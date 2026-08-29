@@ -1,15 +1,16 @@
 # Architecture decision records
 
-Each record holds one decision: what was decided, what else was considered,
-and what it costs. Once a record is accepted, nobody edits its argument. A
-decision that changes gets a new record that supersedes the old one, and the
-old record links to it.
+Each record holds one decision: what we decided, what else we considered, and
+what it costs. Once we accept a record, nobody changes what it argues. If the
+decision changes, write a new record that supersedes the old one, then link
+the old record to the new one.
 
-The [decision log](../architecture/21-decisions.md) lists every settled
-decision and is the place to look one up. A decision moves into a record here
-when its revisit trigger fires, or when its argument no longer fits in one
-row of that table. See
-[ADR-0001](0001-use-adrs-for-architecture-decisions.md).
+The table in [21-decisions.md](../architecture/21-decisions.md) lists every
+settled decision. Look there first. Write a record here when the event you
+said would make you reconsider a decision actually happens, or when the
+reasoning no longer fits in one row of that table.
+[ADR-0001](0001-use-adrs-for-architecture-decisions.md) says why we work this
+way.
 
 | # | Title | Status |
 |---|---|---|

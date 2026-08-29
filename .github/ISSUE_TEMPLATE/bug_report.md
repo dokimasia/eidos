@@ -5,7 +5,7 @@ labels: bug
 ---
 
 **Module and version**
-<!-- go.dokimi.dev/eidos/core v0.1.0, or a commit SHA -->
+<!-- For example go.dokimi.dev/eidos/core v0.1.0, or a commit SHA. -->
 
 **What you did**
 
@@ -15,4 +15,5 @@ labels: bug
 <!-- If a specification document states the expected behaviour, name it. -->
 
 **Smallest way to reproduce it**
-<!-- The smallest workspace, source file or directive that shows the problem. -->
+<!-- The smallest workspace, source file or directive that shows the
+     problem. -->

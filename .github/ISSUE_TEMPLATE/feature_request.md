@@ -8,9 +8,10 @@ labels: enhancement
 <!-- The problem you hit, not the solution you have in mind. -->
 
 **Why the existing mechanisms do not cover it**
-<!-- Every contract and policy appears in exactly one specification document.
-     Name the one that should have covered this, and say why it does not. -->
+<!-- Every contract and policy appears in exactly one specification
+     document. Name the one that should have covered this, and say why it
+     does not. -->
 
 **Which module**
-<!-- The kernel, a language satellite, the shape catalog. A change to a
+<!-- The kernel, a language satellite, or the shape catalog. A change to a
      contract shape needs an RFC before any code. -->

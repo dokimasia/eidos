@@ -25,7 +25,7 @@ If eidos is new to you, read
 follows a single declaration through the whole system. Keep the
 [glossary](architecture/GLOSSARY.md) open beside it.
 
-Documents keep their numbers. Nobody renumbers them, and rejected,
-withdrawn and superseded documents stay on disk — they record what was turned
-down and why. The authoring tools supply the shape of each document unless
+Documents keep their numbers. Nobody renumbers them. Rejected, withdrawn and
+superseded documents stay on disk, because they record what we turned down
+and why. The authoring tools supply the shape of each document unless
 [templates](templates/README.md) overrides it.

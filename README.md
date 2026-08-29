@@ -1,12 +1,12 @@
 # eidos
 
-eidos generates code. A frontend parses your source into a symbol graph
-that belongs to no language, plugins annotate that graph and produce output
-entities, and a backend renders them into a target language. One run
-regenerates only what changed, produces the same bytes every time, and can
-target several languages at once.
+eidos generates code. A frontend parses your source into a symbol graph that
+belongs to no language. Plugins annotate that graph and produce output
+entities. A backend renders those into a target language. One run regenerates
+only what changed, produces the same bytes every time, and can target several
+languages at once.
 
-eidos ships no binary. You build the binary: it composes the command kernels,
+eidos ships no binary. You build the binary. It composes the command kernels,
 and it is the thing your users install.
 
 **eidos is not released yet.** The [specification](docs/README.md) is
@@ -17,7 +17,7 @@ which follows one declaration through the whole system.
 ## Modules
 
 Each component is its own module in this repository, tagged and released on
-its own (`eidos-core/v0.1.0`). The kernel changes slowly and breaking it is
+its own as `eidos-core/v0.1.0`. The kernel changes slowly and breaking it is
 expensive. Catalogs and language support change often, so they release on
 their own schedule.
 
@@ -27,16 +27,16 @@ their own schedule.
 | [eidos-lang](eidos-lang) | `go.dokimi.dev/eidos/lang` | tree-sitter binding layer and pinned grammars, shared by the tree-sitter satellites |
 | [eidos-lang-go](eidos-lang-go) | `go.dokimi.dev/eidos/lang-go` | Go language satellite |
 | [eidos-lang-typescript](eidos-lang-typescript) | `go.dokimi.dev/eidos/lang-typescript` | TypeScript satellite |
-| [eidos-lang-protobuf](eidos-lang-protobuf) | `go.dokimi.dev/eidos/lang-protobuf` | protobuf satellite (read-only by design) |
-| [eidos-lang-java](eidos-lang-java) | `go.dokimi.dev/eidos/lang-java` | Java satellite (placeholder) |
-| [eidos-lang-kotlin](eidos-lang-kotlin) | `go.dokimi.dev/eidos/lang-kotlin` | Kotlin satellite (placeholder, sequenced late) |
-| [eidos-lang-php](eidos-lang-php) | `go.dokimi.dev/eidos/lang-php` | PHP satellite (placeholder) |
-| [eidos-lang-rust](eidos-lang-rust) | `go.dokimi.dev/eidos/lang-rust` | Rust satellite (placeholder) |
-| [eidos-plugin-shape](eidos-plugin-shape) | `go.dokimi.dev/eidos/plugin-shape` | the classification catalog: spec-first shapes, mixins, contracts |
-| [eidos-reference](eidos-reference) | `go.dokimi.dev/eidos/reference` | reference plugin ensemble; the compat canary and perf rig |
+| [eidos-lang-protobuf](eidos-lang-protobuf) | `go.dokimi.dev/eidos/lang-protobuf` | protobuf satellite, read-only by design |
+| [eidos-lang-java](eidos-lang-java) | `go.dokimi.dev/eidos/lang-java` | Java satellite, not written yet |
+| [eidos-lang-kotlin](eidos-lang-kotlin) | `go.dokimi.dev/eidos/lang-kotlin` | Kotlin satellite, not written yet |
+| [eidos-lang-php](eidos-lang-php) | `go.dokimi.dev/eidos/lang-php` | PHP satellite, not written yet |
+| [eidos-lang-rust](eidos-lang-rust) | `go.dokimi.dev/eidos/lang-rust` | Rust satellite, not written yet |
+| [eidos-plugin-shape](eidos-plugin-shape) | `go.dokimi.dev/eidos/plugin-shape` | the classification catalog: shapes, mixins and contracts, written as specs first |
+| [eidos-reference](eidos-reference) | `go.dokimi.dev/eidos/reference` | the reference plugin ensemble, which is also the compatibility canary and the benchmark rig |
 
 Consumers depend on satellites, satellites depend on the kernel, and nothing
-depends the other way. One satellite never imports another; anything
+depends the other way. One satellite never imports another. Anything
 cross-language goes through the kernel's canonical-type hub. The kernel knows
 no language and takes no third-party dependencies.
 
@@ -46,27 +46,27 @@ toolchain for CI. It holds no packages and stays out of `go.work`.
 
 ## Development
 
-[ergon](https://go.thesmos.sh/ergon) drives the build, tests, lint and
-releases:
+[ergon](https://go.thesmos.sh/ergon) drives the build, the tests, the linters
+and the releases:
 
 ```sh
 make bootstrap    # install dev tools
-make check        # full pre-merge gate (mod verify + lint + test)
-make fmt          # apply SPDX headers, gofumpt + gci, markdownlint
+make check        # the full pre-merge gate: mod verify, lint, test
+make fmt          # apply SPDX headers, gofumpt, gci, markdownlint
 make help         # every target
 ```
 
-Write Conventional Commits, scoped by module name (`feat(core): …`,
-`fix(go): …`). [.ergon.yaml](.ergon.yaml) lists the accepted types and
-scopes, and the commit-msg hook rejects anything else.
+Write Conventional Commits, scoped by module name, such as `feat(core):` or
+`fix(go):`. [.ergon.yaml](.ergon.yaml) lists the accepted types and scopes,
+and the commit-msg hook rejects anything else.
 
 ## Contributing
 
-[CONTRIBUTING](CONTRIBUTING.md) tells you how to set up, what to run before
-a PR, and how to write a commit message. Everyone taking part follows the
+[CONTRIBUTING](CONTRIBUTING.md) tells you how to set up, what to run before a
+PR, and how to write a commit message. Everyone taking part follows the
 [Code of Conduct](CODE_OF_CONDUCT.md). Email vulnerabilities to
-security@dokimi.dev; see [SECURITY](SECURITY.md).
+security@dokimi.dev, as [SECURITY](SECURITY.md) explains.
 
 ## License
 
-MIT — see [LICENSE](LICENSE).
+MIT. See [LICENSE](LICENSE).

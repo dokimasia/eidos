@@ -1,13 +1,15 @@
 # Add a module
 
-Adds a language satellite, a plugin, or a shared component to the workspace.
+This guide takes you from an empty directory to a module that the workspace
+builds, lints and accepts commits for. Use it for a language satellite, a
+plugin, or a shared component.
 
 Before you start, run `make bootstrap` in a working checkout.
 
 ## Steps
 
 1. Create the directory and its `go.mod`. Keep the `eidos-` prefix on the
-   directory; drop it from the import path.
+   directory and drop it from the import path.
 
    ```sh
    mkdir eidos-<name>
@@ -21,7 +23,7 @@ Before you start, run `make bootstrap` in a working checkout.
 3. In [`.ergon.yaml`](../../.ergon.yaml), add a coverage layer under
    `checks.coverage.packages` and the bare module name under
    `checks.commit_msg.scopes`. Use `line: 85` for the kernel and shared
-   components, `line: 75` for a satellite.
+   components, and `line: 75` for a satellite.
 
 4. Add a row to the module table in the [README](../../README.md).
 
@@ -40,8 +42,8 @@ Before you start, run `make bootstrap` in a working checkout.
 make fmt && make check
 ```
 
-Then check the new scope, because an unlisted scope fails the commit-msg hook
-rather than `make check`:
+Then check the new scope. An unlisted scope fails the commit-msg hook rather
+than `make check`, so the gate alone will not catch it:
 
 ```sh
 printf 'feat(<name>): probe\n' > /tmp/scope-probe
@@ -51,7 +53,7 @@ ergon check commit-msg /tmp/scope-probe
 ## Rules the new module has to keep
 
 Consumers depend on satellites, satellites depend on the kernel, and nothing
-depends the other way. One satellite never imports another; anything
+depends the other way. One satellite never imports another. Anything
 cross-language goes through the kernel's canonical-type hub.
 
 The kernel takes no third-party dependencies. Put code that needs one in a

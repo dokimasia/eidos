@@ -15,88 +15,88 @@ Accepted
 
 ## Context
 
-The architecture specification records 80 settled decisions, D1 through D80.
-Each is one row in the decision log at
-[21-decisions.md](../architecture/21-decisions.md): the decision, its
-reasoning in a single line, a revisit trigger where one was recorded, and a
-link to the context document carrying the full argument. The arguments
-themselves live inline in those documents — the case against a daemon is a
-section of [09-incrementality.md](../architecture/09-incrementality.md), not a
-paragraph in the log.
+The architecture specification holds 80 settled decisions, D1 through D80.
+The table in [21-decisions.md](../architecture/21-decisions.md) lists them.
+Each row gives the decision, one line of reasoning, a link to the document
+that argues it, and for some decisions the event that would make us
+reconsider. The table calls that event a revisit trigger.
 
-Eight decisions carry an explicit revisit trigger: D9, D12, D13, D16, D23,
-D29, D45 and D77. Each names the event that would reopen it — an IDE surface
-actually being built, a native compiler port publishing a public importable
-API, an organisation demonstrably saturating CI-restore bandwidth. When one
-fires, the decision is re-argued against evidence the original did not have,
-and a one-line table row cannot hold that argument.
+The full argument for a decision sits in the document that owns the
+mechanism. The case against running a daemon is a section of
+[09-incrementality.md](../architecture/09-incrementality.md). The table row
+only points at it.
 
-The decision log already declares this directory as the destination: "Each of
-these will be recorded as an ADR in `docs/adr/`; this log is their source."
-Until now the directory did not exist, so the specification promised a record
-it did not keep.
+Eight decisions name an event that would make us reconsider: D9, D12, D13,
+D16, D23, D29, D45 and D77. The events are things like someone building an
+IDE surface, a native compiler port publishing a public importable API, and
+an organisation running out of CI-restore bandwidth. When one of them
+happens, we argue the decision again against evidence we did not have the
+first time. That argument does not fit in a table row.
 
-The practice is already the repository's. Context documents carry "Considered
-and refused" sections — per-plan model transforms in 08, an embedded database
-in 09, machine-supplied toolchain frontends in 11 — each naming the
-alternative and the reason it lost.
+Before this record existed, the table said these decisions would be written
+up as ADRs in `docs/adr/`, and that directory did not exist.
+
+We already write down what we reject. Three specification documents carry
+"Considered and refused" sections: 08 on per-plan model transforms, 09 on an
+embedded database, and 11 on machine-supplied toolchain frontends. Each one
+names the alternative and says why we did not take it.
 
 ## Decision
 
-We will record architecture decisions as ADRs under `docs/adr/`, numbered and
-immutable once accepted.
+Record architecture decisions as ADRs in `docs/adr/`. Give each one a number.
+Once you accept an ADR, do not change what it argues. If the decision itself
+changes, write a new ADR that supersedes it.
 
-The decision log remains the source of record for the decision set: every
-settled decision appears there, and it is what a reader consults to find out
-what has been decided. An individual decision graduates to a full ADR when
-its recorded revisit trigger fires, or when its argument outgrows one table
-row. A graduated decision's log row then links to its ADR.
+Keep using the table in `21-decisions.md` to look up what has been decided.
+Every settled decision stays listed there. Write a full ADR for a decision
+when the event you said would make you reconsider actually happens, or when
+the reasoning no longer fits in one row. Then link that row to the ADR.
 
 ## Alternatives Considered
 
 ### Migrate all 80 decisions to ADRs immediately
 
-Generate one ADR per log row and retire the log.
+Write one ADR per row and delete the table.
 
-Rejected because the arguments already have a home. Each decision's full
-reasoning lives inline in the context document that owns the mechanism, where
-it is read alongside the machinery it justifies. Copying it into an ADR
-creates a second copy that drifts, and an ADR generated from a one-line row
-would be thinner than the specification text it duplicates. The specification
-is closed on exactly this rule: every component, contract, and policy
-"appears in exactly one" of its documents.
+We rejected this because the reasoning is already written down. Each decision
+is argued in the document that owns the mechanism, where you read it next to
+the machinery it explains. An ADR built from a one-line row would say less
+than the specification text it copies, and the two copies would disagree
+within a few months. The specification states the rule directly: every
+component, contract, and policy "appears in exactly one" of its documents.
 
-### Keep the decision log only, and drop the ADR claim
+### Keep the table only, and drop the ADR claim
 
-Delete the sentence promising `docs/adr/` and let the log be the whole record.
+Delete the sentence pointing at `docs/adr/` and keep the table as the whole
+record.
 
-Rejected because it leaves the eight revisit triggers with nowhere to land. A
-trigger firing produces a new argument against new evidence; writing that into
-the log means either a table row too small to hold it, or an edit to the row
-recording the original decision — destroying the history the log exists to
-keep.
+We rejected this because the eight decisions above would have nowhere to
+record a new argument. When one of those events happens, someone has to write
+that argument down. Writing it in the table means either a row too small to
+hold it, or editing the row that records the original decision. Editing the
+row loses the history the table exists to keep.
 
 ## Consequences
 
 **Positive:**
 
-- A reopened decision has somewhere to be re-argued in full, with its
-  supersession chain visible, without editing the record of what came before.
-- The promise the specification already makes is kept.
-- Decisions that never reopen cost nothing: they stay one row, and no thin
-  ADR is written to satisfy a convention.
+- When we reopen a decision, there is somewhere to argue it in full, and the
+  older record stays as it was.
+- The table now points at a directory that exists.
+- A decision nobody reopens costs nothing. It stays one row, and nobody
+  writes a thin ADR to satisfy a convention.
 
 **Negative:**
 
-- Decisions live in two places. A reader must know that the log is the index
-  and an ADR, where one exists, is the current record.
-- A supersession must be written in both the new ADR and the superseded
-  decision's log row. Miss the second and the log presents a superseded
-  decision as current.
-- "Outgrows one table row" is a judgment call. Until a concrete case sets the
+- Decisions live in two places. A reader has to know that the table lists
+  everything, and that the ADR, where there is one, holds the current
+  argument.
+- When you supersede an ADR you have to edit the new ADR and the table row.
+  Forget the row and the table shows a superseded decision as current.
+- "No longer fits in one row" is a judgement call. Until a real case sets the
   bar, two contributors will draw the line differently.
 
 **Neutral:**
 
-- ADR numbering is independent of the D-numbers. D-numbers remain the
-  specification's identifiers; a graduated decision carries both.
+- ADR numbers and D-numbers are separate. D-numbers stay the specification's
+  identifiers, and a decision with an ADR has both.
