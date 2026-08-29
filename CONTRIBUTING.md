@@ -71,7 +71,7 @@ and rejects anything outside these two lists.
 that touches the whole repository.
 
 Keep the subject under 80 bytes and body lines under 100. Say what changed
-and why. The diff already shows how.
+and why; the diff shows how.
 
 ## Tests and coverage
 

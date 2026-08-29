@@ -9,8 +9,7 @@ every release. The backend and plugin registrations produce the funcmap
 reference, the registered schemas produce the directive reference, the
 published JSON Schema produces the config reference, the diag registry
 produces the diagnostic-code index, and the completeness rung produces the
-per-language support matrices. A stale page blocks a release the same way a
-failing test does. See
+per-language support matrices. A stale page blocks the release. See
 [14-distribution-and-cli.md](../architecture/14-distribution-and-cli.md).
 
 Write a page here by hand only when no registry can answer for it. Anything

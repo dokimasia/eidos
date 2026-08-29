@@ -6,8 +6,8 @@
 
 ## How you tested it
 
-<!-- The tests you added, the commands you ran, what you saw. A green CI run
-     is not a test; it only means nothing already covered has broken. -->
+<!-- The tests you added, the commands you ran, what you saw. Say what you
+     did, not that CI passed. -->
 
 ## Breaking changes
 

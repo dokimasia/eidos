@@ -54,8 +54,8 @@ Consumers depend on satellites, satellites depend on the kernel, and nothing
 depends the other way. One satellite never imports another; anything
 cross-language goes through the kernel's canonical-type hub.
 
-The kernel takes no third-party dependencies. A module that needs one is not
-the kernel.
+The kernel takes no third-party dependencies. Put code that needs one in a
+satellite or a plugin.
 
 Leave the root module `go.dokimi.dev/eidos` out of `go.work`. It holds no
 packages, and `go vet ./...` fails on a module with no Go files.

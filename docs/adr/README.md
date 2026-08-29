@@ -3,7 +3,7 @@
 Each record holds one decision: what was decided, what else was considered,
 and what it costs. Once a record is accepted, nobody edits its argument. A
 decision that changes gets a new record that supersedes the old one, and the
-old one gains a pointer forward.
+old record links to it.
 
 The [decision log](../architecture/21-decisions.md) lists every settled
 decision and is the place to look one up. A decision moves into a record here
