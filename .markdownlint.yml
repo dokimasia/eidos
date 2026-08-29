@@ -1,0 +1,52 @@
+# markdownlint configuration. Consumed by `ergon fmt` (auto-fix)
+# and `ergon lint md` (reporting only). Rule reference:
+# https://github.com/DavidAnson/markdownlint/blob/main/doc/Rules.md
+#
+# Each disabled rule below has a one-line rationale — change
+# them when your project's prose conventions diverge.
+
+# Line length — off. READMEs and docs routinely include tables,
+# fenced code blocks, and long URLs that exceed any sensible
+# wrap point.
+MD013: false
+
+# Multiple headings with same content — off. Common in
+# changelogs / release notes ("### Fixed" repeated per version).
+MD024: false
+
+# Trailing punctuation in headings — allow "?" for FAQ-style
+# titles; everything else still flagged.
+MD026:
+  punctuation: ".,;:!"
+
+# Multiple top-level headings — off. Some Markdown frontmatter
+# patterns generate a second h1.
+MD025: false
+
+# Inline HTML — off. Sometimes the only way to align tables or
+# embed badges.
+MD033: false
+
+# Bare URLs — off. URL-as-text is fine in changelogs and link
+# references.
+MD034: false
+
+# First line heading — off. YAML / TOML frontmatter blocks
+# precede the first h1 on docs site generators.
+MD041: false
+
+# Emphasis as heading — off. Bolded one-liners aren't always a
+# misused heading.
+MD036: false
+
+# Code block style — fenced (consistent ```language blocks).
+MD046:
+  style: fenced
+
+# Fenced code block language — off. Some blocks (directory
+# trees, ASCII diagrams) have no meaningful language.
+MD040: false
+
+# Table column style — off. Compact-style tables (without
+# pipe-aligned padding) are intentional in many docs.
+MD060: false

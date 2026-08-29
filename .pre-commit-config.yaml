@@ -1,0 +1,56 @@
+# pre-commit configuration for eidos.
+#
+# Install:
+#   pre-commit install --hook-type pre-commit --hook-type commit-msg
+#
+# Heavy gates (vet, golangci-lint, test, coverage, vuln) run via
+# `make check` so the Makefile remains the single source of truth
+# for "what runs before a commit". The commit-msg hook calls
+# `ergon check commit-msg`, which validates the Conventional
+# Commits subset declared in `.ergon.yaml`'s `checks.commit_msg`
+# section — no Node/npm dependency.
+
+default_stages: [pre-commit]
+
+repos:
+  # File hygiene — fast checks that don't need the Go toolchain.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+        exclude: '\.md$'
+      - id: end-of-file-fixer
+      - id: mixed-line-ending
+        args: ["--fix=lf"]
+      - id: check-merge-conflict
+      - id: detect-private-key
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-yaml
+        args: ["--allow-multiple-documents"]
+      - id: check-json
+      - id: check-toml
+      - id: check-symlinks
+
+  # Pre-commit: the full umbrella gate. `make check` shells out to
+  # `ergon check` (mod, lint, test, coverage, skip-expiry,
+  # error-prefix, vuln); see the Makefile for what's wired up.
+  - repo: local
+    hooks:
+      - id: check
+        name: make check
+        entry: make check
+        language: system
+        pass_filenames: false
+
+  # Commit message validation. Pre-commit passes the path to the
+  # commit-message file as the first positional argument;
+  # `ergon check commit-msg` reads it and validates against the
+  # configured Conventional Commits subset.
+  - repo: local
+    hooks:
+      - id: ergon-commit-msg
+        name: ergon check commit-msg
+        entry: ergon check commit-msg
+        language: system
+        stages: [commit-msg]

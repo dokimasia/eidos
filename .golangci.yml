@@ -1,0 +1,109 @@
+# golangci-lint configuration for eidos.
+#
+# Reference: https://golangci-lint.run/usage/configuration/
+#
+# The set below is a conservative baseline — every linter named
+# is a "no false-positive" check or a high-signal modernization
+# rule. Extend as the project grows.
+
+version: "2"
+
+run:
+  timeout: 5m
+  modules-download-mode: readonly
+  allow-parallel-runners: true
+  tests: true
+
+output:
+  show-stats: true
+  sort-order:
+    - linter
+    - severity
+    - file
+
+linters:
+  default: none
+  enable:
+    # Correctness
+    - copyloopvar
+    - errcheck
+    - errorlint
+    - govet
+    - nilerr
+    - staticcheck
+    - unused
+    - wastedassign
+    # Modernization
+    - modernize
+    - unparam
+    # Style
+    - dupword
+    - gocritic
+    - misspell
+    - revive
+    - usestdlibvars
+    # Concurrency
+    - asasalint
+    - contextcheck
+    - errname
+    # Test hygiene
+    - thelper
+    - tparallel
+    - usetesting
+
+  settings:
+    gocritic:
+      enabled-tags: [diagnostic]
+      disabled-checks:
+        - ifElseChain
+
+    revive:
+      severity: warning
+      rules:
+        - name: context-as-argument
+        - name: var-naming
+        - name: package-comments
+        - name: receiver-naming
+        - name: error-return
+        - name: error-naming
+        - name: error-strings
+        - name: errorf
+        - name: if-return
+        - name: indent-error-flow
+        - name: early-return
+        - name: unused-receiver
+
+    govet:
+      enable-all: true
+
+  exclusions:
+    generated: lax
+    presets:
+      - std-error-handling
+      - common-false-positives
+    rules:
+      # fieldalignment is noise outside hot-path structs.
+      - linters: [govet]
+        text: "fieldalignment:"
+
+formatters:
+  enable:
+    - gci
+    - gofmt
+    - gofumpt
+    - goimports
+    - golines
+
+  settings:
+    golines:
+      max-len: 120
+    gofumpt:
+      extra-rules: true
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
+  fix: false
+
+severity:
+  default: error

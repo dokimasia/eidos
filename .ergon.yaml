@@ -1,0 +1,307 @@
+# ergon configuration for eidos.
+#
+# Every field is optional; values not set here fall back to the
+# subsystem's `Defaults()` function. This file shows every
+# configurable section populated with its default value so it
+# doubles as a worked reference for new repositories.
+
+# Project identity — used in help banners and as the directory
+# name for cached artifacts (.eidos/, .coverage/, ...). Defaults to
+# the repository's basename.
+name: eidos
+
+# Module set ergon iterates for multi-module operations.
+# When empty, discovery reads `go.work` (or falls back to a single
+# root entry). When set, the listed paths are used verbatim and
+# `testdata` filtering does not apply — the user explicitly named
+# the modules.
+modules: []
+
+# bootstrap — `ergon bootstrap`
+bootstrap:
+  # Per-repo additions to the built-in tool list (gofumpt, gci,
+  # golangci-lint, govulncheck, go-license, benchstat, gremlins,
+  # gobco). Each entry installs via `go install <pkg>@<version>`.
+  extra_tools: []
+  # Version overrides applied across both the built-in tools and
+  # `extra_tools`. Keys are the `go install` package path; values
+  # are the `@<version>` suffix. Use to make CI installs
+  # deterministic; leave empty to track `@latest` for every tool
+  # (the local dev default). A pinned entry for an unknown
+  # package is silently ignored.
+  pinned: {}
+  # Example (uncomment + adjust):
+  #   pinned:
+  #     mvdan.cc/gofumpt: v0.6.0
+  #     github.com/daixiang0/gci: v0.13.5
+  #     github.com/golangci/golangci-lint/v2/cmd/golangci-lint: v2.0.0
+
+# license — `ergon license` (apply) and `ergon lint license` (verify)
+license:
+  # Path to go-license's YAML config, relative to the repository root.
+  config_file: .go-license.yml
+  # Directory basenames pruned from the source walk (the entire
+  # subtree below any match drops). Extend or replace.
+  exclude_dirs: [.git, vendor, dist, node_modules]
+  # Filename globs (matched via filepath.Match) skipped during the
+  # walk. Covers the generated-file conventions ergon recognises.
+  exclude_files:
+    - "*.gen.go"
+    - "*.gen_test.go"
+
+# lint — `ergon lint` umbrella
+#
+# The umbrella runs the full static-analysis suite by default:
+# `vet`, `go`, `md`, `license`, `skip-expiry`, `error-prefix`,
+# `vuln`. Anything that examines source without running tests
+# belongs here; test-derived gates (coverage, mutation, branch)
+# live under `checks` and run from `ergon check`.
+#
+# Use `enabled` to restrict the set (allowlist) or `disabled` to
+# subtract from it (denylist); the CLI flags `--only` / `--skip`
+# layer on top per-invocation. An unknown stage name in either
+# field surfaces as a usage error so typos are caught at start
+# time.
+lint:
+  enabled: []   # empty = every stage in scope (the default)
+  disabled: []  # remove individual stages without forking the binary
+  # error-prefix — `ergon lint error-prefix`
+  error_prefix:
+    # Directories (repository-relative) the walker recurses into.
+    # `[.]` covers the entire tree. Entries are inclusive prefixes,
+    # so this list cannot express "everywhere except here" — use
+    # excludes below for that.
+    target_dirs: ["."]
+    # Paths the rule must not apply to. Same {path, reason} shape
+    # as checks.excludes, and the same glob syntax: `...` matches
+    # any number of segments, `*` matches one. Note this differs
+    # from target_dirs above — `foo` matches that path alone, and
+    # `foo/...` is needed to match the tree beneath it.
+    #
+    # Intended for source that exists to be read rather than run: a
+    # code generator's fixture corpus deliberately holds the
+    # patterns the generator rejects, and prefixing it to satisfy
+    # this lint makes the fixture unable to detect the bug it
+    # exists to catch. The count of exempted files is printed on
+    # every run, so an exclusion cannot quietly grow.
+    excludes: []
+    # Example:
+    #   excludes:
+    #     - path: conformance/corpus/...
+    #       reason: generator fixture corpus; violating patterns are the point
+
+# markdown — markdownlint-cli2 invocation shared by `ergon fmt`
+# (auto-fix mode) and `ergon lint md` (reporting only)
+markdown:
+  # Argument list handed to markdownlint-cli2. Glob patterns select
+  # files; entries prefixed with `#` exclude paths. A missing
+  # markdownlint-cli2 binary surfaces as a warning naming
+  # `ergon bootstrap`; the rest of the run proceeds.
+  globs:
+    - "**/*.md"
+    - "#vendor"
+    - "#dist"
+    - "#node_modules"
+
+# test — `ergon test` and its subcommands (race, bench, fuzz, coverage)
+test:
+  # Parallelism `go test -cpu=N` exposes to each package.
+  cpu: 4
+  # Iteration count for the default `go test` run.
+  count: 3
+  # Per-package deadline applied to every test mode.
+  timeout: 10m
+  # Iteration count for `ergon test race`.
+  race_count: 3
+  # Sample count for `ergon bench baseline` / `regression`.
+  bench_count: 6
+  # Per-target wall-clock budget for `ergon test fuzz`.
+  fuzz_time: 30s
+
+# bench — `ergon bench baseline` and `ergon bench regression`
+bench:
+  # Repo-relative path where `ergon bench baseline` writes the
+  # pinned reference output. `ergon bench regression` reads it
+  # back at compare time.
+  baseline_path: bench/baseline.txt
+  # Per-metric regression policy. `ergon bench regression` parses
+  # `benchstat -format csv` and applies a different policy per
+  # metric:
+  #   time_percent   sec/op hard-fails on significant deltas ≥ this
+  #                  percent. Insignificant changes (benchstat
+  #                  reports `~`) never fail.
+  #   allocs_percent allocs/op hard-fails on significant deltas
+  #                  STRICTLY above this percent. Zero means any
+  #                  positive change fails (contracts are ceilings).
+  #   bytes_percent  B/op is ADVISORY ONLY. Deltas at or above this
+  #                  percent surface as warnings; the metric never
+  #                  fails the run because B/op shifts too readily
+  #                  under unrelated struct-padding changes.
+  thresholds:
+    time_percent: 5
+    bytes_percent: 10
+    allocs_percent: 0
+
+# release — `ergon release`
+release:
+  # Subset of modules to release. When non-empty this list REPLACES
+  # the top-level `modules:` value for `ergon release` only —
+  # every other subcommand keeps operating on the global set
+  # (or `go.work` discovery when that is empty). When empty,
+  # release inherits the global module list.
+  modules: []
+
+# checks — `ergon check` and its subcommands.
+#
+# `excludes` and `skips` live at this level (not under coverage
+# or mutation) because both gates read the same rules: a file or
+# function exempt from one is invariably exempt from the other.
+# - Coverage filters per-function in its own parser.
+# - Mutation translates the rules into the file-glob regex
+#   `gremlins --exclude-files` accepts; a Skip's func_glob is
+#   honoured at file granularity (gremlins has no per-function
+#   exclusion knob).
+checks:
+  # Stage allow/denylist for the `ergon check` umbrella. Stage
+  # names are `mod`, `lint`, `test`, `coverage`, plus the opt-in
+  # `mutation` and `branch` (auto-appended when their thresholds
+  # are declared below). Static-analysis stages (skip-expiry,
+  # error-prefix, vuln) live under `lint` and run via the nested
+  # `lint` stage above. The CLI flags `--only` / `--skip` layer
+  # on top per-invocation; an unknown stage name surfaces as a
+  # usage error.
+  enabled: []   # empty = every stage in scope (the default)
+  disabled: []  # remove individual stages without forking the binary
+
+  # Path globs both gates ignore. `reason` is human-facing so
+  # reviewers can challenge new excludes on PR.
+  excludes: []
+  # Example:
+  #   excludes:
+  #     - path: "**/*_test.go"
+  #       reason: tests are not part of the coverage or mutation gates
+  #     - path: internal/version/...
+  #       reason: ldflags-injected build metadata; no logic
+
+  # Structural skip rules: a function whose name matches func_glob
+  # AND whose file matches file_glob is exempt from every gate.
+  # Used for assertion / contract branches the verifier framework
+  # only exercises against broken implementations.
+  skips: []
+  # Example:
+  #   skips:
+  #     - label: suite
+  #       func_glob: "Run*Suite"
+  #       file_glob: "*test/*"
+
+  # coverage — `ergon check coverage` + `ergon check branch`
+  #
+  # Per-layer thresholds rather than one global number — different
+  # layers have different testability ceilings. Longest-prefix wins:
+  # a function under both `internal/...` and `internal/checks/...`
+  # is gated by the latter (specificity-wins).
+  #
+  # `line` enforces statement coverage (`go test -cover`). The
+  # per-layer verdict compares the aggregate "X% of statements
+  # covered" against this threshold; individual sub-threshold
+  # functions surface as a diagnostic list, not as failures.
+  #
+  # `branch` enforces condition coverage (gobco). When
+  # `require_branch: true` AND the layer's aggregate branch
+  # coverage is below `branch`, the gate fails. When
+  # `require_branch: false` the number is informational only —
+  # rendered without failing. The branch gate is heavy (gobco
+  # rebuilds each package under test) so it joins the `ergon
+  # check` umbrella only when at least one layer opts in via
+  # `require_branch: true`; otherwise run `ergon check branch`
+  # standalone.
+  coverage:
+    # Per-layer thresholds. Empty disables the check —
+    # `ergon check coverage` short-circuits with a notice.
+    packages: []
+    # Example:
+    #   packages:
+    #     - path: internal/...
+    #       line: 80
+    #       branch: 80
+    #       require_branch: false
+    #     - path: cmd/...
+    #       line: 60
+    #       branch: 0
+    #       require_branch: false
+    # Cap on the per-target list of below-threshold functions.
+    # Anything past the cap is collapsed into "… and N more".
+    top_n: 10
+
+  # mutation — `ergon check mutation`
+  #
+  # Two metrics gate independently per layer:
+  #   score    test efficacy = KILLED / (KILLED + LIVED). Of the
+  #            mutants the test suite reached, how many were caught.
+  #   coverage mutator coverage = (KILLED + LIVED) / TOTAL_VIABLE.
+  #            Of every viable mutant, how many the test suite
+  #            reached at all. Catches "tests don't reach the
+  #            mutateable code".
+  mutation:
+    # Per-layer thresholds. An empty list short-circuits the check.
+    packages: []
+    # Example:
+    #   packages:
+    #     - path: internal/...
+    #       score: 80
+    #       coverage: 80
+    # gremlins invocation policy. Workers bounds CPU usage;
+    # timeout_coefficient tolerates slow-but-finite tests
+    # (gremlins' default of 3 produces spurious timeouts). File
+    # exclusion comes from `checks.excludes` / `checks.skips`
+    # above; gremlins' `--exclude-files` is computed at call time.
+    #
+    # test_cpu is INERT and reaches nothing. gremlins renders
+    # `--test-cpu N` into the per-mutant command as a single argv
+    # element containing a space (`-cpu 2`), which makes `go test`
+    # swallow the package pattern as the flag's value and exit 1
+    # without running anything; gremlins reads that exit as a
+    # killed mutant, reporting every covered mutant KILLED
+    # regardless of what the suite asserts. The key is retained
+    # because the config decoder is strict.
+    #
+    # A timed-out mutant counts as killed: the suite distinguished
+    # it from the original, which is what killing means. Timeouts
+    # show on the Mutants line because a hang is expensive and
+    # worth fixing, but they are not a quality verdict — scoring
+    # them as survivors would turn timeout_coefficient into a
+    # threshold, failing a layer for being tuned tightly rather
+    # than for testing poorly.
+    #
+    # If this gate ever runs implausibly fast or reports zero
+    # LIVED tree-wide, suspect the invocation before believing
+    # the score.
+    gremlins:
+      workers: 2
+      test_cpu: 2
+      timeout_coefficient: 30
+
+  # commit-msg — `ergon check commit-msg <file>`
+  commit_msg:
+    # Closed set of accepted Conventional Commit types.
+    types:
+      - feat
+      - fix
+      - docs
+      - refactor
+      - test
+      - ci
+      - chore
+      - perf
+      - build
+      - revert
+    # Optional closed set of accepted scopes. Empty (the default)
+    # leaves scopes free-form — commits without a scope or with
+    # any scope name are accepted. Set to constrain `(scope)` to
+    # a named list, e.g. ["api", "cli", "internal"]; scope-less
+    # commits still pass when the list is set.
+    scopes: []
+    # Maximum length (in bytes) of the commit subject line.
+    max_subject_length: 72
+    # Maximum length (in bytes) of each body or footer line.
+    body_max_line_length: 100

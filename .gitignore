@@ -1,0 +1,38 @@
+# Binaries and build artefacts
+bin/
+dist/
+artifacts/
+
+# Tests and coverage
+*.test
+*.out
+.ergon/
+
+# Dependencies
+vendor/
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Agentic / LLM
+.claude/
+.codex/
+.gemini/
+.topoi/
+superpowers/
+AGENT.md
+CLAUDE.md
+GEMINI.md
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets
+.env
+*.local
+secrets.json

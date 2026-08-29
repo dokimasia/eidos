@@ -1,0 +1,10 @@
+# go-license header template. The `header` block is prepended to
+# every Go source file by `ergon license` (apply) and verified by
+# `ergon lint license`. `{{YEAR}}` is substituted by go-license
+# at apply time with the current year — keep the literal in the
+# template.
+#
+# Edit the copyright holder + SPDX identifier to suit your project.
+header: |
+  // Copyright ThesmOS B.V. {{YEAR}}
+  // SPDX-License-Identifier: MIT
