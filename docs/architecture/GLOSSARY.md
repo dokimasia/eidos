@@ -38,6 +38,7 @@ defining document carries the contract.
 | sweep | deletion of manifested files whose producer no longer exists | [17](17-output-and-determinism.md) |
 | tag | a named companion output of a plugin (`test`, `docs`); empty tag = primary | [18](18-routing-and-layout.md) |
 | satellite | a language module of the fixed anatomy, depending only on the kernel | [11](11-languages.md) |
+| eidos-lang | the shared tree-sitter binding layer and pinned grammar set; below the satellites, registers no language | [11](11-languages.md) |
 | read-only language | a satellite shipping frontend + rules and nothing else (protobuf) | [11](11-languages.md) |
 | declarative plugin | plugin-as-files (manifest + templates), instantiated by the kernel's loader | [06](06-plugins.md) |
 | command kernels | the complete CLI implementations a consumer's binary composes | [20](20-cli.md) |

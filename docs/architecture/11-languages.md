@@ -246,11 +246,13 @@ module, a tree-sitter grammar — because the same workspace resolves
 the same parser everywhere. A toolchain found on PATH answers
 differently per machine and per version, which D29 refuses and
 warm≡cold cannot absorb. Within the law, **tree-sitter is the
-platform**: one grammar model, one binding layer, well developed
-and maintained, uniform across satellites. A satellite deviates
-only where a first-class pure-Go parser already exists and is
-proven — Go's stdlib parser, protobuf's protocompile — and the kit
-keeps even that deviation invisible downstream:
+platform**: one grammar model, one binding layer — the shared
+`eidos-lang` module, which pins every grammar and is the only
+importer of the bindings — uniform across satellites. A satellite
+deviates only where a first-class pure-Go parser already exists and
+is proven — Go's stdlib parser, protobuf's protocompile; those two
+take no `eidos-lang` dependency — and the kit keeps even that
+deviation invisible downstream:
 
 | Language | Parser | Why |
 |---|---|---|
@@ -266,9 +268,9 @@ keeps even that deviation invisible downstream:
 One operational note: the official tree-sitter Go bindings are cgo,
 which taxes every consumer binary embedding such a satellite with a
 C toolchain and complicates cross-compilation. Wazero-based
-(pure-Go, WASM) bindings exist but are pre-release; the kit hides
-the swap, so satellites migrate when those mature, without any
-downstream change.
+(pure-Go, WASM) bindings exist but are pre-release; the binding
+choice is private to `eidos-lang`, so satellites migrate when those
+mature, without any downstream change.
 
 The recorded revisit trigger, per satellite: a compiler-as-library
 frontend needs an *importable, public* API. A port that ships

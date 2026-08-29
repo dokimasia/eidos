@@ -15,6 +15,7 @@ their vocabularies settle. The kernel is exactly the slow-moving set.
 | Directory | Module path | Contents |
 |---|---|---|
 | eidos-core | `go.dokimi.dev/eidos/core` | the kernel (below) |
+| eidos-lang | `go.dokimi.dev/eidos/lang` | tree-sitter binding layer + pinned grammars |
 | eidos-lang-go | `go.dokimi.dev/eidos/lang-go` | Go language satellite |
 | eidos-lang-typescript | `go.dokimi.dev/eidos/lang-typescript` | TypeScript satellite |
 | eidos-lang-protobuf | `go.dokimi.dev/eidos/lang-protobuf` | protobuf satellite (read-only shape) |
@@ -38,6 +39,18 @@ places in the same anatomy, and further languages
 ([11-languages.md](11-languages.md)). Bridge modules do not exist:
 cross-language conversion is hub-and-spoke through the kernel
 ([10-cross-language.md](10-cross-language.md)), never pairwise.
+
+`eidos-lang` is neither kernel nor satellite: it is the shared
+tree-sitter binding layer and grammar set the tree-sitter
+satellites parse through, registering no language of its own. It
+depends only on the kernel; satellites that use it (TypeScript,
+Java, Kotlin, PHP, Rust) depend on it beside the kernel, and
+satellites with first-class pure-Go parsers (Go, protobuf) do not
+depend on it at all. The satellite-never-imports-satellite law is
+untouched — `eidos-lang` sits below the satellites, not beside
+them. It is also where the tree-sitter cgo dependency is
+concentrated: the kernel stays zero-dependency, and a binding or
+grammar upgrade lands in one module.
 
 The kernel is the only module whose tags gate anyone else.
 Satellites release on their own cadence against a declared kernel
@@ -89,6 +102,7 @@ Dependencies point one way and only one way:
 ```
 consumers (dokimi, org binaries) ──► satellites (eidos-lang-go, …) ──► kernel
                                      eidos-plugin-shape ─────────────► kernel
+                                     tree-sitter satellites ──► eidos-lang ──► kernel
 ```
 
 Nothing in the kernel names anything to its left; a satellite never

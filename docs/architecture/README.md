@@ -24,8 +24,9 @@ all of them.
 - **Multi-module**: one repository, one kernel module
   (`go.dokimi.dev/eidos/core`) plus satellite modules
   (`go.dokimi.dev/eidos/lang-go`, `/lang-typescript`,
-  `/lang-protobuf`, `/plugin-shape`, `/reference`, …), each tagged
-  and released independently. Everything is implemented in Go; a
+  `/lang-protobuf`, `/plugin-shape`, `/reference`, …) and the
+  shared tree-sitter binding module (`/lang`), each tagged and
+  released independently. Everything is implemented in Go; a
   satellite module per language is a packaging boundary, not a
   rewrite in that language.
 - **Scale envelope: monorepo-grade.** 10k+ packages, sub-second warm

@@ -6,6 +6,7 @@ go 1.27.0
 // per-module command iterates the list below.
 use (
 	./eidos-core
+	./eidos-lang
 	./eidos-lang-go
 	./eidos-lang-java
 	./eidos-lang-kotlin

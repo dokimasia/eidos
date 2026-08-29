@@ -24,6 +24,7 @@ their own cadence, released independently through per-module tags
 | Module | Import path | Contents |
 |---|---|---|
 | [eidos-core](eidos-core) | `go.dokimi.dev/eidos/core` | the kernel: symbol model, projections, directives, plugins, workspace, engine, conformance, command kernels |
+| [eidos-lang](eidos-lang) | `go.dokimi.dev/eidos/lang` | tree-sitter binding layer and pinned grammars, shared by the tree-sitter satellites |
 | [eidos-lang-go](eidos-lang-go) | `go.dokimi.dev/eidos/lang-go` | Go language satellite |
 | [eidos-lang-typescript](eidos-lang-typescript) | `go.dokimi.dev/eidos/lang-typescript` | TypeScript satellite |
 | [eidos-lang-protobuf](eidos-lang-protobuf) | `go.dokimi.dev/eidos/lang-protobuf` | protobuf satellite (read-only by design) |

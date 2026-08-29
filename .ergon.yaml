@@ -52,6 +52,8 @@ checks:
     packages:
       - path: eidos-core/...
         line: 85
+      - path: eidos-lang/...
+        line: 85
       - path: eidos-lang-go/...
         line: 75
       - path: eidos-lang-java/...
@@ -94,6 +96,7 @@ checks:
       - revert
     scopes:
       - core
+      - lang
       - go
       - java
       - kotlin
