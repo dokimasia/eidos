@@ -1,21 +1,31 @@
-# eidos documentation
+# Documentation
 
-| I want to know | Go to |
+## For users
+
+| I want to | Read |
 |---|---|
-| What the system is and how it fits together | [architecture](architecture/README.md) — the specification, 21 bounded contexts plus a glossary |
-| Why the system is the way it is | [adr](adr/README.md) — architecture decision records |
-| How one declaration travels the whole system | [00-one-declarations-journey](architecture/00-one-declarations-journey.md) — the on-ramp |
-| What a term means | [GLOSSARY](architecture/GLOSSARY.md) |
+| Get started from zero | [Tutorials](tutorials/README.md) |
+| Accomplish a specific task | [How-to guides](how-to/README.md) |
+| Look up a flag, field, or command | [Reference](reference/README.md) |
+| Understand why it works this way | [Explanation](explanation/README.md) |
 
-The specification is closed: every component, contract, and policy appears in
-exactly one of its documents. Settled decisions live inline in the context
-they belong to, indexed by the
-[decision log](architecture/21-decisions.md).
+## For contributors
 
-User-facing documentation — tutorials, how-to guides, and the reference
-surface — does not exist yet. Most of that surface is specified as generated
-per release (the funcmap, directive, config and diagnostic-code references,
-and the per-language support matrices); see
-[14-distribution-and-cli](architecture/14-distribution-and-cli.md).
+| I want to know | Read |
+|---|---|
+| How the system is specified, end to end | [Architecture](architecture/README.md) |
+| Why the system is shaped this way | [Architecture decisions](adr/README.md) |
+| What is being proposed, and the debate | [RFCs](rfc/README.md) |
+| What problems we decided were worth solving | [PRDs](prd/README.md) |
+| What we learned about the world outside | [Research](research/README.md) |
+| How to build, test, and land a change | [CONTRIBUTING](../CONTRIBUTING.md) |
 
-Contributors start at [CONTRIBUTING](../CONTRIBUTING.md).
+New to eidos: read
+[one declaration's journey](architecture/00-one-declarations-journey.md), which
+follows a single declaration through the whole system, and keep the
+[glossary](architecture/GLOSSARY.md) beside it.
+
+Documents are numbered and never renumbered. Rejected, withdrawn, and
+superseded documents stay on disk — they are the record of why not. Their
+shapes come from the authoring tools' defaults unless
+[templates](templates/README.md) overrides one.

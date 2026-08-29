@@ -1,0 +1,5 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Report a security vulnerability
+    url: mailto:security@dokimi.dev
+    about: Never report a vulnerability as a public issue — mail security@dokimi.dev.
