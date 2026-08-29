@@ -52,36 +52,24 @@ checks:
     packages:
       - path: eidos-core/...
         line: 85
-        branch: 85
-        require_branch: false
       - path: eidos-lang-go/...
         line: 75
-        branch: 75
-        require_branch: false
       - path: eidos-lang-java/...
         line: 75
-        branch: 75
-        require_branch: false
       - path: eidos-lang-kotlin/...
         line: 75
-        branch: 75
-        require_branch: false
       - path: eidos-lang-php/...
         line: 75
-        branch: 75
-        require_branch: false
+      - path: eidos-lang-protobuf/...
+        line: 75
       - path: eidos-lang-rust/...
         line: 75
-        branch: 75
-        require_branch: false
       - path: eidos-lang-typescript/...
         line: 75
-        branch: 75
-        require_branch: false
       - path: eidos-plugin-shape/...
         line: 75
-        branch: 75
-        require_branch: false
+      - path: eidos-reference/...
+        line: 75
     top_n: 10
 
   mutation:
@@ -106,12 +94,14 @@ checks:
       - revert
     scopes:
       - core
-      - lang-go
-      - lang-java
-      - lang-kotlin
-      - lang-php
-      - lang-rust
-      - lang-typescript
-      - plugin-shape
+      - go
+      - java
+      - kotlin
+      - php
+      - protobuf
+      - rust
+      - typescript
+      - shape
+      - reference
     max_subject_length: 80
     body_max_line_length: 100

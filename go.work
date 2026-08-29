@@ -10,7 +10,9 @@ use (
 	./eidos-lang-java
 	./eidos-lang-kotlin
 	./eidos-lang-php
+	./eidos-lang-protobuf
 	./eidos-lang-rust
 	./eidos-lang-typescript
 	./eidos-plugin-shape
+	./eidos-reference
 )
