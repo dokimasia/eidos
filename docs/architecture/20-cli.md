@@ -4,12 +4,11 @@
 [16](16-diagnostics.md), [17](17-output-and-determinism.md). This is
 the consumer's surface.*
 
-What a consumer's binary offers its users is mostly what eidos
-offers the consumer. The `cli` package holds command kernels, which
-are complete command implementations that a `main` composes, so
-every eidos-built binary presents the same commands, flags, output
-formats and exit codes without its author writing UX code. This
-document is the contract for that surface.
+The `cli` package holds command kernels: complete command
+implementations that a consumer's `main` composes. Compose them and
+your users get the commands, flags, output formats and exit codes
+specified here, and you write no UX code to get them. This document
+is the contract for that surface.
 
 ## Composition
 

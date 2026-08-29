@@ -2,68 +2,72 @@
 
 *Builds on: [03](03-projection.md) (Callable and Resolve),
 [05](05-directives.md) (param schemas). Feeds: consumers that
-generate checks from stamps — dokimi is the reference case.*
+generate checks from stamps, where dokimi is the reference case.*
 
-The classification vocabulary as its own satellite: **one
-mechanism with three declared forms** — shape, mixin, contract
-(below). Catalogs churn as their vocabulary settles, which is
-exactly why this one lives outside the kernel: its cadence gates
-nobody.
+The classification vocabulary lives in its own satellite. It is
+**one mechanism with three declared forms**: shape, mixin and
+contract. A catalog changes often while its vocabulary settles,
+which is exactly why this one lives outside the kernel, where its
+cadence gates nobody.
 
 ## One mechanism, three forms
 
-A classification is one mechanism — a named spec, typed params,
-generated constants, stamped facts, `Where`-gated consumers — and
-every spec declares its **form**, which pins everything that
-varies:
+A classification is always the same mechanism: a named spec, typed
+params, generated constants, stamped facts, and consumers gated with
+`Where`. Every spec declares its **form**, and the form pins
+everything that varies:
 
 | | shape | mixin | contract |
 |---|---|---|---|
 | per callable | exactly one | any number | one per (instance, role) |
-| arbitration | first claim wins ([04-metadata.md](04-metadata.md)) | accumulate — every stamp sticks | accumulate, per instance |
-| inferred? | optionally, by a `Detect` function; `+gen:shape <name>` overrides at directive authority | never — directive only | never — directive only |
-| directive | single-instance | `mixin <name>`, repeatable | `contract <proto> role=<r>`, repeatable; `id=` separates instances |
+| arbitration | first claim wins ([04-metadata.md](04-metadata.md)) | accumulate: every stamp sticks | accumulate, per instance |
+| inferred? | optionally, by a `Detect` function. `+gen:shape <name>` overrides at directive authority | never: directive only | never: directive only |
+| directive | single-instance | `mixin <name>`, repeatable | `contract <proto> role=<r>`, repeatable, with `id=` separating instances |
 | `precedence:` | required where signatures overlap | forbidden | forbidden |
 | `roles:` | forbidden | forbidden | required, with arity |
 
-The forms are the occupied cells of a small grid — who asserts
-(inferred or declared) crossed with how many stick — and the
-empty cells are enforcement: a shape spec carrying `roles:`, or a
-mixin carrying `precedence:`, fails the schema before review sees
-it. The split is not three systems; it is the *type* of a
-classification, and it decides semantics nothing downstream can
-re-derive: which arbitration applies, whether a second annotation
-is composition (mixin) or contradiction (shape), and what a
-consumer generates — a shape picks the check template, mixins
-modify it, a contract yields a cross-callable harness. A callable
-carries all three at once by construction: `Commit` is
-`shape=writer`, role `commit` of contract `tx`, and `atomic`,
-under disjoint key prefixes that never collide.
+The three forms are the occupied cells of a small grid: who asserts
+the classification, inferred or declared, crossed with how many of
+them stick. The empty cells are enforced. A shape spec carrying
+`roles:`, or a mixin carrying `precedence:`, fails the schema before
+review sees it.
 
-Contract instances bind by protocol name within a package;
-`id=` separates two instances of one protocol in scope. Role
-arity ("exactly one `commit`") is validated by the catalog's
-validation-bucket annotator over the whole instance, reported as
+This is not three systems. The form is the *type* of a
+classification, and it decides things nothing downstream can work
+out for itself: which arbitration applies, whether a second
+annotation composes (mixin) or contradicts (shape), and what a
+consumer generates, since a shape picks the check template, mixins
+modify it, and a contract yields a harness across several callables.
+
+One callable carries all three at once by construction. `Commit` is
+`shape=writer`, it is role `commit` of contract `tx`, and it is
+`atomic`. The key prefixes are disjoint, so they never collide.
+
+A contract instance binds by protocol name within a package, and
+`id=` separates two instances of one protocol in scope. Role arity,
+such as "exactly one `commit`", is validated by the catalog's
+validation-bucket annotator over the whole instance, and reported as
 positioned Errors.
 
-Generated name constants are **typed per form** —
-`shape.ShapeName`, `shape.MixinName`, `shape.ContractName` — so a
-consumer cannot pass a mixin where a shape is expected: the
-boundary-strings law applied to the catalog's own vocabulary.
+Generated name constants are **typed per form**: `shape.ShapeName`,
+`shape.MixinName` and `shape.ContractName`. A consumer therefore
+cannot pass a mixin where a shape is expected, which is the same
+registered-name rule applied to the catalog's own vocabulary.
 
 ## Language-neutral by construction
 
-A detector written against one language's signature primitives
-multiplies: ~90 detectors × N languages is ~270 hand-written
-functions, each a re-derivation of the same question in another
-language's spelling. So detectors read **only `rules.Callable`** and
-the canonical shapes ([03-projection.md](03-projection.md));
-parameter resolution goes through `rules.Resolve`. One detector
-serves every language that answers Tier 1 — 90 + N, not 90 × N. The
-module's CI enforces the Tier-3 import ban.
+Write a detector against one language's signature primitives and the
+work multiplies: roughly 90 detectors across N languages is about
+270 hand-written functions, each one re-deriving the same question
+in another language's spelling.
 
-The contract a detector satisfies, pinned — and the composition
-rule that makes precedence enforceable:
+So a detector reads **only `rules.Callable`** and the canonical
+shapes ([03-projection.md](03-projection.md)), and resolves
+parameters through `rules.Resolve`. One detector then serves every
+language that answers Tier 1, which makes the cost 90 + N rather
+than 90 × N. The module's CI enforces the Tier-3 import ban.
+
+The contract a detector satisfies, pinned:
 
 ```go
 type Detector interface {
@@ -72,55 +76,62 @@ type Detector interface {
 }
 ```
 
-Detectors register as an **ordered list inside one annotator**
-(the umbrella plugin), first claim wins per callable. They cannot
-be separate rules: the kernel's handler order-independence law
-([06b-authoring.md](06b-authoring.md)) forbids ordering across handlers,
-so precedence must live where order is data — the list, whose
-order is generated from the specs' precedence declarations.
+Detectors register as an **ordered list inside one annotator**, the
+umbrella plugin, and the first claim wins per callable. They cannot
+be separate rules, because the kernel's handler order-independence
+law ([06b-authoring.md](06b-authoring.md)) forbids ordering across
+handlers. Precedence therefore has to live where order is data,
+which is the list, and the list's order is generated from the specs'
+precedence declarations.
 
-## Spec-first (decided)
+## Specs come first
 
-The catalog's source of truth is `spec/` — one spec per contract,
-detector, and mixin, written **before** code. The defect class this
-prevents is the worst one a classification vocabulary has: a
-directive that under-determines the check it licenses, discovered by
-a consumer's conformance corpus after shipping. The spec template
-makes that a review-time checkbox:
+The catalog's source of truth is `spec/`, holding one spec per
+contract, detector and mixin, written **before** the code.
 
-- **Claim** — the assertion, in neutral vocabulary (no language's
-  spelling).
-- **Observation** — what a check must be able to *see* for the claim
-  to be checkable; which param names the observation when the shape
-  itself doesn't. A shape that permits observation without naming it
-  leaves every consumer guessing which sibling is the observer.
-- **Param schema** — each key with type, resolution kind, role
-  scoping, required/optional, and counterexample marking
-  ([05-directives.md](05-directives.md)); adversarial inputs a
-  derivation cannot invent are declared, not discovered.
-- **Falsifiability** — what goes red if the subject's handling is
-  deleted. The hollow-law bug — a law binding only derived samples,
-  inputs constructed to be accepted, which engages, stays green with
-  the subject's handling deleted, and tests nothing — becomes a
-  mandatory spec section instead of a shipped defect.
-- **Counterexample obligations** — the invalid/unsafe/edge/refused
-  family, stated per claim.
-- **Precedence** (shape form only) — where signatures overlap (`Delete(v) error` is
-  writer-shaped and deleter-shaped), which shape claims the
-  callable and which yields. Detectors are an ordered list inside
-  one annotator — the handler order-independence law
-  ([06b-authoring.md](06b-authoring.md)) forbids hanging precedence on
-  separate rules — so precedence is catalog data the spec
-  declares, never an accident of registration.
+The defect this prevents is the worst one a classification
+vocabulary can have: a directive that does not pin down the check it
+licenses, discovered by a consumer's conformance corpus after it
+ships. The spec template turns that into something a reviewer can
+check:
 
-The format is settled, not deferred: specs are YAML files under a
-published JSON Schema whose sections are exactly the template above
-— so a spec is machine-checkable for structural completeness (a
-missing falsifiability section fails CI before review sees it), the
-generators consume it directly, and the docs site renders it without
-transformation.
+- **Claim**: the assertion, in neutral vocabulary, using no
+  language's spelling.
+- **Observation**: what a check has to be able to see for the claim
+  to be checkable, and which param names that observation when the
+  shape itself does not. A shape that allows an observation without
+  naming it leaves every consumer guessing which sibling does the
+  observing.
+- **Param schema**: each key with its type, resolution kind, role
+  scoping, required or optional, and counterexample marking
+  ([05-directives.md](05-directives.md)). Adversarial inputs that no
+  derivation could invent are declared rather than discovered.
+- **Falsifiability**: what turns red if you delete the subject's
+  handling. This catches the hollow law, meaning a law that binds
+  only derived samples, built from inputs constructed to be
+  accepted, which runs, stays green after you delete the subject's
+  handling, and tests nothing. Making it a mandatory spec section
+  catches it before it ships.
+- **Counterexample obligations**: the invalid, unsafe, edge and
+  refused family, stated per claim.
+- **Precedence**, for the shape form only. Where signatures overlap,
+  such as `Delete(v) error` being both writer-shaped and
+  deleter-shaped, it says which shape claims the callable and which
+  yields. Since detectors are an ordered list inside one annotator,
+  and the handler order-independence law
+  ([06b-authoring.md](06b-authoring.md)) forbids hanging precedence
+  on separate rules, precedence is catalog data the spec declares
+  rather than an accident of registration order.
 
-One spec, worked, so the template is a shape rather than a list:
+The format is settled rather than deferred. Specs are YAML files
+under a published JSON Schema whose sections are exactly the
+template above. A spec is therefore machine-checkable for structural
+completeness, so a missing falsifiability section fails CI before
+review sees it, the generators consume it directly, and the
+documentation site renders it without transforming anything.
+
+One worked spec, so the template reads as a shape rather than a
+list:
 
 ```yaml
 # spec/shapes/writer.yaml
@@ -149,9 +160,9 @@ precedence:
   yields_to: [deleter]    # same signature under a removal name
 ```
 
-The other two forms, complete — every mandatory section present,
-and *only* the sections the form forbids absent (`precedence:`
-here, `roles:` on the mixin):
+The other two forms, complete, with every mandatory section present
+and only the sections their form forbids absent, meaning
+`precedence:` here and `roles:` on the mixin:
 
 ```yaml
 # spec/contracts/tx.yaml
@@ -198,55 +209,61 @@ counterexamples:
     acknowledgement
 ```
 
-## Generated from specs
+## Generated from the specs
 
-Registry code, name constants, param constants, and directive schemas
-are **generated from the specs** by a real eidos workspace — this
-satellite, not the kernel, is where the framework builds itself with
-itself, because here the dependency direction is legal. The generator
-lives in a tools module (its own `go.mod`) that depends on the kernel
-and `eidos-lang-go`; the catalog module itself never requires a language
-satellite, which is the same Tier-3 discipline its detectors live
-under. There is nothing hand-written to drift. Spec renders to the
-docs site verbatim — the spec *is* the documentation.
+Registry code, name constants, param constants and directive schemas
+are **generated from the specs** by a real eidos workspace. This
+satellite, rather than the kernel, is where the framework builds
+itself with itself, because here the dependency direction is legal.
 
-The flow, in order: (1) specs validate against the published JSON
-Schema — structural incompleteness fails CI before review; (2)
+The generator lives in a tools module with its own `go.mod`, which
+depends on the kernel and on `eidos-lang-go`. The catalog module
+itself never requires a language satellite, which is the same Tier-3
+discipline its detectors live under. Nothing is hand-written, so
+nothing can drift. The spec renders to the documentation site
+verbatim, which makes the spec the documentation.
+
+The flow, in order. First, specs validate against the published JSON
+Schema, so structural incompleteness fails CI before review. Second,
 the tools module's eidos workspace reads `spec/` through a
-purpose-built YAML frontend and generates the registries — name
-constants, param constants, directive schemas, the detector
-precedence order; (3) generated output is committed, and a mirror
-guard reruns the workspace and diffs the tree, the same
-discipline as the kernel's models
-([02-symbol-model.md](02-symbol-model.md)); (4) the docs site
-renders the specs verbatim.
+purpose-built YAML frontend and generates the registries: name
+constants, param constants, directive schemas and the detector
+precedence order. Third, the generated output is committed, and a
+mirror guard reruns the workspace and diffs the tree, the same
+discipline the kernel's models use
+([02-symbol-model.md](02-symbol-model.md)). Fourth, the
+documentation site renders the specs verbatim.
 
-No code ever lives in the YAML. The frontend maps each spec onto
-the ordinary node model — one spec is a `node.Struct`, its params
-are `node.Field`s, form and resolution kinds ride `shape.spec.*`
-metadata, and YAML positions are real positions, so a bad spec
-fails at `spec/shapes/writer.yaml:14:3` like any other source.
-The join to behavior is generated and therefore compiler-checked:
-the wiring map (`ids.Writer: writer.Detector()`, one line per
-inferable spec) makes a spec without a `Detect` implementation a
-compile error, and a generated completeness test finds the
-orphan in the other direction.
+No code ever lives in the YAML. The frontend maps each spec onto the
+ordinary node model: one spec is a `node.Struct`, its params are
+`node.Field`s, and form and resolution kinds ride on `shape.spec.*`
+metadata. YAML positions are real positions, so a bad spec fails at
+`spec/shapes/writer.yaml:14:3` like any other source.
 
-## Division of labor
+The join to behaviour is generated, so the compiler checks it. The
+wiring map, one line per inferable spec such as `ids.Writer:
+writer.Detector()`, makes a spec without a `Detect` implementation a
+compile error, and a generated completeness test finds the orphan in
+the other direction.
 
-Shape **stamps**; consumers **check**. The catalog classifies
-callables and asserts nothing about behavior — generating checks from
-classifications is the consumer's business (dokimi, the reference
-consumer, is the proving case). Stamps are the standard three facts
-(name, role bindings, param resolutions) in the `shape.*` namespace,
-overridable like all metadata — a wrong inference is a one-line
-directive at the declaration, never a fork.
+## Division of labour
+
+Shape **stamps**. Consumers **check**. The catalog classifies
+callables and asserts nothing about behaviour. Generating checks
+from classifications is the consumer's business, and dokimi, the
+reference consumer, is the proving case.
+
+Stamps are the standard three facts, meaning the name, the role
+bindings and the param resolutions, in the `shape.*` namespace. They
+are overridable like all metadata, so a wrong inference is a
+one-line directive at the declaration rather than a fork.
 
 ## Scope
 
 Every name enters through the spec template or not at all. Specs
-group by form (`spec/shapes/`, `spec/mixins/`, `spec/contracts/` —
-the directory must match the declared form); name constants ship
-generated, typed per form. A `Detect` function exists only for
-shape-form specs — the inferable form; mixins and contracts have
-no detector by construction.
+group by form, under `spec/shapes/`, `spec/mixins/` and
+`spec/contracts/`, and the directory has to match the declared form.
+Name constants ship generated and typed per form. A `Detect`
+function exists only for shape-form specs, which is the only
+inferable form. Mixins and contracts have no detector by
+construction.

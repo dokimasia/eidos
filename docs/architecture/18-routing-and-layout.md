@@ -167,5 +167,5 @@ file it cannot prove it produced
 
 Every routed path is workspace-relative, slash-separated, and
 root-jailed by the sink. `out=` accepts a relative path, resolved
-against the declaration's package directory. A path that escapes the
-workspace root produces a diagnostic rather than a write.
+against the declaration's package directory. If a path escapes the
+workspace root, eidos reports a diagnostic and writes nothing.

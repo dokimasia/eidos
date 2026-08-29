@@ -5,8 +5,9 @@
 semantics of every document.*
 
 Every layer of the system reports through one diagnostic model. A
-diagnostic is data rather than a sentence: consumers script against
-it, tests assert on it, and the documentation anchors to it.
+diagnostic is a record with named fields, and a code is one of them.
+Consumers script against those fields, tests assert on the code, and
+the documentation anchors to it.
 
 ## The diagnostic
 

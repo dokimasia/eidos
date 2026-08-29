@@ -6,17 +6,19 @@
 [17](17-output-and-determinism.md) (manifest and sweep),
 [18](18-routing-and-layout.md) (layout per plan).*
 
-The composition frame. Rendering a language needs exactly one answer
-for import resolution, formatting, and layout — so one backend per
-rendering pass is an invariant worth keeping. But a project is
-rarely one rendering pass: a schema becomes a Go server and a TS
-client; a monorepo generates Go and Python side by side. Running
-independent tools per language means parsing the same source N
-times, no place to check cross-language consistency, and output
-trackers that don't know about each other — the orphan shape, where
-a deleted configuration leaves its generated files behind forever.
+Rendering one language needs exactly one answer for import
+resolution, formatting and layout, so one backend per rendering pass
+is worth keeping as an invariant.
 
-The frame that resolves this: **one workspace, N plans; one backend
+But a project is rarely one rendering pass. A schema becomes a Go
+server and a TypeScript client. A monorepo generates Go and Python
+side by side. Run an independent tool per language and you parse the
+same source N times, you have nowhere to check that the languages
+agree, and each tool tracks its output without knowing about the
+others. Delete a configuration under that arrangement and its
+generated files stay on disk forever, with nothing tracking them.
+
+The frame that resolves this: **one workspace, N plans, one backend
 per plan.**
 
 ## The model
@@ -30,43 +32,49 @@ Load ─► Link ─► Freeze ─► Annotate ─► Plan "go-server"  ─► G
 ```
 
 Link is the resolution step
-([02-symbol-model.md](02-symbol-model.md)): after every frontend
-finishes, type spellings resolve once to canonical identities,
-which is what makes cross-file and cross-package lookup a plain
-join for every later phase.
+([02-symbol-model.md](02-symbol-model.md)). After every frontend
+finishes, type spellings resolve once into canonical identities,
+which is what makes cross-file and cross-package lookup a plain join
+for every later phase.
 
-- **Workspace**: N frontends, the annotator set, N named plans, the
-  cache, the diag sink, config. Built by the consumer's binary via
-  the fluent builder or YAML onto the same typed config structs.
-- **Plan**: one write side — a generator set, a layout policy,
-  exactly one backend, one sink, a **source scope**, a name. Plans
-  are *values* (declarable data, exportable as presets), not plugins
-  ([06-plugins.md](06-plugins.md)).
-- **Freeze** is enforced: after Annotate the store seals; structural
-  writes are refused with a stable code.
-- **Isolation**: a plan failing doesn't abort siblings; the
-  workspace joins errors with per-plan status; a plan's manifest
-  slice commits only on that plan's success.
-- **Outputs are never inputs.** A workspace does not read its own
-  generated files as source. Load excludes every path the
-  workspace can prove it owns — a manifest entry, or the
-  provenance trailer
-  ([17-output-and-determinism.md](17-output-and-determinism.md)) —
-  at the fingerprint gate, before any parse. Without the law the
-  second run parses the first run's output, bare rules fire on
-  generated symbols, and warm≡cold degenerates into
-  run-N ≠ run-N+1; and no consumer could express the exclusion
-  themselves, because the scope vocabulary below has no negation.
-  Files another tool generated are ordinary input — parsed and
-  classified, never excluded
-  ([11-languages.md](11-languages.md)); only the self-loop is
-  closed.
+A **workspace** holds N frontends, the annotator set, N named plans,
+the cache, the diagnostic sink and the config. The consumer's binary
+builds it, through the fluent builder or through YAML onto the same
+typed config structs.
 
-## The runtime architecture: Workspace and Run
+A **plan** is one write side: a generator set, a layout policy,
+exactly one backend, one sink, a source scope and a name. Plans are
+values, meaning declarable data that can be exported as presets,
+rather than plugins ([06-plugins.md](06-plugins.md)).
 
-The frame above is semantics; this is the machine. One load-bearing
-split: **the composition is immutable, the run owns every mutable
-thing.**
+**Freeze is enforced.** After Annotate the store seals, and a
+structural write is refused with a stable code.
+
+**Plans are isolated.** One plan failing does not abort its
+siblings. The workspace joins the errors and reports status per
+plan, and a plan's manifest slice commits only when that plan
+succeeds.
+
+**Outputs are never inputs.** A workspace does not read its own
+generated files as source. Load excludes every path the workspace
+can prove it owns, through a manifest entry or a provenance trailer
+([17-output-and-determinism.md](17-output-and-determinism.md)), at
+the fingerprint gate, before anything parses.
+
+Without that rule, the second run parses the first run's output,
+bare rules fire on generated symbols, and warm≡cold collapses into
+run N differing from run N+1. No consumer could write the exclusion
+themselves either, because the scope vocabulary below has no
+negation. Files another tool generated stay ordinary input: parsed
+and classified, never excluded
+([11-languages.md](11-languages.md)). Only the loop back to itself
+is closed.
+
+## The runtime: Workspace and Run
+
+The frame above is the semantics. This is the machine. One split
+carries the weight: **the composition is immutable, and the run owns
+everything mutable.**
 
 ```
 Workspace (built once, survives forever)
@@ -87,15 +95,22 @@ Run (per invocation; holds the workspace lock)
 └─ diag          the one collector
 ```
 
-Four laws become structure instead of discipline: plugins are
-stateless values (there is no run state outside `Run` to smuggle
-anything into — `--watch` is many Runs over one Workspace); the
-**dispatch plan is compiled at Build** like a query plan, since
-compile-time plugins make every subscription known at Build — the
-run-time dispatcher is a stateless executor over static tables; the
-same tables are the ledger's invalidation metadata, so dispatch and
-invalidation cannot disagree; and the conductor is a **function,
-not a state machine** — `Run()` is the score as straight-line code.
+Four rules become structure rather than discipline.
+
+Plugins are stateless values, because there is no run state outside
+`Run` to hide anything in. `--watch` is many Runs over one
+Workspace.
+
+**The dispatch plan compiles at Build**, the way a query plan does,
+because compile-time plugins make every subscription known at Build.
+The run-time dispatcher is then a stateless executor over static
+tables.
+
+Those same tables are the ledger's invalidation metadata, so
+dispatch and invalidation cannot disagree with each other.
+
+The conductor is a function rather than a state machine: `Run()`
+reads as straight-line code.
 
 The seams, as contracts:
 
@@ -143,21 +158,23 @@ type PlanExec interface {
 }
 ```
 
-**The sealed state** is the persisted trio — sealed graph, fact
-store, artifact table — written generationally (N+1 beside N, swap
-on success). Facts persist because they must: bags that die with the
-run would force full re-annotation every warm run, O(subjects)
-against the envelope. Symbol IDs are generation-local; canonical
+**The sealed state** is the persisted trio: the sealed graph, the
+fact store and the artifact table, written one generation at a time,
+with N+1 beside N and a swap on success. Facts persist because they
+have to. Bags that died with the run would force full re-annotation
+on every warm run, which is O(subjects) against the performance
+target. Symbol IDs are local to a generation, and canonical
 identities are the stored form.
 
-**The commit protocol is two-phase and its crash posture is
-stated**: every plan stages; a plan's `Commit` (renames + manifest
-slice) runs only on its success; `Ledger.CommitRun` runs last, after
-all sinks — the engine's memory never records an output disk does
-not hold, and a crash between the two fails conservative:
-re-derive, rewrite identical bytes, `Unchanged`.
+**The commit protocol is two-phase, and its behaviour under a crash
+is stated.** Every plan stages. A plan's `Commit`, meaning its
+renames plus its manifest slice, runs only when that plan succeeds.
+`Ledger.CommitRun` runs last, after every sink. So the engine's
+memory never records an output that disk does not hold, and a crash
+between the two fails conservatively: derive again, write identical
+bytes, report `Unchanged`.
 
-**The score** — who runs everything, in order:
+**The score**, meaning who runs what, in order:
 
 ```
 Workspace.Run (the only conductor; cli `run` calls it, main calls cli)
@@ -176,49 +193,51 @@ Workspace.Run (the only conductor; cli `run` calls it, main calls cli)
 └─ report
 ```
 
-Concurrency, per phase: phases are barriers; Load shards per unit
-with per-package graph writes; Annotate is bucket-sequential with
-opt-in parallelism inside a bucket (bag arbitration is already
-deterministic); plans parallel except export edges; render per-file
-inside the kit; Close single-threaded over immutable records.
-Dry-run is this same Run with staging discarded.
+Concurrency per phase: phases are barriers. Load shards per unit,
+with graph writes serialized per package. Annotate runs
+bucket-sequentially, with parallelism inside a bucket as an opt-in,
+since bag arbitration is already deterministic. Plans run in
+parallel except across export edges. Render runs per file inside the
+kit. Close runs single-threaded over immutable records. A dry run is
+this same Run with the staging discarded.
 
 ## Build: the validation ladder
 
 Build runs once, in the consumer's `main`, and produces the
-immutable Workspace above — or an error that names *everything*
-wrong at once. Build collects; it never stops at the first fault,
-because a consumer fixing a composition wants the whole bill, not
-an installment plan. A Build that returns success has resolved
-every boundary string in the composition; nothing after it can
+immutable Workspace above, or an error naming *everything* that is
+wrong at once. Build collects rather than stopping at the first
+fault, because a consumer fixing a composition wants the whole bill
+rather than an instalment plan. A Build that succeeds has resolved
+every human-typed name in the composition, so nothing after it can
 fail on a name.
 
-The ladder, in order — each step assumes the ones before it:
+The ladder, in order, where each step assumes the ones before it:
 
-1. **Registries.** Language identities, metadata keys (namespaces,
-   groups, kinds, contracts), diagnostic codes and prefixes,
-   capability labels, policy keys, and directive schemas —
-   identical schema redeclarations unify, conflicting ones are
-   refused naming both plugins.
+1. **Registries.** Language identities, metadata keys with their
+   namespaces, groups, kinds and contracts, diagnostic codes and
+   prefixes, capability labels, policy keys, and directive schemas.
+   Identical schema redeclarations unify, and conflicting ones are
+   refused, naming both plugins.
 2. **Plugin lowering.** Authoring-surface values lower to the SPI
-   ([06b-authoring.md](06b-authoring.md)); subscriptions are
-   collected as data; per-role priorities and capability topology
-   sort — a cycle is an error naming the bucket and its members.
+   ([06b-authoring.md](06b-authoring.md)), subscriptions are
+   collected as data, and per-role priorities and capability
+   topology sort. A cycle is an error naming the bucket and its
+   members.
 3. **Options.** Every plugin's options schema populates from its
-   config section; a failure names the plugin and the field.
-4. **Plans.** Per plan: exactly one backend and a registered
-   target; every template-claiming plugin declares that target;
-   layout refinements name known plugins and tags; Sources
-   predicates resolve against the registries; export dependencies
-   topo-sort — a cycle names both plans.
+   config section, and a failure names the plugin and the field.
+4. **Plans.** Per plan: exactly one backend and a registered target;
+   every template-claiming plugin declares that target; layout
+   refinements name plugins and tags that exist; Sources predicates
+   resolve against the registries; and export dependencies
+   topologically sort, where a cycle names both plans.
 5. **Policies.** Selections validate against registered keys and
-   choices; each plan's total `Policy` is fixed here
+   choices, and each plan's total `Policy` is fixed here
    ([10-cross-language.md](10-cross-language.md)).
-6. **The dispatch plan.** Subscriptions compile into the
-   per-phase, per-bucket gate→handler tables the Run's dispatcher
-   executes.
-7. **The handshake.** One contract version checked across every
-   registered component ([15-compatibility.md](15-compatibility.md)).
+6. **The dispatch plan.** Subscriptions compile into the per-phase,
+   per-bucket gate-to-handler tables the Run's dispatcher executes.
+7. **The handshake.** One contract version, checked across every
+   registered component
+   ([15-compatibility.md](15-compatibility.md)).
 
 The builder and the two values it composes, pinned:
 
@@ -258,9 +277,10 @@ type ExportedSymbol struct {
 
 ## Source scopes: mixed monorepos
 
-`Plan.Sources` filters which source packages a plan's generators see
-(the Reader is scope-filtered). The read side is the **union** —
-each frontend parses its files once, however many plans read them:
+`Plan.Sources` filters which source packages a plan's generators
+see, because the Reader is scope-filtered. The read side is the
+**union**: each frontend parses its files once, however many plans
+read them.
 
 ```yaml
 workspace:
@@ -272,13 +292,14 @@ plans:
   - {name: py-clients,  sources: {lang: golang}, target: python}   # cross-language plan
 ```
 
-Multiple same-target plans (different generator sets, layouts,
-sinks) fall out for free. Annotators run once on the union graph —
-facts are per-source-language anyway, and detection dispatches per
-language.
+Several plans targeting one language, with different generator sets,
+layouts and sinks, fall out of that for free. Annotators run once
+over the union graph, because facts are per source language anyway
+and detection dispatches per language.
 
-The predicate vocabulary is closed and conjunctive — three fields,
-all optional, a package matches when every present field matches:
+The predicate vocabulary is closed and conjunctive: three optional
+fields, and a package matches when every field that is present
+matches.
 
 ```yaml
 sources:
@@ -287,107 +308,120 @@ sources:
   module: "billing"       # toolchain-module identity (the neutral gen.module fact)
 ```
 
-Nothing else — no negation, no unions of predicates. A plan needing
-a stranger scope is two plans. Growing the vocabulary is a kernel
-change, additive under the compatibility policy. `golang` here is
-boundary spelling, resolved against the language registry at Build;
-a plan composed in Go uses the satellite's exported identity
-([03-projection.md](03-projection.md)).
+Nothing else. No negation, and no unions of predicates. A plan that
+needs a stranger scope is two plans. Growing the vocabulary is a
+kernel change, additive under the compatibility policy. `golang`
+here is the human spelling, resolved against the language registry
+at Build, and a plan composed in Go uses the satellite's exported
+identity ([03-projection.md](03-projection.md)).
 
-## Plan exports: the declared cross-plan edge
+## Plan exports: the one declared edge between plans
 
-Raw sibling-emit reads are forbidden: with N plans they create order
-constraints the workspace cannot infer, destroy plan parallelism
-globally, and entangle the incrementality graphs through edges
-nobody declared. But one legitimate family needs cross-plan
-knowledge — **binding generators** (Rust↔Python FFI, JNI, cgo, wasm
-bindings) — which must spell the names and signatures a sibling plan
-generated, and recomputing them by convention ("apply the same
-naming rules and hope") is drift-by-construction.
+Reading a sibling plan's emit directly is forbidden. With N plans it
+creates ordering constraints the workspace cannot infer, destroys
+plan parallelism everywhere, and entangles the incrementality graphs
+through edges nobody declared.
 
-So the coupling exists only in its explicit form:
+But one family of generators genuinely needs cross-plan knowledge:
+**binding generators**, covering Rust-to-Python FFI, JNI, cgo and
+wasm bindings. They must spell the names and signatures a sibling
+plan generated, and working those out again by applying the same
+naming rules and hoping drifts by construction.
 
-- A plan may **publish an export**: a typed, deterministic summary
-  of what it generated. A frozen value, never a window into its emit
-  graph.
-- A plan may **declare a dependency** on a named export. Plans
-  topo-sort on declared dependencies; a cycle is a Build error
-  naming both plans; undeclared plans stay fully parallel; the
-  incrementality engine gets a real edge instead of a hidden one.
+So the coupling exists only in its explicit form. A plan may
+**publish an export**, which is a typed, deterministic summary of
+what it generated: a frozen value rather than a window into its emit
+graph. And a plan may **declare a dependency** on a named export.
+Plans then sort topologically on declared dependencies, a cycle is a
+Build error naming both plans, plans that declare nothing stay fully
+parallel, and the incrementality engine gets a real edge instead of
+a hidden one.
 
-The export itself is a versioned document under a kernel schema —
-public API, since binding correctness leans on it
+The export is a versioned document under a kernel schema, and it is
+public API, because binding correctness leans on it
 ([15-compatibility.md](15-compatibility.md)). Per exported symbol it
-records: the kind, the canonical-type signature (TypeShape terms,
-[03-projection.md](03-projection.md)), and the **spelling the plan's
-lowering chose** — qualified name, import path, and the file it
-landed in. A dependent reads spellings from the export rather than
-recomputing naming conventions, which is the entire point: the
-producing plan's lowering is the only authority on what it named
-things. Exports hash into dependents' fingerprints — an export that
-didn't change wakes nobody, one that did re-runs exactly its
-dependents — and publish beside the producing plan's manifest slice.
+records the kind, the canonical-type signature in TypeShape terms
+([03-projection.md](03-projection.md)), and **the spelling the
+plan's lowering chose**, meaning the qualified name, the import path
+and the file it landed in.
 
-Considered and refused: **per-plan model transforms** — filtering or
-renaming the shared graph per plan before generation. Transforms
-fork the one graph into N variants, and everything downstream —
-explain, invalidation edges, cross-plan checks comparing like with
-like — would have to answer "which variant?" first. Each need a
-transform serves already has a home: filtering is `Sources` scopes,
-facts are annotators on the one graph, per-target spellings are
-lowering policy.
+A dependent reads spellings from the export rather than recomputing
+naming conventions, which is the entire point: the producing plan's
+lowering is the only authority on what it named things. Exports hash
+into their dependents' fingerprints, so an export that did not
+change causes nobody to run again, and one that did re-runs exactly
+its dependents. Each publishes beside the producing plan's manifest
+slice.
+
+Considered and refused: **per-plan model transforms**, meaning
+filtering or renaming the shared graph per plan before generation.
+Transforms fork the one graph into N variants, and then everything
+downstream has to ask "which variant" first, including explain,
+invalidation edges, and cross-plan checks trying to compare like
+with like. Every need a transform would serve already has a home:
+filtering is a `Sources` scope, facts are annotators over the one
+graph, and per-target spellings are lowering policy.
 
 ## Close
 
-Runs after all plans:
+Close runs after every plan.
 
-- **Merged workspace manifest**, recording plan → files. This closes
-  the orphan failure mode: a workspace that no longer declares a
-  plan sweeps that plan's files.
-- **Path-collision detection** across plan manifests — a stable
-  error, never last-writer-wins.
-- **Staleness sweep**, scoped per plan ("everything this plan didn't
-  produce is stale" is only true within a plan's scope) — and per
-  run: under narrowed patterns ([20-cli.md](20-cli.md)), a
-  manifested file is swept only when its sources fall inside the
-  narrowed scope and no longer produce it, or its producing plan
-  or plugin left the composition. Out-of-scope entries carry
-  forward untouched; a partial run must not eat outputs it merely
-  didn't look at. Whole-workspace reconciliation is `prune`'s job.
-- **Cross-plan checks**: `WorkspaceCheck` plugins read the
-  *records* — manifests, exports, graph and facts — never raw emit,
-  which on a warm run does not exist for clean plans. Checks
-  therefore run identically on cold and warm runs, over carried
-  records included. They run over the plans that *succeeded*; a
-  check whose claim needs a failed plan's records reports one Info
-  and stands down — the missing output is already that plan's
-  Error, not something to re-litigate once per check.
-- **Audit mode**: metadata completeness contracts verified
-  ([04-metadata.md](04-metadata.md)).
+It writes the **merged workspace manifest**, recording plan to
+files, which is what stops a deleted plan leaving its generated
+files behind: a workspace that no longer declares a plan deletes
+that plan's files.
 
-## Multi-workspace repositories
+It runs **path-collision detection** across the plan manifests,
+producing a stable error rather than letting the last writer win.
 
-Every anticipated language has a native multi-project notion
-(`go.work`, Cargo workspaces, Maven/Gradle multi-module, pnpm, uv).
-The rule, decided once:
+It runs the **staleness sweep**, scoped per plan, because
+"everything this plan did not produce is stale" is only true within
+one plan's scope. It is also scoped per run: under narrowed patterns
+([20-cli.md](20-cli.md)), a manifested file is deleted only when its
+sources fall inside the narrowed scope and no longer produce it, or
+when its producing plan or plugin left the composition.
+Out-of-scope entries carry forward untouched, because a partial run
+must not delete outputs it merely did not look at. Reconciling the
+whole workspace is `prune`'s job.
 
-**An eidos workspace is a config boundary, not a toolchain
-boundary.** One workspace deliberately spans N toolchain modules —
-one graph, one manifest, one sweep. Frontends own
-toolchain-workspace resolution and surface module identity through
-the kernel-owned neutral keys `gen.module` and `gen.moduleRoot` —
-one spelling every frontend writes; the raw toolchain form (a
-go.mod path, a Maven artifact) stays in the frontend's own
-namespace, the same normalize-plus-raw split as Visibility. Layout
-policies and Sources predicates match the neutral keys only, which
-is what keeps module-aware kernel machinery free of per-language
-tables; generated files import correctly across modules because
-the emit import machinery already qualifies by package path.
-Partial runs are scoping (`./services/...`), not separate
-workspaces; per-module heterogeneity is plans with directory-scoped
-Sources, not a nested config dialect.
+It runs the **cross-plan checks**. `WorkspaceCheck` plugins read the
+*records*, meaning manifests, exports, graph and facts, and never
+raw emit, which on a warm run does not exist for a clean plan. So
+the checks run identically cold and warm, including over carried
+records. They run over the plans that succeeded. A check whose claim
+needs a failed plan's records reports one Info and stands down,
+because the missing output is already that plan's Error and does not
+need re-litigating once per check.
 
-A repo holding genuinely unrelated projects declares multiple
+Finally, **audit mode** verifies the metadata completeness contracts
+([04-metadata.md](04-metadata.md)).
+
+## Repositories with several workspaces
+
+Every anticipated language has its own notion of a multi-project
+build: `go.work`, Cargo workspaces, Maven and Gradle multi-module,
+pnpm, uv. The rule, decided once:
+
+**An eidos workspace is a config boundary rather than a toolchain
+boundary.** One workspace deliberately spans N toolchain modules,
+with one graph, one manifest and one sweep.
+
+Frontends own toolchain-workspace resolution and report module
+identity through the kernel-owned neutral keys `gen.module` and
+`gen.moduleRoot`, which every frontend spells the same way. The raw
+toolchain form, a go.mod path or a Maven artifact, stays in the
+frontend's own namespace, which is the same normalize-plus-raw split
+Visibility uses. Layout policies and Sources predicates match only
+the neutral keys, which is what keeps module-aware kernel machinery
+free of per-language tables. Generated files import correctly across
+modules because the emit import machinery already qualifies by
+package path.
+
+A partial run is a scope, such as `./services/...`, rather than a
+separate workspace. Per-module differences are plans with
+directory-scoped Sources, rather than a nested config dialect.
+
+A repository holding genuinely unrelated projects declares several
 workspaces **explicitly, in one place**:
 
 ```yaml
@@ -396,26 +430,32 @@ workspaces:
   - {root: ./tools/gen, config: ./tools/gen/.mygen.yaml}
 ```
 
-A config that declares `workspaces` declares nothing else — the list
-is the whole file, so there is never a question of which workspace a
-stray top-level field belongs to. Nested configs are never
-implicitly independent workspaces: two things that each own a
-manifest and don't know about each other is exactly the orphan
-shape. Nothing crosses workspace boundaries — no facts, no exports,
-no checks. Two projects needing each other's anything is the signal
-they are one workspace with two plans, and the architecture offers
-nothing weaker.
+A config that declares `workspaces` declares nothing else. The list
+is the whole file, so nobody has to ask which workspace a stray
+top-level field belongs to.
+
+Nested configs are never implicitly independent workspaces, because
+two things that each own a manifest and do not know about each other
+is exactly how generated files end up orphaned. Nothing crosses a
+workspace boundary: no facts, no exports, no checks. Two projects
+that need each other's anything are telling you they are one
+workspace with two plans, and the architecture offers nothing weaker.
 
 ## Config
 
-The typed groups the YAML maps 1:1 onto (published JSON Schema for
-editor completion; the fluent builder is the Go-native equal):
-`Identity` (brand, workspace ID), `Scope`, `Cache` (enabled, dir
-override, memo size cap — [09-incrementality.md](09-incrementality.md)),
-`Plans []PlanConfig{Name, Sources, Target, Generators, Layout, Sink,
-Exports, DependsOn}`. `DryRun` resolves the full multi-plan
-picture — buckets, topo order, layouts, export edges — without
-executing. The workspace ID names the workspace in manifests and
-in multi-workspace diagnostics — merged CI output from a
-`workspaces:` list must say which workspace spoke — and defaults
-to the root directory's name.
+The typed groups the YAML maps onto one-to-one, with a published
+JSON Schema for editor completion, where the fluent builder is the
+Go-native equal: `Identity` for brand and workspace ID, `Scope`,
+`Cache` for enabled, directory override and memo size cap
+([09-incrementality.md](09-incrementality.md)), and `Plans
+[]PlanConfig{Name, Sources, Target, Generators, Layout, Sink,
+Exports, DependsOn}`.
+
+`DryRun` resolves the full multi-plan picture, meaning buckets,
+topological order, layouts and export edges, without executing
+anything.
+
+The workspace ID names the workspace in manifests and in
+multi-workspace diagnostics, because merged CI output from a
+`workspaces:` list has to say which workspace spoke. It defaults to
+the root directory's name.

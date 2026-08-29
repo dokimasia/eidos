@@ -4,67 +4,74 @@
 [16](16-diagnostics.md). Feeds: [09](09-incrementality.md) (what
 warm≡cold means), [18](18-routing-and-layout.md) (ownership).*
 
-Generated output is committed source under review. Everything in
-this document exists so that the same workspace over the same input
-produces the same bytes on every machine, every time — and so that
-what reaches disk is always a complete, consistent tree.
+Generated output is committed source that people review. Everything
+in this document exists so that the same workspace over the same
+input produces the same bytes on every machine, every time, and so
+that what reaches disk is always a complete, consistent tree.
 
 ## What determinism covers
 
-Byte-identity of every rendered file and of the manifest, across
-machines, operating systems, runs, and warm/cold
-([09-incrementality.md](09-incrementality.md)). The laws that make
-it hold:
+Every rendered file and the manifest are byte-identical across
+machines, operating systems, runs, and warm against cold
+([09-incrementality.md](09-incrementality.md)). Four rules make that
+hold.
 
-- **Every ordering is defined.** Plugins order by capability
-  topology with an alphabetical tie-break; slot contents likewise;
-  files within a manifest sort by path; imports sort by the target
-  language's formatter. Nothing observable ever depends on map
-  iteration, registration order, or scheduling.
-- **No clocks, no randomness, no environment.** Output never
-  contains timestamps, hostnames, usernames, absolute paths, or
-  toolchain paths. The header carries attribution
-  (brand, source), none of it invocation-shaped.
-- **One text policy.** UTF-8, LF line endings, on every platform —
-  a formatter that emits CRLF is wrapped, not obeyed. Manifest and
-  diagnostic paths are slash-separated and workspace-relative.
-- **Deterministic identifiers only.** Anything generated that needs
-  uniqueness derives it from content or declared names, never from
-  counters that depend on visit order.
+**Every ordering is defined.** Plugins order by capability topology
+with an alphabetical tie-break, and slot contents order the same
+way. Files within a manifest sort by path. Imports sort the way the
+target language's formatter sorts them. Nothing anyone can observe
+depends on map iteration, registration order or scheduling.
 
-The warm≡cold rung enforces the whole property; this document is
+**No clocks, no randomness, no environment.** Output never contains
+a timestamp, a hostname, a username, an absolute path or a toolchain
+path. The header carries the brand and the source it derives from,
+and nothing that varies with the invocation.
+
+**One text policy.** UTF-8 and LF line endings, on every platform. A
+formatter that emits CRLF gets wrapped rather than obeyed. Manifest
+and diagnostic paths are slash-separated and workspace-relative.
+
+**Deterministic identifiers only.** Anything generated that needs to
+be unique derives that from content or from declared names, never
+from a counter that depends on visit order.
+
+The warm≡cold rung enforces the whole property, and this document is
 what it enforces.
 
 ## The sink contract
 
-A sink receives `(target, bytes)` and owes four behaviors:
+A sink receives a target and bytes, and owes five behaviours.
 
-- **Write-if-changed.** Identical bytes leave the file untouched —
-  mtime included. Consumers' build systems key on mtimes; a
-  generator that rewrites unchanged files poisons every downstream
-  cache.
-- **Atomic per file.** Temp-and-rename in the target directory; a
-  reader never observes a half-written file, and cancellation
-  mid-run never leaves one behind.
-- **Staged per plan.** A plan's writes stage together and commit
-  with its manifest slice on plan success
-  ([08-workspace-and-plans.md](08-workspace-and-plans.md)); a failed
-  plan leaves the previous generation of its files intact.
-- **Root-jailed.** A sink refuses any path that escapes its root —
-  layout bugs surface as diagnostics, not as files outside the
-  workspace.
-- **Whole files only.** eidos writes complete files it manifests and
-  nothing else — it never merges into, appends to, or rewrites
-  regions of a file it does not wholly own. Partial ownership has no
-  determinism story (the unowned half is uncontrolled input), no
-  sweep story, and no drift story. A plugin that must contribute
-  into a hand-written file does it through a generated sibling the
-  hand-written file imports.
+**Write if changed.** Identical bytes leave the file untouched,
+including its mtime. Consumers' build systems key on mtimes, so a
+generator that rewrites unchanged files breaks every downstream
+cache.
 
-Disk, memory (for tests), and fan-out sinks ship with the kernel;
-the contract is public for consumers with exotic destinations.
-The contract, pinned — a sink is staged by construction, which is
-what makes dry-run and plan isolation free:
+**Atomic per file.** Write to a temp file and rename within the
+target directory. A reader never sees a half-written file, and
+cancelling mid-run never leaves one behind.
+
+**Staged per plan.** A plan's writes stage together and commit with
+its manifest slice when that plan succeeds
+([08-workspace-and-plans.md](08-workspace-and-plans.md)). A plan
+that fails leaves the previous generation of its files in place.
+
+**Root-jailed.** A sink refuses any path that escapes its root, so a
+layout bug produces a diagnostic instead of files outside the
+workspace.
+
+**Whole files only.** eidos writes complete files that it manifests
+and nothing else. It never merges into, appends to, or rewrites part
+of a file it does not wholly own. Owning half a file gives you no
+determinism story, since the other half is uncontrolled input, no
+sweep story and no drift story. A plugin that must contribute into a
+hand-written file does it through a generated sibling that the
+hand-written file imports.
+
+Disk, memory and fan-out sinks ship with the kernel, and the
+contract is public for consumers with somewhere exotic to write. A
+sink stages by construction, which is what makes dry-run and plan
+isolation free:
 
 ```go
 type Sink interface {
@@ -77,131 +84,137 @@ type Sink interface {
 type Written struct {
     Path   string
     Action Action // Created | Updated | Unchanged
-    Hash   string // sha256 of the bytes — the manifest's value
+    Hash   string // sha256 of the bytes, which is the manifest's value
 }
 ```
 
-Commit's renames are atomic per file, not jointly: a crash
-mid-commit leaves a mixed tree — new files owned by their
-trailers, old files owned by the previous manifest — and the next
-run heals it by construction: re-derive, write-if-changed,
-manifest rewritten. No repair pass exists because none is needed.
+Commit renames each file atomically, but not all of them jointly. A
+crash mid-commit leaves a mixed tree, where new files are owned by
+their trailers and old files by the previous manifest, and the next
+run heals it by construction: derive again, write if changed, and
+rewrite the manifest. No repair pass exists because none is needed.
 
 ## Drift
 
-The trailer makes hand edits detectable instead of silently lost;
-the manifest's recorded hash is the warm-path accelerator of the
-same check. Before writing or sweeping an owned path, the engine
-compares the on-disk body hash to the attested one:
+The trailer makes a hand edit detectable instead of quietly lost,
+and the manifest's recorded hash is the warm-path shortcut to the
+same check. Before writing or deleting a path it owns, the engine
+compares the body hash on disk with the attested one.
 
-- **Match** — the normal case; write-if-changed proceeds.
-- **Missing** — recreate.
-- **Differs** — the file **drifted**: someone edited generated
-  output. The run refuses to overwrite it, reports an Error naming
-  the file and the last run that produced it, and `prune` never
-  sweeps it. `run --overwrite-drift` accepts the loss explicitly;
-  the honest fix is moving the edit into source, config, or a
-  directive, where it survives regeneration.
+**Match** is the normal case, and write-if-changed proceeds.
+**Missing** means recreate the file. **Different** means the file
+drifted: somebody edited generated output. The run refuses to
+overwrite it, reports an Error naming the file and the run that last
+produced it, and `prune` never deletes it. `run --overwrite-drift`
+accepts the loss explicitly. The honest fix is moving the edit into
+source, config or a directive, where regeneration will keep it.
 
-Dry run reports drifted paths as their own category (create /
-update / unchanged / stale / drifted).
+Dry run reports drifted paths as their own category, alongside
+create, update, unchanged and stale.
 
-**Adoption.** A path with no manifest record but an existing file —
-the first run ever, or a migration from another generator — is not
-drift, and it should not be a wall. Output whose body hash matches
-adopts the file silently into the manifest; a differing body is
-the tree-collision Error
+**Adoption.** A path with no manifest record but an existing file is
+not drift. That happens on the first run ever, or when migrating
+from another generator, and it should not be a wall. If the output's
+body hash matches the file, eidos adopts it into the manifest
+silently. If the body differs, that is the tree-collision Error
 ([18-routing-and-layout.md](18-routing-and-layout.md)), and
 `--adopt` accepts replacement explicitly. Adopting a tool must not
-fail on file one.
+fail on the first file.
 
 ## Concurrency between runs
 
-One writer per workspace: a run takes an exclusive lock on the
+One writer per workspace. A run takes an exclusive lock on the
 workspace's state directory for its duration. A second concurrent
-invocation fails fast with a diagnostic naming the holder rather
-than interleaving staged commits — two runs racing one manifest is
-the orphan shape with extra steps. The state directory is the
-brand's (`.<brand>/`, [20-cli.md](20-cli.md)), so two *different*
-eidos-built binaries sharing one repository never contend on the
-lock — their mutual safety is the ownership law above, not
-serialization.
+invocation fails immediately with a diagnostic naming the holder,
+rather than interleaving staged commits, because two runs racing one
+manifest leaves generated files nothing tracks.
+
+The state directory belongs to the brand, `.<brand>/`
+([20-cli.md](20-cli.md)), so two different eidos-built binaries
+sharing one repository never contend on the lock. What keeps them
+safe from each other is the ownership rule below, not serialization.
 
 ## Cancellation
 
-Context cancellation aborts between units of work — never mid-file
-(atomicity above), never mid-manifest. A canceled run reports what
-committed and what didn't; because plans stage, the answer is always
-"these whole plans, and nothing partial."
+Cancelling the context stops the run between units of work, never
+mid-file, since writes are atomic, and never mid-manifest. A
+cancelled run reports what committed and what did not, and because
+plans stage, the answer is always whole plans and nothing partial.
 
 ## The generated-file header
 
 Every rendered file opens with the target language's comment form
-of:
+of three things.
 
-1. A machine-recognizable generated-code marker (the target
-   ecosystem's conventional spelling, so linters, review tools, and
-   coverage exclusions detect it without configuration).
-2. Attribution: brand and the source it derives from
-   (workspace-relative). The invocation command is deliberately
-   absent: `run ./svc/...` and `run ./...` produce identical
-   bytes, and a header that varies with phrasing forces
-   write-if-changed to rewrite files whose content never moved.
-   Which command produced a file is the manifest's and
-   `explain`'s answer, not the file's.
-3. Nothing else — no versions that churn diffs, no dates.
+First, a marker that machines recognize as generated code, spelled
+the way the target ecosystem spells it, so linters, review tools and
+coverage exclusions detect it without configuration.
+
+Second, attribution: the brand, and the source the file derives
+from, workspace-relative. The invocation command is deliberately
+absent, because `run ./svc/...` and `run ./...` have to produce
+identical bytes, and a header that varies with the phrasing forces
+write-if-changed to rewrite files whose content never moved. Which
+command produced a file is what the manifest and `explain` answer.
+
+Third, nothing else. No version that churns the diff, no date.
 
 ## The provenance trailer
 
-Every rendered file *ends* with the target language's comment form
-of `<brand>:provenance sha256:<hash>` — the hash of the body, the
-bytes between header and trailer. Where the header says
-"generated, don't edit", the trailer proves *whose* and *intact*:
-it is the file's ownership record, carried in the file because
-the manifest is not committed and a clone arrives without state.
+Every rendered file ends with the target language's comment form of
+`<brand>:provenance sha256:<hash>`, hashing the body, meaning the
+bytes between the header and the trailer.
 
-- **The ownership law.** eidos overwrites or deletes only what it
-  can prove it owns — a trailer with this brand, or a manifest
-  entry. A hand-deleted trailer turns the file into a
-  hand-written one: colliding with it is an Error
-  ([18-routing-and-layout.md](18-routing-and-layout.md)), never
-  an overwrite; the sweep honours the same proof.
-- **Drift is decidable per file**: recompute the body hash,
-  compare with the trailer. The trailer must be the file's final
-  bytes — content after it is drift, which closes the
-  append-past-the-marker tamper case.
-- **First contact works without state.** Excluding own outputs
-  from Load
-  ([08-workspace-and-plans.md](08-workspace-and-plans.md)),
-  adoption, drift refusal, and CI verification all function in a
-  fresh clone, because the proof travels in the bytes. A CI gate
-  is regenerate-and-compare-body-hashes; it reads no state
-  directory.
+The header says "generated, do not edit". The trailer proves whose
+it is and that it is intact. It is the file's ownership record,
+carried in the file itself, because the manifest is not committed
+and a fresh clone arrives with no state.
 
-The hash is content-derived; the trailer is as deterministic as
-the body it attests.
+**The ownership rule.** eidos overwrites or deletes only what it can
+prove it owns, through a trailer carrying this brand or a manifest
+entry. Delete the trailer by hand and the file becomes a
+hand-written one: colliding with it is an Error
+([18-routing-and-layout.md](18-routing-and-layout.md)) rather than
+an overwrite, and the sweep honours the same proof.
+
+**Drift is decidable per file.** Recompute the body hash and compare
+it with the trailer. The trailer must be the file's final bytes, so
+anything after it counts as drift, which closes the
+append-past-the-marker case.
+
+**First contact works with no state.** Excluding a workspace's own
+outputs from Load
+([08-workspace-and-plans.md](08-workspace-and-plans.md)), adoption,
+refusing to overwrite drift, and CI verification all work in a fresh
+clone, because the proof travels in the bytes. A CI gate regenerates
+and compares body hashes, and reads no state directory at all.
+
+The hash comes from the content, so the trailer is as deterministic
+as the body it attests.
 
 ## Dry run
 
-`--dry-run` executes every phase — including Layout, Close checks,
-and audit mode — and writes nothing: the manifest is computed and
-reported, with a diff summary against the tree (create / update /
-unchanged / stale / drifted). Dry run is the review surface for
-"what would this change," and its output is the same versioned JSON
-as everything else.
+`--dry-run` executes every phase, including Layout, the Close checks
+and audit mode, and writes nothing. It computes the manifest and
+reports it, with a diff summary against the tree covering create,
+update, unchanged, stale and drifted. Dry run is the surface for
+reviewing what a run would change, and its output is the same
+versioned JSON as everything else.
 
 ## The manifest
 
-The workspace manifest is versioned public API: for every file — the
-producing plan, the content hash, the emitting plugins, and the
-source declarations it derives from (provenance pointers, so `prune`
-and `explain` read the same record). It lives in the brand's
-state directory (`.<brand>/manifest.json`, [20-cli.md](20-cli.md))
-and is **not committed** to version control: committed, it is a
-merge-conflict generator; uncommitted, nothing is lost, because
-every per-file answer it accelerates — ownership, drift,
-adoption — also rides the provenance trailer. The document,
-concretely — versioned at the root and naming its workspace
+The workspace manifest is versioned public API. For every file it
+records the producing plan, the content hash, the emitting plugins,
+and the source declarations the file derives from, so `prune` and
+`explain` read the same record.
+
+It lives in the brand's state directory, at
+`.<brand>/manifest.json` ([20-cli.md](20-cli.md)), and it is **not
+committed**. Committed, it generates merge conflicts. Uncommitted,
+nothing is lost, because every per-file answer it speeds up, meaning
+ownership, drift and adoption, also rides in the provenance trailer.
+
+The document is versioned at the root and names its workspace
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)):
 
 ```json
@@ -218,10 +231,10 @@ The `sources` entries are canonical symbol identities
 the compatibility policy
 ([15-compatibility.md](15-compatibility.md)).
 
-Plan exports publish into the same state directory, one document
-per (plan, export) beside the manifest, under the export schema
+Plan exports publish into the same state directory, one document per
+plan and export, beside the manifest, under the export schema
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)). They
-persist because they are cross-run inputs: an export's hash folds
-into its dependents' artifact fingerprints
-([09-incrementality.md](09-incrementality.md)), so a warm run must
+persist because they are inputs to later runs: an export's hash
+folds into its dependents' artifact fingerprints
+([09-incrementality.md](09-incrementality.md)), so a warm run has to
 read the previous export without re-running its producer.

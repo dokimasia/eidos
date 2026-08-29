@@ -65,14 +65,17 @@ the same call that produces the text feeds the backend's per-file
 
 ### The policy layer, as data
 
-The genuinely contested mappings are not facts, they are project
-decisions. proto `int64` can become TypeScript `bigint`, `string` or
-`number`. Unannotated Java references need a nullability answer.
-Policies live in workspace config, with a default recorded in the
-target satellite, and a directive can override one per declaration
-at `directive` authority. Per-pair override tables exist only where
-the canonical path is genuinely wrong, and the proto scalar table is
-about twenty rows of data rather than a walker.
+Some mappings have no correct answer, only a choice the project has
+to make. A proto `int64` can reasonably become TypeScript `bigint`,
+`string` or `number`. An unannotated Java reference needs somebody to
+say whether to treat it as nullable.
+
+The project makes those choices in workspace config. Each target
+satellite records a default, and a directive can override one per
+declaration at `directive` authority. A per-pair override table
+exists only where the canonical path is genuinely wrong. The proto
+scalar table is one of those, and it holds about twenty rows of data.
+Nobody writes a walker for it.
 
 `Policy`, the value a `Lowering` receives, is the resolved form of
 all that. Resolution has four steps, and after Build there is no
