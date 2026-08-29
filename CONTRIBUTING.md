@@ -7,6 +7,9 @@ contributions that change one need the specification changed first.
 
 ## Setup
 
+Go 1.27.0 or later — the version is pinned in every module's `go.mod` and in
+`go.work`, and CI reads it from there.
+
 ```sh
 make bootstrap    # install gofumpt, gci, golangci-lint, govulncheck, go-license, ...
 make install      # download and verify module dependencies
@@ -47,20 +50,7 @@ workspace member: `go vet ./...` exits 1 on a module with no Go files.
 
 ### Adding a module
 
-1. `mkdir eidos-<name>` and write `go.mod` with module path
-   `go.dokimi.dev/eidos/<name>` — the directory keeps the `eidos-` prefix,
-   the import path drops it.
-2. Add a `use` line to `go.work`.
-3. Add the coverage layer and the commit scope to `.ergon.yaml`.
-4. Add the row to the [README](README.md) module table.
-5. Add the row to
-   [01-repos-and-kernel.md](docs/architecture/01-repos-and-kernel.md).
-6. Write `doc.go` — see the documentation rules below.
-
-Dependencies point one way: consumers → satellites → kernel. A satellite
-never imports a satellite; cross-language needs go through the kernel's
-canonical-type hub. The kernel carries zero third-party dependencies, as a
-hard property.
+See [Add a module](docs/how-to/add-a-module.md).
 
 ## Commits
 
