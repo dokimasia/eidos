@@ -1,8 +1,9 @@
 # Product requirements documents
 
-Problems argued before designs exist: what the problem is, the evidence it is
-real, who has it, how success is measured, and what is explicitly out of
-scope. Abandoned PRDs stay on disk, with the reason.
+A PRD argues that a problem is real before anyone designs a solution. It says
+what the problem is, who has it, what evidence there is, how you would know
+it was solved, and what is out of scope. Abandoned PRDs stay here, with the
+reason they were abandoned.
 
 | # | Title | Status |
 |---|---|---|

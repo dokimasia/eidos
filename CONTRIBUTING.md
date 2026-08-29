@@ -1,109 +1,111 @@
 # Contributing to eidos
 
-eidos is pre-release and specification-first: the architecture in
-[docs/architecture](docs/architecture/README.md) is complete, and the modules
-are stubs. Contributions that implement a specified mechanism are welcome;
-contributions that change one need the specification changed first.
+eidos is not released yet. The [specification](docs/architecture/README.md) is
+complete and the modules are stubs, so most work right now is implementing a
+mechanism the specification already describes. If you want to change one of
+those mechanisms, change the specification first.
 
 ## Setup
 
-Go 1.27.0 or later — the version is pinned in every module's `go.mod` and in
-`go.work`, and CI reads it from there.
+You need Go 1.27.0 or later. Every `go.mod` and `go.work` pins it, and CI
+reads the version from there.
 
 ```sh
-make bootstrap    # install gofumpt, gci, golangci-lint, govulncheck, go-license, ...
-make install      # download and verify module dependencies
+make bootstrap    # installs gofumpt, gci, golangci-lint, govulncheck, go-license
+make install      # downloads and verifies dependencies
 pre-commit install --hook-type pre-commit --hook-type commit-msg
 ```
 
-## The gate
+## Before you open a PR
 
 ```sh
-make check        # what CI runs: mod verify + lint + test
+make check
 ```
 
-`make check` is also the pre-commit hook, so a commit that would fail CI fails
-locally first. Narrow it while iterating:
+That runs `ergon check` — module verification, lint, and tests. CI runs the
+same command, and so does the pre-commit hook, so a commit that would fail CI
+fails on your machine first.
+
+While you work, run the narrower targets:
 
 ```sh
-make fmt          # SPDX headers, gofumpt + gci, markdownlint — run before check
+make fmt          # SPDX headers, gofumpt, gci, markdownlint — run this before make check
 make lint-go      # golangci-lint only
-make test         # go test per module
+make test         # go test, per module
 make build        # compile every module
 make help         # every target
 ```
 
-Lint runs per module, from each module directory, against the one
-`.golangci.yml` at the repository root. Formatting is not negotiable: `gci`
-groups imports with `prefix(go.dokimi.dev/eidos)`, and `gofmt`/`goimports` are
-deliberately disabled because they fight `gofumpt` and `gci`.
+ergon runs golangci-lint once per module, from each module directory. All of
+them read the single `.golangci.yml` at the repository root.
 
-## Repository layout
+Do not add `gofmt` or `goimports` to that config. gofumpt already does what
+gofmt does, and goimports regroups imports that gci then regroups back, which
+makes `make fmt` produce a different result every time you run it. gci owns
+import grouping, with `prefix(go.dokimi.dev/eidos)`.
 
-One module per component, each tagged and released independently. `go.work`
-is the single source of truth for the module list — ergon discovers modules
-from it, and `.ergon.yaml` keeps `modules: []` for that reason.
+## How the repository is laid out
 
-The root module `go.dokimi.dev/eidos` anchors the import-path prefix and pins
-the toolchain for CI. It holds no packages and is deliberately **not** a
-workspace member: `go vet ./...` exits 1 on a module with no Go files.
+Each component is its own Go module, tagged and released on its own. The
+[README](README.md) lists them.
 
-### Adding a module
+`go.work` holds the module list. ergon reads it from there, which is why
+`.ergon.yaml` leaves `modules:` empty. The root module
+`go.dokimi.dev/eidos` is not in `go.work`: it holds no packages, it exists to
+own the import-path prefix and pin the toolchain for CI, and `go vet ./...`
+fails on a module with no Go files.
 
-See [Add a module](docs/how-to/add-a-module.md).
+To add a module, follow [Add a module](docs/how-to/add-a-module.md).
 
 ## Commits
 
-Conventional Commits, validated by `ergon check commit-msg` from the
-commit-msg hook. Both sets are closed — an unlisted type or scope is an
-error naming the candidates.
+Write Conventional Commits. The commit-msg hook runs `ergon check commit-msg`
+and rejects anything outside these two lists.
 
 **Types:** `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `chore`, `perf`,
 `build`, `deps`, `revert`
 
 **Scopes:** `core`, `lang`, `go`, `java`, `kotlin`, `php`, `protobuf`,
-`rust`, `typescript`, `shape`, `reference` — the module names with the
-`eidos-lang-` and `eidos-plugin-` prefixes dropped. Scope-less commits are
-legal for repository-wide changes.
+`rust`, `typescript`, `shape`, `reference` — the module names, without the
+`eidos-lang-` and `eidos-plugin-` prefixes. Leave the scope off for a change
+that touches the whole repository.
 
-Subject lines cap at 80 bytes, body and footer lines at 100. Write what
-changed and why; the diff already shows how.
+Keep the subject under 80 bytes and body lines under 100. Say what changed
+and why. The diff already shows how.
 
 ## Tests and coverage
 
-Test files mirror their subjects, and fixture sources live in `testdata/`
-beside the test that drives them. `make test` runs each package twice
-(`count: 2`) so map-order defects cannot hide behind a single pass.
+Put test files beside what they test, and fixtures in `testdata/` beside the
+test that reads them. `make test` runs each package twice, so a test that
+only passes in one order fails here rather than in CI.
 
-Per-module coverage thresholds are declared in `.ergon.yaml` — 85% for the
-kernel and the shared tree-sitter module, 75% for satellites. The coverage
-stage is currently in `checks.disabled` because a layer with zero statements
-reports 0.0% rather than "nothing to measure", which would fail the gate on
-stub modules. **Delete that entry when the first module gains real code.**
+`.ergon.yaml` sets a coverage threshold per module: 85% for the kernel and
+`eidos-lang`, 75% for satellites. The coverage stage is currently switched
+off in `checks.disabled`, because a module with no statements reports 0.0%
+instead of "nothing to measure" and fails the gate. Delete that entry once
+the first module has real code in it.
 
-Beyond unit tests, the specification defines a conformance ladder of eight
-rungs — plugintest through warm≡cold — shipped from the kernel and run by
-satellites and consumers alike. A satellite or plugin is held to those rungs,
-not to hand-written assertions; see
-[13-testing-and-conformance.md](docs/architecture/13-testing-and-conformance.md).
+Plugins, satellites and backends are tested by the conformance suite the
+kernel ships — eight rungs, from `plugintest` through `warm≡cold`. Write
+fixtures for those rungs rather than your own assertions;
+[13-testing-and-conformance.md](docs/architecture/13-testing-and-conformance.md)
+says what each rung proves.
 
 ## Documentation
 
-**Go docblocks** are API documentation for a reader at the import site.
-Write what a package is and does, in present tense. No repository-file
-references (godoc renders where those paths are dead text), no status,
-no roadmap, no history. State laws as facts.
+Write a Go docblock for the person who is about to call the package. Say what
+it is and what it does, in the present tense. Do not mention repository files
+— godoc renders where those paths mean nothing. Do not write status,
+roadmap or history into a docblock. State the rules as facts.
 
-**The specification** in `docs/architecture/` is closed: every component,
-contract, and policy appears in exactly one document. A change to a mechanism
-edits the one document that owns it. Prose is for arguments; tables are for
-comparisons across fixed sets; diagrams are for structure.
+The [specification](docs/architecture/README.md) is closed: every component,
+contract and policy appears in exactly one document. Change a mechanism by
+editing the one document that owns it.
 
-**Decisions** are indexed in the
-[decision log](docs/architecture/21-decisions.md) and graduate to full
-[ADRs](docs/adr/README.md) when their revisit trigger fires or their argument
-outgrows a table row.
+The [decision log](docs/architecture/21-decisions.md) lists every settled
+decision. A decision moves into an [ADR](docs/adr/README.md) when its revisit
+trigger fires, or when the argument stops fitting in one table row.
 
 ## Security
 
-Do not open a public issue for a vulnerability. See [SECURITY](SECURITY.md).
+Do not open an issue for a vulnerability. Read [SECURITY](SECURITY.md).

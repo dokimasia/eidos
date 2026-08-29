@@ -15,17 +15,17 @@
 |---|---|
 | How the system is specified, end to end | [Architecture](architecture/README.md) |
 | Why the system is shaped this way | [Architecture decisions](adr/README.md) |
-| What is being proposed, and the debate | [RFCs](rfc/README.md) |
+| What is being proposed, and the argument | [RFCs](rfc/README.md) |
 | What problems we decided were worth solving | [PRDs](prd/README.md) |
-| What we learned about the world outside | [Research](research/README.md) |
+| What we found out about the world outside | [Research](research/README.md) |
 | How to build, test, and land a change | [CONTRIBUTING](../CONTRIBUTING.md) |
 
-New to eidos: read
-[one declaration's journey](architecture/00-one-declarations-journey.md), which
-follows a single declaration through the whole system, and keep the
-[glossary](architecture/GLOSSARY.md) beside it.
+If eidos is new to you, read
+[one declaration's journey](architecture/00-one-declarations-journey.md). It
+follows a single declaration through the whole system. Keep the
+[glossary](architecture/GLOSSARY.md) open beside it.
 
-Documents are numbered and never renumbered. Rejected, withdrawn, and
-superseded documents stay on disk — they are the record of why not. Their
-shapes come from the authoring tools' defaults unless
-[templates](templates/README.md) overrides one.
+Documents keep their numbers. Nobody renumbers them, and rejected,
+withdrawn and superseded documents stay on disk — they record what was turned
+down and why. The authoring tools supply the shape of each document unless
+[templates](templates/README.md) overrides it.

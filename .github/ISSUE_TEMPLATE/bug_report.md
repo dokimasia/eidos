@@ -1,16 +1,18 @@
 ---
 name: Bug report
-about: Something behaves differently from the specification
+about: eidos behaves differently from what the specification says
 labels: bug
 ---
 
 **Module and version**
-<!-- e.g. go.dokimi.dev/eidos/core v0.1.0, or a commit SHA -->
+<!-- go.dokimi.dev/eidos/core v0.1.0, or a commit SHA -->
+
+**What you did**
 
 **What happened**
 
 **What you expected**
-<!-- If the specification states the expected behaviour, cite the document. -->
+<!-- If a specification document states the expected behaviour, name it. -->
 
-**Minimal reproduction**
-<!-- The smallest workspace, source file, or directive that shows it. -->
+**Smallest way to reproduce it**
+<!-- The smallest workspace, source file or directive that shows the problem. -->

@@ -1,17 +1,16 @@
 ---
 name: Feature request
-about: Propose a capability or a change to a specified mechanism
+about: Ask for a capability, or a change to something the specification describes
 labels: enhancement
 ---
 
-**The problem**
-<!-- What you are unable to do today. Not the solution you have in mind. -->
+**What you cannot do today**
+<!-- The problem you hit, not the solution you have in mind. -->
 
 **Why the existing mechanisms do not cover it**
-<!-- The specification is closed: every contract and policy appears in exactly
-     one document. Naming the one that should have covered this, and why it
-     does not, is the fastest route to an answer. -->
+<!-- Every contract and policy appears in exactly one specification document.
+     Name the one that should have covered this, and say why it does not. -->
 
-**Scope**
-<!-- Which module: kernel, a language satellite, the shape catalog. A change
-     to a contract shape needs an RFC before code. -->
+**Which module**
+<!-- The kernel, a language satellite, the shape catalog. A change to a
+     contract shape needs an RFC before any code. -->

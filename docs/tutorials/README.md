@@ -1,13 +1,12 @@
 # Tutorials
 
-Learning by doing: a guaranteed success experience, start to finish, with no
-decisions for the reader to make.
+A tutorial teaches you eidos by building something that works. You follow it
+start to finish and it succeeds. It makes every choice for you, because you
+do not yet know enough to choose.
 
-A tutorial here builds something real with eidos — composing a workspace,
-writing a first plugin, generating a first file — and every command must work
-in order from a clean machine. Nothing is committed here until the kernel can
-run a workspace end to end, because a tutorial that fails at step six loses
-the reader permanently.
+There are no tutorials yet. The kernel cannot run a workspace end to end, so
+any tutorial written today would fail partway through, and a reader who hits
+that does not come back.
 
-Goal-directed steps for a reader who already knows the system are
+If you already know eidos and want to get something done, read the
 [how-to guides](../how-to/README.md).

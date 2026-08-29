@@ -1,16 +1,15 @@
 # Explanation
 
-Concepts and context for a reader building a mental model away from the
-keyboard: why the boundaries fall where they do, what the design space looked
-like, which trade-offs were accepted.
+These pages explain why eidos works the way it does — where the boundaries
+fall, what else was possible, what the design gives up. Read them away from
+the keyboard. Nothing here tells you what to type.
 
-The system's explanation currently lives in the
-[architecture specification](../architecture/README.md), which is closed —
-every component, contract and policy appears in exactly one of its documents,
-and each carries its own argument inline. A page here summarises several of
-those into a current picture for a *user* of the system, where the
-specification addresses a contributor to it.
+Right now the explanation lives in the
+[architecture specification](../architecture/README.md), which argues each
+mechanism where it defines it. The specification addresses someone building
+eidos. A page here addresses someone using it, and can pull several
+specification documents into one picture.
 
-Decisions are not recorded here. A page in this directory is edited freely to
-stay current, which is exactly what a decision record must never be; those are
-[ADRs](../adr/README.md).
+Do not record decisions here. These pages get edited to stay current, which
+would destroy the history. Decisions go in [ADRs](../adr/README.md), which
+are never edited once accepted.

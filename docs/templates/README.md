@@ -1,11 +1,10 @@
 # Document templates
 
-Repo-local overrides for the ADR, RFC and PRD templates. The authoring tools
-check this directory first and fall back to their own defaults.
+Put an `ADR.md`, `RFC.md` or `PRD.md` here to override the template the
+authoring tools use. They check this directory first.
 
-**Deliberately empty of templates.** A copy of a default template placed here
-gains nothing and freezes that template at the day it was copied — the
-repository stops inheriting improvements to it and nobody notices for a year.
-Add `ADR.md`, `RFC.md` or `PRD.md` here only when this repository genuinely
-needs a section the default lacks, and say in the file what the divergence is
-for.
+This directory holds no templates, on purpose. Copying a default template
+here changes nothing and freezes it: the repository stops picking up
+improvements to that template, and nobody notices for a year. Add one only
+when eidos needs a section the default does not have, and write in the file
+what the extra section is for.
