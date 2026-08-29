@@ -10,8 +10,7 @@ consumers build binaries on the kernel's command kernels and those
 binaries are the products.
 
 **Status: specification.** The architecture is fully specified in
-[docs/architecture](docs/architecture/README.md); every module below
-is a stub. Start with
+[docs](docs/README.md); every module below is a stub. Start with
 [one declaration's journey](docs/architecture/00-one-declarations-journey.md).
 
 ## Modules
@@ -58,8 +57,15 @@ make help         # every target
 ```
 
 Commits follow Conventional Commits with module-name scopes
-(`feat(core): …`, `fix(lang-go): …`); the closed scope set lives in
-[.ergon.yaml](.ergon.yaml).
+(`feat(core): …`, `fix(go): …`); the closed type and scope sets live in
+[.ergon.yaml](.ergon.yaml) and are enforced by the commit-msg hook.
+
+## Contributing
+
+[CONTRIBUTING](CONTRIBUTING.md) covers the toolchain, the gate, the commit
+convention, and the checklist for adding a module. Participation is governed
+by the [Code of Conduct](CODE_OF_CONDUCT.md). Report vulnerabilities per
+[SECURITY](SECURITY.md), never as a public issue.
 
 ## License
 

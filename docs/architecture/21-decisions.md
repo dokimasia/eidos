@@ -5,8 +5,12 @@ Each context document holds the full reasoning.*
 
 Every settled decision, its reasoning in one line (the full argument
 lives in the linked context doc), and the recorded revisit trigger
-where one exists. Each of these will be recorded as an ADR in
-`docs/adr/`; this log is their source.
+where one exists.
+
+This log is the source of record. A decision graduates to a full
+ADR in [docs/adr/](../adr/README.md) when its revisit trigger fires,
+or when its argument outgrows one row here; its row then links to
+the ADR ([ADR-0001](../adr/0001-use-adrs-for-architecture-decisions.md)).
 
 | # | Decision | Why (short) | Revisit trigger | Doc |
 |---|---|---|---|---|

@@ -12,19 +12,9 @@ rate: declaration models and plugin contracts move slowly and their
 breaks are expensive, while catalogs and language support churn as
 their vocabularies settle. The kernel is exactly the slow-moving set.
 
-| Directory | Module path | Contents |
-|---|---|---|
-| eidos-core | `go.dokimi.dev/eidos/core` | the kernel (below) |
-| eidos-lang | `go.dokimi.dev/eidos/lang` | tree-sitter binding layer + pinned grammars |
-| eidos-lang-go | `go.dokimi.dev/eidos/lang-go` | Go language satellite |
-| eidos-lang-typescript | `go.dokimi.dev/eidos/lang-typescript` | TypeScript satellite |
-| eidos-lang-protobuf | `go.dokimi.dev/eidos/lang-protobuf` | protobuf satellite (read-only shape) |
-| eidos-lang-java | `go.dokimi.dev/eidos/lang-java` | Java satellite |
-| eidos-lang-kotlin | `go.dokimi.dev/eidos/lang-kotlin` | Kotlin satellite |
-| eidos-lang-php | `go.dokimi.dev/eidos/lang-php` | PHP satellite |
-| eidos-lang-rust | `go.dokimi.dev/eidos/lang-rust` | Rust satellite |
-| eidos-plugin-shape | `go.dokimi.dev/eidos/plugin-shape` | the classification catalog |
-| eidos-reference | `go.dokimi.dev/eidos/reference` | reference plugin ensemble; the compat canary |
+The module inventory — every directory, its import path, and what it
+holds — is the [repository README](../../README.md). This document owns
+the boundary that inventory reflects.
 
 The root module (`go.dokimi.dev/eidos`) anchors the import-path
 prefix and pins the toolchain for CI; it holds no packages and is
