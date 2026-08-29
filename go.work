@@ -1,0 +1,16 @@
+go 1.27.0
+
+// The repository root module (go.dokimi.dev/eidos) is deliberately
+// absent: it carries no packages and exists only to anchor the
+// module path and pin the toolchain version for CI. Every ergon
+// per-module command iterates the list below.
+use (
+	./eidos-core
+	./eidos-lang-go
+	./eidos-lang-java
+	./eidos-lang-kotlin
+	./eidos-lang-php
+	./eidos-lang-rust
+	./eidos-lang-typescript
+	./eidos-plugin-shape
+)

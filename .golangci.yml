@@ -1,11 +1,3 @@
-# golangci-lint configuration for eidos.
-#
-# Reference: https://golangci-lint.run/usage/configuration/
-#
-# The set below is a conservative baseline — every linter named
-# is a "no false-positive" check or a high-signal modernization
-# rule. Extend as the project grows.
-
 version: "2"
 
 run:
@@ -26,32 +18,54 @@ linters:
   enable:
     # Correctness
     - copyloopvar
+    - durationcheck
     - errcheck
     - errorlint
+    - forcetypeassert
     - govet
+    - ineffassign
+    - makezero
     - nilerr
+    - nilnil
     - staticcheck
+    - unconvert
     - unused
     - wastedassign
     # Modernization
     - modernize
     - unparam
     # Style
+    - decorder
     - dupword
+    - funcorder
     - gocritic
     - misspell
+    - nolintlint
+    - predeclared
+    - reassign
     - revive
     - usestdlibvars
     # Concurrency
     - asasalint
     - contextcheck
     - errname
+    - noctx
     # Test hygiene
     - thelper
     - tparallel
     - usetesting
 
   settings:
+    decorder:
+      dec-order: [const, var, type, func]
+      disable-dec-order-check: false
+      disable-init-func-first-check: false
+      disable-dec-num-check: true
+
+    funcorder:
+      constructor: true
+      struct-method: true
+
     gocritic:
       enabled-tags: [diagnostic]
       disabled-checks:
@@ -72,29 +86,61 @@ linters:
         - name: indent-error-flow
         - name: early-return
         - name: unused-receiver
+        - name: blank-imports
+        - name: range
+        - name: time-naming
+        - name: unexported-return
+        - name: exported
 
     govet:
       enable-all: true
+
+    staticcheck:
+      checks:
+        - all
+        - -ST1000
+        - -ST1003
+
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+      allow-unused: false
 
   exclusions:
     generated: lax
     presets:
       - std-error-handling
       - common-false-positives
+    paths:
+      - "(^|/)testdata($|/)"
     rules:
       # fieldalignment is noise outside hot-path structs.
       - linters: [govet]
         text: "fieldalignment:"
+      # A failed assertion or unused parameter in a test fails the
+      # test, which is the signal those linters exist to produce.
+      - path: _test\.go$
+        linters: [forcetypeassert, unparam]
+      # Test files put fakes and helper types below the tests that
+      # use them, which reads better and which decorder scores as
+      # "type after func". Declaration order in a test file is about
+      # reading order, not about API shape.
+      - path: _test\.go$
+        linters: [decorder, funcorder]
 
 formatters:
   enable:
     - gci
-    - gofmt
     - gofumpt
-    - goimports
     - golines
 
   settings:
+    gci:
+      sections:
+        - standard
+        - default
+        - prefix(go.dokimi.dev/eidos)
+      custom-order: true
     golines:
       max-len: 120
     gofumpt:
@@ -103,6 +149,7 @@ formatters:
 issues:
   max-issues-per-linter: 0
   max-same-issues: 0
+  uniq-by-line: false
   fix: false
 
 severity:
