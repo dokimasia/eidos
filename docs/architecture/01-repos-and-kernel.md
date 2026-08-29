@@ -1,49 +1,50 @@
 # Module topology and the kernel
 
 *Builds on: the [README](README.md) ground rules. Feeds: every
-document — this is the map their machinery lives in.*
+document. This is the map their machinery lives in.*
 
 ## Topology
 
-One kernel, satellites around it — one repository, one Go module
-per component, each tagged independently per Go's multi-module
-convention (`eidos-core/v1.2.3`). The boundary is drawn by change
-rate: declaration models and plugin contracts move slowly and their
-breaks are expensive, while catalogs and language support churn as
-their vocabularies settle. The kernel is exactly the slow-moving set.
+One kernel with satellites around it, as one repository holding one
+Go module per component. Each module is tagged on its own, following
+Go's multi-module convention: `eidos-core/v1.2.3`.
 
-The module inventory — every directory, its import path, and what it
-holds — is the [repository README](../../README.md). This document owns
-the boundary that inventory reflects.
+Change rate draws the boundary. Declaration models and plugin
+contracts move slowly, and breaking them is expensive. Catalogs and
+language support change often while their vocabularies settle. The
+kernel is exactly the slow-moving set.
 
-The root module (`go.dokimi.dev/eidos`) anchors the import-path
-prefix and pins the toolchain for CI; it holds no packages and is
-not a workspace member. The kernel module's root package is named
-`eidos`, so the authoring surface reads `eidos.NewPlugin(…)` at the
-import site.
+The [repository README](../../README.md) lists every module, its
+import path and what it holds. This document explains the boundary
+that list reflects.
 
-Go and TypeScript are first-class and protobuf read-only; the Java,
-Kotlin, PHP, and Rust satellites hold the anticipated languages'
-places in the same anatomy, and further languages
-(`eidos-lang-python`, …) join as new modules
-([11-languages.md](11-languages.md)). Bridge modules do not exist:
-cross-language conversion is hub-and-spoke through the kernel
-([10-cross-language.md](10-cross-language.md)), never pairwise.
+The root module `go.dokimi.dev/eidos` owns the import-path prefix
+and pins the toolchain for CI. It holds no packages and is not a
+workspace member. The kernel module's root package is called
+`eidos`, so plugin authors write `eidos.NewPlugin(…)`.
 
-`eidos-lang` is neither kernel nor satellite: it is the shared
-tree-sitter binding layer and grammar set the tree-sitter
-satellites parse through, registering no language of its own. It
-depends only on the kernel; satellites that use it (TypeScript,
-Java, Kotlin, PHP, Rust) depend on it beside the kernel, and
-satellites with first-class pure-Go parsers (Go, protobuf) do not
-depend on it at all. The satellite-never-imports-satellite law is
-untouched — `eidos-lang` sits below the satellites, not beside
-them. It is also where the tree-sitter cgo dependency is
-concentrated: the kernel stays zero-dependency, and a binding or
-grammar upgrade lands in one module.
+Go and TypeScript are first-class, and protobuf is read-only. The
+Java, Kotlin, PHP and Rust satellites hold the anticipated
+languages' places in the same anatomy, and further languages such as
+`eidos-lang-python` join as new modules
+([11-languages.md](11-languages.md)). There are no bridge modules:
+cross-language conversion goes through the kernel's hub, never
+pairwise ([10-cross-language.md](10-cross-language.md)).
+
+`eidos-lang` is neither the kernel nor a satellite. It holds the
+tree-sitter bindings and the pinned grammars that the tree-sitter
+satellites parse through, and it registers no language of its own.
+It depends only on the kernel. TypeScript, Java, Kotlin, PHP and
+Rust depend on it alongside the kernel; Go and protobuf have
+first-class pure-Go parsers and do not depend on it at all. This
+does not weaken the rule that a satellite never imports a satellite,
+because `eidos-lang` sits below the satellites rather than beside
+them. It is also where the tree-sitter cgo dependency stays, so the
+kernel keeps its zero dependencies and a binding or grammar upgrade
+touches one module.
 
 The kernel is the only module whose tags gate anyone else.
-Satellites release on their own cadence against a declared kernel
+Satellites release on their own schedule against a declared kernel
 version range ([15-compatibility.md](15-compatibility.md)).
 
 ## The kernel package tree
@@ -95,30 +96,31 @@ consumers (dokimi, org binaries) ──► satellites (eidos-lang-go, …) ─�
                                      tree-sitter satellites ──► eidos-lang ──► kernel
 ```
 
-Nothing in the kernel names anything to its left; a satellite never
-imports a satellite (cross-language needs go through the kernel's
-hub, [10-cross-language.md](10-cross-language.md)).
+Nothing in the kernel names anything to its left, and no satellite
+imports another satellite. Cross-language needs go through the
+kernel's hub ([10-cross-language.md](10-cross-language.md)).
 
-Constraints the tree encodes:
+The tree encodes three constraints:
 
-- The kernel knows **no language**. No satellite name, no language
-  string, no per-language table appears anywhere in it.
-- The kernel carries **zero third-party dependencies**, as a hard
-  property — a public framework's kernel is on every consumer's
-  supply-chain audit.
-- `symbol/schema` is the only hand-written definition of the
-  declaration kinds. `node/` and `emit/` are generated from it and
-  committed ([02-symbol-model.md](02-symbol-model.md)). The generator
-  is `internal/gen`, a plain `go/ast`-plus-template tool with zero
-  eidos dependencies — a kernel that used a language satellite to
-  build itself would invert the layering and could not bootstrap.
+- **The kernel knows no language.** No satellite name, no language
+  string and no per-language table appears anywhere in it.
+- **The kernel takes no third-party dependencies.** This is a hard
+  property, because a public framework's kernel appears in every
+  consumer's supply-chain audit.
+- **`symbol/schema` is the only hand-written definition of the
+  declaration kinds.** `node/` and `emit/` are generated from it and
+  committed ([02-symbol-model.md](02-symbol-model.md)). The
+  generator is `internal/gen`, a plain `go/ast` and template tool
+  with no eidos dependencies. A kernel that used a language
+  satellite to build itself would invert the layering and could
+  never bootstrap.
 
 ## What is deliberately not in the kernel
 
-- Any binary (`cmd/`). eidos ships no executable
+- Any binary. eidos ships no executable
   ([14-distribution-and-cli.md](14-distribution-and-cli.md)).
-- Any language satellite content, including "just this once" helper
-  tables. The degradation ladder and metadata namespaces exist so the
-  kernel never needs a language exception.
-- A daemon or client-server protocol
+- Any language satellite content, including a helper table added
+  "just this once". The degradation ladder and the metadata
+  namespaces exist so the kernel never needs a language exception.
+- A daemon or a client-server protocol
   ([09-incrementality.md](09-incrementality.md), decision D9).

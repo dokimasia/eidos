@@ -1,114 +1,122 @@
 # Compatibility and versioning
 
-*Builds on: [13](13-testing-and-conformance.md). Governs: every
-repo's releases and every schema surface.*
+*Builds on: [13](13-testing-and-conformance.md). Governs every
+module's releases and every schema surface.*
 
-What makes the multi-module split survivable: the kernel boundary sits around the
-slow-moving set, and every compatibility claim is executed by CI, in
-both directions.
+Splitting the system across modules works because the kernel
+boundary sits around the slow-moving set, and because CI executes
+every compatibility claim in both directions.
 
 ## Kernel versioning
 
-- Semver, with **additive-only within a major** as the working rule.
-  The generated mirrors keep "additive" cheap: a new kind or field
-  is a schema edit and a regen
-  ([02-symbol-model.md](02-symbol-model.md)).
-- One **contract version** constant, checked at workspace Build
-  across every registered component — one handshake for the whole
-  contract. A mismatch is a Build error naming the component and
-  both versions.
-- The public API surface is enumerated, not implied: the kernel
-  packages' exported identifiers, the directive grammar and kernel
-  schemas ([05-directives.md](05-directives.md)), the manifest
-  format, the plan-export schema
-  ([08-workspace-and-plans.md](08-workspace-and-plans.md)), the
-  declarative-plugin manifest schema, the config JSON Schema, the
-  JSON output schemas of the command kernels, and the diagnostic codes.
-  Each is versioned with the kernel; breaking any of them is a
-  major.
+The kernel follows semver, and the working rule is that a minor
+release only adds. The generated mirrors keep adding cheap: a new
+kind or field is a schema edit plus a regeneration
+([02-symbol-model.md](02-symbol-model.md)).
 
-The Go surface itself is diffed, not trusted: `conformance/` ships
-an exported-surface check that compares a module's API against its
-committed baseline — additions update the baseline in review,
-removals and signature changes fail outside a major. The baseline
-is a committed text artifact, one sorted line per exported
-identifier with its full signature, so a surface change is a
-reviewable diff hunk rather than a tool's opinion. The canary ring
-catches breaks empirically; the surface diff names them precisely,
-and both run per release.
+One **contract version** constant is checked at workspace Build
+across every registered component, so the whole contract shakes
+hands once. A mismatch is a Build error naming the component and
+both versions.
+
+The public API surface is enumerated rather than implied. It covers
+the kernel packages' exported identifiers, the directive grammar and
+the kernel schemas ([05-directives.md](05-directives.md)), the
+manifest format, the plan-export schema
+([08-workspace-and-plans.md](08-workspace-and-plans.md)), the
+declarative-plugin manifest schema, the config JSON Schema, the JSON
+output schemas of the command kernels, and the diagnostic codes.
+Each is versioned with the kernel, and breaking any of them means a
+major release.
+
+The Go surface is diffed rather than trusted. `conformance/` ships a
+check that compares a module's exported API against a committed
+baseline. Additions update the baseline in review; removals and
+signature changes fail outside a major. The baseline is a committed
+text file, one sorted line per exported identifier with its full
+signature, so a surface change arrives as a reviewable diff rather
+than a tool's opinion. The canary ring catches breaks by running
+real code, the surface diff names them precisely, and both run per
+release.
 
 ## Satellite versioning
 
-Satellites tag freely on their own cadence and declare a **supported
-kernel range**. Their CI proves it: the kernel conformance suite runs
-at the declared minimum and maximum on every commit. An
-unproven range cannot be published — the range in the go.mod and the
-range in CI are the same data.
+Satellites tag on their own cadence and declare the kernel range
+they support. Their CI proves it by running the kernel conformance
+suite at the declared minimum and maximum on every commit. A range
+that has not been proven cannot be published, because the range in
+the go.mod and the range in CI are the same data.
 
 ## The canary ring
 
-Before the kernel tags anything, its release pipeline runs the ring —
-eidos-reference (the designated canary, kept API-typical on
-purpose), eidos-plugin-shape, and the language satellites at their published
-versions — against kernel HEAD. "Additive-only" is thereby tested
-against real consumers before release, not promised in a changelog.
-A ring failure blocks the tag; the fix is either kernel-side or a
-coordinated satellite release, decided by a human with the failure in
-hand.
+Before the kernel tags anything, its release pipeline runs the ring:
+eidos-reference, which is the designated canary and is kept
+API-typical on purpose, plus eidos-plugin-shape and the language
+satellites at their published versions, all against kernel HEAD.
+"Only adds" is therefore tested against real consumers before
+release rather than promised in a changelog. A ring failure blocks
+the tag, and a human decides with the failure in hand whether the
+fix is kernel-side or a coordinated satellite release.
 
 ## Deprecation
 
-- A deprecation is a marker (doc + `Deprecated:` convention +
-  diagnostic-code entry), one minor of grace, and `doctor` flagging
-  usage in consumer workspaces.
-- Removal happens at the next major only.
-- Directive-language deprecations additionally get a rewrite hint in
-  the diagnostic ("`limit=` is now `bound=`; see code EID-…") —
-  annotations in consumer source are the surface least able to
-  absorb silent change.
+A deprecation is a marker: documentation, the `Deprecated:`
+convention, and an entry in the diagnostic-code index. It gets one
+minor of grace, and `doctor` flags its use in consumer workspaces.
+Removal happens at the next major and nowhere else.
+
+Directive deprecations also carry a rewrite hint in the diagnostic,
+such as "`limit=` is now `bound=`; see code EID-…", because
+annotations sit in consumer source, which is the surface least able
+to absorb a silent change.
 
 ## Schema evolution is checked, not read
 
-Every schema-shaped surface — directive schemas, options schemas,
-metadata key registrations, the declarative-plugin manifest schema,
-the plan-export schema — publishes into a per-release **schema
-index**. Evolution between releases is classified mechanically:
-additive (new optional param, new key) passes; breaking (a removed
-name, a type change, a newly-required param, a changed resolution
-kind, a tightened closure) blocks the tag outside a major, through
-the same ring that blocks API breaks. `doctor` runs the consumer
-side of the same check: a workspace's actual directive usage diffed
-against the index of the release it is about to adopt, so breaking
-annotation changes surface before an upgrade bites, positioned at
-the annotations they affect.
+Every schema-shaped surface publishes into a per-release **schema
+index**: directive schemas, options schemas, metadata key
+registrations, the declarative-plugin manifest schema and the
+plan-export schema.
+
+Evolution between releases is classified mechanically. Additive
+changes, meaning a new optional param or a new key, pass. Breaking
+changes block the tag outside a major, through the same ring that
+blocks API breaks: a removed name, a type change, a newly required
+param, a changed resolution kind, or a tightened closure.
+
+`doctor` runs the consumer side of the same check. It diffs a
+workspace's actual directive usage against the index of the release
+the consumer is about to adopt, so a breaking annotation change
+shows up before the upgrade bites, positioned at the annotations it
+affects.
 
 The index is one committed JSON document per release: every
-schema-shaped surface flattened to (name, fields, types,
-resolution kinds, required flags, closure), sorted — the diff
-between two releases *is* the evolution classifier's input, and
-`doctor` carries the same file to the consumer side.
+schema-shaped surface flattened to its name, fields, types,
+resolution kinds, required flags and closure, then sorted. The diff
+between two releases is the classifier's input, and `doctor` carries
+the same file to the consumer side.
 
 ## Output-affecting releases
 
-A release that changes generated bytes — even cosmetically — is
-**output-affecting** and says so in its notes: consumers regenerate
+A release that changes generated bytes, even cosmetically, is
+**output-affecting** and says so in its notes. Consumers regenerate
 on upgrade and review the diff as part of adopting the release.
-Byte-determinism (warm ≡ cold) holds *within* a version; it is never
-promised *across* versions, because freezing rendered output forever
-would freeze every template and formatter with it.
+
+Byte-determinism holds within a version. It is never promised across
+versions, because freezing rendered output forever would freeze
+every template and every formatter with it.
 
 ## Published per release
 
-- The per-language **support matrix** (from the completeness rung).
-- The cross-language **metadata parity matrix**
+- The per-language support matrix, from the completeness rung.
+- The cross-language metadata parity matrix
   ([04-metadata.md](04-metadata.md)).
-- The **diagnostic-code index** with stable anchors.
+- The diagnostic-code index, with stable anchors.
 - Benchmark results against the previous release, budget-gated.
 
 ## Stable diagnostic codes
 
-Every kernel and satellite diagnostic carries a stable code
-(`EID-####` kernel, `EIDGO-####` satellites). Codes are API: tests
-and consumer tooling assert on them rather than string-matching
-prose, docs anchor on them, and a code's meaning never changes — a
-changed meaning is a new code.
+Every kernel and satellite diagnostic carries a stable code:
+`EID-####` for the kernel, `EIDGO-####` for satellites. Codes are
+API. Tests and consumer tooling assert on them instead of matching
+message text, the documentation anchors on them, and a code's
+meaning never changes. A changed meaning is a new code.

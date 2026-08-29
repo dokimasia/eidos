@@ -4,31 +4,34 @@
 [08](08-workspace-and-plans.md) (plans and exports). Feeds:
 [11](11-languages.md) (the lowering half of every satellite).*
 
-One schema in, a Go server and a TS client out of one workspace run —
-without eidos becoming a transpiler and without a walker per language
-pair.
+One schema goes in, and a Go server and a TypeScript client come out
+of a single workspace run. eidos does this without becoming a
+transpiler and without a walker per language pair.
 
 ## The boundary
 
-**eidos maps interfaces, never implementations.** Type references,
-names, optionality, error models, enum representations — what appears
-in generated declarations and delegating scaffolding. Function bodies
-are permanently out of scope. This sentence is what keeps the feature
-from becoming a compiler.
+**eidos maps interfaces, never implementations.** It converts type
+references, names, optionality, error models and enum
+representations, which is what appears in generated declarations and
+in delegating scaffolding. Function bodies stay out of scope
+permanently. That sentence is what keeps this feature from turning
+into a compiler.
 
 ## Hub and spoke, never pairwise
 
-The pairwise shape — a hand-written walker per (source, target) pair,
-stamping target names and types onto source symbols — is O(pairs),
-and every walker re-implements the same projection of one type system
-into another; two walkers sharing a target drift apart the first time
-either is corrected. The hub shape inverts it: a deliberately small
-canonical type system in the middle, each source language projecting
-*into* it once, each target language lowering *out of* it once. A new
-language pair then costs **zero new code** once both ends exist.
+The pairwise approach writes one walker per (source, target) pair,
+stamping target names and types onto source symbols. It costs
+O(pairs), every walker re-implements the same projection of one type
+system into another, and two walkers that share a target drift apart
+the first time somebody corrects one of them.
 
-The hub already exists in the kernel: the canonical **TypeShape**
-vocabulary ([03-projection.md](03-projection.md)):
+The hub approach inverts that. A deliberately small canonical type
+system sits in the middle. Each source language projects into it
+once, and each target language lowers out of it once. Once both ends
+exist, a new language pair costs no new code at all.
+
+The hub is already in the kernel: the canonical **TypeShape**
+vocabulary ([03-projection.md](03-projection.md)).
 
 ```
    go ──┐                        ┌── go
@@ -37,14 +40,13 @@ proto ──┤── TypeOf ─► canonical ─┤── Lowering ─► ts   
  java ──┘                        └── java                   one arrow out)
 ```
 
-Two layers around it:
+Two layers sit around it.
 
-### Canonical layer (kernel)
+### The canonical layer, in the kernel
 
-- Frontends project source types **into** canonical shapes (Tier 1
-  `TypeOf`).
-- Each target language implements one **`Lowering`**
-  ([11-languages.md](11-languages.md)) — the contract shape:
+Frontends project source types into canonical shapes through the
+Tier-1 `TypeOf`. Each target language implements one `Lowering`
+([11-languages.md](11-languages.md)):
 
 ```go
 type Lowering interface {
@@ -57,40 +59,40 @@ type Lowering interface {
 }
 ```
 
-  A `Spelling` carries rendered text plus the imports it requires,
-  so the backend's per-file `ImportSet` is fed by the same call that
-  produced the text.
+A `Spelling` carries the rendered text plus the imports it needs, so
+the same call that produces the text feeds the backend's per-file
+`ImportSet`.
 
-### Policy layer (data)
+### The policy layer, as data
 
 The genuinely contested mappings are not facts, they are project
-policy: proto `int64` → TS `bigint` vs `string` vs `number`;
-nullability-unknown treatment for unannotated Java. Policies live in
-workspace config with a recorded default in the target satellite,
-overridable per directive at `directive` authority. Per-pair override
-tables exist only where the canonical path is genuinely wrong — the
-proto scalar table is ~20 rows of data, not a walker.
+decisions. proto `int64` can become TypeScript `bigint`, `string` or
+`number`. Unannotated Java references need a nullability answer.
+Policies live in workspace config, with a default recorded in the
+target satellite, and a directive can override one per declaration
+at `directive` authority. Per-pair override tables exist only where
+the canonical path is genuinely wrong, and the proto scalar table is
+about twenty rows of data rather than a walker.
 
-`Policy`, the value a `Lowering` receives, is the *resolved* form
-of that. Resolution has four steps, and after Build there is no
+`Policy`, the value a `Lowering` receives, is the resolved form of
+all that. Resolution has four steps, and after Build there is no
 fifth:
 
 1. **Register.** A target satellite registers each policy key with
-   its typed choices and a default (`ts.int64:
-   bigint|string|number`, default `bigint`;
-   `java.nullabilityUnknown: nullable|nonnull`). Keys and choices
-   export as generated constants; the spellings below are boundary
-   forms.
-2. **Select.** Workspace config picks choices per key. Build
-   validates every selection against the registered keys — an
-   unknown key or invalid choice is a Build error naming the
-   candidates.
-3. **Override.** A per-declaration directive overrides at
-   `directive` authority, validated against the registered choices
-   at Freeze like any directive param.
+   its typed choices and a default: `ts.int64` accepts
+   `bigint|string|number` and defaults to `bigint`;
+   `java.nullabilityUnknown` accepts `nullable|nonnull`. Keys and
+   choices export as generated constants, and the spellings above
+   are what a human types.
+2. **Select.** Workspace config picks a choice per key. Build checks
+   every selection against the registered keys, and an unknown key
+   or an invalid choice is a Build error naming the candidates.
+3. **Override.** A directive on a declaration overrides at
+   `directive` authority, checked against the registered choices at
+   Freeze like any other directive param.
 4. **Hand over.** The `Policy` a lowering receives is total: every
-   registered key resolves to default, selection, or override. A
-   lowering never sees an unresolved policy, so it never carries a
+   registered key resolves to a default, a selection or an override.
+   A lowering never sees an unresolved policy, so it never carries a
    fallback branch that quietly becomes the real default.
 
 The contract, pinned:
@@ -108,45 +110,45 @@ type Policy interface {
 
 ## Refusal is first-class
 
-A lowering that cannot spell a shape **refuses with a stable
-diagnostic code** at the declaration that forced it: Go `chan T` has
-no TS spelling; a Union has no Go spelling. It never guesses. Rung 4
-of the degradation ladder, tested per language by the completeness
-rung.
+A lowering that cannot spell a shape refuses, with a stable
+diagnostic code, at the declaration that forced it. Go `chan T` has
+no TypeScript spelling. A Union has no Go spelling. It never
+guesses. This is rung 4 of the degradation ladder, and the
+completeness rung tests it per language.
 
 ## Names across the boundary
 
-Cross-language naming (proto `user_id` → Go `UserID` → TS `userId`)
-flows through the target's naming joins, with the result stamped as
-target-namespace metadata on the source symbol (`go.name`) at
-`plugin` authority — so a consumer overrides any single name at the
-declaration with a directive, and `explain` shows where every
-spelling came from.
+Cross-language naming, such as proto `user_id` becoming Go `UserID`
+and TypeScript `userId`, goes through the target's naming joins. The
+result is stamped as target-namespace metadata on the source symbol,
+such as `go.name`, at `plugin` authority. A consumer can therefore
+override any single name at the declaration with a directive, and
+`explain` shows where every spelling came from.
 
-*When* matters: the stamps land during **Annotate**, by a naming
-annotator each target language provides and the workspace registers
-automatically when any plan targets that language. Plans read the
-shared graph and never write it — stamping from inside a plan would
-break both the freeze and plan isolation, since plans run in
-parallel. Two plans targeting one language share the stamps, which
-is correct: a name is a fact about (symbol, target language), not
-about a plan.
+The timing matters. The stamps land during **Annotate**, written by
+a naming annotator that each target language provides and the
+workspace registers automatically whenever a plan targets that
+language. Plans read the shared graph and never write it. Stamping
+from inside a plan would break both the freeze and plan isolation,
+because plans run in parallel. Two plans targeting one language
+share the stamps, which is correct: a name is a fact about a symbol
+and a target language, not about a plan.
 
 ## Binding generation
 
-Generators that must reference *generated* artifacts on the other
-side of a boundary (FFI bindings, JNI, cgo, wasm bindings) do not
-read sibling emit; they consume **plan exports** — the typed,
-deterministic summaries plans publish, with dependencies declared and
-topo-ordered
-([08-workspace-and-plans.md](08-workspace-and-plans.md)). Convention
-recomputation ("apply the same naming rules and hope") is rejected as
-drift-by-construction.
+Some generators must reference generated artifacts on the other side
+of a boundary: FFI bindings, JNI, cgo, wasm bindings. They do not
+read a sibling plan's emit. They consume **plan exports**, the
+typed, deterministic summaries that plans publish, with dependencies
+declared and topologically ordered
+([08-workspace-and-plans.md](08-workspace-and-plans.md)). Working
+the names out again by applying the same naming rules and hoping
+they match is rejected, because it drifts by construction.
 
 ## Consistency
 
-Cross-language claims are checked, not hoped for: `WorkspaceCheck`
-plugins at Close read the records — manifests, exports, graph and
-facts — and report drift ("proto
-service method X has a Go handler and no TS client method") as
-positioned diagnostics with stable codes.
+Cross-language claims are checked rather than hoped for.
+`WorkspaceCheck` plugins run at Close, read the records (manifests,
+exports, graph and facts) and report a mismatch such as "proto
+service method X has a Go handler and no TypeScript client method"
+as a positioned diagnostic with a stable code.
