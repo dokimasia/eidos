@@ -1,0 +1,119 @@
+{{template "header" .}}
+import (
+	"testing"
+
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+func TestWalk(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Walk", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("visits nothing for a nil declaration", func(t *testing.T) {
+			t.Parallel()
+
+			Walk(nil, func(symbol.Symbol) bool {
+				t.Fatal("visit was called for a nil declaration")
+				return true
+			})
+		})
+{{- range .Views}}
+{{- if .Children}}
+
+		t.Run("descends into every traversed field of {{.Name}}", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &{{.Name}}{}
+{{- range .Children}}
+			{{.}}
+{{- end}}
+
+			var seen int
+			Walk(subject, func(symbol.Symbol) bool {
+				seen++
+				return true
+			})
+			if want := {{.WalkVisits}}; seen != want {
+				t.Fatalf("visited %d declarations, want %d", seen, want)
+			}
+		})
+{{- end}}
+{{- end}}
+
+		t.Run("prunes a subtree when visit answers false", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .Children}}
+
+			subject := &{{.Name}}{}
+{{- range .Children}}
+			{{.}}
+{{- end}}
+			var seen int
+			Walk(subject, func(symbol.Symbol) bool {
+				seen++
+				return false
+			})
+			if seen != 1 {
+				t.Fatalf("visited %d declarations after pruning, want 1", seen)
+			}
+{{- break}}
+{{- end}}
+{{- end}}
+		})
+	})
+
+	t.Run("All", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("yields the same declarations as Walk", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .Children}}
+
+			subject := &{{.Name}}{}
+{{- range .Children}}
+			{{.}}
+{{- end}}
+			var walked int
+			Walk(subject, func(symbol.Symbol) bool {
+				walked++
+				return true
+			})
+			var yielded int
+			for range All(subject) {
+				yielded++
+			}
+			if walked != yielded {
+				t.Fatalf("All yielded %d declarations, Walk visited %d", yielded, walked)
+			}
+{{- break}}
+{{- end}}
+{{- end}}
+		})
+
+		t.Run("stops when the range stops", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .Children}}
+
+			subject := &{{.Name}}{}
+{{- range .Children}}
+			{{.}}
+{{- end}}
+			var yielded int
+			for range All(subject) {
+				yielded++
+				break
+			}
+			if yielded != 1 {
+				t.Fatalf("yielded %d declarations after breaking, want 1", yielded)
+			}
+{{- break}}
+{{- end}}
+{{- end}}
+		})
+	})
+}

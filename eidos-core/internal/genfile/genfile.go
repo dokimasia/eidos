@@ -22,9 +22,16 @@ import (
 // equal wherever it was produced.
 type Set map[string][]byte
 
-// GeneratedSuffix marks a generated Go file. The mirror guard reads
-// it to tell its own output from hand-written source.
-const GeneratedSuffix = ".gen.go"
+// The suffixes marking a generated Go file. The mirror guard reads
+// them to tell its own output from hand-written source, and a
+// generator that emits tests alongside its code is covered by both.
+const (
+	// GeneratedSuffix marks generated source.
+	GeneratedSuffix = ".gen.go"
+	// GeneratedTestSuffix marks a generated test, which does not end
+	// in GeneratedSuffix and would otherwise escape the guard.
+	GeneratedTestSuffix = ".gen_test.go"
+)
 
 // dirPerm and filePerm are the modes generated output lands with.
 const (
@@ -125,7 +132,7 @@ func strays(root string, set Set, dirs []string) ([]string, error) {
 				return nil
 			case err != nil:
 				return err
-			case d.IsDir() || !strings.HasSuffix(d.Name(), GeneratedSuffix):
+			case d.IsDir() || !generated(d.Name()):
 				return nil
 			}
 			rel, err := filepath.Rel(root, path)
@@ -143,6 +150,12 @@ func strays(root string, set Set, dirs []string) ([]string, error) {
 	}
 	slices.Sort(found)
 	return found, nil
+}
+
+// generated reports whether a filename is generated output.
+func generated(name string) bool {
+	return strings.HasSuffix(name, GeneratedSuffix) ||
+		strings.HasSuffix(name, GeneratedTestSuffix)
 }
 
 // resolve joins a module-relative path onto root, refusing one that

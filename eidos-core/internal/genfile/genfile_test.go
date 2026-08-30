@@ -77,10 +77,50 @@ func TestGenfile(t *testing.T) {
 				t.Fatal("Write: error = nil, want non-nil")
 			}
 		})
+
+		t.Run("reports a directory it cannot create", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			blocker := filepath.Join(root, "node")
+			if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
+			if err := genfile.Write(root, set); err == nil {
+				t.Fatal("Write: error = nil, want non-nil")
+			}
+		})
 	})
 
 	t.Run("Verify", func(t *testing.T) {
 		t.Parallel()
+
+		t.Run("refuses a set path escaping the root", func(t *testing.T) {
+			t.Parallel()
+
+			set := genfile.Set{"../escape.gen.go": []byte(wellFormed)}
+			if err := genfile.Verify(t.TempDir(), set, nil); err == nil {
+				t.Fatal("Verify: error = nil, want non-nil")
+			}
+		})
+
+		t.Run("refuses an owned directory escaping the root", func(t *testing.T) {
+			t.Parallel()
+
+			err := genfile.Verify(t.TempDir(), genfile.Set{}, []string{"../elsewhere"})
+			if err == nil {
+				t.Fatal("Verify: error = nil, want non-nil")
+			}
+		})
+
+		t.Run("passes over a directory the generator has not created", func(t *testing.T) {
+			t.Parallel()
+
+			if err := genfile.Verify(t.TempDir(), genfile.Set{}, []string{"node"}); err != nil {
+				t.Fatalf("Verify: unexpected error: %v", err)
+			}
+		})
 
 		t.Run("passes when the tree matches", func(t *testing.T) {
 			t.Parallel()
@@ -143,6 +183,27 @@ func TestGenfile(t *testing.T) {
 				t.Fatal("Verify: error = nil, want non-nil")
 			}
 			if !strings.Contains(err.Error(), "orphan.gen.go") {
+				t.Fatalf("error = %q, want it to name the stray", err)
+			}
+		})
+
+		t.Run("reports a stray generated test", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
+			if err := genfile.Write(root, set); err != nil {
+				t.Fatalf("Write: unexpected error: %v", err)
+			}
+			stray := filepath.Join(root, "node", "orphan.gen_test.go")
+			if err := os.WriteFile(stray, []byte(wellFormed), 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+			err := genfile.Verify(root, set, []string{"node"})
+			if err == nil {
+				t.Fatal("Verify: error = nil, want non-nil")
+			}
+			if !strings.Contains(err.Error(), "orphan.gen_test.go") {
 				t.Fatalf("error = %q, want it to name the stray", err)
 			}
 		})

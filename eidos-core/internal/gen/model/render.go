@@ -59,9 +59,12 @@ type view struct {
 	Doc []string
 	// Fields are the struct's fields, in declaration order.
 	Fields []fieldView
-	// PosExpr and DocExpr answer the Symbol interface.
+	// PosExpr and DocExpr answer the Symbol interface, and HasPos
+	// and HasDoc say whether the kind carries the field they read.
 	PosExpr string
 	DocExpr string
+	HasPos  bool
+	HasDoc  bool
 	// Members answer the Membered interface. The slice is empty for
 	// a kind that carries no member list, and an entry with an
 	// empty Items answers nil.
@@ -73,6 +76,12 @@ type view struct {
 	Walked []fieldView
 	// Slots are the fields that become slot storage.
 	Slots []fieldView
+	// Children are the statements a test uses to give the subject
+	// one child in every traversed field.
+	Children []string
+	// WalkVisits is how many declarations a walk over that subject
+	// reaches, the subject included.
+	WalkVisits int
 }
 
 // IsMembered reports whether the kind carries any member list.
@@ -142,9 +151,9 @@ func viewOf(kind KindSpec, side string) view {
 
 		switch {
 		case f.Name == posField:
-			v.PosExpr = "x." + f.Storage
+			v.PosExpr, v.HasPos = "x."+f.Storage, true
 		case f.Name == docField:
-			v.DocExpr = "x." + f.Storage
+			v.DocExpr, v.HasDoc = "x."+f.Storage, true
 		case f.Name == typeField && f.Elem == typeRefKind:
 			v.TypeRefStorage = f.Storage
 		}
@@ -156,7 +165,35 @@ func viewOf(kind KindSpec, side string) view {
 		}
 	}
 	v.Members = membersOf(byName)
+	v.Children, v.WalkVisits = childrenOf(v)
 	return v
+}
+
+// childrenOf writes the statements that give a subject one child in
+// every traversed field, and counts what a walk then reaches.
+//
+// A child is empty, so it contributes exactly one visit. A field
+// typed by the marker takes a value of the enclosing kind, which is
+// always available and terminates for the same reason.
+func childrenOf(v view) (stmts []string, visits int) {
+	visits = 1
+	for _, f := range v.Walked {
+		child := "&" + v.Name + "{}"
+		if f.Elem != "" {
+			child = "&" + f.Elem + "{}"
+		}
+		switch {
+		case f.Accessor != "":
+			stmts = append(stmts, "subject."+f.Accessor+"().Append("+child+")")
+		case f.Slice:
+			stmts = append(stmts,
+				"subject."+f.Storage+" = append(subject."+f.Storage+", "+child+")")
+		default:
+			stmts = append(stmts, "subject."+f.Storage+" = "+child)
+		}
+		visits++
+	}
+	return stmts, visits
 }
 
 // membersOf answers the Membered methods a kind implements. It

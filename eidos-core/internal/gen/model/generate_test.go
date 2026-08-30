@@ -40,10 +40,14 @@ func TestGenerate(t *testing.T) {
 			}
 			want := []string{
 				"emit/kinds.gen.go",
+				"emit/kinds.gen_test.go",
 				"emit/slots.gen.go",
 				"emit/walk.gen.go",
+				"emit/walk.gen_test.go",
 				"node/kinds.gen.go",
+				"node/kinds.gen_test.go",
 				"node/walk.gen.go",
+				"node/walk.gen_test.go",
 				"symbol/kind.gen.go",
 			}
 			got := slices.Sorted(maps(set))

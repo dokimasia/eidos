@@ -1,0 +1,159 @@
+{{template "header" .}}
+import (
+	"testing"
+
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// Every kind answers the vocabulary's interfaces. The assertions
+// fail to compile rather than to run, which is where an unsatisfied
+// interface belongs.
+var (
+{{- range .Views}}
+	_ symbol.Symbol = (*{{.Name}})(nil)
+{{- end}}
+{{- range .Views}}
+{{- if .IsMembered}}
+	_ symbol.Membered = (*{{.Name}})(nil)
+{{- end}}
+{{- end}}
+{{- range .Views}}
+{{- if .TypeRefStorage}}
+	_ symbol.Typed = (*{{.Name}})(nil)
+{{- end}}
+{{- end}}
+)
+
+func TestKinds(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Kind", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			subject symbol.Symbol
+			want    symbol.Kind
+		}{
+{{- range .Views}}
+			{subject: &{{.Name}}{}, want: symbol.Kind{{.Name}}},
+{{- end}}
+		}
+		for _, tt := range tests {
+			t.Run(tt.want.String(), func(t *testing.T) {
+				t.Parallel()
+				if got := tt.subject.Kind(); got != tt.want {
+					t.Fatalf("Kind() = %v, want %v", got, tt.want)
+				}
+			})
+		}
+	})
+
+	t.Run("Position", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("answers where the declaration was written", func(t *testing.T) {
+			t.Parallel()
+
+			at := position.Pos{File: "svc/store.go", Line: 41, Col: 2}
+			_ = at
+{{- range .Views}}
+{{- if .HasPos}}
+			if got := (&{{.Name}}{Pos: at}).Position(); got != at {
+				t.Fatalf("{{.Name}}.Position() = %v, want %v", got, at)
+			}
+{{- else}}
+			if got := (&{{.Name}}{}).Position(); !got.IsZero() {
+				t.Fatalf("{{.Name}}.Position() = %v, want the zero position", got)
+			}
+{{- end}}
+{{- end}}
+		})
+	})
+
+	t.Run("Docs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("answers the declaration's documentation", func(t *testing.T) {
+			t.Parallel()
+
+			lines := []string{"one", "two"}
+			_ = lines
+{{- range .Views}}
+{{- if .HasDoc}}
+			if got := (&{{.Name}}{Doc: lines}).Docs(); len(got) != len(lines) {
+				t.Fatalf("{{.Name}}.Docs() = %v, want %v", got, lines)
+			}
+{{- else}}
+			if got := (&{{.Name}}{}).Docs(); got != nil {
+				t.Fatalf("{{.Name}}.Docs() = %v, want nil", got)
+			}
+{{- end}}
+{{- end}}
+		})
+	})
+
+	t.Run("TypeRef", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("answers nil when the source states no type", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .TypeRefStorage}}
+			if got := (&{{.Name}}{}).TypeRef(); got != nil {
+				t.Fatalf("{{.Name}}.TypeRef() = %v, want nil", got)
+			}
+{{- end}}
+{{- end}}
+		})
+
+		t.Run("answers the declared type reference", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .TypeRefStorage}}
+			if got := (&{{.Name}}{Type: &TypeRef{}}).TypeRef(); got == nil {
+				t.Fatal("{{.Name}}.TypeRef() = nil, want the declared reference")
+			}
+{{- end}}
+{{- end}}
+		})
+	})
+
+	t.Run("Members", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("a member list the kind does not carry answers nil", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}{{$v := .}}
+{{- range .Members}}
+{{- if not .Items}}
+
+			if got := (&{{$v.Name}}{}).{{.Method}}(); got != nil {
+				t.Fatalf("{{$v.Name}}.{{.Method}}() = %v, want nil", got)
+			}
+{{- end}}
+{{- end}}
+{{- end}}
+		})
+
+		t.Run("a member list the kind carries answers its members", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}{{$v := .}}
+{{- range .Members}}
+{{- if .Items}}
+
+			{
+				subject := &{{$v.Name}}{}
+{{- range $v.Children}}
+				{{.}}
+{{- end}}
+				if got := subject.{{.Method}}(); len(got) == 0 {
+					t.Fatalf("{{$v.Name}}.{{.Method}}() is empty, want its members")
+				}
+			}
+{{- end}}
+{{- end}}
+{{- end}}
+		})
+	})
+}
