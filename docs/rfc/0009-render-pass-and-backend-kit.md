@@ -70,13 +70,19 @@ does, belongs to the sink:
 package plugin
 
 // RenderedFile is one rendered output as a value: the derived
-// filename and the finished bytes. Nothing here touches disk;
-// paths, staging and commit belong to the sink that consumes it.
+// filename under its owning package, and the finished bytes.
+// Nothing here touches disk; paths, staging and commit belong to
+// the sink that consumes it.
 type RenderedFile struct {
     // Name is the target-spelled filename the unit's routing key
     // derives: word, tag and cardinality key joined the way the
     // language joins them.
     Name string
+    // Pkg is the owning package's identity, zero for a plan file:
+    // the namespace half of the file's address, because two
+    // packages spell the same filename and stay two files,
+    // whatever directory layout places them in.
+    Pkg symbol.Identity
     // Body is the finished text: formatted, in the language's own
     // spelling. The output contract stamps and stages it.
     Body []byte
@@ -100,6 +106,11 @@ type RenderContext struct {
     // declared template overrides resolve against, carried as
     // data so the pass decides nothing.
     Schedule []ID
+    // Trees holds each plugin's declared template tree for this
+    // target, keyed by plugin: what a template reference resolves
+    // in. The composition reads them off the TemplateProvider
+    // surface; a fixture hands them over directly.
+    Trees map[ID]fs.FS
     // Sink takes the pass's findings: an unresolved reference, a
     // dropped slot marker, a format failure.
     Sink *diag.Sink
@@ -314,10 +325,12 @@ prove, over a hand-built emit fixture:
 package backendtest
 
 // Fixture is a hand-built plan as the renderer sees it: the emit
-// store and the schedule the composition would have handed over.
+// store, the schedule and the template trees the composition
+// would have handed over.
 type Fixture struct {
     Emit     *plugin.Emit
     Schedule []plugin.ID
+    Trees    map[plugin.ID]fs.FS
 }
 
 // Setup builds the backend under test with the emit fixture it
