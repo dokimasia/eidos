@@ -15,3 +15,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0001](0001-symbol-model-contract.md) | The symbol schema and its contract | Accepted |
 | [0002](0002-model-generator.md) | The model generator (internal/gen/model) | Accepted |
 | [0003](0003-diagnostics-and-store.md) | Diagnostics and the node store | Accepted |
+| [0004](0004-metadata-facts.md) | Metadata keys and the fact store | Draft |
