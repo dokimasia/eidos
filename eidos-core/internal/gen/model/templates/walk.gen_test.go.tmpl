@@ -2,6 +2,7 @@
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
 {{if .Identified}}	"go.dokimi.dev/eidos/core/position"
 {{end}}	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -16,7 +17,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			Walk(nil, func(symbol.Symbol) bool {
-				t.Fatal("visit was called for a nil declaration")
+				assert.True(t, false, "visit is never called for a nil declaration")
 				return true
 			})
 		})
@@ -36,9 +37,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := {{.WalkVisits}}; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, {{.WalkVisits}},
+				"the walk descends into every traversed field")
 		})
 {{- end}}
 {{- end}}
@@ -58,9 +58,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of {{.Name}} after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 {{- end}}
 {{- end}}
@@ -89,10 +88,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d {{.Name}} declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 {{- end}}
 {{- end}}
@@ -113,9 +110,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d {{.Name}} declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 {{- end}}
 {{- end}}
@@ -144,10 +140,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d {{.Name}} declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 {{- end}}
 {{- end}}
@@ -158,9 +152,9 @@ func TestWalk(t *testing.T) {
 
 			subject := &File{Decls: Symbols{unnamed{}}}
 			for decl := range Declarations(subject) {
-				if _, isFile := decl.(*File); !isFile {
-					t.Fatalf("Declarations yielded %v, want the file alone", decl)
-				}
+				_, isFile := decl.(*File)
+				assert.True(t, isFile,
+					"a symbol that does not name itself is skipped, not yielded")
 			}
 		})
 
@@ -179,9 +173,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d {{.Name}} declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 {{- end}}
 {{- end}}

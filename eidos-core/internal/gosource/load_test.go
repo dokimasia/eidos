@@ -6,8 +6,9 @@ package gosource_test
 import (
 	"go/token"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
@@ -23,16 +24,13 @@ func TestLoad(t *testing.T) {
 
 			fset := token.NewFileSet()
 			files, err := gosource.ParseDir(fset, "testdata/mod/lib", gosource.HandWritten)
-			if err != nil {
-				t.Fatalf("ParseDir: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the fixture directory parses")
 			var got []string
 			for _, f := range files {
 				got = append(got, filepath.Base(fset.Position(f.Pos()).Filename))
 			}
-			if want := "lib.go"; strings.Join(got, ",") != want {
-				t.Fatalf("files = %v, want only %s", got, want)
-			}
+			assert.Equal(t, got, []string{"lib.go"},
+				"hand-written mode skips generated and test files")
 		})
 
 		t.Run("reads generated files in complete mode", func(t *testing.T) {
@@ -40,16 +38,13 @@ func TestLoad(t *testing.T) {
 
 			fset := token.NewFileSet()
 			files, err := gosource.ParseDir(fset, "testdata/mod/lib", gosource.Complete)
-			if err != nil {
-				t.Fatalf("ParseDir: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the fixture directory parses")
 			var got []string
 			for _, f := range files {
 				got = append(got, filepath.Base(fset.Position(f.Pos()).Filename))
 			}
-			if want := "lib.gen.go,lib.go"; strings.Join(got, ",") != want {
-				t.Fatalf("files = %v, want %s", got, want)
-			}
+			assert.Equal(t, got, []string{"lib.gen.go", "lib.go"},
+				"complete mode reads generated files too")
 		})
 
 		t.Run("reads files in name order", func(t *testing.T) {
@@ -57,25 +52,20 @@ func TestLoad(t *testing.T) {
 
 			fset := token.NewFileSet()
 			files, err := gosource.ParseDir(fset, "testdata/mod/app", gosource.HandWritten)
-			if err != nil {
-				t.Fatalf("ParseDir: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the fixture directory parses")
 			var got []string
 			for _, f := range files {
 				got = append(got, filepath.Base(fset.Position(f.Pos()).Filename))
 			}
-			want := "app.go,uses_stdlib.go"
-			if strings.Join(got, ",") != want {
-				t.Fatalf("files = %v, want %s", got, want)
-			}
+			assert.Equal(t, got, []string{"app.go", "uses_stdlib.go"},
+				"files read in name order, so two runs answer alike")
 		})
 
 		t.Run("reports a directory holding no hand-written file", func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := gosource.ParseDir(token.NewFileSet(), "testdata/empty", gosource.HandWritten); err == nil {
-				t.Fatal("ParseDir: error = nil, want non-nil")
-			}
+			_, err := gosource.ParseDir(token.NewFileSet(), "testdata/empty", gosource.HandWritten)
+			assert.HasError(t, err, "a directory holding no readable file is reported")
 		})
 	})
 
@@ -86,44 +76,31 @@ func TestLoad(t *testing.T) {
 			t.Parallel()
 
 			modRoot, err := filepath.Abs("testdata/mod")
-			if err != nil {
-				t.Fatalf("Abs: %v", err)
-			}
+			assert.NoError(t, err, "the module root resolves")
 			pkg, files, err := gosource.Load(
 				token.NewFileSet(), "testdata/mod/app", "example.test/fixture/app", modRoot,
 				gosource.HandWritten,
 			)
-			if err != nil {
-				t.Fatalf("Load: unexpected error: %v", err)
-			}
-			if len(files) != 2 {
-				t.Fatalf("parsed %d files, want 2", len(files))
-			}
-			if obj := pkg.Scope().Lookup("Holder"); obj == nil {
-				t.Fatal("Holder is missing from the type-checked package")
-			}
-			if got := pkg.Scope().Lookup("Upper"); got == nil {
-				t.Fatal("Upper is missing: the stdlib import did not resolve")
-			}
+			assert.NoError(t, err, "the fixture package loads")
+			assert.Length(t, files, 2, "with both hand-written files")
+			assert.NotNil(t, pkg.Scope().Lookup("Holder"),
+				"the package's own declarations type-check")
+			assert.NotNil(t, pkg.Scope().Lookup("Upper"),
+				"and its stdlib imports resolve")
 		})
 
 		t.Run("does not resolve generated declarations", func(t *testing.T) {
 			t.Parallel()
 
 			modRoot, err := filepath.Abs("testdata/mod")
-			if err != nil {
-				t.Fatalf("Abs: %v", err)
-			}
+			assert.NoError(t, err, "the module root resolves")
 			pkg, _, err := gosource.Load(
 				token.NewFileSet(), "testdata/mod/lib", "example.test/fixture/lib", modRoot,
 				gosource.HandWritten,
 			)
-			if err != nil {
-				t.Fatalf("Load: unexpected error: %v", err)
-			}
-			if pkg.Scope().Lookup("Generated") != nil {
-				t.Fatal("Generated resolved: the loader read a .gen.go file")
-			}
+			assert.NoError(t, err, "the fixture package loads")
+			assert.Nil(t, pkg.Scope().Lookup("Generated"),
+				"hand-written mode does not resolve what the generator produced")
 		})
 
 		t.Run("reports a package that does not type-check", func(t *testing.T) {
@@ -133,9 +110,7 @@ func TestLoad(t *testing.T) {
 				token.NewFileSet(), "testdata/mod/app", "example.test/fixture/app", "",
 				gosource.HandWritten,
 			)
-			if err == nil {
-				t.Fatal("Load without a module root: error = nil, want non-nil")
-			}
+			assert.HasError(t, err, "a package that does not type-check is reported")
 		})
 	})
 }

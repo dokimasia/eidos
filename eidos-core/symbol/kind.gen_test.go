@@ -5,7 +5,11 @@
 
 package symbol
 
-import "testing"
+import (
+	"testing"
+
+	"go.dokimi.dev/assert"
+)
 
 // kindNamings pairs every kind with the name it answers, which is
 // what String writes and ParseKind reads back.
@@ -48,31 +52,28 @@ func TestKind(t *testing.T) {
 		for _, tt := range kindNamings {
 			t.Run(tt.want, func(t *testing.T) {
 				t.Parallel()
-				if got := tt.kind.String(); got != tt.want {
-					t.Fatalf("String() = %q, want %q", got, tt.want)
-				}
+				assert.Equal(t, tt.kind.String(), tt.want,
+					"the kind spells its schema name")
 			})
 		}
 
 		t.Run("names are unique", func(t *testing.T) {
 			t.Parallel()
 
-			seen := make(map[string]Kind, len(kindNamings))
+			seen := make(map[string]struct{}, len(kindNamings))
 			for _, tt := range kindNamings {
-				if first, ok := seen[tt.want]; ok {
-					t.Fatalf("%v and %v both answer %q", first, tt.kind, tt.want)
-				}
-				seen[tt.want] = tt.kind
+				seen[tt.want] = struct{}{}
 			}
+			assert.Length(t, seen, len(kindNamings),
+				"every kind answers its own name")
 		})
 
 		t.Run("a value outside the set answers a placeholder", func(t *testing.T) {
 			t.Parallel()
 
 			outside := Kind(len(kindNamings) + 1)
-			if got := outside.String(); got == "" {
-				t.Fatal("String() = \"\", want a placeholder")
-			}
+			assert.NotEqual(t, outside.String(), "",
+				"a value outside the set answers a placeholder")
 		})
 	})
 
@@ -90,13 +91,8 @@ func TestKind(t *testing.T) {
 					t.Parallel()
 
 					got, known := ParseKind(tt.want)
-					if !known {
-						t.Fatalf("ParseKind(%q) is unknown, but %v names it",
-							tt.want, tt.kind)
-					}
-					if got != tt.kind {
-						t.Fatalf("ParseKind(%q) = %v, want %v", tt.want, got, tt.kind)
-					}
+					assert.True(t, known, "a name a kind carries parses")
+					assert.Equal(t, got, tt.kind, "to the kind that carries it")
 				})
 			}
 		})
@@ -111,10 +107,8 @@ func TestKind(t *testing.T) {
 					continue
 				}
 				got, known := ParseKind(tt.kind.String())
-				if !known || got != tt.kind {
-					t.Fatalf("ParseKind(%v.String()) = %v, %t; want %v, true",
-						tt.kind, got, known, tt.kind)
-				}
+				assert.True(t, known, "whatever String writes, ParseKind reads back")
+				assert.Equal(t, got, tt.kind, "to the same kind")
 			}
 		})
 
@@ -125,12 +119,9 @@ func TestKind(t *testing.T) {
 			// usable kind, so the refusal answers the zero value
 			// rather than whatever the lookup left behind.
 			got, known := ParseKind("Nonexistent")
-			if known {
-				t.Fatal("ParseKind refused nothing, want it to refuse")
-			}
-			if got != KindInvalid {
-				t.Fatalf("a refused name answered %v, want KindInvalid", got)
-			}
+			assert.False(t, known, "a name no kind carries is refused")
+			assert.Equal(t, got, KindInvalid,
+				"and a caller that drops the boolean holds no usable kind")
 		})
 
 		t.Run("refuses a name no kind answers", func(t *testing.T) {
@@ -156,10 +147,10 @@ func TestKind(t *testing.T) {
 				t.Run(tt.why, func(t *testing.T) {
 					t.Parallel()
 
-					if got, known := ParseKind(tt.name); known {
-						t.Fatalf("ParseKind(%q) = %v, want it refused: %s",
-							tt.name, got, tt.why)
-					}
+					_, known := ParseKind(tt.name)
+					assert.False(t, known,
+						"a name is matched exactly: nothing trims, folds case "+
+							"or accepts a near miss")
 				})
 			}
 		})

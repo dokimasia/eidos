@@ -2,9 +2,9 @@
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 	"testing"
 
+	"go.dokimi.dev/assert"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -18,12 +18,8 @@ func TestSymbols(t *testing.T) {
 			t.Parallel()
 
 			got, err := EncodeJSON(nil)
-			if err != nil {
-				t.Fatalf("EncodeJSON: unexpected error: %v", err)
-			}
-			if string(got) != "null" {
-				t.Fatalf("EncodeJSON(nil) = %s, want null", got)
-			}
+			assert.NoError(t, err, "a nil declaration encodes")
+			assert.Equal(t, string(got), "null", "as JSON null")
 		})
 
 		t.Run("carries the kind on every declaration", func(t *testing.T) {
@@ -32,12 +28,9 @@ func TestSymbols(t *testing.T) {
 
 			{
 				encoded, err := EncodeJSON(&{{.Name}}{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"{{.Name}}"`) {
-					t.Fatalf("{{.Name}} encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"{{.Name}}"`,
+					"carrying its kind so a decoder can place it")
 			}
 {{- end}}
 		})
@@ -48,12 +41,9 @@ func TestSymbols(t *testing.T) {
 			// Struct tags carry a concretely typed field on their own,
 			// which is why only Symbols reaches for a discriminator.
 			encoded, err := json.Marshal(&{{(index .Views 0).Name}}{})
-			if err != nil {
-				t.Fatalf("Marshal: unexpected error: %v", err)
-			}
-			if strings.Contains(string(encoded), `"kind"`) {
-				t.Fatalf("a plain marshal produced %s, want no discriminator", encoded)
-			}
+			assert.NoError(t, err, "a concrete field marshals through its tags")
+			assert.NotContains(t, string(encoded), `"kind"`,
+				"and needs no discriminator")
 		})
 	})
 
@@ -73,23 +63,15 @@ func TestSymbols(t *testing.T) {
 					t.Parallel()
 
 					encoded, err := EncodeJSON(subject)
-					if err != nil {
-						t.Fatalf("EncodeJSON: unexpected error: %v", err)
-					}
+					assert.NoError(t, err, "the kind encodes")
 					decoded, err := DecodeJSON(encoded)
-					if err != nil {
-						t.Fatalf("DecodeJSON: unexpected error: %v", err)
-					}
-					if decoded.Kind() != subject.Kind() {
-						t.Fatalf("decoded a %v, want a %v", decoded.Kind(), subject.Kind())
-					}
+					assert.NoError(t, err, "its encoding decodes")
+					assert.Equal(t, decoded.Kind(), subject.Kind(),
+						"to the kind that produced it")
 					again, err := EncodeJSON(decoded)
-					if err != nil {
-						t.Fatalf("EncodeJSON: unexpected error: %v", err)
-					}
-					if string(again) != string(encoded) {
-						t.Fatalf("re-encoded as %s, want %s", again, encoded)
-					}
+					assert.NoError(t, err, "and encodes again")
+					assert.Equal(t, string(again), string(encoded),
+						"to the same bytes: the round trip is a fixed point")
 				})
 			}
 		})
@@ -105,22 +87,17 @@ func TestSymbols(t *testing.T) {
 				{{.}}
 {{- end}}
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("{{.Name}}: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("{{.Name}}: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := {{.WalkVisits}}; walked != want {
-					t.Fatalf("the decoded {{.Name}} holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, {{.WalkVisits}},
+					"with every child the original held")
 			}
 {{- end}}
 {{- end}}
@@ -146,9 +123,8 @@ func TestSymbols(t *testing.T) {
 				t.Run(tt.name, func(t *testing.T) {
 					t.Parallel()
 
-					if _, err := DecodeJSON([]byte(tt.data)); err == nil {
-						t.Fatalf("DecodeJSON(%s): error = nil, want non-nil", tt.data)
-					}
+					_, err := DecodeJSON([]byte(tt.data))
+					assert.HasError(t, err, "an encoding it cannot place is refused")
 				})
 			}
 		})
@@ -166,22 +142,14 @@ func TestSymbols(t *testing.T) {
 {{- end}}
 			}
 			encoded, err := json.Marshal(subjects)
-			if err != nil {
-				t.Fatalf("Marshal: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the list marshals")
 
 			var decoded Symbols
-			if err := json.Unmarshal(encoded, &decoded); err != nil {
-				t.Fatalf("Unmarshal: unexpected error: %v", err)
-			}
-			if len(decoded) != len(subjects) {
-				t.Fatalf("decoded %d declarations, want %d", len(decoded), len(subjects))
-			}
+			assert.NoError(t, json.Unmarshal(encoded, &decoded), "and unmarshals")
+			assert.Length(t, decoded, len(subjects), "whole")
 			for i, want := range subjects {
-				if decoded[i].Kind() != want.Kind() {
-					t.Fatalf("element %d decoded as %v, want %v",
-						i, decoded[i].Kind(), want.Kind())
-				}
+				assert.Equal(t, decoded[i].Kind(), want.Kind(),
+					"each element through its own kind")
 			}
 		})
 
@@ -189,37 +157,30 @@ func TestSymbols(t *testing.T) {
 			t.Parallel()
 
 			encoded, err := json.Marshal(Symbols{&{{(index .Views 0).Name}}{}})
-			if err != nil {
-				t.Fatalf("Marshal: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the list marshals")
 			var plain []symbol.Symbol
-			if err := json.Unmarshal(encoded, &plain); err == nil {
-				t.Fatal("a plain []symbol.Symbol decoded: Symbols is no longer needed")
-			}
+			assert.HasError(t, json.Unmarshal(encoded, &plain),
+				"a plain interface slice cannot decode the same bytes, "+
+					"which is why Symbols exists")
 		})
 
 		t.Run("null decodes to nothing", func(t *testing.T) {
 			t.Parallel()
 
 			decoded := Symbols{&{{(index .Views 0).Name}}{}}
-			if err := json.Unmarshal([]byte("null"), &decoded); err != nil {
-				t.Fatalf("Unmarshal: unexpected error: %v", err)
-			}
-			if decoded != nil {
-				t.Fatalf("null decoded to %v, want nothing", decoded)
-			}
+			assert.NoError(t, json.Unmarshal([]byte("null"), &decoded),
+				"null unmarshals")
+			assert.Nil(t, decoded, "to nothing, so a value re-encodes as it arrived")
 		})
 
 		t.Run("refuses an element it cannot place", func(t *testing.T) {
 			t.Parallel()
 
 			var decoded Symbols
-			if err := json.Unmarshal([]byte(`[{"kind":"Nonexistent"}]`), &decoded); err == nil {
-				t.Fatal("Unmarshal: error = nil, want non-nil")
-			}
-			if err := json.Unmarshal([]byte(`{}`), &decoded); err == nil {
-				t.Fatal("Unmarshal of an object: error = nil, want non-nil")
-			}
+			assert.HasError(t, json.Unmarshal([]byte(`[{"kind":"Nonexistent"}]`), &decoded),
+				"an element it cannot place is refused")
+			assert.HasError(t, json.Unmarshal([]byte(`{}`), &decoded),
+				"and so is an encoding that is not a list")
 		})
 	})
 }

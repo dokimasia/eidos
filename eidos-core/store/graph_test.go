@@ -4,13 +4,15 @@
 package store_test
 
 import (
-	"errors"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -33,18 +35,16 @@ func TestGraph(t *testing.T) {
 			decl := coretest.Struct(coretest.StorePath, "Store")
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath, decl))
 
-			if _, held := g.Lookup(decl.ID); !held {
-				t.Fatalf("Lookup(%v) = false, want the added declaration", decl.ID)
-			}
+			_, held := g.Lookup(decl.ID)
+			assert.True(t, held, "the graph holds what AddPackage added")
 		})
 
 		t.Run("refuses a package the graph already holds", func(t *testing.T) {
 			t.Parallel()
 
 			g := store.New()
-			if err := g.AddPackage(coretest.Package(coretest.StorePath)); err != nil {
-				t.Fatalf("AddPackage: unexpected error: %v", err)
-			}
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath)),
+				"the first add is admitted")
 
 			err := g.AddPackage(coretest.Package(coretest.StorePath))
 			assertRefused(t, err, store.DuplicatePackage)
@@ -63,17 +63,15 @@ func TestGraph(t *testing.T) {
 			t.Parallel()
 
 			g := store.New()
-			if err := g.AddPackage(&node.Package{Name: "store"}); err == nil {
-				t.Fatal("AddPackage without an identity: error = nil, want non-nil")
-			}
+			assert.HasError(t, g.AddPackage(&node.Package{Name: "store"}),
+				"a package naming no identity cannot be indexed")
 		})
 
 		t.Run("refuses no package at all", func(t *testing.T) {
 			t.Parallel()
 
-			if err := store.New().AddPackage(nil); err == nil {
-				t.Fatal("AddPackage(nil): error = nil, want non-nil")
-			}
+			assert.HasError(t, store.New().AddPackage(nil),
+				"no package at all is a defect, not a load")
 		})
 
 		t.Run("is safe to call concurrently", func(t *testing.T) {
@@ -85,10 +83,8 @@ func TestGraph(t *testing.T) {
 			for frontend := range frontends {
 				wg.Go(func() {
 					shard := strings.Join([]string{coretest.StorePath, string(rune('a' + frontend))}, "/")
-					pkg := coretest.Package(shard)
-					if err := g.AddPackage(pkg); err != nil {
-						t.Errorf("AddPackage: unexpected error: %v", err)
-					}
+					expect.NoError(t, g.AddPackage(coretest.Package(shard)),
+						"every parallel add is admitted")
 				})
 			}
 			wg.Wait()
@@ -98,9 +94,7 @@ func TestGraph(t *testing.T) {
 			for range g.ByKind(symbol.KindFile) {
 				held++
 			}
-			if held != frontends {
-				t.Fatalf("the graph holds %d files, want %d: a write was lost", held, frontends)
-			}
+			assert.Equal(t, held, frontends, "no concurrent write is lost")
 		})
 	})
 
@@ -111,13 +105,9 @@ func TestGraph(t *testing.T) {
 			t.Parallel()
 
 			g := store.New()
-			if g.Frozen() {
-				t.Fatal("Frozen() = true before Freeze, want false")
-			}
+			assert.False(t, g.Frozen(), "a fresh graph is not sealed")
 			g.Freeze()
-			if !g.Frozen() {
-				t.Fatal("Frozen() = false after Freeze, want true")
-			}
+			assert.True(t, g.Frozen(), "Freeze seals it")
 		})
 
 		t.Run("is idempotent", func(t *testing.T) {
@@ -127,9 +117,8 @@ func TestGraph(t *testing.T) {
 			before := slices.Collect(g.ByKind(symbol.KindStruct))
 			g.Freeze()
 
-			if after := slices.Collect(g.ByKind(symbol.KindStruct)); len(after) != len(before) {
-				t.Fatalf("a second Freeze answered %d structs, want %d", len(after), len(before))
-			}
+			assert.Length(t, slices.Collect(g.ByKind(symbol.KindStruct)), len(before),
+				"a second Freeze changes nothing")
 		})
 
 		t.Run("skips a declaration the resolution step has not named", func(t *testing.T) {
@@ -139,13 +128,11 @@ func TestGraph(t *testing.T) {
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath,
 				coretest.Struct(coretest.StorePath, "Cache"), unresolved))
 
-			if _, held := g.Lookup(unresolved.ID); held {
-				t.Fatal("a declaration carrying the zero identity was indexed under it, " +
-					"which every other unnamed declaration would answer too")
-			}
-			if got := len(slices.Collect(g.ByKind(symbol.KindStruct))); got != 1 {
-				t.Fatalf("ByKind(Struct) answered %d declarations, want 1", got)
-			}
+			_, held := g.Lookup(unresolved.ID)
+			assert.False(t, held,
+				"a declaration the resolution step has not named is not indexed under the zero identity")
+			assert.Length(t, slices.Collect(g.ByKind(symbol.KindStruct)), 1,
+				"and does not enumerate")
 		})
 
 		t.Run("indexes every declaration a package holds", func(t *testing.T) {
@@ -157,9 +144,8 @@ func TestGraph(t *testing.T) {
 			for _, kind := range []symbol.Kind{
 				symbol.KindPackage, symbol.KindFile, symbol.KindStruct,
 			} {
-				if len(slices.Collect(g.ByKind(kind))) == 0 {
-					t.Fatalf("ByKind(%v) is empty: the walk did not reach that kind", kind)
-				}
+				assert.NotEmpty(t, slices.Collect(g.ByKind(kind)),
+					"the walk reaches every kind a package holds")
 			}
 		})
 	})
@@ -174,21 +160,16 @@ func TestGraph(t *testing.T) {
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath, want))
 
 			got, held := g.Lookup(want.ID)
-			if !held {
-				t.Fatalf("Lookup(%v) = false, want the declaration", want.ID)
-			}
-			if got != symbol.Symbol(want) {
-				t.Fatalf("Lookup(%v) = %v, want %v", want.ID, got, want)
-			}
+			assert.True(t, held, "Lookup answers a held identity")
+			assert.True(t, got == symbol.Symbol(want), "with the very declaration")
 		})
 
 		t.Run("answers false for an identity nothing holds", func(t *testing.T) {
 			t.Parallel()
 
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath))
-			if _, held := g.Lookup(coretest.Struct(coretest.CachePath, "Cache").ID); held {
-				t.Fatal("Lookup of an unheld identity = true, want false")
-			}
+			_, held := g.Lookup(coretest.Struct(coretest.CachePath, "Cache").ID)
+			assert.False(t, held, "an identity nothing holds answers nothing")
 		})
 
 		t.Run("answers false before Freeze", func(t *testing.T) {
@@ -196,13 +177,11 @@ func TestGraph(t *testing.T) {
 
 			want := coretest.Struct(coretest.StorePath, "Store")
 			g := store.New()
-			if err := g.AddPackage(coretest.Package(coretest.StorePath, want)); err != nil {
-				t.Fatalf("AddPackage: unexpected error: %v", err)
-			}
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, want)),
+				"the package is admitted")
 
-			if _, held := g.Lookup(want.ID); held {
-				t.Fatal("Lookup before Freeze = true, want false: the index is built at Freeze")
-			}
+			_, held := g.Lookup(want.ID)
+			assert.False(t, held, "the index is built at Freeze, not before")
 		})
 	})
 
@@ -216,10 +195,8 @@ func TestGraph(t *testing.T) {
 				coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store")),
 				coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")))
 
-			got := coretest.Names(t, slices.Collect(g.ByKind(symbol.KindStruct)))
-			if want := []string{"Cache", "Store"}; !slices.Equal(got, want) {
-				t.Fatalf("ByKind(Struct) = %v, want %v", got, want)
-			}
+			assert.Equal(t, coretest.Names(t, slices.Collect(g.ByKind(symbol.KindStruct))),
+				[]string{"Cache", "Store"}, "ByKind answers every declaration of the kind")
 		})
 
 		t.Run("answers one order however the packages arrived", func(t *testing.T) {
@@ -232,11 +209,10 @@ func TestGraph(t *testing.T) {
 				coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")),
 				coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store")))
 
-			one := coretest.Names(t, slices.Collect(first.ByKind(symbol.KindStruct)))
-			other := coretest.Names(t, slices.Collect(second.ByKind(symbol.KindStruct)))
-			if !slices.Equal(one, other) {
-				t.Fatalf("ByKind answered %v and %v: the order follows the load order", one, other)
-			}
+			assert.Equal(t,
+				coretest.Names(t, slices.Collect(first.ByKind(symbol.KindStruct))),
+				coretest.Names(t, slices.Collect(second.ByKind(symbol.KindStruct))),
+				"the order is the graph's own, not the load order")
 		})
 
 		t.Run("answers nothing before Freeze", func(t *testing.T) {
@@ -244,13 +220,10 @@ func TestGraph(t *testing.T) {
 
 			g := store.New()
 			loaded := coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store"))
-			if err := g.AddPackage(loaded); err != nil {
-				t.Fatalf("AddPackage: unexpected error: %v", err)
-			}
+			assert.NoError(t, g.AddPackage(loaded), "the package is admitted")
 
-			if got := slices.Collect(g.ByKind(symbol.KindStruct)); len(got) != 0 {
-				t.Fatalf("ByKind before Freeze answered %d declarations, want 0", len(got))
-			}
+			assert.Empty(t, slices.Collect(g.ByKind(symbol.KindStruct)),
+				"an untracked read before the seal answers nothing rather than a partial result")
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
@@ -264,9 +237,7 @@ func TestGraph(t *testing.T) {
 				seen++
 				break
 			}
-			if seen != 1 {
-				t.Fatalf("ByKind yielded %d declarations after a break, want 1", seen)
-			}
+			assert.Equal(t, seen, 1, "the enumeration stops when the range stops")
 		})
 	})
 
@@ -283,22 +254,17 @@ func TestGraph(t *testing.T) {
 		t.Run("is refused without a read set", func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := coretest.Frozen(t).Reader(nil, nil); err == nil {
-				t.Fatal("Reader(nil, nil): error = nil, want non-nil: " +
-					"a read with nowhere to record is an untracked read")
-			}
+			_, err := coretest.Frozen(t).Reader(nil, nil)
+			assert.HasError(t, err,
+				"a read with nowhere to record would be an untracked read")
 		})
 
 		t.Run("answers a reader once the graph is sealed", func(t *testing.T) {
 			t.Parallel()
 
 			r, err := coretest.Frozen(t).Reader(store.NewReadSet(), nil)
-			if err != nil {
-				t.Fatalf("Reader: unexpected error: %v", err)
-			}
-			if r == nil {
-				t.Fatal("Reader answered no reader and no error")
-			}
+			assert.NoError(t, err, "a sealed graph hands out readers")
+			assert.NotNil(t, r, "and answers one")
 		})
 	})
 }
@@ -307,16 +273,10 @@ func TestGraph(t *testing.T) {
 func assertRefused(t *testing.T, err error, want diag.Code) {
 	t.Helper()
 
-	if err == nil {
-		t.Fatalf("error = nil, want a refusal under %v", want)
-	}
-	var refused *store.RefusedError
-	if !errors.As(err, &refused) {
-		t.Fatalf("error = %v (%T), want a *store.RefusedError", err, err)
-	}
-	if refused.Code != want {
-		t.Fatalf("refused under %v, want %v", refused.Code, want)
-	}
+	refused := assert.ErrorAs[*store.RefusedError](t, err,
+		"the graph refuses with its typed error")
+	assert.Equal(t, refused.Code, want,
+		"under the code consumers script against")
 }
 
 // The graph is loaded once per run and read from for the rest of

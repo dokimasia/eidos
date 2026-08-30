@@ -10,6 +10,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
@@ -33,13 +35,9 @@ func TestVocabulary(t *testing.T) {
 		t.Parallel()
 
 		root, err := gosource.ModuleRoot(".")
-		if err != nil {
-			t.Fatalf("ModuleRoot: %v", err)
-		}
+		assert.NoError(t, err, "the module root resolves")
 		modPath, err := gosource.ModulePath(root)
-		if err != nil {
-			t.Fatalf("ModulePath: %v", err)
-		}
+		assert.NoError(t, err, "the module path reads")
 
 		for _, pkg := range generatorPackages {
 			t.Run(pkg, func(t *testing.T) {
@@ -48,15 +46,11 @@ func TestVocabulary(t *testing.T) {
 				files, err := gosource.ParseDir(
 					token.NewFileSet(), filepath.Join(root, pkg), gosource.HandWritten,
 				)
-				if err != nil {
-					t.Fatalf("ParseDir: %v", err)
-				}
+				assert.NoError(t, err, "the generator package parses")
 				for _, file := range files {
 					for _, imported := range file.Imports {
 						path, err := strconv.Unquote(imported.Path.Value)
-						if err != nil {
-							t.Fatalf("unquote %s: %v", imported.Path.Value, err)
-						}
+						assert.NoError(t, err, "the import path unquotes")
 						assertAllowed(t, modPath, path)
 					}
 				}
@@ -74,14 +68,12 @@ func assertAllowed(t *testing.T, modPath, path string) {
 	if !isLocal {
 		// A path whose first segment carries a dot names a module,
 		// so anything else is the standard library.
-		if first, _, _ := strings.Cut(path, "/"); strings.Contains(first, ".") {
-			t.Fatalf("imports %s: the generator takes no third-party dependency", path)
-		}
+		first, _, _ := strings.Cut(path, "/")
+		assert.False(t, strings.Contains(first, "."),
+			"the generator takes no third-party dependency")
 		return
 	}
-	if !strings.HasPrefix(local, "internal/") {
-		t.Fatalf("imports %s: the generator imports no kernel package outside internal/, "+
-			"because a generator that imported the model it generates could never bootstrap",
-			path)
-	}
+	assert.HasPrefix(t, local, "internal/",
+		"the generator imports no kernel package outside internal/, because a "+
+			"generator that imported the model it generates could never bootstrap")
 }

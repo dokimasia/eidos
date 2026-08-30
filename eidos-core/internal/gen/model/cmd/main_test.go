@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"testing"
 	"time"
+
+	"go.dokimi.dev/assert"
 )
 
 // generateTimeout bounds a wrapper run, so a hung generator fails
@@ -29,9 +31,8 @@ func TestMain(t *testing.T) {
 
 		run := exec.CommandContext(ctx, "go", "run", ".")
 		run.Dir = "."
-		if out, err := run.CombinedOutput(); err != nil {
-			t.Fatalf("go run .: %v\n%s", err, out)
-		}
+		out, err := run.CombinedOutput()
+		assert.NoError(t, err, "the wrapper regenerates from inside the module: "+string(out))
 	})
 
 	t.Run("reports a directory outside any module", func(t *testing.T) {
@@ -42,8 +43,7 @@ func TestMain(t *testing.T) {
 
 		run := exec.CommandContext(ctx, "go", "run", ".")
 		run.Dir = t.TempDir()
-		if err := run.Run(); err == nil {
-			t.Fatal("go run . outside a module: error = nil, want non-nil")
-		}
+		assert.HasError(t, run.Run(),
+			"a directory outside any module is reported, not generated into")
 	})
 }

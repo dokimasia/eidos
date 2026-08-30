@@ -6,6 +6,8 @@ package symbol_test
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -21,13 +23,10 @@ func TestModifier(t *testing.T) {
 			t.Parallel()
 
 			var got symbol.Visibility
-			if got != symbol.VisibilityUnknown {
-				t.Fatalf("zero Visibility = %d, want VisibilityUnknown", got)
-			}
-			if symbol.VisibilityUnknown == symbol.VisibilityPublic {
-				t.Fatal("VisibilityUnknown equals VisibilityPublic: " +
-					"an unanswered visibility would read as public")
-			}
+			assert.Equal(t, got, symbol.VisibilityUnknown,
+				"an unanswered visibility claims nothing")
+			assert.NotEqual(t, symbol.VisibilityUnknown, symbol.VisibilityPublic,
+				"so it cannot read as public")
 		})
 	})
 
@@ -38,9 +37,8 @@ func TestModifier(t *testing.T) {
 			t.Parallel()
 
 			var got symbol.Level
-			if got != symbol.LevelInstance {
-				t.Fatalf("zero Level = %d, want LevelInstance", got)
-			}
+			assert.Equal(t, got, symbol.LevelInstance,
+				"the zero Level is the common case everywhere")
 		})
 	})
 
@@ -51,9 +49,8 @@ func TestModifier(t *testing.T) {
 			t.Parallel()
 
 			var got symbol.Variance
-			if got != symbol.VarianceInvariant {
-				t.Fatalf("zero Variance = %d, want VarianceInvariant", got)
-			}
+			assert.Equal(t, got, symbol.VarianceInvariant,
+				"the zero Variance is what Go and Rust always answer")
 		})
 	})
 
@@ -64,13 +61,10 @@ func TestModifier(t *testing.T) {
 			t.Parallel()
 
 			var got symbol.Mutability
-			if got != symbol.MutabilityUnknown {
-				t.Fatalf("zero Mutability = %d, want MutabilityUnknown", got)
-			}
-			if symbol.MutabilityUnknown == symbol.MutabilityImmutable {
-				t.Fatal("MutabilityUnknown equals MutabilityImmutable: " +
-					"a language without the distinction would read as immutable")
-			}
+			assert.Equal(t, got, symbol.MutabilityUnknown,
+				"an unanswered mutability claims nothing")
+			assert.NotEqual(t, symbol.MutabilityUnknown, symbol.MutabilityImmutable,
+				"so a language without the distinction cannot read as immutable")
 		})
 	})
 
@@ -81,18 +75,15 @@ func TestModifier(t *testing.T) {
 			t.Parallel()
 
 			var got symbol.Variadic
-			if got != symbol.VariadicNone {
-				t.Fatalf("zero Variadic = %d, want VariadicNone", got)
-			}
+			assert.Equal(t, got, symbol.VariadicNone,
+				"the zero Variadic takes exactly one argument")
 		})
 
 		t.Run("positional and keyword stay distinct", func(t *testing.T) {
 			t.Parallel()
 
-			if symbol.VariadicPositional == symbol.VariadicKeyword {
-				t.Fatal("the two variadic forms collapsed: Python *args and " +
-					"**kwargs would spell the same")
-			}
+			assert.NotEqual(t, symbol.VariadicPositional, symbol.VariadicKeyword,
+				"Python *args and **kwargs spell differently")
 		})
 	})
 }

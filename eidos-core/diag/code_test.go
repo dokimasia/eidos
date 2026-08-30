@@ -4,9 +4,10 @@
 package diag_test
 
 import (
-	"strings"
 	"sync/atomic"
 	"testing"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
 )
@@ -52,9 +53,8 @@ func TestCode(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				if got := tt.code.String(); got != tt.want {
-					t.Fatalf("String() = %q, want %q", got, tt.want)
-				}
+				assert.Equal(t, tt.code.String(), tt.want,
+					"the code spells its prefix and padded number")
 			})
 		}
 	})
@@ -62,12 +62,10 @@ func TestCode(t *testing.T) {
 	t.Run("IsZero", func(t *testing.T) {
 		t.Parallel()
 
-		if !(diag.Code{}).IsZero() {
-			t.Fatal("the zero Code: IsZero() = false, want true")
-		}
-		if (diag.Code{Prefix: diag.KernelPrefix, Number: 1}).IsZero() {
-			t.Fatal("a registered Code: IsZero() = true, want false")
-		}
+		assert.True(t, (diag.Code{}).IsZero(),
+			"the zero Code names nothing")
+		assert.False(t, (diag.Code{Prefix: diag.KernelPrefix, Number: 1}).IsZero(),
+			"a registered Code names a finding")
 	})
 
 	t.Run("Register", func(t *testing.T) {
@@ -80,16 +78,12 @@ func TestCode(t *testing.T) {
 			got, err := r.Register(diag.KernelPrefix, diag.CodeSpec{
 				Number: 1, Meaning: "a declaration was added after Freeze",
 			})
-			if err != nil {
-				t.Fatalf("Register: unexpected error: %v", err)
-			}
-			want := diag.Code{Prefix: diag.KernelPrefix, Number: 1}
-			if got != want {
-				t.Fatalf("Register = %v, want %v", got, want)
-			}
-			if meaning, known := r.Meaning(got); !known || meaning == "" {
-				t.Fatalf("Meaning(%v) = %q, %t; want the recorded meaning", got, meaning, known)
-			}
+			assert.NoError(t, err, "a fresh number registers")
+			assert.Equal(t, got, diag.Code{Prefix: diag.KernelPrefix, Number: 1},
+				"Register answers the code it recorded")
+			meaning, known := r.Meaning(got)
+			assert.True(t, known, "the registry then knows the code")
+			assert.NotEqual(t, meaning, "", "and holds its meaning")
 		})
 
 		t.Run("refuses a number claimed twice in one prefix", func(t *testing.T) {
@@ -98,22 +92,17 @@ func TestCode(t *testing.T) {
 			r := diag.NewRegistry()
 			first := diag.CodeSpec{Number: 1, Meaning: "the first claim"}
 			second := diag.CodeSpec{Number: 1, Meaning: "the second claim"}
-			if _, err := r.Register(diag.KernelPrefix, first); err != nil {
-				t.Fatalf("Register: unexpected error: %v", err)
-			}
+			_, err := r.Register(diag.KernelPrefix, first)
+			assert.NoError(t, err, "the first claim registers")
 
-			_, err := r.Register(diag.KernelPrefix, second)
-			if err == nil {
-				t.Fatal("Register: error = nil, want the duplicate refused")
-			}
-			for _, want := range []string{first.Meaning, second.Meaning} {
-				if !strings.Contains(err.Error(), want) {
-					t.Fatalf("error = %q, want it to name %q", err, want)
-				}
-			}
-			if !strings.HasPrefix(err.Error(), "diag: ") {
-				t.Fatalf("error = %q, want the package prefix", err)
-			}
+			_, err = r.Register(diag.KernelPrefix, second)
+			assert.HasError(t, err, "a number claimed twice is refused")
+			assert.Contains(t, err.Error(), first.Meaning,
+				"the refusal names the meaning already held")
+			assert.Contains(t, err.Error(), second.Meaning,
+				"and the meaning that tried to claim it")
+			assert.HasPrefix(t, err.Error(), "diag: ",
+				"the error carries the package prefix")
 		})
 
 		t.Run("admits one number under two prefixes", func(t *testing.T) {
@@ -121,21 +110,18 @@ func TestCode(t *testing.T) {
 
 			r := diag.NewRegistry()
 			spec := diag.CodeSpec{Number: 1, Meaning: "the same number, another owner"}
-			if _, err := r.Register(diag.KernelPrefix, spec); err != nil {
-				t.Fatalf("Register: unexpected error: %v", err)
-			}
-			if _, err := r.Register("EIDGO", spec); err != nil {
-				t.Fatalf("Register under a second prefix: unexpected error: %v", err)
-			}
+			_, err := r.Register(diag.KernelPrefix, spec)
+			assert.NoError(t, err, "the number registers under the first prefix")
+			_, err = r.Register("EIDGO", spec)
+			assert.NoError(t, err, "and again under a second: prefixes own their ranges")
 		})
 
 		t.Run("refuses a spec that names no meaning", func(t *testing.T) {
 			t.Parallel()
 
 			r := diag.NewRegistry()
-			if _, err := r.Register(diag.KernelPrefix, diag.CodeSpec{Number: 1}); err == nil {
-				t.Fatal("Register without a meaning: error = nil, want non-nil")
-			}
+			_, err := r.Register(diag.KernelPrefix, diag.CodeSpec{Number: 1})
+			assert.HasError(t, err, "a spec without a meaning is refused: the index anchors to it")
 		})
 
 		t.Run("refuses a prefix that owns nothing", func(t *testing.T) {
@@ -143,9 +129,7 @@ func TestCode(t *testing.T) {
 
 			r := diag.NewRegistry()
 			_, err := r.Register("", diag.CodeSpec{Number: 1, Meaning: "unowned"})
-			if err == nil {
-				t.Fatal("Register under the empty prefix: error = nil, want non-nil")
-			}
+			assert.HasError(t, err, "a code belongs to whoever owns its prefix")
 		})
 	})
 
@@ -162,36 +146,27 @@ func TestCode(t *testing.T) {
 			}
 			got := diag.MustRegister(testPrefix, spec)
 
-			if want := (diag.Code{Prefix: testPrefix, Number: spec.Number}); got != want {
-				t.Fatalf("MustRegister = %v, want %v", got, want)
-			}
+			assert.Equal(t, got, diag.Code{Prefix: testPrefix, Number: spec.Number},
+				"MustRegister answers the code it recorded")
 			meaning, known := diag.Kernel().Meaning(got)
-			if !known || meaning != spec.Meaning {
-				t.Fatalf("Kernel().Meaning(%v) = %q, %t; want %q, true",
-					got, meaning, known, spec.Meaning)
-			}
+			assert.True(t, known, "the kernel registry holds it")
+			assert.Equal(t, meaning, spec.Meaning, "under the declared meaning")
 		})
 
 		t.Run("panics on a number claimed twice", func(t *testing.T) {
-			defer func() {
-				if recovered := recover(); recovered == nil {
-					t.Fatal("MustRegister: recover() = nil, want the duplicate panic")
-				}
-			}()
-
 			spec := diag.CodeSpec{Number: nextTestNumber(), Meaning: "the first claim"}
 			diag.MustRegister(testPrefix, spec)
 			spec.Meaning = "the second claim"
-			diag.MustRegister(testPrefix, spec)
+
+			assert.Panics(t, func() { diag.MustRegister(testPrefix, spec) },
+				"a duplicate at package initialization is a defect, not a condition")
 		})
 	})
 
 	t.Run("Kernel", func(t *testing.T) {
 		first, second := diag.Kernel(), diag.Kernel()
-		if first != second {
-			t.Fatal("Kernel() answered two registries: a code registered " +
-				"into one would be missing from the other")
-		}
+		assert.True(t, first == second,
+			"Kernel answers one registry, or a code registered into one would be missing from the other")
 	})
 
 	t.Run("Codes", func(t *testing.T) {
@@ -207,21 +182,18 @@ func TestCode(t *testing.T) {
 				{Prefix: "EIDGO", Number: 1},
 				{Prefix: diag.KernelPrefix, Number: 3},
 			} {
-				if _, err := r.Register(in.Prefix, diag.CodeSpec{
+				_, err := r.Register(in.Prefix, diag.CodeSpec{
 					Number: in.Number, Meaning: "registered",
-				}); err != nil {
-					t.Fatalf("Register: unexpected error: %v", err)
-				}
+				})
+				assert.NoError(t, err, "every fixture code registers")
 			}
 
 			var got []string
 			for _, c := range r.Codes() {
 				got = append(got, c.String())
 			}
-			want := "EID-0003,EID-0009,EIDGO-0001,EIDGO-0002"
-			if strings.Join(got, ",") != want {
-				t.Fatalf("Codes() = %v, want %s", got, want)
-			}
+			assert.Equal(t, got, []string{"EID-0003", "EID-0009", "EIDGO-0001", "EIDGO-0002"},
+				"Codes answers prefix then number order")
 		})
 	})
 }

@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -99,9 +101,8 @@ func TestIdentity(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				if got := tt.id.String(); got != tt.want {
-					t.Fatalf("String() = %q, want %q", got, tt.want)
-				}
+				assert.Equal(t, tt.id.String(), tt.want,
+					"the identity spells the canonical grammar")
 			})
 		}
 	})
@@ -189,17 +190,11 @@ func TestIdentity(t *testing.T) {
 				t.Parallel()
 				got, err := symbol.Parse(tt.in)
 				if tt.wantErr {
-					if err == nil {
-						t.Fatalf("Parse(%q): error = nil, want non-nil", tt.in)
-					}
+					assert.HasError(t, err, "a spelling outside the grammar is refused")
 					return
 				}
-				if err != nil {
-					t.Fatalf("Parse(%q): unexpected error: %v", tt.in, err)
-				}
-				if got != tt.want {
-					t.Fatalf("Parse(%q) = %+v, want %+v", tt.in, got, tt.want)
-				}
+				assert.NoError(t, err, "a spelling inside the grammar parses")
+				assert.Equal(t, got, tt.want, "and reads back the parts it wrote")
 			})
 		}
 	})
@@ -225,12 +220,10 @@ func TestIdentity(t *testing.T) {
 			byIndex := base
 			byIndex.Disc = "int"
 
-			if byKey == byIndex {
-				t.Fatal("two overloads share one identity: the discriminator does not separate them")
-			}
-			if byKey.String() == byIndex.String() {
-				t.Fatalf("two overloads spell alike: %q", byKey.String())
-			}
+			assert.NotEqual(t, byKey, byIndex,
+				"the discriminator separates two overloads")
+			assert.NotEqual(t, byKey.String(), byIndex.String(),
+				"and their spellings differ with them")
 		})
 
 		t.Run("a language without overloads answers one identity", func(t *testing.T) {
@@ -241,9 +234,8 @@ func TestIdentity(t *testing.T) {
 				Name: "Get", Kind: symbol.KindMethod,
 			}
 			second := first
-			if first != second {
-				t.Fatal("one declaration answered two identities")
-			}
+			assert.Equal(t, first, second,
+				"a language without overloads answers one identity")
 		})
 
 		t.Run("the parts that make an identity all count", func(t *testing.T) {
@@ -278,9 +270,8 @@ func TestIdentity(t *testing.T) {
 			for part, other := range tests {
 				t.Run(part, func(t *testing.T) {
 					t.Parallel()
-					if base == other {
-						t.Fatalf("identities matching except for the %s compared equal", part)
-					}
+					assert.NotEqual(t, base, other,
+						"every part that makes an identity counts")
 				})
 			}
 		})
@@ -289,12 +280,10 @@ func TestIdentity(t *testing.T) {
 	t.Run("IsZero", func(t *testing.T) {
 		t.Parallel()
 
-		if !(symbol.Identity{}).IsZero() {
-			t.Fatal("zero Identity: IsZero() = false, want true")
-		}
-		if (symbol.Identity{Lang: "golang"}).IsZero() {
-			t.Fatal("populated Identity: IsZero() = true, want false")
-		}
+		assert.True(t, (symbol.Identity{}).IsZero(),
+			"the zero Identity names nothing")
+		assert.False(t, (symbol.Identity{Lang: "golang"}).IsZero(),
+			"a populated Identity names something")
 	})
 
 	t.Run("Compare", func(t *testing.T) {
@@ -309,9 +298,8 @@ func TestIdentity(t *testing.T) {
 			t.Parallel()
 
 			same := base
-			if got := base.Compare(same); got != 0 {
-				t.Fatalf("Compare against a copy = %d, want 0", got)
-			}
+			assert.Equal(t, base.Compare(same), 0,
+				"an identity sorts with its copy")
 		})
 
 		t.Run("orders on every part that makes an identity", func(t *testing.T) {
@@ -336,12 +324,10 @@ func TestIdentity(t *testing.T) {
 				t.Run(part, func(t *testing.T) {
 					t.Parallel()
 
-					if got := base.Compare(other); got >= 0 {
-						t.Fatalf("Compare on a greater %s = %d, want a negative number", part, got)
-					}
-					if got := other.Compare(base); got <= 0 {
-						t.Fatalf("the reverse comparison = %d, want a positive number", got)
-					}
+					assert.True(t, base.Compare(other) < 0,
+						"a lesser identity sorts before a greater one")
+					assert.True(t, other.Compare(base) > 0,
+						"and the comparison reverses with its arguments")
 				})
 			}
 		})
@@ -351,10 +337,8 @@ func TestIdentity(t *testing.T) {
 
 			field := base
 			field.Kind = symbol.KindField
-			if got := field.Compare(base); got == 0 {
-				t.Fatal("two identities differing in kind compared equal, " +
-					"so a sorted output would drop one")
-			}
+			assert.NotEqual(t, field.Compare(base), 0,
+				"two identities differing only in kind sort apart")
 		})
 
 		t.Run("sorts a slice into one order", func(t *testing.T) {
@@ -368,9 +352,8 @@ func TestIdentity(t *testing.T) {
 			shuffled := []symbol.Identity{ordered[2], ordered[0], ordered[1]}
 			slices.SortFunc(shuffled, symbol.Identity.Compare)
 
-			if !slices.Equal(shuffled, ordered) {
-				t.Fatalf("sorted to %v, want %v", shuffled, ordered)
-			}
+			assert.Equal(t, shuffled, ordered,
+				"Compare sorts a slice into the one canonical order")
 		})
 	})
 }

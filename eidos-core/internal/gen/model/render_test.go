@@ -7,6 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/internal/gen/model"
 )
 
@@ -23,13 +25,9 @@ func TestRender(t *testing.T) {
 		t.Helper()
 
 		set, err := model.Generate(moduleRoot(t))
-		if err != nil {
-			t.Fatalf("Generate: unexpected error: %v", err)
-		}
+		assert.NoError(t, err, "the schema generates")
 		body, ok := set[path]
-		if !ok {
-			t.Fatalf("%s was not generated", path)
-		}
+		assert.True(t, ok, "the case reads a file the generator owns")
 		return strings.Join(strings.Fields(string(body)), " ")
 	}
 
@@ -40,22 +38,17 @@ func TestRender(t *testing.T) {
 			t.Parallel()
 
 			kinds := generated(t, "node/kinds.gen.go")
-			if !strings.Contains(kinds, `json:"id,omitzero"`) {
-				t.Fatal(`ID is not tagged json:"id": an acronym lost its first letter`)
-			}
-			if strings.Contains(kinds, `json:"iD`) {
-				t.Fatal(`a field is tagged json:"iD": only the first letter was lowered`)
-			}
+			assert.Contains(t, kinds, `json:"id,omitzero"`,
+				"an acronym lowers as one word")
+			assert.NotContains(t, kinds, `json:"iD`,
+				"never by its first letter alone")
 		})
 
 		t.Run("keep an ordinary name camel-cased", func(t *testing.T) {
 			t.Parallel()
 
-			if kinds := generated(t, "node/kinds.gen.go"); !strings.Contains(
-				kinds, `json:"typeParams,omitzero"`,
-			) {
-				t.Fatal(`TypeParams is not tagged json:"typeParams"`)
-			}
+			assert.Contains(t, generated(t, "node/kinds.gen.go"), `json:"typeParams,omitzero"`,
+				"an ordinary name camel-cases")
 		})
 	})
 
@@ -66,63 +59,47 @@ func TestRender(t *testing.T) {
 			t.Parallel()
 
 			kinds := generated(t, "node/kinds.gen.go")
-			if !strings.Contains(kinds, "Pos position.Pos") {
-				t.Fatal("the node model carries no position")
-			}
-			if strings.Contains(kinds, "Origin symbol.Identity") {
-				t.Fatal("the node model carries an origin, which belongs to emit")
-			}
+			assert.Contains(t, kinds, "Pos position.Pos",
+				"the node model carries a position")
+			assert.NotContains(t, kinds, "Origin symbol.Identity",
+				"and no origin, which belongs to emit")
 		})
 
 		t.Run("the emit model carries an origin and no position", func(t *testing.T) {
 			t.Parallel()
 
 			kinds := generated(t, "emit/kinds.gen.go")
-			if !strings.Contains(kinds, "Origin") {
-				t.Fatal("the emit model carries no origin")
-			}
-			if strings.Contains(kinds, "position.Pos{}") == false {
-				t.Fatal("emit declarations do not answer the zero position")
-			}
+			assert.Contains(t, kinds, "Origin",
+				"the emit model carries an origin")
+			assert.Contains(t, kinds, "position.Pos{}",
+				"and answers the zero position")
 		})
 
 		t.Run("a slot exists on the emit side alone", func(t *testing.T) {
 			t.Parallel()
 
-			if emit := generated(t, "emit/kinds.gen.go"); !strings.Contains(
-				emit, "Fields Slot[*Field]",
-			) {
-				t.Fatal("the emit model holds no slot storage")
-			}
-			if node := generated(t, "node/kinds.gen.go"); strings.Contains(node, "Slot[") {
-				t.Fatal("the node model holds slot storage, which belongs to emit")
-			}
+			assert.Contains(t, generated(t, "emit/kinds.gen.go"), "Fields Slot[*Field]",
+				"the emit model holds slot storage")
+			assert.NotContains(t, generated(t, "node/kinds.gen.go"), "Slot[",
+				"and the node model holds none")
 		})
 
 		t.Run("a marker field carries the dispatching slice", func(t *testing.T) {
 			t.Parallel()
 
-			if node := generated(t, "node/kinds.gen.go"); !strings.Contains(
-				node, "Decls Symbols",
-			) {
-				t.Fatal("a marker-typed field is not typed Symbols, so it cannot decode")
-			}
+			assert.Contains(t, generated(t, "node/kinds.gen.go"), "Decls Symbols",
+				"a marker-typed field is typed Symbols, so it can decode")
 		})
 
 		t.Run("the node model names itself and the emit model does not", func(t *testing.T) {
 			t.Parallel()
 
-			kinds := generated(t, "node/kinds.gen.go")
-			if !strings.Contains(kinds, "func (x *Struct) Identity() symbol.Identity") {
-				t.Fatal("a node declaration cannot answer its identity, " +
-					"so nothing can index a traversal by one")
-			}
-			if emit := generated(t, "emit/kinds.gen.go"); strings.Contains(
-				emit, "Identity() symbol.Identity",
-			) {
-				t.Fatal("the emit model answers an identity, which it does not carry: " +
-					"an emit declaration has an origin instead")
-			}
+			assert.Contains(t, generated(t, "node/kinds.gen.go"),
+				"func (x *Struct) Identity() symbol.Identity",
+				"a node declaration answers its identity, so a traversal can index by one")
+			assert.NotContains(t, generated(t, "emit/kinds.gen.go"),
+				"Identity() symbol.Identity",
+				"the emit model answers none: an emit declaration has an origin instead")
 		})
 
 		t.Run("the node walk answers the declarations it yields", func(t *testing.T) {
@@ -133,16 +110,11 @@ func TestRender(t *testing.T) {
 				"type Declaration interface",
 				"func Declarations(s symbol.Symbol) iter.Seq[Declaration]",
 			} {
-				if !strings.Contains(walk, want) {
-					t.Fatalf("the node walk is missing %q", want)
-				}
+				assert.Contains(t, walk, want,
+					"the node walk answers the declarations it yields")
 			}
-			if emit := generated(t, "emit/walk.gen.go"); strings.Contains(
-				emit, "Declaration",
-			) {
-				t.Fatal("the emit walk answers declarations, " +
-					"which only the identity-bearing side can")
-			}
+			assert.NotContains(t, generated(t, "emit/walk.gen.go"), "Declaration",
+				"which only the identity-bearing side can")
 		})
 	})
 
@@ -158,10 +130,8 @@ func TestRender(t *testing.T) {
 				"// This is the node spelling of the kind.",
 				"// no value of it can be made directly",
 			} {
-				want = strings.Join(strings.Fields(want), " ")
-				if !strings.Contains(kinds, want) {
-					t.Fatalf("the generated model is missing %q", want)
-				}
+				assert.Contains(t, kinds, strings.Join(strings.Fields(want), " "),
+					"the models carry the schema's own words")
 			}
 		})
 	})

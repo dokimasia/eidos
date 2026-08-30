@@ -6,6 +6,8 @@ package symbol_test
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -19,20 +21,17 @@ func TestKindType(t *testing.T) {
 		t.Parallel()
 
 		var got symbol.Kind
-		if got != symbol.KindInvalid {
-			t.Fatalf("zero Kind = %d, want KindInvalid", got)
-		}
-		if got.String() != "Invalid" {
-			t.Fatalf("zero Kind names %q, want Invalid", got.String())
-		}
+		assert.Equal(t, got, symbol.KindInvalid,
+			"the zero Kind is the kind no declaration answers")
+		assert.Equal(t, got.String(), "Invalid",
+			"and it spells itself as such")
 	})
 
 	t.Run("no declaration answers Invalid", func(t *testing.T) {
 		t.Parallel()
 
-		if symbol.KindInvalid == symbol.KindPackage {
-			t.Fatal("KindInvalid collides with a real kind")
-		}
+		assert.NotEqual(t, symbol.KindInvalid, symbol.KindPackage,
+			"KindInvalid stays distinct from every real kind")
 	})
 
 	t.Run("the set fits the type", func(t *testing.T) {
@@ -40,9 +39,7 @@ func TestKindType(t *testing.T) {
 
 		// Kind is a uint8, so the schema may hold 255 kinds before
 		// the constants wrap and two of them collide.
-		if symbol.KindEmbed > symbol.Kind(200) {
-			t.Fatalf("the kind set reaches %d, close to what a uint8 holds",
-				symbol.KindEmbed)
-		}
+		assert.True(t, symbol.KindEmbed <= symbol.Kind(200),
+			"the kind set stays clear of what a uint8 holds")
 	})
 }

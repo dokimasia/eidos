@@ -17,7 +17,7 @@
 // # Dependency position
 //
 // core/internal/coretest imports core/store, core/node,
-// core/symbol, core/internal/gosource and the Go stdlib. It is
-// imported by test packages alone, so nothing it depends on can
-// cycle back through it.
+// core/symbol, core/internal/gosource, the assert module and the
+// Go stdlib. It is imported by test packages alone, so nothing it
+// depends on can cycle back through it.
 package coretest

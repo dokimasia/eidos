@@ -10,6 +10,8 @@ import (
 	"sync"
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/position"
 )
@@ -47,15 +49,8 @@ func TestSink(t *testing.T) {
 			s := diag.NewSink()
 			s.Report(want)
 
-			got := collect(t, s)
-			if len(got) != 1 {
-				t.Fatalf("All() answered %d findings, want 1", len(got))
-			}
-			if got[0].Code != want.Code || got[0].Severity != want.Severity ||
-				got[0].Pos != want.Pos || got[0].Msg != want.Msg ||
-				got[0].Origin != want.Origin {
-				t.Fatalf("All() = %+v, want %+v", got[0], want)
-			}
+			assert.Equal(t, collect(t, s), []diag.Diag{want},
+				"Report attaches the finding it was given, whole")
 		})
 
 		t.Run("is safe to call concurrently", func(t *testing.T) {
@@ -77,13 +72,10 @@ func TestSink(t *testing.T) {
 			}
 			wg.Wait()
 
-			if got := len(collect(t, s)); got != reporters*each {
-				t.Fatalf("All() answered %d findings, want %d: a report was lost",
-					got, reporters*each)
-			}
-			if !s.Failed() {
-				t.Fatal("Failed() = false after concurrent errors, want true")
-			}
+			assert.Length(t, collect(t, s), reporters*each,
+				"no report is lost under concurrent reporters")
+			assert.True(t, s.Failed(),
+				"and the errors they reported failed the run")
 		})
 
 		t.Run("is safe to call while a caller reads", func(t *testing.T) {
@@ -118,25 +110,13 @@ func TestSink(t *testing.T) {
 			code := diag.Code{Prefix: diag.KernelPrefix, Number: 1}
 			s.Errorf(code, somewhere, diag.PhaseFreeze, "%s is added after Freeze", "Store")
 
-			got := collect(t, s)
-			if len(got) != 1 {
-				t.Fatalf("All() answered %d findings, want 1", len(got))
-			}
-			if got[0].Severity != diag.SeverityError {
-				t.Fatalf("Severity = %v, want %v", got[0].Severity, diag.SeverityError)
-			}
-			if got[0].Code != code {
-				t.Fatalf("Code = %v, want %v", got[0].Code, code)
-			}
-			if got[0].Origin != diag.PhaseFreeze {
-				t.Fatalf("Origin = %q, want %q", got[0].Origin, diag.PhaseFreeze)
-			}
-			if got[0].Pos != somewhere {
-				t.Fatalf("Pos = %v, want %v", got[0].Pos, somewhere)
-			}
-			if want := "Store is added after Freeze"; got[0].Msg != want {
-				t.Fatalf("Msg = %q, want %q", got[0].Msg, want)
-			}
+			assert.Equal(t, collect(t, s), []diag.Diag{{
+				Code:     code,
+				Severity: diag.SeverityError,
+				Pos:      somewhere,
+				Msg:      "Store is added after Freeze",
+				Origin:   diag.PhaseFreeze,
+			}}, "Errorf reports at Error with the message formatted")
 		})
 	})
 
@@ -151,12 +131,9 @@ func TestSink(t *testing.T) {
 				somewhere, diag.PhaseAnnotate, "the %s directive is deprecated", "shape")
 
 			got := collect(t, s)
-			if len(got) != 1 || got[0].Severity != diag.SeverityWarning {
-				t.Fatalf("All() = %+v, want one Warning", got)
-			}
-			if s.Failed() {
-				t.Fatal("Failed() = true after a Warning, want false")
-			}
+			assert.Length(t, got, 1, "Warnf reports one finding")
+			assert.Equal(t, got[0].Severity, diag.SeverityWarning, "at Warning")
+			assert.False(t, s.Failed(), "which never fails a run")
 		})
 	})
 
@@ -171,15 +148,10 @@ func TestSink(t *testing.T) {
 				somewhere, diag.PhaseLoad, "loaded %d units", 4)
 
 			got := collect(t, s)
-			if len(got) != 1 || got[0].Severity != diag.SeverityInfo {
-				t.Fatalf("All() = %+v, want one Info", got)
-			}
-			if want := "loaded 4 units"; got[0].Msg != want {
-				t.Fatalf("Msg = %q, want %q", got[0].Msg, want)
-			}
-			if s.Failed() {
-				t.Fatal("Failed() = true after an Info, want false")
-			}
+			assert.Length(t, got, 1, "Infof reports one finding")
+			assert.Equal(t, got[0].Severity, diag.SeverityInfo, "at Info")
+			assert.Equal(t, got[0].Msg, "loaded 4 units", "with the message formatted")
+			assert.False(t, s.Failed(), "and it never fails a run")
 		})
 	})
 
@@ -189,9 +161,8 @@ func TestSink(t *testing.T) {
 		t.Run("answers false for a sink holding nothing", func(t *testing.T) {
 			t.Parallel()
 
-			if diag.NewSink().Failed() {
-				t.Fatal("Failed() = true for an empty sink, want false")
-			}
+			assert.False(t, diag.NewSink().Failed(),
+				"a sink holding nothing has failed nothing")
 		})
 
 		t.Run("answers false for warnings and infos alone", func(t *testing.T) {
@@ -200,10 +171,7 @@ func TestSink(t *testing.T) {
 			s := diag.NewSink()
 			s.Report(diag.Diag{Severity: diag.SeverityWarning, Pos: somewhere})
 			s.Report(diag.Diag{Severity: diag.SeverityInfo, Pos: somewhere})
-			if s.Failed() {
-				t.Fatal("Failed() = true without an Error, want false: " +
-					"a warning never fails a run")
-			}
+			assert.False(t, s.Failed(), "a warning never fails a run")
 		})
 
 		t.Run("stays true once an error lands", func(t *testing.T) {
@@ -212,9 +180,7 @@ func TestSink(t *testing.T) {
 			s := diag.NewSink()
 			s.Report(diag.Diag{Severity: diag.SeverityError, Pos: somewhere})
 			s.Report(diag.Diag{Severity: diag.SeverityInfo, Pos: somewhere})
-			if !s.Failed() {
-				t.Fatal("Failed() = false after an Error, want true")
-			}
+			assert.True(t, s.Failed(), "an Error fails the run whatever follows it")
 		})
 	})
 
@@ -224,9 +190,8 @@ func TestSink(t *testing.T) {
 		t.Run("answers nothing for a sink holding nothing", func(t *testing.T) {
 			t.Parallel()
 
-			if got := collect(t, diag.NewSink()); len(got) != 0 {
-				t.Fatalf("All() answered %d findings for an empty sink, want 0", len(got))
-			}
+			assert.Empty(t, collect(t, diag.NewSink()),
+				"a sink holding nothing answers nothing")
 		})
 
 		t.Run("keeps report order within one origin", func(t *testing.T) {
@@ -242,9 +207,7 @@ func TestSink(t *testing.T) {
 			for d := range s.All() {
 				got = append(got, d.Msg)
 			}
-			if !slices.Equal(got, want) {
-				t.Fatalf("All() = %v, want %v", got, want)
-			}
+			assert.Equal(t, got, want, "report order holds within one origin")
 		})
 
 		t.Run("groups the origins in one order however they interleave", func(t *testing.T) {
@@ -273,12 +236,10 @@ func TestSink(t *testing.T) {
 				return strings.Join(out, ",")
 			}
 			want := "annotate/first,annotate/second,load/first,load/second"
-			if got := spell(ordered); got != want {
-				t.Fatalf("All() = %s, want %s", got, want)
-			}
-			if got := spell(interleaved); got != want {
-				t.Fatalf("interleaved All() = %s, want %s: the order is not stable", got, want)
-			}
+			assert.Equal(t, spell(ordered), want,
+				"the origins group in one order")
+			assert.Equal(t, spell(interleaved), want,
+				"however their reports interleaved")
 		})
 
 		t.Run("stops when the caller stops", func(t *testing.T) {
@@ -294,9 +255,7 @@ func TestSink(t *testing.T) {
 				seen++
 				break
 			}
-			if seen != 1 {
-				t.Fatalf("the iteration answered %d findings after a break, want 1", seen)
-			}
+			assert.Equal(t, seen, 1, "the iteration stops when the caller stops")
 		})
 	})
 }

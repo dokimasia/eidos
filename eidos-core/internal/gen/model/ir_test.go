@@ -5,8 +5,9 @@ package model_test
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/internal/gen/model"
 	"go.dokimi.dev/eidos/core/internal/gosource"
@@ -27,59 +28,49 @@ func TestIR(t *testing.T) {
 			t.Parallel()
 
 			kinds, err := model.Lower("testdata/valid", "")
-			if err != nil {
-				t.Fatalf("Lower: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the fixture schema lowers")
 			var got []string
 			for _, kind := range kinds {
 				got = append(got, kind.Name)
 			}
-			if want := "Thing,Part"; strings.Join(got, ",") != want {
-				t.Fatalf("kinds = %v, want %s", got, want)
-			}
+			assert.Equal(t, got, []string{"Thing", "Part"},
+				"kinds answer in declaration order")
 		})
 
 		t.Run("lowers a tag into the field spec", func(t *testing.T) {
 			t.Parallel()
 
 			kinds, err := model.Lower("testdata/valid", "")
-			if err != nil {
-				t.Fatalf("Lower: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the fixture schema lowers")
 			fields := map[string]model.FieldSpec{}
 			for _, field := range kinds[0].Fields {
 				fields[field.Name] = field
 			}
 
-			if got := fields["Name"]; got.Side != model.SideBoth || got.Walk {
-				t.Fatalf("Name = %+v, want side both and no walk", got)
-			}
-			if got := fields["Pos"]; got.Side != model.SideNode || got.Side.OnEmit() {
-				t.Fatalf("Pos = %+v, want the node side only", got)
-			}
+			assert.Equal(t, fields["Name"].Side, model.SideBoth,
+				"an untagged side lands on both models")
+			assert.False(t, fields["Name"].Walk, "and is not walked untagged")
+			assert.Equal(t, fields["Pos"].Side, model.SideNode,
+				"a node-tagged field lands on the node side")
+			assert.False(t, fields["Pos"].Side.OnEmit(), "and not on emit")
 			parts := fields["Parts"]
-			if !parts.Walk || parts.Slot != "parts" {
-				t.Fatalf("Parts = %+v, want walk and slot=parts", parts)
-			}
-			if parts.Elem != "Part" || !parts.Slice || parts.Type != "[]*Part" {
-				t.Fatalf("Parts = %+v, want a slice of Part spelled []*Part", parts)
-			}
-			if decls := fields["Decls"]; !decls.IsSymbol || !decls.Walk {
-				t.Fatalf("Decls = %+v, want the marker and walk", decls)
-			}
+			assert.True(t, parts.Walk, "a walk tag marks the field traversed")
+			assert.Equal(t, parts.Slot, "parts", "a slot tag names its accessor")
+			assert.Equal(t, parts.Elem, "Part", "the element kind is read from the type")
+			assert.True(t, parts.Slice, "so is the slice shape")
+			assert.Equal(t, parts.Type, "[]*Part", "and the declared spelling")
+			assert.True(t, fields["Decls"].IsSymbol, "the marker type is recognized")
+			assert.True(t, fields["Decls"].Walk, "and walked")
 		})
 
 		t.Run("skips a field carrying no tag", func(t *testing.T) {
 			t.Parallel()
 
 			kinds, err := model.Lower("testdata/valid", "")
-			if err != nil {
-				t.Fatalf("Lower: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the fixture schema lowers")
 			for _, field := range kinds[0].Fields {
-				if field.Name == "Untagged" {
-					t.Fatal("Untagged was lowered: a field with no eidos tag is not a model field")
-				}
+				assert.NotEqual(t, field.Name, "Untagged",
+					"a field with no eidos tag is not a model field")
 			}
 		})
 
@@ -87,25 +78,19 @@ func TestIR(t *testing.T) {
 			t.Parallel()
 
 			root, err := gosource.ModuleRoot(".")
-			if err != nil {
-				t.Fatalf("ModuleRoot: %v", err)
-			}
+			assert.NoError(t, err, "the module root resolves")
 			kinds, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
-			if err != nil {
-				t.Fatalf("Lower: unexpected error: %v", err)
-			}
-			if len(kinds) != wantKinds {
-				t.Fatalf("lowered %d kinds, want %d", len(kinds), wantKinds)
-			}
+			assert.NoError(t, err, "the kernel's own schema lowers")
+			assert.Length(t, kinds, wantKinds,
+				"adding a kind is a deliberate edit here as well as in the schema")
 
 			byName := map[string]model.KindSpec{}
 			for _, kind := range kinds {
 				byName[kind.Name] = kind
 			}
 			for _, name := range []string{"Package", "Struct", "Method", "Import", "Export"} {
-				if _, ok := byName[name]; !ok {
-					t.Fatalf("%s is missing from the lowered schema", name)
-				}
+				_, ok := byName[name]
+				assert.True(t, ok, "every family representative lowers")
 			}
 
 			var methods model.FieldSpec
@@ -114,20 +99,17 @@ func TestIR(t *testing.T) {
 					methods = field
 				}
 			}
-			if methods.Slot != "methods" || methods.Elem != "Method" {
-				t.Fatalf("Struct.Methods = %+v, want slot=methods and elem Method", methods)
-			}
-			if len(byName["Struct"].Doc) == 0 {
-				t.Fatal("Struct carries no documentation: the schema's docblock was dropped")
-			}
+			assert.Equal(t, methods.Slot, "methods", "Struct.Methods carries its slot")
+			assert.Equal(t, methods.Elem, "Method", "and its element kind")
+			assert.NotEmpty(t, byName["Struct"].Doc,
+				"the schema's docblock travels with the kind")
 		})
 
 		t.Run("reports a schema directory it cannot read", func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := model.Lower("testdata/nonexistent", ""); err == nil {
-				t.Fatal("Lower: error = nil, want non-nil")
-			}
+			_, err := model.Lower("testdata/nonexistent", "")
+			assert.HasError(t, err, "a schema directory it cannot read is reported")
 		})
 
 		t.Run("refuses a schema that breaks the contract", func(t *testing.T) {
@@ -150,18 +132,10 @@ func TestIR(t *testing.T) {
 					t.Parallel()
 
 					_, err := model.Lower(tt.dir, "")
-					if err == nil {
-						t.Fatalf("Lower(%s): error = nil, want non-nil", tt.dir)
-					}
-					if !strings.Contains(err.Error(), tt.want) {
-						t.Fatalf("error = %q, want it to name %q", err, tt.want)
-					}
-					if !strings.Contains(err.Error(), ".go:") {
-						t.Fatalf("error = %q, want a schema position", err)
-					}
-					if !strings.HasPrefix(err.Error(), "model: ") {
-						t.Fatalf("error = %q, want the package prefix", err)
-					}
+					assert.HasError(t, err, "a schema breaking the contract is refused")
+					assert.Contains(t, err.Error(), tt.want, "naming what broke it")
+					assert.Contains(t, err.Error(), ".go:", "at a schema position")
+					assert.HasPrefix(t, err.Error(), "model: ", "under the package prefix")
 				})
 			}
 		})

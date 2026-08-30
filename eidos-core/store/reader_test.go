@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -33,13 +35,10 @@ func TestReader(t *testing.T) {
 			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, want))
 
 			got, held := r.Lookup(want.ID)
-			if !held || got != symbol.Symbol(want) {
-				t.Fatalf("Lookup(%v) = %v, %t; want the declaration", want.ID, got, held)
-			}
-			if !recorded(reads, want.ID) {
-				t.Fatalf("Lookup(%v) recorded no edge: the read is invisible to invalidation",
-					want.ID)
-			}
+			assert.True(t, held, "Lookup answers a held declaration")
+			assert.True(t, got == symbol.Symbol(want), "the very declaration, not a copy")
+			assert.True(t, recorded(reads, want.ID),
+				"and records the edge invalidation follows")
 		})
 
 		t.Run("records an identity the graph does not hold", func(t *testing.T) {
@@ -48,13 +47,10 @@ func TestReader(t *testing.T) {
 			absent := coretest.Struct(coretest.StorePath, "Absent").ID
 			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath))
 
-			if _, held := r.Lookup(absent); held {
-				t.Fatalf("Lookup(%v) = true, want false", absent)
-			}
-			if !recorded(reads, absent) {
-				t.Fatal("a miss recorded no edge: the reader would not run again " +
-					"when the declaration it asked for appears")
-			}
+			_, held := r.Lookup(absent)
+			assert.False(t, held, "an unheld identity answers nothing")
+			assert.True(t, recorded(reads, absent),
+				"and still records: the reader runs again when it appears")
 		})
 
 		t.Run("neither answers nor records a declaration outside scope", func(t *testing.T) {
@@ -64,14 +60,10 @@ func TestReader(t *testing.T) {
 			r, reads := coretest.Reading(t, onlyPackage(coretest.StorePath),
 				coretest.Package(coretest.StorePath), coretest.Package(coretest.CachePath, hidden))
 
-			if _, held := r.Lookup(hidden.ID); held {
-				t.Fatalf("Lookup(%v) = true, want false: the package is out of scope",
-					hidden.ID)
-			}
-			if recorded(reads, hidden.ID) {
-				t.Fatal("an out-of-scope read recorded an edge: a change the reader " +
-					"could never have seen would re-run it")
-			}
+			_, held := r.Lookup(hidden.ID)
+			assert.False(t, held, "a declaration outside scope is not answered")
+			assert.False(t, recorded(reads, hidden.ID),
+				"and not recorded: a change the reader could never see must not re-run it")
 		})
 	})
 
@@ -86,11 +78,8 @@ func TestReader(t *testing.T) {
 			for range r.ByKind(symbol.KindStruct) { // ranging is what records the edge
 			}
 
-			if got := slices.Collect(reads.Kinds()); !slices.Equal(
-				got, []symbol.Kind{symbol.KindStruct},
-			) {
-				t.Fatalf("Kinds() = %v, want [Struct]", got)
-			}
+			assert.Equal(t, slices.Collect(reads.Kinds()), []symbol.Kind{symbol.KindStruct},
+				"an enumeration records a set-membership edge")
 		})
 
 		t.Run("records an enumeration that answered nothing", func(t *testing.T) {
@@ -100,10 +89,9 @@ func TestReader(t *testing.T) {
 			for range r.ByKind(symbol.KindStruct) { // ranging is what records the edge
 			}
 
-			if len(slices.Collect(reads.Kinds())) != 1 {
-				t.Fatal("an empty enumeration recorded no edge: the reader would not " +
-					"run again when the first declaration of that kind arrives")
-			}
+			assert.Length(t, slices.Collect(reads.Kinds()), 1,
+				"an empty enumeration still records: the reader runs again "+
+					"when the first declaration of that kind arrives")
 		})
 
 		t.Run("records only the declarations the caller reached", func(t *testing.T) {
@@ -115,10 +103,8 @@ func TestReader(t *testing.T) {
 			for range r.ByKind(symbol.KindStruct) {
 				break
 			}
-			if got := len(slices.Collect(reads.Identities())); got != 1 {
-				t.Fatalf("a stopped enumeration recorded %d identities, want 1: "+
-					"the read is priced at the size of the set", got)
-			}
+			assert.Length(t, slices.Collect(reads.Identities()), 1,
+				"a stopped enumeration records what the caller reached, not the set")
 		})
 
 		t.Run("skips a declaration outside scope", func(t *testing.T) {
@@ -129,13 +115,10 @@ func TestReader(t *testing.T) {
 				coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store")),
 				coretest.Package(coretest.CachePath, hidden))
 
-			got := coretest.Names(t, slices.Collect(r.ByKind(symbol.KindStruct)))
-			if want := []string{"Store"}; !slices.Equal(got, want) {
-				t.Fatalf("ByKind = %v, want %v", got, want)
-			}
-			if recorded(reads, hidden.ID) {
-				t.Fatal("an out-of-scope declaration was recorded while enumerating")
-			}
+			assert.Equal(t, coretest.Names(t, slices.Collect(r.ByKind(symbol.KindStruct))),
+				[]string{"Store"}, "the enumeration skips a declaration outside scope")
+			assert.False(t, recorded(reads, hidden.ID),
+				"and does not record it either")
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
@@ -149,9 +132,7 @@ func TestReader(t *testing.T) {
 				seen++
 				break
 			}
-			if seen != 1 {
-				t.Fatalf("ByKind yielded %d declarations after a break, want 1", seen)
-			}
+			assert.Equal(t, seen, 1, "the enumeration stops when the range stops")
 		})
 	})
 
@@ -165,12 +146,9 @@ func TestReader(t *testing.T) {
 			r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
 
 			got, held := r.PackageOf(decl.ID)
-			if !held {
-				t.Fatalf("PackageOf(%v) = false, want the package", decl.ID)
-			}
-			if got.ID != coretest.PackageID(coretest.StorePath) {
-				t.Fatalf("PackageOf(%v) = %v, want %v", decl.ID, got.ID, coretest.PackageID(coretest.StorePath))
-			}
+			assert.True(t, held, "PackageOf answers the holding package")
+			assert.Equal(t, got.ID, coretest.PackageID(coretest.StorePath),
+				"the one the declaration's identity names")
 		})
 
 		t.Run("records a per-identity edge on the package", func(t *testing.T) {
@@ -180,18 +158,16 @@ func TestReader(t *testing.T) {
 			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
 			r.PackageOf(decl.ID)
 
-			if !recorded(reads, coretest.PackageID(coretest.StorePath)) {
-				t.Fatal("PackageOf recorded no edge on the package it answered")
-			}
+			assert.True(t, recorded(reads, coretest.PackageID(coretest.StorePath)),
+				"PackageOf records a per-identity edge on the package")
 		})
 
 		t.Run("answers false for a package nothing holds", func(t *testing.T) {
 			t.Parallel()
 
 			r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath))
-			if _, held := r.PackageOf(coretest.Struct(coretest.CachePath, "Cache").ID); held {
-				t.Fatal("PackageOf of an unheld package = true, want false")
-			}
+			_, held := r.PackageOf(coretest.Struct(coretest.CachePath, "Cache").ID)
+			assert.False(t, held, "a package nothing holds answers nothing")
 		})
 
 		t.Run("answers the package the identity names, not the file that carried it", func(t *testing.T) {
@@ -204,9 +180,9 @@ func TestReader(t *testing.T) {
 			stray := coretest.Struct(coretest.CachePath, "Stray")
 			r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, stray))
 
-			if _, held := r.PackageOf(stray.ID); held {
-				t.Fatal("PackageOf answered a package the graph never loaded")
-			}
+			_, held := r.PackageOf(stray.ID)
+			assert.False(t, held,
+				"the holder derives from the identity, not from the file that carried it")
 		})
 
 		t.Run("neither answers nor records outside scope", func(t *testing.T) {
@@ -216,12 +192,10 @@ func TestReader(t *testing.T) {
 			r, reads := coretest.Reading(t, onlyPackage(coretest.StorePath),
 				coretest.Package(coretest.StorePath), coretest.Package(coretest.CachePath, hidden))
 
-			if _, held := r.PackageOf(hidden.ID); held {
-				t.Fatal("PackageOf answered a package outside scope")
-			}
-			if recorded(reads, coretest.PackageID(coretest.CachePath)) {
-				t.Fatal("PackageOf recorded an edge on a package outside scope")
-			}
+			_, held := r.PackageOf(hidden.ID)
+			assert.False(t, held, "a package outside scope is not answered")
+			assert.False(t, recorded(reads, coretest.PackageID(coretest.CachePath)),
+				"and not recorded")
 		})
 	})
 
@@ -235,9 +209,8 @@ func TestReader(t *testing.T) {
 				coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store")),
 				coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")))
 
-			if got := len(slices.Collect(r.ByKind(symbol.KindStruct))); got != 2 {
-				t.Fatalf("a nil scope admitted %d declarations, want 2", got)
-			}
+			assert.Length(t, slices.Collect(r.ByKind(symbol.KindStruct)), 2,
+				"a nil scope admits every package")
 		})
 	})
 }

@@ -8,9 +8,9 @@ package node
 import (
 	"bytes"
 	"encoding/json"
-	"strings"
 	"testing"
 
+	"go.dokimi.dev/assert"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -24,12 +24,8 @@ func TestSymbols(t *testing.T) {
 			t.Parallel()
 
 			got, err := EncodeJSON(nil)
-			if err != nil {
-				t.Fatalf("EncodeJSON: unexpected error: %v", err)
-			}
-			if string(got) != "null" {
-				t.Fatalf("EncodeJSON(nil) = %s, want null", got)
-			}
+			assert.NoError(t, err, "a nil declaration encodes")
+			assert.Equal(t, string(got), "null", "as JSON null")
 		})
 
 		t.Run("carries the kind on every declaration", func(t *testing.T) {
@@ -37,232 +33,163 @@ func TestSymbols(t *testing.T) {
 
 			{
 				encoded, err := EncodeJSON(&Function{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Function"`) {
-					t.Fatalf("Function encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Function"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Method{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Method"`) {
-					t.Fatalf("Method encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Method"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Param{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Param"`) {
-					t.Fatalf("Param encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Param"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Return{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Return"`) {
-					t.Fatalf("Return encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Return"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Package{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Package"`) {
-					t.Fatalf("Package encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Package"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&File{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"File"`) {
-					t.Fatalf("File encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"File"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Import{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Import"`) {
-					t.Fatalf("Import encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Import"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Export{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Export"`) {
-					t.Fatalf("Export encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Export"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Binding{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Binding"`) {
-					t.Fatalf("Binding encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Binding"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Enum{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Enum"`) {
-					t.Fatalf("Enum encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Enum"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&EnumVariant{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"EnumVariant"`) {
-					t.Fatalf("EnumVariant encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"EnumVariant"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Sum{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Sum"`) {
-					t.Fatalf("Sum encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Sum"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&SumVariant{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"SumVariant"`) {
-					t.Fatalf("SumVariant encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"SumVariant"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Field{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Field"`) {
-					t.Fatalf("Field encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Field"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Variable{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Variable"`) {
-					t.Fatalf("Variable encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Variable"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Constant{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Constant"`) {
-					t.Fatalf("Constant encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Constant"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Struct{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Struct"`) {
-					t.Fatalf("Struct encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Struct"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Interface{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Interface"`) {
-					t.Fatalf("Interface encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Interface"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Alias{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Alias"`) {
-					t.Fatalf("Alias encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Alias"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&TypeRef{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"TypeRef"`) {
-					t.Fatalf("TypeRef encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"TypeRef"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&TypeParam{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"TypeParam"`) {
-					t.Fatalf("TypeParam encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"TypeParam"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Constraint{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Constraint"`) {
-					t.Fatalf("Constraint encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Constraint"`,
+					"carrying its kind so a decoder can place it")
 			}
 
 			{
 				encoded, err := EncodeJSON(&Embed{})
-				if err != nil {
-					t.Fatalf("EncodeJSON: unexpected error: %v", err)
-				}
-				if !strings.Contains(string(encoded), `"kind":"Embed"`) {
-					t.Fatalf("Embed encoded as %s, want its kind", encoded)
-				}
+				assert.NoError(t, err, "every kind encodes")
+				assert.Contains(t, string(encoded), `"kind":"Embed"`,
+					"carrying its kind so a decoder can place it")
 			}
 		})
 
@@ -272,12 +199,9 @@ func TestSymbols(t *testing.T) {
 			// Struct tags carry a concretely typed field on their own,
 			// which is why only Symbols reaches for a discriminator.
 			encoded, err := json.Marshal(&Function{})
-			if err != nil {
-				t.Fatalf("Marshal: unexpected error: %v", err)
-			}
-			if strings.Contains(string(encoded), `"kind"`) {
-				t.Fatalf("a plain marshal produced %s, want no discriminator", encoded)
-			}
+			assert.NoError(t, err, "a concrete field marshals through its tags")
+			assert.NotContains(t, string(encoded), `"kind"`,
+				"and needs no discriminator")
 		})
 	})
 
@@ -317,23 +241,15 @@ func TestSymbols(t *testing.T) {
 					t.Parallel()
 
 					encoded, err := EncodeJSON(subject)
-					if err != nil {
-						t.Fatalf("EncodeJSON: unexpected error: %v", err)
-					}
+					assert.NoError(t, err, "the kind encodes")
 					decoded, err := DecodeJSON(encoded)
-					if err != nil {
-						t.Fatalf("DecodeJSON: unexpected error: %v", err)
-					}
-					if decoded.Kind() != subject.Kind() {
-						t.Fatalf("decoded a %v, want a %v", decoded.Kind(), subject.Kind())
-					}
+					assert.NoError(t, err, "its encoding decodes")
+					assert.Equal(t, decoded.Kind(), subject.Kind(),
+						"to the kind that produced it")
 					again, err := EncodeJSON(decoded)
-					if err != nil {
-						t.Fatalf("EncodeJSON: unexpected error: %v", err)
-					}
-					if string(again) != string(encoded) {
-						t.Fatalf("re-encoded as %s, want %s", again, encoded)
-					}
+					assert.NoError(t, err, "and encodes again")
+					assert.Equal(t, string(again), string(encoded),
+						"to the same bytes: the round trip is a fixed point")
 				})
 			}
 		})
@@ -347,22 +263,17 @@ func TestSymbols(t *testing.T) {
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Function: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Function: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 4; walked != want {
-					t.Fatalf("the decoded Function holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 4,
+					"with every child the original held")
 			}
 
 			{
@@ -373,88 +284,68 @@ func TestSymbols(t *testing.T) {
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Method: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Method: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 6; walked != want {
-					t.Fatalf("the decoded Method holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 6,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Param{}
 				subject.Type = &TypeRef{}
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Param: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Param: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Param holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Return{}
 				subject.Type = &TypeRef{}
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Return: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Return: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Return holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Package{}
 				subject.Files = append(subject.Files, &File{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Package: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Package: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Package holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
@@ -463,66 +354,51 @@ func TestSymbols(t *testing.T) {
 				subject.Exports = append(subject.Exports, &Export{})
 				subject.Decls = append(subject.Decls, &File{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("File: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("File: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 4; walked != want {
-					t.Fatalf("the decoded File holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 4,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Import{}
 				subject.Names = append(subject.Names, &Binding{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Import: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Import: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Import holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Export{}
 				subject.Names = append(subject.Names, &Binding{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Export: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Export: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Export holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
@@ -531,22 +407,17 @@ func TestSymbols(t *testing.T) {
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Enum: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Enum: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 4; walked != want {
-					t.Fatalf("the decoded Enum holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 4,
+					"with every child the original held")
 			}
 
 			{
@@ -555,110 +426,85 @@ func TestSymbols(t *testing.T) {
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Sum: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Sum: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 4; walked != want {
-					t.Fatalf("the decoded Sum holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 4,
+					"with every child the original held")
 			}
 
 			{
 				subject := &SumVariant{}
 				subject.Fields = append(subject.Fields, &Field{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("SumVariant: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("SumVariant: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded SumVariant holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Field{}
 				subject.Type = &TypeRef{}
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Field: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Field: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Field holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Variable{}
 				subject.Type = &TypeRef{}
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Variable: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Variable: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Variable holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Constant{}
 				subject.Type = &TypeRef{}
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Constant: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Constant: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Constant holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
@@ -671,22 +517,17 @@ func TestSymbols(t *testing.T) {
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Struct: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Struct: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 8; walked != want {
-					t.Fatalf("the decoded Struct holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 8,
+					"with every child the original held")
 			}
 
 			{
@@ -698,22 +539,17 @@ func TestSymbols(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Interface: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Interface: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 7; walked != want {
-					t.Fatalf("the decoded Interface holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 7,
+					"with every child the original held")
 			}
 
 			{
@@ -721,44 +557,34 @@ func TestSymbols(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Target = &TypeRef{}
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Alias: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Alias: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 3; walked != want {
-					t.Fatalf("the decoded Alias holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 3,
+					"with every child the original held")
 			}
 
 			{
 				subject := &TypeRef{}
 				subject.Args = append(subject.Args, &TypeRef{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("TypeRef: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("TypeRef: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded TypeRef holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
@@ -767,66 +593,51 @@ func TestSymbols(t *testing.T) {
 				subject.Default = &TypeRef{}
 				subject.Type = &TypeRef{}
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("TypeParam: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("TypeParam: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 4; walked != want {
-					t.Fatalf("the decoded TypeParam holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 4,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Constraint{}
 				subject.Terms = append(subject.Terms, &TypeRef{})
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Constraint: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Constraint: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Constraint holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 
 			{
 				subject := &Embed{}
 				subject.Ref = &TypeRef{}
 				encoded, err := EncodeJSON(subject)
-				if err != nil {
-					t.Fatalf("Embed: EncodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
-				if err != nil {
-					t.Fatalf("Embed: DecodeJSON: %v", err)
-				}
+				assert.NoError(t, err, "and decodes")
 
 				var walked int
 				Walk(decoded, func(symbol.Symbol) bool {
 					walked++
 					return true
 				})
-				if want := 2; walked != want {
-					t.Fatalf("the decoded Embed holds %d declarations, want %d", walked, want)
-				}
+				assert.Equal(t, walked, 2,
+					"with every child the original held")
 			}
 		})
 
@@ -868,9 +679,8 @@ func TestSymbols(t *testing.T) {
 				t.Run(tt.name, func(t *testing.T) {
 					t.Parallel()
 
-					if _, err := DecodeJSON([]byte(tt.data)); err == nil {
-						t.Fatalf("DecodeJSON(%s): error = nil, want non-nil", tt.data)
-					}
+					_, err := DecodeJSON([]byte(tt.data))
+					assert.HasError(t, err, "an encoding it cannot place is refused")
 				})
 			}
 		})
@@ -908,22 +718,14 @@ func TestSymbols(t *testing.T) {
 				&Embed{},
 			}
 			encoded, err := json.Marshal(subjects)
-			if err != nil {
-				t.Fatalf("Marshal: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the list marshals")
 
 			var decoded Symbols
-			if err := json.Unmarshal(encoded, &decoded); err != nil {
-				t.Fatalf("Unmarshal: unexpected error: %v", err)
-			}
-			if len(decoded) != len(subjects) {
-				t.Fatalf("decoded %d declarations, want %d", len(decoded), len(subjects))
-			}
+			assert.NoError(t, json.Unmarshal(encoded, &decoded), "and unmarshals")
+			assert.Length(t, decoded, len(subjects), "whole")
 			for i, want := range subjects {
-				if decoded[i].Kind() != want.Kind() {
-					t.Fatalf("element %d decoded as %v, want %v",
-						i, decoded[i].Kind(), want.Kind())
-				}
+				assert.Equal(t, decoded[i].Kind(), want.Kind(),
+					"each element through its own kind")
 			}
 		})
 
@@ -931,37 +733,30 @@ func TestSymbols(t *testing.T) {
 			t.Parallel()
 
 			encoded, err := json.Marshal(Symbols{&Function{}})
-			if err != nil {
-				t.Fatalf("Marshal: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "the list marshals")
 			var plain []symbol.Symbol
-			if err := json.Unmarshal(encoded, &plain); err == nil {
-				t.Fatal("a plain []symbol.Symbol decoded: Symbols is no longer needed")
-			}
+			assert.HasError(t, json.Unmarshal(encoded, &plain),
+				"a plain interface slice cannot decode the same bytes, "+
+					"which is why Symbols exists")
 		})
 
 		t.Run("null decodes to nothing", func(t *testing.T) {
 			t.Parallel()
 
 			decoded := Symbols{&Function{}}
-			if err := json.Unmarshal([]byte("null"), &decoded); err != nil {
-				t.Fatalf("Unmarshal: unexpected error: %v", err)
-			}
-			if decoded != nil {
-				t.Fatalf("null decoded to %v, want nothing", decoded)
-			}
+			assert.NoError(t, json.Unmarshal([]byte("null"), &decoded),
+				"null unmarshals")
+			assert.Nil(t, decoded, "to nothing, so a value re-encodes as it arrived")
 		})
 
 		t.Run("refuses an element it cannot place", func(t *testing.T) {
 			t.Parallel()
 
 			var decoded Symbols
-			if err := json.Unmarshal([]byte(`[{"kind":"Nonexistent"}]`), &decoded); err == nil {
-				t.Fatal("Unmarshal: error = nil, want non-nil")
-			}
-			if err := json.Unmarshal([]byte(`{}`), &decoded); err == nil {
-				t.Fatal("Unmarshal of an object: error = nil, want non-nil")
-			}
+			assert.HasError(t, json.Unmarshal([]byte(`[{"kind":"Nonexistent"}]`), &decoded),
+				"an element it cannot place is refused")
+			assert.HasError(t, json.Unmarshal([]byte(`{}`), &decoded),
+				"and so is an encoding that is not a list")
 		})
 	})
 }

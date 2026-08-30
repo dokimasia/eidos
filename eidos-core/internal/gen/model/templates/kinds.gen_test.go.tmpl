@@ -2,6 +2,7 @@
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -47,9 +48,8 @@ func TestKinds(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.want.String(), func(t *testing.T) {
 				t.Parallel()
-				if got := tt.subject.Kind(); got != tt.want {
-					t.Fatalf("Kind() = %v, want %v", got, tt.want)
-				}
+				assert.Equal(t, tt.subject.Kind(), tt.want,
+					"every kind answers its own constant")
 			})
 		}
 	})
@@ -64,13 +64,11 @@ func TestKinds(t *testing.T) {
 			_ = at
 {{- range .Views}}
 {{- if .HasPos}}
-			if got := (&{{.Name}}{Pos: at}).Position(); got != at {
-				t.Fatalf("{{.Name}}.Position() = %v, want %v", got, at)
-			}
+			assert.Equal(t, (&{{.Name}}{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
 {{- else}}
-			if got := (&{{.Name}}{}).Position(); !got.IsZero() {
-				t.Fatalf("{{.Name}}.Position() = %v, want the zero position", got)
-			}
+			assert.True(t, (&{{.Name}}{}).Position().IsZero(),
+				"a kind carrying no position answers the zero position")
 {{- end}}
 {{- end}}
 		})
@@ -86,13 +84,11 @@ func TestKinds(t *testing.T) {
 			_ = lines
 {{- range .Views}}
 {{- if .HasDoc}}
-			if got := (&{{.Name}}{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("{{.Name}}.Docs() = %v, want %v", got, lines)
-			}
+			assert.Length(t, (&{{.Name}}{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
 {{- else}}
-			if got := (&{{.Name}}{}).Docs(); got != nil {
-				t.Fatalf("{{.Name}}.Docs() = %v, want nil", got)
-			}
+			assert.Nil(t, (&{{.Name}}{}).Docs(),
+				"a kind carrying no documentation answers nil")
 {{- end}}
 {{- end}}
 		})
@@ -107,9 +103,8 @@ func TestKinds(t *testing.T) {
 			id := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"}
 {{- range .Views}}
 {{- if .IDStorage}}
-			if got := (&{{.Name}}{ID: id}).Identity(); got != id {
-				t.Fatalf("{{.Name}}.Identity() = %v, want %v", got, id)
-			}
+			assert.Equal(t, (&{{.Name}}{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
 {{- end}}
 {{- end}}
 		})
@@ -118,9 +113,8 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 {{- range .Views}}
 {{- if .IDStorage}}
-			if got := (&{{.Name}}{}).Identity(); !got.IsZero() {
-				t.Fatalf("{{.Name}}.Identity() = %v, want the zero identity", got)
-			}
+			assert.True(t, (&{{.Name}}{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
 {{- end}}
 {{- end}}
 		})
@@ -133,9 +127,8 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 {{- range .Views}}
 {{- if .TypeRefStorage}}
-			if got := (&{{.Name}}{}).TypeRef(); got != nil {
-				t.Fatalf("{{.Name}}.TypeRef() = %v, want nil", got)
-			}
+			assert.Nil(t, (&{{.Name}}{}).TypeRef(),
+				"a declaration stating no type answers nil")
 {{- end}}
 {{- end}}
 		})
@@ -144,9 +137,8 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 {{- range .Views}}
 {{- if .TypeRefStorage}}
-			if got := (&{{.Name}}{Type: &TypeRef{}}).TypeRef(); got == nil {
-				t.Fatal("{{.Name}}.TypeRef() = nil, want the declared reference")
-			}
+			assert.NotNil(t, (&{{.Name}}{Type: &TypeRef{}}).TypeRef(),
+				"a declaration stating a type answers the declared reference")
 {{- end}}
 {{- end}}
 		})
@@ -161,9 +153,8 @@ func TestKinds(t *testing.T) {
 {{- range .Members}}
 {{- if not .Items}}
 
-			if got := (&{{$v.Name}}{}).{{.Method}}(); got != nil {
-				t.Fatalf("{{$v.Name}}.{{.Method}}() = %v, want nil", got)
-			}
+			assert.Nil(t, (&{{$v.Name}}{}).{{.Method}}(),
+				"a member list the kind does not carry answers nil")
 {{- end}}
 {{- end}}
 {{- end}}
@@ -180,9 +171,8 @@ func TestKinds(t *testing.T) {
 {{- range $v.Children}}
 				{{.}}
 {{- end}}
-				if got := subject.{{.Method}}(); len(got) == 0 {
-					t.Fatalf("{{$v.Name}}.{{.Method}}() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.{{.Method}}(),
+					"a member list the kind carries answers its members")
 			}
 {{- end}}
 {{- end}}

@@ -6,8 +6,9 @@ package genfile_test
 import (
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/internal/genfile"
 )
@@ -24,27 +25,18 @@ func TestGenfile(t *testing.T) {
 			t.Parallel()
 
 			got, err := genfile.Format("x.gen.go", []byte("package p\ntype T struct{A int}\n"))
-			if err != nil {
-				t.Fatalf("Format: unexpected error: %v", err)
-			}
-			if !strings.Contains(string(got), "type T struct{ A int }") {
-				t.Fatalf("Format did not canonicalize: %q", got)
-			}
+			assert.NoError(t, err, "well-formed source formats")
+			assert.Contains(t, string(got), "type T struct{ A int }",
+				"and comes back in canonical layout")
 		})
 
 		t.Run("names the file it could not format", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := genfile.Format("broken.gen.go", []byte("package p\nfunc ("))
-			if err == nil {
-				t.Fatal("Format: error = nil, want non-nil")
-			}
-			if !strings.Contains(err.Error(), "broken.gen.go") {
-				t.Fatalf("error = %q, want it to name the file", err)
-			}
-			if !strings.HasPrefix(err.Error(), "genfile: ") {
-				t.Fatalf("error = %q, want the package prefix", err)
-			}
+			assert.HasError(t, err, "source that does not parse is refused")
+			assert.Contains(t, err.Error(), "broken.gen.go", "naming the file")
+			assert.HasPrefix(t, err.Error(), "genfile: ", "under the package prefix")
 		})
 	})
 
@@ -59,13 +51,10 @@ func TestGenfile(t *testing.T) {
 				"node/kinds.gen.go": []byte(wellFormed),
 				"emit/kinds.gen.go": []byte(wellFormed),
 			}
-			if err := genfile.Write(root, set); err != nil {
-				t.Fatalf("Write: unexpected error: %v", err)
-			}
+			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			for path := range set {
-				if _, err := os.Stat(filepath.Join(root, filepath.FromSlash(path))); err != nil {
-					t.Fatalf("%s: %v", path, err)
-				}
+				_, err := os.Stat(filepath.Join(root, filepath.FromSlash(path)))
+				assert.NoError(t, err, "every file lands under the root")
 			}
 		})
 
@@ -73,9 +62,7 @@ func TestGenfile(t *testing.T) {
 			t.Parallel()
 
 			err := genfile.Write(t.TempDir(), genfile.Set{"../escape.gen.go": []byte(wellFormed)})
-			if err == nil {
-				t.Fatal("Write: error = nil, want non-nil")
-			}
+			assert.HasError(t, err, "a path escaping the root is refused")
 		})
 
 		t.Run("reports a directory it cannot create", func(t *testing.T) {
@@ -83,13 +70,11 @@ func TestGenfile(t *testing.T) {
 
 			root := t.TempDir()
 			blocker := filepath.Join(root, "node")
-			if err := os.WriteFile(blocker, []byte("not a directory"), 0o600); err != nil {
-				t.Fatalf("WriteFile: %v", err)
-			}
+			assert.NoError(t, os.WriteFile(blocker, []byte("not a directory"), 0o600),
+				"the blocking file writes")
 			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
-			if err := genfile.Write(root, set); err == nil {
-				t.Fatal("Write: error = nil, want non-nil")
-			}
+			assert.HasError(t, genfile.Write(root, set),
+				"a directory it cannot create is reported")
 		})
 	})
 
@@ -100,26 +85,22 @@ func TestGenfile(t *testing.T) {
 			t.Parallel()
 
 			set := genfile.Set{"../escape.gen.go": []byte(wellFormed)}
-			if err := genfile.Verify(t.TempDir(), set, nil); err == nil {
-				t.Fatal("Verify: error = nil, want non-nil")
-			}
+			assert.HasError(t, genfile.Verify(t.TempDir(), set, nil),
+				"a set path escaping the root is refused")
 		})
 
 		t.Run("refuses an owned directory escaping the root", func(t *testing.T) {
 			t.Parallel()
 
 			err := genfile.Verify(t.TempDir(), genfile.Set{}, []string{"../elsewhere"})
-			if err == nil {
-				t.Fatal("Verify: error = nil, want non-nil")
-			}
+			assert.HasError(t, err, "an owned directory escaping the root is refused")
 		})
 
 		t.Run("passes over a directory the generator has not created", func(t *testing.T) {
 			t.Parallel()
 
-			if err := genfile.Verify(t.TempDir(), genfile.Set{}, []string{"node"}); err != nil {
-				t.Fatalf("Verify: unexpected error: %v", err)
-			}
+			assert.NoError(t, genfile.Verify(t.TempDir(), genfile.Set{}, []string{"node"}),
+				"a directory the generator has not created passes")
 		})
 
 		t.Run("passes when the tree matches", func(t *testing.T) {
@@ -127,12 +108,9 @@ func TestGenfile(t *testing.T) {
 
 			root := t.TempDir()
 			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
-			if err := genfile.Write(root, set); err != nil {
-				t.Fatalf("Write: unexpected error: %v", err)
-			}
-			if err := genfile.Verify(root, set, []string{"node"}); err != nil {
-				t.Fatalf("Verify: unexpected error: %v", err)
-			}
+			assert.NoError(t, genfile.Write(root, set), "the set writes")
+			assert.NoError(t, genfile.Verify(root, set, []string{"node"}),
+				"a tree matching its set verifies")
 		})
 
 		t.Run("reports a file whose bytes differ", func(t *testing.T) {
@@ -140,20 +118,13 @@ func TestGenfile(t *testing.T) {
 
 			root := t.TempDir()
 			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
-			if err := genfile.Write(root, set); err != nil {
-				t.Fatalf("Write: unexpected error: %v", err)
-			}
+			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			edited := filepath.Join(root, "node", "kinds.gen.go")
-			if err := os.WriteFile(edited, []byte("package p\n"), 0o600); err != nil {
-				t.Fatalf("WriteFile: %v", err)
-			}
+			assert.NoError(t, os.WriteFile(edited, []byte("package p\n"), 0o600),
+				"the edit lands")
 			err := genfile.Verify(root, set, []string{"node"})
-			if err == nil {
-				t.Fatal("Verify: error = nil, want non-nil")
-			}
-			if !strings.Contains(err.Error(), "kinds.gen.go") {
-				t.Fatalf("error = %q, want it to name the file", err)
-			}
+			assert.HasError(t, err, "a file whose bytes differ fails the mirror")
+			assert.Contains(t, err.Error(), "kinds.gen.go", "and is named")
 		})
 
 		t.Run("reports a missing file", func(t *testing.T) {
@@ -161,9 +132,8 @@ func TestGenfile(t *testing.T) {
 
 			root := t.TempDir()
 			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
-			if err := genfile.Verify(root, set, []string{"node"}); err == nil {
-				t.Fatal("Verify: error = nil, want non-nil")
-			}
+			assert.HasError(t, genfile.Verify(root, set, []string{"node"}),
+				"a file the set holds and the tree lacks fails the mirror")
 		})
 
 		t.Run("reports a stray generated file", func(t *testing.T) {
@@ -171,20 +141,13 @@ func TestGenfile(t *testing.T) {
 
 			root := t.TempDir()
 			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
-			if err := genfile.Write(root, set); err != nil {
-				t.Fatalf("Write: unexpected error: %v", err)
-			}
+			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			stray := filepath.Join(root, "node", "orphan.gen.go")
-			if err := os.WriteFile(stray, []byte(wellFormed), 0o600); err != nil {
-				t.Fatalf("WriteFile: %v", err)
-			}
+			assert.NoError(t, os.WriteFile(stray, []byte(wellFormed), 0o600),
+				"the stray lands")
 			err := genfile.Verify(root, set, []string{"node"})
-			if err == nil {
-				t.Fatal("Verify: error = nil, want non-nil")
-			}
-			if !strings.Contains(err.Error(), "orphan.gen.go") {
-				t.Fatalf("error = %q, want it to name the stray", err)
-			}
+			assert.HasError(t, err, "a generated file the set does not name is a stray")
+			assert.Contains(t, err.Error(), "orphan.gen.go", "and is named")
 		})
 
 		t.Run("reports a stray generated test", func(t *testing.T) {
@@ -192,20 +155,13 @@ func TestGenfile(t *testing.T) {
 
 			root := t.TempDir()
 			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
-			if err := genfile.Write(root, set); err != nil {
-				t.Fatalf("Write: unexpected error: %v", err)
-			}
+			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			stray := filepath.Join(root, "node", "orphan.gen_test.go")
-			if err := os.WriteFile(stray, []byte(wellFormed), 0o600); err != nil {
-				t.Fatalf("WriteFile: %v", err)
-			}
+			assert.NoError(t, os.WriteFile(stray, []byte(wellFormed), 0o600),
+				"the stray lands")
 			err := genfile.Verify(root, set, []string{"node"})
-			if err == nil {
-				t.Fatal("Verify: error = nil, want non-nil")
-			}
-			if !strings.Contains(err.Error(), "orphan.gen_test.go") {
-				t.Fatalf("error = %q, want it to name the stray", err)
-			}
+			assert.HasError(t, err, "a generated test the set does not name is a stray too")
+			assert.Contains(t, err.Error(), "orphan.gen_test.go", "and is named")
 		})
 
 		t.Run("ignores a hand-written file", func(t *testing.T) {
@@ -213,16 +169,12 @@ func TestGenfile(t *testing.T) {
 
 			root := t.TempDir()
 			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
-			if err := genfile.Write(root, set); err != nil {
-				t.Fatalf("Write: unexpected error: %v", err)
-			}
+			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			hand := filepath.Join(root, "node", "resolver.go")
-			if err := os.WriteFile(hand, []byte(wellFormed), 0o600); err != nil {
-				t.Fatalf("WriteFile: %v", err)
-			}
-			if err := genfile.Verify(root, set, []string{"node"}); err != nil {
-				t.Fatalf("Verify: unexpected error: %v", err)
-			}
+			assert.NoError(t, os.WriteFile(hand, []byte(wellFormed), 0o600),
+				"the hand-written file lands")
+			assert.NoError(t, genfile.Verify(root, set, []string{"node"}),
+				"a hand-written file is no stray: the guard owns generated names alone")
 		})
 	})
 }

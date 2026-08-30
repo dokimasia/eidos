@@ -6,6 +6,8 @@ package diag_test
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/position"
 )
@@ -35,23 +37,20 @@ func TestDiag(t *testing.T) {
 		for _, tt := range phases {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				if string(tt.id) != tt.want {
-					t.Fatalf("%s = %q, want %q", tt.name, tt.id, tt.want)
-				}
+				assert.Equal(t, string(tt.id), tt.want,
+					"a kernel phase reports under its own name")
 			})
 		}
 
 		t.Run("the kernel phases stay distinct", func(t *testing.T) {
 			t.Parallel()
 
-			seen := make(map[diag.PluginID]string, len(phases))
+			seen := make(map[diag.PluginID]struct{}, len(phases))
 			for _, tt := range phases {
-				if first, taken := seen[tt.id]; taken {
-					t.Fatalf("%s and %s both spell %q: a consumer filtering by "+
-						"origin cannot tell them apart", first, tt.name, tt.id)
-				}
-				seen[tt.id] = tt.name
+				seen[tt.id] = struct{}{}
 			}
+			assert.Length(t, seen, len(phases),
+				"a consumer filtering by origin can tell every phase apart")
 		})
 	})
 
@@ -59,16 +58,11 @@ func TestDiag(t *testing.T) {
 		t.Parallel()
 
 		var d diag.Diag
-		if d.Severity != diag.SeverityError {
-			t.Fatalf("zero Diag: Severity = %v, want %v", d.Severity, diag.SeverityError)
-		}
-		if !d.Code.IsZero() {
-			t.Fatalf("zero Diag: Code = %v, want the zero code", d.Code)
-		}
-		if !d.Pos.IsZero() {
-			t.Fatalf("zero Diag: Pos = %v, want the zero position, so that a "+
-				"finding reported without one is detectable", d.Pos)
-		}
+		assert.Equal(t, d.Severity, diag.SeverityError,
+			"a zero Diag does not downgrade itself")
+		assert.True(t, d.Code.IsZero(), "a zero Diag names no code")
+		assert.True(t, d.Pos.IsZero(),
+			"a zero Diag carries no position, so a finding reported without one is detectable")
 	})
 
 	t.Run("Related", func(t *testing.T) {
@@ -87,9 +81,8 @@ func TestDiag(t *testing.T) {
 				Origin:   diag.PhaseLink,
 				Related:  []position.Pos{twin, export},
 			}
-			if got := d.Related; len(got) != 2 || got[0] != twin || got[1] != export {
-				t.Fatalf("Related = %v, want [%v %v]", got, twin, export)
-			}
+			assert.Equal(t, d.Related, []position.Pos{twin, export},
+				"Related carries the secondary positions in order")
 		})
 	})
 }

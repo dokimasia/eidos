@@ -7,6 +7,8 @@ import (
 	"slices"
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -32,9 +34,8 @@ func TestReadSet(t *testing.T) {
 		t.Run("answers nothing for a set that read nothing", func(t *testing.T) {
 			t.Parallel()
 
-			if got := slices.Collect(store.NewReadSet().Identities()); len(got) != 0 {
-				t.Fatalf("Identities() = %v, want none", got)
-			}
+			assert.Empty(t, slices.Collect(store.NewReadSet().Identities()),
+				"a set that read nothing holds nothing")
 		})
 
 		t.Run("records one edge for a declaration read twice", func(t *testing.T) {
@@ -46,9 +47,8 @@ func TestReadSet(t *testing.T) {
 				r.Lookup(decl.ID)
 			}
 
-			if got := slices.Collect(reads.Identities()); len(got) != 1 {
-				t.Fatalf("Identities() = %v, want one edge: edges deduplicate", got)
-			}
+			assert.Length(t, slices.Collect(reads.Identities()), 1,
+				"a declaration read three times records one edge")
 		})
 
 		t.Run("answers one order however the reads arrived", func(t *testing.T) {
@@ -64,12 +64,10 @@ func TestReadSet(t *testing.T) {
 			backward.Lookup(omega.ID)
 			backward.Lookup(alpha.ID)
 
-			one := slices.Collect(forwardReads.Identities())
-			other := slices.Collect(backwardReads.Identities())
-			if !slices.Equal(one, other) {
-				t.Fatalf("Identities() answered %v and %v: the order follows the read order",
-					one, other)
-			}
+			assert.Equal(t,
+				slices.Collect(forwardReads.Identities()),
+				slices.Collect(backwardReads.Identities()),
+				"the order is the set's own, not the read order")
 		})
 	})
 
@@ -83,9 +81,8 @@ func TestReadSet(t *testing.T) {
 				coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store")))
 			enumerate(r, symbol.KindStruct, symbol.KindStruct)
 
-			if got := slices.Collect(reads.Kinds()); len(got) != 1 {
-				t.Fatalf("Kinds() = %v, want one edge: edges deduplicate", got)
-			}
+			assert.Length(t, slices.Collect(reads.Kinds()), 1,
+				"a kind enumerated twice records one edge")
 		})
 
 		t.Run("answers one order however the enumerations arrived", func(t *testing.T) {
@@ -97,12 +94,10 @@ func TestReadSet(t *testing.T) {
 			backward, backwardReads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath))
 			enumerate(backward, symbol.KindPackage, symbol.KindFile, symbol.KindStruct)
 
-			one := slices.Collect(forwardReads.Kinds())
-			other := slices.Collect(backwardReads.Kinds())
-			if !slices.Equal(one, other) {
-				t.Fatalf("Kinds() answered %v and %v: the order follows the read order",
-					one, other)
-			}
+			assert.Equal(t,
+				slices.Collect(forwardReads.Kinds()),
+				slices.Collect(backwardReads.Kinds()),
+				"the order is the set's own, not the enumeration order")
 		})
 	})
 
@@ -112,9 +107,8 @@ func TestReadSet(t *testing.T) {
 		t.Run("answers zero for a set that read nothing", func(t *testing.T) {
 			t.Parallel()
 
-			if got := store.NewReadSet().Len(); got != 0 {
-				t.Fatalf("Len() = %d, want 0", got)
-			}
+			assert.Equal(t, store.NewReadSet().Len(), 0,
+				"a set that read nothing counts nothing")
 		})
 
 		t.Run("counts both grains", func(t *testing.T) {
@@ -127,10 +121,7 @@ func TestReadSet(t *testing.T) {
 
 			// One identity from the lookup, one from the file the
 			// enumeration reached, and one kind edge.
-			if got := reads.Len(); got != 3 {
-				t.Fatalf("Len() = %d, want 3: %v and %v",
-					got, slices.Collect(reads.Identities()), slices.Collect(reads.Kinds()))
-			}
+			assert.Equal(t, reads.Len(), 3, "Len counts both grains")
 		})
 	})
 }

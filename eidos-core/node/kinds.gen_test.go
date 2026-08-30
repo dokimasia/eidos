@@ -8,6 +8,7 @@ package node
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -112,9 +113,8 @@ func TestKinds(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.want.String(), func(t *testing.T) {
 				t.Parallel()
-				if got := tt.subject.Kind(); got != tt.want {
-					t.Fatalf("Kind() = %v, want %v", got, tt.want)
-				}
+				assert.Equal(t, tt.subject.Kind(), tt.want,
+					"every kind answers its own constant")
 			})
 		}
 	})
@@ -127,75 +127,52 @@ func TestKinds(t *testing.T) {
 
 			at := position.Pos{File: "svc/store.go", Line: 41, Col: 2}
 			_ = at
-			if got := (&Function{Pos: at}).Position(); got != at {
-				t.Fatalf("Function.Position() = %v, want %v", got, at)
-			}
-			if got := (&Method{Pos: at}).Position(); got != at {
-				t.Fatalf("Method.Position() = %v, want %v", got, at)
-			}
-			if got := (&Param{Pos: at}).Position(); got != at {
-				t.Fatalf("Param.Position() = %v, want %v", got, at)
-			}
-			if got := (&Return{Pos: at}).Position(); got != at {
-				t.Fatalf("Return.Position() = %v, want %v", got, at)
-			}
-			if got := (&Package{Pos: at}).Position(); got != at {
-				t.Fatalf("Package.Position() = %v, want %v", got, at)
-			}
-			if got := (&File{Pos: at}).Position(); got != at {
-				t.Fatalf("File.Position() = %v, want %v", got, at)
-			}
-			if got := (&Import{Pos: at}).Position(); got != at {
-				t.Fatalf("Import.Position() = %v, want %v", got, at)
-			}
-			if got := (&Export{Pos: at}).Position(); got != at {
-				t.Fatalf("Export.Position() = %v, want %v", got, at)
-			}
-			if got := (&Binding{Pos: at}).Position(); got != at {
-				t.Fatalf("Binding.Position() = %v, want %v", got, at)
-			}
-			if got := (&Enum{Pos: at}).Position(); got != at {
-				t.Fatalf("Enum.Position() = %v, want %v", got, at)
-			}
-			if got := (&EnumVariant{Pos: at}).Position(); got != at {
-				t.Fatalf("EnumVariant.Position() = %v, want %v", got, at)
-			}
-			if got := (&Sum{Pos: at}).Position(); got != at {
-				t.Fatalf("Sum.Position() = %v, want %v", got, at)
-			}
-			if got := (&SumVariant{Pos: at}).Position(); got != at {
-				t.Fatalf("SumVariant.Position() = %v, want %v", got, at)
-			}
-			if got := (&Field{Pos: at}).Position(); got != at {
-				t.Fatalf("Field.Position() = %v, want %v", got, at)
-			}
-			if got := (&Variable{Pos: at}).Position(); got != at {
-				t.Fatalf("Variable.Position() = %v, want %v", got, at)
-			}
-			if got := (&Constant{Pos: at}).Position(); got != at {
-				t.Fatalf("Constant.Position() = %v, want %v", got, at)
-			}
-			if got := (&Struct{Pos: at}).Position(); got != at {
-				t.Fatalf("Struct.Position() = %v, want %v", got, at)
-			}
-			if got := (&Interface{Pos: at}).Position(); got != at {
-				t.Fatalf("Interface.Position() = %v, want %v", got, at)
-			}
-			if got := (&Alias{Pos: at}).Position(); got != at {
-				t.Fatalf("Alias.Position() = %v, want %v", got, at)
-			}
-			if got := (&TypeRef{Pos: at}).Position(); got != at {
-				t.Fatalf("TypeRef.Position() = %v, want %v", got, at)
-			}
-			if got := (&TypeParam{Pos: at}).Position(); got != at {
-				t.Fatalf("TypeParam.Position() = %v, want %v", got, at)
-			}
-			if got := (&Constraint{Pos: at}).Position(); got != at {
-				t.Fatalf("Constraint.Position() = %v, want %v", got, at)
-			}
-			if got := (&Embed{Pos: at}).Position(); got != at {
-				t.Fatalf("Embed.Position() = %v, want %v", got, at)
-			}
+			assert.Equal(t, (&Function{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Method{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Param{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Return{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Package{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&File{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Import{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Export{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Binding{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Enum{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&EnumVariant{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Sum{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&SumVariant{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Field{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Variable{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Constant{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Struct{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Interface{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Alias{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&TypeRef{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&TypeParam{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Constraint{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
+			assert.Equal(t, (&Embed{Pos: at}).Position(), at,
+				"a located declaration answers where it was written")
 		})
 	})
 
@@ -207,75 +184,52 @@ func TestKinds(t *testing.T) {
 
 			lines := []string{"one", "two"}
 			_ = lines
-			if got := (&Function{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Function.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Method{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Method.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Param{}).Docs(); got != nil {
-				t.Fatalf("Param.Docs() = %v, want nil", got)
-			}
-			if got := (&Return{}).Docs(); got != nil {
-				t.Fatalf("Return.Docs() = %v, want nil", got)
-			}
-			if got := (&Package{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Package.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&File{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("File.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Import{}).Docs(); got != nil {
-				t.Fatalf("Import.Docs() = %v, want nil", got)
-			}
-			if got := (&Export{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Export.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Binding{}).Docs(); got != nil {
-				t.Fatalf("Binding.Docs() = %v, want nil", got)
-			}
-			if got := (&Enum{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Enum.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&EnumVariant{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("EnumVariant.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Sum{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Sum.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&SumVariant{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("SumVariant.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Field{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Field.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Variable{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Variable.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Constant{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Constant.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Struct{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Struct.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Interface{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Interface.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&Alias{Doc: lines}).Docs(); len(got) != len(lines) {
-				t.Fatalf("Alias.Docs() = %v, want %v", got, lines)
-			}
-			if got := (&TypeRef{}).Docs(); got != nil {
-				t.Fatalf("TypeRef.Docs() = %v, want nil", got)
-			}
-			if got := (&TypeParam{}).Docs(); got != nil {
-				t.Fatalf("TypeParam.Docs() = %v, want nil", got)
-			}
-			if got := (&Constraint{}).Docs(); got != nil {
-				t.Fatalf("Constraint.Docs() = %v, want nil", got)
-			}
-			if got := (&Embed{}).Docs(); got != nil {
-				t.Fatalf("Embed.Docs() = %v, want nil", got)
-			}
+			assert.Length(t, (&Function{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&Method{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Nil(t, (&Param{}).Docs(),
+				"a kind carrying no documentation answers nil")
+			assert.Nil(t, (&Return{}).Docs(),
+				"a kind carrying no documentation answers nil")
+			assert.Length(t, (&Package{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&File{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Nil(t, (&Import{}).Docs(),
+				"a kind carrying no documentation answers nil")
+			assert.Length(t, (&Export{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Nil(t, (&Binding{}).Docs(),
+				"a kind carrying no documentation answers nil")
+			assert.Length(t, (&Enum{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&EnumVariant{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&Sum{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&SumVariant{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&Field{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&Variable{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&Constant{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&Struct{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&Interface{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Length(t, (&Alias{Doc: lines}).Docs(), len(lines),
+				"a documented declaration answers its documentation")
+			assert.Nil(t, (&TypeRef{}).Docs(),
+				"a kind carrying no documentation answers nil")
+			assert.Nil(t, (&TypeParam{}).Docs(),
+				"a kind carrying no documentation answers nil")
+			assert.Nil(t, (&Constraint{}).Docs(),
+				"a kind carrying no documentation answers nil")
+			assert.Nil(t, (&Embed{}).Docs(),
+				"a kind carrying no documentation answers nil")
 		})
 	})
 
@@ -286,148 +240,102 @@ func TestKinds(t *testing.T) {
 			t.Parallel()
 
 			id := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"}
-			if got := (&Function{ID: id}).Identity(); got != id {
-				t.Fatalf("Function.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Method{ID: id}).Identity(); got != id {
-				t.Fatalf("Method.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Param{ID: id}).Identity(); got != id {
-				t.Fatalf("Param.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Return{ID: id}).Identity(); got != id {
-				t.Fatalf("Return.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Package{ID: id}).Identity(); got != id {
-				t.Fatalf("Package.Identity() = %v, want %v", got, id)
-			}
-			if got := (&File{ID: id}).Identity(); got != id {
-				t.Fatalf("File.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Import{ID: id}).Identity(); got != id {
-				t.Fatalf("Import.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Export{ID: id}).Identity(); got != id {
-				t.Fatalf("Export.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Binding{ID: id}).Identity(); got != id {
-				t.Fatalf("Binding.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Enum{ID: id}).Identity(); got != id {
-				t.Fatalf("Enum.Identity() = %v, want %v", got, id)
-			}
-			if got := (&EnumVariant{ID: id}).Identity(); got != id {
-				t.Fatalf("EnumVariant.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Sum{ID: id}).Identity(); got != id {
-				t.Fatalf("Sum.Identity() = %v, want %v", got, id)
-			}
-			if got := (&SumVariant{ID: id}).Identity(); got != id {
-				t.Fatalf("SumVariant.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Field{ID: id}).Identity(); got != id {
-				t.Fatalf("Field.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Variable{ID: id}).Identity(); got != id {
-				t.Fatalf("Variable.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Constant{ID: id}).Identity(); got != id {
-				t.Fatalf("Constant.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Struct{ID: id}).Identity(); got != id {
-				t.Fatalf("Struct.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Interface{ID: id}).Identity(); got != id {
-				t.Fatalf("Interface.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Alias{ID: id}).Identity(); got != id {
-				t.Fatalf("Alias.Identity() = %v, want %v", got, id)
-			}
-			if got := (&TypeRef{ID: id}).Identity(); got != id {
-				t.Fatalf("TypeRef.Identity() = %v, want %v", got, id)
-			}
-			if got := (&TypeParam{ID: id}).Identity(); got != id {
-				t.Fatalf("TypeParam.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Constraint{ID: id}).Identity(); got != id {
-				t.Fatalf("Constraint.Identity() = %v, want %v", got, id)
-			}
-			if got := (&Embed{ID: id}).Identity(); got != id {
-				t.Fatalf("Embed.Identity() = %v, want %v", got, id)
-			}
+			assert.Equal(t, (&Function{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Method{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Param{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Return{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Package{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&File{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Import{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Export{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Binding{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Enum{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&EnumVariant{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Sum{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&SumVariant{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Field{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Variable{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Constant{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Struct{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Interface{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Alias{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&TypeRef{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&TypeParam{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Constraint{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
+			assert.Equal(t, (&Embed{ID: id}).Identity(), id,
+				"a named declaration answers the identity it was assigned")
 		})
 
 		t.Run("answers the zero identity before it is assigned", func(t *testing.T) {
 			t.Parallel()
-			if got := (&Function{}).Identity(); !got.IsZero() {
-				t.Fatalf("Function.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Method{}).Identity(); !got.IsZero() {
-				t.Fatalf("Method.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Param{}).Identity(); !got.IsZero() {
-				t.Fatalf("Param.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Return{}).Identity(); !got.IsZero() {
-				t.Fatalf("Return.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Package{}).Identity(); !got.IsZero() {
-				t.Fatalf("Package.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&File{}).Identity(); !got.IsZero() {
-				t.Fatalf("File.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Import{}).Identity(); !got.IsZero() {
-				t.Fatalf("Import.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Export{}).Identity(); !got.IsZero() {
-				t.Fatalf("Export.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Binding{}).Identity(); !got.IsZero() {
-				t.Fatalf("Binding.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Enum{}).Identity(); !got.IsZero() {
-				t.Fatalf("Enum.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&EnumVariant{}).Identity(); !got.IsZero() {
-				t.Fatalf("EnumVariant.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Sum{}).Identity(); !got.IsZero() {
-				t.Fatalf("Sum.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&SumVariant{}).Identity(); !got.IsZero() {
-				t.Fatalf("SumVariant.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Field{}).Identity(); !got.IsZero() {
-				t.Fatalf("Field.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Variable{}).Identity(); !got.IsZero() {
-				t.Fatalf("Variable.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Constant{}).Identity(); !got.IsZero() {
-				t.Fatalf("Constant.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Struct{}).Identity(); !got.IsZero() {
-				t.Fatalf("Struct.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Interface{}).Identity(); !got.IsZero() {
-				t.Fatalf("Interface.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Alias{}).Identity(); !got.IsZero() {
-				t.Fatalf("Alias.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&TypeRef{}).Identity(); !got.IsZero() {
-				t.Fatalf("TypeRef.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&TypeParam{}).Identity(); !got.IsZero() {
-				t.Fatalf("TypeParam.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Constraint{}).Identity(); !got.IsZero() {
-				t.Fatalf("Constraint.Identity() = %v, want the zero identity", got)
-			}
-			if got := (&Embed{}).Identity(); !got.IsZero() {
-				t.Fatalf("Embed.Identity() = %v, want the zero identity", got)
-			}
+			assert.True(t, (&Function{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Method{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Param{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Return{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Package{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&File{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Import{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Export{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Binding{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Enum{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&EnumVariant{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Sum{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&SumVariant{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Field{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Variable{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Constant{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Struct{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Interface{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Alias{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&TypeRef{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&TypeParam{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Constraint{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
+			assert.True(t, (&Embed{}).Identity().IsZero(),
+				"an unassigned declaration answers the zero identity")
 		})
 	})
 
@@ -436,46 +344,34 @@ func TestKinds(t *testing.T) {
 
 		t.Run("answers nil when the source states no type", func(t *testing.T) {
 			t.Parallel()
-			if got := (&Param{}).TypeRef(); got != nil {
-				t.Fatalf("Param.TypeRef() = %v, want nil", got)
-			}
-			if got := (&Return{}).TypeRef(); got != nil {
-				t.Fatalf("Return.TypeRef() = %v, want nil", got)
-			}
-			if got := (&Field{}).TypeRef(); got != nil {
-				t.Fatalf("Field.TypeRef() = %v, want nil", got)
-			}
-			if got := (&Variable{}).TypeRef(); got != nil {
-				t.Fatalf("Variable.TypeRef() = %v, want nil", got)
-			}
-			if got := (&Constant{}).TypeRef(); got != nil {
-				t.Fatalf("Constant.TypeRef() = %v, want nil", got)
-			}
-			if got := (&TypeParam{}).TypeRef(); got != nil {
-				t.Fatalf("TypeParam.TypeRef() = %v, want nil", got)
-			}
+			assert.Nil(t, (&Param{}).TypeRef(),
+				"a declaration stating no type answers nil")
+			assert.Nil(t, (&Return{}).TypeRef(),
+				"a declaration stating no type answers nil")
+			assert.Nil(t, (&Field{}).TypeRef(),
+				"a declaration stating no type answers nil")
+			assert.Nil(t, (&Variable{}).TypeRef(),
+				"a declaration stating no type answers nil")
+			assert.Nil(t, (&Constant{}).TypeRef(),
+				"a declaration stating no type answers nil")
+			assert.Nil(t, (&TypeParam{}).TypeRef(),
+				"a declaration stating no type answers nil")
 		})
 
 		t.Run("answers the declared type reference", func(t *testing.T) {
 			t.Parallel()
-			if got := (&Param{Type: &TypeRef{}}).TypeRef(); got == nil {
-				t.Fatal("Param.TypeRef() = nil, want the declared reference")
-			}
-			if got := (&Return{Type: &TypeRef{}}).TypeRef(); got == nil {
-				t.Fatal("Return.TypeRef() = nil, want the declared reference")
-			}
-			if got := (&Field{Type: &TypeRef{}}).TypeRef(); got == nil {
-				t.Fatal("Field.TypeRef() = nil, want the declared reference")
-			}
-			if got := (&Variable{Type: &TypeRef{}}).TypeRef(); got == nil {
-				t.Fatal("Variable.TypeRef() = nil, want the declared reference")
-			}
-			if got := (&Constant{Type: &TypeRef{}}).TypeRef(); got == nil {
-				t.Fatal("Constant.TypeRef() = nil, want the declared reference")
-			}
-			if got := (&TypeParam{Type: &TypeRef{}}).TypeRef(); got == nil {
-				t.Fatal("TypeParam.TypeRef() = nil, want the declared reference")
-			}
+			assert.NotNil(t, (&Param{Type: &TypeRef{}}).TypeRef(),
+				"a declaration stating a type answers the declared reference")
+			assert.NotNil(t, (&Return{Type: &TypeRef{}}).TypeRef(),
+				"a declaration stating a type answers the declared reference")
+			assert.NotNil(t, (&Field{Type: &TypeRef{}}).TypeRef(),
+				"a declaration stating a type answers the declared reference")
+			assert.NotNil(t, (&Variable{Type: &TypeRef{}}).TypeRef(),
+				"a declaration stating a type answers the declared reference")
+			assert.NotNil(t, (&Constant{Type: &TypeRef{}}).TypeRef(),
+				"a declaration stating a type answers the declared reference")
+			assert.NotNil(t, (&TypeParam{Type: &TypeRef{}}).TypeRef(),
+				"a declaration stating a type answers the declared reference")
 		})
 	})
 
@@ -485,21 +381,17 @@ func TestKinds(t *testing.T) {
 		t.Run("a member list the kind does not carry answers nil", func(t *testing.T) {
 			t.Parallel()
 
-			if got := (&Enum{}).EmbedList(); got != nil {
-				t.Fatalf("Enum.EmbedList() = %v, want nil", got)
-			}
+			assert.Nil(t, (&Enum{}).EmbedList(),
+				"a member list the kind does not carry answers nil")
 
-			if got := (&Sum{}).EmbedList(); got != nil {
-				t.Fatalf("Sum.EmbedList() = %v, want nil", got)
-			}
+			assert.Nil(t, (&Sum{}).EmbedList(),
+				"a member list the kind does not carry answers nil")
 
-			if got := (&SumVariant{}).MethodList(); got != nil {
-				t.Fatalf("SumVariant.MethodList() = %v, want nil", got)
-			}
+			assert.Nil(t, (&SumVariant{}).MethodList(),
+				"a member list the kind does not carry answers nil")
 
-			if got := (&SumVariant{}).EmbedList(); got != nil {
-				t.Fatalf("SumVariant.EmbedList() = %v, want nil", got)
-			}
+			assert.Nil(t, (&SumVariant{}).EmbedList(),
+				"a member list the kind does not carry answers nil")
 		})
 
 		t.Run("a member list the kind carries answers its members", func(t *testing.T) {
@@ -510,9 +402,8 @@ func TestKinds(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
-				if got := subject.FieldList(); len(got) == 0 {
-					t.Fatalf("Enum.FieldList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.FieldList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
@@ -520,9 +411,8 @@ func TestKinds(t *testing.T) {
 				subject.Variants = append(subject.Variants, &EnumVariant{})
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
-				if got := subject.MethodList(); len(got) == 0 {
-					t.Fatalf("Enum.MethodList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.MethodList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
@@ -530,9 +420,8 @@ func TestKinds(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
-				if got := subject.FieldList(); len(got) == 0 {
-					t.Fatalf("Sum.FieldList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.FieldList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
@@ -540,17 +429,15 @@ func TestKinds(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
-				if got := subject.MethodList(); len(got) == 0 {
-					t.Fatalf("Sum.MethodList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.MethodList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
 				subject := &SumVariant{}
 				subject.Fields = append(subject.Fields, &Field{})
-				if got := subject.FieldList(); len(got) == 0 {
-					t.Fatalf("SumVariant.FieldList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.FieldList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
@@ -562,9 +449,8 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
-				if got := subject.FieldList(); len(got) == 0 {
-					t.Fatalf("Struct.FieldList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.FieldList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
@@ -576,9 +462,8 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
-				if got := subject.MethodList(); len(got) == 0 {
-					t.Fatalf("Struct.MethodList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.MethodList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
@@ -590,9 +475,8 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
-				if got := subject.EmbedList(); len(got) == 0 {
-					t.Fatalf("Struct.EmbedList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.EmbedList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
@@ -603,9 +487,8 @@ func TestKinds(t *testing.T) {
 				subject.Types = append(subject.Types, &Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
-				if got := subject.FieldList(); len(got) == 0 {
-					t.Fatalf("Interface.FieldList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.FieldList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
@@ -616,9 +499,8 @@ func TestKinds(t *testing.T) {
 				subject.Types = append(subject.Types, &Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
-				if got := subject.MethodList(); len(got) == 0 {
-					t.Fatalf("Interface.MethodList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.MethodList(),
+					"a member list the kind carries answers its members")
 			}
 
 			{
@@ -629,9 +511,8 @@ func TestKinds(t *testing.T) {
 				subject.Types = append(subject.Types, &Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
-				if got := subject.EmbedList(); len(got) == 0 {
-					t.Fatalf("Interface.EmbedList() is empty, want its members")
-				}
+				assert.NotEmpty(t, subject.EmbedList(),
+					"a member list the kind carries answers its members")
 			}
 		})
 	})

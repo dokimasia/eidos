@@ -6,7 +6,8 @@ package coretest
 import (
 	"go/token"
 	"strings"
-	"testing"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
@@ -22,16 +23,13 @@ const dependencyHeading = "# Dependency position"
 // relies on where this one sits, and a position stated in a review
 // comment rots. It reads the package's own source in the working
 // directory, which is the directory of the package under test.
-func AssertDependencyPosition(tb testing.TB) {
+func AssertDependencyPosition(tb assert.TB) {
 	tb.Helper()
 
 	states, err := StatesDependencyPosition(".")
-	if err != nil {
-		tb.Fatalf("StatesDependencyPosition: %v", err)
-	}
-	if !states {
-		tb.Fatal("no file carries the package comment with its dependency position")
-	}
+	assert.NoError(tb, err, "the package under test parses")
+	assert.True(tb, states,
+		"a file carries the package comment with its dependency position")
 }
 
 // StatesDependencyPosition reports whether the package in dir

@@ -6,6 +6,8 @@ package emit_test
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/emit"
 )
 
@@ -20,9 +22,7 @@ func TestSlot(t *testing.T) {
 
 			var slot emit.Slot[int]
 			slot.Append(1)
-			if got := slot.Len(); got != 1 {
-				t.Fatalf("Len() = %d, want 1", got)
-			}
+			assert.Equal(t, slot.Len(), 1, "the zero slot accepts values")
 		})
 
 		t.Run("keeps insertion order across calls", func(t *testing.T) {
@@ -32,16 +32,8 @@ func TestSlot(t *testing.T) {
 			slot.Append(1, 2)
 			slot.Append(3)
 
-			want := []int{1, 2, 3}
-			got := slot.Items()
-			if len(got) != len(want) {
-				t.Fatalf("Items() = %v, want %v", got, want)
-			}
-			for i := range want {
-				if got[i] != want[i] {
-					t.Fatalf("Items() = %v, want %v", got, want)
-				}
-			}
+			assert.Equal(t, slot.Items(), []int{1, 2, 3},
+				"insertion order holds across calls")
 		})
 
 		t.Run("accepts no values without changing the slot", func(t *testing.T) {
@@ -49,9 +41,7 @@ func TestSlot(t *testing.T) {
 
 			var slot emit.Slot[int]
 			slot.Append()
-			if got := slot.Len(); got != 0 {
-				t.Fatalf("Len() = %d, want 0", got)
-			}
+			assert.Equal(t, slot.Len(), 0, "appending nothing changes nothing")
 		})
 	})
 
@@ -62,9 +52,7 @@ func TestSlot(t *testing.T) {
 			t.Parallel()
 
 			var slot emit.Slot[int]
-			if got := slot.Items(); len(got) != 0 {
-				t.Fatalf("Items() = %v, want empty", got)
-			}
+			assert.Empty(t, slot.Items(), "the zero slot holds nothing")
 		})
 	})
 
@@ -78,9 +66,7 @@ func TestSlot(t *testing.T) {
 			for i := range 5 {
 				slot.Append(string(rune('a' + i)))
 			}
-			if got := slot.Len(); got != 5 {
-				t.Fatalf("Len() = %d, want 5", got)
-			}
+			assert.Equal(t, slot.Len(), 5, "Len counts what was appended")
 		})
 	})
 }

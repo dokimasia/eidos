@@ -6,6 +6,8 @@ package diag_test
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/diag"
 )
 
@@ -34,9 +36,8 @@ func TestSeverity(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				if got := tt.severity.String(); got != tt.want {
-					t.Fatalf("String() = %q, want %q", got, tt.want)
-				}
+				assert.Equal(t, tt.severity.String(), tt.want,
+					"the severity spells what machine output carries")
 			})
 		}
 	})
@@ -45,9 +46,7 @@ func TestSeverity(t *testing.T) {
 		t.Parallel()
 
 		var got diag.Severity
-		if got != diag.SeverityError {
-			t.Fatalf("zero Severity = %d, want SeverityError: a finding that "+
-				"answered no severity must not downgrade itself", got)
-		}
+		assert.Equal(t, got, diag.SeverityError,
+			"a finding that answered no severity must not downgrade itself")
 	})
 }

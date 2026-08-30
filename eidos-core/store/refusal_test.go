@@ -4,10 +4,10 @@
 package store_test
 
 import (
-	"errors"
 	"fmt"
-	"strings"
 	"testing"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/store"
@@ -34,11 +34,9 @@ func TestRefusal(t *testing.T) {
 			const reason = "svc/store is added after Freeze"
 			got := (&store.RefusedError{Code: store.FrozenWrite, Msg: reason}).Error()
 
-			for _, want := range []string{"store: ", store.FrozenWrite.String(), reason} {
-				if !strings.Contains(got, want) {
-					t.Fatalf("Error() = %q, want it to name %q", got, want)
-				}
-			}
+			assert.HasPrefix(t, got, "store: ", "the error carries the package prefix")
+			assert.Contains(t, got, store.FrozenWrite.String(), "names its code")
+			assert.Contains(t, got, reason, "and states its reason")
 		})
 
 		t.Run("carries its code through a wrapping", func(t *testing.T) {
@@ -47,13 +45,10 @@ func TestRefusal(t *testing.T) {
 			wrapped := fmt.Errorf("loading svc/store: %w",
 				&store.RefusedError{Code: store.FrozenWrite, Msg: "refused"})
 
-			var refused *store.RefusedError
-			if !errors.As(wrapped, &refused) {
-				t.Fatalf("errors.As(%v) = false, want the refusal", wrapped)
-			}
-			if refused.Code != store.FrozenWrite {
-				t.Fatalf("Code = %v, want %v", refused.Code, store.FrozenWrite)
-			}
+			refused := assert.ErrorAs[*store.RefusedError](t, wrapped,
+				"the refusal survives a wrapping")
+			assert.Equal(t, refused.Code, store.FrozenWrite,
+				"with the code consumers script against")
 		})
 	})
 
@@ -68,14 +63,10 @@ func TestRefusal(t *testing.T) {
 					t.Parallel()
 
 					meaning, known := diag.Kernel().Meaning(code)
-					if !known || meaning == "" {
-						t.Fatalf("Kernel().Meaning(%v) = %q, %t; want the registered meaning",
-							code, meaning, known)
-					}
-					if code.Prefix != diag.KernelPrefix {
-						t.Fatalf("%v is owned by %q, want the kernel's prefix",
-							code, code.Prefix)
-					}
+					assert.True(t, known, "the code is registered in the kernel registry")
+					assert.NotEqual(t, meaning, "", "with a meaning the index anchors to")
+					assert.Equal(t, code.Prefix, diag.KernelPrefix,
+						"under the kernel's own prefix")
 				})
 			}
 		})
@@ -83,13 +74,12 @@ func TestRefusal(t *testing.T) {
 		t.Run("name distinct findings", func(t *testing.T) {
 			t.Parallel()
 
-			seen := make(map[diag.Code]string, len(storeCodes))
-			for name, code := range storeCodes {
-				if first, taken := seen[code]; taken {
-					t.Fatalf("%s and %s both spell %v", first, name, code)
-				}
-				seen[code] = name
+			seen := make(map[diag.Code]struct{}, len(storeCodes))
+			for _, code := range storeCodes {
+				seen[code] = struct{}{}
 			}
+			assert.Length(t, seen, len(storeCodes),
+				"every refusal reports under its own code")
 		})
 	})
 }

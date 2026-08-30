@@ -6,6 +6,8 @@ package symbol_test
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
+
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -50,27 +52,22 @@ func TestSymbol(t *testing.T) {
 				pos:  at,
 				docs: []string{"Store is the persistence seam."},
 			}
-			if got := subject.Kind(); got != symbol.KindStruct {
-				t.Fatalf("Kind() = %v, want KindStruct", got)
-			}
-			if got := subject.Position(); got != at {
-				t.Fatalf("Position() = %v, want %v", got, at)
-			}
-			if got := subject.Docs(); len(got) != 1 {
-				t.Fatalf("Docs() = %v, want one line", got)
-			}
+			assert.Equal(t, subject.Kind(), symbol.KindStruct,
+				"Kind answers what the declaration is")
+			assert.Equal(t, subject.Position(), at,
+				"Position answers where it was written")
+			assert.Length(t, subject.Docs(), 1,
+				"Docs answers the documentation it carries")
 		})
 
 		t.Run("a synthesized declaration answers the zero position", func(t *testing.T) {
 			t.Parallel()
 
 			var subject symbol.Symbol = &declaration{kind: symbol.KindStruct}
-			if !subject.Position().IsZero() {
-				t.Fatal("Position() is set, want the zero position")
-			}
-			if subject.Docs() != nil {
-				t.Fatal("Docs() is set, want nil")
-			}
+			assert.True(t, subject.Position().IsZero(),
+				"a synthesized declaration answers the zero position")
+			assert.Nil(t, subject.Docs(),
+				"and carries no documentation")
 		})
 	})
 
@@ -81,12 +78,10 @@ func TestSymbol(t *testing.T) {
 			t.Parallel()
 
 			var subject symbol.Membered = &declaration{kind: symbol.KindStruct}
-			if got := subject.MethodList(); len(got) != 1 {
-				t.Fatalf("MethodList() = %v, want one member", got)
-			}
-			if got := subject.FieldList(); got != nil {
-				t.Fatalf("FieldList() = %v, want nil for a kind carrying none", got)
-			}
+			assert.Length(t, subject.MethodList(), 1,
+				"MethodList answers the members the kind carries")
+			assert.Nil(t, subject.FieldList(),
+				"a member list the kind does not carry answers nil")
 		})
 	})
 
@@ -97,9 +92,8 @@ func TestSymbol(t *testing.T) {
 			t.Parallel()
 
 			var subject symbol.Typed = &declaration{kind: symbol.KindField}
-			if got := subject.TypeRef(); got != nil {
-				t.Fatalf("TypeRef() = %v, want nil", got)
-			}
+			assert.Nil(t, subject.TypeRef(),
+				"TypeRef answers nil when the source states no type")
 		})
 	})
 }

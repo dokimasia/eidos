@@ -5,8 +5,9 @@ package gosource_test
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
@@ -21,36 +22,25 @@ func TestModule(t *testing.T) {
 			t.Parallel()
 
 			got, err := gosource.ModuleRoot("testdata/mod/lib")
-			if err != nil {
-				t.Fatalf("ModuleRoot: unexpected error: %v", err)
-			}
+			assert.NoError(t, err, "a directory inside a module resolves")
 			want, err := filepath.Abs("testdata/mod")
-			if err != nil {
-				t.Fatalf("Abs: %v", err)
-			}
-			if got != want {
-				t.Fatalf("ModuleRoot = %q, want %q", got, want)
-			}
+			assert.NoError(t, err, "the fixture root resolves")
+			assert.Equal(t, got, want, "to the nearest enclosing module")
 		})
 
 		t.Run("answers an absolute path", func(t *testing.T) {
 			t.Parallel()
 
 			got, err := gosource.ModuleRoot("testdata/mod")
-			if err != nil {
-				t.Fatalf("ModuleRoot: unexpected error: %v", err)
-			}
-			if !filepath.IsAbs(got) {
-				t.Fatalf("ModuleRoot = %q, want an absolute path", got)
-			}
+			assert.NoError(t, err, "the module root resolves")
+			assert.True(t, filepath.IsAbs(got), "and is absolute")
 		})
 
 		t.Run("reports a directory outside any module", func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := gosource.ModuleRoot("/"); err == nil {
-				t.Fatal("ModuleRoot(/): error = nil, want non-nil")
-			}
+			_, err := gosource.ModuleRoot("/")
+			assert.HasError(t, err, "a directory outside any module is reported")
 		})
 	})
 
@@ -61,24 +51,16 @@ func TestModule(t *testing.T) {
 			t.Parallel()
 
 			got, err := gosource.ModulePath("testdata/mod")
-			if err != nil {
-				t.Fatalf("ModulePath: unexpected error: %v", err)
-			}
-			if want := "example.test/fixture"; got != want {
-				t.Fatalf("ModulePath = %q, want %q", got, want)
-			}
+			assert.NoError(t, err, "a module with a go.mod answers")
+			assert.Equal(t, got, "example.test/fixture", "its module directive")
 		})
 
 		t.Run("reports a directory holding no go.mod", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := gosource.ModulePath("testdata/empty")
-			if err == nil {
-				t.Fatal("ModulePath: error = nil, want non-nil")
-			}
-			if !strings.HasPrefix(err.Error(), "gosource: ") {
-				t.Fatalf("error = %q, want the package prefix", err)
-			}
+			assert.HasError(t, err, "a directory holding no go.mod is reported")
+			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
 		})
 	})
 }

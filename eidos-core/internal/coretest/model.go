@@ -6,7 +6,8 @@ package coretest
 import (
 	"strconv"
 	"strings"
-	"testing"
+
+	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -102,14 +103,16 @@ func Workspace(packages, files, decls int) []*node.Package {
 
 // Names answers the declared names of what a traversal yielded,
 // which is what a case compares against.
-func Names(tb testing.TB, decls []symbol.Symbol) []string {
+func Names(tb assert.TB, decls []symbol.Symbol) []string {
 	tb.Helper()
 
 	out := make([]string, 0, len(decls))
 	for _, decl := range decls {
 		named, names := decl.(node.Declaration)
+		assert.True(tb, names,
+			"everything the traversal yielded names a declaration")
 		if !names {
-			tb.Fatalf("the traversal yielded %T, which names no declaration", decl)
+			continue
 		}
 		out = append(out, named.Identity().Name)
 	}

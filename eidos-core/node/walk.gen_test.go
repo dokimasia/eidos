@@ -8,6 +8,7 @@ package node
 import (
 	"testing"
 
+	"go.dokimi.dev/assert"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -22,7 +23,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			Walk(nil, func(symbol.Symbol) bool {
-				t.Fatal("visit was called for a nil declaration")
+				assert.True(t, false, "visit is never called for a nil declaration")
 				return true
 			})
 		})
@@ -40,9 +41,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 4; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 4,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Method", func(t *testing.T) {
@@ -60,9 +60,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 6; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 6,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Param", func(t *testing.T) {
@@ -76,9 +75,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Return", func(t *testing.T) {
@@ -92,9 +90,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Package", func(t *testing.T) {
@@ -108,9 +105,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of File", func(t *testing.T) {
@@ -126,9 +122,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 4; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 4,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Import", func(t *testing.T) {
@@ -142,9 +137,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Export", func(t *testing.T) {
@@ -158,9 +152,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Enum", func(t *testing.T) {
@@ -176,9 +169,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 4; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 4,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Sum", func(t *testing.T) {
@@ -194,9 +186,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 4; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 4,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of SumVariant", func(t *testing.T) {
@@ -210,9 +201,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Field", func(t *testing.T) {
@@ -226,9 +216,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Variable", func(t *testing.T) {
@@ -242,9 +231,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Constant", func(t *testing.T) {
@@ -258,9 +246,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Struct", func(t *testing.T) {
@@ -280,9 +267,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 8; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 8,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Interface", func(t *testing.T) {
@@ -301,9 +287,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 7; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 7,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Alias", func(t *testing.T) {
@@ -318,9 +303,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 3; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 3,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of TypeRef", func(t *testing.T) {
@@ -334,9 +318,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of TypeParam", func(t *testing.T) {
@@ -352,9 +335,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 4; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 4,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Constraint", func(t *testing.T) {
@@ -368,9 +350,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("descends into every traversed field of Embed", func(t *testing.T) {
@@ -384,9 +365,8 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			if want := 2; seen != want {
-				t.Fatalf("visited %d declarations, want %d", seen, want)
-			}
+			assert.Equal(t, seen, 2,
+				"the walk descends into every traversed field")
 		})
 
 		t.Run("prunes a subtree when visit answers false", func(t *testing.T) {
@@ -402,9 +382,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Function after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -419,9 +398,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Method after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -432,9 +410,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Param after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -445,9 +422,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Return after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -458,9 +434,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Package after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -473,9 +448,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of File after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -486,9 +460,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Import after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -499,9 +472,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Export after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -514,9 +486,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Enum after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -529,9 +500,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Sum after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -542,9 +512,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of SumVariant after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -555,9 +524,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Field after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -568,9 +536,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Variable after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -581,9 +548,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Constant after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -600,9 +566,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Struct after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -618,9 +583,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Interface after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -632,9 +596,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Alias after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -645,9 +608,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of TypeRef after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -660,9 +622,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of TypeParam after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -673,9 +634,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Constraint after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 
 			{
@@ -686,9 +646,8 @@ func TestWalk(t *testing.T) {
 					seen++
 					return false
 				})
-				if seen != 1 {
-					t.Fatalf("visited %d declarations of Embed after pruning, want 1", seen)
-				}
+				assert.Equal(t, seen, 1,
+					"answering false prunes the subtree")
 			}
 		})
 	})
@@ -713,10 +672,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Function declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -735,10 +692,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Method declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -753,10 +708,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Param declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -771,10 +724,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Return declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -789,10 +740,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Package declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -809,10 +758,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d File declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -827,10 +774,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Import declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -845,10 +790,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Export declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -865,10 +808,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Enum declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -885,10 +826,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Sum declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -903,10 +842,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d SumVariant declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -921,10 +858,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Field declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -939,10 +874,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Variable declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -957,10 +890,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Constant declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -981,10 +912,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Struct declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -1004,10 +933,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Interface declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -1023,10 +950,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Alias declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -1041,10 +966,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d TypeRef declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -1061,10 +984,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d TypeParam declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -1079,10 +1000,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Constraint declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 
 			{
@@ -1097,10 +1016,8 @@ func TestWalk(t *testing.T) {
 				for range All(subject) {
 					yielded++
 				}
-				if walked != yielded {
-					t.Fatalf("All yielded %d Embed declarations, Walk visited %d",
-						yielded, walked)
-				}
+				assert.Equal(t, yielded, walked,
+					"All yields the same declarations Walk visits")
 			}
 		})
 
@@ -1117,9 +1034,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Function declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1134,9 +1050,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Method declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1147,9 +1062,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Param declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1160,9 +1074,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Return declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1173,9 +1086,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Package declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1188,9 +1100,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d File declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1201,9 +1112,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Import declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1214,9 +1124,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Export declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1229,9 +1138,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Enum declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1244,9 +1152,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Sum declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1257,9 +1164,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d SumVariant declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1270,9 +1176,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Field declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1283,9 +1188,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Variable declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1296,9 +1200,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Constant declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1315,9 +1218,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Struct declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1333,9 +1235,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Interface declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1347,9 +1248,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Alias declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1360,9 +1260,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d TypeRef declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1375,9 +1274,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d TypeParam declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1388,9 +1286,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Constraint declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 
 			{
@@ -1401,9 +1298,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Embed declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the iteration stops when the range stops")
 			}
 		})
 	})
@@ -1427,10 +1323,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Function declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1448,10 +1342,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Method declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1465,10 +1357,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Param declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1482,10 +1372,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Return declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1499,10 +1387,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Package declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1518,10 +1404,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d File declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1535,10 +1419,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Import declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1552,10 +1434,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Export declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1571,10 +1451,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Enum declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1590,10 +1468,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Sum declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1607,10 +1483,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d SumVariant declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1624,10 +1498,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Field declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1641,10 +1513,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Variable declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1658,10 +1528,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Constant declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1681,10 +1549,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Struct declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1703,10 +1569,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Interface declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1721,10 +1585,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Alias declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1738,10 +1600,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d TypeRef declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1757,10 +1617,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d TypeParam declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1774,10 +1632,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Constraint declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 
 			{
@@ -1791,10 +1647,8 @@ func TestWalk(t *testing.T) {
 				for range Declarations(subject) {
 					named++
 				}
-				if named != yielded {
-					t.Fatalf("Declarations yielded %d Embed declarations, All yielded %d",
-						named, yielded)
-				}
+				assert.Equal(t, named, yielded,
+					"Declarations yields every declaration All does")
 			}
 		})
 
@@ -1803,9 +1657,9 @@ func TestWalk(t *testing.T) {
 
 			subject := &File{Decls: Symbols{unnamed{}}}
 			for decl := range Declarations(subject) {
-				if _, isFile := decl.(*File); !isFile {
-					t.Fatalf("Declarations yielded %v, want the file alone", decl)
-				}
+				_, isFile := decl.(*File)
+				assert.True(t, isFile,
+					"a symbol that does not name itself is skipped, not yielded")
 			}
 		})
 
@@ -1822,9 +1676,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Function declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1839,9 +1692,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Method declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1852,9 +1704,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Param declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1865,9 +1716,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Return declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1878,9 +1728,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Package declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1893,9 +1742,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d File declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1906,9 +1754,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Import declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1919,9 +1766,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Export declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1934,9 +1780,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Enum declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1949,9 +1794,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Sum declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1962,9 +1806,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d SumVariant declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1975,9 +1818,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Field declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -1988,9 +1830,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Variable declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -2001,9 +1842,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Constant declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -2020,9 +1860,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Struct declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -2038,9 +1877,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Interface declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -2052,9 +1890,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Alias declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -2065,9 +1902,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d TypeRef declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -2080,9 +1916,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d TypeParam declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -2093,9 +1928,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Constraint declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 
 			{
@@ -2106,9 +1940,8 @@ func TestWalk(t *testing.T) {
 					yielded++
 					break
 				}
-				if yielded != 1 {
-					t.Fatalf("yielded %d Embed declarations after breaking, want 1", yielded)
-				}
+				assert.Equal(t, yielded, 1,
+					"the typed iteration stops when the range stops")
 			}
 		})
 	})
