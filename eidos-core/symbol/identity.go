@@ -4,6 +4,7 @@
 package symbol
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 )
@@ -45,22 +46,54 @@ func (id Identity) IsZero() bool { return id == Identity{} }
 // parenthesized discriminator, even when it is empty, so a field
 // and a nullary method with one name spell differently.
 func (id Identity) String() string {
-	s := string(id.Lang) + ":" + id.Package
+	// The parts are written into one buffer rather than concatenated
+	// in steps, because an identity is spelled on every ordering the
+	// kernel makes deterministic.
+	var out strings.Builder
+	out.Grow(len(id.Lang) + len(id.Package) + len(id.Owner) + len(id.Name) + len(id.Disc) + 4)
+	out.WriteString(string(id.Lang))
+	out.WriteByte(':')
+	out.WriteString(id.Package)
+
 	if id.Kind == KindFile {
-		return s + "/" + id.Name
+		out.WriteByte('/')
+		out.WriteString(id.Name)
+		return out.String()
 	}
 	if id.Name == "" {
-		return s
+		return out.String()
 	}
-	s += "."
+
+	out.WriteByte('.')
 	if id.Owner != "" {
-		s += id.Owner + "#"
+		out.WriteString(id.Owner)
+		out.WriteByte('#')
 	}
-	s += id.Name
+	out.WriteString(id.Name)
 	if id.Kind == KindFunction || id.Kind == KindMethod {
-		s += "(" + id.Disc + ")"
+		out.WriteByte('(')
+		out.WriteString(id.Disc)
+		out.WriteByte(')')
 	}
-	return s
+	return out.String()
+}
+
+// Compare orders two identities, answering a negative number, zero
+// or a positive one as id sorts before, with, or after other.
+//
+// The order is field order: language, package, owner, name, kind,
+// discriminator. It exists so that a caller sorting identities for a
+// deterministic output compares the parts rather than
+// [Identity.String], which builds a string per comparison.
+func (id Identity) Compare(other Identity) int {
+	return cmp.Or(
+		cmp.Compare(id.Lang, other.Lang),
+		cmp.Compare(id.Package, other.Package),
+		cmp.Compare(id.Owner, other.Owner),
+		cmp.Compare(id.Name, other.Name),
+		cmp.Compare(id.Kind, other.Kind),
+		cmp.Compare(id.Disc, other.Disc),
+	)
 }
 
 // Parse reads an identity from the canonical grammar.

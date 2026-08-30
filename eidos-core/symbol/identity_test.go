@@ -4,6 +4,7 @@
 package symbol_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/eidos/core/symbol"
@@ -293,6 +294,115 @@ func TestIdentity(t *testing.T) {
 		}
 		if (symbol.Identity{Lang: "golang"}).IsZero() {
 			t.Fatal("populated Identity: IsZero() = true, want false")
+		}
+	})
+
+	t.Run("Compare", func(t *testing.T) {
+		t.Parallel()
+
+		base := symbol.Identity{
+			Lang: "golang", Package: "svc/store", Owner: "Store",
+			Name: "Get", Kind: symbol.KindMethod, Disc: "ctx",
+		}
+
+		t.Run("answers zero for one identity", func(t *testing.T) {
+			t.Parallel()
+
+			same := base
+			if got := base.Compare(same); got != 0 {
+				t.Fatalf("Compare against a copy = %d, want 0", got)
+			}
+		})
+
+		t.Run("orders on every part that makes an identity", func(t *testing.T) {
+			t.Parallel()
+
+			// Each entry differs from base in one field alone, and
+			// sorts after it, so a comparison that skipped that field
+			// would answer zero.
+			raise := func(alter func(*symbol.Identity)) symbol.Identity {
+				other := base
+				alter(&other)
+				return other
+			}
+			greater := map[string]symbol.Identity{
+				"language":      raise(func(id *symbol.Identity) { id.Lang = "protobuf" }),
+				"package":       raise(func(id *symbol.Identity) { id.Package = "svc/zache" }),
+				"owner":         raise(func(id *symbol.Identity) { id.Owner = "Zache" }),
+				"name":          raise(func(id *symbol.Identity) { id.Name = "Put" }),
+				"discriminator": raise(func(id *symbol.Identity) { id.Disc = "ctx,string" }),
+			}
+			for part, other := range greater {
+				t.Run(part, func(t *testing.T) {
+					t.Parallel()
+
+					if got := base.Compare(other); got >= 0 {
+						t.Fatalf("Compare on a greater %s = %d, want a negative number", part, got)
+					}
+					if got := other.Compare(base); got <= 0 {
+						t.Fatalf("the reverse comparison = %d, want a positive number", got)
+					}
+				})
+			}
+		})
+
+		t.Run("separates two identities differing only in kind", func(t *testing.T) {
+			t.Parallel()
+
+			field := base
+			field.Kind = symbol.KindField
+			if got := field.Compare(base); got == 0 {
+				t.Fatal("two identities differing in kind compared equal, " +
+					"so a sorted output would drop one")
+			}
+		})
+
+		t.Run("sorts a slice into one order", func(t *testing.T) {
+			t.Parallel()
+
+			ordered := []symbol.Identity{
+				{Lang: "golang", Package: "svc/cache", Kind: symbol.KindPackage},
+				{Lang: "golang", Package: "svc/store", Kind: symbol.KindPackage},
+				{Lang: "golang", Package: "svc/store", Name: "Store", Kind: symbol.KindStruct},
+			}
+			shuffled := []symbol.Identity{ordered[2], ordered[0], ordered[1]}
+			slices.SortFunc(shuffled, symbol.Identity.Compare)
+
+			if !slices.Equal(shuffled, ordered) {
+				t.Fatalf("sorted to %v, want %v", shuffled, ordered)
+			}
+		})
+	})
+}
+
+// An identity is spelled and compared on every ordering the kernel
+// makes deterministic: a graph's indexes, a read set, a manifest.
+func BenchmarkIdentity(b *testing.B) {
+	method := symbol.Identity{
+		Lang:    "golang",
+		Package: "svc/store",
+		Owner:   "Store",
+		Name:    "Get",
+		Disc:    "ctx,string",
+		Kind:    symbol.KindMethod,
+	}
+
+	b.Run("String", func(b *testing.B) {
+		b.ReportAllocs()
+
+		for b.Loop() {
+			_ = method.String()
+		}
+	})
+
+	b.Run("Parse", func(b *testing.B) {
+		b.ReportAllocs()
+
+		spelled := method.String()
+		for b.Loop() {
+			if _, err := symbol.Parse(spelled); err != nil {
+				b.Fatalf("Parse(%q): unexpected error: %v", spelled, err)
+			}
 		}
 	})
 }
