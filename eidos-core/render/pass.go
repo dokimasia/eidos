@@ -8,6 +8,7 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"slices"
 	"strings"
@@ -46,6 +47,23 @@ var RefusedTemplate = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 // content is guessed at.
 var BodyConflict = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 24, Meaning: "a body holds more than one content form",
+})
+
+// UnresolvedRef reports a template reference nothing answers: no
+// tree declared for the emitting plugin, no template of that name
+// in it, or a template that does not parse. The body falls back to
+// its slots, so the extension points survive the broken claim.
+var UnresolvedRef = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 25, Meaning: "a template reference resolves to nothing in its emitting plugin's tree",
+})
+
+// DroppedSlots reports a body-claiming template that placed no
+// marker for pending slot content: the template owns the layout,
+// so nothing is appended for it, and the Error names the emitting
+// plugin and counts what went unplaced. The contributor cannot be
+// named, because a slot statement carries no attribution.
+var DroppedSlots = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 26, Meaning: "a body-claiming template places no marker for pending contributions",
 })
 
 // Naming spells a unit's filename for one target: the join and
@@ -184,7 +202,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		return cmp.Compare(a.name, b.name)
 	})
 
-	f := &frame{pass: p, sink: ctx.Sink}
+	f := &frame{pass: p, sink: ctx.Sink, trees: ctx.Trees}
 	kinds, err := p.bind(f)
 	if err != nil {
 		return nil, err
@@ -205,6 +223,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 type frame struct {
 	pass   *Pass
 	sink   *diag.Sink
+	trees  map[plugin.ID]fs.FS
 	out    bytes.Buffer
 	at     position.Pos
 	plugin plugin.ID
@@ -239,23 +258,32 @@ func (f *frame) body(d any) (string, error) {
 	default:
 		return "", fmt.Errorf("a %T carries no body", d)
 	}
-	return f.renderBody(b)
+	return f.renderBody(d, b)
 }
 
-// renderBody composes one body: prologue, content, named slots in
-// declaration order, epilogue. A two-form body reports and keeps
-// its slots; a reference resolves against the trees the context
-// carries, and a statement the language cannot spell fails the
-// declaration under the execute-time code.
-func (f *frame) renderBody(b *emit.Body) (string, error) {
-	var out strings.Builder
-	if err := f.stmts(&out, b.Prologue.Items()); err != nil {
-		return "", err
-	}
+// renderBody composes one body. For the template form the
+// emitter's own template drives the layout, placing slots through
+// its markers; every other form takes the fixed composition:
+// prologue, content, named slots in declaration order, epilogue.
+// A two-form body reports and keeps its slots, an unresolved
+// reference reports and falls back to them, and a statement the
+// language cannot spell fails the declaration under the
+// execute-time code.
+func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
 	form, err := b.Form()
 	if err != nil {
 		f.sink.Errorf(BodyConflict, f.at, f.pass.name,
 			"%s emitted a body holding two forms: %v", f.plugin, err)
+	}
+	if form == emit.FormTemplate {
+		if out, resolved := f.reference(d, b); resolved {
+			return out, nil
+		}
+		form = emit.FormDefault
+	}
+	var out strings.Builder
+	if err := f.stmts(&out, b.Prologue.Items()); err != nil {
+		return "", err
 	}
 	switch form {
 	case emit.FormStmts:
@@ -264,9 +292,7 @@ func (f *frame) renderBody(b *emit.Body) (string, error) {
 		}
 	case emit.FormVerbatim:
 		out.WriteString(b.Verbatim)
-	case emit.FormTemplate:
-		return "", errors.New("the pass holds no template trees")
-	case emit.FormDefault:
+	case emit.FormTemplate, emit.FormDefault:
 	}
 	for _, named := range b.Slots {
 		if err := f.stmts(&out, named.Slot.Items()); err != nil {
@@ -277,6 +303,124 @@ func (f *frame) renderBody(b *emit.Body) (string, error) {
 		return "", err
 	}
 	return out.String(), nil
+}
+
+// reference executes a body-claiming template from the emitting
+// plugin's tree. A false answer means nothing resolved, the
+// finding is on the sink, and the caller falls back to the slots;
+// a true answer is the template's own output, the marker law
+// checked behind it.
+func (f *frame) reference(d any, b *emit.Body) (string, bool) {
+	tree, held := f.trees[f.plugin]
+	if !held {
+		f.sink.Errorf(UnresolvedRef, f.at, f.pass.name,
+			"%s references %q, and no tree is declared for it",
+			f.plugin, b.Ref.Name)
+		return "", false
+	}
+	src, err := fs.ReadFile(tree, b.Ref.Name)
+	if err != nil {
+		f.sink.Errorf(UnresolvedRef, f.at, f.pass.name,
+			"%s references %q, which its tree does not hold",
+			f.plugin, b.Ref.Name)
+		return "", false
+	}
+	pl := &placement{frame: f, body: b, named: make([]bool, len(b.Slots))}
+	t, err := template.New(b.Ref.Name).Funcs(template.FuncMap{
+		"slots": pl.all,
+		"slot":  pl.one,
+	}).Parse(string(src))
+	if err != nil {
+		f.sink.Errorf(UnresolvedRef, f.at, f.pass.name,
+			"%s's template %q does not parse: %v", f.plugin, b.Ref.Name, err)
+		return "", false
+	}
+	var out strings.Builder
+	data := struct{ Decl, Data any }{Decl: d, Data: b.Ref.Data}
+	if err := t.Execute(&out, data); err != nil {
+		f.sink.Errorf(RefusedTemplate, f.at, f.pass.name,
+			"%s's template %q refused: %v", f.plugin, b.Ref.Name, err)
+		return "", false
+	}
+	if n := pl.pending(); n > 0 {
+		f.sink.Errorf(DroppedSlots, f.at, f.pass.name,
+			"%s's template %q places no marker for %d pending statements",
+			f.plugin, b.Ref.Name, n)
+	}
+	return out.String(), true
+}
+
+// placement tracks which of a body's slots the template placed,
+// so the marker law has something to count.
+type placement struct {
+	frame *frame
+	body  *emit.Body
+	std   [2]bool
+	named []bool
+}
+
+// all places everything not yet placed, in the fixed order:
+// prologue, named slots in declaration order, epilogue. It is the
+// slots builtin.
+func (pl *placement) all() (string, error) {
+	var out strings.Builder
+	if !pl.std[0] {
+		pl.std[0] = true
+		if err := pl.frame.stmts(&out, pl.body.Prologue.Items()); err != nil {
+			return "", err
+		}
+	}
+	for i, named := range pl.body.Slots {
+		if pl.named[i] {
+			continue
+		}
+		pl.named[i] = true
+		if err := pl.frame.stmts(&out, named.Slot.Items()); err != nil {
+			return "", err
+		}
+	}
+	if !pl.std[1] {
+		pl.std[1] = true
+		if err := pl.frame.stmts(&out, pl.body.Epilogue.Items()); err != nil {
+			return "", err
+		}
+	}
+	return out.String(), nil
+}
+
+// one places a single named slot where the template says. It is
+// the slot builtin; a name the owner never declared is the
+// template's own error.
+func (pl *placement) one(name string) (string, error) {
+	for i, named := range pl.body.Slots {
+		if named.Name != name {
+			continue
+		}
+		pl.named[i] = true
+		var out strings.Builder
+		if err := pl.frame.stmts(&out, named.Slot.Items()); err != nil {
+			return "", err
+		}
+		return out.String(), nil
+	}
+	return "", fmt.Errorf("the body declares no slot %q", name)
+}
+
+// pending counts the statements left in slots no marker placed.
+func (pl *placement) pending() int {
+	n := 0
+	if !pl.std[0] {
+		n += pl.body.Prologue.Len()
+	}
+	for i, named := range pl.body.Slots {
+		if !pl.named[i] {
+			n += named.Slot.Len()
+		}
+	}
+	if !pl.std[1] {
+		n += pl.body.Epilogue.Len()
+	}
+	return n
 }
 
 // stmts spells a statement run through the language's printer.

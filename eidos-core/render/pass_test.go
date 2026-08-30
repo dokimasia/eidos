@@ -5,10 +5,12 @@ package render_test
 
 import (
 	"errors"
+	"io/fs"
 	"path"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
@@ -271,6 +273,98 @@ func TestPass(t *testing.T) {
 			_, sink := runPass(t, language(), seeded(t,
 				fn("store.go", "Handle", body)))
 			assert.True(t, sink.Failed(), "the printer's refusal is an Error")
+		})
+	})
+
+	t.Run("resolves references in the emitter's tree", func(t *testing.T) {
+		t.Parallel()
+
+		trees := func(tpl string) map[plugin.ID]fs.FS {
+			return map[plugin.ID]fs.FS{
+				"gen": fstest.MapFS{"method1.tpl": &fstest.MapFile{Data: []byte(tpl)}},
+			}
+		}
+		refBody := func(data any) emit.Body {
+			var b emit.Body
+			b.Prologue.Append(call("pro"))
+			b.Ref = &emit.TemplateRef{Name: "method1.tpl", Data: data}
+			return b
+		}
+		runRef := func(t *testing.T, trees map[plugin.ID]fs.FS, b emit.Body) (string, *diag.Sink) {
+			t.Helper()
+			pass, err := render.New("printer", language())
+			assert.NoError(t, err, "the language composes")
+			sink := diag.NewSink()
+			files, err := pass.Render(&plugin.RenderContext{
+				Emit:  seeded(t, fn("store.go", "Handle", b)),
+				Trees: trees, Sink: sink, Plugin: "printer",
+			})
+			assert.NoError(t, err, "the pass runs whole")
+			if len(files) == 0 {
+				return "", sink
+			}
+			return string(files[0].Body), sink
+		}
+
+		t.Run("the template drives the layout and the data rides", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := runRef(t,
+				trees("\tref({{.Data.mark}}) for {{.Decl.Name}}\n{{slots}}"),
+				refBody(map[string]any{"mark": "x"}))
+			assert.False(t, sink.Failed(), "a placed marker is lawful")
+			assert.ContainsInOrder(t, body, []string{"ref(x) for Handle", "pro"},
+				"content where the template says, then the marker's slots")
+		})
+
+		t.Run("a named marker places one slot", func(t *testing.T) {
+			t.Parallel()
+
+			b := refBody(nil)
+			b.Declare("checks").Append(call("named"))
+			body, sink := runRef(t,
+				trees("{{slot \"checks\"}}\tmid()\n{{slots}}"), b)
+			assert.False(t, sink.Failed(), "named markers are lawful")
+			assert.ContainsInOrder(t, body, []string{"named", "mid", "pro"},
+				"the named slot lands first, the catch-all takes the rest")
+		})
+
+		t.Run("the tree is the emitter's alone", func(t *testing.T) {
+			t.Parallel()
+
+			stranger := map[plugin.ID]fs.FS{
+				"other": fstest.MapFS{"method1.tpl": &fstest.MapFile{Data: []byte("{{slots}}")}},
+			}
+			body, sink := runRef(t, stranger, refBody(nil))
+			assert.True(t, sink.Failed(), "a stranger's tree resolves nothing")
+			assert.Contains(t, body, "pro",
+				"and the slots survive as the fallback")
+		})
+
+		t.Run("a dropped marker with pending content is an Error", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := runRef(t, trees("\tbare()\n"), refBody(nil))
+			assert.True(t, sink.Failed(), "the pending prologue reports")
+			found := false
+			for d := range sink.All() {
+				if d.Code == render.DroppedSlots {
+					found = true
+					assert.Contains(t, d.Msg, "gen", "naming the emitter")
+				}
+			}
+			assert.True(t, found, "under the marker law's code")
+			assert.NotContains(t, body, "pro",
+				"the template owns the layout, so nothing is appended for it")
+		})
+
+		t.Run("no pending content needs no marker", func(t *testing.T) {
+			t.Parallel()
+
+			var b emit.Body
+			b.Ref = &emit.TemplateRef{Name: "method1.tpl"}
+			_, sink := runRef(t, trees("\tbare()\n"), b)
+			assert.False(t, sink.Failed(), "an empty slot set has nothing to drop")
 		})
 	})
 

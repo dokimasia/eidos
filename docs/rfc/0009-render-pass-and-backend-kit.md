@@ -285,7 +285,9 @@ sequenceDiagram
    resolves its name in the emitting plugin's tree for this
    target, never the backend's or a stranger's. The template must
    place the slot markers: a pending contribution into a body
-   whose template dropped them is an Error naming both plugins.
+   whose template dropped them is an Error naming the emitting
+   plugin and counting what went unplaced, because a slot
+   statement carries no attribution to name its contributor by.
 5. **Collect imports.** Spelling a type feeds the file's one
    ImportSet as a side effect; the Imports renderer groups and
    sorts the block the way the language's own formatter leaves it.

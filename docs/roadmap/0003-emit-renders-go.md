@@ -41,8 +41,9 @@ of the ritual, not one.
       plugin's tree, and `Verbatim`.
 - [ ] A body-claiming template that drops the `{{slots}}` marker fails
       template lint, and a pending contribution into such a body is an
-      Error naming both plugins. This completes the template-lint half
-      of plugintest that milestone 0002 left open.
+      Error naming the emitting plugin and counting what went
+      unplaced. This completes the template-lint half of plugintest
+      that milestone 0002 left open.
 - [ ] Spelling a type feeds the file's one `ImportSet`, and the
       rendered import block is grouped and sorted the way the target's
       own formatter leaves it: gofmt for Go, the satellite's canonical
@@ -90,5 +91,6 @@ rendering spells types through it.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | The marker-law bullet names the emitter and a count, not both plugins | A slot statement carries no attribution, so the contributor is unknowable by construction; the emitter whose template dropped the marker is the party that can fix it |
 | 2026-08-30 | Added the TypeScript backend beside Go | Two consumers of the render ritual are what hold the kit's API; the Go-to-TypeScript lowering and its contested mappings stay at their own milestone, because a backend renders the neutral emit graph and needs no policy machinery |
 | 2026-08-30 | Added at position 3 | Rendering is testable over hand-built emit graphs, so it runs in parallel with 0002 rather than after it |
