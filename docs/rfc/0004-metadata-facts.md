@@ -2,7 +2,7 @@
 rfc: 0004
 title: Metadata keys and the fact store
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-08-30
 updated: 2026-08-30
 discussion: none
@@ -457,12 +457,12 @@ without a sixth vocabulary term.
 
 ## Open questions
 
-- Should `Claim.Plugin` be `diag.PluginID`, as drafted, or a
-  meta-local name type? Drafted as reuse: attribution and
-  diagnostics name the same actors, and `Completeness` already
-  carries `diag` types, so the import exists either way.
-- Is `Bucket int` the right boundary form for the capability
-  bucket, with composition owning how the ordinal is computed?
+None. The two this RFC opened are settled in the design above:
+`Claim.Plugin` is `diag.PluginID`, because attribution and
+diagnostics name the same actors and the import exists through
+`Completeness` either way; and `Bucket` is a plain `int`, because
+a defined type that validates nothing is ceremony, and composition
+owns how the ordinal is computed.
 
 ## Unresolved and future work
 
