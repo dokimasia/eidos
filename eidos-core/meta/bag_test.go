@@ -175,7 +175,7 @@ func TestBag(t *testing.T) {
 type claimRecord struct {
 	authority meta.Authority
 	bucket    int
-	plugin    diag.PluginID
+	plugin    diag.Origin
 	seq       int
 	drop      bool
 	value     string
@@ -185,7 +185,7 @@ type claimRecord struct {
 type rankSource struct {
 	authority meta.Authority
 	bucket    int
-	plugin    diag.PluginID
+	plugin    diag.Origin
 	seq       int
 }
 
@@ -197,7 +197,7 @@ func FuzzArbitration(f *testing.F) {
 	f.Add([]byte{1, 0, 0, 0, 1, 0})
 	f.Add([]byte{})
 
-	plugins := []diag.PluginID{"alpha", "beta", "gamma", "delta"}
+	plugins := []diag.Origin{"alpha", "beta", "gamma", "delta"}
 	values := []string{"a", "b", "c", "d"}
 
 	f.Fuzz(func(t *testing.T, in []byte) {

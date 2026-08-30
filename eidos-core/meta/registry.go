@@ -62,7 +62,7 @@ type KeySpec struct {
 // declaration of these kinds by the end of the named phase.
 type Completeness struct {
 	On []symbol.Kind
-	By diag.PluginID
+	By diag.Origin
 	// Severity is what a violation reports as: Error when output
 	// depends on the promise, Warning when it is advisory.
 	Severity diag.Severity

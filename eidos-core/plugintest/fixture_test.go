@@ -104,7 +104,8 @@ func TestFixture(t *testing.T) {
 							func(m *eidos.StructMatch, st *eidos.Stamper) error {
 								eidos.Stamp(st, key, true)
 								return nil
-							})).
+							},
+						)).
 						Build()
 					f.Generate(tb, p)
 				})

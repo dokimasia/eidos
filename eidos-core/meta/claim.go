@@ -43,7 +43,7 @@ type Claim struct {
 	// in canonical match order.
 	Authority Authority
 	Bucket    int
-	Plugin    diag.PluginID
+	Plugin    diag.Origin
 	Seq       int
 
 	// Pos locates the authoring carrier: a directive's position, or

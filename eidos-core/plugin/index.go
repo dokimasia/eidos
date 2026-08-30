@@ -7,7 +7,6 @@ import (
 	"errors"
 	"iter"
 
-	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
@@ -55,7 +54,7 @@ type pkgKey struct {
 // few.
 type skipEntry struct {
 	all     bool
-	plugins map[diag.PluginID]struct{}
+	plugins map[ID]struct{}
 }
 
 // NewIndex builds the routing surface for one run.
@@ -133,9 +132,9 @@ func skipsOf(
 				continue
 			}
 			if entry.plugins == nil {
-				entry.plugins = map[diag.PluginID]struct{}{}
+				entry.plugins = map[ID]struct{}{}
 			}
-			entry.plugins[diag.PluginID(v.Str)] = struct{}{}
+			entry.plugins[ID(v.Str)] = struct{}{}
 			skips[id] = entry
 		}
 	}
@@ -200,7 +199,7 @@ func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive {
 // under a bare skip, the named one under skip plugin=<name>. The
 // table is computed once at [NewIndex], so a match pays one probe
 // of a map holding only the subjects that carry skip.
-func (ix *Index) Skipped(id symbol.Identity, p diag.PluginID) bool {
+func (ix *Index) Skipped(id symbol.Identity, p ID) bool {
 	if len(ix.skips) == 0 {
 		return false
 	}

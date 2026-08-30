@@ -65,7 +65,7 @@ func TestRecord(t *testing.T) {
 
 			got := slices.Collect(f.Claims(subject, role.ID()))
 			assert.Length(t, got, 1, "and is recorded")
-			assert.Equal(t, got[0].Claim.Plugin, diag.PluginID("shape"), "who wrote it")
+			assert.Equal(t, got[0].Claim.Plugin, diag.Origin("shape"), "who wrote it")
 			assert.Equal(t, got[0].Claim.Pos, carrier, "where it was authored")
 			assert.Equal(t, got[0].Claim.Derived, claim.Derived, "and what produced it")
 		})

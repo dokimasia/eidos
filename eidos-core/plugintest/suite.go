@@ -27,19 +27,27 @@ type Setup func(tb assert.TB) (plugin.Plugin, *Fixture)
 // RunPluginSuite holds a plugin to the conformance rungs a fixture
 // can check without a workspace: declaration stability, byte-equal
 // emit across isolated runs, annotator idempotence, positioned
-// diagnostics, attribution, declared tags, and no panics. Rungs
-// for roles the plugin does not hold are skipped.
+// diagnostics, attribution, declared tags, the options schema, and
+// no panics. Rungs for roles or surfaces the plugin does not hold
+// are skipped.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
 	probe, _ := setup(t)
 	_, annotates := probe.(plugin.Annotator)
 	_, generates := probe.(plugin.Generator)
+	options, optioned := probe.(plugin.OptionsProvider)
 
 	t.Run("declaration stability", func(t *testing.T) {
 		t.Parallel()
 		AssertStableDeclaration(t, setup)
 	})
+	if optioned && options.Options() != nil {
+		t.Run("options schema", func(t *testing.T) {
+			t.Parallel()
+			AssertOptionsSchema(t, setup)
+		})
+	}
 	if generates {
 		t.Run("deterministic emit", func(t *testing.T) {
 			t.Parallel()
@@ -104,6 +112,18 @@ func AssertStableDeclaration(tb assert.TB, setup Setup) {
 	}
 }
 
+// AssertOptionsSchema holds the plugin's options struct to the tag
+// contract, through the same check the composition runs, so a
+// plugin failing at Build fails in its own tests first.
+func AssertOptionsSchema(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	p, _ := setup(tb)
+	for _, err := range plugin.ValidateOptions(p) {
+		assert.NoError(tb, err, "the options struct holds the tag contract")
+	}
+}
+
 // AssertDeterministicEmit runs one plugin over two isolated
 // fixtures and holds the emitted bytes equal: the byte-identity
 // contract, checked before any renderer exists.
@@ -165,7 +185,7 @@ func AssertAttributedEmit(tb assert.TB, setup Setup) {
 		}
 	}
 	for u := range generateOnce(tb, p, f).Units() {
-		assert.Equal(tb, string(u.Plugin), p.Name(),
+		assert.Equal(tb, u.Plugin, p.Name(),
 			"every unit names the plugin that emitted it")
 		assert.True(tb, declared[u.Tag],
 			"every unit lands under a declared family")

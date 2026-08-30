@@ -217,13 +217,13 @@ func TestSink(t *testing.T) {
 			// interleavings, which is what two schedulings of one
 			// parallel run produce.
 			ordered, interleaved := diag.NewSink(), diag.NewSink()
-			for _, origin := range []diag.PluginID{diag.PhaseLoad, diag.PhaseAnnotate} {
+			for _, origin := range []diag.Origin{diag.PhaseLoad, diag.PhaseAnnotate} {
 				for _, msg := range []string{"first", "second"} {
 					ordered.Report(diag.Diag{Msg: msg, Pos: somewhere, Origin: origin})
 				}
 			}
 			for _, msg := range []string{"first", "second"} {
-				for _, origin := range []diag.PluginID{diag.PhaseLoad, diag.PhaseAnnotate} {
+				for _, origin := range []diag.Origin{diag.PhaseLoad, diag.PhaseAnnotate} {
 					interleaved.Report(diag.Diag{Msg: msg, Pos: somewhere, Origin: origin})
 				}
 			}
@@ -306,7 +306,7 @@ func BenchmarkSink(b *testing.B) {
 			s.Report(diag.Diag{
 				Code:   code,
 				Pos:    somewhere,
-				Origin: diag.PluginID("plugin" + strconv.Itoa(i%8)),
+				Origin: diag.Origin("plugin" + strconv.Itoa(i%8)),
 				Msg:    "a finding",
 			})
 		}

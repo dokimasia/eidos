@@ -30,8 +30,8 @@
 //
 // This root package is the authoring surface. A plugin is a value:
 // [NewPlugin] starts the declaration, identity, outputs, priorities
-// and schemas are data built once, and only the handlers are
-// functions. Handlers attach to kind-indexed triggers — one
+// and schemas are data built once, and only the handlers and the
+// key registration declared through [Builder.Keys] are functions. Handlers attach to kind-indexed triggers — one
 // generated constructor per subject kind, [OnInterface] and its
 // siblings — plus [OnGraph] and [OnEmit]. Gates are declarative:
 // [Directive] binds a schema and [Where] binds fact predicates,

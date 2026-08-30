@@ -49,7 +49,7 @@ func fixture(tb assert.TB) (*meta.Registry, *meta.Facts,
 }
 
 // by answers a plugin-authority claim on the fixture subject.
-func by(plugin diag.PluginID, seq int) meta.Claim {
+func by(plugin diag.Origin, seq int) meta.Claim {
 	return meta.Claim{Subject: subject, Plugin: plugin, Seq: seq, Pos: carrier}
 }
 

@@ -3,7 +3,10 @@
 
 package plugin
 
-import "go.dokimi.dev/eidos/core/directive"
+import (
+	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
+)
 
 // The capability surfaces: interfaces the composition asserts on a
 // plugin to learn what it declared. Each answers data built once;
@@ -13,6 +16,18 @@ import "go.dokimi.dev/eidos/core/directive"
 // registration at composition.
 type DirectiveProvider interface {
 	Directives() []directive.Schema
+}
+
+// KeyProvider registers the plugin's metadata keys at composition.
+// The call runs once per workspace, and the plugin keeps the typed
+// handles it is answered: they are composition constants, the same
+// class as a directive schema, not run state. It takes the
+// registry rather than answering data because registration answers
+// the handles back, which data cannot. Faults are collected by the
+// caller, so the error names what failed rather than stopping the
+// bill.
+type KeyProvider interface {
+	Keys(r *meta.Registry) error
 }
 
 // OutputProvider declares the file families a generator emits.

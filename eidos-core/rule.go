@@ -93,6 +93,12 @@ type Pred struct {
 }
 
 // HasKey admits a subject on which k reads present.
+//
+// The key is read here, when the gate is declared, because the
+// subscription record carries it as data. A handle a composition
+// assigns later is still zero at this point and the gate would
+// watch nothing, so Build panics on it: a handler may read such a
+// handle through its closure, a gate may not.
 func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 	return Pred{
 		id:   k.ID(),

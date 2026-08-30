@@ -319,7 +319,7 @@ func TestDispatch(t *testing.T) {
 				found = true
 				assert.Equal(t, d.Pos, alpha.Pos,
 					"an emit match reports at its origin's position")
-				assert.Equal(t, d.Origin, diag.PluginID("weaver"),
+				assert.Equal(t, d.Origin, diag.Origin("weaver"),
 					"under the reporting plugin's identity")
 			}
 			assert.True(t, found, "the report landed")

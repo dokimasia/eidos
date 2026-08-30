@@ -9,7 +9,6 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -30,7 +29,7 @@ func structID(name string) symbol.Identity {
 // unit answers a minimal valid unit for one plugin and key.
 func unit(p, key string) plugin.Unit {
 	return plugin.Unit{
-		Plugin: diag.PluginID(p),
+		Plugin: plugin.ID(p),
 		Per:    plugin.PerSource,
 		Word:   "stub",
 		Key:    key,
@@ -128,7 +127,7 @@ func TestEmit(t *testing.T) {
 			second := unit("stubgen", "a.go")
 			second.Tag = "test"
 			for _, u := range []plugin.Unit{
-				{Plugin: diag.PluginID("stubgen"), Per: plugin.PerPlan, Word: "registry"},
+				{Plugin: "stubgen", Per: plugin.PerPlan, Word: "registry"},
 				second,
 				unit("stubgen", "a.go"),
 				unit("audit", "z.go"),

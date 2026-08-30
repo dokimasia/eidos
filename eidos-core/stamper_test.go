@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // annContext answers an annotator context over one routing surface.
@@ -75,7 +76,7 @@ func TestStamper(t *testing.T) {
 			}
 			assert.Length(t, views, 1, "one claim landed on the first subject")
 			claim := views[0].Claim
-			assert.Equal(t, claim.Plugin, diag.PluginID("classify"),
+			assert.Equal(t, claim.Plugin, plugin.ID("classify"),
 				"the rank carries the context's plugin")
 			assert.Equal(t, claim.Bucket, 1, "and its bucket")
 			assert.Equal(t, claim.Authority, meta.AuthorityPlugin,
@@ -85,6 +86,36 @@ func TestStamper(t *testing.T) {
 			assert.Equal(t, claim.Derived, []meta.Read{{
 				Subject: alpha.ID, Key: key.Name(),
 			}}, "the derivation names the invocation's reads, the miss included")
+		})
+
+		t.Run("derives each claim from its own invocation alone", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			key, facts := boolKey(t)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(t, err, "the routing surface builds")
+
+			p := eidos.NewPlugin("classify").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+					eidos.Fact(m, key)
+					eidos.Stamp(st, key, true)
+					return nil
+				})).
+				Build()
+			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)),
+				"the phase call passes")
+
+			for _, subject := range []symbol.Identity{alpha.ID, beta.ID} {
+				var views []meta.ClaimView
+				for v := range facts.Claims(subject, key.ID()) {
+					views = append(views, v)
+				}
+				assert.Length(t, views, 1, "one claim per subject")
+				assert.Equal(t, views[0].Claim.Derived, []meta.Read{{
+					Subject: subject, Key: key.Name(),
+				}}, "the derivation holds this invocation's read and no other's")
+			}
 		})
 
 		t.Run("assigns the sequence in canonical match order", func(t *testing.T) {

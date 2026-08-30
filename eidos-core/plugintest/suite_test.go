@@ -45,6 +45,9 @@ func wellBehaved(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 	f, _, _ := twoStructs(tb)
 	key := plugintest.Key[bool](tb, f, "t.flag", "marks a fixture subject")
 	p := eidos.NewPlugin("suite").
+		Options(&struct {
+			Header string `opt:"header" doc:"the banner every audit opens with"`
+		}{}).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "audit"}).
 		Handle(
 			eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
@@ -106,6 +109,34 @@ func TestAssertDeterministicEmit(t *testing.T) {
 	})
 }
 
+func TestAssertOptionsSchema(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects a struct outside the tag contract", func(t *testing.T) {
+		t.Parallel()
+
+		undocumented := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+			f, _, _ := twoStructs(tb)
+			p := eidos.NewPlugin("cheat").
+				Options(&struct {
+					Depth int `opt:"depth"`
+				}{}).
+				Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
+				Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+					return nil
+				})).
+				Build()
+			return p, f
+		}
+
+		failure := assert.Rejects(t, "an undocumented option must fail the rung",
+			func(tb assert.TB) {
+				plugintest.AssertOptionsSchema(tb, undocumented)
+			})
+		assert.Contains(t, failure, "doc", "the rung names the missing tag")
+	})
+}
+
 func TestAssertPositionedDiagnostics(t *testing.T) {
 	t.Parallel()
 
@@ -136,7 +167,7 @@ func TestAssertPositionedDiagnostics(t *testing.T) {
 // does not own.
 type rogue struct{}
 
-func (rogue) Name() string { return "honest" }
+func (rogue) Name() plugin.ID { return "honest" }
 
 func (rogue) Generate(ctx *plugin.GeneratorContext) error {
 	return ctx.Emit.Add(plugin.Unit{
@@ -226,7 +257,7 @@ func TestAssertTwins(t *testing.T) {
 // per-package unit in canonical order.
 type handRolled struct{}
 
-func (handRolled) Name() string { return "twin" }
+func (handRolled) Name() plugin.ID { return "twin" }
 
 func (handRolled) Generate(ctx *plugin.GeneratorContext) error {
 	unit := plugin.Unit{

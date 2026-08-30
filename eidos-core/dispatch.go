@@ -51,7 +51,7 @@ type runState struct {
 	facts  *meta.Facts
 	sink   *diag.Sink
 	emit   *plugin.Emit
-	plugin diag.PluginID
+	plugin plugin.ID
 	bucket int
 	seq    int
 	accs   map[accKey]*accumulator
@@ -62,7 +62,7 @@ type runState struct {
 // newRunState binds one phase call.
 func newRunState(
 	b *built, ix *plugin.Index, facts *meta.Facts, sink *diag.Sink,
-	em *plugin.Emit, id diag.PluginID, bucket int,
+	em *plugin.Emit, id plugin.ID, bucket int,
 ) *runState {
 	return &runState{
 		b:       b,

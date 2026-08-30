@@ -8,26 +8,29 @@ import (
 	"strconv"
 
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // Builder accumulates a plugin's declaration. Everything on it is
-// data; only the handlers inside rules are functions. Build freezes
-// it, and a Builder is not reused afterwards.
+// data; only the handlers inside rules and the key registrations
+// are functions. Build freezes it, and a Builder is not reused
+// afterwards.
 type Builder struct {
-	name     string
+	name     plugin.ID
 	version  string
 	outputs  []plugin.Output
 	priority map[plugin.Role]int
 	provides []plugin.Capability
 	requires []plugin.Capability
 	options  any
+	keys     []func(r *meta.Registry) error
 	rules    []Rule
 }
 
 // NewPlugin starts a plugin declaration.
-func NewPlugin(name string) *Builder {
+func NewPlugin(name plugin.ID) *Builder {
 	return &Builder{name: name, priority: map[plugin.Role]int{}}
 }
 
@@ -71,6 +74,15 @@ func (b *Builder) Options(cfg any) *Builder {
 	return b
 }
 
+// Keys declares the registration the plugin performs at
+// composition: claim the namespace, register the keys, keep the
+// typed handles. The built value answers it through
+// [plugin.KeyProvider]; repeated declarations run in order.
+func (b *Builder) Keys(register func(r *meta.Registry) error) *Builder {
+	b.keys = append(b.keys, register)
+	return b
+}
+
 // Handle registers rules, in declaration order.
 func (b *Builder) Handle(rules ...Rule) *Builder {
 	b.rules = append(b.rules, rules...)
@@ -97,33 +109,39 @@ func (b *Builder) Build() plugin.Plugin {
 	if b.name == "" {
 		panic("eidos: NewPlugin with an empty name")
 	}
+	name := string(b.name)
 	if len(b.rules) == 0 {
-		panic("eidos: " + b.name + " declares no rules")
+		panic("eidos: " + name + " declares no rules")
 	}
 	outByTag := make(map[Tag]plugin.Output, len(b.outputs))
 	for _, o := range b.outputs {
 		if o.Per == 0 {
-			panic("eidos: " + b.name + " declares a family with no cardinality")
+			panic("eidos: " + name + " declares a family with no cardinality")
 		}
 		if o.Word == "" {
-			panic("eidos: " + b.name + " declares a family with no word")
+			panic("eidos: " + name + " declares a family with no word")
 		}
 		if _, taken := outByTag[Tag(o.Tag)]; taken {
-			panic("eidos: " + b.name + " declares output tag " +
+			panic("eidos: " + name + " declares output tag " +
 				strconv.Quote(o.Tag) + " twice")
 		}
 		outByTag[Tag(o.Tag)] = o
 	}
 	for _, c := range slices.Concat(b.provides, b.requires) {
 		if c == "" {
-			panic("eidos: " + b.name + " declares an empty capability label")
+			panic("eidos: " + name + " declares an empty capability label")
+		}
+	}
+	for _, register := range b.keys {
+		if register == nil {
+			panic("eidos: " + name + " declares a nil key registration")
 		}
 	}
 
 	var rules []flatRule
-	flatten(b.name, b.rules, nil, nil, &rules)
+	flatten(name, b.rules, nil, nil, &rules)
 
-	schemas := collectSchemas(b.name, rules)
+	schemas := collectSchemas(name, rules)
 	base := &built{
 		name:     b.name,
 		version:  b.version,
@@ -133,6 +151,7 @@ func (b *Builder) Build() plugin.Plugin {
 		provides: slices.Clone(b.provides),
 		requires: slices.Clone(b.requires),
 		options:  b.options,
+		keys:     slices.Clone(b.keys),
 		schemas:  schemas,
 		rules:    rules,
 		subs:     subscriptionsFor(rules),
@@ -182,6 +201,10 @@ func flatten(
 		for _, p := range held {
 			if p.test == nil {
 				panic("eidos: " + name + " gates on a zero predicate")
+			}
+			if p.id == 0 {
+				panic("eidos: " + name + " gates on an unregistered key;" +
+					" a gate reads its key when the rule is declared")
 			}
 		}
 		if r.leaf.graph && (sch != nil || len(held) > 0) {

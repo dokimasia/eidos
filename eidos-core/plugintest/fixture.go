@@ -166,7 +166,7 @@ func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 		Reader: mintReader(tb, ix),
 		Facts:  f.Facts,
 		Sink:   sink,
-		Plugin: diag.PluginID(p.Name()),
+		Plugin: p.Name(),
 		Bucket: f.Bucket,
 	})
 	return Result{Emit: f.store(), Sink: sink, Err: err}
@@ -188,7 +188,7 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 		Facts:  f.Facts,
 		Emit:   f.store(),
 		Sink:   sink,
-		Plugin: diag.PluginID(p.Name()),
+		Plugin: p.Name(),
 		Bucket: f.Bucket,
 	})
 	return Result{Emit: f.store(), Sink: sink, Err: err}

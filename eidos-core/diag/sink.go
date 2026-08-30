@@ -45,18 +45,18 @@ func (s *Sink) Report(d Diag) {
 }
 
 // Errorf reports at [SeverityError], which fails the run.
-func (s *Sink) Errorf(c Code, at position.Pos, by PluginID, format string, args ...any) {
+func (s *Sink) Errorf(c Code, at position.Pos, by Origin, format string, args ...any) {
 	s.reportf(c, SeverityError, at, by, format, args...)
 }
 
 // Warnf reports at [SeverityWarning], which never fails a run.
-func (s *Sink) Warnf(c Code, at position.Pos, by PluginID, format string, args ...any) {
+func (s *Sink) Warnf(c Code, at position.Pos, by Origin, format string, args ...any) {
 	s.reportf(c, SeverityWarning, at, by, format, args...)
 }
 
 // Infof reports at [SeverityInfo], which carries provenance and
 // progress.
-func (s *Sink) Infof(c Code, at position.Pos, by PluginID, format string, args ...any) {
+func (s *Sink) Infof(c Code, at position.Pos, by Origin, format string, args ...any) {
 	s.reportf(c, SeverityInfo, at, by, format, args...)
 }
 
@@ -88,7 +88,7 @@ func (s *Sink) All() iter.Seq[Diag] {
 // reportf assembles one finding at the given severity, so that a
 // caller reporting at one severity does not spell a whole [Diag].
 func (s *Sink) reportf(
-	c Code, sev Severity, at position.Pos, by PluginID, format string, args ...any,
+	c Code, sev Severity, at position.Pos, by Origin, format string, args ...any,
 ) {
 	s.Report(Diag{
 		Code:     c,

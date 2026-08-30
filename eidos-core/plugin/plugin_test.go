@@ -12,9 +12,9 @@ import (
 )
 
 // named is the smallest plugin: a stable name and nothing else.
-type named struct{ name string }
+type named struct{ name plugin.ID }
 
-func (p named) Name() string { return p.name }
+func (p named) Name() plugin.ID { return p.name }
 
 // A plugin's name is its diagnostic origin, its emit attribution and
 // its arbitration rank, and a role is the seat a priority attaches

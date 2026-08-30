@@ -17,12 +17,12 @@ import (
 func TestDiag(t *testing.T) {
 	t.Parallel()
 
-	t.Run("PluginID", func(t *testing.T) {
+	t.Run("Origin", func(t *testing.T) {
 		t.Parallel()
 
 		phases := []struct {
 			name string
-			id   diag.PluginID
+			id   diag.Origin
 			want string
 		}{
 			{name: "build", id: diag.PhaseBuild, want: "build"},
@@ -45,7 +45,7 @@ func TestDiag(t *testing.T) {
 		t.Run("the kernel phases stay distinct", func(t *testing.T) {
 			t.Parallel()
 
-			seen := make(map[diag.PluginID]struct{}, len(phases))
+			seen := make(map[diag.Origin]struct{}, len(phases))
 			for _, tt := range phases {
 				seen[tt.id] = struct{}{}
 			}

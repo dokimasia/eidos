@@ -5,31 +5,34 @@ package diag
 
 import "go.dokimi.dev/eidos/core/position"
 
-// PluginID names whoever reported a finding: a plugin's declared
-// name, or one of the kernel phases below.
-type PluginID string
+// Origin names whoever reported a finding or wrote a claim: a
+// plugin's declared name, or one of the kernel phases below. The
+// service provider interface spells it plugin.ID where plugins are
+// the subject; the definition sits here so the layers beneath that
+// interface can carry it.
+type Origin string
 
 // The kernel phases that report findings. A phase is an origin like
 // any plugin, so a consumer filtering by origin needs no second rule
 // for the kernel.
 const (
 	// PhaseBuild composes the workspace and populates its registries.
-	PhaseBuild PluginID = "build"
+	PhaseBuild Origin = "build"
 	// PhaseLoad is the frontends parsing units into the graph.
-	PhaseLoad PluginID = "load"
+	PhaseLoad Origin = "load"
 	// PhaseLink resolves type spellings into canonical identities.
-	PhaseLink PluginID = "link"
+	PhaseLink Origin = "link"
 	// PhaseFreeze seals the graph and builds its indexes.
-	PhaseFreeze PluginID = "freeze"
+	PhaseFreeze Origin = "freeze"
 	// PhaseAnnotate is the annotators stamping facts.
-	PhaseAnnotate PluginID = "annotate"
+	PhaseAnnotate Origin = "annotate"
 	// PhaseGenerate is a plan's generators producing emit trees.
-	PhaseGenerate PluginID = "generate"
+	PhaseGenerate Origin = "generate"
 	// PhaseRender is a backend spelling an emit tree as source.
-	PhaseRender PluginID = "render"
+	PhaseRender Origin = "render"
 	// PhaseClose merges the manifests, checks for collisions and
 	// sweeps.
-	PhaseClose PluginID = "close"
+	PhaseClose Origin = "close"
 )
 
 // Diag is one finding.
@@ -51,7 +54,7 @@ type Diag struct {
 	// the refusal or the finding.
 	Msg string
 	// Origin is the plugin, or the kernel phase, that reported it.
-	Origin PluginID
+	Origin Origin
 	// Related holds secondary positions, such as the colliding twin
 	// or the export a refusal depends on.
 	Related []position.Pos

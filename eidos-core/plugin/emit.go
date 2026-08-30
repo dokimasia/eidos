@@ -10,7 +10,6 @@ import (
 	"slices"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -49,7 +48,7 @@ type Output struct {
 type Unit struct {
 	// Plugin is the contributor: the attribution a manifest names,
 	// and part of what makes one accumulator's flush unique.
-	Plugin diag.PluginID
+	Plugin ID
 	// Tag selects the declared family; "" is the primary.
 	Tag string
 	Per Cardinality
@@ -79,7 +78,7 @@ type Unit struct {
 // unitKey addresses one accumulator: what one phase call may flush
 // exactly once.
 type unitKey struct {
-	plugin diag.PluginID
+	plugin ID
 	tag    string
 	key    string
 }

@@ -9,6 +9,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
@@ -20,6 +21,8 @@ type declared struct {
 func (declared) Directives() []directive.Schema {
 	return []directive.Schema{{Plugin: "stubgen", Name: "stub", Doc: "a fixture"}}
 }
+
+func (declared) Keys(*meta.Registry) error { return nil }
 
 func (declared) Outputs() []plugin.Output {
 	return []plugin.Output{{Per: plugin.PerPlan, Word: "registry"}}
@@ -42,6 +45,8 @@ func TestProviders(t *testing.T) {
 		var p plugin.Plugin = declared{name: "stubgen"}
 		_, directives := p.(plugin.DirectiveProvider)
 		assert.True(t, directives, "the directive surface asserts")
+		_, keys := p.(plugin.KeyProvider)
+		assert.True(t, keys, "the key surface asserts")
 		_, outputs := p.(plugin.OutputProvider)
 		assert.True(t, outputs, "the output surface asserts")
 		_, options := p.(plugin.OptionsProvider)
@@ -63,6 +68,8 @@ func TestProviders(t *testing.T) {
 		var p plugin.Plugin = named{name: "bare"}
 		_, directives := p.(plugin.DirectiveProvider)
 		assert.False(t, directives, "a plugin that declares nothing asserts nothing")
+		_, keys := p.(plugin.KeyProvider)
+		assert.False(t, keys, "the key surface is opt-in")
 		_, versioned := p.(plugin.Versioned)
 		assert.False(t, versioned, "the version surface is opt-in")
 	})

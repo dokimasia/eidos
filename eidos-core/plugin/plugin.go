@@ -3,16 +3,29 @@
 
 package plugin
 
-import "strconv"
+import (
+	"strconv"
+
+	"go.dokimi.dev/eidos/core/diag"
+)
+
+// ID is a plugin's declared name: the one identity everywhere it
+// appears. The diagnostic origin, the emit attribution and the
+// arbitration rank's plugin field all carry this same type, so no
+// boundary converts. It aliases [diag.Origin] rather than
+// defining its own type because those envelopes live beneath the
+// service provider interface, where this package cannot be
+// imported; the definition sits at the bottom and this is its
+// spelling wherever plugins are the subject.
+type ID = diag.Origin
 
 // Plugin is the base contract: a stable name.
 //
-// The name is the plugin's one identity everywhere it appears: the
-// diagnostic origin, the emit attribution and the arbitration
-// rank's plugin field. It never changes between versions, because
-// everything durable keys on it.
+// The name never changes between versions, because everything
+// durable keys on it: findings, units, claims, config sections and
+// the composition's roster.
 type Plugin interface {
-	Name() string
+	Name() ID
 }
 
 // Role names one phase seat a plugin can hold.

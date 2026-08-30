@@ -10,6 +10,7 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -70,6 +71,30 @@ func TestBuilder(t *testing.T) {
 				"one wrapper gating two rules registers one schema")
 		})
 
+		t.Run("carries the key registration through", func(t *testing.T) {
+			t.Parallel()
+
+			p := eidos.NewPlugin("keyed").
+				Keys(func(r *meta.Registry) error {
+					return r.ClaimNamespace("keyed", "the fixture")
+				}).
+				Keys(func(r *meta.Registry) error {
+					_, err := meta.Register[bool](r, meta.KeySpec{
+						Name: "keyed.flag", Doc: "a fixture key",
+					})
+					return err
+				}).
+				Handle(emitNothing()).Build()
+
+			kp, ok := p.(plugin.KeyProvider)
+			assert.True(t, ok, "the declaration answers through the provider")
+			reg := meta.NewRegistry()
+			assert.NoError(t, kp.Keys(reg),
+				"the declared registrations run in order against the registry")
+			_, held := reg.Resolve("keyed.flag")
+			assert.True(t, held, "the key landed in the registry it was handed")
+		})
+
 		t.Run("panics on a declaration defect", func(t *testing.T) {
 			t.Parallel()
 
@@ -121,6 +146,12 @@ func TestBuilder(t *testing.T) {
 					},
 				},
 				{
+					name: "a nil key registration",
+					build: func() {
+						eidos.NewPlugin("t").Keys(nil).Handle(emitNothing()).Build()
+					},
+				},
+				{
 					name: "one directive name in two wrappers",
 					build: func() {
 						eidos.NewPlugin("stubgen").Handle(
@@ -150,6 +181,15 @@ func TestBuilder(t *testing.T) {
 					build: func() {
 						eidos.NewPlugin("t").Handle(
 							eidos.Where(eidos.Pred{}, onEmit()),
+						).Build()
+					},
+				},
+				{
+					name: "a gate on a zero key",
+					build: func() {
+						var unregistered meta.Key[bool]
+						eidos.NewPlugin("t").Handle(
+							eidos.Where(eidos.HasKey(unregistered), onEmit()),
 						).Build()
 					},
 				},

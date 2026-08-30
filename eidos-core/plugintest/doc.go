@@ -19,9 +19,10 @@
 // A [Setup] builds the plugin together with its fixture, the way a
 // composition does, sharing one key registry and one graph.
 // [RunPluginSuite] composes the granular assertions over it,
-// skipping the roles a plugin does not hold:
-// [AssertStableDeclaration], [AssertDeterministicEmit],
-// [AssertIdempotentAnnotate], [AssertPositionedDiagnostics] and
+// skipping the roles and surfaces a plugin does not hold:
+// [AssertStableDeclaration], [AssertOptionsSchema],
+// [AssertDeterministicEmit], [AssertIdempotentAnnotate],
+// [AssertPositionedDiagnostics] and
 // [AssertAttributedEmit]. [AssertTwins] holds two spellings of one
 // plugin to byte-equal emit, which is how the lowering guarantee
 // is checked from the outside. Each assertion takes the

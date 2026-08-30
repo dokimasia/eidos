@@ -4,7 +4,10 @@
 package eidos
 
 import (
+	"errors"
+
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
@@ -13,7 +16,7 @@ import (
 // live on the wrapper types, so a type assertion answers exactly
 // the roles the rules imply.
 type built struct {
-	name     string
+	name     plugin.ID
 	version  string
 	outputs  []plugin.Output
 	outByTag map[Tag]plugin.Output
@@ -21,13 +24,14 @@ type built struct {
 	provides []plugin.Capability
 	requires []plugin.Capability
 	options  any
+	keys     []func(r *meta.Registry) error
 	schemas  []directive.Schema
 	rules    []flatRule
 	subs     []plugin.Subscription
 }
 
 // Name answers the plugin's one identity.
-func (b *built) Name() string { return b.name }
+func (b *built) Name() plugin.ID { return b.name }
 
 // Version answers the declared version, "" where none was.
 func (b *built) Version() string { return b.version }
@@ -48,6 +52,19 @@ func (b *built) Requires() []plugin.Capability { return b.requires }
 // Options answers the declared options struct: the same pointer the
 // plugin constructed, defaults intact. Nil where none was declared.
 func (b *built) Options() any { return b.options }
+
+// Keys implements [plugin.KeyProvider]: the declared registrations
+// run in order and their faults join, so the composition reads the
+// whole bill.
+func (b *built) Keys(r *meta.Registry) error {
+	var errs []error
+	for _, register := range b.keys {
+		if err := register(r); err != nil {
+			errs = append(errs, err)
+		}
+	}
+	return errors.Join(errs...)
+}
 
 // Directives answers the schemas the Directive wrappers carried,
 // for registration at composition.

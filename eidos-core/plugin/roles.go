@@ -46,7 +46,7 @@ type AnnotatorContext struct {
 	Sink   *diag.Sink
 	// Plugin is the caller's identity: the diagnostic origin and
 	// the rank's plugin field.
-	Plugin diag.PluginID
+	Plugin ID
 	// Bucket is the priority bucket this call runs in: the rank's
 	// bucket field.
 	Bucket int
@@ -63,7 +63,7 @@ type GeneratorContext struct {
 	Sink   *diag.Sink
 	// Plugin is the caller's identity: the diagnostic origin and
 	// the emit attribution.
-	Plugin diag.PluginID
+	Plugin ID
 	// Bucket is the priority bucket this call runs in, which
 	// decides what an emit-triggered rule can see: the store holds
 	// earlier buckets' units.
