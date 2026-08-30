@@ -2,7 +2,7 @@
 rfc: 0003
 title: Diagnostics and the node store
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-08-30
 updated: 2026-08-30
 discussion: none
