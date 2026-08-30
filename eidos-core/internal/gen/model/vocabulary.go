@@ -31,6 +31,14 @@ const (
 	// emit side the field becomes slot storage with typed
 	// accessors instead of a plain slice.
 	SlotPrefix = "slot="
+
+	// SubjectMark is the doc directive that makes a kind a dispatch
+	// subject, written as its own "//eidos:subject" line in the
+	// kind's documentation. A marked kind gets its generated Match
+	// type and trigger constructor, and the line is stripped from
+	// the rendered docs. The spelling here is the line after the
+	// comment markers strip.
+	SubjectMark = "eidos:subject"
 )
 
 // Names the schema fixes, which lowering matches against.

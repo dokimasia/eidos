@@ -9,6 +9,11 @@ import "strings"
 const (
 	// SymbolPackage holds the Kind constants.
 	SymbolPackage = "symbol"
+
+	// RootPackage is the authoring surface the match constructors
+	// land in, and RootTestPackage its black-box twin.
+	RootPackage     = "eidos"
+	RootTestPackage = "eidos_test"
 	// NodePackage is the model a frontend produces.
 	NodePackage = "node"
 	// EmitPackage is the model a generator produces.
@@ -111,6 +116,9 @@ type view struct {
 	// IDStorage is the field answering the identity accessor, empty
 	// on the emit side, which carries an origin instead.
 	IDStorage string
+	// Subject marks a kind the dispatch surface triggers on, which
+	// is what the match template ranges over.
+	Subject bool
 	// OriginStorage is the field answering OriginOf, empty on the
 	// node side and on emit kinds that derive from nothing.
 	OriginStorage string
@@ -196,6 +204,7 @@ func viewOf(kind KindSpec, side string) view {
 		Name:    kind.Name,
 		Shadow:  unexport(kind.Name) + shadowSuffix,
 		Doc:     kind.Doc,
+		Subject: kind.Subject,
 		PosExpr: positionQualifier + "Pos{}",
 		DocExpr: "nil",
 	}

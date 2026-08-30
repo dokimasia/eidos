@@ -74,7 +74,13 @@ func OnEmit(k symbol.Kind, h func(*EmitMatch, *Emitter) error) Rule {
 		kind:  k,
 		phase: plugin.PhaseEmit,
 		invoke: func(inv invocation) error {
-			m := &EmitMatch{match: newMatch(inv), Value: inv.value}
+			m, reused := inv.scratch().(*EmitMatch)
+			if !reused {
+				m = &EmitMatch{}
+				inv.keep(m)
+			}
+			m.match = newMatch(inv)
+			m.Value = inv.value
 			return h(m, inv.rs.emitterFor(&m.match))
 		},
 	}}

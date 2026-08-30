@@ -1,0 +1,40 @@
+{{template "header" .}}
+import (
+	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+{{- range .Views}}
+{{- if .Subject}}
+
+// {{.Name}}Match is the On{{.Name}} subject.
+type {{.Name}}Match struct {
+	match
+	{{.Name}} *node.{{.Name}}
+}
+
+// On{{.Name}} fires the handler once per subject of its kind in
+// scope, or once per gating instance under a Directive wrapper.
+// The effect parameter picks the role: an Emitter generates, a
+// Stamper annotates.
+func On{{.Name}}[E Effect](h func(*{{.Name}}Match, E) error) Rule {
+	return Rule{leaf: &leaf{
+		kind:  symbol.Kind{{.Name}},
+		phase: phaseOf[E](),
+		invoke: func(inv invocation) error {
+			decl, held := inv.value.(*node.{{.Name}})
+			if !held {
+				return nil
+			}
+			m, reused := inv.scratch().(*{{.Name}}Match)
+			if !reused {
+				m = &{{.Name}}Match{}
+				inv.keep(m)
+			}
+			m.match = newMatch(inv)
+			m.{{.Name}} = decl
+			return h(m, effectFor[E](inv.rs, &m.match))
+		},
+	}}
+}
+{{- end}}
+{{- end}}

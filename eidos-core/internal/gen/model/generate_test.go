@@ -43,6 +43,8 @@ func TestGenerate(t *testing.T) {
 				"emit/symbols.gen_test.go",
 				"emit/walk.gen.go",
 				"emit/walk.gen_test.go",
+				"match.gen.go",
+				"match.gen_test.go",
 				"node/kinds.gen.go",
 				"node/kinds.gen_test.go",
 				"node/symbols.gen.go",

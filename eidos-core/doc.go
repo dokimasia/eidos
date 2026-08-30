@@ -29,21 +29,51 @@
 // # Authoring model
 //
 // This root package is the authoring surface. A plugin is a value:
-// identity, outputs, priorities, and schemas are data built once;
-// only handlers are functions. Handlers attach to kind-indexed
-// triggers, gates are declarative — a directive or a stamped fact,
-// never a filter inside the handler — and the effect, generate or
-// annotate, is chosen by the handler's signature. Every rule set
-// lowers to the SPI role interfaces, which remain public for what
+// [NewPlugin] starts the declaration, identity, outputs, priorities
+// and schemas are data built once, and only the handlers are
+// functions. Handlers attach to kind-indexed triggers — one
+// generated constructor per subject kind, [OnInterface] and its
+// siblings — plus [OnGraph] and [OnEmit]. Gates are declarative:
+// [Directive] binds a schema and [Where] binds fact predicates,
+// never a filter inside the handler. The handler's second parameter
+// picks its effect, [Emitter] to generate or [Stamper] to annotate,
+// and [Builder.Build] lowers every rule set to the SPI roles in
+// [go.dokimi.dev/eidos/core/plugin], which remain public for what
 // the facade does not fit.
+//
+// # Dispatch
+//
+// Dispatch is indexed: a directive-gated rule visits its carriers,
+// a fact-gated rule visits its stamped subjects, and only a bare
+// rule pays for the whole graph. Every invocation carries its own
+// read set, minted on first read, so a fact write's derivation
+// names what its match read; sequence numbers follow canonical
+// match order, so arbitration never depends on scheduling. The
+// kernel skip directive excludes a subject from bare and fact-gated
+// rules, for every plugin or one named plugin, and directive-gated
+// rules run regardless.
+//
+// # Failure semantics
+//
+// A declaration defect panics at [Builder.Build], before any run
+// exists. A handler's per-subject problem goes to the sink through
+// its match and the phase continues; a returned error is fatal to
+// the phase, wrapped with the plugin and rule. A stamp the fact
+// store refuses reports under [RefusedStamp] at the subject's
+// position.
 //
 // # Determinism
 //
 // Byte-identity is the contract: the same workspace over the same
 // input produces the same bytes on every machine, warm or cold.
-// Every ordering is defined, output carries no clocks or
-// environment, sinks write atomically and only on change, and
-// incremental runs are licensed by a conformance rung that proves
-// warm and cold runs byte-equal — a cache that cannot prove
-// equivalence is a determinism bug wearing a speedup.
+// Every ordering is defined — units by plugin, cardinality, key and
+// tag; contributions by origin, gating instance and insertion — and
+// output carries no clocks or environment.
+//
+// # Dependency position
+//
+// The root package imports core/plugin, core/diag, core/directive,
+// core/emit, core/meta, core/node, core/position, core/store,
+// core/symbol and the Go stdlib. Nothing in the module imports the
+// root package back.
 package eidos

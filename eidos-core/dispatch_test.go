@@ -369,6 +369,168 @@ func TestDispatch(t *testing.T) {
 		})
 	})
 
+	t.Run("node rules", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("a bare rule visits every declaration of its kind", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			var visited []string
+			p := eidos.NewPlugin("weaver").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					visited = append(visited, m.Struct.Name)
+					return nil
+				})).
+				Build()
+
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
+				"the phase call passes")
+			assert.Equal(t, visited, []string{"Alpha", "Beta"},
+				"the full-price path visits everything, in the graph's own order")
+		})
+
+		t.Run("a directive-gated rule runs per instance", func(t *testing.T) {
+			t.Parallel()
+
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
+				"the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{
+				{Name: "stub"}, {Name: "stub"},
+			}), "two raw instances attach")
+			g.Freeze()
+
+			schema := stubSchema("stub")
+			canonical := schema.Canonical()
+			validated := map[symbol.Identity][]directive.Directive{
+				alpha.ID: {
+					{Name: canonical, Instance: 0},
+					{Name: canonical, Instance: 1},
+				},
+			}
+			_, facts := boolKey(t)
+
+			var instances []int
+			p := eidos.NewPlugin("stubgen").
+				Handle(eidos.Directive(schema,
+					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						assert.NotNil(t, m.Directive(),
+							"a gated match carries its instance")
+						instances = append(instances, m.Directive().Instance)
+						return nil
+					}))).
+				Build()
+
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, validated)),
+				"the phase call passes")
+			assert.Equal(t, instances, []int{0, 1},
+				"a repeatable directive runs its handler once per instance, in source order")
+		})
+
+		t.Run("a fact-gated rule visits the stamped carriers", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			key, facts := boolKey(t)
+			assert.NoError(t,
+				meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
+				"the fact stamps on one subject")
+
+			var visited []string
+			p := eidos.NewPlugin("weaver").
+				Handle(eidos.Where(eidos.HasKey(key),
+					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						visited = append(visited, m.Struct.Name)
+						return nil
+					}))).
+				Build()
+
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
+				"the phase call passes")
+			assert.Equal(t, visited, []string{"Alpha"},
+				"the fact index routes the rule to its carriers alone")
+		})
+
+		t.Run("a narrowed skip excludes one plugin alone", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			validated := map[symbol.Identity][]directive.Directive{
+				beta.ID: {{
+					Name: directive.KernelSkip,
+					Params: map[directive.ParamKey]directive.Value{
+						directive.SkipPlugin: {
+							Kind: directive.TypeString, Str: "weaver",
+						},
+					},
+				}},
+			}
+
+			counting := func() (plugin.Plugin, *[]string) {
+				var visited []string
+				p := eidos.NewPlugin("weaver").
+					Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						visited = append(visited, m.Struct.Name)
+						return nil
+					})).
+					Build()
+				return p, &visited
+			}
+
+			named, visited := counting()
+			ctx := genContext(t, g, facts, validated)
+			assert.NoError(t, generatorOf(t, named).Generate(ctx), "the named plugin runs")
+			assert.Equal(t, *visited, []string{"Alpha"},
+				"the named plugin loses the skipped subject")
+
+			other, otherVisited := counting()
+			otherCtx := genContext(t, g, facts, validated)
+			otherCtx.Plugin = "audit"
+			assert.NoError(t, generatorOf(t, other).Generate(otherCtx),
+				"another plugin runs")
+			assert.Equal(t, *otherVisited, []string{"Alpha", "Beta"},
+				"every other plugin still matches the subject")
+		})
+
+		t.Run("a dual-role plugin runs each phase's rules alone", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := fixtureGraph(t)
+			key, facts := boolKey(t)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(t, err, "the routing surface builds")
+
+			var stamped, emitted int
+			p := eidos.NewPlugin("dual").
+				Handle(
+					eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+						stamped++
+						eidos.Stamp(st, key, true)
+						return nil
+					}),
+					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						emitted++
+						return nil
+					}),
+				).
+				Build()
+
+			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)),
+				"the annotate call passes")
+			assert.Equal(t, stamped, 2, "the annotate call ran the stamper rule")
+			assert.Equal(t, emitted, 0, "and never the emitter rule")
+
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
+				"the generate call passes")
+			assert.Equal(t, emitted, 2, "the generate call ran the emitter rule")
+			assert.Equal(t, stamped, 2, "and never the stamper rule again")
+		})
+	})
+
 	t.Run("OnGraph", func(t *testing.T) {
 		t.Parallel()
 
@@ -586,4 +748,83 @@ func BenchmarkBuild(b *testing.B) {
 			b.Fatal("the declaration must build")
 		}
 	}
+}
+
+func BenchmarkNodeDispatch(b *testing.B) {
+	const packages, files, decls = 1_000, 10, 20
+	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
+
+	b.Run("bare rule over 200k structs", func(b *testing.B) {
+		b.ReportAllocs()
+		_, facts := boolKey(b)
+		ix, err := plugin.NewIndex(g, facts, nil, nil)
+		if err != nil {
+			b.Fatalf("NewIndex: unexpected error: %v", err)
+		}
+		ctx := &plugin.GeneratorContext{
+			Index: ix, Facts: facts, Emit: plugin.NewEmit(),
+			Sink: diag.NewSink(), Plugin: "bench", Bucket: 1,
+		}
+		var visited int
+		p := eidos.NewPlugin("bench").
+			Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+				visited++
+				return nil
+			})).
+			Build()
+		gen, ok := p.(plugin.Generator)
+		if !ok {
+			b.Fatal("the bench plugin must generate")
+		}
+		for b.Loop() {
+			visited = 0
+			if err := gen.Generate(ctx); err != nil {
+				b.Fatalf("Generate: unexpected error: %v", err)
+			}
+			if visited != packages*files*decls {
+				b.Fatalf("visited %d subjects", visited)
+			}
+		}
+	})
+
+	b.Run("annotate stamps 200k subjects", func(b *testing.B) {
+		b.ReportAllocs()
+		reg := meta.NewRegistry()
+		if err := reg.ClaimNamespace("t", "the bench"); err != nil {
+			b.Fatalf("ClaimNamespace: unexpected error: %v", err)
+		}
+		benchKey, err := meta.Register[bool](reg, meta.KeySpec{
+			Name: "t.flag", Doc: "marks a bench subject",
+		})
+		if err != nil {
+			b.Fatalf("Register: unexpected error: %v", err)
+		}
+		p := eidos.NewPlugin("bench").
+			Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+				eidos.Stamp(st, benchKey, true)
+				return nil
+			})).
+			Build()
+		ann, ok := p.(plugin.Annotator)
+		if !ok {
+			b.Fatal("the bench plugin must annotate")
+		}
+		for b.Loop() {
+			facts := meta.NewFacts(reg)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			if err != nil {
+				b.Fatalf("NewIndex: unexpected error: %v", err)
+			}
+			ctx := &plugin.AnnotatorContext{
+				Index: ix, Facts: facts, Sink: diag.NewSink(),
+				Plugin: "bench", Bucket: 1,
+			}
+			if err := ann.Annotate(ctx); err != nil {
+				b.Fatalf("Annotate: unexpected error: %v", err)
+			}
+			if ctx.Sink.Failed() {
+				b.Fatal("no stamp may be refused")
+			}
+		}
+	})
 }

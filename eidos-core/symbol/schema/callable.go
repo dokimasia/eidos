@@ -15,6 +15,8 @@ import (
 // The model carries the signature and never a body. Generated
 // bodies are an emit-side concern, and parsed bodies are out of
 // scope entirely.
+//
+//eidos:subject
 type Function struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`
@@ -53,6 +55,8 @@ type Function struct {
 // default method, a Kotlin interface method, a Rust default impl.
 // It differs from Abstract's inverse, because a class method with a
 // body is ordinary rather than a default.
+//
+//eidos:subject
 type Method struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`

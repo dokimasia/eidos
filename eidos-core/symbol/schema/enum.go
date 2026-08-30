@@ -18,6 +18,8 @@ import (
 // Fields and Methods exist because a Java enum is a class: it
 // declares instance state and behaviour alongside its variants.
 // Most languages leave both empty.
+//
+//eidos:subject
 type Enum struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`
@@ -55,6 +57,8 @@ type EnumVariant struct {
 // Python spell with a bar is a type shape instead, and the two stay
 // separate because conflating them is how a target language ends up
 // guessing which one it is spelling.
+//
+//eidos:subject
 type Sum struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`

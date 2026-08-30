@@ -15,6 +15,12 @@ import (
 // match is the base every Match embeds: the surface that positions
 // a handler without confining it. One match is one invocation, so
 // its read set and its sequence number are the invocation's own.
+//
+// A match is valid for the duration of its handler call and reused
+// for the rule's next invocation, which is what prices an
+// invocation at zero steady-state allocations. Retaining a match,
+// an effect handle or an [Out] past the call is a defect, the same
+// law that forbids state on the plugin struct.
 type match struct {
 	rs      *runState
 	seq     int
@@ -23,10 +29,11 @@ type match struct {
 	gate    *directive.Directive
 	reads   *store.ReadSet
 	reader  *store.Reader
-	// em is the invocation's emitter handle, held in the match's
-	// own allocation so an invocation costs one heap object, not
-	// two.
+	// em and st are the invocation's effect handles, held in the
+	// match's own allocation so an invocation costs one heap
+	// object, not two.
 	em Emitter
+	st Stamper
 }
 
 // newMatch binds one invocation's surface.

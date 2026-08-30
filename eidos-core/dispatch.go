@@ -22,12 +22,25 @@ import (
 // The constructors turn one into their typed match.
 type invocation struct {
 	rs      *runState
+	fr      *flatRule
 	seq     int
 	subject symbol.Identity
 	pos     position.Pos
 	gate    *directive.Directive
 	value   symbol.Symbol
 }
+
+// scratch answers the rule's reusable match, nil on its first
+// invocation. A match is valid for the duration of its handler
+// call and reused afterwards, which is what prices an invocation
+// at zero steady-state allocations; retaining one past the call is
+// a defect the conformance suite races. The scratch lives on the
+// phase call, never the shared rule, so concurrent plans cannot
+// meet.
+func (inv invocation) scratch() any { return inv.rs.scratch[inv.fr.ordinal] }
+
+// keep stores the rule's reusable match for the next invocation.
+func (inv invocation) keep(m any) { inv.rs.scratch[inv.fr.ordinal] = m }
 
 // runState is one phase call's dispatch: the routing surface, the
 // rank fields, the running sequence, and the accumulators the
@@ -42,6 +55,8 @@ type runState struct {
 	bucket int
 	seq    int
 	accs   map[accKey]*accumulator
+	// scratch holds one reusable match per rule, keyed by ordinal.
+	scratch []any
 }
 
 // newRunState binds one phase call.
@@ -50,14 +65,15 @@ func newRunState(
 	em *plugin.Emit, id diag.PluginID, bucket int,
 ) *runState {
 	return &runState{
-		b:      b,
-		index:  ix,
-		facts:  facts,
-		sink:   sink,
-		emit:   em,
-		plugin: id,
-		bucket: bucket,
-		accs:   map[accKey]*accumulator{},
+		b:       b,
+		index:   ix,
+		facts:   facts,
+		sink:    sink,
+		emit:    em,
+		plugin:  id,
+		bucket:  bucket,
+		accs:    map[accKey]*accumulator{},
+		scratch: make([]any, len(b.rules)),
 	}
 }
 
@@ -222,6 +238,7 @@ func (rs *runState) admits(fr *flatRule, subject symbol.Identity) bool {
 // in canonical match order.
 func (rs *runState) invoke(fr *flatRule, inv invocation) error {
 	inv.rs = rs
+	inv.fr = fr
 	inv.seq = rs.seq
 	rs.seq++
 	return fr.invoke(inv)

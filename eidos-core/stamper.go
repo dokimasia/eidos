@@ -15,6 +15,13 @@ type Stamper struct {
 	m *match
 }
 
+// stamperInto wires the invocation's stamper handle into the
+// match's own allocation.
+func stamperInto(m *match) *Stamper {
+	m.st = Stamper{m: m}
+	return &m.st
+}
+
 // Stamp records v under k with the envelope pre-bound: plugin
 // authority, the phase call's bucket and plugin, the invocation's
 // sequence in canonical match order, and the invocation's point

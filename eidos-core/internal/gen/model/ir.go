@@ -45,8 +45,14 @@ type KindSpec struct {
 	// Name is the kind's Go type name, "Struct".
 	Name string
 	// Doc is the schema's documentation for the kind, one entry per
-	// line with the comment markers stripped.
+	// line with the comment markers stripped and the subject mark
+	// removed.
 	Doc []string
+	// Subject marks a kind the dispatch surface triggers on: it
+	// gets a generated Match type and constructor. Lowering refuses
+	// the mark on a kind without a node-side identity, because a
+	// subject that cannot be addressed cannot be dispatched.
+	Subject bool
 	// Fields are the annotated fields, in declaration order.
 	Fields []FieldSpec
 }
@@ -116,10 +122,11 @@ func Lower(dir, modRoot string) ([]KindSpec, error) {
 
 // declaration is one schema struct, kept in declaration order.
 type declaration struct {
-	name string
-	typ  *ast.StructType
-	pos  token.Pos
-	doc  []string
+	name    string
+	typ     *ast.StructType
+	pos     token.Pos
+	doc     []string
+	subject bool
 }
 
 // collect gathers the schema's struct declarations in order.
@@ -163,11 +170,13 @@ func collect(fset *token.FileSet, files []*ast.File) ([]declaration, error) {
 				if doc == nil {
 					doc = group.Doc
 				}
+				lines, subject := splitSubject(docLines(doc))
 				out = append(out, declaration{
-					name: typeSpec.Name.Name,
-					typ:  structType,
-					pos:  typeSpec.Pos(),
-					doc:  docLines(doc),
+					name:    typeSpec.Name.Name,
+					typ:     structType,
+					pos:     typeSpec.Pos(),
+					doc:     lines,
+					subject: subject,
 				})
 			}
 		}
@@ -186,7 +195,7 @@ func lowerKind(
 	d declaration,
 	structs map[string]*ast.StructType,
 ) (KindSpec, error) {
-	kind := KindSpec{Name: d.name, Doc: d.doc}
+	kind := KindSpec{Name: d.name, Doc: d.doc, Subject: d.subject}
 	slots := make(map[string]bool)
 
 	for _, field := range d.typ.Fields.List {
@@ -213,7 +222,22 @@ func lowerKind(
 			kind.Fields = append(kind.Fields, spec)
 		}
 	}
+	if kind.Subject && !identified(kind.Fields) {
+		return KindSpec{}, at(fset, d.pos,
+			"%s is marked a subject and carries no node identity: "+
+				"a subject that cannot be addressed cannot be dispatched", d.name)
+	}
 	return kind, nil
+}
+
+// identified reports whether the fields carry a node-side identity.
+func identified(fields []FieldSpec) bool {
+	for _, f := range fields {
+		if f.Name == "ID" && f.Side.OnNode() {
+			return true
+		}
+	}
+	return false
 }
 
 // lowerField lowers one field's tag and type into a field spec,
@@ -330,6 +354,21 @@ func parseSide(fset *token.FileSet, pos token.Pos, tok string) (Side, error) {
 		return SideNode, at(fset, pos, "unknown side %q: a tag opens with %s, %s or %s",
 			tok, SideNodeToken, SideEmitToken, SideBothToken)
 	}
+}
+
+// splitSubject strips the subject mark from a kind's documentation
+// and reports whether it was carried.
+func splitSubject(lines []string) ([]string, bool) {
+	subject := false
+	out := lines[:0]
+	for _, line := range lines {
+		if line == SubjectMark {
+			subject = true
+			continue
+		}
+		out = append(out, line)
+	}
+	return out, subject
 }
 
 // docLines renders a comment group as plain lines, with the markers

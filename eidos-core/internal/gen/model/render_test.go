@@ -102,6 +102,19 @@ func TestRender(t *testing.T) {
 				"the emit model answers none: an emit declaration has an origin instead")
 		})
 
+		t.Run("the match surface generates per subject kind", func(t *testing.T) {
+			t.Parallel()
+
+			matches := generated(t, "match.gen.go")
+			assert.Contains(t, matches,
+				"func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule",
+				"a marked kind gets its constructor and Match type")
+			assert.NotContains(t, matches, "OnParam",
+				"an unmarked kind gets neither: the model bounds the set")
+			assert.Contains(t, generated(t, "match.gen_test.go"), "func TestMatches",
+				"the generated twin holds every kind to the lowering")
+		})
+
 		t.Run("the emit walk answers origins by function", func(t *testing.T) {
 			t.Parallel()
 

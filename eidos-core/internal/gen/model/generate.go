@@ -51,6 +51,8 @@ var outputs = []output{
 	{Path: "emit/slots.gen.go", Template: "slots.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/walk.gen.go", Template: "walk.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/walk.gen_test.go", Template: "walk.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{Path: "match.gen.go", Template: "match.gen.go.tmpl", Package: RootPackage, Side: NodePackage},
+	{Path: "match.gen_test.go", Template: "match.gen_test.go.tmpl", Package: RootTestPackage, Side: NodePackage},
 	{Path: "node/symbols.gen.go", Template: "symbols.gen.go.tmpl", Package: NodePackage, Side: NodePackage},
 	{Path: "node/symbols.gen_test.go", Template: "symbols.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
 	{Path: "node/kinds.gen.go", Template: "kinds.gen.go.tmpl", Package: NodePackage, Side: NodePackage},

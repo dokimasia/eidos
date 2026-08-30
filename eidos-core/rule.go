@@ -15,6 +15,36 @@ import (
 // [*Emitter] generates, one taking [*Stamper] annotates.
 type Effect interface{ *Emitter | *Stamper }
 
+// phaseOf answers the phase a handler's effect implies: a Stamper
+// annotates and an Emitter generates.
+func phaseOf[E Effect]() plugin.Phase {
+	var zero E
+	if _, stamps := any(zero).(*Stamper); stamps {
+		return plugin.PhaseAnnotate
+	}
+	return plugin.PhaseGenerate
+}
+
+// effectFor answers the invocation's effect handle, wired into the
+// match's own allocation. The constraint admits exactly two types,
+// so a failed assertion is a plumbing defect rather than a run
+// condition.
+func effectFor[E Effect](rs *runState, m *match) E {
+	var zero E
+	if _, stamps := any(zero).(*Stamper); stamps {
+		eff, held := any(stamperInto(m)).(E)
+		if !held {
+			panic("eidos: the stamper handle does not satisfy its own effect")
+		}
+		return eff
+	}
+	eff, held := any(rs.emitterFor(m)).(E)
+	if !held {
+		panic("eidos: the emitter handle does not satisfy its own effect")
+	}
+	return eff
+}
+
 // Rule is one trigger bound to one handler, with its gates. Rules
 // are opaque values: the On constructors make them and the scoping
 // wrappers annotate them, and [Builder.Build] lowers them to the

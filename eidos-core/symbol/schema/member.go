@@ -18,6 +18,8 @@ import (
 // data class has to reproduce. A field declared without a name, as
 // a positional Sum variant payload is, leaves Name empty and
 // carries only its type.
+//
+//eidos:subject
 type Field struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`
@@ -43,6 +45,8 @@ type Field struct {
 // it. That is a declared limit rather than a failure: the
 // declaration still projects, and the language's own metadata
 // carries the inferred spelling for anyone who needs it.
+//
+//eidos:subject
 type Variable struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`
@@ -62,6 +66,8 @@ type Variable struct {
 // languages do not. Value holds the source spelling of the value
 // expression verbatim, unevaluated, the same contract
 // [EnumVariant.Value] carries.
+//
+//eidos:subject
 type Constant struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`

@@ -1,0 +1,48 @@
+{{template "header" .}}
+import (
+	"testing"
+
+	"go.dokimi.dev/assert"
+
+	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// Every subject kind's constructor lowers one way: the effect
+// parameter picks the phase, the record carries the kind, and the
+// roles a plugin asserts are exactly what its handlers imply.
+func TestMatches(t *testing.T) {
+	t.Parallel()
+{{- range .Views}}
+{{- if .Subject}}
+
+	t.Run("{{.Name}}", func(t *testing.T) {
+		t.Parallel()
+
+		emits := eidos.NewPlugin("t").
+			Handle(eidos.On{{.Name}}(func(m *eidos.{{.Name}}Match, e *eidos.Emitter) error {
+				return nil
+			})).
+			Build()
+		_, generates := emits.(plugin.Generator)
+		assert.True(t, generates, "an emitter handler makes a generator")
+		subscribed, held := emits.(plugin.Subscribed)
+		assert.True(t, held, "a built plugin declares its gates")
+		assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{ {
+			Kind: symbol.Kind{{.Name}}, Phase: plugin.PhaseGenerate,
+		} }, "the record carries the trigger's kind in the generate phase")
+
+		stamps := eidos.NewPlugin("t").
+			Handle(eidos.On{{.Name}}(func(m *eidos.{{.Name}}Match, st *eidos.Stamper) error {
+				return nil
+			})).
+			Build()
+		_, annotates := stamps.(plugin.Annotator)
+		assert.True(t, annotates, "a stamper handler makes an annotator")
+		_, alsoGenerates := stamps.(plugin.Generator)
+		assert.False(t, alsoGenerates, "and only an annotator")
+	})
+{{- end}}
+{{- end}}
+}

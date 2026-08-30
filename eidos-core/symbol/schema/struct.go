@@ -32,6 +32,8 @@ import (
 // Types holds declarations nested inside this one, which Java,
 // Kotlin, C#, TypeScript and Python all allow. Without it the walk
 // never reaches an inner class and no generator can see one.
+//
+//eidos:subject
 type Struct struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`
@@ -68,6 +70,8 @@ type Struct struct {
 // Item;" and a Swift associatedtype project: a name the
 // implementation supplies, rather than a parameter the caller
 // chooses.
+//
+//eidos:subject
 type Interface struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`
@@ -91,6 +95,8 @@ type Interface struct {
 // implementation supplies it. An alias may be generic, so a
 // language that parameterizes aliases fills TypeParams and the
 // target references them.
+//
+//eidos:subject
 type Alias struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`
