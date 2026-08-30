@@ -1,6 +1,6 @@
 ---
 milestone: 0003
-title: Emit renders to deterministic Go
+title: Emit renders to deterministic Go and TypeScript
 status: Planned
 depends-on: 0001
 ships-in: unscheduled
@@ -10,21 +10,24 @@ prd: none
 rfc: none
 ---
 
-# Milestone 0003: Emit renders to deterministic Go
+# Milestone 0003: Emit renders to deterministic Go and TypeScript
 
 ## Goal
 
-A hand-built emit graph renders through the Go backend to gofmt-clean
-files, byte-identical across two runs, with the generated-file header,
-the provenance trailer, and sinks that write atomically and only on
-change.
+A hand-built emit graph renders through the Go and TypeScript
+backends to formatter-clean files, byte-identical across two runs,
+with the generated-file header, the provenance trailer, and sinks
+that write atomically and only on change. Two backends from the
+start is deliberate: the kit's API is held by having two consumers
+of the ritual, not one.
 
 ## Done when
 
-- [ ] `RunBackendSuite` passes for eidos-lang-go over hand-built emit
-      fixtures: every emit kind renders, two runs produce identical
-      bytes, and a format failure reports a positioned Error while the
-      pass continues with the remaining files.
+- [ ] `RunBackendSuite` passes for eidos-lang-go and
+      eidos-lang-typescript over hand-built emit fixtures: every emit
+      kind renders, two runs produce identical bytes, and a format
+      failure reports a positioned Error while the pass continues with
+      the remaining files.
 - [ ] The backend kit exists with the surface in
       [11-languages.md](../architecture/11-languages.md):
       `FileTemplate`, `KindTemplates`, `Funcs`, `Imports`, `Finalise`,
@@ -41,8 +44,9 @@ change.
       Error naming both plugins. This completes the template-lint half
       of plugintest that milestone 0002 left open.
 - [ ] Spelling a type feeds the file's one `ImportSet`, and the
-      rendered import block is grouped and sorted the way gofmt leaves
-      it.
+      rendered import block is grouped and sorted the way the target's
+      own formatter leaves it: gofmt for Go, the satellite's canonical
+      printer for TypeScript.
 - [ ] The sink stages, then commits: identical bytes leave the file
       and its mtime untouched, renames are atomic, a path escaping the
       root is refused, and `Discard` leaves no trace. Disk, memory and
@@ -73,18 +77,18 @@ rendering spells types through it.
 
 - The manifest, drift and adoption: they need runs. Milestone 0005.
 - The policy machinery for contested mappings: the first contested
-  mapping arrives with TypeScript. Milestone 0009.
-- A second backend: milestone 0009.
+  mapping arrives with the Go-to-TypeScript lowering. Milestone 0009.
 
 ## Risks to the sequence
 
 | Risk | What it delays | What we would do |
 |---|---|---|
 | text/template reports errors at execute time and checks nothing statically | 0005 | The template-lint rung is the designed answer, and it lands in this milestone rather than later |
-| The kit API changes when the second backend arrives | 0009 | Expected. Nothing is tagged before 0014, so the kit may change freely until then |
+| One kit API serving two languages grows a per-language escape hatch | 0009 | Two backends land together, so a law that fits only one language is found here, where changing the kit is free, and not at the cross-language milestone |
 
 ## Changes
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Added the TypeScript backend beside Go | Two consumers of the render ritual are what hold the kit's API; the Go-to-TypeScript lowering and its contested mappings stay at their own milestone, because a backend renders the neutral emit graph and needs no policy machinery |
 | 2026-08-30 | Added at position 3 | Rendering is testable over hand-built emit graphs, so it runs in parallel with 0002 rather than after it |

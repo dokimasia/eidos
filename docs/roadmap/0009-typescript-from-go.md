@@ -76,4 +76,5 @@ module per [01-repos-and-kernel.md](../architecture/01-repos-and-kernel.md).
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | The TypeScript backend moved to milestone 0003 | Two consumers hold the render kit's API, so the backend lands beside Go's; this milestone keeps the frontend anatomy, the hub, the policies and the lowering |
 | 2026-08-30 | Added at position 9 | The second language proves the hub. TypeScript before protobuf because the schema-in story (0010) wants a second target to land on |
