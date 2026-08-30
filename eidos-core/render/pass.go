@@ -57,6 +57,14 @@ var UnresolvedRef = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 25, Meaning: "a template reference resolves to nothing in its emitting plugin's tree",
 })
 
+// UndeclaredOverride reports a plugin helper shadowing a shared
+// vocabulary name without declaring the override: the shared
+// helper stands, because a silent replacement is the drift
+// byte-identity cannot tolerate.
+var UndeclaredOverride = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 27, Meaning: "a plugin shadows a shared template helper without declaring the override",
+})
+
 // DroppedSlots reports a body-claiming template that placed no
 // marker for pending slot content: the template owns the layout,
 // so nothing is appended for it, and the Error names the emitting
@@ -65,6 +73,32 @@ var UnresolvedRef = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 var DroppedSlots = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 26, Meaning: "a body-claiming template places no marker for pending contributions",
 })
+
+// The builtin names every template resolves against: what a kind
+// template, a file skeleton or a body-claiming template calls, and
+// what the lint rung checks for. No vocabulary may claim them.
+const (
+	// BuiltinBody places a callable's content; a kind template
+	// calls it with the declaration under render.
+	BuiltinBody = "body"
+	// BuiltinUse records one import path into the file under
+	// render.
+	BuiltinUse = "use"
+	// BuiltinImports renders the file's collected import block; it
+	// is the skeleton's.
+	BuiltinImports = "imports"
+	// BuiltinDecls answers the file's rendered declarations; it is
+	// the skeleton's.
+	BuiltinDecls = "decls"
+	// BuiltinSlots places everything pending in the fixed order:
+	// the body-claiming template's catch-all marker.
+	BuiltinSlots = "slots"
+	// BuiltinSlot places one named slot where the template says.
+	BuiltinSlot = "slot"
+)
+
+// skeletonName labels the parsed file skeleton.
+const skeletonName = "file"
 
 // Naming spells a unit's filename for one target: the join and
 // extension of the family's word, the tag's treatment, and the
@@ -86,6 +120,11 @@ type Language struct {
 	// language has one. The header is not the skeleton's: the
 	// output contract prepends it after the formatter ran.
 	File string
+	// Funcs is the language's shared template vocabulary,
+	// registered once into the overrideable bucket: every kind
+	// template, file skeleton and reference template calls it, and
+	// a declared override replaces one name for all of them.
+	Funcs template.FuncMap
 	// Naming spells each unit's filename.
 	Naming Naming
 	// Scaffold spells one statement of the neutral vocabulary the
@@ -110,14 +149,26 @@ type Pass struct {
 	name     plugin.ID
 	kinds    map[symbol.Kind]*template.Template
 	file     *template.Template
+	shared   template.FuncMap
 	spell    Naming
 	scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
 	imports  func(set *ImportSet) string
 	final    func(src []byte) ([]byte, error)
 }
 
+// reserved answers whether a name belongs to the pass's builtins,
+// which no vocabulary may claim.
+func reserved(name string) bool {
+	switch name {
+	case BuiltinBody, BuiltinUse, BuiltinImports, BuiltinDecls,
+		BuiltinSlots, BuiltinSlot:
+		return true
+	}
+	return false
+}
+
 // defaultFile is the skeleton a language that sets none takes.
-const defaultFile = "{{imports}}{{decls}}"
+const defaultFile = "{{" + BuiltinImports + "}}{{" + BuiltinDecls + "}}"
 
 // New composes a language into its pass.
 //
@@ -132,9 +183,15 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		faults = append(faults,
 			errors.New("render: the language spells no kinds"))
 	}
+	for _, name := range slices.Sorted(maps.Keys(l.Funcs)) {
+		if reserved(name) {
+			faults = append(faults, fmt.Errorf(
+				"render: the shared vocabulary claims %q, which is a builtin", name))
+		}
+	}
 	kinds := make(map[symbol.Kind]*template.Template, len(l.Kinds))
 	for _, k := range slices.Sorted(maps.Keys(l.Kinds)) {
-		t, err := template.New(k.String()).Funcs(unbound()).Parse(l.Kinds[k])
+		t, err := template.New(k.String()).Funcs(unbound()).Funcs(l.Funcs).Parse(l.Kinds[k])
 		if err != nil {
 			faults = append(faults, fmt.Errorf("render: the %s template: %w", k, err))
 			continue
@@ -161,15 +218,19 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 	if skeleton == "" {
 		skeleton = defaultFile
 	}
-	file, err := template.New("file").Funcs(unbound()).Parse(skeleton)
+	file, err := template.New(skeletonName).Funcs(unbound()).Funcs(l.Funcs).Parse(skeleton)
 	if err != nil {
 		faults = append(faults, fmt.Errorf("render: the file skeleton: %w", err))
 	}
 	if len(faults) > 0 {
 		return nil, errors.Join(faults...)
 	}
+	shared := maps.Clone(l.Funcs)
+	if shared == nil {
+		shared = template.FuncMap{}
+	}
 	return &Pass{
-		name: name, kinds: kinds, file: file,
+		name: name, kinds: kinds, file: file, shared: shared,
 		spell: l.Naming, scaffold: l.Scaffold, imports: l.Imports, final: l.Finalise,
 	}, nil
 }
@@ -181,10 +242,10 @@ func unbound() template.FuncMap {
 		return "", errors.New("render: the builtin is unbound")
 	}
 	return template.FuncMap{
-		"body":    func(any) (string, error) { return refuse() },
-		"use":     func(string) (string, error) { return refuse() },
-		"imports": refuse,
-		"decls":   refuse,
+		BuiltinBody:    func(any) (string, error) { return refuse() },
+		BuiltinUse:     func(string) (string, error) { return refuse() },
+		BuiltinImports: refuse,
+		BuiltinDecls:   refuse,
 	}
 }
 
@@ -236,6 +297,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	})
 
 	f := &frame{pass: p, sink: ctx.Sink, trees: ctx.Trees}
+	f.merged = f.mergeVocabulary(ctx)
 	b, err := p.bind(f)
 	if err != nil {
 		return nil, err
@@ -264,11 +326,62 @@ type frame struct {
 	pass    *Pass
 	sink    *diag.Sink
 	trees   map[plugin.ID]fs.FS
+	merged  template.FuncMap
 	out     bytes.Buffer
 	fileOut bytes.Buffer
 	set     ImportSet
 	at      position.Pos
 	plugin  plugin.ID
+}
+
+// mergeVocabulary folds the plugins' helpers over the shared
+// bucket: schedule order, latest wins, and plugins the schedule
+// does not hold merge first, in name order, so a fixture without a
+// schedule stays deterministic. A shared name shadowed without a
+// declared override is refused and reported, and a reserved name
+// is refused the same way, so the shared helper and the builtin
+// stand.
+func (f *frame) mergeVocabulary(ctx *plugin.RenderContext) template.FuncMap {
+	merged := template.FuncMap{}
+	scheduled := map[plugin.ID]bool{}
+	order := make([]plugin.ID, 0, len(ctx.Funcs))
+	for _, id := range ctx.Schedule {
+		scheduled[id] = true
+	}
+	for _, id := range slices.Sorted(maps.Keys(ctx.Funcs)) {
+		if !scheduled[id] {
+			order = append(order, id)
+		}
+	}
+	for _, id := range ctx.Schedule {
+		if _, held := ctx.Funcs[id]; held {
+			order = append(order, id)
+		}
+	}
+	at := position.Pos{File: string(f.pass.name)}
+	for _, id := range order {
+		declared := map[string]bool{}
+		for _, name := range ctx.Overrides[id] {
+			declared[name] = true
+		}
+		fm := ctx.Funcs[id]
+		for _, name := range slices.Sorted(maps.Keys(fm)) {
+			_, shared := f.pass.shared[name]
+			switch {
+			case reserved(name):
+				f.sink.Errorf(UndeclaredOverride, at, f.pass.name,
+					"%s claims %q, which is a builtin, and the builtin stands",
+					id, name)
+			case shared && !declared[name]:
+				f.sink.Errorf(UndeclaredOverride, at, f.pass.name,
+					"%s shadows the shared helper %q without declaring the override, and the shared helper stands",
+					id, name)
+			default:
+				merged[name] = fm[name]
+			}
+		}
+	}
+	return merged
 }
 
 // bound is one render call's executable templates: the kind
@@ -283,11 +396,11 @@ type bound struct {
 // builtins to its frame: parse happened once at New, and no two
 // calls share an executing tree.
 func (p *Pass) bind(f *frame) (*bound, error) {
-	funcs := template.FuncMap{
-		"body":    f.body,
-		"use":     f.use,
-		"imports": f.importsBlock,
-		"decls":   f.decls,
+	builtins := template.FuncMap{
+		BuiltinBody:    f.body,
+		BuiltinUse:     f.use,
+		BuiltinImports: f.importsBlock,
+		BuiltinDecls:   f.decls,
 	}
 	kinds := make(map[symbol.Kind]*template.Template, len(p.kinds))
 	for k, t := range p.kinds {
@@ -295,13 +408,13 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 		if err != nil {
 			return nil, fmt.Errorf("render: cloning the %s template: %w", k, err)
 		}
-		kinds[k] = c.Funcs(funcs)
+		kinds[k] = c.Funcs(f.merged).Funcs(builtins)
 	}
 	file, err := p.file.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("render: cloning the file skeleton: %w", err)
 	}
-	return &bound{kinds: kinds, file: file.Funcs(funcs)}, nil
+	return &bound{kinds: kinds, file: file.Funcs(f.merged).Funcs(builtins)}, nil
 }
 
 // use records one import path into the file under render; it is
@@ -405,10 +518,13 @@ func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 		return "", false
 	}
 	pl := &placement{frame: f, body: b, named: make([]bool, len(b.Slots))}
-	t, err := template.New(b.Ref.Name).Funcs(template.FuncMap{
-		"slots": pl.all,
-		"slot":  pl.one,
-	}).Parse(string(src))
+	t, err := template.New(b.Ref.Name).
+		Funcs(f.pass.shared).Funcs(f.merged).
+		Funcs(template.FuncMap{
+			BuiltinSlots: pl.all,
+			BuiltinSlot:  pl.one,
+			BuiltinUse:   f.use,
+		}).Parse(string(src))
 	if err != nil {
 		f.sink.Errorf(UnresolvedRef, f.at, f.pass.name,
 			"%s's template %q does not parse: %v", f.plugin, b.Ref.Name, err)
