@@ -10,8 +10,11 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"runtime"
 	"slices"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"text/template"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -144,7 +147,10 @@ type Language struct {
 
 // Pass is one composed language's render ritual. A Pass is safe
 // for concurrent use: everything it holds is fixed at [New], and
-// every render call owns its own buffers.
+// every render call owns its own frames. Within one call, files
+// render in parallel across workers bounded by GOMAXPROCS, which
+// is why a context's trees must tolerate concurrent reads, as
+// every fs.FS does.
 type Pass struct {
 	name     plugin.ID
 	kinds    map[symbol.Kind]*template.Template
@@ -296,16 +302,50 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		return cmp.Compare(a.name, b.name)
 	})
 
-	f := &frame{pass: p, sink: ctx.Sink, trees: ctx.Trees}
-	f.merged = f.mergeVocabulary(ctx)
-	b, err := p.bind(f)
-	if err != nil {
-		return nil, err
+	seed := &frame{pass: p, sink: ctx.Sink, trees: ctx.Trees}
+	merged := seed.mergeVocabulary(ctx)
+
+	// Files are independent after grouping, so workers share the
+	// render: each owns its frame, its buffers and its template
+	// clones, bounded by the parallelism and never the file count,
+	// and the trees are read concurrently, which an fs.FS supports.
+	// The output order is the precomputed one, whatever order the
+	// workers finish in.
+	type rendered struct {
+		body []byte
+		held bool
+	}
+	results := make([]rendered, len(order))
+	workers := min(runtime.GOMAXPROCS(0), len(order))
+	var next atomic.Int64
+	var bindErr atomic.Pointer[error]
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Go(func() {
+			w := &frame{pass: p, sink: ctx.Sink, trees: ctx.Trees, merged: merged}
+			b, err := p.bind(w)
+			if err != nil {
+				bindErr.CompareAndSwap(nil, &err)
+				return
+			}
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= len(order) {
+					return
+				}
+				body, held := w.file(order[i], b)
+				results[i] = rendered{body: body, held: held}
+			}
+		})
+	}
+	wg.Wait()
+	if err := bindErr.Load(); err != nil {
+		return nil, *err
 	}
 	files := make([]plugin.RenderedFile, 0, len(order))
-	for _, g := range order {
-		if body, rendered := f.file(g, b); rendered {
-			files = append(files, plugin.RenderedFile{Name: g.name, Pkg: g.pkg, Body: body})
+	for i, g := range order {
+		if results[i].held {
+			files = append(files, plugin.RenderedFile{Name: g.name, Pkg: g.pkg, Body: results[i].body})
 		}
 	}
 	return files, nil
