@@ -35,7 +35,6 @@ linters:
     - modernize
     - unparam
     # Style
-    - decorder
     - dupword
     - funcorder
     - gocritic
@@ -56,12 +55,6 @@ linters:
     - usetesting
 
   settings:
-    decorder:
-      dec-order: [const, var, type, func]
-      disable-dec-order-check: false
-      disable-init-func-first-check: false
-      disable-dec-num-check: true
-
     funcorder:
       constructor: true
       struct-method: true
@@ -144,7 +137,7 @@ formatters:
     golines:
       max-len: 120
     gofumpt:
-      extra-rules: true
+      group-params: true
 
 issues:
   max-issues-per-linter: 0

@@ -1,7 +1,7 @@
 ---
 milestone: 0001
 title: One schema generates both models
-status: Planned
+status: In progress
 depends-on: none
 ships-in: unscheduled
 deadline: none
@@ -79,5 +79,6 @@ settled decisions.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Status Planned to In progress | RFC-0001 and RFC-0002 accepted; implementation starts |
 | 2026-08-30 | Linked RFC-0001, RFC-0002 and ADR-0002 to 0005 | The design is written; the milestone points at the documents that hold it, and the documents never point back |
 | 2026-08-30 | Added at position 1 | First milestone of the initial plan: every other milestone consumes the generated models |

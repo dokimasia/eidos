@@ -61,4 +61,4 @@
 // core/symbol/schema imports only core/symbol and core/position.
 package schema
 
-//go:generate go run go.dokimi.dev/eidos/core/internal/gen
+//go:generate go run go.dokimi.dev/eidos/core/internal/gen/symbol

@@ -1,7 +1,6 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: MIT
 
-//nolint:decorder // each enum reads as its type followed by its own constants
 package symbol
 
 // Visibility is the normalized five-way visibility of a
