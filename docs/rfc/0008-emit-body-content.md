@@ -26,7 +26,7 @@ or verbatim text. The scaffolding vocabulary is deliberately small:
 a name, a call, a return, an assignment, and a failure guard, which
 is enough to delegate and too little to write logic in. `Body`,
 `Stmt`, `Expr` and `TemplateRef` are hand-written emit types beside
-[`Slot`], carried by a generated field, so the schema stays the one
+`Slot`, carried by a generated field, so the schema stays the one
 place that says which kinds have bodies.
 
 ## Motivation
@@ -45,19 +45,19 @@ it in a shape three other mechanisms can hold on to:
   one of four declared forms can be checked: a template reference
   resolves or it does not, a scaffolding statement is inside the
   vocabulary or refused at compile time, and verbatim text is
-  visibly the form the machinery cannot see into. Free-shaped
-  content can only be trusted.
+  visibly the form the machinery cannot see into. Nothing can check
+  free-shaped content at all.
 - **Determinism needs values, not functions.** A generator that
   names a template instead of executing one stays blind to
   languages, and the same emit graph renders through a Go tree in
   one plan and a TypeScript tree in another. That requires the
   reference to be a plain value on the model.
 
-The boundary this RFC sits on is deliberate: interfaces, never
-implementations. The vocabulary covers a handler calling the user's
-function and a stub recording its arguments. It does not cover
-loops, arithmetic or comparisons, because anything past delegation
-belongs in a hand-written file that the generated one calls.
+This RFC draws its boundary at interfaces and stops there. The
+vocabulary covers a handler calling the user's function and a stub
+recording its arguments. It covers no loops, no arithmetic and no
+comparisons, because anything past delegation belongs in a
+hand-written file that the generated one calls.
 
 ## Detailed design
 
@@ -83,19 +83,21 @@ type Body any
 Body Body `eidos:"emit"`
 ```
 
-What generates: each callable's emit struct gains a `Body` field
-under the usual omit-when-zero JSON tag, the walk does not descend
-into it, because a body holds statements rather than declarations,
-and the schema stays the one place that answers "which kinds have
-bodies". The callables' shared docblocks change in the same edit:
-today they state that the model never carries a body, which stays
-true of the node twin and stops being true of the emit twin, and a
-schema comment generates into both. Giving another kind a body is
-one schema field plus a regeneration.
+Three things follow from that field. Each callable's emit struct
+gains a `Body` under the usual omit-when-zero JSON tag. The walk
+does not descend into it, because a body holds statements rather
+than declarations. And the schema stays the one place that answers
+which kinds have bodies.
+
+The callables' shared docblocks change in the same edit. Today they
+state that the model never carries a body. That stays true of the
+node twin and stops being true of the emit twin, and one schema
+comment generates into both. Giving another kind a body is one
+schema field plus a regeneration.
 
 ### The body: two standard slots, named slots, one content form
 
-`Body` is a hand-written emit type beside [`Slot`], a plain value
+`Body` is a hand-written emit type beside `Slot`, a plain value
 with codecs and no behaviour beyond its accessors:
 
 ```go
@@ -170,11 +172,12 @@ const (
 )
 ```
 
-Verbatim exists only here. There is no declaration-level verbatim
-value, so raw text between declarations stays impossible by
-construction rather than by review: content the slot machinery
-cannot check and the import resolver cannot see is confined to the
-one place that declared it wants exactly that.
+Verbatim exists only here. No declaration-level verbatim value
+exists, so raw text between declarations stays impossible by
+construction rather than by review. The slot machinery cannot check
+this content and the import resolver cannot see it, and confining
+it to a body means only a caller who asked for exactly that gets
+it.
 
 ### The template reference
 
@@ -283,9 +286,9 @@ emit store's units already follow.
 
 A `Content` interface with `Stmts`, `TemplateRef` and `Verbatim`
 implementations models "exactly one form" in the type system. It
-was rejected because the emit model is plain values with JSON
-codecs throughout, and an interface field forces polymorphic
-encoding with a type discriminator the flat struct carries anyway.
+lost because the emit model is plain values with JSON codecs
+throughout, and an interface field forces polymorphic encoding with
+a type discriminator the flat struct carries anyway.
 The kind-field union is the same shape the validated directive
 value uses, checked at one accessor instead of by the type system,
 and the cost of that check is stated in Drawbacks.
@@ -293,38 +296,38 @@ and the cost of that check is stated in Drawbacks.
 ### Body as a schema-declared kind
 
 Declaring `Body`, `Stmt` and `Expr` in the schema would generate
-their codecs for free. But the schema generates node and emit twins
-from every declaration, and these types are emit-only whole: the
-node twin would be a struct nobody may construct, and suppressing
-it takes a kind-level side marker the generator does not have and
-nothing else needs. The per-field side mechanism already exists,
-`Origin` uses it, so the field generates and the types stay
-hand-written, the same split `Slot` already lives on.
+their codecs for free. It lost because the schema generates node
+and emit twins from every declaration, and these types are
+emit-only whole: the node twin would be a struct nobody may
+construct, and suppressing it takes a kind-level side marker the
+generator does not have and nothing else needs. The per-field side
+mechanism already exists, `Origin` uses it, so the field generates
+and the types stay hand-written, the same split `Slot` already
+lives on.
 
 ### A richer statement vocabulary
 
 Loops, conditionals over comparisons, and literals would let
-generated bodies carry real logic. Refused: every statement kind is
-a rendering obligation on every backend forever, and logic in
-generated code is logic nobody can debug at its source. The
-boundary is delegation; a body that outgrows it belongs in a
-hand-written file.
+generated bodies carry real logic. It lost on two counts. Every
+statement kind is a rendering obligation on every backend forever,
+and nobody can debug generated logic where it was written. The
+boundary is delegation: a body that needs more than that belongs in
+a hand-written file.
 
 ### Declaration-level verbatim
 
 A free-floating text value among typed declarations would make
-claiming a whole file unnecessary for one odd construct. Refused:
-such a value is invisible to the slot machinery, the collision
-logic and the import resolver alike, and the file-claim path
-already serves the plugin that wants that much control.
+claiming a whole file unnecessary for one odd construct. It lost
+because the slot machinery, the collision logic and the import
+resolver would all be blind to such a value, and the file-claim
+path already serves a plugin that wants that much control.
 
 ### Named markers without standard slots
 
 Only owner-declared slots, no `prologue` and `epilogue`, keeps the
-body smaller. Refused: it reintroduces the classic slot weakness,
-where the owner must anticipate every extension point, and the
-cross-cutting plugin is exactly the author who cannot ask the owner
-to.
+body smaller. It lost because the owner would then have to
+anticipate every extension point, and a cross-cutting plugin is
+written by the one author who cannot ask the owner for one.
 
 ## Drawbacks
 

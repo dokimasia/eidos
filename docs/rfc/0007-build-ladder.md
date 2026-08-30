@@ -35,10 +35,10 @@ Every piece the run needs exists and nothing composes it. The
 dispatch surface, the fact store, the directive validator and the
 routing index each work alone, and every test in the tree wires
 them by hand: freeze here, validate there, build the table, mint
-the index, order the calls. That wiring is exactly the code a
-consumer would have to write, and it encodes decisions nobody made
-once: which order plugins run in, when directive validation
-happens, what a fault at composition looks like.
+the index, order the calls. That wiring is the code a consumer
+would otherwise write, and every copy of it re-decides what nobody
+has decided once: which order plugins run in, when directive
+validation happens, what a fault at composition looks like.
 
 Three requirements shape the frame:
 
@@ -47,10 +47,9 @@ Three requirements shape the frame:
   collect-everything validation: no step may stop at its first
   finding, and every registry must refuse a duplicate by naming
   both claimants rather than failing on the second.
-- **Nothing after Build fails on a name.** Every human-typed name
-  in the composition resolves at Build: capability labels, target
-  names, option keys, directive constraints. A Build that succeeds
-  has spent the whole class of name errors.
+- **Nothing after Build fails on a name.** Capability labels,
+  target names, option keys and directive constraints all resolve
+  at Build, so no later phase has a name left to fail on.
 - **The run is straight-line code.** Seal, validate, annotate,
   generate. The order is the frame's own, decided once, and a
   plugin cannot observe or depend on anything subtler than its
@@ -180,22 +179,10 @@ type Plan struct {
 
 ### The ladder
 
-Build validates in one pass and collects. Every step runs even
-when an earlier one found faults, except where a fault empties a
-following check for that one item; the error is
-`errors.Join` over everything found, so a consumer reads the whole
-bill.
-
-```mermaid
-flowchart TD
-    R["1 roster<br/>the plugin universe, one name one plugin"]
-    A["2 registries<br/>kernel schemas, keys, schemas, capabilities, targets"]
-    B["3 lowering<br/>subscriptions read, priorities and topology sort"]
-    C["4 options<br/>validate the schemas, populate from config"]
-    D["5 plans<br/>one backend each, registered target, unique names"]
-    E["6 schedule<br/>the per-phase bucket order, compiled once"]
-    R --> A --> B --> C --> D --> E
-```
+Build validates in one pass and collects. Every step runs even when
+an earlier one found faults, except where a fault empties a
+following check for that one item. The error is `errors.Join` over
+everything found, so a consumer reads the whole bill.
 
 1. **The roster.** The plugin universe is the annotators, every
    plan's generators, and every backend, deduplicated by instance:
@@ -283,14 +270,17 @@ sequenceDiagram
     participant S as store.Graph
     participant D as directive.Validate
     participant P as plugins
+
     C->>W: Run(ctx, loaded graph)
     W->>S: Freeze()
-    W->>D: per subject, in parallel
-    D-->>W: validated table + positioned Errors
-    W->>W: apply meta drops at directive authority
-    W->>P: Annotate, bucket order, one Index
-    W->>P: per plan: Generate, bucket order, scoped Index
-    W-->>C: Report, ErrRunFailed on any Error
+    W->>D: each subject's raw instances, in parallel
+    D-->>W: the validated table, and positioned Errors
+    Note over W: apply every validated meta drop<br/>at directive authority
+    W->>P: Annotate, in bucket order, over one Index
+    par per plan, in parallel
+        W->>P: Generate, in bucket order, over the plan's scoped Index
+    end
+    W-->>C: Report, and ErrRunFailed on any Error
 ```
 
 - **Seal.** `Run` freezes the graph. A graph the caller already
@@ -319,13 +309,14 @@ sequenceDiagram
   rule's visibility is defined against. Plans exchange nothing,
   and a plan's failure does not stop its siblings.
 
-What the run deliberately does not do at this scope: no load phase
-and no link step, because the caller hands over a loaded graph
-with identities assigned; no layout, render, sink or manifest,
-because nothing lands on disk; no close, sweep or cross-plan
-checks, because there are no records to merge; no ledger and no
-sealed state, because nothing invalidates. Each is an addition to
-this frame's straight line, between the phases that are here.
+At this scope the run does no loading and no link step, because the
+caller hands over a loaded graph with identities already assigned.
+It does no layout, render, sink or manifest, because nothing lands
+on disk. It does no close, no sweep and no cross-plan checks,
+because there are no records to merge. It holds no ledger and no
+sealed state, because nothing invalidates. Each of those is an
+addition to this frame's straight line, between the phases that are
+here.
 
 ### Dependency position
 
@@ -363,11 +354,11 @@ Build's one error names all five.
 Every other provider answers data, and a data-only key declaration
 was weighed first: `Keys() []meta.KeySpec`. It cannot work, because
 registration answers the typed handles the plugin's own handlers
-close over, and data cannot answer anything back. The alternatives
-to a callback are worse: handles resolved lazily at first use put
-registry lookups on the hot path and a failure in the wrong phase,
-and handles resolved into a struct the workspace populates by
-reflection make key identity stringly. The callback runs plugin
+close over, and data cannot answer anything back. Two ways round
+that are worse. Resolving handles lazily at first use puts a
+registry lookup on the hot path and moves the failure into the
+wrong phase. Resolving them into a struct the workspace populates
+by reflection makes key identity stringly. The callback runs plugin
 code at Build, which is already true of `Build()` itself; the law
 about never executing plugin code binds dispatch discovery, not
 composition.

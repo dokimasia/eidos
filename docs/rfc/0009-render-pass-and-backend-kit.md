@@ -16,7 +16,7 @@ produces-adr: tbd
 ## Summary
 
 This RFC makes a backend invokable. The service provider interface
-gains the render seam: a [Renderer] takes one plan's emit store and
+gains the render seam: a `Renderer` takes one plan's emit store and
 answers files as values, bytes against names, with nothing landing
 on disk. The kernel package `render` owns the pass every backend
 runs: group units into files, render declarations through the
@@ -35,9 +35,9 @@ the output contract's seams, consumed here and proposed elsewhere.
 ## Motivation
 
 The emit model now says everything about what to render, bodies
-included, and nothing renders it. Three laws need a home before the
-first language lands, because retrofitting them means rewriting
-every backend that came first:
+included, and nothing renders it. Three laws have to be settled
+before the first language arrives, because retrofitting them means
+rewriting every backend that came first:
 
 - **One pass, owned once.** Grouping, splice order, reference
   resolution, the format-failure rule and the merge order are the
@@ -134,7 +134,7 @@ type TemplateProvider interface {
 }
 ```
 
-A backend that renders implements [Renderer] beside [Backend]. The
+A backend that renders implements `Renderer` beside `Backend`. The
 composition keeps validating the backend contract exactly as it
 does; nothing at composition invokes rendering, so the seam is
 additive and the plan value does not change. The authoring surface
@@ -259,16 +259,19 @@ sequenceDiagram
     participant T as kind templates
     participant P as plugin template tree
     participant F as Finalise
+
     C->>R: Render(ctx)
-    R->>R: group units into files, Naming per unit
-    loop per file, parallel
-        R->>T: render declarations, canonical order
-        R->>T: splice slot contents, schedule order
+    Note over R: group units into files,<br/>one Naming call per unit
+    loop per file, in parallel
+        R->>T: each declaration, in canonical order
+        T-->>R: rendered declarations
+        R->>T: each slot's contents, in insertion order
+        T-->>R: rendered slot contents
         R->>P: resolve each TemplateRef in its emitter's tree
-        P-->>R: executed body, slots placed
-        R->>R: collect imports, render the block
-        R->>F: format the assembled file
-        F-->>R: bytes, or a positioned Error
+        P-->>R: the executed body, slot markers placed
+        Note over R: collect the imports and render the block
+        R->>F: the assembled file
+        F-->>R: formatted bytes, or a positioned Error
     end
     R-->>C: files as values, findings on the sink
 ```
@@ -284,8 +287,8 @@ sequenceDiagram
 3. **Splice slots.** Slot contents render through the same kind
    machinery, in the order they were appended, and the pass adds
    no sort of its own, because a slot item carries no attribution
-   to sort by. The ordering law holds by construction:
-   contributions land only through handlers the run's bucket
+   to sort by. The ordering law holds by construction: a
+   contribution arrives only through a handler the run's bucket
    schedule already sequenced, so insertion order is the lowered
    order, priority, capability topology, then name.
 4. **Resolve references.** A body whose form is a template claim
@@ -296,15 +299,16 @@ sequenceDiagram
    plugin and counting what went unplaced, because a slot
    statement carries no attribution to name its contributor by.
 5. **Collect imports.** Spelling a type feeds the file's one
-   ImportSet as a side effect; the Imports renderer groups and
+   ImportSet as a side effect, and the Imports renderer groups and
    sorts the block the way the language's own formatter leaves it.
-   Three laws meet here and the mechanism is contract: the funcmap
-   registers once, templates parse once, and files render in
-   parallel, so the pass clones the parsed templates per worker
-   and binds the spelling helpers to a worker-local file under
-   render, which the loop swaps between files. The clone count is
-   bounded by the parallelism, never the file count, and no two
-   workers share a parse tree.
+   Three constraints meet here: the funcmap registers once,
+   templates parse once, and files render in parallel. The pass
+   satisfies all three by cloning the parsed templates per worker
+   and binding the spelling helpers to a worker-local file, which
+   the loop swaps between files. That mechanism is contract, not an
+   implementation detail: the clone count is bounded by the
+   parallelism rather than the file count, and no two workers share
+   a parse tree.
 6. **Finalise.** The formatter runs per file. A failure is a
    positioned Error carrying the file it could not format, and the
    pass continues with the remaining files.
@@ -316,14 +320,16 @@ consumed by whoever holds both a renderer and a sink.
 ### Template lint, the static half
 
 The lint is a kernel function beside the pass, and the conformance
-suite is its caller: every template of every plugin parses against
-each declared target's merged funcmap, an undefined function, a
-colliding override and a body template without its slot markers
-are findings, and field references check wherever the bound type
-is known, which is always for kind templates and for the
-emit-value half of body templates, never for a reference's
-payload. What the lint cannot see is exactly the verbatim form,
-which is the cost verbatim was priced at.
+suite is its caller. Every template of every plugin parses against
+each declared target's merged funcmap. Three things are findings:
+an undefined function, a colliding override, and a body template
+without its slot markers.
+
+Field references check wherever the bound type is known, which is
+always for kind templates and for the emit-value half of body
+templates, and never for a reference's payload. The verbatim form
+is the one thing the lint cannot see into at all, which is the cost
+verbatim was priced at.
 
 ### The conformance rungs this opens
 
@@ -361,36 +367,36 @@ contract, which owns their shape.
 
 ### Rendering on the Backend interface
 
-Growing `Backend` with a Render method puts the seam where the
-plan already points. It was rejected because every composed
-backend would break at compile time the day the method appears,
-and because carrying and invoking are different capabilities: the
-composition validates one, a run exercises the other, and two
-interfaces let a test fake carry without rendering.
+Growing `Backend` with a Render method puts the seam where the plan
+already points. It lost because every composed backend would break
+at compile time the day the method appears, and because carrying
+and invoking are different capabilities: the composition validates
+one, a run exercises the other, and two interfaces let a test fake
+carry without rendering.
 
 ### A template method set instead of a pass
 
 Letting each backend own its loop and giving it helpers was
-weighed: it is how most template engines are consumed. Rejected
-because the three laws in Motivation live in the loop, not the
-helpers: a backend that owns the loop can splice a stranger's
-values through its own templates, resolve a reference in the wrong
-tree, or stop at the first format failure, and nothing but review
-would notice.
+weighed: it is how most template engines are consumed. It lost
+because the loop is where the three laws in Motivation hold, and
+the helpers are not. A backend owning the loop can splice a
+stranger's values through its own templates, resolve a reference in
+the wrong tree, or stop at the first format failure, and nothing
+but review would notice.
 
 ### Rendering through the walk instead of unit order
 
 Driving the pass off the emit walk would reuse generated
-machinery. Rejected: a unit already carries its declarations in
-canonical order, the walk's order is the tree's, and rendering is
-about files, which are unit-shaped, not about traversal.
+machinery. It lost because a unit already carries its declarations
+in canonical order while the walk's order is the tree's, and
+because rendering produces files, which are unit-shaped.
 
 ### A richer file value
 
 Answering staged files with modes, directories and overwrite
-intents was weighed. Rejected at this seam: the renderer knows
-bytes and names, the sink knows disk, and every field added here
-is one the output contract has to validate twice.
+intents was weighed. It lost at this seam: the renderer knows bytes
+and names, the sink knows disk, and every field added here is one
+the output contract has to validate twice.
 
 ## Drawbacks
 
