@@ -81,6 +81,9 @@ type data struct {
 	// which is what lets the side declare the Declaration interface
 	// and the traversal typed by it.
 	Identified bool
+	// Originated says whether any kind on this side carries origin
+	// storage, which is what earns the side the OriginOf function.
+	Originated bool
 }
 
 // Generate renders every generated file from the schema under
@@ -142,6 +145,20 @@ func viewsIdentified(views []view) bool {
 	return len(views) > 0
 }
 
+// viewsOriginated reports whether any kind carries origin storage.
+//
+// The predicate is "any" rather than "every", the opposite of
+// [viewsIdentified]: OriginOf is a function answering false for the
+// kinds without the seat, so one carrying kind already earns it.
+func viewsOriginated(views []view) bool {
+	for _, v := range views {
+		if v.OriginStorage != "" {
+			return true
+		}
+	}
+	return false
+}
+
 // render executes one output's template.
 func render(out output, kinds []KindSpec) ([]byte, error) {
 	tmpl, err := template.ParseFS(templates,
@@ -160,6 +177,7 @@ func render(out output, kinds []KindSpec) ([]byte, error) {
 		Views:       views,
 		NeedsSymbol: slotsUseSymbol(views),
 		Identified:  viewsIdentified(views),
+		Originated:  viewsOriginated(views),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("model: render %s: %w", out.Path, err)

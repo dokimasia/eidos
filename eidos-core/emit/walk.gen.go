@@ -185,3 +185,38 @@ func All(s symbol.Symbol) iter.Seq[symbol.Symbol] {
 		})
 	}
 }
+
+// OriginOf answers the node identity a generated value derives
+// from, and false for a kind that carries no origin storage. The
+// zero identity still answers true, and claims nothing: carrying
+// the seat and carrying a value are different questions.
+func OriginOf(s symbol.Symbol) (symbol.Identity, bool) {
+	switch x := s.(type) {
+	case *Function:
+		return x.Origin, true
+	case *Method:
+		return x.Origin, true
+	case *Enum:
+		return x.Origin, true
+	case *EnumVariant:
+		return x.Origin, true
+	case *Sum:
+		return x.Origin, true
+	case *SumVariant:
+		return x.Origin, true
+	case *Field:
+		return x.Origin, true
+	case *Variable:
+		return x.Origin, true
+	case *Constant:
+		return x.Origin, true
+	case *Struct:
+		return x.Origin, true
+	case *Interface:
+		return x.Origin, true
+	case *Alias:
+		return x.Origin, true
+	default:
+		return symbol.Identity{}, false
+	}
+}

@@ -117,6 +117,22 @@ func TestWalk(t *testing.T) {
 {{- end}}
 		})
 	})
+{{- if .Originated}}
+
+	t.Run("OriginOf", func(t *testing.T) {
+		t.Parallel()
+{{- range .Views}}
+
+		t.Run("{{.Name}}", func(t *testing.T) {
+			t.Parallel()
+
+			_, held := OriginOf(&{{.Name}}{})
+			assert.Equal(t, held, {{if .OriginStorage}}true{{else}}false{{end}},
+				"a kind answers exactly when it carries origin storage")
+		})
+{{- end}}
+	})
+{{- end}}
 {{- if .Identified}}
 
 	t.Run("Declarations", func(t *testing.T) {

@@ -102,6 +102,17 @@ func TestRender(t *testing.T) {
 				"the emit model answers none: an emit declaration has an origin instead")
 		})
 
+		t.Run("the emit walk answers origins by function", func(t *testing.T) {
+			t.Parallel()
+
+			walk := generated(t, "emit/walk.gen.go")
+			assert.Contains(t, walk,
+				"func OriginOf(s symbol.Symbol) (symbol.Identity, bool)",
+				"a subset of emit kinds carries origin storage, so a function answers it")
+			assert.NotContains(t, generated(t, "node/walk.gen.go"), "OriginOf",
+				"the node side has identities, never origins")
+		})
+
 		t.Run("the node walk answers the declarations it yields", func(t *testing.T) {
 			t.Parallel()
 

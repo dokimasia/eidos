@@ -60,6 +60,9 @@ const (
 	// idField holds a node declaration's canonical identity, which is
 	// what makes the kind answer the Declaration interface.
 	idField = "ID"
+	// originField holds an emit value's node identity, which is what
+	// the generated OriginOf answers.
+	originField = "Origin"
 	// typeField holds a declaration's own type reference, which is
 	// what makes a kind satisfy the Typed interface.
 	typeField = "Type"
@@ -108,6 +111,9 @@ type view struct {
 	// IDStorage is the field answering the identity accessor, empty
 	// on the emit side, which carries an origin instead.
 	IDStorage string
+	// OriginStorage is the field answering OriginOf, empty on the
+	// node side and on emit kinds that derive from nothing.
+	OriginStorage string
 	// Walked are the fields the traversal descends into.
 	Walked []fieldView
 	// Slots are the fields that become slot storage.
@@ -211,6 +217,8 @@ func viewOf(kind KindSpec, side string) view {
 			v.DocExpr, v.HasDoc = "x."+f.Storage, true
 		case f.Name == idField:
 			v.IDStorage = f.Storage
+		case f.Name == originField:
+			v.OriginStorage = f.Storage
 		case f.Name == typeField && f.Elem == typeRefKind:
 			v.TypeRefStorage = f.Storage
 		}
