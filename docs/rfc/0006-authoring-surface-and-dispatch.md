@@ -395,8 +395,8 @@ func NewEmit() *Emit
 
 // Add records one unit. A second unit under the same
 // (plugin, tag, key) is refused as the defect it is: one phase
-// call flushes each accumulator once. A zero cardinality and an
-// empty word are refused the same way.
+// call flushes each accumulator once. A zero cardinality, an empty
+// word and a plan unit naming a key are refused the same way.
 func (e *Emit) Add(u Unit) error
 
 // Units enumerates every unit: by plugin, then cardinality, then
@@ -798,7 +798,7 @@ order" requires of the rank's last field, and what keeps
 arbitration deterministic under a parallel bucket.
 
 The refusal reports under one new kernel code, declared where the
-root package registers: `EID0020`, `RefusedStamp`, an Error, meaning
+root package registers: `EID-0020`, `RefusedStamp`, an Error, meaning
 the fact store refused a stamp, carrying the reason it gave.
 
 ### Dispatch
@@ -1036,9 +1036,13 @@ implementation detail.
 ### What generates, what is written by hand
 
 The model generator gains one vocabulary token (the subject doc
-directive) and one template. Generated into the root package, under
-the same mirror guard as the models: the ten Match types and their
-On constructors. Hand-written beside them: the match base, `Rule`
+directive), one template, and one addition to the emit walk: a
+generated `OriginOf(s symbol.Symbol) (symbol.Identity, bool)`,
+because the emit kinds export the `Origin` field, so a method of
+that name cannot exist, and a function honestly covers the kinds
+that carry no origin storage. Generated into the root package,
+under the same mirror guard as the models: the ten Match types and
+their On constructors. Hand-written beside them: the match base, `Rule`
 and the gates, the Builder and its lowering, the Emitter and `Out`,
 the Stamper, the dispatcher, `OnGraph`, `OnEmit` and `Mirror`; and
 the whole `plugin` package.
