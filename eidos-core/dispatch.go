@@ -57,6 +57,15 @@ type runState struct {
 	accs   map[accKey]*accumulator
 	// scratch holds one reusable match per rule, keyed by ordinal.
 	scratch []any
+	// handles is the pool the emitter's accessors answer from,
+	// reset per invocation: every call mints a distinct entry, so
+	// two live handles in one invocation never alias, and a handler
+	// touching a few families allocates no Out at all. It lives
+	// here rather than on the emitter so the match copy an
+	// invocation makes stays small; invocations run sequentially,
+	// which is what makes one pool per phase call sound.
+	handles [4]Out
+	minted  int
 }
 
 // newRunState binds one phase call.
@@ -81,6 +90,7 @@ func newRunState(
 // wired into the match's own allocation.
 func (rs *runState) emitterFor(m *match) *Emitter {
 	m.em = Emitter{rs: rs, m: m}
+	rs.minted = 0
 	return &m.em
 }
 
