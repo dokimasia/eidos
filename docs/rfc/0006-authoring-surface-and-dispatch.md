@@ -2,7 +2,7 @@
 rfc: 0006
 title: The authoring surface and dispatch
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Review
+status: Accepted
 created: 2026-08-30
 updated: 2026-08-30
 discussion: none

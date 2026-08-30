@@ -1,13 +1,13 @@
 ---
 milestone: 0002
 title: A typed plugin runs over a hand-built graph
-status: Planned
+status: Done
 depends-on: 0001
 ships-in: unscheduled
 deadline: none
 deadline-source: none
 prd: none
-rfc: none
+rfc: RFC-0003, RFC-0004, RFC-0005, RFC-0006, RFC-0007
 ---
 
 # Milestone 0002: A typed plugin runs over a hand-built graph
@@ -23,39 +23,39 @@ ones.
 
 ## Done when
 
-- [ ] The authoring surface of
+- [x] The authoring surface of
       [06b-authoring.md](../architecture/06b-authoring.md) compiles:
       kind-indexed triggers with generated Match types, `OnEmit` and
       `OnGraph`, `Directive` and `Where` gates, the Emitter and
       Stamper effects, and `NewPlugin(...).Build()`.
-- [ ] Build runs the seven-step ladder of
+- [x] Build runs the validation ladder of
       [08-workspace-and-plans.md](../architecture/08-workspace-and-plans.md)
       and collects faults: a fixture composition seeded with five
       distinct faults reports all five in one error.
-- [ ] Every registry refuses a duplicate with an error naming both
+- [x] Every registry refuses a duplicate with an error naming both
       claimants: metadata keys and their namespaces, directive
       schemas, diagnostic codes, capability labels.
-- [ ] The store enforces freeze: a structural write after Annotate is
+- [x] The store enforces freeze: a structural write after Annotate is
       refused with a stable diagnostic code.
-- [ ] Metadata writes arbitrate by the four-step rank in
+- [x] Metadata writes arbitrate by the four-step rank in
       [04-metadata.md](../architecture/04-metadata.md), `meta drop`
       removes a fact or a group, and every write records provenance
       with its read set. The `explain` command that walks it comes in
       milestone 0008; the record starts here.
-- [ ] Directive validation runs over fixture directives: closure,
+- [x] Directive validation runs over fixture directives: closure,
       param types, repeatability, `Requires` and `ConflictsWith`, all
       reported as positioned Errors before any handler runs.
-- [ ] `RunPluginSuite` passes over the fixture plugins: declaration
+- [x] `RunPluginSuite` passes over the fixture plugins: declaration
       stability, byte-equal emit under `-count=2`, annotator
       idempotence, no structural writes, positioned diagnostics,
       declared tags, attribution, options schemas, and no fixture
       panics (the conformance half of D68).
-- [ ] The lowering guarantee holds: a facade-authored plugin and its
+- [x] The lowering guarantee holds: a facade-authored plugin and its
       hand-rolled SPI twin produce byte-equal emit in plugintest.
-- [ ] Dispatch is indexed: a rule gated on a directive visits only the
+- [x] Dispatch is indexed: a rule gated on a directive visits only the
       subjects that carry it, which a fixture checks by counting
       handler calls.
-- [ ] The kernel `skip` directive works at dispatch: it excludes a
+- [x] The kernel `skip` directive works at dispatch: it excludes a
       subject from bare and fact-gated rules, `skip plugin=<name>`
       excludes one plugin, and directive-gated rules are unaffected.
 
@@ -114,6 +114,8 @@ plugintest from
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Status Planned to Done | Every exit criterion is met and `make check` passes; RFC-0003 through RFC-0007 are accepted and linked |
+| 2026-08-30 | Reworded the ladder bullet from seven steps to the validation ladder | The accepted ladder carries no policy step and no version handshake: no policy registry or second versioned component exists to check against, and each is an addition between the steps that are |
 | 2026-08-30 | Pinned the `skip` directive and the no-panic assertion into Done when | A coverage audit against the architecture found them held by Scope reference only, so nothing forced them to exist |
 | 2026-08-30 | Retitled from "Typed plugins compose and Build validates"; goal restated over fixture graphs | The old title claimed a composition capability that only exists at 0005. The plugin frame still comes second: a frontend is a plugin, so 0004 needs these seams first |
 | 2026-08-30 | Added at position 2 | The middle of the machine comes before the edges: plugins and Build are testable over hand-built graphs, so no language needs to exist first |

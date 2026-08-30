@@ -2,7 +2,7 @@
 rfc: 0007
 title: The Build ladder and the fixture run
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Review
+status: Accepted
 created: 2026-08-30
 updated: 2026-08-30
 discussion: none
