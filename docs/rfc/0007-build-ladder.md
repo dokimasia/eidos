@@ -201,7 +201,9 @@ flowchart TD
    plan's generators, and every backend, deduplicated by instance:
    one plugin serving two plans registers once. Two distinct
    plugins under one name are a fault naming both, because the
-   name is the identity everything downstream keys on.
+   name is the identity everything downstream keys on. A plugin
+   named after a kernel phase is refused the same way, because its
+   findings would answer under the kernel's identity.
 2. **Registries.** The kernel's four directive schemas register
    first, because validation of the skip and meta instances reads
    them. Then every plugin's `KeyProvider` registers its keys, the

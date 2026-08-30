@@ -110,11 +110,21 @@ back up.
 ```go
 package plugin
 
-// Plugin is the base contract: a stable name. The name is the
-// diagnostic origin, the emit attribution and the arbitration
-// rank's plugin field, so it never changes between versions.
+// ID is a plugin's declared name: the one identity everywhere it
+// appears. The diagnostic origin, the emit attribution and the
+// arbitration rank's plugin field all carry this same type, so no
+// boundary converts. It aliases the origin type the diagnostics
+// package defines, because those envelopes live beneath this
+// package and cannot import it; the definition sits at the
+// bottom, and this is its spelling wherever plugins are the
+// subject.
+type ID = diag.Origin
+
+// Plugin is the base contract: a stable name. The name never
+// changes between versions, because everything durable keys on
+// it.
 type Plugin interface {
-    Name() string
+    Name() ID
 }
 
 // Role names one phase seat a plugin can hold. Priorities are per
