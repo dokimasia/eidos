@@ -29,8 +29,9 @@
 //     the set, plus a per-identity edge for each declaration the
 //     caller actually reached while iterating.
 //
-// [Graph.ByKind] and [Graph.Lookup] answer the same questions
-// untracked. They are the kernel's own path, for the dispatcher
+// [Graph.ByKind], [Graph.Lookup] and [Graph.PackageOf] answer the
+// same questions untracked. They are the kernel's own path, for
+// the dispatcher
 // deciding which rules a phase runs: dispatch is not a plugin's read
 // and must not record one. A plugin holds a [Reader] and never the
 // graph.

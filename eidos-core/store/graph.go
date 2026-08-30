@@ -39,8 +39,9 @@ const kindSlots = math.MaxUint8 + 1
 //
 // # Reading
 //
-// [Graph.ByKind] and [Graph.Lookup] answer untracked, and are the
-// kernel's own path. Everything a plugin reaches goes through a
+// [Graph.ByKind], [Graph.Lookup] and [Graph.PackageOf] answer
+// untracked, and are the kernel's own path. Everything a plugin
+// reaches goes through a
 // [Reader], which a plugin is handed instead of the graph. That is
 // what makes the single door structural rather than a review
 // comment.
@@ -248,6 +249,16 @@ func (g *Graph) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 		return nil, false
 	}
 	return decl, true
+}
+
+// PackageOf answers the package holding a declaration, untracked:
+// the kernel's own path, beside the tracked [Reader.PackageOf].
+//
+// It answers false for a declaration the graph does not hold, and
+// nothing before [Graph.Freeze], because both indexes it reads are
+// built there.
+func (g *Graph) PackageOf(id symbol.Identity) (*node.Package, bool) {
+	return g.packageOf(id)
 }
 
 // collect walks one package, answering its identity-bearing

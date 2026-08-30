@@ -185,6 +185,42 @@ func TestGraph(t *testing.T) {
 		})
 	})
 
+	t.Run("PackageOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("answers the package holding a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			decl := coretest.Struct(coretest.StorePath, "Store")
+			g := coretest.Frozen(t, coretest.Package(coretest.StorePath, decl))
+
+			pkg, held := g.PackageOf(decl.ID)
+			assert.True(t, held, "PackageOf answers a held declaration")
+			assert.Equal(t, pkg.ID, coretest.PackageID(coretest.StorePath),
+				"with the package its identity names")
+		})
+
+		t.Run("answers false for an identity nothing holds", func(t *testing.T) {
+			t.Parallel()
+
+			g := coretest.Frozen(t, coretest.Package(coretest.StorePath))
+			_, held := g.PackageOf(coretest.Struct(coretest.CachePath, "Cache").ID)
+			assert.False(t, held, "an identity nothing holds owns nothing")
+		})
+
+		t.Run("answers false before Freeze", func(t *testing.T) {
+			t.Parallel()
+
+			decl := coretest.Struct(coretest.StorePath, "Store")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, decl)),
+				"the package is admitted")
+
+			_, held := g.PackageOf(decl.ID)
+			assert.False(t, held, "the index is built at Freeze, not before")
+		})
+	})
+
 	t.Run("ByKind", func(t *testing.T) {
 		t.Parallel()
 
