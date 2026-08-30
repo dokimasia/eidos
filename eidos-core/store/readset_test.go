@@ -10,9 +10,14 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// The fact grain's compile-time contract: one artifact's read set
+// records declaration reads and fact reads into one place.
+var _ meta.Recorder = (*store.ReadSet)(nil)
 
 // enumerate ranges every kind through the reader, which is what
 // records a set-membership edge for each.
@@ -101,6 +106,77 @@ func TestReadSet(t *testing.T) {
 		})
 	})
 
+	t.Run("Facts", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("answers nothing for a set that read none", func(t *testing.T) {
+			t.Parallel()
+
+			count := 0
+			for range store.NewReadSet().Facts() {
+				count++
+			}
+			assert.Equal(t, count, 0, "a set that read no facts holds none")
+		})
+
+		t.Run("records at (subject, key) and deduplicates", func(t *testing.T) {
+			t.Parallel()
+
+			s := store.NewReadSet()
+			id := coretest.Struct(coretest.StorePath, "Store").ID
+			for range 3 {
+				s.RecordFact(id, "shape.role")
+			}
+			s.RecordFact(id, "shape.comparable")
+
+			var got []meta.KeyName
+			for subject, key := range s.Facts() {
+				assert.Equal(t, subject, id, "every edge names its subject")
+				got = append(got, key)
+			}
+			assert.Equal(t, got, []meta.KeyName{"shape.comparable", "shape.role"},
+				"edges deduplicate and answer in subject then key order")
+		})
+
+		t.Run("answers one order however the reads arrived", func(t *testing.T) {
+			t.Parallel()
+
+			one := coretest.Struct(coretest.StorePath, "Alpha").ID
+			other := coretest.Struct(coretest.StorePath, "Omega").ID
+
+			forward, backward := store.NewReadSet(), store.NewReadSet()
+			forward.RecordFact(one, "shape.role")
+			forward.RecordFact(other, "shape.role")
+			backward.RecordFact(other, "shape.role")
+			backward.RecordFact(one, "shape.role")
+
+			collect := func(s *store.ReadSet) []symbol.Identity {
+				var out []symbol.Identity
+				for subject := range s.Facts() {
+					out = append(out, subject)
+				}
+				return out
+			}
+			assert.Equal(t, collect(forward), collect(backward),
+				"the order is the set's own, not the read order")
+		})
+
+		t.Run("stops when the range stops", func(t *testing.T) {
+			t.Parallel()
+
+			s := store.NewReadSet()
+			s.RecordFact(coretest.Struct(coretest.StorePath, "Store").ID, "shape.role")
+			s.RecordFact(coretest.Struct(coretest.StorePath, "Cache").ID, "shape.role")
+
+			seen := 0
+			for range s.Facts() {
+				seen++
+				break
+			}
+			assert.Equal(t, seen, 1, "the iteration stops when the range stops")
+		})
+	})
+
 	t.Run("Len", func(t *testing.T) {
 		t.Parallel()
 
@@ -118,10 +194,11 @@ func TestReadSet(t *testing.T) {
 			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
 			r.Lookup(decl.ID)
 			enumerate(r, symbol.KindFile)
+			reads.RecordFact(decl.ID, "shape.role")
 
 			// One identity from the lookup, one from the file the
-			// enumeration reached, and one kind edge.
-			assert.Equal(t, reads.Len(), 3, "Len counts both grains")
+			// enumeration reached, one kind edge, and one fact edge.
+			assert.Equal(t, reads.Len(), 4, "Len counts all three grains")
 		})
 	})
 }

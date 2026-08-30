@@ -4,19 +4,23 @@
 package store
 
 import (
+	"cmp"
 	"iter"
 	"maps"
 	"slices"
 
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // ReadSet is what one derived artifact read.
 //
 // Edges deduplicate, so a loop reading one declaration a thousand
-// times records one edge. Two grains are recorded: a per-identity
-// edge for a targeted read, and a set-membership edge for an
-// enumeration.
+// times records one edge. Three grains are recorded: a per-identity
+// edge for a targeted read, a set-membership edge for an
+// enumeration, and a (subject, key) edge for a fact read — ReadSet
+// satisfies [meta.Recorder], so one artifact's declaration reads
+// and fact reads land in one set.
 //
 // A ReadSet belongs to one derived artifact and is not shared, so it
 // is not safe for concurrent use even though the graph beneath it
@@ -28,6 +32,13 @@ import (
 type ReadSet struct {
 	identities map[symbol.Identity]struct{}
 	kinds      map[symbol.Kind]struct{}
+	facts      map[factRead]struct{}
+}
+
+// factRead is one (subject, key) edge.
+type factRead struct {
+	subject symbol.Identity
+	key     meta.KeyName
 }
 
 // NewReadSet answers a read set holding no edges.
@@ -50,8 +61,37 @@ func (s *ReadSet) Kinds() iter.Seq[symbol.Kind] {
 	return slices.Values(out)
 }
 
-// Len answers how many edges the set holds, both grains counted.
-func (s *ReadSet) Len() int { return len(s.identities) + len(s.kinds) }
+// RecordFact records a fact read at (subject, key), never as a bare
+// identity edge: per-subject recording would re-run every reader of
+// a bag on any stamp.
+func (s *ReadSet) RecordFact(subject symbol.Identity, key meta.KeyName) {
+	if s.facts == nil {
+		s.facts = map[factRead]struct{}{}
+	}
+	s.facts[factRead{subject: subject, key: key}] = struct{}{}
+}
+
+// Facts answers every recorded fact read, in subject then key
+// order.
+func (s *ReadSet) Facts() iter.Seq2[symbol.Identity, meta.KeyName] {
+	edges := slices.SortedFunc(maps.Keys(s.facts), func(a, b factRead) int {
+		if by := a.subject.Compare(b.subject); by != 0 {
+			return by
+		}
+		return cmp.Compare(a.key, b.key)
+	})
+	return func(yield func(symbol.Identity, meta.KeyName) bool) {
+		for _, edge := range edges {
+			if !yield(edge.subject, edge.key) {
+				return
+			}
+		}
+	}
+}
+
+// Len answers how many edges the set holds, all three grains
+// counted.
+func (s *ReadSet) Len() int { return len(s.identities) + len(s.kinds) + len(s.facts) }
 
 // recordIdentity records a per-identity edge.
 //
