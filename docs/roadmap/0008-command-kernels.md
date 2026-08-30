@@ -37,6 +37,9 @@ code to get them.
       unmanifested file; its `--dry-run` lists what would go.
 - [ ] `doctor` validates config against the published JSON Schema,
       lists dead suppressions, and flags deprecated usage.
+- [ ] `+gen:diag off=<code>` suppresses that code at that declaration
+      and nothing else: the run summary counts suppressions per code,
+      and a kernel Error is not suppressible.
 - [ ] `watch` re-runs when the fingerprint gate's poll reports a
       change; `version` prints the kernel version, the contract
       version, every plugin, and the plugin-set fingerprint.
@@ -77,4 +80,5 @@ and the machine-output schemas of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Pinned diagnostic suppression and its audit counts into Done when | A coverage audit against the architecture found them held by Scope reference only |
 | 2026-08-30 | Added at position 8 | The commands wrap the engine, so they follow it. Everything a consumer script touches exists after this |

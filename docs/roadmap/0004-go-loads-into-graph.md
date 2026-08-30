@@ -36,6 +36,10 @@ Go.
 - [ ] `//+gen:` carriers strip and parse to canonical directives. An
       unclaimed directive is reported, and the workspace opt-out
       silences it.
+- [ ] The kernel-owned `sample` and `witness` directives stamp their
+      `gen.*` keys through the default annotators, and `SamplesOf`
+      and `Witnesses` answer from those stamps before deriving
+      anything (D64).
 - [ ] `go.work` and `go.mod` are read declaratively, `gen.module` and
       `gen.moduleRoot` are stamped, and a static check asserts the
       frontend never imports `os/exec`.
@@ -55,6 +59,12 @@ Go.
       landscape table, and the completeness rung, built in the kernel
       as part of this milestone, passes with every row on its declared
       rung.
+- [ ] The kernel's toolchain-adapter skeleton exists and
+      `eidos-lang-go/testing` implements it: the shared assertion set
+      (`AssertParses`, `AssertTypeChecks`, `AssertTestsPass`,
+      `AssertSatisfies`) runs over a `Generated` fixture through the
+      Go toolchain. A toolchain-dependent assertion skips locally with
+      a recorded reason and is required in CI.
 
 ## Why now
 
@@ -94,4 +104,5 @@ plus the completeness rung from
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Pinned the `sample`/`witness` directives and the toolchain-adapter skeleton into Done when | A coverage audit against the architecture found them held by Scope reference only |
 | 2026-08-30 | Added at position 4 | First real language. Go comes first because its parser needs no tree-sitter layer |

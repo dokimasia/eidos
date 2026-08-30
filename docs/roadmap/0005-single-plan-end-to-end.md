@@ -36,6 +36,11 @@ runs as a fixture.
       (`store_stub.go`, `suite_test.go`), `out=` and `tag=` overrides,
       refinement precedence. A within-plan collision and a collision
       with a hand-written file are Errors naming both sides.
+- [ ] Centralised layout derives package identity from the
+      `gen.module` facts, `importBase` covers an output directory
+      outside every module, and a missing identity is refused at the
+      referencing declaration, only when a cross-reference needs the
+      qualification (D69).
 - [ ] Drift and adoption work: editing a generated file makes the next
       run refuse with an Error naming the file, and a byte-equal
       unmanifested file is adopted silently.
@@ -47,6 +52,9 @@ runs as a fixture.
       `CommitRun` strictly last. A test crashes between the last two
       and the next run heals by deriving again and writing nothing
       new.
+- [ ] Cancelling the run's context stops it between units of work:
+      writes stay atomic, nothing lands mid-file or mid-manifest, and
+      the report says what committed.
 - [ ] Running twice produces byte-identical trees, and the second run
       touches no mtime.
 - [ ] A `PerPackage` accumulator file assembles from many matches
@@ -90,4 +98,5 @@ and the accumulator Emitter of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Pinned centralised-layout package identity and cancellation semantics into Done when | A coverage audit against the architecture found them held by Scope reference only |
 | 2026-08-30 | Added at position 5 | The first end-to-end run. Placed as early as its three inputs allow |

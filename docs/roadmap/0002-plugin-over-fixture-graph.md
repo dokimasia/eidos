@@ -48,12 +48,16 @@ ones.
 - [ ] `RunPluginSuite` passes over the fixture plugins: declaration
       stability, byte-equal emit under `-count=2`, annotator
       idempotence, no structural writes, positioned diagnostics,
-      declared tags, attribution, options schemas.
+      declared tags, attribution, options schemas, and no fixture
+      panics (the conformance half of D68).
 - [ ] The lowering guarantee holds: a facade-authored plugin and its
       hand-rolled SPI twin produce byte-equal emit in plugintest.
 - [ ] Dispatch is indexed: a rule gated on a directive visits only the
       subjects that carry it, which a fixture checks by counting
       handler calls.
+- [ ] The kernel `skip` directive works at dispatch: it excludes a
+      subject from bare and fact-gated rules, `skip plugin=<name>`
+      excludes one plugin, and directive-gated rules are unaffected.
 
 ## Why now
 
@@ -110,5 +114,6 @@ plugintest from
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Pinned the `skip` directive and the no-panic assertion into Done when | A coverage audit against the architecture found them held by Scope reference only, so nothing forced them to exist |
 | 2026-08-30 | Retitled from "Typed plugins compose and Build validates"; goal restated over fixture graphs | The old title claimed a composition capability that only exists at 0005. The plugin frame still comes second: a frontend is a plugin, so 0004 needs these seams first |
 | 2026-08-30 | Added at position 2 | The middle of the machine comes before the edges: plugins and Build are testable over hand-built graphs, so no language needs to exist first |
