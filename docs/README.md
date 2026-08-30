@@ -14,6 +14,7 @@
 | I want to know | Read |
 |---|---|
 | How the system is specified, end to end | [Architecture](architecture/README.md) |
+| What we build in what order, and what has to exist first | [Roadmap](roadmap/README.md) |
 | Why the system is shaped this way | [Architecture decisions](adr/README.md) |
 | What is being proposed, and the argument | [RFCs](rfc/README.md) |
 | What problems we decided were worth solving | [PRDs](prd/README.md) |
