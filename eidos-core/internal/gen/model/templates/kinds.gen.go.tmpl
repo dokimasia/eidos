@@ -27,6 +27,12 @@ func (x *{{.Name}}) Position() position.Pos { return {{.PosExpr}} }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *{{.Name}}) Docs() []string { return {{.DocExpr}} }
+{{- if .IDStorage}}
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *{{.Name}}) Identity() symbol.Identity { return x.{{.IDStorage}} }
+{{- end}}
 {{- range .Members}}
 
 // {{.Method}} answers the member list, adapted for neutral code.

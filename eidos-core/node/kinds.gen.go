@@ -40,6 +40,10 @@ func (x *Function) Position() position.Pos { return x.Pos }
 // none.
 func (x *Function) Docs() []string { return x.Doc }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Function) Identity() symbol.Identity { return x.ID }
+
 // Method is a callable attached to a type.
 //
 // Receiver holds the explicit receiver where the language writes
@@ -97,6 +101,10 @@ func (x *Method) Position() position.Pos { return x.Pos }
 // none.
 func (x *Method) Docs() []string { return x.Doc }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Method) Identity() symbol.Identity { return x.ID }
+
 // Param is one parameter of a callable, or its receiver.
 //
 // Name is empty where the language allows an unnamed parameter, as
@@ -137,6 +145,10 @@ func (x *Param) Position() position.Pos { return x.Pos }
 // none.
 func (x *Param) Docs() []string { return nil }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Param) Identity() symbol.Identity { return x.ID }
+
 // TypeRef answers the declaration's own type reference, nil when
 // the source states none.
 func (x *Param) TypeRef() symbol.Symbol {
@@ -169,6 +181,10 @@ func (x *Return) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *Return) Docs() []string { return nil }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Return) Identity() symbol.Identity { return x.ID }
 
 // TypeRef answers the declaration's own type reference, nil when
 // the source states none.
@@ -210,6 +226,10 @@ func (x *Package) Position() position.Pos { return x.Pos }
 // none.
 func (x *Package) Docs() []string { return x.Doc }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Package) Identity() symbol.Identity { return x.ID }
+
 // File is one source file and the declarations it holds.
 //
 // Imports and Exports record the file's module boundary as written,
@@ -238,6 +258,10 @@ func (x *File) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *File) Docs() []string { return x.Doc }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *File) Identity() symbol.Identity { return x.ID }
 
 // Import is one import statement and everything it binds.
 //
@@ -279,6 +303,10 @@ func (x *Import) Position() position.Pos { return x.Pos }
 // none.
 func (x *Import) Docs() []string { return nil }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Import) Identity() symbol.Identity { return x.ID }
+
 // Export is one re-export statement: a name this file publishes
 // that it did not declare.
 //
@@ -313,6 +341,10 @@ func (x *Export) Position() position.Pos { return x.Pos }
 // none.
 func (x *Export) Docs() []string { return x.Doc }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Export) Identity() symbol.Identity { return x.ID }
+
 // Binding is one name bound by an [Import] or published by an
 // [Export].
 //
@@ -340,6 +372,10 @@ func (x *Binding) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *Binding) Docs() []string { return nil }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Binding) Identity() symbol.Identity { return x.ID }
 
 // Enum is a closed set of named values carrying no payload: a Java
 // enum class, a TypeScript enum, a proto enum, a Go constant group.
@@ -373,6 +409,10 @@ func (x *Enum) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *Enum) Docs() []string { return x.Doc }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Enum) Identity() symbol.Identity { return x.ID }
 
 // FieldList answers the member list, adapted for neutral code.
 func (x *Enum) FieldList() []symbol.Symbol {
@@ -425,6 +465,10 @@ func (x *EnumVariant) Position() position.Pos { return x.Pos }
 // none.
 func (x *EnumVariant) Docs() []string { return x.Doc }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *EnumVariant) Identity() symbol.Identity { return x.ID }
+
 // Sum is a closed set of named variants carrying payloads: a Rust
 // data enum, a Kotlin or Java sealed class hierarchy, a proto
 // oneof, a Swift associated-value enum.
@@ -455,6 +499,10 @@ func (x *Sum) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *Sum) Docs() []string { return x.Doc }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Sum) Identity() symbol.Identity { return x.ID }
 
 // FieldList answers the member list, adapted for neutral code.
 func (x *Sum) FieldList() []symbol.Symbol {
@@ -503,6 +551,10 @@ func (x *SumVariant) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *SumVariant) Docs() []string { return x.Doc }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *SumVariant) Identity() symbol.Identity { return x.ID }
 
 // FieldList answers the member list, adapted for neutral code.
 func (x *SumVariant) FieldList() []symbol.Symbol {
@@ -557,6 +609,10 @@ func (x *Field) Position() position.Pos { return x.Pos }
 // none.
 func (x *Field) Docs() []string { return x.Doc }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Field) Identity() symbol.Identity { return x.ID }
+
 // TypeRef answers the declaration's own type reference, nil when
 // the source states none.
 func (x *Field) TypeRef() symbol.Symbol {
@@ -600,6 +656,10 @@ func (x *Variable) Position() position.Pos { return x.Pos }
 // none.
 func (x *Variable) Docs() []string { return x.Doc }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Variable) Identity() symbol.Identity { return x.ID }
+
 // TypeRef answers the declaration's own type reference, nil when
 // the source states none.
 func (x *Variable) TypeRef() symbol.Symbol {
@@ -638,6 +698,10 @@ func (x *Constant) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *Constant) Docs() []string { return x.Doc }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Constant) Identity() symbol.Identity { return x.ID }
 
 // TypeRef answers the declaration's own type reference, nil when
 // the source states none.
@@ -700,6 +764,10 @@ func (x *Struct) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *Struct) Docs() []string { return x.Doc }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Struct) Identity() symbol.Identity { return x.ID }
 
 // FieldList answers the member list, adapted for neutral code.
 func (x *Struct) FieldList() []symbol.Symbol {
@@ -772,6 +840,10 @@ func (x *Interface) Position() position.Pos { return x.Pos }
 // none.
 func (x *Interface) Docs() []string { return x.Doc }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Interface) Identity() symbol.Identity { return x.ID }
+
 // FieldList answers the member list, adapted for neutral code.
 func (x *Interface) FieldList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, len(x.Fields))
@@ -829,6 +901,10 @@ func (x *Alias) Position() position.Pos { return x.Pos }
 // none.
 func (x *Alias) Docs() []string { return x.Doc }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Alias) Identity() symbol.Identity { return x.ID }
+
 // TypeRef is a type as a declaration mentions it.
 //
 // Spelling holds the source text verbatim. Target holds the
@@ -862,6 +938,10 @@ func (x *TypeRef) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *TypeRef) Docs() []string { return nil }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *TypeRef) Identity() symbol.Identity { return x.ID }
 
 // TypeParam is one parameter of a generic declaration.
 //
@@ -904,6 +984,10 @@ func (x *TypeParam) Position() position.Pos { return x.Pos }
 // none.
 func (x *TypeParam) Docs() []string { return nil }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *TypeParam) Identity() symbol.Identity { return x.ID }
+
 // TypeRef answers the declaration's own type reference, nil when
 // the source states none.
 func (x *TypeParam) TypeRef() symbol.Symbol {
@@ -938,6 +1022,10 @@ func (x *Constraint) Position() position.Pos { return x.Pos }
 // none.
 func (x *Constraint) Docs() []string { return nil }
 
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Constraint) Identity() symbol.Identity { return x.ID }
+
 // Embed is one embedded type in a declaration that promotes
 // members: a Go embedded field or embedded interface, a PHP trait
 // use.
@@ -964,3 +1052,7 @@ func (x *Embed) Position() position.Pos { return x.Pos }
 // Docs answers the declaration's documentation, nil when it carries
 // none.
 func (x *Embed) Docs() []string { return nil }
+
+// Identity answers the declaration's canonical identity, which stays
+// zero until the resolution step assigns one.
+func (x *Embed) Identity() symbol.Identity { return x.ID }

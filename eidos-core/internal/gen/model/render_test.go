@@ -108,6 +108,42 @@ func TestRender(t *testing.T) {
 				t.Fatal("a marker-typed field is not typed Symbols, so it cannot decode")
 			}
 		})
+
+		t.Run("the node model names itself and the emit model does not", func(t *testing.T) {
+			t.Parallel()
+
+			kinds := generated(t, "node/kinds.gen.go")
+			if !strings.Contains(kinds, "func (x *Struct) Identity() symbol.Identity") {
+				t.Fatal("a node declaration cannot answer its identity, " +
+					"so nothing can index a traversal by one")
+			}
+			if emit := generated(t, "emit/kinds.gen.go"); strings.Contains(
+				emit, "Identity() symbol.Identity",
+			) {
+				t.Fatal("the emit model answers an identity, which it does not carry: " +
+					"an emit declaration has an origin instead")
+			}
+		})
+
+		t.Run("the node walk answers the declarations it yields", func(t *testing.T) {
+			t.Parallel()
+
+			walk := generated(t, "node/walk.gen.go")
+			for _, want := range []string{
+				"type Declaration interface",
+				"func Declarations(s symbol.Symbol) iter.Seq[Declaration]",
+			} {
+				if !strings.Contains(walk, want) {
+					t.Fatalf("the node walk is missing %q", want)
+				}
+			}
+			if emit := generated(t, "emit/walk.gen.go"); strings.Contains(
+				emit, "Declaration",
+			) {
+				t.Fatal("the emit walk answers declarations, " +
+					"which only the identity-bearing side can")
+			}
+		})
 	})
 
 	t.Run("documentation", func(t *testing.T) {

@@ -9,7 +9,7 @@
 // holds its member lists in a [Slot] that other plugins append
 // into.
 //
-// The kinds, [Walk], [All] and [RewireOwners] generate from the
+// The kinds, [Walk] and [All] generate from the
 // symbol schema. Editing a generated file fails the build, because
 // the mirror guard reruns the generator and compares.
 //

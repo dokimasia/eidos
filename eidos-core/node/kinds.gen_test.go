@@ -50,6 +50,29 @@ var (
 	_ symbol.Typed    = (*Variable)(nil)
 	_ symbol.Typed    = (*Constant)(nil)
 	_ symbol.Typed    = (*TypeParam)(nil)
+	_ Declaration     = (*Function)(nil)
+	_ Declaration     = (*Method)(nil)
+	_ Declaration     = (*Param)(nil)
+	_ Declaration     = (*Return)(nil)
+	_ Declaration     = (*Package)(nil)
+	_ Declaration     = (*File)(nil)
+	_ Declaration     = (*Import)(nil)
+	_ Declaration     = (*Export)(nil)
+	_ Declaration     = (*Binding)(nil)
+	_ Declaration     = (*Enum)(nil)
+	_ Declaration     = (*EnumVariant)(nil)
+	_ Declaration     = (*Sum)(nil)
+	_ Declaration     = (*SumVariant)(nil)
+	_ Declaration     = (*Field)(nil)
+	_ Declaration     = (*Variable)(nil)
+	_ Declaration     = (*Constant)(nil)
+	_ Declaration     = (*Struct)(nil)
+	_ Declaration     = (*Interface)(nil)
+	_ Declaration     = (*Alias)(nil)
+	_ Declaration     = (*TypeRef)(nil)
+	_ Declaration     = (*TypeParam)(nil)
+	_ Declaration     = (*Constraint)(nil)
+	_ Declaration     = (*Embed)(nil)
 )
 
 func TestKinds(t *testing.T) {
@@ -252,6 +275,158 @@ func TestKinds(t *testing.T) {
 			}
 			if got := (&Embed{}).Docs(); got != nil {
 				t.Fatalf("Embed.Docs() = %v, want nil", got)
+			}
+		})
+	})
+
+	t.Run("Identity", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("answers the identity the resolution step assigned", func(t *testing.T) {
+			t.Parallel()
+
+			id := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"}
+			if got := (&Function{ID: id}).Identity(); got != id {
+				t.Fatalf("Function.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Method{ID: id}).Identity(); got != id {
+				t.Fatalf("Method.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Param{ID: id}).Identity(); got != id {
+				t.Fatalf("Param.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Return{ID: id}).Identity(); got != id {
+				t.Fatalf("Return.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Package{ID: id}).Identity(); got != id {
+				t.Fatalf("Package.Identity() = %v, want %v", got, id)
+			}
+			if got := (&File{ID: id}).Identity(); got != id {
+				t.Fatalf("File.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Import{ID: id}).Identity(); got != id {
+				t.Fatalf("Import.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Export{ID: id}).Identity(); got != id {
+				t.Fatalf("Export.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Binding{ID: id}).Identity(); got != id {
+				t.Fatalf("Binding.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Enum{ID: id}).Identity(); got != id {
+				t.Fatalf("Enum.Identity() = %v, want %v", got, id)
+			}
+			if got := (&EnumVariant{ID: id}).Identity(); got != id {
+				t.Fatalf("EnumVariant.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Sum{ID: id}).Identity(); got != id {
+				t.Fatalf("Sum.Identity() = %v, want %v", got, id)
+			}
+			if got := (&SumVariant{ID: id}).Identity(); got != id {
+				t.Fatalf("SumVariant.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Field{ID: id}).Identity(); got != id {
+				t.Fatalf("Field.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Variable{ID: id}).Identity(); got != id {
+				t.Fatalf("Variable.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Constant{ID: id}).Identity(); got != id {
+				t.Fatalf("Constant.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Struct{ID: id}).Identity(); got != id {
+				t.Fatalf("Struct.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Interface{ID: id}).Identity(); got != id {
+				t.Fatalf("Interface.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Alias{ID: id}).Identity(); got != id {
+				t.Fatalf("Alias.Identity() = %v, want %v", got, id)
+			}
+			if got := (&TypeRef{ID: id}).Identity(); got != id {
+				t.Fatalf("TypeRef.Identity() = %v, want %v", got, id)
+			}
+			if got := (&TypeParam{ID: id}).Identity(); got != id {
+				t.Fatalf("TypeParam.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Constraint{ID: id}).Identity(); got != id {
+				t.Fatalf("Constraint.Identity() = %v, want %v", got, id)
+			}
+			if got := (&Embed{ID: id}).Identity(); got != id {
+				t.Fatalf("Embed.Identity() = %v, want %v", got, id)
+			}
+		})
+
+		t.Run("answers the zero identity before it is assigned", func(t *testing.T) {
+			t.Parallel()
+			if got := (&Function{}).Identity(); !got.IsZero() {
+				t.Fatalf("Function.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Method{}).Identity(); !got.IsZero() {
+				t.Fatalf("Method.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Param{}).Identity(); !got.IsZero() {
+				t.Fatalf("Param.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Return{}).Identity(); !got.IsZero() {
+				t.Fatalf("Return.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Package{}).Identity(); !got.IsZero() {
+				t.Fatalf("Package.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&File{}).Identity(); !got.IsZero() {
+				t.Fatalf("File.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Import{}).Identity(); !got.IsZero() {
+				t.Fatalf("Import.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Export{}).Identity(); !got.IsZero() {
+				t.Fatalf("Export.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Binding{}).Identity(); !got.IsZero() {
+				t.Fatalf("Binding.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Enum{}).Identity(); !got.IsZero() {
+				t.Fatalf("Enum.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&EnumVariant{}).Identity(); !got.IsZero() {
+				t.Fatalf("EnumVariant.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Sum{}).Identity(); !got.IsZero() {
+				t.Fatalf("Sum.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&SumVariant{}).Identity(); !got.IsZero() {
+				t.Fatalf("SumVariant.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Field{}).Identity(); !got.IsZero() {
+				t.Fatalf("Field.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Variable{}).Identity(); !got.IsZero() {
+				t.Fatalf("Variable.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Constant{}).Identity(); !got.IsZero() {
+				t.Fatalf("Constant.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Struct{}).Identity(); !got.IsZero() {
+				t.Fatalf("Struct.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Interface{}).Identity(); !got.IsZero() {
+				t.Fatalf("Interface.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Alias{}).Identity(); !got.IsZero() {
+				t.Fatalf("Alias.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&TypeRef{}).Identity(); !got.IsZero() {
+				t.Fatalf("TypeRef.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&TypeParam{}).Identity(); !got.IsZero() {
+				t.Fatalf("TypeParam.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Constraint{}).Identity(); !got.IsZero() {
+				t.Fatalf("Constraint.Identity() = %v, want the zero identity", got)
+			}
+			if got := (&Embed{}).Identity(); !got.IsZero() {
+				t.Fatalf("Embed.Identity() = %v, want the zero identity", got)
 			}
 		})
 	})

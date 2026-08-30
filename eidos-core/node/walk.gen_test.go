@@ -8,6 +8,7 @@ package node
 import (
 	"testing"
 
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -1406,4 +1407,718 @@ func TestWalk(t *testing.T) {
 			}
 		})
 	})
+
+	t.Run("Declarations", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("yields every declaration All does", func(t *testing.T) {
+			t.Parallel()
+
+			{
+				subject := &Function{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Function declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Method{}
+				subject.Receiver = &Param{}
+				subject.Receives = &TypeRef{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Method declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Param{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Param declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Return{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Return declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Package{}
+				subject.Files = append(subject.Files, &File{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Package declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &File{}
+				subject.Imports = append(subject.Imports, &Import{})
+				subject.Exports = append(subject.Exports, &Export{})
+				subject.Decls = append(subject.Decls, &File{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d File declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Import{}
+				subject.Names = append(subject.Names, &Binding{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Import declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Export{}
+				subject.Names = append(subject.Names, &Binding{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Export declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Enum{}
+				subject.Variants = append(subject.Variants, &EnumVariant{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Enum declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Sum{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Variants = append(subject.Variants, &SumVariant{})
+				subject.Methods = append(subject.Methods, &Method{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Sum declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &SumVariant{}
+				subject.Fields = append(subject.Fields, &Field{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d SumVariant declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Field{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Field declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Variable{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Variable declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Constant{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Constant declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Struct{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				subject.Types = append(subject.Types, &Struct{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Struct declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Interface{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				subject.Types = append(subject.Types, &Interface{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Interface declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Alias{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Target = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Alias declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &TypeRef{}
+				subject.Args = append(subject.Args, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d TypeRef declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &TypeParam{}
+				subject.Bounds = append(subject.Bounds, &TypeRef{})
+				subject.Default = &TypeRef{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d TypeParam declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Constraint{}
+				subject.Terms = append(subject.Terms, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Constraint declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+
+			{
+				subject := &Embed{}
+				subject.Ref = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d Embed declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+		})
+
+		t.Run("skips a symbol that does not name itself", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &File{Decls: Symbols{unnamed{}}}
+			for decl := range Declarations(subject) {
+				if _, isFile := decl.(*File); !isFile {
+					t.Fatalf("Declarations yielded %v, want the file alone", decl)
+				}
+			}
+		})
+
+		t.Run("stops when the range stops", func(t *testing.T) {
+			t.Parallel()
+
+			{
+				subject := &Function{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Function declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Method{}
+				subject.Receiver = &Param{}
+				subject.Receives = &TypeRef{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Method declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Param{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Param declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Return{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Return declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Package{}
+				subject.Files = append(subject.Files, &File{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Package declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &File{}
+				subject.Imports = append(subject.Imports, &Import{})
+				subject.Exports = append(subject.Exports, &Export{})
+				subject.Decls = append(subject.Decls, &File{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d File declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Import{}
+				subject.Names = append(subject.Names, &Binding{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Import declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Export{}
+				subject.Names = append(subject.Names, &Binding{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Export declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Enum{}
+				subject.Variants = append(subject.Variants, &EnumVariant{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Enum declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Sum{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Variants = append(subject.Variants, &SumVariant{})
+				subject.Methods = append(subject.Methods, &Method{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Sum declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &SumVariant{}
+				subject.Fields = append(subject.Fields, &Field{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d SumVariant declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Field{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Field declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Variable{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Variable declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Constant{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Constant declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Struct{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				subject.Types = append(subject.Types, &Struct{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Struct declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Interface{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				subject.Types = append(subject.Types, &Interface{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Interface declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Alias{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Target = &TypeRef{}
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Alias declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &TypeRef{}
+				subject.Args = append(subject.Args, &TypeRef{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d TypeRef declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &TypeParam{}
+				subject.Bounds = append(subject.Bounds, &TypeRef{})
+				subject.Default = &TypeRef{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d TypeParam declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Constraint{}
+				subject.Terms = append(subject.Terms, &TypeRef{})
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Constraint declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Embed{}
+				subject.Ref = &TypeRef{}
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Embed declarations after breaking, want 1", yielded)
+				}
+			}
+		})
+	})
 }
+
+// unnamed is a symbol from outside this model: it answers the shared
+// vocabulary and no identity, which is the only thing [Declarations]
+// skips.
+type unnamed struct{}
+
+func (unnamed) Kind() symbol.Kind      { return symbol.KindInvalid }
+func (unnamed) Position() position.Pos { return position.Pos{} }
+func (unnamed) Docs() []string         { return nil }

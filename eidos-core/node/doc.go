@@ -9,7 +9,12 @@
 // canonical identity, and its member lists are plain slices,
 // because the read side is sealed once loading finishes.
 //
-// The kinds, [Walk], [All] and [RewireOwners] generate from the
+// Every kind answers [Declaration], which is [symbol.Symbol] plus
+// the identity this side carries. [Declarations] is the traversal
+// typed by it, for a caller keying on identity rather than walking
+// neutrally.
+//
+// The kinds, [Walk], [All] and [Declarations] generate from the
 // symbol schema. Editing a generated file fails the build, because
 // the mirror guard reruns the generator and compares.
 //

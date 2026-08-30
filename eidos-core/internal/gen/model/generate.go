@@ -77,6 +77,10 @@ type data struct {
 	// NeedsSymbol says whether the rendered file reaches the shared
 	// vocabulary, so a template imports it only when it uses it.
 	NeedsSymbol bool
+	// Identified says whether every kind on this side names itself,
+	// which is what lets the side declare the Declaration interface
+	// and the traversal typed by it.
+	Identified bool
 }
 
 // Generate renders every generated file from the schema under
@@ -123,6 +127,21 @@ func slotsUseSymbol(views []view) bool {
 	return false
 }
 
+// viewsIdentified reports whether every kind carries an identity.
+//
+// The predicate is "every" rather than "any": the Declaration
+// interface is only worth declaring on a side where no kind fails to
+// answer it, because a traversal typed by it would otherwise drop
+// whichever kinds did.
+func viewsIdentified(views []view) bool {
+	for _, v := range views {
+		if v.IDStorage == "" {
+			return false
+		}
+	}
+	return len(views) > 0
+}
+
 // render executes one output's template.
 func render(out output, kinds []KindSpec) ([]byte, error) {
 	tmpl, err := template.ParseFS(templates,
@@ -140,6 +159,7 @@ func render(out output, kinds []KindSpec) ([]byte, error) {
 		Kinds:       kinds,
 		Views:       views,
 		NeedsSymbol: slotsUseSymbol(views),
+		Identified:  viewsIdentified(views),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("model: render %s: %w", out.Path, err)

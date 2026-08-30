@@ -23,6 +23,11 @@ var (
 	_ symbol.Typed = (*{{.Name}})(nil)
 {{- end}}
 {{- end}}
+{{- if .Identified}}
+{{- range .Views}}
+	_ Declaration = (*{{.Name}})(nil)
+{{- end}}
+{{- end}}
 )
 
 func TestKinds(t *testing.T) {
@@ -92,7 +97,35 @@ func TestKinds(t *testing.T) {
 {{- end}}
 		})
 	})
+{{if .Identified}}
+	t.Run("Identity", func(t *testing.T) {
+		t.Parallel()
 
+		t.Run("answers the identity the resolution step assigned", func(t *testing.T) {
+			t.Parallel()
+
+			id := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"}
+{{- range .Views}}
+{{- if .IDStorage}}
+			if got := (&{{.Name}}{ID: id}).Identity(); got != id {
+				t.Fatalf("{{.Name}}.Identity() = %v, want %v", got, id)
+			}
+{{- end}}
+{{- end}}
+		})
+
+		t.Run("answers the zero identity before it is assigned", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .IDStorage}}
+			if got := (&{{.Name}}{}).Identity(); !got.IsZero() {
+				t.Fatalf("{{.Name}}.Identity() = %v, want the zero identity", got)
+			}
+{{- end}}
+{{- end}}
+		})
+	})
+{{end}}
 	t.Run("TypeRef", func(t *testing.T) {
 		t.Parallel()
 

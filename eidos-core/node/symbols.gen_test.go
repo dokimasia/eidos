@@ -6,6 +6,7 @@
 package node
 
 import (
+	"bytes"
 	"encoding/json"
 	"strings"
 	"testing"
@@ -962,5 +963,65 @@ func TestSymbols(t *testing.T) {
 				t.Fatal("Unmarshal of an object: error = nil, want non-nil")
 			}
 		})
+	})
+}
+
+// FuzzDecodeJSON drives the decoder with bytes nothing in this
+// repository produced.
+//
+// The encoding is a boundary: a sealed state and a carried
+// declaration both arrive as bytes a previous release, another tool
+// or a corrupted file wrote. Two properties hold whatever those
+// bytes are. Decoding answers an error rather than panicking, and a
+// value that decoded re-encodes to bytes that decode to the same
+// encoding, so one trip through the boundary is a fixed point.
+func FuzzDecodeJSON(f *testing.F) {
+	f.Add([]byte(`{"kind":"Function"}`))
+	f.Add([]byte(`{"kind":"Method"}`))
+	f.Add([]byte(`{"kind":"Param"}`))
+	f.Add([]byte(`{"kind":"Return"}`))
+	f.Add([]byte(`{"kind":"Package"}`))
+	f.Add([]byte(`{"kind":"File"}`))
+	f.Add([]byte(`{"kind":"Import"}`))
+	f.Add([]byte(`{"kind":"Export"}`))
+	f.Add([]byte(`{"kind":"Binding"}`))
+	f.Add([]byte(`{"kind":"Enum"}`))
+	f.Add([]byte(`{"kind":"EnumVariant"}`))
+	f.Add([]byte(`{"kind":"Sum"}`))
+	f.Add([]byte(`{"kind":"SumVariant"}`))
+	f.Add([]byte(`{"kind":"Field"}`))
+	f.Add([]byte(`{"kind":"Variable"}`))
+	f.Add([]byte(`{"kind":"Constant"}`))
+	f.Add([]byte(`{"kind":"Struct"}`))
+	f.Add([]byte(`{"kind":"Interface"}`))
+	f.Add([]byte(`{"kind":"Alias"}`))
+	f.Add([]byte(`{"kind":"TypeRef"}`))
+	f.Add([]byte(`{"kind":"TypeParam"}`))
+	f.Add([]byte(`{"kind":"Constraint"}`))
+	f.Add([]byte(`{"kind":"Embed"}`))
+	for _, seed := range []string{`null`, `{}`, `[]`, `{"kind":"Nonexistent"}`} {
+		f.Add([]byte(seed))
+	}
+
+	f.Fuzz(func(t *testing.T, in []byte) {
+		decoded, err := DecodeJSON(in)
+		if err != nil {
+			return
+		}
+		encoded, err := EncodeJSON(decoded)
+		if err != nil {
+			t.Fatalf("DecodeJSON(%s) answered a value EncodeJSON refuses: %v", in, err)
+		}
+		again, err := DecodeJSON(encoded)
+		if err != nil {
+			t.Fatalf("DecodeJSON refuses its own encoding %s: %v", encoded, err)
+		}
+		twice, err := EncodeJSON(again)
+		if err != nil {
+			t.Fatalf("EncodeJSON: unexpected error: %v", err)
+		}
+		if !bytes.Equal(encoded, twice) {
+			t.Fatalf("a second trip encoded as %s, want %s", twice, encoded)
+		}
 	})
 }

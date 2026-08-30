@@ -57,6 +57,9 @@ const (
 	docField = "Doc"
 	// posField holds a node symbol's source position.
 	posField = "Pos"
+	// idField holds a node declaration's canonical identity, which is
+	// what makes the kind answer the Declaration interface.
+	idField = "ID"
 	// typeField holds a declaration's own type reference, which is
 	// what makes a kind satisfy the Typed interface.
 	typeField = "Type"
@@ -102,6 +105,9 @@ type view struct {
 	// TypeRefStorage is the field answering the Typed interface,
 	// empty when the kind is not typed.
 	TypeRefStorage string
+	// IDStorage is the field answering the identity accessor, empty
+	// on the emit side, which carries an origin instead.
+	IDStorage string
 	// Walked are the fields the traversal descends into.
 	Walked []fieldView
 	// Slots are the fields that become slot storage.
@@ -203,6 +209,8 @@ func viewOf(kind KindSpec, side string) view {
 			v.PosExpr, v.HasPos = "x."+f.Storage, true
 		case f.Name == docField:
 			v.DocExpr, v.HasDoc = "x."+f.Storage, true
+		case f.Name == idField:
+			v.IDStorage = f.Storage
 		case f.Name == typeField && f.Elem == typeRefKind:
 			v.TypeRefStorage = f.Storage
 		}

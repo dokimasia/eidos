@@ -2,7 +2,8 @@
 import (
 	"testing"
 
-	"go.dokimi.dev/eidos/core/symbol"
+{{if .Identified}}	"go.dokimi.dev/eidos/core/position"
+{{end}}	"go.dokimi.dev/eidos/core/symbol"
 )
 
 func TestWalk(t *testing.T) {
@@ -120,4 +121,82 @@ func TestWalk(t *testing.T) {
 {{- end}}
 		})
 	})
+{{- if .Identified}}
+
+	t.Run("Declarations", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("yields every declaration All does", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .Children}}
+
+			{
+				subject := &{{.Name}}{}
+{{- range .Children}}
+				{{.}}
+{{- end}}
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				var named int
+				for range Declarations(subject) {
+					named++
+				}
+				if named != yielded {
+					t.Fatalf("Declarations yielded %d {{.Name}} declarations, All yielded %d",
+						named, yielded)
+				}
+			}
+{{- end}}
+{{- end}}
+		})
+
+		t.Run("skips a symbol that does not name itself", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &File{Decls: Symbols{unnamed{}}}
+			for decl := range Declarations(subject) {
+				if _, isFile := decl.(*File); !isFile {
+					t.Fatalf("Declarations yielded %v, want the file alone", decl)
+				}
+			}
+		})
+
+		t.Run("stops when the range stops", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .Children}}
+
+			{
+				subject := &{{.Name}}{}
+{{- range .Children}}
+				{{.}}
+{{- end}}
+				var yielded int
+				for range Declarations(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d {{.Name}} declarations after breaking, want 1", yielded)
+				}
+			}
+{{- end}}
+{{- end}}
+		})
+	})
+{{- end}}
 }
+{{- if .Identified}}
+
+// unnamed is a symbol from outside this model: it answers the shared
+// vocabulary and no identity, which is the only thing [Declarations]
+// skips.
+type unnamed struct{}
+
+func (unnamed) Kind() symbol.Kind          { return symbol.KindInvalid }
+func (unnamed) Position() position.Pos     { return position.Pos{} }
+func (unnamed) Docs() []string             { return nil }
+{{- end}}
