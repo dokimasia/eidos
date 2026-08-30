@@ -84,6 +84,15 @@ func TestRender(t *testing.T) {
 				"and the node model holds none")
 		})
 
+		t.Run("the body exists on the emit side alone", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Contains(t, generated(t, "emit/kinds.gen.go"), `json:"body,omitzero"`,
+				"the emit callables carry their content")
+			assert.NotContains(t, generated(t, "node/kinds.gen.go"), `json:"body,omitzero"`,
+				"and the node model never does")
+		})
+
 		t.Run("a marker field carries the dispatching slice", func(t *testing.T) {
 			t.Parallel()
 

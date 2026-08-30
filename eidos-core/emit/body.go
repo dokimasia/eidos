@@ -113,29 +113,36 @@ func (b *Body) Slot(name string) (*Slot[Stmt], bool) {
 // Form answers which content form the body holds, and an error
 // naming the forms where more than one is set: a body built with
 // two contents is a defect, and the render and the lint rung both
-// ask this one question.
+// ask this one question. The question is asked once per callable,
+// so the lawful path allocates nothing and only the defect pays
+// for its message.
 func (b *Body) Form() (Form, error) {
-	form := FormDefault
-	var set []string
+	form, set := FormDefault, 0
 	if len(b.Stmts) > 0 {
-		form = FormStmts
-		set = append(set, FormStmts.String())
+		form, set = FormStmts, set+1
 	}
 	if b.Ref != nil {
-		form = FormTemplate
-		set = append(set, FormTemplate.String())
+		form, set = FormTemplate, set+1
 	}
 	if b.Verbatim != "" {
-		form = FormVerbatim
-		set = append(set, FormVerbatim.String())
+		form, set = FormVerbatim, set+1
 	}
-	if len(set) > 1 {
-		return FormDefault, fmt.Errorf(
-			"emit: the body holds %s at once, and content is one form",
-			strings.Join(set, " and "),
-		)
+	if set < 2 {
+		return form, nil
 	}
-	return form, nil
+	names := make([]string, 0, set)
+	if len(b.Stmts) > 0 {
+		names = append(names, FormStmts.String())
+	}
+	if b.Ref != nil {
+		names = append(names, FormTemplate.String())
+	}
+	if b.Verbatim != "" {
+		names = append(names, FormVerbatim.String())
+	}
+	return FormDefault, fmt.Errorf(
+		"emit: the body holds %s at once, and content is one form",
+		strings.Join(names, " and "))
 }
 
 // IsZero reports whether the body holds nothing at all, which is

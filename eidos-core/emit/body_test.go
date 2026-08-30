@@ -215,3 +215,44 @@ func TestBody(t *testing.T) {
 		})
 	})
 }
+
+// BenchmarkBody prices the per-callable operations the render pass
+// pays once per body, and the codec the conformance rungs pay per
+// encoded declaration.
+func BenchmarkBody(b *testing.B) {
+	b.Run("the form question", func(b *testing.B) {
+		b.ReportAllocs()
+		var body emit.Body
+		body.Stmts = []emit.Stmt{delegate()}
+		for b.Loop() {
+			form, err := body.Form()
+			if err != nil || form != emit.FormStmts {
+				b.Fatal("the scaffold body answers its form")
+			}
+		}
+	})
+
+	b.Run("build the delegate scaffold", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			var body emit.Body
+			body.Prologue.Append(delegate())
+			body.Stmts = []emit.Stmt{delegate()}
+			if body.IsZero() {
+				b.Fatal("the scaffold body holds content")
+			}
+		}
+	})
+
+	b.Run("encode a bodied method", func(b *testing.B) {
+		b.ReportAllocs()
+		m := &emit.Method{Name: "Do"}
+		m.Body.Prologue.Append(delegate())
+		m.Body.Stmts = []emit.Stmt{delegate()}
+		for b.Loop() {
+			if _, err := emit.EncodeJSON(m); err != nil {
+				b.Fatalf("EncodeJSON: unexpected error: %v", err)
+			}
+		}
+	})
+}
