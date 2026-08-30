@@ -1,0 +1,114 @@
+// Copyright ThesmOS B.V. 2026
+// SPDX-License-Identifier: MIT
+
+package schema
+
+import (
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// Function is a callable declared outside any type: a Go or Rust
+// free function, a Python module-level def, a TypeScript exported
+// function.
+//
+// The model carries the signature and never a body. Generated
+// bodies are an emit-side concern, and parsed bodies are out of
+// scope entirely.
+type Function struct {
+	ID         symbol.Identity   `eidos:"node"`
+	Origin     symbol.Identity   `eidos:"emit"`
+	Pos        position.Pos      `eidos:"node"`
+	Doc        []string          `eidos:"both"`
+	Name       string            `eidos:"both"`
+	Visibility symbol.Visibility `eidos:"both"`
+	TypeParams []*TypeParam      `eidos:"both,walk"`
+	Params     []*Param          `eidos:"both,walk"`
+	Returns    []*Return         `eidos:"both,walk"`
+}
+
+// Method is a callable attached to a type.
+//
+// Receiver holds the explicit receiver where the language writes
+// one, as Go and Rust do, and stays nil where the receiver is
+// implicit. Level says whether the method belongs to instances or
+// to the type itself, which covers JVM statics and Kotlin
+// companions.
+//
+// Receives carries the type a method attaches to when it is
+// declared outside that type's own declaration: a Kotlin extension
+// function, a Swift extension member, a C# extension method, a Rust
+// impl for a type from another crate. Host stays the declaration
+// that contains the method, so the two answer different questions
+// and neither has to lie. A method declared inside its type leaves
+// Receives nil.
+//
+// Abstract marks a member with no body that a subtype must supply.
+// Final forbids overriding. Override marks a member that replaces a
+// supertype's, which Kotlin, C#, Swift and TypeScript spell as a
+// keyword the emitted code has to carry; Java spells it as an
+// annotation instead, so a Java frontend leaves the field false.
+//
+// HasDefault marks an interface method that carries a body: a Java
+// default method, a Kotlin interface method, a Rust default impl.
+// It differs from Abstract's inverse, because a class method with a
+// body is ordinary rather than a default.
+type Method struct {
+	ID         symbol.Identity   `eidos:"node"`
+	Origin     symbol.Identity   `eidos:"emit"`
+	Pos        position.Pos      `eidos:"node"`
+	Doc        []string          `eidos:"both"`
+	Name       string            `eidos:"both"`
+	Visibility symbol.Visibility `eidos:"both"`
+	Level      symbol.Level      `eidos:"both"`
+	Abstract   bool              `eidos:"both"`      // no body; a subtype must supply one
+	Final      bool              `eidos:"both"`      // overriding is forbidden
+	Override   bool              `eidos:"both"`      // replaces a supertype's member
+	HasDefault bool              `eidos:"both"`      // an interface method with a body
+	Receiver   *Param            `eidos:"both,walk"` // nil where the receiver is implicit
+	Receives   *TypeRef          `eidos:"both,walk"` // set when declared outside the type it attaches to
+	TypeParams []*TypeParam      `eidos:"both,walk"`
+	Params     []*Param          `eidos:"both,walk"`
+	Returns    []*Return         `eidos:"both,walk"`
+	Host       Symbol            `eidos:"both"`
+}
+
+// Param is one parameter of a callable, or its receiver.
+//
+// Name is empty where the language allows an unnamed parameter, as
+// Go and Java interfaces do. Label is the caller-facing name where
+// a language gives a parameter two, which Swift and Objective-C do:
+// in "func greet(person name: String)" the label is "person" and
+// the name is "name".
+//
+// Default holds the source spelling of the default value,
+// unevaluated, and is empty when the parameter has none. A
+// generator that drops a default changes the callee's contract, so
+// the spelling travels with the parameter rather than living in
+// metadata.
+//
+// Variadic distinguishes the positional and keyword forms, because
+// Python, Ruby and PHP have both. It is legal on the trailing
+// parameters only, and frontends enforce that rather than the
+// model.
+type Param struct {
+	ID       symbol.Identity `eidos:"node"`
+	Pos      position.Pos    `eidos:"node"`
+	Name     string          `eidos:"both"` // "" when unnamed
+	Label    string          `eidos:"both"` // caller-facing name; Swift and Objective-C
+	Type     *TypeRef        `eidos:"both,walk"`
+	Default  string          `eidos:"both"` // source spelling, unevaluated; "" when none
+	Variadic symbol.Variadic `eidos:"both"` // positional or keyword
+}
+
+// Return is one result of a callable.
+//
+// The list is a slice because Go returns several values. A language
+// with one result fills one entry, and a language with none fills
+// none. Name carries a Go named result and is empty elsewhere.
+type Return struct {
+	ID   symbol.Identity `eidos:"node"`
+	Pos  position.Pos    `eidos:"node"`
+	Name string          `eidos:"both"` // Go named results; "" elsewhere
+	Type *TypeRef        `eidos:"both,walk"`
+}

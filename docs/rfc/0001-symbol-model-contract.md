@@ -2,7 +2,7 @@
 rfc: 0001
 title: The symbol schema and its contract
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-08-30
 updated: 2026-08-30
 discussion: none
@@ -26,7 +26,7 @@ this schema. RFC-0002 proposes the generator itself.
 ## Motivation
 
 The architecture documents deliberately stop at the vocabulary
-level: the symbol model specification names 21 kinds, lists the
+level: the symbol model specification names its kinds, lists the
 elements the language landscape forces (variance, member level,
 default method bodies, nominal supertypes against embedding), and
 shows one worked example. Nobody has written down the full field set
@@ -108,6 +108,30 @@ const (
     VarianceInvariant Variance = iota
     VarianceIn
     VarianceOut
+)
+
+// Mutability says whether a binding may be reassigned after
+// initialization. The zero value is Unknown, because a language
+// that does not distinguish the two has not answered immutable:
+// Kotlin val against var, TypeScript readonly, Java final.
+type Mutability uint8
+
+const (
+    MutabilityUnknown Mutability = iota
+    MutabilityMutable
+    MutabilityImmutable
+)
+
+// Variadic says how a parameter accepts a variable number of
+// arguments. Positional and keyword forms stay separate because
+// Python, Ruby and PHP have both, and a delegating call has to
+// reproduce the right one.
+type Variadic uint8
+
+const (
+    VariadicNone Variadic = iota
+    VariadicPositional
+    VariadicKeyword
 )
 ```
 
@@ -225,7 +249,7 @@ with side one of `both`, `node`, `emit`. An unknown token fails
 generation with the schema position; RFC-0002 carries the full
 validation list. Three fields follow conventions rather than tags:
 
-- `Id symbol.Identity` is node-side on every kind. It is zero until a
+- `ID symbol.Identity` is node-side on every kind. It is zero until a
   frontend assigns it, and zero claims nothing. Assignment belongs to
   the frontends and the Link step, outside this proposal.
 - `Origin symbol.Identity` is emit-side on every declaration-shaped
@@ -237,91 +261,135 @@ validation list. Three fields follow conventions rather than tags:
   the walked structure stays a tree even though the graph is cyclic.
   The generator enforces that rule.
 
-The full inventory, which is the proposed content of
-`symbol/schema/schema.go`:
+The full inventory. Kinds group by family, one file each under
+`symbol/schema`, and the documentation lives with the declarations:
 
 ```go
-// Containers.
+// The marker that types heterogeneous fields.
+
+type Symbol any
+
+// Containers and module boundaries.
 
 type Package struct {
-    Id    symbol.Identity `eidos:"node"`
+    ID    symbol.Identity `eidos:"node"`
     Pos   position.Pos    `eidos:"node"`
     Doc   []string        `eidos:"both"`
-    Path  []string        `eidos:"both"` // hierarchical segments: ["svc","store"]
-    Name  string          `eidos:"both"` // the declared name; may differ from the last segment
+    Path  []string        `eidos:"both"` // ["svc","store"]
+    Name  string          `eidos:"both"` // may differ from the last segment
     Files []*File         `eidos:"node,walk"`
 }
 
 type File struct {
-    Id      symbol.Identity `eidos:"node"`
+    ID      symbol.Identity `eidos:"node"`
     Pos     position.Pos    `eidos:"node"`
     Doc     []string        `eidos:"both"`
-    Path    string          `eidos:"both"` // workspace-relative, slash-separated
-    Imports []*Import       `eidos:"node,walk"` // per-file import scope; cross-package resolution reads it
+    Path    string          `eidos:"both"`      // workspace-relative, slash-separated
+    Imports []*Import       `eidos:"node,walk"` // the file's import scope, as written
+    Exports []*Export       `eidos:"node,walk"` // re-exports; a declaration's own export is its Visibility
     Decls   []Symbol        `eidos:"node,walk"`
 }
 
 type Import struct {
-    Id    symbol.Identity `eidos:"node"`
-    Pos   position.Pos    `eidos:"node"`
-    Path  string          `eidos:"node"`
-    Alias string          `eidos:"node"` // "" when unaliased
+    ID       symbol.Identity `eidos:"node"`
+    Pos      position.Pos    `eidos:"node"`
+    Path     string          `eidos:"node"`
+    Alias    string          `eidos:"node"`            // module-level alias; "" when unaliased
+    Names    []*Binding      `eidos:"node,walk,owner"` // per-symbol bindings
+    Default  string          `eidos:"node"`            // local name for the module's default export
+    Wildcard bool            `eidos:"node"`            // every exported name enters scope
 }
 
-// Type declarations.
+type Export struct {
+    ID       symbol.Identity `eidos:"node"`
+    Pos      position.Pos    `eidos:"node"`
+    Doc      []string        `eidos:"node"`
+    Path     string          `eidos:"node"`            // source module; "" when re-exporting local names
+    Names    []*Binding      `eidos:"node,walk,owner"` // per-symbol bindings
+    Default  string          `eidos:"node"`            // name published as the module's default export
+    Wildcard bool            `eidos:"node"`            // every name of Path is republished
+}
+
+type Binding struct {
+    ID    symbol.Identity `eidos:"node"`
+    Pos   position.Pos    `eidos:"node"`
+    Name  string          `eidos:"node"`
+    Alias string          `eidos:"node"` // "" when unrenamed
+    Host  Symbol          `eidos:"node"`
+}
+
+// Structural type declarations.
 
 type Struct struct {
-    Id         symbol.Identity   `eidos:"node"`
+    ID         symbol.Identity   `eidos:"node"`
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
+    Abstract   bool              `eidos:"both"` // no value of it can be made directly
+    Final      bool              `eidos:"both"` // subclassing is forbidden
     TypeParams []*TypeParam      `eidos:"both,walk"`
     Fields     []*Field          `eidos:"both,walk,slot=fields"`
     Methods    []*Method         `eidos:"both,walk,slot=methods,owner"`
-    Embeds     []*Embed          `eidos:"both,walk"` // compositional promotion
-    Extends    []*TypeRef        `eidos:"both,walk"` // nominal supertypes
+    Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations
+    Embeds     []*Embed          `eidos:"both,walk"`            // compositional promotion
+    Extends    []*TypeRef        `eidos:"both,walk"`            // nominal supertypes
     Implements []*TypeRef        `eidos:"both,walk"`
 }
 
 type Interface struct {
-    Id         symbol.Identity   `eidos:"node"`
+    ID         symbol.Identity   `eidos:"node"`
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
     TypeParams []*TypeParam      `eidos:"both,walk"`
-    Fields     []*Field          `eidos:"both,walk,slot=fields"` // TypeScript interfaces are mostly properties
+    Fields     []*Field          `eidos:"both,walk,slot=fields"` // properties, not just methods
     Methods    []*Method         `eidos:"both,walk,slot=methods,owner"`
+    Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations and associated types
     Embeds     []*Embed          `eidos:"both,walk"`
     Extends    []*TypeRef        `eidos:"both,walk"`
 }
 
+type Alias struct {
+    ID         symbol.Identity   `eidos:"node"`
+    Origin     symbol.Identity   `eidos:"emit"`
+    Pos        position.Pos      `eidos:"node"`
+    Doc        []string          `eidos:"both"`
+    Name       string            `eidos:"both"`
+    Visibility symbol.Visibility `eidos:"both"`
+    TypeParams []*TypeParam      `eidos:"both,walk"`
+    Target     *TypeRef          `eidos:"both,walk"` // nil for an associated type
+}
+
+// Enumerated type declarations.
+
 type Enum struct {
-    Id         symbol.Identity   `eidos:"node"`
+    ID         symbol.Identity   `eidos:"node"`
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
     Variants   []*EnumVariant    `eidos:"both,walk,slot=variants,owner"`
-    Methods    []*Method         `eidos:"both,walk,slot=methods,owner"` // Java enums carry members
+    Fields     []*Field          `eidos:"both,walk,slot=fields"`        // Java enums carry instance state
+    Methods    []*Method         `eidos:"both,walk,slot=methods,owner"` // and behaviour
 }
 
 type EnumVariant struct {
-    Id     symbol.Identity `eidos:"node"`
+    ID     symbol.Identity `eidos:"node"`
     Origin symbol.Identity `eidos:"emit"`
     Pos    position.Pos    `eidos:"node"`
     Doc    []string        `eidos:"both"`
     Name   string          `eidos:"both"`
-    Value  string          `eidos:"both"` // the source spelling of the value expression, verbatim
+    Value  string          `eidos:"both"` // source spelling, unevaluated
     Host   Symbol          `eidos:"both"`
 }
 
 type Sum struct {
-    Id         symbol.Identity   `eidos:"node"`
+    ID         symbol.Identity   `eidos:"node"`
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
@@ -333,36 +401,19 @@ type Sum struct {
 }
 
 type SumVariant struct {
-    Id     symbol.Identity `eidos:"node"`
+    ID     symbol.Identity `eidos:"node"`
     Origin symbol.Identity `eidos:"emit"`
     Pos    position.Pos    `eidos:"node"`
     Doc    []string        `eidos:"both"`
     Name   string          `eidos:"both"`
-    Fields []*Field        `eidos:"both,walk,slot=fields"` // the variant's payload
+    Fields []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
     Host   Symbol          `eidos:"both"`
 }
 
-type Alias struct {
-    Id         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    TypeParams []*TypeParam      `eidos:"both,walk"`
-    Target     *TypeRef          `eidos:"both,walk"`
-}
-
-type Constraint struct {
-    Id    symbol.Identity `eidos:"node"`
-    Pos   position.Pos    `eidos:"node"`
-    Terms []*TypeRef      `eidos:"both,walk"` // the projectable terms; language metadata carries the rest
-}
-
-// Callables and members.
+// Callables and parameters.
 
 type Function struct {
-    Id         symbol.Identity   `eidos:"node"`
+    ID         symbol.Identity   `eidos:"node"`
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
@@ -374,89 +425,109 @@ type Function struct {
 }
 
 type Method struct {
-    Id         symbol.Identity   `eidos:"node"`
+    ID         symbol.Identity   `eidos:"node"`
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
     Level      symbol.Level      `eidos:"both"`
-    HasDefault bool              `eidos:"both"` // interface methods with default bodies
-    Receiver   *Param            `eidos:"both,walk"` // nil where the language has no explicit receiver
+    Abstract   bool              `eidos:"both"`      // no body; a subtype must supply one
+    Final      bool              `eidos:"both"`      // overriding is forbidden
+    Override   bool              `eidos:"both"`      // replaces a supertype's member
+    HasDefault bool              `eidos:"both"`      // an interface method with a body
+    Receiver   *Param            `eidos:"both,walk"` // nil where the receiver is implicit
+    Receives   *TypeRef          `eidos:"both,walk"` // set when declared outside the type it attaches to
     TypeParams []*TypeParam      `eidos:"both,walk"`
     Params     []*Param          `eidos:"both,walk"`
     Returns    []*Return         `eidos:"both,walk"`
     Host       Symbol            `eidos:"both"`
 }
 
+type Param struct {
+    ID       symbol.Identity `eidos:"node"`
+    Pos      position.Pos    `eidos:"node"`
+    Name     string          `eidos:"both"` // "" when unnamed
+    Label    string          `eidos:"both"` // caller-facing name; Swift and Objective-C
+    Type     *TypeRef        `eidos:"both,walk"`
+    Default  string          `eidos:"both"` // source spelling, unevaluated; "" when none
+    Variadic symbol.Variadic `eidos:"both"` // positional or keyword
+}
+
+type Return struct {
+    ID   symbol.Identity `eidos:"node"`
+    Pos  position.Pos    `eidos:"node"`
+    Name string          `eidos:"both"` // Go named results; "" elsewhere
+    Type *TypeRef        `eidos:"both,walk"`
+}
+
+// Members and bindings.
+
 type Field struct {
-    Id         symbol.Identity   `eidos:"node"`
+    ID         symbol.Identity   `eidos:"node"`
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
-    Name       string            `eidos:"both"`
+    Name       string            `eidos:"both"` // "" when positional
     Visibility symbol.Visibility `eidos:"both"`
     Level      symbol.Level      `eidos:"both"`
+    Mutability symbol.Mutability `eidos:"both"`
     Type       *TypeRef          `eidos:"both,walk"`
     Host       Symbol            `eidos:"both"`
 }
 
-type Param struct {
-    Id       symbol.Identity `eidos:"node"`
-    Pos      position.Pos    `eidos:"node"`
-    Name     string          `eidos:"both"` // "" where the language allows unnamed parameters
-    Type     *TypeRef        `eidos:"both,walk"`
-    Variadic bool            `eidos:"both"` // legal on the last parameter only; frontends enforce
-}
-
-type Return struct {
-    Id   symbol.Identity `eidos:"node"`
-    Pos  position.Pos    `eidos:"node"`
-    Name string          `eidos:"both"` // Go named returns; "" elsewhere
-    Type *TypeRef        `eidos:"both,walk"`
-}
-
 type Variable struct {
-    Id         symbol.Identity   `eidos:"node"`
+    ID         symbol.Identity   `eidos:"node"`
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
-    Type       *TypeRef          `eidos:"both,walk"` // nil when the source declares no type; language metadata carries the inferred spelling
+    Mutability symbol.Mutability `eidos:"both"`
+    Type       *TypeRef          `eidos:"both,walk"` // nil when the source states none
 }
 
 type Constant struct {
-    Id         symbol.Identity   `eidos:"node"`
+    ID         symbol.Identity   `eidos:"node"`
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
-    Type       *TypeRef          `eidos:"both,walk"` // nil for untyped constants
-    Value      string            `eidos:"both"`      // the source spelling of the value expression, verbatim
+    Type       *TypeRef          `eidos:"both,walk"` // nil when untyped
+    Value      string            `eidos:"both"`      // source spelling, unevaluated
 }
 
 // Type machinery.
 
-type TypeParam struct {
-    Id       symbol.Identity `eidos:"node"`
-    Pos      position.Pos    `eidos:"node"`
-    Name     string          `eidos:"both"`
-    Variance symbol.Variance `eidos:"both"`
-    Bounds   []*TypeRef      `eidos:"both,walk"`
-}
-
 type TypeRef struct {
-    Id       symbol.Identity `eidos:"node"`
+    ID       symbol.Identity `eidos:"node"`
     Pos      position.Pos    `eidos:"node"`
-    Spelling string          `eidos:"both"` // the source spelling, verbatim
-    Target   symbol.Identity `eidos:"both"` // zero until the Link phase resolves it; an identity, never a pointer
+    Spelling string          `eidos:"both"` // source text, verbatim
+    Target   symbol.Identity `eidos:"both"` // zero until resolution, and for builtins and externals
     Args     []*TypeRef      `eidos:"both,walk"`
 }
 
+type TypeParam struct {
+    ID           symbol.Identity `eidos:"node"`
+    Pos          position.Pos    `eidos:"node"`
+    Name         string          `eidos:"both"`
+    Variance     symbol.Variance `eidos:"both"`
+    Bounds       []*TypeRef      `eidos:"both,walk"`
+    Default      *TypeRef        `eidos:"both,walk"` // default type argument; nil when none
+    Const        bool            `eidos:"both"`      // the argument is a value, not a type
+    Type         *TypeRef        `eidos:"both,walk"` // the value's type, when Const
+    DefaultValue string          `eidos:"both"`      // default value spelling, when Const
+}
+
+type Constraint struct {
+    ID    symbol.Identity `eidos:"node"`
+    Pos   position.Pos    `eidos:"node"`
+    Terms []*TypeRef      `eidos:"both,walk"` // the projectable terms
+}
+
 type Embed struct {
-    Id   symbol.Identity `eidos:"node"`
+    ID   symbol.Identity `eidos:"node"`
     Pos  position.Pos    `eidos:"node"`
     Ref  *TypeRef        `eidos:"both,walk"`
     Host Symbol          `eidos:"both"`
@@ -547,7 +618,7 @@ the documented spellings; the struct keeps `Kind` for equality.
 
 ## Drawbacks
 
-- 21 kind structs generate on each side: roughly 2,500 lines of
+- 23 kind structs generate on each side: roughly 3,000 lines of
   committed generated Go across ten `*.gen.go` files. Reviewers see
   them in every schema-touching diff; the mirror guard keeps them
   honest.
@@ -573,6 +644,10 @@ the documented spellings; the struct keeps `Kind` for equality.
 - Does `Enum` need an underlying-type field (`Base *TypeRef`) for
   C#-style `enum : byte` and proto value types, or does that stay in
   language metadata until a satellite forces it?
+- `Method.Override` is a keyword in Kotlin, C#, Swift and
+  TypeScript and an annotation in Java. Should a Java frontend stamp
+  the field anyway from `@Override`, so neutral consumers get one
+  answer, or leave it false and let the annotation speak?
 - Does `File` need a `Doc` distinct from `Package` docs for every
   language, or only for some (Python module docstrings against Go
   package comments)? The schema proposes both carry `Doc`.

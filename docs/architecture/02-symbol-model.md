@@ -85,9 +85,16 @@ Hand-written rather than generated:
 
 ## The kind inventory
 
-Package, File, Import, Struct, Interface, Method, Field, Function,
-Param, Return, Variable, Constant, Enum, EnumVariant, Sum,
-SumVariant, Alias, TypeParam, TypeRef, Embed, Constraint.
+Package, File, Import, Export, Binding, Struct, Interface, Method,
+Field, Function, Param, Return, Variable, Constant, Enum,
+EnumVariant, Sum, SumVariant, Alias, TypeParam, TypeRef, Embed,
+Constraint.
+
+Import and Export carry a statement's whole binding list, and each
+bound name is a Binding, because `import {a as b, c} from 'x'` binds
+two names with their own aliases and positions. A declaration's own
+export is its visibility; Export is for the re-export forms that
+publish something the file did not declare.
 
 Struct and Interface differ by whether you can instantiate them, not
 by which members they may declare. A Struct is a type you make

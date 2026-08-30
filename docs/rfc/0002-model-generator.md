@@ -2,7 +2,7 @@
 rfc: 0002
 title: The model generator (internal/gen)
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-08-30
 updated: 2026-08-30
 discussion: none
