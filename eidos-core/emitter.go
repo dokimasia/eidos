@@ -69,6 +69,12 @@ func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 	if e.m.gate != nil {
 		instance = e.m.gate.Instance
 	}
+	if e.rs.minted < len(e.rs.handles) {
+		h := &e.rs.handles[e.rs.minted]
+		e.rs.minted++
+		*h = Out{acc: acc, subject: e.m.subject, instance: instance}
+		return h
+	}
 	return &Out{acc: acc, subject: e.m.subject, instance: instance}
 }
 
@@ -114,9 +120,6 @@ func (o *Out) Append(decls ...symbol.Symbol) {
 			decl:     d,
 		})
 	}
-	if !o.subject.IsZero() {
-		o.acc.origins[o.subject] = struct{}{}
-	}
 }
 
 // accKey addresses one accumulator: a family under one cardinality
@@ -128,13 +131,14 @@ type accKey struct {
 }
 
 // accumulator gathers one output entity's contributions until the
-// phase call returns and the flush orders them.
+// phase call returns and the flush orders them. It keeps no origin
+// set of its own: the flush reads the unique origins off the
+// sorted contributions, so an append costs no map entry.
 type accumulator struct {
-	out     plugin.Output
-	key     string
-	pkg     symbol.Identity
-	places  []placed
-	origins map[symbol.Identity]struct{}
+	out    plugin.Output
+	key    string
+	pkg    symbol.Identity
+	places []placed
 }
 
 // placed is one appended declaration and its ordering key.
@@ -145,17 +149,39 @@ type placed struct {
 	decl     symbol.Symbol
 }
 
+// originsOf answers the distinct nonzero origins of places sorted
+// in canonical order: counted first, so the slice is allocated at
+// its exact size.
+func originsOf(places []placed) []symbol.Identity {
+	distinct := 0
+	prev := symbol.Identity{}
+	for _, p := range places {
+		if !p.origin.IsZero() && p.origin != prev {
+			distinct++
+			prev = p.origin
+		}
+	}
+	if distinct == 0 {
+		return nil
+	}
+	out := make([]symbol.Identity, 0, distinct)
+	prev = symbol.Identity{}
+	for _, p := range places {
+		if !p.origin.IsZero() && p.origin != prev {
+			out = append(out, p.origin)
+			prev = p.origin
+		}
+	}
+	return out
+}
+
 // accFor answers the accumulator for one key, created on first
 // touch with its namespace resolved once.
 func (rs *runState) accFor(k accKey, fam plugin.Output, subject symbol.Identity) *accumulator {
 	if acc, held := rs.accs[k]; held {
 		return acc
 	}
-	acc := &accumulator{
-		out:     fam,
-		key:     k.key,
-		origins: map[symbol.Identity]struct{}{},
-	}
+	acc := &accumulator{out: fam, key: k.key}
 	if k.per != plugin.PerPlan && !subject.IsZero() {
 		if pkg, held := rs.index.PackageOf(subject); held {
 			acc.pkg = pkg.ID
@@ -193,7 +219,7 @@ func (rs *runState) flush(into *plugin.Emit) error {
 		for _, p := range acc.places {
 			decls = append(decls, p.decl)
 		}
-		origins := slices.SortedFunc(maps.Keys(acc.origins), symbol.Identity.Compare)
+		origins := originsOf(acc.places)
 		err := into.Add(plugin.Unit{
 			Plugin:  rs.plugin,
 			Tag:     string(k.tag),
