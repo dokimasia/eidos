@@ -15,3 +15,7 @@ way.
 | # | Title | Status |
 |---|---|---|
 | [0001](0001-use-adrs-for-architecture-decisions.md) | Use ADRs for architecture decisions | Accepted |
+| [0002](0002-identity-carries-source-language.md) | Identity carries the source language | Accepted |
+| [0003](0003-json-codecs-round-trip.md) | JSON codecs round-trip | Accepted |
+| [0004](0004-generate-kind-enum-from-schema.md) | Generate the Kind enum from the schema | Accepted |
+| [0005](0005-concern-grouped-generated-files.md) | Group generated files by concern | Accepted |

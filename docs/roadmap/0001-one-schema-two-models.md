@@ -7,7 +7,7 @@ ships-in: unscheduled
 deadline: none
 deadline-source: none
 prd: none
-rfc: none
+rfc: RFC-0001, RFC-0002
 ---
 
 # Milestone 0001: One schema generates both models
@@ -52,6 +52,14 @@ vocabulary, the schema annotation set, both generated models, and the
 `internal/gen` tool. Decisions D4 and D40, and the slot-declaration
 half of D39.
 
+The detail lives in
+[RFC-0001](../rfc/0001-symbol-model-contract.md) (the symbol contract
+and schema) and [RFC-0002](../rfc/0002-model-generator.md) (the
+generator and mirror guard). ADRs
+[0002](../adr/0002-identity-carries-source-language.md) to
+[0005](../adr/0005-concern-grouped-generated-files.md) record the
+settled decisions.
+
 ## Not in this milestone
 
 - The hand-written node runtime (resolver, queries, freeze): goes to
@@ -71,4 +79,5 @@ half of D39.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Linked RFC-0001, RFC-0002 and ADR-0002 to 0005 | The design is written; the milestone points at the documents that hold it, and the documents never point back |
 | 2026-08-30 | Added at position 1 | First milestone of the initial plan: every other milestone consumes the generated models |
