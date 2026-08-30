@@ -6,6 +6,8 @@ package plugintest
 import (
 	"bytes"
 	"fmt"
+	"maps"
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -13,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/render"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -27,9 +30,9 @@ type Setup func(tb assert.TB) (plugin.Plugin, *Fixture)
 // RunPluginSuite holds a plugin to the conformance rungs a fixture
 // can check without a workspace: declaration stability, byte-equal
 // emit across isolated runs, annotator idempotence, positioned
-// diagnostics, attribution, declared tags, the options schema, and
-// no panics. Rungs for roles or surfaces the plugin does not hold
-// are skipped.
+// diagnostics, attribution, declared tags, the options schema, the
+// template lint, and no panics. Rungs for roles or surfaces the
+// plugin does not hold are skipped.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
@@ -37,6 +40,7 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 	_, annotates := probe.(plugin.Annotator)
 	_, generates := probe.(plugin.Generator)
 	options, optioned := probe.(plugin.OptionsProvider)
+	_, templated := probe.(plugin.TemplateProvider)
 
 	t.Run("declaration stability", func(t *testing.T) {
 		t.Parallel()
@@ -46,6 +50,12 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 		t.Run("options schema", func(t *testing.T) {
 			t.Parallel()
 			AssertOptionsSchema(t, setup)
+		})
+	}
+	if templated {
+		t.Run("template lint", func(t *testing.T) {
+			t.Parallel()
+			AssertTemplates(t, setup)
 		})
 	}
 	if generates {
@@ -109,6 +119,31 @@ func AssertStableDeclaration(tb assert.TB, setup Setup) {
 		assert.True(tb, alsoHeld, "both builds declare their schemas")
 		assert.Equal(tb, b.Directives(), a.Directives(),
 			"the owned schemas are stable across builds")
+	}
+}
+
+// AssertTemplates holds every declared template tree to the static
+// template laws, through the same lint the render pass runs, per
+// language the fixture carries: a plugin failing at CI fails in
+// its own tests first.
+func AssertTemplates(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	p, f := setup(tb)
+	tp, held := p.(plugin.TemplateProvider)
+	if !held {
+		return
+	}
+	for _, target := range slices.Sorted(maps.Keys(f.Languages)) {
+		tree, declared := tp.Templates(target)
+		if !declared {
+			continue
+		}
+		pass, err := render.New("lint", f.Languages[target])
+		assert.NoError(tb, err, "the fixture language composes")
+		for _, finding := range pass.Lint(tree, tp.TemplateFuncs(target), tp.Overrides()) {
+			assert.NoError(tb, finding, "the tree holds the template laws")
+		}
 	}
 }
 

@@ -4,8 +4,11 @@
 package plugintest_test
 
 import (
+	"io/fs"
 	"strconv"
 	"testing"
+	"testing/fstest"
+	"text/template"
 
 	"go.dokimi.dev/assert"
 
@@ -17,6 +20,7 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/plugintest"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/render"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -134,6 +138,73 @@ func TestAssertOptionsSchema(t *testing.T) {
 				plugintest.AssertOptionsSchema(tb, undocumented)
 			})
 		assert.Contains(t, failure, "doc", "the rung names the missing tag")
+	})
+}
+
+// templated wraps a plugin with a declared template tree for the
+// fixture target.
+type templated struct {
+	plugin.Plugin
+	tree fs.FS
+}
+
+func (p templated) Templates(t plugin.Target) (fs.FS, bool) {
+	if t != "fixture" {
+		return nil, false
+	}
+	return p.tree, true
+}
+
+func (templated) TemplateFuncs(plugin.Target) template.FuncMap { return nil }
+func (templated) Overrides() []string                          { return nil }
+
+// fixtureLanguage answers the smallest language the template rung
+// can lint against.
+func fixtureLanguage() render.Language {
+	return render.Language{
+		Kinds:    map[symbol.Kind]string{symbol.KindStruct: "type {{.Name}} struct{}\n"},
+		Naming:   func(u plugin.Unit) string { return u.Key },
+		Scaffold: func(emit.Stmt, *render.ImportSet) ([]byte, error) { return nil, nil },
+		Imports:  func(*render.ImportSet) string { return "" },
+		Finalise: func(src []byte) ([]byte, error) { return src, nil },
+	}
+}
+
+func TestAssertTemplates(t *testing.T) {
+	t.Parallel()
+
+	setupWith := func(tree fs.FS) plugintest.Setup {
+		return func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+			f, _, _ := twoStructs(tb)
+			f.Languages = map[plugin.Target]render.Language{"fixture": fixtureLanguage()}
+			p := eidos.NewPlugin("treed").
+				Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
+				Handle(eidos.OnGraph(func(*eidos.GraphMatch, *eidos.Emitter) error {
+					return nil
+				})).
+				Build()
+			return templated{Plugin: p, tree: tree}, f
+		}
+	}
+
+	t.Run("waves a lawful tree through", func(t *testing.T) {
+		t.Parallel()
+
+		plugintest.AssertTemplates(t, setupWith(fstest.MapFS{
+			"method1.tpl": &fstest.MapFile{Data: []byte("{{slots}}")},
+		}))
+	})
+
+	t.Run("rejects a tree dropping the marker", func(t *testing.T) {
+		t.Parallel()
+
+		failure := assert.Rejects(t, "a dropped marker must fail the rung",
+			func(tb assert.TB) {
+				plugintest.AssertTemplates(tb, setupWith(fstest.MapFS{
+					"method1.tpl": &fstest.MapFile{Data: []byte("bare\n")},
+				}))
+			})
+		assert.Contains(t, failure, "marker", "the rung names the law")
 	})
 }
 

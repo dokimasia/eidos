@@ -21,8 +21,8 @@
 // [RunPluginSuite] composes the granular assertions over it,
 // skipping the roles and surfaces a plugin does not hold:
 // [AssertStableDeclaration], [AssertOptionsSchema],
-// [AssertDeterministicEmit], [AssertIdempotentAnnotate],
-// [AssertPositionedDiagnostics] and
+// [AssertTemplates], [AssertDeterministicEmit],
+// [AssertIdempotentAnnotate], [AssertPositionedDiagnostics] and
 // [AssertAttributedEmit]. [AssertTwins] holds two spellings of one
 // plugin to byte-equal emit, which is how the lowering guarantee
 // is checked from the outside. Each assertion takes the
@@ -30,9 +30,9 @@
 //
 // # Dependency position
 //
-// core/plugintest imports core/plugin, core/diag, core/directive,
-// core/emit, core/meta, core/node, core/store, core/symbol, the
-// assert module and the Go stdlib. It never imports the root
+// core/plugintest imports core/plugin, core/render, core/diag,
+// core/directive, core/emit, core/meta, core/node, core/store,
+// core/symbol, the assert module and the Go stdlib. It never imports the root
 // package: the harness works at the SPI floor, so a facade-built
 // plugin and a hand-rolled one are held to the same rungs.
 package plugintest

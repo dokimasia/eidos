@@ -13,6 +13,7 @@ import (
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/render"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -35,6 +36,10 @@ type Fixture struct {
 	Directives map[symbol.Identity][]directive.Directive
 	// Scope filters what phase calls see; nil admits everything.
 	Scope store.Scope
+	// Languages holds a render language per target, what the
+	// template rung lints declared trees against; a fixture that
+	// carries none skips the rung.
+	Languages map[plugin.Target]render.Language
 	// Bucket is the priority bucket phase calls claim to run in.
 	Bucket int
 
