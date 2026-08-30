@@ -71,9 +71,15 @@ func (p Pos) String() string // "svc/store.go:41:2"
 package symbol
 
 // Kind discriminates the declaration kinds. The type is hand-written;
-// the constants and String live in kind.gen.go, generated from the
-// schema so that adding a kind is a schema edit and nothing else.
+// the constants, String and ParseKind live in kind.gen.go, generated
+// from the schema so that adding a kind is a schema edit and nothing
+// else.
 type Kind uint8
+
+// ParseKind is String's inverse for every kind, which is what lets a
+// kind cross a boundary carrying names rather than values: an
+// encoded declaration, a diagnostic, a command-line argument.
+func ParseKind(name string) (Kind, bool)
 
 // Visibility is the normalized five-way visibility of declarations.
 // The zero value is Unknown: emptiness never claims anything, so a

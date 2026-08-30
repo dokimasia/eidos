@@ -42,13 +42,18 @@ func TestGenerate(t *testing.T) {
 				"emit/kinds.gen.go",
 				"emit/kinds.gen_test.go",
 				"emit/slots.gen.go",
+				"emit/symbols.gen.go",
+				"emit/symbols.gen_test.go",
 				"emit/walk.gen.go",
 				"emit/walk.gen_test.go",
 				"node/kinds.gen.go",
 				"node/kinds.gen_test.go",
+				"node/symbols.gen.go",
+				"node/symbols.gen_test.go",
 				"node/walk.gen.go",
 				"node/walk.gen_test.go",
 				"symbol/kind.gen.go",
+				"symbol/kind.gen_test.go",
 			}
 			got := slices.Sorted(maps(set))
 			if !slices.Equal(got, want) {
@@ -90,6 +95,14 @@ func TestGenerate(t *testing.T) {
 				if string(second[path]) != string(want) {
 					t.Fatalf("%s differs between two runs", path)
 				}
+			}
+		})
+
+		t.Run("reports a module holding no schema", func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := model.Generate(t.TempDir()); err == nil {
+				t.Fatal("Generate: error = nil, want non-nil")
 			}
 		})
 

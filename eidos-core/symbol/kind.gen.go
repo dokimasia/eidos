@@ -64,10 +64,49 @@ var kindNames = [...]string{
 	KindEmbed:       "Embed",
 }
 
+// kindByName answers [ParseKind].
+var kindByName = map[string]Kind{
+	"Function":    KindFunction,
+	"Method":      KindMethod,
+	"Param":       KindParam,
+	"Return":      KindReturn,
+	"Package":     KindPackage,
+	"File":        KindFile,
+	"Import":      KindImport,
+	"Export":      KindExport,
+	"Binding":     KindBinding,
+	"Enum":        KindEnum,
+	"EnumVariant": KindEnumVariant,
+	"Sum":         KindSum,
+	"SumVariant":  KindSumVariant,
+	"Field":       KindField,
+	"Variable":    KindVariable,
+	"Constant":    KindConstant,
+	"Struct":      KindStruct,
+	"Interface":   KindInterface,
+	"Alias":       KindAlias,
+	"TypeRef":     KindTypeRef,
+	"TypeParam":   KindTypeParam,
+	"Constraint":  KindConstraint,
+	"Embed":       KindEmbed,
+}
+
 // String names the kind, or "Kind(n)" for a value outside the set.
 func (k Kind) String() string {
 	if int(k) >= len(kindNames) {
 		return "Kind(" + strconv.Itoa(int(k)) + ")"
 	}
 	return kindNames[k]
+}
+
+// ParseKind answers the kind a name spells, and false for a name no
+// kind answers.
+//
+// It is the inverse of [Kind.String] for every kind, which is what
+// lets a kind survive a boundary that carries names rather than
+// values: an encoded declaration, a diagnostic, a command-line
+// argument. [KindInvalid] is not a kind and does not parse.
+func ParseKind(name string) (Kind, bool) {
+	kind, known := kindByName[name]
+	return kind, known
 }

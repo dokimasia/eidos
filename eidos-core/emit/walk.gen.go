@@ -58,27 +58,27 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 			Walk(x.Type, visit)
 		}
 	case *Enum:
-		for _, child := range x.variants.Items() {
+		for _, child := range x.Variants.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.fields.Items() {
+		for _, child := range x.Fields.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.methods.Items() {
+		for _, child := range x.Methods.Items() {
 			Walk(child, visit)
 		}
 	case *Sum:
 		for _, child := range x.TypeParams {
 			Walk(child, visit)
 		}
-		for _, child := range x.variants.Items() {
+		for _, child := range x.Variants.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.methods.Items() {
+		for _, child := range x.Methods.Items() {
 			Walk(child, visit)
 		}
 	case *SumVariant:
-		for _, child := range x.fields.Items() {
+		for _, child := range x.Fields.Items() {
 			Walk(child, visit)
 		}
 	case *Field:
@@ -97,13 +97,13 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.TypeParams {
 			Walk(child, visit)
 		}
-		for _, child := range x.fields.Items() {
+		for _, child := range x.Fields.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.methods.Items() {
+		for _, child := range x.Methods.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.types.Items() {
+		for _, child := range x.Types.Items() {
 			Walk(child, visit)
 		}
 		for _, child := range x.Embeds {
@@ -119,13 +119,13 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.TypeParams {
 			Walk(child, visit)
 		}
-		for _, child := range x.fields.Items() {
+		for _, child := range x.Fields.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.methods.Items() {
+		for _, child := range x.Methods.Items() {
 			Walk(child, visit)
 		}
-		for _, child := range x.types.Items() {
+		for _, child := range x.Types.Items() {
 			Walk(child, visit)
 		}
 		for _, child := range x.Embeds {

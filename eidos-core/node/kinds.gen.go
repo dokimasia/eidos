@@ -20,14 +20,14 @@ import (
 //
 // This is the node spelling of the kind.
 type Function struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	TypeParams []*TypeParam
-	Params     []*Param
-	Returns    []*Return
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
+	Params     []*Param          `json:"params,omitzero"`
+	Returns    []*Return         `json:"returns,omitzero"`
 }
 
 // Kind answers [symbol.KindFunction].
@@ -69,22 +69,22 @@ func (x *Function) Docs() []string { return x.Doc }
 //
 // This is the node spelling of the kind.
 type Method struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	Level      symbol.Level
-	Abstract   bool     // no body; a subtype must supply one
-	Final      bool     // overriding is forbidden
-	Override   bool     // replaces a supertype's member
-	HasDefault bool     // an interface method with a body
-	Receiver   *Param   // nil where the receiver is implicit
-	Receives   *TypeRef // set when declared outside the type it attaches to
-	TypeParams []*TypeParam
-	Params     []*Param
-	Returns    []*Return
-	Host       symbol.Identity
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Level      symbol.Level      `json:"level,omitzero"`
+	Abstract   bool              `json:"abstract,omitzero"`   // no body; a subtype must supply one
+	Final      bool              `json:"final,omitzero"`      // overriding is forbidden
+	Override   bool              `json:"override,omitzero"`   // replaces a supertype's member
+	HasDefault bool              `json:"hasDefault,omitzero"` // an interface method with a body
+	Receiver   *Param            `json:"receiver,omitzero"`   // nil where the receiver is implicit
+	Receives   *TypeRef          `json:"receives,omitzero"`   // set when declared outside the type it attaches to
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
+	Params     []*Param          `json:"params,omitzero"`
+	Returns    []*Return         `json:"returns,omitzero"`
+	Host       symbol.Identity   `json:"host,omitzero"`
 }
 
 // Kind answers [symbol.KindMethod].
@@ -118,13 +118,13 @@ func (x *Method) Docs() []string { return x.Doc }
 //
 // This is the node spelling of the kind.
 type Param struct {
-	ID       symbol.Identity
-	Pos      position.Pos
-	Name     string // "" when unnamed
-	Label    string // caller-facing name; Swift and Objective-C
-	Type     *TypeRef
-	Default  string          // source spelling, unevaluated; "" when none
-	Variadic symbol.Variadic // positional or keyword
+	ID       symbol.Identity `json:"id,omitzero"`
+	Pos      position.Pos    `json:"pos,omitzero"`
+	Name     string          `json:"name,omitzero"`  // "" when unnamed
+	Label    string          `json:"label,omitzero"` // caller-facing name; Swift and Objective-C
+	Type     *TypeRef        `json:"type,omitzero"`
+	Default  string          `json:"default,omitzero"`  // source spelling, unevaluated; "" when none
+	Variadic symbol.Variadic `json:"variadic,omitzero"` // positional or keyword
 }
 
 // Kind answers [symbol.KindParam].
@@ -154,10 +154,10 @@ func (x *Param) TypeRef() symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type Return struct {
-	ID   symbol.Identity
-	Pos  position.Pos
-	Name string // Go named results; "" elsewhere
-	Type *TypeRef
+	ID   symbol.Identity `json:"id,omitzero"`
+	Pos  position.Pos    `json:"pos,omitzero"`
+	Name string          `json:"name,omitzero"` // Go named results; "" elsewhere
+	Type *TypeRef        `json:"type,omitzero"`
 }
 
 // Kind answers [symbol.KindReturn].
@@ -192,12 +192,12 @@ func (x *Return) TypeRef() symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type Package struct {
-	ID    symbol.Identity
-	Pos   position.Pos
-	Doc   []string
-	Path  []string // ["svc","store"]
-	Name  string   // may differ from the last segment
-	Files []*File
+	ID    symbol.Identity `json:"id,omitzero"`
+	Pos   position.Pos    `json:"pos,omitzero"`
+	Doc   []string        `json:"doc,omitzero"`
+	Path  []string        `json:"path,omitzero"` // ["svc","store"]
+	Name  string          `json:"name,omitzero"` // may differ from the last segment
+	Files []*File         `json:"files,omitzero"`
 }
 
 // Kind answers [symbol.KindPackage].
@@ -220,13 +220,13 @@ func (x *Package) Docs() []string { return x.Doc }
 //
 // This is the node spelling of the kind.
 type File struct {
-	ID      symbol.Identity
-	Pos     position.Pos
-	Doc     []string
-	Path    string    // workspace-relative, slash-separated
-	Imports []*Import // the file's import scope, as written
-	Exports []*Export // re-exports; a declaration's own export is its Visibility
-	Decls   []symbol.Symbol
+	ID      symbol.Identity `json:"id,omitzero"`
+	Pos     position.Pos    `json:"pos,omitzero"`
+	Doc     []string        `json:"doc,omitzero"`
+	Path    string          `json:"path,omitzero"`    // workspace-relative, slash-separated
+	Imports []*Import       `json:"imports,omitzero"` // the file's import scope, as written
+	Exports []*Export       `json:"exports,omitzero"` // re-exports; a declaration's own export is its Visibility
+	Decls   Symbols         `json:"decls,omitzero"`
 }
 
 // Kind answers [symbol.KindFile].
@@ -260,13 +260,13 @@ func (x *File) Docs() []string { return x.Doc }
 //
 // This is the node spelling of the kind.
 type Import struct {
-	ID       symbol.Identity
-	Pos      position.Pos
-	Path     string
-	Alias    string     // module-level alias; "" when unaliased
-	Names    []*Binding // per-symbol bindings
-	Default  string     // local name for the module's default export
-	Wildcard bool       // every exported name enters scope
+	ID       symbol.Identity `json:"id,omitzero"`
+	Pos      position.Pos    `json:"pos,omitzero"`
+	Path     string          `json:"path,omitzero"`
+	Alias    string          `json:"alias,omitzero"`    // module-level alias; "" when unaliased
+	Names    []*Binding      `json:"names,omitzero"`    // per-symbol bindings
+	Default  string          `json:"default,omitzero"`  // local name for the module's default export
+	Wildcard bool            `json:"wildcard,omitzero"` // every exported name enters scope
 }
 
 // Kind answers [symbol.KindImport].
@@ -294,13 +294,13 @@ func (x *Import) Docs() []string { return nil }
 //
 // This is the node spelling of the kind.
 type Export struct {
-	ID       symbol.Identity
-	Pos      position.Pos
-	Doc      []string
-	Path     string     // source module; "" when re-exporting local names
-	Names    []*Binding // per-symbol bindings
-	Default  string     // name published as the module's default export
-	Wildcard bool       // every name of Path is republished
+	ID       symbol.Identity `json:"id,omitzero"`
+	Pos      position.Pos    `json:"pos,omitzero"`
+	Doc      []string        `json:"doc,omitzero"`
+	Path     string          `json:"path,omitzero"`     // source module; "" when re-exporting local names
+	Names    []*Binding      `json:"names,omitzero"`    // per-symbol bindings
+	Default  string          `json:"default,omitzero"`  // name published as the module's default export
+	Wildcard bool            `json:"wildcard,omitzero"` // every name of Path is republished
 }
 
 // Kind answers [symbol.KindExport].
@@ -324,11 +324,11 @@ func (x *Export) Docs() []string { return x.Doc }
 //
 // This is the node spelling of the kind.
 type Binding struct {
-	ID    symbol.Identity
-	Pos   position.Pos
-	Name  string
-	Alias string // "" when unrenamed
-	Host  symbol.Identity
+	ID    symbol.Identity `json:"id,omitzero"`
+	Pos   position.Pos    `json:"pos,omitzero"`
+	Name  string          `json:"name,omitzero"`
+	Alias string          `json:"alias,omitzero"` // "" when unrenamed
+	Host  symbol.Identity `json:"host,omitzero"`
 }
 
 // Kind answers [symbol.KindBinding].
@@ -354,14 +354,14 @@ func (x *Binding) Docs() []string { return nil }
 //
 // This is the node spelling of the kind.
 type Enum struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	Variants   []*EnumVariant
-	Fields     []*Field  // Java enums carry instance state
-	Methods    []*Method // and behaviour
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Variants   []*EnumVariant    `json:"variants,omitzero"`
+	Fields     []*Field          `json:"fields,omitzero"`  // Java enums carry instance state
+	Methods    []*Method         `json:"methods,omitzero"` // and behaviour
 }
 
 // Kind answers [symbol.KindEnum].
@@ -407,12 +407,12 @@ func (x *Enum) EmbedList() []symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type EnumVariant struct {
-	ID    symbol.Identity
-	Pos   position.Pos
-	Doc   []string
-	Name  string
-	Value string // source spelling, unevaluated
-	Host  symbol.Identity
+	ID    symbol.Identity `json:"id,omitzero"`
+	Pos   position.Pos    `json:"pos,omitzero"`
+	Doc   []string        `json:"doc,omitzero"`
+	Name  string          `json:"name,omitzero"`
+	Value string          `json:"value,omitzero"` // source spelling, unevaluated
+	Host  symbol.Identity `json:"host,omitzero"`
 }
 
 // Kind answers [symbol.KindEnumVariant].
@@ -436,14 +436,14 @@ func (x *EnumVariant) Docs() []string { return x.Doc }
 //
 // This is the node spelling of the kind.
 type Sum struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	TypeParams []*TypeParam // Rust data enums are generic
-	Variants   []*SumVariant
-	Methods    []*Method
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"` // Rust data enums are generic
+	Variants   []*SumVariant     `json:"variants,omitzero"`
+	Methods    []*Method         `json:"methods,omitzero"`
 }
 
 // Kind answers [symbol.KindSum].
@@ -486,12 +486,12 @@ func (x *Sum) EmbedList() []symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type SumVariant struct {
-	ID     symbol.Identity
-	Pos    position.Pos
-	Doc    []string
-	Name   string
-	Fields []*Field // the payload; unnamed when positional
-	Host   symbol.Identity
+	ID     symbol.Identity `json:"id,omitzero"`
+	Pos    position.Pos    `json:"pos,omitzero"`
+	Doc    []string        `json:"doc,omitzero"`
+	Name   string          `json:"name,omitzero"`
+	Fields []*Field        `json:"fields,omitzero"` // the payload; unnamed when positional
+	Host   symbol.Identity `json:"host,omitzero"`
 }
 
 // Kind answers [symbol.KindSumVariant].
@@ -536,15 +536,15 @@ func (x *SumVariant) EmbedList() []symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type Field struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string // "" when positional
-	Visibility symbol.Visibility
-	Level      symbol.Level
-	Mutability symbol.Mutability
-	Type       *TypeRef
-	Host       symbol.Identity
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"` // "" when positional
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Level      symbol.Level      `json:"level,omitzero"`
+	Mutability symbol.Mutability `json:"mutability,omitzero"`
+	Type       *TypeRef          `json:"type,omitzero"`
+	Host       symbol.Identity   `json:"host,omitzero"`
 }
 
 // Kind answers [symbol.KindField].
@@ -581,13 +581,13 @@ func (x *Field) TypeRef() symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type Variable struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	Mutability symbol.Mutability
-	Type       *TypeRef // nil when the source states none
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Mutability symbol.Mutability `json:"mutability,omitzero"`
+	Type       *TypeRef          `json:"type,omitzero"` // nil when the source states none
 }
 
 // Kind answers [symbol.KindVariable].
@@ -620,13 +620,13 @@ func (x *Variable) TypeRef() symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type Constant struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	Type       *TypeRef // nil when untyped
-	Value      string   // source spelling, unevaluated
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Type       *TypeRef          `json:"type,omitzero"`  // nil when untyped
+	Value      string            `json:"value,omitzero"` // source spelling, unevaluated
 }
 
 // Kind answers [symbol.KindConstant].
@@ -675,20 +675,20 @@ func (x *Constant) TypeRef() symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type Struct struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	Abstract   bool // no value of it can be made directly
-	Final      bool // subclassing is forbidden
-	TypeParams []*TypeParam
-	Fields     []*Field
-	Methods    []*Method
-	Types      []symbol.Symbol // nested declarations
-	Embeds     []*Embed        // compositional promotion
-	Extends    []*TypeRef      // nominal supertypes
-	Implements []*TypeRef
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Abstract   bool              `json:"abstract,omitzero"` // no value of it can be made directly
+	Final      bool              `json:"final,omitzero"`    // subclassing is forbidden
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
+	Fields     []*Field          `json:"fields,omitzero"`
+	Methods    []*Method         `json:"methods,omitzero"`
+	Types      Symbols           `json:"types,omitzero"`   // nested declarations
+	Embeds     []*Embed          `json:"embeds,omitzero"`  // compositional promotion
+	Extends    []*TypeRef        `json:"extends,omitzero"` // nominal supertypes
+	Implements []*TypeRef        `json:"implements,omitzero"`
 }
 
 // Kind answers [symbol.KindStruct].
@@ -749,17 +749,17 @@ func (x *Struct) EmbedList() []symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type Interface struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	TypeParams []*TypeParam
-	Fields     []*Field // properties, not just methods
-	Methods    []*Method
-	Types      []symbol.Symbol // nested declarations and associated types
-	Embeds     []*Embed
-	Extends    []*TypeRef
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
+	Fields     []*Field          `json:"fields,omitzero"` // properties, not just methods
+	Methods    []*Method         `json:"methods,omitzero"`
+	Types      Symbols           `json:"types,omitzero"` // nested declarations and associated types
+	Embeds     []*Embed          `json:"embeds,omitzero"`
+	Extends    []*TypeRef        `json:"extends,omitzero"`
 }
 
 // Kind answers [symbol.KindInterface].
@@ -810,13 +810,13 @@ func (x *Interface) EmbedList() []symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type Alias struct {
-	ID         symbol.Identity
-	Pos        position.Pos
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	TypeParams []*TypeParam
-	Target     *TypeRef // nil for an associated type
+	ID         symbol.Identity   `json:"id,omitzero"`
+	Pos        position.Pos      `json:"pos,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
+	Target     *TypeRef          `json:"target,omitzero"` // nil for an associated type
 }
 
 // Kind answers [symbol.KindAlias].
@@ -846,11 +846,11 @@ func (x *Alias) Docs() []string { return x.Doc }
 //
 // This is the node spelling of the kind.
 type TypeRef struct {
-	ID       symbol.Identity
-	Pos      position.Pos
-	Spelling string          // source text, verbatim
-	Target   symbol.Identity // zero until resolution, and for builtins and externals
-	Args     []*TypeRef
+	ID       symbol.Identity `json:"id,omitzero"`
+	Pos      position.Pos    `json:"pos,omitzero"`
+	Spelling string          `json:"spelling,omitzero"` // source text, verbatim
+	Target   symbol.Identity `json:"target,omitzero"`   // zero until resolution, and for builtins and externals
+	Args     []*TypeRef      `json:"args,omitzero"`
 }
 
 // Kind answers [symbol.KindTypeRef].
@@ -883,15 +883,15 @@ func (x *TypeRef) Docs() []string { return nil }
 //
 // This is the node spelling of the kind.
 type TypeParam struct {
-	ID           symbol.Identity
-	Pos          position.Pos
-	Name         string
-	Variance     symbol.Variance
-	Bounds       []*TypeRef
-	Default      *TypeRef // default type argument; nil when none
-	Const        bool     // the argument is a value, not a type
-	Type         *TypeRef // the value's type, when Const
-	DefaultValue string   // default value spelling, when Const
+	ID           symbol.Identity `json:"id,omitzero"`
+	Pos          position.Pos    `json:"pos,omitzero"`
+	Name         string          `json:"name,omitzero"`
+	Variance     symbol.Variance `json:"variance,omitzero"`
+	Bounds       []*TypeRef      `json:"bounds,omitzero"`
+	Default      *TypeRef        `json:"default,omitzero"`      // default type argument; nil when none
+	Const        bool            `json:"const,omitzero"`        // the argument is a value, not a type
+	Type         *TypeRef        `json:"type,omitzero"`         // the value's type, when Const
+	DefaultValue string          `json:"defaultValue,omitzero"` // default value spelling, when Const
 }
 
 // Kind answers [symbol.KindTypeParam].
@@ -923,9 +923,9 @@ func (x *TypeParam) TypeRef() symbol.Symbol {
 //
 // This is the node spelling of the kind.
 type Constraint struct {
-	ID    symbol.Identity
-	Pos   position.Pos
-	Terms []*TypeRef // the projectable terms
+	ID    symbol.Identity `json:"id,omitzero"`
+	Pos   position.Pos    `json:"pos,omitzero"`
+	Terms []*TypeRef      `json:"terms,omitzero"` // the projectable terms
 }
 
 // Kind answers [symbol.KindConstraint].
@@ -949,10 +949,10 @@ func (x *Constraint) Docs() []string { return nil }
 //
 // This is the node spelling of the kind.
 type Embed struct {
-	ID   symbol.Identity
-	Pos  position.Pos
-	Ref  *TypeRef
-	Host symbol.Identity
+	ID   symbol.Identity `json:"id,omitzero"`
+	Pos  position.Pos    `json:"pos,omitzero"`
+	Ref  *TypeRef        `json:"ref,omitzero"`
+	Host symbol.Identity `json:"host,omitzero"`
 }
 
 // Kind answers [symbol.KindEmbed].

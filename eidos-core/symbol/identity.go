@@ -23,12 +23,12 @@ type Lang string
 // part of the key because a mixed workspace can hold two languages'
 // packages in one directory.
 type Identity struct {
-	Lang    Lang   // "golang", "protobuf"
-	Package string // slash path: "svc/store"
-	Owner   string // enclosing type name; "" for top-level symbols
-	Name    string
-	Kind    Kind
-	Disc    string // signature discriminator; "" where overloads cannot exist
+	Lang    Lang   `json:"lang,omitzero"` // "golang", "protobuf"
+	Package string `json:"package,omitzero"`
+	Owner   string `json:"owner,omitzero"` // enclosing type; "" at top level
+	Name    string `json:"name,omitzero"`
+	Kind    Kind   `json:"kind,omitzero"`
+	Disc    string `json:"disc,omitzero"` // "" where overloads cannot exist
 }
 
 // IsZero reports whether id names nothing.

@@ -10,59 +10,59 @@ import "go.dokimi.dev/eidos/core/symbol"
 // VariantsSlot answers the Variants slot of a Enum, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Enum) VariantsSlot() *Slot[*EnumVariant] { return &x.variants }
+func (x *Enum) VariantsSlot() *Slot[*EnumVariant] { return &x.Variants }
 
 // FieldsSlot answers the Fields slot of a Enum, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Enum) FieldsSlot() *Slot[*Field] { return &x.fields }
+func (x *Enum) FieldsSlot() *Slot[*Field] { return &x.Fields }
 
 // MethodsSlot answers the Methods slot of a Enum, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Enum) MethodsSlot() *Slot[*Method] { return &x.methods }
+func (x *Enum) MethodsSlot() *Slot[*Method] { return &x.Methods }
 
 // VariantsSlot answers the Variants slot of a Sum, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Sum) VariantsSlot() *Slot[*SumVariant] { return &x.variants }
+func (x *Sum) VariantsSlot() *Slot[*SumVariant] { return &x.Variants }
 
 // MethodsSlot answers the Methods slot of a Sum, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Sum) MethodsSlot() *Slot[*Method] { return &x.methods }
+func (x *Sum) MethodsSlot() *Slot[*Method] { return &x.Methods }
 
 // FieldsSlot answers the Fields slot of a SumVariant, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *SumVariant) FieldsSlot() *Slot[*Field] { return &x.fields }
+func (x *SumVariant) FieldsSlot() *Slot[*Field] { return &x.Fields }
 
 // FieldsSlot answers the Fields slot of a Struct, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Struct) FieldsSlot() *Slot[*Field] { return &x.fields }
+func (x *Struct) FieldsSlot() *Slot[*Field] { return &x.Fields }
 
 // MethodsSlot answers the Methods slot of a Struct, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Struct) MethodsSlot() *Slot[*Method] { return &x.methods }
+func (x *Struct) MethodsSlot() *Slot[*Method] { return &x.Methods }
 
 // TypesSlot answers the Types slot of a Struct, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Struct) TypesSlot() *Slot[symbol.Symbol] { return &x.types }
+func (x *Struct) TypesSlot() *Slot[symbol.Symbol] { return &x.Types }
 
 // FieldsSlot answers the Fields slot of a Interface, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Interface) FieldsSlot() *Slot[*Field] { return &x.fields }
+func (x *Interface) FieldsSlot() *Slot[*Field] { return &x.Fields }
 
 // MethodsSlot answers the Methods slot of a Interface, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Interface) MethodsSlot() *Slot[*Method] { return &x.methods }
+func (x *Interface) MethodsSlot() *Slot[*Method] { return &x.Methods }
 
 // TypesSlot answers the Types slot of a Interface, which
 // plugins append into. The slot is part of the value, so the
 // accessor never answers nil.
-func (x *Interface) TypesSlot() *Slot[symbol.Symbol] { return &x.types }
+func (x *Interface) TypesSlot() *Slot[symbol.Symbol] { return &x.Types }

@@ -14,9 +14,9 @@ import "strconv"
 //
 // Pos is a plain value: copy it freely, compare it with ==.
 type Pos struct {
-	File string
-	Line int
-	Col  int
+	File string `json:"file,omitzero"`
+	Line int    `json:"line,omitzero"`
+	Col  int    `json:"col,omitzero"`
 }
 
 // IsZero reports whether p carries no source position.

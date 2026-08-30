@@ -47,19 +47,20 @@ func TestWalk(t *testing.T) {
 {{- range .Views}}
 {{- if .Children}}
 
-			subject := &{{.Name}}{}
+			{
+				subject := &{{.Name}}{}
 {{- range .Children}}
-			{{.}}
+				{{.}}
 {{- end}}
-			var seen int
-			Walk(subject, func(symbol.Symbol) bool {
-				seen++
-				return false
-			})
-			if seen != 1 {
-				t.Fatalf("visited %d declarations after pruning, want 1", seen)
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of {{.Name}} after pruning, want 1", seen)
+				}
 			}
-{{- break}}
 {{- end}}
 {{- end}}
 		})
@@ -73,23 +74,25 @@ func TestWalk(t *testing.T) {
 {{- range .Views}}
 {{- if .Children}}
 
-			subject := &{{.Name}}{}
+			{
+				subject := &{{.Name}}{}
 {{- range .Children}}
-			{{.}}
+				{{.}}
 {{- end}}
-			var walked int
-			Walk(subject, func(symbol.Symbol) bool {
-				walked++
-				return true
-			})
-			var yielded int
-			for range All(subject) {
-				yielded++
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d {{.Name}} declarations, Walk visited %d",
+						yielded, walked)
+				}
 			}
-			if walked != yielded {
-				t.Fatalf("All yielded %d declarations, Walk visited %d", yielded, walked)
-			}
-{{- break}}
 {{- end}}
 {{- end}}
 		})
@@ -99,19 +102,20 @@ func TestWalk(t *testing.T) {
 {{- range .Views}}
 {{- if .Children}}
 
-			subject := &{{.Name}}{}
+			{
+				subject := &{{.Name}}{}
 {{- range .Children}}
-			{{.}}
+				{{.}}
 {{- end}}
-			var yielded int
-			for range All(subject) {
-				yielded++
-				break
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d {{.Name}} declarations after breaking, want 1", yielded)
+				}
 			}
-			if yielded != 1 {
-				t.Fatalf("yielded %d declarations after breaking, want 1", yielded)
-			}
-{{- break}}
 {{- end}}
 {{- end}}
 		})

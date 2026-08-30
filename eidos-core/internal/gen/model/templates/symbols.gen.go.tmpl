@@ -1,0 +1,132 @@
+{{template "header" .}}
+import (
+	"encoding/json"
+	"fmt"
+
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// kindKey names the discriminator an encoded declaration carries
+// when its concrete kind cannot be known from the field's type.
+const kindKey = "kind"
+
+// newByKind allocates a declaration of a kind.
+//
+// It is indexed by the kind rather than keyed by its name, because
+// the vocabulary already turns a name into a kind: this side only
+// has to know how to make one. Only a decoder that cannot learn the
+// concrete type from context needs it, since a field typed
+// `[]*Field` decodes straight through the struct tags.
+var newByKind = [...]func() symbol.Symbol{
+{{- range .Views}}
+	symbol.Kind{{.Name}}: func() symbol.Symbol { return new({{.Name}}) },
+{{- end}}
+}
+
+// Symbols is a list of declarations of any kind.
+//
+// A field admitting anything, as a file's declaration list does,
+// carries this rather than a plain interface slice. Decoding
+// `[]symbol.Symbol` fails outright, because nothing tells the
+// decoder which kind to allocate for an element. Every other field
+// is typed concretely and needs none of this: the struct tags on
+// the models carry it.
+type Symbols []symbol.Symbol
+
+// MarshalJSON encodes each element with its kind in front of the
+// fields the element's own tags produce.
+func (s Symbols) MarshalJSON() ([]byte, error) {
+	encoded := make([]json.RawMessage, 0, len(s))
+	for _, one := range s {
+		body, err := EncodeJSON(one)
+		if err != nil {
+			return nil, err
+		}
+		encoded = append(encoded, body)
+	}
+	return json.Marshal(encoded)
+}
+
+// UnmarshalJSON decodes each element through its own kind.
+//
+// A JSON null decodes to a nil Symbols, so a value that carried
+// nothing re-encodes as it arrived.
+func (s *Symbols) UnmarshalJSON(data []byte) error {
+	var encoded []json.RawMessage
+	if err := json.Unmarshal(data, &encoded); err != nil {
+		return err
+	}
+	if encoded == nil {
+		*s = nil
+		return nil
+	}
+
+	decoded := make(Symbols, 0, len(encoded))
+	for _, one := range encoded {
+		child, err := DecodeJSON(one)
+		if err != nil {
+			return err
+		}
+		decoded = append(decoded, child)
+	}
+	*s = decoded
+	return nil
+}
+
+// EncodeJSON encodes a declaration so that a decoder can tell what
+// it is holding.
+//
+// The fields come from the declaration's own struct tags; this adds
+// the kind in front of them. A nil declaration encodes as JSON
+// null.
+func EncodeJSON(s symbol.Symbol) ([]byte, error) {
+	if s == nil {
+		return []byte("null"), nil
+	}
+	body, err := json.Marshal(s)
+	if err != nil {
+		return nil, fmt.Errorf("{{.Package}}: encode %v: %w", s.Kind(), err)
+	}
+
+	// A kind's name is a Go type name, so it needs no escaping and
+	// no second pass through the encoder.
+	name := s.Kind().String()
+	encoded := make([]byte, 0, len(body)+len(name)+len(kindKey)+8)
+	encoded = append(encoded, '{', '"')
+	encoded = append(encoded, kindKey...)
+	encoded = append(encoded, '"', ':', '"')
+	encoded = append(encoded, name...)
+	encoded = append(encoded, '"')
+	if len(body) > 2 {
+		encoded = append(encoded, ',')
+		encoded = append(encoded, body[1:len(body)-1]...)
+	}
+	return append(encoded, '}'), nil
+}
+
+// DecodeJSON decodes a declaration encoded by [EncodeJSON].
+//
+// It reads the kind, allocates it and lets the struct tags do the
+// rest. JSON null decodes to a nil declaration, and an unknown or
+// absent kind is an error naming what it read.
+func DecodeJSON(data []byte) (symbol.Symbol, error) {
+	var probe struct {
+		Kind string `json:"kind"`
+	}
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return nil, fmt.Errorf("{{.Package}}: read the %s: %w", kindKey, err)
+	}
+	if probe.Kind == "" {
+		return nil, fmt.Errorf("{{.Package}}: no %s in the encoded declaration", kindKey)
+	}
+	kind, known := symbol.ParseKind(probe.Kind)
+	if !known || int(kind) >= len(newByKind) || newByKind[kind] == nil {
+		return nil, fmt.Errorf("{{.Package}}: unknown %s %q", kindKey, probe.Kind)
+	}
+
+	into := newByKind[kind]()
+	if err := json.Unmarshal(data, into); err != nil {
+		return nil, fmt.Errorf("{{.Package}}: decode %s: %w", probe.Kind, err)
+	}
+	return into, nil
+}

@@ -122,6 +122,14 @@ func TestIR(t *testing.T) {
 			}
 		})
 
+		t.Run("reports a schema directory it cannot read", func(t *testing.T) {
+			t.Parallel()
+
+			if _, err := model.Lower("testdata/nonexistent", ""); err == nil {
+				t.Fatal("Lower: error = nil, want non-nil")
+			}
+		})
+
 		t.Run("refuses a schema that breaks the contract", func(t *testing.T) {
 			t.Parallel()
 
@@ -135,6 +143,7 @@ func TestIR(t *testing.T) {
 				{"slot on a field that is not a slice", "testdata/slotnotslice", model.SlotPrefix},
 				{"walk on a field that is not a kind", "testdata/walkbadtype", model.WalkToken},
 				{"declaration that is not a struct", "testdata/nonstruct", "Alias"},
+				{"declaration that is not a type", "testdata/notatype", "types and imports"},
 			}
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {

@@ -14,7 +14,7 @@ type {{.Name}} struct {
 {{- range .Doc}}
 	// {{.}}
 {{- end}}
-	{{.Storage}} {{.Decl}}{{if .Comment}} // {{.Comment}}{{end}}
+	{{.Storage}} {{.Decl}} `json:"{{.JSONName}},omitzero"`{{if .Comment}} // {{.Comment}}{{end}}
 {{- end}}
 }
 

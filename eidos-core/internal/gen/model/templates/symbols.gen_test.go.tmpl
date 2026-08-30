@@ -1,0 +1,224 @@
+{{template "header" .}}
+import (
+	"encoding/json"
+	"strings"
+	"testing"
+
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+func TestSymbols(t *testing.T) {
+	t.Parallel()
+
+	t.Run("EncodeJSON", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("encodes a nil declaration as null", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := EncodeJSON(nil)
+			if err != nil {
+				t.Fatalf("EncodeJSON: unexpected error: %v", err)
+			}
+			if string(got) != "null" {
+				t.Fatalf("EncodeJSON(nil) = %s, want null", got)
+			}
+		})
+
+		t.Run("carries the kind on every declaration", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+
+			{
+				encoded, err := EncodeJSON(&{{.Name}}{})
+				if err != nil {
+					t.Fatalf("EncodeJSON: unexpected error: %v", err)
+				}
+				if !strings.Contains(string(encoded), `"kind":"{{.Name}}"`) {
+					t.Fatalf("{{.Name}} encoded as %s, want its kind", encoded)
+				}
+			}
+{{- end}}
+		})
+
+		t.Run("a concrete field needs no kind", func(t *testing.T) {
+			t.Parallel()
+
+			// Struct tags carry a concretely typed field on their own,
+			// which is why only Symbols reaches for a discriminator.
+			encoded, err := json.Marshal(&{{(index .Views 0).Name}}{})
+			if err != nil {
+				t.Fatalf("Marshal: unexpected error: %v", err)
+			}
+			if strings.Contains(string(encoded), `"kind"`) {
+				t.Fatalf("a plain marshal produced %s, want no discriminator", encoded)
+			}
+		})
+	})
+
+	t.Run("DecodeJSON", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("round-trips every kind", func(t *testing.T) {
+			t.Parallel()
+
+			subjects := []symbol.Symbol{
+{{- range .Views}}
+				&{{.Name}}{},
+{{- end}}
+			}
+			for _, subject := range subjects {
+				t.Run(subject.Kind().String(), func(t *testing.T) {
+					t.Parallel()
+
+					encoded, err := EncodeJSON(subject)
+					if err != nil {
+						t.Fatalf("EncodeJSON: unexpected error: %v", err)
+					}
+					decoded, err := DecodeJSON(encoded)
+					if err != nil {
+						t.Fatalf("DecodeJSON: unexpected error: %v", err)
+					}
+					if decoded.Kind() != subject.Kind() {
+						t.Fatalf("decoded a %v, want a %v", decoded.Kind(), subject.Kind())
+					}
+					again, err := EncodeJSON(decoded)
+					if err != nil {
+						t.Fatalf("EncodeJSON: unexpected error: %v", err)
+					}
+					if string(again) != string(encoded) {
+						t.Fatalf("re-encoded as %s, want %s", again, encoded)
+					}
+				})
+			}
+		})
+
+		t.Run("round-trips a populated declaration and its children", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if .Children}}
+
+			{
+				subject := &{{.Name}}{}
+{{- range .Children}}
+				{{.}}
+{{- end}}
+				encoded, err := EncodeJSON(subject)
+				if err != nil {
+					t.Fatalf("{{.Name}}: EncodeJSON: %v", err)
+				}
+				decoded, err := DecodeJSON(encoded)
+				if err != nil {
+					t.Fatalf("{{.Name}}: DecodeJSON: %v", err)
+				}
+
+				var walked int
+				Walk(decoded, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				if want := {{.WalkVisits}}; walked != want {
+					t.Fatalf("the decoded {{.Name}} holds %d declarations, want %d", walked, want)
+				}
+			}
+{{- end}}
+{{- end}}
+		})
+
+		t.Run("refuses an encoding it cannot place", func(t *testing.T) {
+			t.Parallel()
+
+			tests := []struct {
+				name string
+				data string
+			}{
+				{name: "no kind", data: `{"name":"Store"}`},
+				{name: "unknown kind", data: `{"kind":"Nonexistent"}`},
+				{name: "not an object", data: `[]`},
+{{- range .Views}}
+{{- if .Malformed}}
+				{name: "a {{.Name}} body it cannot read", data: `{{.Malformed}}`},
+{{- end}}
+{{- end}}
+			}
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					if _, err := DecodeJSON([]byte(tt.data)); err == nil {
+						t.Fatalf("DecodeJSON(%s): error = nil, want non-nil", tt.data)
+					}
+				})
+			}
+		})
+	})
+
+	t.Run("UnmarshalJSON", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("decodes each element through its kind", func(t *testing.T) {
+			t.Parallel()
+
+			subjects := Symbols{
+{{- range .Views}}
+				&{{.Name}}{},
+{{- end}}
+			}
+			encoded, err := json.Marshal(subjects)
+			if err != nil {
+				t.Fatalf("Marshal: unexpected error: %v", err)
+			}
+
+			var decoded Symbols
+			if err := json.Unmarshal(encoded, &decoded); err != nil {
+				t.Fatalf("Unmarshal: unexpected error: %v", err)
+			}
+			if len(decoded) != len(subjects) {
+				t.Fatalf("decoded %d declarations, want %d", len(decoded), len(subjects))
+			}
+			for i, want := range subjects {
+				if decoded[i].Kind() != want.Kind() {
+					t.Fatalf("element %d decoded as %v, want %v",
+						i, decoded[i].Kind(), want.Kind())
+				}
+			}
+		})
+
+		t.Run("a plain interface slice cannot decode the same bytes", func(t *testing.T) {
+			t.Parallel()
+
+			encoded, err := json.Marshal(Symbols{&{{(index .Views 0).Name}}{}})
+			if err != nil {
+				t.Fatalf("Marshal: unexpected error: %v", err)
+			}
+			var plain []symbol.Symbol
+			if err := json.Unmarshal(encoded, &plain); err == nil {
+				t.Fatal("a plain []symbol.Symbol decoded: Symbols is no longer needed")
+			}
+		})
+
+		t.Run("null decodes to nothing", func(t *testing.T) {
+			t.Parallel()
+
+			decoded := Symbols{&{{(index .Views 0).Name}}{}}
+			if err := json.Unmarshal([]byte("null"), &decoded); err != nil {
+				t.Fatalf("Unmarshal: unexpected error: %v", err)
+			}
+			if decoded != nil {
+				t.Fatalf("null decoded to %v, want nothing", decoded)
+			}
+		})
+
+		t.Run("refuses an element it cannot place", func(t *testing.T) {
+			t.Parallel()
+
+			var decoded Symbols
+			if err := json.Unmarshal([]byte(`[{"kind":"Nonexistent"}]`), &decoded); err == nil {
+				t.Fatal("Unmarshal: error = nil, want non-nil")
+			}
+			if err := json.Unmarshal([]byte(`{}`), &decoded); err == nil {
+				t.Fatal("Unmarshal of an object: error = nil, want non-nil")
+			}
+		})
+	})
+}

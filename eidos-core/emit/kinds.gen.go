@@ -20,13 +20,13 @@ import (
 //
 // This is the emit spelling of the kind.
 type Function struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	TypeParams []*TypeParam
-	Params     []*Param
-	Returns    []*Return
+	Origin     symbol.Identity   `json:"origin,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
+	Params     []*Param          `json:"params,omitzero"`
+	Returns    []*Return         `json:"returns,omitzero"`
 }
 
 // Kind answers [symbol.KindFunction].
@@ -68,20 +68,20 @@ func (x *Function) Docs() []string { return x.Doc }
 //
 // This is the emit spelling of the kind.
 type Method struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	Level      symbol.Level
-	Abstract   bool     // no body; a subtype must supply one
-	Final      bool     // overriding is forbidden
-	Override   bool     // replaces a supertype's member
-	HasDefault bool     // an interface method with a body
-	Receiver   *Param   // nil where the receiver is implicit
-	Receives   *TypeRef // set when declared outside the type it attaches to
-	TypeParams []*TypeParam
-	Params     []*Param
-	Returns    []*Return
+	Origin     symbol.Identity   `json:"origin,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Level      symbol.Level      `json:"level,omitzero"`
+	Abstract   bool              `json:"abstract,omitzero"`   // no body; a subtype must supply one
+	Final      bool              `json:"final,omitzero"`      // overriding is forbidden
+	Override   bool              `json:"override,omitzero"`   // replaces a supertype's member
+	HasDefault bool              `json:"hasDefault,omitzero"` // an interface method with a body
+	Receiver   *Param            `json:"receiver,omitzero"`   // nil where the receiver is implicit
+	Receives   *TypeRef          `json:"receives,omitzero"`   // set when declared outside the type it attaches to
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
+	Params     []*Param          `json:"params,omitzero"`
+	Returns    []*Return         `json:"returns,omitzero"`
 }
 
 // Kind answers [symbol.KindMethod].
@@ -115,11 +115,11 @@ func (x *Method) Docs() []string { return x.Doc }
 //
 // This is the emit spelling of the kind.
 type Param struct {
-	Name     string // "" when unnamed
-	Label    string // caller-facing name; Swift and Objective-C
-	Type     *TypeRef
-	Default  string          // source spelling, unevaluated; "" when none
-	Variadic symbol.Variadic // positional or keyword
+	Name     string          `json:"name,omitzero"`  // "" when unnamed
+	Label    string          `json:"label,omitzero"` // caller-facing name; Swift and Objective-C
+	Type     *TypeRef        `json:"type,omitzero"`
+	Default  string          `json:"default,omitzero"`  // source spelling, unevaluated; "" when none
+	Variadic symbol.Variadic `json:"variadic,omitzero"` // positional or keyword
 }
 
 // Kind answers [symbol.KindParam].
@@ -149,8 +149,8 @@ func (x *Param) TypeRef() symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Return struct {
-	Name string // Go named results; "" elsewhere
-	Type *TypeRef
+	Name string   `json:"name,omitzero"` // Go named results; "" elsewhere
+	Type *TypeRef `json:"type,omitzero"`
 }
 
 // Kind answers [symbol.KindReturn].
@@ -185,9 +185,9 @@ func (x *Return) TypeRef() symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Package struct {
-	Doc  []string
-	Path []string // ["svc","store"]
-	Name string   // may differ from the last segment
+	Doc  []string `json:"doc,omitzero"`
+	Path []string `json:"path,omitzero"` // ["svc","store"]
+	Name string   `json:"name,omitzero"` // may differ from the last segment
 }
 
 // Kind answers [symbol.KindPackage].
@@ -210,8 +210,8 @@ func (x *Package) Docs() []string { return x.Doc }
 //
 // This is the emit spelling of the kind.
 type File struct {
-	Doc  []string
-	Path string // workspace-relative, slash-separated
+	Doc  []string `json:"doc,omitzero"`
+	Path string   `json:"path,omitzero"` // workspace-relative, slash-separated
 }
 
 // Kind answers [symbol.KindFile].
@@ -320,13 +320,13 @@ func (x *Binding) Docs() []string { return nil }
 //
 // This is the emit spelling of the kind.
 type Enum struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	variants   Slot[*EnumVariant]
-	fields     Slot[*Field]  // Java enums carry instance state
-	methods    Slot[*Method] // and behaviour
+	Origin     symbol.Identity    `json:"origin,omitzero"`
+	Doc        []string           `json:"doc,omitzero"`
+	Name       string             `json:"name,omitzero"`
+	Visibility symbol.Visibility  `json:"visibility,omitzero"`
+	Variants   Slot[*EnumVariant] `json:"variants,omitzero"`
+	Fields     Slot[*Field]       `json:"fields,omitzero"`  // Java enums carry instance state
+	Methods    Slot[*Method]      `json:"methods,omitzero"` // and behaviour
 }
 
 // Kind answers [symbol.KindEnum].
@@ -341,8 +341,8 @@ func (x *Enum) Docs() []string { return x.Doc }
 
 // FieldList answers the member list, adapted for neutral code.
 func (x *Enum) FieldList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.fields.Len())
-	for _, member := range x.fields.Items() {
+	out := make([]symbol.Symbol, 0, x.Fields.Len())
+	for _, member := range x.Fields.Items() {
 		out = append(out, member)
 	}
 	return out
@@ -350,8 +350,8 @@ func (x *Enum) FieldList() []symbol.Symbol {
 
 // MethodList answers the member list, adapted for neutral code.
 func (x *Enum) MethodList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.methods.Len())
-	for _, member := range x.methods.Items() {
+	out := make([]symbol.Symbol, 0, x.Methods.Len())
+	for _, member := range x.Methods.Items() {
 		out = append(out, member)
 	}
 	return out
@@ -372,10 +372,10 @@ func (x *Enum) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type EnumVariant struct {
-	Origin symbol.Identity
-	Doc    []string
-	Name   string
-	Value  string // source spelling, unevaluated
+	Origin symbol.Identity `json:"origin,omitzero"`
+	Doc    []string        `json:"doc,omitzero"`
+	Name   string          `json:"name,omitzero"`
+	Value  string          `json:"value,omitzero"` // source spelling, unevaluated
 }
 
 // Kind answers [symbol.KindEnumVariant].
@@ -399,13 +399,13 @@ func (x *EnumVariant) Docs() []string { return x.Doc }
 //
 // This is the emit spelling of the kind.
 type Sum struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	TypeParams []*TypeParam // Rust data enums are generic
-	variants   Slot[*SumVariant]
-	methods    Slot[*Method]
+	Origin     symbol.Identity   `json:"origin,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"` // Rust data enums are generic
+	Variants   Slot[*SumVariant] `json:"variants,omitzero"`
+	Methods    Slot[*Method]     `json:"methods,omitzero"`
 }
 
 // Kind answers [symbol.KindSum].
@@ -420,8 +420,8 @@ func (x *Sum) Docs() []string { return x.Doc }
 
 // FieldList answers the member list, adapted for neutral code.
 func (x *Sum) FieldList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.variants.Len())
-	for _, member := range x.variants.Items() {
+	out := make([]symbol.Symbol, 0, x.Variants.Len())
+	for _, member := range x.Variants.Items() {
 		out = append(out, member)
 	}
 	return out
@@ -429,8 +429,8 @@ func (x *Sum) FieldList() []symbol.Symbol {
 
 // MethodList answers the member list, adapted for neutral code.
 func (x *Sum) MethodList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.methods.Len())
-	for _, member := range x.methods.Items() {
+	out := make([]symbol.Symbol, 0, x.Methods.Len())
+	for _, member := range x.Methods.Items() {
 		out = append(out, member)
 	}
 	return out
@@ -448,10 +448,10 @@ func (x *Sum) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type SumVariant struct {
-	Origin symbol.Identity
-	Doc    []string
-	Name   string
-	fields Slot[*Field] // the payload; unnamed when positional
+	Origin symbol.Identity `json:"origin,omitzero"`
+	Doc    []string        `json:"doc,omitzero"`
+	Name   string          `json:"name,omitzero"`
+	Fields Slot[*Field]    `json:"fields,omitzero"` // the payload; unnamed when positional
 }
 
 // Kind answers [symbol.KindSumVariant].
@@ -466,8 +466,8 @@ func (x *SumVariant) Docs() []string { return x.Doc }
 
 // FieldList answers the member list, adapted for neutral code.
 func (x *SumVariant) FieldList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.fields.Len())
-	for _, member := range x.fields.Items() {
+	out := make([]symbol.Symbol, 0, x.Fields.Len())
+	for _, member := range x.Fields.Items() {
 		out = append(out, member)
 	}
 	return out
@@ -496,13 +496,13 @@ func (x *SumVariant) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Field struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string // "" when positional
-	Visibility symbol.Visibility
-	Level      symbol.Level
-	Mutability symbol.Mutability
-	Type       *TypeRef
+	Origin     symbol.Identity   `json:"origin,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"` // "" when positional
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Level      symbol.Level      `json:"level,omitzero"`
+	Mutability symbol.Mutability `json:"mutability,omitzero"`
+	Type       *TypeRef          `json:"type,omitzero"`
 }
 
 // Kind answers [symbol.KindField].
@@ -539,12 +539,12 @@ func (x *Field) TypeRef() symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Variable struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	Mutability symbol.Mutability
-	Type       *TypeRef // nil when the source states none
+	Origin     symbol.Identity   `json:"origin,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Mutability symbol.Mutability `json:"mutability,omitzero"`
+	Type       *TypeRef          `json:"type,omitzero"` // nil when the source states none
 }
 
 // Kind answers [symbol.KindVariable].
@@ -577,12 +577,12 @@ func (x *Variable) TypeRef() symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Constant struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	Type       *TypeRef // nil when untyped
-	Value      string   // source spelling, unevaluated
+	Origin     symbol.Identity   `json:"origin,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Type       *TypeRef          `json:"type,omitzero"`  // nil when untyped
+	Value      string            `json:"value,omitzero"` // source spelling, unevaluated
 }
 
 // Kind answers [symbol.KindConstant].
@@ -631,19 +631,19 @@ func (x *Constant) TypeRef() symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Struct struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	Abstract   bool // no value of it can be made directly
-	Final      bool // subclassing is forbidden
-	TypeParams []*TypeParam
-	fields     Slot[*Field]
-	methods    Slot[*Method]
-	types      Slot[symbol.Symbol] // nested declarations
-	Embeds     []*Embed            // compositional promotion
-	Extends    []*TypeRef          // nominal supertypes
-	Implements []*TypeRef
+	Origin     symbol.Identity     `json:"origin,omitzero"`
+	Doc        []string            `json:"doc,omitzero"`
+	Name       string              `json:"name,omitzero"`
+	Visibility symbol.Visibility   `json:"visibility,omitzero"`
+	Abstract   bool                `json:"abstract,omitzero"` // no value of it can be made directly
+	Final      bool                `json:"final,omitzero"`    // subclassing is forbidden
+	TypeParams []*TypeParam        `json:"typeParams,omitzero"`
+	Fields     Slot[*Field]        `json:"fields,omitzero"`
+	Methods    Slot[*Method]       `json:"methods,omitzero"`
+	Types      Slot[symbol.Symbol] `json:"types,omitzero"`   // nested declarations
+	Embeds     []*Embed            `json:"embeds,omitzero"`  // compositional promotion
+	Extends    []*TypeRef          `json:"extends,omitzero"` // nominal supertypes
+	Implements []*TypeRef          `json:"implements,omitzero"`
 }
 
 // Kind answers [symbol.KindStruct].
@@ -658,8 +658,8 @@ func (x *Struct) Docs() []string { return x.Doc }
 
 // FieldList answers the member list, adapted for neutral code.
 func (x *Struct) FieldList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.fields.Len())
-	for _, member := range x.fields.Items() {
+	out := make([]symbol.Symbol, 0, x.Fields.Len())
+	for _, member := range x.Fields.Items() {
 		out = append(out, member)
 	}
 	return out
@@ -667,8 +667,8 @@ func (x *Struct) FieldList() []symbol.Symbol {
 
 // MethodList answers the member list, adapted for neutral code.
 func (x *Struct) MethodList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.methods.Len())
-	for _, member := range x.methods.Items() {
+	out := make([]symbol.Symbol, 0, x.Methods.Len())
+	for _, member := range x.Methods.Items() {
 		out = append(out, member)
 	}
 	return out
@@ -704,16 +704,16 @@ func (x *Struct) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Interface struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	TypeParams []*TypeParam
-	fields     Slot[*Field] // properties, not just methods
-	methods    Slot[*Method]
-	types      Slot[symbol.Symbol] // nested declarations and associated types
-	Embeds     []*Embed
-	Extends    []*TypeRef
+	Origin     symbol.Identity     `json:"origin,omitzero"`
+	Doc        []string            `json:"doc,omitzero"`
+	Name       string              `json:"name,omitzero"`
+	Visibility symbol.Visibility   `json:"visibility,omitzero"`
+	TypeParams []*TypeParam        `json:"typeParams,omitzero"`
+	Fields     Slot[*Field]        `json:"fields,omitzero"` // properties, not just methods
+	Methods    Slot[*Method]       `json:"methods,omitzero"`
+	Types      Slot[symbol.Symbol] `json:"types,omitzero"` // nested declarations and associated types
+	Embeds     []*Embed            `json:"embeds,omitzero"`
+	Extends    []*TypeRef          `json:"extends,omitzero"`
 }
 
 // Kind answers [symbol.KindInterface].
@@ -728,8 +728,8 @@ func (x *Interface) Docs() []string { return x.Doc }
 
 // FieldList answers the member list, adapted for neutral code.
 func (x *Interface) FieldList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.fields.Len())
-	for _, member := range x.fields.Items() {
+	out := make([]symbol.Symbol, 0, x.Fields.Len())
+	for _, member := range x.Fields.Items() {
 		out = append(out, member)
 	}
 	return out
@@ -737,8 +737,8 @@ func (x *Interface) FieldList() []symbol.Symbol {
 
 // MethodList answers the member list, adapted for neutral code.
 func (x *Interface) MethodList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.methods.Len())
-	for _, member := range x.methods.Items() {
+	out := make([]symbol.Symbol, 0, x.Methods.Len())
+	for _, member := range x.Methods.Items() {
 		out = append(out, member)
 	}
 	return out
@@ -764,12 +764,12 @@ func (x *Interface) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Alias struct {
-	Origin     symbol.Identity
-	Doc        []string
-	Name       string
-	Visibility symbol.Visibility
-	TypeParams []*TypeParam
-	Target     *TypeRef // nil for an associated type
+	Origin     symbol.Identity   `json:"origin,omitzero"`
+	Doc        []string          `json:"doc,omitzero"`
+	Name       string            `json:"name,omitzero"`
+	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
+	Target     *TypeRef          `json:"target,omitzero"` // nil for an associated type
 }
 
 // Kind answers [symbol.KindAlias].
@@ -799,9 +799,9 @@ func (x *Alias) Docs() []string { return x.Doc }
 //
 // This is the emit spelling of the kind.
 type TypeRef struct {
-	Spelling string          // source text, verbatim
-	Target   symbol.Identity // zero until resolution, and for builtins and externals
-	Args     []*TypeRef
+	Spelling string          `json:"spelling,omitzero"` // source text, verbatim
+	Target   symbol.Identity `json:"target,omitzero"`   // zero until resolution, and for builtins and externals
+	Args     []*TypeRef      `json:"args,omitzero"`
 }
 
 // Kind answers [symbol.KindTypeRef].
@@ -834,13 +834,13 @@ func (x *TypeRef) Docs() []string { return nil }
 //
 // This is the emit spelling of the kind.
 type TypeParam struct {
-	Name         string
-	Variance     symbol.Variance
-	Bounds       []*TypeRef
-	Default      *TypeRef // default type argument; nil when none
-	Const        bool     // the argument is a value, not a type
-	Type         *TypeRef // the value's type, when Const
-	DefaultValue string   // default value spelling, when Const
+	Name         string          `json:"name,omitzero"`
+	Variance     symbol.Variance `json:"variance,omitzero"`
+	Bounds       []*TypeRef      `json:"bounds,omitzero"`
+	Default      *TypeRef        `json:"default,omitzero"`      // default type argument; nil when none
+	Const        bool            `json:"const,omitzero"`        // the argument is a value, not a type
+	Type         *TypeRef        `json:"type,omitzero"`         // the value's type, when Const
+	DefaultValue string          `json:"defaultValue,omitzero"` // default value spelling, when Const
 }
 
 // Kind answers [symbol.KindTypeParam].
@@ -872,7 +872,7 @@ func (x *TypeParam) TypeRef() symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Constraint struct {
-	Terms []*TypeRef // the projectable terms
+	Terms []*TypeRef `json:"terms,omitzero"` // the projectable terms
 }
 
 // Kind answers [symbol.KindConstraint].
@@ -896,7 +896,7 @@ func (x *Constraint) Docs() []string { return nil }
 //
 // This is the emit spelling of the kind.
 type Embed struct {
-	Ref *TypeRef
+	Ref *TypeRef `json:"ref,omitzero"`
 }
 
 // Kind answers [symbol.KindEmbed].

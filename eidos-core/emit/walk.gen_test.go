@@ -325,17 +325,249 @@ func TestWalk(t *testing.T) {
 		t.Run("prunes a subtree when visit answers false", func(t *testing.T) {
 			t.Parallel()
 
-			subject := &Function{}
-			subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-			subject.Params = append(subject.Params, &Param{})
-			subject.Returns = append(subject.Returns, &Return{})
-			var seen int
-			Walk(subject, func(symbol.Symbol) bool {
-				seen++
-				return false
-			})
-			if seen != 1 {
-				t.Fatalf("visited %d declarations after pruning, want 1", seen)
+			{
+				subject := &Function{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Function after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Method{}
+				subject.Receiver = &Param{}
+				subject.Receives = &TypeRef{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Method after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Param{}
+				subject.Type = &TypeRef{}
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Param after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Return{}
+				subject.Type = &TypeRef{}
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Return after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Enum{}
+				subject.VariantsSlot().Append(&EnumVariant{})
+				subject.FieldsSlot().Append(&Field{})
+				subject.MethodsSlot().Append(&Method{})
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Enum after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Sum{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.VariantsSlot().Append(&SumVariant{})
+				subject.MethodsSlot().Append(&Method{})
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Sum after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &SumVariant{}
+				subject.FieldsSlot().Append(&Field{})
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of SumVariant after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Field{}
+				subject.Type = &TypeRef{}
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Field after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Variable{}
+				subject.Type = &TypeRef{}
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Variable after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Constant{}
+				subject.Type = &TypeRef{}
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Constant after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Struct{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.FieldsSlot().Append(&Field{})
+				subject.MethodsSlot().Append(&Method{})
+				subject.TypesSlot().Append(&Struct{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Struct after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Interface{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.FieldsSlot().Append(&Field{})
+				subject.MethodsSlot().Append(&Method{})
+				subject.TypesSlot().Append(&Interface{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Interface after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Alias{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Target = &TypeRef{}
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Alias after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &TypeRef{}
+				subject.Args = append(subject.Args, &TypeRef{})
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of TypeRef after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &TypeParam{}
+				subject.Bounds = append(subject.Bounds, &TypeRef{})
+				subject.Default = &TypeRef{}
+				subject.Type = &TypeRef{}
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of TypeParam after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Constraint{}
+				subject.Terms = append(subject.Terms, &TypeRef{})
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Constraint after pruning, want 1", seen)
+				}
+			}
+
+			{
+				subject := &Embed{}
+				subject.Ref = &TypeRef{}
+				var seen int
+				Walk(subject, func(symbol.Symbol) bool {
+					seen++
+					return false
+				})
+				if seen != 1 {
+					t.Fatalf("visited %d declarations of Embed after pruning, want 1", seen)
+				}
 			}
 		})
 	})
@@ -346,38 +578,583 @@ func TestWalk(t *testing.T) {
 		t.Run("yields the same declarations as Walk", func(t *testing.T) {
 			t.Parallel()
 
-			subject := &Function{}
-			subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-			subject.Params = append(subject.Params, &Param{})
-			subject.Returns = append(subject.Returns, &Return{})
-			var walked int
-			Walk(subject, func(symbol.Symbol) bool {
-				walked++
-				return true
-			})
-			var yielded int
-			for range All(subject) {
-				yielded++
+			{
+				subject := &Function{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Function declarations, Walk visited %d",
+						yielded, walked)
+				}
 			}
-			if walked != yielded {
-				t.Fatalf("All yielded %d declarations, Walk visited %d", yielded, walked)
+
+			{
+				subject := &Method{}
+				subject.Receiver = &Param{}
+				subject.Receives = &TypeRef{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Method declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Param{}
+				subject.Type = &TypeRef{}
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Param declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Return{}
+				subject.Type = &TypeRef{}
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Return declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Enum{}
+				subject.VariantsSlot().Append(&EnumVariant{})
+				subject.FieldsSlot().Append(&Field{})
+				subject.MethodsSlot().Append(&Method{})
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Enum declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Sum{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.VariantsSlot().Append(&SumVariant{})
+				subject.MethodsSlot().Append(&Method{})
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Sum declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &SumVariant{}
+				subject.FieldsSlot().Append(&Field{})
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d SumVariant declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Field{}
+				subject.Type = &TypeRef{}
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Field declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Variable{}
+				subject.Type = &TypeRef{}
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Variable declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Constant{}
+				subject.Type = &TypeRef{}
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Constant declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Struct{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.FieldsSlot().Append(&Field{})
+				subject.MethodsSlot().Append(&Method{})
+				subject.TypesSlot().Append(&Struct{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Struct declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Interface{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.FieldsSlot().Append(&Field{})
+				subject.MethodsSlot().Append(&Method{})
+				subject.TypesSlot().Append(&Interface{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Interface declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Alias{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Target = &TypeRef{}
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Alias declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &TypeRef{}
+				subject.Args = append(subject.Args, &TypeRef{})
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d TypeRef declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &TypeParam{}
+				subject.Bounds = append(subject.Bounds, &TypeRef{})
+				subject.Default = &TypeRef{}
+				subject.Type = &TypeRef{}
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d TypeParam declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Constraint{}
+				subject.Terms = append(subject.Terms, &TypeRef{})
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Constraint declarations, Walk visited %d",
+						yielded, walked)
+				}
+			}
+
+			{
+				subject := &Embed{}
+				subject.Ref = &TypeRef{}
+				var walked int
+				Walk(subject, func(symbol.Symbol) bool {
+					walked++
+					return true
+				})
+				var yielded int
+				for range All(subject) {
+					yielded++
+				}
+				if walked != yielded {
+					t.Fatalf("All yielded %d Embed declarations, Walk visited %d",
+						yielded, walked)
+				}
 			}
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
 			t.Parallel()
 
-			subject := &Function{}
-			subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-			subject.Params = append(subject.Params, &Param{})
-			subject.Returns = append(subject.Returns, &Return{})
-			var yielded int
-			for range All(subject) {
-				yielded++
-				break
+			{
+				subject := &Function{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Function declarations after breaking, want 1", yielded)
+				}
 			}
-			if yielded != 1 {
-				t.Fatalf("yielded %d declarations after breaking, want 1", yielded)
+
+			{
+				subject := &Method{}
+				subject.Receiver = &Param{}
+				subject.Receives = &TypeRef{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Method declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Param{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Param declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Return{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Return declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Enum{}
+				subject.VariantsSlot().Append(&EnumVariant{})
+				subject.FieldsSlot().Append(&Field{})
+				subject.MethodsSlot().Append(&Method{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Enum declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Sum{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.VariantsSlot().Append(&SumVariant{})
+				subject.MethodsSlot().Append(&Method{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Sum declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &SumVariant{}
+				subject.FieldsSlot().Append(&Field{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d SumVariant declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Field{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Field declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Variable{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Variable declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Constant{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Constant declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Struct{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.FieldsSlot().Append(&Field{})
+				subject.MethodsSlot().Append(&Method{})
+				subject.TypesSlot().Append(&Struct{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Struct declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Interface{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.FieldsSlot().Append(&Field{})
+				subject.MethodsSlot().Append(&Method{})
+				subject.TypesSlot().Append(&Interface{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Interface declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Alias{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Target = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Alias declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &TypeRef{}
+				subject.Args = append(subject.Args, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d TypeRef declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &TypeParam{}
+				subject.Bounds = append(subject.Bounds, &TypeRef{})
+				subject.Default = &TypeRef{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d TypeParam declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Constraint{}
+				subject.Terms = append(subject.Terms, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Constraint declarations after breaking, want 1", yielded)
+				}
+			}
+
+			{
+				subject := &Embed{}
+				subject.Ref = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					break
+				}
+				if yielded != 1 {
+					t.Fatalf("yielded %d Embed declarations after breaking, want 1", yielded)
+				}
 			}
 		})
 	})

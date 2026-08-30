@@ -1,0 +1,141 @@
+{{template "header" .}}
+import "testing"
+
+// kindNamings pairs every kind with the name it answers, which is
+// what String writes and ParseKind reads back.
+var kindNamings = []struct {
+	kind Kind
+	want string
+}{
+	{kind: KindInvalid, want: "Invalid"},
+{{- range .Kinds}}
+	{kind: Kind{{.Name}}, want: "{{.Name}}"},
+{{- end}}
+}
+
+func TestKind(t *testing.T) {
+	t.Parallel()
+
+	t.Run("String", func(t *testing.T) {
+		t.Parallel()
+
+		for _, tt := range kindNamings {
+			t.Run(tt.want, func(t *testing.T) {
+				t.Parallel()
+				if got := tt.kind.String(); got != tt.want {
+					t.Fatalf("String() = %q, want %q", got, tt.want)
+				}
+			})
+		}
+
+		t.Run("names are unique", func(t *testing.T) {
+			t.Parallel()
+
+			seen := make(map[string]Kind, len(kindNamings))
+			for _, tt := range kindNamings {
+				if first, ok := seen[tt.want]; ok {
+					t.Fatalf("%v and %v both answer %q", first, tt.kind, tt.want)
+				}
+				seen[tt.want] = tt.kind
+			}
+		})
+
+		t.Run("a value outside the set answers a placeholder", func(t *testing.T) {
+			t.Parallel()
+
+			outside := Kind(len(kindNamings) + 1)
+			if got := outside.String(); got == "" {
+				t.Fatal("String() = \"\", want a placeholder")
+			}
+		})
+	})
+
+	t.Run("ParseKind", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("answers the kind a name spells", func(t *testing.T) {
+			t.Parallel()
+
+			for _, tt := range kindNamings {
+				if tt.kind == KindInvalid {
+					continue
+				}
+				t.Run(tt.want, func(t *testing.T) {
+					t.Parallel()
+
+					got, known := ParseKind(tt.want)
+					if !known {
+						t.Fatalf("ParseKind(%q) is unknown, but %v names it",
+							tt.want, tt.kind)
+					}
+					if got != tt.kind {
+						t.Fatalf("ParseKind(%q) = %v, want %v", tt.want, got, tt.kind)
+					}
+				})
+			}
+		})
+
+		// The pair is what lets a kind cross a boundary carrying
+		// names: whatever String writes, ParseKind has to read back.
+		t.Run("inverts String for every kind", func(t *testing.T) {
+			t.Parallel()
+
+			for _, tt := range kindNamings {
+				if tt.kind == KindInvalid {
+					continue
+				}
+				got, known := ParseKind(tt.kind.String())
+				if !known || got != tt.kind {
+					t.Fatalf("ParseKind(%v.String()) = %v, %t; want %v, true",
+						tt.kind, got, known, tt.kind)
+				}
+			}
+		})
+
+		t.Run("answers KindInvalid when it refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// A caller that drops the boolean must not receive a
+			// usable kind, so the refusal answers the zero value
+			// rather than whatever the lookup left behind.
+			got, known := ParseKind("Nonexistent")
+			if known {
+				t.Fatal("ParseKind refused nothing, want it to refuse")
+			}
+			if got != KindInvalid {
+				t.Fatalf("a refused name answered %v, want KindInvalid", got)
+			}
+		})
+
+		t.Run("refuses a name no kind answers", func(t *testing.T) {
+			t.Parallel()
+
+			// A kind's name is its Go type name, matched exactly:
+			// nothing trims, folds case or accepts a near miss.
+			tests := []struct {
+				name string
+				why  string
+			}{
+				{name: "", why: "the empty name"},
+				{name: "Nonexistent", why: "a name no kind carries"},
+				{name: "struct", why: "the lowered spelling"},
+				{name: "STRUCT", why: "the upper spelling"},
+				{name: " Struct", why: "a leading space"},
+				{name: "Struct ", why: "a trailing space"},
+				{name: "Struct\n", why: "a trailing newline"},
+				{name: "Invalid", why: "the placeholder String answers for a non-kind"},
+				{name: "Kind(0)", why: "the placeholder String answers outside the set"},
+			}
+			for _, tt := range tests {
+				t.Run(tt.why, func(t *testing.T) {
+					t.Parallel()
+
+					if got, known := ParseKind(tt.name); known {
+						t.Fatalf("ParseKind(%q) = %v, want it refused: %s",
+							tt.name, got, tt.why)
+					}
+				})
+			}
+		})
+	})
+}

@@ -22,6 +22,34 @@ const (
 	positionQualifier = "position."
 )
 
+// The spellings rendering composes generated expressions from.
+const (
+	// receiverName is the receiver every generated method uses.
+	receiverName = "x"
+	// accessorSuffix names a slot's exported accessor.
+	accessorSuffix = "Slot"
+	// shadowSuffix names the struct a codec encodes through.
+	shadowSuffix = "JSON"
+	// slotType is the storage a slot-tagged field declares.
+	slotType = "Slot"
+	// itemsMethod, lenMethod and appendMethod are the slot's own
+	// surface, which generated code reaches through.
+	itemsMethod  = "Items"
+	lenMethod    = "Len"
+	appendMethod = "Append"
+	// symbolsType is the named slice a marker-typed field declares.
+	// It carries the codec that reads a child's kind before it
+	// allocates one, which a plain interface slice cannot.
+	symbolsType = "Symbols"
+	// sliceMarker and pointerMarker open a Go type spelling.
+	sliceMarker   = "[]"
+	pointerMarker = "*"
+	// zeroLiteral constructs an empty value of a kind, and addressOf
+	// takes its address.
+	zeroLiteral = "{}"
+	addressOf   = "&"
+)
+
 // Field names the models treat by convention rather than by tag.
 // Lowering carries them through and rendering recognizes them.
 const (
@@ -55,6 +83,8 @@ var memberMethods = []struct {
 // is on.
 type view struct {
 	Name string
+	// Shadow is the unexported struct the codec encodes through.
+	Shadow string
 	// Doc is the schema's documentation for the kind.
 	Doc []string
 	// Fields are the struct's fields, in declaration order.
@@ -82,6 +112,10 @@ type view struct {
 	// WalkVisits is how many declarations a walk over that subject
 	// reaches, the subject included.
 	WalkVisits int
+	// Malformed is an encoding naming this kind whose first field
+	// holds the wrong JSON type, so a decoder places the kind and
+	// then fails on its body.
+	Malformed string
 }
 
 // IsMembered reports whether the kind carries any member list.
@@ -120,6 +154,15 @@ type fieldView struct {
 	// Accessor is the exported slot method, empty when the field is
 	// not a slot.
 	Accessor string
+	// JSONName is the field's key in encoded form.
+	JSONName string
+	// JSONType is the type the codec's shadow struct declares. A
+	// field typed by the marker becomes raw bytes, because its
+	// concrete kind is only known from the encoded discriminator.
+	JSONType string
+	// Raw says the codec dispatches this field through the
+	// kind-discriminated encoder rather than encoding it directly.
+	Raw bool
 }
 
 // viewsFor prepares every kind for one model side.
@@ -137,7 +180,13 @@ func viewsFor(kinds []KindSpec, side string) []view {
 
 // viewOf prepares one kind for one model side.
 func viewOf(kind KindSpec, side string) view {
-	v := view{Name: kind.Name, Doc: kind.Doc, PosExpr: positionQualifier + "Pos{}", DocExpr: "nil"}
+	v := view{
+		Name:    kind.Name,
+		Shadow:  unexport(kind.Name) + shadowSuffix,
+		Doc:     kind.Doc,
+		PosExpr: positionQualifier + "Pos{}",
+		DocExpr: "nil",
+	}
 
 	byName := map[string]fieldView{}
 	for _, field := range kind.Fields {
@@ -166,7 +215,24 @@ func viewOf(kind KindSpec, side string) view {
 	}
 	v.Members = membersOf(byName)
 	v.Children, v.WalkVisits = childrenOf(v)
+	v.Malformed = malformedOf(v)
 	return v
+}
+
+// malformedOf writes an encoding that names the kind and then
+// breaks: the first field carries a JSON type it cannot hold. A
+// decoder therefore reaches the kind's own reader before it fails,
+// which is the path a bad payload takes.
+func malformedOf(v view) string {
+	if len(v.Fields) == 0 {
+		return ""
+	}
+	field := v.Fields[0]
+	wrong := `"nope"`
+	if !strings.HasPrefix(field.JSONType, sliceMarker) && field.JSONType == "string" {
+		wrong = "[]"
+	}
+	return `{"kind":"` + v.Name + `","` + field.JSONName + `":` + wrong + `}`
 }
 
 // childrenOf writes the statements that give a subject one child in
@@ -177,19 +243,22 @@ func viewOf(kind KindSpec, side string) view {
 // always available and terminates for the same reason.
 func childrenOf(v view) (stmts []string, visits int) {
 	visits = 1
+	const subject = "subject"
 	for _, f := range v.Walked {
-		child := "&" + v.Name + "{}"
+		named := v.Name
 		if f.Elem != "" {
-			child = "&" + f.Elem + "{}"
+			named = f.Elem
 		}
+		child := addressOf + named + zeroLiteral
+		target := subject + "." + f.Storage
 		switch {
 		case f.Accessor != "":
-			stmts = append(stmts, "subject."+f.Accessor+"().Append("+child+")")
-		case f.Slice:
 			stmts = append(stmts,
-				"subject."+f.Storage+" = append(subject."+f.Storage+", "+child+")")
+				subject+"."+f.Accessor+"()."+appendMethod+"("+child+")")
+		case f.Slice:
+			stmts = append(stmts, target+" = append("+target+", "+child+")")
 		default:
-			stmts = append(stmts, "subject."+f.Storage+" = "+child)
+			stmts = append(stmts, target+" = "+child)
 		}
 		visits++
 	}
@@ -231,17 +300,51 @@ func fieldOf(field FieldSpec, side string) fieldView {
 		Slice:   field.Slice,
 		Pointer: strings.HasPrefix(field.Type, "*"),
 	}
+	f.JSONName = unexport(field.Name)
+	f.Raw = field.IsSymbol
+	switch {
+	case field.IsSymbol && field.Slice:
+		f.JSONType = symbolsType
+	default:
+		f.JSONType = qualify(field.Type)
+	}
+	f.Decl = f.JSONType
+
 	if side == EmitPackage && field.Slot != "" {
-		f.Storage = strings.ToLower(field.Name[:1]) + field.Name[1:]
-		f.Accessor = field.Name + "Slot"
-		f.Decl = "Slot[" + strings.TrimPrefix(qualify(field.Type), "[]") + "]"
-		f.Items = "x." + f.Storage + ".Items()"
-		f.Len = "x." + f.Storage + ".Len()"
+		element := strings.TrimPrefix(qualify(field.Type), sliceMarker)
+		f.Accessor = field.Name + accessorSuffix
+		f.Decl = slotType + "[" + element + "]"
+		f.Items = f.selector() + "." + itemsMethod + "()"
+		f.Len = f.selector() + "." + lenMethod + "()"
 		return f
 	}
-	f.Items = "x." + f.Storage
-	f.Len = "len(x." + f.Storage + ")"
+	f.Items = f.selector()
+	f.Len = "len(" + f.selector() + ")"
 	return f
+}
+
+// selector is the field as generated code reads it off the
+// receiver.
+func (f fieldView) selector() string { return receiverName + "." + f.Storage }
+
+// unexport lowers a name's leading run of capitals, so an acronym
+// stays one word: ID becomes id, and TypeParams becomes typeParams.
+func unexport(name string) string {
+	caps := 0
+	for caps < len(name) && name[caps] >= 'A' && name[caps] <= 'Z' {
+		caps++
+	}
+	switch {
+	case caps == 0:
+		return name
+	case caps == len(name):
+		return strings.ToLower(name)
+	case caps == 1:
+		return strings.ToLower(name[:1]) + name[1:]
+	default:
+		// The last capital opens the next word: IDList becomes idList.
+		return strings.ToLower(name[:caps-1]) + name[caps-1:]
+	}
 }
 
 // qualify renders a schema type spelling as a model package spells
