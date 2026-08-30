@@ -836,9 +836,9 @@ the directive. For an emit-triggered rule the origin's `skip`
 governs, since the origin is the subject consulted. A graph rule has
 no subject, so nothing excludes it.
 
-Each invocation gets a fresh read set, a lazily minted reader and
-its own effect handle, so the reads a handler makes are the reads
-its artifact records: a stamp's derivation names what this match
+Each invocation reuses its rule's match with a fresh read set,
+minted lazily, and its own effect handle, so the reads a handler
+makes are the reads its artifact records: a stamp's derivation names what this match
 read, not what the phase read. Handlers are order-independent
 within a plugin by law, and dispatch is sequential in this
 proposal; the read grain is what makes the parallelism opt-in
@@ -999,9 +999,12 @@ index is maintained at stamp time.
   choice rather than a default people fall into.
 - Skip is one probe of a map holding only the subjects that carry
   skip, computed once at `NewIndex`.
-- Per invocation the fixed cost is one match value and one effect
-  handle; the read set and reader allocate on the first tracked
-  read, so a handler that only writes pays no tracking.
+- Per invocation the steady-state cost is zero allocations: each
+  rule reuses one match per phase call, valid for the duration of
+  its handler call, and the read set and reader allocate on the
+  first tracked read, so a handler that only writes pays no
+  tracking. Retaining a match past its call is a defect, under the
+  same law that forbids state on the plugin struct.
 - Emit rules enumerate the per-kind index maintained at `Add`, one
   tree walk per unit when it lands, instead of re-walking the emit
   graph per rule.
