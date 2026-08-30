@@ -44,7 +44,8 @@
 //
 // # Dependency position
 //
-// core/store imports core/node, core/symbol, core/diag, core/meta
-// and the Go stdlib; the read set satisfies the fact recorder, so
-// the two stores meet here, on this side.
+// core/store imports core/node, core/symbol, core/diag, core/meta,
+// core/directive and the Go stdlib; the read set satisfies the
+// fact recorder and the graph attaches and indexes raw directive
+// instances, so those packages meet here, on this side.
 package store

@@ -11,6 +11,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -75,6 +76,14 @@ type Graph struct {
 	byID   map[symbol.Identity]node.Declaration
 	byKind map[symbol.Kind][]node.Declaration
 	byPkg  map[symbol.Identity]*node.Package
+
+	// attached holds raw directive instances per subject as they
+	// arrive; the seal sorts them and builds the directive index
+	// beside the kind index.
+	attached       sync.Map
+	directives     map[symbol.Identity][]directive.Raw
+	directiveOrder []symbol.Identity
+	byDirective    map[directive.Name][]node.Declaration
 }
 
 // New answers an unfrozen graph holding nothing.
@@ -179,6 +188,8 @@ func (g *Graph) Freeze() {
 		}
 	})
 	fill.Wait()
+
+	g.freezeDirectives()
 
 	// The collected slices are spent: the indexes hold everything.
 	for _, entry := range loaded {

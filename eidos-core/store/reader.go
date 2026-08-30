@@ -6,6 +6,7 @@ package store
 import (
 	"iter"
 
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -59,6 +60,29 @@ func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 		}
 
 		for _, decl := range held {
+			id := decl.Identity()
+			if !r.scope.admits(owningPackage(id)) {
+				continue
+			}
+			r.reads.recordIdentity(id)
+			if !yield(decl) {
+				return
+			}
+		}
+	}
+}
+
+// ByDirective enumerates the declarations carrying a spelling,
+// under the reader's scope: a subject outside it is neither
+// answered nor recorded. It records a directive-membership edge,
+// so the reader runs again when a subject gains or loses the
+// directive, plus a per-identity edge for each declaration the
+// caller reached.
+func (r *Reader) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
+	return func(yield func(symbol.Symbol) bool) {
+		r.reads.recordDirective(n)
+
+		for _, decl := range r.graph.byDirective[n] {
 			id := decl.Identity()
 			if !r.scope.admits(owningPackage(id)) {
 				continue

@@ -147,3 +147,15 @@ func (r *Registry) Spec(id KeyID) (KeySpec, bool) {
 func (r *Registry) Group(g GroupName) iter.Seq[KeyID] {
 	return slices.Values(r.groups[g])
 }
+
+// Keys answers every registered key's spelling, in registration
+// order: what a candidate-naming refusal enumerates.
+func (r *Registry) Keys() iter.Seq[KeyName] {
+	return func(yield func(KeyName) bool) {
+		for _, spec := range r.specs {
+			if !yield(spec.Name) {
+				return
+			}
+		}
+	}
+}

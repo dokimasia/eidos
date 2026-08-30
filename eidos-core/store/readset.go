@@ -9,6 +9,7 @@ import (
 	"maps"
 	"slices"
 
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -16,9 +17,10 @@ import (
 // ReadSet is what one derived artifact read.
 //
 // Edges deduplicate, so a loop reading one declaration a thousand
-// times records one edge. Three grains are recorded: a per-identity
+// times records one edge. Four grains are recorded: a per-identity
 // edge for a targeted read, a set-membership edge for an
-// enumeration, and a (subject, key) edge for a fact read — ReadSet
+// enumeration by kind, a directive-membership edge for one by
+// directive, and a (subject, key) edge for a fact read — ReadSet
 // satisfies [meta.Recorder], so one artifact's declaration reads
 // and fact reads land in one set.
 //
@@ -33,6 +35,7 @@ type ReadSet struct {
 	identities map[symbol.Identity]struct{}
 	kinds      map[symbol.Kind]struct{}
 	facts      map[factRead]struct{}
+	directives map[directive.Name]struct{}
 }
 
 // factRead is one (subject, key) edge.
@@ -89,9 +92,21 @@ func (s *ReadSet) Facts() iter.Seq2[symbol.Identity, meta.KeyName] {
 	}
 }
 
-// Len answers how many edges the set holds, all three grains
+// Directives answers every recorded directive-membership edge, in
+// name order. Each edge means the artifact enumerated that
+// spelling's carriers, so it runs again when a subject gains or
+// loses the directive — and never when a carrier merely changes,
+// which the per-identity edges recorded alongside cover.
+func (s *ReadSet) Directives() iter.Seq[directive.Name] {
+	out := slices.Sorted(maps.Keys(s.directives))
+	return slices.Values(out)
+}
+
+// Len answers how many edges the set holds, all four grains
 // counted.
-func (s *ReadSet) Len() int { return len(s.identities) + len(s.kinds) + len(s.facts) }
+func (s *ReadSet) Len() int {
+	return len(s.identities) + len(s.kinds) + len(s.facts) + len(s.directives)
+}
 
 // recordIdentity records a per-identity edge.
 //
@@ -113,6 +128,14 @@ func (s *ReadSet) reserve(n int) {
 	if s.identities == nil && n > 0 {
 		s.identities = make(map[symbol.Identity]struct{}, n)
 	}
+}
+
+// recordDirective records a directive-membership edge.
+func (s *ReadSet) recordDirective(n directive.Name) {
+	if s.directives == nil {
+		s.directives = map[directive.Name]struct{}{}
+	}
+	s.directives[n] = struct{}{}
 }
 
 // recordKind records a set-membership edge.

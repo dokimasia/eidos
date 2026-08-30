@@ -197,6 +197,44 @@ func TestRegistry(t *testing.T) {
 		})
 	})
 
+	t.Run("Keys", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("answers every spelling in registration order", func(t *testing.T) {
+			t.Parallel()
+
+			r := claimed(t)
+			_, err := meta.Register[string](r, meta.KeySpec{
+				Name: "shape.role", Doc: "the classified role",
+			})
+			assert.NoError(t, err, "the first key registers")
+			_, err = meta.Register[bool](r, meta.KeySpec{
+				Name: "gen.exported", Doc: "the export flag",
+			})
+			assert.NoError(t, err, "and the second")
+
+			assert.Equal(t, slices.Collect(r.Keys()),
+				[]meta.KeyName{"shape.role", "gen.exported"},
+				"a candidate-naming refusal enumerates what registered, in order")
+		})
+
+		t.Run("stops when the range stops", func(t *testing.T) {
+			t.Parallel()
+
+			r := claimed(t)
+			_, err := meta.Register[string](r, meta.KeySpec{
+				Name: "shape.role", Doc: "the classified role",
+			})
+			assert.NoError(t, err, "the key registers")
+			seen := 0
+			for range r.Keys() {
+				seen++
+				break
+			}
+			assert.Equal(t, seen, 1, "the iteration stops when the range stops")
+		})
+	})
+
 	t.Run("Group", func(t *testing.T) {
 		t.Parallel()
 
