@@ -45,13 +45,29 @@ writes, and how the guard runs.
 ### Pipeline
 
 ```mermaid
-flowchart TD
-    S["symbol/schema sources"] -->|"go/parser"| A["ast.Files"]
-    A -->|"go/types + source importer"| T["type-checked package"]
-    T -->|"lower + validate"| I["IR: KindSpec list"]
-    I -->|"text/template, embedded"| G["generated sources"]
-    G -->|"go/format.Source"| F["formatted bytes"]
-    F -->|"write, or diff in the guard"| O["symbol/, node/, emit/"]
+sequenceDiagram
+    participant C as make generate / mirror test
+    participant G as internal/gen/model
+    participant P as go/parser
+    participant T as go/types + source importer
+    participant R as text/template, go/format
+    participant D as symbol/, node/, emit/
+
+    C->>G: Generate(modRoot)
+    G->>P: parse symbol/schema, hand-written files only
+    P-->>G: ast.Files
+    G->>T: Check the schema package
+    Note over T: dependencies read complete:<br/>generated files included,<br/>type errors tolerated
+    T-->>G: type-checked package
+    Note over G: lower and validate<br/>into the KindSpec list
+    G->>R: render each output file, then format
+    R-->>G: formatted bytes
+    G-->>C: every output path, in memory
+    alt make generate
+        C->>D: write every path
+    else mirror test
+        C->>D: compare against the committed bytes
+    end
 ```
 
 The tool lives at `internal/gen/model`, named for what it writes. Two

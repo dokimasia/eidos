@@ -849,6 +849,34 @@ wrapped with the plugin and the rule's ordinal. Everything
 per-subject that is not worth ending the phase for goes to the sink
 through the match.
 
+One fact-gated rule, from the phase call to the write:
+
+```mermaid
+sequenceDiagram
+    participant R as the run
+    participant P as the plugin's Annotate
+    participant IX as plugin.Index
+    participant H as the handler
+    participant FS as meta.Facts
+    participant SK as diag.Sink
+
+    R->>P: Annotate(ctx)
+    Note over P: the plugin's rules run in declaration order
+    P->>IX: ByFactKey(the first predicate's key)
+    IX-->>P: candidate subjects, skip already excluded
+    Note over P: keep the trigger's kind, then evaluate<br/>the remaining predicates, untracked
+    loop per surviving match, in canonical order
+        Note over P,H: a fresh read set and a lazily<br/>minted reader per invocation
+        P->>H: handler(match, stamper)
+        H->>FS: Fact(m, k)
+        FS-->>H: the winning value, recorded at (subject, key)
+        H->>FS: Stamp(st, k, v)
+        Note over FS: authority, bucket, plugin, sequence and<br/>this match's reads are already bound
+        FS->>SK: EID-0020 on a refusal, and the phase continues
+    end
+    H-->>P: a returned error ends the phase call, wrapped<br/>with the plugin and the rule's ordinal
+```
+
 ### A plugin, end to end
 
 Three shapes cover most plugins. An annotator that classifies:
@@ -930,6 +958,29 @@ declares its gate on that fact and appends through a slot, and the
 capability edge turns the ordering into a scheduled guarantee. At
 no point does either plugin read the other's directives or import
 the other's package.
+
+```mermaid
+sequenceDiagram
+    participant R as the run
+    participant C as classify (Annotator)
+    participant SG as stubgen (Generator)
+    participant AU as audit (Generator)
+    participant FS as meta.Facts
+    participant EM as plugin.Emit
+
+    Note over R,EM: Annotate: the graph is frozen
+    R->>C: Annotate(ctx)
+    C->>FS: Stamp(isHandler, true) per matching struct
+    Note over R,EM: Generate: CapClassified orders the buckets,<br/>so classify has already run
+    R->>SG: Generate(ctx)
+    SG->>EM: append the stub struct to a per-source file
+    R->>AU: Generate(ctx)
+    AU->>EM: Emit.ByKind(KindStruct) over the plan's units
+    EM-->>AU: each emitted struct, with its origin
+    AU->>FS: gate: HasKey(isHandler) on the origin, untracked
+    FS-->>AU: only the admitted values reach the handler
+    AU->>EM: append an Audit method through the struct's slot
+```
 
 ### The cost model
 
@@ -1126,6 +1177,15 @@ schema and regenerated.
 - A per-rule invocation entry beside `Subscriptions`, for re-running
   one rule over one subject, is deliberately absent until a
   consumer of recorded edges exists.
+- A graph-wide stamper for closure- and ranking-shaped annotation,
+  meaning reachability, cycle membership, global ranking and
+  collision renames, is deliberately absent. If one of those cases
+  forces it, the shape is a separate `OnGraphStamp` constructor
+  whose stamps name their target and whose subscription is marked
+  write-dynamic, so the engine can quarantine what it cannot
+  bound. A widened `Effect` generic is not that shape: the two
+  answers that compose, subscribing per kind and marking a kind a
+  subject, stay the default.
 - Retaining generate-side per-invocation read sets, the
   unit-to-reads record a warm run consumes, has a natural seat in
   the dispatcher, which already creates the sets; nothing retains

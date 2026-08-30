@@ -245,6 +245,31 @@ reader, so the two are told apart by which value a caller holds. A
 plugin is handed a reader and never the graph, which is what keeps
 the single-door rule structural rather than a review comment.
 
+```mermaid
+sequenceDiagram
+    participant D as the dispatcher
+    participant PL as a plugin
+    participant RD as store.Reader
+    participant G as store.Graph
+    participant RS as ReadSet
+
+    Note over D,RS: the kernel's own path
+    D->>G: ByKind(k)
+    G-->>D: the declarations, across every plan
+    Note over D,RS: a plugin's path
+    PL->>RD: Lookup(id)
+    RD->>RD: does Scope admit the owning package?
+    alt outside scope
+        RD-->>PL: not found
+        Note over RS: neither answered nor recorded
+    else in scope
+        RD->>G: Lookup(id)
+        G-->>RD: the declaration
+        RD->>RS: record a per-identity edge
+        RD-->>PL: the declaration
+    end
+```
+
 The reader is the only path a read takes.
 
 ```go

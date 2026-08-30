@@ -361,6 +361,26 @@ func (s *ReadSet) Facts() iter.Seq2[symbol.Identity, meta.KeyName]
 
 `Len` counts all three grains. Edges deduplicate as before.
 
+```mermaid
+sequenceDiagram
+    participant PL as a plugin's handler
+    participant F as meta.Facts
+    participant RS as store.ReadSet
+    participant K as the kernel
+
+    PL->>F: Fact(rec, subject, k)
+    Note over F: the winner is already ranked across<br/>value claims, key drops and group drops
+    F->>RS: RecordFact(subject, key)
+    Note over RS: a miss records too, so the reader runs<br/>again when the fact appears
+    alt a value claim won
+        F-->>PL: the value, held
+    else nothing stamped, or a drop won
+        F-->>PL: absent
+    end
+    K->>F: Get(subject, k)
+    F-->>K: the same winner, nothing recorded
+```
+
 The dependency points one way: `meta` imports `symbol`,
 `position` and `diag`; `store` imports `meta`. The fact store never
 reads the graph, because a claim carries its subject's kind in the

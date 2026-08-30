@@ -377,12 +377,30 @@ func Validate(
 The flow, one subject at a time:
 
 ```mermaid
-flowchart TD
-    A["carrier owner<br/>Parse(payload)"] -- "raw instances + Pos" --> B["store<br/>AttachDirectives"]
-    B -- "at Freeze" --> C["directive index<br/>by spelled name"]
-    B -- "full list per subject" --> D["Validate<br/>types + checks"]
-    D -- "validated instances" --> E["dispatch, m.Directive()"]
-    D -- "positioned Errors" --> F["diag.Sink"]
+sequenceDiagram
+    participant F as frontend (carrier owner)
+    participant P as directive.Parse
+    participant G as store.Graph
+    participant V as directive.Validate
+    participant S as diag.Sink
+    participant X as dispatch
+
+    F->>P: Parse(payload)
+    alt outside the grammar
+        P-->>F: error, and the byte offset reading stopped at
+        Note over F: the carrier owner holds the file<br/>position and converts
+    else parsed
+        P-->>F: Raw: grammar parsed, values untyped
+        F->>G: AttachDirectives(subject, []Raw)
+    end
+    Note over G: Freeze builds the directive index,<br/>keyed by the name as written
+    V->>G: Directives()
+    G-->>V: every subject, with its raw instances
+    Note over V: the schema registry is sealed,<br/>and subjects validate independently
+    V->>S: one positioned Error per violation
+    V-->>X: the instances that passed, typed, in source order
+    X->>G: ByDirective(each spelling the schema answers to)
+    G-->>X: the subjects carrying it
 ```
 
 ### The store side
