@@ -12,9 +12,10 @@ import (
 // free function, a Python module-level def, a TypeScript exported
 // function.
 //
-// The model carries the signature and never a body. Generated
-// bodies are an emit-side concern, and parsed bodies are out of
-// scope entirely.
+// The node model carries the signature and never a body, because
+// parsed bodies are out of scope entirely. The emit model carries
+// what a generated body holds in its Body field: the standard
+// slots, and one content form.
 //
 //eidos:subject
 type Function struct {
@@ -27,6 +28,7 @@ type Function struct {
 	TypeParams []*TypeParam      `eidos:"both,walk"`
 	Params     []*Param          `eidos:"both,walk"`
 	Returns    []*Return         `eidos:"both,walk"`
+	Body       Body              `eidos:"emit"`
 }
 
 // Method is a callable attached to a type.
@@ -56,6 +58,9 @@ type Function struct {
 // It differs from Abstract's inverse, because a class method with a
 // body is ordinary rather than a default.
 //
+// The node model carries the signature and never a body; the emit
+// model carries what a generated body holds in its Body field.
+//
 //eidos:subject
 type Method struct {
 	ID         symbol.Identity   `eidos:"node"`
@@ -74,6 +79,7 @@ type Method struct {
 	TypeParams []*TypeParam      `eidos:"both,walk"`
 	Params     []*Param          `eidos:"both,walk"`
 	Returns    []*Return         `eidos:"both,walk"`
+	Body       Body              `eidos:"emit"`
 	Host       symbol.Identity   `eidos:"node"`
 }
 

@@ -12,7 +12,9 @@
 //
 // Kinds group by family, one file each: containers, structural type
 // declarations, enumerations, callables, members, and type
-// machinery. [Symbol] in marker.go types the heterogeneous fields.
+// machinery. The markers in marker.go are read by name: [Symbol]
+// types the heterogeneous fields, and [Body] types a callable's
+// emit-side content.
 //
 // # Annotations
 //

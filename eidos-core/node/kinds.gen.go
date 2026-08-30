@@ -14,9 +14,10 @@ import (
 // free function, a Python module-level def, a TypeScript exported
 // function.
 //
-// The model carries the signature and never a body. Generated
-// bodies are an emit-side concern, and parsed bodies are out of
-// scope entirely.
+// The node model carries the signature and never a body, because
+// parsed bodies are out of scope entirely. The emit model carries
+// what a generated body holds in its Body field: the standard
+// slots, and one content form.
 //
 // This is the node spelling of the kind.
 type Function struct {
@@ -70,6 +71,9 @@ func (x *Function) Identity() symbol.Identity { return x.ID }
 // default method, a Kotlin interface method, a Rust default impl.
 // It differs from Abstract's inverse, because a class method with a
 // body is ordinary rather than a default.
+//
+// The node model carries the signature and never a body; the emit
+// model carries what a generated body holds in its Body field.
 //
 // This is the node spelling of the kind.
 type Method struct {

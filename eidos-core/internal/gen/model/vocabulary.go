@@ -47,6 +47,13 @@ const (
 	// field of this type holds any kind.
 	MarkerName = "Symbol"
 
+	// BodyMarkerName is the schema's body marker: a field of this
+	// type carries a callable's emit-side content. The spelling
+	// passes through bare, where it resolves to the emit package's
+	// own Body value; the node model never sees the field, because
+	// the schema declares it emit-side.
+	BodyMarkerName = "Body"
+
 	// HostField names the owning declaration of an owned kind. It
 	// holds an identity rather than a pointer, so it is resolved
 	// through a tracked read like any other cross-reference.

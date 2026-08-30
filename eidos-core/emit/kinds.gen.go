@@ -14,9 +14,10 @@ import (
 // free function, a Python module-level def, a TypeScript exported
 // function.
 //
-// The model carries the signature and never a body. Generated
-// bodies are an emit-side concern, and parsed bodies are out of
-// scope entirely.
+// The node model carries the signature and never a body, because
+// parsed bodies are out of scope entirely. The emit model carries
+// what a generated body holds in its Body field: the standard
+// slots, and one content form.
 //
 // This is the emit spelling of the kind.
 type Function struct {
@@ -27,6 +28,7 @@ type Function struct {
 	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
 	Params     []*Param          `json:"params,omitzero"`
 	Returns    []*Return         `json:"returns,omitzero"`
+	Body       Body              `json:"body,omitzero"`
 }
 
 // Kind answers [symbol.KindFunction].
@@ -66,6 +68,9 @@ func (x *Function) Docs() []string { return x.Doc }
 // It differs from Abstract's inverse, because a class method with a
 // body is ordinary rather than a default.
 //
+// The node model carries the signature and never a body; the emit
+// model carries what a generated body holds in its Body field.
+//
 // This is the emit spelling of the kind.
 type Method struct {
 	Origin     symbol.Identity   `json:"origin,omitzero"`
@@ -82,6 +87,7 @@ type Method struct {
 	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
 	Params     []*Param          `json:"params,omitzero"`
 	Returns    []*Return         `json:"returns,omitzero"`
+	Body       Body              `json:"body,omitzero"`
 }
 
 // Kind answers [symbol.KindMethod].

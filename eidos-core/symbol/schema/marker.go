@@ -14,3 +14,12 @@ package schema
 // It is a marker: it declares no methods, and the generator reads
 // it by name rather than by structure.
 type Symbol any
+
+// Body marks a field that holds a callable's emit-side content.
+//
+// The generator carries the field through to the emit model, where
+// the spelling resolves to that package's own Body value; the node
+// model never sees the field, because it is declared emit-side and
+// parsed bodies are out of scope. Like [Symbol], it is a marker
+// read by name.
+type Body any
