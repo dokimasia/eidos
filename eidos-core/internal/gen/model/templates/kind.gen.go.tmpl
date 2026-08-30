@@ -1,0 +1,27 @@
+{{template "header" .}}
+import "strconv"
+
+// The declaration kinds, one per schema struct, in schema
+// declaration order.
+const (
+	KindInvalid Kind = iota
+{{- range .Kinds}}
+	Kind{{.Name}}
+{{- end}}
+)
+
+// kindNames answers [Kind.String].
+var kindNames = [...]string{
+	KindInvalid: "Invalid",
+{{- range .Kinds}}
+	Kind{{.Name}}: "{{.Name}}",
+{{- end}}
+}
+
+// String names the kind, or "Kind(n)" for a value outside the set.
+func (k Kind) String() string {
+	if int(k) >= len(kindNames) {
+		return "Kind(" + strconv.Itoa(int(k)) + ")"
+	}
+	return kindNames[k]
+}

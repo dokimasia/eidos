@@ -27,8 +27,6 @@
 //     tree over a cyclic graph.
 //   - slot=<name>: on the emit side the field becomes slot storage
 //     with typed accessors instead of a plain slice.
-//   - owner: the generated RewireOwners pass fills each element's
-//     Host with the declaring symbol.
 //
 // # Field conventions
 //
@@ -44,8 +42,11 @@
 //     have none, so the field is node-only.
 //   - Doc: the declaration's documentation, one entry per line,
 //     with the comment markers already stripped.
-//   - Host: the owner back-pointer on an owned kind, filled by
-//     RewireOwners. It is never walk-tagged.
+//   - Host: the identity of the declaration that owns an owned
+//     kind, set when a frontend creates the child. It is an
+//     identity rather than a pointer, so it can be stored,
+//     compared and carried across runs, and reaching the owner
+//     goes through a tracked read like any other cross-reference.
 //
 // # Emptiness
 //
@@ -61,4 +62,4 @@
 // core/symbol/schema imports only core/symbol and core/position.
 package schema
 
-//go:generate go run go.dokimi.dev/eidos/core/internal/gen/symbol
+//go:generate go run go.dokimi.dev/eidos/core/internal/gen/model/cmd

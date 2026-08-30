@@ -27,10 +27,6 @@ const (
 	// tree over a cyclic graph.
 	WalkToken = "walk"
 
-	// OwnerToken makes the generated rewiring pass fill each
-	// element's host back-pointer.
-	OwnerToken = "owner"
-
 	// SlotPrefix opens a slot declaration, "slot=fields". On the
 	// emit side the field becomes slot storage with typed
 	// accessors instead of a plain slice.
@@ -43,8 +39,9 @@ const (
 	// field of this type holds any kind.
 	MarkerName = "Symbol"
 
-	// HostField is the owner back-pointer an owned kind declares.
-	// The rewiring pass fills it, and it never carries WalkToken.
+	// HostField names the owning declaration of an owned kind. It
+	// holds an identity rather than a pointer, so it is resolved
+	// through a tracked read like any other cross-reference.
 	HostField = "Host"
 )
 

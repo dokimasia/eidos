@@ -244,7 +244,7 @@ It contains plain structs, one per kind, plus one marker:
 type Symbol interface{}
 ```
 
-The tag vocabulary is closed: `eidos:"side[,walk][,slot=name][,owner]"`
+The tag vocabulary is closed: `eidos:"side[,walk][,slot=name]"`
 with side one of `both`, `node`, `emit`. An unknown token fails
 generation with the schema position; RFC-0002 carries the full
 validation list. Three fields follow conventions rather than tags:
@@ -256,10 +256,11 @@ validation list. Three fields follow conventions rather than tags:
   kind: the node symbol an emit value derives from. Origin points one
   way, and no node field refers to emit, which is the symbol model's
   one-way origin law.
-- `Host Symbol` is the owner back-pointer on owned kinds. The
-  generated `RewireOwners` sets it, and it is never `walk`-tagged, so
-  the walked structure stays a tree even though the graph is cyclic.
-  The generator enforces that rule.
+- `Host symbol.Identity` is node-side on every owned kind: the
+  identity of the declaration that holds it, set when a frontend
+  creates the child. It is an identity rather than a pointer for the
+  reason `TypeRef.Target` is, and reaching the owner therefore goes
+  through a tracked read (ADR-0006).
 
 The full inventory. Kinds group by family, one file each under
 `symbol/schema`, and the documentation lives with the declarations:
@@ -294,20 +295,20 @@ type Import struct {
     ID       symbol.Identity `eidos:"node"`
     Pos      position.Pos    `eidos:"node"`
     Path     string          `eidos:"node"`
-    Alias    string          `eidos:"node"`            // module-level alias; "" when unaliased
-    Names    []*Binding      `eidos:"node,walk,owner"` // per-symbol bindings
-    Default  string          `eidos:"node"`            // local name for the module's default export
-    Wildcard bool            `eidos:"node"`            // every exported name enters scope
+    Alias    string          `eidos:"node"`      // module-level alias; "" when unaliased
+    Names    []*Binding      `eidos:"node,walk"` // per-symbol bindings
+    Default  string          `eidos:"node"`      // local name for the module's default export
+    Wildcard bool            `eidos:"node"`      // every exported name enters scope
 }
 
 type Export struct {
     ID       symbol.Identity `eidos:"node"`
     Pos      position.Pos    `eidos:"node"`
     Doc      []string        `eidos:"node"`
-    Path     string          `eidos:"node"`            // source module; "" when re-exporting local names
-    Names    []*Binding      `eidos:"node,walk,owner"` // per-symbol bindings
-    Default  string          `eidos:"node"`            // name published as the module's default export
-    Wildcard bool            `eidos:"node"`            // every name of Path is republished
+    Path     string          `eidos:"node"`      // source module; "" when re-exporting local names
+    Names    []*Binding      `eidos:"node,walk"` // per-symbol bindings
+    Default  string          `eidos:"node"`      // name published as the module's default export
+    Wildcard bool            `eidos:"node"`      // every name of Path is republished
 }
 
 type Binding struct {
@@ -315,7 +316,7 @@ type Binding struct {
     Pos   position.Pos    `eidos:"node"`
     Name  string          `eidos:"node"`
     Alias string          `eidos:"node"` // "" when unrenamed
-    Host  Symbol          `eidos:"node"`
+    Host  symbol.Identity `eidos:"node"`
 }
 
 // Structural type declarations.
@@ -331,7 +332,7 @@ type Struct struct {
     Final      bool              `eidos:"both"` // subclassing is forbidden
     TypeParams []*TypeParam      `eidos:"both,walk"`
     Fields     []*Field          `eidos:"both,walk,slot=fields"`
-    Methods    []*Method         `eidos:"both,walk,slot=methods,owner"`
+    Methods    []*Method         `eidos:"both,walk,slot=methods"`
     Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations
     Embeds     []*Embed          `eidos:"both,walk"`            // compositional promotion
     Extends    []*TypeRef        `eidos:"both,walk"`            // nominal supertypes
@@ -347,7 +348,7 @@ type Interface struct {
     Visibility symbol.Visibility `eidos:"both"`
     TypeParams []*TypeParam      `eidos:"both,walk"`
     Fields     []*Field          `eidos:"both,walk,slot=fields"` // properties, not just methods
-    Methods    []*Method         `eidos:"both,walk,slot=methods,owner"`
+    Methods    []*Method         `eidos:"both,walk,slot=methods"`
     Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations and associated types
     Embeds     []*Embed          `eidos:"both,walk"`
     Extends    []*TypeRef        `eidos:"both,walk"`
@@ -373,9 +374,9 @@ type Enum struct {
     Doc        []string          `eidos:"both"`
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
-    Variants   []*EnumVariant    `eidos:"both,walk,slot=variants,owner"`
-    Fields     []*Field          `eidos:"both,walk,slot=fields"`        // Java enums carry instance state
-    Methods    []*Method         `eidos:"both,walk,slot=methods,owner"` // and behaviour
+    Variants   []*EnumVariant    `eidos:"both,walk,slot=variants"`
+    Fields     []*Field          `eidos:"both,walk,slot=fields"`  // Java enums carry instance state
+    Methods    []*Method         `eidos:"both,walk,slot=methods"` // and behaviour
 }
 
 type EnumVariant struct {
@@ -385,7 +386,7 @@ type EnumVariant struct {
     Doc    []string        `eidos:"both"`
     Name   string          `eidos:"both"`
     Value  string          `eidos:"both"` // source spelling, unevaluated
-    Host   Symbol          `eidos:"both"`
+    Host   symbol.Identity `eidos:"node"`
 }
 
 type Sum struct {
@@ -396,8 +397,8 @@ type Sum struct {
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
     TypeParams []*TypeParam      `eidos:"both,walk"` // Rust data enums are generic
-    Variants   []*SumVariant     `eidos:"both,walk,slot=variants,owner"`
-    Methods    []*Method         `eidos:"both,walk,slot=methods,owner"`
+    Variants   []*SumVariant     `eidos:"both,walk,slot=variants"`
+    Methods    []*Method         `eidos:"both,walk,slot=methods"`
 }
 
 type SumVariant struct {
@@ -407,7 +408,7 @@ type SumVariant struct {
     Doc    []string        `eidos:"both"`
     Name   string          `eidos:"both"`
     Fields []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
-    Host   Symbol          `eidos:"both"`
+    Host   symbol.Identity `eidos:"node"`
 }
 
 // Callables and parameters.
@@ -441,7 +442,7 @@ type Method struct {
     TypeParams []*TypeParam      `eidos:"both,walk"`
     Params     []*Param          `eidos:"both,walk"`
     Returns    []*Return         `eidos:"both,walk"`
-    Host       Symbol            `eidos:"both"`
+    Host       symbol.Identity   `eidos:"node"`
 }
 
 type Param struct {
@@ -473,7 +474,7 @@ type Field struct {
     Level      symbol.Level      `eidos:"both"`
     Mutability symbol.Mutability `eidos:"both"`
     Type       *TypeRef          `eidos:"both,walk"`
-    Host       Symbol            `eidos:"both"`
+    Host       symbol.Identity   `eidos:"node"`
 }
 
 type Variable struct {
@@ -530,7 +531,7 @@ type Embed struct {
     ID   symbol.Identity `eidos:"node"`
     Pos  position.Pos    `eidos:"node"`
     Ref  *TypeRef        `eidos:"both,walk"`
-    Host Symbol          `eidos:"both"`
+    Host symbol.Identity `eidos:"node"`
 }
 ```
 
@@ -558,11 +559,9 @@ func (x *Field) TypeRef() symbol.Symbol       // Typed
 func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool)
 func All(s symbol.Symbol) iter.Seq[symbol.Symbol] // the range-over-func wrapper
 
-// rewire.gen.go, per side: sets Host on every owner-tagged child.
-func RewireOwners(s symbol.Symbol)
-
 // json.gen.go, per side: kind-discriminated round-trip.
-// {"kind":"Struct","name":"Store",...}; identities encode as objects.
+// {"kind":"Struct","name":"Store",...}; identities encode as
+// objects, and an owner identity encodes like any other field.
 func EncodeJSON(s symbol.Symbol) ([]byte, error)
 func DecodeJSON(data []byte) (symbol.Symbol, error)
 

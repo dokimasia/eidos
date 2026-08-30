@@ -44,6 +44,9 @@ func (s Side) OnEmit() bool { return s == SideEmit || s == SideBoth }
 type KindSpec struct {
 	// Name is the kind's Go type name, "Struct".
 	Name string
+	// Doc is the schema's documentation for the kind, one entry per
+	// line with the comment markers stripped.
+	Doc []string
 	// Fields are the annotated fields, in declaration order.
 	Fields []FieldSpec
 }
@@ -60,13 +63,16 @@ type KindSpec struct {
 // holds many of them, and IsSymbol says the field is typed by the
 // [MarkerName] marker and so admits any kind.
 type FieldSpec struct {
-	Name     string
+	Name string
+	// Doc is the schema's documentation for the field, and Comment
+	// its trailing line comment.
+	Doc      []string
+	Comment  string
 	Type     string
 	Elem     string
 	Side     Side
 	Walk     bool
 	Slot     string
-	Owner    bool
 	Slice    bool
 	IsSymbol bool
 }
@@ -83,7 +89,7 @@ type FieldSpec struct {
 // schema position. The package documentation lists them.
 func Lower(dir, modRoot string) ([]KindSpec, error) {
 	fset := token.NewFileSet()
-	_, files, err := gosource.Load(fset, dir, SchemaPackage, modRoot)
+	_, files, err := gosource.Load(fset, dir, SchemaPackage, modRoot, gosource.HandWritten)
 	if err != nil {
 		return nil, fmt.Errorf("model: load schema: %w", err)
 	}
@@ -113,6 +119,7 @@ type declaration struct {
 	name string
 	typ  *ast.StructType
 	pos  token.Pos
+	doc  []string
 }
 
 // collect gathers the schema's struct declarations in order.
@@ -152,10 +159,15 @@ func collect(fset *token.FileSet, files []*ast.File) ([]declaration, error) {
 					return nil, at(fset, typeSpec.Pos(),
 						"%s is not exported: every kind is public", typeSpec.Name.Name)
 				}
+				doc := typeSpec.Doc
+				if doc == nil {
+					doc = group.Doc
+				}
 				out = append(out, declaration{
 					name: typeSpec.Name.Name,
 					typ:  structType,
 					pos:  typeSpec.Pos(),
+					doc:  docLines(doc),
 				})
 			}
 		}
@@ -174,7 +186,7 @@ func lowerKind(
 	d declaration,
 	structs map[string]*ast.StructType,
 ) (KindSpec, error) {
-	kind := KindSpec{Name: d.name}
+	kind := KindSpec{Name: d.name, Doc: d.doc}
 	slots := make(map[string]bool)
 
 	for _, field := range d.typ.Fields.List {
@@ -187,17 +199,16 @@ func lowerKind(
 			if err != nil {
 				return KindSpec{}, err
 			}
+			spec.Doc = docLines(field.Doc)
+			if lines := docLines(field.Comment); len(lines) == 1 {
+				spec.Comment = lines[0]
+			}
 			if spec.Slot != "" {
 				if slots[spec.Slot] {
 					return KindSpec{}, at(fset, field.Pos(),
 						"%s declares slot %q twice", d.name, spec.Slot)
 				}
 				slots[spec.Slot] = true
-			}
-			if spec.Owner {
-				if err := requireHost(fset, field.Pos(), spec, structs); err != nil {
-					return KindSpec{}, err
-				}
 			}
 			kind.Fields = append(kind.Fields, spec)
 		}
@@ -227,20 +238,18 @@ func lowerField(
 		switch {
 		case tok == WalkToken:
 			spec.Walk = true
-		case tok == OwnerToken:
-			spec.Owner = true
 		case strings.HasPrefix(tok, SlotPrefix):
 			spec.Slot = strings.TrimPrefix(tok, SlotPrefix)
 		default:
 			return FieldSpec{}, at(fset, expr.Pos(),
-				"%s carries unknown tag token %q: the vocabulary is %s, %s, %s and a side",
-				name, tok, WalkToken, OwnerToken, SlotPrefix)
+				"%s carries unknown tag token %q: the vocabulary is %s, %s and a side",
+				name, tok, WalkToken, SlotPrefix)
 		}
 	}
 	return spec, validate(fset, expr.Pos(), spec)
 }
 
-// validate holds the three rules a lowered field has to satisfy.
+// validate holds the two rules a lowered field has to satisfy.
 func validate(fset *token.FileSet, pos token.Pos, spec FieldSpec) error {
 	referencesKind := spec.Elem != ""
 
@@ -250,43 +259,11 @@ func validate(fset *token.FileSet, pos token.Pos, spec FieldSpec) error {
 			spec.Name, WalkToken, spec.Type, MarkerName)
 	}
 	sliceOfKinds := spec.Slice && (referencesKind || spec.IsSymbol)
-	if (spec.Slot != "" || spec.Owner) && !sliceOfKinds {
-		token := SlotPrefix
-		if spec.Owner {
-			token = OwnerToken
-		}
+	if spec.Slot != "" && !sliceOfKinds {
 		return at(fset, pos, "%s is tagged %s but %s is not a slice of kinds",
-			spec.Name, token, spec.Type)
-	}
-	if spec.Name == HostField && spec.Walk {
-		return at(fset, pos,
-			"%s is tagged %s: the back-pointer stays out of the traversal, "+
-				"which is what keeps it a tree over a cyclic graph", HostField, WalkToken)
+			spec.Name, SlotPrefix, spec.Type)
 	}
 	return nil
-}
-
-// requireHost refuses an owner-tagged slice whose element kind
-// declares no back-pointer for the rewiring pass to fill.
-func requireHost(
-	fset *token.FileSet,
-	pos token.Pos,
-	spec FieldSpec,
-	structs map[string]*ast.StructType,
-) error {
-	element, ok := structs[spec.Elem]
-	if !ok {
-		return nil
-	}
-	for _, field := range element.Fields.List {
-		for _, name := range field.Names {
-			if name.Name == HostField {
-				return nil
-			}
-		}
-	}
-	return at(fset, pos, "%s is tagged %s but %s declares no %s field",
-		spec.Name, OwnerToken, spec.Elem, HostField)
 }
 
 // describe renders a field's type as the generated model spells it
@@ -353,6 +330,24 @@ func parseSide(fset *token.FileSet, pos token.Pos, tok string) (Side, error) {
 		return SideNode, at(fset, pos, "unknown side %q: a tag opens with %s, %s or %s",
 			tok, SideNodeToken, SideEmitToken, SideBothToken)
 	}
+}
+
+// docLines renders a comment group as plain lines, with the markers
+// and one leading space stripped.
+//
+// The schema documents every kind and most fields, and the
+// generated models carry that documentation rather than a generic
+// stand-in: the contract is written once, where it is decided.
+func docLines(group *ast.CommentGroup) []string {
+	if group == nil {
+		return nil
+	}
+	out := make([]string, 0, len(group.List))
+	for _, comment := range group.List {
+		text := strings.TrimPrefix(comment.Text, "//")
+		out = append(out, strings.TrimPrefix(text, " "))
+	}
+	return out
 }
 
 // at formats an error carrying its schema position.

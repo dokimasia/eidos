@@ -36,8 +36,22 @@ func TestImporter(t *testing.T) {
 			if pkg.Scope().Lookup("Value") == nil {
 				t.Fatal("Value is missing from the imported package")
 			}
-			if pkg.Scope().Lookup("Generated") != nil {
-				t.Fatal("Generated resolved: the importer read a .gen.go file")
+		})
+
+		t.Run("resolves a dependency's generated declarations", func(t *testing.T) {
+			t.Parallel()
+
+			imp, err := gosource.NewImporter(token.NewFileSet(), modRoot)
+			if err != nil {
+				t.Fatalf("NewImporter: unexpected error: %v", err)
+			}
+			pkg, err := imp.Import("example.test/fixture/lib")
+			if err != nil {
+				t.Fatalf("Import: unexpected error: %v", err)
+			}
+			if pkg.Scope().Lookup("Generated") == nil {
+				t.Fatal("Generated is missing: hand-written code in a dependency " +
+					"may refer to what its own generator produced")
 			}
 		})
 

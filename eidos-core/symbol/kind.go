@@ -10,36 +10,8 @@ package symbol
 // reads the same against the emit model. The zero value is
 // [KindInvalid], which no declaration answers.
 //
-// One constant exists per schema struct, in schema declaration
-// order. The values belong to a build: nothing durable stores them,
-// because the JSON codecs encode kind names and the sealed state
-// carries its own format version.
+// One constant exists per schema struct, generated from the schema
+// into kind.gen.go. The values belong to a build: nothing durable
+// stores them, because the codecs encode kind names and the sealed
+// state carries its own format version.
 type Kind uint8
-
-// The declaration kinds, one per schema struct.
-const (
-	KindInvalid Kind = iota
-	KindPackage
-	KindFile
-	KindImport
-	KindExport
-	KindBinding
-	KindStruct
-	KindInterface
-	KindEnum
-	KindEnumVariant
-	KindSum
-	KindSumVariant
-	KindAlias
-	KindConstraint
-	KindFunction
-	KindMethod
-	KindField
-	KindParam
-	KindReturn
-	KindVariable
-	KindConstant
-	KindTypeParam
-	KindTypeRef
-	KindEmbed
-)

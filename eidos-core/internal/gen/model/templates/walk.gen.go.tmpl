@@ -1,0 +1,57 @@
+{{template "header" .}}
+import (
+	"iter"
+
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// Walk visits s and every declaration it contains, depth first, in
+// schema field order.
+//
+// Returning false from visit prunes that subtree and continues.
+// Only containment edges are followed, so the walk is a tree even
+// though the graph is not: a back-pointer is never traversed, and a
+// cross-reference is an identity rather than a pointer.
+func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
+	if s == nil || !visit(s) {
+		return
+	}
+	switch x := s.(type) {
+{{- range .Views}}
+{{- if .Walked}}
+	case *{{.Name}}:
+{{- range .Walked}}
+{{- if .Slice}}
+		for _, child := range {{.Items}} {
+			Walk(child, visit)
+		}
+{{- else}}
+		if x.{{.Storage}} != nil {
+			Walk(x.{{.Storage}}, visit)
+		}
+{{- end}}
+{{- end}}
+{{- end}}
+{{- end}}
+	}
+}
+
+// All answers the same traversal as [Walk] as an iterator.
+//
+// Stopping the range stops the walk, which differs from Walk's own
+// visit: there, false prunes one subtree.
+func All(s symbol.Symbol) iter.Seq[symbol.Symbol] {
+	return func(yield func(symbol.Symbol) bool) {
+		stopped := false
+		Walk(s, func(n symbol.Symbol) bool {
+			if stopped {
+				return false
+			}
+			if !yield(n) {
+				stopped = true
+				return false
+			}
+			return true
+		})
+	}
+}

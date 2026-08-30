@@ -55,7 +55,7 @@ eidos-core/
                  interfaces (Symbol, Membered, Typed, Documented),
                  schema/ — the hand-written source of truth for kinds
   node/  emit/   the two concrete models, GENERATED from symbol/schema:
-                 kind structs, Walk, RewireOwners, JSON, mirror guards.
+                 kind structs, Walk, JSON, mirror guards.
                  Hand-written per side: node's resolver, queries, and
                  freeze; emit's slots, Target, Ref variants, Expr/Stmt,
                  samples, and the builder

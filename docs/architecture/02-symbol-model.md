@@ -47,7 +47,7 @@ Hand-written, small, and slow to change:
 
 A generator reads `symbol/schema` with `go/ast` and `go/types`, then
 writes, for both sides: the concrete kind structs, `Walk`,
-`RewireOwners`, JSON encoding and the mirror guards. The output is
+JSON encoding and the mirror guards. The output is
 committed. Consumers never run the generator, and changing the model
 costs a schema edit plus a regeneration. Editing a generated file
 fails CI, because the mirror guard reruns the tool and diffs the
@@ -222,6 +222,12 @@ seen it.
 - **Origin points one way.** An emit symbol links to the node symbol
   it came from, and a node symbol never refers to emit. The read
   side cannot observe the write side.
+- **A reference is an identity, never a pointer.** A type reference
+  names what it resolves to, and an owned declaration names the
+  declaration that holds it, both by canonical identity. A key can
+  be stored, compared and carried across runs; a pointer cannot, and
+  a pointer read is invisible to the tracked Reader
+  ([ADR-0006](../adr/0006-host-is-an-identity.md)).
 - Adding a kind or a field is a schema edit and nothing else.
 
 ## Why two models

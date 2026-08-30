@@ -22,7 +22,7 @@ func TestLoad(t *testing.T) {
 			t.Parallel()
 
 			fset := token.NewFileSet()
-			files, err := gosource.ParseDir(fset, "testdata/mod/lib")
+			files, err := gosource.ParseDir(fset, "testdata/mod/lib", gosource.HandWritten)
 			if err != nil {
 				t.Fatalf("ParseDir: unexpected error: %v", err)
 			}
@@ -35,11 +35,28 @@ func TestLoad(t *testing.T) {
 			}
 		})
 
+		t.Run("reads generated files in complete mode", func(t *testing.T) {
+			t.Parallel()
+
+			fset := token.NewFileSet()
+			files, err := gosource.ParseDir(fset, "testdata/mod/lib", gosource.Complete)
+			if err != nil {
+				t.Fatalf("ParseDir: unexpected error: %v", err)
+			}
+			var got []string
+			for _, f := range files {
+				got = append(got, filepath.Base(fset.Position(f.Pos()).Filename))
+			}
+			if want := "lib.gen.go,lib.go"; strings.Join(got, ",") != want {
+				t.Fatalf("files = %v, want %s", got, want)
+			}
+		})
+
 		t.Run("reads files in name order", func(t *testing.T) {
 			t.Parallel()
 
 			fset := token.NewFileSet()
-			files, err := gosource.ParseDir(fset, "testdata/mod/app")
+			files, err := gosource.ParseDir(fset, "testdata/mod/app", gosource.HandWritten)
 			if err != nil {
 				t.Fatalf("ParseDir: unexpected error: %v", err)
 			}
@@ -56,7 +73,7 @@ func TestLoad(t *testing.T) {
 		t.Run("reports a directory holding no hand-written file", func(t *testing.T) {
 			t.Parallel()
 
-			if _, err := gosource.ParseDir(token.NewFileSet(), "testdata/empty"); err == nil {
+			if _, err := gosource.ParseDir(token.NewFileSet(), "testdata/empty", gosource.HandWritten); err == nil {
 				t.Fatal("ParseDir: error = nil, want non-nil")
 			}
 		})
@@ -74,6 +91,7 @@ func TestLoad(t *testing.T) {
 			}
 			pkg, files, err := gosource.Load(
 				token.NewFileSet(), "testdata/mod/app", "example.test/fixture/app", modRoot,
+				gosource.HandWritten,
 			)
 			if err != nil {
 				t.Fatalf("Load: unexpected error: %v", err)
@@ -98,6 +116,7 @@ func TestLoad(t *testing.T) {
 			}
 			pkg, _, err := gosource.Load(
 				token.NewFileSet(), "testdata/mod/lib", "example.test/fixture/lib", modRoot,
+				gosource.HandWritten,
 			)
 			if err != nil {
 				t.Fatalf("Load: unexpected error: %v", err)
@@ -112,6 +131,7 @@ func TestLoad(t *testing.T) {
 
 			_, _, err := gosource.Load(
 				token.NewFileSet(), "testdata/mod/app", "example.test/fixture/app", "",
+				gosource.HandWritten,
 			)
 			if err == nil {
 				t.Fatal("Load without a module root: error = nil, want non-nil")

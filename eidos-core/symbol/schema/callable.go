@@ -70,7 +70,7 @@ type Method struct {
 	TypeParams []*TypeParam      `eidos:"both,walk"`
 	Params     []*Param          `eidos:"both,walk"`
 	Returns    []*Return         `eidos:"both,walk"`
-	Host       Symbol            `eidos:"both"`
+	Host       symbol.Identity   `eidos:"node"`
 }
 
 // Param is one parameter of a callable, or its receiver.

@@ -84,5 +84,5 @@ type Embed struct {
 	ID   symbol.Identity `eidos:"node"`
 	Pos  position.Pos    `eidos:"node"`
 	Ref  *TypeRef        `eidos:"both,walk"`
-	Host Symbol          `eidos:"both"`
+	Host symbol.Identity `eidos:"node"`
 }

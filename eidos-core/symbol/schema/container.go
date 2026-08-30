@@ -66,10 +66,10 @@ type Import struct {
 	ID       symbol.Identity `eidos:"node"`
 	Pos      position.Pos    `eidos:"node"`
 	Path     string          `eidos:"node"`
-	Alias    string          `eidos:"node"`            // module-level alias; "" when unaliased
-	Names    []*Binding      `eidos:"node,walk,owner"` // per-symbol bindings
-	Default  string          `eidos:"node"`            // local name for the module's default export
-	Wildcard bool            `eidos:"node"`            // every exported name enters scope
+	Alias    string          `eidos:"node"`      // module-level alias; "" when unaliased
+	Names    []*Binding      `eidos:"node,walk"` // per-symbol bindings
+	Default  string          `eidos:"node"`      // local name for the module's default export
+	Wildcard bool            `eidos:"node"`      // every exported name enters scope
 }
 
 // Export is one re-export statement: a name this file publishes
@@ -88,10 +88,10 @@ type Export struct {
 	ID       symbol.Identity `eidos:"node"`
 	Pos      position.Pos    `eidos:"node"`
 	Doc      []string        `eidos:"node"`
-	Path     string          `eidos:"node"`            // source module; "" when re-exporting local names
-	Names    []*Binding      `eidos:"node,walk,owner"` // per-symbol bindings
-	Default  string          `eidos:"node"`            // name published as the module's default export
-	Wildcard bool            `eidos:"node"`            // every name of Path is republished
+	Path     string          `eidos:"node"`      // source module; "" when re-exporting local names
+	Names    []*Binding      `eidos:"node,walk"` // per-symbol bindings
+	Default  string          `eidos:"node"`      // name published as the module's default export
+	Wildcard bool            `eidos:"node"`      // every name of Path is republished
 }
 
 // Binding is one name bound by an [Import] or published by an
@@ -107,5 +107,5 @@ type Binding struct {
 	Pos   position.Pos    `eidos:"node"`
 	Name  string          `eidos:"node"`
 	Alias string          `eidos:"node"` // "" when unrenamed
-	Host  Symbol          `eidos:"node"`
+	Host  symbol.Identity `eidos:"node"`
 }

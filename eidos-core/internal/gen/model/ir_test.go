@@ -58,8 +58,8 @@ func TestIR(t *testing.T) {
 				t.Fatalf("Pos = %+v, want the node side only", got)
 			}
 			parts := fields["Parts"]
-			if !parts.Walk || parts.Slot != "parts" || !parts.Owner {
-				t.Fatalf("Parts = %+v, want walk, slot=parts and owner", parts)
+			if !parts.Walk || parts.Slot != "parts" {
+				t.Fatalf("Parts = %+v, want walk and slot=parts", parts)
 			}
 			if parts.Elem != "Part" || !parts.Slice || parts.Type != "[]*Part" {
 				t.Fatalf("Parts = %+v, want a slice of Part spelled []*Part", parts)
@@ -114,8 +114,11 @@ func TestIR(t *testing.T) {
 					methods = field
 				}
 			}
-			if methods.Slot != "methods" || !methods.Owner || methods.Elem != "Method" {
-				t.Fatalf("Struct.Methods = %+v, want slot=methods, owner, elem Method", methods)
+			if methods.Slot != "methods" || methods.Elem != "Method" {
+				t.Fatalf("Struct.Methods = %+v, want slot=methods and elem Method", methods)
+			}
+			if len(byName["Struct"].Doc) == 0 {
+				t.Fatal("Struct carries no documentation: the schema's docblock was dropped")
 			}
 		})
 
@@ -128,8 +131,6 @@ func TestIR(t *testing.T) {
 				want string
 			}{
 				{"unknown tag token", "testdata/badtoken", "walkk"},
-				{"walk-tagged host", "testdata/hostwalk", model.HostField},
-				{"owner slice whose element has no host", "testdata/ownernohost", model.HostField},
 				{"duplicate slot name", "testdata/dupslot", "parts"},
 				{"slot on a field that is not a slice", "testdata/slotnotslice", model.SlotPrefix},
 				{"walk on a field that is not a kind", "testdata/walkbadtype", model.WalkToken},

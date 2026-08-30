@@ -1,0 +1,58 @@
+{{template "header" .}}
+import (
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+{{range .Views}}{{$v := .}}
+{{- range .Doc}}
+// {{.}}
+{{- end}}
+//
+// This is the {{$.Package}} spelling of the kind.
+type {{.Name}} struct {
+{{- range .Fields}}
+{{- range .Doc}}
+	// {{.}}
+{{- end}}
+	{{.Storage}} {{.Decl}}{{if .Comment}} // {{.Comment}}{{end}}
+{{- end}}
+}
+
+// Kind answers [symbol.Kind{{.Name}}].
+func (x *{{.Name}}) Kind() symbol.Kind { return symbol.Kind{{.Name}} }
+
+// Position answers where the declaration was written.
+func (x *{{.Name}}) Position() position.Pos { return {{.PosExpr}} }
+
+// Docs answers the declaration's documentation, nil when it carries
+// none.
+func (x *{{.Name}}) Docs() []string { return {{.DocExpr}} }
+{{- range .Members}}
+
+// {{.Method}} answers the member list, adapted for neutral code.
+{{- if not .Items}} This kind carries none, so it answers nil.
+{{- end}}
+func (x *{{$v.Name}}) {{.Method}}() []symbol.Symbol {
+{{- if .Items}}
+	out := make([]symbol.Symbol, 0, {{.Len}})
+	for _, member := range {{.Items}} {
+		out = append(out, member)
+	}
+	return out
+{{- else}}
+	return nil
+{{- end}}
+}
+{{- end}}
+{{- if .TypeRefStorage}}
+
+// TypeRef answers the declaration's own type reference, nil when
+// the source states none.
+func (x *{{.Name}}) TypeRef() symbol.Symbol {
+	if x.{{.TypeRefStorage}} == nil {
+		return nil
+	}
+	return x.{{.TypeRefStorage}}
+}
+{{- end}}
+{{end}}

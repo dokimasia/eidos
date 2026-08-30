@@ -43,7 +43,7 @@ type Struct struct {
 	Final      bool              `eidos:"both"` // subclassing is forbidden
 	TypeParams []*TypeParam      `eidos:"both,walk"`
 	Fields     []*Field          `eidos:"both,walk,slot=fields"`
-	Methods    []*Method         `eidos:"both,walk,slot=methods,owner"`
+	Methods    []*Method         `eidos:"both,walk,slot=methods"`
 	Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations
 	Embeds     []*Embed          `eidos:"both,walk"`            // compositional promotion
 	Extends    []*TypeRef        `eidos:"both,walk"`            // nominal supertypes
@@ -77,7 +77,7 @@ type Interface struct {
 	Visibility symbol.Visibility `eidos:"both"`
 	TypeParams []*TypeParam      `eidos:"both,walk"`
 	Fields     []*Field          `eidos:"both,walk,slot=fields"` // properties, not just methods
-	Methods    []*Method         `eidos:"both,walk,slot=methods,owner"`
+	Methods    []*Method         `eidos:"both,walk,slot=methods"`
 	Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations and associated types
 	Embeds     []*Embed          `eidos:"both,walk"`
 	Extends    []*TypeRef        `eidos:"both,walk"`

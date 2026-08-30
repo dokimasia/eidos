@@ -23,13 +23,12 @@ models come out of the generator, and a hand edit to either fails CI.
 - [ ] `eidos-core/symbol` holds the `Kind` enum, the walk interfaces
       and `schema/` with every kind in the inventory of
       [02-symbol-model.md](../architecture/02-symbol-model.md).
-- [ ] `internal/gen` reads the schema and writes both models: kind
-      structs, `Walk`, `RewireOwners`, JSON encoding, slot
-      declarations with typed accessors, and the mirror guards. The
-      output is committed.
+- [ ] `internal/gen/model` reads the schema and writes both models:
+      kind structs, `Walk`, JSON encoding, and slot declarations
+      with typed accessors. The output is committed.
 - [ ] Editing a generated file by hand makes `make check` fail: the
       mirror guard reruns the generator and diffs the tree.
-- [ ] A test asserts that `internal/gen` imports only the standard
+- [ ] A test asserts that the generator imports only the standard
       library.
 - [ ] `symbol.Identity` carries package path, kind, name and the
       signature discriminator, and two overloads get distinct
@@ -79,6 +78,7 @@ settled decisions.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Dropped RewireOwners from the exit criteria | The owner back-pointer became an identity set at construction, so the pass has nothing to fill (ADR-0006) |
 | 2026-08-30 | Status Planned to In progress | RFC-0001 and RFC-0002 accepted; implementation starts |
 | 2026-08-30 | Linked RFC-0001, RFC-0002 and ADR-0002 to 0005 | The design is written; the milestone points at the documents that hold it, and the documents never point back |
 | 2026-08-30 | Added at position 1 | First milestone of the initial plan: every other milestone consumes the generated models |

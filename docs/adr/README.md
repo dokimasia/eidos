@@ -19,3 +19,4 @@ way.
 | [0003](0003-json-codecs-round-trip.md) | JSON codecs round-trip | Accepted |
 | [0004](0004-generate-kind-enum-from-schema.md) | Generate the Kind enum from the schema | Accepted |
 | [0005](0005-concern-grouped-generated-files.md) | Group generated files by concern | Accepted |
+| [0006](0006-host-is-an-identity.md) | The owner back-pointer is an identity | Accepted |

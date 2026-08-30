@@ -15,9 +15,8 @@ import (
 // cache.
 //
 // Packages inside the module rooted at modRoot load from disk
-// through [ParseDir], so they read hand-written files only.
-// Everything else, the standard library included, goes to the
-// compiler's source importer.
+// through [Load] in [Complete] mode. Everything else, the standard
+// library included, goes to the compiler's source importer.
 //
 // Resolving from source is what keeps generation independent of a
 // prior build: a checkout with a cold cache generates the same
@@ -65,7 +64,7 @@ func (im *Importer) Import(path string) (*types.Package, error) {
 		return im.std.Import(path)
 	}
 	rel := strings.TrimPrefix(strings.TrimPrefix(path, im.modPath), "/")
-	pkg, _, err := Load(im.fset, filepath.Join(im.modRoot, rel), path, im.modRoot)
+	pkg, _, err := Load(im.fset, filepath.Join(im.modRoot, rel), path, im.modRoot, Complete)
 	if err != nil {
 		return nil, err
 	}

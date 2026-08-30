@@ -25,9 +25,9 @@ type Enum struct {
 	Doc        []string          `eidos:"both"`
 	Name       string            `eidos:"both"`
 	Visibility symbol.Visibility `eidos:"both"`
-	Variants   []*EnumVariant    `eidos:"both,walk,slot=variants,owner"`
-	Fields     []*Field          `eidos:"both,walk,slot=fields"`        // Java enums carry instance state
-	Methods    []*Method         `eidos:"both,walk,slot=methods,owner"` // and behaviour
+	Variants   []*EnumVariant    `eidos:"both,walk,slot=variants"`
+	Fields     []*Field          `eidos:"both,walk,slot=fields"`  // Java enums carry instance state
+	Methods    []*Method         `eidos:"both,walk,slot=methods"` // and behaviour
 }
 
 // EnumVariant is one member of an [Enum].
@@ -44,7 +44,7 @@ type EnumVariant struct {
 	Doc    []string        `eidos:"both"`
 	Name   string          `eidos:"both"`
 	Value  string          `eidos:"both"` // source spelling, unevaluated
-	Host   Symbol          `eidos:"both"`
+	Host   symbol.Identity `eidos:"node"`
 }
 
 // Sum is a closed set of named variants carrying payloads: a Rust
@@ -63,8 +63,8 @@ type Sum struct {
 	Name       string            `eidos:"both"`
 	Visibility symbol.Visibility `eidos:"both"`
 	TypeParams []*TypeParam      `eidos:"both,walk"` // Rust data enums are generic
-	Variants   []*SumVariant     `eidos:"both,walk,slot=variants,owner"`
-	Methods    []*Method         `eidos:"both,walk,slot=methods,owner"`
+	Variants   []*SumVariant     `eidos:"both,walk,slot=variants"`
+	Methods    []*Method         `eidos:"both,walk,slot=methods"`
 }
 
 // SumVariant is one variant of a [Sum]: a name and a field list.
@@ -78,5 +78,5 @@ type SumVariant struct {
 	Doc    []string        `eidos:"both"`
 	Name   string          `eidos:"both"`
 	Fields []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
-	Host   Symbol          `eidos:"both"`
+	Host   symbol.Identity `eidos:"node"`
 }

@@ -28,7 +28,7 @@ type Field struct {
 	Level      symbol.Level      `eidos:"both"`
 	Mutability symbol.Mutability `eidos:"both"`
 	Type       *TypeRef          `eidos:"both,walk"`
-	Host       Symbol            `eidos:"both"`
+	Host       symbol.Identity   `eidos:"node"`
 }
 
 // Variable is a binding declared outside any type: a Go
