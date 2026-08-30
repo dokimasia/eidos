@@ -249,7 +249,8 @@ func NewFacts(r *Registry) *Facts
 // and a false boolean — absence is the negative, so false is
 // never stamped and deletion stays load-bearing. A claim
 // identical to one already held, same rank source and equal
-// value, changes nothing.
+// value, changes nothing. Values compare per vocabulary term;
+// slices compare element-wise.
 func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error
 
 // DropKey claims the fact's absence. A drop is a claim like any
@@ -269,8 +270,9 @@ func (f *Facts) DropGroup(g GroupName, c Claim) error
 func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool)
 
 // Fact answers what Get does and records the read at
-// (subject, key) into rec. It is the read every plugin makes; Get
-// is the kernel's own untracked path.
+// (subject, key) into rec. A miss records too: the reader asked,
+// so it runs again when the fact appears. It is the read every
+// plugin makes; Get is the kernel's own untracked path.
 func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T, bool)
 
 // Recorder records fact reads. The store's read set implements
@@ -372,11 +374,15 @@ This proposal carries no directive machinery: `DropKey` and
 drop from source is directive work. It carries no audit: a
 `Completeness` contract is declared and stored, and nothing
 checks it here. It carries no namespace-ownership enforcement at
-write time: the registry knows who claimed a namespace, and
-refusing a plugin's write outside its own namespace is
-composition validation, where the writer's module is known. It
-persists nothing: values are held in memory, and the sealed form
-belongs to the engine.
+write time: the registry holds who claimed a namespace, and
+refusing a plugin's write outside its own belongs to the dispatch
+that knows which plugin is writing — a handler is an opaque
+function, so no earlier layer can. It carries no scope: the fact
+store answers any subject it holds, because a handler only
+receives subjects its plan's dispatch admitted, and reading
+another plan's facts on a shared subject is the channel working
+as intended. It persists nothing: values are held in memory, and
+the sealed form belongs to the engine.
 
 ## Alternatives considered
 
@@ -426,11 +432,16 @@ without a sixth vocabulary term.
 
 ## Drawbacks
 
-- Every claim is kept. A fact with three claimants holds three
-  envelopes — roughly 150 bytes each plus the derived reads —
-  where a winner-only store holds one. That is the price of
-  attribution and of deterministic re-arbitration when a drop
-  arrives.
+- Every claim is kept. A claim costs roughly 500 bytes: the
+  envelope, the subject, and the derived reads at about 100 bytes
+  per read. A run stamping two million facts — dozens of lifted
+  keys on two hundred thousand declarations — holds about a
+  gigabyte where a winner-only store holds a fifth of that. Two
+  things bound it: claims from one handler run share one backing
+  slice of reads, and identities are string headers over the
+  graph's existing bytes. The rest is the price of attribution
+  and of deterministic re-arbitration when a drop arrives, and
+  the interned form is the engine's.
 - The claim envelope is ceremony for a fixture: four rank fields
   and a position, filled by hand wherever no dispatch fills them.
   Every fact-store test pays it.
@@ -467,6 +478,10 @@ without a sixth vocabulary term.
   the contract names.
 - The parity matrix tabulates `Registry` specs per kind and
   language.
+- No read enumerates a subject's bag or the whole store: every
+  read names its key. Persisting facts and attributing a whole
+  subject both need an enumeration, and the chunk that consumes
+  one adds it.
 - Interning identities and key ids for persistence is the
   engine's commitment; the flat forms here are the boundary.
 
