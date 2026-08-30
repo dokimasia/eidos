@@ -169,15 +169,28 @@ func (f *Facts) group(k KeyID) GroupName {
 	return f.groupOf[k]
 }
 
-// bag answers the subject's bag, creating it on first touch.
+// bag answers the subject's bag, creating it on first touch: the
+// write path's own lookup. A read goes through [Facts.peek], so a
+// miss on a subject nothing stamped allocates nothing.
 func (f *Facts) bag(id symbol.Identity) *bag {
 	if held, ok := f.bags.Load(id); ok {
 		b, _ := held.(*bag)
 		return b
 	}
-	held, _ := f.bags.LoadOrStore(id, &bag{perKey: map[KeyID]*factState{}})
+	held, _ := f.bags.LoadOrStore(id, &bag{})
 	b, _ := held.(*bag)
 	return b
+}
+
+// peek answers the subject's bag and false where nothing was ever
+// stamped, allocating nothing.
+func (f *Facts) peek(id symbol.Identity) (*bag, bool) {
+	held, ok := f.bags.Load(id)
+	if !ok {
+		return nil, false
+	}
+	b, _ := held.(*bag)
+	return b, true
 }
 
 // write admits one stored claim under (subject, key) and maintains
@@ -200,14 +213,17 @@ func (f *Facts) write(id symbol.Identity, k KeyID, keyName KeyName, entry stored
 // lookup answers the winning value for (subject, key), and false
 // where the winner is a drop or nothing was stamped.
 func (f *Facts) lookup(id symbol.Identity, k KeyID) (any, bool) {
-	b := f.bag(id)
+	b, held := f.peek(id)
+	if !held {
+		return nil, false
+	}
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
 	if !b.presentLocked(f.group(k), k) {
 		return nil, false
 	}
-	state := b.perKey[k]
+	state, _ := b.state(k)
 	return state.claims[state.winner].value, true
 }
 

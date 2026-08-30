@@ -24,10 +24,13 @@ type ClaimView struct {
 // record attribution walks: a losing write stays visible instead of
 // mysterious.
 func (f *Facts) Claims(id symbol.Identity, k KeyID) iter.Seq[ClaimView] {
-	b := f.bag(id)
+	b, held := f.peek(id)
+	if !held {
+		return func(func(ClaimView) bool) {}
+	}
 	b.mu.RLock()
 	var all []stored
-	if state, held := b.perKey[k]; held {
+	if state, held := b.state(k); held {
 		all = slices.Clone(state.claims)
 	}
 	if group := f.group(k); group != "" {

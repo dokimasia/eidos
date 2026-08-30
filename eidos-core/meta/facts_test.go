@@ -320,6 +320,20 @@ func BenchmarkFacts(b *testing.B) {
 		}
 	})
 
+	b.Run("Get/a miss on an unstamped subject", func(b *testing.B) {
+		b.ReportAllocs()
+
+		_, f, role, _ := fixture(b)
+		unstamped := benchIdentities(benchSubjects)
+		next := 0
+		for b.Loop() {
+			if _, held := meta.Get(f, unstamped[next%len(unstamped)], role); held {
+				b.Fatal("Get answered present for an unstamped subject")
+			}
+			next++
+		}
+	})
+
 	b.Run("Get", func(b *testing.B) {
 		b.ReportAllocs()
 
