@@ -38,13 +38,26 @@ type match struct {
 
 // newMatch binds one invocation's surface.
 func newMatch(inv invocation) match {
-	return match{
+	m := match{
 		rs:      inv.rs,
 		seq:     inv.seq,
 		subject: inv.subject,
 		pos:     inv.pos,
 		gate:    inv.gate,
 	}
+	// The previous invocation's read set and reader recycle off the
+	// rule's scratch: the set resets so no read leaks into this
+	// invocation's derivation, the storage stays, and the reader
+	// stays valid because it binds the same index and the same set.
+	// A rule that never reads keeps costing nothing.
+	if prev, held := inv.scratch().(Matcher); held {
+		if b := prev.base(); b.reads != nil {
+			b.reads.Reset()
+			m.reads = b.reads
+			m.reader = b.reader
+		}
+	}
+	return m
 }
 
 // Reader answers the invocation's tracked read handle, minted on

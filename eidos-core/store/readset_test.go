@@ -106,6 +106,35 @@ func TestReadSet(t *testing.T) {
 		})
 	})
 
+	t.Run("Reset", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("drops every grain and keeps recording", func(t *testing.T) {
+			t.Parallel()
+
+			s := store.NewReadSet()
+			id := coretest.Struct(coretest.StorePath, "Store").ID
+			g := coretest.Frozen(t, coretest.Package(coretest.StorePath,
+				coretest.Struct(coretest.StorePath, "Store")))
+			r, err := g.Reader(s, nil)
+			assert.NoError(t, err, "the tracked handle mints")
+			r.Lookup(id)
+			for range r.ByKind(symbol.KindStruct) {
+				break
+			}
+			for range r.ByDirective("stub") {
+				break
+			}
+			s.RecordFact(id, "shape.role")
+			assert.Equal(t, s.Len(), 4, "all four grains recorded")
+
+			s.Reset()
+			assert.Equal(t, s.Len(), 0, "a reset set holds no edges")
+			s.RecordFact(id, "shape.role")
+			assert.Equal(t, s.Len(), 1, "and records again after the reset")
+		})
+	})
+
 	t.Run("Facts", func(t *testing.T) {
 		t.Parallel()
 

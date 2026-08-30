@@ -47,6 +47,17 @@ type factRead struct {
 // NewReadSet answers a read set holding no edges.
 func NewReadSet() *ReadSet { return &ReadSet{} }
 
+// Reset drops every recorded edge and keeps the storage, so a
+// dispatcher reuses one set across a rule's invocations instead of
+// building four maps per subject. The set records again
+// immediately; only the edges are gone.
+func (s *ReadSet) Reset() {
+	clear(s.identities)
+	clear(s.kinds)
+	clear(s.facts)
+	clear(s.directives)
+}
+
 // Identities answers every per-identity edge, in identity order.
 //
 // The order is the set's own rather than the order the reads
