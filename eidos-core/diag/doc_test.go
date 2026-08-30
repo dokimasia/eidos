@@ -1,7 +1,7 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: MIT
 
-package node_test
+package diag_test
 
 import (
 	"testing"
