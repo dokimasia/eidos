@@ -1,0 +1,41 @@
+// Copyright ThesmOS B.V. 2026
+// SPDX-License-Identifier: MIT
+
+package render_test
+
+import (
+	"testing"
+
+	"go.dokimi.dev/assert"
+
+	"go.dokimi.dev/eidos/core/render"
+)
+
+// The set is the one meeting point between spelling and the import
+// block: deduplicated, sorted, per file.
+func TestImportSet(t *testing.T) {
+	t.Parallel()
+
+	t.Run("dedupes and sorts", func(t *testing.T) {
+		t.Parallel()
+
+		var s render.ImportSet
+		s.Add("zeta")
+		s.Add("alpha")
+		s.Add("zeta")
+		assert.Equal(t, s.Paths(), []string{"alpha", "zeta"},
+			"one mention per path, in path order")
+		assert.Equal(t, s.Len(), 2, "the count agrees")
+	})
+
+	t.Run("resets for the next file", func(t *testing.T) {
+		t.Parallel()
+
+		var s render.ImportSet
+		s.Add("alpha")
+		s.Reset()
+		assert.Equal(t, s.Len(), 0, "a reset set holds nothing")
+		s.Add("beta")
+		assert.Equal(t, s.Paths(), []string{"beta"}, "and records again")
+	})
+}

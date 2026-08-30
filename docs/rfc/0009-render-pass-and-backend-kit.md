@@ -213,6 +213,13 @@ func (b *BackendBuilder) FileTemplate(t string) *BackendBuilder
 // render inside their hosts is the language's own split.
 func (b *BackendBuilder) KindTemplates(ts map[symbol.Kind]string) *BackendBuilder
 
+// Scaffold sets the language's statement printer: how each kind
+// of the neutral scaffolding vocabulary spells, recording into
+// the file's import set whatever it qualifies with. The body
+// builtin calls it for slot contributions and scaffold content
+// alike.
+func (b *BackendBuilder) Scaffold(f func(s emit.Stmt, set *render.ImportSet) ([]byte, error)) *BackendBuilder
+
 // Funcs registers the language's shared template vocabulary, once,
 // into the overrideable bucket.
 func (b *BackendBuilder) Funcs(fs template.FuncMap) *BackendBuilder

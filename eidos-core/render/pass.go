@@ -79,14 +79,26 @@ type Language struct {
 	// Kinds holds the template source per emit kind: how the
 	// language spells each declaration.
 	Kinds map[symbol.Kind]string
+	// File is the file skeleton, executed once per file over the
+	// file's name and owning package; empty takes the default,
+	// imports then declarations. The clause a language opens its
+	// files with is the skeleton's own to spell, because not every
+	// language has one. The header is not the skeleton's: the
+	// output contract prepends it after the formatter ran.
+	File string
 	// Naming spells each unit's filename.
 	Naming Naming
 	// Scaffold spells one statement of the neutral vocabulary the
-	// language's way. It is the printer the body builtin calls for
-	// slot contributions and scaffold content alike; a statement
-	// the language cannot spell answers an error, and the
+	// language's way, recording into the file's import set whatever
+	// it qualified with. It is the printer the body builtin calls
+	// for slot contributions and scaffold content alike; a
+	// statement the language cannot spell answers an error, and the
 	// declaration is skipped under the execute-time code.
-	Scaffold func(s emit.Stmt) ([]byte, error)
+	Scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
+	// Imports renders one file's collected set as the block the
+	// language's own formatter would leave: grouping and sorting
+	// are language facts.
+	Imports func(set *ImportSet) string
 	// Finalise is the language formatter, run last per file.
 	Finalise func(src []byte) ([]byte, error)
 }
@@ -97,10 +109,15 @@ type Language struct {
 type Pass struct {
 	name     plugin.ID
 	kinds    map[symbol.Kind]*template.Template
+	file     *template.Template
 	spell    Naming
-	scaffold func(s emit.Stmt) ([]byte, error)
+	scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
+	imports  func(set *ImportSet) string
 	final    func(src []byte) ([]byte, error)
 }
+
+// defaultFile is the skeleton a language that sets none takes.
+const defaultFile = "{{imports}}{{decls}}"
 
 // New composes a language into its pass.
 //
@@ -132,26 +149,42 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		faults = append(faults,
 			errors.New("render: the language spells no scaffolding"))
 	}
+	if l.Imports == nil {
+		faults = append(faults,
+			errors.New("render: the language renders no import block"))
+	}
 	if l.Finalise == nil {
 		faults = append(faults,
 			errors.New("render: the language holds no formatter"))
+	}
+	skeleton := l.File
+	if skeleton == "" {
+		skeleton = defaultFile
+	}
+	file, err := template.New("file").Funcs(unbound()).Parse(skeleton)
+	if err != nil {
+		faults = append(faults, fmt.Errorf("render: the file skeleton: %w", err))
 	}
 	if len(faults) > 0 {
 		return nil, errors.Join(faults...)
 	}
 	return &Pass{
-		name: name, kinds: kinds,
-		spell: l.Naming, scaffold: l.Scaffold, final: l.Finalise,
+		name: name, kinds: kinds, file: file,
+		spell: l.Naming, scaffold: l.Scaffold, imports: l.Imports, final: l.Finalise,
 	}, nil
 }
 
 // unbound answers the builtin names for parse-time resolution; a
 // render call rebinds them to its own frame before any execute.
 func unbound() template.FuncMap {
+	refuse := func() (string, error) {
+		return "", errors.New("render: the builtin is unbound")
+	}
 	return template.FuncMap{
-		"body": func(any) (string, error) {
-			return "", errors.New("render: the body builtin is unbound")
-		},
+		"body":    func(any) (string, error) { return refuse() },
+		"use":     func(string) (string, error) { return refuse() },
+		"imports": refuse,
+		"decls":   refuse,
 	}
 }
 
@@ -203,17 +236,24 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	})
 
 	f := &frame{pass: p, sink: ctx.Sink, trees: ctx.Trees}
-	kinds, err := p.bind(f)
+	b, err := p.bind(f)
 	if err != nil {
 		return nil, err
 	}
 	files := make([]plugin.RenderedFile, 0, len(order))
 	for _, g := range order {
-		if body, rendered := f.file(g, kinds); rendered {
+		if body, rendered := f.file(g, b); rendered {
 			files = append(files, plugin.RenderedFile{Name: g.name, Pkg: g.pkg, Body: body})
 		}
 	}
 	return files, nil
+}
+
+// fileView is what the skeleton executes over: the file's spelled
+// name and its owning package identity.
+type fileView struct {
+	Name string
+	Pkg  symbol.Identity
 }
 
 // frame is one render call's mutable state: the buffer the files
@@ -221,20 +261,35 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 // under render, which the builtins read. One frame serves one
 // call, which is what keeps a Pass safe for concurrent renders.
 type frame struct {
-	pass   *Pass
-	sink   *diag.Sink
-	trees  map[plugin.ID]fs.FS
-	out    bytes.Buffer
-	at     position.Pos
-	plugin plugin.ID
+	pass    *Pass
+	sink    *diag.Sink
+	trees   map[plugin.ID]fs.FS
+	out     bytes.Buffer
+	fileOut bytes.Buffer
+	set     ImportSet
+	at      position.Pos
+	plugin  plugin.ID
 }
 
-// bind clones the parsed kind templates for this call and binds
-// the builtins to its frame: parse happened once at New, and no
-// two calls share an executing tree.
-func (p *Pass) bind(f *frame) (map[symbol.Kind]*template.Template, error) {
+// bound is one render call's executable templates: the kind
+// templates and the file skeleton, cloned from the parse and bound
+// to the call's frame.
+type bound struct {
+	kinds map[symbol.Kind]*template.Template
+	file  *template.Template
+}
+
+// bind clones the parsed templates for this call and binds the
+// builtins to its frame: parse happened once at New, and no two
+// calls share an executing tree.
+func (p *Pass) bind(f *frame) (*bound, error) {
+	funcs := template.FuncMap{
+		"body":    f.body,
+		"use":     f.use,
+		"imports": f.importsBlock,
+		"decls":   f.decls,
+	}
 	kinds := make(map[symbol.Kind]*template.Template, len(p.kinds))
-	funcs := template.FuncMap{"body": f.body}
 	for k, t := range p.kinds {
 		c, err := t.Clone()
 		if err != nil {
@@ -242,7 +297,31 @@ func (p *Pass) bind(f *frame) (map[symbol.Kind]*template.Template, error) {
 		}
 		kinds[k] = c.Funcs(funcs)
 	}
-	return kinds, nil
+	file, err := p.file.Clone()
+	if err != nil {
+		return nil, fmt.Errorf("render: cloning the file skeleton: %w", err)
+	}
+	return &bound{kinds: kinds, file: file.Funcs(funcs)}, nil
+}
+
+// use records one import path into the file under render; it is
+// the builtin a kind template qualifies with.
+func (f *frame) use(path string) (string, error) {
+	f.set.Add(path)
+	return "", nil
+}
+
+// importsBlock renders the file's collected set the language's
+// way; it is the skeleton's imports builtin, executed after the
+// declarations rendered, which is what makes the set complete.
+func (f *frame) importsBlock() (string, error) {
+	return f.pass.imports(&f.set), nil
+}
+
+// decls answers the file's rendered declarations; it is the
+// skeleton's decls builtin.
+func (f *frame) decls() (string, error) {
+	return f.out.String(), nil
 }
 
 // body is the builtin a callable's kind template places its
@@ -423,10 +502,11 @@ func (pl *placement) pending() int {
 	return n
 }
 
-// stmts spells a statement run through the language's printer.
+// stmts spells a statement run through the language's printer,
+// each spelling recording into the file's import set.
 func (f *frame) stmts(out *strings.Builder, items []emit.Stmt) error {
 	for _, s := range items {
-		txt, err := f.pass.scaffold(s)
+		txt, err := f.pass.scaffold(s, &f.set)
 		if err != nil {
 			return err
 		}
@@ -442,13 +522,15 @@ func (f *frame) stmts(out *strings.Builder, items []emit.Stmt) error {
 // bytes are copied out, so a formatter that answers its input, as
 // a pass-through one does, never aliases storage a following file
 // overwrites.
-func (f *frame) file(g *group, kinds map[symbol.Kind]*template.Template) ([]byte, bool) {
+func (f *frame) file(g *group, b *bound) ([]byte, bool) {
 	f.out.Reset()
+	f.fileOut.Reset()
+	f.set.Reset()
 	f.at = position.Pos{File: g.name}
 	for _, u := range g.units {
 		f.plugin = u.Plugin
 		for _, d := range u.Decls {
-			t, spelt := kinds[d.Kind()]
+			t, spelt := b.kinds[d.Kind()]
 			if !spelt {
 				f.sink.Errorf(UnspeltKind, f.at, f.pass.name,
 					"%s holds no template for %s, and the declaration is skipped",
@@ -462,7 +544,12 @@ func (f *frame) file(g *group, kinds map[symbol.Kind]*template.Template) ([]byte
 			}
 		}
 	}
-	body, err := f.pass.final(f.out.Bytes())
+	if err := b.file.Execute(&f.fileOut, fileView{Name: g.name, Pkg: g.pkg}); err != nil {
+		f.sink.Errorf(RefusedTemplate, f.at, f.pass.name,
+			"the file skeleton refused %s: %v", g.name, err)
+		return nil, false
+	}
+	body, err := f.pass.final(f.fileOut.Bytes())
 	if err != nil {
 		f.sink.Errorf(UnformattedFile, f.at, f.pass.name,
 			"%s cannot be formatted and is withheld: %v", g.name, err)

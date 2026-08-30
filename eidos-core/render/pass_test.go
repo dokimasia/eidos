@@ -43,15 +43,26 @@ func language() render.Language {
 		},
 		Naming:   stubNaming,
 		Scaffold: scaffold,
+		Imports: func(set *render.ImportSet) string {
+			if set.Len() == 0 {
+				return ""
+			}
+			return "import (" + strings.Join(set.Paths(), " ") + ")\n"
+		},
 		Finalise: func(src []byte) ([]byte, error) { return src, nil },
 	}
 }
 
 // scaffold spells the two statement kinds the fixtures use: a bare
-// name evaluated for effect, and a return.
-func scaffold(s emit.Stmt) ([]byte, error) {
+// name evaluated for effect, and a return. A dotted name records
+// its head as an import, the way a real printer records what it
+// qualifies with.
+func scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 	switch s.Kind {
 	case emit.StmtExpr:
+		if head, _, qualified := strings.Cut(s.Value.Name, "."); qualified {
+			set.Add(head)
+		}
 		return []byte("\t" + s.Value.Name + "()\n"), nil
 	case emit.StmtReturn:
 		return []byte("\treturn\n"), nil
@@ -365,6 +376,58 @@ func TestPass(t *testing.T) {
 			b.Ref = &emit.TemplateRef{Name: "method1.tpl"}
 			_, sink := runRef(t, trees("\tbare()\n"), b)
 			assert.False(t, sink.Failed(), "an empty slot set has nothing to drop")
+		})
+	})
+
+	t.Run("assembles the file through the skeleton", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("the default skeleton is imports then declarations", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Kinds[symbol.KindStruct] = "{{use \"fmt\"}}type {{.Name}} struct{}\n"
+			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+			assert.False(t, sink.Failed(), "a recorded import is lawful")
+			assert.ContainsInOrder(t, string(files[0].Body),
+				[]string{"import (fmt)", "type Alpha struct{}"},
+				"the block renders above the declarations")
+		})
+
+		t.Run("a file template spells its own clause", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.File = "package {{.Pkg.Package}}\n\n{{imports}}{{decls}}"
+			u := unitOf("gen", "example.com/store/store.go", "Alpha")
+			u.Pkg = coretest.PackageID("example.com/store")
+			files, sink := runPass(t, l, seeded(t, u))
+			assert.False(t, sink.Failed(), "the skeleton is lawful")
+			assert.HasPrefix(t, string(files[0].Body), "package example.com/store\n",
+				"the language spells its clause off the owning package")
+		})
+
+		t.Run("the scaffold records what it qualifies", func(t *testing.T) {
+			t.Parallel()
+
+			body := emit.Body{Stmts: []emit.Stmt{call("audit.Log")}}
+			files, sink := runPass(t, language(), seeded(t,
+				fn("store.go", "Handle", body)))
+			assert.False(t, sink.Failed(), "the qualified call is lawful")
+			assert.ContainsInOrder(t, string(files[0].Body),
+				[]string{"import (audit)", "audit.Log()"},
+				"spelling fed the file's one import set")
+		})
+
+		t.Run("imports dedupe and sort per file", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Kinds[symbol.KindStruct] = "{{use \"zeta\"}}{{use \"alpha\"}}{{use \"zeta\"}}type {{.Name}} struct{}\n"
+			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+			assert.False(t, sink.Failed(), "repeated uses are lawful")
+			assert.Contains(t, string(files[0].Body), "import (alpha zeta)",
+				"one mention per path, in path order")
 		})
 	})
 
