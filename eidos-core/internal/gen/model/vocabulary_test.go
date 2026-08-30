@@ -46,7 +46,8 @@ func TestVocabulary(t *testing.T) {
 				t.Parallel()
 
 				files, err := gosource.ParseDir(
-					token.NewFileSet(), filepath.Join(root, pkg), gosource.HandWritten)
+					token.NewFileSet(), filepath.Join(root, pkg), gosource.HandWritten,
+				)
 				if err != nil {
 					t.Fatalf("ParseDir: %v", err)
 				}

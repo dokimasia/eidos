@@ -203,6 +203,88 @@ func TestIdentity(t *testing.T) {
 		}
 	})
 
+	t.Run("equality", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("two overloads answer distinct identities", func(t *testing.T) {
+			t.Parallel()
+
+			// Overloads share every part but the discriminator, which
+			// is the whole reason it exists: Java, Kotlin, C# and
+			// TypeScript all admit two methods under one name.
+			base := symbol.Identity{
+				Lang:    "java",
+				Package: "svc/store",
+				Owner:   "Store",
+				Name:    "Get",
+				Kind:    symbol.KindMethod,
+			}
+			byKey := base
+			byKey.Disc = "String"
+			byIndex := base
+			byIndex.Disc = "int"
+
+			if byKey == byIndex {
+				t.Fatal("two overloads share one identity: the discriminator does not separate them")
+			}
+			if byKey.String() == byIndex.String() {
+				t.Fatalf("two overloads spell alike: %q", byKey.String())
+			}
+		})
+
+		t.Run("a language without overloads answers one identity", func(t *testing.T) {
+			t.Parallel()
+
+			first := symbol.Identity{
+				Lang: "golang", Package: "svc/store", Owner: "Store",
+				Name: "Get", Kind: symbol.KindMethod,
+			}
+			second := first
+			if first != second {
+				t.Fatal("one declaration answered two identities")
+			}
+		})
+
+		t.Run("the parts that make an identity all count", func(t *testing.T) {
+			t.Parallel()
+
+			base := symbol.Identity{
+				Lang: "golang", Package: "svc/store", Owner: "Store",
+				Name: "Get", Kind: symbol.KindMethod, Disc: "ctx",
+			}
+			tests := map[string]symbol.Identity{
+				"language": {
+					Lang: "protobuf", Package: base.Package, Owner: base.Owner,
+					Name: base.Name, Kind: base.Kind, Disc: base.Disc,
+				},
+				"package": {
+					Lang: base.Lang, Package: "svc/cache", Owner: base.Owner,
+					Name: base.Name, Kind: base.Kind, Disc: base.Disc,
+				},
+				"owner": {
+					Lang: base.Lang, Package: base.Package, Owner: "Cache",
+					Name: base.Name, Kind: base.Kind, Disc: base.Disc,
+				},
+				"name": {
+					Lang: base.Lang, Package: base.Package, Owner: base.Owner,
+					Name: "Put", Kind: base.Kind, Disc: base.Disc,
+				},
+				"kind": {
+					Lang: base.Lang, Package: base.Package, Owner: base.Owner,
+					Name: base.Name, Kind: symbol.KindField, Disc: base.Disc,
+				},
+			}
+			for part, other := range tests {
+				t.Run(part, func(t *testing.T) {
+					t.Parallel()
+					if base == other {
+						t.Fatalf("identities matching except for the %s compared equal", part)
+					}
+				})
+			}
+		})
+	})
+
 	t.Run("IsZero", func(t *testing.T) {
 		t.Parallel()
 

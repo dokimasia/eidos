@@ -52,7 +52,8 @@ func TestRender(t *testing.T) {
 			t.Parallel()
 
 			if kinds := generated(t, "node/kinds.gen.go"); !strings.Contains(
-				kinds, `json:"typeParams,omitzero"`) {
+				kinds, `json:"typeParams,omitzero"`,
+			) {
 				t.Fatal(`TypeParams is not tagged json:"typeParams"`)
 			}
 		})
@@ -89,7 +90,8 @@ func TestRender(t *testing.T) {
 			t.Parallel()
 
 			if emit := generated(t, "emit/kinds.gen.go"); !strings.Contains(
-				emit, "Fields Slot[*Field]") {
+				emit, "Fields Slot[*Field]",
+			) {
 				t.Fatal("the emit model holds no slot storage")
 			}
 			if node := generated(t, "node/kinds.gen.go"); strings.Contains(node, "Slot[") {
@@ -101,7 +103,8 @@ func TestRender(t *testing.T) {
 			t.Parallel()
 
 			if node := generated(t, "node/kinds.gen.go"); !strings.Contains(
-				node, "Decls Symbols") {
+				node, "Decls Symbols",
+			) {
 				t.Fatal("a marker-typed field is not typed Symbols, so it cannot decode")
 			}
 		})

@@ -36,7 +36,7 @@ flowchart LR
 
 | Order | Milestone | Status | Depends on | Ships in |
 |---|---|---|---|---|
-| 1 | [0001](0001-one-schema-two-models.md) One schema generates both models | In progress | none | unscheduled |
+| 1 | [0001](0001-one-schema-two-models.md) One schema generates both models | Done | none | unscheduled |
 | 2 | [0002](0002-plugin-over-fixture-graph.md) A typed plugin runs over a hand-built graph | Planned | 0001 | unscheduled |
 | 3 | [0003](0003-emit-renders-go.md) Emit renders to deterministic Go | Planned | 0001 | unscheduled |
 | 4 | [0004](0004-go-loads-into-graph.md) Go source loads into the symbol graph | Planned | 0001, 0002 | unscheduled |

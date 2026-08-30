@@ -1,7 +1,7 @@
 ---
 milestone: 0001
 title: One schema generates both models
-status: In progress
+status: Done
 depends-on: none
 ships-in: unscheduled
 deadline: none
@@ -20,20 +20,21 @@ models come out of the generator, and a hand edit to either fails CI.
 
 ## Done when
 
-- [ ] `eidos-core/symbol` holds the `Kind` enum, the walk interfaces
+- [x] `eidos-core/symbol` holds the `Kind` enum, the walk interfaces
       and `schema/` with every kind in the inventory of
       [02-symbol-model.md](../architecture/02-symbol-model.md).
-- [ ] `internal/gen/model` reads the schema and writes both models:
+- [x] `internal/gen/model` reads the schema and writes both models:
       kind structs, `Walk`, JSON encoding, and slot declarations
       with typed accessors. The output is committed.
-- [ ] Editing a generated file by hand makes `make check` fail: the
+- [x] Editing a generated file by hand makes `make check` fail: the
       mirror guard reruns the generator and diffs the tree.
-- [ ] A test asserts that the generator imports only the standard
-      library.
-- [ ] `symbol.Identity` carries package path, kind, name and the
+- [x] A test asserts the generator's dependency position: no
+      third-party import, and no kernel import outside `internal/`,
+      whose helpers import only the standard library.
+- [x] `symbol.Identity` carries package path, kind, name and the
       signature discriminator, and two overloads get distinct
       identities.
-- [ ] An unknown schema annotation makes the generator fail with an
+- [x] An unknown schema annotation makes the generator fail with an
       error naming the annotation.
 
 ## Why now
@@ -78,6 +79,7 @@ settled decisions.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-30 | Status In progress to Done | Every exit criterion is met and `make check` passes; the models generate, the guard bites, and the schema is the only hand-written definition |
 | 2026-08-30 | Dropped RewireOwners from the exit criteria | The owner back-pointer became an identity set at construction, so the pass has nothing to fill (ADR-0006) |
 | 2026-08-30 | Status Planned to In progress | RFC-0001 and RFC-0002 accepted; implementation starts |
 | 2026-08-30 | Linked RFC-0001, RFC-0002 and ADR-0002 to 0005 | The design is written; the milestone points at the documents that hold it, and the documents never point back |
