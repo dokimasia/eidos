@@ -17,3 +17,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0003](0003-diagnostics-and-store.md) | Diagnostics and the node store | Accepted |
 | [0004](0004-metadata-facts.md) | Metadata keys and the fact store | Accepted |
 | [0005](0005-directive-grammar.md) | The directive grammar, schemas and validation | Accepted |
+| [0006](0006-authoring-surface-and-dispatch.md) | The authoring surface and dispatch | Review |

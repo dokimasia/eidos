@@ -22,23 +22,26 @@ re-implementing slice or struct comparison. Each site decides its
 own failure wording, so what a failure looks like depends on which
 file it is in.
 
-Two of the suite's own needs go unmet by that practice. The shared
-test fixtures fail through `Fatalf`, so their failure branches
-cannot be exercised without failing the test that exercises them —
-they sit uncovered for lack of a recorder. And the repository's
-tests state their contracts in subtest names while the failures
-state only observations; nothing ties a failure back to the
-contract it broke.
+That practice leaves two of the suite's own needs unmet. The shared
+test fixtures fail through `Fatalf`, so exercising a failure branch
+fails the test that exercises it, and those branches stay uncovered
+for want of a recorder. The repository's tests also state their
+contracts in subtest names while the failures state only what was
+observed, so nothing ties a failure back to the contract it broke.
 
-`go.dokimi.dev/assert` is the organisation's own assertion library,
-four surfaces over one comparison core. `assert` stops the test at
-the first failure; `expect` records and continues, generated from
-the same core so the two cannot drift, with a conformance gate
-holding both to a language-neutral standard. `golden` compares
-output against a file recording what it should be, which is the
-shape a generator's rendered output wants. `bench` fails a
-benchmark that exceeds a declared ceiling. A `Recorder` seat lets
-an assertion be tested by reading what it reported. Every
+`go.dokimi.dev/assert` is the organisation's own assertion library:
+four surfaces over one comparison core.
+
+| Surface | What it does |
+|---|---|
+| `assert` | stops the test at the first failure |
+| `expect` | records and continues; generated from the same core, so the two cannot drift |
+| `golden` | compares output against a file that records what it should be |
+| `bench` | fails a benchmark that exceeds a declared ceiling |
+
+A conformance gate holds `assert` and `expect` to one
+language-neutral standard. A `Recorder` seat lets a test read what
+an assertion reported, which is how an assertion gets tested. Every
 assertion takes a contract message last and prints it as the
 failure's first line, followed by a structural diff that reaches
 unexported fields. Its only dependency is `go-cmp`. The module is
@@ -46,13 +49,11 @@ unpublished and lives beside this repository.
 
 ## Decision
 
-Write test checks through `go.dokimi.dev/assert` and its
-surfaces — `assert` to stop, `expect` to continue, `golden` for
-file-shaped expectations, `bench` for benchmark ceilings —
-required by each module that tests with it and replaced to the
-sibling checkout at `../../assert-go`, because one library states
-the contract per failure where 964 hand-rolled sites each spell
-their own.
+Write test checks through `go.dokimi.dev/assert`, because one
+library states the contract on every failure where 964 hand-rolled
+sites each spell their own. Each module that tests with it requires
+the module and replaces it with the sibling checkout at
+`../../assert-go`.
 
 ## Alternatives Considered
 
@@ -61,21 +62,21 @@ their own.
 The practice until now, and the zero-dependency purity is real:
 `eidos-core/go.mod` requires nothing today.
 
-It lost on the counts above and on what they cannot do. A
-hand-rolled `Fatalf` helper cannot have its failure path tested,
-because failing is dying; the fixtures' failure branches are
-uncovered for exactly that reason. Every new package re-decides
-failure wording, and the drift is already visible across 44 files.
+It lost on the counts above. A hand-rolled `Fatalf` helper cannot
+have its failure path tested, because the only way it reports is by
+ending the test, which is why the fixtures' failure branches are
+uncovered. Every new package also re-decides its failure wording,
+and 44 files already disagree.
 
 ### Publish the module first, adopt it after
 
 Adoption would then pin a version instead of a directory.
 
-It lost because the surface freezes at publication, and a library
-published before its first real consumer freezes its mistakes. This
-repository is that consumer: the feedback flows while the API can
-still move, and the cost of not waiting is one sibling checkout and
-a replace directive per module.
+It lost because publishing freezes the API, and nothing has used
+this library yet, so whatever is wrong with it would freeze too.
+This repository is its first consumer: reviewing it here can still
+change the API, and not waiting costs one sibling checkout and a
+replace directive per module.
 
 ## Consequences
 
@@ -128,10 +129,10 @@ a replace directive per module.
 - The contract message sometimes restates the subtest name. That
   is the convention working: the name addresses the reader, the
   message addresses the failure.
-- The generator's mirror guard keeps its own byte-comparison: it
+- The generator's mirror guard keeps its own byte-comparison. It
   holds a committed tree equal to a regeneration, which is a build
-  invariant over the repository, not a testdata expectation. That
-  is one comparison staying put, not a surface going unused.
+  invariant over the repository rather than a testdata expectation,
+  so that one comparison stays as it is.
 
 ## References
 

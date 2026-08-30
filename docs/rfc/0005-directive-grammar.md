@@ -33,18 +33,17 @@ hold: one parser, one schema vocabulary, one validator.
 
 A first implementation of this package exists and teaches by
 counterexample. Its parsed form held values as strings in three
-parallel containers — positionals in one, key-values in another,
-lists in a third — so reading a param meant knowing which container
+parallel containers, positionals in one, key-values in another and
+lists in a third, so reading a param meant knowing which container
 its type hid it in, and every consumer re-typed every value at every
-call site. Its validator took one directive at a time, so the two
-checks that need a subject's full list — a duplicate of a
-single-instance directive, and the constraints between directives —
-could not be written against its signature at all. Its schema could
-not declare positional params, so positionals went unvalidated. And
-its instances carried no ordinal, so repeatable handlers had no
-source order to run in. Each of those is a shape error, not a
-missing feature: the fix is a different signature, which is why the
-form is worth an argument before the code.
+call site. Its validator took one directive at a time, so its
+signature could not express the two checks that need a subject's full
+list: a duplicate of a single-instance directive, and the constraints
+between directives. Its schema could not declare positional params,
+so positionals went unvalidated. And its instances carried no
+ordinal, so repeatable handlers had no source order to run in. Every
+one of those needs a different signature rather than another feature,
+which is why the form is worth an argument before the code.
 
 Role scoping failed the same way one layer up: roles existed as
 prose, so every plugin interpreted `role=` in its handler. A gate
@@ -246,13 +245,14 @@ declarative everywhere else in the system, because a gate inside a
 handler is selectivity the kernel cannot validate or route. So the
 schema declares the closed role set, each param declares the roles
 that admit it, and the kernel validates a written role against the
-set — an unknown role is an Error naming the candidates, a schema
-that demands a role refuses a bare instance naming the same set,
-and no handler ever inspects `role=` to decide what applies. The reserved
-keys `out` and `tag` stay schema-unclaimable and are admitted on
-every directive as strings, landing in the instance's params like
-any declared key; they lower to a routing override, and a plugin
-schema that claims either is refused at registration.
+set. An unknown role is an Error naming the candidates. A schema that
+demands a role refuses a bare instance, naming the same set. No
+handler ever inspects `role=` to decide what applies.
+
+No schema may claim the reserved keys `out` and `tag`, and a plugin
+schema that claims either is refused at registration. Every directive
+admits both as strings, and they arrive in the instance's params like
+any declared key, where they lower to a routing override.
 
 ### The registry
 
@@ -377,11 +377,11 @@ func Validate(
 The flow, one subject at a time:
 
 ```mermaid
-flowchart LR
-    A["carrier owner<br/>Parse(payload)"] -- "[]Raw + Pos" --> B["store<br/>AttachDirectives"]
+flowchart TD
+    A["carrier owner<br/>Parse(payload)"] -- "raw instances + Pos" --> B["store<br/>AttachDirectives"]
     B -- "at Freeze" --> C["directive index<br/>by spelled name"]
     B -- "full list per subject" --> D["Validate<br/>types + checks"]
-    D -- "[]Directive" --> E["dispatch, m.Directive()"]
+    D -- "validated instances" --> E["dispatch, m.Directive()"]
     D -- "positioned Errors" --> F["diag.Sink"]
 ```
 
@@ -399,7 +399,7 @@ with the graph.
 func (g *Graph) AttachDirectives(subject symbol.Identity, ds []directive.Raw) error
 
 // ByDirective enumerates the declarations carrying a spelling,
-// untracked, in identity order — the same yield ByKind answers,
+// untracked, in identity order. It yields what ByKind yields,
 // because every indexed subject is a held declaration: one that
 // is not fails validation as dangling. The index builds at Freeze
 // in the same pass as the kind index and is keyed by the name as
@@ -437,9 +437,9 @@ func (r *Reader) ByDirective(n directive.Name) iter.Seq[symbol.Symbol]
 func (s *ReadSet) Directives() iter.Seq[directive.Name]
 ```
 
-A dangling attachment — a subject the graph never got — is a
-validation Error positioned at the directive, because silence there
-eats a typo in an identity.
+A dangling attachment, meaning a subject the graph never got, is a
+validation Error positioned at the directive. Reporting nothing there
+would swallow a typo in an identity.
 
 One amendment lands outside the package: the metadata registry
 gains the enumeration its own proposal reserved for the first

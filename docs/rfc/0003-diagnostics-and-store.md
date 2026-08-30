@@ -286,9 +286,9 @@ compose, rather than the second undoing the first.
 
 The predicate is a function rather than the plan's own source
 vocabulary, because that vocabulary matches on facts a frontend
-stamps and no frontend exists yet. A plan builds a Scope from its
-predicate when plans arrive; until then a caller passes nil or a
-package-set closure.
+stamps and no frontend exists yet. A plan builds its Scope from its
+own predicate. This proposal carries no plans, so a caller passes nil
+or a package-set closure.
 
 ### The two grains
 
@@ -300,12 +300,12 @@ a read from costing more than it observed.
 | `Lookup`, `PackageOf`, walking a declaration's members | per identity | that declaration changes |
 | `ByKind`, a package's declaration list | set membership | a declaration enters or leaves the set |
 
-An enumeration prices "I asked for the whole set" honestly as
+An enumeration prices "I asked for the whole set" honestly, as
 sensitivity to membership. Sensitivity to a change inside the set
-comes from the per-identity edges the enumerator records for the
-declarations it actually touched while iterating, which is why
-`ByKind` answers an iterator rather than a slice: it records what
-the caller reached, not what it might have.
+comes from somewhere else: the enumerator records a per-identity edge
+for each declaration the caller touches while iterating. That is why
+`ByKind` answers an iterator rather than a slice. It records what the
+caller reached rather than what it might have.
 
 ```go
 // ReadSet is what one derived artifact read.
@@ -336,8 +336,7 @@ error.
 
 A `ReadSet` belongs to one derived artifact and is not shared, so a
 reader is not safe for concurrent use even though the graph beneath
-it is. That is the honest split: the graph is shared and the
-bookkeeping is not.
+it is. The graph is shared; the bookkeeping is not.
 
 ### Freeze
 
@@ -349,8 +348,8 @@ which is the entire point of the seal.
 
 The kind index builds at Freeze, where it is free: nothing may add a
 declaration afterwards, so the index cannot go stale. The directive
-index builds in the same pass once directives exist, for the same
-reason and at the same moment.
+index builds in the same pass and for the same reason. This proposal
+does not carry it.
 
 ## Alternatives considered
 
@@ -365,10 +364,9 @@ what it observed. An iterator records as the caller advances.
 ### Recording reads outside the reader
 
 A caller could record its own edges, which would let a hot path skip
-the bookkeeping. It lost because an unrecorded read is invisible to
-invalidation, and the failure it produces is output that is stale
-and looks current. One door, always tracked, is what makes the
-completeness structural.
+the bookkeeping. It lost because invalidation cannot see an
+unrecorded read, so the artifact that depended on it never re-runs.
+One door, always tracked, is what makes the completeness structural.
 
 ### Panicking on a duplicate code
 

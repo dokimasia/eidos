@@ -22,20 +22,19 @@ journey document and the determinism rules both write identities as
 `golang:svc/store.Store#Get(ctx,string)`, with a language prefix the
 field list never mentions.
 
-The two readings collide in exactly the situation eidos is built for:
-a mixed monorepo, where a proto package and a Go package can share
-one directory. Under the four-part reading their declarations can
-produce equal identities, and identity is the join that read sets,
-exports, manifests, drift and explain all key on. A key that needs
-context to be unique is not a key. RFC-0001 specifies the `Identity`
-struct and its string grammar.
+The two readings collide in the situation eidos is built for: a mixed
+monorepo, where a proto package and a Go package share one directory.
+Under the four-part reading their declarations produce equal
+identities, and read sets, exports, manifests, drift and explain all
+key on identity. Two declarations that collide there are
+indistinguishable to every one of those.
 
 ## Decision
 
-We will include the source language in `symbol.Identity` and in its
-string form, because identities must stay unique across languages
-sharing one workspace, and every documented example already spells
-the prefix.
+Put the source language in `symbol.Identity` and in its string form,
+because identities have to stay unique across languages that share
+one workspace, and every documented example already spells the
+prefix.
 
 ## Alternatives Considered
 
@@ -43,18 +42,18 @@ the prefix.
 
 Package path, kind, name, discriminator, exactly as the
 specification's field list says. It lost because a proto file and a
-Go package in one directory can collide, and uniqueness is the entire
-job of the identity. It also contradicts every example spelling the
-documents actually show.
+Go package in one directory can collide, and an identity that is not
+unique does nothing else useful. It also contradicts every example
+spelling the documents show.
 
 ### Language as metadata beside the identity
 
 Keep the four-part key and stamp the language as a metadata fact on
-the symbol. It lost because the consumers of identity use it as a
-standalone map key and a stored string: a read-set row, a manifest
-`sources` entry, an export record. A key whose uniqueness depends on
-a lookup somewhere else fails precisely where it is used without the
-graph in hand, such as a manifest read in a fresh clone.
+the symbol. It lost because identity gets used as a standalone map
+key and as a stored string: a read-set row, a manifest `sources`
+entry, an export record. Someone reading a manifest in a fresh clone
+has no graph to look the language up in, so the key would be
+ambiguous where nothing can disambiguate it.
 
 ## Consequences
 
@@ -75,8 +74,8 @@ graph in hand, such as a manifest read in a fresh clone.
 
 **Neutral:**
 
-- The specification's field list and its examples disagreed; this
-  record is the reconciliation, on the examples' side.
+- The specification's field list and its examples disagreed. This
+  record settles that on the examples' side.
 
 ## References
 

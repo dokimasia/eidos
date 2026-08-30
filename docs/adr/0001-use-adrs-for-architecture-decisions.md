@@ -15,31 +15,31 @@ Accepted
 
 ## Context
 
-The architecture specification holds 80 settled decisions, D1 through D80.
-The table in [21-decisions.md](../architecture/21-decisions.md) lists them.
-Each row gives the decision, one line of reasoning, a link to the document
-that argues it, and for some decisions the event that would make us
-reconsider. The table calls that event a revisit trigger.
+The architecture specification settles 80 decisions, D1 through D80, and
+lists them in one table. Each row gives the decision, one line of reasoning,
+a link to the document that argues it, and for some decisions the event that
+would make us reconsider. The table calls that event a revisit trigger.
 
-The full argument for a decision sits in the document that owns the
-mechanism. The case against running a daemon is a section of
-[09-incrementality.md](../architecture/09-incrementality.md). The table row
-only points at it.
+A row does not carry the argument. The document that owns the mechanism
+does: the case against running a daemon is a section of the incrementality
+document, and the row only points at it.
 
-Eight decisions name an event that would make us reconsider: D9, D12, D13,
-D16, D23, D29, D45 and D77. The events are things like someone building an
-IDE surface, a native compiler port publishing a public importable API, and
-an organisation running out of CI-restore bandwidth. When one of them
-happens, we argue the decision again against evidence we did not have the
-first time. That argument does not fit in a table row.
+Eight rows name an event that would make us reconsider: D9, D12, D13, D16,
+D23, D29, D45 and D77. Someone builds an IDE surface. A native compiler port
+publishes an importable API. An organisation runs out of CI-restore
+bandwidth. When one of those happens we argue the decision again against
+evidence we did not have the first time, and that argument is longer than a
+row.
 
 Before this record existed, the table said these decisions would be written
 up as ADRs in `docs/adr/`, and that directory did not exist.
 
-We already write down what we reject. Three specification documents carry
-"Considered and refused" sections: 08 on per-plan model transforms, 09 on an
-embedded database, and 11 on machine-supplied toolchain frontends. Each one
-names the alternative and says why we did not take it.
+We already write down what we reject. Three specification documents carry a
+"Considered and refused" section: the workspace document on per-plan model
+transforms, the incrementality document on an embedded database, and the
+languages document on toolchain frontends that fork `go list`, invoke Node
+or require a JVM. Each names the alternative and says why we did not take
+it.
 
 ## Decision
 
@@ -62,8 +62,8 @@ We rejected this because the reasoning is already written down. Each decision
 is argued in the document that owns the mechanism, where you read it next to
 the machinery it explains. An ADR built from a one-line row would say less
 than the specification text it copies, and the two copies would disagree
-within a few months. The specification states the rule directly: every
-component, contract, and policy "appears in exactly one" of its documents.
+within a few months. The specification states the rule outright: every
+component, contract and policy appears in exactly one document.
 
 ### Keep the table only, and drop the ADR claim
 
@@ -93,10 +93,21 @@ row loses the history the table exists to keep.
   argument.
 - When you supersede an ADR you have to edit the new ADR and the table row.
   Forget the row and the table shows a superseded decision as current.
-- "No longer fits in one row" is a judgement call. Until a real case sets the
-  bar, two contributors will draw the line differently.
+- Whether reasoning still fits in one row is a judgement call. Until a real
+  case decides it, two contributors will draw the line in different places.
 
 **Neutral:**
 
 - ADR numbers and D-numbers are separate. D-numbers stay the specification's
   identifiers, and a decision with an ADR has both.
+
+## References
+
+- [21-decisions.md](../architecture/21-decisions.md), the table of 80
+  settled decisions and their revisit triggers
+- [README.md](../architecture/README.md), the rule that every component,
+  contract and policy appears in exactly one document
+- [08-workspace-and-plans.md](../architecture/08-workspace-and-plans.md),
+  [09-incrementality.md](../architecture/09-incrementality.md) and
+  [11-languages.md](../architecture/11-languages.md), the three
+  "Considered and refused" sections

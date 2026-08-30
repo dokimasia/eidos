@@ -38,16 +38,17 @@ must produce the same winner as a serial run. If the first
 implementation lets arrival order decide, every test written
 against it encodes a schedule.
 
-Every claim is kept, not just the winner. Attribution answers why
-a fact holds and who lost, and a losing write that vanishes is a
-bug report nobody can file. Nothing here walks the record for a
-human; the record itself starts with the first write.
+Every claim is kept, not just the winner. Attribution answers why a
+fact holds and who lost, and a losing write that vanishes leaves
+nobody able to explain why their own stamp did not take. Nothing
+here walks the record for a human; the record itself starts with
+the first write.
 
-A fact read records at (subject, key). Bags are fat — annotation
-lifting alone puts dozens of keys on one class — and readers are
-many. A read recorded per subject would re-run every reader of the
-bag on any stamp; per key, unrelated readers do not run at all.
-The grain is part of the read set's shape, and the read set is
+A fact read records at (subject, key). A bag holds a lot, since
+annotation lifting alone puts dozens of keys on one class, and many
+readers read it. Recording per subject would re-run every reader of
+the bag on any stamp. Recording per key leaves the unrelated readers
+alone. The grain is part of the read set's shape, and the read set is
 already being recorded.
 
 ## Detailed design
@@ -59,9 +60,10 @@ already being recorded.
 package meta
 
 // KeyName is a key's boundary spelling: dotted segments with the
-// owning namespace first, as in "shape.role". It appears at the
-// boundary — a directive parameter, an explain argument — and
-// resolves against the registry. Code holds the typed [Key].
+// owning namespace first, as in "shape.role". It appears wherever a
+// human names a key, such as a directive parameter or an explain
+// argument, and resolves against the registry. Code holds the typed
+// [Key].
 type KeyName string
 
 // Namespace answers the segment before the first dot, which names
@@ -222,10 +224,10 @@ type Read struct {
 ```
 
 The rank fields arrive filled in by whoever writes. The authoring
-surface binds them from the dispatch — the plugin's name, its
-bucket, the match's canonical order — and a fixture fills them by
-hand. The fact store arbitrates what it is given; it does not know
-what a plugin is.
+surface binds them from the dispatch: the plugin's name, its bucket
+and the match's canonical order. A fixture fills them by hand. The
+fact store arbitrates what it is given; it does not know what a
+plugin is.
 
 ### The fact store
 
@@ -246,11 +248,10 @@ func NewFacts(r *Registry) *Facts
 // Stamp records one claim of v under k.
 //
 // It refuses a zero key, a subject kind the key does not admit,
-// and a false boolean — absence is the negative, so false is
-// never stamped and deletion stays load-bearing. A claim
-// identical to one already held, same rank source and equal
-// value, changes nothing. Values compare per vocabulary term;
-// slices compare element-wise.
+// and a false boolean. Absence is the negative, so nothing stamps
+// false and deletion stays load-bearing. A claim identical to one
+// already held, same rank source and equal value, changes nothing.
+// Values compare per vocabulary term; slices compare element-wise.
 func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error
 
 // DropKey claims the fact's absence. A drop is a claim like any
@@ -324,9 +325,9 @@ The rank, in order, higher first:
 1. **Authority**: `plugin < directive < manual`.
 2. **Bucket**: the earlier capability bucket wins.
 3. **Plugin**: alphabetical.
-4. **Seq**: the first claim wins, in canonical match order —
-   subject identity, then directive-instance source order, then
-   insertion — which the writer encodes into the number.
+4. **Seq**: the first claim wins, in canonical match order. The
+   writer encodes that order into the number: subject identity,
+   then directive-instance source order, then insertion.
 
 A later claim carrying a different value does nothing. That is
 precedence rather than conflict: detector ordering is this rule
@@ -336,9 +337,9 @@ who asks.
 A drop competes in the same ranking. Reading a key considers its
 value claims, the drops on the key, and the drops on the key's
 group; the best rank wins, and a winning drop reads as absent.
-Arrival order appears nowhere, which is what "covers stamps that
-land later" means mechanically: the tombstone does not race the
-stamp, it outranks it.
+Arrival order appears nowhere. That is what "covers stamps that
+land later" means mechanically: a tombstone outranks a stamp
+whenever the stamp arrives, so the two never race.
 
 ### The read grain
 
@@ -361,11 +362,11 @@ func (s *ReadSet) Facts() iter.Seq2[symbol.Identity, meta.KeyName]
 `Len` counts all three grains. Edges deduplicate as before.
 
 The dependency points one way: `meta` imports `symbol`,
-`position` and `diag`; `store` imports `meta`. The fact store
-never reads the graph — a claim carries its subject's kind in the
-identity — and the graph knows nothing of facts. The two meet in
-the read set, on the store side, so one artifact records
-declaration reads and fact reads into one set.
+`position` and `diag`; `store` imports `meta`. The fact store never
+reads the graph, because a claim carries its subject's kind in the
+identity, and the graph knows nothing of facts. The two meet in the
+read set, on the store side, so one artifact records declaration
+reads and fact reads into one set.
 
 ### What this is not
 
@@ -374,25 +375,25 @@ This proposal carries no directive machinery: `DropKey` and
 drop from source is directive work. It carries no audit: a
 `Completeness` contract is declared and stored, and nothing
 checks it here. It carries no namespace-ownership enforcement at
-write time: the registry holds who claimed a namespace, and
-refusing a plugin's write outside its own belongs to the dispatch
-that knows which plugin is writing — a handler is an opaque
-function, so no earlier layer can. It carries no scope: the fact
-store answers any subject it holds, because a handler only
-receives subjects its plan's dispatch admitted, and reading
-another plan's facts on a shared subject is the channel working
-as intended. It persists nothing: values are held in memory, and
-the sealed form belongs to the engine.
+write time. The registry holds who claimed a namespace, but only
+the dispatch knows which plugin is writing, so only the dispatch
+can refuse a write outside that plugin's own namespace. A handler
+is an opaque function, and no layer below it can tell. It carries
+no scope: the fact store answers any subject it holds, because a
+handler only receives subjects its plan's dispatch admitted, and
+reading another plan's facts on a shared subject is the channel
+working as intended. It persists nothing: values are held in
+memory, and the sealed form belongs to the engine.
 
 ## Alternatives considered
 
 ### Computing the winner at read time
 
 Keep claims unordered and scan by rank on every `Get`. It lost
-because reads outnumber writes — every gate predicate and every
-generator read is a `Get` — and the scan prices the hot path for
-the cold one. Re-ranking at write is O(claims on that key), and
-claims per key are few.
+because reads outnumber writes, since every gate predicate and every
+generator read is a `Get`, and the scan prices the hot path for the
+cold one. Re-ranking at write is O(claims on that key), and claims
+per key are few.
 
 ### One claims log per bag
 
@@ -403,10 +404,10 @@ every read would scan the whole bag to answer one key.
 ### Provenance as a reference to the artifact's read set
 
 Store a pointer to the read set instead of copying reads into the
-claim. It lost because a claim outlives the run that made it —
-the record is what gets persisted — and a handler run reads
-little, so the flat copy is small. The reference would also make
-every claim mutable after the fact as the set grows.
+claim. It lost because a claim outlives the run that made it, since
+the record is what gets persisted, and a handler run reads little, so
+the flat copy is small. The reference would also make every claim
+mutable after the fact as the set grows.
 
 ### The grain as a bare string in the store
 
@@ -434,21 +435,21 @@ without a sixth vocabulary term.
 
 - Every claim is kept. A claim costs roughly 500 bytes: the
   envelope, the subject, and the derived reads at about 100 bytes
-  per read. A run stamping two million facts — dozens of lifted
-  keys on two hundred thousand declarations — holds about a
-  gigabyte where a winner-only store holds a fifth of that. Two
-  things bound it: claims from one handler run share one backing
-  slice of reads, and identities are string headers over the
-  graph's existing bytes. The rest is the price of attribution
-  and of deterministic re-arbitration when a drop arrives, and
-  the interned form is the engine's.
+  per read. Stamping two million facts, which is dozens of lifted
+  keys on two hundred thousand declarations, holds about a gigabyte
+  where a winner-only store holds a fifth of that. Two things bound
+  it: claims from one handler run share one backing slice of reads,
+  and identities are string headers over the graph's existing bytes.
+  The rest is the price of attribution and of deterministic
+  re-arbitration when a drop arrives, and the interned form is the
+  engine's.
 - The claim envelope is ceremony for a fixture: four rank fields
   and a position, filled by hand wherever no dispatch fills them.
   Every fact-store test pays it.
 - A lower-rank write after a drop does nothing, silently. That is
-  the design — precedence, not conflict — and the record is
-  reachable through `Claims` alone; nothing renders it for a
-  human.
+  the design: rank decides, and the loser stays in the record.
+  `Claims` is the only way to reach it, and nothing renders it for
+  a human.
 - Slice values copy on write and on read: one allocation per
   `[]string` read. The alternative is aliasing a bag's storage.
 - `KeyID` is composition-scoped, so anything durable must carry

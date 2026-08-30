@@ -26,7 +26,7 @@ else. A `TypeRef` names what it resolves to with a
 `symbol.Identity`, and the specification gives the reason: a key can
 be stored, compared and carried across runs, and a pointer cannot.
 
-Making the owner a pointer costs four accommodations. The generated
+Making the owner a pointer costs four exceptions. The generated
 traversal has to be told never to follow it, or the walk stops being
 a tree. A codec has to skip it, or encoding recurses forever. The
 sealed state cannot serialize it at all. And every caller who
@@ -51,10 +51,10 @@ tracking. There is no rewiring pass.
 The specification's original shape: `Host Symbol` filled by a
 generated pass over the graph.
 
-It lost on the four accommodations above, and on the hidden read.
-The pass also has to be remembered, and the architecture refuses
-that class of rule elsewhere: a preference each generator has to
-remember is a preference two of them will forget.
+It lost on the four exceptions above, and on the hidden read. The
+pass also has to be remembered, and the architecture refuses that
+class of rule elsewhere: if every generator has to remember the same
+step, some generator will not.
 
 ### Carry the identity on both models
 

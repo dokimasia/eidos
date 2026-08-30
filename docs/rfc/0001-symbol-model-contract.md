@@ -27,19 +27,18 @@ this schema. RFC-0002 proposes the generator itself.
 
 The architecture documents deliberately stop at the vocabulary
 level: the symbol model specification names its kinds, lists the
-elements the language landscape forces (variance, member level,
-default method bodies, nominal supertypes against embedding), and
-shows one worked example. Nobody has written down the full field set
-per kind, the exact walk interfaces, or the `Identity` struct, and
-nothing else can be built until someone has.
+elements the target languages force (variance, member level, default
+method bodies, nominal supertypes against embedding), and shows one
+worked example. Nobody has written down the full field set per kind,
+the exact walk interfaces, or the `Identity` struct, and nothing else
+can be built until someone has.
 
-Everything else in the kernel consumes exactly these declarations:
-the store and its dispatch, the frontends, every generator and
-backend. Getting a field wrong once frontends exist costs a
-regeneration plus a sweep over every consumer; getting it wrong here
-costs a review comment. The model belongs in the kernel and nowhere
-else: the kernel is the slow-moving set, and the model is its
-slowest-moving part.
+Everything else in the kernel consumes these declarations: the store
+and its dispatch, the frontends, every generator and backend. Getting
+a field wrong once frontends exist costs a regeneration plus a sweep
+over every consumer; getting it wrong here costs a review comment.
+The model belongs in the kernel and nowhere else: the kernel is the
+slow-moving set, and the model is its slowest-moving part.
 
 ## Detailed design
 
@@ -141,14 +140,13 @@ const (
 )
 ```
 
-The walk interfaces. The specification lists four (`Symbol`,
-`Membered`, `Typed`, `Documented`); this RFC folds `Documented` into
-`Symbol`, because every kind can answer `Docs()` and kinds without
-documentation answer nil, which keeps neutral code to one interface
-instead of two. Interface method names avoid colliding with the
-generated struct fields (`Fields` the field against `FieldList()` the
-method, following `go/ast`), because Go forbids a field and a method
-sharing a name:
+The specification lists four walk interfaces: `Symbol`, `Membered`,
+`Typed` and `Documented`. This RFC folds `Documented` into `Symbol`,
+because every kind can answer `Docs()` and an undocumented kind
+answers nil, so neutral code holds one interface instead of two. Go
+forbids a field and a method sharing a name, so the interface methods
+are named apart from the generated struct fields: `Fields` is the
+field, `FieldList()` the method, following `go/ast`.
 
 ```go
 // Symbol is the least any declaration answers.
@@ -178,14 +176,13 @@ type Typed interface {
 }
 ```
 
-`Identity` and its string form. The symbol model specification
-defines a canonical identity as package path, kind, name and a
-signature discriminator. ADR-0002 adds the source language, because a
-proto package and a Go package can share a directory in a mixed
-monorepo, and every worked example in the architecture documents
-already spells the language prefix. Equality is the whole struct.
-Overloads differ only in `Disc`, and a language that cannot overload
-writes the empty string:
+The symbol model specification defines a canonical identity as
+package path, kind, name and a signature discriminator. ADR-0002 adds
+the source language, because a proto package and a Go package can
+share a directory in a mixed monorepo, and every worked example in
+the architecture documents already spells the language prefix. Two
+identities are equal when every field is. Overloads differ only in
+`Disc`, and a language that cannot overload writes the empty string:
 
 ```go
 // Lang is the source-language name as identities, metadata
@@ -268,8 +265,9 @@ validation list. Three fields follow conventions rather than tags:
   reason `TypeRef.Target` is, and reaching the owner therefore goes
   through a tracked read (ADR-0006).
 
-The full inventory. Kinds group by family, one file each under
-`symbol/schema`, and the documentation lives with the declarations:
+The full inventory follows. Kinds group by family, one file each
+under `symbol/schema`, and the documentation lives with the
+declarations:
 
 ```go
 // The marker that types heterogeneous fields.
@@ -591,8 +589,8 @@ pair; the walk and JSON code on the emit side read the slot's items.
 
 The symbol model specification already argues and refuses this: a
 merged model loses compile-time phase discipline and multi-plan
-safety, and embedding dies on covariant recursion. This
-RFC only pins the concrete shape of the decision already made.
+safety, and embedding fails under covariant recursion. This RFC only
+pins the concrete shape of the decision already made.
 
 ### B. Typed member access on the interfaces
 
@@ -630,13 +628,13 @@ the documented spellings; the struct keeps `Kind` for equality.
 - The `[]Symbol` adapters on `Membered` and `Typed` allocate a slice
   per call. Neutral tooling pays it; hot paths use the concrete
   structs and pay nothing.
-- `Identity` at six fields is wide for a value used as a map key
-  everywhere. The engine's interning replaces it with dense run-local
-  IDs; the struct is the boundary form.
+- `Identity` at six fields is wide for a value the engine uses as a
+  map key throughout. The engine's interning replaces it with dense
+  run-local IDs; the struct is the boundary form.
 - The metadata, directive and emit-body seams are absent by design,
   so each arrives as a schema edit that regenerates both sides. The
-  regeneration is the designed cost; the diff noise lands on whoever
-  reviews those changes.
+  regeneration is the designed cost, and whoever reviews those
+  changes reads the diff noise it makes.
 
 ## Open questions
 

@@ -26,40 +26,42 @@ never run it; contributors run it through `make generate`.
 
 ## Motivation
 
-Two models must never diverge from one schema or from each other;
-that promise needs an enforcer.
-The enforcer has constraints the architecture fixes: the module map
-requires the tool to have no eidos dependencies and to be plain
-`go/ast` plus `text/template`, because a kernel that needed a
-language satellite to build itself could never bootstrap; and the
-kernel takes no third-party dependencies, which extends to its
-`go.mod`, because a `tool` directive is visible to every consumer's
-supply-chain audit. Within those walls, this RFC decides what the
-architecture left open: how the tool reads the schema without
-importing it, what its intermediate form is, which files it writes,
-and how the guard runs.
+Two models generate from one schema, and neither may drift from the
+schema or from each other. Something has to check that, and the
+architecture fixes two constraints on whatever does.
+
+The module map requires the tool to depend on no eidos package and to
+be plain `go/ast` plus `text/template`, because a kernel that needed
+a language satellite to build itself could never bootstrap. The
+kernel also takes no third-party dependencies, which covers its
+`go.mod`, because a `tool` directive shows up in every consumer's
+supply-chain audit. Inside those two constraints this RFC decides
+what the architecture left open: how the tool reads the schema
+without importing it, what its intermediate form is, which files it
+writes, and how the guard runs.
 
 ## Detailed design
 
 ### Pipeline
 
 ```mermaid
-flowchart LR
-    S[symbol/schema sources] -->|go/parser| A[ast.Files]
-    A -->|go/types + source importer| T[type-checked package]
-    T -->|lower + validate| I[IR: KindSpec list]
-    I -->|text/template, embedded| G[generated sources]
-    G -->|go/format.Source| F[formatted bytes]
-    F -->|write, or diff in the guard| O[symbol/ node/ emit/]
+flowchart TD
+    S["symbol/schema sources"] -->|"go/parser"| A["ast.Files"]
+    A -->|"go/types + source importer"| T["type-checked package"]
+    T -->|"lower + validate"| I["IR: KindSpec list"]
+    I -->|"text/template, embedded"| G["generated sources"]
+    G -->|"go/format.Source"| F["formatted bytes"]
+    F -->|"write, or diff in the guard"| O["symbol/, node/, emit/"]
 ```
 
-The tool lives at `internal/gen/model`, named for what it writes. Two more generators take the same input or the same shape: the
-authoring surface's kind-indexed triggers and Match types come from
-this schema, and registered names (diagnostic codes, metadata keys
-and groups, directive names and their param keys) generate constants.
-Each is a sibling under `internal/gen`, and the machinery they share,
-module-root discovery, the importer, formatting and the mirror
-harness, moves up a level when the second one needs it.
+The tool lives at `internal/gen/model`, named for what it writes. Two
+more generators take the same input or the same shape: the authoring
+surface's kind-indexed triggers and Match types come from this
+schema, and registered names (diagnostic codes, metadata keys and
+groups, directive names and their param keys) generate constants.
+Each is a sibling under `internal/gen`. They share module-root
+discovery, the importer, formatting and the mirror harness, and that
+machinery moves up a level as soon as a second generator needs it.
 
 The tool never imports `symbol`, `schema` or any eidos package. It
 locates the module root by walking up from the working directory to
@@ -98,16 +100,16 @@ Verified against go1.27.0: `types.Importer` is the single-method
 interface above, and `(*types.Config).Check(path, fset, files, info)`
 type-checks a parsed package with it.
 
-Two reading modes keep the bootstrap sound. The generator reads its
-own input, the schema, hand-written: generated files are skipped, so
-its output can never feed it and a stale file cannot change what it
-produces. It reads a dependency complete, generated files included
-and type errors tolerated, for two reasons. Hand-written code
-legitimately refers to what its own generator produced, as
+Two reading modes keep the bootstrap sound. The tool reads its own
+input, the schema, hand-written only: it skips generated files, so
+its output can never feed back in and a stale file cannot change what
+it produces. It reads a dependency complete instead, generated files
+included and type errors tolerated, for two reasons. Hand-written
+code legitimately refers to what its own generator produced, as
 `symbol.Identity.String` refers to the generated Kind constants. And
 a dependency that does not compile must not stop the generator that
-would fix it: a broken generated file would otherwise brick
-regeneration.
+would fix it, or one broken generated file leaves no way to
+regenerate.
 
 ### The intermediate representation
 
@@ -168,10 +170,10 @@ carrying the schema file position:
 | `emit/walk.gen.go` | `Walk`, `All` over slot items |
 | `emit/walk.gen_test.go` | traversal and pruning, per kind |
 
-Files group by concern rather than by kind (ADR-0005): a dozen
-files instead of dozens per kind, diffs review as one concern at a time, and the
-`.gen.go` suffix rides the license-header exclusion already in
-`.ergon.yaml`. Every file opens with
+Files group by concern rather than by kind (ADR-0005): fourteen files
+instead of dozens per kind, so a reviewer reads a schema change one
+concern at a time, and the `.gen.go` suffix already matches the
+license-header exclusion in `.ergon.yaml`. Every file opens with
 `// Code generated by internal/gen/model. DO NOT EDIT.`, the standard
 marker tools recognize.
 
@@ -197,18 +199,17 @@ encoder does the rest. There are no per-kind marshallers, because a
 concretely typed field needs none: `[]*Field` decodes straight
 through the tags.
 
-One case genuinely cannot work that way. A field admitting any
-declaration cannot decode from an interface slice, because nothing
-tells the decoder what to allocate: `[]symbol.Symbol` fails with
-"cannot unmarshal object into .0 of type symbol.Symbol". Those
-fields are typed `Symbols`, a named slice that writes each
-element's kind ahead of its fields and reads it back before
-allocating. `ParseKind` turns the name into a kind, and each model
-carries a table indexed by that kind holding how to make one, so
-the name lookup lives once in the vocabulary rather than once per
-model.
+One case cannot work that way. A field admitting any declaration
+cannot decode from an interface slice, because nothing tells the
+decoder what to allocate: `[]symbol.Symbol` fails with "cannot
+unmarshal object into .0 of type symbol.Symbol". Those fields are
+typed `Symbols`, a named slice that writes each element's kind ahead
+of its fields and reads it back before allocating. `ParseKind` turns
+the name into a kind, and each model carries a table indexed by that
+kind holding how to make one, so the name lookup lives once in the
+vocabulary rather than once per model.
 
-So the discriminator exists on exactly the values that need it, in
+The discriminator therefore sits only on the values that need it, in
 one place per model, rather than on every kind. A slot holding
 declarations delegates to `Symbols`; a slot of one concrete kind
 encodes and decodes from the tags alone.
@@ -227,13 +228,13 @@ of it: the kind constant it answers, its position and documentation,
 which member lists it carries, and that a traversal reaches one
 child in every traversed field and stops when a visitor prunes.
 
-The limit is worth stating, because it decides what these tests are
-for. A test generated from the same intermediate representation as
-the code cannot catch a lowering fault: if lowering marks a field
-traversed when the schema did not, the code and the test agree and
-both are wrong. What it does catch is a rendering fault, because it
-compiles and runs the emitted code. Lowering is checked separately,
-against hand-written schema fixtures.
+These tests have one limit, and it decides what they are for. A test
+generated from the same intermediate representation as the code
+cannot catch a lowering fault: if lowering marks a field traversed
+when the schema did not, the code and the test agree and both are
+wrong. It does catch a rendering fault, because it compiles and runs
+the emitted code. Lowering is checked separately, against
+hand-written schema fixtures.
 
 ### Determinism
 
@@ -253,7 +254,7 @@ The same schema bytes produce the same output bytes anywhere:
 // Generate renders every output file into memory.
 func Generate(modRoot string) (map[string][]byte, error)
 
-// internal/gen/model/mirror_test.go — the mirror guard.
+// internal/gen/model/mirror_test.go holds the mirror guard.
 // For every generated path: bytes on disk equal Generate's bytes.
 // For every *.gen.go on disk under symbol/, node/ and emit/: it is
 // one of Generate's paths, so a stray or hand-added generated file

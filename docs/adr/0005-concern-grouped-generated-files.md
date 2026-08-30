@@ -17,21 +17,20 @@ Accepted
 
 The model generator writes kind structs, walk code, owner rewiring,
 JSON codecs and slot accessors for 21 kinds on two sides. That output
-has to land in some file layout, and the layout decides what a
+has to go into some file layout, and the layout decides what a
 reviewer sees in every schema-touching diff for the life of the
 project.
 
 The repository already treats the `.gen.go` suffix specially:
 `.ergon.yaml` excludes `*.gen.go` from license-header enforcement.
-RFC-0002 specifies the generator and names the files.
 
 ## Decision
 
-We will write generated code as one file per concern per side,
-named `*.gen.go` (`kinds.gen.go`, `walk.gen.go`, `rewire.gen.go`,
+Write generated code as one file per concern per side, named
+`*.gen.go` (`kinds.gen.go`, `walk.gen.go`, `rewire.gen.go`,
 `json.gen.go`, and `slots.gen.go` on the emit side), because a
-reviewer reads a schema change as one concern at a time and the
-suffix rides the tooling exclusions the repository already has.
+reviewer reads a schema change one concern at a time and the suffix
+already matches the tooling exclusions this repository sets.
 
 ## Alternatives Considered
 
@@ -39,18 +38,17 @@ suffix rides the tooling exclusions the repository already has.
 
 `node/struct.gen.go`, `node/method.gen.go` and so on: 42 files, each
 holding its kind's struct, walk case, rewire case and codec together.
-It lost because the concerns interleave inside every file, the
-templates fragment the same concern's logic across kinds, and the
-tree churns by two files for every kind added. Reviewing "what did
-this schema edit do to traversal" means opening 21 files instead of
-one.
+It lost because every file then mixes four concerns, the templates
+split one concern's logic across every kind, and adding a kind adds
+two more files. Asking what a schema edit did to traversal means
+opening 21 files instead of one.
 
 ### One file per side
 
 `node/generated.gen.go` and `emit/generated.gen.go`. It lost because
-each file lands in the low thousands of lines, every generated diff
-collides in one path, and a reviewer looking for the JSON change
-scrolls past the structs and the walker to find it.
+each file runs to a few thousand lines, every generated diff collides
+in one path, and a reviewer looking for the JSON change scrolls past
+the structs and the walker to reach it.
 
 ## Consequences
 
