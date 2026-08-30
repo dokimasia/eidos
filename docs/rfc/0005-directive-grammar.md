@@ -2,7 +2,7 @@
 rfc: 0005
 title: The directive grammar, schemas and validation
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-08-30
 updated: 2026-08-30
 discussion: none

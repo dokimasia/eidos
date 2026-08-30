@@ -16,4 +16,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0002](0002-model-generator.md) | The model generator (internal/gen/model) | Accepted |
 | [0003](0003-diagnostics-and-store.md) | Diagnostics and the node store | Accepted |
 | [0004](0004-metadata-facts.md) | Metadata keys and the fact store | Accepted |
-| [0005](0005-directive-grammar.md) | The directive grammar, schemas and validation | Draft |
+| [0005](0005-directive-grammar.md) | The directive grammar, schemas and validation | Accepted |
