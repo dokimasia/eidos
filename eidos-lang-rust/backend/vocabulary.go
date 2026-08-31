@@ -46,6 +46,10 @@ const (
 	FuncAttrs = "attrs"
 	// FuncSupertraits writes a trait's supertrait bounds.
 	FuncSupertraits = "supertraits"
+	// FuncEnumMods writes an enum's keywords.
+	FuncEnumMods = "enummods"
+	// FuncAliasMods writes a type alias's keywords.
+	FuncAliasMods = "aliasmods"
 )
 
 // Funcs is the shared template vocabulary the kind templates call.
@@ -66,6 +70,8 @@ func Funcs() template.FuncMap {
 		FuncFieldMods:   FieldMods,
 		FuncAttrs:       Attrs,
 		FuncSupertraits: Supertraits,
+		FuncEnumMods:    EnumMods,
+		FuncAliasMods:   AliasMods,
 	}
 }
 
@@ -204,6 +210,28 @@ func StructMods(s *emit.Struct) (string, error) {
 				"supertypes", s.Name)
 	}
 	return Vis(s.Visibility, s.Name)
+}
+
+// EnumMods writes an enum's keywords: its visibility alone. An
+// enum carrying fields or methods refuses, because Rust holds
+// state in variants and behaviour in impl blocks.
+func EnumMods(e *emit.Enum) (string, error) {
+	if e.Fields.Len() > 0 || e.Methods.Len() > 0 {
+		return "", fmt.Errorf(
+			"rust: an enum holds variants alone, and %s states members", e.Name)
+	}
+	return Vis(e.Visibility, e.Name)
+}
+
+// AliasMods writes a type alias's keywords: its visibility alone.
+// A defined type refuses, because a Rust alias is transparent.
+func AliasMods(a *emit.Alias) (string, error) {
+	if a.Defined {
+		return "", fmt.Errorf(
+			"rust: an alias is transparent, and %s states a defined type",
+			a.Name)
+	}
+	return Vis(a.Visibility, a.Name)
 }
 
 // Supertraits writes a trait's supertrait bounds behind a colon,

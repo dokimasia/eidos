@@ -25,6 +25,7 @@ func New() plugin.Backend {
 		Funcs(Funcs()).
 		Naming(spell.Filename).
 		Respell(spell.Name).
+		Lower(Lower).
 		Scaffold(Scaffold).
 		Imports(Imports).
 		Finalise(format.Source).

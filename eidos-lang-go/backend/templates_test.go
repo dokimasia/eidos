@@ -119,6 +119,10 @@ func TestTemplates(t *testing.T) {
 			execute(t, backend.AliasTemplate, &emit.Alias{Name: "ID", Target: ref("string")}),
 			"type ID = string\n", "the alias shape")
 		assert.Equal(t,
+			execute(t, backend.AliasTemplate,
+				&emit.Alias{Name: "phase", Defined: true, Target: ref("int")}),
+			"type phase int\n", "a defined type drops the equals sign")
+		assert.Equal(t,
 			execute(t, backend.ConstantTemplate,
 				&emit.Constant{Name: "Max", Type: ref("int"), Value: "10"}),
 			"const Max int = 10\n", "a typed constant")

@@ -41,6 +41,8 @@ const (
 	FuncHeritage = "heritage"
 	// FuncThrows writes a callable's throws clause.
 	FuncThrows = "throws"
+	// FuncEnumVariant writes one enum constant.
+	FuncEnumVariant = "enumvariant"
 )
 
 // Anonymous is what Java writes where a declaration states no
@@ -50,19 +52,20 @@ const Anonymous = "Object"
 // Funcs is the shared template vocabulary the kind templates call.
 func Funcs() template.FuncMap {
 	return template.FuncMap{
-		FuncDocs:       Docs,
-		FuncSpell:      Spell,
-		FuncTypeParams: TypeParams,
-		FuncParams:     Params,
-		FuncResults:    Results,
-		FuncPackage:    PackageClause,
-		FuncTypeMods:   TypeMods,
-		FuncFieldMods:  FieldMods,
-		FuncMethodMods: MethodMods,
-		FuncSigMods:    SigMods,
-		FuncAnnotate:   Annotate,
-		FuncHeritage:   Heritage,
-		FuncThrows:     Throws,
+		FuncDocs:        Docs,
+		FuncSpell:       Spell,
+		FuncTypeParams:  TypeParams,
+		FuncParams:      Params,
+		FuncResults:     Results,
+		FuncPackage:     PackageClause,
+		FuncTypeMods:    TypeMods,
+		FuncFieldMods:   FieldMods,
+		FuncMethodMods:  MethodMods,
+		FuncSigMods:     SigMods,
+		FuncAnnotate:    Annotate,
+		FuncHeritage:    Heritage,
+		FuncThrows:      Throws,
+		FuncEnumVariant: EnumVariantName,
 	}
 }
 
@@ -208,10 +211,24 @@ func TypeMods(d symbol.Symbol) (string, error) {
 		return part, nil
 	case *emit.Interface:
 		return access(t.Visibility, t.Name, true)
+	case *emit.Enum:
+		return access(t.Visibility, t.Name, true)
 	default:
 		return "", fmt.Errorf(
 			"java: no file-level keywords spell a %s", d.Kind())
 	}
+}
+
+// EnumVariantName writes one enum constant's spelling: the name
+// alone. A stated value refuses, because a valued constant takes
+// the constructor form these templates do not spell.
+func EnumVariantName(v *emit.EnumVariant) (string, error) {
+	if v.Value != "" {
+		return "", fmt.Errorf(
+			"java: an enum constant spells its name alone, and %s states a "+
+				"value", v.Name)
+	}
+	return v.Name, nil
 }
 
 // FieldMods writes a field's keywords, in Java's stated order:

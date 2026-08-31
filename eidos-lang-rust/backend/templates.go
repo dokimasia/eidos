@@ -53,10 +53,20 @@ const (
 		"{{.Name}}{{typeparams .TypeParams}}" +
 		"({{params .Params}}){{results .Returns}} {\n{{body .}}}\n"
 
+	// EnumTemplate spells a payloadless enum: one variant per
+	// line under its own doc lines and attributes, a stated value
+	// as its discriminant.
+	EnumTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
+		"{{enummods .}}enum {{.Name}} {\n" +
+		"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"    {{.Name}}{{with .Value}} = {{.}}{{end}},\n" +
+		"{{- end}}\n}\n"
+
 	// AliasTemplate spells a type alias, its visibility and type
-	// parameters behind the name.
+	// parameters behind the name; a defined type refuses through
+	// the keywords helper, because a Rust alias is transparent.
 	AliasTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
-		"{{vis .Visibility .Name}}type {{.Name}}{{typeparams .TypeParams}}" +
+		"{{aliasmods .}}type {{.Name}}{{typeparams .TypeParams}}" +
 		" = {{spell .Target}};\n"
 
 	// ConstantTemplate spells a constant. Rust states a constant's
@@ -75,6 +85,7 @@ func KindTemplates() map[symbol.Kind]string {
 		symbol.KindStruct:    StructTemplate,
 		symbol.KindInterface: InterfaceTemplate,
 		symbol.KindFunction:  FunctionTemplate,
+		symbol.KindEnum:      EnumTemplate,
 		symbol.KindAlias:     AliasTemplate,
 		symbol.KindConstant:  ConstantTemplate,
 	}

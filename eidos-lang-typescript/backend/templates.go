@@ -60,6 +60,14 @@ const (
 	AliasTemplate = "{{docs .Doc}}{{mods .}}type {{.Name}}{{typeparams .TypeParams}}" +
 		" = {{spell .Target}};\n"
 
+	// EnumTemplate spells an enum: one member per variant, its
+	// stated value behind an equals sign, each under its own doc
+	// block.
+	EnumTemplate = "{{docs .Doc}}{{mods .}}enum {{.Name}} {\n" +
+		"{{- range .Variants.Items}}\n{{docs .Doc \"  \"}}" +
+		"  {{.Name}}{{with .Value}} = {{.}}{{end}},\n" +
+		"{{- end}}\n}\n"
+
 	// ConstantTemplate spells a constant, typed where the
 	// declaration states a type.
 	ConstantTemplate = "{{docs .Doc}}{{mods .}}const {{.Name}}" +
@@ -81,6 +89,7 @@ func KindTemplates() map[symbol.Kind]string {
 		symbol.KindStruct:    StructTemplate,
 		symbol.KindInterface: InterfaceTemplate,
 		symbol.KindFunction:  FunctionTemplate,
+		symbol.KindEnum:      EnumTemplate,
 		symbol.KindAlias:     AliasTemplate,
 		symbol.KindConstant:  ConstantTemplate,
 		symbol.KindVariable:  VariableTemplate,

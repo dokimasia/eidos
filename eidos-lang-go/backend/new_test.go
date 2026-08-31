@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"maps"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -11,18 +12,23 @@ import (
 	"go.dokimi.dev/eidos/core/backendtest"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 	golang "go.dokimi.dev/eidos/lang-go"
 	"go.dokimi.dev/eidos/lang-go/backend"
 )
 
 // setup builds the backend over the kernel's canonical fixture,
-// filtered to this module's declared inventory.
+// filtered to this module's rendered coverage: the declared kind
+// templates, plus the enum kind the lowering reshapes into a
+// defined type and constants before any template runs.
 func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	tb.Helper()
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.CanonicalFixture(tb, backend.KindTemplates())
+	inventory := maps.Clone(backend.KindTemplates())
+	inventory[symbol.KindEnum] = ""
+	return r, backendtest.CanonicalFixture(tb, inventory)
 }
 
 // benchSetup builds the backend over the suite's scaled corpus,
@@ -32,7 +38,9 @@ func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.ScaledFixture(tb, backend.KindTemplates())
+	inventory := maps.Clone(backend.KindTemplates())
+	inventory[symbol.KindEnum] = ""
+	return r, backendtest.ScaledFixture(tb, inventory)
 }
 
 // BenchmarkNew measures the composed backend over the suite's
@@ -40,7 +48,7 @@ func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 // allocation ceiling pinned from measurement with headroom.
 func BenchmarkNew(b *testing.B) {
 	backendtest.BenchRender(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 13_800_000})
+		backendtest.Budget{MaxAllocs: 14_800_000})
 }
 
 // BenchmarkSettle measures the settle over the suite's scaled
@@ -48,7 +56,7 @@ func BenchmarkNew(b *testing.B) {
 // ceiling pinned from measurement with headroom.
 func BenchmarkSettle(b *testing.B) {
 	backendtest.BenchSettle(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 4_100_000})
+		backendtest.Budget{MaxAllocs: 4_800_000})
 }
 
 // The backend is the module's write half: the kernel suite holds

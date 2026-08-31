@@ -45,17 +45,19 @@ func execute(src string, data any) (string, error) {
 func TestTemplates(t *testing.T) {
 	t.Parallel()
 
-	t.Run("the inventory is class and interface alone", func(t *testing.T) {
+	t.Run("the inventory is class, interface and enum alone", func(t *testing.T) {
 		t.Parallel()
 
 		kinds := backend.KindTemplates()
-		assert.Length(t, kinds, 2,
+		assert.Length(t, kinds, 3,
 			"Java states everything inside a type, so nothing else "+
 				"has a file-level spelling")
 		_, held := kinds[symbol.KindStruct]
 		assert.True(t, held, "the class")
 		_, held = kinds[symbol.KindInterface]
-		assert.True(t, held, "and the interface")
+		assert.True(t, held, "the interface")
+		_, held = kinds[symbol.KindEnum]
+		assert.True(t, held, "and the enum class")
 	})
 
 	t.Run("class carries fields and methods with bodies", func(t *testing.T) {
@@ -261,6 +263,38 @@ func TestTemplates(t *testing.T) {
 		_, err := execute(backend.InterfaceTemplate, i)
 		assert.HasError(t, err,
 			"a Java callable returns one value, and the second arrives thrown")
+	})
+
+	t.Run("enum", func(t *testing.T) {
+		t.Parallel()
+
+		e := &emit.Enum{Doc: []string{"Phase names a step."}, Name: "Phase"}
+		e.Variants.Append(
+			&emit.EnumVariant{Doc: []string{"OPEN admits writes."}, Name: "OPEN"},
+			&emit.EnumVariant{Name: "CLOSED"},
+		)
+		e.Fields.Append(&emit.Field{
+			Name: "steps", Level: symbol.LevelType, Type: ref("int"), Value: "2",
+		})
+		got, err := execute(backend.EnumTemplate, e)
+		assert.NoError(t, err, "the enum class renders")
+		assert.Equal(t, got,
+			"/**\n * Phase names a step.\n */\n"+
+				"public enum Phase {\n"+
+				"    /**\n     * OPEN admits writes.\n     */\n"+
+				"    OPEN,\n"+
+				"    CLOSED,\n"+
+				"    ;\n"+
+				"    public static int steps = 2;\n"+
+				"}\n",
+			"constants first, the members Java's enum class carries "+
+				"behind the semicolon")
+
+		valued := &emit.Enum{Name: "Phase"}
+		valued.Variants.Append(&emit.EnumVariant{Name: "OPEN", Value: "1"})
+		_, err = execute(backend.EnumTemplate, valued)
+		assert.HasError(t, err,
+			"a stated value refuses, because it takes the constructor form")
 	})
 
 	t.Run("the file skeleton opens with the package clause", func(t *testing.T) {

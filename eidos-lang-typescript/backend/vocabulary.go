@@ -197,8 +197,23 @@ func Mods(d symbol.Symbol) (string, error) {
 		}
 		return part, nil
 	case *emit.Alias:
-		if len(t.Annotations) > 0 {
+		switch {
+		case len(t.Annotations) > 0:
 			return "", undecorated(t.Name)
+		case t.Defined:
+			return "", fmt.Errorf(
+				"typescript: an alias is transparent, and %s states a "+
+					"defined type", t.Name)
+		}
+		return exported(t.Visibility, t.Name)
+	case *emit.Enum:
+		switch {
+		case len(t.Annotations) > 0:
+			return "", undecorated(t.Name)
+		case t.Fields.Len() > 0 || t.Methods.Len() > 0:
+			return "", fmt.Errorf(
+				"typescript: an enum carries values alone, and %s states "+
+					"members", t.Name)
 		}
 		return exported(t.Visibility, t.Name)
 	case *emit.Constant:

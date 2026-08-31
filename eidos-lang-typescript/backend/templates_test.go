@@ -252,6 +252,32 @@ func TestTemplates(t *testing.T) {
 			"an immutable binding is const with its initializer")
 	})
 
+	t.Run("enum", func(t *testing.T) {
+		t.Parallel()
+
+		e := &emit.Enum{Doc: []string{"Phase names a step."}, Name: "Phase"}
+		e.Variants.Append(
+			&emit.EnumVariant{Doc: []string{"Open admits writes."}, Name: "Open"},
+			&emit.EnumVariant{Name: "Closed", Value: "9"},
+		)
+		assert.Equal(t, execute(t, backend.EnumTemplate, e),
+			"/**\n * Phase names a step.\n */\n"+
+				"export enum Phase {\n"+
+				"  /**\n   * Open admits writes.\n   */\n"+
+				"  Open,\n"+
+				"  Closed = 9,\n"+
+				"}\n",
+			"one member per variant, a stated value behind equals")
+
+		withMembers := &emit.Enum{Name: "Phase"}
+		withMembers.Methods.Append(&emit.Method{Name: "describe"})
+		tmpl, err := template.New("kind").Funcs(backend.Funcs()).Parse(backend.EnumTemplate)
+		assert.NoError(t, err, "the template parses")
+		var b strings.Builder
+		assert.HasError(t, tmpl.Execute(&b, withMembers),
+			"an enum carrying members refuses")
+	})
+
 	t.Run("the file skeleton is imports then declarations", func(t *testing.T) {
 		t.Parallel()
 

@@ -69,9 +69,12 @@ const (
 		"{{.Name}}{{typeparams .TypeParams}}({{params .Params}})" +
 		"{{results .Returns}} {\n{{body .}}}\n"
 
-	// AliasTemplate spells a type alias, its type parameters
-	// behind the name, under the guard.
-	AliasTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} = {{spell .Target}}\n"
+	// AliasTemplate spells a type alias or a defined type, its
+	// type parameters behind the name, under the guard: the equals
+	// sign is the transparent alias's, and a defined type drops it,
+	// which is what makes its constants and methods its own.
+	AliasTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} " +
+		"{{if not .Defined}}= {{end}}{{spell .Target}}\n"
 
 	// ConstantTemplate spells a constant, typed where the
 	// declaration states a type, its trailing comment beside the

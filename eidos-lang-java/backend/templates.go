@@ -58,6 +58,27 @@ const (
 		"{{- end}}\n}\n"
 )
 
+// EnumTemplate spells an enum class: annotation lines above the
+// declaration, one constant per variant under its own doc block
+// and annotations, then the instance fields and methods a Java
+// enum may carry behind the closing semicolon, each spelled the
+// way the class template spells its members.
+const EnumTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
+	"{{typemods .}}enum {{.Name}} {\n" +
+	"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+	"    {{enumvariant .}},\n" +
+	"{{- end}}" +
+	"{{- if or .Fields.Len .Methods.Len}}\n    ;{{end}}" +
+	"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+	"    {{fieldmods .}}{{spell .Type}} {{.Name}}{{with .Value}} = {{.}}{{end}};\n" +
+	"{{- end}}" +
+	"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+	"{{if .Override}}    @Override\n{{end}}" +
+	"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
+	"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
+	"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}\n" +
+	"{{- end}}\n}\n"
+
 // KindTemplates maps each emit kind to the template that spells
 // it. A kind absent from the map is one the Java backend cannot
 // spell at file level: the render reports it and skips that
@@ -66,5 +87,6 @@ func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,
 		symbol.KindInterface: InterfaceTemplate,
+		symbol.KindEnum:      EnumTemplate,
 	}
 }
