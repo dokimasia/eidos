@@ -43,10 +43,10 @@ func TestFixture(t *testing.T) {
 		assert.True(t, seen != nil, "the check rendered")
 		assert.True(t, seen.Emit == f.Emit, "the same store")
 		assert.Equal(t, seen.Schedule, f.Schedule, "the schedule as data")
-		assert.True(t, seen.Trees["gen"] != nil, "the trees ride the context")
-		assert.True(t, seen.Funcs["gen"] != nil, "the helpers ride the context")
+		assert.True(t, seen.Trees["gen"] != nil, "the trees reach the context")
+		assert.True(t, seen.Funcs["gen"] != nil, "the helpers reach the context")
 		assert.Equal(t, seen.Overrides["gen"], []string{"up"},
-			"the override declarations ride the context")
+			"the override declarations reach the context")
 		assert.True(t, seen.Sink != nil, "the suite supplies a fresh sink")
 		assert.True(t, seen.Plugin != "", "the suite renders under its own identity")
 	})

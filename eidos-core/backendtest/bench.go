@@ -26,7 +26,7 @@ const (
 	// BenchFiles is how many source units each package holds.
 	BenchFiles = 10
 	// BenchDecls is how many file-level declarations each unit
-	// holds; member declarations ride inside them uncounted.
+	// holds; member declarations nest inside them uncounted.
 	BenchDecls = 20
 )
 
@@ -147,15 +147,21 @@ func scaledKey(p, file int) string {
 }
 
 // scaledDecl returns the nth benchmark declaration of a kind,
-// numbered so names stay distinct across the corpus.
+// numbered so names stay distinct across the corpus. The
+// parameterizable kinds carry the canonical generic shapes, so a
+// ceiling measures the surface the backend spells: a parameter
+// list on every host, one named bound, an argument-carrying
+// reference, and a method declaring parameters of its own over a
+// generic receiver.
 func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 	i := strconv.Itoa(n)
 	switch k {
 	case symbol.KindStruct:
 		s := &emit.Struct{
-			Origin: originOf("Row"+i, symbol.KindStruct),
-			Doc:    []string{"Row" + i + " holds one record."},
-			Name:   "Row" + i,
+			Origin:     originOf("Row"+i, symbol.KindStruct),
+			Doc:        []string{"Row" + i + " holds one record."},
+			Name:       "Row" + i,
+			TypeParams: []*emit.TypeParam{{Name: "T"}},
 		}
 		s.Fields.Append(&emit.Field{
 			Origin:  memberOf("Row"+i, "Name", symbol.KindField),
@@ -174,6 +180,9 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 		iface := &emit.Interface{
 			Origin: originOf("Store"+i, symbol.KindInterface),
 			Name:   "Store" + i,
+			TypeParams: []*emit.TypeParam{
+				{Name: "K", Bounds: []*emit.TypeRef{typeRef(boundName)}},
+			},
 		}
 		iface.Methods.Append(&emit.Method{
 			Origin:  memberOf("Store"+i, "Get", symbol.KindMethod),
@@ -186,20 +195,35 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 		return &emit.Function{
 			Origin: originOf("Task"+i, symbol.KindFunction),
 			Name:   "Task" + i,
-			Body:   emit.Body{Stmts: scaffoldStmts()},
+			TypeParams: []*emit.TypeParam{
+				{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
+			},
+			Body: emit.Body{Stmts: scaffoldStmts()},
 		}
 	case symbol.KindMethod:
 		return &emit.Method{
-			Origin:   memberOf("Row"+i, "Track", symbol.KindMethod),
-			Name:     "Track",
-			Receives: typeRef("Row" + i),
-			Body:     emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}},
+			Origin: memberOf("Row"+i, "Track", symbol.KindMethod),
+			Name:   "Track",
+			Receives: &emit.TypeRef{
+				Spelling: "Row" + i,
+				Args:     []*emit.TypeRef{typeRef("T")},
+			},
+			TypeParams: []*emit.TypeParam{
+				{Name: "U", Bounds: []*emit.TypeRef{typeRef(boundName)}},
+			},
+			Body: emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}},
 		}
 	case symbol.KindAlias:
 		return &emit.Alias{
 			Origin: originOf("ID"+i, symbol.KindAlias),
 			Name:   "ID" + i,
-			Target: typeRef("string"),
+			TypeParams: []*emit.TypeParam{
+				{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
+			},
+			Target: &emit.TypeRef{
+				Spelling: "Keyed",
+				Args:     []*emit.TypeRef{typeRef("T")},
+			},
 		}
 	case symbol.KindConstant:
 		return &emit.Constant{

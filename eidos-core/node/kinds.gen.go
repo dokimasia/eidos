@@ -952,7 +952,10 @@ func (x *Alias) Identity() symbol.Identity { return x.ID }
 // one would make the walk cyclic.
 //
 // Args holds the type arguments of an instantiation, so
-// Map[string, User] carries two.
+// Map[string, User] carries two. A reference carrying Args holds
+// the bare name in Spelling, and a target writes the argument
+// list in its own brackets, so the one instantiation spells
+// Map[K, V] in Go and Map<K, V> in Java.
 //
 // This is the node spelling of the kind.
 type TypeRef struct {

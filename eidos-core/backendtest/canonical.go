@@ -48,6 +48,10 @@ const refTemplate = "save.tpl"
 // the file.
 const verbatimBody = "\ttrace()\n"
 
+// boundName is the one bound every generic canonical declaration
+// constrains by, so each target proves one bound spelling.
+const boundName = "Codec"
+
 // canonicalKinds fixes which kinds the fixture holds a
 // declaration for, in build order.
 var canonicalKinds = []symbol.Kind{
@@ -81,6 +85,14 @@ var canonicalKinds = []symbol.Kind{
 // still reaches every content form through its struct template's
 // members. Two calls build two isolated fixtures, the way [Setup]
 // requires.
+//
+// The parameterizable kinds carry a generic sibling beside the
+// plain declaration: a parameter list, one named bound, a
+// reference restating a parameter as an argument, and a method
+// declaring parameters of its own, so a backend's generic
+// spellings render under the same suite. The siblings stay inside
+// what every target spells; variance, defaults and value
+// parameters stay in each satellite's own template tests.
 func CanonicalFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
 	tb.Helper()
 
@@ -146,19 +158,21 @@ func canonicalTree() fs.FS {
 	}
 }
 
-// canonicalUnit returns the one unit covering a kind.
+// canonicalUnit returns the one unit covering a kind, the plain
+// declaration first and its generic sibling beside it where the
+// kind parameterizes.
 func canonicalUnit(k symbol.Kind) plugin.Unit {
 	switch k {
 	case symbol.KindStruct:
-		return unitFor("row", rowStruct())
+		return unitFor("row", rowStruct(), boxStruct())
 	case symbol.KindInterface:
-		return unitFor("store", storeInterface())
+		return unitFor("store", storeInterface(), keyedInterface())
 	case symbol.KindFunction:
-		return unitFor("task", taskFunctions()...)
+		return unitFor("task", append(taskFunctions(), sortFunction())...)
 	case symbol.KindMethod:
-		return unitFor("track", trackMethod())
+		return unitFor("track", trackMethod(), foldMethod())
 	case symbol.KindAlias:
-		return unitFor("id", idAlias())
+		return unitFor("id", idAlias(), matchAlias())
 	case symbol.KindConstant:
 		return unitFor("limit", limitConstant())
 	default: // symbol.KindVariable, by canonicalKinds
@@ -315,6 +329,38 @@ func rowStruct() *emit.Struct {
 	return s
 }
 
+// boxStruct returns the generic struct: one type parameter, a
+// field referencing it, and a member method declaring a bounded
+// parameter of its own, which is how a target rendering members
+// inside the host spells a method's own list. The host's
+// parameter stays unbounded, so a target restating it over an
+// impl block restates the name alone.
+func boxStruct() *emit.Struct {
+	s := &emit.Struct{
+		Origin:     originOf("Box", symbol.KindStruct),
+		Doc:        []string{"Box wraps one item."},
+		Name:       "Box",
+		TypeParams: []*emit.TypeParam{{Name: "T"}},
+	}
+	s.Fields.Append(&emit.Field{
+		Origin: memberOf("Box", "Item", symbol.KindField),
+		Doc:    []string{"Item is the wrapped value."},
+		Name:   "Item",
+		Type:   typeRef("T"),
+	})
+	s.Methods.Append(&emit.Method{
+		Origin: memberOf("Box", "Map", symbol.KindMethod),
+		Doc:    []string{"Map rewraps the item."},
+		Name:   "Map",
+		TypeParams: []*emit.TypeParam{
+			{Name: "U", Bounds: []*emit.TypeRef{typeRef(boundName)}},
+		},
+		Params:  []*emit.Param{{Name: "item", Type: typeRef("U")}},
+		Returns: []*emit.Return{{Type: typeRef("U")}},
+	})
+	return s
+}
+
 // storeInterface returns the interface: one documented method
 // signature with a parameter and a result, which is what the
 // signature vocabulary renders.
@@ -334,6 +380,27 @@ func storeInterface() *emit.Interface {
 	return i
 }
 
+// keyedInterface returns the generic interface: one bounded type
+// parameter its method signature references.
+func keyedInterface() *emit.Interface {
+	i := &emit.Interface{
+		Origin: originOf("Keyed", symbol.KindInterface),
+		Doc:    []string{"Keyed looks rows up."},
+		Name:   "Keyed",
+		TypeParams: []*emit.TypeParam{
+			{Name: "K", Bounds: []*emit.TypeRef{typeRef(boundName)}},
+		},
+	}
+	i.Methods.Append(&emit.Method{
+		Origin:  memberOf("Keyed", "Pick", symbol.KindMethod),
+		Doc:     []string{"Pick returns the row at a key."},
+		Name:    "Pick",
+		Params:  []*emit.Param{{Name: "key", Type: typeRef("K")}},
+		Returns: []*emit.Return{{Type: typeRef("K")}},
+	})
+	return i
+}
+
 // taskFunctions returns the four content forms as file-level
 // functions.
 func taskFunctions() []symbol.Symbol {
@@ -349,6 +416,21 @@ func taskFunctions() []symbol.Symbol {
 	return fns
 }
 
+// sortFunction returns the generic function: one bounded type
+// parameter its signature references.
+func sortFunction() symbol.Symbol {
+	return &emit.Function{
+		Origin: originOf("Sort", symbol.KindFunction),
+		Doc:    []string{"Sort orders items in place."},
+		Name:   "Sort",
+		TypeParams: []*emit.TypeParam{
+			{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
+		},
+		Params:  []*emit.Param{{Name: "items", Type: typeRef("T")}},
+		Returns: []*emit.Return{{Type: typeRef("T")}},
+	}
+}
+
 // trackMethod returns the file-level method, attached to the
 // struct by reference the way a target with receiver syntax
 // spells it.
@@ -361,6 +443,29 @@ func trackMethod() *emit.Method {
 	}
 }
 
+// foldMethod returns the generic file-level method: the receiver
+// restates the generic host's parameter as an argument, and the
+// method declares a bounded parameter of its own, which Go spells
+// behind the name and Rust inside the impl block the receiver
+// opens.
+func foldMethod() *emit.Method {
+	return &emit.Method{
+		Origin: memberOf("Box", "Fold", symbol.KindMethod),
+		Doc:    []string{"Fold collapses the box."},
+		Name:   "Fold",
+		Receives: &emit.TypeRef{
+			Spelling: "Box",
+			Args:     []*emit.TypeRef{typeRef("T")},
+		},
+		TypeParams: []*emit.TypeParam{
+			{Name: "U", Bounds: []*emit.TypeRef{typeRef(boundName)}},
+		},
+		Params:  []*emit.Param{{Name: "item", Type: typeRef("U")}},
+		Returns: []*emit.Return{{Type: typeRef("U")}},
+		Body:    emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}},
+	}
+}
+
 // idAlias returns the alias.
 func idAlias() *emit.Alias {
 	return &emit.Alias{
@@ -368,6 +473,24 @@ func idAlias() *emit.Alias {
 		Doc:    []string{"ID names a row."},
 		Name:   "ID",
 		Target: typeRef("string"),
+	}
+}
+
+// matchAlias returns the generic alias: a bounded parameter the
+// target reference restates as an argument, which is what proves
+// an argument list spells.
+func matchAlias() *emit.Alias {
+	return &emit.Alias{
+		Origin: originOf("Match", symbol.KindAlias),
+		Doc:    []string{"Match names a keyed lookup."},
+		Name:   "Match",
+		TypeParams: []*emit.TypeParam{
+			{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
+		},
+		Target: &emit.TypeRef{
+			Spelling: "Keyed",
+			Args:     []*emit.TypeRef{typeRef("T")},
+		},
 	}
 }
 

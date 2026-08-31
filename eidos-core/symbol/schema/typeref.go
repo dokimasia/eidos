@@ -21,7 +21,10 @@ import (
 // one would make the walk cyclic.
 //
 // Args holds the type arguments of an instantiation, so
-// Map[string, User] carries two.
+// Map[string, User] carries two. A reference carrying Args holds
+// the bare name in Spelling, and a target writes the argument
+// list in its own brackets, so the one instantiation spells
+// Map[K, V] in Go and Map<K, V> in Java.
 type TypeRef struct {
 	ID       symbol.Identity `eidos:"node"`
 	Pos      position.Pos    `eidos:"node"`
