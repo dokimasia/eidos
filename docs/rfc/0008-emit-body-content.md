@@ -41,7 +41,7 @@ it in a shape three other mechanisms can hold on to:
   either knowing the other exists. That only works if the extension
   points exist whether the owner anticipated them or not, which is
   what `prologue` and `epilogue` on every body give.
-- **The lint rung needs a closed shape.** A body whose content is
+- **The lint check needs a closed shape.** A body whose content is
   one of four declared forms can be checked: a template reference
   resolves or it does not, a scaffolding statement is inside the
   vocabulary or refused at compile time, and verbatim text is
@@ -147,7 +147,7 @@ func (b *Body) Slot(name string) (*Slot[Stmt], bool)
 
 // Form answers which content form the body holds, and an error
 // naming the forms where more than one is set: a body built with
-// two contents is a defect, and the render and the lint rung both
+// two contents is a defect, and the render and the lint check both
 // ask this one question.
 func (b *Body) Form() (Form, error)
 
@@ -336,7 +336,7 @@ written by the one author who cannot ask the owner for one.
   roughly three source files and their test twins.
 - The exactly-one-form law is checked where `Form` is asked, not
   where the body is built: a two-form body is a defect the render
-  or the lint rung reports, and nothing at append time refuses it.
+  or the lint check reports, and nothing at append time refuses it.
 - `TemplateRef.Data` is `any`: the codec round-trips it as generic
   JSON values, so a decoded reference does not answer the author's
   concrete type. Templates read their payload dynamically either
@@ -365,7 +365,7 @@ written by the one author who cannot ask the owner for one.
 ## Unresolved and future work
 
 - The render pass, the backend kit, the `{{slots}}` marker law and
-  the template-lint rung consume these values and are proposed
+  the template-lint check consume these values and are proposed
   separately.
 - `Sample` and a literal expression kind wait on the projection
   machinery whose answers they render.
@@ -380,4 +380,4 @@ written by the one author who cannot ask the owner for one.
 - [11-languages.md](../architecture/11-languages.md), the backend
   kit that executes template references
 - [13-testing-and-conformance.md](../architecture/13-testing-and-conformance.md),
-  the template-lint rung that reads the closed shape
+  the template-lint check that reads the closed shape

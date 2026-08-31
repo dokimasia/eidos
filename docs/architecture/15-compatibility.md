@@ -107,7 +107,7 @@ every template and every formatter with it.
 
 ## Published per release
 
-- The per-language support matrix, from the completeness rung.
+- The per-language support matrix, from the completeness check.
 - The cross-language metadata parity matrix
   ([04-metadata.md](04-metadata.md)).
 - The diagnostic-code index, with stable anchors.

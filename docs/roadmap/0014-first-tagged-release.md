@@ -32,7 +32,7 @@ by CI, and the generated documentation artifacts publish with the tag.
 - [ ] Every artifact in the table of
       [14-distribution-and-cli.md](../architecture/14-distribution-and-cli.md)
       generates in the tag pipeline, and a seeded stale page blocks
-      the tag the way a failing rung does.
+      the tag the way a failing check does.
 - [ ] The support matrix, the parity matrix, the diagnostic-code index
       and the benchmark comparison against the previous release
       publish beside the tag.

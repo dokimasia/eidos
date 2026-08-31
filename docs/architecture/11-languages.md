@@ -38,7 +38,7 @@ eidos-lang-<lang>/
                    over kernel skeletons, not hand-kept twins
   testdata/features/
                    one fixture per feature row; driven by the
-                   kernel's completeness rung from a root-level
+                   kernel's completeness check from a root-level
                    conformance test. The published support matrix is
                    a CI-generated artifact, not code
 ```
@@ -88,17 +88,17 @@ Three rules make "supports language X" something you can check
 
 First, the symbol model admits what any language needs, and other
 languages leave those parts empty. Second, every construct sits on
-one rung of the degradation ladder. Third, the **completeness rung**
+one level of the degradation ladder. Third, the **completeness check**
 drives `testdata/features/`, holding one small source file per
 landscape row beside its expectation:
 
 ```yaml
 # testdata/features/sum-types/expect.yaml
-rung: 1                      # 1 full | 2 partial+meta | 3 opaque+meta | 4 refused
-meta: [rust.lifetimeParams]  # rungs 2–3: the keys carrying the remainder
+level: 1                      # 1 full | 2 partial+meta | 3 opaque+meta | 4 refused
+meta: [rust.lifetimeParams]  # checks 2–3: the keys carrying the remainder
 ```
 
-The rung verifies that each fixture lands exactly where it declared.
+The check verifies that each fixture lands exactly where it declared.
 A feature that lands *better* than declared fails too, because a
 capability nobody declared is a capability nobody tested. The
 published per-language support matrix is generated from that run, so
@@ -279,7 +279,7 @@ and the kit keeps even that deviation invisible downstream:
 | Rust | tree-sitter-rust | no production pure-Go Rust parser exists, and the grammar is org-maintained |
 | Python | tree-sitter-python | the same, and docstrings enter through the kit's `Doc` and `DocLines` door |
 | Java | tree-sitter-java plus the class-file reader (D31) | a mature grammar, and JARs answer signature-only dependencies |
-| Kotlin | tree-sitter-kotlin, **flagged** | the community grammar reports a 61% structural match against the JetBrains PSI reference. Sequence this satellite late and expect more rung-2 and rung-3 rows in its feature matrix until the grammar closes the gap |
+| Kotlin | tree-sitter-kotlin, **flagged** | the community grammar reports a 61% structural match against the JetBrains PSI reference. Sequence this satellite late and expect more level-2 and level-3 rows in its feature matrix until the grammar closes the gap |
 | PHP | tree-sitter-php | a pure-Go parser exists, VKCOM's `php-parser` for PHP 8, but nobody has maintained it since 2022. Adopt it only with a maintenance commitment |
 
 One operational note. The official tree-sitter Go bindings use cgo,
@@ -316,12 +316,12 @@ question lands on a declared source of truth:
 | cross-package types, embeds, effective member sets | the linked graph, through `Members` and `Resolve` ([03-projection.md](03-projection.md)) |
 | comparability, zero values, samples | `rules/` walking the linked graph |
 | dependencies distributed without source | declared artifacts such as JARs and `.d.ts`, parsed and never executed |
-| inferred types, such as `var x = f()` with no annotation | rung 2: the declaration projects with the type opaque, and `<lang>.inferred` carries the spelling |
-| anything needing execution or macro expansion | rungs 3 and 4 of the ladder |
+| inferred types, such as `var x = f()` with no annotation | level 2: the declaration projects with the type opaque, and `<lang>.inferred` carries the spelling |
+| anything needing execution or macro expansion | checks 3 and 4 of the ladder |
 
 The residue is honest and small: what a compiler infers that the
 declarations do not state. Every such row sits on the degradation
-ladder, and the completeness rung verifies where
+ladder, and the completeness check verifies where
 ([13-testing-and-conformance.md](13-testing-and-conformance.md)).
 "Syntax-derived" is a declared property per feature row rather than
 a blanket caveat.
@@ -337,7 +337,7 @@ into every consumer's runs, and its answers move with whatever
 version the machine carries, which warm≡cold across machines cannot
 absorb. **Hybrid loading**, using the toolchain when present and a
 parser library otherwise: one workspace producing different graphs
-on different machines is a nondeterminism no rung can license.
+on different machines is a nondeterminism no check can license.
 
 ## The next satellites
 

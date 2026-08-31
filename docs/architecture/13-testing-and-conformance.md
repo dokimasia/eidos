@@ -9,28 +9,28 @@ Everything here ships in the kernel's `conformance/` package, and
 satellites and consumers run it too. Claims about compatibility,
 determinism and language support are executed rather than asserted.
 
-## The rung ladder
+## The check ladder
 
-Eight rungs, each proving something the others cannot:
+Eight checks, each proving something the others cannot:
 
-| Rung | Proves |
+| Check | Proves |
 |---|---|
 | plugintest | one plugin's declarations, its determinism, that no fixture panics (the other half of D68), and its diagnostic discipline, while rendering nothing. It includes template lint: every declared template parses against the merged funcmap per language, and every body-claiming template places the slot marker |
 | backendtest | one backend over a hand-built emit graph |
 | pipelinetest | plugins plus a real backend producing rendered files, driving one plan |
 | workspacetest | a full workspace: several plans, exports, and Close, covering collision detection, sweep, cross-plan checks and audit mode |
 | frontendtest | a real frontend with the plugin chain behind it |
-| acceptancetest | the consumer's binary end to end. The only rung that compiles generated output |
-| completeness | every `testdata/features/` row sits on the degradation rung it declared ([11-languages.md](11-languages.md)) |
+| acceptancetest | the consumer's binary end to end. The only check that compiles generated output |
+| completeness | every `testdata/features/` row sits on the degradation level it declared ([11-languages.md](11-languages.md)) |
 | warm≡cold | the same workspace, run cold and warm, produces byte-identical manifests ([09-incrementality.md](09-incrementality.md)) |
 
 Two disciplines apply throughout. Run with `-count=2` at minimum, so
 a defect that depends on map order cannot hide behind a single pass.
 Run with `-race` wherever plugins hold state.
 
-## Every rung, pinned
+## Every check, pinned
 
-Each rung is a suite the kernel owns, running over a fixture the
+Each check is a suite the kernel owns, running over a fixture the
 caller supplies. Harnesses and plugins supply fixtures and never
 assertion logic, so the assertion set and the wording of its
 failures are written once.
@@ -61,7 +61,7 @@ that every emit kind the fixture carries renders; that every body
 lands whole, with slot contents spliced through the kind machinery;
 and that a file's failure reports positioned and attributed while
 the render continues per [07-rendering.md](07-rendering.md), the
-refused file withheld. The header and trailer rungs are the output
+refused file withheld. The header and trailer checks are the output
 contract's and join the suite with it.
 
 **pipelinetest**, through `RunPipelineSuite(t, f PipelineFixture)`.
@@ -78,11 +78,11 @@ fingerprint and the frontend version.
 **acceptancetest** drives the consumer's binary as a process: exit
 codes per [16-diagnostics.md](16-diagnostics.md), config discovery,
 idempotence at the process level, and compiling the generated
-output. It is the only rung that builds what was generated.
+output. It is the only check that builds what was generated.
 
 **completeness** drives `testdata/features/` per
 [11-languages.md](11-languages.md): every row sits exactly on the
-rung it declared, and a feature that lands better than declared
+level it declared, and a feature that lands better than declared
 fails too.
 
 Beside plugintest ships the **Tier-3 import lint**, a static pass
@@ -91,9 +91,9 @@ package from a neutral file. Binding files are declared and exempt,
 which is Tier 3 staying legal and visible
 ([03-projection.md](03-projection.md)).
 
-## The two rungs that test the frame
+## The two checks that test the frame
 
-Six rungs test parts. workspacetest and warm≡cold test the frame
+Six checks test parts. workspacetest and warm≡cold test the frame
 itself. They are specified as precisely as the adapter below,
 because they are the hardest to retrofit: every workspace mechanism
 they exercise had to be built so it could be tested.
@@ -186,7 +186,7 @@ Test files mirror their subjects, and fixture sources live in
 `testdata/` beside the test that drives them.
 
 The feature matrix is `testdata/features/` plus one root conformance
-test per satellite. It is fixtures and a rung rather than a package.
+test per satellite. It is fixtures and a check rather than a package.
 
 Golden files are canonicalised: a position outside the fixture's own
 sources keeps its file and loses its numbers. Positions in

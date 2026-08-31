@@ -58,7 +58,7 @@ protocompile (D16), and the well-known-type mappings of
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| protocompile's model diverges from the projection vocabulary in some corner of proto3 | 0014, through this milestone only | Carry the remainder as `proto.*` metadata on rung 2 of the ladder, and declare it in the feature matrix |
+| protocompile's model diverges from the projection vocabulary in some corner of proto3 | 0014, through this milestone only | Carry the remainder as `proto.*` metadata on level 2 of the ladder, and declare it in the feature matrix |
 
 ## Changes
 

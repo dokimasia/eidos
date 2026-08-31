@@ -366,15 +366,15 @@ running out of CI-restore bandwidth.
 
 `run --cold` ([20-cli.md](20-cli.md)) ignores both layers without
 deleting them, which is the debugging handle and the fresh-state leg
-of the warm≡cold rung.
+of the warm≡cold check.
 
 ## The non-negotiable
 
-**Warm and cold produce identical bytes.** A conformance rung runs
+**Warm and cold produce identical bytes.** A conformance check runs
 the same workspace cold and warm and diffs the manifests
 ([13-testing-and-conformance.md](13-testing-and-conformance.md)).
 
-Every optimization above is licensed by that rung and by nothing
+Every optimization above is licensed by that check and by nothing
 else: memoization, cutoff, laziness and parallel plans. A cache that
 cannot prove it produces the same answer is a determinism bug that
 happens to be fast.

@@ -108,7 +108,7 @@ out-of-scope outputs safe.
 `--cold` ignores the sealed state and the parse memo without
 deleting either ([09-incrementality.md](09-incrementality.md)). It
 is the handle to reach for when warm behaviour is in question, and
-it is how the warm≡cold rung gets its fresh-state leg outside a
+it is how the warm≡cold check gets its fresh-state leg outside a
 scratch directory.
 
 `--check` is the CI gate. It runs with dry-run semantics and

@@ -91,7 +91,7 @@ and the accumulator Emitter of
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| First contact between 0002's authoring API and real plugin code forces API revisions | 0006 and everything after | Planned for: nothing tags before 0014, and the rungs pin behaviour so revisions cannot drift silently |
+| First contact between 0002's authoring API and real plugin code forces API revisions | 0006 and everything after | Planned for: nothing tags before 0014, and the checks pin behaviour so revisions cannot drift silently |
 | This is the spine: a slip here slips every open milestone | all | Cut sideways, not lengthwise: fixture plugins stay minimal, and layout corner cases move to 0006 before the phase order does |
 
 ## Changes

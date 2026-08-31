@@ -87,7 +87,7 @@ support ticket waiting to happen.
 | funcmap reference | backend and plugin registrations | per release |
 | directive reference | registered schemas and their constants | per release |
 | shape catalog pages | eidos-plugin-shape `spec/`, verbatim | per eidos-plugin-shape release |
-| support matrices | the completeness rung's run | per satellite release |
+| support matrices | the completeness check's run | per satellite release |
 | config reference | the published JSON Schema | per kernel release |
 | diagnostic-code index | the diag registry, with stable anchors | per release |
 | parity matrix | the key registrations audit ([04-metadata.md](04-metadata.md)) | per release |
@@ -95,5 +95,5 @@ support ticket waiting to happen.
 Each generated artifact publishes beside the release's compatibility
 artifacts ([15-compatibility.md](15-compatibility.md)), and
 regenerating it is part of the tag pipeline: a stale page blocks the
-tag the way a failing rung does. Three things stay hand-written: the
+tag the way a failing check does. Three things stay hand-written: the
 tutorials, the concept documents, and these architecture documents.

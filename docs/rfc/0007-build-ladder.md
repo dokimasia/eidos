@@ -25,7 +25,7 @@ renders. Two seams the composition needs are added to the service
 provider interface: a key provider, so a plugin's metadata keys
 register the way its directive schemas already do, and a minimal
 target name with the backend contract that carries it. The
-conformance suite gains the options-schema rung, and the
+conformance suite gains the options-schema check, and the
 composition's own tests hold Build to the whole bill: a fixture
 seeded with five distinct faults reports all five in one error.
 
@@ -123,7 +123,7 @@ package plugin
 // field documented, no duplicate keys. It answers one error per
 // finding and nil where the plugin declares no options. The
 // composition runs it before populating; the conformance suite
-// runs it as a rung.
+// runs it as a check.
 func ValidateOptions(p Plugin) []error
 ```
 
@@ -327,9 +327,9 @@ root package, for the same reason the conformance harness does
 not: plugins arrive built, so the composition works at the floor
 every authoring layer lowers to.
 
-### The conformance rungs this completes
+### The conformance checks this completes
 
-The suite gains the options rung, and the composition's tests hold
+The suite gains the options check, and the composition's tests hold
 Build to the bill:
 
 ```go
@@ -342,7 +342,7 @@ func AssertOptionsSchema(tb assert.TB, setup Setup)
 ```
 
 `RunPluginSuite` runs it when the plugin declares options. The
-five-fault check is a workspace test rather than a rung, because
+five-fault check is a workspace test rather than a check, because
 its subject is the composition, not a plugin: a fixture composed
 with five distinct faults across the ladder's steps asserts that
 Build's one error names all five.
@@ -441,7 +441,7 @@ post-freeze pass, parallel per subject.
   proposed here; each is an addition between the phases and steps
   that are.
 - The parallelism opt-in inside an annotate bucket, and the race
-  rung that holds plugins to it, wait on that opt-in existing.
+  check that holds plugins to it, wait on that opt-in existing.
 - A config file format mapping onto `Config` is not proposed here.
 
 ## References
@@ -451,7 +451,7 @@ post-freeze pass, parallel per subject.
 - [06-plugins.md](../architecture/06-plugins.md), the provider
   surfaces and the capability topology
 - [13-testing-and-conformance.md](../architecture/13-testing-and-conformance.md),
-  the conformance rungs
+  the conformance checks
 - [04-metadata.md](../architecture/04-metadata.md), the key
   registration and namespace claims the first step runs
 - [05-directives.md](../architecture/05-directives.md), the

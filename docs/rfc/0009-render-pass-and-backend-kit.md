@@ -27,7 +27,7 @@ finalise through the language formatter, continuing past a format
 failure. The root package gains `NewBackend`, the kit that builds a
 renderer from the handful of things a language genuinely varies in.
 Template lint checks every declared template statically, and the
-conformance suite gains `backendtest` with the rungs a valueless
+conformance suite gains `backendtest` with the checks a valueless
 render can hold: byte-stable output, every kind rendered, slots
 spliced, format failures survived. Headers, trailers and sinks are
 the output contract's seams, consumed here and proposed elsewhere.
@@ -53,7 +53,7 @@ rewriting every backend that came first:
 - **text/template fails late, so the lint must run early.** The
   engine reports at execute time and checks nothing statically.
   Both weaknesses are handled in the conformance ladder: the lint
-  rung parses every declared template against each target's merged
+  check parses every declared template against each target's merged
   funcmap before any run exists, and an execute-time error maps to
   a template file and line with the emitting plugin named.
 
@@ -215,7 +215,7 @@ func (b *BackendBuilder) FileTemplate(t string) *BackendBuilder
 
 // KindTemplates declares how the language spells each emit kind,
 // keyed by kind. Build refuses an empty set; the conformance
-// suite's every-kind rung is what holds a backend to the full
+// suite's every-kind check is what holds a backend to the full
 // inventory, because which kinds render standalone and which
 // render inside their hosts is the language's own split.
 func (b *BackendBuilder) KindTemplates(ts map[symbol.Kind]string) *BackendBuilder
@@ -338,7 +338,7 @@ templates, and never for a reference's payload. The verbatim form
 is the one thing the lint cannot see into at all, which is the cost
 verbatim was priced at.
 
-### The conformance rungs this opens
+### The conformance checks this opens
 
 `backendtest` holds a renderer to what a valueless render can
 prove, over a hand-built emit fixture:
@@ -361,7 +361,7 @@ type Fixture struct {
 // renders, fresh per call, the way the plugin suite's Setup does.
 type Setup func(tb assert.TB) (plugin.Renderer, *Fixture)
 
-// RunBackendSuite holds a renderer to the rungs a render answers
+// RunBackendSuite holds a renderer to the checks a render answers
 // as values: two runs produce byte-identical files, every emit
 // kind renders, slot contents render through the kind machinery,
 // and a format failure reports positioned and does not stop the
@@ -369,7 +369,7 @@ type Setup func(tb assert.TB) (plugin.Renderer, *Fixture)
 func RunBackendSuite(t *testing.T, setup Setup)
 ```
 
-The header and trailer rungs join the suite with the output
+The header and trailer checks join the suite with the output
 contract, which owns their shape.
 
 ## Alternatives considered
@@ -442,7 +442,7 @@ the output contract has to validate twice.
   file accumulator and the spelling helpers that fill it are the
   lowering's; this proposal keeps the set with the pass and leaves
   the helpers where the seam lands.
-- Does `RunBackendSuite` need a rung refusing an undeclared kind
+- Does `RunBackendSuite` need a check refusing an undeclared kind
   template, or is Build's panic the whole answer? The proposal
   relies on Build.
 
@@ -472,4 +472,4 @@ the output contract has to validate twice.
 - [17-output-and-determinism.md](../architecture/17-output-and-determinism.md),
   the header, trailer and sink contracts this pass hands off to
 - [13-testing-and-conformance.md](../architecture/13-testing-and-conformance.md),
-  the backend rungs and the template lint
+  the backend checks and the template lint

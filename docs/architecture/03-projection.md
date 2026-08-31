@@ -28,7 +28,7 @@ Tier 2  declared by satisfying,       EnumRules · AnnotationRules ·
         found by asserting            GenericsRules · …
 Tier 3  language sdk, importable      the Go-only, Java-only
         from binding files alone      questions
-        ─────────── below the line: metadata (rungs 2–3) ───────────
+        ─────────── below the line: metadata (checks 2–3) ───────────
 ```
 
 ## Typed language identity
@@ -294,7 +294,7 @@ bounded, and unable to reach neutral code without somebody noticing.
 
 ## The degradation ladder
 
-Every source construct sits on exactly one rung:
+Every source construct sits on exactly one check:
 
 1. **Projected fully** into Tier-1 or Tier-2 vocabulary.
 2. **Projected partly**, with the remainder carried as language
@@ -303,13 +303,13 @@ Every source construct sits on exactly one rung:
    projectable. Rust lifetimes, TypeScript conditional types and
    Python metaclasses sit here.
 4. **Refused at lowering**, with a stable diagnostic code. This is
-   the only rung on the write side, and it never guesses.
+   the only level on the write side, and it never guesses.
 
 Everything is representable. Some things cannot be lowered. Every
-failure arrives as a positioned diagnostic. The completeness rung
+failure arrives as a positioned diagnostic. The completeness check
 ([13-testing-and-conformance.md](13-testing-and-conformance.md))
 verifies that every feature-matrix row of every language sits on the
-rung it declared.
+level it declared.
 
 ## Generics, split across the tiers
 

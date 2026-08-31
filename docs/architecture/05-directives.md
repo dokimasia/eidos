@@ -25,7 +25,7 @@ statically and lowered into the same canonical directive. Rust
 `#[gen::stub(tag = "test")]` and TypeScript decorators work this
 way. Sugar executes nothing and introduces no semantics. It is
 another spelling of a directive that already has a schema, and the
-completeness rung tests the lowering the way it tests any carrier.
+completeness check tests the lowering the way it tests any carrier.
 
 ### Grammar: one, owned by the kernel
 

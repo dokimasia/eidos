@@ -56,9 +56,9 @@ Go.
       iota evaluator, sentinel names, struct tags, promotion,
       comparability, and generics with authored witnesses.
 - [ ] `testdata/features/` holds one fixture per Go row of the
-      landscape table, and the completeness rung, built in the kernel
+      landscape table, and the completeness check, built in the kernel
       as part of this milestone, passes with every row on its declared
-      rung.
+      check.
 - [ ] The kernel's toolchain-adapter skeleton exists and
       `eidos-lang-go/testing` implements it: the shared assertion set
       (`AssertParses`, `AssertTypeChecks`, `AssertTestsPass`,
@@ -81,7 +81,7 @@ hermeticity and classify-not-exclude, Go's `rules/` per
 [03-projection.md](../architecture/03-projection.md), Link from
 [02-symbol-model.md](../architecture/02-symbol-model.md), carriers from
 [05-directives.md](../architecture/05-directives.md), and frontendtest
-plus the completeness rung from
+plus the completeness check from
 [13-testing-and-conformance.md](../architecture/13-testing-and-conformance.md).
 
 ## Not in this milestone
@@ -90,7 +90,7 @@ plus the completeness rung from
   Milestone 0007.
 - eidos-lang and tree-sitter: milestone 0009.
 - Types the declarations do not state (inferred `var x = f()`): these
-  land on rung 2 with `go.inferred` carrying the spelling, per the
+  land on level 2 with `go.inferred` carrying the spelling, per the
   degradation ladder. That is the declared behaviour, not deferred
   work.
 
@@ -98,7 +98,7 @@ plus the completeness rung from
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| `MembersOf` and generics substitution are the deepest rules code, and wrong answers make later generators ship incomplete doubles silently | 0005, 0011 | The MemberSet failure reasons and the completeness rung make degradation visible. Rows land on rung 2 or 3 honestly instead of blocking the milestone |
+| `MembersOf` and generics substitution are the deepest rules code, and wrong answers make later generators ship incomplete doubles silently | 0005, 0011 | The MemberSet failure reasons and the completeness check make degradation visible. Rows land on level 2 or 3 honestly instead of blocking the milestone |
 
 ## Changes
 

@@ -84,7 +84,7 @@ rendering spells types through it.
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| text/template reports errors at execute time and checks nothing statically | 0005 | The template-lint rung is the designed answer, and it lands in this milestone rather than later |
+| text/template reports errors at execute time and checks nothing statically | 0005 | The template-lint check is the designed answer, and it lands in this milestone rather than later |
 | One kit API serving two languages grows a per-language escape hatch | 0009 | Two backends land together, so a law that fits only one language is found here, where changing the kit is free, and not at the cross-language milestone |
 
 ## Changes

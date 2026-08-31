@@ -18,7 +18,7 @@ A second run over an unchanged tree executes no rule and produces a
 byte-identical manifest. After one edit, only the artifacts whose
 recorded inputs changed derive again. The fingerprint gate, the sealed
 state, the parse memo and early cutoff exist and are licensed by the
-warm≡cold rung.
+warm≡cold check.
 
 ## Done when
 
@@ -73,7 +73,7 @@ All of [09-incrementality.md](../architecture/09-incrementality.md).
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| A warm≡cold failure exposes a read-tracking gap in 0002, 0004 or 0005 code | 0008, 0013 | The rung diffs manifests, so a failure names its artifact. Tracked Readers have been the only read path since 0002, which bounds where a gap can hide |
+| A warm≡cold failure exposes a read-tracking gap in 0002, 0004 or 0005 code | 0008, 0013 | The check diffs manifests, so a failure names its artifact. Tracked Readers have been the only read path since 0002, which bounds where a gap can hide |
 | The most novel machinery in the plan, so the estimate is the least reliable | 0008, 0013, 0014 | Milestones 0009 to 0012 do not depend on this one and proceed in parallel if it slips |
 
 ## Changes

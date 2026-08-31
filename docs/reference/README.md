@@ -8,7 +8,7 @@ Most of these pages are generated, and the tag pipeline regenerates them for
 every release. The backend and plugin registrations produce the funcmap
 reference. The registered schemas produce the directive reference. The
 published JSON Schema produces the config reference. The diag registry
-produces the diagnostic-code index. The completeness rung produces the
+produces the diagnostic-code index. The completeness check produces the
 per-language support matrices. A stale page blocks the release, and
 [14-distribution-and-cli.md](../architecture/14-distribution-and-cli.md)
 explains why.

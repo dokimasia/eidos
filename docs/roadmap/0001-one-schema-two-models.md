@@ -42,7 +42,7 @@ models come out of the generator, and a hand edit to either fails CI.
 Nothing had to exist first. Everything else keys on these models: the
 kind-indexed triggers and their Match types generate from this schema,
 the store holds node values, emitters build emit values, and the
-conformance rungs walk both. Milestones 0002 and 0003 cannot start
+conformance checks walk both. Milestones 0002 and 0003 cannot start
 until this is done.
 
 ## Scope

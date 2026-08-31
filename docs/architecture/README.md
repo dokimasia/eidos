@@ -93,7 +93,7 @@ and links into the specification at every step. Keep the
 | [10-cross-language.md](10-cross-language.md) | Canonical types, lowering, policy, refusal |
 | [11-languages.md](11-languages.md) | Satellite anatomy, the language landscape, completeness |
 | [12-shape-catalog.md](12-shape-catalog.md) | eidos-plugin-shape: classification, written as specs first |
-| [13-testing-and-conformance.md](13-testing-and-conformance.md) | The rung ladder, harness skeletons, fixtures |
+| [13-testing-and-conformance.md](13-testing-and-conformance.md) | The check ladder, harness skeletons, fixtures |
 | [14-distribution-and-cli.md](14-distribution-and-cli.md) | Library-only delivery, command kernels, consumer binaries |
 | [15-compatibility.md](15-compatibility.md) | Versioning, the canary ring, deprecation |
 | [16-diagnostics.md](16-diagnostics.md) | Severities, failure semantics, suppression, codes |

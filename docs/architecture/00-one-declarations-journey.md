@@ -117,7 +117,7 @@ notices one file. One unit reparses. `Get` keeps its identity, and
 every edge through it survives. Only the artifacts that read `Put`
 derive again. Both plans re-render exactly the files that changed,
 and the result is byte-identical to what a cold run would have
-produced. A conformance rung proves that rather than promising it
+produced. A conformance check proves that rather than promising it
 ([09-incrementality.md](09-incrementality.md),
 [13-testing-and-conformance.md](13-testing-and-conformance.md)).
 

@@ -63,7 +63,7 @@ that is exactly what early cutoff prunes
 `explain` shows every claim with the winner marked, so a losing
 write stays visible instead of mysterious. Two plugins stamping one
 key under opt-in parallelism produce the same winner as a serial
-run, which is what lets the warm≡cold rung hold with parallelism
+run, which is what lets the warm≡cold check hold with parallelism
 switched on.
 
 The channel designs out three failure modes: colliding keys, silent
@@ -188,7 +188,7 @@ Frontends stamp their own namespace: lifted annotations under
 `kotlin.companion`, and the original spelling behind every
 normalization, such as visibility and package paths.
 
-Any plugin may read any namespace. In practice, facts on rungs 2 and
+Any plugin may read any namespace. In practice, facts on checks 2 and
 3 get read by that language's bindings. Build refuses a write
 outside the namespace you own.
 

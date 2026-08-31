@@ -108,7 +108,7 @@ plugintest from
 | Risk | What it delays | What we would do |
 |---|---|---|
 | The Effect type parameter (the handler signature picks the role) may not survive contact with real plugin code | 0005, 0011 | The SPI stays public. Worst case the facade narrows to explicit constructors, which is free to do before anything is tagged |
-| The largest single milestone in the plan; scope tends to grow toward "all of the kernel" | 0004, 0005 | plugintest green defines done. Anything no rung exercises moves out |
+| The largest single milestone in the plan; scope tends to grow toward "all of the kernel" | 0004, 0005 | plugintest green defines done. Anything no check exercises moves out |
 
 ## Changes
 

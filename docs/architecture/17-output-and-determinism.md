@@ -35,7 +35,7 @@ and diagnostic paths are slash-separated and workspace-relative.
 be unique derives that from content or from declared names, never
 from a counter that depends on visit order.
 
-The warm≡cold rung enforces the whole property, and this document is
+The warm≡cold check enforces the whole property, and this document is
 what it enforces.
 
 ## The sink contract

@@ -86,10 +86,10 @@ only passes in one order fails here rather than in CI.
 once the first module has real code in it.
 
 The kernel ships a conformance suite that tests plugins, satellites and
-backends. It has eight rungs, from `plugintest` through `warm≡cold`. Write
-fixtures for those rungs rather than your own assertions.
+backends. It has eight checks, from `plugintest` through `warm≡cold`. Write
+fixtures for those checks rather than your own assertions.
 [13-testing-and-conformance.md](docs/architecture/13-testing-and-conformance.md)
-says what each rung proves.
+says what each check proves.
 
 ## Documentation
 

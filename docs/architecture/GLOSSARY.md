@@ -15,7 +15,7 @@ The document named in each row carries the full contract.
 | completeness contract | a key's promise that it is stamped on every X by phase Y, checked in audit mode | [04](04-metadata.md) |
 | projection | a neutral view of language facts: Callable, TypeShape, Resolve, Members, Values | [03](03-projection.md) |
 | tier | where a language question may live: 1 mandatory, 2 optional and found by asserting, 3 the language sdk | [03](03-projection.md) |
-| degradation ladder | the four rungs a source construct can land on: projected fully, projected partly with metadata, opaque with metadata, or refused at lowering | [03](03-projection.md) |
+| degradation ladder | the four levels a source construct can land on: projected fully, projected partly with metadata, opaque with metadata, or refused at lowering | [03](03-projection.md) |
 | carrier | where a directive physically sits in source, such as `//+gen:` or an attribute | [05](05-directives.md) |
 | directive | the canonical parsed annotation: one grammar, params checked against a schema | [05](05-directives.md) |
 | slot | a typed append point on an emit value. Every body carries `prologue` and `epilogue` | [07](07-rendering.md) |
@@ -30,8 +30,8 @@ The document named in each row carries the full contract.
 | fingerprint gate | the stat and hash pass above the loader that decides whether anything loads | [09](09-incrementality.md) |
 | early cutoff | recompute only when a read *value* changed, not merely when its input was touched | [09](09-incrementality.md) |
 | sealed graph | the persisted symbol graph. Regions decode on first touch, so opening it costs what the run reads | [09](09-incrementality.md) |
-| warm≡cold | the rung proving that a cached run and a cold run produce byte-identical manifests | [13](13-testing-and-conformance.md) |
-| rung | one layer of the conformance ladder | [13](13-testing-and-conformance.md) |
+| warm≡cold | the check proving that a cached run and a cold run produce byte-identical manifests | [13](13-testing-and-conformance.md) |
+| check | one layer of the conformance ladder | [13](13-testing-and-conformance.md) |
 | manifest | the versioned record of every generated file: its plan, its hash, and what it derives from | [17](17-output-and-determinism.md) |
 | drift | a manifested file whose hash on disk no longer matches. Someone edited it, and eidos never overwrites it | [17](17-output-and-determinism.md) |
 | adoption | claiming a byte-equal pre-existing file into the manifest on the first run | [17](17-output-and-determinism.md) |

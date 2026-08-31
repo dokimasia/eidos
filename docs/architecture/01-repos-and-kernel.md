@@ -78,8 +78,8 @@ eidos-core/
                  the sealed-graph persistence format
   sink/ writer/ manifest/
                  output: sinks, text emission + import sets, manifests
-  conformance/   every rung of the test ladder, the toolchain-adapter
-                 skeleton, the completeness rung, the warm≡cold rung,
+  conformance/   every check of the test ladder, the toolchain-adapter
+                 skeleton, the completeness check, the warm≡cold check,
                  the benchmark harness and corpus generator
   cli/           command kernels: run, plan, explain, prune, doctor,
                  version, watch; config loading; flag conventions

@@ -1140,8 +1140,8 @@ schema and regenerated.
 ## Drawbacks
 
 - Two surfaces to keep honest. The SPI and the facade can drift,
-  and the guard is a conformance rung (byte-equal twins) that this
-  proposal specifies but does not implement. Until that rung runs,
+  and the guard is a conformance check (byte-equal twins) that this
+  proposal specifies but does not implement. Until that check runs,
   the lowering guarantee is a design statement.
 - The root package is wide: ten generated Match types and
   constructors, roughly fifteen hand-written exported symbols, and
@@ -1227,7 +1227,7 @@ schema and regenerated.
 - [18-routing-and-layout.md](../architecture/18-routing-and-layout.md),
   the output families and the `out` override
 - [13-testing-and-conformance.md](../architecture/13-testing-and-conformance.md),
-  the conformance rungs, including the twin check
+  the conformance checks, including the twin check
 - [RFC-0003](0003-diagnostics-and-store.md), the graph, the tracked
   reader and the untracked kernel path
 - [RFC-0004](0004-metadata-facts.md), the fact store the Stamper

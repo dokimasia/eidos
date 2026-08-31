@@ -2,7 +2,7 @@
 
 *Builds on: [02](02-symbol-model.md) (slot declarations),
 [06](06-plugins.md), [06b](06b-authoring.md). Feeds:
-[13](13-testing-and-conformance.md) (the lint rung),
+[13](13-testing-and-conformance.md) (the lint check),
 [17](17-output-and-determinism.md) (the backend's byte contract),
 [18](18-routing-and-layout.md) (declared outputs).*
 
@@ -48,7 +48,7 @@ in the diff or at the compiler.
 Slot declarations live in `symbol/schema` and generate with the
 models ([02-symbol-model.md](02-symbol-model.md)), so which slots
 exist on which emit kind is generated documentation and static
-knowledge. `Walk` and the lint rung know every slot, and "what can I
+knowledge. `Walk` and the lint check know every slot, and "what can I
 append to a Method" has a generated answer rather than a tribal one.
 
 Generation includes **typed accessors**. Go code appends through
@@ -143,7 +143,7 @@ around it:
   render automatically.
 - **Scaffolding statements**, from the vocabulary above.
 - **A `TemplateRef`.** The template must place the slots, through a
-  `{{slots}}` marker or named markers. The template-lint rung checks
+  `{{slots}}` marker or named markers. The template lint checks
   statically that every body-claiming template contains the marker,
   and at run time a contribution into a body whose template dropped
   it is an Error naming the emitting plugin and counting what went
@@ -151,7 +151,7 @@ around it:
   name its contributor by.
 - **`Verbatim`**, which is literal text. It is the sharp knife for a
   genuine one-liner, and it costs three things: the template-lint
-  rung cannot see into it, it contributes no imports, and nothing
+  check cannot see into it, it contributes no imports, and nothing
   can compose with it. A `TemplateRef` avoids all three and is
   almost always the better tool. `Verbatim` exists only inside
   bodies, never as a declaration-level value.
@@ -196,7 +196,7 @@ text/template has two real weaknesses: errors surface when the
 template executes, and nothing is checked statically. Both are
 handled where they belong, in the conformance ladder.
 
-**The template-lint rung** parses every template of every plugin
+**The template-lint check** parses every template of every plugin
 against the merged funcmap of each language it declares, at CI time.
 Undefined functions, colliding overrides and missing body-slot
 markers become build failures. So do undefined field references
@@ -262,7 +262,7 @@ The reference a generator hands the backend, pinned:
 ```go
 type TemplateRef struct {
     Name string // resolves in the EMITTING plugin's tree, per target
-    Data any    // plugin-supplied payload; the lint rung checks the
+    Data any    // plugin-supplied payload; the lint checks the
 }               // emit-value half of a body template, never Data
 ```
 

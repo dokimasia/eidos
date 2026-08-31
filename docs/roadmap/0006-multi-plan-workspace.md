@@ -68,7 +68,7 @@ repositories.
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| Plan parallelism exposes a shared-state leak that read isolation was supposed to make impossible | 0007, 0009 | `-race` on every rung. A leak found here is a design fault to fix now, while it is cheaper than under 0007's caching |
+| Plan parallelism exposes a shared-state leak that read isolation was supposed to make impossible | 0007, 0009 | `-race` on every check. A leak found here is a design fault to fix now, while it is cheaper than under 0007's caching |
 
 ## Changes
 

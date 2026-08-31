@@ -116,8 +116,8 @@ type Policy interface {
 A lowering that cannot spell a shape refuses, with a stable
 diagnostic code, at the declaration that forced it. Go `chan T` has
 no TypeScript spelling. A Union has no Go spelling. It never
-guesses. This is rung 4 of the degradation ladder, and the
-completeness rung tests it per language.
+guesses. This is check 4 of the degradation ladder, and the
+completeness check tests it per language.
 
 ## Names across the boundary
 
