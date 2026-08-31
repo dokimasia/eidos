@@ -172,6 +172,14 @@ func TestVocabulary(t *testing.T) {
 			Name: "ID", Visibility: symbol.VisibilityProtected,
 		})
 		assert.HasError(t, err, "a scope no case carries refuses")
+		_, err = backend.Guard(&emit.Struct{
+			Name:       "Row",
+			Extends:    []*emit.TypeRef{ref("Base")},
+			Implements: []*emit.TypeRef{ref("Keyed")},
+		})
+		assert.NoError(t, err,
+			"supertypes pass: extends spells as embedding, and implements "+
+				"holds through structural satisfaction")
 	})
 
 	t.Run("SigGuard", func(t *testing.T) {

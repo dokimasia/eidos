@@ -160,6 +160,36 @@ func TestTemplates(t *testing.T) {
 			"the alias parameterizes and its target restates the argument")
 	})
 
+	t.Run("supertypes", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{
+			Name:       "Row",
+			Extends:    []*emit.TypeRef{ref("Base")},
+			Implements: []*emit.TypeRef{ref("Keyed")},
+		}
+		s.Fields.Append(&emit.Field{Name: "key", Type: ref("string")})
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"export class Row extends Base implements Keyed {\n"+
+				"  key: string;\n"+
+				"}\n",
+			"the heritage clauses behind the name")
+
+		i := &emit.Interface{
+			Name:    "Store",
+			Extends: []*emit.TypeRef{ref("Keyed"), ref("Closer")},
+		}
+		i.Methods.Append(&emit.Method{
+			Name:    "get",
+			Returns: []*emit.Return{{Type: ref("string")}},
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"export interface Store extends Keyed, Closer {\n"+
+				"  get(): string;\n"+
+				"}\n",
+			"the widened contracts joined behind extends")
+	})
+
 	t.Run("modifiers", func(t *testing.T) {
 		t.Parallel()
 

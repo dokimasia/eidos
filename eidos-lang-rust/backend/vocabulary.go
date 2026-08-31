@@ -44,25 +44,28 @@ const (
 	FuncFieldMods = "fieldmods"
 	// FuncAttrs writes a declaration's attribute lines.
 	FuncAttrs = "attrs"
+	// FuncSupertraits writes a trait's supertrait bounds.
+	FuncSupertraits = "supertraits"
 )
 
 // Funcs is the shared template vocabulary the kind templates call.
 func Funcs() template.FuncMap {
 	return template.FuncMap{
-		FuncDocs:       Docs,
-		FuncSpell:      Spell,
-		FuncTypeParams: TypeParams,
-		FuncBinder:     Binder,
-		FuncParams:     Params,
-		FuncResults:    Results,
-		FuncVis:        Vis,
-		FuncStructMods: StructMods,
-		FuncFnMods:     FnMods,
-		FuncTraitFn:    TraitFn,
-		FuncImplFn:     ImplFn,
-		FuncSelfParams: SelfParams,
-		FuncFieldMods:  FieldMods,
-		FuncAttrs:      Attrs,
+		FuncDocs:        Docs,
+		FuncSpell:       Spell,
+		FuncTypeParams:  TypeParams,
+		FuncBinder:      Binder,
+		FuncParams:      Params,
+		FuncResults:     Results,
+		FuncVis:         Vis,
+		FuncStructMods:  StructMods,
+		FuncFnMods:      FnMods,
+		FuncTraitFn:     TraitFn,
+		FuncImplFn:      ImplFn,
+		FuncSelfParams:  SelfParams,
+		FuncFieldMods:   FieldMods,
+		FuncAttrs:       Attrs,
+		FuncSupertraits: Supertraits,
 	}
 }
 
@@ -188,13 +191,39 @@ func Vis(v symbol.Visibility, name string) (string, error) {
 
 // StructMods writes a struct's keywords: its visibility alone. An
 // abstract struct refuses, because every Rust struct can be made;
-// a final one holds, because nothing subclasses.
+// a final one holds, because nothing subclasses; supertypes and
+// embeds refuse, because a struct neither inherits nor promotes.
 func StructMods(s *emit.Struct) (string, error) {
-	if s.Abstract {
+	switch {
+	case s.Abstract:
 		return "", fmt.Errorf(
 			"rust: every struct can be made, and %s states abstract", s.Name)
+	case len(s.Extends) > 0 || len(s.Implements) > 0 || len(s.Embeds) > 0:
+		return "", fmt.Errorf(
+			"rust: a struct neither inherits nor promotes, and %s states "+
+				"supertypes", s.Name)
 	}
 	return Vis(s.Visibility, s.Name)
+}
+
+// Supertraits writes a trait's supertrait bounds behind a colon,
+// joined by plus signs, or nothing where none are stated. An
+// embed refuses, because a trait widens through supertraits
+// alone.
+func Supertraits(i *emit.Interface) (string, error) {
+	if len(i.Embeds) > 0 {
+		return "", fmt.Errorf(
+			"rust: a trait widens through supertraits alone, and %s states "+
+				"embeds", i.Name)
+	}
+	if len(i.Extends) == 0 {
+		return "", nil
+	}
+	parts := make([]string, 0, len(i.Extends))
+	for _, t := range i.Extends {
+		parts = append(parts, Spell(t))
+	}
+	return ": " + strings.Join(parts, " + "), nil
 }
 
 // FnMods writes a free function's keywords: its visibility, then

@@ -192,6 +192,48 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "an interface method overrides nothing")
 	})
 
+	t.Run("Heritage", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.Heritage(&emit.Struct{
+			Name:       "Row",
+			Extends:    []*emit.TypeRef{ref("Base")},
+			Implements: []*emit.TypeRef{ref("Keyed"), ref("Closeable")},
+		})
+		assert.NoError(t, err, "a class heritage spells")
+		assert.Equal(t, got, " extends Base implements Keyed, Closeable",
+			"one superclass behind extends, the contracts behind implements")
+
+		got, err = backend.Heritage(&emit.Interface{
+			Name:    "Store",
+			Extends: []*emit.TypeRef{ref("Keyed"), ref("Closeable")},
+		})
+		assert.NoError(t, err, "an interface heritage spells")
+		assert.Equal(t, got, " extends Keyed, Closeable",
+			"the widened contracts joined behind extends")
+
+		_, err = backend.Heritage(&emit.Struct{
+			Name:    "Row",
+			Extends: []*emit.TypeRef{ref("A"), ref("B")},
+		})
+		assert.HasError(t, err, "a second superclass refuses")
+		_, err = backend.Heritage(&emit.Interface{
+			Name:   "Store",
+			Embeds: []*emit.Embed{{Ref: ref("Base")}},
+		})
+		assert.HasError(t, err, "an embed refuses, because nothing promotes")
+	})
+
+	t.Run("Throws", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, backend.Throws(nil), "", "no failures, no clause")
+		assert.Equal(t,
+			backend.Throws([]*emit.TypeRef{ref("IOException"), ref("SQLException")}),
+			" throws IOException, SQLException",
+			"the declared failure types joined behind the keyword")
+	})
+
 	t.Run("Annotate", func(t *testing.T) {
 		t.Parallel()
 

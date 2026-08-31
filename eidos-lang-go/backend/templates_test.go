@@ -139,6 +139,43 @@ func TestTemplates(t *testing.T) {
 			"var count int = 0\n", "the initializer behind the equals sign")
 	})
 
+	t.Run("supertypes", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{
+			Name:   "Row",
+			Embeds: []*emit.Embed{{Ref: ref("Base")}, {Ref: ref("sync.Mutex")}},
+		}
+		s.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"type Row struct {\n\tBase\n\tsync.Mutex\n\tKey string\n}\n",
+			"embedded types before the fields, the way Go promotes")
+
+		n := &emit.Struct{
+			Name:       "Child",
+			Extends:    []*emit.TypeRef{ref("Base")},
+			Implements: []*emit.TypeRef{ref("Keyed")},
+		}
+		n.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
+		assert.Equal(t, execute(t, backend.StructTemplate, n),
+			"type Child struct {\n\tBase\n\tKey string\n}\n",
+			"a nominal parent spells as embedding, promotion without "+
+				"subtyping, and implements spells nothing at all")
+
+		i := &emit.Interface{
+			Name:    "Store",
+			Extends: []*emit.TypeRef{ref("Closer")},
+		}
+		i.Embeds = []*emit.Embed{{Ref: ref("Reader")}}
+		i.Methods.Append(&emit.Method{
+			Name:    "Get",
+			Returns: []*emit.Return{{Type: ref("string")}},
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"type Store interface {\n\tReader\n\tCloser\n\tGet() string\n}\n",
+			"embeds then the widened contracts, both as embedded lines")
+	})
+
 	t.Run("generics", func(t *testing.T) {
 		t.Parallel()
 

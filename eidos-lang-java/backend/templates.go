@@ -31,14 +31,14 @@ const (
 	// spells before its return type, which is where Java states
 	// it.
 	StructTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
-		"{{typemods .}}class {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{typemods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
 		"    {{fieldmods .}}{{spell .Type}} {{.Name}}{{with .Value}} = {{.}}{{end}};\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
 		"{{if .Override}}    @Override\n{{end}}" +
 		"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
-		"{{results .Returns}} {{.Name}}({{params .Params}})" +
+		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
 		"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}\n" +
 		"{{- end}}\n}\n"
 
@@ -50,10 +50,10 @@ const (
 	// default at instance level or static at type level, and
 	// places the body.
 	InterfaceTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
-		"{{typemods .}}interface {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{typemods .}}interface {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
 		"    {{sigmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
-		"{{results .Returns}} {{.Name}}({{params .Params}})" +
+		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
 		"{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}\n" +
 		"{{- end}}\n}\n"
 )

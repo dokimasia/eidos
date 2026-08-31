@@ -22,22 +22,34 @@ const FileTemplate = "package {{" + FuncPackage + " .Pkg}}\n" +
 // vocabulary rather than by a template of its own.
 const (
 	// StructTemplate spells a struct and its fields, its type
-	// parameters behind the name, each field under its own
-	// docblock, carrying its tag in backquotes and its trailing
-	// comment where the declaration states them. The guard
-	// refuses what Go states nowhere before a byte renders.
+	// parameters behind the name: embedded types first, the way Go
+	// promotes members, the embeds then the nominal parents,
+	// because embedding is Go's one idiom for both and the
+	// promotion carries the members without the subtyping. A
+	// stated Implements spells nothing: satisfaction is
+	// structural, and the methods themselves carry the claim.
+	// Fields follow, each under its own docblock, carrying its tag
+	// in backquotes and its trailing comment where the declaration
+	// states them. The guard refuses what Go states nowhere before
+	// a byte renders.
 	StructTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
+		"{{- range .Embeds}}\n\t{{spell .Ref}}\n{{- end}}" +
+		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
 		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n"
 
 	// InterfaceTemplate spells an interface and the methods it
-	// requires, its type parameters behind the name, each method
-	// under its own docblock. An interface method states no body,
-	// no receiver and no parameter list of its own, which Go
-	// refuses on interface methods, so it is a signature alone
-	// under its own guard.
+	// requires, its type parameters behind the name: embedded
+	// interfaces first, both the embeds and the nominal widening,
+	// because Go spells an interface's supertypes as embedding,
+	// then each method under its own docblock. An interface method
+	// states no body, no receiver and no parameter list of its
+	// own, which Go refuses on interface methods, so it is a
+	// signature alone under its own guard.
 	InterfaceTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} interface {\n" +
+		"{{- range .Embeds}}\n\t{{spell .Ref}}\n{{- end}}" +
+		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"\\t\"}}{{sigguard .}}" +
 		"\t{{.Name}}({{params .Params}}){{results .Returns}}\n" +
 		"{{- end}}\n}\n"

@@ -134,6 +134,33 @@ func TestVocabulary(t *testing.T) {
 		_, err := backend.StructMods(&emit.Struct{Name: "Row", Abstract: true})
 		assert.HasError(t, err,
 			"an abstract struct refuses, because every struct can be made")
+		_, err = backend.StructMods(&emit.Struct{
+			Name: "Row", Extends: []*emit.TypeRef{ref("Base")},
+		})
+		assert.HasError(t, err,
+			"a supertype refuses, because a struct neither inherits nor promotes")
+	})
+
+	t.Run("Supertraits", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.Supertraits(&emit.Interface{Name: "Store"})
+		assert.NoError(t, err, "no supertraits spell")
+		assert.Equal(t, got, "", "as nothing")
+
+		got, err = backend.Supertraits(&emit.Interface{
+			Name:    "Store",
+			Extends: []*emit.TypeRef{ref("Keyed"), ref("Ord")},
+		})
+		assert.NoError(t, err, "supertraits spell")
+		assert.Equal(t, got, ": Keyed + Ord",
+			"joined by plus signs behind the colon")
+
+		_, err = backend.Supertraits(&emit.Interface{
+			Name:   "Store",
+			Embeds: []*emit.Embed{{Ref: ref("Base")}},
+		})
+		assert.HasError(t, err, "a trait widens through supertraits alone")
 	})
 
 	t.Run("FnMods", func(t *testing.T) {

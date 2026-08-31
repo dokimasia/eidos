@@ -201,6 +201,38 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "a stated modifier refuses on an interface method")
 	})
 
+	t.Run("Heritage", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.Heritage(&emit.Struct{
+			Name:       "Row",
+			Extends:    []*emit.TypeRef{ref("Base")},
+			Implements: []*emit.TypeRef{ref("Keyed"), ref("Closer")},
+		})
+		assert.NoError(t, err, "a class heritage spells")
+		assert.Equal(t, got, " extends Base implements Keyed, Closer",
+			"one base behind extends, the contracts behind implements")
+
+		got, err = backend.Heritage(&emit.Interface{
+			Name:    "Store",
+			Extends: []*emit.TypeRef{ref("Keyed"), ref("Closer")},
+		})
+		assert.NoError(t, err, "an interface heritage spells")
+		assert.Equal(t, got, " extends Keyed, Closer",
+			"the widened contracts joined behind extends")
+
+		_, err = backend.Heritage(&emit.Struct{
+			Name:    "Row",
+			Extends: []*emit.TypeRef{ref("A"), ref("B")},
+		})
+		assert.HasError(t, err, "a second class base refuses")
+		_, err = backend.Heritage(&emit.Struct{
+			Name:   "Row",
+			Embeds: []*emit.Embed{{Ref: ref("Base")}},
+		})
+		assert.HasError(t, err, "an embed refuses, because nothing promotes")
+	})
+
 	t.Run("Binding", func(t *testing.T) {
 		t.Parallel()
 

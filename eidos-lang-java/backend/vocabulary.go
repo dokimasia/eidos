@@ -37,6 +37,10 @@ const (
 	FuncSigMods = "sigmods"
 	// FuncAnnotate writes a declaration's annotation lines.
 	FuncAnnotate = "annotate"
+	// FuncHeritage writes a type's heritage clauses.
+	FuncHeritage = "heritage"
+	// FuncThrows writes a callable's throws clause.
+	FuncThrows = "throws"
 )
 
 // Anonymous is what Java writes where a declaration states no
@@ -57,6 +61,8 @@ func Funcs() template.FuncMap {
 		FuncMethodMods: MethodMods,
 		FuncSigMods:    SigMods,
 		FuncAnnotate:   Annotate,
+		FuncHeritage:   Heritage,
+		FuncThrows:     Throws,
 	}
 }
 
@@ -315,6 +321,70 @@ func access(v symbol.Visibility, name string, fileLevel bool) (string, error) {
 	}
 	return "", fmt.Errorf(
 		"java: no access keyword spells the scope %s states", name)
+}
+
+// Heritage writes a type's heritage clauses: one superclass
+// behind extends and the contracts behind implements on a class,
+// the widened contracts behind extends on an interface. A second
+// superclass refuses, because Java extends one, and an embed
+// refuses on either, because nothing promotes members.
+func Heritage(d symbol.Symbol) (string, error) {
+	switch t := d.(type) {
+	case *emit.Struct:
+		if len(t.Embeds) > 0 {
+			return "", unembedded(t.Name)
+		}
+		var part string
+		switch len(t.Extends) {
+		case 0:
+		case 1:
+			part = " extends " + Spell(t.Extends[0])
+		default:
+			return "", fmt.Errorf(
+				"java: a class extends one superclass, and %s states %d",
+				t.Name, len(t.Extends))
+		}
+		if len(t.Implements) > 0 {
+			part += " implements " + joined(t.Implements)
+		}
+		return part, nil
+	case *emit.Interface:
+		if len(t.Embeds) > 0 {
+			return "", unembedded(t.Name)
+		}
+		if len(t.Extends) > 0 {
+			return " extends " + joined(t.Extends), nil
+		}
+		return "", nil
+	default:
+		return "", fmt.Errorf(
+			"java: no heritage clause spells a %s", d.Kind())
+	}
+}
+
+// Throws writes a callable's throws clause: the declared failure
+// types comma-joined behind the keyword, or nothing where none
+// are stated.
+func Throws(ts []*emit.TypeRef) string {
+	if len(ts) == 0 {
+		return ""
+	}
+	return " throws " + joined(ts)
+}
+
+// joined writes references as a comma-joined list.
+func joined(ts []*emit.TypeRef) string {
+	parts := make([]string, 0, len(ts))
+	for _, t := range ts {
+		parts = append(parts, Spell(t))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// unembedded is the refusal for embeds: nothing promotes members.
+func unembedded(name string) error {
+	return fmt.Errorf(
+		"java: nothing promotes members, and %s states embeds", name)
 }
 
 // Annotate writes a declaration's annotation lines, one per

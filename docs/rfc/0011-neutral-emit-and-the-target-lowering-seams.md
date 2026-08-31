@@ -125,7 +125,7 @@ reports a positioned finding rather than narrowing the output.
 | Interface properties | refuse | tokens | refuse | refuse |
 | Docs, comments, variadic parameters | tokens | tokens | tokens | tokens |
 | Several returns | tokens | tokens | refuse | tokens |
-| Supertypes | tokens | tokens | tokens | tokens |
+| Supertypes | tokens; implements holds | tokens | tokens | tokens; structs refuse |
 | Method attachment | tokens | tokens | tokens | group |
 | Enum | lower | tokens | tokens | tokens |
 | Sum | refuse | lower | lower | tokens |

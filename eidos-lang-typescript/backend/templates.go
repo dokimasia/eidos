@@ -28,7 +28,7 @@ const (
 	// its keywords in TypeScript's stated order. An abstract
 	// method is a signature alone.
 	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
-		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
 		"  {{membermods .}}{{.Name}}: {{spell .Type}}{{with .Value}} = {{.}}{{end}};\n" +
 		"{{- end}}" +
@@ -41,7 +41,8 @@ const (
 	// behind the name: properties, readonly where stated, and
 	// method signatures with their own parameter lists, no bodies
 	// and no other keywords.
-	InterfaceTemplate = "{{docs .Doc}}{{mods .}}interface {{.Name}}{{typeparams .TypeParams}} {\n" +
+	InterfaceTemplate = "{{docs .Doc}}{{mods .}}interface {{.Name}}" +
+		"{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{propmods .}}{{.Name}}: {{spell .Type}};\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +

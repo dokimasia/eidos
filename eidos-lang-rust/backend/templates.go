@@ -39,7 +39,7 @@ const (
 	// parameter list. A method carrying a default body places it;
 	// the rest close as signatures.
 	InterfaceTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
-		"{{vis .Visibility .Name}}trait {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{vis .Visibility .Name}}trait {{.Name}}{{typeparams .TypeParams}}{{supertraits .}} {\n" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{traitfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
 		"{{results .Returns}}{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}\n" +

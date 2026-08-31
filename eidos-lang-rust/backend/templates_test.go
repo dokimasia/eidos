@@ -151,6 +151,24 @@ func TestTemplates(t *testing.T) {
 			"the alias parameterizes and its target restates the argument")
 	})
 
+	t.Run("supertypes", func(t *testing.T) {
+		t.Parallel()
+
+		i := &emit.Interface{
+			Name:    "Store",
+			Extends: []*emit.TypeRef{ref("Keyed"), ref("Ord")},
+		}
+		i.Methods.Append(&emit.Method{
+			Name:    "get",
+			Returns: []*emit.Return{{Type: ref("String")}},
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"pub trait Store: Keyed + Ord {\n"+
+				"    fn get(&self) -> String;\n"+
+				"}\n",
+			"the supertrait bounds behind the name")
+	})
+
 	t.Run("modifiers", func(t *testing.T) {
 		t.Parallel()
 

@@ -38,6 +38,8 @@ const (
 	FuncBinding = "binding"
 	// FuncDecorators writes a declaration's decorator lines.
 	FuncDecorators = "decorators"
+	// FuncHeritage writes a type's heritage clauses.
+	FuncHeritage = "heritage"
 )
 
 // Anonymous is what TypeScript writes where a declaration states
@@ -59,6 +61,7 @@ func Funcs() template.FuncMap {
 		FuncSigMods:    SigMods,
 		FuncBinding:    Binding,
 		FuncDecorators: Decorators,
+		FuncHeritage:   Heritage,
 	}
 }
 
@@ -179,8 +182,11 @@ func Mods(d symbol.Symbol) (string, error) {
 		}
 		return exported(t.Visibility, t.Name)
 	case *emit.Function:
-		if len(t.Annotations) > 0 {
+		switch {
+		case len(t.Annotations) > 0:
 			return "", undecorated(t.Name)
+		case len(t.Throws) > 0:
+			return "", unthrown(t.Name)
 		}
 		part, err := exported(t.Visibility, t.Name)
 		if err != nil {
@@ -255,6 +261,8 @@ func MemberMods(d symbol.Symbol) (string, error) {
 			return "", fmt.Errorf(
 				"typescript: a class method carries its body outright, and %s "+
 					"states a default", t.Name)
+		case len(t.Throws) > 0:
+			return "", unthrown(t.Name)
 		}
 		part, err := accessibility(t.Visibility, t.Name)
 		if err != nil {
@@ -338,8 +346,72 @@ func SigMods(m *emit.Method) (string, error) {
 		return "", fmt.Errorf(
 			"typescript: an interface method is a bare signature, and %s "+
 				"states a modifier", m.Name)
+	case len(m.Throws) > 0:
+		return "", unthrown(m.Name)
 	}
 	return "", nil
+}
+
+// Heritage writes a type's heritage clauses: one base behind
+// extends and the contracts behind implements on a class, the
+// widened contracts behind extends on an interface. A second
+// class base refuses, because TypeScript extends one, and an
+// embed refuses on either, because nothing promotes members.
+func Heritage(d symbol.Symbol) (string, error) {
+	switch t := d.(type) {
+	case *emit.Struct:
+		if len(t.Embeds) > 0 {
+			return "", unembedded(t.Name)
+		}
+		var part string
+		switch len(t.Extends) {
+		case 0:
+		case 1:
+			part = " extends " + Spell(t.Extends[0])
+		default:
+			return "", fmt.Errorf(
+				"typescript: a class extends one base, and %s states %d",
+				t.Name, len(t.Extends))
+		}
+		if len(t.Implements) > 0 {
+			part += " implements " + joined(t.Implements)
+		}
+		return part, nil
+	case *emit.Interface:
+		if len(t.Embeds) > 0 {
+			return "", unembedded(t.Name)
+		}
+		if len(t.Extends) > 0 {
+			return " extends " + joined(t.Extends), nil
+		}
+		return "", nil
+	default:
+		return "", fmt.Errorf(
+			"typescript: no heritage clause spells a %s", d.Kind())
+	}
+}
+
+// joined writes references as a comma-joined list.
+func joined(ts []*emit.TypeRef) string {
+	parts := make([]string, 0, len(ts))
+	for _, t := range ts {
+		parts = append(parts, Spell(t))
+	}
+	return strings.Join(parts, ", ")
+}
+
+// unthrown is the refusal for declared failure types: a
+// TypeScript signature declares none.
+func unthrown(name string) error {
+	return fmt.Errorf(
+		"typescript: a signature declares no failure types, and %s states "+
+			"throws", name)
+}
+
+// unembedded is the refusal for embeds: nothing promotes members.
+func unembedded(name string) error {
+	return fmt.Errorf(
+		"typescript: nothing promotes members, and %s states embeds", name)
 }
 
 // Binding writes a module-level binding's keyword: const for an

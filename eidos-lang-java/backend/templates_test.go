@@ -147,6 +147,48 @@ func TestTemplates(t *testing.T) {
 			"declaration-site variance refuses, because Java's wildcard is use-site")
 	})
 
+	t.Run("supertypes and throws", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{
+			Name:       "Row",
+			Extends:    []*emit.TypeRef{ref("Base")},
+			Implements: []*emit.TypeRef{ref("Keyed")},
+		}
+		s.Methods.Append(&emit.Method{
+			Name:    "load",
+			Returns: []*emit.Return{{Type: ref("Row")}},
+			Throws:  []*emit.TypeRef{ref("IOException")},
+		})
+		got, err := execute(backend.StructTemplate, s)
+		assert.NoError(t, err, "the class renders")
+		assert.Equal(t, got,
+			"public class Row extends Base implements Keyed {\n"+
+				"    public Row load() throws IOException {\n"+
+				"        body();\n"+
+				"    }\n"+
+				"}\n",
+			"the heritage behind the name, the throws clause behind the "+
+				"parameter list")
+
+		i := &emit.Interface{
+			Name:    "Store",
+			Extends: []*emit.TypeRef{ref("Keyed")},
+		}
+		i.Methods.Append(&emit.Method{
+			Name:    "load",
+			Returns: []*emit.Return{{Type: ref("Row")}},
+			Throws:  []*emit.TypeRef{ref("IOException")},
+		})
+		got, err = execute(backend.InterfaceTemplate, i)
+		assert.NoError(t, err, "the interface renders")
+		assert.Equal(t, got,
+			"public interface Store extends Keyed {\n"+
+				"    Row load() throws IOException;\n"+
+				"}\n",
+			"a signature carries its throws clause too")
+	})
+
 	t.Run("modifiers", func(t *testing.T) {
 		t.Parallel()
 
