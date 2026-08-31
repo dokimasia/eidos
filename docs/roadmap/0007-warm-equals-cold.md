@@ -35,6 +35,10 @@ warm≡cold check.
       region-lazy graph (a probe counts decoded regions against
       touched ones), persisted facts that early cutoff diffs against,
       and the artifact table returning dirtiness by lookup.
+- [ ] Commit is incremental: a probe compares bytes written after one
+      edit against the state's size, a no-change run writes no
+      generation, and clean regions and bags carry by segment
+      reference.
 - [ ] A truncated or version-skewed generation falls back to cold with
       one Info, and the run completes correctly.
 - [ ] Early cutoff works: an annotator that re-runs and stamps
@@ -80,4 +84,5 @@ All of [09-incrementality.md](../architecture/09-incrementality.md).
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-31 | Pinned incremental commit and the no-change skip into Done when | The incrementality design gained the write-side contract: a full-generation rewrite scales with the corpus and would fail the warm-one-edit gate on the commit alone |
 | 2026-08-30 | Added at position 7 | The riskiest milestone, placed as early as its dependency on the whole frame allows |

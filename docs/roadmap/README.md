@@ -5,9 +5,8 @@ Milestone numbers are permanent. The order is the order of this table,
 and it changes.
 
 The [architecture documents](../architecture/README.md) are the
-specification these milestones implement. Every module is a stub
-today, so this plan sequences the whole build, from the generated
-models to the first tagged release.
+specification these milestones implement. This plan sequences the
+whole build, from the generated models to the first tagged release.
 
 ```mermaid
 flowchart LR
@@ -37,7 +36,7 @@ flowchart LR
 | Order | Milestone | Status | Depends on | Ships in |
 |---|---|---|---|---|
 | 1 | [0001](0001-one-schema-two-models.md) One schema generates both models | Done | none | unscheduled |
-| 2 | [0002](0002-plugin-over-fixture-graph.md) A typed plugin runs over a hand-built graph | Planned | 0001 | unscheduled |
+| 2 | [0002](0002-plugin-over-fixture-graph.md) A typed plugin runs over a hand-built graph | Done | 0001 | unscheduled |
 | 3 | [0003](0003-emit-renders-go.md) Emit renders to deterministic Go | Planned | 0001 | unscheduled |
 | 4 | [0004](0004-go-loads-into-graph.md) Go source loads into the symbol graph | Planned | 0001, 0002 | unscheduled |
 | 5 | [0005](0005-single-plan-end-to-end.md) A single plan runs end to end | Planned | 0002, 0003, 0004 | unscheduled |
@@ -65,7 +64,10 @@ anything blocks them.
 
 The Java, Kotlin, PHP and Rust satellites exist as stub modules and
 are not scheduled. Each becomes a milestone when someone commits to
-it. Their sequencing notes live in
+it. dokimi, the reference consumer, reads Go, TypeScript, Rust,
+Java, Kotlin and Python, so the unscheduled satellites are demand
+rather than speculation, and eidos-lang-python still needs its stub
+module before it can become one. Their sequencing notes live in
 [11-languages.md](../architecture/11-languages.md): Kotlin waits on
 its grammar closing a measured gap, and PHP forces no new model
 element, so it can come early and cheap.

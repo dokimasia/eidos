@@ -69,12 +69,12 @@ module per [01-repos-and-kernel.md](../architecture/01-repos-and-kernel.md).
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| No TypeScript formatter is named anywhere in the specification, and hermeticity rules out invoking Node or prettier | the start of this milestone | Write the RFC first. The candidates are a pure-Go printer or making the kind templates produce final formatting |
 | The tree-sitter Go bindings use cgo, which taxes every consumer build that embeds this satellite | 0013 (the reference binary builds it), consumers | Recorded in [11-languages.md](../architecture/11-languages.md). The binding choice is private to eidos-lang, so a wazero migration later changes one module |
 
 ## Changes
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-31 | Moved the TypeScript-formatter risk to milestone 0003 | It belongs with the backend, which moved there on 2026-08-30; the row had stayed behind |
 | 2026-08-30 | The TypeScript backend moved to milestone 0003 | Two consumers hold the render kit's API, so the backend arrives beside Go's; this milestone keeps the frontend anatomy, the hub, the policies and the lowering |
 | 2026-08-30 | Added at position 9 | The second language proves the hub. TypeScript before protobuf because the schema-in work (0010) wants a second target to arrive on |

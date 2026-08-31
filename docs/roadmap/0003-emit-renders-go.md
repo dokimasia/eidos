@@ -86,11 +86,13 @@ rendering spells types through it.
 |---|---|---|
 | text/template reports errors at execute time and checks nothing statically | 0005 | The template-lint check is the designed answer, and it arrives in this milestone rather than later |
 | One kit API serving two languages grows a per-language escape hatch | 0009 | Two backends arrive together, so a rule that fits only one language is found here, where changing the kit is free, and not at the cross-language milestone |
+| No pure-Go TypeScript formatter is named anywhere, and hermeticity refuses invoking Node or prettier | the TypeScript half of this milestone | Write the RFC first. The candidates are a pure-Go printer or kind templates that emit final formatting |
 
 ## Changes
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-08-31 | Took the TypeScript-formatter risk from milestone 0009 | The TypeScript backend moved here on 2026-08-30 and the risk row stayed behind; the printer is due with the backend that needs it |
 | 2026-08-30 | The marker-rule bullet names the emitter and a count, not both plugins | A slot statement carries no attribution, so the contributor is unknowable by construction; the emitter whose template dropped the marker is the party that can fix it |
 | 2026-08-30 | Added the TypeScript backend beside Go | Two consumers of the render procedure are what hold the kit's API; the Go-to-TypeScript lowering and its contested mappings stay at their own milestone, because a backend renders the neutral emit graph and needs no policy machinery |
 | 2026-08-30 | Added at position 3 | Rendering is testable over hand-built emit graphs, so it runs in parallel with 0002 rather than after it |

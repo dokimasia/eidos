@@ -217,8 +217,9 @@ overhead a few million times over.
 
 ## The sealed state, designed
 
-The persisted state has to be loadable lazily, and this is the
-design that delivers that. The stored set is
+The persisted state has to be loadable lazily and committable
+incrementally, and this is the design that delivers both. The stored
+set is
 [08](08-workspace-and-plans.md)'s trio, meaning the sealed graph,
 the fact store and the artifact table, plus the header that gates
 all three.
@@ -230,28 +231,52 @@ directory ([20-cli.md](20-cli.md)):
 .<brand>/state/
   CURRENT              names the live generation ("gen-41");
                        rewritten atomically at commit
+  segments/            immutable, content-addressed payload files,
+                       each grouping many regions and bags; shared
+                       between generations, released when no live
+                       generation references one
   gen-41/
     header             format + contract versions, plugin-set
                        fingerprint, section checksums
-    graph              intern table · region index · regions
-    facts              per-symbol bags, packed interned pairs
+    graph              intern table · region index; clean regions
+                       by segment reference, dirty ones written
+                       fresh
+    facts              the claim record, packed interned pairs;
+                       clean bags by segment reference
     artifacts          the ArtifactRow table
 ```
 
-Commit writes `gen-42/` completely, fsyncs it, atomically rewrites
-`CURRENT`, then deletes `gen-40/` on a best-effort basis. A crash at
-any point leaves `CURRENT` naming a complete generation, old or new
-but never partial, which is the conservative half of the two-phase
-commit ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
+Commit writes the dirty state into `gen-42/` and its fresh segments,
+carries the rest forward by reference, fsyncs what it wrote,
+atomically rewrites `CURRENT`, then releases whatever no live
+generation references, on a best-effort basis. A reference is never
+mutated, so a crash at any point leaves `CURRENT` naming a complete
+generation, old or new but never partial, which is the conservative
+half of the two-phase commit
+([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
-**The graph file** holds an intern table, a region index and the
-regions. A region is one frontend unit, so the parse granule, the
-graph-write lock granule and the invalidation granule are one grain,
-with no translation layer between them.
+**Incremental commit is the write side's contract, mirroring lazy
+regions on the read side.** Opening costs what the run touches, and
+committing costs what the run changed: encoding and I/O proportional
+to the dirty regions, bags and rows, plus the header, the index and
+the intern-table delta, never to the corpus. A full-generation
+rewrite would scale the commit with the corpus and fail the
+warm-one-edit scaling gate ([19-benchmarking.md](19-benchmarking.md))
+on the last step alone. Grouped segments with periodic compaction,
+delta-over-base sections and filesystem block sharing are permitted
+mechanisms behind the contract, the way memory-mapping is behind the
+read side's. A run that changed nothing writes no generation at all:
+`CommitRun` validates, enforces the memo cap, and returns with
+`CURRENT` in place.
 
-The index maps unit identity to an offset, a length, a fingerprint
-and a checksum, so opening the file costs the header, the index and
-the intern table. Regions decode on first touch: dirty regions
+**The graph section** holds an intern table, a region index and the
+region references. A region is one frontend unit, so the parse
+granule, the graph-write lock granule and the invalidation granule
+are one grain, with no translation layer between them.
+
+The index maps unit identity to a segment, an offset, a length, a
+fingerprint and a checksum, so opening a generation costs the
+header, the index and the intern table. Regions decode on first touch: dirty regions
 eagerly at Load, and clean regions only when a tracked read arrives in
 one.
 
@@ -264,17 +289,26 @@ it can state the observable contract without it.
 **Encoding** is length-prefixed and uses only the standard library,
 per the kernel's zero-dependency rule. Canonical identities, key
 names and paths live once in the intern table, and regions and
-tables reference dense IDs. The IDs belong to a generation and are
-assigned at write time, and the canonical identity is the join, as
-it is everywhere ([02-symbol-model.md](02-symbol-model.md)).
+tables reference dense IDs. The table is append-only across
+generations, so a segment written under one generation reads
+unchanged under a later one and an ID never rebinds; run-local IDs
+translate at the boundary, and the canonical identity is the join,
+as it is everywhere ([02-symbol-model.md](02-symbol-model.md)).
 
-**The fact store** persists each bag as packed (keyID, value) pairs,
-which is the same small-slice layout the in-memory bags use. So a
-warm open restores the bags without re-annotating, and the persisted
-values are exactly what early cutoff diffs a re-stamp against. Facts
-persist because they have to: bags that die with the run force full
-re-annotation on every warm run, which is O(subjects) against the
-target.
+**The fact store** persists the claim record, not winning values
+alone: per (symbol, key), the winning claim with its envelope, value
+and derived reads, every drop tombstone, and the losing claims,
+packed over interned IDs. The envelopes are load-bearing for
+warm≡cold, because a warm re-stamp arbitrates against the claims
+already held: a store keeping only winning values would let a plugin
+re-stamp beat the directive drop it lost to on the cold run. Losers
+persist so `explain` walks one record warm or cold
+([04-metadata.md](04-metadata.md)). The winning values keep the
+small-slice layout the in-memory bags use, so a warm open restores
+the bags without re-annotating, and they are exactly what early
+cutoff diffs a re-stamp against. Facts persist because they have to:
+bags that die with the run force full re-annotation on every warm
+run, which is O(subjects) against the target.
 
 **When the state is unusable, the run goes cold rather than wrong.**
 A version mismatch, a checksum failure or a truncated section
@@ -290,20 +324,22 @@ private, and these are what the engine holds:
 type SealedState interface {
     Header() StateHeader                   // versions, fingerprints
     OpenRegion(u UnitRef) (Region, error)  // decode on first touch
-    Facts() FactSnapshot                   // what early cutoff diffs against
+    Facts() FactSnapshot                   // the claim record; cutoff diffs its winners
     Artifacts() []ArtifactRow
 }
 type StateWriter interface {
-    PutRegion(u UnitRef, r Region) error
-    PutFacts(FactSnapshot) error
-    PutArtifacts([]ArtifactRow) error
-    Commit() error                         // fsync, swap CURRENT — CommitRun
+    PutRegion(u UnitRef, r Region) error   // dirty regions only
+    PutFacts(FactSnapshot) error           // changed bags; clean ones carry by reference
+    PutArtifacts([]ArtifactRow) error      // changed rows; clean ones carry by reference
+    Commit() error                         // fsync, swap CURRENT — CommitRun;
+                                           // writes nothing when nothing changed
 }
 ```
 
 Considered and refused. **An embedded database**: a third-party
 dependency in a kernel that has none, and a B-tree's write paths buy
-generality that writing a whole generation and swapping never uses.
+generality that writing immutable segments and swapping a pointer
+never uses.
 **One file per unit**: ten thousand or more opens per warm run at L,
 which is a syscall floor that eats the sub-second budget by itself.
 **Encodings that deserialize everything**, such as gob or JSON:
