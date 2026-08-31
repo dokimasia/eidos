@@ -914,6 +914,12 @@ func (x *Interface) EmbedList() []symbol.Symbol {
 // language that parameterizes aliases fills TypeParams and the
 // target references them.
 //
+// Defined marks a distinct type rather than a transparent alias:
+// a Go defined type, which attaches methods and converts
+// explicitly, against the alias form that is only another
+// spelling. A language without the distinction leaves it false,
+// and one whose aliases are transparent alone refuses it.
+//
 // This is the node spelling of the kind.
 type Alias struct {
 	ID         symbol.Identity   `json:"id,omitzero"`
@@ -921,6 +927,7 @@ type Alias struct {
 	Doc        []string          `json:"doc,omitzero"`
 	Name       string            `json:"name,omitzero"`
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Defined    bool              `json:"defined,omitzero"` // a distinct type, not a transparent alias
 	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
 	Target     *TypeRef          `json:"target,omitzero"` // nil for an associated type
 }

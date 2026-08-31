@@ -202,6 +202,22 @@ func scaledKey(p, file int) string {
 func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 	i := strconv.Itoa(n)
 	switch k {
+	case symbol.KindEnum:
+		e := &emit.Enum{
+			Origin: originOf("phase"+i, symbol.KindEnum),
+			Name:   "phase" + i,
+		}
+		e.Variants.Append(
+			&emit.EnumVariant{
+				Origin: memberOf("phase"+i, "open", symbol.KindEnumVariant),
+				Name:   "open",
+			},
+			&emit.EnumVariant{
+				Origin: memberOf("phase"+i, "closed", symbol.KindEnumVariant),
+				Name:   "closed",
+			},
+		)
+		return e
 	case symbol.KindStruct:
 		s := &emit.Struct{
 			Origin:     originOf("row"+i, symbol.KindStruct),

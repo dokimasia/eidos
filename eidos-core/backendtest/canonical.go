@@ -55,6 +55,7 @@ const boundName = "Codec"
 // canonicalKinds fixes which kinds the fixture holds a
 // declaration for, in build order.
 var canonicalKinds = []symbol.Kind{
+	symbol.KindEnum,
 	symbol.KindStruct,
 	symbol.KindInterface,
 	symbol.KindFunction,
@@ -168,6 +169,8 @@ func canonicalTree() fs.FS {
 // kind parameterizes.
 func canonicalUnit(k symbol.Kind) plugin.Unit {
 	switch k {
+	case symbol.KindEnum:
+		return unitFor("phase", phaseEnum())
 	case symbol.KindStruct:
 		return unitFor("row", rowStruct(), boxStruct())
 	case symbol.KindInterface:
@@ -332,6 +335,31 @@ func rowStruct() *emit.Struct {
 		})
 	}
 	return s
+}
+
+// phaseEnum returns the enum: two payloadless variants and no
+// stated values, which is the shape every target spells, a target
+// lowering it into a constant group included. Values and members
+// stay in each satellite's own tests, because their spellings
+// diverge.
+func phaseEnum() *emit.Enum {
+	e := &emit.Enum{
+		Origin: originOf("phase", symbol.KindEnum),
+		Doc:    []string{"phase names a lifecycle step."},
+		Name:   "phase",
+	}
+	e.Variants.Append(
+		&emit.EnumVariant{
+			Origin: memberOf("phase", "open", symbol.KindEnumVariant),
+			Doc:    []string{"open admits writes."},
+			Name:   "open",
+		},
+		&emit.EnumVariant{
+			Origin: memberOf("phase", "closed", symbol.KindEnumVariant),
+			Name:   "closed",
+		},
+	)
+	return e
 }
 
 // boxStruct returns the generic struct: one type parameter, a

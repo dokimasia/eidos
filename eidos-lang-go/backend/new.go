@@ -24,6 +24,7 @@ func New() plugin.Backend {
 		KindTemplates(KindTemplates()).
 		Funcs(Funcs()).
 		Naming(spell.Filename).
+		Respell(spell.Name).
 		Scaffold(Scaffold).
 		Imports(Imports).
 		Finalise(format.Source).

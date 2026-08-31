@@ -98,6 +98,12 @@ type Interface struct {
 // language that parameterizes aliases fills TypeParams and the
 // target references them.
 //
+// Defined marks a distinct type rather than a transparent alias:
+// a Go defined type, which attaches methods and converts
+// explicitly, against the alias form that is only another
+// spelling. A language without the distinction leaves it false,
+// and one whose aliases are transparent alone refuses it.
+//
 //eidos:subject
 type Alias struct {
 	ID          symbol.Identity   `eidos:"node"`
@@ -106,6 +112,7 @@ type Alias struct {
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
+	Defined     bool              `eidos:"both"` // a distinct type, not a transparent alias
 	TypeParams  []*TypeParam      `eidos:"both,walk"`
 	Target      *TypeRef          `eidos:"both,walk"` // nil for an associated type
 	Annotations Annotations       `eidos:"emit"`

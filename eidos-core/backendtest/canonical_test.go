@@ -21,6 +21,7 @@ import (
 // fixture must not read.
 func fullInventory() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
+		symbol.KindEnum:      "unread",
 		symbol.KindStruct:    "unread",
 		symbol.KindInterface: "unread",
 		symbol.KindFunction:  "unread",

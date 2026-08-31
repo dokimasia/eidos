@@ -22,6 +22,7 @@ func New() plugin.Backend {
 		KindTemplates(KindTemplates()).
 		Funcs(Funcs()).
 		Naming(spell.Filename).
+		Respell(spell.Name).
 		Cluster(Cluster).
 		Groups(Groups()).
 		Scaffold(Scaffold).

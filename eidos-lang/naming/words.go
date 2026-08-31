@@ -46,6 +46,22 @@ func (*Caser) Words(s string) []string {
 	}
 
 	out := make([]string, 0, countWordStarts(s))
+	wordSpans(s, func(start, end int, dirty bool) bool {
+		out = append(out, wordAt(s, start, end, dirty))
+		return true
+	})
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+// wordSpans calls yield for every word's byte span in s, under the
+// boundary rules [Caser.Words] documents, without allocating: the
+// converters' identity checks walk it to compare an input against
+// the output it would produce, and Words collects it into the
+// slice its callers hold.
+func wordSpans(s string, yield func(start, end int, dirty bool) bool) {
 	// start is the byte offset the current word began at, or -1 when
 	// the scan is between words. dirty records whether the current
 	// word contains an invalid byte, which decides whether it can be
@@ -64,12 +80,16 @@ func (*Caser) Words(s string) []string {
 		switch {
 		case isSeparator(r):
 			if start >= 0 {
-				out = append(out, wordAt(s, start, i, dirty))
+				if !yield(start, i, dirty) {
+					return
+				}
 				start, dirty = -1, false
 			}
 		case !first && breaksBefore(prev, r, s, i+sz):
 			if start >= 0 {
-				out = append(out, wordAt(s, start, i, dirty))
+				if !yield(start, i, dirty) {
+					return
+				}
 				dirty = false
 			}
 			start = i
@@ -83,12 +103,8 @@ func (*Caser) Words(s string) []string {
 		i += sz
 	}
 	if start >= 0 {
-		out = append(out, wordAt(s, start, len(s), dirty))
+		yield(start, len(s), dirty)
 	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }
 
 // wordAt returns the word spanning [start, end) of s.

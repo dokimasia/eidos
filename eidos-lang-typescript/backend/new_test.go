@@ -44,6 +44,14 @@ func BenchmarkNew(b *testing.B) {
 		backendtest.Budget{MaxAllocs: 8_700_000})
 }
 
+// BenchmarkSettle measures the settle over the suite's scaled
+// corpus, the corpus build inside the number, under its own
+// ceiling pinned from measurement with headroom.
+func BenchmarkSettle(b *testing.B) {
+	backendtest.BenchSettle(b, benchSetup,
+		backendtest.Budget{MaxAllocs: 3_800_000})
+}
+
 // The backend is the module's write half: the kernel suite holds
 // it to the render checks over the canonical fixture, and the
 // stamp check joins it to the output contract under this module's
@@ -67,5 +75,18 @@ func TestNew(t *testing.T) {
 		c, err := output.NewContract("typescript", typescript.Syntax())
 		assert.NoError(t, err, "the module contract composes")
 		backendtest.AssertStamped(t, setup, c)
+	})
+
+	t.Run("spells its convention through the settle", func(t *testing.T) {
+		t.Parallel()
+
+		var text []byte
+		for _, f := range backendtest.RenderSettled(t, setup) {
+			text = append(text, f.Body...)
+		}
+		assert.Contains(t, string(text), "export class Row",
+			"a neutral row takes Pascal")
+		assert.Contains(t, string(text), "  boot(): void {",
+			"and a neutral boot stays camel")
 	})
 }

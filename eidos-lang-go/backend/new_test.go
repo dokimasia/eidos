@@ -43,6 +43,14 @@ func BenchmarkNew(b *testing.B) {
 		backendtest.Budget{MaxAllocs: 13_800_000})
 }
 
+// BenchmarkSettle measures the settle over the suite's scaled
+// corpus, the corpus build inside the number, under its own
+// ceiling pinned from measurement with headroom.
+func BenchmarkSettle(b *testing.B) {
+	backendtest.BenchSettle(b, benchSetup,
+		backendtest.Budget{MaxAllocs: 4_100_000})
+}
+
 // The backend is the module's write half: the kernel suite holds
 // it to the render checks over the canonical fixture, and the
 // stamp check joins it to the output contract under this module's
@@ -66,5 +74,18 @@ func TestNew(t *testing.T) {
 		c, err := output.NewContract("golang", golang.Syntax())
 		assert.NoError(t, err, "the module contract composes")
 		backendtest.AssertStamped(t, setup, c)
+	})
+
+	t.Run("spells its convention through the settle", func(t *testing.T) {
+		t.Parallel()
+
+		var text []byte
+		for _, f := range backendtest.RenderSettled(t, setup) {
+			text = append(text, f.Body...)
+		}
+		assert.Contains(t, string(text), "type Row struct",
+			"a neutral row exports as Row")
+		assert.Contains(t, string(text), "func Fetch()",
+			"and a neutral fetch as Fetch")
 	})
 }

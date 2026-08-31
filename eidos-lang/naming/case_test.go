@@ -42,6 +42,39 @@ func runStyles(t *testing.T, convert func(*naming.Caser, string) string, cases [
 func TestCase(t *testing.T) {
 	t.Parallel()
 
+	t.Run("an input already in the style stands whole", func(t *testing.T) {
+		t.Parallel()
+
+		// The zero-allocation half of the contract holds in
+		// BenchmarkCase and in the settle ceilings that consume it,
+		// because AllocsPerRun refuses to run beside parallel tests.
+		styled := []struct {
+			name string
+			fn   func(string) string
+			in   string
+		}{
+			{"Pascal", naming.Pascal, "HTTPRow"},
+			{"Camel", naming.Camel, "httpRow"},
+			{"Snake", naming.Snake, "row_count"},
+			{"ScreamingSnake", naming.ScreamingSnake, "MAX_ROWS"},
+			{"Kebab", naming.Kebab, "row-count"},
+			{"ScreamingKebab", naming.ScreamingKebab, "MAX-ROWS"},
+			{"Dot", naming.Dot, "row.count"},
+			{"Title", naming.Title, "HTTP Row"},
+		}
+		for _, c := range styled {
+			assert.Equal(t, c.fn(c.in), c.in,
+				c.name+" keeps an already-styled input whole")
+		}
+
+		assert.Equal(t, naming.Camel("HTTPRow"), "httpRow",
+			"a near miss still converts")
+		assert.Equal(t, naming.Snake("rowCount"), "row_count",
+			"through the builder")
+		assert.Equal(t, naming.Snake("row__count"), "row_count",
+			"and a doubled separator never passes as styled")
+	})
+
 	t.Run("Pascal", func(t *testing.T) {
 		t.Parallel()
 		runStyles(t, (*naming.Caser).Pascal, []style{
