@@ -84,20 +84,8 @@ var canonicalKinds = []symbol.Kind{
 func CanonicalFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
 	tb.Helper()
 
-	if len(inventory) == 0 {
-		tb.Errorf("the canonical fixture takes an inventory naming at least one kind")
+	if _, valid := requestedKinds(tb, inventory); !valid {
 		return nil
-	}
-	requested := make([]symbol.Kind, 0, len(inventory))
-	for k := range inventory {
-		requested = append(requested, k)
-	}
-	slices.Sort(requested)
-	for _, k := range requested {
-		if !slices.Contains(canonicalKinds, k) {
-			tb.Errorf("the canonical fixture holds no %s declaration", k)
-			return nil
-		}
 	}
 
 	e := plugin.NewEmit()
@@ -116,6 +104,35 @@ func CanonicalFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
 		Schedule: []plugin.ID{emitter},
 		Trees:    map[plugin.ID]fs.FS{emitter: canonicalTree()},
 	}
+}
+
+// requestedKinds validates an inventory and returns its kinds in
+// kind order; false means the calling test already failed. The
+// fixtures hold a declaration for every kind a backend spells
+// today, so an inventory naming any other kind is refused, and a
+// backend growing a new spelling extends the fixtures before it
+// can claim coverage.
+func requestedKinds(
+	tb assert.TB, inventory map[symbol.Kind]string,
+) ([]symbol.Kind, bool) {
+	tb.Helper()
+
+	if len(inventory) == 0 {
+		tb.Errorf("the fixture takes an inventory naming at least one kind")
+		return nil, false
+	}
+	requested := make([]symbol.Kind, 0, len(inventory))
+	for k := range inventory {
+		requested = append(requested, k)
+	}
+	slices.Sort(requested)
+	for _, k := range requested {
+		if !slices.Contains(canonicalKinds, k) {
+			tb.Errorf("the fixture holds no %s declaration", k)
+			return nil, false
+		}
+	}
+	return requested, true
 }
 
 // canonicalTree returns the emitter's template tree: the

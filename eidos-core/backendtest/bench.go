@@ -1,0 +1,218 @@
+// Copyright ThesmOS B.V. 2026
+// SPDX-License-Identifier: MIT
+
+package backendtest
+
+import (
+	"io/fs"
+	"strconv"
+	"testing"
+
+	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
+
+	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// The canonical benchmark scale. Every backend measures over the
+// same corpus shape, so two backends' numbers mean one thing and
+// a regression names a code change rather than a fixture change.
+const (
+	// BenchPackages is how many packages the scaled fixture holds.
+	BenchPackages = 1_000
+	// BenchFiles is how many source units each package holds.
+	BenchFiles = 10
+	// BenchDecls is how many file-level declarations each unit
+	// holds; member declarations ride inside them uncounted.
+	BenchDecls = 20
+)
+
+// Budget is what a satellite pins its benchmark to. An allocation
+// count does not move with machine load, so exceeding the ceiling
+// names a real code change; latency bounds stay beside the pinned
+// baseline gates, where the machine is fixed.
+type Budget struct {
+	// MaxAllocs bounds allocations per rendered corpus. Zero is
+	// refused: a benchmark without a ceiling records numbers
+	// nobody reads.
+	MaxAllocs uint64
+}
+
+// BenchRender measures one backend over its setup's fixture and
+// holds it to the budget: the fixture builds once outside the
+// loop, every iteration renders it whole over a fresh sink, and
+// the contract checks the ceiling when the loop ends. An
+// iteration reporting any finding fails the benchmark, because a
+// number over a partial render measures the wrong thing.
+//
+// A satellite's setup returns [ScaledFixture] filtered to its
+// rendered coverage, so the corpus shape stays the suite's and
+// the ceiling stays the satellite's.
+func BenchRender(b *testing.B, setup Setup, budget Budget) {
+	b.Helper()
+
+	if budget.MaxAllocs == 0 {
+		b.Fatal("the budget states no ceiling")
+	}
+	r, f := setup(b)
+	if f == nil || f.Emit == nil {
+		b.Fatal("the setup carries no fixture")
+	}
+
+	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
+	defer c.End()
+	for c.Loop() {
+		sink := diag.NewSink()
+		files, err := r.Render(f.context(sink))
+		if err != nil {
+			b.Fatalf("the render aborted: %v", err)
+		}
+		if len(files) == 0 || sink.Failed() {
+			b.Fatal("the corpus renders whole and clean")
+		}
+	}
+}
+
+// ScaledFixture returns the benchmark corpus, filtered to a
+// backend's declared kind inventory the way [CanonicalFixture]
+// filters its coverage: [BenchPackages] packages of [BenchFiles]
+// units, each holding [BenchDecls] declarations cycling the
+// inventory's kinds in kind order, numbered so every name is
+// distinct. Two calls build two equal fixtures.
+func ScaledFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
+	tb.Helper()
+
+	requested, valid := requestedKinds(tb, inventory)
+	if !valid {
+		return nil
+	}
+	e := plugin.NewEmit()
+	n := 0
+	for p := range BenchPackages {
+		pkg := scaledPackageID(p)
+		for file := range BenchFiles {
+			decls := make([]symbol.Symbol, 0, BenchDecls)
+			origins := make([]symbol.Identity, 0, BenchDecls)
+			for range BenchDecls {
+				d := scaledDecl(requested[n%len(requested)], n)
+				n++
+				decls = append(decls, d)
+				if id, held := emit.OriginOf(d); held && !id.IsZero() {
+					origins = append(origins, id)
+				}
+			}
+			u := plugin.Unit{
+				Plugin: emitter,
+				Per:    plugin.PerSource,
+				Word:   canonicalWord,
+				Key:    scaledKey(p, file),
+				Pkg:    pkg,
+				Decls:  decls,
+				// The builder numbers every name upward, so the
+				// origins arrive sorted the way a flush leaves
+				// them.
+				Origins: origins,
+			}
+			if err := e.Add(u); err != nil {
+				tb.Errorf("the scaled %s unit arrives: %v", u.Key, err)
+				return nil
+			}
+		}
+	}
+	return &Fixture{
+		Emit:     e,
+		Schedule: []plugin.ID{emitter},
+		Trees:    map[plugin.ID]fs.FS{emitter: canonicalTree()},
+	}
+}
+
+// scaledPackageID is one benchmark package's identity.
+func scaledPackageID(p int) symbol.Identity {
+	name := "p" + strconv.Itoa(p)
+	return symbol.Identity{
+		Lang:    fixtureLang,
+		Package: fixturePackage + "/" + name,
+		Name:    name,
+		Kind:    symbol.KindPackage,
+	}
+}
+
+// scaledKey is one benchmark unit's routing key.
+func scaledKey(p, file int) string {
+	return fixturePackage + "/p" + strconv.Itoa(p) +
+		"/f" + strconv.Itoa(file) + keyExt
+}
+
+// scaledDecl returns the nth benchmark declaration of a kind,
+// numbered so names stay distinct across the corpus.
+func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
+	i := strconv.Itoa(n)
+	switch k {
+	case symbol.KindStruct:
+		s := &emit.Struct{
+			Origin: originOf("Row"+i, symbol.KindStruct),
+			Doc:    []string{"Row" + i + " holds one record."},
+			Name:   "Row" + i,
+		}
+		s.Fields.Append(&emit.Field{
+			Origin:  memberOf("Row"+i, "Name", symbol.KindField),
+			Comment: "unique per store",
+			Name:    "Name",
+			Type:    typeRef("string"),
+			Tag:     `json:"name"`,
+		})
+		s.Methods.Append(&emit.Method{
+			Origin: memberOf("Row"+i, "Fetch", symbol.KindMethod),
+			Name:   "Fetch",
+			Body:   emit.Body{Stmts: scaffoldStmts()},
+		})
+		return s
+	case symbol.KindInterface:
+		iface := &emit.Interface{
+			Origin: originOf("Store"+i, symbol.KindInterface),
+			Name:   "Store" + i,
+		}
+		iface.Methods.Append(&emit.Method{
+			Origin:  memberOf("Store"+i, "Get", symbol.KindMethod),
+			Name:    "Get",
+			Params:  []*emit.Param{{Name: "key", Type: typeRef("string")}},
+			Returns: []*emit.Return{{Type: typeRef("string")}},
+		})
+		return iface
+	case symbol.KindFunction:
+		return &emit.Function{
+			Origin: originOf("Task"+i, symbol.KindFunction),
+			Name:   "Task" + i,
+			Body:   emit.Body{Stmts: scaffoldStmts()},
+		}
+	case symbol.KindMethod:
+		return &emit.Method{
+			Origin:   memberOf("Row"+i, "Track", symbol.KindMethod),
+			Name:     "Track",
+			Receives: typeRef("Row" + i),
+			Body:     emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}},
+		}
+	case symbol.KindAlias:
+		return &emit.Alias{
+			Origin: originOf("ID"+i, symbol.KindAlias),
+			Name:   "ID" + i,
+			Target: typeRef("string"),
+		}
+	case symbol.KindConstant:
+		return &emit.Constant{
+			Origin:  originOf("Limit"+i, symbol.KindConstant),
+			Comment: "rows per call",
+			Name:    "Limit" + i,
+			Value:   "8",
+		}
+	default: // symbol.KindVariable, by canonicalKinds
+		return &emit.Variable{
+			Origin: originOf("Count"+i, symbol.KindVariable),
+			Name:   "Count" + i,
+			Type:   typeRef("int"),
+		}
+	}
+}

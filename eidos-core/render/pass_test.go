@@ -14,6 +14,7 @@ import (
 	"text/template"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -750,8 +751,9 @@ func BenchmarkPass(b *testing.B) {
 		b.Fatalf("New: unexpected error: %v", err)
 	}
 
-	b.ReportAllocs()
-	for b.Loop() {
+	c := bench.Start(b).MaxAllocs(680_000)
+	defer c.End()
+	for c.Loop() {
 		sink := diag.NewSink()
 		files, err := p.Render(&plugin.RenderContext{
 			Emit: e, Sink: sink, Plugin: "printer",
