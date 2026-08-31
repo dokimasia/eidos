@@ -29,7 +29,7 @@ func TestBag(t *testing.T) {
 
 			_, f, role, _ := fixture(t)
 			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)),
-				"the first claim lands")
+				"the first claim arrives")
 
 			err := meta.Stamp(f, role, "reader", by("shape", 1))
 			assert.HasError(t, err,
@@ -125,7 +125,7 @@ func TestBag(t *testing.T) {
 		t.Run("one winner however the writes interleave", func(t *testing.T) {
 			t.Parallel()
 
-			// Every scheduling of the same claims answers the same
+			// Every scheduling of the same claims returns the same
 			// winner, which is what lets a parallel run report what a
 			// serial one does.
 			claims := []struct {

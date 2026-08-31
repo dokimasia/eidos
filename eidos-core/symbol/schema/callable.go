@@ -94,7 +94,7 @@ type Method struct {
 // Default holds the source spelling of the default value,
 // unevaluated, and is empty when the parameter has none. A
 // generator that drops a default changes the callee's contract, so
-// the spelling travels with the parameter rather than living in
+// the spelling is carried with the parameter rather than living in
 // metadata.
 //
 // Variadic distinguishes the positional and keyword forms, because

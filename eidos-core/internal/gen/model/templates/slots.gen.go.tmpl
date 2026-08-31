@@ -5,9 +5,9 @@ import "go.dokimi.dev/eidos/core/symbol"
 {{- range .Views}}{{$v := .}}
 {{- range .Slots}}
 
-// {{.Accessor}} answers the {{.Name}} slot of a {{$v.Name}}, which
+// {{.Accessor}} returns the {{.Name}} slot of a {{$v.Name}}, which
 // plugins append into. The slot is part of the value, so the
-// accessor never answers nil.
+// accessor never returns nil.
 {{- range .Doc}}
 //
 // {{.}}

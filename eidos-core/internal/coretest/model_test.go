@@ -14,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// foreign is a symbol from outside the node model: it answers the
+// foreign is a symbol from outside the node model: it returns the
 // shared vocabulary and no identity, which is what [coretest.Names]
 // refuses.
 type foreign struct{}
@@ -87,19 +87,19 @@ func TestModel(t *testing.T) {
 
 			assert.NotEqual(t,
 				coretest.PackageID(coretest.StorePath), coretest.PackageID(coretest.CachePath),
-				"the two fixture paths answer two identities")
+				"the two fixture paths produce two identities")
 		})
 	})
 
 	t.Run("Workspace", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the packages and declarations it was asked for", func(t *testing.T) {
+		t.Run("returns the packages and declarations it was asked for", func(t *testing.T) {
 			t.Parallel()
 
 			const packages, files, decls = 3, 2, 4
 			got := coretest.Workspace(packages, files, decls)
-			assert.Length(t, got, packages, "Workspace answers the packages asked for")
+			assert.Length(t, got, packages, "Workspace returns the packages asked for")
 
 			held := 0
 			for decl := range node.Declarations(got[0]) {
@@ -127,7 +127,7 @@ func TestModel(t *testing.T) {
 				"every built declaration is distinct, or a graph would drop some")
 		})
 
-		t.Run("answers nothing for a workspace of no packages", func(t *testing.T) {
+		t.Run("returns nothing for a workspace of no packages", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, coretest.Workspace(0, 2, 4),
@@ -138,7 +138,7 @@ func TestModel(t *testing.T) {
 	t.Run("Names", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the declared names in the order it read them", func(t *testing.T) {
+		t.Run("returns the declared names in the order it read them", func(t *testing.T) {
 			t.Parallel()
 
 			decls := []symbol.Symbol{
@@ -146,10 +146,10 @@ func TestModel(t *testing.T) {
 				coretest.Struct(coretest.StorePath, "Cache"),
 			}
 			assert.Equal(t, coretest.Names(t, decls), []string{"Store", "Cache"},
-				"Names answers the declared names in the order it read them")
+				"Names returns the declared names in the order it read them")
 		})
 
-		t.Run("answers nothing for a traversal that yielded nothing", func(t *testing.T) {
+		t.Run("returns nothing for a traversal that yielded nothing", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, coretest.Names(t, nil),

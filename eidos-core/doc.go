@@ -24,7 +24,7 @@
 // communicate only through typed metadata on the graph: every
 // write carries authority (plugin < directive < manual) and
 // provenance, so a human override at the declaration beats any
-// inference and every fact can answer "derived from what".
+// inference and every fact can return "derived from what".
 //
 // # Authoring model
 //
@@ -44,13 +44,13 @@
 // A backend is declared the same way: [NewBackend] takes the
 // identity, target and comment syntax, the language pieces are
 // data, and [BackendBuilder.Build] lowers them to the render pass,
-// answering the Backend and Renderer seats both.
+// returning the Backend and Renderer roles both.
 //
 // # Dispatch
 //
 // Dispatch is indexed: a directive-gated rule visits its carriers,
 // a fact-gated rule visits its stamped subjects, and only a bare
-// rule pays for the whole graph. Every invocation carries its own
+// rule visits the whole graph. Every invocation carries its own
 // read set, minted on first read, so a fact write's derivation
 // names what its match read; sequence numbers follow canonical
 // match order, so arbitration never depends on scheduling. The

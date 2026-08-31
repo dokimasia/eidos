@@ -33,7 +33,7 @@ const (
 	GeneratedTestSuffix = ".gen_test.go"
 )
 
-// dirPerm and filePerm are the modes generated output lands with.
+// dirPerm and filePerm are the modes generated output arrives with.
 const (
 	dirPerm  fs.FileMode = 0o750
 	filePerm fs.FileMode = 0o600

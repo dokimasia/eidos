@@ -166,7 +166,7 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 	}
 }
 
-// All answers the same traversal as [Walk] as an iterator.
+// All returns the same traversal as [Walk], as an iterator.
 //
 // Stopping the range stops the walk, which differs from Walk's own
 // visit: there, false prunes one subtree.
@@ -186,10 +186,10 @@ func All(s symbol.Symbol) iter.Seq[symbol.Symbol] {
 	}
 }
 
-// OriginOf answers the node identity a generated value derives
+// OriginOf returns the node identity a generated value derives
 // from, and false for a kind that carries no origin storage. The
-// zero identity still answers true, and claims nothing: carrying
-// the seat and carrying a value are different questions.
+// zero identity still returns true, and claims nothing: carrying
+// the field and carrying a value are different questions.
 func OriginOf(s symbol.Symbol) (symbol.Identity, bool) {
 	switch x := s.(type) {
 	case *Function:

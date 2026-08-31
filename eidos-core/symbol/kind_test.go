@@ -22,12 +22,12 @@ func TestKindType(t *testing.T) {
 
 		var got symbol.Kind
 		assert.Equal(t, got, symbol.KindInvalid,
-			"the zero Kind is the kind no declaration answers")
+			"the zero Kind is the kind no declaration returns")
 		assert.Equal(t, got.String(), "Invalid",
 			"and it spells itself as such")
 	})
 
-	t.Run("no declaration answers Invalid", func(t *testing.T) {
+	t.Run("no declaration returns Invalid", func(t *testing.T) {
 		t.Parallel()
 
 		assert.NotEqual(t, symbol.KindInvalid, symbol.KindPackage,

@@ -15,7 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// structID answers the identity a resolved struct of that name
+// structID returns the identity a resolved struct of that name
 // carries, for origins the fixtures below derive from.
 func structID(name string) symbol.Identity {
 	return symbol.Identity{
@@ -26,7 +26,7 @@ func structID(name string) symbol.Identity {
 	}
 }
 
-// unit answers a minimal valid unit for one plugin and key.
+// unit returns a minimal valid unit for one plugin and key.
 func unit(p, key string) plugin.Unit {
 	return plugin.Unit{
 		Plugin: plugin.ID(p),
@@ -39,8 +39,8 @@ func unit(p, key string) plugin.Unit {
 
 // The emit store is one plan's accumulated output: its refusals keep
 // a phase call's flush honest, its enumeration order is total so two
-// runs answer alike, and its kind index is what prices an
-// emit-triggered rule at its matches.
+// runs agree, and its kind index is what makes an
+// emit-triggered rule cost only its matches.
 func TestEmit(t *testing.T) {
 	t.Parallel()
 
@@ -52,15 +52,15 @@ func TestEmit(t *testing.T) {
 
 			e := plugin.NewEmit()
 			assert.NoError(t, e.Add(unit("stubgen", "svc/store/unit.go")),
-				"a valid unit lands")
+				"a valid unit arrives")
 
 			var got []plugin.Unit
 			for u := range e.Units() {
 				got = append(got, u)
 			}
-			assert.Length(t, got, 1, "the store holds what landed")
+			assert.Length(t, got, 1, "the store holds what arrived")
 			assert.Equal(t, got[0].Key, "svc/store/unit.go",
-				"the unit answers as it was added")
+				"the unit comes back as it was added")
 		})
 
 		t.Run("refuses a second unit under one accumulator", func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestEmit(t *testing.T) {
 
 			e := plugin.NewEmit()
 			assert.NoError(t, e.Add(unit("stubgen", "svc/store/unit.go")),
-				"the first flush lands")
+				"the first flush arrives")
 			assert.HasError(t, e.Add(unit("stubgen", "svc/store/unit.go")),
 				"one phase call flushes each accumulator once")
 
@@ -76,7 +76,7 @@ func TestEmit(t *testing.T) {
 			for range e.Units() {
 				got++
 			}
-			assert.Equal(t, got, 1, "the refused unit did not land")
+			assert.Equal(t, got, 1, "the refused unit did not arrive")
 		})
 
 		t.Run("admits one key under two plugins", func(t *testing.T) {
@@ -84,7 +84,7 @@ func TestEmit(t *testing.T) {
 
 			e := plugin.NewEmit()
 			assert.NoError(t, e.Add(unit("stubgen", "svc/store/unit.go")),
-				"the first plugin's unit lands")
+				"the first plugin's unit arrives")
 			assert.NoError(t, e.Add(unit("audit", "svc/store/unit.go")),
 				"two plugins may contribute to one cardinality key")
 		})
@@ -120,7 +120,7 @@ func TestEmit(t *testing.T) {
 	t.Run("Units", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers a total order", func(t *testing.T) {
+		t.Run("returns a total order", func(t *testing.T) {
 			t.Parallel()
 
 			e := plugin.NewEmit()
@@ -132,7 +132,7 @@ func TestEmit(t *testing.T) {
 				unit("stubgen", "a.go"),
 				unit("audit", "z.go"),
 			} {
-				assert.NoError(t, e.Add(u), "every fixture unit lands")
+				assert.NoError(t, e.Add(u), "every fixture unit arrives")
 			}
 
 			var got []string
@@ -151,8 +151,8 @@ func TestEmit(t *testing.T) {
 			t.Parallel()
 
 			e := plugin.NewEmit()
-			assert.NoError(t, e.Add(unit("stubgen", "a.go")), "a unit lands")
-			assert.NoError(t, e.Add(unit("audit", "b.go")), "a second lands")
+			assert.NoError(t, e.Add(unit("stubgen", "a.go")), "a unit arrives")
+			assert.NoError(t, e.Add(unit("audit", "b.go")), "a second arrives")
 
 			var got int
 			for range e.Units() {
@@ -166,7 +166,7 @@ func TestEmit(t *testing.T) {
 	t.Run("ByKind", func(t *testing.T) {
 		t.Parallel()
 
-		// carrying answers a unit holding one origined struct with
+		// carrying returns a unit holding one origined struct with
 		// one origined method in its slot.
 		carrying := func(p, key, structName string) plugin.Unit {
 			s := &emit.Struct{Origin: structID(structName), Name: structName}
@@ -182,9 +182,9 @@ func TestEmit(t *testing.T) {
 
 			e := plugin.NewEmit()
 			assert.NoError(t, e.Add(carrying("stubgen", "b.go", "Store")),
-				"the later-ordered unit lands first")
+				"the later-ordered unit arrives first")
 			assert.NoError(t, e.Add(carrying("audit", "a.go", "Cache")),
-				"the earlier-ordered unit lands second")
+				"the earlier-ordered unit arrives second")
 
 			var structs []string
 			for s := range e.ByKind(symbol.KindStruct) {
@@ -200,7 +200,7 @@ func TestEmit(t *testing.T) {
 				methods++
 			}
 			assert.Equal(t, methods, 2,
-				"a slotted declaration answers under its own kind")
+				"a slotted declaration returns under its own kind")
 		})
 
 		t.Run("skips a value without an origin", func(t *testing.T) {
@@ -213,7 +213,7 @@ func TestEmit(t *testing.T) {
 				&emit.Struct{Origin: structID("Store"), Name: "Store"},
 			}
 			e := plugin.NewEmit()
-			assert.NoError(t, e.Add(u), "the unit lands whole")
+			assert.NoError(t, e.Add(u), "the unit arrives whole")
 
 			var structs []string
 			for s := range e.ByKind(symbol.KindStruct) {
@@ -229,7 +229,7 @@ func TestEmit(t *testing.T) {
 				files++
 			}
 			assert.Equal(t, files, 0,
-				"a kind without origin storage never answers")
+				"a kind without origin storage never returns")
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
@@ -237,7 +237,7 @@ func TestEmit(t *testing.T) {
 
 			e := plugin.NewEmit()
 			assert.NoError(t, e.Add(carrying("stubgen", "a.go", "Store")),
-				"a carrying unit lands")
+				"a carrying unit arrives")
 
 			var got int
 			for range e.ByKind(symbol.KindMethod) {
@@ -249,7 +249,7 @@ func TestEmit(t *testing.T) {
 	})
 }
 
-// benchUnit answers one unit holding structs of methods, the tree
+// benchUnit returns one unit holding structs of methods, the tree
 // Add walks and indexes.
 func benchUnit(p, key string, structs, methods int) plugin.Unit {
 	decls := make([]symbol.Symbol, 0, structs)

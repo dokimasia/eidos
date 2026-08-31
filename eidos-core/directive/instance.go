@@ -54,9 +54,9 @@ type Directive struct {
 	Instance int
 }
 
-// Param answers a keyed value and whether the instance carries it,
+// Param returns a keyed value and whether the instance carries it,
 // the reserved routing keys included. A required param always
-// answers true — validation refused the instance otherwise — so
+// returns true — validation refused the instance otherwise — so
 // the boolean matters only for optional and reserved keys.
 func (d *Directive) Param(k ParamKey) (Value, bool) {
 	v, held := d.Params[k]

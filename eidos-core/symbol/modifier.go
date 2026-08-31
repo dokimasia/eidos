@@ -7,14 +7,14 @@ package symbol
 // declaration.
 //
 // The zero value is [VisibilityUnknown]: emptiness never claims
-// anything, so a frontend that has not answered has not silently
-// answered public. The raw source spelling stays in language
+// anything, so a frontend that has not returned has not silently
+// returned public. The raw source spelling stays in language
 // metadata, because normalizing loses which of several spellings a
 // language used.
 type Visibility uint8
 
 const (
-	// VisibilityUnknown means no frontend has answered.
+	// VisibilityUnknown means no frontend has returned.
 	VisibilityUnknown Visibility = iota
 	// VisibilityPublic is visible to every consumer.
 	VisibilityPublic
@@ -34,7 +34,7 @@ const (
 // Level says whether a member belongs to instances of a type or to
 // the type itself.
 //
-// The zero value is [LevelInstance], which every Go member answers
+// The zero value is [LevelInstance], which every Go member returns
 // and which is the common case everywhere.
 type Level uint8
 
@@ -49,7 +49,7 @@ const (
 // Variance is the variance of a type parameter.
 //
 // The zero value is [VarianceInvariant], which Go and Rust always
-// answer. Kotlin, C# and Java wildcards carry the other two.
+// carry. Kotlin, C# and Java wildcards carry the other two.
 type Variance uint8
 
 const (
@@ -65,7 +65,7 @@ const (
 // initialization.
 //
 // The zero value is [MutabilityUnknown], because a language that
-// does not distinguish the two has not answered immutable. Kotlin
+// does not distinguish the two has not returned immutable. Kotlin
 // val against var, TypeScript readonly and Java final are the
 // distinction; a Kotlin const val is a Constant instead, since it
 // is fixed at compile time.
@@ -73,7 +73,7 @@ type Mutability uint8
 
 const (
 	// MutabilityUnknown means the language draws no distinction, or
-	// no frontend has answered.
+	// no frontend has returned.
 	MutabilityUnknown Mutability = iota
 	// MutabilityMutable may be reassigned.
 	MutabilityMutable

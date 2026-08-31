@@ -15,19 +15,19 @@ import (
 	"go.dokimi.dev/eidos/core/render"
 )
 
-// RunBackendSuite holds a renderer to the checks a render answers
-// as values: the fixture is inhabited, two runs produce
+// RunBackendSuite holds a renderer to the checks a render returns
+// as values: the fixture is populated, two runs produce
 // byte-identical files, every emit kind the fixture carries
-// renders, every body lands whole, and a file's failure reports
+// renders, every body arrives whole, and a file's failure reports
 // positioned and attributed while the render continues. The
 // header and trailer checks are the output contract's and join the
 // suite with it.
 func RunBackendSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
-	t.Run("an inhabited fixture", func(t *testing.T) {
+	t.Run("an populated fixture", func(t *testing.T) {
 		t.Parallel()
-		AssertInhabitedFixture(t, setup)
+		AssertPopulatedFixture(t, setup)
 	})
 	t.Run("byte-stable render", func(t *testing.T) {
 		t.Parallel()
@@ -37,7 +37,7 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertSpeltKinds(t, setup)
 	})
-	t.Run("content lands whole", func(t *testing.T) {
+	t.Run("content arrives whole", func(t *testing.T) {
 		t.Parallel()
 		AssertPlacedContent(t, setup)
 	})
@@ -48,7 +48,7 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 }
 
 // runRender is one check's render call: a fresh setup, a fresh sink
-// and the fatality law held, because a renderer returns an error
+// and the fatality rule held, because a renderer returns an error
 // for a defect in the pass's own inputs, never for a problem with
 // one file.
 func runRender(tb assert.TB, setup Setup) ([]plugin.RenderedFile, []diag.Diag) {
@@ -62,10 +62,10 @@ func runRender(tb assert.TB, setup Setup) ([]plugin.RenderedFile, []diag.Diag) {
 	return files, slices.Collect(sink.All())
 }
 
-// AssertInhabitedFixture refuses an empty world: a suite over a
+// AssertPopulatedFixture refuses an empty store: a suite over a
 // store holding no units passes every check vacuously and proves
 // nothing about the backend.
-func AssertInhabitedFixture(tb assert.TB, setup Setup) {
+func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	_, f := setup(tb)
@@ -91,12 +91,12 @@ func AssertDeterministicRender(tb assert.TB, setup Setup) {
 	first, firstDiags := runRender(tb, setup)
 	second, secondDiags := runRender(tb, setup)
 	assert.Equal(tb, first, second,
-		"two isolated renders answer the same bytes")
+		"two isolated renders produce the same bytes")
 	assert.Equal(tb, sorted(firstDiags), sorted(secondDiags),
 		"and report the same findings")
 }
 
-// sorted orders findings canonically, so two lawful runs reporting
+// sorted orders findings canonically, so two valid runs reporting
 // one set in two completion orders compare equal.
 func sorted(diags []diag.Diag) []diag.Diag {
 	slices.SortFunc(diags, func(a, b diag.Diag) int {
@@ -126,7 +126,7 @@ func AssertSpeltKinds(tb assert.TB, setup Setup) {
 	}
 }
 
-// AssertPlacedContent renders once and holds every body to landing
+// AssertPlacedContent renders once and holds every body to arriving
 // whole: no conflicting forms, no reference resolving to nothing,
 // no pending slot content dropped by its template.
 func AssertPlacedContent(tb assert.TB, setup Setup) {
@@ -138,12 +138,12 @@ func AssertPlacedContent(tb assert.TB, setup Setup) {
 			d.Code != render.BodyConflict &&
 				d.Code != render.UnresolvedRef &&
 				d.Code != render.DroppedSlots,
-			"every body lands whole: "+d.Msg)
+			"every body arrives whole: "+d.Msg)
 	}
 }
 
 // AssertContinuedRender renders once and holds the failure
-// semantics: the call answers no error, every finding carries a
+// semantics: the call returns no error, every finding carries a
 // position and the suite's origin, and a file reported unformatted
 // is withheld from the values.
 func AssertContinuedRender(tb assert.TB, setup Setup) {

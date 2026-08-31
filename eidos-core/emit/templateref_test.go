@@ -12,7 +12,7 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 )
 
-// A template reference is the value that keeps a generator blind to
+// A template reference is the value that keeps a generator never seeing
 // languages: a name resolved in the emitting plugin's tree, and a
 // payload the codec carries as generic JSON.
 func TestTemplateRef(t *testing.T) {
@@ -42,14 +42,14 @@ func TestTemplateRef(t *testing.T) {
 			second, err := json.Marshal(ref)
 			assert.NoError(t, err, "and encodes again")
 			assert.Equal(t, string(second), string(first),
-				"map keys land in one order")
+				"map keys arrive in one order")
 
 			var decoded emit.TemplateRef
 			assert.NoError(t, json.Unmarshal(first, &decoded), "and decodes")
 			again, err := json.Marshal(decoded)
 			assert.NoError(t, err, "a decoded reference encodes")
 			assert.Equal(t, string(again), string(first),
-				"the round trip answers the same bytes")
+				"the round trip returns the same bytes")
 		})
 	})
 }

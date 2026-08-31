@@ -5,7 +5,7 @@ import (
 	"go.dokimi.dev/assert"
 )
 
-// kindNamings pairs every kind with the name it answers, which is
+// kindNamings pairs every kind with the name it returns, which is
 // what String writes and ParseKind reads back.
 var kindNamings = []struct {
 	kind Kind
@@ -39,22 +39,22 @@ func TestKind(t *testing.T) {
 				seen[tt.want] = struct{}{}
 			}
 			assert.Length(t, seen, len(kindNamings),
-				"every kind answers its own name")
+				"every kind returns its own name")
 		})
 
-		t.Run("a value outside the set answers a placeholder", func(t *testing.T) {
+		t.Run("a value outside the set returns a placeholder", func(t *testing.T) {
 			t.Parallel()
 
 			outside := Kind(len(kindNamings) + 1)
 			assert.NotEqual(t, outside.String(), "",
-				"a value outside the set answers a placeholder")
+				"a value outside the set returns a placeholder")
 		})
 	})
 
 	t.Run("ParseKind", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the kind a name spells", func(t *testing.T) {
+		t.Run("returns the kind a name spells", func(t *testing.T) {
 			t.Parallel()
 
 			for _, tt := range kindNamings {
@@ -86,11 +86,11 @@ func TestKind(t *testing.T) {
 			}
 		})
 
-		t.Run("answers KindInvalid when it refuses", func(t *testing.T) {
+		t.Run("returns KindInvalid when it refuses", func(t *testing.T) {
 			t.Parallel()
 
 			// A caller that drops the boolean must not receive a
-			// usable kind, so the refusal answers the zero value
+			// usable kind, so the refusal returns the zero value
 			// rather than whatever the lookup left behind.
 			got, known := ParseKind("Nonexistent")
 			assert.False(t, known, "a name no kind carries is refused")
@@ -98,7 +98,7 @@ func TestKind(t *testing.T) {
 				"and a caller that drops the boolean holds no usable kind")
 		})
 
-		t.Run("refuses a name no kind answers", func(t *testing.T) {
+		t.Run("refuses a name no kind claims", func(t *testing.T) {
 			t.Parallel()
 
 			// A kind's name is its Go type name, matched exactly:
@@ -114,8 +114,8 @@ func TestKind(t *testing.T) {
 				{name: " Struct", why: "a leading space"},
 				{name: "Struct ", why: "a trailing space"},
 				{name: "Struct\n", why: "a trailing newline"},
-				{name: "Invalid", why: "the placeholder String answers for a non-kind"},
-				{name: "Kind(0)", why: "the placeholder String answers outside the set"},
+				{name: "Invalid", why: "the placeholder String stands in for a non-kind"},
+				{name: "Kind(0)", why: "the placeholder String stands in outside the set"},
 			}
 			for _, tt := range tests {
 				t.Run(tt.why, func(t *testing.T) {

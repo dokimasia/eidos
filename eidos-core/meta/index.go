@@ -11,7 +11,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// factIndex answers which subjects presently carry which keys. It is
+// factIndex returns which subjects presently carry which keys. It is
 // maintained at stamp time so a fact-gated rule visits its matches
 // rather than the graph, and it owns its own lock: presence
 // transitions arrive from many bags at once.
@@ -32,7 +32,7 @@ type keyIndex struct {
 	stale  bool
 }
 
-// newFactIndex answers an index holding nothing.
+// newFactIndex returns an index holding nothing.
 func newFactIndex() *factIndex {
 	return &factIndex{perKey: map[KeyID]*keyIndex{}}
 }
@@ -66,7 +66,7 @@ func (x *factIndex) record(id symbol.Identity, k KeyID, present bool) {
 	entry.stale = true
 }
 
-// enumerate answers the subjects presently carrying k, in identity
+// enumerate returns the subjects presently carrying k, in identity
 // order, from the cache where it is fresh.
 func (x *factIndex) enumerate(k KeyID) []symbol.Identity {
 	x.mu.Lock()

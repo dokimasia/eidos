@@ -9,7 +9,7 @@
 // canonical identity, and its member lists are plain slices,
 // because the read side is sealed once loading finishes.
 //
-// Every kind answers [Declaration], which is [symbol.Symbol] plus
+// Every kind returns [Declaration], which is [symbol.Symbol] plus
 // the identity this side carries. [Declarations] is the traversal
 // typed by it, for a caller keying on identity rather than walking
 // neutrally.

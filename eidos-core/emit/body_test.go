@@ -13,7 +13,7 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 )
 
-// delegate answers the one-statement scaffold the body tests
+// delegate returns the one-statement scaffold the body tests
 // reuse: return f(ctx).
 func delegate() emit.Stmt {
 	return emit.Stmt{
@@ -28,7 +28,7 @@ func delegate() emit.Stmt {
 
 // A body is the composition point rendering reads: the standard
 // slots, the owner's declared ones, and exactly one content form.
-// The handles Declare answers and the one question Form answers
+// The handles Declare returns and the one question Form returns
 // are both contract.
 func TestBody(t *testing.T) {
 	t.Parallel()
@@ -42,12 +42,12 @@ func TestBody(t *testing.T) {
 			var b emit.Body
 			b.Declare("checks")
 			b.Declare("cleanup")
-			assert.Length(t, b.Slots, 2, "both slots landed")
+			assert.Length(t, b.Slots, 2, "both slots arrived")
 			assert.Equal(t, b.Slots[0].Name, "checks", "in declaration order")
 			assert.Equal(t, b.Slots[1].Name, "cleanup", "not name order")
 		})
 
-		t.Run("answers the existing slot for a declared name", func(t *testing.T) {
+		t.Run("returns the existing slot for a declared name", func(t *testing.T) {
 			t.Parallel()
 
 			var b emit.Body
@@ -55,7 +55,7 @@ func TestBody(t *testing.T) {
 			first.Append(delegate())
 			again := b.Declare("checks")
 			assert.Equal(t, again.Len(), 1,
-				"declaring twice answers the one slot, holding what it held")
+				"declaring twice returns the one slot, holding what it held")
 			assert.Length(t, b.Slots, 2-1, "and adds nothing")
 		})
 
@@ -78,7 +78,7 @@ func TestBody(t *testing.T) {
 	t.Run("Slot", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers false for a name the owner never declared", func(t *testing.T) {
+		t.Run("returns false for a name the owner never declared", func(t *testing.T) {
 			t.Parallel()
 
 			var b emit.Body
@@ -92,7 +92,7 @@ func TestBody(t *testing.T) {
 	t.Run("Form", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers one form per content", func(t *testing.T) {
+		t.Run("returns one form per content", func(t *testing.T) {
 			t.Parallel()
 
 			var touched emit.Body
@@ -125,7 +125,7 @@ func TestBody(t *testing.T) {
 					t.Parallel()
 
 					form, err := tt.body.Form()
-					assert.NoError(t, err, "one form is lawful")
+					assert.NoError(t, err, "one form is valid")
 					assert.Equal(t, form, tt.want, "and named")
 				})
 			}
@@ -155,7 +155,7 @@ func TestBody(t *testing.T) {
 		assert.False(t, emit.Body{Verbatim: "x"}.IsZero(), "content counts")
 	})
 
-	t.Run("rides the callable kinds", func(t *testing.T) {
+	t.Run("is carried by the callable kinds", func(t *testing.T) {
 		t.Parallel()
 
 		f := &emit.Function{Name: "Handler"}
@@ -211,13 +211,14 @@ func TestBody(t *testing.T) {
 			second, err := json.Marshal(decoded)
 			assert.NoError(t, err, "and encodes again")
 			assert.Equal(t, string(second), string(first),
-				"the round trip answers the same bytes")
+				"the round trip returns the same bytes")
 		})
 	})
 }
 
-// BenchmarkBody prices the per-callable operations the render pass
-// pays once per body, and the codec the conformance checks pay per
+// BenchmarkBody measures the per-callable operations the render
+// pass runs once per body, and the codec the conformance checks
+// run per
 // encoded declaration.
 func BenchmarkBody(b *testing.B) {
 	b.Run("the form question", func(b *testing.B) {
@@ -227,7 +228,7 @@ func BenchmarkBody(b *testing.B) {
 		for b.Loop() {
 			form, err := body.Form()
 			if err != nil || form != emit.FormStmts {
-				b.Fatal("the scaffold body answers its form")
+				b.Fatal("the scaffold body returns its form")
 			}
 		}
 	})

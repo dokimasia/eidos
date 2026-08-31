@@ -21,7 +21,7 @@ import (
 
 // fakeBackend is the smallest backend: a name and the target its
 // plan resolves at composition. Nothing invokes it, which is the
-// scope's own law.
+// scope's own rule.
 type fakeBackend struct {
 	name   plugin.ID
 	target plugin.Target
@@ -33,29 +33,29 @@ func (b fakeBackend) Target() plugin.Target { return b.target }
 // quiet is an annotator handler stamping nothing.
 func quiet(*eidos.StructMatch, *eidos.Stamper) error { return nil }
 
-// stamper answers a facade-built annotator running h once per
+// stamper returns a facade-built annotator running h once per
 // struct in scope.
 func stamper(name plugin.ID, h func(*eidos.StructMatch, *eidos.Stamper) error) plugin.Annotator {
 	p, held := eidos.NewPlugin(name).Handle(eidos.OnStruct(h)).Build().(plugin.Annotator)
 	if !held {
-		panic("workspace_test: a stamper rule lowers to the annotator seat")
+		panic("workspace_test: a stamper rule lowers to the annotator role")
 	}
 	return p
 }
 
-// generator answers a facade-built generator running h once per
+// generator returns a facade-built generator running h once per
 // struct in scope, emitting into the "gen" family.
 func generator(name plugin.ID, h func(*eidos.StructMatch, *eidos.Emitter) error) plugin.Generator {
 	p, held := eidos.NewPlugin(name).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
 		Handle(eidos.OnStruct(h)).Build().(plugin.Generator)
 	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator seat")
+		panic("workspace_test: an emitter rule lowers to the generator role")
 	}
 	return p
 }
 
-// mirror answers a generator emitting one struct per subject.
+// mirror returns a generator emitting one struct per subject.
 func mirror(name plugin.ID) plugin.Generator {
 	return generator(name, func(m *eidos.StructMatch, e *eidos.Emitter) error {
 		e.PackageFile().Append(&emit.Struct{
@@ -69,7 +69,7 @@ func mirror(name plugin.ID) plugin.Generator {
 // caps spells a capability list inline.
 func caps(cs ...plugin.Capability) []plugin.Capability { return cs }
 
-// ordered answers an annotator placed by priority and capabilities,
+// ordered returns an annotator placed by priority and capabilities,
 // recording its runs into calls.
 func ordered(
 	name plugin.ID, pri int, provides, requires []plugin.Capability, calls *[]plugin.ID,
@@ -81,7 +81,7 @@ func ordered(
 		})
 }
 
-// stamperAt answers a facade-built annotator with its ordering
+// stamperAt returns a facade-built annotator with its ordering
 // inputs declared.
 func stamperAt(
 	name plugin.ID, pri int, provides, requires []plugin.Capability,
@@ -93,12 +93,12 @@ func stamperAt(
 		Requires(requires...).
 		Handle(eidos.OnStruct(h)).Build().(plugin.Annotator)
 	if !held {
-		panic("workspace_test: a stamper rule lowers to the annotator seat")
+		panic("workspace_test: a stamper rule lowers to the annotator role")
 	}
 	return p
 }
 
-// planTo answers a plan carrying gens toward a backend naming
+// planTo returns a plan carrying gens toward a backend naming
 // target.
 func planTo(name string, target plugin.Target, gens ...plugin.Generator) workspace.Plan {
 	return workspace.Plan{
@@ -108,16 +108,16 @@ func planTo(name string, target plugin.Target, gens ...plugin.Generator) workspa
 	}
 }
 
-// lawful answers the smallest whole composition: one annotator, one
+// valid returns the smallest whole composition: one annotator, one
 // plan with one generator, one registered target.
-func lawful() *workspace.Builder {
+func valid() *workspace.Builder {
 	return workspace.New().
 		Annotators(stamper("noter", quiet)).
 		Targets("fixture").
 		Plans(planTo("plan", "fixture", mirror("mirror")))
 }
 
-// alpha answers an unfrozen one-package graph holding one
+// alpha returns an unfrozen one-package graph holding one
 // positioned struct.
 func alpha(tb assert.TB) (*store.Graph, *node.Struct) {
 	tb.Helper()
@@ -140,7 +140,7 @@ func units(e *plugin.Emit) []plugin.Unit {
 }
 
 // The workspace is the composition's frozen form: what Build
-// answers survives any number of runs, and every run leaves its own
+// returns survives any number of runs, and every run leaves its own
 // report behind.
 func TestWorkspace(t *testing.T) {
 	t.Parallel()
@@ -148,22 +148,22 @@ func TestWorkspace(t *testing.T) {
 	t.Run("the report carries the run's three surfaces", func(t *testing.T) {
 		t.Parallel()
 
-		w, err := lawful().Build()
-		assert.NoError(t, err, "the fixture composition is lawful")
+		w, err := valid().Build()
+		assert.NoError(t, err, "the fixture composition is valid")
 		g, _ := alpha(t)
 		report, err := w.Run(t.Context(), g)
 		assert.NoError(t, err, "the fixture run is clean")
 		assert.NotNil(t, report.Sink, "the findings")
 		assert.NotNil(t, report.Facts, "the arbitrated facts")
 		assert.Length(t, report.Emits, 1, "one store per plan")
-		assert.Length(t, units(report.Emits["plan"]), 1, "the mirrored unit landed")
+		assert.Length(t, units(report.Emits["plan"]), 1, "the mirrored unit arrived")
 	})
 
 	t.Run("concurrent runs share nothing", func(t *testing.T) {
 		t.Parallel()
 
-		w, err := lawful().Build()
-		assert.NoError(t, err, "the fixture composition is lawful")
+		w, err := valid().Build()
+		assert.NoError(t, err, "the fixture composition is valid")
 		reports := make([]*workspace.Report, 2)
 		errs := make([]error, 2)
 		var wg sync.WaitGroup
@@ -177,7 +177,7 @@ func TestWorkspace(t *testing.T) {
 		for i := range reports {
 			assert.NoError(t, errs[i], "each run is clean")
 			assert.Length(t, units(reports[i].Emits["plan"]), 1,
-				"each run answers its own store")
+				"each run returns its own store")
 		}
 	})
 }

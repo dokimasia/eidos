@@ -12,7 +12,7 @@ type Target string
 // Backend renders one plan's emit. A plan holds exactly one, and
 // its target must be a registered name; a composition that runs no
 // renderer still validates both, so a plan is whole before
-// anything lands on disk.
+// anything arrives on disk.
 type Backend interface {
 	Plugin
 	Target() Target

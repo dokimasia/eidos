@@ -24,7 +24,7 @@ func TestIR(t *testing.T) {
 	t.Run("Lower", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers kinds in declaration order", func(t *testing.T) {
+		t.Run("returns kinds in declaration order", func(t *testing.T) {
 			t.Parallel()
 
 			kinds, err := model.Lower("testdata/valid", "")
@@ -34,7 +34,7 @@ func TestIR(t *testing.T) {
 				got = append(got, kind.Name)
 			}
 			assert.Equal(t, got, []string{"Thing", "Part"},
-				"kinds answer in declaration order")
+				"kinds come back in declaration order")
 		})
 
 		t.Run("lowers a tag into the field spec", func(t *testing.T) {
@@ -48,10 +48,10 @@ func TestIR(t *testing.T) {
 			}
 
 			assert.Equal(t, fields["Name"].Side, model.SideBoth,
-				"an untagged side lands on both models")
+				"an untagged side arrives on both models")
 			assert.False(t, fields["Name"].Walk, "and is not walked untagged")
 			assert.Equal(t, fields["Pos"].Side, model.SideNode,
-				"a node-tagged field lands on the node side")
+				"a node-tagged field arrives on the node side")
 			assert.False(t, fields["Pos"].Side.OnEmit(), "and not on emit")
 			parts := fields["Parts"]
 			assert.True(t, parts.Walk, "a walk tag marks the field traversed")
@@ -102,7 +102,7 @@ func TestIR(t *testing.T) {
 			assert.Equal(t, methods.Slot, "methods", "Struct.Methods carries its slot")
 			assert.Equal(t, methods.Elem, "Method", "and its element kind")
 			assert.NotEmpty(t, byName["Struct"].Doc,
-				"the schema's docblock travels with the kind")
+				"the schema's docblock is carried with the kind")
 		})
 
 		t.Run("reports a schema directory it cannot read", func(t *testing.T) {

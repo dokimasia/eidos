@@ -58,7 +58,7 @@ func TestLoad(t *testing.T) {
 				got = append(got, filepath.Base(fset.Position(f.Pos()).Filename))
 			}
 			assert.Equal(t, got, []string{"app.go", "uses_stdlib.go"},
-				"files read in name order, so two runs answer alike")
+				"files read in name order, so two runs agree")
 		})
 
 		t.Run("reports a directory holding no hand-written file", func(t *testing.T) {

@@ -17,7 +17,7 @@ import (
 // Facts is safe for concurrent use and serializes writes per bag,
 // so two annotators stamping two subjects do not contend, and
 // readers of one bag share its lock. Rank decides every winner, so
-// a parallel run answers what a serial one does, whatever order the
+// a parallel run returns what a serial one does, whatever order the
 // writes arrived.
 type Facts struct {
 	registry *Registry
@@ -30,13 +30,13 @@ type Facts struct {
 	// subjects, which is what keeps two bags from contending on one
 	// lock.
 	bags sync.Map
-	// index answers ByKey; bags feed it presence transitions under
+	// index returns ByKey; bags feed it presence transitions under
 	// their own write lock, so two racing writes on one subject
 	// cannot record their transitions out of order.
 	index *factIndex
 }
 
-// NewFacts answers an empty fact store reading specs from r.
+// NewFacts returns an empty fact store reading specs from r.
 // Registration completes before the first write; the store
 // snapshots what it needs and never locks the registry.
 func NewFacts(r *Registry) *Facts {
@@ -85,7 +85,7 @@ func (f *Facts) DropKey(k KeyID, c Claim) error {
 }
 
 // DropGroup claims absence for every member of g, including members
-// whose stamps land after the drop: the tombstone covers the group,
+// whose stamps arrive after the drop: the tombstone covers the group,
 // so arbitration finds it whichever member is read.
 func (f *Facts) DropGroup(g GroupName, c Claim) error {
 	members := slices.Collect(f.registry.Group(g))
@@ -111,7 +111,7 @@ func (f *Facts) DropGroup(g GroupName, c Claim) error {
 	return nil
 }
 
-// Get answers the winning value, untracked, and false where the
+// Get returns the winning value, untracked, and false where the
 // winner is a drop or nothing was stamped. Slice values are copied
 // out, so a caller cannot reach into a bag.
 func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
@@ -127,7 +127,7 @@ func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 	return typed, true
 }
 
-// Fact answers what [Get] does and records the read at
+// Fact returns what [Get] does and records the read at
 // (subject, key) into rec. A miss records too: the reader asked, so
 // it runs again when the fact appears. It is the read every plugin
 // makes; Get is the kernel's own untracked path.
@@ -137,7 +137,7 @@ func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T,
 }
 
 // Recorder records fact reads. The store's read set implements it,
-// so one artifact's declaration reads and fact reads land in one
+// so one artifact's declaration reads and fact reads arrive in one
 // set.
 type Recorder interface {
 	RecordFact(subject symbol.Identity, key KeyName)
@@ -151,7 +151,7 @@ func (f *Facts) ByKey(k KeyID) iter.Seq[symbol.Identity] {
 	return slices.Values(f.index.enumerate(k))
 }
 
-// spec answers a key's spec or the refusal naming what was wrong.
+// spec returns a key's spec or the refusal naming what was wrong.
 func (f *Facts) spec(k KeyID) (KeySpec, error) {
 	spec, known := f.registry.Spec(k)
 	if !known {
@@ -160,7 +160,7 @@ func (f *Facts) spec(k KeyID) (KeySpec, error) {
 	return spec, nil
 }
 
-// group answers a key's fact group without copying its spec, which
+// group returns a key's fact group without copying its spec, which
 // is what keeps the read path off the registry.
 func (f *Facts) group(k KeyID) GroupName {
 	if int(k) >= len(f.groupOf) {
@@ -169,7 +169,7 @@ func (f *Facts) group(k KeyID) GroupName {
 	return f.groupOf[k]
 }
 
-// bag answers the subject's bag, creating it on first touch: the
+// bag returns the subject's bag, creating it on first touch: the
 // write path's own lookup. A read goes through [Facts.peek], so a
 // miss on a subject nothing stamped allocates nothing.
 func (f *Facts) bag(id symbol.Identity) *bag {
@@ -182,7 +182,7 @@ func (f *Facts) bag(id symbol.Identity) *bag {
 	return b
 }
 
-// peek answers the subject's bag and false where nothing was ever
+// peek returns the subject's bag and false where nothing was ever
 // stamped, allocating nothing.
 func (f *Facts) peek(id symbol.Identity) (*bag, bool) {
 	held, ok := f.bags.Load(id)
@@ -210,7 +210,7 @@ func (f *Facts) write(id symbol.Identity, k KeyID, keyName KeyName, entry stored
 	return nil
 }
 
-// lookup answers the winning value for (subject, key), and false
+// lookup returns the winning value for (subject, key), and false
 // where the winner is a drop or nothing was stamped.
 func (f *Facts) lookup(id symbol.Identity, k KeyID) (any, bool) {
 	b, held := f.peek(id)

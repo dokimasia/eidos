@@ -7,7 +7,7 @@ import "strconv"
 
 // Severity says what a finding means for the run.
 //
-// The zero value is [SeverityError]. A finding that answered no
+// The zero value is [SeverityError]. A finding that returned no
 // severity is a defect in whatever reported it, and a defect must
 // not read as one of the severities a run tolerates.
 type Severity uint8
@@ -31,11 +31,11 @@ var severityNames = [...]string{
 	SeverityInfo:    "info",
 }
 
-// String answers the severity's spelling.
+// String returns the severity's spelling.
 //
 // The spellings are what machine output carries, so a consumer
 // matching on them matches on API. A severity nothing declares
-// answers its number rather than a name.
+// returns its number rather than a name.
 func (s Severity) String() string {
 	if int(s) >= len(severityNames) {
 		return "Severity(" + strconv.Itoa(int(s)) + ")"

@@ -27,7 +27,7 @@ import (
 // suiteCode is a code for the fixture plugins' findings.
 var suiteCode = diag.Code{Prefix: "tst", Number: 2}
 
-// twoStructs answers a fixture holding two positioned structs.
+// twoStructs returns a fixture holding two positioned structs.
 func twoStructs(tb assert.TB) (*plugintest.Fixture, *node.Struct, *node.Struct) {
 	tb.Helper()
 
@@ -72,8 +72,8 @@ func wellBehaved(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 }
 
 // The suite is the contract a plugin author tests against, so it
-// has to wave a lawful plugin through and reject each way of
-// cheating: that second half is what earns it.
+// has to accept a valid plugin through and reject each way of
+// cheating: that second half is what justifies it.
 func TestRunPluginSuite(t *testing.T) {
 	t.Parallel()
 
@@ -158,7 +158,7 @@ func (p templated) Templates(t plugin.Target) (fs.FS, bool) {
 func (templated) TemplateFuncs(plugin.Target) template.FuncMap { return nil }
 func (templated) Overrides() []string                          { return nil }
 
-// fixtureLanguage answers the smallest language the template check
+// fixtureLanguage returns the smallest language the template check
 // can lint against.
 func fixtureLanguage() render.Language {
 	return render.Language{
@@ -187,7 +187,7 @@ func TestAssertTemplates(t *testing.T) {
 		}
 	}
 
-	t.Run("waves a lawful tree through", func(t *testing.T) {
+	t.Run("waves a valid tree through", func(t *testing.T) {
 		t.Parallel()
 
 		plugintest.AssertTemplates(t, setupWith(fstest.MapFS{
@@ -204,7 +204,7 @@ func TestAssertTemplates(t *testing.T) {
 					"method1.tpl": &fstest.MapFile{Data: []byte("bare\n")},
 				}))
 			})
-		assert.Contains(t, failure, "marker", "the check names the law")
+		assert.Contains(t, failure, "marker", "the check names the rule")
 	})
 }
 
@@ -249,7 +249,7 @@ func (rogue) Generate(ctx *plugin.GeneratorContext) error {
 func TestAssertAttributedEmit(t *testing.T) {
 	t.Parallel()
 
-	t.Run("rejects a unit under a stranger's name", func(t *testing.T) {
+	t.Run("rejects a unit under another plugin's name", func(t *testing.T) {
 		t.Parallel()
 
 		misattributed := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
@@ -262,7 +262,7 @@ func TestAssertAttributedEmit(t *testing.T) {
 				plugintest.AssertAttributedEmit(tb, misattributed)
 			})
 		assert.Contains(t, failure, "names the plugin",
-			"the check names the attribution law")
+			"the check names the attribution rule")
 	})
 }
 
@@ -292,7 +292,7 @@ func TestAssertStableDeclaration(t *testing.T) {
 				plugintest.AssertStableDeclaration(tb, unstable)
 			})
 		assert.Contains(t, failure, "stable",
-			"the check names the stability law")
+			"the check names the stability rule")
 	})
 }
 
@@ -376,6 +376,6 @@ func TestAssertNoStructuralWrites(t *testing.T) {
 				plugintest.AssertNoStructuralWrites(tb, mutating)
 			})
 		assert.Contains(t, failure, "input truth",
-			"the check names the law the mutation broke")
+			"the check names the rule the mutation broke")
 	})
 }

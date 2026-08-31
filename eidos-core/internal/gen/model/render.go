@@ -11,7 +11,7 @@ const (
 	SymbolPackage = "symbol"
 
 	// RootPackage is the authoring surface the match constructors
-	// land in, and RootTestPackage its black-box twin.
+	// arrive in, and RootTestPackage its black-box twin.
 	RootPackage     = "eidos"
 	RootTestPackage = "eidos_test"
 	// NodePackage is the model a frontend produces.
@@ -63,10 +63,10 @@ const (
 	// posField holds a node symbol's source position.
 	posField = "Pos"
 	// idField holds a node declaration's canonical identity, which is
-	// what makes the kind answer the Declaration interface.
+	// what makes the kind satisfy the Declaration interface.
 	idField = "ID"
 	// originField holds an emit value's node identity, which is what
-	// the generated OriginOf answers.
+	// the generated OriginOf returns.
 	originField = "Origin"
 	// typeField holds a declaration's own type reference, which is
 	// what makes a kind satisfy the Typed interface.
@@ -76,7 +76,7 @@ const (
 )
 
 // memberMethods are the Membered interface's methods, against the
-// field names that answer each one.
+// field names that satisfy each one.
 var memberMethods = []struct {
 	Method string
 	Fields []string
@@ -100,26 +100,26 @@ type view struct {
 	Doc []string
 	// Fields are the struct's fields, in declaration order.
 	Fields []fieldView
-	// PosExpr and DocExpr answer the Symbol interface, and HasPos
+	// PosExpr and DocExpr satisfy the Symbol interface, and HasPos
 	// and HasDoc say whether the kind carries the field they read.
 	PosExpr string
 	DocExpr string
 	HasPos  bool
 	HasDoc  bool
-	// Members answer the Membered interface. The slice is empty for
+	// Members satisfy the Membered interface. The slice is empty for
 	// a kind that carries no member list, and an entry with an
-	// empty Items answers nil.
+	// empty Items returns nil.
 	Members []memberView
-	// TypeRefStorage is the field answering the Typed interface,
+	// TypeRefStorage is the field returning the Typed interface,
 	// empty when the kind is not typed.
 	TypeRefStorage string
-	// IDStorage is the field answering the identity accessor, empty
+	// IDStorage is the field returning the identity accessor, empty
 	// on the emit side, which carries an origin instead.
 	IDStorage string
 	// Subject marks a kind the dispatch surface triggers on, which
 	// is what the match template ranges over.
 	Subject bool
-	// OriginStorage is the field answering OriginOf, empty on the
+	// OriginStorage is the field returning OriginOf, empty on the
 	// node side and on emit kinds that derive from nothing.
 	OriginStorage string
 	// Walked are the fields the traversal descends into.
@@ -141,7 +141,7 @@ type view struct {
 // IsMembered reports whether the kind carries any member list.
 func (v view) IsMembered() bool { return len(v.Members) > 0 }
 
-// memberView is one Membered method and the expressions that answer
+// memberView is one Membered method and the expressions that satisfy
 // it.
 type memberView struct {
 	Method string
@@ -290,8 +290,8 @@ func childrenOf(v view) (stmts []string, visits int) {
 	return stmts, visits
 }
 
-// membersOf answers the Membered methods a kind implements. It
-// answers nothing when the kind carries no member list at all, so a
+// membersOf returns the Membered methods a kind implements. It
+// returns nothing when the kind carries no member list at all, so a
 // kind that is not membered grows no methods.
 func membersOf(byName map[string]fieldView) []memberView {
 	var members []memberView

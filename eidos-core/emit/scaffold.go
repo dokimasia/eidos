@@ -14,7 +14,7 @@ const (
 	// zero.
 	StmtReturn StmtKind = iota + 1
 	// StmtAssign binds Value to Names, one target or several,
-	// because a delegate answering a result and a failure binds
+	// because a delegate returning a result and a failure binds
 	// two; Declare introduces the names.
 	StmtAssign
 	// StmtExpr evaluates Value for its effect: a delegate call.
@@ -26,9 +26,9 @@ const (
 	StmtGuard
 )
 
-// String answers the kind's spelling. Faults and lint findings name
+// String returns the kind's spelling. Faults and lint findings name
 // statement kinds, so a consumer matching on the spelling matches
-// on API. A kind nothing declares answers its number rather than a
+// on API. A kind nothing declares returns its number rather than a
 // name.
 func (k StmtKind) String() string {
 	switch k {
@@ -74,7 +74,7 @@ const (
 	ExprCall
 )
 
-// String answers the kind's spelling, and the number for a kind
+// String returns the kind's spelling, and the number for a kind
 // nothing declares. The spellings are API for the same reason the
 // statement kinds' are.
 func (k ExprKind) String() string {

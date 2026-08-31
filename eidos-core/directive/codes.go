@@ -67,7 +67,7 @@ var (
 		Number: 16, Meaning: "two directives on one subject conflict",
 	})
 	// UnknownMetadataKey refuses a metadata reference no key or
-	// group answers.
+	// group returns.
 	UnknownMetadataKey = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number: 17, Meaning: "a directive names a metadata key or group nothing registered",
 	})

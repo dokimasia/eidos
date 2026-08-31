@@ -92,7 +92,7 @@ func TestFixture(t *testing.T) {
 				"only the validated carrier matches")
 		})
 
-		t.Run("refuses a plugin without the seat", func(t *testing.T) {
+		t.Run("refuses a plugin without the role", func(t *testing.T) {
 			t.Parallel()
 
 			failure := assert.Rejects(t, "an annotator is not a generator",
@@ -109,8 +109,8 @@ func TestFixture(t *testing.T) {
 						Build()
 					f.Generate(tb, p)
 				})
-			assert.Contains(t, failure, "generator seat",
-				"the refusal names the missing seat")
+			assert.Contains(t, failure, "generator role",
+				"the refusal names the missing role")
 		})
 	})
 

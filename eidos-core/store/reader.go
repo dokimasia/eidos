@@ -24,8 +24,8 @@ func (sc Scope) admits(pkg symbol.Identity) bool { return sc == nil || sc(pkg) }
 // Reader is a tracked, scope-filtered read handle over a frozen
 // graph.
 //
-// A declaration outside scope is neither answered nor recorded. Both
-// halves matter: answering it would let one plan observe another's
+// A declaration outside scope is neither returned nor recorded. Both
+// halves matter: returning it would let one plan observe another's
 // sources, and recording it would let a change the plan could never
 // have seen re-run it.
 //
@@ -43,7 +43,7 @@ type Reader struct {
 // declaration of that kind enters or leaves the set, and never when
 // one merely changes. Sensitivity to a change inside the set comes
 // from the per-identity edges recorded for the declarations the
-// caller actually reached, which is why this answers an iterator
+// caller actually reached, which is why this returns an iterator
 // rather than a slice: it records what the caller reached, not what
 // it might have.
 func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
@@ -74,7 +74,7 @@ func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 
 // ByDirective enumerates the declarations carrying a spelling,
 // under the reader's scope: a subject outside it is neither
-// answered nor recorded. It records a directive-membership edge,
+// returned nor recorded. It records a directive-membership edge,
 // so the reader runs again when a subject gains or loses the
 // directive, plus a per-identity edge for each declaration the
 // caller reached.
@@ -95,10 +95,10 @@ func (r *Reader) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 	}
 }
 
-// Lookup answers one declaration by identity.
+// Lookup returns one declaration by identity.
 //
 // It records a per-identity edge, so a change to that declaration
-// alone re-runs the reader. A lookup that answered nothing records
+// alone re-runs the reader. A lookup that returned nothing records
 // too: the reader asked, so it has to run again when a declaration
 // appears under that identity.
 func (r *Reader) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
@@ -109,7 +109,7 @@ func (r *Reader) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 	return r.graph.Lookup(id)
 }
 
-// PackageOf answers the package holding a declaration, recording a
+// PackageOf returns the package holding a declaration, recording a
 // per-identity edge on the package.
 func (r *Reader) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	pkg := owningPackage(id)
@@ -120,7 +120,7 @@ func (r *Reader) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	return r.graph.packageOf(id)
 }
 
-// owningPackage answers the identity of the package a declaration
+// owningPackage returns the identity of the package a declaration
 // belongs to.
 //
 // It reads the identity rather than the graph, so scope is decided

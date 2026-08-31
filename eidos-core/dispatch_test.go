@@ -27,7 +27,7 @@ import (
 // carries codes without consulting a registry.
 var testCode = diag.Code{Prefix: "tst", Number: 1}
 
-// boolKey answers a registered bool key and a fact store built over
+// boolKey returns a registered bool key and a fact store built over
 // its registry.
 func boolKey(tb assert.TB) (meta.Key[bool], *meta.Facts) {
 	tb.Helper()
@@ -42,7 +42,7 @@ func boolKey(tb assert.TB) (meta.Key[bool], *meta.Facts) {
 	return key, meta.NewFacts(reg)
 }
 
-// fixtureGraph answers a frozen graph holding two positioned structs
+// fixtureGraph returns a frozen graph holding two positioned structs
 // in the store package.
 func fixtureGraph(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 	tb.Helper()
@@ -58,7 +58,7 @@ func fixtureGraph(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 	return g, alpha, beta
 }
 
-// genContext answers a generator context over the fixture graph.
+// genContext returns a generator context over the fixture graph.
 func genContext(
 	tb assert.TB, g *store.Graph, facts *meta.Facts,
 	validated map[symbol.Identity][]directive.Directive,
@@ -77,17 +77,17 @@ func genContext(
 	}
 }
 
-// seed lands one earlier-bucket unit holding decls into ctx.Emit.
+// seed arrives one earlier-bucket unit holding decls into ctx.Emit.
 func seed(tb assert.TB, ctx *plugin.GeneratorContext, decls ...symbol.Symbol) {
 	tb.Helper()
 
 	assert.NoError(tb, ctx.Emit.Add(plugin.Unit{
 		Plugin: "earlier", Per: plugin.PerSource, Word: "impl",
 		Key: "a.go", Decls: decls,
-	}), "the earlier bucket's unit lands")
+	}), "the earlier bucket's unit arrives")
 }
 
-// emitted answers an origined emit struct for one node subject.
+// emitted returns an origined emit struct for one node subject.
 func emitted(origin *node.Struct) *emit.Struct {
 	return &emit.Struct{Origin: origin.ID, Name: "Gen" + origin.Name}
 }
@@ -101,9 +101,9 @@ func generatorOf(tb assert.TB, p plugin.Plugin) plugin.Generator {
 	return gen
 }
 
-// Dispatch is where the laws meet: indexed enumeration, skip, gate
+// Dispatch is where the rules meet: indexed enumeration, skip, gate
 // views, per-invocation grain, deterministic flush. Every case here
-// is a law a plugin author gets to assume.
+// is a guarantee a plugin author gets to assume.
 func TestDispatch(t *testing.T) {
 	t.Parallel()
 
@@ -131,7 +131,7 @@ func TestDispatch(t *testing.T) {
 				Build()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			assert.Equal(t, calls, 1, "a graph rule fires once per phase call")
+			assert.Equal(t, calls, 1, "a graph rule runs once per phase call")
 
 			var units []plugin.Unit
 			for u := range ctx.Emit.Units() {
@@ -144,7 +144,7 @@ func TestDispatch(t *testing.T) {
 			assert.Equal(t, units[0].Key, "", "a plan unit has no key")
 			assert.Length(t, units[0].Decls, 1, "holding what the handler appended")
 			assert.Length(t, units[0].Origins, 0,
-				"a graph match has no subject, so no per-subject provenance lands")
+				"a graph match has no subject, so no per-subject provenance arrives")
 		})
 
 		t.Run("wraps a handler error with the plugin and rule", func(t *testing.T) {
@@ -218,14 +218,14 @@ func TestDispatch(t *testing.T) {
 				"the emit rule sees the seeded unit and not the plugin's own flush")
 		})
 
-		t.Run("appends into a stranger's slot", func(t *testing.T) {
+		t.Run("appends into another plugin's slot", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, _ := fixtureGraph(t)
 			_, facts := boolKey(t)
 			ctx := genContext(t, g, facts, nil)
-			stranger := emitted(alpha)
-			seed(t, ctx, stranger)
+			other := emitted(alpha)
+			seed(t, ctx, other)
 
 			p := eidos.NewPlugin("weaver").
 				Handle(eidos.OnEmit(symbol.KindStruct,
@@ -240,7 +240,7 @@ func TestDispatch(t *testing.T) {
 				Build()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			assert.Equal(t, stranger.Methods.Len(), 1,
+			assert.Equal(t, other.Methods.Len(), 1,
 				"the slot is the composition seam between plugins")
 		})
 
@@ -322,7 +322,7 @@ func TestDispatch(t *testing.T) {
 				assert.Equal(t, d.Origin, diag.Origin("weaver"),
 					"under the reporting plugin's identity")
 			}
-			assert.True(t, found, "the report landed")
+			assert.True(t, found, "the report arrived")
 		})
 
 		t.Run("orders one accumulator's contributions by origin", func(t *testing.T) {
@@ -566,7 +566,7 @@ func TestDispatch(t *testing.T) {
 			p := eidos.NewPlugin("planner").
 				Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
 					_, held := m.Reader().Lookup(alpha.ID)
-					assert.True(t, held, "the reader answers the held declaration")
+					assert.True(t, held, "the reader returns the held declaration")
 					return nil
 				})).
 				Build()
@@ -577,7 +577,7 @@ func TestDispatch(t *testing.T) {
 }
 
 // benchEmitStore seeds units of origined structs whose origins the
-// graph holds, so the dispatch path pays its position lookups.
+// graph holds, so the dispatch path performs its position lookups.
 func benchEmitStore(tb assert.TB, units, perUnit int) *plugin.Emit {
 	tb.Helper()
 

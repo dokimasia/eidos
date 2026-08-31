@@ -30,9 +30,9 @@ type invocation struct {
 	value   symbol.Symbol
 }
 
-// scratch answers the rule's reusable match, nil on its first
+// scratch returns the rule's reusable match, nil on its first
 // invocation. A match is valid for the duration of its handler
-// call and reused afterwards, which is what prices an invocation
+// call and reused afterwards, which is what holds an invocation
 // at zero steady-state allocations; retaining one past the call is
 // a defect the conformance suite races. The scratch lives on the
 // phase call, never the shared rule, so concurrent plans cannot
@@ -57,7 +57,7 @@ type runState struct {
 	accs   map[accKey]*accumulator
 	// scratch holds one reusable match per rule, keyed by ordinal.
 	scratch []any
-	// handles is the pool the emitter's accessors answer from,
+	// handles is the pool the emitter's accessors are served from,
 	// reset per invocation: every call mints a distinct entry, so
 	// two live handles in one invocation never alias, and a handler
 	// touching a few families allocates no Out at all. It lives
@@ -86,7 +86,7 @@ func newRunState(
 	}
 }
 
-// emitterFor answers the effect handle bound to one invocation,
+// emitterFor returns the effect handle bound to one invocation,
 // wired into the match's own allocation.
 func (rs *runState) emitterFor(m *match) *Emitter {
 	m.em = Emitter{rs: rs, m: m}
@@ -157,7 +157,7 @@ func (rs *runState) dispatchEmit(fr *flatRule) error {
 }
 
 // dispatchDirective visits the carriers of the rule's schema, under
-// every spelling the schema answers to, one invocation per gating
+// every spelling the schema recognises, one invocation per gating
 // instance in source order.
 func (rs *runState) dispatchDirective(fr *flatRule) error {
 	seen := map[symbol.Identity]struct{}{}
@@ -244,7 +244,7 @@ func (rs *runState) admits(fr *flatRule, subject symbol.Identity) bool {
 	return true
 }
 
-// invoke fires one handler with the invocation's sequence assigned
+// invoke runs one handler with the invocation's sequence assigned
 // in canonical match order.
 func (rs *runState) invoke(fr *flatRule, inv invocation) error {
 	inv.rs = rs
@@ -264,7 +264,7 @@ func (rs *runState) positionOf(id symbol.Identity) position.Pos {
 	return s.Position()
 }
 
-// gateViews answers the instances of one schema on a subject, in
+// gateViews returns the instances of one schema on a subject, in
 // source order: one invocation each, which is how a repeatable
 // directive runs its handler per instance.
 func gateViews(ds []directive.Directive, s *directive.Schema) []*directive.Directive {
@@ -278,7 +278,7 @@ func gateViews(ds []directive.Directive, s *directive.Schema) []*directive.Direc
 	return out
 }
 
-// spellingsOf answers the spellings a schema's carriers may be
+// spellingsOf returns the spellings a schema's carriers may be
 // indexed under: the canonical one, and the bare one where they
 // differ.
 func spellingsOf(s *directive.Schema) []directive.Name {

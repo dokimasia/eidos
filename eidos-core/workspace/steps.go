@@ -20,33 +20,33 @@ import (
 )
 
 // annSeat is one scheduled annotator. The bucket number is the
-// seat's position in the annotate schedule, and the same number
+// role's position in the annotate schedule, and the same number
 // every claim it stamps carries as the arbitration rank's bucket.
-type annSeat struct {
+type annEntry struct {
 	bucket int
 	name   plugin.ID
 	run    plugin.Annotator
 }
 
 // genSeat is one scheduled generator, numbered across the whole
-// generator seat so one plugin serving two plans holds one bucket.
-type genSeat struct {
+// generator role so one plugin serving two plans holds one bucket.
+type genEntry struct {
 	bucket int
 	name   plugin.ID
 	run    plugin.Generator
 }
 
 // compiledPlan is one write side as the run executes it: the
-// seats in bucket order, the scope, and the name that keys its
+// roles in bucket order, the scope, and the name that keys its
 // store in the report.
 type compiledPlan struct {
-	name  string
-	scope store.Scope
-	seats []genSeat
+	name    string
+	scope   store.Scope
+	entries []genEntry
 }
 
 // kernelPhases holds the origins the kernel reports under. A
-// plugin answering one of them would file its findings under the
+// plugin returning one of them would file its findings under the
 // kernel's identity, so the roster refuses the name.
 var kernelPhases = map[plugin.ID]bool{
 	diag.PhaseBuild:    true,
@@ -78,16 +78,16 @@ func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []er
 		switch {
 		case name == "":
 			faults = append(faults,
-				errors.New("workspace: a plugin answers an empty name"))
+				errors.New("workspace: a plugin returns an empty name"))
 			return
 		case kernelPhases[name]:
 			faults = append(faults, fmt.Errorf(
-				"workspace: plugin %q is named after a kernel phase, whose findings it would answer under",
+				"workspace: plugin %q is named after a kernel phase, whose findings it would report under",
 				name,
 			))
 		case byName[name] != nil:
 			faults = append(faults, fmt.Errorf(
-				"workspace: two plugins answer the name %q", name,
+				"workspace: two plugins carry the name %q", name,
 			))
 			return
 		}
@@ -247,7 +247,7 @@ func capabilities(roster []plugin.Plugin) []error {
 	return faults
 }
 
-// member is one seat candidate with its ordering inputs read off
+// member is one role candidate with its ordering inputs read off
 // the provider surfaces as data.
 type member struct {
 	p        plugin.Plugin
@@ -279,31 +279,31 @@ func membersOf(roster []plugin.Plugin, role plugin.Role, holds func(plugin.Plugi
 // lower is the third step: each role's members sort by priority,
 // then by capability topology inside one priority, then by name,
 // and a member's bucket number is its position in the result.
-func lower(roster []plugin.Plugin) ([]annSeat, []genSeat, []error) {
+func lower(roster []plugin.Plugin) ([]annEntry, []genEntry, []error) {
 	var faults []error
 
 	annotators, aerr := order("annotator", membersOf(roster, plugin.RoleAnnotator,
 		func(p plugin.Plugin) bool { _, held := p.(plugin.Annotator); return held }))
 	faults = append(faults, aerr...)
-	ann := make([]annSeat, 0, len(annotators))
+	ann := make([]annEntry, 0, len(annotators))
 	for i, m := range annotators {
 		run, held := m.p.(plugin.Annotator)
 		if !held {
-			continue // membersOf admitted it, so the seat holds
+			continue // membersOf admitted it, so the role holds
 		}
-		ann = append(ann, annSeat{bucket: i + 1, name: m.name, run: run})
+		ann = append(ann, annEntry{bucket: i + 1, name: m.name, run: run})
 	}
 
 	generators, gerr := order("generator", membersOf(roster, plugin.RoleGenerator,
 		func(p plugin.Plugin) bool { _, held := p.(plugin.Generator); return held }))
 	faults = append(faults, gerr...)
-	gen := make([]genSeat, 0, len(generators))
+	gen := make([]genEntry, 0, len(generators))
 	for i, m := range generators {
 		run, held := m.p.(plugin.Generator)
 		if !held {
-			continue // membersOf admitted it, so the seat holds
+			continue // membersOf admitted it, so the role holds
 		}
-		gen = append(gen, genSeat{bucket: i + 1, name: m.name, run: run})
+		gen = append(gen, genEntry{bucket: i + 1, name: m.name, run: run})
 	}
 	return ann, gen, faults
 }
@@ -311,7 +311,7 @@ func lower(roster []plugin.Plugin) ([]annSeat, []genSeat, []error) {
 // order sorts one role's members into schedule order: priority
 // ascending, capability topology inside one priority, names
 // breaking what remains open.
-func order(seat string, ms []member) ([]member, []error) {
+func order(role string, ms []member) ([]member, []error) {
 	slices.SortFunc(ms, func(a, b member) int {
 		if c := cmp.Compare(a.pri, b.pri); c != 0 {
 			return c
@@ -325,7 +325,7 @@ func order(seat string, ms []member) ([]member, []error) {
 		for end < len(ms) && ms[end].pri == ms[start].pri {
 			end++
 		}
-		group, ferr := topo(seat, ms[start:end])
+		group, ferr := topo(role, ms[start:end])
 		out = append(out, group...)
 		faults = append(faults, ferr...)
 		start = end
@@ -338,7 +338,7 @@ func order(seat string, ms []member) ([]member, []error) {
 // naming the members still standing, and those members append in
 // name order so the schedule stays total for the steps after this
 // one, which run even on a faulted composition.
-func topo(seat string, group []member) ([]member, []error) {
+func topo(role string, group []member) ([]member, []error) {
 	if len(group) < 2 {
 		return group, nil
 	}
@@ -397,16 +397,16 @@ func topo(seat string, group []member) ([]member, []error) {
 		}
 	}
 	return out, []error{fmt.Errorf(
-		"workspace: capabilities cycle among %s in the %s seat",
-		strings.Join(standing, " and "), seat,
+		"workspace: capabilities cycle among %s in the %s role",
+		strings.Join(standing, " and "), role,
 	)}
 }
 
 // configure is the fourth step: every plugin's options validate
 // against the tag contract, then the config's values populate the
 // structs over their constructed defaults. A plugin whose schema
-// failed skips population, because its faults are already on the
-// bill.
+// failed skips population, because its faults are already
+// collected.
 func configure(
 	roster []plugin.Plugin, byName map[plugin.ID]plugin.Plugin, cfg Config,
 ) []error {
@@ -435,7 +435,7 @@ func configure(
 }
 
 // populate sets one plugin's declared options from its config
-// section, key by key, sorted so the faults land in one order.
+// section, key by key, sorted so the faults arrive in one order.
 func populate(p plugin.Plugin, section map[string]any) []error {
 	op, held := p.(plugin.OptionsProvider)
 	if !held || op.Options() == nil {
@@ -478,13 +478,13 @@ func populate(p plugin.Plugin, section map[string]any) []error {
 
 // compilePlans is the fifth and sixth step: every plan named once,
 // at least one generator, exactly one backend against a registered
-// target, and the seats fixed in bucket order, which is the
+// target, and the roles fixed in bucket order, which is the
 // schedule the run executes as data.
 func compilePlans(
-	declared []Plan, gens []genSeat, targets map[plugin.Target]bool,
+	declared []Plan, gens []genEntry, targets map[plugin.Target]bool,
 ) ([]compiledPlan, []error) {
 	var faults []error
-	seatOf := map[plugin.Generator]genSeat{}
+	seatOf := map[plugin.Generator]genEntry{}
 	for _, s := range gens {
 		seatOf[s.run] = s
 	}
@@ -503,7 +503,7 @@ func compilePlans(
 			names[pl.Name] = true
 		}
 		listed := map[plugin.Generator]bool{}
-		var seats []genSeat
+		var roles []genEntry
 		for _, g := range pl.Generators {
 			if g == nil {
 				faults = append(faults, fmt.Errorf(
@@ -518,14 +518,14 @@ func compilePlans(
 				continue
 			}
 			listed[g] = true
-			seats = append(seats, seatOf[g])
+			roles = append(roles, seatOf[g])
 		}
-		if len(seats) == 0 {
+		if len(roles) == 0 {
 			faults = append(faults, fmt.Errorf(
 				"workspace: plan %q holds no generator", pl.Name,
 			))
 		}
-		slices.SortFunc(seats, func(a, b genSeat) int {
+		slices.SortFunc(roles, func(a, b genEntry) int {
 			return cmp.Compare(a.bucket, b.bucket)
 		})
 		switch {
@@ -539,7 +539,7 @@ func compilePlans(
 				pl.Name, pl.Backend.Target(),
 			))
 		}
-		out = append(out, compiledPlan{name: pl.Name, scope: pl.Scope, seats: seats})
+		out = append(out, compiledPlan{name: pl.Name, scope: pl.Scope, entries: roles})
 	}
 	return out, faults
 }

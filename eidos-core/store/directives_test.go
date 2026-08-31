@@ -18,7 +18,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// stubAt answers a raw stub instance positioned at line.
+// stubAt returns a raw stub instance positioned at line.
 func stubAt(line int) directive.Raw {
 	return directive.Raw{
 		Name: "stub",
@@ -32,7 +32,7 @@ func TestDirectives(t *testing.T) {
 	t.Run("AttachDirectives", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("attaches instances the graph then answers", func(t *testing.T) {
+		t.Run("attaches instances the graph then returns", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
@@ -44,7 +44,7 @@ func TestDirectives(t *testing.T) {
 			g.Freeze()
 
 			assert.Length(t, g.DirectivesOf(decl.ID), 1,
-				"the subject's instances answer after the seal")
+				"the subject's instances are readable after the seal")
 		})
 
 		t.Run("refuses a zero subject", func(t *testing.T) {
@@ -94,10 +94,10 @@ func TestDirectives(t *testing.T) {
 
 			got := coretest.Names(t, slices.Collect(g.ByDirective("stub")))
 			assert.Equal(t, got, []string{"Cache", "Store"},
-				"the index answers carriers alone, in identity order")
+				"the index returns carriers alone, in identity order")
 		})
 
-		t.Run("answers nothing for a spelling nothing carries", func(t *testing.T) {
+		t.Run("returns nothing for a spelling nothing carries", func(t *testing.T) {
 			t.Parallel()
 
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath))
@@ -144,7 +144,7 @@ func TestDirectives(t *testing.T) {
 	t.Run("DirectivesOf", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers instances in position order", func(t *testing.T) {
+		t.Run("returns instances in position order", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
@@ -158,13 +158,13 @@ func TestDirectives(t *testing.T) {
 			g.Freeze()
 
 			got := g.DirectivesOf(decl.ID)
-			assert.Length(t, got, 2, "both instances answer")
+			assert.Length(t, got, 2, "both instances are returned")
 			assert.Equal(t, got[0].Pos.Line, 3,
-				"in position order, so two concurrent attachments answer one order")
+				"in position order, so two concurrent attachments produce one order")
 			assert.Equal(t, got[1].Pos.Line, 9, "earliest first")
 		})
 
-		t.Run("answers nothing before Freeze", func(t *testing.T) {
+		t.Run("returns nothing before Freeze", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
@@ -175,7 +175,7 @@ func TestDirectives(t *testing.T) {
 				"the instance attaches")
 
 			assert.Empty(t, g.DirectivesOf(decl.ID),
-				"an untracked read before the seal answers nothing rather than a partial result")
+				"an untracked read before the seal returns nothing rather than a partial result")
 		})
 	})
 
@@ -225,14 +225,14 @@ func TestDirectives(t *testing.T) {
 			assert.NoError(t, err, "the sealed graph hands out a reader")
 
 			got := coretest.Names(t, slices.Collect(r.ByDirective("stub")))
-			assert.Equal(t, got, []string{"Store"}, "the tracked enumeration answers carriers")
+			assert.Equal(t, got, []string{"Store"}, "the tracked enumeration returns carriers")
 			assert.Equal(t, slices.Collect(reads.Directives()), []directive.Name{"stub"},
 				"records the membership edge")
 			assert.True(t, recorded(reads, decl.ID),
 				"and a per-identity edge for what the caller reached")
 		})
 
-		t.Run("neither answers nor records outside scope", func(t *testing.T) {
+		t.Run("neither returns nor records outside scope", func(t *testing.T) {
 			t.Parallel()
 
 			hidden := coretest.Struct(coretest.CachePath, "Cache")
@@ -248,7 +248,7 @@ func TestDirectives(t *testing.T) {
 			assert.NoError(t, err, "the scoped reader hands out")
 
 			assert.Empty(t, slices.Collect(r.ByDirective("stub")),
-				"a declaration outside scope is not answered")
+				"a declaration outside scope is not returned")
 			assert.False(t, recorded(reads, hidden.ID), "and not recorded")
 		})
 	})
@@ -329,7 +329,7 @@ func BenchmarkDirectives(b *testing.B) {
 				seen++
 			}
 			if seen != carriers {
-				b.Fatalf("ByDirective answered %d carriers, want %d", seen, carriers)
+				b.Fatalf("ByDirective returned %d carriers, want %d", seen, carriers)
 			}
 		}
 	})

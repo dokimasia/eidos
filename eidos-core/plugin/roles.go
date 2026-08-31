@@ -25,7 +25,7 @@ type Annotator interface {
 //
 // A problem with one subject attaches to the context's sink and the
 // phase continues; a returned error is fatal to the phase. A
-// generator is blind to languages: it reads the graph through its
+// generator is never seeing languages: it reads the graph through its
 // context and emits neutral values into the plan's store.
 type Generator interface {
 	Plugin
@@ -34,7 +34,7 @@ type Generator interface {
 
 // AnnotatorContext carries what one Annotate call may touch.
 //
-// The two read surfaces split by law: Index is the dispatcher's
+// The two read surfaces split by rule: Index is the dispatcher's
 // routing path and records nothing, and Reader is the plugin's
 // tracked path, recording into the phase's read set. Plugin and
 // Bucket are the arbitration rank fields every stamp made under

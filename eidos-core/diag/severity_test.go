@@ -47,6 +47,6 @@ func TestSeverity(t *testing.T) {
 
 		var got diag.Severity
 		assert.Equal(t, got, diag.SeverityError,
-			"a finding that answered no severity must not downgrade itself")
+			"a finding that returned no severity must not downgrade itself")
 	})
 }

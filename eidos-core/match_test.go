@@ -13,14 +13,14 @@ import (
 )
 
 // The match's fact reads are the sanctioned channel between
-// plugins, so what they answer and what they refuse are contract.
+// plugins, so what they return and what they refuse are contract.
 func TestMatch(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Fact", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers false on a graph match", func(t *testing.T) {
+		t.Run("returns false on a graph match", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := fixtureGraph(t)
@@ -31,7 +31,7 @@ func TestMatch(t *testing.T) {
 					ran = true
 					_, held := eidos.Fact(m, key)
 					assert.False(t, held,
-						"a graph match has no subject, so no subject fact answers")
+						"a graph match has no subject, so no subject fact returns")
 					return nil
 				})).
 				Build()
@@ -44,7 +44,7 @@ func TestMatch(t *testing.T) {
 	t.Run("FactOf", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers a sibling's winning value", func(t *testing.T) {
+		t.Run("returns a sibling's winning value", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, _ := fixtureGraph(t)
@@ -58,7 +58,7 @@ func TestMatch(t *testing.T) {
 				Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
 					ran = true
 					got, held := eidos.FactOf(m, alpha.ID, key)
-					assert.True(t, held, "the stamped fact answers")
+					assert.True(t, held, "the stamped fact returns")
 					assert.True(t, got, "with its winning value")
 					return nil
 				})).

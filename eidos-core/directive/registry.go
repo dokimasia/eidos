@@ -24,7 +24,7 @@ type Registry struct {
 	sealed    bool
 }
 
-// NewRegistry answers a registry holding nothing.
+// NewRegistry returns a registry holding nothing.
 func NewRegistry() *Registry {
 	return &Registry{
 		byCanonical: map[Name]Schema{},
@@ -94,11 +94,11 @@ func (r *Registry) Seal() []error {
 // Sealed reports whether registration has ended.
 func (r *Registry) Sealed() bool { return r.sealed }
 
-// ResolveName answers the schema a spelling addresses.
+// ResolveName returns the schema a spelling addresses.
 //
 // A prefixed spelling addresses its owner's schema. A bare
 // spelling addresses the schema iff exactly one plugin claims it;
-// with two claimants it answers false, and Candidates names them
+// with two claimants it returns false, and Candidates names them
 // for the diagnostic.
 func (r *Registry) ResolveName(n Name) (Schema, bool) {
 	if s, held := r.byCanonical[n]; held {
@@ -111,7 +111,7 @@ func (r *Registry) ResolveName(n Name) (Schema, bool) {
 	return r.byCanonical[claimants[0]], true
 }
 
-// Candidates answers every canonical spelling that claims a bare
+// Candidates returns every canonical spelling that claims a bare
 // name, in registration order, for the ambiguity Error.
 func (r *Registry) Candidates(n Name) []Name {
 	return slices.Clone(r.claimants[n])
@@ -205,8 +205,8 @@ func admissibleParam(
 	return nil
 }
 
-// canonicalOrder answers every canonical spelling, sorted, so the
-// seal's faults answer in one order.
+// canonicalOrder returns every canonical spelling, sorted, so the
+// seal's faults arrive in one order.
 func (r *Registry) canonicalOrder() []Name {
 	out := make([]Name, 0, len(r.byCanonical))
 	for name := range r.byCanonical {

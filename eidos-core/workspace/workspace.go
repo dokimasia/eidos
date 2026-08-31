@@ -19,7 +19,7 @@ import (
 type Workspace struct {
 	keys       *meta.Registry
 	directives *directive.Registry
-	annotate   []annSeat
+	annotate   []annEntry
 	plans      []compiledPlan
 }
 

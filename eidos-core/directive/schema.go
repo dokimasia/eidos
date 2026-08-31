@@ -60,7 +60,7 @@ type ParamKey string
 
 // The reserved keys honoured on every directive: both lower to a
 // routing override, and no schema may claim either. Validation
-// admits them as strings and they land in the instance's params
+// admits them as strings and they arrive in the instance's params
 // like any declared key.
 const (
 	ReservedOut ParamKey = "out"
@@ -153,7 +153,7 @@ type Schema struct {
 	Doc string
 }
 
-// Canonical answers the schema's canonical spelling: prefixed for
+// Canonical returns the schema's canonical spelling: prefixed for
 // a plugin's, bare for the kernel's.
 func (s Schema) Canonical() Name {
 	if s.Plugin == "" {

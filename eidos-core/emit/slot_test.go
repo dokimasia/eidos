@@ -48,7 +48,7 @@ func TestSlot(t *testing.T) {
 	t.Run("Items", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("the zero slot answers nothing", func(t *testing.T) {
+		t.Run("the zero slot returns nothing", func(t *testing.T) {
 			t.Parallel()
 
 			var slot emit.Slot[int]

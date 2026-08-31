@@ -15,7 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// subscriptionsOf builds the plugin and answers its gate records.
+// subscriptionsOf builds the plugin and returns its gate records.
 func subscriptionsOf(tb assert.TB, rules ...eidos.Rule) []plugin.Subscription {
 	tb.Helper()
 
@@ -114,7 +114,7 @@ func TestRule(t *testing.T) {
 				eidos.OnEmit(symbol.KindMethod,
 					func(m *eidos.EmitMatch, e *eidos.Emitter) error { return nil }),
 			))
-			assert.Length(t, got, 2, "two rules answer two records")
+			assert.Length(t, got, 2, "two rules produce two records")
 			assert.Equal(t, got[0].Rule, plugin.RuleID(0), "ordinals follow declaration order")
 			assert.Equal(t, got[1].Rule, plugin.RuleID(1), "one per rule")
 			assert.Equal(t, got[1].Kind, symbol.KindMethod,

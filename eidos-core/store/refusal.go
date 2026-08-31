@@ -16,7 +16,7 @@ var (
 	// DuplicatePackage refuses a package identity claimed twice.
 	DuplicatePackage = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number:  2,
-		Meaning: "two packages answer one identity",
+		Meaning: "two packages produce one identity",
 	})
 	// UnfrozenRead refuses a reader over a graph that is still
 	// moving.
@@ -26,13 +26,13 @@ var (
 	})
 )
 
-// RefusedError is a condition the graph answers an error for, under the
+// RefusedError is a condition the graph returns an error for, under the
 // code a consumer scripts against.
 //
 // A caller reaches the code through [errors.As] rather than by
 // reading the text, which is what keeps the code load-bearing.
 // Conditions a caller can only reach through a defect, such as
-// handing over no package at all, answer a plain error instead: they
+// handing over no package at all, return a plain error instead: they
 // carry no code because nothing should be scripted against them.
 type RefusedError struct {
 	// Code identifies the refusal across releases.

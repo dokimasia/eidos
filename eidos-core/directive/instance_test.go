@@ -19,19 +19,19 @@ func TestInstance(t *testing.T) {
 	t.Run("Param", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers a carried key", func(t *testing.T) {
+		t.Run("returns a carried key", func(t *testing.T) {
 			t.Parallel()
 
 			d := directive.Directive{Params: map[directive.ParamKey]directive.Value{
 				"depth": {Kind: directive.TypeInt, Int: 3},
 			}}
 			got, held := d.Param("depth")
-			assert.True(t, held, "a carried key answers")
+			assert.True(t, held, "a carried key returns")
 			assert.Equal(t, got, directive.Value{Kind: directive.TypeInt, Int: 3},
 				"with its typed value")
 		})
 
-		t.Run("answers false for a key the instance omits", func(t *testing.T) {
+		t.Run("returns false for a key the instance omits", func(t *testing.T) {
 			t.Parallel()
 
 			d := directive.Directive{}

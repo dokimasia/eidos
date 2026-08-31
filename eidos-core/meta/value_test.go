@@ -17,13 +17,13 @@ import (
 func TestValue(t *testing.T) {
 	t.Parallel()
 
-	t.Run("answers absent through a foreign handle of another type", func(t *testing.T) {
+	t.Run("returns absent through a foreign handle of another type", func(t *testing.T) {
 		t.Parallel()
 
-		// A handle belongs to the registry that answered it. One
+		// A handle belongs to the registry that returned it. One
 		// from another composition can collide on the dense id with
 		// a different value type; the read refuses rather than
-		// answering the wrong type.
+		// returning the wrong type.
 		_, f, role, _ := fixture(t)
 		assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)),
 			"the string fact stamps")

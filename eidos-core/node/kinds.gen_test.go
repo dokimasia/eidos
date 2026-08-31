@@ -13,7 +13,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Every kind answers the vocabulary's interfaces. The assertions
+// Every kind satisfies the vocabulary's interfaces. The assertions
 // fail to compile rather than to run, which is where an unsatisfied
 // interface belongs.
 var (
@@ -114,7 +114,7 @@ func TestKinds(t *testing.T) {
 			t.Run(tt.want.String(), func(t *testing.T) {
 				t.Parallel()
 				assert.Equal(t, tt.subject.Kind(), tt.want,
-					"every kind answers its own constant")
+					"every kind returns its own constant")
 			})
 		}
 	})
@@ -122,279 +122,279 @@ func TestKinds(t *testing.T) {
 	t.Run("Position", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers where the declaration was written", func(t *testing.T) {
+		t.Run("returns where the declaration was written", func(t *testing.T) {
 			t.Parallel()
 
 			at := position.Pos{File: "svc/store.go", Line: 41, Col: 2}
 			_ = at
 			assert.Equal(t, (&Function{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Method{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Param{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Return{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Package{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&File{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Import{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Export{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Binding{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Enum{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&EnumVariant{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Sum{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&SumVariant{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Field{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Variable{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Constant{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Struct{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Interface{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Alias{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&TypeRef{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&TypeParam{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Constraint{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 			assert.Equal(t, (&Embed{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 		})
 	})
 
 	t.Run("Docs", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the declaration's documentation", func(t *testing.T) {
+		t.Run("returns the declaration's documentation", func(t *testing.T) {
 			t.Parallel()
 
 			lines := []string{"one", "two"}
 			_ = lines
 			assert.Length(t, (&Function{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Method{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Nil(t, (&Param{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&Return{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Length(t, (&Package{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&File{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Nil(t, (&Import{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Length(t, (&Export{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Nil(t, (&Binding{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Length(t, (&Enum{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&EnumVariant{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Sum{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&SumVariant{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Field{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Variable{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Constant{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Struct{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Interface{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Alias{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Nil(t, (&TypeRef{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&TypeParam{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&Constraint{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&Embed{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 		})
 	})
 
 	t.Run("Identity", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the identity the resolution step assigned", func(t *testing.T) {
+		t.Run("returns the identity the resolution step assigned", func(t *testing.T) {
 			t.Parallel()
 
 			id := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"}
 			assert.Equal(t, (&Function{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Method{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Param{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Return{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Package{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&File{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Import{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Export{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Binding{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Enum{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&EnumVariant{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Sum{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&SumVariant{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Field{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Variable{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Constant{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Struct{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Interface{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Alias{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&TypeRef{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&TypeParam{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Constraint{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Embed{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 		})
 
-		t.Run("answers the zero identity before it is assigned", func(t *testing.T) {
+		t.Run("returns the zero identity before it is assigned", func(t *testing.T) {
 			t.Parallel()
 			assert.True(t, (&Function{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Method{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Param{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Return{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Package{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&File{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Import{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Export{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Binding{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Enum{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&EnumVariant{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Sum{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&SumVariant{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Field{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Variable{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Constant{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Struct{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Interface{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Alias{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&TypeRef{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&TypeParam{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Constraint{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Embed{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 		})
 	})
 
 	t.Run("TypeRef", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers nil when the source states no type", func(t *testing.T) {
+		t.Run("returns nil when the source states no type", func(t *testing.T) {
 			t.Parallel()
 			assert.Nil(t, (&Param{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&Return{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&Field{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&Variable{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&Constant{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&TypeParam{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 		})
 
-		t.Run("answers the declared type reference", func(t *testing.T) {
+		t.Run("returns the declared type reference", func(t *testing.T) {
 			t.Parallel()
 			assert.NotNil(t, (&Param{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&Return{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&Field{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&Variable{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&Constant{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&TypeParam{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 		})
 	})
 
 	t.Run("Members", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("a member list the kind does not carry answers nil", func(t *testing.T) {
+		t.Run("a member list the kind does not carry returns nil", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&Enum{}).EmbedList(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 
 			assert.Nil(t, (&Sum{}).EmbedList(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 
 			assert.Nil(t, (&SumVariant{}).MethodList(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 
 			assert.Nil(t, (&SumVariant{}).EmbedList(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 		})
 
-		t.Run("a member list the kind carries answers its members", func(t *testing.T) {
+		t.Run("a member list the kind carries returns its members", func(t *testing.T) {
 			t.Parallel()
 
 			{
@@ -403,7 +403,7 @@ func TestKinds(t *testing.T) {
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -412,7 +412,7 @@ func TestKinds(t *testing.T) {
 				subject.Fields = append(subject.Fields, &Field{})
 				subject.Methods = append(subject.Methods, &Method{})
 				assert.NotEmpty(t, subject.MethodList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -421,7 +421,7 @@ func TestKinds(t *testing.T) {
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -430,14 +430,14 @@ func TestKinds(t *testing.T) {
 				subject.Variants = append(subject.Variants, &SumVariant{})
 				subject.Methods = append(subject.Methods, &Method{})
 				assert.NotEmpty(t, subject.MethodList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
 				subject := &SumVariant{}
 				subject.Fields = append(subject.Fields, &Field{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -450,7 +450,7 @@ func TestKinds(t *testing.T) {
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -463,7 +463,7 @@ func TestKinds(t *testing.T) {
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -476,7 +476,7 @@ func TestKinds(t *testing.T) {
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.EmbedList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -488,7 +488,7 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -500,7 +500,7 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -512,7 +512,7 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				assert.NotEmpty(t, subject.EmbedList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 		})
 	})

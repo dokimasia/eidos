@@ -26,7 +26,7 @@ import (
 // runCode is a code for the run fixtures' findings.
 var runCode = diag.Code{Prefix: "tst", Number: 7}
 
-// rawMeta answers a positioned raw instance of the kernel meta
+// rawMeta returns a positioned raw instance of the kernel meta
 // directive dropping ref.
 func rawMeta(ref string, line int) directive.Raw {
 	return directive.Raw{
@@ -36,10 +36,10 @@ func rawMeta(ref string, line int) directive.Raw {
 	}
 }
 
-// flagged answers a composition whose annotator registers and
+// flagged returns a composition whose annotator registers and
 // stamps shape.flag through its own key provider, and whose
 // generator mirrors the subjects the flag reads present on. The
-// key handle lands when Build climbs the ladder; the handlers read
+// key handle arrives when Build runs the steps; the handlers read
 // it through their closures, which is the seam under test.
 func flagged() (*workspace.Builder, *meta.Key[bool]) {
 	var flag meta.Key[bool]
@@ -99,8 +99,8 @@ func TestRun(t *testing.T) {
 	t.Run("refuses a graph already frozen", func(t *testing.T) {
 		t.Parallel()
 
-		w, err := lawful().Build()
-		assert.NoError(t, err, "the fixture composition is lawful")
+		w, err := valid().Build()
+		assert.NoError(t, err, "the fixture composition is valid")
 		g, _ := alpha(t)
 		g.Freeze()
 		report, err := w.Run(t.Context(), g)
@@ -112,8 +112,8 @@ func TestRun(t *testing.T) {
 	t.Run("refuses a missing graph", func(t *testing.T) {
 		t.Parallel()
 
-		w, err := lawful().Build()
-		assert.NoError(t, err, "the fixture composition is lawful")
+		w, err := valid().Build()
+		assert.NoError(t, err, "the fixture composition is valid")
 		report, err := w.Run(t.Context(), nil)
 		assert.HasError(t, err, "there is nothing to run over")
 		assert.Nil(t, report, "nothing ran")
@@ -153,7 +153,7 @@ func TestRun(t *testing.T) {
 		assert.NoError(t, err, "a drop is authored intent, not a finding")
 		assert.False(t, report.Sink.Failed(), "and reports nothing")
 		_, held := meta.Get(report.Facts, s.Identity(), *flag)
-		assert.False(t, held, "the drop outranks the stamp whenever it lands")
+		assert.False(t, held, "the drop outranks the stamp whenever it arrives")
 		assert.Empty(t, units(report.Emits["plan"]), "so the flag gates nothing")
 	})
 
@@ -189,7 +189,7 @@ func TestRun(t *testing.T) {
 		ghost := coretest.Struct("example.com/elsewhere", "Ghost")
 		assert.NoError(t,
 			g.AttachDirectives(ghost.Identity(), []directive.Raw{rawMeta("shape.flag", 9)}),
-			"the dangling attachment lands before the seal")
+			"the dangling attachment arrives before the seal")
 		report, err := w.Run(t.Context(), g)
 		assert.ErrorIs(t, err, workspace.ErrRunFailed,
 			"a dangling subject is an Error")
@@ -212,7 +212,7 @@ func TestRun(t *testing.T) {
 		g, _ := alpha(t)
 		report, err := w.Run(t.Context(), g)
 		assert.HasError(t, err, "a returned error is fatal to the frame")
-		assert.Contains(t, err.Error(), "angry", "the error names the seat")
+		assert.Contains(t, err.Error(), "angry", "the error names the role")
 		assert.Contains(t, err.Error(), "boom", "and carries the cause")
 		assert.ErrorIsNot(t, err, workspace.ErrRunFailed,
 			"a handler error is a defect, not a finding")
@@ -244,14 +244,14 @@ func TestRun(t *testing.T) {
 	t.Run("a cancelled context stops the frame", func(t *testing.T) {
 		t.Parallel()
 
-		w, err := lawful().Build()
-		assert.NoError(t, err, "the fixture composition is lawful")
+		w, err := valid().Build()
+		assert.NoError(t, err, "the fixture composition is valid")
 		ctx, cancel := context.WithCancel(t.Context())
 		cancel()
 		g, _ := alpha(t)
 		_, err = w.Run(ctx, g)
 		assert.ErrorIs(t, err, context.Canceled,
-			"the caller's cancellation answers")
+			"the caller's cancellation returns")
 	})
 
 	t.Run("an Error finding fails the run without stopping it", func(t *testing.T) {
@@ -305,7 +305,7 @@ func BenchmarkRun(b *testing.B) {
 				b.Fatalf("Run: unexpected error: %v", err)
 			}
 			if len(report.Emits) != 1 {
-				b.Fatal("the plan store must land")
+				b.Fatal("the plan store must arrive")
 			}
 		}
 	})

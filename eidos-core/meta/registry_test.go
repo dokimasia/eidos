@@ -14,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// claimed answers a registry with the fixture namespaces claimed.
+// claimed returns a registry with the fixture namespaces claimed.
 func claimed(tb assert.TB) *meta.Registry {
 	tb.Helper()
 
@@ -62,7 +62,7 @@ func TestRegistry(t *testing.T) {
 	t.Run("Register", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the typed handle", func(t *testing.T) {
+		t.Run("returns the typed handle", func(t *testing.T) {
 			t.Parallel()
 
 			r := claimed(t)
@@ -88,7 +88,7 @@ func TestRegistry(t *testing.T) {
 			_, err := meta.Register[string](r, meta.KeySpec{
 				Name: "shape.role", Doc: "the first claimant",
 			})
-			assert.NoError(t, err, "the first registration lands")
+			assert.NoError(t, err, "the first registration arrives")
 
 			_, err = meta.Register[int64](r, meta.KeySpec{
 				Name: "shape.role", Doc: "the second claimant",
@@ -134,7 +134,7 @@ func TestRegistry(t *testing.T) {
 	t.Run("Resolve", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the id a spelling names", func(t *testing.T) {
+		t.Run("returns the id a spelling names", func(t *testing.T) {
 			t.Parallel()
 
 			r := claimed(t)
@@ -155,7 +155,7 @@ func TestRegistry(t *testing.T) {
 	t.Run("Spec", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers a registered key's spec", func(t *testing.T) {
+		t.Run("returns a registered key's spec", func(t *testing.T) {
 			t.Parallel()
 
 			r := claimed(t)
@@ -167,7 +167,7 @@ func TestRegistry(t *testing.T) {
 			assert.NoError(t, err, "the key registers")
 
 			spec, known := r.Spec(role.ID())
-			assert.True(t, known, "a registered id answers")
+			assert.True(t, known, "a registered id returns")
 			assert.Equal(t, spec.Name, meta.KeyName("shape.role"), "its spelling")
 			assert.Equal(t, spec.Kinds, []symbol.Kind{symbol.KindStruct}, "its kinds")
 
@@ -192,7 +192,7 @@ func TestRegistry(t *testing.T) {
 			assert.NoError(t, err, "a key promising coverage registers")
 
 			spec, known := r.Spec(key.ID())
-			assert.True(t, known, "and answers")
+			assert.True(t, known, "and returns")
 			assert.Equal(t, spec.Contract, contract, "with the promise held, unchecked")
 		})
 	})
@@ -200,7 +200,7 @@ func TestRegistry(t *testing.T) {
 	t.Run("Keys", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers every spelling in registration order", func(t *testing.T) {
+		t.Run("returns every spelling in registration order", func(t *testing.T) {
 			t.Parallel()
 
 			r := claimed(t)
@@ -238,7 +238,7 @@ func TestRegistry(t *testing.T) {
 	t.Run("Group", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers members in registration order", func(t *testing.T) {
+		t.Run("returns members in registration order", func(t *testing.T) {
 			t.Parallel()
 
 			r := claimed(t)

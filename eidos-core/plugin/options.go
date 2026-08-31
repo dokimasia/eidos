@@ -11,7 +11,7 @@ import (
 // ValidateOptions holds a plugin's options declaration to the tag
 // contract: a pointer to a struct, exported fields only, an opt
 // tag naming each field's config key, a doc tag stating its
-// meaning, and no key claimed twice. It answers one error per
+// meaning, and no key claimed twice. It returns one error per
 // finding, in field order, and nothing where the plugin declares
 // no options. The composition runs it before populating; the
 // conformance suite runs it as a check, so a plugin failing at

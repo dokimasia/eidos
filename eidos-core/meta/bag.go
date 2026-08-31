@@ -42,7 +42,7 @@ type bag struct {
 	perGroup map[GroupName]*factState
 }
 
-// state answers the bag's state for k and false where the key was
+// state returns the bag's state for k and false where the key was
 // never written. The caller holds b.mu.
 func (b *bag) state(k KeyID) (*factState, bool) {
 	if b.hasFirst && b.firstID == k {
@@ -71,7 +71,7 @@ func (b *bag) presentLocked(group GroupName, k KeyID) bool {
 	return !best.drop
 }
 
-// key answers the bag's state for k, creating it on first touch:
+// key returns the bag's state for k, creating it on first touch:
 // inline for the bag's first key, in the spill map for the rest,
 // so a bag costs its writes alone. The caller holds b.mu.
 func (b *bag) key(k KeyID) *factState {
@@ -91,7 +91,7 @@ func (b *bag) key(k KeyID) *factState {
 	return state
 }
 
-// group answers the bag's state for a group tombstone, creating the
+// group returns the bag's state for a group tombstone, creating the
 // map and the state on first touch. The caller holds b.mu.
 func (b *bag) group(g GroupName) *factState {
 	if b.perGroup == nil {

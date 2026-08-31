@@ -5,7 +5,7 @@
 //
 // [Diag] is one finding: a [Code], a [Severity], the position of the
 // declaration that caused it, and the [Origin] that reported it.
-// [Sink] collects the findings of one run and answers whether any of
+// [Sink] collects the findings of one run and reports whether any of
 // them failed it. [Registry] holds every registered code and refuses
 // a number claimed twice within one prefix.
 //

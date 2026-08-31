@@ -48,16 +48,16 @@ type Registry struct {
 	meanings map[Code]string
 }
 
-// NewRegistry answers an empty registry.
+// NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{meanings: map[Code]string{}}
 }
 
-// Register records a code and answers it.
+// Register records a code and returns it.
 //
 // A number claimed twice within one prefix is an error naming both
 // meanings, because the second claimant would otherwise report under
-// the first one's identity. It answers an error rather than
+// the first one's identity. It returns an error rather than
 // panicking so that a caller collecting faults reports every one.
 func (r *Registry) Register(p Prefix, s CodeSpec) (Code, error) {
 	if p == "" {
@@ -94,17 +94,17 @@ func MustRegister(p Prefix, s CodeSpec) Code {
 // kernel holds the codes packages declare at initialization.
 var kernel = NewRegistry()
 
-// Kernel answers the registry [MustRegister] records into.
+// Kernel returns the registry [MustRegister] records into.
 func Kernel() *Registry { return kernel }
 
-// Meaning answers what a registered code means, and false for a code
+// Meaning returns what a registered code means, and false for a code
 // this registry does not hold.
 func (r *Registry) Meaning(c Code) (string, bool) {
 	meaning, known := r.meanings[c]
 	return meaning, known
 }
 
-// Codes answers every registered code, in prefix then number order.
+// Codes returns every registered code, in prefix then number order.
 func (r *Registry) Codes() []Code {
 	out := make([]Code, 0, len(r.meanings))
 	for code := range r.meanings {

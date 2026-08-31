@@ -23,7 +23,7 @@ import (
 // runs over, the way a composition builds them: sharing one key
 // registry, one schema set, one graph. The suite calls it more
 // than once, because declaration stability compares two builds and
-// determinism compares two isolated runs, so a Setup answers a
+// determinism compares two isolated runs, so a Setup returns a
 // fresh pair every call.
 type Setup func(tb assert.TB) (plugin.Plugin, *Fixture)
 
@@ -123,7 +123,7 @@ func AssertStableDeclaration(tb assert.TB, setup Setup) {
 }
 
 // AssertTemplates holds every declared template tree to the static
-// template laws, through the same lint the render pass runs, per
+// template rules, through the same lint the render pass runs, per
 // language the fixture carries: a plugin failing at CI fails in
 // its own tests first.
 func AssertTemplates(tb assert.TB, setup Setup) {
@@ -142,7 +142,7 @@ func AssertTemplates(tb assert.TB, setup Setup) {
 		pass, err := render.New("lint", f.Languages[target])
 		assert.NoError(tb, err, "the fixture language composes")
 		for _, finding := range pass.Lint(tree, tp.TemplateFuncs(target), tp.Overrides()) {
-			assert.NoError(tb, finding, "the tree holds the template laws")
+			assert.NoError(tb, finding, "the tree holds the template rules")
 		}
 	}
 }
@@ -175,7 +175,7 @@ func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 
 // AssertIdempotentAnnotate runs one plugin's annotate phase twice
 // over one fixture and holds both passes clean. A stamp that
-// depends on run state lands a second value from the same rank
+// depends on run state arrives a second value from the same rank
 // source, which the fact store refuses, and the refusal fails this
 // check.
 func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
@@ -223,13 +223,13 @@ func AssertAttributedEmit(tb assert.TB, setup Setup) {
 		assert.Equal(tb, u.Plugin, p.Name(),
 			"every unit names the plugin that emitted it")
 		assert.True(tb, declared[u.Tag],
-			"every unit lands under a declared family")
+			"every unit arrives under a declared family")
 	}
 }
 
 // AssertTwins holds two spellings of one plugin, usually a facade
 // build and a hand-rolled SPI twin, to byte-equal emit: the
-// lowering guarantee, checked from the outside. Each setup answers
+// lowering guarantee, checked from the outside. Each setup returns
 // its own spelling over an equivalent fixture.
 func AssertTwins(tb assert.TB, facade, twin Setup) {
 	tb.Helper()
@@ -243,7 +243,7 @@ func AssertTwins(tb assert.TB, facade, twin Setup) {
 }
 
 // runAll runs every phase the plugin holds, annotate first, over
-// one fixture, and answers the results in phase order.
+// one fixture, and returns the results in phase order.
 func runAll(tb assert.TB, p plugin.Plugin, f *Fixture) []Result {
 	tb.Helper()
 
@@ -262,7 +262,7 @@ func runAll(tb assert.TB, p plugin.Plugin, f *Fixture) []Result {
 }
 
 // generateOnce runs annotate where the plugin holds it, then
-// generate, and answers the fixture's emit store.
+// generate, and returns the fixture's emit store.
 func generateOnce(tb assert.TB, p plugin.Plugin, f *Fixture) *plugin.Emit {
 	tb.Helper()
 

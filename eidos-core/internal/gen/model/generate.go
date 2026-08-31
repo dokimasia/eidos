@@ -25,7 +25,7 @@ const templateDir = "templates"
 const headerTemplate = "header.tmpl"
 
 // output is one file the generator writes: which template renders
-// it, into which package, and where it lands.
+// it, into which package, and where it arrives.
 type output struct {
 	// Path is the file's module-relative slash path.
 	Path string
@@ -84,19 +84,19 @@ type data struct {
 	// and the traversal typed by it.
 	Identified bool
 	// Originated says whether any kind on this side carries origin
-	// storage, which is what earns the side the OriginOf function.
+	// storage, which is why the side gets the OriginOf function.
 	Originated bool
 }
 
 // Generate renders every generated file from the schema under
 // modRoot.
 //
-// It answers the whole output in memory, keyed by module-relative
+// It returns the whole output in memory, keyed by module-relative
 // slash path, and writes nothing. A caller puts it on disk with
 // [genfile.Write] or compares it with [genfile.Verify], which is
 // what makes the mirror guard a plain test.
 //
-// Nothing is answered unless every file rendered and formatted, so
+// Nothing is returned unless every file rendered and formatted, so
 // a template fault cannot leave a half-generated tree.
 func Generate(modRoot string) (genfile.Set, error) {
 	kinds, err := Lower(path.Join(modRoot, SchemaDir), modRoot)
@@ -136,7 +136,7 @@ func slotsUseSymbol(views []view) bool {
 //
 // The predicate is "every" rather than "any": the Declaration
 // interface is only worth declaring on a side where no kind fails to
-// answer it, because a traversal typed by it would otherwise drop
+// satisfy it, because a traversal typed by it would otherwise drop
 // whichever kinds did.
 func viewsIdentified(views []view) bool {
 	for _, v := range views {
@@ -150,8 +150,8 @@ func viewsIdentified(views []view) bool {
 // viewsOriginated reports whether any kind carries origin storage.
 //
 // The predicate is "any" rather than "every", the opposite of
-// [viewsIdentified]: OriginOf is a function answering false for the
-// kinds without the seat, so one carrying kind already earns it.
+// [viewsIdentified]: OriginOf is a function returning false for the
+// kinds without the role, so one carrying kind already justifies it.
 func viewsOriginated(views []view) bool {
 	for _, v := range views {
 		if v.OriginStorage != "" {

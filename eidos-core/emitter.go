@@ -17,12 +17,12 @@ import (
 // Tag selects a declared output family; the zero value is the
 // primary. Addressing a family the plugin never declared panics:
 // the family set is the plugin's own declaration, so the mismatch
-// is a defect and fires on the first matching test.
+// is a defect and panics on the first matching test.
 type Tag string
 
 // Emitter is a handler's write surface, scoped to its subject.
 //
-// Each accessor answers the one accumulator for its cardinality key
+// Each accessor returns the one accumulator for its cardinality key
 // and family, created on first touch and appended to thereafter, so
 // two interfaces in one source file assemble one per-source unit
 // and a package's matches assemble one registry. At most one tag
@@ -32,27 +32,27 @@ type Emitter struct {
 	m  *match
 }
 
-// File answers the accumulator for the subject's source file and
+// File returns the accumulator for the subject's source file and
 // the family, keyed by the subject's position: a subject without
 // one keys the empty string.
 func (e *Emitter) File(tags ...Tag) *Out {
 	return e.out(plugin.PerSource, e.m.pos.File, tags)
 }
 
-// PackageFile answers the accumulator for the subject's package and
+// PackageFile returns the accumulator for the subject's package and
 // the family, keyed by the package path the subject's identity
 // names.
 func (e *Emitter) PackageFile(tags ...Tag) *Out {
 	return e.out(plugin.PerPackage, e.m.subject.Package, tags)
 }
 
-// PlanFile answers the accumulator for the plan and the family. A
+// PlanFile returns the accumulator for the plan and the family. A
 // plan has one output per family, so its key is empty.
 func (e *Emitter) PlanFile(tags ...Tag) *Out {
 	return e.out(plugin.PerPlan, "", tags)
 }
 
-// out resolves the family and answers the subject-bound handle.
+// out resolves the family and returns the subject-bound handle.
 func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 	tag := oneTag(tags)
 	fam, declared := e.rs.b.outByTag[tag]
@@ -78,7 +78,7 @@ func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 	return &Out{acc: acc, subject: e.m.subject, instance: instance}
 }
 
-// oneTag answers the selected family: none means the primary, and
+// oneTag returns the selected family: none means the primary, and
 // more than one is a defect.
 func oneTag(tags []Tag) Tag {
 	switch len(tags) {
@@ -149,7 +149,7 @@ type placed struct {
 	decl     symbol.Symbol
 }
 
-// originsOf answers the distinct nonzero origins of places sorted
+// originsOf returns the distinct nonzero origins of places sorted
 // in canonical order: counted first, so the slice is allocated at
 // its exact size.
 func originsOf(places []placed) []symbol.Identity {
@@ -175,7 +175,7 @@ func originsOf(places []placed) []symbol.Identity {
 	return out
 }
 
-// accFor answers the accumulator for one key, created on first
+// accFor returns the accumulator for one key, created on first
 // touch with its namespace resolved once.
 func (rs *runState) accFor(k accKey, fam plugin.Output, subject symbol.Identity) *accumulator {
 	if acc, held := rs.accs[k]; held {
@@ -192,8 +192,8 @@ func (rs *runState) accFor(k accKey, fam plugin.Output, subject symbol.Identity)
 }
 
 // flush turns every touched accumulator into a unit, contributions
-// in canonical order, and lands them in the plan's store. The
-// accumulators flush in key order, so refusals answer in one order.
+// in canonical order, and arrives them in the plan's store. The
+// accumulators flush in key order, so refusals arrive in one order.
 func (rs *runState) flush(into *plugin.Emit) error {
 	keys := slices.SortedFunc(maps.Keys(rs.accs), func(a, b accKey) int {
 		if c := cmp.Compare(a.per, b.per); c != 0 {

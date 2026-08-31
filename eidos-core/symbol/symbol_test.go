@@ -12,7 +12,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// declaration is the least a model kind answers, and stands in for
+// declaration is the least a model kind returns, and stands in for
 // one here so the interfaces are exercised without importing a
 // model: the vocabulary sits below both.
 type declaration struct {
@@ -43,7 +43,7 @@ func TestSymbol(t *testing.T) {
 	t.Run("Symbol", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers a kind, a position and its documentation", func(t *testing.T) {
+		t.Run("returns a kind, a position and its documentation", func(t *testing.T) {
 			t.Parallel()
 
 			at := position.Pos{File: "svc/store.go", Line: 41, Col: 2}
@@ -53,19 +53,19 @@ func TestSymbol(t *testing.T) {
 				docs: []string{"Store is the persistence seam."},
 			}
 			assert.Equal(t, subject.Kind(), symbol.KindStruct,
-				"Kind answers what the declaration is")
+				"Kind returns what the declaration is")
 			assert.Equal(t, subject.Position(), at,
-				"Position answers where it was written")
+				"Position returns where it was written")
 			assert.Length(t, subject.Docs(), 1,
-				"Docs answers the documentation it carries")
+				"Docs returns the documentation it carries")
 		})
 
-		t.Run("a synthesized declaration answers the zero position", func(t *testing.T) {
+		t.Run("a synthesized declaration returns the zero position", func(t *testing.T) {
 			t.Parallel()
 
 			var subject symbol.Symbol = &declaration{kind: symbol.KindStruct}
 			assert.True(t, subject.Position().IsZero(),
-				"a synthesized declaration answers the zero position")
+				"a synthesized declaration returns the zero position")
 			assert.Nil(t, subject.Docs(),
 				"and carries no documentation")
 		})
@@ -74,26 +74,26 @@ func TestSymbol(t *testing.T) {
 	t.Run("Membered", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers member lists a caller can walk", func(t *testing.T) {
+		t.Run("returns member lists a caller can walk", func(t *testing.T) {
 			t.Parallel()
 
 			var subject symbol.Membered = &declaration{kind: symbol.KindStruct}
 			assert.Length(t, subject.MethodList(), 1,
-				"MethodList answers the members the kind carries")
+				"MethodList returns the members the kind carries")
 			assert.Nil(t, subject.FieldList(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 		})
 	})
 
 	t.Run("Typed", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers nil when the source states no type", func(t *testing.T) {
+		t.Run("returns nil when the source states no type", func(t *testing.T) {
 			t.Parallel()
 
 			var subject symbol.Typed = &declaration{kind: symbol.KindField}
 			assert.Nil(t, subject.TypeRef(),
-				"TypeRef answers nil when the source states no type")
+				"TypeRef returns nil when the source states no type")
 		})
 	})
 }

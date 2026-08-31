@@ -369,7 +369,7 @@ func TestWalk(t *testing.T) {
 				"the walk descends into every traversed field")
 		})
 
-		t.Run("prunes a subtree when visit answers false", func(t *testing.T) {
+		t.Run("prunes a subtree when visit returns false", func(t *testing.T) {
 			t.Parallel()
 
 			{
@@ -1947,7 +1947,7 @@ func TestWalk(t *testing.T) {
 	})
 }
 
-// unnamed is a symbol from outside this model: it answers the shared
+// unnamed is a symbol from outside this model: it satisfies the shared
 // vocabulary and no identity, which is the only thing [Declarations]
 // skips.
 type unnamed struct{}

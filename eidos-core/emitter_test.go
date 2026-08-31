@@ -14,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The emitter owns the accumulator ritual: family misuse is a
+// The emitter owns the accumulator bookkeeping: family misuse is a
 // defect that panics, and an empty append changes nothing.
 func TestEmitter(t *testing.T) {
 	t.Parallel()
@@ -91,7 +91,7 @@ func TestEmitter(t *testing.T) {
 			assert.Length(t, byTag["aux"].Decls, 2, "and the aux handle its own")
 		})
 
-		t.Run("handles past the pool still land apart", func(t *testing.T) {
+		t.Run("handles past the pool still arrive apart", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := fixtureGraph(t)
@@ -127,7 +127,7 @@ func TestEmitter(t *testing.T) {
 				first, held := u.Decls[0].(*emit.Struct)
 				assert.True(t, held, "the fixture emits structs")
 				assert.HasPrefix(t, first.Name, u.Tag,
-					"each append landed under the handle that made it")
+					"each append arrived under the handle that made it")
 			}
 			assert.Equal(t, units, len(tags), "one unit per family")
 		})

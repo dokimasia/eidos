@@ -14,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
-// moduleRoot answers the kernel's module root, which every case
+// moduleRoot returns the kernel's module root, which every case
 // here generates against.
 func moduleRoot(tb assert.TB) string {
 	tb.Helper()
@@ -69,7 +69,7 @@ func TestGenerate(t *testing.T) {
 				"// This is the node spelling of the kind.",
 			} {
 				assert.Contains(t, kinds, want,
-					"the schema's documentation travels into the models")
+					"the schema's documentation is carried into the models")
 			}
 		})
 

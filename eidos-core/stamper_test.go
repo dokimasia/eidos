@@ -15,7 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// annContext answers an annotator context over one routing surface.
+// annContext returns an annotator context over one routing surface.
 func annContext(tb assert.TB, facts *meta.Facts, ix *plugin.Index) *plugin.AnnotatorContext {
 	tb.Helper()
 
@@ -46,7 +46,7 @@ func TestStamper(t *testing.T) {
 	t.Run("Stamp", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("lands with the full envelope", func(t *testing.T) {
+		t.Run("arrives with the full envelope", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, _ := fixtureGraph(t)
@@ -67,14 +67,14 @@ func TestStamper(t *testing.T) {
 			assert.False(t, ctx.Sink.Failed(), "nothing was refused")
 
 			got, held := meta.Get(facts, alpha.ID, key)
-			assert.True(t, held, "the stamped fact answers")
+			assert.True(t, held, "the stamped fact returns")
 			assert.True(t, got, "with the stamped value")
 
 			var views []meta.ClaimView
 			for v := range facts.Claims(alpha.ID, key.ID()) {
 				views = append(views, v)
 			}
-			assert.Length(t, views, 1, "one claim landed on the first subject")
+			assert.Length(t, views, 1, "one claim arrived on the first subject")
 			claim := views[0].Claim
 			assert.Equal(t, claim.Plugin, plugin.ID("classify"),
 				"the rank carries the context's plugin")
@@ -173,7 +173,7 @@ func TestStamper(t *testing.T) {
 					"at the first refusing subject's position")
 				break
 			}
-			assert.True(t, found, "the refusal landed in the sink")
+			assert.True(t, found, "the refusal arrived in the sink")
 		})
 	})
 }

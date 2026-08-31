@@ -17,10 +17,10 @@ import (
 // its read set and its sequence number are the invocation's own.
 //
 // A match is valid for the duration of its handler call and reused
-// for the rule's next invocation, which is what prices an
+// for the rule's next invocation, which is what holds an
 // invocation at zero steady-state allocations. Retaining a match,
 // an effect handle or an [Out] past the call is a defect, the same
-// law that forbids state on the plugin struct.
+// rule that forbids state on the plugin struct.
 type match struct {
 	rs      *runState
 	seq     int
@@ -60,7 +60,7 @@ func newMatch(inv invocation) match {
 	return m
 }
 
-// Reader answers the invocation's tracked read handle, minted on
+// Reader returns the invocation's tracked read handle, minted on
 // first use, so a handler that never reads costs no tracking. A
 // handler that needs a sibling declaration looks it up like anyone
 // else, instead of escaping to a graph-wide rule for an ordinary
@@ -79,7 +79,7 @@ func (m *match) Reader() *store.Reader {
 	return m.reader
 }
 
-// Directive answers the gating instance, nil for bare and
+// Directive returns the gating instance, nil for bare and
 // fact-gated matches. Under a repeatable schema the handler runs
 // once per instance and each match carries its one instance, so
 // the accessor stays singular. The instance is the validated
@@ -104,7 +104,7 @@ func (m *match) Infof(c diag.Code, format string, a ...any) {
 	m.rs.sink.Infof(c, m.pos, m.rs.plugin, format, a...)
 }
 
-// readset answers the invocation's read set, created on first use.
+// readset returns the invocation's read set, created on first use.
 func (m *match) readset() *store.ReadSet {
 	if m.reads == nil {
 		m.reads = store.NewReadSet()
@@ -112,7 +112,7 @@ func (m *match) readset() *store.ReadSet {
 	return m.reads
 }
 
-// derived answers the invocation's point reads so far, in the read
+// derived returns the invocation's point reads so far, in the read
 // set's own order: what a claim carries as its derivation.
 func (m *match) derived() []meta.Read {
 	if m.reads == nil {
@@ -128,7 +128,7 @@ func (m *match) derived() []meta.Read {
 	return out
 }
 
-// base answers the embedded surface; it is what closes [Matcher].
+// base returns the embedded surface; it is what closes [Matcher].
 func (m *match) base() *match { return m }
 
 // Matcher is the closed set of match types: only this package's
@@ -137,10 +137,10 @@ type Matcher interface {
 	base() *match
 }
 
-// Fact answers the subject's winning value for k, recording the
+// Fact returns the subject's winning value for k, recording the
 // read at (subject, key) into the invocation's read set; a miss
 // records too. On an emit match the subject is the origin; on a
-// graph match there is no subject, so Fact answers false and
+// graph match there is no subject, so Fact returns false and
 // records nothing.
 func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 	b := m.base()
@@ -151,9 +151,9 @@ func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 	return meta.Fact(b.rs.facts, b.readset(), b.subject, k)
 }
 
-// FactOf answers another declaration's winning value, recorded the
+// FactOf returns another declaration's winning value, recorded the
 // same way: reading a sibling's stamped facts is the sanctioned
-// channel between plugins. A zero identity answers false and
+// channel between plugins. A zero identity returns false and
 // records nothing.
 func FactOf[T meta.FactValue](
 	m Matcher, id symbol.Identity, k meta.Key[T],

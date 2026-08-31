@@ -28,17 +28,17 @@ const (
 // UnitFile is the one file [Package] puts its declarations in.
 const UnitFile = "unit.go"
 
-// PackageID answers the identity a package of that path answers.
+// PackageID returns the identity a package of that path returns.
 func PackageID(path string) symbol.Identity {
 	return symbol.Identity{Lang: Lang, Package: path, Kind: symbol.KindPackage}
 }
 
-// FileID answers the identity of the file [Package] builds.
+// FileID returns the identity of the file [Package] builds.
 func FileID(path string) symbol.Identity {
 	return symbol.Identity{Lang: Lang, Package: path, Name: UnitFile, Kind: symbol.KindFile}
 }
 
-// Struct answers a struct declaration in one package, carrying the
+// Struct returns a struct declaration in one package, carrying the
 // identity the resolution step would have assigned it.
 //
 // A case wanting a declaration the resolution step has not reached
@@ -50,7 +50,7 @@ func Struct(path, name string) *node.Struct {
 	}
 }
 
-// Package answers a package holding decls in one file, as a frontend
+// Package returns a package holding decls in one file, as a frontend
 // would hand it over.
 func Package(path string, decls ...symbol.Symbol) *node.Package {
 	return &node.Package{
@@ -64,7 +64,7 @@ func Package(path string, decls ...symbol.Symbol) *node.Package {
 	}
 }
 
-// Workspace answers a loaded fixture at scale: packages of files of
+// Workspace returns a loaded fixture at scale: packages of files of
 // decls, each count set by the caller. A benchmark loads it to
 // measure a cost that grows with the graph.
 //
@@ -101,7 +101,7 @@ func Workspace(packages, files, decls int) []*node.Package {
 	return out
 }
 
-// Names answers the declared names of what a traversal yielded,
+// Names returns the declared names of what a traversal yielded,
 // which is what a case compares against.
 func Names(tb assert.TB, decls []symbol.Symbol) []string {
 	tb.Helper()

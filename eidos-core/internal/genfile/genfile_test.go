@@ -54,7 +54,7 @@ func TestGenfile(t *testing.T) {
 			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			for path := range set {
 				_, err := os.Stat(filepath.Join(root, filepath.FromSlash(path)))
-				assert.NoError(t, err, "every file lands under the root")
+				assert.NoError(t, err, "every file arrives under the root")
 			}
 		})
 
@@ -121,7 +121,7 @@ func TestGenfile(t *testing.T) {
 			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			edited := filepath.Join(root, "node", "kinds.gen.go")
 			assert.NoError(t, os.WriteFile(edited, []byte("package p\n"), 0o600),
-				"the edit lands")
+				"the edit arrives")
 			err := genfile.Verify(root, set, []string{"node"})
 			assert.HasError(t, err, "a file whose bytes differ fails the mirror")
 			assert.Contains(t, err.Error(), "kinds.gen.go", "and is named")
@@ -144,7 +144,7 @@ func TestGenfile(t *testing.T) {
 			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			stray := filepath.Join(root, "node", "orphan.gen.go")
 			assert.NoError(t, os.WriteFile(stray, []byte(wellFormed), 0o600),
-				"the stray lands")
+				"the stray arrives")
 			err := genfile.Verify(root, set, []string{"node"})
 			assert.HasError(t, err, "a generated file the set does not name is a stray")
 			assert.Contains(t, err.Error(), "orphan.gen.go", "and is named")
@@ -158,7 +158,7 @@ func TestGenfile(t *testing.T) {
 			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			stray := filepath.Join(root, "node", "orphan.gen_test.go")
 			assert.NoError(t, os.WriteFile(stray, []byte(wellFormed), 0o600),
-				"the stray lands")
+				"the stray arrives")
 			err := genfile.Verify(root, set, []string{"node"})
 			assert.HasError(t, err, "a generated test the set does not name is a stray too")
 			assert.Contains(t, err.Error(), "orphan.gen_test.go", "and is named")
@@ -172,7 +172,7 @@ func TestGenfile(t *testing.T) {
 			assert.NoError(t, genfile.Write(root, set), "the set writes")
 			hand := filepath.Join(root, "node", "resolver.go")
 			assert.NoError(t, os.WriteFile(hand, []byte(wellFormed), 0o600),
-				"the hand-written file lands")
+				"the hand-written file arrives")
 			assert.NoError(t, genfile.Verify(root, set, []string{"node"}),
 				"a hand-written file is no stray: the guard owns generated names alone")
 		})

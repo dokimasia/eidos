@@ -30,7 +30,7 @@ const (
 	// way, so its output can never feed it and a stale generated
 	// file cannot change what it produces.
 	HandWritten Mode = iota
-	// Complete reads generated files and answers whatever resolved,
+	// Complete reads generated files and returns whatever resolved,
 	// tolerating type-checking errors. A dependency is read this
 	// way: the caller wants its names, and a dependency that does
 	// not compile must not stop the generator that would fix it.
@@ -88,7 +88,7 @@ func readable(name string, mode Mode) bool {
 // modRoot roots the importer that resolves the package's imports;
 // see [NewImporter]. A package importing nothing loads with an
 // empty modRoot. The type-checked package and the parsed files are
-// both answered, because a caller that walks declarations wants the
+// both returned, because a caller that walks declarations wants the
 // syntax and the caller that resolves names wants the types.
 //
 // pkgPath names the package under type-checking and appears in type
@@ -109,7 +109,7 @@ func Load(
 	conf := types.Config{Importer: imp}
 	if mode == Complete {
 		// Collect errors instead of stopping at the first, so a
-		// dependency that does not compile still answers its names.
+		// dependency that does not compile still returns its names.
 		conf.Error = func(error) {}
 	}
 	pkg, err := conf.Check(pkgPath, fset, files, nil)

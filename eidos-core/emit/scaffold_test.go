@@ -49,7 +49,7 @@ func TestScaffold(t *testing.T) {
 			assert.Equal(t, emit.ExprName.String(), "name", "the local spelling")
 			assert.Equal(t, emit.ExprCall.String(), "call", "the application")
 			assert.Equal(t, emit.ExprKind(9).String(), "9",
-				"a kind nothing declares answers its number")
+				"a kind nothing declares returns its number")
 		})
 
 		t.Run("forms spell their names", func(t *testing.T) {
@@ -102,7 +102,7 @@ func TestScaffold(t *testing.T) {
 			assert.NoError(t, err, "the guard encodes")
 			var decoded emit.Stmt
 			assert.NoError(t, json.Unmarshal(first, &decoded), "and decodes")
-			assert.Equal(t, decoded, guard, "the round trip answers the value")
+			assert.Equal(t, decoded, guard, "the round trip returns the value")
 		})
 	})
 }

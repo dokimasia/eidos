@@ -19,7 +19,7 @@ const moduleDirective = "module"
 
 // ModuleRoot walks up from dir to the directory holding go.mod.
 //
-// It answers an absolute path, so a caller may join relative
+// It returns an absolute path, so a caller may join relative
 // package directories onto it. Reaching the filesystem root without
 // finding go.mod is an error naming the directory the walk started
 // from.

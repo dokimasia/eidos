@@ -23,7 +23,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// kitSyntax answers the comment forms a fixture language declares.
+// kitSyntax returns the comment forms a fixture language declares.
 func kitSyntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{Line: []string{"//"}}
 }
@@ -48,7 +48,7 @@ func kitCallables() map[symbol.Kind]string {
 	}
 }
 
-// kitFuncs answers the fixture's shared template vocabulary.
+// kitFuncs returns the fixture's shared template vocabulary.
 func kitFuncs() template.FuncMap {
 	return template.FuncMap{"up": strings.ToUpper}
 }
@@ -79,8 +79,8 @@ func kitImports(set *render.ImportSet) string {
 // kitFinalise is the pass-through fixture formatter.
 func kitFinalise(src []byte) ([]byte, error) { return src, nil }
 
-// kitLanguage answers the same language as values, for the floor
-// the kit's Build must lower to.
+// kitLanguage returns the same language as values, for the
+// hand-built pass the kit's Build must lower to.
 func kitLanguage() render.Language {
 	kinds := kitStructs()
 	maps.Copy(kinds, kitCallables())
@@ -91,7 +91,7 @@ func kitLanguage() render.Language {
 	}
 }
 
-// kitBackend answers the full fixture declaration, ready to Build
+// kitBackend returns the full fixture declaration, ready to Build
 // or to break one piece of.
 func kitBackend(name plugin.ID, target plugin.Target) *eidos.BackendBuilder {
 	return eidos.NewBackend(name, target, kitSyntax()).
@@ -105,7 +105,7 @@ func kitBackend(name plugin.ID, target plugin.Target) *eidos.BackendBuilder {
 		Finalise(kitFinalise)
 }
 
-// kitUnit answers one flushed plan unit holding a struct and a
+// kitUnit returns one flushed plan unit holding a struct and a
 // function whose body scaffolds a return.
 func kitUnit() plugin.Unit {
 	f := &emit.Function{
@@ -125,7 +125,7 @@ func kitUnit() plugin.Unit {
 	}
 }
 
-// kitRender renders the fixture store through b's renderer seat
+// kitRender renders the fixture store through b's renderer role
 // and asserts the pass ran clean.
 func kitRender(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
 	tb.Helper()
@@ -133,7 +133,7 @@ func kitRender(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
 	r, held := b.(plugin.Renderer)
 	assert.True(tb, held, "a kit backend renders")
 	e := plugin.NewEmit()
-	assert.NoError(tb, e.Add(kitUnit()), "the fixture unit lands")
+	assert.NoError(tb, e.Add(kitUnit()), "the fixture unit arrives")
 	sink := diag.NewSink()
 	files, err := r.Render(&plugin.RenderContext{
 		Emit: e, Sink: sink, Plugin: "printer",
@@ -146,21 +146,21 @@ func kitRender(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
 
 // The backend kit is the second builder on the root package: the
 // declaration is data, Build lowers it to the render pass, and
-// the answered value carries every seat the plan validates.
+// the returned value carries every role the plan validates.
 func TestBackendBuilder(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Build", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the backend, renderer and syntax seats", func(t *testing.T) {
+		t.Run("returns the backend, renderer and syntax roles", func(t *testing.T) {
 			t.Parallel()
 
 			b := kitBackend("printer", "stub").Build()
 			assert.Equal(t, b.Name(), "printer", "the name is the identity")
-			assert.Equal(t, b.Target(), "stub", "the target rides the declaration")
+			assert.Equal(t, b.Target(), "stub", "the target is carried as declared")
 			_, renders := b.(plugin.Renderer)
-			assert.True(t, renders, "the kit backend holds the renderer seat")
+			assert.True(t, renders, "the kit backend holds the renderer role")
 			carrier, held := b.(interface{ Syntax() plugin.CommentSyntax })
 			assert.True(t, held,
 				"the comment syntax is carried for the output contract")
@@ -184,14 +184,14 @@ func TestBackendBuilder(t *testing.T) {
 				"the declared skeleton, vocabulary, kinds and scaffold all spell")
 
 			pass, err := render.New("printer", kitLanguage())
-			assert.NoError(t, err, "the same language composes at the floor")
+			assert.NoError(t, err, "the same language composes by hand")
 			e := plugin.NewEmit()
-			assert.NoError(t, e.Add(kitUnit()), "the fixture unit lands")
-			floor, err := pass.Render(&plugin.RenderContext{
+			assert.NoError(t, e.Add(kitUnit()), "the fixture unit arrives")
+			direct, err := pass.Render(&plugin.RenderContext{
 				Emit: e, Sink: diag.NewSink(), Plugin: "printer",
 			})
-			assert.NoError(t, err, "the floor pass runs whole")
-			assert.Equal(t, first, floor, "the kit is spelling, not semantics")
+			assert.NoError(t, err, "the hand-built pass runs whole")
+			assert.Equal(t, first, direct, "the kit is spelling, not semantics")
 		})
 
 		t.Run("panics on a declaration defect", func(t *testing.T) {
@@ -234,12 +234,12 @@ func TestBackendBuilder(t *testing.T) {
 				t.Run(tt.name, func(t *testing.T) {
 					t.Parallel()
 					assert.Panics(t, tt.build,
-						"a wrong declaration fires on the first Build in any test")
+						"a wrong declaration panics on the first Build in any test")
 				})
 			}
 		})
 
-		t.Run("panics with every kit defect in one bill", func(t *testing.T) {
+		t.Run("panics with every kit defect in one message", func(t *testing.T) {
 			t.Parallel()
 
 			recovered := assert.Panics(t, func() {
@@ -253,7 +253,7 @@ func TestBackendBuilder(t *testing.T) {
 			assert.Contains(t, text, "helper twice", "the helper defect is named")
 		})
 
-		t.Run("panics with the language's whole bill", func(t *testing.T) {
+		t.Run("panics with every language fault at once", func(t *testing.T) {
 			t.Parallel()
 
 			recovered := assert.Panics(t, func() {
@@ -264,7 +264,7 @@ func TestBackendBuilder(t *testing.T) {
 				"kinds", "filenames", "scaffolding", "import block", "formatter",
 			} {
 				assert.True(t, strings.Contains(text, gap),
-					"the bill names every gap, "+gap+" included")
+					"the message names every gap, "+gap+" included")
 			}
 		})
 	})

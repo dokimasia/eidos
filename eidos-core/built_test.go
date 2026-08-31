@@ -14,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// stubTree answers a one-template tree for template declarations.
+// stubTree returns a one-template tree for template declarations.
 func stubTree() fstest.MapFS {
 	return fstest.MapFS{
 		"body.tmpl": &fstest.MapFile{Data: []byte("ok")},
@@ -27,7 +27,7 @@ func stubTree() fstest.MapFS {
 func TestBuilt(t *testing.T) {
 	t.Parallel()
 
-	t.Run("answers the declared providers", func(t *testing.T) {
+	t.Run("returns the declared providers", func(t *testing.T) {
 		t.Parallel()
 
 		out := plugin.Output{Per: plugin.PerPlan, Word: "registry"}
@@ -43,32 +43,32 @@ func TestBuilt(t *testing.T) {
 			Build()
 
 		outputs, ok := p.(plugin.OutputProvider)
-		assert.True(t, ok, "declared outputs answer")
+		assert.True(t, ok, "the declared outputs are returned")
 		assert.Equal(t, outputs.Outputs(), []plugin.Output{out},
 			"as declared, in declaration order")
 
 		caps, ok := p.(plugin.CapabilityProvider)
-		assert.True(t, ok, "capabilities answer")
+		assert.True(t, ok, "the capabilities are returned")
 		assert.Equal(t, caps.Priority(plugin.RoleGenerator), 7,
 			"the declared role carries its priority")
 		assert.Equal(t, caps.Priority(plugin.RoleAnnotator), 0,
-			"an undeclared role answers the zero priority")
+			"an undeclared role returns the zero priority")
 		assert.Equal(t, caps.Provides(), []plugin.Capability{"registry"},
-			"provided labels answer")
+			"the provided labels are returned")
 		assert.Equal(t, caps.Requires(), []plugin.Capability{"classified"},
-			"required labels answer")
+			"the required labels are returned")
 
 		versioned, ok := p.(plugin.Versioned)
-		assert.True(t, ok, "the version answers")
+		assert.True(t, ok, "the version returns")
 		assert.Equal(t, versioned.Version(), "1.2.0", "as declared")
 
 		options, ok := p.(plugin.OptionsProvider)
-		assert.True(t, ok, "the options struct answers")
+		assert.True(t, ok, "the options struct returns")
 		assert.True(t, options.Options() == any(opts),
 			"the same pointer the plugin constructed, defaults intact")
 	})
 
-	t.Run("answers the declared template tree", func(t *testing.T) {
+	t.Run("returns the declared template tree", func(t *testing.T) {
 		t.Parallel()
 
 		p := eidos.NewPlugin("planner").
@@ -77,15 +77,15 @@ func TestBuilt(t *testing.T) {
 			Build()
 
 		tp, ok := p.(plugin.TemplateProvider)
-		assert.True(t, ok, "the built value answers the provider")
+		assert.True(t, ok, "the built value returns the provider")
 		tree, held := tp.Templates("stub")
-		assert.True(t, held, "the declared target answers its tree")
+		assert.True(t, held, "the declared target returns its tree")
 		src, err := fs.ReadFile(tree, "body.tmpl")
-		assert.NoError(t, err, "the answered tree is readable")
+		assert.NoError(t, err, "the returned tree is readable")
 		assert.Equal(t, string(src), "ok", "same tree, same bytes")
 
 		_, held = tp.Templates("other")
-		assert.False(t, held, "an undeclared target answers absent")
+		assert.False(t, held, "an undeclared target returns absent")
 		assert.True(t, tp.TemplateFuncs("stub") == nil,
 			"the facade carries no helper declaration")
 		assert.True(t, tp.Overrides() == nil,

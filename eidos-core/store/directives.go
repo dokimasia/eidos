@@ -28,7 +28,7 @@ type attachments struct {
 // It is safe to call concurrently, refused after [Graph.Freeze]
 // under the frozen write code, and refuses a zero subject and an
 // empty attachment as the defects they are. The instances sort by
-// position at the seal, so two concurrent attachments answer one
+// position at the seal, so two concurrent attachments produce one
 // order.
 func (g *Graph) AttachDirectives(subject symbol.Identity, ds []directive.Raw) error {
 	if subject.IsZero() {
@@ -60,12 +60,12 @@ func (g *Graph) AttachDirectives(subject symbol.Identity, ds []directive.Raw) er
 
 // ByDirective enumerates the declarations carrying a spelling,
 // untracked, in identity order — the same yield [Graph.ByKind]
-// answers, because every indexed subject is a held declaration:
+// returns, because every indexed subject is a held declaration:
 // one that is not fails validation as dangling. The index builds
 // at [Graph.Freeze] in the same pass as the kind index and is
 // keyed by the name as written: the store holds no registry, so
 // the dispatcher, which does, queries each spelling a schema
-// answers to.
+// recognises.
 func (g *Graph) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
 		for _, decl := range g.byDirective[n] {
@@ -76,14 +76,14 @@ func (g *Graph) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 	}
 }
 
-// DirectivesOf answers a subject's raw instances, untracked, in
+// DirectivesOf returns a subject's raw instances, untracked, in
 // position order, and nothing before [Graph.Freeze]: the order is
-// fixed at the seal, so an earlier read would answer a partial,
+// fixed at the seal, so an earlier read would return a partial,
 // unordered result. It is the validator's read. No tracked
-// equivalent exists: a plugin never reads a stranger's
-// annotations, so the reader deliberately cannot answer them.
+// equivalent exists: a plugin never reads another plugin's
+// annotations, so the reader deliberately cannot return them.
 //
-// The answered slice is the graph's own storage; do not mutate it.
+// The returned slice is the graph's own storage; do not mutate it.
 func (g *Graph) DirectivesOf(id symbol.Identity) []directive.Raw {
 	return g.directives[id]
 }

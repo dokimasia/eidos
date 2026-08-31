@@ -21,11 +21,11 @@ func TestGraph(t *testing.T) {
 	t.Run("Frozen", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers a sealed graph", func(t *testing.T) {
+		t.Run("returns a sealed graph", func(t *testing.T) {
 			t.Parallel()
 
 			assert.True(t, coretest.Frozen(t).Frozen(),
-				"the fixture graph arrives sealed, or every read would answer nothing")
+				"the fixture graph arrives sealed, or every read would return nothing")
 		})
 
 		t.Run("holds the packages it was given", func(t *testing.T) {
@@ -42,17 +42,17 @@ func TestGraph(t *testing.T) {
 	t.Run("Reading", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers a reader over the packages it was given", func(t *testing.T) {
+		t.Run("returns a reader over the packages it was given", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
 			r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
 
 			_, held := r.Lookup(decl.Identity())
-			assert.True(t, held, "the fixture reader answers what it was given")
+			assert.True(t, held, "the fixture reader returns what it was given")
 		})
 
-		t.Run("answers a read set holding nothing yet", func(t *testing.T) {
+		t.Run("returns a read set holding nothing yet", func(t *testing.T) {
 			t.Parallel()
 
 			_, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath))

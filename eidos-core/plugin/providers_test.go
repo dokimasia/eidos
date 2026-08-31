@@ -34,7 +34,7 @@ func (declared) Options() any                  { return nil }
 func (declared) Version() string               { return "1.0.0" }
 
 // The providers are how the composition learns what a plugin
-// declared, so their shapes are contract: each answers data, and a
+// declared, so their shapes are contract: each returns data, and a
 // plugin declares by satisfying the interface.
 func TestProviders(t *testing.T) {
 	t.Parallel()
@@ -55,11 +55,11 @@ func TestProviders(t *testing.T) {
 		caps, ok := p.(plugin.CapabilityProvider)
 		assert.True(t, ok, "the capability surface asserts")
 		assert.Equal(t, caps.Priority(plugin.RoleGenerator), int(plugin.RoleGenerator),
-			"the priority answers per role seat")
+			"the priority is read per role")
 
 		versioned, ok := p.(plugin.Versioned)
 		assert.True(t, ok, "the version surface asserts")
-		assert.Equal(t, versioned.Version(), "1.0.0", "answering what was declared")
+		assert.Equal(t, versioned.Version(), "1.0.0", "returning what was declared")
 	})
 
 	t.Run("a bare plugin satisfies none of them", func(t *testing.T) {

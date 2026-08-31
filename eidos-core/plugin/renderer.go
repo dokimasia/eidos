@@ -33,7 +33,7 @@ type RenderedFile struct {
 //
 // A problem with one file attaches to the context's sink and the
 // pass continues with the remaining files; a returned error is
-// fatal to the pass. Two calls over one store answer the same
+// fatal to the pass. Two calls over one store return the same
 // bytes, which the conformance suite holds every renderer to.
 type Renderer interface {
 	Render(ctx *RenderContext) ([]RenderedFile, error)

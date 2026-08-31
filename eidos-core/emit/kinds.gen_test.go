@@ -13,7 +13,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Every kind answers the vocabulary's interfaces. The assertions
+// Every kind satisfies the vocabulary's interfaces. The assertions
 // fail to compile rather than to run, which is where an unsatisfied
 // interface belongs.
 var (
@@ -91,7 +91,7 @@ func TestKinds(t *testing.T) {
 			t.Run(tt.want.String(), func(t *testing.T) {
 				t.Parallel()
 				assert.Equal(t, tt.subject.Kind(), tt.want,
-					"every kind answers its own constant")
+					"every kind returns its own constant")
 			})
 		}
 	})
@@ -99,173 +99,173 @@ func TestKinds(t *testing.T) {
 	t.Run("Position", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers where the declaration was written", func(t *testing.T) {
+		t.Run("returns where the declaration was written", func(t *testing.T) {
 			t.Parallel()
 
 			at := position.Pos{File: "svc/store.go", Line: 41, Col: 2}
 			_ = at
 			assert.True(t, (&Function{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Method{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Param{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Return{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Package{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&File{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Import{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Export{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Binding{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Enum{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&EnumVariant{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Sum{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&SumVariant{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Field{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Variable{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Constant{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Struct{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Interface{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Alias{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&TypeRef{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&TypeParam{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Constraint{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Embed{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 		})
 	})
 
 	t.Run("Docs", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the declaration's documentation", func(t *testing.T) {
+		t.Run("returns the declaration's documentation", func(t *testing.T) {
 			t.Parallel()
 
 			lines := []string{"one", "two"}
 			_ = lines
 			assert.Length(t, (&Function{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Method{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Nil(t, (&Param{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&Return{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Length(t, (&Package{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&File{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Nil(t, (&Import{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&Export{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&Binding{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Length(t, (&Enum{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&EnumVariant{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Sum{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&SumVariant{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Field{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Variable{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Constant{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Struct{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Interface{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Alias{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 			assert.Nil(t, (&TypeRef{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&TypeParam{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&Constraint{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&Embed{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 		})
 	})
 
 	t.Run("TypeRef", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers nil when the source states no type", func(t *testing.T) {
+		t.Run("returns nil when the source states no type", func(t *testing.T) {
 			t.Parallel()
 			assert.Nil(t, (&Param{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&Return{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&Field{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&Variable{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&Constant{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 			assert.Nil(t, (&TypeParam{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 		})
 
-		t.Run("answers the declared type reference", func(t *testing.T) {
+		t.Run("returns the declared type reference", func(t *testing.T) {
 			t.Parallel()
 			assert.NotNil(t, (&Param{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&Return{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&Field{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&Variable{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&Constant{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 			assert.NotNil(t, (&TypeParam{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 		})
 	})
 
 	t.Run("Members", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("a member list the kind does not carry answers nil", func(t *testing.T) {
+		t.Run("a member list the kind does not carry returns nil", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Nil(t, (&Enum{}).EmbedList(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 
 			assert.Nil(t, (&Sum{}).EmbedList(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 
 			assert.Nil(t, (&SumVariant{}).MethodList(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 
 			assert.Nil(t, (&SumVariant{}).EmbedList(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 		})
 
-		t.Run("a member list the kind carries answers its members", func(t *testing.T) {
+		t.Run("a member list the kind carries returns its members", func(t *testing.T) {
 			t.Parallel()
 
 			{
@@ -274,7 +274,7 @@ func TestKinds(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -283,7 +283,7 @@ func TestKinds(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				assert.NotEmpty(t, subject.MethodList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -292,7 +292,7 @@ func TestKinds(t *testing.T) {
 				subject.VariantsSlot().Append(&SumVariant{})
 				subject.MethodsSlot().Append(&Method{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -301,14 +301,14 @@ func TestKinds(t *testing.T) {
 				subject.VariantsSlot().Append(&SumVariant{})
 				subject.MethodsSlot().Append(&Method{})
 				assert.NotEmpty(t, subject.MethodList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
 				subject := &SumVariant{}
 				subject.FieldsSlot().Append(&Field{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -321,7 +321,7 @@ func TestKinds(t *testing.T) {
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -334,7 +334,7 @@ func TestKinds(t *testing.T) {
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -347,7 +347,7 @@ func TestKinds(t *testing.T) {
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
 				assert.NotEmpty(t, subject.EmbedList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -359,7 +359,7 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -371,7 +371,7 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 
 			{
@@ -383,7 +383,7 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				assert.NotEmpty(t, subject.EmbedList(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 		})
 	})

@@ -16,7 +16,7 @@ import (
 // plugins ran in. Manual is reserved for consumer tooling; nothing
 // in a normal run writes at it.
 //
-// The zero value is [AuthorityPlugin]: a claim that answered no
+// The zero value is [AuthorityPlugin]: a claim that returned no
 // authority speaks with the least.
 type Authority uint8
 

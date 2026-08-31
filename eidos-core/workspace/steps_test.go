@@ -15,7 +15,7 @@ import (
 )
 
 // runOrdering composes the annotators over the one-struct fixture
-// and runs, so each seat's handler fires exactly once, in schedule
+// and runs, so each role's handler runs exactly once, in schedule
 // order.
 func runOrdering(t *testing.T, anns ...plugin.Annotator) {
 	t.Helper()
@@ -31,13 +31,13 @@ func runOrdering(t *testing.T, anns ...plugin.Annotator) {
 	assert.NoError(t, err, "the ordering fixture runs")
 }
 
-// The ladder's output is the schedule, and the schedule is
+// The steps' output is the schedule, and the schedule is
 // observable twice over: the order handlers run in, and the bucket
 // number every claim carries.
-func TestLadder(t *testing.T) {
+func TestSteps(t *testing.T) {
 	t.Parallel()
 
-	t.Run("priority places the seats", func(t *testing.T) {
+	t.Run("priority places the roles", func(t *testing.T) {
 		t.Parallel()
 
 		var calls []plugin.ID
@@ -82,7 +82,7 @@ func TestLadder(t *testing.T) {
 				return err
 			}
 			k, err := meta.Register[string](r, meta.KeySpec{
-				Name: "order.rank", Doc: "which seat stamped first",
+				Name: "order.rank", Doc: "which role stamped first",
 			})
 			rank = k
 			return err
@@ -128,7 +128,7 @@ func TestLadder(t *testing.T) {
 					calls = append(calls, name)
 					return nil
 				})).Build().(plugin.Generator)
-			assert.True(t, held, "an emitter rule lowers to the generator seat")
+			assert.True(t, held, "an emitter rule lowers to the generator role")
 			return p
 		}
 		w, err := workspace.New().

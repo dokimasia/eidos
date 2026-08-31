@@ -6,7 +6,7 @@
 // [Pos] is the value every symbol carries: a workspace-relative,
 // slash-separated file path on every platform, with 1-based line and
 // column. The zero [Pos] means "no source position", which is what
-// synthesized emit values answer.
+// synthesized emit values carry.
 //
 // # Dependency position
 //

@@ -67,7 +67,7 @@ type Unit struct {
 	Pkg symbol.Identity
 	// Decls holds the emit declarations, ordered by origin identity,
 	// then instance order under a repeatable directive, then
-	// insertion, so contributions land in canonical subject order
+	// insertion, so contributions arrive in canonical subject order
 	// and never in dispatch order.
 	Decls []symbol.Symbol
 	// Origins holds the node identities whose matches contributed,
@@ -85,11 +85,11 @@ type unitKey struct {
 
 // Emit holds one plan's accumulated units, plus a per-kind index
 // over their declarations that is maintained at [Emit.Add]: each
-// unit's tree is walked once when it lands, so an emit-triggered
+// unit's tree is walked once when it arrives, so an emit-triggered
 // rule enumerates its matches rather than the emit graph.
 //
 // An Emit is not safe for concurrent use: annotators and generators
-// run sequentially, and a unit landing mid-enumeration would race
+// run sequentially, and a unit arriving mid-enumeration would race
 // the index it is being read from.
 type Emit struct {
 	units []Unit
@@ -99,11 +99,11 @@ type Emit struct {
 	// into units.
 	byKind map[symbol.Kind]map[int][]symbol.Symbol
 	// order caches the unit indexes in Units order; nil after a
-	// unit landed since it was built.
+	// unit arrived since it was built.
 	order []int
 }
 
-// NewEmit answers an emit store holding nothing.
+// NewEmit returns an emit store holding nothing.
 func NewEmit() *Emit {
 	return &Emit{
 		held:   map[unitKey]struct{}{},
@@ -162,8 +162,8 @@ func (e *Emit) Add(u Unit) error {
 }
 
 // Units enumerates every unit: by plugin, then cardinality, then
-// key, then tag. The order is total, so two runs answer alike
-// whatever order the units landed in.
+// key, then tag. The order is total, so two runs agree
+// whatever order the units arrived in.
 func (e *Emit) Units() iter.Seq[Unit] {
 	return func(yield func(Unit) bool) {
 		for _, at := range e.sorted() {
@@ -177,10 +177,10 @@ func (e *Emit) Units() iter.Seq[Unit] {
 // ByKind enumerates the emit declarations of one kind across every
 // unit, in [Emit.Units] order, each unit's tree walked depth first.
 //
-// Only values carrying a nonzero origin answer, because every
+// Only values carrying a nonzero origin are returned, because every
 // emit-trigger mechanism resolves through the origin: predicates,
 // skip and reporting alike. A value whose producer left the origin
-// zero still lands in its unit; it is just not a subject.
+// zero still arrives in its unit; it is just not a subject.
 func (e *Emit) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
 		per := e.byKind[k]
@@ -197,8 +197,8 @@ func (e *Emit) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	}
 }
 
-// sorted answers the unit indexes in Units order, rebuilding the
-// cache after a unit landed.
+// sorted returns the unit indexes in Units order, rebuilding the
+// cache after a unit arrived.
 func (e *Emit) sorted() []int {
 	if e.order != nil {
 		return e.order

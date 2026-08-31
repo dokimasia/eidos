@@ -10,7 +10,7 @@ import (
 	"go.dokimi.dev/eidos/core/node"
 )
 
-// Mirror answers an emit method mirroring a node method's
+// Mirror returns an emit method mirroring a node method's
 // signature, type spellings verbatim, origin set. The receiver is
 // named against the host type's name and the parameter names: a
 // method declaring Put(s Session) must not bind its receiver to s,

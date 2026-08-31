@@ -4,8 +4,8 @@
 // Package meta carries typed facts between plugins.
 //
 // Metadata is the only channel between plugins: a fact that has to
-// travel goes on the graph, never through an import. [Key] is the
-// typed handle a registration answers, [Registry] refuses a key or
+// move between plugins goes on the graph, never through an import. [Key] is the
+// typed handle a registration returns, [Registry] refuses a key or
 // a namespace claimed twice naming both claimants, and [Facts]
 // holds the run's stamped facts, one bag per subject.
 //
@@ -22,11 +22,11 @@
 // A drop is a claim of absence at directive authority: it outranks
 // a plugin stamp whenever the stamp arrives, and loses to a manual
 // write. [Facts.DropGroup] covers every member of a fact group,
-// stamps that land after it included.
+// stamps that arrive after it included.
 //
 // # Reading
 //
-// [Get] answers the winning value untracked, which is the kernel's
+// [Get] returns the winning value untracked, which is the kernel's
 // own path. [Fact] records the read at (subject, key) into a
 // [Recorder] — a miss records too — and is the read every plugin
 // makes. [Facts.ByKey] enumerates the subjects a key presently

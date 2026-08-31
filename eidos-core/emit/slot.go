@@ -30,13 +30,13 @@ type Slot[T any] struct {
 // Append adds values to the end of the slot.
 func (s *Slot[T]) Append(values ...T) { s.items = append(s.items, values...) }
 
-// Items answers the slot's contents in insertion order.
+// Items returns the slot's contents in insertion order.
 //
 // The result aliases the slot's storage: read it, range over it,
 // and do not retain it across a later Append.
 func (s *Slot[T]) Items() []T { return s.items }
 
-// Len answers how many values the slot holds.
+// Len returns how many values the slot holds.
 func (s *Slot[T]) Len() int { return len(s.items) }
 
 // IsZero reports whether the slot holds nothing, which is what lets

@@ -37,7 +37,7 @@ type Plan struct {
 }
 
 // Builder collects a composition. Every method appends or sets
-// data; nothing validates until [Builder.Build] climbs the ladder,
+// data; nothing validates until [Builder.Build] runs the steps,
 // which is what lets one error carry every fault.
 type Builder struct {
 	annotators []plugin.Annotator
@@ -47,7 +47,7 @@ type Builder struct {
 	config     Config
 }
 
-// New answers an empty builder.
+// New returns an empty builder.
 func New() *Builder {
 	return &Builder{}
 }
@@ -85,10 +85,10 @@ func (b *Builder) Config(c Config) *Builder {
 	return b
 }
 
-// Build climbs the ladder and answers the immutable workspace, or
+// Build runs every step and returns the immutable workspace, or
 // one error joining every fault it found. Each step runs even when
 // an earlier one found faults, except where a fault empties a
-// following check for that one item, so the bill is whole.
+// following check for that one item, so the fault list is complete.
 func (b *Builder) Build() (*Workspace, error) {
 	roster, byName, faults := b.assemble()
 	keys, dirs, targets, rerr := b.register(roster)

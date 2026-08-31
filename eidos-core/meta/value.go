@@ -9,7 +9,7 @@ import "slices"
 // are plain comparable values, and []string is the one that has to
 // be copied at the boundary and compared element-wise.
 
-// cloneValue answers a value safe to hold or hand out: a slice is
+// cloneValue returns a value safe to hold or hand out: a slice is
 // copied, everything else is a value already.
 func cloneValue(v any) any {
 	if list, isList := v.([]string); isList {

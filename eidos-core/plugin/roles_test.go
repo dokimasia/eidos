@@ -23,7 +23,7 @@ func (a *annotator) Annotate(ctx *plugin.AnnotatorContext) error {
 	return nil
 }
 
-// generator mirrors it for the generate seat.
+// generator mirrors it for the generate role.
 type generator struct {
 	named
 	got *plugin.GeneratorContext

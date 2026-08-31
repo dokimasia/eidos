@@ -23,7 +23,7 @@ func storeOnly(pkg symbol.Identity) bool {
 	return pkg.Package == coretest.StorePath
 }
 
-// twoPackages answers a frozen graph holding one struct per fixture
+// twoPackages returns a frozen graph holding one struct per fixture
 // package, with the store struct carrying one raw stub directive.
 func twoPackages(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 	tb.Helper()
@@ -43,7 +43,7 @@ func twoPackages(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 	return g, inStore, inCache
 }
 
-// index answers a routing surface over the fixture graph, no facts
+// index returns a routing surface over the fixture graph, no facts
 // stamped and no directives validated unless the case adds them.
 func index(
 	tb assert.TB, g *store.Graph,
@@ -72,7 +72,7 @@ func names(tb assert.TB, seq func(func(symbol.Symbol) bool)) []string {
 // The index is the dispatcher's routing surface: untracked and
 // scope-filtered, holding the validated directive table and the skip
 // table, and minting the tracked readers handlers hold. Its filters
-// are the visibility law, so every one is contract.
+// are the visibility rule, so every one is contract.
 func TestIndex(t *testing.T) {
 	t.Parallel()
 
@@ -86,7 +86,7 @@ func TestIndex(t *testing.T) {
 				store.New(), meta.NewFacts(meta.NewRegistry()), nil, nil,
 			)
 			assert.HasError(t, err,
-				"routing over a moving graph would answer partial results")
+				"routing over a moving graph would return partial results")
 		})
 
 		t.Run("refuses a missing graph", func(t *testing.T) {
@@ -108,7 +108,7 @@ func TestIndex(t *testing.T) {
 	t.Run("ByKind", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers every declaration of one kind", func(t *testing.T) {
+		t.Run("returns every declaration of one kind", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := twoPackages(t)
@@ -123,7 +123,7 @@ func TestIndex(t *testing.T) {
 			g, _, _ := twoPackages(t)
 			got := names(t, index(t, g, nil, storeOnly).ByKind(symbol.KindStruct))
 			assert.Equal(t, got, []string{"Store"},
-				"a declaration outside scope is not answered")
+				"a declaration outside scope is not returned")
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
@@ -142,21 +142,21 @@ func TestIndex(t *testing.T) {
 	t.Run("ByDirective", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the carriers under scope", func(t *testing.T) {
+		t.Run("returns the carriers under scope", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := twoPackages(t)
 			ix := index(t, g, nil, storeOnly)
 			got := names(t, ix.ByDirective(directive.Name("stub")))
 			assert.Equal(t, got, []string{"Store"},
-				"a carrier outside scope is not answered")
+				"a carrier outside scope is not returned")
 		})
 	})
 
 	t.Run("ByFactKey", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the stamped subjects under scope", func(t *testing.T) {
+		t.Run("returns the stamped subjects under scope", func(t *testing.T) {
 			t.Parallel()
 
 			g, inStore, inCache := twoPackages(t)
@@ -183,14 +183,14 @@ func TestIndex(t *testing.T) {
 				got = append(got, id.Name)
 			}
 			assert.Equal(t, got, []string{"Store"},
-				"a stamped subject outside scope is not answered")
+				"a stamped subject outside scope is not returned")
 		})
 	})
 
 	t.Run("Lookup", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers a held declaration", func(t *testing.T) {
+		t.Run("returns a held declaration", func(t *testing.T) {
 			t.Parallel()
 
 			g, inStore, _ := twoPackages(t)
@@ -199,20 +199,20 @@ func TestIndex(t *testing.T) {
 			assert.True(t, got == symbol.Symbol(inStore), "to the very declaration")
 		})
 
-		t.Run("answers false outside scope", func(t *testing.T) {
+		t.Run("returns false outside scope", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, inCache := twoPackages(t)
 			_, held := index(t, g, nil, storeOnly).Lookup(inCache.ID)
 			assert.False(t, held,
-				"a declaration outside scope is neither answered nor reachable")
+				"a declaration outside scope is neither returned nor reachable")
 		})
 	})
 
 	t.Run("DirectivesOf", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the validated instances as handed", func(t *testing.T) {
+		t.Run("returns the validated instances as handed", func(t *testing.T) {
 			t.Parallel()
 
 			g, inStore, _ := twoPackages(t)
@@ -223,7 +223,7 @@ func TestIndex(t *testing.T) {
 			ix := index(t, g,
 				map[symbol.Identity][]directive.Directive{inStore.ID: want}, nil)
 			assert.Equal(t, ix.DirectivesOf(inStore.ID), want,
-				"the gate reads the table validation answered, position order intact")
+				"the gate reads the table validation returned, position order intact")
 		})
 	})
 
@@ -285,7 +285,7 @@ func TestIndex(t *testing.T) {
 			assert.NoError(t, err, "the handle mints over a frozen graph")
 
 			_, held := r.Lookup(inStore.ID)
-			assert.True(t, held, "the reader answers inside the scope")
+			assert.True(t, held, "the reader returns inside the scope")
 			_, held = r.Lookup(inCache.ID)
 			assert.False(t, held, "and refuses outside it")
 			assert.True(t, reads.Len() > 0,
@@ -396,10 +396,10 @@ func BenchmarkIndex(b *testing.B) {
 		miss := coretest.Struct(one, "Decl0_1").ID
 		for b.Loop() {
 			if !ix.Skipped(hit, "stubgen") {
-				b.Fatal("the skipped subject must answer true")
+				b.Fatal("the skipped subject must return true")
 			}
 			if ix.Skipped(miss, "stubgen") {
-				b.Fatal("the clean subject must answer false")
+				b.Fatal("the clean subject must return false")
 			}
 		}
 	})

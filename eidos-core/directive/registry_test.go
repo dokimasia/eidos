@@ -11,7 +11,7 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 )
 
-// wellFormed answers a schema that passes registration, for cases
+// wellFormed returns a schema that passes registration, for cases
 // that vary one thing.
 func wellFormed(plugin string, name directive.Name) directive.Schema {
 	return directive.Schema{
@@ -24,7 +24,7 @@ func wellFormed(plugin string, name directive.Name) directive.Schema {
 	}
 }
 
-// sealed answers a registry holding schemas, sealed without faults.
+// sealed returns a registry holding schemas, sealed without faults.
 func sealed(tb assert.TB, schemas ...directive.Schema) *directive.Registry {
 	tb.Helper()
 
@@ -208,7 +208,7 @@ func TestRegistry(t *testing.T) {
 			r := directive.NewRegistry()
 			first := wellFormed("mockgen", "stub")
 			first.Doc = "the first claimant"
-			assert.NoError(t, r.Register(first), "the first registration lands")
+			assert.NoError(t, r.Register(first), "the first registration arrives")
 
 			second := wellFormed("mockgen", "stub")
 			second.Doc = "the second claimant"

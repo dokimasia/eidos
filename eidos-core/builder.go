@@ -55,7 +55,7 @@ func (b *Builder) Output(o plugin.Output) *Builder {
 	return b
 }
 
-// Priority places one of the plugin's role seats.
+// Priority sets one role's priority.
 func (b *Builder) Priority(r plugin.Role, p int) *Builder {
 	b.priority[r] = p
 	return b
@@ -84,7 +84,7 @@ func (b *Builder) Options(cfg any) *Builder {
 
 // Keys declares the registration the plugin performs at
 // composition: claim the namespace, register the keys, keep the
-// typed handles. The built value answers it through
+// typed handles. The built value returns it through
 // [plugin.KeyProvider]; repeated declarations run in order.
 func (b *Builder) Keys(register func(r *meta.Registry) error) *Builder {
 	b.keys = append(b.keys, register)
@@ -92,7 +92,7 @@ func (b *Builder) Keys(register func(r *meta.Registry) error) *Builder {
 }
 
 // Templates declares the plugin's template tree for one target;
-// repeatable, one tree per target. The built value answers it
+// repeatable, one tree per target. The built value returns it
 // through [plugin.TemplateProvider]: the tree a render pass
 // resolves this plugin's template references in.
 func (b *Builder) Templates(t plugin.Target, tree fs.FS) *Builder {
@@ -106,12 +106,12 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 	return b
 }
 
-// Build freezes the declaration and answers the lowered plugin.
+// Build freezes the declaration and returns the lowered plugin.
 //
 // The dynamic type implements the roles the rules imply and no
 // others: Stamper rules make an Annotator, Emitter rules a
 // Generator, a mixed set both. It also implements
-// [plugin.Subscribed] and the provider interfaces, which answer
+// [plugin.Subscribed] and the provider interfaces, which return
 // what was declared and empty where nothing was.
 //
 // Build panics on a declaration defect: an empty name, no rules, a
@@ -120,7 +120,7 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 // template tree, a directive name carried by two wrappers, a rule
 // gating on two directives, a gate wrapped around a graph rule, a
 // zero predicate. A wrong declaration is a bug in
-// the plugin's own constructor and fires on the first Build in any
+// the plugin's own constructor and panics on the first Build in any
 // test, before a run exists; composition faults stay collected
 // errors where the workspace composes.
 func (b *Builder) Build() plugin.Plugin {

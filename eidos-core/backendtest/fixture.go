@@ -14,9 +14,9 @@ import (
 )
 
 // origin is the identity the suite renders under. The context's
-// plugin is the origin findings carry, so a lawful renderer
+// plugin is the origin findings carry, so a valid renderer
 // reports everything back under it, which is what the attribution
-// law checks.
+// rule checks.
 const origin plugin.ID = "backendtest"
 
 // Fixture is a hand-built plan as the renderer sees it: the emit
@@ -41,7 +41,7 @@ type Fixture struct {
 
 // Setup builds the renderer under test with the emit fixture it
 // renders, fresh per call, the way the plugin suite's Setup does:
-// two calls answer two isolated worlds, which is what makes the
+// two calls build two isolated fixtures, which is what makes the
 // determinism check honest.
 type Setup func(tb assert.TB) (plugin.Renderer, *Fixture)
 

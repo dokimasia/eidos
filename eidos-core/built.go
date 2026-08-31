@@ -14,8 +14,8 @@ import (
 )
 
 // built is a lowered declaration: the data every provider surface
-// answers, and the rules the role methods dispatch. The role seats
-// live on the wrapper types, so a type assertion answers exactly
+// returns, and the rules the role methods dispatch. The role methods
+// live on the wrapper types, so a type assertion returns exactly
 // the roles the rules imply.
 type built struct {
 	name     plugin.ID
@@ -33,32 +33,32 @@ type built struct {
 	subs     []plugin.Subscription
 }
 
-// Name answers the plugin's one identity.
+// Name returns the plugin's one identity.
 func (b *built) Name() plugin.ID { return b.name }
 
-// Version answers the declared version, "" where none was.
+// Version returns the declared version, "" where none was.
 func (b *built) Version() string { return b.version }
 
-// Outputs answers the declared file families, in declaration order.
+// Outputs returns the declared file families, in declaration order.
 func (b *built) Outputs() []plugin.Output { return b.outputs }
 
-// Priority answers the declared priority for one role seat, zero
+// Priority returns the declared priority for one role role, zero
 // where none was declared.
 func (b *built) Priority(r plugin.Role) int { return b.priority[r] }
 
-// Provides answers the declared capability labels.
+// Provides returns the declared capability labels.
 func (b *built) Provides() []plugin.Capability { return b.provides }
 
-// Requires answers the required capability labels.
+// Requires returns the required capability labels.
 func (b *built) Requires() []plugin.Capability { return b.requires }
 
-// Options answers the declared options struct: the same pointer the
+// Options returns the declared options struct: the same pointer the
 // plugin constructed, defaults intact. Nil where none was declared.
 func (b *built) Options() any { return b.options }
 
 // Keys implements [plugin.KeyProvider]: the declared registrations
-// run in order and their faults join, so the composition reads the
-// whole bill.
+// run in order and their faults join, so the composition reads
+// every fault at once.
 func (b *built) Keys(r *meta.Registry) error {
 	var errs []error
 	for _, register := range b.keys {
@@ -86,11 +86,11 @@ func (*built) TemplateFuncs(plugin.Target) template.FuncMap { return nil }
 // replaces a shared vocabulary name.
 func (*built) Overrides() []string { return nil }
 
-// Directives answers the schemas the Directive wrappers carried,
+// Directives returns the schemas the Directive wrappers carried,
 // for registration at composition.
 func (b *built) Directives() []directive.Schema { return b.schemas }
 
-// Subscriptions answers the gate tuples as data: what every rule
+// Subscriptions returns the gate tuples as data: what every rule
 // watches, one record per gated key.
 func (b *built) Subscriptions() []plugin.Subscription { return b.subs }
 
@@ -128,7 +128,7 @@ func (b *builtGenerator) Generate(ctx *plugin.GeneratorContext) error {
 	return generate(b.built, ctx)
 }
 
-// builtDual is a lowered plugin holding both seats.
+// builtDual is a lowered plugin holding both roles.
 type builtDual struct{ *built }
 
 // Annotate implements [plugin.Annotator].

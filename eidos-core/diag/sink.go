@@ -21,8 +21,8 @@ import (
 // # Order
 //
 // [Sink.All] groups the findings by origin and keeps report order
-// within one origin, so two schedulings of one parallel run answer
-// alike however the origins interleaved. Ordering for output belongs
+// within one origin, so two schedulings of one parallel run agree
+// on it however the origins interleaved. Ordering for output belongs
 // to the run, which sorts by position.
 type Sink struct {
 	mu     sync.Mutex
@@ -30,7 +30,7 @@ type Sink struct {
 	failed bool
 }
 
-// NewSink answers a sink holding nothing.
+// NewSink returns a sink holding nothing.
 func NewSink() *Sink { return &Sink{} }
 
 // Report attaches one finding.
@@ -69,10 +69,10 @@ func (s *Sink) Failed() bool {
 	return s.failed
 }
 
-// All answers every finding, in the order the type documents.
+// All returns every finding, in the order the type documents.
 //
 // The findings are snapshotted when All is called, so an iteration
-// runs alongside further reports and answers what the sink held at
+// runs alongside further reports and returns what the sink held at
 // the call.
 func (s *Sink) All() iter.Seq[Diag] {
 	s.mu.Lock()

@@ -12,10 +12,10 @@
 //
 // Loading and annotating are different phases, and the difference is
 // enforced rather than documented. Before the seal the graph admits
-// packages and answers nothing: both indexes build at Freeze, where
+// packages and returns nothing: both indexes build at Freeze, where
 // they are free, because nothing may add a declaration afterwards.
 // After the seal a structural write is refused under [FrozenWrite]
-// and a read answers from the indexes.
+// and a read returns from the indexes.
 //
 // # Reading
 //
@@ -29,7 +29,7 @@
 //     the set, plus a per-identity edge for each declaration the
 //     caller actually reached while iterating.
 //
-// [Graph.ByKind], [Graph.Lookup] and [Graph.PackageOf] answer the
+// [Graph.ByKind], [Graph.Lookup] and [Graph.PackageOf] return the
 // same questions untracked. They are the kernel's own path, for
 // the dispatcher
 // deciding which rules a phase runs: dispatch is not a plugin's read
@@ -38,9 +38,9 @@
 //
 // # Failure semantics
 //
-// A condition a run can meet answers a [RefusedError], which carries the
+// A condition a run can meet returns a [RefusedError], which carries the
 // code a consumer scripts against. A condition only a defect
-// reaches, such as adding no package at all, answers a plain error.
+// reaches, such as adding no package at all, returns a plain error.
 // Nothing here panics.
 //
 // # Dependency position

@@ -14,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
-// Side says which model a field lands in.
+// Side says which model a field arrives in.
 //
 // The zero value is [SideNode], so a field whose tag lowering
 // refuses never silently reaches the emit model.
@@ -29,15 +29,15 @@ const (
 	SideBoth
 )
 
-// OnNode reports whether the field lands on the node model.
+// OnNode reports whether the field arrives on the node model.
 func (s Side) OnNode() bool { return s == SideNode || s == SideBoth }
 
-// OnEmit reports whether the field lands on the emit model.
+// OnEmit reports whether the field arrives on the emit model.
 func (s Side) OnEmit() bool { return s == SideEmit || s == SideBoth }
 
 // KindSpec is one declaration kind, lowered from its schema struct.
 //
-// Kinds answer in schema declaration order: files sort by name and
+// Kinds come back in schema declaration order: files sort by name and
 // declarations keep their order within a file. That order fixes the
 // generated Kind constants and every rendered switch, which is what
 // makes the same schema bytes produce the same output bytes.
@@ -83,7 +83,7 @@ type FieldSpec struct {
 	IsSymbol bool
 }
 
-// Lower parses and type-checks the schema in dir and answers its
+// Lower parses and type-checks the schema in dir and returns its
 // kinds.
 //
 // modRoot roots the importer that resolves the schema's imports; a

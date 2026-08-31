@@ -25,9 +25,9 @@ const (
 	FormVerbatim
 )
 
-// String answers the form's spelling. The lint check and render
+// String returns the form's spelling. The lint check and render
 // findings name forms, so a consumer matching on the spelling
-// matches on API. A form nothing declares answers its number
+// matches on API. A form nothing declares returns its number
 // rather than a name.
 func (f Form) String() string {
 	switch f {
@@ -60,7 +60,7 @@ type Body struct {
 	Epilogue Slot[Stmt] `json:"epilogue,omitzero"`
 	// Slots holds the owner's declared extension points, in
 	// declaration order, rendered between the standard pair. The
-	// elements are pointers because [Body.Declare] answers handles
+	// elements are pointers because [Body.Declare] returns handles
 	// into the list, and a following declaration must not move
 	// what an earlier caller already holds.
 	Slots []*NamedSlot `json:"slots,omitzero"`
@@ -69,7 +69,7 @@ type Body struct {
 	// default form, and [Body.Form] is the one question the render
 	// and the lint check ask. Stmts is scaffolding, Ref claims the
 	// body for a template in the emitting plugin's tree, and
-	// Verbatim is literal text: the sharp knife the lint check
+	// Verbatim is literal text: the one form the lint check
 	// cannot see into, which contributes no imports and composes
 	// with nothing.
 	Stmts    []Stmt       `json:"stmts,omitzero"`
@@ -83,8 +83,8 @@ type NamedSlot struct {
 	Slot Slot[Stmt] `json:"stmts,omitzero"`
 }
 
-// Declare answers the named slot, adding it in declaration order
-// on first use; declaring a name twice answers the existing slot.
+// Declare returns the named slot, adding it in declaration order
+// on first use; declaring a name twice returns the existing slot.
 // Declaring is the owner's act: a contributor looks a slot up
 // through [Body.Slot] instead.
 func (b *Body) Declare(name string) *Slot[Stmt] {
@@ -98,7 +98,7 @@ func (b *Body) Declare(name string) *Slot[Stmt] {
 	return &s.Slot
 }
 
-// Slot answers a declared slot and false for a name the owner
+// Slot returns a declared slot and false for a name the owner
 // never declared, so a contribution into an invented extension
 // point fails where it is made.
 func (b *Body) Slot(name string) (*Slot[Stmt], bool) {
@@ -110,12 +110,12 @@ func (b *Body) Slot(name string) (*Slot[Stmt], bool) {
 	return nil, false
 }
 
-// Form answers which content form the body holds, and an error
+// Form returns which content form the body holds, and an error
 // naming the forms where more than one is set: a body built with
 // two contents is a defect, and the render and the lint check both
 // ask this one question. The question is asked once per callable,
-// so the lawful path allocates nothing and only the defect pays
-// for its message.
+// so the valid path allocates nothing and only the defect allocates
+// its message.
 func (b *Body) Form() (Form, error) {
 	form, set := FormDefault, 0
 	if len(b.Stmts) > 0 {
@@ -142,7 +142,8 @@ func (b *Body) Form() (Form, error) {
 	}
 	return FormDefault, fmt.Errorf(
 		"emit: the body holds %s at once, and content is one form",
-		strings.Join(names, " and "))
+		strings.Join(names, " and "),
+	)
 }
 
 // IsZero reports whether the body holds nothing at all, which is

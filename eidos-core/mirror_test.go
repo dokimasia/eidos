@@ -13,7 +13,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// methodID answers a fixture method identity.
+// methodID returns a fixture method identity.
 func methodID(name string) symbol.Identity {
 	return symbol.Identity{
 		Lang: "golang", Package: "svc/store", Name: name,
@@ -22,7 +22,7 @@ func methodID(name string) symbol.Identity {
 }
 
 // Mirror owns the signature-copying lessons, so they are contract:
-// the receiver never collides with a parameter, spellings travel
+// the receiver never collides with a parameter, spellings copy over
 // verbatim, and the mirrored method names its origin.
 func TestMirror(t *testing.T) {
 	t.Parallel()
@@ -48,7 +48,7 @@ func TestMirror(t *testing.T) {
 			"the mirrored method names its origin")
 		assert.Length(t, got.Params, 1, "the parameters mirror")
 		assert.Equal(t, got.Params[0].Type.Spelling, "Session",
-			"type spellings travel verbatim")
+			"type spellings copy over verbatim")
 	})
 
 	t.Run("mirrors returns and generic spellings", func(t *testing.T) {
@@ -71,8 +71,8 @@ func TestMirror(t *testing.T) {
 			"an untaken first letter is the receiver")
 		assert.Length(t, got.Returns, 1, "the results mirror")
 		assert.Equal(t, got.Returns[0].Type.Spelling, "Map[string, User]",
-			"the instantiation spelling travels whole")
+			"the instantiation spelling is carried whole")
 		assert.Length(t, got.Returns[0].Type.Args, 2,
-			"and its arguments travel as a tree")
+			"and its arguments copy over as a tree")
 	})
 }

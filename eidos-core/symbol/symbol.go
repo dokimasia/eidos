@@ -5,11 +5,11 @@ package symbol
 
 import "go.dokimi.dev/eidos/core/position"
 
-// Symbol is the least any declaration answers.
+// Symbol is the least any declaration returns.
 //
 // Every kind on both model sides satisfies it. Synthesized emit
-// values answer the zero [position.Pos], and kinds that carry no
-// documentation answer nil from Docs.
+// values carry the zero [position.Pos], and kinds that carry no
+// documentation return nil from Docs.
 type Symbol interface {
 	Kind() Kind
 	Position() position.Pos

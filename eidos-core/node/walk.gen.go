@@ -188,7 +188,7 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 	}
 }
 
-// All answers the same traversal as [Walk] as an iterator.
+// All returns the same traversal as [Walk], as an iterator.
 //
 // Stopping the range stops the walk, which differs from Walk's own
 // visit: there, false prunes one subtree.
@@ -210,19 +210,19 @@ func All(s symbol.Symbol) iter.Seq[symbol.Symbol] {
 
 // Declaration is a declaration that names itself.
 //
-// Every kind on this side answers it. The interface exists because
+// Every kind on this side satisfies it. The interface exists because
 // the fields typed [Symbols] admit any symbol, so a traversal is
 // statically a sequence of [symbol.Symbol] even where every element
 // is one of these.
 type Declaration interface {
 	symbol.Symbol
 
-	// Identity answers the declaration's canonical identity, which
+	// Identity returns the declaration's canonical identity, which
 	// stays zero until the resolution step assigns one.
 	Identity() symbol.Identity
 }
 
-// Declarations answers the traversal [All] makes, typed as the
+// Declarations returns the traversal [All] makes, typed as the
 // declarations it yields.
 //
 // A symbol that does not name itself is skipped rather than

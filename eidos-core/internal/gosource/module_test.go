@@ -28,7 +28,7 @@ func TestModule(t *testing.T) {
 			assert.Equal(t, got, want, "to the nearest enclosing module")
 		})
 
-		t.Run("answers an absolute path", func(t *testing.T) {
+		t.Run("returns an absolute path", func(t *testing.T) {
 			t.Parallel()
 
 			got, err := gosource.ModuleRoot("testdata/mod")
@@ -51,7 +51,7 @@ func TestModule(t *testing.T) {
 			t.Parallel()
 
 			got, err := gosource.ModulePath("testdata/mod")
-			assert.NoError(t, err, "a module with a go.mod answers")
+			assert.NoError(t, err, "a module with a go.mod returns")
 			assert.Equal(t, got, "example.test/fixture", "its module directive")
 		})
 

@@ -191,7 +191,7 @@ func TestSymbols(t *testing.T) {
 // The encoding is a boundary: a sealed state and a carried
 // declaration both arrive as bytes a previous release, another tool
 // or a corrupted file wrote. Two properties hold whatever those
-// bytes are. Decoding answers an error rather than panicking, and a
+// bytes are. Decoding returns an error rather than panicking, and a
 // value that decoded re-encodes to bytes that decode to the same
 // encoding, so one trip through the boundary is a fixed point.
 func FuzzDecodeJSON(f *testing.F) {

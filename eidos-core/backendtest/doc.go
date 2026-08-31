@@ -10,20 +10,20 @@
 // store, the schedule, and the template trees, helpers and
 // override declarations the composition would have handed over. A
 // [Setup] builds the renderer under test with its fixture, fresh
-// per call, so two calls answer two isolated worlds.
+// per call, so two calls build two isolated fixtures.
 //
 // # The checks
 //
 // [RunBackendSuite] composes the granular assertions:
-// [AssertInhabitedFixture] refuses an empty store, because a suite
-// over an empty world passes vacuously, [AssertDeterministicRender]
+// [AssertPopulatedFixture] refuses an empty store, because a suite
+// over an empty store passes vacuously, [AssertDeterministicRender]
 // holds two isolated renders to byte-equal files, [AssertSpeltKinds]
 // refuses a kind the language cannot spell, [AssertPlacedContent]
-// holds every body to landing whole, and [AssertContinuedRender]
+// holds every body to arriving whole, and [AssertContinuedRender]
 // holds the failure semantics —
 // no fatal error for a file's problem, every finding positioned
 // and attributed, and a file the formatter refused withheld from
-// the values. Each assertion takes the [assert.TB] seat, so its
+// the values. Each assertion takes the [assert.TB] role, so its
 // own failure path is testable. The generated-file header and the
 // provenance trailer are the output contract's, and their checks
 // join the suite with it.
@@ -32,6 +32,6 @@
 //
 // core/backendtest imports core/plugin, core/render, core/diag,
 // the assert module and the Go stdlib. It never imports the root
-// package: the harness works at the SPI floor, so a kit-built
+// package: the harness works directly on the SPI, so a kit-built
 // backend and a hand-rolled renderer are held to the same checks.
 package backendtest

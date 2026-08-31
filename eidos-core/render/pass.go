@@ -52,7 +52,7 @@ var BodyConflict = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 24, Meaning: "a body holds more than one content form",
 })
 
-// UnresolvedRef reports a template reference nothing answers: no
+// UnresolvedRef reports a template reference nothing returns: no
 // tree declared for the emitting plugin, no template of that name
 // in it, or a template that does not parse. The body falls back to
 // its slots, so the extension points survive the broken claim.
@@ -90,7 +90,7 @@ const (
 	// BuiltinImports renders the file's collected import block; it
 	// is the skeleton's.
 	BuiltinImports = "imports"
-	// BuiltinDecls answers the file's rendered declarations; it is
+	// BuiltinDecls returns the file's rendered declarations; it is
 	// the skeleton's.
 	BuiltinDecls = "decls"
 	// BuiltinSlots places everything pending in the fixed order:
@@ -106,7 +106,7 @@ const skeletonName = "file"
 // Naming spells a unit's filename for one target: the join and
 // extension of the family's word, the tag's treatment, and the
 // cardinality key's stem. It is total: every unit the plan admits
-// answers a name, and units answering one name assemble one file,
+// returns a name, and units returning one name assemble one file,
 // which is how two plugins share it.
 type Naming func(u plugin.Unit) string
 
@@ -134,7 +134,7 @@ type Language struct {
 	// language's way, recording into the file's import set whatever
 	// it qualified with. It is the printer the body builtin calls
 	// for slot contributions and scaffold content alike; a
-	// statement the language cannot spell answers an error, and the
+	// statement the language cannot spell returns an error, and the
 	// declaration is skipped under the execute-time code.
 	Scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
 	// Imports renders one file's collected set as the block the
@@ -145,7 +145,7 @@ type Language struct {
 	Finalise func(src []byte) ([]byte, error)
 }
 
-// Pass is one composed language's render ritual. A Pass is safe
+// Pass is one composed language's render procedure. A Pass is safe
 // for concurrent use: everything it holds is fixed at [New], and
 // every render call owns its own frames. Within one call, files
 // render in parallel across workers bounded by GOMAXPROCS, which
@@ -162,7 +162,7 @@ type Pass struct {
 	final    func(src []byte) ([]byte, error)
 }
 
-// reserved answers whether a name belongs to the pass's builtins,
+// reserved reports whether a name belongs to the pass's builtins,
 // which no vocabulary may claim.
 func reserved(name string) bool {
 	switch name {
@@ -182,7 +182,7 @@ const defaultFile = "{{" + BuiltinImports + "}}{{" + BuiltinDecls + "}}"
 // a template that does not parse, a missing naming and a missing
 // formatter. The kit converts these to panics at its own Build,
 // because there they are declaration defects; here they are
-// composition faults, and a composition reads the whole bill.
+// composition faults, and a composition reads every fault at once.
 func New(name plugin.ID, l Language) (*Pass, error) {
 	var faults []error
 	if len(l.Kinds) == 0 {
@@ -192,7 +192,8 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 	for _, name := range slices.Sorted(maps.Keys(l.Funcs)) {
 		if reserved(name) {
 			faults = append(faults, fmt.Errorf(
-				"render: the shared vocabulary claims %q, which is a builtin", name))
+				"render: the shared vocabulary claims %q, which is a builtin", name,
+			))
 		}
 	}
 	kinds := make(map[symbol.Kind]*template.Template, len(l.Kinds))
@@ -241,7 +242,7 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 	}, nil
 }
 
-// unbound answers the builtin names for parse-time resolution; a
+// unbound returns the builtin names for parse-time resolution; a
 // render call rebinds them to its own frame before any execute.
 func unbound() template.FuncMap {
 	refuse := func() (string, error) {
@@ -271,7 +272,7 @@ type fileKey struct {
 	name string
 }
 
-// Render takes one plan's emit through the ritual and answers the
+// Render takes one plan's emit through the procedure and returns the
 // files as values, in name order. Findings attach to the context's
 // sink at the rendered filename; a returned error is a defect in
 // the inputs, never a finding.
@@ -481,7 +482,7 @@ func (f *frame) importsBlock() (string, error) {
 	return f.pass.imports(&f.set), nil
 }
 
-// decls answers the file's rendered declarations; it is the
+// decls returns the file's rendered declarations; it is the
 // skeleton's decls builtin.
 func (f *frame) decls() (string, error) {
 	return f.out.String(), nil
@@ -550,7 +551,7 @@ func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
 // reference executes a body-claiming template from the emitting
 // plugin's tree. A false answer means nothing resolved, the
 // finding is on the sink, and the caller falls back to the slots;
-// a true answer is the template's own output, the marker law
+// a true answer is the template's own output, the marker rule
 // checked behind it.
 func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 	tree, held := f.trees[f.plugin]
@@ -596,7 +597,7 @@ func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 }
 
 // placement tracks which of a body's slots the template placed,
-// so the marker law has something to count.
+// so the marker rule has something to count.
 type placement struct {
 	frame *frame
 	body  *emit.Body
@@ -685,7 +686,7 @@ func (f *frame) stmts(out *strings.Builder, items []emit.Stmt) error {
 // unit's declarations in the order the flush fixed, then the
 // formatter. A false answer means the formatter refused and the
 // finding is on the sink. The buffer is reset per file and its
-// bytes are copied out, so a formatter that answers its input, as
+// bytes are copied out, so a formatter that returns its input, as
 // a pass-through one does, never aliases storage a following file
 // overwrites.
 func (f *frame) file(g *group, b *bound) ([]byte, bool) {

@@ -306,7 +306,7 @@ func TestWalk(t *testing.T) {
 				"the walk descends into every traversed field")
 		})
 
-		t.Run("prunes a subtree when visit answers false", func(t *testing.T) {
+		t.Run("prunes a subtree when visit returns false", func(t *testing.T) {
 			t.Parallel()
 
 			{
@@ -1083,7 +1083,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Function{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Method", func(t *testing.T) {
@@ -1091,7 +1091,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Method{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Param", func(t *testing.T) {
@@ -1099,7 +1099,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Param{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Return", func(t *testing.T) {
@@ -1107,7 +1107,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Return{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Package", func(t *testing.T) {
@@ -1115,7 +1115,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Package{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("File", func(t *testing.T) {
@@ -1123,7 +1123,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&File{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Import", func(t *testing.T) {
@@ -1131,7 +1131,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Import{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Export", func(t *testing.T) {
@@ -1139,7 +1139,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Export{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Binding", func(t *testing.T) {
@@ -1147,7 +1147,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Binding{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Enum", func(t *testing.T) {
@@ -1155,7 +1155,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Enum{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("EnumVariant", func(t *testing.T) {
@@ -1163,7 +1163,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&EnumVariant{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Sum", func(t *testing.T) {
@@ -1171,7 +1171,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Sum{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("SumVariant", func(t *testing.T) {
@@ -1179,7 +1179,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&SumVariant{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Field", func(t *testing.T) {
@@ -1187,7 +1187,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Field{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Variable", func(t *testing.T) {
@@ -1195,7 +1195,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Variable{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Constant", func(t *testing.T) {
@@ -1203,7 +1203,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Constant{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Struct", func(t *testing.T) {
@@ -1211,7 +1211,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Struct{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Interface", func(t *testing.T) {
@@ -1219,7 +1219,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Interface{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Alias", func(t *testing.T) {
@@ -1227,7 +1227,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Alias{})
 			assert.Equal(t, held, true,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("TypeRef", func(t *testing.T) {
@@ -1235,7 +1235,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&TypeRef{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("TypeParam", func(t *testing.T) {
@@ -1243,7 +1243,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&TypeParam{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Constraint", func(t *testing.T) {
@@ -1251,7 +1251,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Constraint{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 
 		t.Run("Embed", func(t *testing.T) {
@@ -1259,7 +1259,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&Embed{})
 			assert.Equal(t, held, false,
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 	})
 }

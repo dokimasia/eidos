@@ -59,7 +59,7 @@ func TestKey(t *testing.T) {
 		assert.NoError(t, err, "the key registers")
 
 		assert.Equal(t, key.Name(), meta.KeyName("shape.role"),
-			"the handle answers its boundary spelling")
+			"the handle returns its boundary spelling")
 		assert.NotEqual(t, key.ID(), meta.KeyID(0),
 			"and a dense id the gate tuples hold")
 		assert.False(t, key.IsZero(), "a registered handle names its key")

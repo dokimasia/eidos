@@ -31,7 +31,7 @@ func TestClaim(t *testing.T) {
 
 			var got meta.Authority
 			assert.Equal(t, got, meta.AuthorityPlugin,
-				"a claim that answered no authority claims the least")
+				"a claim that returned no authority claims the least")
 		})
 	})
 

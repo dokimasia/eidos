@@ -19,14 +19,14 @@ type KeyName string
 // everything before the first one.
 const namespaceSep = "."
 
-// Namespace answers the segment before the first dot, which names
+// Namespace returns the segment before the first dot, which names
 // the module that owns the key.
 func (n KeyName) Namespace() string {
 	ns, _, _ := strings.Cut(string(n), namespaceSep)
 	return ns
 }
 
-// local answers the part after the namespace, and false when the
+// local returns the part after the namespace, and false when the
 // name carries none.
 func (n KeyName) local() (string, bool) {
 	_, rest, found := strings.Cut(string(n), namespaceSep)
@@ -47,7 +47,7 @@ type FactValue interface {
 	string | int64 | bool | []string | symbol.Identity
 }
 
-// Key is the typed handle registration answers. Reads, writes and
+// Key is the typed handle registration returns. Reads, writes and
 // gate predicates all go through it, so the value type is checked
 // where the code compiles rather than where the run fails.
 //
@@ -57,10 +57,10 @@ type Key[T FactValue] struct {
 	name KeyName
 }
 
-// Name answers the key's boundary spelling.
+// Name returns the key's boundary spelling.
 func (k Key[T]) Name() KeyName { return k.name }
 
-// ID answers the key's dense id.
+// ID returns the key's dense id.
 func (k Key[T]) ID() KeyID { return k.id }
 
 // IsZero reports whether the key names nothing.

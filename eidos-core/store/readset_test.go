@@ -36,7 +36,7 @@ func TestReadSet(t *testing.T) {
 	t.Run("Identities", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers nothing for a set that read nothing", func(t *testing.T) {
+		t.Run("returns nothing for a set that read nothing", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, slices.Collect(store.NewReadSet().Identities()),
@@ -56,7 +56,7 @@ func TestReadSet(t *testing.T) {
 				"a declaration read three times records one edge")
 		})
 
-		t.Run("answers one order however the reads arrived", func(t *testing.T) {
+		t.Run("returns one order however the reads arrived", func(t *testing.T) {
 			t.Parallel()
 
 			alpha, omega := coretest.Struct(coretest.StorePath, "Alpha"), coretest.Struct(coretest.StorePath, "Omega")
@@ -90,7 +90,7 @@ func TestReadSet(t *testing.T) {
 				"a kind enumerated twice records one edge")
 		})
 
-		t.Run("answers one order however the enumerations arrived", func(t *testing.T) {
+		t.Run("returns one order however the enumerations arrived", func(t *testing.T) {
 			t.Parallel()
 
 			forward, forwardReads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath))
@@ -138,7 +138,7 @@ func TestReadSet(t *testing.T) {
 	t.Run("Facts", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers nothing for a set that read none", func(t *testing.T) {
+		t.Run("returns nothing for a set that read none", func(t *testing.T) {
 			t.Parallel()
 
 			count := 0
@@ -164,10 +164,10 @@ func TestReadSet(t *testing.T) {
 				got = append(got, key)
 			}
 			assert.Equal(t, got, []meta.KeyName{"shape.comparable", "shape.role"},
-				"edges deduplicate and answer in subject then key order")
+				"edges deduplicate and return in subject then key order")
 		})
 
-		t.Run("answers one order however the reads arrived", func(t *testing.T) {
+		t.Run("returns one order however the reads arrived", func(t *testing.T) {
 			t.Parallel()
 
 			one := coretest.Struct(coretest.StorePath, "Alpha").ID
@@ -209,7 +209,7 @@ func TestReadSet(t *testing.T) {
 	t.Run("Len", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers zero for a set that read nothing", func(t *testing.T) {
+		t.Run("returns zero for a set that read nothing", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, store.NewReadSet().Len(), 0,

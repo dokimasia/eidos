@@ -15,7 +15,7 @@ import (
 // [*Emitter] generates, one taking [*Stamper] annotates.
 type Effect interface{ *Emitter | *Stamper }
 
-// phaseOf answers the phase a handler's effect implies: a Stamper
+// phaseOf returns the phase a handler's effect implies: a Stamper
 // annotates and an Emitter generates.
 func phaseOf[E Effect]() plugin.Phase {
 	var zero E
@@ -25,7 +25,7 @@ func phaseOf[E Effect]() plugin.Phase {
 	return plugin.PhaseGenerate
 }
 
-// effectFor answers the invocation's effect handle, wired into the
+// effectFor returns the invocation's effect handle, wired into the
 // match's own allocation. The constraint admits exactly two types,
 // so a failed assertion is a plumbing defect rather than a run
 // condition.
@@ -57,7 +57,7 @@ type Rule struct {
 	children []Rule
 }
 
-// leaf is one trigger: what fires, when, and how an invocation
+// leaf is one trigger: what runs, when, and how an invocation
 // reaches the handler.
 type leaf struct {
 	kind   symbol.Kind

@@ -22,7 +22,7 @@ import (
 )
 
 // The graph is the run's declarations: what it admits, when it
-// seals, and what it answers afterwards.
+// seals, and what it returns afterwards.
 func TestGraph(t *testing.T) {
 	t.Parallel()
 
@@ -153,26 +153,26 @@ func TestGraph(t *testing.T) {
 	t.Run("Lookup", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers a declaration by identity", func(t *testing.T) {
+		t.Run("returns a declaration by identity", func(t *testing.T) {
 			t.Parallel()
 
 			want := coretest.Struct(coretest.StorePath, "Store")
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath, want))
 
 			got, held := g.Lookup(want.ID)
-			assert.True(t, held, "Lookup answers a held identity")
+			assert.True(t, held, "Lookup returns a held identity")
 			assert.True(t, got == symbol.Symbol(want), "with the very declaration")
 		})
 
-		t.Run("answers false for an identity nothing holds", func(t *testing.T) {
+		t.Run("returns false for an identity nothing holds", func(t *testing.T) {
 			t.Parallel()
 
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath))
 			_, held := g.Lookup(coretest.Struct(coretest.CachePath, "Cache").ID)
-			assert.False(t, held, "an identity nothing holds answers nothing")
+			assert.False(t, held, "an identity nothing holds returns nothing")
 		})
 
-		t.Run("answers false before Freeze", func(t *testing.T) {
+		t.Run("returns false before Freeze", func(t *testing.T) {
 			t.Parallel()
 
 			want := coretest.Struct(coretest.StorePath, "Store")
@@ -188,19 +188,19 @@ func TestGraph(t *testing.T) {
 	t.Run("PackageOf", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the package holding a declaration", func(t *testing.T) {
+		t.Run("returns the package holding a declaration", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath, decl))
 
 			pkg, held := g.PackageOf(decl.ID)
-			assert.True(t, held, "PackageOf answers a held declaration")
+			assert.True(t, held, "PackageOf returns a held declaration")
 			assert.Equal(t, pkg.ID, coretest.PackageID(coretest.StorePath),
 				"with the package its identity names")
 		})
 
-		t.Run("answers false for an identity nothing holds", func(t *testing.T) {
+		t.Run("returns false for an identity nothing holds", func(t *testing.T) {
 			t.Parallel()
 
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath))
@@ -208,7 +208,7 @@ func TestGraph(t *testing.T) {
 			assert.False(t, held, "an identity nothing holds owns nothing")
 		})
 
-		t.Run("answers false before Freeze", func(t *testing.T) {
+		t.Run("returns false before Freeze", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
@@ -224,7 +224,7 @@ func TestGraph(t *testing.T) {
 	t.Run("ByKind", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers every declaration of one kind", func(t *testing.T) {
+		t.Run("returns every declaration of one kind", func(t *testing.T) {
 			t.Parallel()
 
 			g := coretest.Frozen(t,
@@ -232,10 +232,10 @@ func TestGraph(t *testing.T) {
 				coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")))
 
 			assert.Equal(t, coretest.Names(t, slices.Collect(g.ByKind(symbol.KindStruct))),
-				[]string{"Cache", "Store"}, "ByKind answers every declaration of the kind")
+				[]string{"Cache", "Store"}, "ByKind returns every declaration of the kind")
 		})
 
-		t.Run("answers one order however the packages arrived", func(t *testing.T) {
+		t.Run("returns one order however the packages arrived", func(t *testing.T) {
 			t.Parallel()
 
 			first := coretest.Frozen(t,
@@ -251,7 +251,7 @@ func TestGraph(t *testing.T) {
 				"the order is the graph's own, not the load order")
 		})
 
-		t.Run("answers nothing before Freeze", func(t *testing.T) {
+		t.Run("returns nothing before Freeze", func(t *testing.T) {
 			t.Parallel()
 
 			g := store.New()
@@ -259,7 +259,7 @@ func TestGraph(t *testing.T) {
 			assert.NoError(t, g.AddPackage(loaded), "the package is admitted")
 
 			assert.Empty(t, slices.Collect(g.ByKind(symbol.KindStruct)),
-				"an untracked read before the seal answers nothing rather than a partial result")
+				"an untracked read before the seal returns nothing rather than a partial result")
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
@@ -295,12 +295,12 @@ func TestGraph(t *testing.T) {
 				"a read with nowhere to record would be an untracked read")
 		})
 
-		t.Run("answers a reader once the graph is sealed", func(t *testing.T) {
+		t.Run("returns a reader once the graph is sealed", func(t *testing.T) {
 			t.Parallel()
 
 			r, err := coretest.Frozen(t).Reader(store.NewReadSet(), nil)
 			assert.NoError(t, err, "a sealed graph hands out readers")
-			assert.NotNil(t, r, "and answers one")
+			assert.NotNil(t, r, "and returns one")
 		})
 	})
 }
@@ -444,7 +444,7 @@ func BenchmarkGraph(b *testing.B) {
 				seen++
 			}
 			if seen != packages*files*decls {
-				b.Fatalf("ByKind answered %d declarations, want %d", seen, packages*files*decls)
+				b.Fatalf("ByKind returned %d declarations, want %d", seen, packages*files*decls)
 			}
 		}
 	})

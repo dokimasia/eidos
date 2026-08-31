@@ -24,7 +24,7 @@ const (
 
 // Validate types and checks every instance on one subject,
 // reporting each violation as a positioned Error on sink and
-// answering the instances that passed, in position order, with
+// returning the instances that passed, in position order, with
 // repeatable instances numbered.
 //
 // keys resolves ResolveMetadataKey params. Validation of one
@@ -350,7 +350,7 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 	case TypeReference:
 		if spec.Resolution == ResolveMetadataKey && !v.metadataResolves(raw.Text) {
 			v.report(UnknownMetadataKey, v.at,
-				"%s param %s names %q, which no metadata key or group answers; keys: %s",
+				"%s param %s names %q, which no metadata key or group returns; keys: %s",
 				name, spec.Key, raw.Text, v.metadataCandidates())
 			return Value{}, false
 		}
@@ -382,7 +382,7 @@ func (v *validator) metadataCandidates() string {
 	return strings.Join(out, ", ")
 }
 
-// findParam answers a schema's keyed spec.
+// findParam returns a schema's keyed spec.
 func findParam(s Schema, key ParamKey) (ParamSpec, bool) {
 	for _, spec := range s.Params {
 		if spec.Key == key {
@@ -408,7 +408,7 @@ func nameList(names []Name) string {
 	return strings.Join(out, ", ")
 }
 
-// rawSpelling answers a raw value's spelling for a refusal.
+// rawSpelling returns a raw value's spelling for a refusal.
 func rawSpelling(v RawValue) string {
 	if v.List == nil {
 		return v.Text

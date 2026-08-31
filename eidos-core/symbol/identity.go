@@ -78,7 +78,7 @@ func (id Identity) String() string {
 	return out.String()
 }
 
-// Compare orders two identities, answering a negative number, zero
+// Compare orders two identities, returning a negative number, zero
 // or a positive one as id sorts before, with, or after other.
 //
 // The order is field order: language, package, owner, name, kind,

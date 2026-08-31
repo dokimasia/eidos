@@ -202,7 +202,7 @@ func TestIdentity(t *testing.T) {
 	t.Run("equality", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("two overloads answer distinct identities", func(t *testing.T) {
+		t.Run("two overloads get distinct identities", func(t *testing.T) {
 			t.Parallel()
 
 			// Overloads share every part but the discriminator, which
@@ -226,7 +226,7 @@ func TestIdentity(t *testing.T) {
 				"and their spellings differ with them")
 		})
 
-		t.Run("a language without overloads answers one identity", func(t *testing.T) {
+		t.Run("a language without overloads returns one identity", func(t *testing.T) {
 			t.Parallel()
 
 			first := symbol.Identity{
@@ -235,7 +235,7 @@ func TestIdentity(t *testing.T) {
 			}
 			second := first
 			assert.Equal(t, first, second,
-				"a language without overloads answers one identity")
+				"a language without overloads returns one identity")
 		})
 
 		t.Run("the parts that make an identity all count", func(t *testing.T) {
@@ -294,7 +294,7 @@ func TestIdentity(t *testing.T) {
 			Name: "Get", Kind: symbol.KindMethod, Disc: "ctx",
 		}
 
-		t.Run("answers zero for one identity", func(t *testing.T) {
+		t.Run("returns zero for one identity", func(t *testing.T) {
 			t.Parallel()
 
 			same := base
@@ -307,7 +307,7 @@ func TestIdentity(t *testing.T) {
 
 			// Each entry differs from base in one field alone, and
 			// sorts after it, so a comparison that skipped that field
-			// would answer zero.
+			// would return zero.
 			raise := func(alter func(*symbol.Identity)) symbol.Identity {
 				other := base
 				alter(&other)

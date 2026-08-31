@@ -22,7 +22,7 @@ import (
 // enumeration by kind, a directive-membership edge for one by
 // directive, and a (subject, key) edge for a fact read — ReadSet
 // satisfies [meta.Recorder], so one artifact's declaration reads
-// and fact reads land in one set.
+// and fact reads arrive in one set.
 //
 // A ReadSet belongs to one derived artifact and is not shared, so it
 // is not safe for concurrent use even though the graph beneath it
@@ -44,7 +44,7 @@ type factRead struct {
 	key     meta.KeyName
 }
 
-// NewReadSet answers a read set holding no edges.
+// NewReadSet returns a read set holding no edges.
 func NewReadSet() *ReadSet { return &ReadSet{} }
 
 // Reset drops every recorded edge and keeps the storage, so a
@@ -58,18 +58,18 @@ func (s *ReadSet) Reset() {
 	clear(s.directives)
 }
 
-// Identities answers every per-identity edge, in identity order.
+// Identities returns every per-identity edge, in identity order.
 //
 // The order is the set's own rather than the order the reads
 // arrived, so two runs reading the same declarations in different
-// orders answer alike.
+// orders agree.
 func (s *ReadSet) Identities() iter.Seq[symbol.Identity] {
 	out := slices.Collect(maps.Keys(s.identities))
 	slices.SortFunc(out, symbol.Identity.Compare)
 	return slices.Values(out)
 }
 
-// Kinds answers every set-membership edge, in kind order.
+// Kinds returns every set-membership edge, in kind order.
 func (s *ReadSet) Kinds() iter.Seq[symbol.Kind] {
 	out := slices.Sorted(maps.Keys(s.kinds))
 	return slices.Values(out)
@@ -85,7 +85,7 @@ func (s *ReadSet) RecordFact(subject symbol.Identity, key meta.KeyName) {
 	s.facts[factRead{subject: subject, key: key}] = struct{}{}
 }
 
-// Facts answers every recorded fact read, in subject then key
+// Facts returns every recorded fact read, in subject then key
 // order.
 func (s *ReadSet) Facts() iter.Seq2[symbol.Identity, meta.KeyName] {
 	edges := slices.SortedFunc(maps.Keys(s.facts), func(a, b factRead) int {
@@ -103,7 +103,7 @@ func (s *ReadSet) Facts() iter.Seq2[symbol.Identity, meta.KeyName] {
 	}
 }
 
-// Directives answers every recorded directive-membership edge, in
+// Directives returns every recorded directive-membership edge, in
 // name order. Each edge means the artifact enumerated that
 // spelling's carriers, so it runs again when a subject gains or
 // loses the directive — and never when a carrier merely changes,
@@ -113,7 +113,7 @@ func (s *ReadSet) Directives() iter.Seq[directive.Name] {
 	return slices.Values(out)
 }
 
-// Len answers how many edges the set holds, all four grains
+// Len returns how many edges the set holds, all four grains
 // counted.
 func (s *ReadSet) Len() int {
 	return len(s.identities) + len(s.kinds) + len(s.facts) + len(s.directives)
@@ -121,7 +121,7 @@ func (s *ReadSet) Len() int {
 
 // recordIdentity records a per-identity edge.
 //
-// A read that answered nothing records too: the artifact asked for a
+// A read that returned nothing records too: the artifact asked for a
 // declaration, so it has to run again when one appears under that
 // identity.
 func (s *ReadSet) recordIdentity(id symbol.Identity) {

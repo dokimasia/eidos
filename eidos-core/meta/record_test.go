@@ -21,7 +21,7 @@ func TestRecord(t *testing.T) {
 	t.Run("Claims", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers every claim in rank order, winner first", func(t *testing.T) {
+		t.Run("returns every claim in rank order, winner first", func(t *testing.T) {
 			t.Parallel()
 
 			_, f, role, _ := fixture(t)
@@ -44,7 +44,7 @@ func TestRecord(t *testing.T) {
 			t.Parallel()
 
 			_, f, role, _ := fixture(t)
-			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the stamp lands")
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the stamp arrives")
 			drop := by("defaults", 1)
 			drop.Authority = meta.AuthorityDirective
 			assert.NoError(t, f.DropKey(role.ID(), drop), "and the drop over it")
@@ -70,7 +70,7 @@ func TestRecord(t *testing.T) {
 			assert.Equal(t, got[0].Claim.Derived, claim.Derived, "and what produced it")
 		})
 
-		t.Run("answers nothing for a fact never claimed", func(t *testing.T) {
+		t.Run("returns nothing for a fact never claimed", func(t *testing.T) {
 			t.Parallel()
 
 			_, f, role, _ := fixture(t)

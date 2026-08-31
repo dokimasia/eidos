@@ -12,7 +12,7 @@
 // between directives. [Registry] holds every schema, refuses what
 // the contract refuses, and resolves spellings: bare while
 // unambiguous, plugin-prefixed once two plugins claim one name.
-// [Validate] runs over one subject's full list and answers
+// [Validate] runs over one subject's full list and returns
 // [Directive] instances typed per schema, reporting every
 // violation as a positioned Error under its own registered code
 // before any handler runs.
@@ -27,7 +27,7 @@
 //
 // # Failure semantics
 //
-// [Parse] and [Registry.Register] answer errors: their callers are
+// [Parse] and [Registry.Register] return errors: their callers are
 // composition and carriers, which collect faults. [Validate]
 // reports diagnostics: its findings are the author's to fix, and
 // every one carries the carrier's position. Nothing here panics.

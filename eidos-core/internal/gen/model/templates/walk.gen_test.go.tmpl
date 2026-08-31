@@ -43,7 +43,7 @@ func TestWalk(t *testing.T) {
 {{- end}}
 {{- end}}
 
-		t.Run("prunes a subtree when visit answers false", func(t *testing.T) {
+		t.Run("prunes a subtree when visit returns false", func(t *testing.T) {
 			t.Parallel()
 {{- range .Views}}
 {{- if .Children}}
@@ -128,7 +128,7 @@ func TestWalk(t *testing.T) {
 
 			_, held := OriginOf(&{{.Name}}{})
 			assert.Equal(t, held, {{if .OriginStorage}}true{{else}}false{{end}},
-				"a kind answers exactly when it carries origin storage")
+				"a kind reports true exactly when it carries origin storage")
 		})
 {{- end}}
 	})
@@ -200,7 +200,7 @@ func TestWalk(t *testing.T) {
 }
 {{- if .Identified}}
 
-// unnamed is a symbol from outside this model: it answers the shared
+// unnamed is a symbol from outside this model: it satisfies the shared
 // vocabulary and no identity, which is the only thing [Declarations]
 // skips.
 type unnamed struct{}

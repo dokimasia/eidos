@@ -6,7 +6,7 @@
 //
 // [Load] parses and type-checks one directory. [ParseDir] is the
 // parse step alone, and [NewImporter] is the resolver the type
-// checker uses. [ModuleRoot] and [ModulePath] answer where the
+// checker uses. [ModuleRoot] and [ModulePath] report where the
 // enclosing module starts and what it is called.
 //
 // Every loader here reads hand-written sources only: generated and

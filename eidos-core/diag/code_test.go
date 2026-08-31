@@ -20,7 +20,7 @@ const testPrefix diag.Prefix = "EIDTEST"
 // [testPrefix].
 var claimed atomic.Int64
 
-// nextTestNumber answers a code number no case has claimed.
+// nextTestNumber returns a code number no case has claimed.
 func nextTestNumber() int { return int(claimed.Add(1)) }
 
 func TestCode(t *testing.T) {
@@ -71,7 +71,7 @@ func TestCode(t *testing.T) {
 	t.Run("Register", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the code it recorded", func(t *testing.T) {
+		t.Run("returns the code it recorded", func(t *testing.T) {
 			t.Parallel()
 
 			r := diag.NewRegistry()
@@ -80,7 +80,7 @@ func TestCode(t *testing.T) {
 			})
 			assert.NoError(t, err, "a fresh number registers")
 			assert.Equal(t, got, diag.Code{Prefix: diag.KernelPrefix, Number: 1},
-				"Register answers the code it recorded")
+				"Register returns the code it recorded")
 			meaning, known := r.Meaning(got)
 			assert.True(t, known, "the registry then knows the code")
 			assert.NotEqual(t, meaning, "", "and holds its meaning")
@@ -147,7 +147,7 @@ func TestCode(t *testing.T) {
 			got := diag.MustRegister(testPrefix, spec)
 
 			assert.Equal(t, got, diag.Code{Prefix: testPrefix, Number: spec.Number},
-				"MustRegister answers the code it recorded")
+				"MustRegister returns the code it recorded")
 			meaning, known := diag.Kernel().Meaning(got)
 			assert.True(t, known, "the kernel registry holds it")
 			assert.Equal(t, meaning, spec.Meaning, "under the declared meaning")
@@ -166,13 +166,13 @@ func TestCode(t *testing.T) {
 	t.Run("Kernel", func(t *testing.T) {
 		first, second := diag.Kernel(), diag.Kernel()
 		assert.True(t, first == second,
-			"Kernel answers one registry, or a code registered into one would be missing from the other")
+			"Kernel returns one registry, or a code registered into one would be missing from the other")
 	})
 
 	t.Run("Codes", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers in prefix then number order", func(t *testing.T) {
+		t.Run("returns in prefix then number order", func(t *testing.T) {
 			t.Parallel()
 
 			r := diag.NewRegistry()
@@ -193,13 +193,13 @@ func TestCode(t *testing.T) {
 				got = append(got, c.String())
 			}
 			assert.Equal(t, got, []string{"EID-0003", "EID-0009", "EIDGO-0001", "EIDGO-0002"},
-				"Codes answers prefix then number order")
+				"Codes returns prefix then number order")
 		})
 	})
 }
 
 // A code is spelled into every diagnostic a run reports and into
-// every refusal it answers, so its rendering is on a hot path.
+// every refusal it returns, so its rendering is on a hot path.
 func BenchmarkCode(b *testing.B) {
 	b.Run("String", func(b *testing.B) {
 		b.ReportAllocs()

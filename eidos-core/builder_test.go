@@ -15,7 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// emitNothing answers a graph rule whose handler does nothing: the
+// emitNothing returns a graph rule whose handler does nothing: the
 // smallest rule a declaration can carry.
 func emitNothing() eidos.Rule {
 	return eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
@@ -23,7 +23,7 @@ func emitNothing() eidos.Rule {
 	})
 }
 
-// stubSchema answers a plugin-owned schema for gate fixtures.
+// stubSchema returns a plugin-owned schema for gate fixtures.
 func stubSchema(name directive.Name) directive.Schema {
 	return directive.Schema{
 		Plugin: "stubgen", Name: name,
@@ -33,7 +33,7 @@ func stubSchema(name directive.Name) directive.Schema {
 
 // A plugin declaration is a value and Build freezes it: what it
 // panics on, which roles the rules imply, and what the providers
-// answer are all contract.
+// return are all contract.
 func TestBuilder(t *testing.T) {
 	t.Parallel()
 
@@ -49,7 +49,7 @@ func TestBuilder(t *testing.T) {
 			assert.True(t, generates, "an emitter rule makes a generator")
 			_, annotates := p.(plugin.Annotator)
 			assert.False(t, annotates,
-				"no stamper rule was declared, so the annotator seat does not exist")
+				"no stamper rule was declared, so the annotator role does not exist")
 		})
 
 		t.Run("collects the schemas the wrappers carry", func(t *testing.T) {
@@ -66,7 +66,7 @@ func TestBuilder(t *testing.T) {
 				Build()
 
 			owned, ok := p.(plugin.DirectiveProvider)
-			assert.True(t, ok, "carried schemas answer for registration")
+			assert.True(t, ok, "carried schemas are returned for registration")
 			assert.Equal(t, owned.Directives(), []directive.Schema{s},
 				"one wrapper gating two rules registers one schema")
 		})
@@ -87,12 +87,12 @@ func TestBuilder(t *testing.T) {
 				Handle(emitNothing()).Build()
 
 			kp, ok := p.(plugin.KeyProvider)
-			assert.True(t, ok, "the declaration answers through the provider")
+			assert.True(t, ok, "the declaration returns through the provider")
 			reg := meta.NewRegistry()
 			assert.NoError(t, kp.Keys(reg),
 				"the declared registrations run in order against the registry")
 			_, held := reg.Resolve("keyed.flag")
-			assert.True(t, held, "the key landed in the registry it was handed")
+			assert.True(t, held, "the key arrived in the registry it was handed")
 		})
 
 		t.Run("panics on a declaration defect", func(t *testing.T) {
@@ -221,7 +221,7 @@ func TestBuilder(t *testing.T) {
 				t.Run(tt.name, func(t *testing.T) {
 					t.Parallel()
 					assert.Panics(t, tt.build,
-						"a wrong declaration fires on the first Build in any test")
+						"a wrong declaration panics on the first Build in any test")
 				})
 			}
 		})

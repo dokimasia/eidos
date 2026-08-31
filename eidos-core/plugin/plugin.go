@@ -28,26 +28,26 @@ type Plugin interface {
 	Name() ID
 }
 
-// Role names one phase seat a plugin can hold.
+// Role names one phase role a plugin can hold.
 //
 // Priorities are per role: one shared number cannot place a
 // dual-role plugin's annotator half and generator half
 // independently, and the two phases' orderings have no reason to
-// share integers. The zero Role names no seat.
+// share integers. The zero Role names no role.
 type Role uint8
 
 const (
-	// RoleAnnotator is the seat that stamps facts over the frozen
+	// RoleAnnotator is the role that stamps facts over the frozen
 	// graph.
 	RoleAnnotator Role = iota + 1
-	// RoleGenerator is the seat that produces emit values into one
+	// RoleGenerator is the role that produces emit values into one
 	// plan.
 	RoleGenerator
 )
 
-// String answers the role's spelling. Faults and stats name roles,
+// String returns the role's spelling. Faults and stats name roles,
 // so a consumer matching on the spelling matches on API. A role
-// nothing declares answers its number rather than a name.
+// nothing declares returns its number rather than a name.
 func (r Role) String() string {
 	switch r {
 	case RoleAnnotator:

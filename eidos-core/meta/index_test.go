@@ -34,7 +34,7 @@ func TestFactIndex(t *testing.T) {
 
 			got := slices.Collect(f.ByKey(role.ID()))
 			assert.Equal(t, got, []symbol.Identity{second.Subject, subject},
-				"the index answers every present subject, in identity order")
+				"the index returns every present subject, in identity order")
 		})
 
 		t.Run("a drop on an absent subject leaves the index alone", func(t *testing.T) {
@@ -49,7 +49,7 @@ func TestFactIndex(t *testing.T) {
 			drop.Authority = meta.AuthorityDirective
 			drop.Subject = other
 			assert.NoError(t, f.DropKey(role.ID(), drop),
-				"a drop lands on a subject never stamped")
+				"a drop arrives on a subject never stamped")
 
 			assert.Equal(t, slices.Collect(f.ByKey(role.ID())), []symbol.Identity{subject},
 				"the present subject stays, and the absent one stays absent")
@@ -67,12 +67,12 @@ func TestFactIndex(t *testing.T) {
 			t.Parallel()
 
 			_, f, role, _ := fixture(t)
-			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the stamp lands")
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "the stamp arrives")
 			assert.Length(t, slices.Collect(f.ByKey(role.ID())), 1, "and is indexed")
 
 			drop := by("defaults", 1)
 			drop.Authority = meta.AuthorityDirective
-			assert.NoError(t, f.DropKey(role.ID(), drop), "the drop lands")
+			assert.NoError(t, f.DropKey(role.ID(), drop), "the drop arrives")
 			assert.Empty(t, slices.Collect(f.ByKey(role.ID())),
 				"a subject whose winner is a drop is no match for a gated rule")
 		})

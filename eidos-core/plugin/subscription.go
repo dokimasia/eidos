@@ -33,9 +33,9 @@ const (
 	PhaseEmit
 )
 
-// String answers the phase's spelling. Subscription records reach
+// String returns the phase's spelling. Subscription records reach
 // stats and faults, so the spelling is API. A phase nothing
-// declares answers its number rather than a name.
+// declares returns its number rather than a name.
 func (p Phase) String() string {
 	switch p {
 	case PhaseAnnotate:
@@ -55,7 +55,7 @@ func (p Phase) String() string {
 // rule, kind and phase.
 type Subscription struct {
 	// Rule names the rule the record belongs to. Several records
-	// may share one, because a rule gated on two fact keys answers
+	// may share one, because a rule gated on two fact keys returns
 	// two.
 	Rule RuleID
 	// Kind is the trigger's subject kind, zero for a graph-wide
@@ -75,8 +75,8 @@ type Subscription struct {
 // reads them as data without executing a handler.
 //
 // A hand-rolled plugin may skip it entirely, which reads as one
-// implicit subscription to everything in scope: honest, and priced
-// with full-graph dispatch.
+// implicit subscription to everything in scope: honest, and costs
+// full-graph dispatch.
 type Subscribed interface {
 	Plugin
 	Subscriptions() []Subscription

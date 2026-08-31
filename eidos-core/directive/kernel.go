@@ -40,7 +40,7 @@ const (
 	SkipPlugin ParamKey = "plugin"
 )
 
-// Kernel answers the kernel-owned schemas: meta, out, diag and
+// Kernel returns the kernel-owned schemas: meta, out, diag and
 // skip. Their semantics stay with their owners; what registers
 // here is the spelling and its validation.
 func Kernel() []Schema {
@@ -65,7 +65,7 @@ func Kernel() []Schema {
 				},
 				{
 					Key: OutTag, Type: TypeString,
-					Doc: "the companion output the declaration lands in",
+					Doc: "the companion output the declaration arrives in",
 				},
 			},
 			Doc: "overrides routing for a declaration",

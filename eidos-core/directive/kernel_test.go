@@ -17,7 +17,7 @@ import (
 func TestKernel(t *testing.T) {
 	t.Parallel()
 
-	// byName answers the kernel schema carrying a name.
+	// byName returns the kernel schema carrying a name.
 	byName := func(tb assert.TB, name directive.Name) directive.Schema {
 		tb.Helper()
 		for _, s := range directive.Kernel() {
@@ -25,7 +25,7 @@ func TestKernel(t *testing.T) {
 				return s
 			}
 		}
-		assert.True(tb, false, "every kernel name answers a schema")
+		assert.True(tb, false, "every kernel name returns a schema")
 		return directive.Schema{}
 	}
 

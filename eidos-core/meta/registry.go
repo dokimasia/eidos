@@ -31,7 +31,7 @@ type Registry struct {
 	groups map[GroupName][]KeyID
 }
 
-// NewRegistry answers a registry holding nothing.
+// NewRegistry returns a registry holding nothing.
 func NewRegistry() *Registry {
 	return &Registry{
 		namespaces: map[string]string{},
@@ -88,11 +88,11 @@ func (r *Registry) ClaimNamespace(ns, owner string) error {
 	return nil
 }
 
-// Register records a key and answers its typed handle.
+// Register records a key and returns its typed handle.
 //
 // It refuses, with an error naming both claimants where two exist: a
 // name without a claimed namespace or without a local part, a name
-// registered twice, and a spec without documentation. It answers an
+// registered twice, and a spec without documentation. It returns an
 // error rather than panicking because composition collects every
 // fault in one pass.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
@@ -127,14 +127,14 @@ func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	return Key[T]{id: id, name: s.Name}, nil
 }
 
-// Resolve answers the id a boundary spelling names, and false for a
+// Resolve returns the id a boundary spelling names, and false for a
 // spelling nothing registered.
 func (r *Registry) Resolve(name KeyName) (KeyID, bool) {
 	id, known := r.byName[name]
 	return id, known
 }
 
-// Spec answers a registered key's spec, and false for an id nothing
+// Spec returns a registered key's spec, and false for an id nothing
 // was assigned.
 func (r *Registry) Spec(id KeyID) (KeySpec, bool) {
 	if id == 0 || int(id) > len(r.specs) {
@@ -143,12 +143,12 @@ func (r *Registry) Spec(id KeyID) (KeySpec, bool) {
 	return r.specs[id-1], true
 }
 
-// Group answers a group's member keys, in registration order.
+// Group returns a group's member keys, in registration order.
 func (r *Registry) Group(g GroupName) iter.Seq[KeyID] {
 	return slices.Values(r.groups[g])
 }
 
-// Keys answers every registered key's spelling, in registration
+// Keys returns every registered key's spelling, in registration
 // order: what a candidate-naming refusal enumerates.
 func (r *Registry) Keys() iter.Seq[KeyName] {
 	return func(yield func(KeyName) bool) {

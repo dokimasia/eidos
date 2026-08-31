@@ -27,10 +27,10 @@ import (
 // would otherwise blame the wrong party.
 //
 // A handler's returned error stops the frame, wrapped with its
-// seat, and the report holds whatever ran before it. Findings
-// never stop the frame: they land in the report's sink, and any
-// Error among them answers [ErrRunFailed] beside the report. A
-// pure refusal, a missing or pre-frozen graph, answers a nil
+// role, and the report holds whatever ran before it. Findings
+// never stop the frame: they arrive in the report's sink, and any
+// Error among them returns [ErrRunFailed] beside the report. A
+// pure refusal, a missing or pre-frozen graph, returns a nil
 // report, because nothing ran.
 func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 	if g == nil {
@@ -65,7 +65,7 @@ func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 }
 
 // failure classifies the sink: [ErrRunFailed] when any Error
-// landed, nil otherwise.
+// arrived, nil otherwise.
 func failure(sink *diag.Sink) error {
 	if sink.Failed() {
 		return ErrRunFailed
@@ -153,9 +153,9 @@ func (w *Workspace) applyDrops(
 }
 
 // annotateAll runs the annotate schedule in bucket order over one
-// whole-graph index, each seat handed its own tracked reader and
+// whole-graph index, each role handed its own tracked reader and
 // its rank fields. A returned error stops the frame, wrapped with
-// the seat that returned it.
+// the role that returned it.
 func (w *Workspace) annotateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
@@ -194,7 +194,7 @@ func (w *Workspace) annotateAll(
 
 // generateAll runs the plans in parallel, each over its own emit
 // store, its own scoped index and its own readers. A plan's
-// failure does not stop its siblings; every plan's store lands in
+// failure does not stop its siblings; every plan's store arrives in
 // emits either way, so the report shows what each plan produced.
 func (w *Workspace) generateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
@@ -221,9 +221,9 @@ func (w *Workspace) generateAll(
 	return errs
 }
 
-// runPlan runs one plan's seats in bucket order, which is what an
+// runPlan runs one plan's roles in bucket order, which is what an
 // emit-triggered rule's visibility is defined against: the store
-// holds earlier buckets' units when a later seat runs.
+// holds earlier buckets' units when a later role runs.
 func runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
@@ -233,7 +233,7 @@ func runPlan(
 	if err != nil {
 		return err
 	}
-	for _, s := range pl.seats {
+	for _, s := range pl.entries {
 		if err := ctx.Err(); err != nil {
 			return err
 		}

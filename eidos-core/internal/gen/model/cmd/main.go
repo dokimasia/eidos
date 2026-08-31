@@ -26,7 +26,7 @@ func main() {
 	}
 }
 
-// run generates the models and writes them, answering the first
+// run generates the models and writes them, returning the first
 // failure. Nothing is written unless every file rendered.
 func run() error {
 	root, err := gosource.ModuleRoot(".")

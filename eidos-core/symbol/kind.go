@@ -8,7 +8,7 @@ package symbol
 // Every consumer that switches on kind uses one set of names across
 // both model sides, so a switch written against the node model
 // reads the same against the emit model. The zero value is
-// [KindInvalid], which no declaration answers.
+// [KindInvalid], which no declaration returns.
 //
 // One constant exists per schema struct, generated from the schema
 // into kind.gen.go. The values belong to a build: nothing durable

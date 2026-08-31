@@ -19,7 +19,7 @@ type ClaimView struct {
 	Won bool
 }
 
-// Claims answers every claim on (subject, key) in rank order,
+// Claims returns every claim on (subject, key) in rank order,
 // winner first, group drops covering the key included. This is the
 // record attribution walks: a losing write stays visible instead of
 // mysterious.

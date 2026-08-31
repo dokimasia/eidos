@@ -44,17 +44,17 @@ func TestImporter(t *testing.T) {
 					"there may refer to what its own generator produced")
 		})
 
-		t.Run("answers the same package on a second call", func(t *testing.T) {
+		t.Run("returns the same package on a second call", func(t *testing.T) {
 			t.Parallel()
 
 			imp, err := gosource.NewImporter(token.NewFileSet(), modRoot)
 			assert.NoError(t, err, "the importer builds")
 			first, err := imp.Import("example.test/fixture/lib")
-			assert.NoError(t, err, "the first import answers")
+			assert.NoError(t, err, "the first import returns")
 			second, err := imp.Import("example.test/fixture/lib")
 			assert.NoError(t, err, "and the second")
 			assert.True(t, first == second,
-				"one path answers one package, so type identities agree")
+				"one path returns one package, so type identities agree")
 		})
 
 		t.Run("delegates a standard-library path", func(t *testing.T) {

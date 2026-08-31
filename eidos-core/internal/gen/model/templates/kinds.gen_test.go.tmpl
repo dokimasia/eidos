@@ -7,7 +7,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Every kind answers the vocabulary's interfaces. The assertions
+// Every kind satisfies the vocabulary's interfaces. The assertions
 // fail to compile rather than to run, which is where an unsatisfied
 // interface belongs.
 var (
@@ -49,7 +49,7 @@ func TestKinds(t *testing.T) {
 			t.Run(tt.want.String(), func(t *testing.T) {
 				t.Parallel()
 				assert.Equal(t, tt.subject.Kind(), tt.want,
-					"every kind answers its own constant")
+					"every kind returns its own constant")
 			})
 		}
 	})
@@ -57,7 +57,7 @@ func TestKinds(t *testing.T) {
 	t.Run("Position", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers where the declaration was written", func(t *testing.T) {
+		t.Run("returns where the declaration was written", func(t *testing.T) {
 			t.Parallel()
 
 			at := position.Pos{File: "svc/store.go", Line: 41, Col: 2}
@@ -65,10 +65,10 @@ func TestKinds(t *testing.T) {
 {{- range .Views}}
 {{- if .HasPos}}
 			assert.Equal(t, (&{{.Name}}{Pos: at}).Position(), at,
-				"a located declaration answers where it was written")
+				"a located declaration returns where it was written")
 {{- else}}
 			assert.True(t, (&{{.Name}}{}).Position().IsZero(),
-				"a kind carrying no position answers the zero position")
+				"a kind carrying no position returns the zero position")
 {{- end}}
 {{- end}}
 		})
@@ -77,7 +77,7 @@ func TestKinds(t *testing.T) {
 	t.Run("Docs", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the declaration's documentation", func(t *testing.T) {
+		t.Run("returns the declaration's documentation", func(t *testing.T) {
 			t.Parallel()
 
 			lines := []string{"one", "two"}
@@ -85,10 +85,10 @@ func TestKinds(t *testing.T) {
 {{- range .Views}}
 {{- if .HasDoc}}
 			assert.Length(t, (&{{.Name}}{Doc: lines}).Docs(), len(lines),
-				"a documented declaration answers its documentation")
+				"a documented declaration returns its documentation")
 {{- else}}
 			assert.Nil(t, (&{{.Name}}{}).Docs(),
-				"a kind carrying no documentation answers nil")
+				"a kind carrying no documentation returns nil")
 {{- end}}
 {{- end}}
 		})
@@ -97,24 +97,24 @@ func TestKinds(t *testing.T) {
 	t.Run("Identity", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers the identity the resolution step assigned", func(t *testing.T) {
+		t.Run("returns the identity the resolution step assigned", func(t *testing.T) {
 			t.Parallel()
 
 			id := symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"}
 {{- range .Views}}
 {{- if .IDStorage}}
 			assert.Equal(t, (&{{.Name}}{ID: id}).Identity(), id,
-				"a named declaration answers the identity it was assigned")
+				"a named declaration returns the identity it was assigned")
 {{- end}}
 {{- end}}
 		})
 
-		t.Run("answers the zero identity before it is assigned", func(t *testing.T) {
+		t.Run("returns the zero identity before it is assigned", func(t *testing.T) {
 			t.Parallel()
 {{- range .Views}}
 {{- if .IDStorage}}
 			assert.True(t, (&{{.Name}}{}).Identity().IsZero(),
-				"an unassigned declaration answers the zero identity")
+				"an unassigned declaration returns the zero identity")
 {{- end}}
 {{- end}}
 		})
@@ -123,22 +123,22 @@ func TestKinds(t *testing.T) {
 	t.Run("TypeRef", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers nil when the source states no type", func(t *testing.T) {
+		t.Run("returns nil when the source states no type", func(t *testing.T) {
 			t.Parallel()
 {{- range .Views}}
 {{- if .TypeRefStorage}}
 			assert.Nil(t, (&{{.Name}}{}).TypeRef(),
-				"a declaration stating no type answers nil")
+				"a declaration stating no type returns nil")
 {{- end}}
 {{- end}}
 		})
 
-		t.Run("answers the declared type reference", func(t *testing.T) {
+		t.Run("returns the declared type reference", func(t *testing.T) {
 			t.Parallel()
 {{- range .Views}}
 {{- if .TypeRefStorage}}
 			assert.NotNil(t, (&{{.Name}}{Type: &TypeRef{}}).TypeRef(),
-				"a declaration stating a type answers the declared reference")
+				"a declaration stating a type returns the declared reference")
 {{- end}}
 {{- end}}
 		})
@@ -147,20 +147,20 @@ func TestKinds(t *testing.T) {
 	t.Run("Members", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("a member list the kind does not carry answers nil", func(t *testing.T) {
+		t.Run("a member list the kind does not carry returns nil", func(t *testing.T) {
 			t.Parallel()
 {{- range .Views}}{{$v := .}}
 {{- range .Members}}
 {{- if not .Items}}
 
 			assert.Nil(t, (&{{$v.Name}}{}).{{.Method}}(),
-				"a member list the kind does not carry answers nil")
+				"a member list the kind does not carry returns nil")
 {{- end}}
 {{- end}}
 {{- end}}
 		})
 
-		t.Run("a member list the kind carries answers its members", func(t *testing.T) {
+		t.Run("a member list the kind carries returns its members", func(t *testing.T) {
 			t.Parallel()
 {{- range .Views}}{{$v := .}}
 {{- range .Members}}
@@ -172,7 +172,7 @@ func TestKinds(t *testing.T) {
 				{{.}}
 {{- end}}
 				assert.NotEmpty(t, subject.{{.Method}}(),
-					"a member list the kind carries answers its members")
+					"a member list the kind carries returns its members")
 			}
 {{- end}}
 {{- end}}

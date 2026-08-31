@@ -12,7 +12,7 @@ import (
 )
 
 // Each modifier's zero value is a contract: a frontend that has not
-// answered must not have silently answered something definite.
+// returned must not have silently returned something definite.
 func TestModifier(t *testing.T) {
 	t.Parallel()
 
@@ -50,7 +50,7 @@ func TestModifier(t *testing.T) {
 
 			var got symbol.Variance
 			assert.Equal(t, got, symbol.VarianceInvariant,
-				"the zero Variance is what Go and Rust always answer")
+				"the zero Variance is what Go and Rust always carry")
 		})
 	})
 

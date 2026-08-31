@@ -23,7 +23,7 @@ import (
 // Index wraps the graph rather than exposing it, and the wrapping
 // is load-bearing twice over. Nothing reachable from a phase
 // context can make a structural write, because the graph's write
-// surface is not here; and nothing reachable can read a stranger's
+// surface is not here; and nothing reachable can read another plugin's
 // raw directives. What dispatch needs is exactly what is here.
 //
 // An Index is safe for concurrent reads: everything it holds is
@@ -60,9 +60,9 @@ type skipEntry struct {
 // NewIndex builds the routing surface for one run.
 //
 // It refuses a missing graph, a missing fact store and an unfrozen
-// graph, because routing over any of those would answer partial
+// graph, because routing over any of those would return partial
 // results. validated holds each subject's typed instances in
-// position order, as validation answered them; the index keeps the
+// position order, as validation returned them; the index keeps the
 // map, and the caller does not mutate it after handing it over. A
 // nil scope admits everything.
 func NewIndex(
@@ -80,7 +80,7 @@ func NewIndex(
 	}
 	if !g.Frozen() {
 		return nil, errors.New(
-			"plugin: the graph is not frozen, so routing would answer partial results",
+			"plugin: the graph is not frozen, so routing would return partial results",
 		)
 	}
 	return &Index{
@@ -93,7 +93,7 @@ func NewIndex(
 	}, nil
 }
 
-// admittedOf evaluates the scope once per held package, and answers
+// admittedOf evaluates the scope once per held package, and returns
 // nil for a nil scope.
 func admittedOf(g *store.Graph, sc store.Scope) map[pkgKey]struct{} {
 	if sc == nil {
@@ -113,7 +113,7 @@ func admittedOf(g *store.Graph, sc store.Scope) map[pkgKey]struct{} {
 	return admitted
 }
 
-// skipsOf derives the skip table once, so a match pays one probe of
+// skipsOf derives the skip table once, so a match costs one probe of
 // a map holding only the subjects that carry skip.
 func skipsOf(
 	validated map[symbol.Identity][]directive.Directive,
@@ -150,7 +150,7 @@ func (ix *Index) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 // ByDirective enumerates the declarations carrying a spelling under
 // the scope, in identity order, untracked. The store's index is
 // keyed by the name as written, so the dispatcher queries each
-// spelling a schema answers to.
+// spelling a schema recognises.
 func (ix *Index) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 	return ix.filtered(ix.graph.ByDirective(n))
 }
@@ -175,9 +175,9 @@ func (ix *Index) ByFactKey(id meta.KeyID) iter.Seq[symbol.Identity] {
 	}
 }
 
-// Lookup answers one declaration under the scope, untracked: how a
+// Lookup returns one declaration under the scope, untracked: how a
 // fact-gated candidate resolves to its declaration and kind. A
-// declaration outside scope is not answered.
+// declaration outside scope is not returned.
 func (ix *Index) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 	if !ix.admits(id) {
 		return nil, false
@@ -185,10 +185,10 @@ func (ix *Index) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 	return ix.graph.Lookup(id)
 }
 
-// DirectivesOf answers a subject's validated instances, in position
+// DirectivesOf returns a subject's validated instances, in position
 // order, and nil for a subject carrying none. This is the gate's
 // read, not a plugin's: a handler is handed only the one instance
-// that caused its call. The answered slice is the table's own
+// that caused its call. The returned slice is the table's own
 // storage; do not mutate it.
 func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive {
 	return ix.validated[id]
@@ -197,7 +197,7 @@ func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive {
 // Skipped reports whether the kernel skip directive excludes a
 // subject from a plugin's bare and fact-gated rules: every plugin
 // under a bare skip, the named one under skip plugin=<name>. The
-// table is computed once at [NewIndex], so a match pays one probe
+// table is computed once at [NewIndex], so a match costs one probe
 // of a map holding only the subjects that carry skip.
 func (ix *Index) Skipped(id symbol.Identity, p ID) bool {
 	if len(ix.skips) == 0 {
@@ -214,7 +214,7 @@ func (ix *Index) Skipped(id symbol.Identity, p ID) bool {
 	return named
 }
 
-// PackageOf answers the package holding a declaration, under the
+// PackageOf returns the package holding a declaration, under the
 // scope, untracked: how a flush resolves a unit's namespace once
 // per accumulator.
 func (ix *Index) PackageOf(id symbol.Identity) (*node.Package, bool) {
@@ -243,8 +243,8 @@ func (ix *Index) admits(id symbol.Identity) bool {
 }
 
 // filtered narrows an enumeration of held declarations to the
-// scope. A nil scope answers the enumeration untouched, so the
-// common case pays nothing. Under a scope, the verdict is cached
+// scope. A nil scope returns the enumeration untouched, so the
+// common case costs nothing. Under a scope, the verdict is cached
 // per package run: the graph's indexes group declarations by
 // package, so consecutive candidates usually share one answer.
 func (ix *Index) filtered(seq iter.Seq[symbol.Symbol]) iter.Seq[symbol.Symbol] {

@@ -27,7 +27,7 @@ var (
 	carrier = position.Pos{File: "svc/store.go", Line: 7, Col: 1}
 )
 
-// fixture answers a registry with the fixture keys registered and a
+// fixture returns a registry with the fixture keys registered and a
 // fact store over it.
 func fixture(tb assert.TB) (*meta.Registry, *meta.Facts,
 	meta.Key[string], meta.Key[bool],
@@ -48,7 +48,7 @@ func fixture(tb assert.TB) (*meta.Registry, *meta.Facts,
 	return r, meta.NewFacts(r), role, flag
 }
 
-// by answers a plugin-authority claim on the fixture subject.
+// by returns a plugin-authority claim on the fixture subject.
 func by(plugin diag.Origin, seq int) meta.Claim {
 	return meta.Claim{Subject: subject, Plugin: plugin, Seq: seq, Pos: carrier}
 }
@@ -128,7 +128,7 @@ func TestFacts(t *testing.T) {
 
 			_, f, role, _ := fixture(t)
 			claim := by("shape", 1)
-			assert.NoError(t, meta.Stamp(f, role, "writer", claim), "the first stamp lands")
+			assert.NoError(t, meta.Stamp(f, role, "writer", claim), "the first stamp arrives")
 			assert.NoError(t, meta.Stamp(f, role, "writer", claim), "the re-stamp is accepted")
 
 			assert.Length(t, slices.Collect(f.Claims(subject, role.ID())), 1,
@@ -145,7 +145,7 @@ func TestFacts(t *testing.T) {
 			_, f, role, _ := fixture(t)
 			drop := by("defaults", 1)
 			drop.Authority = meta.AuthorityDirective
-			assert.NoError(t, f.DropGroup("shape.writer", drop), "the drop lands")
+			assert.NoError(t, f.DropGroup("shape.writer", drop), "the drop arrives")
 			assert.NoError(t, f.DropGroup("shape.writer", drop), "and repeats")
 
 			assert.Length(t, slices.Collect(f.Claims(subject, role.ID())), 1,
@@ -158,9 +158,9 @@ func TestFacts(t *testing.T) {
 			_, f, role, _ := fixture(t)
 			drop := by("defaults", 1)
 			drop.Authority = meta.AuthorityDirective
-			assert.NoError(t, f.DropKey(role.ID(), drop), "the drop lands first")
+			assert.NoError(t, f.DropKey(role.ID(), drop), "the drop arrives first")
 			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)),
-				"the stamp lands second")
+				"the stamp arrives second")
 
 			_, held := meta.Get(f, subject, role)
 			assert.False(t, held,
@@ -173,10 +173,10 @@ func TestFacts(t *testing.T) {
 			_, f, role, _ := fixture(t)
 			drop := by("defaults", 1)
 			drop.Authority = meta.AuthorityDirective
-			assert.NoError(t, f.DropKey(role.ID(), drop), "the drop lands")
+			assert.NoError(t, f.DropKey(role.ID(), drop), "the drop arrives")
 			manual := by("migrate", 1)
 			manual.Authority = meta.AuthorityManual
-			assert.NoError(t, meta.Stamp(f, role, "kept", manual), "the manual write lands")
+			assert.NoError(t, meta.Stamp(f, role, "kept", manual), "the manual write arrives")
 
 			got, held := meta.Get(f, subject, role)
 			assert.True(t, held, "manual outranks the drop")
@@ -189,7 +189,7 @@ func TestFacts(t *testing.T) {
 			_, f, role, _ := fixture(t)
 			drop := by("defaults", 1)
 			drop.Authority = meta.AuthorityDirective
-			assert.NoError(t, f.DropGroup("shape.writer", drop), "the group drop lands")
+			assert.NoError(t, f.DropGroup("shape.writer", drop), "the group drop arrives")
 			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)),
 				"a member stamps afterwards")
 
@@ -205,7 +205,7 @@ func TestFacts(t *testing.T) {
 			_, f, _, flag := fixture(t)
 			drop := by("defaults", 1)
 			drop.Authority = meta.AuthorityDirective
-			assert.NoError(t, f.DropGroup("shape.writer", drop), "the group drop lands")
+			assert.NoError(t, f.DropGroup("shape.writer", drop), "the group drop arrives")
 			assert.NoError(t, meta.Stamp(f, flag, true, by("shape", 1)),
 				"a key outside the group stamps")
 
@@ -230,7 +230,7 @@ func TestFacts(t *testing.T) {
 	t.Run("Get", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers absent for a fact never stamped", func(t *testing.T) {
+		t.Run("returns absent for a fact never stamped", func(t *testing.T) {
 			t.Parallel()
 
 			_, f, role, _ := fixture(t)
@@ -243,7 +243,7 @@ func TestFacts(t *testing.T) {
 	t.Run("Fact", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers what Get does and records the read", func(t *testing.T) {
+		t.Run("returns what Get does and records the read", func(t *testing.T) {
 			t.Parallel()
 
 			_, f, role, _ := fixture(t)
@@ -251,7 +251,7 @@ func TestFacts(t *testing.T) {
 
 			rec := &recorder{}
 			got, held := meta.Fact(f, rec, subject, role)
-			assert.True(t, held, "the tracked read answers the fact")
+			assert.True(t, held, "the tracked read returns the fact")
 			assert.Equal(t, got, "writer", "with its value")
 			assert.Equal(t, rec.reads, []meta.Read{{Subject: subject, Key: "shape.role"}},
 				"and records the read at (subject, key)")
@@ -270,12 +270,12 @@ func TestFacts(t *testing.T) {
 	})
 }
 
-// The scale the store answers for: two hundred thousand subjects,
+// The scale the store is sized for: two hundred thousand subjects,
 // which is dozens of lifted keys across a large workspace's
 // declarations.
 const benchSubjects = 200_000
 
-// benchIdentities answers n distinct struct subjects.
+// benchIdentities returns n distinct struct subjects.
 func benchIdentities(n int) []symbol.Identity {
 	out := make([]symbol.Identity, 0, n)
 	for i := range n {
@@ -287,7 +287,7 @@ func benchIdentities(n int) []symbol.Identity {
 	return out
 }
 
-// stamped answers a fact store with the role fact on every subject.
+// stamped returns a fact store with the role fact on every subject.
 func stamped(b *testing.B, subjects []symbol.Identity) (*meta.Facts, meta.Key[string]) {
 	b.Helper()
 
@@ -328,7 +328,7 @@ func BenchmarkFacts(b *testing.B) {
 		next := 0
 		for b.Loop() {
 			if _, held := meta.Get(f, unstamped[next%len(unstamped)], role); held {
-				b.Fatal("Get answered present for an unstamped subject")
+				b.Fatal("Get returned present for an unstamped subject")
 			}
 			next++
 		}
@@ -341,7 +341,7 @@ func BenchmarkFacts(b *testing.B) {
 		next := 0
 		for b.Loop() {
 			if _, held := meta.Get(f, subjects[next%len(subjects)], role); !held {
-				b.Fatal("Get answered absent for a stamped fact")
+				b.Fatal("Get returned absent for a stamped fact")
 			}
 			next++
 		}
@@ -355,7 +355,7 @@ func BenchmarkFacts(b *testing.B) {
 		next := 0
 		for b.Loop() {
 			if _, held := meta.Fact(f, reads, subjects[next%len(subjects)], role); !held {
-				b.Fatal("Fact answered absent for a stamped fact")
+				b.Fatal("Fact returned absent for a stamped fact")
 			}
 			next++
 		}
@@ -371,13 +371,13 @@ func BenchmarkFacts(b *testing.B) {
 				seen++
 			}
 			if seen != len(subjects) {
-				b.Fatalf("ByKey answered %d subjects, want %d", seen, len(subjects))
+				b.Fatalf("ByKey returned %d subjects, want %d", seen, len(subjects))
 			}
 		}
 	})
 }
 
-// The contention story: bags shard by subject, so parallel writers
+// Contention: bags shard by subject, so parallel writers
 // on distinct subjects and parallel readers of stamped facts both
 // scale rather than serialize.
 func BenchmarkFactsParallel(b *testing.B) {
@@ -411,7 +411,7 @@ func BenchmarkFactsParallel(b *testing.B) {
 			for p.Next() {
 				i := int(next.Add(1) - 1)
 				if _, held := meta.Get(f, subjects[i%len(subjects)], role); !held {
-					b.Error("Get answered absent for a stamped fact")
+					b.Error("Get returned absent for a stamped fact")
 				}
 			}
 		})

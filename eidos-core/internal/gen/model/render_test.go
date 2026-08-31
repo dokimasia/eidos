@@ -18,7 +18,7 @@ import (
 func TestRender(t *testing.T) {
 	t.Parallel()
 
-	// generated answers one rendered file with its column padding
+	// generated returns one rendered file with its column padding
 	// collapsed, so a case reads the spelling rather than the
 	// alignment gofmt chose.
 	generated := func(t *testing.T, path string) string {
@@ -72,7 +72,7 @@ func TestRender(t *testing.T) {
 			assert.Contains(t, kinds, "Origin",
 				"the emit model carries an origin")
 			assert.Contains(t, kinds, "position.Pos{}",
-				"and answers the zero position")
+				"and returns the zero position")
 		})
 
 		t.Run("a slot exists on the emit side alone", func(t *testing.T) {
@@ -105,10 +105,10 @@ func TestRender(t *testing.T) {
 
 			assert.Contains(t, generated(t, "node/kinds.gen.go"),
 				"func (x *Struct) Identity() symbol.Identity",
-				"a node declaration answers its identity, so a traversal can index by one")
+				"a node declaration returns its identity, so a traversal can index by one")
 			assert.NotContains(t, generated(t, "emit/kinds.gen.go"),
 				"Identity() symbol.Identity",
-				"the emit model answers none: an emit declaration has an origin instead")
+				"the emit model returns none: an emit declaration has an origin instead")
 		})
 
 		t.Run("the match surface generates per subject kind", func(t *testing.T) {
@@ -124,18 +124,18 @@ func TestRender(t *testing.T) {
 				"the generated twin holds every kind to the lowering")
 		})
 
-		t.Run("the emit walk answers origins by function", func(t *testing.T) {
+		t.Run("the emit walk returns origins by function", func(t *testing.T) {
 			t.Parallel()
 
 			walk := generated(t, "emit/walk.gen.go")
 			assert.Contains(t, walk,
 				"func OriginOf(s symbol.Symbol) (symbol.Identity, bool)",
-				"a subset of emit kinds carries origin storage, so a function answers it")
+				"a subset of emit kinds carries origin storage, so a function returns it")
 			assert.NotContains(t, generated(t, "node/walk.gen.go"), "OriginOf",
 				"the node side has identities, never origins")
 		})
 
-		t.Run("the node walk answers the declarations it yields", func(t *testing.T) {
+		t.Run("the node walk returns the declarations it yields", func(t *testing.T) {
 			t.Parallel()
 
 			walk := generated(t, "node/walk.gen.go")
@@ -144,7 +144,7 @@ func TestRender(t *testing.T) {
 				"func Declarations(s symbol.Symbol) iter.Seq[Declaration]",
 			} {
 				assert.Contains(t, walk, want,
-					"the node walk answers the declarations it yields")
+					"the node walk returns the declarations it yields")
 			}
 			assert.NotContains(t, generated(t, "emit/walk.gen.go"), "Declaration",
 				"which only the identity-bearing side can")

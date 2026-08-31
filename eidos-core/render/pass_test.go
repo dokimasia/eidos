@@ -24,7 +24,7 @@ import (
 )
 
 // stubNaming spells every unit as word, key stem and a fixture
-// extension: the shape a target's naming answers.
+// extension: the shape a target's naming returns.
 func stubNaming(u plugin.Unit) string {
 	stem := strings.TrimSuffix(path.Base(u.Key), ".go")
 	if stem == "." {
@@ -33,7 +33,7 @@ func stubNaming(u plugin.Unit) string {
 	return stem + "_" + u.Word + ".txt"
 }
 
-// language answers the smallest lawful language: a struct
+// language returns the smallest valid language: a struct
 // spelling, a callable spelling that places its body, a scaffold
 // printer for names and returns, and a pass-through formatter.
 func language() render.Language {
@@ -72,12 +72,12 @@ func scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 	}
 }
 
-// call answers the one-line scaffold statement naming n.
+// call returns the one-line scaffold statement naming n.
 func call(n string) emit.Stmt {
 	return emit.Stmt{Kind: emit.StmtExpr, Value: emit.Expr{Kind: emit.ExprName, Name: n}}
 }
 
-// fn answers a per-source unit holding one function carrying body.
+// fn returns a per-source unit holding one function carrying body.
 func fn(key, name string, body emit.Body) plugin.Unit {
 	u := unitOf("gen", key)
 	f := &emit.Function{
@@ -89,7 +89,7 @@ func fn(key, name string, body emit.Body) plugin.Unit {
 	return u
 }
 
-// unitOf answers one flushed unit carrying structs.
+// unitOf returns one flushed unit carrying structs.
 func unitOf(p plugin.ID, key string, names ...string) plugin.Unit {
 	decls := make([]symbol.Symbol, 0, len(names))
 	for _, n := range names {
@@ -104,13 +104,13 @@ func unitOf(p plugin.ID, key string, names ...string) plugin.Unit {
 	}
 }
 
-// seeded answers an emit store holding the given units.
+// seeded returns an emit store holding the given units.
 func seeded(tb assert.TB, units ...plugin.Unit) *plugin.Emit {
 	tb.Helper()
 
 	e := plugin.NewEmit()
 	for _, u := range units {
-		assert.NoError(tb, e.Add(u), "the fixture unit lands")
+		assert.NoError(tb, e.Add(u), "the fixture unit arrives")
 	}
 	return e
 }
@@ -131,7 +131,7 @@ func runPass(
 	return files, sink
 }
 
-// The pass is the ritual every language shares: group through the
+// The pass is the procedure every language shares: group through the
 // naming, render kinds in canonical order, finalise per file and
 // continue past a failure.
 func TestPass(t *testing.T) {
@@ -147,7 +147,7 @@ func TestPass(t *testing.T) {
 		assert.False(t, sink.Failed(), "nothing to report")
 		assert.Length(t, files, 2, "one file per name")
 		assert.Equal(t, files[0].Name, "store_stub.txt",
-			"files answer in name order")
+			"files come back in name order")
 		assert.Equal(t, files[1].Name, "user_stub.txt", "both spelled by the target")
 	})
 
@@ -161,7 +161,7 @@ func TestPass(t *testing.T) {
 		assert.Length(t, files, 1, "two plugins, one file")
 		body := string(files[0].Body)
 		assert.ContainsInOrder(t, body, []string{"Alpha", "Omega"},
-			"contributions land in unit order, which is total")
+			"contributions arrive in unit order, which is total")
 	})
 
 	t.Run("two packages spelling one filename stay two files", func(t *testing.T) {
@@ -261,7 +261,7 @@ func TestPass(t *testing.T) {
 
 			files, sink := runPass(t, language(), seeded(t,
 				fn("store.go", "Handle", emit.Body{})))
-			assert.False(t, sink.Failed(), "the default form is lawful")
+			assert.False(t, sink.Failed(), "the default form is valid")
 			assert.Equal(t, string(files[0].Body), "func Handle() {\n}\n",
 				"the kind template's own shape, no content")
 		})
@@ -276,20 +276,20 @@ func TestPass(t *testing.T) {
 			body.Stmts = []emit.Stmt{call("content")}
 			files, sink := runPass(t, language(), seeded(t,
 				fn("store.go", "Handle", body)))
-			assert.False(t, sink.Failed(), "the scaffold form is lawful")
+			assert.False(t, sink.Failed(), "the scaffold form is valid")
 			assert.ContainsInOrder(t, string(files[0].Body),
 				[]string{"pro", "content", "named", "epi"},
 				"prologue, content, named slots, epilogue: the fixed composition")
 		})
 
-		t.Run("verbatim lands literally", func(t *testing.T) {
+		t.Run("verbatim arrives literally", func(t *testing.T) {
 			t.Parallel()
 
 			files, sink := runPass(t, language(), seeded(t,
 				fn("store.go", "Handle", emit.Body{Verbatim: "\treturn nil\n"})))
-			assert.False(t, sink.Failed(), "the verbatim form is lawful")
+			assert.False(t, sink.Failed(), "the verbatim form is valid")
 			assert.Contains(t, string(files[0].Body), "\treturn nil\n",
-				"byte for byte, the sharp knife")
+				"byte for byte, as literal text")
 		})
 
 		t.Run("two forms is a finding and the slots still render", func(t *testing.T) {
@@ -348,13 +348,13 @@ func TestPass(t *testing.T) {
 			return string(files[0].Body), sink
 		}
 
-		t.Run("the template drives the layout and the data rides", func(t *testing.T) {
+		t.Run("the template drives the layout and the data is passed through", func(t *testing.T) {
 			t.Parallel()
 
 			body, sink := runRef(t,
 				trees("\tref({{.Data.mark}}) for {{.Decl.Name}}\n{{slots}}"),
 				refBody(map[string]any{"mark": "x"}))
-			assert.False(t, sink.Failed(), "a placed marker is lawful")
+			assert.False(t, sink.Failed(), "a placed marker is valid")
 			assert.ContainsInOrder(t, body, []string{"ref(x) for Handle", "pro"},
 				"content where the template says, then the marker's slots")
 		})
@@ -366,19 +366,19 @@ func TestPass(t *testing.T) {
 			b.Declare("checks").Append(call("named"))
 			body, sink := runRef(t,
 				trees("{{slot \"checks\"}}\tmid()\n{{slots}}"), b)
-			assert.False(t, sink.Failed(), "named markers are lawful")
+			assert.False(t, sink.Failed(), "named markers are valid")
 			assert.ContainsInOrder(t, body, []string{"named", "mid", "pro"},
-				"the named slot lands first, the catch-all takes the rest")
+				"the named slot arrives first, the catch-all takes the rest")
 		})
 
 		t.Run("the tree is the emitter's alone", func(t *testing.T) {
 			t.Parallel()
 
-			stranger := map[plugin.ID]fs.FS{
+			other := map[plugin.ID]fs.FS{
 				"other": fstest.MapFS{"method1.tpl": &fstest.MapFile{Data: []byte("{{slots}}")}},
 			}
-			body, sink := runRef(t, stranger, refBody(nil))
-			assert.True(t, sink.Failed(), "a stranger's tree resolves nothing")
+			body, sink := runRef(t, other, refBody(nil))
+			assert.True(t, sink.Failed(), "another plugin's tree resolves nothing")
 			assert.Contains(t, body, "pro",
 				"and the slots survive as the fallback")
 		})
@@ -395,7 +395,7 @@ func TestPass(t *testing.T) {
 					assert.Contains(t, d.Msg, "gen", "naming the emitter")
 				}
 			}
-			assert.True(t, found, "under the marker law's code")
+			assert.True(t, found, "under the marker rule's code")
 			assert.NotContains(t, body, "pro",
 				"the template owns the layout, so nothing is appended for it")
 		})
@@ -419,7 +419,7 @@ func TestPass(t *testing.T) {
 			l := language()
 			l.Kinds[symbol.KindStruct] = "{{use \"fmt\"}}type {{.Name}} struct{}\n"
 			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
-			assert.False(t, sink.Failed(), "a recorded import is lawful")
+			assert.False(t, sink.Failed(), "a recorded import is valid")
 			assert.ContainsInOrder(t, string(files[0].Body),
 				[]string{"import (fmt)", "type Alpha struct{}"},
 				"the block renders above the declarations")
@@ -433,7 +433,7 @@ func TestPass(t *testing.T) {
 			u := unitOf("gen", "example.com/store/store.go", "Alpha")
 			u.Pkg = coretest.PackageID("example.com/store")
 			files, sink := runPass(t, l, seeded(t, u))
-			assert.False(t, sink.Failed(), "the skeleton is lawful")
+			assert.False(t, sink.Failed(), "the skeleton is valid")
 			assert.HasPrefix(t, string(files[0].Body), "package example.com/store\n",
 				"the language spells its clause off the owning package")
 		})
@@ -444,7 +444,7 @@ func TestPass(t *testing.T) {
 			body := emit.Body{Stmts: []emit.Stmt{call("audit.Log")}}
 			files, sink := runPass(t, language(), seeded(t,
 				fn("store.go", "Handle", body)))
-			assert.False(t, sink.Failed(), "the qualified call is lawful")
+			assert.False(t, sink.Failed(), "the qualified call is valid")
 			assert.ContainsInOrder(t, string(files[0].Body),
 				[]string{"import (audit)", "audit.Log()"},
 				"spelling fed the file's one import set")
@@ -456,7 +456,7 @@ func TestPass(t *testing.T) {
 			l := language()
 			l.Kinds[symbol.KindStruct] = "{{use \"zeta\"}}{{use \"alpha\"}}{{use \"zeta\"}}type {{.Name}} struct{}\n"
 			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
-			assert.False(t, sink.Failed(), "repeated uses are lawful")
+			assert.False(t, sink.Failed(), "repeated uses are valid")
 			assert.Contains(t, string(files[0].Body), "import (alpha zeta)",
 				"one mention per path, in path order")
 		})
@@ -494,7 +494,7 @@ func TestPass(t *testing.T) {
 			body, sink := runMerged(t, shouting(), &plugin.RenderContext{
 				Emit: seeded(t, unitOf("gen", "store.go", "Alpha")),
 			})
-			assert.False(t, sink.Failed(), "the shared helper is lawful")
+			assert.False(t, sink.Failed(), "the shared helper is valid")
 			assert.Contains(t, body, "type ALPHA struct{}",
 				"registered once, called anywhere")
 		})
@@ -508,7 +508,7 @@ func TestPass(t *testing.T) {
 				Funcs:     map[plugin.ID]template.FuncMap{"styler": {"shout": strings.ToLower}},
 				Overrides: map[plugin.ID][]string{"styler": {"shout"}},
 			})
-			assert.False(t, sink.Failed(), "the replace verb is declared and lawful")
+			assert.False(t, sink.Failed(), "the replace verb is declared and valid")
 			assert.Contains(t, body, "type alpha struct{}",
 				"the backend's own templates render through the override")
 		})
@@ -582,7 +582,7 @@ func TestPass(t *testing.T) {
 		})
 	})
 
-	t.Run("two runs answer the same bytes", func(t *testing.T) {
+	t.Run("two runs produce the same bytes", func(t *testing.T) {
 		t.Parallel()
 
 		build := func() *plugin.Emit {
@@ -598,7 +598,7 @@ func TestPass(t *testing.T) {
 	})
 }
 
-// BenchmarkPass prices the ritual at the canonical scale: 1000
+// BenchmarkPass measures the procedure at the canonical scale: 1000
 // per-package files of 200 declarations, 200k template executions,
 // through a pass-through formatter, so the number is the pass and
 // the engine, not a real language's spelling.

@@ -9,7 +9,7 @@ import (
 )
 
 // The capability surfaces: interfaces the composition asserts on a
-// plugin to learn what it declared. Each answers data built once;
+// plugin to learn what it declared. Each returns data built once;
 // none is invoked during a phase.
 
 // DirectiveProvider declares the schemas a plugin owns, for
@@ -20,12 +20,12 @@ type DirectiveProvider interface {
 
 // KeyProvider registers the plugin's metadata keys at composition.
 // The call runs once per workspace, and the plugin keeps the typed
-// handles it is answered: they are composition constants, the same
+// handles it is returned: they are composition constants, the same
 // class as a directive schema, not run state. It takes the
-// registry rather than answering data because registration answers
+// registry rather than returning data because registration returns
 // the handles back, which data cannot. Faults are collected by the
 // caller, so the error names what failed rather than stopping the
-// bill.
+// collection.
 type KeyProvider interface {
 	Keys(r *meta.Registry) error
 }
@@ -35,7 +35,7 @@ type OutputProvider interface {
 	Outputs() []Output
 }
 
-// CapabilityProvider orders a plugin: a priority per role seat,
+// CapabilityProvider orders a plugin: a priority per role role,
 // plus the capability topology inside one priority bucket.
 type CapabilityProvider interface {
 	Priority(r Role) int

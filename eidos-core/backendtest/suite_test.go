@@ -23,21 +23,21 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// call answers the one-line scaffold statement naming n.
+// call returns the one-line scaffold statement naming n.
 func call(n string) emit.Stmt {
 	return emit.Stmt{Kind: emit.StmtExpr, Value: emit.Expr{Kind: emit.ExprName, Name: n}}
 }
 
-// unit answers one flushed plan unit under the emitting fixture
+// unit returns one flushed plan unit under the emitting fixture
 // plugin, its word doubling as the family tag the way distinct
-// declared outputs land as distinct accumulators.
+// declared outputs arrive as distinct accumulators.
 func unit(word string, decls ...symbol.Symbol) plugin.Unit {
 	return plugin.Unit{
 		Plugin: "gen", Tag: word, Per: plugin.PerPlan, Word: word, Decls: decls,
 	}
 }
 
-// fnOf answers a function declaration carrying body.
+// fnOf returns a function declaration carrying body.
 func fnOf(name string, body emit.Body) *emit.Function {
 	f := &emit.Function{
 		Origin: coretest.Struct(coretest.StorePath, name).ID,
@@ -84,7 +84,7 @@ func wellBackend(tb assert.TB) plugin.Renderer {
 	return r
 }
 
-// wellFixture answers the lawful fixture: a store carrying every
+// wellFixture returns the valid fixture: a store carrying every
 // kind the backend spells and a body in each of the four content
 // forms, with the reference's slot content spliced through a
 // marker-placing tree.
@@ -106,7 +106,7 @@ func wellFixture(tb assert.TB) *backendtest.Fixture {
 		unit("ref", fnOf("Save", refBody)),
 		unit("raw", fnOf("Dump", emit.Body{Verbatim: "\tdump()\n"})),
 	} {
-		assert.NoError(tb, e.Add(u), "the fixture unit lands")
+		assert.NoError(tb, e.Add(u), "the fixture unit arrives")
 	}
 	return &backendtest.Fixture{
 		Emit:     e,
@@ -119,8 +119,8 @@ func wellFixture(tb assert.TB) *backendtest.Fixture {
 	}
 }
 
-// wellRendered answers the lawful setup: the kit backend over the
-// lawful fixture.
+// wellRendered returns the valid setup: the kit backend over the
+// valid fixture.
 func wellRendered(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	tb.Helper()
 
@@ -128,7 +128,7 @@ func wellRendered(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 }
 
 // fake is a renderer the rejection tests script: the suite has to
-// catch every way a renderer can cheat the laws.
+// catch every way a renderer can cheat the rules.
 type fake struct {
 	render func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error)
 }
@@ -137,7 +137,7 @@ func (f *fake) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	return f.render(ctx)
 }
 
-// scripted answers a setup handing the fake over a bare fixture.
+// scripted returns a setup handing the fake over a bare fixture.
 func scripted(r func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error)) backendtest.Setup {
 	return func(assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 		return &fake{render: r}, &backendtest.Fixture{Emit: plugin.NewEmit()}
@@ -145,15 +145,15 @@ func scripted(r func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error)) 
 }
 
 // The suite is the contract a backend author tests against, so it
-// has to wave a lawful backend through and reject each way of
-// cheating: that second half is what earns it.
+// has to accept a valid backend through and reject each way of
+// cheating: that second half is what justifies it.
 func TestRunBackendSuite(t *testing.T) {
 	t.Parallel()
 
 	backendtest.RunBackendSuite(t, wellRendered)
 }
 
-func TestAssertInhabitedFixture(t *testing.T) {
+func TestAssertPopulatedFixture(t *testing.T) {
 	t.Parallel()
 
 	t.Run("rejects an empty store", func(t *testing.T) {
@@ -163,12 +163,12 @@ func TestAssertInhabitedFixture(t *testing.T) {
 			return nil, nil
 		})
 
-		failure := assert.Rejects(t, "an empty world must fail the check",
+		failure := assert.Rejects(t, "an empty store must fail the check",
 			func(tb assert.TB) {
-				backendtest.AssertInhabitedFixture(tb, hollow)
+				backendtest.AssertPopulatedFixture(tb, hollow)
 			})
 		assert.Contains(t, failure, "unit",
-			"the check demands an inhabited fixture")
+			"the check demands an populated fixture")
 	})
 }
 
@@ -236,7 +236,7 @@ func TestAssertPlacedContent(t *testing.T) {
 				backendtest.AssertPlacedContent(tb, dropped)
 			})
 		assert.Contains(t, failure, "whole",
-			"the check holds every body to landing whole")
+			"the check holds every body to arriving whole")
 	})
 }
 
@@ -255,7 +255,7 @@ func TestAssertContinuedRender(t *testing.T) {
 				backendtest.AssertContinuedRender(tb, aborting)
 			})
 		assert.Contains(t, failure, "continue",
-			"the check names the continuation law")
+			"the check names the continuation rule")
 	})
 
 	t.Run("rejects a finding without a position", func(t *testing.T) {
@@ -272,24 +272,24 @@ func TestAssertContinuedRender(t *testing.T) {
 				backendtest.AssertContinuedRender(tb, unpositioned)
 			})
 		assert.Contains(t, failure, "position",
-			"the check names the positioning law")
+			"the check names the positioning rule")
 	})
 
-	t.Run("rejects a finding under a stranger's origin", func(t *testing.T) {
+	t.Run("rejects a finding under another plugin's origin", func(t *testing.T) {
 		t.Parallel()
 
-		stranger := scripted(func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+		foreign := scripted(func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
 			ctx.Sink.Errorf(render.UnformattedFile,
-				position.Pos{File: "a.txt"}, "stranger", "not mine")
+				position.Pos{File: "a.txt"}, "outsider", "not mine")
 			return nil, nil
 		})
 
 		failure := assert.Rejects(t, "a mis-attributed finding must fail the check",
 			func(tb assert.TB) {
-				backendtest.AssertContinuedRender(tb, stranger)
+				backendtest.AssertContinuedRender(tb, foreign)
 			})
 		assert.Contains(t, failure, "origin",
-			"the check names the attribution law")
+			"the check names the attribution rule")
 	})
 
 	t.Run("rejects a returned file reported unformatted", func(t *testing.T) {
@@ -306,7 +306,7 @@ func TestAssertContinuedRender(t *testing.T) {
 				backendtest.AssertContinuedRender(tb, lying)
 			})
 		assert.Contains(t, failure, "withheld",
-			"the check holds the withholding law")
+			"the check holds the withholding rule")
 	})
 
 	t.Run("holds a genuine format failure to continuation", func(t *testing.T) {

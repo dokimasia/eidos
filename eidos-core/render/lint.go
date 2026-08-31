@@ -13,17 +13,17 @@ import (
 )
 
 // Lint holds one plugin's template tree to the static half of the
-// template laws, against this pass's target: every template parses
+// template rules, against this pass's target: every template parses
 // with the merged vocabulary, so an unknown function fails here
 // rather than at execute time; every template carries a slots or
 // slot marker, because a body-claiming template that dropped them
 // strands contributions at render; a helper shadowing a shared
 // name without a declared override is refused the way the render
 // refuses it; and a declared override must replace something
-// shared. It answers one error per finding and nothing for a
-// lawful tree. What the lint cannot see is a reference's payload
-// and everything inside verbatim, which is the cost those were
-// priced at.
+// shared. It returns one error per finding and nothing for a
+// valid tree. What the lint cannot see is a reference's payload
+// and everything inside verbatim, which is the cost those
+// carry.
 func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides []string) []error {
 	var findings []error
 
@@ -33,7 +33,8 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides []string) []er
 		if _, shared := p.shared[name]; !shared {
 			findings = append(findings, fmt.Errorf(
 				"render: the override %q replaces nothing in %s's shared vocabulary",
-				name, p.name))
+				name, p.name,
+			))
 		}
 	}
 	vocabulary := template.FuncMap{}
@@ -42,12 +43,14 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides []string) []er
 		switch {
 		case reserved(name):
 			findings = append(findings, fmt.Errorf(
-				"render: the helper %q claims a builtin's name", name))
+				"render: the helper %q claims a builtin's name", name,
+			))
 		case !declared[name]:
 			if _, shared := p.shared[name]; shared {
 				findings = append(findings, fmt.Errorf(
 					"render: the helper %q shadows %s's shared vocabulary without declaring the override",
-					name, p.name))
+					name, p.name,
+				))
 				continue
 			}
 			vocabulary[name] = fn
@@ -76,7 +79,8 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides []string) []er
 		if !placesSlots(t.Root) {
 			return fmt.Errorf(
 				"render: %s places no %s or %s marker, and a pending contribution would strand",
-				name, BuiltinSlots, BuiltinSlot)
+				name, BuiltinSlots, BuiltinSlot,
+			)
 		}
 		return nil
 	}

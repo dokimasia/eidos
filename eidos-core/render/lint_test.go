@@ -13,12 +13,12 @@ import (
 	"go.dokimi.dev/eidos/core/render"
 )
 
-// tree answers a one-template tree.
+// tree returns a one-template tree.
 func tree(name, src string) fstest.MapFS {
 	return fstest.MapFS{name: &fstest.MapFile{Data: []byte(src)}}
 }
 
-// The lint is the static half of the marker law: every declared
+// The lint is the static half of the marker rule: every declared
 // template parses against the merged vocabulary before any run
 // exists, and a body-claiming template carries its marker or
 // fails here rather than in a diff.
@@ -35,11 +35,12 @@ func TestLint(t *testing.T) {
 		return p
 	}
 
-	t.Run("a lawful tree passes whole", func(t *testing.T) {
+	t.Run("a valid tree passes whole", func(t *testing.T) {
 		t.Parallel()
 
 		findings := linter(t).Lint(
-			tree("method1.tpl", "\t{{shout .Data.x}}()\n{{slots}}"), nil, nil)
+			tree("method1.tpl", "\t{{shout .Data.x}}()\n{{slots}}"), nil, nil,
+		)
 		assert.Empty(t, findings, "marker placed, vocabulary known")
 	})
 
@@ -47,7 +48,8 @@ func TestLint(t *testing.T) {
 		t.Parallel()
 
 		findings := linter(t).Lint(
-			tree("method1.tpl", `{{slot "checks"}}`), nil, nil)
+			tree("method1.tpl", `{{slot "checks"}}`), nil, nil,
+		)
 		assert.Empty(t, findings, "named placement is placement")
 	})
 
@@ -63,7 +65,8 @@ func TestLint(t *testing.T) {
 		t.Parallel()
 
 		findings := linter(t).Lint(
-			tree("method1.tpl", "{{mystery .}}{{slots}}"), nil, nil)
+			tree("method1.tpl", "{{mystery .}}{{slots}}"), nil, nil,
+		)
 		assert.Length(t, findings, 1, "the unknown name reports")
 		assert.Contains(t, findings[0].Error(), "mystery", "naming the function")
 	})
@@ -73,7 +76,8 @@ func TestLint(t *testing.T) {
 
 		findings := linter(t).Lint(
 			tree("method1.tpl", "{{mine .}}{{slots}}"),
-			template.FuncMap{"mine": func(any) string { return "" }}, nil)
+			template.FuncMap{"mine": func(any) string { return "" }}, nil,
+		)
 		assert.Empty(t, findings, "declared helpers resolve")
 	})
 
@@ -81,7 +85,7 @@ func TestLint(t *testing.T) {
 		t.Parallel()
 
 		findings := linter(t).Lint(tree("bare.tpl", "\treturn nil\n"), nil, nil)
-		assert.Length(t, findings, 1, "the marker law is static here")
+		assert.Length(t, findings, 1, "the marker rule is static here")
 		assert.Contains(t, findings[0].Error(), "bare.tpl", "naming the template")
 		assert.Contains(t, findings[0].Error(), render.BuiltinSlots,
 			"and the marker it lacks")
@@ -92,7 +96,8 @@ func TestLint(t *testing.T) {
 
 		findings := linter(t).Lint(
 			tree("method1.tpl", "{{slots}}"),
-			template.FuncMap{"shout": func(s string) string { return s }}, nil)
+			template.FuncMap{"shout": func(s string) string { return s }}, nil,
+		)
 		assert.Length(t, findings, 1, "the shared name needs the declaration")
 		assert.Contains(t, findings[0].Error(), "shout", "naming the helper")
 	})
@@ -101,7 +106,8 @@ func TestLint(t *testing.T) {
 		t.Parallel()
 
 		findings := linter(t).Lint(
-			tree("method1.tpl", "{{slots}}"), nil, []string{"ghost"})
+			tree("method1.tpl", "{{slots}}"), nil, []string{"ghost"},
+		)
 		assert.Length(t, findings, 1, "an override replaces something or lies")
 		assert.Contains(t, findings[0].Error(), "ghost", "naming the claim")
 	})

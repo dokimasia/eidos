@@ -118,11 +118,11 @@ func (b *BackendBuilder) Finalise(f func(src []byte) ([]byte, error)) *BackendBu
 	return b
 }
 
-// Build freezes the declaration and answers the lowered backend,
+// Build freezes the declaration and returns the lowered backend,
 // which implements [plugin.Backend] and [plugin.Renderer] both.
 // Its Render is the render pass over the declared language and
 // nothing more, so a kit backend and a hand-rolled pass over the
-// same language answer the same bytes.
+// same language return the same bytes.
 //
 // Build panics on a declaration defect: an empty name, a zero
 // target, a kind or helper declared twice, and everything the
@@ -130,7 +130,7 @@ func (b *BackendBuilder) Finalise(f func(src []byte) ([]byte, error)) *BackendBu
 // template that does not parse, a builtin name claimed by the
 // shared vocabulary, a missing naming, scaffold, import renderer
 // or formatter. A wrong declaration is a bug in the backend's own
-// constructor and fires on the first Build in any test.
+// constructor and panics on the first Build in any test.
 func (b *BackendBuilder) Build() plugin.Backend {
 	if b.name == "" {
 		panic("eidos: NewBackend with an empty name")
@@ -152,7 +152,7 @@ func (b *BackendBuilder) Build() plugin.Backend {
 	}
 }
 
-// builtBackend is a lowered backend declaration: the seats the
+// builtBackend is a lowered backend declaration: the roles the
 // plan validates as data, and the composed pass Render lowers to.
 type builtBackend struct {
 	name   plugin.ID
@@ -161,14 +161,14 @@ type builtBackend struct {
 	pass   *render.Pass
 }
 
-// Name answers the backend's one identity.
+// Name returns the backend's one identity.
 func (b *builtBackend) Name() plugin.ID { return b.name }
 
-// Target answers the target the backend's plan resolves at
+// Target returns the target the backend's plan resolves at
 // composition.
 func (b *builtBackend) Target() plugin.Target { return b.target }
 
-// Syntax answers the language's comment forms, carried for the
+// Syntax returns the language's comment forms, carried for the
 // output contract: the generated-file header is written through
 // them, after the formatter ran.
 func (b *builtBackend) Syntax() plugin.CommentSyntax { return b.syntax }

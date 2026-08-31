@@ -31,13 +31,13 @@ type Function struct {
 	Body       Body              `json:"body,omitzero"`
 }
 
-// Kind answers [symbol.KindFunction].
+// Kind returns [symbol.KindFunction].
 func (x *Function) Kind() symbol.Kind { return symbol.KindFunction }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Function) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Function) Docs() []string { return x.Doc }
 
@@ -90,13 +90,13 @@ type Method struct {
 	Body       Body              `json:"body,omitzero"`
 }
 
-// Kind answers [symbol.KindMethod].
+// Kind returns [symbol.KindMethod].
 func (x *Method) Kind() symbol.Kind { return symbol.KindMethod }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Method) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Method) Docs() []string { return x.Doc }
 
@@ -111,7 +111,7 @@ func (x *Method) Docs() []string { return x.Doc }
 // Default holds the source spelling of the default value,
 // unevaluated, and is empty when the parameter has none. A
 // generator that drops a default changes the callee's contract, so
-// the spelling travels with the parameter rather than living in
+// the spelling is carried with the parameter rather than living in
 // metadata.
 //
 // Variadic distinguishes the positional and keyword forms, because
@@ -128,17 +128,17 @@ type Param struct {
 	Variadic symbol.Variadic `json:"variadic,omitzero"` // positional or keyword
 }
 
-// Kind answers [symbol.KindParam].
+// Kind returns [symbol.KindParam].
 func (x *Param) Kind() symbol.Kind { return symbol.KindParam }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Param) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Param) Docs() []string { return nil }
 
-// TypeRef answers the declaration's own type reference, nil when
+// TypeRef returns the declaration's own type reference, nil when
 // the source states none.
 func (x *Param) TypeRef() symbol.Symbol {
 	if x.Type == nil {
@@ -159,17 +159,17 @@ type Return struct {
 	Type *TypeRef `json:"type,omitzero"`
 }
 
-// Kind answers [symbol.KindReturn].
+// Kind returns [symbol.KindReturn].
 func (x *Return) Kind() symbol.Kind { return symbol.KindReturn }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Return) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Return) Docs() []string { return nil }
 
-// TypeRef answers the declaration's own type reference, nil when
+// TypeRef returns the declaration's own type reference, nil when
 // the source states none.
 func (x *Return) TypeRef() symbol.Symbol {
 	if x.Type == nil {
@@ -196,13 +196,13 @@ type Package struct {
 	Name string   `json:"name,omitzero"` // may differ from the last segment
 }
 
-// Kind answers [symbol.KindPackage].
+// Kind returns [symbol.KindPackage].
 func (x *Package) Kind() symbol.Kind { return symbol.KindPackage }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Package) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Package) Docs() []string { return x.Doc }
 
@@ -220,13 +220,13 @@ type File struct {
 	Path string   `json:"path,omitzero"` // workspace-relative, slash-separated
 }
 
-// Kind answers [symbol.KindFile].
+// Kind returns [symbol.KindFile].
 func (x *File) Kind() symbol.Kind { return symbol.KindFile }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *File) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *File) Docs() []string { return x.Doc }
 
@@ -253,13 +253,13 @@ func (x *File) Docs() []string { return x.Doc }
 type Import struct {
 }
 
-// Kind answers [symbol.KindImport].
+// Kind returns [symbol.KindImport].
 func (x *Import) Kind() symbol.Kind { return symbol.KindImport }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Import) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Import) Docs() []string { return nil }
 
@@ -280,13 +280,13 @@ func (x *Import) Docs() []string { return nil }
 type Export struct {
 }
 
-// Kind answers [symbol.KindExport].
+// Kind returns [symbol.KindExport].
 func (x *Export) Kind() symbol.Kind { return symbol.KindExport }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Export) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Export) Docs() []string { return nil }
 
@@ -303,13 +303,13 @@ func (x *Export) Docs() []string { return nil }
 type Binding struct {
 }
 
-// Kind answers [symbol.KindBinding].
+// Kind returns [symbol.KindBinding].
 func (x *Binding) Kind() symbol.Kind { return symbol.KindBinding }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Binding) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Binding) Docs() []string { return nil }
 
@@ -335,17 +335,17 @@ type Enum struct {
 	Methods    Slot[*Method]      `json:"methods,omitzero"` // and behaviour
 }
 
-// Kind answers [symbol.KindEnum].
+// Kind returns [symbol.KindEnum].
 func (x *Enum) Kind() symbol.Kind { return symbol.KindEnum }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Enum) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Enum) Docs() []string { return x.Doc }
 
-// FieldList answers the member list, adapted for neutral code.
+// FieldList returns the member list, adapted for neutral code.
 func (x *Enum) FieldList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, x.Fields.Len())
 	for _, member := range x.Fields.Items() {
@@ -354,7 +354,7 @@ func (x *Enum) FieldList() []symbol.Symbol {
 	return out
 }
 
-// MethodList answers the member list, adapted for neutral code.
+// MethodList returns the member list, adapted for neutral code.
 func (x *Enum) MethodList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, x.Methods.Len())
 	for _, member := range x.Methods.Items() {
@@ -363,7 +363,7 @@ func (x *Enum) MethodList() []symbol.Symbol {
 	return out
 }
 
-// EmbedList answers the member list, adapted for neutral code. This kind carries none, so it answers nil.
+// EmbedList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
 func (x *Enum) EmbedList() []symbol.Symbol {
 	return nil
 }
@@ -384,13 +384,13 @@ type EnumVariant struct {
 	Value  string          `json:"value,omitzero"` // source spelling, unevaluated
 }
 
-// Kind answers [symbol.KindEnumVariant].
+// Kind returns [symbol.KindEnumVariant].
 func (x *EnumVariant) Kind() symbol.Kind { return symbol.KindEnumVariant }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *EnumVariant) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *EnumVariant) Docs() []string { return x.Doc }
 
@@ -414,17 +414,17 @@ type Sum struct {
 	Methods    Slot[*Method]     `json:"methods,omitzero"`
 }
 
-// Kind answers [symbol.KindSum].
+// Kind returns [symbol.KindSum].
 func (x *Sum) Kind() symbol.Kind { return symbol.KindSum }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Sum) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Sum) Docs() []string { return x.Doc }
 
-// FieldList answers the member list, adapted for neutral code.
+// FieldList returns the member list, adapted for neutral code.
 func (x *Sum) FieldList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, x.Variants.Len())
 	for _, member := range x.Variants.Items() {
@@ -433,7 +433,7 @@ func (x *Sum) FieldList() []symbol.Symbol {
 	return out
 }
 
-// MethodList answers the member list, adapted for neutral code.
+// MethodList returns the member list, adapted for neutral code.
 func (x *Sum) MethodList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, x.Methods.Len())
 	for _, member := range x.Methods.Items() {
@@ -442,7 +442,7 @@ func (x *Sum) MethodList() []symbol.Symbol {
 	return out
 }
 
-// EmbedList answers the member list, adapted for neutral code. This kind carries none, so it answers nil.
+// EmbedList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
 func (x *Sum) EmbedList() []symbol.Symbol {
 	return nil
 }
@@ -460,17 +460,17 @@ type SumVariant struct {
 	Fields Slot[*Field]    `json:"fields,omitzero"` // the payload; unnamed when positional
 }
 
-// Kind answers [symbol.KindSumVariant].
+// Kind returns [symbol.KindSumVariant].
 func (x *SumVariant) Kind() symbol.Kind { return symbol.KindSumVariant }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *SumVariant) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *SumVariant) Docs() []string { return x.Doc }
 
-// FieldList answers the member list, adapted for neutral code.
+// FieldList returns the member list, adapted for neutral code.
 func (x *SumVariant) FieldList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, x.Fields.Len())
 	for _, member := range x.Fields.Items() {
@@ -479,12 +479,12 @@ func (x *SumVariant) FieldList() []symbol.Symbol {
 	return out
 }
 
-// MethodList answers the member list, adapted for neutral code. This kind carries none, so it answers nil.
+// MethodList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
 func (x *SumVariant) MethodList() []symbol.Symbol {
 	return nil
 }
 
-// EmbedList answers the member list, adapted for neutral code. This kind carries none, so it answers nil.
+// EmbedList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
 func (x *SumVariant) EmbedList() []symbol.Symbol {
 	return nil
 }
@@ -511,17 +511,17 @@ type Field struct {
 	Type       *TypeRef          `json:"type,omitzero"`
 }
 
-// Kind answers [symbol.KindField].
+// Kind returns [symbol.KindField].
 func (x *Field) Kind() symbol.Kind { return symbol.KindField }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Field) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Field) Docs() []string { return x.Doc }
 
-// TypeRef answers the declaration's own type reference, nil when
+// TypeRef returns the declaration's own type reference, nil when
 // the source states none.
 func (x *Field) TypeRef() symbol.Symbol {
 	if x.Type == nil {
@@ -553,17 +553,17 @@ type Variable struct {
 	Type       *TypeRef          `json:"type,omitzero"` // nil when the source states none
 }
 
-// Kind answers [symbol.KindVariable].
+// Kind returns [symbol.KindVariable].
 func (x *Variable) Kind() symbol.Kind { return symbol.KindVariable }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Variable) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Variable) Docs() []string { return x.Doc }
 
-// TypeRef answers the declaration's own type reference, nil when
+// TypeRef returns the declaration's own type reference, nil when
 // the source states none.
 func (x *Variable) TypeRef() symbol.Symbol {
 	if x.Type == nil {
@@ -591,17 +591,17 @@ type Constant struct {
 	Value      string            `json:"value,omitzero"` // source spelling, unevaluated
 }
 
-// Kind answers [symbol.KindConstant].
+// Kind returns [symbol.KindConstant].
 func (x *Constant) Kind() symbol.Kind { return symbol.KindConstant }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Constant) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Constant) Docs() []string { return x.Doc }
 
-// TypeRef answers the declaration's own type reference, nil when
+// TypeRef returns the declaration's own type reference, nil when
 // the source states none.
 func (x *Constant) TypeRef() symbol.Symbol {
 	if x.Type == nil {
@@ -652,17 +652,17 @@ type Struct struct {
 	Implements []*TypeRef          `json:"implements,omitzero"`
 }
 
-// Kind answers [symbol.KindStruct].
+// Kind returns [symbol.KindStruct].
 func (x *Struct) Kind() symbol.Kind { return symbol.KindStruct }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Struct) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Struct) Docs() []string { return x.Doc }
 
-// FieldList answers the member list, adapted for neutral code.
+// FieldList returns the member list, adapted for neutral code.
 func (x *Struct) FieldList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, x.Fields.Len())
 	for _, member := range x.Fields.Items() {
@@ -671,7 +671,7 @@ func (x *Struct) FieldList() []symbol.Symbol {
 	return out
 }
 
-// MethodList answers the member list, adapted for neutral code.
+// MethodList returns the member list, adapted for neutral code.
 func (x *Struct) MethodList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, x.Methods.Len())
 	for _, member := range x.Methods.Items() {
@@ -680,7 +680,7 @@ func (x *Struct) MethodList() []symbol.Symbol {
 	return out
 }
 
-// EmbedList answers the member list, adapted for neutral code.
+// EmbedList returns the member list, adapted for neutral code.
 func (x *Struct) EmbedList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, len(x.Embeds))
 	for _, member := range x.Embeds {
@@ -722,17 +722,17 @@ type Interface struct {
 	Extends    []*TypeRef          `json:"extends,omitzero"`
 }
 
-// Kind answers [symbol.KindInterface].
+// Kind returns [symbol.KindInterface].
 func (x *Interface) Kind() symbol.Kind { return symbol.KindInterface }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Interface) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Interface) Docs() []string { return x.Doc }
 
-// FieldList answers the member list, adapted for neutral code.
+// FieldList returns the member list, adapted for neutral code.
 func (x *Interface) FieldList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, x.Fields.Len())
 	for _, member := range x.Fields.Items() {
@@ -741,7 +741,7 @@ func (x *Interface) FieldList() []symbol.Symbol {
 	return out
 }
 
-// MethodList answers the member list, adapted for neutral code.
+// MethodList returns the member list, adapted for neutral code.
 func (x *Interface) MethodList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, x.Methods.Len())
 	for _, member := range x.Methods.Items() {
@@ -750,7 +750,7 @@ func (x *Interface) MethodList() []symbol.Symbol {
 	return out
 }
 
-// EmbedList answers the member list, adapted for neutral code.
+// EmbedList returns the member list, adapted for neutral code.
 func (x *Interface) EmbedList() []symbol.Symbol {
 	out := make([]symbol.Symbol, 0, len(x.Embeds))
 	for _, member := range x.Embeds {
@@ -778,13 +778,13 @@ type Alias struct {
 	Target     *TypeRef          `json:"target,omitzero"` // nil for an associated type
 }
 
-// Kind answers [symbol.KindAlias].
+// Kind returns [symbol.KindAlias].
 func (x *Alias) Kind() symbol.Kind { return symbol.KindAlias }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Alias) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Alias) Docs() []string { return x.Doc }
 
@@ -810,13 +810,13 @@ type TypeRef struct {
 	Args     []*TypeRef      `json:"args,omitzero"`
 }
 
-// Kind answers [symbol.KindTypeRef].
+// Kind returns [symbol.KindTypeRef].
 func (x *TypeRef) Kind() symbol.Kind { return symbol.KindTypeRef }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *TypeRef) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *TypeRef) Docs() []string { return nil }
 
@@ -849,17 +849,17 @@ type TypeParam struct {
 	DefaultValue string          `json:"defaultValue,omitzero"` // default value spelling, when Const
 }
 
-// Kind answers [symbol.KindTypeParam].
+// Kind returns [symbol.KindTypeParam].
 func (x *TypeParam) Kind() symbol.Kind { return symbol.KindTypeParam }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *TypeParam) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *TypeParam) Docs() []string { return nil }
 
-// TypeRef answers the declaration's own type reference, nil when
+// TypeRef returns the declaration's own type reference, nil when
 // the source states none.
 func (x *TypeParam) TypeRef() symbol.Symbol {
 	if x.Type == nil {
@@ -881,13 +881,13 @@ type Constraint struct {
 	Terms []*TypeRef `json:"terms,omitzero"` // the projectable terms
 }
 
-// Kind answers [symbol.KindConstraint].
+// Kind returns [symbol.KindConstraint].
 func (x *Constraint) Kind() symbol.Kind { return symbol.KindConstraint }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Constraint) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Constraint) Docs() []string { return nil }
 
@@ -905,12 +905,12 @@ type Embed struct {
 	Ref *TypeRef `json:"ref,omitzero"`
 }
 
-// Kind answers [symbol.KindEmbed].
+// Kind returns [symbol.KindEmbed].
 func (x *Embed) Kind() symbol.Kind { return symbol.KindEmbed }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *Embed) Position() position.Pos { return position.Pos{} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *Embed) Docs() []string { return nil }

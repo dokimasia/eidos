@@ -36,7 +36,7 @@ const (
 	KindEmbed
 )
 
-// kindNames answers [Kind.String].
+// kindNames backs [Kind.String].
 var kindNames = [...]string{
 	KindInvalid:     "Invalid",
 	KindFunction:    "Function",
@@ -64,7 +64,7 @@ var kindNames = [...]string{
 	KindEmbed:       "Embed",
 }
 
-// kindByName answers [ParseKind].
+// kindByName backs [ParseKind].
 var kindByName = map[string]Kind{
 	"Function":    KindFunction,
 	"Method":      KindMethod,
@@ -99,8 +99,8 @@ func (k Kind) String() string {
 	return kindNames[k]
 }
 
-// ParseKind answers the kind a name spells, and false for a name no
-// kind answers.
+// ParseKind returns the kind a name spells, and false for a name no
+// kind claims.
 //
 // It is the inverse of [Kind.String] for every kind, which is what
 // lets a kind survive a boundary that carries names rather than

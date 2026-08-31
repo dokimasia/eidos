@@ -11,7 +11,7 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// optioned is a fixture plugin answering whatever options value it
+// optioned is a fixture plugin returning whatever options value it
 // was built with.
 type optioned struct {
 	named
@@ -48,8 +48,8 @@ type doublyWrongOptions struct {
 
 // ValidateOptions is the one check both consumers run: the
 // composition before populating, and the conformance suite as a
-// check. It holds the declaration to the tag contract and answers
-// every finding, so a plugin author reads the whole bill at once.
+// check. It holds the declaration to the tag contract and returns
+// every finding, so a plugin author reads every fault at once.
 func TestValidateOptions(t *testing.T) {
 	t.Parallel()
 
@@ -67,7 +67,7 @@ func TestValidateOptions(t *testing.T) {
 			"a nil options value reads as no options")
 	})
 
-	t.Run("a lawful struct passes whole", func(t *testing.T) {
+	t.Run("a valid struct passes whole", func(t *testing.T) {
 		t.Parallel()
 
 		p := optioned{name: "cfg", cfg: &lawfulOptions{Depth: 2}}
@@ -98,7 +98,7 @@ func TestValidateOptions(t *testing.T) {
 		errs := plugin.ValidateOptions(p)
 		assert.Length(t, errs, 1, "a nil pointer is one finding")
 		assert.Contains(t, errs[0].Error(), "nil",
-			"the finding says what was answered")
+			"the finding says what was returned")
 	})
 
 	t.Run("an unexported field is refused", func(t *testing.T) {
@@ -116,7 +116,7 @@ func TestValidateOptions(t *testing.T) {
 
 		p := optioned{name: "cfg", cfg: &doublyWrongOptions{}}
 		errs := plugin.ValidateOptions(p)
-		assert.Length(t, errs, 2, "every finding lands, not just the first")
+		assert.Length(t, errs, 2, "every finding arrives, not just the first")
 		assert.Contains(t, errs[0].Error(), "First",
 			"the unkeyed field is named")
 		assert.Contains(t, errs[0].Error(), "opt",

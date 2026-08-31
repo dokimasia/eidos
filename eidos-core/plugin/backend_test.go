@@ -32,7 +32,7 @@ func TestBackend(t *testing.T) {
 		b, held := p.(plugin.Backend)
 		assert.True(t, held, "the backend surface asserts")
 		assert.Equal(t, b.Target(), plugin.Target("fixture"),
-			"answering the declared target name")
+			"returning the declared target name")
 	})
 
 	t.Run("a bare plugin holds no target", func(t *testing.T) {

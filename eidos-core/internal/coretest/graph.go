@@ -10,9 +10,9 @@ import (
 	"go.dokimi.dev/eidos/core/store"
 )
 
-// Frozen answers a graph holding pkgs, sealed.
+// Frozen returns a graph holding pkgs, sealed.
 //
-// It fails the test rather than answering an error, because a case
+// It fails the test rather than returning an error, because a case
 // whose fixture would not load is not testing what it says it is.
 func Frozen(tb assert.TB, pkgs ...*node.Package) *store.Graph {
 	tb.Helper()
@@ -27,7 +27,7 @@ func Frozen(tb assert.TB, pkgs ...*node.Package) *store.Graph {
 	return g
 }
 
-// Reading answers a tracked reader over a graph holding pkgs,
+// Reading returns a tracked reader over a graph holding pkgs,
 // together with the read set it records into.
 //
 // A nil Scope admits every package, which is what a case not about

@@ -47,7 +47,7 @@ type Fixture struct {
 	claimed map[string]bool
 }
 
-// New answers a fixture holding nothing, bucket one.
+// New returns a fixture holding nothing, bucket one.
 func New(tb assert.TB) *Fixture {
 	tb.Helper()
 
@@ -84,7 +84,7 @@ func (f *Fixture) Attach(
 }
 
 // Validated sets a subject's typed instances, as validation would
-// have answered them: position order, canonical names. It also
+// have returned them: position order, canonical names. It also
 // attaches one raw instance per directive, because dispatch routes
 // a gate through the store's spelled-name index, which only raw
 // attachments feed; a real load attaches at parse and validates at
@@ -106,14 +106,14 @@ func (f *Fixture) Validated(
 	return f
 }
 
-// Seed lands earlier-bucket units into the emit store the next
+// Seed arrives earlier-bucket units into the emit store the next
 // [Fixture.Generate] call reads, which is how a weaver's fixture
 // stands in for the plugins that ran before it.
 func (f *Fixture) Seed(tb assert.TB, units ...plugin.Unit) *Fixture {
 	tb.Helper()
 
 	for _, u := range units {
-		assert.NoError(tb, f.store().Add(u), "the seeded unit lands")
+		assert.NoError(tb, f.store().Add(u), "the seeded unit arrives")
 	}
 	return f
 }
@@ -157,13 +157,13 @@ type Result struct {
 }
 
 // Annotate runs one plugin's annotate phase over the fixture. The
-// plugin must hold the annotator seat; a fixture handing the wrong
+// plugin must hold the annotator role; a fixture handing the wrong
 // role over is its own defect and fails the test.
 func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 	tb.Helper()
 
 	ann, held := p.(plugin.Annotator)
-	assert.True(tb, held, "the plugin holds the annotator seat")
+	assert.True(tb, held, "the plugin holds the annotator role")
 	ix := f.index(tb)
 	sink := diag.NewSink()
 	err := ann.Annotate(&plugin.AnnotatorContext{
@@ -184,7 +184,7 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 	tb.Helper()
 
 	gen, held := p.(plugin.Generator)
-	assert.True(tb, held, "the plugin holds the generator seat")
+	assert.True(tb, held, "the plugin holds the generator role")
 	ix := f.index(tb)
 	sink := diag.NewSink()
 	err := gen.Generate(&plugin.GeneratorContext{
@@ -199,7 +199,7 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }
 
-// index seals the graph on first use and answers the routing
+// index seals the graph on first use and returns the routing
 // surface a phase call dispatches through.
 func (f *Fixture) index(tb assert.TB) *plugin.Index {
 	tb.Helper()
@@ -210,8 +210,8 @@ func (f *Fixture) index(tb assert.TB) *plugin.Index {
 	return ix
 }
 
-// mintReader answers the phase call's tracked read handle: the
-// whole-call grain a hand-rolled plugin prices at.
+// mintReader returns the phase call's tracked read handle: the
+// whole-call grain a hand-rolled plugin reads at.
 func mintReader(tb assert.TB, ix *plugin.Index) *store.Reader {
 	tb.Helper()
 
@@ -220,7 +220,7 @@ func mintReader(tb assert.TB, ix *plugin.Index) *store.Reader {
 	return r
 }
 
-// store answers the fixture's emit store, created on first use.
+// store returns the fixture's emit store, created on first use.
 func (f *Fixture) store() *plugin.Emit {
 	if f.emit == nil {
 		f.emit = plugin.NewEmit()

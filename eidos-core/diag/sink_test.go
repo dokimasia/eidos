@@ -26,8 +26,8 @@ var somewhere = position.Pos{File: "svc/store.go", Line: 1, Col: 1}
 func TestSink(t *testing.T) {
 	t.Parallel()
 
-	// collect answers everything a sink holds, in the order it
-	// answers it.
+	// collect returns everything a sink holds, in the order it
+	// returns it.
 	collect := func(t *testing.T, s *diag.Sink) []diag.Diag {
 		t.Helper()
 		return slices.Collect(s.All())
@@ -158,14 +158,14 @@ func TestSink(t *testing.T) {
 	t.Run("Failed", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers false for a sink holding nothing", func(t *testing.T) {
+		t.Run("returns false for a sink holding nothing", func(t *testing.T) {
 			t.Parallel()
 
 			assert.False(t, diag.NewSink().Failed(),
 				"a sink holding nothing has failed nothing")
 		})
 
-		t.Run("answers false for warnings and infos alone", func(t *testing.T) {
+		t.Run("returns false for warnings and infos alone", func(t *testing.T) {
 			t.Parallel()
 
 			s := diag.NewSink()
@@ -174,7 +174,7 @@ func TestSink(t *testing.T) {
 			assert.False(t, s.Failed(), "a warning never fails a run")
 		})
 
-		t.Run("stays true once an error lands", func(t *testing.T) {
+		t.Run("stays true once an error arrives", func(t *testing.T) {
 			t.Parallel()
 
 			s := diag.NewSink()
@@ -187,11 +187,11 @@ func TestSink(t *testing.T) {
 	t.Run("All", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers nothing for a sink holding nothing", func(t *testing.T) {
+		t.Run("returns nothing for a sink holding nothing", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, collect(t, diag.NewSink()),
-				"a sink holding nothing answers nothing")
+				"a sink holding nothing returns nothing")
 		})
 
 		t.Run("keeps report order within one origin", func(t *testing.T) {
@@ -317,7 +317,7 @@ func BenchmarkSink(b *testing.B) {
 				seen++
 			}
 			if seen != findings {
-				b.Fatalf("All answered %d findings, want %d", seen, findings)
+				b.Fatalf("All returned %d findings, want %d", seen, findings)
 			}
 		}
 	})

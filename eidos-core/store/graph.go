@@ -30,7 +30,7 @@ const kindSlots = math.MaxUint8 + 1
 // itself rather than asking every frontend to. Serialization is per
 // package, so two frontends adding two packages do not contend.
 // [Graph.Freeze] is the one exclusive operation, and it excludes
-// writes rather than racing them: a package cannot land after the
+// writes rather than racing them: a package cannot arrive after the
 // indexes are built and go missing from them.
 //
 // Reads are safe to make concurrently with each other once the graph
@@ -39,7 +39,7 @@ const kindSlots = math.MaxUint8 + 1
 //
 // # Reading
 //
-// [Graph.ByKind], [Graph.Lookup] and [Graph.PackageOf] answer
+// [Graph.ByKind], [Graph.Lookup] and [Graph.PackageOf] return
 // untracked, and are the kernel's own path. Everything a plugin
 // reaches goes through a
 // [Reader], which a plugin is handed instead of the graph. That is
@@ -48,7 +48,7 @@ const kindSlots = math.MaxUint8 + 1
 //
 // Both indexes build at [Graph.Freeze], where they are free: nothing
 // may add a declaration afterwards, so neither can go stale. An
-// untracked read before the seal therefore answers nothing rather
+// untracked read before the seal therefore returns nothing rather
 // than a partial result.
 type Graph struct {
 	// seal guards the phase rather than the data: a write holds it
@@ -87,7 +87,7 @@ type Graph struct {
 	byDirective    map[directive.Name][]node.Declaration
 }
 
-// New answers an unfrozen graph holding nothing.
+// New returns an unfrozen graph holding nothing.
 func New() *Graph { return &Graph{} }
 
 // loadedPackage is one added package and the declarations one walk
@@ -230,7 +230,7 @@ func (g *Graph) Reader(reads *ReadSet, sc Scope) (*Reader, error) {
 // ByKind enumerates the declarations of one kind, untracked.
 //
 // The order is the graph's own and holds across runs: packages sort
-// by identity, and a package's declarations answer in the order the
+// by identity, and a package's declarations come back in the order the
 // traversal reaches them.
 func (g *Graph) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
@@ -242,7 +242,7 @@ func (g *Graph) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	}
 }
 
-// Lookup answers one declaration by identity, untracked.
+// Lookup returns one declaration by identity, untracked.
 func (g *Graph) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 	decl, held := g.byID[id]
 	if !held {
@@ -251,17 +251,17 @@ func (g *Graph) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 	return decl, true
 }
 
-// PackageOf answers the package holding a declaration, untracked:
+// PackageOf returns the package holding a declaration, untracked:
 // the kernel's own path, beside the tracked [Reader.PackageOf].
 //
-// It answers false for a declaration the graph does not hold, and
+// It returns false for a declaration the graph does not hold, and
 // nothing before [Graph.Freeze], because both indexes it reads are
 // built there.
 func (g *Graph) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	return g.packageOf(id)
 }
 
-// collect walks one package, answering its identity-bearing
+// collect walks one package, returning its identity-bearing
 // declarations in traversal order and tallying them per kind.
 func (g *Graph) collect(p *node.Package) []node.Declaration {
 	var out []node.Declaration
@@ -277,12 +277,12 @@ func (g *Graph) collect(p *node.Package) []node.Declaration {
 	return out
 }
 
-// packageOf answers the package holding a declaration.
+// packageOf returns the package holding a declaration.
 //
 // The holder is derived from the identity rather than looked up per
 // declaration: a declaration's Lang and Package name the package
 // that declared it, which is the same derivation scope filtering
-// uses. It answers false for a declaration the graph does not hold,
+// uses. It returns false for a declaration the graph does not hold,
 // and for one whose identity names a package that was never added.
 func (g *Graph) packageOf(id symbol.Identity) (*node.Package, bool) {
 	if _, held := g.byID[id]; !held {
@@ -292,11 +292,11 @@ func (g *Graph) packageOf(id symbol.Identity) (*node.Package, bool) {
 	return pkg, held
 }
 
-// loaded answers every added package, in identity order.
+// loaded returns every added package, in identity order.
 //
 // The sort is what makes the indexes deterministic: the packages
 // arrive in whatever order the frontends finished in, and a run that
-// scheduled them differently must still answer one order.
+// scheduled them differently must still return one order.
 func (g *Graph) loaded() []*loadedPackage {
 	var out []*loadedPackage
 	g.packages.Range(func(_, value any) bool {

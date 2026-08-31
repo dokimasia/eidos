@@ -23,7 +23,7 @@ var validationSubject = symbol.Identity{
 	Lang: "golang", Package: "svc/store", Name: "Store", Kind: symbol.KindStruct,
 }
 
-// keyed answers a metadata registry holding shape.role in the
+// keyed returns a metadata registry holding shape.role in the
 // group shape.writer, for drop resolution.
 func keyed(tb assert.TB) *meta.Registry {
 	tb.Helper()
@@ -64,7 +64,7 @@ func fullSchema() directive.Schema {
 	}
 }
 
-// parse answers the parsed payload, failing the test on a payload
+// parse returns the parsed payload, failing the test on a payload
 // the grammar refuses.
 func parse(tb assert.TB, payload string, line int) directive.Raw {
 	tb.Helper()
@@ -76,7 +76,7 @@ func parse(tb assert.TB, payload string, line int) directive.Raw {
 }
 
 // validate runs Validate over payloads with the full fixture,
-// answering the typed instances and the sink.
+// returning the typed instances and the sink.
 func validate(tb assert.TB, payloads ...string) ([]directive.Directive, *diag.Sink) {
 	tb.Helper()
 
@@ -89,7 +89,7 @@ func validate(tb assert.TB, payloads ...string) ([]directive.Directive, *diag.Si
 	return directive.Validate(validationSubject, raws, r, keyed(tb), sink), sink
 }
 
-// failures answers the codes the sink holds, in report order.
+// failures returns the codes the sink holds, in report order.
 func failures(sink *diag.Sink) []diag.Code {
 	var out []diag.Code
 	for d := range sink.All() {
@@ -116,7 +116,7 @@ func TestValidate(t *testing.T) {
 			{Kind: directive.TypeString, Str: "btree"},
 		}, "positionals type per the declared order")
 		fields, held := d.Param("fields")
-		assert.True(t, held, "a declared list param answers")
+		assert.True(t, held, "a declared list param returns")
 		assert.Equal(t, fields, directive.Value{
 			Kind: directive.TypeList,
 			List: []directive.Value{
@@ -132,7 +132,7 @@ func TestValidate(t *testing.T) {
 		shard, _ := d.Param("shard")
 		assert.Equal(t, shard.Str, "id", "a role-scoped param admits under its role")
 		out, held := d.Param(directive.ReservedOut)
-		assert.True(t, held, "a reserved key lands in the params")
+		assert.True(t, held, "a reserved key arrives in the params")
 		assert.Equal(t, out, directive.Value{Kind: directive.TypeString, Str: "x.go"},
 			"typed as a string")
 		assert.Equal(t, d.Instance, 0, "the first instance is numbered zero")
@@ -263,7 +263,7 @@ func TestValidate(t *testing.T) {
 				naming:   "depth",
 			},
 			{
-				name:     "a metadata reference no key or group answers",
+				name:     "a metadata reference no key or group returns",
 				payloads: []string{"meta drop=shape.nonexistent"},
 				want:     directive.UnknownMetadataKey,
 				naming:   "shape.role",
@@ -274,7 +274,7 @@ func TestValidate(t *testing.T) {
 				t.Parallel()
 
 				got, sink := validate(t, tt.payloads...)
-				assert.Empty(t, got, "a failing instance is not answered")
+				assert.Empty(t, got, "a failing instance is not returned")
 				assert.True(t, sink.Failed(), "and the run fails")
 				assert.True(t, slices.Contains(failures(sink), tt.want),
 					"under the check's own code")
@@ -429,7 +429,7 @@ func TestValidate(t *testing.T) {
 		})
 	})
 
-	t.Run("validating nothing answers nothing", func(t *testing.T) {
+	t.Run("validating nothing returns nothing", func(t *testing.T) {
 		t.Parallel()
 
 		r := sealed(t)
@@ -494,7 +494,7 @@ func BenchmarkValidate(b *testing.B) {
 	for b.Loop() {
 		sink := diag.NewSink()
 		if got := directive.Validate(validationSubject, raws, r, keys, sink); len(got) != 3 {
-			b.Fatalf("Validate answered %d instances, want 3", len(got))
+			b.Fatalf("Validate returned %d instances, want 3", len(got))
 		}
 	}
 }

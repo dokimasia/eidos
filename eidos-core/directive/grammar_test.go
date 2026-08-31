@@ -12,12 +12,12 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 )
 
-// scalar answers a bare scalar value.
+// scalar returns a bare scalar value.
 func scalar(text string) directive.RawValue {
 	return directive.RawValue{Text: text}
 }
 
-// quoted answers a quoted scalar value.
+// quoted returns a quoted scalar value.
 func quoted(text string) directive.RawValue {
 	return directive.RawValue{Text: text, Quoted: true}
 }

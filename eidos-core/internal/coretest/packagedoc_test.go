@@ -21,7 +21,7 @@ func TestPackageDoc(t *testing.T) {
 	t.Run("StatesDependencyPosition", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("answers true for a package that states one", func(t *testing.T) {
+		t.Run("returns true for a package that states one", func(t *testing.T) {
 			t.Parallel()
 
 			states, err := coretest.StatesDependencyPosition(".")
@@ -29,7 +29,7 @@ func TestPackageDoc(t *testing.T) {
 			assert.True(t, states, "and states its own dependency position")
 		})
 
-		t.Run("answers false for a package that states none", func(t *testing.T) {
+		t.Run("returns false for a package that states none", func(t *testing.T) {
 			t.Parallel()
 
 			silent := filepath.Join("testdata", "silent")
@@ -40,7 +40,7 @@ func TestPackageDoc(t *testing.T) {
 					"or the assertion would pass for every package")
 		})
 
-		t.Run("answers an error for a directory holding no Go source", func(t *testing.T) {
+		t.Run("returns an error for a directory holding no Go source", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := coretest.StatesDependencyPosition("testdata")

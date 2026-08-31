@@ -15,7 +15,7 @@ import (
 //
 // A Name compares by its bytes, so the store's directive index and
 // the registry's lookups key on it directly. The zero Name spells
-// nothing; [Parse] never answers one, because the grammar requires
+// nothing; [Parse] never returns one, because the grammar requires
 // a name before the first argument.
 type Name string
 
@@ -111,7 +111,7 @@ func Join(lines []string) string {
 // is the text after the carrier marker, one logical line with
 // continuations already joined.
 //
-// A payload outside the grammar answers an error carrying the byte
+// A payload outside the grammar returns an error carrying the byte
 // offset where reading stopped; the caller owns the file position
 // and converts. Parse never panics, whatever the bytes.
 func Parse(payload string) (Raw, error) {
@@ -147,7 +147,7 @@ type parser struct {
 // done reports whether the payload is fully read.
 func (p *parser) done() bool { return p.at >= len(p.payload) }
 
-// peek answers the next byte without reading it; zero at the end.
+// peek returns the next byte without reading it; zero at the end.
 func (p *parser) peek() byte {
 	if p.done() {
 		return 0
@@ -162,7 +162,7 @@ func (p *parser) skipSpace() {
 	}
 }
 
-// fail answers a refusal naming the offset where reading stopped.
+// fail returns a refusal naming the offset where reading stopped.
 func (p *parser) fail(format string, args ...any) error {
 	return fmt.Errorf("directive: offset %d: %s", p.at, fmt.Sprintf(format, args...))
 }

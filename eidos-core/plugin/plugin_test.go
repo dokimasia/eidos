@@ -17,7 +17,7 @@ type named struct{ name plugin.ID }
 func (p named) Name() plugin.ID { return p.name }
 
 // A plugin's name is its diagnostic origin, its emit attribution and
-// its arbitration rank, and a role is the seat a priority attaches
+// its arbitration rank, and a role is the role a priority attaches
 // to, so both spellings are contract.
 func TestPlugin(t *testing.T) {
 	t.Parallel()
@@ -46,7 +46,7 @@ func TestPlugin(t *testing.T) {
 				want: "Role(3)",
 			},
 			{
-				name: "the zero role names no seat",
+				name: "the zero role names no role",
 				role: 0,
 				want: "Role(0)",
 			},

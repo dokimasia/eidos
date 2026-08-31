@@ -18,25 +18,25 @@ type {{.Name}} struct {
 {{- end}}
 }
 
-// Kind answers [symbol.Kind{{.Name}}].
+// Kind returns [symbol.Kind{{.Name}}].
 func (x *{{.Name}}) Kind() symbol.Kind { return symbol.Kind{{.Name}} }
 
-// Position answers where the declaration was written.
+// Position returns where the declaration was written.
 func (x *{{.Name}}) Position() position.Pos { return {{.PosExpr}} }
 
-// Docs answers the declaration's documentation, nil when it carries
+// Docs returns the declaration's documentation, nil when it carries
 // none.
 func (x *{{.Name}}) Docs() []string { return {{.DocExpr}} }
 {{- if .IDStorage}}
 
-// Identity answers the declaration's canonical identity, which stays
+// Identity returns the declaration's canonical identity, which stays
 // zero until the resolution step assigns one.
 func (x *{{.Name}}) Identity() symbol.Identity { return x.{{.IDStorage}} }
 {{- end}}
 {{- range .Members}}
 
-// {{.Method}} answers the member list, adapted for neutral code.
-{{- if not .Items}} This kind carries none, so it answers nil.
+// {{.Method}} returns the member list, adapted for neutral code.
+{{- if not .Items}} This kind carries none, so it returns nil.
 {{- end}}
 func (x *{{$v.Name}}) {{.Method}}() []symbol.Symbol {
 {{- if .Items}}
@@ -52,7 +52,7 @@ func (x *{{$v.Name}}) {{.Method}}() []symbol.Symbol {
 {{- end}}
 {{- if .TypeRefStorage}}
 
-// TypeRef answers the declaration's own type reference, nil when
+// TypeRef returns the declaration's own type reference, nil when
 // the source states none.
 func (x *{{.Name}}) TypeRef() symbol.Symbol {
 	if x.{{.TypeRefStorage}} == nil {
