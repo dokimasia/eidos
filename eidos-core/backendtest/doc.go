@@ -24,14 +24,20 @@
 // no fatal error for a file's problem, every finding positioned
 // and attributed, and a file the formatter refused withheld from
 // the values. Each assertion takes the [assert.TB] role, so its
-// own failure path is testable. The generated-file header and the
-// provenance trailer are the output contract's, and their checks
-// join the suite with it.
+// own failure path is testable.
+//
+// [AssertStamped] joins the render to the output contract: every
+// rendered file stamps, the frame carries the body byte for byte,
+// and it verifies whole under the same contract. It stands
+// outside the suite, because a brand is the consumer's to state
+// and a [Setup] carries none, so a satellite runs it beside the
+// suite with the contract its own binary ships.
 //
 // # Dependency position
 //
-// core/backendtest imports core/plugin, core/render, core/diag,
-// the assert module and the Go stdlib. It never imports the root
-// package: the harness works directly on the SPI, so a kit-built
-// backend and a hand-rolled renderer are held to the same checks.
+// core/backendtest imports core/plugin, core/render, core/output,
+// core/diag, the assert module and the Go stdlib. It never imports
+// the root package: the harness works directly on the SPI, so a
+// kit-built backend and a hand-rolled renderer are held to the
+// same checks.
 package backendtest
