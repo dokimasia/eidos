@@ -111,6 +111,13 @@ type RenderContext struct {
     // in. The composition reads them off the TemplateProvider
     // surface; a fixture hands them over directly.
     Trees map[ID]fs.FS
+    // Funcs holds each plugin's template helpers for this target,
+    // and Overrides the shared names each declares it replaces,
+    // both read off the same surface. The merge is the pass's:
+    // schedule order, latest wins, and a shared name shadowed
+    // without a declaration is refused and reported.
+    Funcs     map[ID]template.FuncMap
+    Overrides map[ID][]string
     // Sink takes the pass's findings: an unresolved reference, a
     // dropped slot marker, a format failure.
     Sink *diag.Sink
@@ -340,12 +347,14 @@ prove, over a hand-built emit fixture:
 package backendtest
 
 // Fixture is a hand-built plan as the renderer sees it: the emit
-// store, the schedule and the template trees the composition
-// would have handed over.
+// store, the schedule, and the template trees, helpers and
+// override declarations the composition would have handed over.
 type Fixture struct {
-    Emit     *plugin.Emit
-    Schedule []plugin.ID
-    Trees    map[plugin.ID]fs.FS
+    Emit      *plugin.Emit
+    Schedule  []plugin.ID
+    Trees     map[plugin.ID]fs.FS
+    Funcs     map[plugin.ID]template.FuncMap
+    Overrides map[plugin.ID][]string
 }
 
 // Setup builds the backend under test with the emit fixture it
@@ -439,6 +448,11 @@ the output contract has to validate twice.
 
 ## Unresolved and future work
 
+- The builder facade declares template trees and nothing else: a
+  plugin whose reference templates need helpers or an override
+  declaration implements the provider directly. Widening the
+  facade with the two sibling declarations is a follow-up no
+  consumer has needed.
 - The generated-file header, the provenance trailer, the staged
   sinks and the write path are the output contract's, proposed
   separately and consumed by whoever holds both halves.
