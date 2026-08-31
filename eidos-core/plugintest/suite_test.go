@@ -104,12 +104,12 @@ func TestAssertDeterministicEmit(t *testing.T) {
 			return p, f
 		}
 
-		failure := assert.Rejects(t, "emit carrying run state must fail the rung",
+		failure := assert.Rejects(t, "emit carrying run state must fail the check",
 			func(tb assert.TB) {
 				plugintest.AssertDeterministicEmit(tb, nondeterministic)
 			})
 		assert.Contains(t, failure, "same bytes",
-			"the rung names the byte-identity contract")
+			"the check names the byte-identity contract")
 	})
 }
 
@@ -133,11 +133,11 @@ func TestAssertOptionsSchema(t *testing.T) {
 			return p, f
 		}
 
-		failure := assert.Rejects(t, "an undocumented option must fail the rung",
+		failure := assert.Rejects(t, "an undocumented option must fail the check",
 			func(tb assert.TB) {
 				plugintest.AssertOptionsSchema(tb, undocumented)
 			})
-		assert.Contains(t, failure, "doc", "the rung names the missing tag")
+		assert.Contains(t, failure, "doc", "the check names the missing tag")
 	})
 }
 
@@ -158,7 +158,7 @@ func (p templated) Templates(t plugin.Target) (fs.FS, bool) {
 func (templated) TemplateFuncs(plugin.Target) template.FuncMap { return nil }
 func (templated) Overrides() []string                          { return nil }
 
-// fixtureLanguage answers the smallest language the template rung
+// fixtureLanguage answers the smallest language the template check
 // can lint against.
 func fixtureLanguage() render.Language {
 	return render.Language{
@@ -198,13 +198,13 @@ func TestAssertTemplates(t *testing.T) {
 	t.Run("rejects a tree dropping the marker", func(t *testing.T) {
 		t.Parallel()
 
-		failure := assert.Rejects(t, "a dropped marker must fail the rung",
+		failure := assert.Rejects(t, "a dropped marker must fail the check",
 			func(tb assert.TB) {
 				plugintest.AssertTemplates(tb, setupWith(fstest.MapFS{
 					"method1.tpl": &fstest.MapFile{Data: []byte("bare\n")},
 				}))
 			})
-		assert.Contains(t, failure, "marker", "the rung names the law")
+		assert.Contains(t, failure, "marker", "the check names the law")
 	})
 }
 
@@ -225,12 +225,12 @@ func TestAssertPositionedDiagnostics(t *testing.T) {
 			return p, f
 		}
 
-		failure := assert.Rejects(t, "a positionless finding must fail the rung",
+		failure := assert.Rejects(t, "a positionless finding must fail the check",
 			func(tb assert.TB) {
 				plugintest.AssertPositionedDiagnostics(tb, unpositioned)
 			})
 		assert.Contains(t, failure, "position",
-			"the rung names what the finding is missing")
+			"the check names what the finding is missing")
 	})
 }
 
@@ -257,12 +257,12 @@ func TestAssertAttributedEmit(t *testing.T) {
 			return rogue{}, f
 		}
 
-		failure := assert.Rejects(t, "a misattributed unit must fail the rung",
+		failure := assert.Rejects(t, "a misattributed unit must fail the check",
 			func(tb assert.TB) {
 				plugintest.AssertAttributedEmit(tb, misattributed)
 			})
 		assert.Contains(t, failure, "names the plugin",
-			"the rung names the attribution law")
+			"the check names the attribution law")
 	})
 }
 
@@ -287,12 +287,12 @@ func TestAssertStableDeclaration(t *testing.T) {
 			return b.Build(), f
 		}
 
-		failure := assert.Rejects(t, "a varying declaration must fail the rung",
+		failure := assert.Rejects(t, "a varying declaration must fail the check",
 			func(tb assert.TB) {
 				plugintest.AssertStableDeclaration(tb, unstable)
 			})
 		assert.Contains(t, failure, "stable",
-			"the rung names the stability law")
+			"the check names the stability law")
 	})
 }
 
@@ -371,11 +371,11 @@ func TestAssertNoStructuralWrites(t *testing.T) {
 			return p, f
 		}
 
-		failure := assert.Rejects(t, "a handler rewriting its subject must fail the rung",
+		failure := assert.Rejects(t, "a handler rewriting its subject must fail the check",
 			func(tb assert.TB) {
 				plugintest.AssertNoStructuralWrites(tb, mutating)
 			})
 		assert.Contains(t, failure, "input truth",
-			"the rung names the law the mutation broke")
+			"the check names the law the mutation broke")
 	})
 }

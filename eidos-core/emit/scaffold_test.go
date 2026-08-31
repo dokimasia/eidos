@@ -69,7 +69,7 @@ func TestScaffold(t *testing.T) {
 				t.Run(tt.want, func(t *testing.T) {
 					t.Parallel()
 					assert.Equal(t, tt.form.String(), tt.want,
-						"the spelling is what the lint rung names")
+						"the spelling is what the lint check names")
 				})
 			}
 		})

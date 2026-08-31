@@ -37,8 +37,8 @@ type Fixture struct {
 	// Scope filters what phase calls see; nil admits everything.
 	Scope store.Scope
 	// Languages holds a render language per target, what the
-	// template rung lints declared trees against; a fixture that
-	// carries none skips the rung.
+	// template check lints declared trees against; a fixture that
+	// carries none skips the check.
 	Languages map[plugin.Target]render.Language
 	// Bucket is the priority bucket phase calls claim to run in.
 	Bucket int

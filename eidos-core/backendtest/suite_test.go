@@ -163,12 +163,12 @@ func TestAssertInhabitedFixture(t *testing.T) {
 			return nil, nil
 		})
 
-		failure := assert.Rejects(t, "an empty world must fail the rung",
+		failure := assert.Rejects(t, "an empty world must fail the check",
 			func(tb assert.TB) {
 				backendtest.AssertInhabitedFixture(tb, hollow)
 			})
 		assert.Contains(t, failure, "unit",
-			"the rung demands an inhabited fixture")
+			"the check demands an inhabited fixture")
 	})
 }
 
@@ -187,12 +187,12 @@ func TestAssertDeterministicRender(t *testing.T) {
 			}}, &backendtest.Fixture{Emit: plugin.NewEmit()}
 		}
 
-		failure := assert.Rejects(t, "bytes carrying run state must fail the rung",
+		failure := assert.Rejects(t, "bytes carrying run state must fail the check",
 			func(tb assert.TB) {
 				backendtest.AssertDeterministicRender(tb, varying)
 			})
 		assert.Contains(t, failure, "same bytes",
-			"the rung names the byte-identity contract")
+			"the check names the byte-identity contract")
 	})
 }
 
@@ -209,12 +209,12 @@ func TestAssertSpeltKinds(t *testing.T) {
 			return nil, nil
 		})
 
-		failure := assert.Rejects(t, "an unspelt kind must fail the rung",
+		failure := assert.Rejects(t, "an unspelt kind must fail the check",
 			func(tb assert.TB) {
 				backendtest.AssertSpeltKinds(tb, unspelt)
 			})
 		assert.Contains(t, failure, "spell",
-			"the rung names the missing spelling")
+			"the check names the missing spelling")
 	})
 }
 
@@ -231,12 +231,12 @@ func TestAssertPlacedContent(t *testing.T) {
 			return nil, nil
 		})
 
-		failure := assert.Rejects(t, "dropped slot content must fail the rung",
+		failure := assert.Rejects(t, "dropped slot content must fail the check",
 			func(tb assert.TB) {
 				backendtest.AssertPlacedContent(tb, dropped)
 			})
 		assert.Contains(t, failure, "whole",
-			"the rung holds every body to landing whole")
+			"the check holds every body to landing whole")
 	})
 }
 
@@ -250,12 +250,12 @@ func TestAssertContinuedRender(t *testing.T) {
 			return nil, errors.New("kaboom")
 		})
 
-		failure := assert.Rejects(t, "a fatal error must fail the rung",
+		failure := assert.Rejects(t, "a fatal error must fail the check",
 			func(tb assert.TB) {
 				backendtest.AssertContinuedRender(tb, aborting)
 			})
 		assert.Contains(t, failure, "continue",
-			"the rung names the continuation law")
+			"the check names the continuation law")
 	})
 
 	t.Run("rejects a finding without a position", func(t *testing.T) {
@@ -267,12 +267,12 @@ func TestAssertContinuedRender(t *testing.T) {
 			return nil, nil
 		})
 
-		failure := assert.Rejects(t, "an unpositioned finding must fail the rung",
+		failure := assert.Rejects(t, "an unpositioned finding must fail the check",
 			func(tb assert.TB) {
 				backendtest.AssertContinuedRender(tb, unpositioned)
 			})
 		assert.Contains(t, failure, "position",
-			"the rung names the positioning law")
+			"the check names the positioning law")
 	})
 
 	t.Run("rejects a finding under a stranger's origin", func(t *testing.T) {
@@ -284,12 +284,12 @@ func TestAssertContinuedRender(t *testing.T) {
 			return nil, nil
 		})
 
-		failure := assert.Rejects(t, "a mis-attributed finding must fail the rung",
+		failure := assert.Rejects(t, "a mis-attributed finding must fail the check",
 			func(tb assert.TB) {
 				backendtest.AssertContinuedRender(tb, stranger)
 			})
 		assert.Contains(t, failure, "origin",
-			"the rung names the attribution law")
+			"the check names the attribution law")
 	})
 
 	t.Run("rejects a returned file reported unformatted", func(t *testing.T) {
@@ -306,7 +306,7 @@ func TestAssertContinuedRender(t *testing.T) {
 				backendtest.AssertContinuedRender(tb, lying)
 			})
 		assert.Contains(t, failure, "withheld",
-			"the rung holds the withholding law")
+			"the check holds the withholding law")
 	})
 
 	t.Run("holds a genuine format failure to continuation", func(t *testing.T) {

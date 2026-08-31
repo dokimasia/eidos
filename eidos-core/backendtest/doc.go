@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package backendtest runs a renderer over a hand-built emit
-// fixture and holds it to the rungs a valueless render can prove.
+// fixture and holds it to the checks a valueless render can prove.
 // It is the harness a backend author tests against, before any
 // sink or workspace exists.
 //
@@ -12,7 +12,7 @@
 // [Setup] builds the renderer under test with its fixture, fresh
 // per call, so two calls answer two isolated worlds.
 //
-// # The rungs
+// # The checks
 //
 // [RunBackendSuite] composes the granular assertions:
 // [AssertInhabitedFixture] refuses an empty store, because a suite
@@ -25,7 +25,7 @@
 // and attributed, and a file the formatter refused withheld from
 // the values. Each assertion takes the [assert.TB] seat, so its
 // own failure path is testable. The generated-file header and the
-// provenance trailer are the output contract's, and their rungs
+// provenance trailer are the output contract's, and their checks
 // join the suite with it.
 //
 // # Dependency position
@@ -33,5 +33,5 @@
 // core/backendtest imports core/plugin, core/render, core/diag,
 // the assert module and the Go stdlib. It never imports the root
 // package: the harness works at the SPI floor, so a kit-built
-// backend and a hand-rolled renderer are held to the same rungs.
+// backend and a hand-rolled renderer are held to the same checks.
 package backendtest

@@ -79,7 +79,7 @@ var DroppedSlots = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 
 // The builtin names every template resolves against: what a kind
 // template, a file skeleton or a body-claiming template calls, and
-// what the lint rung checks for. No vocabulary may claim them.
+// what the template lint checks for. No vocabulary may claim them.
 const (
 	// BuiltinBody places a callable's content; a kind template
 	// calls it with the declaration under render.

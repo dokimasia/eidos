@@ -217,7 +217,7 @@ func TestBody(t *testing.T) {
 }
 
 // BenchmarkBody prices the per-callable operations the render pass
-// pays once per body, and the codec the conformance rungs pay per
+// pays once per body, and the codec the conformance checks pay per
 // encoded declaration.
 func BenchmarkBody(b *testing.B) {
 	b.Run("the form question", func(b *testing.B) {

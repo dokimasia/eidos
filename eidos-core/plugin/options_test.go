@@ -48,7 +48,7 @@ type doublyWrongOptions struct {
 
 // ValidateOptions is the one check both consumers run: the
 // composition before populating, and the conformance suite as a
-// rung. It holds the declaration to the tag contract and answers
+// check. It holds the declaration to the tag contract and answers
 // every finding, so a plugin author reads the whole bill at once.
 func TestValidateOptions(t *testing.T) {
 	t.Parallel()

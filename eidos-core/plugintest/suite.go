@@ -27,11 +27,11 @@ import (
 // fresh pair every call.
 type Setup func(tb assert.TB) (plugin.Plugin, *Fixture)
 
-// RunPluginSuite holds a plugin to the conformance rungs a fixture
+// RunPluginSuite holds a plugin to the conformance checks a fixture
 // can check without a workspace: declaration stability, byte-equal
 // emit across isolated runs, annotator idempotence, positioned
 // diagnostics, attribution, declared tags, the options schema, the
-// template lint, and no panics. Rungs for roles or surfaces the
+// template lint, and no panics. Checks for roles or surfaces the
 // plugin does not hold are skipped.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	t.Helper()
@@ -177,7 +177,7 @@ func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 // over one fixture and holds both passes clean. A stamp that
 // depends on run state lands a second value from the same rank
 // source, which the fact store refuses, and the refusal fails this
-// rung.
+// check.
 func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -301,7 +301,7 @@ func encodeEmit(tb assert.TB, e *plugin.Emit) []byte {
 // holds the graph's bytes still: annotators and generators read
 // declarations through shared pointers, so mutating one in place
 // is the structural write the sealed store cannot refuse, and this
-// rung is what catches it.
+// check is what catches it.
 func AssertNoStructuralWrites(tb assert.TB, setup Setup) {
 	tb.Helper()
 

@@ -14,7 +14,7 @@ import (
 // meaning, and no key claimed twice. It answers one error per
 // finding, in field order, and nothing where the plugin declares
 // no options. The composition runs it before populating; the
-// conformance suite runs it as a rung, so a plugin failing at
+// conformance suite runs it as a check, so a plugin failing at
 // composition fails in its own tests first.
 func ValidateOptions(p Plugin) []error {
 	op, held := p.(OptionsProvider)

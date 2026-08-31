@@ -25,7 +25,7 @@ const (
 	FormVerbatim
 )
 
-// String answers the form's spelling. The lint rung and render
+// String answers the form's spelling. The lint check and render
 // findings name forms, so a consumer matching on the spelling
 // matches on API. A form nothing declares answers its number
 // rather than a name.
@@ -67,9 +67,9 @@ type Body struct {
 
 	// The content, exactly one form set; all three zero is the
 	// default form, and [Body.Form] is the one question the render
-	// and the lint rung ask. Stmts is scaffolding, Ref claims the
+	// and the lint check ask. Stmts is scaffolding, Ref claims the
 	// body for a template in the emitting plugin's tree, and
-	// Verbatim is literal text: the sharp knife the lint rung
+	// Verbatim is literal text: the sharp knife the lint check
 	// cannot see into, which contributes no imports and composes
 	// with nothing.
 	Stmts    []Stmt       `json:"stmts,omitzero"`
@@ -112,7 +112,7 @@ func (b *Body) Slot(name string) (*Slot[Stmt], bool) {
 
 // Form answers which content form the body holds, and an error
 // naming the forms where more than one is set: a body built with
-// two contents is a defect, and the render and the lint rung both
+// two contents is a defect, and the render and the lint check both
 // ask this one question. The question is asked once per callable,
 // so the lawful path allocates nothing and only the defect pays
 // for its message.

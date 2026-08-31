@@ -15,12 +15,12 @@ import (
 	"go.dokimi.dev/eidos/core/render"
 )
 
-// RunBackendSuite holds a renderer to the rungs a render answers
+// RunBackendSuite holds a renderer to the checks a render answers
 // as values: the fixture is inhabited, two runs produce
 // byte-identical files, every emit kind the fixture carries
 // renders, every body lands whole, and a file's failure reports
 // positioned and attributed while the render continues. The
-// header and trailer rungs are the output contract's and join the
+// header and trailer checks are the output contract's and join the
 // suite with it.
 func RunBackendSuite(t *testing.T, setup Setup) {
 	t.Helper()
@@ -47,7 +47,7 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 	})
 }
 
-// runRender is one rung's render call: a fresh setup, a fresh sink
+// runRender is one check's render call: a fresh setup, a fresh sink
 // and the fatality law held, because a renderer returns an error
 // for a defect in the pass's own inputs, never for a problem with
 // one file.
@@ -63,7 +63,7 @@ func runRender(tb assert.TB, setup Setup) ([]plugin.RenderedFile, []diag.Diag) {
 }
 
 // AssertInhabitedFixture refuses an empty world: a suite over a
-// store holding no units passes every rung vacuously and proves
+// store holding no units passes every check vacuously and proves
 // nothing about the backend.
 func AssertInhabitedFixture(tb assert.TB, setup Setup) {
 	tb.Helper()

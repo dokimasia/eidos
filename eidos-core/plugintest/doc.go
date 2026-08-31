@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Package plugintest runs a plugin over a hand-built fixture and
-// holds it to the conformance rungs no workspace is needed for. It
+// holds it to the conformance checks no workspace is needed for. It
 // is the harness a plugin author tests against, so its surface is
 // as much contract as the builder's.
 //
@@ -14,7 +14,7 @@
 // bytes, which is what makes determinism checkable before any
 // backend exists.
 //
-// # The rungs
+// # The checks
 //
 // A [Setup] builds the plugin together with its fixture, the way a
 // composition does, sharing one key registry and one graph.
@@ -34,5 +34,5 @@
 // core/directive, core/emit, core/meta, core/node, core/store,
 // core/symbol, the assert module and the Go stdlib. It never imports the root
 // package: the harness works at the SPI floor, so a facade-built
-// plugin and a hand-rolled one are held to the same rungs.
+// plugin and a hand-rolled one are held to the same checks.
 package plugintest

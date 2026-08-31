@@ -42,7 +42,7 @@ type Fixture struct {
 // Setup builds the renderer under test with the emit fixture it
 // renders, fresh per call, the way the plugin suite's Setup does:
 // two calls answer two isolated worlds, which is what makes the
-// determinism rung honest.
+// determinism check honest.
 type Setup func(tb assert.TB) (plugin.Renderer, *Fixture)
 
 // context lowers the fixture to one render call's context, whole,

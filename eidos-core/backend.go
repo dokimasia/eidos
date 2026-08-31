@@ -57,7 +57,7 @@ func (b *BackendBuilder) FileTemplate(t string) *BackendBuilder {
 // by kind; repeatable, merging, one spelling per kind. Which kinds
 // render standalone and which render inside their hosts is the
 // language's own split, and the conformance suite's every-kind
-// rung is what holds a backend to the full inventory.
+// check is what holds a backend to the full inventory.
 func (b *BackendBuilder) KindTemplates(ts map[symbol.Kind]string) *BackendBuilder {
 	for _, k := range slices.Sorted(maps.Keys(ts)) {
 		if _, taken := b.lang.Kinds[k]; taken {
