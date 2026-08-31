@@ -4,6 +4,7 @@
 package eidos
 
 import (
+	"errors"
 	"maps"
 	"slices"
 	"strconv"
@@ -27,6 +28,8 @@ type BackendBuilder struct {
 	target  plugin.Target
 	syntax  plugin.CommentSyntax
 	lang    render.Language
+	lower   plugin.Lower
+	respell plugin.Respell
 	defects []string
 }
 
@@ -149,6 +152,24 @@ func (b *BackendBuilder) Finalise(f func(src []byte) ([]byte, error)) *BackendBu
 	return b
 }
 
+// Lower sets the construct lowering the settle applies: one
+// declaration in, the target's declaration shapes out, before any
+// name respells. The built backend implements [plugin.Lowerer],
+// and its Render refuses an unsettled store.
+func (b *BackendBuilder) Lower(l plugin.Lower) *BackendBuilder {
+	b.lower = l
+	return b
+}
+
+// Respell sets the name convention the settle applies: every
+// declared name spells through it, and references follow. The
+// built backend implements [plugin.Respeller], and its Render
+// refuses an unsettled store.
+func (b *BackendBuilder) Respell(r plugin.Respell) *BackendBuilder {
+	b.respell = r
+	return b
+}
+
 // Build freezes the declaration and returns the lowered backend,
 // which implements [plugin.Backend] and [plugin.Renderer] both.
 // Its Render is the render pass over the declared language and
@@ -178,8 +199,18 @@ func (b *BackendBuilder) Build() plugin.Backend {
 		panic("eidos: " + name + " declares a language the pass refuses:\n" +
 			err.Error())
 	}
-	return &builtBackend{
+	base := &builtBackend{
 		name: b.name, target: b.target, syntax: b.syntax, pass: pass,
+	}
+	switch {
+	case b.lower != nil && b.respell != nil:
+		return &settlingBackend{builtBackend: base, lower: b.lower, respell: b.respell}
+	case b.lower != nil:
+		return &loweringBackend{builtBackend: base, lower: b.lower}
+	case b.respell != nil:
+		return &respellingBackend{builtBackend: base, respell: b.respell}
+	default:
+		return base
 	}
 }
 
@@ -207,4 +238,89 @@ func (b *builtBackend) Syntax() plugin.CommentSyntax { return b.syntax }
 // Render implements [plugin.Renderer] through the composed pass.
 func (b *builtBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
 	return b.pass.Render(ctx)
+}
+
+// refuseUnsettled is the guard a hook-declaring backend renders
+// behind: an unsettled store means the plan never settled, and
+// rendering it would write the wrong bytes without a finding.
+func (b *builtBackend) refuseUnsettled(ctx *plugin.RenderContext) error {
+	if ctx != nil && ctx.Emit != nil && !ctx.Emit.Settled() {
+		return errors.New("eidos: " + string(b.name) +
+			" declares a lowering seam, and the store is unsettled: " +
+			"the plan settles once before the render")
+	}
+	return nil
+}
+
+// loweringBackend is a built backend declaring the construct
+// lowering seam.
+type loweringBackend struct {
+	*builtBackend
+	lower plugin.Lower
+}
+
+// Lower implements [plugin.Lowerer] through the declared hook.
+func (b *loweringBackend) Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
+	return b.lower(s)
+}
+
+// Render refuses an unsettled store, then renders through the
+// composed pass.
+func (b *loweringBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+	if err := b.refuseUnsettled(ctx); err != nil {
+		return nil, err
+	}
+	return b.builtBackend.Render(ctx)
+}
+
+// respellingBackend is a built backend declaring the name respell
+// seam.
+type respellingBackend struct {
+	*builtBackend
+	respell plugin.Respell
+}
+
+// Respell implements [plugin.Respeller] through the declared hook.
+func (b *respellingBackend) Respell(
+	host, kind symbol.Kind, v symbol.Visibility, name string,
+) (string, error) {
+	return b.respell(host, kind, v, name)
+}
+
+// Render refuses an unsettled store, then renders through the
+// composed pass.
+func (b *respellingBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+	if err := b.refuseUnsettled(ctx); err != nil {
+		return nil, err
+	}
+	return b.builtBackend.Render(ctx)
+}
+
+// settlingBackend is a built backend declaring both lowering
+// seams.
+type settlingBackend struct {
+	*builtBackend
+	lower   plugin.Lower
+	respell plugin.Respell
+}
+
+// Lower implements [plugin.Lowerer] through the declared hook.
+func (b *settlingBackend) Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
+	return b.lower(s)
+}
+
+// Respell implements [plugin.Respeller] through the declared hook.
+func (b *settlingBackend) Respell(
+	host, kind symbol.Kind, v symbol.Visibility, name string,
+) (string, error) {
+	return b.respell(host, kind, v, name)
+}
+
+// Render refuses an unsettled store, then renders through the
+// composed pass.
+func (b *settlingBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+	if err := b.refuseUnsettled(ctx); err != nil {
+		return nil, err
+	}
+	return b.builtBackend.Render(ctx)
 }

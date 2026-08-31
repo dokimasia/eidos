@@ -137,6 +137,8 @@ func TestRun(t *testing.T) {
 			"the unit names its plugin")
 		assert.Equal(t, got[0].Origins, []symbol.Identity{s.Identity()},
 			"and carries its provenance")
+		assert.True(t, report.Emits["plan"].Settled(),
+			"the plan's store settles before the report carries it")
 	})
 
 	t.Run("a meta drop wins over the stamp", func(t *testing.T) {

@@ -282,6 +282,42 @@ func TestBackendBuilder(t *testing.T) {
 				"the declared split reshapes units before the naming")
 		})
 
+		t.Run("declares the settle seams and refuses an unsettled store", func(t *testing.T) {
+			t.Parallel()
+
+			b := kitBackend("printer", "stub").
+				Lower(func(s symbol.Symbol) ([]symbol.Symbol, error) {
+					return []symbol.Symbol{s}, nil
+				}).
+				Respell(func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					return name, nil
+				}).
+				Build()
+			_, lowers := b.(plugin.Lowerer)
+			assert.True(t, lowers, "the built backend declares the construct seam")
+			_, respells := b.(plugin.Respeller)
+			assert.True(t, respells, "and the name seam")
+			plain := kitBackend("plain", "stub").Build()
+			_, lowers = plain.(plugin.Lowerer)
+			assert.False(t, lowers, "a hookless backend declares neither")
+
+			r, held := b.(plugin.Renderer)
+			assert.True(t, held, "a kit backend renders")
+			e := plugin.NewEmit()
+			assert.NoError(t, e.Add(kitUnit()), "the fixture unit arrives")
+			_, err := r.Render(&plugin.RenderContext{
+				Emit: e, Sink: diag.NewSink(), Plugin: "printer",
+			})
+			assert.HasError(t, err, "an unsettled store refuses at the first render")
+
+			assert.NoError(t, plugin.Settle(e, b, diag.NewSink()), "the plan settles once")
+			files, err := r.Render(&plugin.RenderContext{
+				Emit: e, Sink: diag.NewSink(), Plugin: "printer",
+			})
+			assert.NoError(t, err, "and the settled store renders")
+			assert.True(t, len(files) > 0, "whole")
+		})
+
 		t.Run("panics with every kit defect in one message", func(t *testing.T) {
 			t.Parallel()
 

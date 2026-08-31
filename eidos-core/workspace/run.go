@@ -254,5 +254,8 @@ func runPlan(
 			return fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
 		}
 	}
+	if err := plugin.Settle(into, pl.backend, sink); err != nil {
+		return fmt.Errorf("settle: %w", err)
+	}
 	return nil
 }

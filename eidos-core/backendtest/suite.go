@@ -56,6 +56,12 @@ func runRender(tb assert.TB, setup Setup) ([]plugin.RenderedFile, []diag.Diag) {
 
 	r, f := setup(tb)
 	sink := diag.NewSink()
+	if b, held := r.(plugin.Backend); held {
+		if err := plugin.Settle(f.Emit, b, sink); err != nil {
+			tb.Errorf("the settle completes: %v", err)
+			return nil, nil
+		}
+	}
 	files, err := r.Render(f.context(sink))
 	assert.NoError(tb, err,
 		"a file's problem attaches to the sink and the render continues")

@@ -101,6 +101,10 @@ type Emit struct {
 	// order caches the unit indexes in Units order; nil after a
 	// unit arrived since it was built.
 	order []int
+	// settled says the store passed through [Settle]: the backend's
+	// lowering seams ran, and the declarations the readers see are
+	// the ones that render.
+	settled bool
 }
 
 // NewEmit returns an emit store holding nothing.
@@ -110,6 +114,12 @@ func NewEmit() *Emit {
 		byKind: map[symbol.Kind]map[int][]symbol.Symbol{},
 	}
 }
+
+// Settled reports whether the store passed through [Settle]. A
+// renderer whose backend declares a lowering seam refuses an
+// unsettled store, so a composition that skips the settle fails at
+// the first render instead of writing the wrong bytes.
+func (e *Emit) Settled() bool { return e.settled }
 
 // Add records one unit and indexes its tree.
 //
@@ -143,20 +153,7 @@ func (e *Emit) Add(u Unit) error {
 
 	at := len(e.units)
 	e.units = append(e.units, u)
-	for _, d := range u.Decls {
-		for s := range emit.All(d) {
-			origin, carries := emit.OriginOf(s)
-			if !carries || origin.IsZero() {
-				continue
-			}
-			per := e.byKind[s.Kind()]
-			if per == nil {
-				per = map[int][]symbol.Symbol{}
-				e.byKind[s.Kind()] = per
-			}
-			per[at] = append(per[at], s)
-		}
-	}
+	e.index(at, u.Decls)
 	e.order = nil
 	return nil
 }
@@ -195,6 +192,34 @@ func (e *Emit) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 			}
 		}
 	}
+}
+
+// index walks one unit's declarations into the per-kind index.
+func (e *Emit) index(at int, decls []symbol.Symbol) {
+	for _, d := range decls {
+		for s := range emit.All(d) {
+			origin, carries := emit.OriginOf(s)
+			if !carries || origin.IsZero() {
+				continue
+			}
+			per := e.byKind[s.Kind()]
+			if per == nil {
+				per = map[int][]symbol.Symbol{}
+				e.byKind[s.Kind()] = per
+			}
+			per[at] = append(per[at], s)
+		}
+	}
+}
+
+// reindex rebuilds the per-kind index over the settled units, so a
+// reader after the settle never meets a kind a lowering replaced.
+func (e *Emit) reindex() {
+	e.byKind = map[symbol.Kind]map[int][]symbol.Symbol{}
+	for i := range e.units {
+		e.index(i, e.units[i].Decls)
+	}
+	e.order = nil
 }
 
 // sorted returns the unit indexes in Units order, rebuilding the

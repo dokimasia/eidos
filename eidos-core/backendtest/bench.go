@@ -61,6 +61,16 @@ func BenchRender(b *testing.B, setup Setup, budget Budget) {
 	if f == nil || f.Emit == nil {
 		b.Fatal("the setup carries no fixture")
 	}
+	if bk, held := r.(plugin.Backend); held {
+		settleSink := diag.NewSink()
+		if err := plugin.Settle(f.Emit, bk, settleSink); err != nil {
+			b.Fatalf("the settle completes: %v", err)
+		}
+		if settleSink.Failed() {
+			b.Fatal("the corpus settles clean, because a ceiling over a " +
+				"partial settle measures the wrong thing")
+		}
+	}
 
 	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
 	defer c.End()

@@ -19,7 +19,7 @@ import (
 	"go.dokimi.dev/eidos/core/store"
 )
 
-// annSeat is one scheduled annotator. The bucket number is the
+// annEntry is one scheduled annotator. The bucket number is the
 // role's position in the annotate schedule, and the same number
 // every claim it stamps carries as the arbitration rank's bucket.
 type annEntry struct {
@@ -28,7 +28,7 @@ type annEntry struct {
 	run    plugin.Annotator
 }
 
-// genSeat is one scheduled generator, numbered across the whole
+// genEntry is one scheduled generator, numbered across the whole
 // generator role so one plugin serving two plans holds one bucket.
 type genEntry struct {
 	bucket int
@@ -43,6 +43,7 @@ type compiledPlan struct {
 	name    string
 	scope   store.Scope
 	entries []genEntry
+	backend plugin.Backend
 }
 
 // kernelPhases holds the origins the kernel reports under. A
@@ -539,7 +540,9 @@ func compilePlans(
 				pl.Name, pl.Backend.Target(),
 			))
 		}
-		out = append(out, compiledPlan{name: pl.Name, scope: pl.Scope, entries: roles})
+		out = append(out, compiledPlan{
+			name: pl.Name, scope: pl.Scope, entries: roles, backend: pl.Backend,
+		})
 	}
 	return out, faults
 }

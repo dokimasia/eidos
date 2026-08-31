@@ -15,6 +15,15 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// hostKind reads a host's kind the way the settle does, with the
+// invalid kind at the top level.
+func hostKind(host symbol.Symbol) symbol.Kind {
+	if host == nil {
+		return symbol.KindInvalid
+	}
+	return host.Kind()
+}
+
 // Every declared name respells through the traversal: each kind's
 // own name under its host and visibility, and one name per
 // descent field.
@@ -33,8 +42,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -68,8 +77,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -98,8 +107,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -126,8 +135,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -158,8 +167,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -188,8 +197,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -220,8 +229,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -251,8 +260,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -280,8 +289,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -311,8 +320,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -342,8 +351,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -377,8 +386,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -412,8 +421,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -444,8 +453,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -474,8 +483,8 @@ func TestRespellNames(t *testing.T) {
 		var hosts []symbol.Kind
 		var seen []symbol.Visibility
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, host)
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, hostKind(host))
 				seen = append(seen, v)
 				return strings.ToUpper(name), nil
 			})
@@ -500,7 +509,7 @@ func TestRespellNames(t *testing.T) {
 		subject := &Function{Name: "alpha"}
 		boom := errors.New("boom")
 		err := RespellNames(subject,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
 				return "", boom
 			})
 		assert.True(t, errors.Is(err, boom), "the first error returns")
@@ -512,7 +521,7 @@ func TestRespellNames(t *testing.T) {
 
 		calls := 0
 		err := RespellNames(&Function{},
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
 				calls++
 				return name, nil
 			})
@@ -524,7 +533,7 @@ func TestRespellNames(t *testing.T) {
 		t.Parallel()
 
 		err := RespellNames(nil,
-			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
 				return name, nil
 			})
 		assert.NoError(t, err, "nothing to walk is not a fault")

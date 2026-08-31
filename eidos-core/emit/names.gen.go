@@ -12,27 +12,29 @@ import (
 // RespellNames applies f to every declared name s carries, its
 // own and its members', parameters', type parameters' and
 // variants', depth first in schema field order, writing each
-// result back. Host is the kind of the declaration a name's
-// carrier sits in, [symbol.KindInvalid] at the top level; a
-// carrier without visibility passes the zero value. An empty
-// name is skipped, because there is nothing to respell, and the
-// first error stops the traversal and returns.
+// result back. Host is the declaration a name's carrier sits in,
+// nil at the top level, so a caller can group members by their
+// host and read the host's kind for the respell hook; a carrier
+// without visibility passes the zero value. An empty name is
+// skipped, because there is nothing to respell, and the first
+// error stops the traversal and returns.
 //
 // A reference is not a name: a type reference's spelling stays
 // untouched, and so does a package's, whose spelling belongs to
 // the routing key.
 func RespellNames(
 	s symbol.Symbol,
-	f func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error),
+	f func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error),
 ) error {
-	return respellNames(symbol.KindInvalid, s, f)
+	return respellNames(nil, s, f)
 }
 
-// respellNames carries the enclosing kind through the descent.
+// respellNames carries the enclosing declaration through the
+// descent.
 func respellNames(
-	host symbol.Kind,
+	host symbol.Symbol,
 	s symbol.Symbol,
-	f func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error),
+	f func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error),
 ) error {
 	switch x := s.(type) {
 	case *Function:
@@ -44,17 +46,17 @@ func respellNames(
 			x.Name = settled
 		}
 		for _, child := range x.TypeParams {
-			if err := respellNames(symbol.KindFunction, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Params {
-			if err := respellNames(symbol.KindFunction, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Returns {
-			if err := respellNames(symbol.KindFunction, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
@@ -67,22 +69,22 @@ func respellNames(
 			x.Name = settled
 		}
 		if x.Receiver != nil {
-			if err := respellNames(symbol.KindMethod, x.Receiver, f); err != nil {
+			if err := respellNames(x, x.Receiver, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.TypeParams {
-			if err := respellNames(symbol.KindMethod, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Params {
-			if err := respellNames(symbol.KindMethod, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Returns {
-			if err := respellNames(symbol.KindMethod, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
@@ -111,17 +113,17 @@ func respellNames(
 			x.Name = settled
 		}
 		for _, child := range x.Variants.Items() {
-			if err := respellNames(symbol.KindEnum, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Fields.Items() {
-			if err := respellNames(symbol.KindEnum, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Methods.Items() {
-			if err := respellNames(symbol.KindEnum, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
@@ -142,17 +144,17 @@ func respellNames(
 			x.Name = settled
 		}
 		for _, child := range x.TypeParams {
-			if err := respellNames(symbol.KindSum, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Variants.Items() {
-			if err := respellNames(symbol.KindSum, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Methods.Items() {
-			if err := respellNames(symbol.KindSum, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
@@ -165,7 +167,7 @@ func respellNames(
 			x.Name = settled
 		}
 		for _, child := range x.Fields.Items() {
-			if err := respellNames(symbol.KindSumVariant, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
@@ -202,22 +204,22 @@ func respellNames(
 			x.Name = settled
 		}
 		for _, child := range x.TypeParams {
-			if err := respellNames(symbol.KindStruct, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Fields.Items() {
-			if err := respellNames(symbol.KindStruct, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Methods.Items() {
-			if err := respellNames(symbol.KindStruct, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Types.Items() {
-			if err := respellNames(symbol.KindStruct, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
@@ -230,22 +232,22 @@ func respellNames(
 			x.Name = settled
 		}
 		for _, child := range x.TypeParams {
-			if err := respellNames(symbol.KindInterface, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Fields.Items() {
-			if err := respellNames(symbol.KindInterface, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Methods.Items() {
-			if err := respellNames(symbol.KindInterface, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
 		for _, child := range x.Types.Items() {
-			if err := respellNames(symbol.KindInterface, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
@@ -258,7 +260,7 @@ func respellNames(
 			x.Name = settled
 		}
 		for _, child := range x.TypeParams {
-			if err := respellNames(symbol.KindAlias, child, f); err != nil {
+			if err := respellNames(x, child, f); err != nil {
 				return err
 			}
 		}
