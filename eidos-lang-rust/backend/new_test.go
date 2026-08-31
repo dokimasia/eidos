@@ -31,6 +31,29 @@ func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	return r, backendtest.CanonicalFixture(tb, inventory)
 }
 
+// benchSetup builds the backend over the suite's scaled corpus,
+// filtered the way setup filters the coverage fixture: the
+// declared templates plus the method kind the impl cluster
+// renders without one.
+func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := backend.New().(plugin.Renderer)
+	assert.True(tb, held, "the built backend renders")
+	inventory := maps.Clone(backend.KindTemplates())
+	inventory[symbol.KindMethod] = ""
+	return r, backendtest.ScaledFixture(tb, inventory)
+}
+
+// BenchmarkNew measures the composed backend over the suite's
+// scaled corpus: the real templates and the impl clustering,
+// through the pass-through formatter, under the allocation
+// ceiling pinned from measurement with headroom.
+func BenchmarkNew(b *testing.B) {
+	backendtest.BenchRender(b, benchSetup,
+		backendtest.Budget{MaxAllocs: 5_300_000})
+}
+
 // The backend is the module's write half: the kernel suite holds
 // it to the render checks over the canonical fixture, and the
 // stamp check joins it to the output contract under this module's

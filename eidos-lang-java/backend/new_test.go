@@ -27,6 +27,26 @@ func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	return r, backendtest.CanonicalFixture(tb, backend.KindTemplates())
 }
 
+// benchSetup builds the backend over the suite's scaled corpus,
+// filtered the way setup filters the coverage fixture.
+func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := backend.New().(plugin.Renderer)
+	assert.True(tb, held, "the built backend renders")
+	return r, backendtest.ScaledFixture(tb, backend.KindTemplates())
+}
+
+// BenchmarkNew measures the composed backend over the suite's
+// scaled corpus. The split fans every typed declaration into its
+// own file, so the corpus renders far more files than units; the
+// allocation ceiling carries that fact, pinned from measurement
+// with headroom.
+func BenchmarkNew(b *testing.B) {
+	backendtest.BenchRender(b, benchSetup,
+		backendtest.Budget{MaxAllocs: 15_500_000})
+}
+
 // The backend is the module's write half: the kernel suite holds
 // it to the render checks over the canonical fixture, and the
 // stamp check joins it to the output contract under this module's
