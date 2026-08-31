@@ -86,6 +86,42 @@ func BenchRender(b *testing.B, setup Setup, budget Budget) {
 	}
 }
 
+// BenchSettle measures the settle over the setup's corpus: every
+// iteration builds a fresh fixture and settles it whole, because
+// a settled store settles to itself and a second pass would
+// measure the short circuit. The corpus build rides inside the
+// number and is identical across backends, so the ceiling pins
+// build plus settle and a settle regression still moves it; the
+// render benchmarks settle before their loop, so the two numbers
+// split the pipeline between them.
+func BenchSettle(b *testing.B, setup Setup, budget Budget) {
+	b.Helper()
+
+	if budget.MaxAllocs == 0 {
+		b.Fatal("the budget states no ceiling")
+	}
+	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
+	defer c.End()
+	for c.Loop() {
+		r, f := setup(b)
+		if f == nil || f.Emit == nil {
+			b.Fatal("the setup carries no fixture")
+		}
+		bk, held := r.(plugin.Backend)
+		if !held {
+			b.Fatal("the settle takes the backend's declared seams")
+		}
+		sink := diag.NewSink()
+		if err := plugin.Settle(f.Emit, bk, sink); err != nil {
+			b.Fatalf("the settle completes: %v", err)
+		}
+		if sink.Failed() {
+			b.Fatal("the corpus settles clean, because a ceiling over a " +
+				"partial settle measures the wrong thing")
+		}
+	}
+}
+
 // ScaledFixture returns the benchmark corpus, filtered to a
 // backend's declared kind inventory the way [CanonicalFixture]
 // filters its coverage: [BenchPackages] packages of [BenchFiles]
@@ -168,44 +204,44 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 	switch k {
 	case symbol.KindStruct:
 		s := &emit.Struct{
-			Origin:     originOf("Row"+i, symbol.KindStruct),
-			Doc:        []string{"Row" + i + " holds one record."},
-			Name:       "Row" + i,
+			Origin:     originOf("row"+i, symbol.KindStruct),
+			Doc:        []string{"row" + i + " holds one record."},
+			Name:       "row" + i,
 			TypeParams: []*emit.TypeParam{{Name: "T"}},
 		}
 		s.Fields.Append(&emit.Field{
-			Origin:  memberOf("Row"+i, "Name", symbol.KindField),
+			Origin:  memberOf("row"+i, "name", symbol.KindField),
 			Comment: "unique per store",
-			Name:    "Name",
+			Name:    "name",
 			Type:    typeRef("string"),
 			Tag:     `json:"name"`,
 		})
 		s.Methods.Append(&emit.Method{
-			Origin: memberOf("Row"+i, "Fetch", symbol.KindMethod),
-			Name:   "Fetch",
+			Origin: memberOf("row"+i, "fetch", symbol.KindMethod),
+			Name:   "fetch",
 			Body:   emit.Body{Stmts: scaffoldStmts()},
 		})
 		return s
 	case symbol.KindInterface:
 		iface := &emit.Interface{
-			Origin: originOf("Store"+i, symbol.KindInterface),
-			Name:   "Store" + i,
+			Origin: originOf("store"+i, symbol.KindInterface),
+			Name:   "store" + i,
 			TypeParams: []*emit.TypeParam{
 				{Name: "K", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 			},
 			Extends: []*emit.TypeRef{typeRef("Closer")},
 		}
 		iface.Methods.Append(&emit.Method{
-			Origin:  memberOf("Store"+i, "Get", symbol.KindMethod),
-			Name:    "Get",
+			Origin:  memberOf("store"+i, "get", symbol.KindMethod),
+			Name:    "get",
 			Params:  []*emit.Param{{Name: "key", Type: typeRef("string")}},
 			Returns: []*emit.Return{{Type: typeRef("string")}},
 		})
 		return iface
 	case symbol.KindFunction:
 		return &emit.Function{
-			Origin: originOf("Task"+i, symbol.KindFunction),
-			Name:   "Task" + i,
+			Origin: originOf("task"+i, symbol.KindFunction),
+			Name:   "task" + i,
 			TypeParams: []*emit.TypeParam{
 				{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 			},
@@ -213,10 +249,10 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 		}
 	case symbol.KindMethod:
 		return &emit.Method{
-			Origin: memberOf("Row"+i, "Track", symbol.KindMethod),
-			Name:   "Track",
+			Origin: memberOf("row"+i, "track", symbol.KindMethod),
+			Name:   "track",
 			Receives: &emit.TypeRef{
-				Spelling: "Row" + i,
+				Spelling: "row" + i,
 				Args:     []*emit.TypeRef{typeRef("T")},
 			},
 			TypeParams: []*emit.TypeParam{
@@ -226,27 +262,27 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 		}
 	case symbol.KindAlias:
 		return &emit.Alias{
-			Origin: originOf("ID"+i, symbol.KindAlias),
-			Name:   "ID" + i,
+			Origin: originOf("id"+i, symbol.KindAlias),
+			Name:   "id" + i,
 			TypeParams: []*emit.TypeParam{
 				{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 			},
 			Target: &emit.TypeRef{
-				Spelling: "Keyed",
+				Spelling: "keyed",
 				Args:     []*emit.TypeRef{typeRef("T")},
 			},
 		}
 	case symbol.KindConstant:
 		return &emit.Constant{
-			Origin:  originOf("Limit"+i, symbol.KindConstant),
+			Origin:  originOf("limit"+i, symbol.KindConstant),
 			Comment: "rows per call",
-			Name:    "Limit" + i,
+			Name:    "limit" + i,
 			Value:   "8",
 		}
 	default: // symbol.KindVariable, by canonicalKinds
 		return &emit.Variable{
-			Origin: originOf("Count"+i, symbol.KindVariable),
-			Name:   "Count" + i,
+			Origin: originOf("count"+i, symbol.KindVariable),
+			Name:   "count" + i,
 			Type:   typeRef("int"),
 			Value:  "0",
 		}

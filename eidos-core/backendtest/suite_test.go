@@ -147,6 +147,48 @@ func scripted(r func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error)) 
 // The suite is the contract a backend author tests against, so it
 // has to accept a valid backend through and reject each way of
 // cheating: that second half is what justifies it.
+func TestAssertSettledShape(t *testing.T) {
+	t.Parallel()
+
+	t.Run("accepts the kit's clean settle", func(t *testing.T) {
+		t.Parallel()
+
+		backendtest.AssertSettledShape(t, wellRendered)
+	})
+
+	t.Run("rejects a setup that breaks its own isolation", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		setup := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+			r, f := wellRendered(tb)
+			calls++
+			if calls > 1 {
+				assert.NoError(tb,
+					f.Emit.Add(unit("extra", fnOf("extra", emit.Body{}))),
+					"the drifted unit arrives")
+			}
+			return r, f
+		}
+		failure := assert.Rejects(t, "a differing second build must fail",
+			func(tb assert.TB) {
+				backendtest.AssertSettledShape(tb, setup)
+			})
+		assert.Contains(t, failure, "unit", "the refusal names the drift")
+	})
+}
+
+func TestRenderSettled(t *testing.T) {
+	t.Parallel()
+
+	t.Run("settles and renders the fixture once", func(t *testing.T) {
+		t.Parallel()
+
+		files := backendtest.RenderSettled(t, wellRendered)
+		assert.True(t, len(files) > 0, "the settled fixture renders whole")
+	})
+}
+
 func TestRunBackendSuite(t *testing.T) {
 	t.Parallel()
 

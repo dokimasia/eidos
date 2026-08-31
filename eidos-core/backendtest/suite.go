@@ -11,8 +11,10 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/render"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // RunBackendSuite holds a renderer to the checks a render returns
@@ -45,6 +47,165 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertContinuedRender(t, setup)
 	})
+	t.Run("the settle preserves the structure", func(t *testing.T) {
+		t.Parallel()
+		AssertSettledShape(t, setup)
+	})
+}
+
+// RenderSettled settles one setup's fixture and renders it once,
+// requiring a clean run, so a satellite's own convention pins read
+// the rendered bytes without repeating the plumbing.
+func RenderSettled(tb assert.TB, setup Setup) []plugin.RenderedFile {
+	tb.Helper()
+
+	files, diags := runRender(tb, setup)
+	for _, d := range diags {
+		if d.Severity == diag.SeverityError {
+			tb.Errorf("the settled fixture renders clean: %s", d.Msg)
+		}
+	}
+	return files
+}
+
+// AssertSettledShape settles one setup's fixture and holds the
+// settle to the changes its seams may declare: the unit count,
+// keys and origins survive whatever runs, and a backend declaring
+// no construct lowering keeps every declaration equal to a fresh
+// build once every declared name normalizes. A settle reporting an
+// Error over the suite's fixture fails the check, because the
+// canonical declarations spell in every convention.
+func AssertSettledShape(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	r, f := setup(tb)
+	if f == nil || f.Emit == nil {
+		tb.Errorf("the setup carries no fixture")
+		return
+	}
+	b, held := r.(plugin.Backend)
+	if !held {
+		return // a hand-rolled renderer declares no seams
+	}
+	sink := diag.NewSink()
+	if err := plugin.Settle(f.Emit, b, sink); err != nil {
+		tb.Errorf("the settle completes: %v", err)
+		return
+	}
+	assert.True(tb, !sink.Failed(), "the suite's fixture settles clean")
+
+	_, fresh := setup(tb)
+	settled := slices.Collect(f.Emit.Units())
+	emitted := slices.Collect(fresh.Emit.Units())
+	assert.Equal(tb, len(settled), len(emitted),
+		"the settle adds and drops no unit")
+	for i := range settled {
+		if i >= len(emitted) {
+			return
+		}
+		assert.Equal(tb, settled[i].Key, emitted[i].Key,
+			"a routing key survives the settle")
+		assert.Equal(tb, settled[i].Origins, emitted[i].Origins,
+			"and so does a unit's provenance")
+	}
+
+	if _, lowers := r.(plugin.Lowerer); lowers {
+		return // a lowering may reshape declarations; origins held above
+	}
+	normalizeStore(settled)
+	normalizeStore(emitted)
+	for i := range settled {
+		assert.Equal(tb, settled[i].Decls, emitted[i].Decls,
+			"a respell changes name fields and reference spellings alone")
+	}
+}
+
+// normalizeStore rewrites every declared name and every reference
+// spelling to one fixed form, per package the way the settle's own
+// table scopes, so two stores compare modulo names.
+func normalizeStore(units []plugin.Unit) {
+	tables := map[string]map[string]bool{}
+	for _, u := range units {
+		table := tables[u.Pkg.Package]
+		if table == nil {
+			table = map[string]bool{}
+			tables[u.Pkg.Package] = table
+		}
+		for _, d := range u.Decls {
+			_ = emit.RespellNames(d, func(
+				host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string,
+			) (string, error) {
+				table[name] = true
+				return normalName, nil
+			})
+		}
+	}
+	for _, u := range units {
+		table := tables[u.Pkg.Package]
+		for _, d := range u.Decls {
+			for s := range emit.All(d) {
+				switch t := s.(type) {
+				case *emit.TypeRef:
+					if table[t.Spelling] {
+						t.Spelling = normalName
+					}
+				case *emit.Function:
+					normalizeBody(&t.Body, table)
+				case *emit.Method:
+					normalizeBody(&t.Body, table)
+				}
+			}
+		}
+	}
+}
+
+// normalName is the one spelling normalization writes.
+const normalName = "n"
+
+// normalizeBody rewrites a body's structured names where they
+// match a declared name, mirroring what the settle may rewrite.
+func normalizeBody(b *emit.Body, table map[string]bool) {
+	if b.Verbatim != "" {
+		return
+	}
+	normalizeStmts(b.Prologue.Items(), table)
+	normalizeStmts(b.Stmts, table)
+	for _, s := range b.Slots {
+		if s != nil {
+			normalizeStmts(s.Slot.Items(), table)
+		}
+	}
+	normalizeStmts(b.Epilogue.Items(), table)
+}
+
+// normalizeStmts rewrites one statement run's names.
+func normalizeStmts(stmts []emit.Stmt, table map[string]bool) {
+	for i := range stmts {
+		s := &stmts[i]
+		normalizeExpr(&s.Value, table)
+		if s.Name != "" && table[s.Name] {
+			s.Name = normalName
+		}
+		normalizeStmts(s.Then, table)
+	}
+}
+
+// normalizeExpr rewrites one expression tree's names.
+func normalizeExpr(x *emit.Expr, table map[string]bool) {
+	if x == nil {
+		return
+	}
+	switch x.Kind {
+	case emit.ExprName:
+		if table[x.Name] {
+			x.Name = normalName
+		}
+	case emit.ExprCall:
+		normalizeExpr(x.Fn, table)
+		for i := range x.Args {
+			normalizeExpr(&x.Args[i], table)
+		}
+	}
 }
 
 // runRender is one check's render call: a fresh setup, a fresh sink

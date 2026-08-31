@@ -97,3 +97,17 @@ func TestBenchRender(t *testing.T) {
 		assert.True(t, rendered >= result.N, "every iteration rendered")
 	})
 }
+
+func TestBenchSettle(t *testing.T) {
+	t.Parallel()
+
+	t.Run("settles a fresh fixture per iteration", func(t *testing.T) {
+		t.Parallel()
+
+		result := testing.Benchmark(func(b *testing.B) {
+			b.Helper()
+			backendtest.BenchSettle(b, wellRendered, backendtest.Budget{MaxAllocs: 1 << 40})
+		})
+		assert.True(t, result.N > 0, "the benchmark ran")
+	})
+}

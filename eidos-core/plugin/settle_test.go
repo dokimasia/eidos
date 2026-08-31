@@ -296,6 +296,49 @@ func TestSettle(t *testing.T) {
 		assert.Equal(t, beta.Name, "beta", "and so does the second")
 	})
 
+	t.Run("two receivers declare one method name without meeting", func(t *testing.T) {
+		t.Parallel()
+
+		b := &respellingOnly{}
+		b.name = "golang"
+		b.fn = func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			return strings.ToUpper(name[:1]) + name[1:], nil
+		}
+		first := &emit.Method{
+			Origin:   settleOrigin("row.track", symbol.KindMethod),
+			Name:     "track",
+			Receives: &emit.TypeRef{Spelling: "row"},
+		}
+		second := &emit.Method{
+			Origin:   settleOrigin("box.track", symbol.KindMethod),
+			Name:     "track",
+			Receives: &emit.TypeRef{Spelling: "box"},
+		}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", first, second))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
+		assert.False(t, sink.Failed(),
+			"the method scopes by its receiver, so nothing collides")
+		assert.Equal(t, first.Name, "Track", "the first settles")
+		assert.Equal(t, second.Name, "Track", "and so does the second")
+
+		twice := &emit.Method{
+			Origin:   settleOrigin("row.track2", symbol.KindMethod),
+			Name:     "Track",
+			Receives: &emit.TypeRef{Spelling: "row"},
+		}
+		again := &emit.Method{
+			Origin:   settleOrigin("row.track3", symbol.KindMethod),
+			Name:     "track",
+			Receives: &emit.TypeRef{Spelling: "row"},
+		}
+		e2 := storeOf(t, settleUnit("svc", "svc/a.src", twice, again))
+		sink2 := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e2, b, sink2), "the settle completes")
+		assert.True(t, sink2.Failed(),
+			"one receiver's two spellings settling together still collide")
+	})
+
 	t.Run("reverts a member collision within one host", func(t *testing.T) {
 		t.Parallel()
 

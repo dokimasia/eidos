@@ -93,6 +93,11 @@ var canonicalKinds = []symbol.Kind{
 // spellings render under the same suite. The siblings stay inside
 // what every target spells; variance, defaults and value
 // parameters stay in each satellite's own template tests.
+//
+// Every declared name spells in the neutral lower camel form, so
+// a backend declaring a respell convention proves it as bytes:
+// one fixture renders row as Row into Go, fetch as fetch into
+// TypeScript and Java, and as fetch into Rust's snake case.
 func CanonicalFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
 	tb.Helper()
 
@@ -278,10 +283,10 @@ func formCallables() []formCallable {
 	ref := emit.Body{Ref: &emit.TemplateRef{Name: refTemplate}}
 	ref.Prologue.Append(emit.Stmt{Kind: emit.StmtExpr, Value: callExpr("audit")})
 	return []formCallable{
-		{Name: "Boot", Body: emit.Body{}},
-		{Name: "Fetch", Body: emit.Body{Stmts: scaffoldStmts()}},
-		{Name: "Push", Body: ref},
-		{Name: "Trace", Body: emit.Body{Verbatim: verbatimBody}},
+		{Name: "boot", Body: emit.Body{}},
+		{Name: "fetch", Body: emit.Body{Stmts: scaffoldStmts()}},
+		{Name: "push", Body: ref},
+		{Name: "trace", Body: emit.Body{Verbatim: verbatimBody}},
 	}
 }
 
@@ -307,21 +312,21 @@ func scaffoldStmts() []emit.Stmt {
 // whose members render inside the host reaches every form.
 func rowStruct() *emit.Struct {
 	s := &emit.Struct{
-		Origin: originOf("Row", symbol.KindStruct),
+		Origin: originOf("row", symbol.KindStruct),
 		Doc:    []string{"Row holds one canonical record."},
-		Name:   "Row",
+		Name:   "row",
 	}
 	s.Fields.Append(&emit.Field{
-		Origin:  memberOf("Row", "Name", symbol.KindField),
+		Origin:  memberOf("row", "name", symbol.KindField),
 		Doc:     []string{"Name keys the row."},
 		Comment: "unique per store",
-		Name:    "Name",
+		Name:    "name",
 		Type:    typeRef("string"),
 		Tag:     `json:"name"`,
 	})
 	for _, c := range formCallables() {
 		s.Methods.Append(&emit.Method{
-			Origin: memberOf("Row", c.Name, symbol.KindMethod),
+			Origin: memberOf("row", c.Name, symbol.KindMethod),
 			Name:   c.Name,
 			Body:   c.Body,
 		})
@@ -337,21 +342,21 @@ func rowStruct() *emit.Struct {
 // impl block restates the name alone.
 func boxStruct() *emit.Struct {
 	s := &emit.Struct{
-		Origin:     originOf("Box", symbol.KindStruct),
+		Origin:     originOf("box", symbol.KindStruct),
 		Doc:        []string{"Box wraps one item."},
-		Name:       "Box",
+		Name:       "box",
 		TypeParams: []*emit.TypeParam{{Name: "T"}},
 	}
 	s.Fields.Append(&emit.Field{
-		Origin: memberOf("Box", "Item", symbol.KindField),
+		Origin: memberOf("box", "item", symbol.KindField),
 		Doc:    []string{"Item is the wrapped value."},
-		Name:   "Item",
+		Name:   "item",
 		Type:   typeRef("T"),
 	})
 	s.Methods.Append(&emit.Method{
-		Origin: memberOf("Box", "Map", symbol.KindMethod),
+		Origin: memberOf("box", "map", symbol.KindMethod),
 		Doc:    []string{"Map rewraps the item."},
-		Name:   "Map",
+		Name:   "map",
 		TypeParams: []*emit.TypeParam{
 			{Name: "U", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 		},
@@ -367,15 +372,15 @@ func boxStruct() *emit.Struct {
 // every target spells in its own supertype form.
 func storeInterface() *emit.Interface {
 	i := &emit.Interface{
-		Origin:  originOf("Store", symbol.KindInterface),
+		Origin:  originOf("store", symbol.KindInterface),
 		Doc:     []string{"Store reads rows back."},
-		Name:    "Store",
+		Name:    "store",
 		Extends: []*emit.TypeRef{typeRef("Closer")},
 	}
 	i.Methods.Append(&emit.Method{
-		Origin:  memberOf("Store", "Get", symbol.KindMethod),
+		Origin:  memberOf("store", "get", symbol.KindMethod),
 		Doc:     []string{"Get returns the row key names."},
-		Name:    "Get",
+		Name:    "get",
 		Params:  []*emit.Param{{Name: "key", Type: typeRef("string")}},
 		Returns: []*emit.Return{{Type: typeRef("string")}},
 	})
@@ -386,17 +391,17 @@ func storeInterface() *emit.Interface {
 // parameter its method signature references.
 func keyedInterface() *emit.Interface {
 	i := &emit.Interface{
-		Origin: originOf("Keyed", symbol.KindInterface),
+		Origin: originOf("keyed", symbol.KindInterface),
 		Doc:    []string{"Keyed looks rows up."},
-		Name:   "Keyed",
+		Name:   "keyed",
 		TypeParams: []*emit.TypeParam{
 			{Name: "K", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 		},
 	}
 	i.Methods.Append(&emit.Method{
-		Origin:  memberOf("Keyed", "Pick", symbol.KindMethod),
+		Origin:  memberOf("keyed", "pick", symbol.KindMethod),
 		Doc:     []string{"Pick returns the row at a key."},
-		Name:    "Pick",
+		Name:    "pick",
 		Params:  []*emit.Param{{Name: "key", Type: typeRef("K")}},
 		Returns: []*emit.Return{{Type: typeRef("K")}},
 	})
@@ -422,9 +427,9 @@ func taskFunctions() []symbol.Symbol {
 // parameter its signature references.
 func sortFunction() symbol.Symbol {
 	return &emit.Function{
-		Origin: originOf("Sort", symbol.KindFunction),
+		Origin: originOf("sort", symbol.KindFunction),
 		Doc:    []string{"Sort orders items in place."},
-		Name:   "Sort",
+		Name:   "sort",
 		TypeParams: []*emit.TypeParam{
 			{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 		},
@@ -438,9 +443,9 @@ func sortFunction() symbol.Symbol {
 // spells it.
 func trackMethod() *emit.Method {
 	return &emit.Method{
-		Origin:   memberOf("Row", "Track", symbol.KindMethod),
-		Name:     "Track",
-		Receives: typeRef("Row"),
+		Origin:   memberOf("row", "track", symbol.KindMethod),
+		Name:     "track",
+		Receives: typeRef("row"),
 		Body:     emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}},
 	}
 }
@@ -452,11 +457,11 @@ func trackMethod() *emit.Method {
 // opens.
 func foldMethod() *emit.Method {
 	return &emit.Method{
-		Origin: memberOf("Box", "Fold", symbol.KindMethod),
+		Origin: memberOf("box", "fold", symbol.KindMethod),
 		Doc:    []string{"Fold collapses the box."},
-		Name:   "Fold",
+		Name:   "fold",
 		Receives: &emit.TypeRef{
-			Spelling: "Box",
+			Spelling: "box",
 			Args:     []*emit.TypeRef{typeRef("T")},
 		},
 		TypeParams: []*emit.TypeParam{
@@ -471,9 +476,9 @@ func foldMethod() *emit.Method {
 // idAlias returns the alias.
 func idAlias() *emit.Alias {
 	return &emit.Alias{
-		Origin: originOf("ID", symbol.KindAlias),
+		Origin: originOf("id", symbol.KindAlias),
 		Doc:    []string{"ID names a row."},
-		Name:   "ID",
+		Name:   "id",
 		Target: typeRef("string"),
 	}
 }
@@ -483,14 +488,14 @@ func idAlias() *emit.Alias {
 // an argument list spells.
 func matchAlias() *emit.Alias {
 	return &emit.Alias{
-		Origin: originOf("Match", symbol.KindAlias),
+		Origin: originOf("match", symbol.KindAlias),
 		Doc:    []string{"Match names a keyed lookup."},
-		Name:   "Match",
+		Name:   "match",
 		TypeParams: []*emit.TypeParam{
 			{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 		},
 		Target: &emit.TypeRef{
-			Spelling: "Keyed",
+			Spelling: "keyed",
 			Args:     []*emit.TypeRef{typeRef("T")},
 		},
 	}
@@ -501,10 +506,10 @@ func matchAlias() *emit.Alias {
 // target that renders one proves it.
 func limitConstant() *emit.Constant {
 	return &emit.Constant{
-		Origin:  originOf("Limit", symbol.KindConstant),
+		Origin:  originOf("limit", symbol.KindConstant),
 		Doc:     []string{"Limit bounds one fetch."},
 		Comment: "rows per call",
-		Name:    "Limit",
+		Name:    "limit",
 		Value:   "8",
 	}
 }
@@ -514,9 +519,9 @@ func limitConstant() *emit.Constant {
 // renders one proves it.
 func countVariable() *emit.Variable {
 	return &emit.Variable{
-		Origin: originOf("Count", symbol.KindVariable),
+		Origin: originOf("count", symbol.KindVariable),
 		Doc:    []string{"Count tracks fetches."},
-		Name:   "Count",
+		Name:   "count",
 		Type:   typeRef("int"),
 		Value:  "0",
 	}
