@@ -77,7 +77,7 @@ Layout runs once per plan, in one pass over the plan's emit values.
 ## Filename derivation
 
 Filename derivation belongs to the language satellite, in
-`lowering/`, and its input is the whole family declaration:
+`spell/`, and its input is the whole family declaration:
 cardinality, word and tag. The plugin declares the meaning and the
 target spells it. A declaration in `store.go` through a `PerSource`
 family with the word `stub` arrives in `store_stub.go` under the Go

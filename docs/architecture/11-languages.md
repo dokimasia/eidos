@@ -26,7 +26,7 @@ eidos-lang-<lang>/
   rules/           the read half: Tier-1 projections (Callable,
                    TypeShape, Resolve, naming) + the Tier-2
                    optionals the language satisfies
-  lowering/        the write half: canonical-type spelling,
+  spell/           the write half: canonical-type spelling,
                    optionality, error model, naming joins — the
                    hub's spoke
   backend/         templates + finalise (fmt/imports) + render state
