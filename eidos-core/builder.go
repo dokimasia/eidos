@@ -4,6 +4,7 @@
 package eidos
 
 import (
+	"io/fs"
 	"slices"
 	"strconv"
 
@@ -26,7 +27,14 @@ type Builder struct {
 	requires []plugin.Capability
 	options  any
 	keys     []func(r *meta.Registry) error
+	trees    []targetTree
 	rules    []Rule
+}
+
+// targetTree is one declared template tree, keyed by target.
+type targetTree struct {
+	target plugin.Target
+	tree   fs.FS
 }
 
 // NewPlugin starts a plugin declaration.
@@ -83,6 +91,15 @@ func (b *Builder) Keys(register func(r *meta.Registry) error) *Builder {
 	return b
 }
 
+// Templates declares the plugin's template tree for one target;
+// repeatable, one tree per target. The built value answers it
+// through [plugin.TemplateProvider]: the tree a render pass
+// resolves this plugin's template references in.
+func (b *Builder) Templates(t plugin.Target, tree fs.FS) *Builder {
+	b.trees = append(b.trees, targetTree{target: t, tree: tree})
+	return b
+}
+
 // Handle registers rules, in declaration order.
 func (b *Builder) Handle(rules ...Rule) *Builder {
 	b.rules = append(b.rules, rules...)
@@ -99,9 +116,10 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 //
 // Build panics on a declaration defect: an empty name, no rules, a
 // duplicate output tag, an empty output word, a zero cardinality,
-// an empty capability label, a directive name carried by two
-// wrappers, a rule gating on two directives, a gate wrapped around
-// a graph rule, a zero predicate. A wrong declaration is a bug in
+// an empty capability label, a nil, zero-target or duplicate
+// template tree, a directive name carried by two wrappers, a rule
+// gating on two directives, a gate wrapped around a graph rule, a
+// zero predicate. A wrong declaration is a bug in
 // the plugin's own constructor and fires on the first Build in any
 // test, before a run exists; composition faults stay collected
 // errors where the workspace composes.
@@ -137,6 +155,20 @@ func (b *Builder) Build() plugin.Plugin {
 			panic("eidos: " + name + " declares a nil key registration")
 		}
 	}
+	trees := make(map[plugin.Target]fs.FS, len(b.trees))
+	for _, tt := range b.trees {
+		if tt.target == "" {
+			panic("eidos: " + name + " declares a template tree for the zero target")
+		}
+		if tt.tree == nil {
+			panic("eidos: " + name + " declares a nil template tree")
+		}
+		if _, taken := trees[tt.target]; taken {
+			panic("eidos: " + name + " declares the " +
+				strconv.Quote(string(tt.target)) + " template tree twice")
+		}
+		trees[tt.target] = tt.tree
+	}
 
 	var rules []flatRule
 	flatten(name, b.rules, nil, nil, &rules)
@@ -152,6 +184,7 @@ func (b *Builder) Build() plugin.Plugin {
 		requires: slices.Clone(b.requires),
 		options:  b.options,
 		keys:     slices.Clone(b.keys),
+		trees:    trees,
 		schemas:  schemas,
 		rules:    rules,
 		subs:     subscriptionsFor(rules),

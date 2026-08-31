@@ -152,6 +152,29 @@ func TestBuilder(t *testing.T) {
 					},
 				},
 				{
+					name: "a nil template tree",
+					build: func() {
+						eidos.NewPlugin("t").
+							Templates("stub", nil).Handle(emitNothing()).Build()
+					},
+				},
+				{
+					name: "a zero template target",
+					build: func() {
+						eidos.NewPlugin("t").
+							Templates("", stubTree()).Handle(emitNothing()).Build()
+					},
+				},
+				{
+					name: "one template target declared twice",
+					build: func() {
+						eidos.NewPlugin("t").
+							Templates("stub", stubTree()).
+							Templates("stub", stubTree()).
+							Handle(emitNothing()).Build()
+					},
+				},
+				{
 					name: "one directive name in two wrappers",
 					build: func() {
 						eidos.NewPlugin("stubgen").Handle(

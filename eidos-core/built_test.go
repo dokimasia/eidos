@@ -4,13 +4,22 @@
 package eidos_test
 
 import (
+	"io/fs"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/plugin"
 )
+
+// stubTree answers a one-template tree for template declarations.
+func stubTree() fstest.MapFS {
+	return fstest.MapFS{
+		"body.tmpl": &fstest.MapFile{Data: []byte("ok")},
+	}
+}
 
 // A built plugin is the lowered declaration: what the providers
 // answer is exactly what was declared, so the composition reads
@@ -57,5 +66,29 @@ func TestBuilt(t *testing.T) {
 		assert.True(t, ok, "the options struct answers")
 		assert.True(t, options.Options() == any(opts),
 			"the same pointer the plugin constructed, defaults intact")
+	})
+
+	t.Run("answers the declared template tree", func(t *testing.T) {
+		t.Parallel()
+
+		p := eidos.NewPlugin("planner").
+			Templates("stub", stubTree()).
+			Handle(emitNothing()).
+			Build()
+
+		tp, ok := p.(plugin.TemplateProvider)
+		assert.True(t, ok, "the built value answers the provider")
+		tree, held := tp.Templates("stub")
+		assert.True(t, held, "the declared target answers its tree")
+		src, err := fs.ReadFile(tree, "body.tmpl")
+		assert.NoError(t, err, "the answered tree is readable")
+		assert.Equal(t, string(src), "ok", "same tree, same bytes")
+
+		_, held = tp.Templates("other")
+		assert.False(t, held, "an undeclared target answers absent")
+		assert.True(t, tp.TemplateFuncs("stub") == nil,
+			"the facade carries no helper declaration")
+		assert.True(t, tp.Overrides() == nil,
+			"the facade declares no overrides")
 	})
 }

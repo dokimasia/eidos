@@ -5,6 +5,8 @@ package eidos
 
 import (
 	"errors"
+	"io/fs"
+	"text/template"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
@@ -25,6 +27,7 @@ type built struct {
 	requires []plugin.Capability
 	options  any
 	keys     []func(r *meta.Registry) error
+	trees    map[plugin.Target]fs.FS
 	schemas  []directive.Schema
 	rules    []flatRule
 	subs     []plugin.Subscription
@@ -65,6 +68,23 @@ func (b *built) Keys(r *meta.Registry) error {
 	}
 	return errors.Join(errs...)
 }
+
+// Templates implements [plugin.TemplateProvider]: the declared
+// tree for one target, absent where none was declared.
+func (b *built) Templates(t plugin.Target) (fs.FS, bool) {
+	tree, held := b.trees[t]
+	return tree, held
+}
+
+// TemplateFuncs implements [plugin.TemplateProvider]. The facade
+// carries no helper declaration: a plugin whose templates need
+// helpers implements the provider directly.
+func (*built) TemplateFuncs(plugin.Target) template.FuncMap { return nil }
+
+// Overrides implements [plugin.TemplateProvider]. The facade
+// carries no override declaration, so a facade plugin never
+// replaces a shared vocabulary name.
+func (*built) Overrides() []string { return nil }
 
 // Directives answers the schemas the Directive wrappers carried,
 // for registration at composition.
