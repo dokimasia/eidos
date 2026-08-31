@@ -213,19 +213,21 @@ spelling of a settled declaration.
 
 The kernel defines one function type and one provider interface:
 
-    // Lower rewrites one declaration into the target's own
-    // construct shape: the same fact, the target's declarations.
-    // Every returned declaration carries the input's origin. An
-    // error is the target refusing the construct; the settle
-    // reports it and the declaration is withheld from render.
-    type Lower func(symbol.Symbol) ([]symbol.Symbol, error)
+```go
+// Lower rewrites one declaration into the target's own
+// construct shape: the same fact, the target's declarations.
+// Every returned declaration carries the input's origin. An
+// error is the target refusing the construct; the settle
+// reports it and the declaration is withheld from render.
+type Lower func(symbol.Symbol) ([]symbol.Symbol, error)
 
-    // Lowerer is the provider a backend implements when its target
-    // reshapes constructs. A backend without it renders
-    // declarations as emitted.
-    type Lowerer interface {
-        Lower(symbol.Symbol) ([]symbol.Symbol, error)
-    }
+// Lowerer is the provider a backend implements when its target
+// reshapes constructs. A backend without it renders
+// declarations as emitted.
+type Lowerer interface {
+    Lower(symbol.Symbol) ([]symbol.Symbol, error)
+}
+```
 
 The seam is declaration-local: one declaration in, its target
 shapes out, and no reads beyond the input. Locality costs less than
@@ -284,22 +286,24 @@ appended error return, a Rust Throws as a Result return.
 
 The kernel defines one function type and one provider interface:
 
-    // Respell spells one declared name in the target's own
-    // convention. Host is the kind of the declaration a member
-    // sits in, zero at file level; a kind without visibility
-    // passes the zero value. An error means the target cannot
-    // spell the name at that visibility; the settle reports it
-    // and the declaration is withheld from render.
-    type Respell func(
-        host, kind symbol.Kind, v symbol.Visibility, name string,
-    ) (string, error)
+```go
+// Respell spells one declared name in the target's own
+// convention. Host is the kind of the declaration a member
+// sits in, zero at file level; a kind without visibility
+// passes the zero value. An error means the target cannot
+// spell the name at that visibility; the settle reports it
+// and the declaration is withheld from render.
+type Respell func(
+    host, kind symbol.Kind, v symbol.Visibility, name string,
+) (string, error)
 
-    // Respeller is the provider a backend implements when its
-    // target respells declared names. A backend without it renders
-    // names as emitted.
-    type Respeller interface {
-        Respell(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error)
-    }
+// Respeller is the provider a backend implements when its
+// target respells declared names. A backend without it renders
+// names as emitted.
+type Respeller interface {
+    Respell(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error)
+}
+```
 
 The signature speaks `symbol.Kind` and `symbol.Visibility`, the
 model's normalized enums, and nothing else. That curation is a
