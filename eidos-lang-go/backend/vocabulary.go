@@ -30,6 +30,10 @@ const (
 	FuncReceiver = "receiver"
 	// FuncPackage writes a file's package clause name.
 	FuncPackage = "package"
+	// FuncGuard refuses what Go states nowhere.
+	FuncGuard = "guard"
+	// FuncSigGuard refuses what an interface method states nowhere.
+	FuncSigGuard = "sigguard"
 )
 
 // Anonymous is what Go writes where a declaration states no type.
@@ -50,6 +54,8 @@ func Funcs() template.FuncMap {
 		FuncResults:    Results,
 		FuncReceiver:   Receiver,
 		FuncPackage:    Package,
+		FuncGuard:      Guard,
+		FuncSigGuard:   SigGuard,
 	}
 }
 
@@ -206,4 +212,133 @@ func Package(id symbol.Identity) string {
 	default:
 		return ""
 	}
+}
+
+// Guard writes nothing and refuses what Go states nowhere, so a
+// stated fact never drops in silence: annotations on any kind,
+// asynchrony, abstractness, an override or default marker, a
+// type-level member, a field's own mutability or initializer, an
+// immutable variable, and every visibility beyond the exported
+// and package scopes the name's case carries. Final holds on a
+// struct or a method, because nothing subclasses.
+func Guard(d symbol.Symbol) (string, error) {
+	switch t := d.(type) {
+	case *emit.Struct:
+		switch {
+		case t.Abstract:
+			return "", refuse("every struct can be made, and %s states abstract", t.Name)
+		case len(t.Annotations) > 0:
+			return "", unannotated(t.Name)
+		}
+		return "", cased(t.Visibility, t.Name)
+	case *emit.Interface:
+		if len(t.Annotations) > 0 {
+			return "", unannotated(t.Name)
+		}
+		return "", cased(t.Visibility, t.Name)
+	case *emit.Function:
+		switch {
+		case t.Async:
+			return "", refuse("concurrency is caller-side, and %s states async", t.Name)
+		case len(t.Annotations) > 0:
+			return "", unannotated(t.Name)
+		}
+		return "", cased(t.Visibility, t.Name)
+	case *emit.Method:
+		switch {
+		case t.Async:
+			return "", refuse("concurrency is caller-side, and %s states async", t.Name)
+		case t.Abstract:
+			return "", refuse("a method carries its body outright, and %s states abstract", t.Name)
+		case t.Override:
+			return "", refuse("a method overrides nothing, and %s states it", t.Name)
+		case t.HasDefault:
+			return "", refuse("default bodies belong to interfaces elsewhere, and %s states one", t.Name)
+		case t.Level == symbol.LevelType:
+			return "", refuse("a type-level callable is a function, and %s states a static method", t.Name)
+		case len(t.Annotations) > 0:
+			return "", unannotated(t.Name)
+		}
+		return "", cased(t.Visibility, t.Name)
+	case *emit.Field:
+		switch {
+		case t.Level == symbol.LevelType:
+			return "", refuse("a struct holds no statics, and %s states type level", t.Name)
+		case t.Mutability == symbol.MutabilityImmutable:
+			return "", refuse("a field's mutability follows its binding, and %s states its own", t.Name)
+		case t.Value != "":
+			return "", refuse("a struct declares no field defaults, and %s states one", t.Name)
+		case len(t.Annotations) > 0:
+			return "", unannotated(t.Name)
+		}
+		return "", cased(t.Visibility, t.Name)
+	case *emit.Alias:
+		if len(t.Annotations) > 0 {
+			return "", unannotated(t.Name)
+		}
+		return "", cased(t.Visibility, t.Name)
+	case *emit.Constant:
+		if len(t.Annotations) > 0 {
+			return "", unannotated(t.Name)
+		}
+		return "", cased(t.Visibility, t.Name)
+	case *emit.Variable:
+		switch {
+		case t.Mutability == symbol.MutabilityImmutable:
+			return "", refuse("an immutable binding is a constant, and %s states a variable", t.Name)
+		case len(t.Annotations) > 0:
+			return "", unannotated(t.Name)
+		}
+		return "", cased(t.Visibility, t.Name)
+	default:
+		return "", nil
+	}
+}
+
+// SigGuard writes nothing and refuses what an interface method
+// states nowhere. Abstractness holds, because a bodiless
+// signature is the interface's shape; everything else an
+// interface method could state refuses the way [Guard] refuses
+// it.
+func SigGuard(m *emit.Method) (string, error) {
+	switch {
+	case m.Async:
+		return "", refuse("concurrency is caller-side, and %s states async", m.Name)
+	case m.Override:
+		return "", refuse("a method overrides nothing, and %s states it", m.Name)
+	case m.Final:
+		return "", refuse("an interface method admits no final, and %s states it", m.Name)
+	case m.HasDefault:
+		return "", refuse("an interface method carries no body, and %s states a default", m.Name)
+	case m.Level == symbol.LevelType:
+		return "", refuse("an interface holds no statics, and %s states type level", m.Name)
+	case len(m.Annotations) > 0:
+		return "", unannotated(m.Name)
+	}
+	return "", cased(m.Visibility, m.Name)
+}
+
+// cased refuses the visibilities the name's case cannot carry:
+// exported and package scopes spell through the first rune, and
+// the rest have no Go spelling at all.
+func cased(v symbol.Visibility, name string) error {
+	switch v {
+	case symbol.VisibilityUnknown, symbol.VisibilityPublic,
+		symbol.VisibilityPackage:
+		return nil
+	default:
+		return refuse("visibility spells through the name's case, and %s "+
+			"states a scope no case carries", name)
+	}
+}
+
+// unannotated is the refusal for an annotation list: Go writes
+// none.
+func unannotated(name string) error {
+	return refuse("declarations carry no annotations, and %s states some", name)
+}
+
+// refuse builds a guard refusal under the package's error prefix.
+func refuse(format string, args ...any) error {
+	return fmt.Errorf("go: "+format, args...)
 }

@@ -79,6 +79,34 @@ func TestCluster(t *testing.T) {
 			"the receiver-first signature under the attached type's block")
 	})
 
+	t.Run("an associated function stands without a receiver", func(t *testing.T) {
+		t.Parallel()
+
+		tmpl, err := template.New("impl").
+			Funcs(backend.Funcs()).
+			Funcs(template.FuncMap{
+				"body": func(any) string { return "        return;\n" },
+			}).
+			Parse(backend.ImplTemplate)
+		assert.NoError(t, err, "the template parses")
+
+		assoc := methodOn("Row", "make", emit.Stmt{Kind: emit.StmtReturn})
+		assoc.Level = symbol.LevelType
+		assoc.Async = true
+		var b strings.Builder
+		assert.NoError(t, tmpl.Execute(&b, render.Clustered{
+			Group: backend.ImplGroup,
+			Decls: []symbol.Symbol{assoc},
+		}), "the template executes")
+		assert.Equal(t, b.String(),
+			"impl Row {\n"+
+				"    pub async fn make() {\n"+
+				"        return;\n"+
+				"    }\n"+
+				"}\n",
+			"no receiver at type level, async before fn")
+	})
+
 	t.Run("a generic receiver opens the binder", func(t *testing.T) {
 		t.Parallel()
 

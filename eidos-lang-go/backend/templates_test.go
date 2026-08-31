@@ -133,6 +133,10 @@ func TestTemplates(t *testing.T) {
 			execute(t, backend.VariableTemplate,
 				&emit.Variable{Name: "count", Type: ref("int")}),
 			"var count int\n", "the variable shape")
+		assert.Equal(t,
+			execute(t, backend.VariableTemplate,
+				&emit.Variable{Name: "count", Type: ref("int"), Value: "0"}),
+			"var count int = 0\n", "the initializer behind the equals sign")
 	})
 
 	t.Run("generics", func(t *testing.T) {

@@ -27,6 +27,23 @@ const (
 	FuncParams = "params"
 	// FuncResults writes a return annotation.
 	FuncResults = "results"
+	// FuncVis writes a declaration's visibility.
+	FuncVis = "vis"
+	// FuncStructMods writes a struct's keywords.
+	FuncStructMods = "structmods"
+	// FuncFnMods writes a free function's keywords.
+	FuncFnMods = "fnmods"
+	// FuncTraitFn writes a trait method's keywords.
+	FuncTraitFn = "traitfn"
+	// FuncImplFn writes an impl method's keywords.
+	FuncImplFn = "implfn"
+	// FuncSelfParams writes a method's parameter list with its
+	// receiver.
+	FuncSelfParams = "selfparams"
+	// FuncFieldMods writes a field's keywords.
+	FuncFieldMods = "fieldmods"
+	// FuncAttrs writes a declaration's attribute lines.
+	FuncAttrs = "attrs"
 )
 
 // Funcs is the shared template vocabulary the kind templates call.
@@ -38,6 +55,14 @@ func Funcs() template.FuncMap {
 		FuncBinder:     Binder,
 		FuncParams:     Params,
 		FuncResults:    Results,
+		FuncVis:        Vis,
+		FuncStructMods: StructMods,
+		FuncFnMods:     FnMods,
+		FuncTraitFn:    TraitFn,
+		FuncImplFn:     ImplFn,
+		FuncSelfParams: SelfParams,
+		FuncFieldMods:  FieldMods,
+		FuncAttrs:      Attrs,
 	}
 }
 
@@ -139,6 +164,162 @@ func Binder(t *emit.TypeRef) string {
 		args = append(args, Spell(a))
 	}
 	return "<" + strings.Join(args, ", ") + ">"
+}
+
+// Vis writes a declaration's visibility: pub for public or
+// unstated, because a generated API is consumed, pub(crate) for
+// internal, nothing for package scope, which is Rust's
+// module-private default. Private and protected refuse: Rust
+// scopes by module, never by type or by subclass.
+func Vis(v symbol.Visibility, name string) (string, error) {
+	switch v {
+	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
+		return "pub ", nil
+	case symbol.VisibilityInternal:
+		return "pub(crate) ", nil
+	case symbol.VisibilityPackage:
+		return "", nil
+	default:
+		return "", fmt.Errorf(
+			"rust: visibility scopes by module, and %s states a scope "+
+				"modules cannot spell", name)
+	}
+}
+
+// StructMods writes a struct's keywords: its visibility alone. An
+// abstract struct refuses, because every Rust struct can be made;
+// a final one holds, because nothing subclasses.
+func StructMods(s *emit.Struct) (string, error) {
+	if s.Abstract {
+		return "", fmt.Errorf(
+			"rust: every struct can be made, and %s states abstract", s.Name)
+	}
+	return Vis(s.Visibility, s.Name)
+}
+
+// FnMods writes a free function's keywords: its visibility, then
+// async where the declaration states it.
+func FnMods(f *emit.Function) (string, error) {
+	part, err := Vis(f.Visibility, f.Name)
+	if err != nil {
+		return "", err
+	}
+	if f.Async {
+		part += "async "
+	}
+	return part, nil
+}
+
+// TraitFn writes a trait method's keywords: async where stated,
+// and nothing else. A trait item carries the trait's own
+// visibility, so a stated scope refuses; abstract holds, because
+// a bodiless signature is the trait's shape; final and override
+// refuse, because Rust seals and overrides nothing.
+func TraitFn(m *emit.Method) (string, error) {
+	switch {
+	case m.Visibility != symbol.VisibilityUnknown &&
+		m.Visibility != symbol.VisibilityPublic:
+		return "", fmt.Errorf(
+			"rust: a trait item carries the trait's visibility, and %s "+
+				"states its own", m.Name)
+	case m.Final:
+		return "", fmt.Errorf(
+			"rust: a method admits no final, and %s states it", m.Name)
+	case m.Override:
+		return "", fmt.Errorf(
+			"rust: a method overrides nothing, and %s states it", m.Name)
+	}
+	if m.Async {
+		return "async ", nil
+	}
+	return "", nil
+}
+
+// ImplFn writes an impl method's keywords: its visibility, then
+// async where stated. Abstract and default refuse, because an
+// impl method carries its body outright; final and override
+// refuse the way every Rust method refuses them.
+func ImplFn(m *emit.Method) (string, error) {
+	switch {
+	case m.Abstract:
+		return "", fmt.Errorf(
+			"rust: an impl method carries its body outright, and %s states "+
+				"abstract", m.Name)
+	case m.HasDefault:
+		return "", fmt.Errorf(
+			"rust: default bodies belong to traits, and %s is an impl "+
+				"method", m.Name)
+	case m.Final:
+		return "", fmt.Errorf(
+			"rust: a method admits no final, and %s states it", m.Name)
+	case m.Override:
+		return "", fmt.Errorf(
+			"rust: a method overrides nothing, and %s states it", m.Name)
+	}
+	part, err := Vis(m.Visibility, m.Name)
+	if err != nil {
+		return "", err
+	}
+	if m.Async {
+		part += "async "
+	}
+	return part, nil
+}
+
+// SelfParams writes a method's parameter list with its receiver:
+// the reference receiver first at instance level, the parameters
+// alone for an associated function at type level.
+func SelfParams(m *emit.Method) string {
+	if m.Level == symbol.LevelType {
+		return Params(m.Params)
+	}
+	if len(m.Params) == 0 {
+		return "&self"
+	}
+	return "&self, " + Params(m.Params)
+}
+
+// FieldMods writes a field's keywords: its visibility alone. A
+// type-level field refuses, because Rust holds statics outside
+// types; an immutable field refuses, because mutability follows
+// the owning binding; an initializer refuses, because a struct
+// declares no field defaults.
+func FieldMods(f *emit.Field) (string, error) {
+	switch {
+	case f.Level == symbol.LevelType:
+		return "", fmt.Errorf(
+			"rust: a struct holds no statics, and %s states type level", f.Name)
+	case f.Mutability == symbol.MutabilityImmutable:
+		return "", fmt.Errorf(
+			"rust: a field's mutability follows its owning binding, and %s "+
+				"states its own", f.Name)
+	case f.Value != "":
+		return "", fmt.Errorf(
+			"rust: a struct declares no field defaults, and %s states one",
+			f.Name)
+	}
+	return Vis(f.Visibility, f.Name)
+}
+
+// Attrs writes a declaration's attribute lines, one per
+// annotation, each prefixed with the given indentation: the name
+// in an outer attribute, its argument spellings verbatim in
+// parentheses where any are stated.
+func Attrs(a emit.Annotations, prefix ...string) string {
+	at := strings.Join(prefix, "")
+	var b strings.Builder
+	for _, an := range a {
+		b.WriteString(at)
+		b.WriteString("#[")
+		b.WriteString(an.Name)
+		if len(an.Args) > 0 {
+			b.WriteString("(")
+			b.WriteString(strings.Join(an.Args, ", "))
+			b.WriteString(")")
+		}
+		b.WriteString("]\n")
+	}
+	return b.String()
 }
 
 // Params writes a parameter list. An unnamed parameter binds to

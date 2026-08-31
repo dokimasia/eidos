@@ -21,29 +21,40 @@ const FileTemplate = "{{" + FuncPackage + " .Pkg}}{{" + render.BuiltinImports + 
 // other kind is reported as one the target cannot spell. Members
 // render as public, because a generated API exists to be called.
 const (
-	// StructTemplate spells a class, its type parameters behind
-	// the name: fields, then methods with their bodies, each
-	// member under its own doc block. A generic method's own
-	// parameter list spells before its return type, which is where
-	// Java states it.
-	StructTemplate = "{{docs .Doc}}public class {{.Name}}{{typeparams .TypeParams}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}" +
-		"    public {{spell .Type}} {{.Name}};\n" +
+	// StructTemplate spells a class: annotation lines above the
+	// declaration, its keywords and type parameters behind the
+	// name, then fields with initializers and methods with their
+	// bodies, each member under its own doc block and annotations,
+	// its keywords in Java's stated order. An overriding method
+	// carries the Override annotation, and an abstract method is a
+	// signature alone. A generic method's own parameter list
+	// spells before its return type, which is where Java states
+	// it.
+	StructTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
+		"{{typemods .}}class {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+		"    {{fieldmods .}}{{spell .Type}} {{.Name}}{{with .Value}} = {{.}}{{end}};\n" +
 		"{{- end}}" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}" +
-		"    public {{with typeparams .TypeParams}}{{.}} {{end}}" +
-		"{{results .Returns}} {{.Name}}({{params .Params}}) {\n" +
-		"{{body .}}    }\n" +
+		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+		"{{if .Override}}    @Override\n{{end}}" +
+		"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
+		"{{results .Returns}} {{.Name}}({{params .Params}})" +
+		"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}\n" +
 		"{{- end}}\n}\n"
 
-	// InterfaceTemplate spells an interface, its type parameters
-	// behind the name: signatures alone, implicitly public the way
+	// InterfaceTemplate spells an interface: annotation lines
+	// above the declaration, its keywords and type parameters
+	// behind the name, then signatures, implicitly public the way
 	// Java reads them, a generic method's own parameter list
-	// before its return type.
-	InterfaceTemplate = "{{docs .Doc}}public interface {{.Name}}{{typeparams .TypeParams}} {\n" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}" +
-		"    {{with typeparams .TypeParams}}{{.}} {{end}}" +
-		"{{results .Returns}} {{.Name}}({{params .Params}});\n" +
+	// before its return type. A method carrying a body spells
+	// default at instance level or static at type level, and
+	// places the body.
+	InterfaceTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
+		"{{typemods .}}interface {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
+		"    {{sigmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
+		"{{results .Returns}} {{.Name}}({{params .Params}})" +
+		"{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}\n" +
 		"{{- end}}\n}\n"
 )
 

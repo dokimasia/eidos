@@ -21,45 +21,54 @@ const FileTemplate = "{{" + render.BuiltinImports + "}}{{" + render.BuiltinDecls
 // host's template, and a standalone method is reported as a kind
 // the target cannot spell.
 const (
-	// StructTemplate spells a class, its type parameters behind
-	// the name: fields, then methods with their bodies and their
-	// own parameter lists, each member under its own doc block.
-	StructTemplate = "{{docs .Doc}}export class {{.Name}}{{typeparams .TypeParams}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{.Name}}: {{spell .Type}};\n" +
+	// StructTemplate spells a class: decorator lines above the
+	// declaration, its keywords and type parameters behind the
+	// name, then fields with initializers and methods with their
+	// bodies, each member under its own doc block and decorators,
+	// its keywords in TypeScript's stated order. An abstract
+	// method is a signature alone.
+	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
+		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
+		"  {{membermods .}}{{.Name}}: {{spell .Type}}{{with .Value}} = {{.}}{{end}};\n" +
 		"{{- end}}" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
-		"  {{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}} {\n" +
-		"{{body .}}  }\n" +
+		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
+		"  {{membermods .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}}" +
+		"{{if .Abstract}};{{else}} {\n{{body .}}  }{{end}}\n" +
 		"{{- end}}\n}\n"
 
 	// InterfaceTemplate spells an interface, its type parameters
-	// behind the name: properties and method signatures with their
-	// own parameter lists, no bodies.
-	InterfaceTemplate = "{{docs .Doc}}export interface {{.Name}}{{typeparams .TypeParams}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{.Name}}: {{spell .Type}};\n" +
+	// behind the name: properties, readonly where stated, and
+	// method signatures with their own parameter lists, no bodies
+	// and no other keywords.
+	InterfaceTemplate = "{{docs .Doc}}{{mods .}}interface {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{propmods .}}{{.Name}}: {{spell .Type}};\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
-		"  {{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};\n" +
+		"  {{sigmods .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};\n" +
 		"{{- end}}\n}\n"
 
-	// FunctionTemplate spells a module-level function, its type
-	// parameters behind the name, and places its body.
-	FunctionTemplate = "{{docs .Doc}}export function {{.Name}}{{typeparams .TypeParams}}" +
+	// FunctionTemplate spells a module-level function, async
+	// where stated, its type parameters behind the name, and
+	// places its body.
+	FunctionTemplate = "{{docs .Doc}}{{mods .}}function {{.Name}}{{typeparams .TypeParams}}" +
 		"({{params .Params}}){{results .Returns}} {\n{{body .}}}\n"
 
 	// AliasTemplate spells a type alias, its type parameters
 	// behind the name.
-	AliasTemplate = "{{docs .Doc}}export type {{.Name}}{{typeparams .TypeParams}}" +
+	AliasTemplate = "{{docs .Doc}}{{mods .}}type {{.Name}}{{typeparams .TypeParams}}" +
 		" = {{spell .Target}};\n"
 
 	// ConstantTemplate spells a constant, typed where the
 	// declaration states a type.
-	ConstantTemplate = "{{docs .Doc}}export const {{.Name}}" +
+	ConstantTemplate = "{{docs .Doc}}{{mods .}}const {{.Name}}" +
 		"{{with .Type}}: {{spell .}}{{end}} = {{.Value}};\n"
 
-	// VariableTemplate spells a module-level binding.
-	VariableTemplate = "{{docs .Doc}}export let {{.Name}}" +
-		"{{with .Type}}: {{spell .}}{{end}};\n"
+	// VariableTemplate spells a module-level binding: const where
+	// the declaration is immutable, let otherwise, its
+	// initializer behind an equals sign where one is stated.
+	VariableTemplate = "{{docs .Doc}}{{mods .}}{{binding .}} {{.Name}}" +
+		"{{with .Type}}: {{spell .}}{{end}}{{with .Value}} = {{.}}{{end}};\n"
 )
 
 // KindTemplates maps each emit kind to the template that spells

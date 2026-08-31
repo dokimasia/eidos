@@ -109,4 +109,98 @@ func TestVocabulary(t *testing.T) {
 		assert.Equal(t, backend.PackageClause(symbol.Identity{}), "",
 			"no package is the default package")
 	})
+
+	t.Run("TypeMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.TypeMods(&emit.Struct{Name: "Row"})
+		assert.NoError(t, err, "an unstated visibility spells")
+		assert.Equal(t, got, "public ", "as public, because a generated API is consumed")
+
+		got, err = backend.TypeMods(&emit.Struct{
+			Name: "Row", Visibility: symbol.VisibilityPackage, Final: true,
+		})
+		assert.NoError(t, err, "a package-scoped final class spells")
+		assert.Equal(t, got, "final ", "default access is no keyword at all")
+
+		got, err = backend.TypeMods(&emit.Struct{Name: "Row", Abstract: true})
+		assert.NoError(t, err, "an abstract class spells")
+		assert.Equal(t, got, "public abstract ", "abstract behind the access")
+
+		_, err = backend.TypeMods(&emit.Struct{
+			Name: "Row", Visibility: symbol.VisibilityPrivate,
+		})
+		assert.HasError(t, err,
+			"a private file-level type refuses, because Java takes public "+
+				"or default access alone")
+	})
+
+	t.Run("FieldMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.FieldMods(&emit.Field{
+			Name:       "key",
+			Level:      symbol.LevelType,
+			Mutability: symbol.MutabilityImmutable,
+		})
+		assert.NoError(t, err, "a guarded field spells")
+		assert.Equal(t, got, "public static final ",
+			"access, static, final, in Java's stated order")
+
+		got, err = backend.FieldMods(&emit.Field{
+			Name: "key", Visibility: symbol.VisibilityProtected,
+		})
+		assert.NoError(t, err, "a protected member spells")
+		assert.Equal(t, got, "protected ", "with its keyword")
+	})
+
+	t.Run("MethodMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.MethodMods(&emit.Method{
+			Name: "load", Visibility: symbol.VisibilityPrivate,
+			Level: symbol.LevelType,
+		})
+		assert.NoError(t, err, "a private static method spells")
+		assert.Equal(t, got, "private static ", "access before static")
+
+		_, err = backend.MethodMods(&emit.Method{Name: "load", Async: true})
+		assert.HasError(t, err,
+			"asynchrony refuses, because Java marks no signature")
+		_, err = backend.MethodMods(&emit.Method{Name: "load", HasDefault: true})
+		assert.HasError(t, err, "default belongs to interface methods")
+	})
+
+	t.Run("SigMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.SigMods(&emit.Method{Name: "load"})
+		assert.NoError(t, err, "a bare signature passes")
+		assert.Equal(t, got, "", "implicitly public")
+
+		got, err = backend.SigMods(&emit.Method{Name: "load", HasDefault: true})
+		assert.NoError(t, err, "a body-carrying method spells")
+		assert.Equal(t, got, "default ", "as default at instance level")
+
+		got, err = backend.SigMods(&emit.Method{
+			Name: "make", HasDefault: true, Level: symbol.LevelType,
+		})
+		assert.NoError(t, err, "a type-level body spells")
+		assert.Equal(t, got, "static ", "as static, which excludes default")
+
+		_, err = backend.SigMods(&emit.Method{Name: "load", Override: true})
+		assert.HasError(t, err, "an interface method overrides nothing")
+	})
+
+	t.Run("Annotate", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, backend.Annotate(nil), "", "no annotations, no lines")
+		assert.Equal(t, backend.Annotate(emit.Annotations{
+			{Name: "Deprecated"},
+			{Name: "SuppressWarnings", Args: []string{`"unchecked"`}},
+		}, "    "),
+			"    @Deprecated\n    @SuppressWarnings(\"unchecked\")\n",
+			"one line per annotation at the member's depth, arguments verbatim")
+	})
 }

@@ -26,6 +26,18 @@ const (
 	FuncParams = "params"
 	// FuncResults writes a return type.
 	FuncResults = "results"
+	// FuncMods writes a module-level declaration's keywords.
+	FuncMods = "mods"
+	// FuncMemberMods writes a class member's keywords.
+	FuncMemberMods = "membermods"
+	// FuncPropMods writes an interface property's keywords.
+	FuncPropMods = "propmods"
+	// FuncSigMods guards an interface method signature.
+	FuncSigMods = "sigmods"
+	// FuncBinding writes a module-level binding's keyword.
+	FuncBinding = "binding"
+	// FuncDecorators writes a declaration's decorator lines.
+	FuncDecorators = "decorators"
 )
 
 // Anonymous is what TypeScript writes where a declaration states
@@ -41,6 +53,12 @@ func Funcs() template.FuncMap {
 		FuncTypeParams: TypeParams,
 		FuncParams:     Params,
 		FuncResults:    Results,
+		FuncMods:       Mods,
+		FuncMemberMods: MemberMods,
+		FuncPropMods:   PropMods,
+		FuncSigMods:    SigMods,
+		FuncBinding:    Binding,
+		FuncDecorators: Decorators,
 	}
 }
 
@@ -130,6 +148,236 @@ func variance(v symbol.Variance) string {
 	default:
 		return ""
 	}
+}
+
+// Mods writes a module-level declaration's leading keywords:
+// export for a public or unstated visibility, nothing for a
+// package-scoped one, abstract before an abstract class, and
+// async before an asynchronous function. A protected, private or
+// internal visibility refuses at module level, a final class
+// refuses because TypeScript seals nothing, and an annotation
+// list refuses on every declaration decorators cannot mark:
+// TypeScript decorates classes and their members alone.
+func Mods(d symbol.Symbol) (string, error) {
+	switch t := d.(type) {
+	case *emit.Struct:
+		if t.Final {
+			return "", fmt.Errorf(
+				"typescript: a class admits no final, and %s states it", t.Name)
+		}
+		part, err := exported(t.Visibility, t.Name)
+		if err != nil {
+			return "", err
+		}
+		if t.Abstract {
+			part += "abstract "
+		}
+		return part, nil
+	case *emit.Interface:
+		if len(t.Annotations) > 0 {
+			return "", undecorated(t.Name)
+		}
+		return exported(t.Visibility, t.Name)
+	case *emit.Function:
+		if len(t.Annotations) > 0 {
+			return "", undecorated(t.Name)
+		}
+		part, err := exported(t.Visibility, t.Name)
+		if err != nil {
+			return "", err
+		}
+		if t.Async {
+			part += "async "
+		}
+		return part, nil
+	case *emit.Alias:
+		if len(t.Annotations) > 0 {
+			return "", undecorated(t.Name)
+		}
+		return exported(t.Visibility, t.Name)
+	case *emit.Constant:
+		if len(t.Annotations) > 0 {
+			return "", undecorated(t.Name)
+		}
+		return exported(t.Visibility, t.Name)
+	case *emit.Variable:
+		if len(t.Annotations) > 0 {
+			return "", undecorated(t.Name)
+		}
+		return exported(t.Visibility, t.Name)
+	default:
+		return "", fmt.Errorf(
+			"typescript: no module-level keywords spell a %s", d.Kind())
+	}
+}
+
+// exported writes the module-level visibility: export for public
+// or unstated, nothing for package scope, which is the module
+// itself. The other scopes have no module-level spelling.
+func exported(v symbol.Visibility, name string) (string, error) {
+	switch v {
+	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
+		return "export ", nil
+	case symbol.VisibilityPackage:
+		return "", nil
+	default:
+		return "", fmt.Errorf(
+			"typescript: a module-level declaration exports or stays "+
+				"module-scoped, and %s states another scope", name)
+	}
+}
+
+// MemberMods writes a class member's leading keywords, in the
+// order TypeScript states them: accessibility, static, abstract,
+// override, async on methods, and readonly on fields. A final or
+// default-carrying method refuses, and so does a package or
+// internal accessibility, which class members do not take.
+func MemberMods(d symbol.Symbol) (string, error) {
+	switch t := d.(type) {
+	case *emit.Field:
+		part, err := accessibility(t.Visibility, t.Name)
+		if err != nil {
+			return "", err
+		}
+		if t.Level == symbol.LevelType {
+			part += "static "
+		}
+		if t.Mutability == symbol.MutabilityImmutable {
+			part += "readonly "
+		}
+		return part, nil
+	case *emit.Method:
+		switch {
+		case t.Final:
+			return "", fmt.Errorf(
+				"typescript: a method admits no final, and %s states it", t.Name)
+		case t.HasDefault:
+			return "", fmt.Errorf(
+				"typescript: a class method carries its body outright, and %s "+
+					"states a default", t.Name)
+		}
+		part, err := accessibility(t.Visibility, t.Name)
+		if err != nil {
+			return "", err
+		}
+		if t.Level == symbol.LevelType {
+			part += "static "
+		}
+		if t.Abstract {
+			part += "abstract "
+		}
+		if t.Override {
+			part += "override "
+		}
+		if t.Async {
+			part += "async "
+		}
+		return part, nil
+	default:
+		return "", fmt.Errorf(
+			"typescript: no member keywords spell a %s", d.Kind())
+	}
+}
+
+// accessibility writes a class member's accessibility: nothing
+// for public or unstated, the keyword for private and protected.
+// Package and internal scopes have no member spelling.
+func accessibility(v symbol.Visibility, name string) (string, error) {
+	switch v {
+	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
+		return "", nil
+	case symbol.VisibilityPrivate:
+		return "private ", nil
+	case symbol.VisibilityProtected:
+		return "protected ", nil
+	default:
+		return "", fmt.Errorf(
+			"typescript: a class member states public, private or protected, "+
+				"and %s states another scope", name)
+	}
+}
+
+// PropMods writes an interface property's keywords: readonly
+// where the property is immutable, and nothing else, because an
+// interface member takes no accessibility, no static level and no
+// decorator.
+func PropMods(f *emit.Field) (string, error) {
+	switch {
+	case len(f.Annotations) > 0:
+		return "", undecorated(f.Name)
+	case f.Visibility != symbol.VisibilityUnknown &&
+		f.Visibility != symbol.VisibilityPublic:
+		return "", fmt.Errorf(
+			"typescript: an interface property is public by shape, and %s "+
+				"states a scope", f.Name)
+	case f.Level == symbol.LevelType:
+		return "", fmt.Errorf(
+			"typescript: an interface property has no static level, and %s "+
+				"states one", f.Name)
+	}
+	if f.Mutability == symbol.MutabilityImmutable {
+		return "readonly ", nil
+	}
+	return "", nil
+}
+
+// SigMods guards an interface method signature, which takes no
+// keywords at all: a stated modifier refuses rather than
+// dropping, and the signature spells bare.
+func SigMods(m *emit.Method) (string, error) {
+	switch {
+	case len(m.Annotations) > 0:
+		return "", undecorated(m.Name)
+	case m.Visibility != symbol.VisibilityUnknown &&
+		m.Visibility != symbol.VisibilityPublic:
+		return "", fmt.Errorf(
+			"typescript: an interface method is public by shape, and %s "+
+				"states a scope", m.Name)
+	case m.Level == symbol.LevelType || m.Abstract || m.Final ||
+		m.Override || m.HasDefault || m.Async:
+		return "", fmt.Errorf(
+			"typescript: an interface method is a bare signature, and %s "+
+				"states a modifier", m.Name)
+	}
+	return "", nil
+}
+
+// Binding writes a module-level binding's keyword: const for an
+// immutable binding, let otherwise.
+func Binding(v *emit.Variable) string {
+	if v.Mutability == symbol.MutabilityImmutable {
+		return "const"
+	}
+	return "let"
+}
+
+// Decorators writes a declaration's decorator lines, one per
+// annotation, each prefixed with the given indentation: the name
+// behind its marker, and the argument spellings verbatim in
+// parentheses where any are stated.
+func Decorators(a emit.Annotations, prefix ...string) string {
+	at := strings.Join(prefix, "")
+	var b strings.Builder
+	for _, an := range a {
+		b.WriteString(at)
+		b.WriteString("@")
+		b.WriteString(an.Name)
+		if len(an.Args) > 0 {
+			b.WriteString("(")
+			b.WriteString(strings.Join(an.Args, ", "))
+			b.WriteString(")")
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// undecorated is the refusal for an annotation list on a
+// declaration decorators cannot mark.
+func undecorated(name string) error {
+	return fmt.Errorf(
+		"typescript: decorators mark classes and their members, and %s "+
+			"states annotations elsewhere", name)
 }
 
 // Params writes a parameter list, the rest marker included.

@@ -22,36 +22,48 @@ const FileTemplate = "{{" + render.BuiltinImports + "}}{{" + render.BuiltinDecls
 // the model carries no initialiser, and a Rust static requires
 // one.
 const (
-	// StructTemplate spells a struct and its fields, its type
-	// parameters behind the name, public the way a generated API
-	// is consumed, each field under its own doc lines.
-	StructTemplate = "{{docs .Doc}}pub struct {{.Name}}{{typeparams .TypeParams}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}    pub {{.Name}}: {{spell .Type}},\n" +
+	// StructTemplate spells a struct and its fields: attribute
+	// lines above the declaration, its visibility and type
+	// parameters behind the name, each field under its own doc
+	// lines and attributes with its own visibility.
+	StructTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
+		"{{structmods .}}struct {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"    {{fieldmods .}}{{.Name}}: {{spell .Type}},\n" +
 		"{{- end}}\n}\n"
 
-	// InterfaceTemplate spells a trait, its type parameters behind
-	// the name: method signatures taking the receiver by
-	// reference, each with its own parameter list, no bodies.
-	InterfaceTemplate = "{{docs .Doc}}pub trait {{.Name}}{{typeparams .TypeParams}} {\n" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}" +
-		"    fn {{.Name}}{{typeparams .TypeParams}}(&self{{with params .Params}}, {{.}}{{end}})" +
-		"{{results .Returns}};\n" +
+	// InterfaceTemplate spells a trait, its visibility and type
+	// parameters behind the name: method signatures taking the
+	// receiver by reference at instance level and standing alone
+	// at type level, async where stated, each with its own
+	// parameter list. A method carrying a default body places it;
+	// the rest close as signatures.
+	InterfaceTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
+		"{{vis .Visibility .Name}}trait {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"    {{traitfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
+		"{{results .Returns}}{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}\n" +
 		"{{- end}}\n}\n"
 
-	// FunctionTemplate spells a free function, its type parameters
-	// behind the name, and places its body.
-	FunctionTemplate = "{{docs .Doc}}pub fn {{.Name}}{{typeparams .TypeParams}}" +
+	// FunctionTemplate spells a free function: attribute lines
+	// above the declaration, its visibility and asynchrony before
+	// fn, its type parameters behind the name, and places its
+	// body.
+	FunctionTemplate = "{{docs .Doc}}{{attrs .Annotations}}{{fnmods .}}fn " +
+		"{{.Name}}{{typeparams .TypeParams}}" +
 		"({{params .Params}}){{results .Returns}} {\n{{body .}}}\n"
 
-	// AliasTemplate spells a type alias, its type parameters
-	// behind the name.
-	AliasTemplate = "{{docs .Doc}}pub type {{.Name}}{{typeparams .TypeParams}}" +
+	// AliasTemplate spells a type alias, its visibility and type
+	// parameters behind the name.
+	AliasTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
+		"{{vis .Visibility .Name}}type {{.Name}}{{typeparams .TypeParams}}" +
 		" = {{spell .Target}};\n"
 
 	// ConstantTemplate spells a constant. Rust states a constant's
 	// type always, so a declaration stating none reaches the unit
 	// type and the compiler's refusal names the file.
-	ConstantTemplate = "{{docs .Doc}}pub const {{.Name}}: {{spell .Type}} = {{.Value}};\n"
+	ConstantTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
+		"{{vis .Visibility .Name}}const {{.Name}}: {{spell .Type}} = {{.Value}};\n"
 )
 
 // KindTemplates maps each emit kind to the template that spells

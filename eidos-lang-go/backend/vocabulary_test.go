@@ -131,4 +131,61 @@ func TestVocabulary(t *testing.T) {
 		assert.Equal(t, backend.Package(symbol.Identity{}), "",
 			"an identity naming nothing spells nothing, and the formatter refuses")
 	})
+
+	t.Run("Guard", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.Guard(&emit.Struct{Name: "Row", Final: true})
+		assert.NoError(t, err, "a final struct passes")
+		assert.Equal(t, got, "", "and holds by writing nothing, because nothing subclasses")
+
+		got, err = backend.Guard(&emit.Variable{
+			Name: "count", Visibility: symbol.VisibilityPackage,
+		})
+		assert.NoError(t, err, "package visibility passes")
+		assert.Equal(t, got, "", "the name's case carries it")
+
+		_, err = backend.Guard(&emit.Struct{Name: "Row", Abstract: true})
+		assert.HasError(t, err, "an abstract struct refuses")
+		_, err = backend.Guard(&emit.Function{Name: "Load", Async: true})
+		assert.HasError(t, err, "an async function refuses")
+		_, err = backend.Guard(&emit.Method{Name: "Load", Level: symbol.LevelType})
+		assert.HasError(t, err, "a static method refuses")
+		_, err = backend.Guard(&emit.Method{Name: "Load", Override: true})
+		assert.HasError(t, err, "an override marker refuses")
+		_, err = backend.Guard(&emit.Field{Name: "Key", Value: "1"})
+		assert.HasError(t, err, "a field initializer refuses")
+		_, err = backend.Guard(&emit.Field{
+			Name: "Key", Mutability: symbol.MutabilityImmutable,
+		})
+		assert.HasError(t, err, "a field's own mutability refuses")
+		_, err = backend.Guard(&emit.Variable{
+			Name: "count", Mutability: symbol.MutabilityImmutable,
+		})
+		assert.HasError(t, err, "an immutable variable refuses, because that is a constant")
+		_, err = backend.Guard(&emit.Constant{
+			Name:        "Max",
+			Annotations: emit.Annotations{{Name: "deprecated"}},
+		})
+		assert.HasError(t, err, "annotations refuse on every kind")
+		_, err = backend.Guard(&emit.Alias{
+			Name: "ID", Visibility: symbol.VisibilityProtected,
+		})
+		assert.HasError(t, err, "a scope no case carries refuses")
+	})
+
+	t.Run("SigGuard", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.SigGuard(&emit.Method{Name: "Get", Abstract: true})
+		assert.NoError(t, err, "an abstract interface method passes")
+		assert.Equal(t, got, "", "a bodiless signature is the interface's shape")
+
+		_, err = backend.SigGuard(&emit.Method{Name: "Get", HasDefault: true})
+		assert.HasError(t, err, "a default body refuses")
+		_, err = backend.SigGuard(&emit.Method{Name: "Get", Final: true})
+		assert.HasError(t, err, "a final marker refuses")
+		_, err = backend.SigGuard(&emit.Method{Name: "Get", Async: true})
+		assert.HasError(t, err, "an async signature refuses")
+	})
 }

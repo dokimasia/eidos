@@ -160,6 +160,68 @@ func TestTemplates(t *testing.T) {
 			"the alias parameterizes and its target restates the argument")
 	})
 
+	t.Run("modifiers", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{
+			Name:        "Row",
+			Abstract:    true,
+			Annotations: emit.Annotations{{Name: "injectable"}},
+		}
+		s.Fields.Append(&emit.Field{
+			Name:       "key",
+			Visibility: symbol.VisibilityPrivate,
+			Level:      symbol.LevelType,
+			Mutability: symbol.MutabilityImmutable,
+			Type:       ref("string"),
+			Value:      `"r"`,
+		})
+		s.Methods.Append(
+			&emit.Method{
+				Name: "load", Async: true, Override: true,
+				Returns: []*emit.Return{{Type: ref("Row")}},
+			},
+			&emit.Method{
+				Name: "pick", Abstract: true,
+				Returns: []*emit.Return{{Type: ref("Row")}},
+			},
+		)
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"@injectable\n"+
+				"export abstract class Row {\n"+
+				"  private static readonly key: string = \"r\";\n"+
+				"  override async load(): Row {\n    body();\n  }\n"+
+				"  abstract pick(): Row;\n"+
+				"}\n",
+			"decorators above, keywords in stated order, the abstract "+
+				"method a signature alone")
+
+		i := &emit.Interface{Name: "Store"}
+		i.Fields.Append(&emit.Field{
+			Name: "kind", Mutability: symbol.MutabilityImmutable,
+			Type: ref("string"),
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"export interface Store {\n  readonly kind: string;\n}\n",
+			"readonly on the property, nothing else")
+
+		f := &emit.Function{
+			Name: "load", Async: true,
+			Returns: []*emit.Return{{Type: ref("Row")}},
+		}
+		assert.Equal(t, execute(t, backend.FunctionTemplate, f),
+			"export async function load(): Row {\n    body();\n}\n",
+			"async behind export")
+
+		v := &emit.Variable{
+			Name: "max", Mutability: symbol.MutabilityImmutable,
+			Type: ref("number"), Value: "8",
+		}
+		assert.Equal(t, execute(t, backend.VariableTemplate, v),
+			"export const max: number = 8;\n",
+			"an immutable binding is const with its initializer")
+	})
+
 	t.Run("the file skeleton is imports then declarations", func(t *testing.T) {
 		t.Parallel()
 

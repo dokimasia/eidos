@@ -13,14 +13,16 @@ import (
 const ImplGroup render.GroupName = "impl"
 
 // ImplTemplate spells an impl block: the methods attached to one
-// type, each taking the receiver by reference with its own type
-// parameter list, its body placed, each under its own doc lines.
-// A generic receiver's arguments restate as the impl binder, so a
+// type, each taking the receiver by reference at instance level
+// and standing alone at type level, its visibility and asynchrony
+// before fn, its own type parameter list behind the name, its
+// body placed, each under its own doc lines and attributes. A
+// generic receiver's arguments restate as the impl binder, so a
 // method on Box<T> opens impl<T> Box<T>.
 const ImplTemplate = "impl{{binder (index .Decls 0).Receives}}" +
 	" {{spell (index .Decls 0).Receives}} {\n" +
-	"{{- range .Decls}}\n{{docs .Doc \"    \"}}" +
-	"    pub fn {{.Name}}{{typeparams .TypeParams}}(&self{{with params .Params}}, {{.}}{{end}})" +
+	"{{- range .Decls}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+	"    {{implfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
 	"{{results .Returns}} {\n{{body .}}    }\n" +
 	"{{- end}}\n}\n"
 

@@ -147,6 +147,67 @@ func TestTemplates(t *testing.T) {
 			"declaration-site variance refuses, because Java's wildcard is use-site")
 	})
 
+	t.Run("modifiers", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{
+			Name:        "Row",
+			Abstract:    true,
+			Annotations: emit.Annotations{{Name: "Entity"}},
+		}
+		s.Fields.Append(&emit.Field{
+			Name:       "MAX",
+			Level:      symbol.LevelType,
+			Mutability: symbol.MutabilityImmutable,
+			Type:       ref("int"),
+			Value:      "8",
+		})
+		s.Methods.Append(
+			&emit.Method{
+				Name: "load", Override: true,
+				Returns: []*emit.Return{{Type: ref("Row")}},
+			},
+			&emit.Method{
+				Name: "pick", Abstract: true,
+				Returns: []*emit.Return{{Type: ref("Row")}},
+			},
+		)
+		got, err := execute(backend.StructTemplate, s)
+		assert.NoError(t, err, "the modified class renders")
+		assert.Equal(t, got,
+			"@Entity\n"+
+				"public abstract class Row {\n"+
+				"    public static final int MAX = 8;\n"+
+				"    @Override\n"+
+				"    public Row load() {\n"+
+				"        body();\n"+
+				"    }\n"+
+				"    public abstract Row pick();\n"+
+				"}\n",
+			"annotations above, keywords in stated order, the abstract "+
+				"method a signature alone")
+
+		i := &emit.Interface{Name: "Store"}
+		i.Methods.Append(
+			&emit.Method{Name: "close"},
+			&emit.Method{
+				Name: "load", HasDefault: true,
+				Returns: []*emit.Return{{Type: ref("Row")}},
+				Body:    emit.Body{Verbatim: "        return null;\n"},
+			},
+		)
+		got, err = execute(backend.InterfaceTemplate, i)
+		assert.NoError(t, err, "the interface with a default renders")
+		assert.Equal(t, got,
+			"public interface Store {\n"+
+				"    void close();\n"+
+				"    default Row load() {\n"+
+				"        body();\n"+
+				"    }\n"+
+				"}\n",
+			"the default keyword opens the one signature that places a body")
+	})
+
 	t.Run("a second return value refuses at render", func(t *testing.T) {
 		t.Parallel()
 

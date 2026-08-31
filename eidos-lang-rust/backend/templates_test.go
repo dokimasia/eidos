@@ -151,6 +151,67 @@ func TestTemplates(t *testing.T) {
 			"the alias parameterizes and its target restates the argument")
 	})
 
+	t.Run("modifiers", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{
+			Name:        "Row",
+			Annotations: emit.Annotations{{Name: "derive", Args: []string{"Debug"}}},
+		}
+		s.Fields.Append(&emit.Field{
+			Name: "key", Visibility: symbol.VisibilityInternal, Type: ref("String"),
+		})
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"#[derive(Debug)]\n"+
+				"pub struct Row {\n"+
+				"    pub(crate) key: String,\n"+
+				"}\n",
+			"attributes above, the field under its own scope")
+
+		i := &emit.Interface{Name: "Store"}
+		i.Methods.Append(
+			&emit.Method{Name: "close", Async: true},
+			&emit.Method{
+				Name:  "make",
+				Level: symbol.LevelType,
+				Returns: []*emit.Return{
+					{Type: ref("Row")},
+				},
+			},
+			&emit.Method{
+				Name:       "kind",
+				HasDefault: true,
+				Returns:    []*emit.Return{{Type: ref("u32")}},
+				Body:       emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}},
+			},
+		)
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"pub trait Store {\n"+
+				"    async fn close(&self);\n"+
+				"    fn make() -> Row;\n"+
+				"    fn kind(&self) -> u32 {\n    body();\n    }\n"+
+				"}\n",
+			"async before fn, an associated function without a receiver, "+
+				"and a default body placed")
+
+		f := &emit.Function{
+			Name: "load", Async: true,
+			Visibility: symbol.VisibilityInternal,
+			Returns:    []*emit.Return{{Type: ref("Row")}},
+		}
+		assert.Equal(t, execute(t, backend.FunctionTemplate, f),
+			"pub(crate) async fn load() -> Row {\n    body();\n}\n",
+			"the crate scope and async before fn")
+
+		c := &emit.Constant{
+			Name: "MAX", Visibility: symbol.VisibilityPackage,
+			Type: ref("u32"), Value: "8",
+		}
+		assert.Equal(t, execute(t, backend.ConstantTemplate, c),
+			"const MAX: u32 = 8;\n",
+			"package scope spells no keyword, which is module-private")
+	})
+
 	t.Run("the file skeleton is uses then declarations", func(t *testing.T) {
 		t.Parallel()
 

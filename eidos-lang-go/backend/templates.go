@@ -24,9 +24,10 @@ const (
 	// StructTemplate spells a struct and its fields, its type
 	// parameters behind the name, each field under its own
 	// docblock, carrying its tag in backquotes and its trailing
-	// comment where the declaration states them.
-	StructTemplate = "{{docs .Doc}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}\t{{.Name}} {{spell .Type}}" +
+	// comment where the declaration states them. The guard
+	// refuses what Go states nowhere before a byte renders.
+	StructTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
+		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
 		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n"
 
@@ -34,41 +35,44 @@ const (
 	// requires, its type parameters behind the name, each method
 	// under its own docblock. An interface method states no body,
 	// no receiver and no parameter list of its own, which Go
-	// refuses on interface methods, so it is a signature alone.
-	InterfaceTemplate = "{{docs .Doc}}type {{.Name}}{{typeparams .TypeParams}} interface {\n" +
-		"{{- range .Methods.Items}}\n{{docs .Doc \"\\t\"}}" +
+	// refuses on interface methods, so it is a signature alone
+	// under its own guard.
+	InterfaceTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} interface {\n" +
+		"{{- range .Methods.Items}}\n{{docs .Doc \"\\t\"}}{{sigguard .}}" +
 		"\t{{.Name}}({{params .Params}}){{results .Returns}}\n" +
 		"{{- end}}\n}\n"
 
 	// FunctionTemplate spells a function, its type parameters
-	// behind the name, and places its body.
-	FunctionTemplate = "{{docs .Doc}}func {{.Name}}{{typeparams .TypeParams}}" +
+	// behind the name, and places its body, under the guard.
+	FunctionTemplate = "{{docs .Doc}}{{guard .}}func {{.Name}}{{typeparams .TypeParams}}" +
 		"({{params .Params}}){{results .Returns}} {\n{{body .}}}\n"
 
 	// MethodTemplate spells a method: Go states one at the package
 	// level with a receiver, never inside the type it attaches to.
 	// The method's own type parameters spell behind its name, the
 	// form Go accepts since 1.27; the receiver's spell inside the
-	// receiver's reference.
-	MethodTemplate = "{{docs .Doc}}func ({{receiver .}}) " +
+	// receiver's reference. The guard refuses what Go states
+	// nowhere.
+	MethodTemplate = "{{docs .Doc}}{{guard .}}func ({{receiver .}}) " +
 		"{{.Name}}{{typeparams .TypeParams}}({{params .Params}})" +
 		"{{results .Returns}} {\n{{body .}}}\n"
 
 	// AliasTemplate spells a type alias, its type parameters
-	// behind the name.
-	AliasTemplate = "{{docs .Doc}}type {{.Name}}{{typeparams .TypeParams}} = {{spell .Target}}\n"
+	// behind the name, under the guard.
+	AliasTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} = {{spell .Target}}\n"
 
 	// ConstantTemplate spells a constant, typed where the
 	// declaration states a type, its trailing comment beside the
-	// value where one is stated.
-	ConstantTemplate = "{{docs .Doc}}const {{.Name}}" +
+	// value where one is stated, under the guard.
+	ConstantTemplate = "{{docs .Doc}}{{guard .}}const {{.Name}}" +
 		"{{with .Type}} {{spell .}}{{end}} = {{.Value}}" +
 		"{{with .Comment}} // {{.}}{{end}}\n"
 
-	// VariableTemplate spells a variable, its trailing comment
-	// beside the type where one is stated.
-	VariableTemplate = "{{docs .Doc}}var {{.Name}} {{spell .Type}}" +
-		"{{with .Comment}} // {{.}}{{end}}\n"
+	// VariableTemplate spells a variable, its initializer behind
+	// an equals sign and its trailing comment beside the type
+	// where the declaration states them, under the guard.
+	VariableTemplate = "{{docs .Doc}}{{guard .}}var {{.Name}} {{spell .Type}}" +
+		"{{with .Value}} = {{.}}{{end}}{{with .Comment}} // {{.}}{{end}}\n"
 )
 
 // KindTemplates maps each emit kind to the template that spells

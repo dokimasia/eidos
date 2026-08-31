@@ -112,4 +112,114 @@ func TestVocabulary(t *testing.T) {
 		assert.Equal(t, backend.Module(symbol.Identity{}), "",
 			"an identity naming nothing spells nothing")
 	})
+
+	t.Run("Mods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.Mods(&emit.Struct{Name: "Row"})
+		assert.NoError(t, err, "an unstated visibility spells")
+		assert.Equal(t, got, "export ", "as export, because a generated API is consumed")
+
+		got, err = backend.Mods(&emit.Struct{Name: "Row", Abstract: true})
+		assert.NoError(t, err, "an abstract class spells")
+		assert.Equal(t, got, "export abstract ", "abstract behind export")
+
+		got, err = backend.Mods(&emit.Variable{
+			Name: "count", Visibility: symbol.VisibilityPackage,
+		})
+		assert.NoError(t, err, "package scope spells")
+		assert.Equal(t, got, "", "by omitting export, because the module is the scope")
+
+		got, err = backend.Mods(&emit.Function{Name: "load", Async: true})
+		assert.NoError(t, err, "an async function spells")
+		assert.Equal(t, got, "export async ", "async behind export")
+
+		_, err = backend.Mods(&emit.Struct{Name: "Row", Final: true})
+		assert.HasError(t, err, "a final class refuses, because TypeScript seals nothing")
+		_, err = backend.Mods(&emit.Alias{
+			Name: "ID", Visibility: symbol.VisibilityProtected,
+		})
+		assert.HasError(t, err, "a protected module-level scope refuses")
+		_, err = backend.Mods(&emit.Function{
+			Name:        "load",
+			Annotations: emit.Annotations{{Name: "log"}},
+		})
+		assert.HasError(t, err, "decorators mark classes and members alone")
+	})
+
+	t.Run("MemberMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.MemberMods(&emit.Field{
+			Name:       "key",
+			Visibility: symbol.VisibilityPrivate,
+			Level:      symbol.LevelType,
+			Mutability: symbol.MutabilityImmutable,
+		})
+		assert.NoError(t, err, "a guarded field spells")
+		assert.Equal(t, got, "private static readonly ",
+			"accessibility, static, readonly, in TypeScript's stated order")
+
+		got, err = backend.MemberMods(&emit.Method{
+			Name: "load", Override: true, Async: true,
+		})
+		assert.NoError(t, err, "an overriding async method spells")
+		assert.Equal(t, got, "override async ",
+			"public stays implicit, override before async")
+
+		_, err = backend.MemberMods(&emit.Method{Name: "load", Final: true})
+		assert.HasError(t, err, "a final method refuses")
+		_, err = backend.MemberMods(&emit.Field{
+			Name: "key", Visibility: symbol.VisibilityPackage,
+		})
+		assert.HasError(t, err, "a package scope refuses on a class member")
+	})
+
+	t.Run("PropMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.PropMods(&emit.Field{
+			Name: "key", Mutability: symbol.MutabilityImmutable,
+		})
+		assert.NoError(t, err, "an immutable property spells")
+		assert.Equal(t, got, "readonly ", "as readonly")
+
+		_, err = backend.PropMods(&emit.Field{
+			Name: "key", Level: symbol.LevelType,
+		})
+		assert.HasError(t, err, "a static interface property refuses")
+	})
+
+	t.Run("SigMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.SigMods(&emit.Method{Name: "load"})
+		assert.NoError(t, err, "a bare signature passes")
+		assert.Equal(t, got, "", "and spells nothing")
+
+		_, err = backend.SigMods(&emit.Method{Name: "load", Async: true})
+		assert.HasError(t, err, "a stated modifier refuses on an interface method")
+	})
+
+	t.Run("Binding", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, backend.Binding(&emit.Variable{Name: "count"}), "let",
+			"a mutable binding is let")
+		assert.Equal(t, backend.Binding(&emit.Variable{
+			Name: "count", Mutability: symbol.MutabilityImmutable,
+		}), "const", "an immutable one is const")
+	})
+
+	t.Run("Decorators", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, backend.Decorators(nil), "", "no annotations, no lines")
+		assert.Equal(t, backend.Decorators(emit.Annotations{
+			{Name: "injectable"},
+			{Name: "route", Args: []string{`"/rows"`, "true"}},
+		}, "  "),
+			"  @injectable\n  @route(\"/rows\", true)\n",
+			"one line per annotation at the member's depth, arguments verbatim")
+	})
 }
