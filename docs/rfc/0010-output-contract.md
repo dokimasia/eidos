@@ -83,6 +83,10 @@ and the sink decides how they get there.
 // one repository must never prove ownership of each other's
 // files, so every consumer states its own name.
 type Brand string
+
+// Valid reports whether b is spelled the way the frame requires:
+// one character at least, every one from the set above.
+func (b Brand) Valid() bool
 ```
 
 The kernel ships no brand value. `NewContract` refuses an empty
@@ -104,6 +108,9 @@ type Contract struct { /* brand, comment spelling */ }
 // block form, because a language without comments cannot carry
 // the frame.
 func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error)
+
+// Brand returns the name this contract stamps under.
+func (c *Contract) Brand() Brand
 
 // Stamp returns the finished bytes: the marker line, one
 // derivation line per plugin and per source, one blank line, the
