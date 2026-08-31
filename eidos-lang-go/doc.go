@@ -36,4 +36,11 @@
 // so positions and comment attachment are exact and the same
 // workspace resolves the same parser everywhere. Dependencies
 // load signature-only from module source.
+//
+// # Dependency position
+//
+// The module imports core/plugin, the shared helpers of
+// eidos-lang, and the Go stdlib. It never imports eidos-lang's
+// grammar packages: the frontend parses with the standard library,
+// and the backend renders through the kernel's own pass.
 package golang

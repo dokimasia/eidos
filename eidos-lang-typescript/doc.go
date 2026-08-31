@@ -31,4 +31,8 @@
 // version-pinned library, never a machine-supplied toolchain — and
 // resolves dependencies signature-only through declaration files
 // (.d.ts), parsed and never executed.
+//
+// # Dependency position
+//
+// The module imports core/plugin and the Go stdlib.
 package typescript

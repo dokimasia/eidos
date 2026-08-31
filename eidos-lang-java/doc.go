@@ -31,4 +31,8 @@
 // The frontend parses with the pinned tree-sitter grammar and
 // resolves dependencies signature-only from JVM class files inside
 // JARs — declarative artifacts, parsed and never executed.
+//
+// # Dependency position
+//
+// The module imports core/plugin and the Go stdlib.
 package java

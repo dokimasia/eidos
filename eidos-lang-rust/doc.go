@@ -31,4 +31,8 @@
 // The frontend parses with the pinned tree-sitter grammar — a
 // version-pinned library, never a machine-supplied toolchain — and
 // resolves dependencies signature-only from crate source.
+//
+// # Dependency position
+//
+// The module imports core/plugin and the Go stdlib.
 package rust
