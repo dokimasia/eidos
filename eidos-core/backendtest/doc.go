@@ -11,6 +11,9 @@
 // override declarations the composition would have handed over. A
 // [Setup] builds the renderer under test with its fixture, fresh
 // per call, so two calls build two isolated fixtures.
+// [CanonicalFixture] is the kernel's own coverage fixture, filtered
+// to the backend's declared kind inventory, so every satellite runs
+// one set of declarations instead of hand-building its own.
 //
 // # The checks
 //
@@ -36,7 +39,8 @@
 // # Dependency position
 //
 // core/backendtest imports core/plugin, core/render, core/output,
-// core/diag, the assert module and the Go stdlib. It never imports
+// core/emit, core/symbol, core/diag, the assert module and the Go
+// stdlib. It never imports
 // the root package: the harness works directly on the SPI, so a
 // kit-built backend and a hand-rolled renderer are held to the
 // same checks.
