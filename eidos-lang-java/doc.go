@@ -34,5 +34,6 @@
 //
 // # Dependency position
 //
-// The module imports core/plugin and the Go stdlib.
+// The module imports core/plugin, the shared helpers of
+// eidos-lang, and the Go stdlib.
 package java
