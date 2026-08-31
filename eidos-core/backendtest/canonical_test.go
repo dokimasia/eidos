@@ -22,6 +22,7 @@ import (
 func fullInventory() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindEnum:      "unread",
+		symbol.KindSum:       "unread",
 		symbol.KindStruct:    "unread",
 		symbol.KindInterface: "unread",
 		symbol.KindFunction:  "unread",
@@ -202,10 +203,10 @@ func TestCanonicalFixture(t *testing.T) {
 		failure := assert.Rejects(t, "an uncovered kind must fail",
 			func(tb assert.TB) {
 				backendtest.CanonicalFixture(tb, map[symbol.Kind]string{
-					symbol.KindSum: "unread",
+					symbol.KindEnumVariant: "unread",
 				})
 			})
-		assert.Contains(t, failure, symbol.KindSum.String(),
+		assert.Contains(t, failure, symbol.KindEnumVariant.String(),
 			"the refusal names the kind the fixture does not hold")
 	})
 }

@@ -56,6 +56,7 @@ const boundName = "Codec"
 // declaration for, in build order.
 var canonicalKinds = []symbol.Kind{
 	symbol.KindEnum,
+	symbol.KindSum,
 	symbol.KindStruct,
 	symbol.KindInterface,
 	symbol.KindFunction,
@@ -171,6 +172,8 @@ func canonicalUnit(k symbol.Kind) plugin.Unit {
 	switch k {
 	case symbol.KindEnum:
 		return unitFor("phase", phaseEnum())
+	case symbol.KindSum:
+		return unitFor("shape", shapeSum(), packSum())
 	case symbol.KindStruct:
 		return unitFor("row", rowStruct(), boxStruct())
 	case symbol.KindInterface:
@@ -360,6 +363,63 @@ func phaseEnum() *emit.Enum {
 		},
 	)
 	return e
+}
+
+// shapeSum returns the sum: one variant carrying a named payload
+// field and one carrying none, which is the shape every target
+// claiming the kind spells, a target lowering it into variant
+// types included. Positional payloads and variant methods stay in
+// each satellite's own tests, because their spellings diverge.
+func shapeSum() *emit.Sum {
+	s := &emit.Sum{
+		Origin: originOf("shape", symbol.KindSum),
+		Doc:    []string{"shape is one closed figure."},
+		Name:   "shape",
+	}
+	circle := &emit.SumVariant{
+		Origin: memberOf("shape", "circle", symbol.KindSumVariant),
+		Doc:    []string{"circle bounds by a radius."},
+		Name:   "circle",
+	}
+	circle.Fields.Append(&emit.Field{
+		Origin: memberOf("circle", "radius", symbol.KindField),
+		Name:   "radius",
+		Type:   typeRef("int"),
+	})
+	s.Variants.Append(circle, &emit.SumVariant{
+		Origin: memberOf("shape", "empty", symbol.KindSumVariant),
+		Name:   "empty",
+	})
+	return s
+}
+
+// packSum returns the generic sum: one type parameter, a variant
+// whose payload references it, and a payloadless variant beside
+// it, so a target restating the parameter over its variants
+// proves the restatement. The parameter stays unbounded the way
+// the generic struct's does.
+func packSum() *emit.Sum {
+	s := &emit.Sum{
+		Origin:     originOf("pack", symbol.KindSum),
+		Doc:        []string{"pack carries one optional item."},
+		Name:       "pack",
+		TypeParams: []*emit.TypeParam{{Name: "T"}},
+	}
+	some := &emit.SumVariant{
+		Origin: memberOf("pack", "some", symbol.KindSumVariant),
+		Doc:    []string{"some holds the item."},
+		Name:   "some",
+	}
+	some.Fields.Append(&emit.Field{
+		Origin: memberOf("some", "item", symbol.KindField),
+		Name:   "item",
+		Type:   typeRef("T"),
+	})
+	s.Variants.Append(some, &emit.SumVariant{
+		Origin: memberOf("pack", "none", symbol.KindSumVariant),
+		Name:   "none",
+	})
+	return s
 }
 
 // boxStruct returns the generic struct: one type parameter, a

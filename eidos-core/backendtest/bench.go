@@ -218,6 +218,26 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 			},
 		)
 		return e
+	case symbol.KindSum:
+		s := &emit.Sum{
+			Origin:     originOf("shape"+i, symbol.KindSum),
+			Name:       "shape" + i,
+			TypeParams: []*emit.TypeParam{{Name: "T"}},
+		}
+		circle := &emit.SumVariant{
+			Origin: memberOf("shape"+i, "circle", symbol.KindSumVariant),
+			Name:   "circle",
+		}
+		circle.Fields.Append(&emit.Field{
+			Origin: memberOf("circle", "item", symbol.KindField),
+			Name:   "item",
+			Type:   typeRef("T"),
+		})
+		s.Variants.Append(circle, &emit.SumVariant{
+			Origin: memberOf("shape"+i, "empty", symbol.KindSumVariant),
+			Name:   "empty",
+		})
+		return s
 	case symbol.KindStruct:
 		s := &emit.Struct{
 			Origin:     originOf("row"+i, symbol.KindStruct),

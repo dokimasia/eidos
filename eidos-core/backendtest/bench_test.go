@@ -68,10 +68,10 @@ func TestScaledFixture(t *testing.T) {
 		failure := assert.Rejects(t, "an uncovered kind must fail",
 			func(tb assert.TB) {
 				backendtest.ScaledFixture(tb, map[symbol.Kind]string{
-					symbol.KindSum: "unread",
+					symbol.KindEnumVariant: "unread",
 				})
 			})
-		assert.Contains(t, failure, symbol.KindSum.String(),
+		assert.Contains(t, failure, symbol.KindEnumVariant.String(),
 			"the refusal names the kind the fixture does not hold")
 	})
 }
