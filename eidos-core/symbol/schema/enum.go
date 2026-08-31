@@ -25,7 +25,7 @@ type Enum struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both"`
+	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
 	Variants    []*EnumVariant    `eidos:"both,walk,slot=variants"`
 	Fields      []*Field          `eidos:"both,walk,slot=fields"`  // Java enums carry instance state
@@ -45,7 +45,7 @@ type EnumVariant struct {
 	Origin      symbol.Identity `eidos:"emit"`
 	Pos         position.Pos    `eidos:"node"`
 	Doc         []string        `eidos:"both"`
-	Name        string          `eidos:"both"`
+	Name        string          `eidos:"both,name"`
 	Value       string          `eidos:"both"` // source spelling, unevaluated
 	Annotations Annotations     `eidos:"emit"`
 	Host        symbol.Identity `eidos:"node"`
@@ -66,7 +66,7 @@ type Sum struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both"`
+	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
 	TypeParams  []*TypeParam      `eidos:"both,walk"` // Rust data enums are generic
 	Variants    []*SumVariant     `eidos:"both,walk,slot=variants"`
@@ -83,7 +83,7 @@ type SumVariant struct {
 	Origin      symbol.Identity `eidos:"emit"`
 	Pos         position.Pos    `eidos:"node"`
 	Doc         []string        `eidos:"both"`
-	Name        string          `eidos:"both"`
+	Name        string          `eidos:"both,name"`
 	Fields      []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
 	Annotations Annotations     `eidos:"emit"`
 	Host        symbol.Identity `eidos:"node"`

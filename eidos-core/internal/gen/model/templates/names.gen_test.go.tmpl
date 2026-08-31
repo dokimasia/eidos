@@ -1,0 +1,101 @@
+{{template "header" .}}
+import (
+	"errors"
+	"strings"
+	"testing"
+
+	"go.dokimi.dev/assert"
+
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// Every declared name respells through the traversal: each kind's
+// own name under its host and visibility, and one name per
+// descent field.
+func TestRespellNames(t *testing.T) {
+	t.Parallel()
+{{- range .Views}}
+{{- if or .NameStorage .NameWalked}}
+
+	t.Run("{{.Name}}", func(t *testing.T) {
+		t.Parallel()
+
+		subject := &{{.Name}}{}
+{{- if .NameStorage}}
+		subject.{{.NameStorage}} = "alpha"
+{{- end}}
+{{- if and .NameStorage .VisStorage}}
+		subject.{{.VisStorage}} = symbol.VisibilityInternal
+{{- end}}
+{{- range .NameChildren}}
+		{{.}}
+{{- end}}
+		var hosts []symbol.Kind
+		var seen []symbol.Visibility
+		err := RespellNames(subject,
+			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				hosts = append(hosts, host)
+				seen = append(seen, v)
+				return strings.ToUpper(name), nil
+			})
+		assert.NoError(t, err, "the traversal completes")
+		assert.Equal(t, len(hosts), {{.NameVisits}}, "every declared name visits once")
+{{- if .NameStorage}}
+		assert.Equal(t, subject.{{.NameStorage}}, "ALPHA", "the settled spelling writes back")
+		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+{{- if .VisStorage}}
+		assert.Equal(t, seen[0], symbol.VisibilityInternal,
+			"the carrier's visibility reaches the hook")
+{{- end}}
+{{- end}}
+		for i, h := range hosts {
+			if {{if .NameStorage}}i == 0{{else}}false{{end}} {
+				continue
+			}
+			_ = i
+			assert.Equal(t, h, symbol.Kind{{.Name}},
+				"a member's host is its enclosing kind")
+		}
+		_ = seen
+	})
+{{- end}}
+{{- end}}
+{{- with firstNamed .Views}}
+
+	t.Run("propagates the hook's error", func(t *testing.T) {
+		t.Parallel()
+
+		subject := &{{.Name}}{ {{.NameStorage}}: "alpha"}
+		boom := errors.New("boom")
+		err := RespellNames(subject,
+			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				return "", boom
+			})
+		assert.True(t, errors.Is(err, boom), "the first error returns")
+		assert.Equal(t, subject.{{.NameStorage}}, "alpha", "and the name stands")
+	})
+
+	t.Run("skips an empty name", func(t *testing.T) {
+		t.Parallel()
+
+		calls := 0
+		err := RespellNames(&{{.Name}}{},
+			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				calls++
+				return name, nil
+			})
+		assert.NoError(t, err, "an unnamed carrier walks clean")
+		assert.Equal(t, calls, 0, "and offers nothing to respell")
+	})
+
+	t.Run("a nil symbol walks nothing", func(t *testing.T) {
+		t.Parallel()
+
+		err := RespellNames(nil,
+			func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				return name, nil
+			})
+		assert.NoError(t, err, "nothing to walk is not a fault")
+	})
+{{- end}}
+}

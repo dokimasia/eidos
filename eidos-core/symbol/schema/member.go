@@ -31,8 +31,8 @@ type Field struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Comment     string            `eidos:"both"` // trailing line comment; "" when none
-	Name        string            `eidos:"both"` // "" when positional
+	Comment     string            `eidos:"both"`      // trailing line comment; "" when none
+	Name        string            `eidos:"both,name"` // "" when positional
 	Visibility  symbol.Visibility `eidos:"both"`
 	Level       symbol.Level      `eidos:"both"`
 	Mutability  symbol.Mutability `eidos:"both"`
@@ -63,7 +63,7 @@ type Variable struct {
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
 	Comment     string            `eidos:"both"` // trailing line comment; "" when none
-	Name        string            `eidos:"both"`
+	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
 	Mutability  symbol.Mutability `eidos:"both"`
 	Type        *TypeRef          `eidos:"both,walk"` // nil when the source states none
@@ -87,7 +87,7 @@ type Constant struct {
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
 	Comment     string            `eidos:"both"` // trailing line comment; "" when none
-	Name        string            `eidos:"both"`
+	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
 	Type        *TypeRef          `eidos:"both,walk"` // nil when untyped
 	Value       string            `eidos:"both"`      // source spelling, unevaluated

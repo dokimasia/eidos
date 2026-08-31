@@ -38,6 +38,8 @@ func TestGenerate(t *testing.T) {
 			want := []string{
 				"emit/kinds.gen.go",
 				"emit/kinds.gen_test.go",
+				"emit/names.gen.go",
+				"emit/names.gen_test.go",
 				"emit/slots.gen.go",
 				"emit/symbols.gen.go",
 				"emit/symbols.gen_test.go",

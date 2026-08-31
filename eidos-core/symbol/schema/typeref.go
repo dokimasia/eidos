@@ -53,7 +53,7 @@ type TypeRef struct {
 type TypeParam struct {
 	ID           symbol.Identity `eidos:"node"`
 	Pos          position.Pos    `eidos:"node"`
-	Name         string          `eidos:"both"`
+	Name         string          `eidos:"both,name"`
 	Variance     symbol.Variance `eidos:"both"`
 	Bounds       []*TypeRef      `eidos:"both,walk"`
 	Default      *TypeRef        `eidos:"both,walk"` // default type argument; nil when none

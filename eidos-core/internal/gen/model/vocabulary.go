@@ -32,6 +32,11 @@ const (
 	// accessors instead of a plain slice.
 	SlotPrefix = "slot="
 
+	// NameToken marks a string field as a declared name, which the
+	// generated respell traversal visits. Only a plain string
+	// carries it: a name is one spelling, never a list.
+	NameToken = "name"
+
 	// SubjectMark is the doc directive that makes a kind a dispatch
 	// subject, written as its own "//eidos:subject" line in the
 	// kind's documentation. A marked kind gets its generated Match

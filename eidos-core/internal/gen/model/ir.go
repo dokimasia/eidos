@@ -81,6 +81,8 @@ type FieldSpec struct {
 	Slot     string
 	Slice    bool
 	IsSymbol bool
+	// IsName marks a declared name the respell traversal visits.
+	IsName bool
 }
 
 // Lower parses and type-checks the schema in dir and returns its
@@ -264,18 +266,20 @@ func lowerField(
 		switch {
 		case tok == WalkToken:
 			spec.Walk = true
+		case tok == NameToken:
+			spec.IsName = true
 		case strings.HasPrefix(tok, SlotPrefix):
 			spec.Slot = strings.TrimPrefix(tok, SlotPrefix)
 		default:
 			return FieldSpec{}, at(fset, expr.Pos(),
-				"%s carries unknown tag token %q: the vocabulary is %s, %s and a side",
-				name, tok, WalkToken, SlotPrefix)
+				"%s carries unknown tag token %q: the vocabulary is %s, %s, %s and a side",
+				name, tok, WalkToken, NameToken, SlotPrefix)
 		}
 	}
 	return spec, validate(fset, expr.Pos(), spec)
 }
 
-// validate holds the two rules a lowered field has to satisfy.
+// validate holds the three rules a lowered field has to satisfy.
 func validate(fset *token.FileSet, pos token.Pos, spec FieldSpec) error {
 	referencesKind := spec.Elem != ""
 
@@ -288,6 +292,11 @@ func validate(fset *token.FileSet, pos token.Pos, spec FieldSpec) error {
 	if spec.Slot != "" && !sliceOfKinds {
 		return at(fset, pos, "%s is tagged %s but %s is not a slice of kinds",
 			spec.Name, SlotPrefix, spec.Type)
+	}
+	if spec.IsName && spec.Type != "string" {
+		return at(fset, pos,
+			"%s is tagged %s but %s is not a string: a name is one spelling",
+			spec.Name, NameToken, spec.Type)
 	}
 	return nil
 }

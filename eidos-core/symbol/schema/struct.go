@@ -39,7 +39,7 @@ type Struct struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both"`
+	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
 	Abstract    bool              `eidos:"both"` // no value of it can be made directly
 	Final       bool              `eidos:"both"` // subclassing is forbidden
@@ -78,7 +78,7 @@ type Interface struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both"`
+	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
 	TypeParams  []*TypeParam      `eidos:"both,walk"`
 	Fields      []*Field          `eidos:"both,walk,slot=fields"` // properties, not just methods
@@ -104,7 +104,7 @@ type Alias struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both"`
+	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
 	TypeParams  []*TypeParam      `eidos:"both,walk"`
 	Target      *TypeRef          `eidos:"both,walk"` // nil for an associated type

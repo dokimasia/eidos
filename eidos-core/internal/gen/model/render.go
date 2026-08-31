@@ -73,6 +73,9 @@ const (
 	typeField = "Type"
 	// typeRefKind is the kind such a field references.
 	typeRefKind = "TypeRef"
+	// visField holds a declaration's normalized visibility, which
+	// the respell traversal hands the hook.
+	visField = "Visibility"
 )
 
 // memberMethods are the Membered interface's methods, against the
@@ -132,6 +135,19 @@ type view struct {
 	// WalkVisits is how many declarations a walk over that subject
 	// reaches, the subject included.
 	WalkVisits int
+	// NameStorage is the field holding the kind's own declared
+	// name, empty when the kind declares none, and VisStorage the
+	// field holding its visibility, empty when it carries none.
+	NameStorage string
+	VisStorage  string
+	// NameWalked are the traversed fields that reach a declared
+	// name: the respell traversal's descent set.
+	NameWalked []fieldView
+	// NameChildren are the statements a test uses to give the
+	// subject one named child per descent field, and NameVisits is
+	// how many names the respell traversal then visits.
+	NameChildren []string
+	NameVisits   int
 	// Malformed is an encoding naming this kind whose first field
 	// holds the wrong JSON type, so a decoder places the kind and
 	// then fails on its body.
@@ -191,15 +207,64 @@ type fieldView struct {
 // emit side alone, so a slot-tagged field renders as an ordinary
 // slice on the node side.
 func viewsFor(kinds []KindSpec, side string) []view {
+	reach, named := nameReach(kinds, side)
 	out := make([]view, 0, len(kinds))
 	for _, kind := range kinds {
-		out = append(out, viewOf(kind, side))
+		out = append(out, viewOf(kind, side, reach, named))
 	}
 	return out
 }
 
+// nameReach computes which kinds the respell traversal descends
+// into: reach holds every kind that carries a declared name or
+// walks to one, and named maps a kind to its own name field. A
+// marker-typed walk field reaches by construction, because any
+// kind may sit in it.
+func nameReach(
+	kinds []KindSpec, side string,
+) (reach map[string]bool, named map[string]string) {
+	onSide := func(f FieldSpec) bool {
+		if side == NodePackage {
+			return f.Side.OnNode()
+		}
+		return f.Side.OnEmit()
+	}
+	named = map[string]string{}
+	for _, k := range kinds {
+		for _, f := range k.Fields {
+			if f.IsName && onSide(f) {
+				named[k.Name] = f.Name
+				break
+			}
+		}
+	}
+	reach = map[string]bool{}
+	for changed := true; changed; {
+		changed = false
+		for _, k := range kinds {
+			if reach[k.Name] {
+				continue
+			}
+			r := named[k.Name] != ""
+			for _, f := range k.Fields {
+				if r {
+					break
+				}
+				if f.Walk && onSide(f) && (f.IsSymbol || reach[f.Elem]) {
+					r = true
+				}
+			}
+			if r {
+				reach[k.Name] = true
+				changed = true
+			}
+		}
+	}
+	return reach, named
+}
+
 // viewOf prepares one kind for one model side.
-func viewOf(kind KindSpec, side string) view {
+func viewOf(kind KindSpec, side string, reach map[string]bool, named map[string]string) view {
 	v := view{
 		Name:    kind.Name,
 		Shadow:  unexport(kind.Name) + shadowSuffix,
@@ -230,9 +295,17 @@ func viewOf(kind KindSpec, side string) view {
 			v.OriginStorage = f.Storage
 		case f.Name == typeField && f.Elem == typeRefKind:
 			v.TypeRefStorage = f.Storage
+		case f.Name == visField:
+			v.VisStorage = f.Storage
+		}
+		if field.IsName {
+			v.NameStorage = f.Storage
 		}
 		if field.Walk {
 			v.Walked = append(v.Walked, f)
+			if field.IsSymbol || reach[field.Elem] {
+				v.NameWalked = append(v.NameWalked, f)
+			}
 		}
 		if f.Accessor != "" {
 			v.Slots = append(v.Slots, f)
@@ -240,8 +313,47 @@ func viewOf(kind KindSpec, side string) view {
 	}
 	v.Members = membersOf(byName)
 	v.Children, v.WalkVisits = childrenOf(v)
+	v.NameChildren, v.NameVisits = nameChildrenOf(v, named)
 	v.Malformed = malformedOf(v)
 	return v
+}
+
+// nameChildrenOf writes the statements that give a subject one
+// named child per respell descent field, and counts the names a
+// traversal then visits, the subject's own included. A marker
+// field takes a named value of the enclosing kind, the way
+// [childrenOf] fills it; a descent field whose element declares
+// no name of its own contributes a bare child and no visit.
+func nameChildrenOf(v view, named map[string]string) (stmts []string, visits int) {
+	if v.NameStorage != "" {
+		visits++
+	}
+	const subject = "subject"
+	for _, f := range v.NameWalked {
+		elem := f.Elem
+		if elem == "" {
+			if v.NameStorage == "" {
+				continue
+			}
+			elem = v.Name
+		}
+		child := addressOf + elem + zeroLiteral
+		if storage, has := named[elem]; has {
+			child = addressOf + elem + `{` + storage + `: "beta"}`
+			visits++
+		}
+		target := subject + "." + f.Storage
+		switch {
+		case f.Accessor != "":
+			stmts = append(stmts,
+				subject+"."+f.Accessor+"()."+appendMethod+"("+child+")")
+		case f.Slice:
+			stmts = append(stmts, target+" = append("+target+", "+child+")")
+		default:
+			stmts = append(stmts, target+" = "+child)
+		}
+	}
+	return stmts, visits
 }
 
 // malformedOf writes an encoding that names the kind and then

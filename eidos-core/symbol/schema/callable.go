@@ -33,7 +33,7 @@ type Function struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both"`
+	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
 	Async       bool              `eidos:"both"`
 	TypeParams  []*TypeParam      `eidos:"both,walk"`
@@ -84,7 +84,7 @@ type Method struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both"`
+	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both"`
 	Level       symbol.Level      `eidos:"both"`
 	Abstract    bool              `eidos:"both"` // no body; a subtype must supply one
@@ -124,8 +124,8 @@ type Method struct {
 type Param struct {
 	ID          symbol.Identity `eidos:"node"`
 	Pos         position.Pos    `eidos:"node"`
-	Name        string          `eidos:"both"` // "" when unnamed
-	Label       string          `eidos:"both"` // caller-facing name; Swift and Objective-C
+	Name        string          `eidos:"both,name"` // "" when unnamed
+	Label       string          `eidos:"both"`      // caller-facing name; Swift and Objective-C
 	Type        *TypeRef        `eidos:"both,walk"`
 	Default     string          `eidos:"both"` // source spelling, unevaluated; "" when none
 	Variadic    symbol.Variadic `eidos:"both"` // positional or keyword
@@ -140,6 +140,6 @@ type Param struct {
 type Return struct {
 	ID   symbol.Identity `eidos:"node"`
 	Pos  position.Pos    `eidos:"node"`
-	Name string          `eidos:"both"` // Go named results; "" elsewhere
+	Name string          `eidos:"both,name"` // Go named results; "" elsewhere
 	Type *TypeRef        `eidos:"both,walk"`
 }

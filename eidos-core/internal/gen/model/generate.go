@@ -49,6 +49,8 @@ var outputs = []output{
 	{Path: "emit/kinds.gen.go", Template: "kinds.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/kinds.gen_test.go", Template: "kinds.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/slots.gen.go", Template: "slots.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{Path: "emit/names.gen.go", Template: "names.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{Path: "emit/names.gen_test.go", Template: "names.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/walk.gen.go", Template: "walk.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/walk.gen_test.go", Template: "walk.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "match.gen.go", Template: "match.gen.go.tmpl", Package: RootPackage, Side: NodePackage},
@@ -163,7 +165,18 @@ func viewsOriginated(views []view) bool {
 
 // render executes one output's template.
 func render(out output, kinds []KindSpec) ([]byte, error) {
-	tmpl, err := template.ParseFS(templates,
+	tmpl, err := template.New(out.Template).Funcs(template.FuncMap{
+		// firstNamed returns the first kind declaring its own name,
+		// which the generated tests build their shared cases over.
+		"firstNamed": func(views []view) *view {
+			for i := range views {
+				if views[i].NameStorage != "" {
+					return &views[i]
+				}
+			}
+			return nil
+		},
+	}).ParseFS(templates,
 		path.Join(templateDir, headerTemplate),
 		path.Join(templateDir, out.Template))
 	if err != nil {
