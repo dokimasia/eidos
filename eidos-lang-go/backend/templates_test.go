@@ -63,16 +63,19 @@ func TestTemplates(t *testing.T) {
 		s := &emit.Struct{Doc: []string{"Row is one record."}, Name: "Row"}
 		s.Fields.Append(
 			&emit.Field{Doc: []string{"Key addresses the row."}, Name: "Key", Type: ref("string")},
-			&emit.Field{Name: "N", Type: ref("int")},
+			&emit.Field{
+				Name: "N", Type: ref("int"),
+				Tag: `json:"n"`, Comment: "counted",
+			},
 		)
 		assert.Equal(t, execute(t, backend.StructTemplate, s),
 			"// Row is one record.\n"+
 				"type Row struct {\n"+
 				"\t// Key addresses the row.\n"+
 				"\tKey string\n"+
-				"\tN int\n"+
+				"\tN int `json:\"n\"` // counted\n"+
 				"}\n",
-			"fields under their own docblocks, at field depth")
+			"fields under their own docblocks, tag and trailing comment beside")
 	})
 
 	t.Run("interface", func(t *testing.T) {
@@ -122,6 +125,10 @@ func TestTemplates(t *testing.T) {
 		assert.Equal(t,
 			execute(t, backend.ConstantTemplate, &emit.Constant{Name: "Max", Value: "10"}),
 			"const Max = 10\n", "an untyped one")
+		assert.Equal(t,
+			execute(t, backend.ConstantTemplate,
+				&emit.Constant{Name: "Max", Value: "10", Comment: "inclusive"}),
+			"const Max = 10 // inclusive\n", "the trailing comment beside the value")
 		assert.Equal(t,
 			execute(t, backend.VariableTemplate,
 				&emit.Variable{Name: "count", Type: ref("int")}),

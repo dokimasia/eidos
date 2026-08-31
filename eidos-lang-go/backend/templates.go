@@ -22,10 +22,11 @@ const FileTemplate = "package {{" + FuncPackage + " .Pkg}}\n" +
 // vocabulary rather than by a template of its own.
 const (
 	// StructTemplate spells a struct and its fields, each field
-	// under its own docblock. The model carries no trailing
-	// comment and no tag, so neither renders yet.
+	// under its own docblock, carrying its tag in backquotes and
+	// its trailing comment where the declaration states them.
 	StructTemplate = "{{docs .Doc}}type {{.Name}} struct {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}\t{{.Name}} {{spell .Type}}\n" +
+		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}\t{{.Name}} {{spell .Type}}" +
+		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n"
 
 	// InterfaceTemplate spells an interface and the methods it
@@ -49,12 +50,16 @@ const (
 	AliasTemplate = "{{docs .Doc}}type {{.Name}} = {{spell .Target}}\n"
 
 	// ConstantTemplate spells a constant, typed where the
-	// declaration states a type.
+	// declaration states a type, its trailing comment beside the
+	// value where one is stated.
 	ConstantTemplate = "{{docs .Doc}}const {{.Name}}" +
-		"{{with .Type}} {{spell .}}{{end}} = {{.Value}}\n"
+		"{{with .Type}} {{spell .}}{{end}} = {{.Value}}" +
+		"{{with .Comment}} // {{.}}{{end}}\n"
 
-	// VariableTemplate spells a variable.
-	VariableTemplate = "{{docs .Doc}}var {{.Name}} {{spell .Type}}\n"
+	// VariableTemplate spells a variable, its trailing comment
+	// beside the type where one is stated.
+	VariableTemplate = "{{docs .Doc}}var {{.Name}} {{spell .Type}}" +
+		"{{with .Comment}} // {{.}}{{end}}\n"
 )
 
 // KindTemplates maps each emit kind to the template that spells
