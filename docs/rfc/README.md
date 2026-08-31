@@ -21,3 +21,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0007](0007-build-ladder.md) | The Build ladder and the fixture run | Accepted |
 | [0008](0008-emit-body-content.md) | The emit body and the scaffolding vocabulary | Review |
 | [0009](0009-render-pass-and-backend-kit.md) | The render pass and the backend kit | Review |
+| [0010](0010-output-contract.md) | The output contract | Review |
