@@ -24,6 +24,15 @@ type RenderedFile struct {
 	// packages spell the same filename and stay two files,
 	// whatever directory layout places them in.
 	Pkg symbol.Identity
+	// Plugins names the emitters whose units assembled the file,
+	// distinct and sorted. The output contract writes one
+	// attribution line per name.
+	Plugins []ID
+	// Sources names what the file derives from: the distinct
+	// routing keys of its units, sorted. A source-keyed unit
+	// contributes its source path, a package-keyed unit its
+	// package path, and a plan file contributes nothing.
+	Sources []string
 	// Body is the finished text: formatted, in the language's own
 	// spelling. The output contract stamps and stages it.
 	Body []byte

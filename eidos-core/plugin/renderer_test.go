@@ -58,6 +58,26 @@ func TestRenderer(t *testing.T) {
 			"each carrying its target-spelled name")
 	})
 
+	t.Run("a file carries the derivation it was assembled from", func(t *testing.T) {
+		t.Parallel()
+
+		f := plugin.RenderedFile{
+			Name:    "store_stub.go",
+			Plugins: []plugin.ID{"acme-audit", "stubgen"},
+			Sources: []string{"svc/session.go", "svc/store.go"},
+			Body:    []byte("package store\n"),
+		}
+		assert.Equal(t, f.Plugins, []plugin.ID{"acme-audit", "stubgen"},
+			"every emitter that contributed, distinct and sorted")
+		assert.Equal(t, f.Sources, []string{"svc/session.go", "svc/store.go"},
+			"and every routing key it derives from, because units sharing "+
+				"a name assemble one file")
+
+		plan := plugin.RenderedFile{Name: "registry.go", Body: []byte("package p\n")}
+		assert.Length(t, plan.Sources, 0,
+			"a plan file derives from nothing and says so by carrying nothing")
+	})
+
 	t.Run("a bare plugin renders nothing", func(t *testing.T) {
 		t.Parallel()
 

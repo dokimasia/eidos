@@ -317,8 +317,10 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	// The output order is the precomputed one, whatever order the
 	// workers finish in.
 	type rendered struct {
-		body []byte
-		held bool
+		body    []byte
+		plugins []plugin.ID
+		sources []string
+		held    bool
 	}
 	results := make([]rendered, len(order))
 	workers := min(runtime.GOMAXPROCS(0), len(order))
@@ -342,7 +344,11 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 					return
 				}
 				body, held := w.file(order[i], b)
-				results[i] = rendered{body: body, held: held}
+				r := rendered{body: body, held: held}
+				if held {
+					r.plugins, r.sources = derivation(order[i].units)
+				}
+				results[i] = r
 			}
 		})
 	}
@@ -353,10 +359,31 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	files := make([]plugin.RenderedFile, 0, len(order))
 	for i, g := range order {
 		if results[i].held {
-			files = append(files, plugin.RenderedFile{Name: g.name, Pkg: g.pkg, Body: results[i].body})
+			files = append(files, plugin.RenderedFile{
+				Name: g.name, Pkg: g.pkg,
+				Plugins: results[i].plugins, Sources: results[i].sources,
+				Body: results[i].body,
+			})
 		}
 	}
 	return files, nil
+}
+
+// derivation reads a file's emitters and the keys it derives from
+// off the units that assembled it, distinct and sorted. A unit
+// carrying no key contributes no source, which is what a plan file
+// is: it derives from the plan rather than from any declaration.
+func derivation(units []plugin.Unit) (plugins []plugin.ID, sources []string) {
+	plugins = make([]plugin.ID, 0, len(units))
+	for _, u := range units {
+		plugins = append(plugins, u.Plugin)
+		if u.Key != "" {
+			sources = append(sources, u.Key)
+		}
+	}
+	slices.Sort(plugins)
+	slices.Sort(sources)
+	return slices.Compact(plugins), slices.Compact(sources)
 }
 
 // fileView is what the skeleton executes over: the file's spelled

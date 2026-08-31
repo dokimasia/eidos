@@ -203,6 +203,33 @@ func TestPass(t *testing.T) {
 			"the file keeps what rendered")
 	})
 
+	t.Run("a file carries the derivation it was assembled from", func(t *testing.T) {
+		t.Parallel()
+
+		files, sink := runPass(t, language(), seeded(t,
+			unitOf("beta", "store.go", "Beta"),
+			unitOf("alpha", "store.go", "Alpha"),
+		))
+		assert.False(t, sink.Failed(), "the fixture renders clean")
+		assert.Length(t, files, 1, "two plugins sharing a filename assemble one file")
+		assert.Equal(t, files[0].Plugins, []plugin.ID{"alpha", "beta"},
+			"every emitter that contributed, distinct and sorted")
+		assert.Equal(t, files[0].Sources, []string{"store.go"},
+			"and the routing key they share, named once")
+	})
+
+	t.Run("a plan file derives from nothing", func(t *testing.T) {
+		t.Parallel()
+
+		plan := unitOf("gen", "", "Registry")
+		plan.Per = plugin.PerPlan
+		files, _ := runPass(t, language(), seeded(t, plan))
+		assert.Length(t, files, 1, "the plan unit renders")
+		assert.Equal(t, files[0].Plugins, []plugin.ID{"gen"}, "its emitter alone")
+		assert.Length(t, files[0].Sources, 0,
+			"and no source, because a plan file derives from no declaration")
+	})
+
 	t.Run("findings carry the context's plugin as origin", func(t *testing.T) {
 		t.Parallel()
 
