@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"maps"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -11,18 +12,23 @@ import (
 	"go.dokimi.dev/eidos/core/backendtest"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 	rust "go.dokimi.dev/eidos/lang-rust"
 	"go.dokimi.dev/eidos/lang-rust/backend"
 )
 
 // setup builds the backend over the kernel's canonical fixture,
-// filtered to this module's declared inventory.
+// filtered to this module's rendered coverage: the declared kind
+// templates, plus the method kind the impl cluster renders
+// without one.
 func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	tb.Helper()
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.CanonicalFixture(tb, backend.KindTemplates())
+	inventory := maps.Clone(backend.KindTemplates())
+	inventory[symbol.KindMethod] = ""
+	return r, backendtest.CanonicalFixture(tb, inventory)
 }
 
 // The backend is the module's write half: the kernel suite holds

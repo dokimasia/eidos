@@ -1,10 +1,12 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: MIT
 
-// Package spell writes Java's spellings of naming facts: the
-// filename a unit's routing-key stem, family word and tag join
-// into. It is the module's half of the lowering, and the kernel
-// consumes it through the backend kit's naming step.
+// Package spell writes Java's spellings of naming facts: a file
+// is named after the lone public type its unit holds, and a
+// typeless unit falls back to the routing-key stem, family word
+// and tag joined as one Pascal name. It is the module's half of
+// the lowering, and the kernel consumes it through the backend
+// kit's naming step.
 //
 // # Dependency position
 //

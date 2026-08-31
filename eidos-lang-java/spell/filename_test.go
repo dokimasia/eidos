@@ -8,7 +8,9 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/lang-java/spell"
 )
 
@@ -17,6 +19,17 @@ import (
 // holds, so a drift here renames types, not just files.
 func TestFilename(t *testing.T) {
 	t.Parallel()
+
+	t.Run("a lone type names its file", func(t *testing.T) {
+		t.Parallel()
+
+		u := plugin.Unit{
+			Per: plugin.PerSource, Key: "svc/types.src", Word: "gen",
+			Decls: []symbol.Symbol{&emit.Struct{Name: "Row"}},
+		}
+		assert.Equal(t, spell.Filename(u), "Row.java",
+			"the type's own name, whatever the key and word spell")
+	})
 
 	tests := []struct {
 		name string
