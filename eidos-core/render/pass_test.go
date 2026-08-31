@@ -623,6 +623,105 @@ func TestPass(t *testing.T) {
 		second, _ := runPass(t, language(), build())
 		assert.Equal(t, second, first, "byte identity is the contract")
 	})
+
+	t.Run("splits units before naming", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Split = func(u plugin.Unit) []plugin.Unit {
+			out := make([]plugin.Unit, 0, len(u.Decls))
+			for _, d := range u.Decls {
+				su := u
+				su.Decls = []symbol.Symbol{d}
+				su.Key = strings.ToLower(d.(*emit.Struct).Name) + ".go"
+				out = append(out, su)
+			}
+			return out
+		}
+		files, sink := runPass(t, l, seeded(t,
+			unitOf("gen", "store.go", "Alpha", "Beta"),
+		))
+		assert.False(t, sink.Failed(), "a split render reports nothing")
+		names := make([]string, 0, len(files))
+		for _, f := range files {
+			names = append(names, f.Name)
+		}
+		assert.Equal(t, names, []string{"alpha_stub.txt", "beta_stub.txt"},
+			"one file per split unit, named from the rewritten key")
+	})
+
+	t.Run("clusters declarations under a group template", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Cluster = func(decls []symbol.Symbol) []render.Clustered {
+			c := render.Clustered{Group: "block"}
+			for _, d := range decls {
+				if _, held := d.(*emit.Struct); held {
+					c.Decls = append(c.Decls, d)
+				}
+			}
+			if len(c.Decls) == 0 {
+				return nil
+			}
+			return []render.Clustered{c}
+		}
+		l.Groups = map[render.GroupName]string{
+			"block": "types (\n{{range .Decls}}\t{{.Name}}\n{{end}})\n",
+		}
+
+		u := unitOf("gen", "store.go", "Alpha")
+		load := &emit.Function{
+			Origin: coretest.Struct(coretest.StorePath, "Load").ID,
+			Name:   "Load",
+		}
+		load.Body = emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}
+		beta := &emit.Struct{
+			Origin: coretest.Struct(coretest.StorePath, "Beta").ID,
+			Name:   "Beta",
+		}
+		u.Decls = append(u.Decls, load, beta)
+
+		files, sink := runPass(t, l, seeded(t, u))
+		assert.False(t, sink.Failed(), "a clustered render reports nothing")
+		assert.Equal(t, len(files), 1, "one file")
+		assert.Equal(t, string(files[0].Body),
+			"types (\n\tAlpha\n\tBeta\n)\nfunc Load() {\n\treturn\n}\n",
+			"the cluster renders at its first member's position, "+
+				"the singleton through its kind template")
+	})
+
+	t.Run("a cluster naming no declared group is reported", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Cluster = func(decls []symbol.Symbol) []render.Clustered {
+			return []render.Clustered{{Group: "ghost", Decls: decls}}
+		}
+		l.Groups = map[render.GroupName]string{
+			"block": "types (\n{{range .Decls}}\t{{.Name}}\n{{end}})\n",
+		}
+		files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+		var codes []diag.Code
+		for d := range sink.All() {
+			codes = append(codes, d.Code)
+		}
+		assert.Equal(t, codes, []diag.Code{render.UnknownGroup},
+			"the unknown group is one finding")
+		assert.Equal(t, len(files), 1, "the file still renders")
+		assert.Equal(t, string(files[0].Body), "",
+			"without the skipped cluster's declarations")
+	})
+
+	t.Run("a cluster without group templates refuses to compose", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Cluster = func(decls []symbol.Symbol) []render.Clustered { return nil }
+		_, err := render.New("printer", l)
+		assert.HasError(t, err, "clustering needs group templates")
+		assert.Contains(t, err.Error(), "group templates", "naming the gap")
+	})
 }
 
 // BenchmarkPass measures the procedure at the canonical scale: 1000

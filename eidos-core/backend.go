@@ -37,8 +37,9 @@ func NewBackend(
 	return &BackendBuilder{
 		name: name, target: target, syntax: syntax,
 		lang: render.Language{
-			Kinds: map[symbol.Kind]string{},
-			Funcs: template.FuncMap{},
+			Kinds:  map[symbol.Kind]string{},
+			Funcs:  template.FuncMap{},
+			Groups: map[render.GroupName]string{},
 		},
 	}
 }
@@ -99,6 +100,36 @@ func (b *BackendBuilder) Funcs(fs template.FuncMap) *BackendBuilder {
 // Naming sets the target's filename spelling.
 func (b *BackendBuilder) Naming(n render.Naming) *BackendBuilder {
 	b.lang.Naming = n
+	return b
+}
+
+// Split sets the target's unit reshaping; undeclared, every unit
+// files whole.
+func (b *BackendBuilder) Split(s render.Split) *BackendBuilder {
+	b.lang.Split = s
+	return b
+}
+
+// Cluster sets the target's declaration clustering. The group
+// templates its clusters select arrive through
+// [BackendBuilder.Groups], and a cluster without them is a defect
+// at Build.
+func (b *BackendBuilder) Cluster(c render.Cluster) *BackendBuilder {
+	b.lang.Cluster = c
+	return b
+}
+
+// Groups declares the group templates a Cluster selects, keyed by
+// group name; repeatable, merging, one spelling per group.
+func (b *BackendBuilder) Groups(gs map[render.GroupName]string) *BackendBuilder {
+	for _, g := range slices.Sorted(maps.Keys(gs)) {
+		if _, taken := b.lang.Groups[g]; taken {
+			b.defects = append(b.defects,
+				"spells the "+string(g)+" group twice")
+			continue
+		}
+		b.lang.Groups[g] = gs[g]
+	}
 	return b
 }
 

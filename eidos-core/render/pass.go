@@ -77,6 +77,13 @@ var DroppedSlots = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 26, Meaning: "a body-claiming template places no marker for pending contributions",
 })
 
+// UnknownGroup reports a cluster naming a group the language
+// declares no template for: the cluster's declarations are
+// skipped and the file renders without them.
+var UnknownGroup = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 28, Meaning: "a cluster names a group the target language declares no template for",
+})
+
 // The builtin names every template resolves against: what a kind
 // template, a file skeleton or a body-claiming template calls, and
 // what the template lint checks for. No vocabulary may claim them.
@@ -110,6 +117,38 @@ const skeletonName = "file"
 // which is how two plugins share it.
 type Naming func(u plugin.Unit) string
 
+// Split reshapes one unit into the units the target files
+// separately: a language that names a file after the type it
+// holds returns one unit per file-level type, and its Naming
+// reads the lone type's name, so the demanded filename spells
+// while the routing key keeps carrying the source derivation. A
+// nil Split keeps every unit whole. The pass applies it before
+// naming, preserves order, and calls it once per unit, so a pure
+// function keeps the render deterministic.
+type Split func(u plugin.Unit) []plugin.Unit
+
+// GroupName names a declaration cluster a group template spells.
+type GroupName string
+
+// Clustered is one cluster: the group template that spells it and
+// the declarations it holds, in unit order.
+type Clustered struct {
+	Group GroupName
+	Decls []symbol.Symbol
+}
+
+// Cluster assigns one unit's declarations to named groups: a
+// language that renders methods only inside a grouped block
+// gathers them by the type they attach to. A declaration the
+// function leaves unassigned renders through its kind template; a
+// cluster renders through the group template its name selects, in
+// place of its members' kind templates, at the position of its
+// first member. A declaration two clusters claim goes to the
+// first, and a member the unit does not hold is ignored. Clusters
+// stay inside one unit, so plugin attribution and canonical order
+// survive. A nil Cluster leaves every declaration a singleton.
+type Cluster func(decls []symbol.Symbol) []Clustered
+
 // Language is what a target genuinely varies in; the pass owns
 // everything else.
 type Language struct {
@@ -130,6 +169,15 @@ type Language struct {
 	Funcs template.FuncMap
 	// Naming spells each unit's filename.
 	Naming Naming
+	// Split reshapes each unit before naming; nil files every unit
+	// whole.
+	Split Split
+	// Cluster assigns a unit's declarations to named groups; nil
+	// leaves every declaration a singleton.
+	Cluster Cluster
+	// Groups holds the template source per group name a Cluster
+	// selects.
+	Groups map[GroupName]string
 	// Scaffold spells one statement of the neutral vocabulary the
 	// language's way, recording into the file's import set whatever
 	// it qualified with. It is the printer the body builtin calls
@@ -154,9 +202,12 @@ type Language struct {
 type Pass struct {
 	name     plugin.ID
 	kinds    map[symbol.Kind]*template.Template
+	groups   map[GroupName]*template.Template
 	file     *template.Template
 	shared   template.FuncMap
 	spell    Naming
+	split    Split
+	cluster  Cluster
 	scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
 	imports  func(set *ImportSet) string
 	final    func(src []byte) ([]byte, error)
@@ -205,6 +256,19 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		}
 		kinds[k] = t
 	}
+	if l.Cluster != nil && len(l.Groups) == 0 {
+		faults = append(faults, errors.New(
+			"render: the language clusters declarations and declares no group templates"))
+	}
+	groups := make(map[GroupName]*template.Template, len(l.Groups))
+	for _, g := range slices.Sorted(maps.Keys(l.Groups)) {
+		t, err := template.New(string(g)).Funcs(unbound()).Funcs(l.Funcs).Parse(l.Groups[g])
+		if err != nil {
+			faults = append(faults, fmt.Errorf("render: the %s group template: %w", g, err))
+			continue
+		}
+		groups[g] = t
+	}
 	if l.Naming == nil {
 		faults = append(faults,
 			errors.New("render: the language spells no filenames"))
@@ -237,8 +301,9 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		shared = template.FuncMap{}
 	}
 	return &Pass{
-		name: name, kinds: kinds, file: file, shared: shared,
-		spell: l.Naming, scaffold: l.Scaffold, imports: l.Imports, final: l.Finalise,
+		name: name, kinds: kinds, groups: groups, file: file, shared: shared,
+		spell: l.Naming, split: l.Split, cluster: l.Cluster,
+		scaffold: l.Scaffold, imports: l.Imports, final: l.Finalise,
 	}, nil
 }
 
@@ -287,14 +352,20 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	byFile := map[fileKey]*group{}
 	var order []*group
 	for u := range ctx.Emit.Units() {
-		key := fileKey{pkg: u.Pkg, name: p.spell(u)}
-		g, held := byFile[key]
-		if !held {
-			g = &group{name: key.name, pkg: key.pkg}
-			byFile[key] = g
-			order = append(order, g)
+		units := []plugin.Unit{u}
+		if p.split != nil {
+			units = p.split(u)
 		}
-		g.units = append(g.units, u)
+		for _, su := range units {
+			key := fileKey{pkg: su.Pkg, name: p.spell(su)}
+			g, held := byFile[key]
+			if !held {
+				g = &group{name: key.name, pkg: key.pkg}
+				byFile[key] = g
+				order = append(order, g)
+			}
+			g.units = append(g.units, su)
+		}
 	}
 	slices.SortFunc(order, func(a, b *group) int {
 		if c := a.pkg.Compare(b.pkg); c != 0 {
@@ -466,8 +537,9 @@ func (f *frame) mergeVocabulary(ctx *plugin.RenderContext) template.FuncMap {
 // templates and the file skeleton, cloned from the parse and bound
 // to the call's frame.
 type bound struct {
-	kinds map[symbol.Kind]*template.Template
-	file  *template.Template
+	kinds  map[symbol.Kind]*template.Template
+	groups map[GroupName]*template.Template
+	file   *template.Template
 }
 
 // bind clones the parsed templates for this call and binds the
@@ -488,11 +560,22 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 		}
 		kinds[k] = c.Funcs(f.merged).Funcs(builtins)
 	}
+	groups := make(map[GroupName]*template.Template, len(p.groups))
+	for g, t := range p.groups {
+		c, err := t.Clone()
+		if err != nil {
+			return nil, fmt.Errorf("render: cloning the %s group template: %w", g, err)
+		}
+		groups[g] = c.Funcs(f.merged).Funcs(builtins)
+	}
 	file, err := p.file.Clone()
 	if err != nil {
 		return nil, fmt.Errorf("render: cloning the file skeleton: %w", err)
 	}
-	return &bound{kinds: kinds, file: file.Funcs(f.merged).Funcs(builtins)}, nil
+	return &bound{
+		kinds: kinds, groups: groups,
+		file: file.Funcs(f.merged).Funcs(builtins),
+	}, nil
 }
 
 // use records one import path into the file under render; it is
@@ -696,6 +779,81 @@ func (pl *placement) pending() int {
 	return n
 }
 
+// declRun renders one unit's declarations: what the language's
+// Cluster gathers renders through the group templates, each
+// cluster at the position of its first member, and the rest
+// renders through the kind templates, in the order the flush
+// fixed.
+func (f *frame) declRun(u plugin.Unit, b *bound) {
+	memberOf := map[int]int{}
+	var clusters []Clustered
+	if f.pass.cluster != nil {
+		clusters = f.pass.cluster(u.Decls)
+		index := make(map[symbol.Symbol]int, len(u.Decls))
+		for i, d := range u.Decls {
+			index[d] = i
+		}
+		for ci, c := range clusters {
+			for _, d := range c.Decls {
+				i, held := index[d]
+				if !held {
+					continue
+				}
+				if _, claimed := memberOf[i]; claimed {
+					continue
+				}
+				memberOf[i] = ci
+			}
+		}
+	}
+	rendered := make(map[int]bool, len(clusters))
+	for i, d := range u.Decls {
+		ci, member := memberOf[i]
+		if !member {
+			f.singleton(u, d, b)
+			continue
+		}
+		if rendered[ci] {
+			continue
+		}
+		rendered[ci] = true
+		f.clustered(u, clusters[ci], b)
+	}
+}
+
+// singleton renders one declaration through its kind template.
+func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) {
+	t, spelt := b.kinds[d.Kind()]
+	if !spelt {
+		f.sink.Errorf(UnspeltKind, f.at, f.origin,
+			"%s holds no template for %s, and the declaration is skipped",
+			f.pass.name, d.Kind())
+		return
+	}
+	if err := t.Execute(&f.out, d); err != nil {
+		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
+			"the %s template refused a declaration of %s: %v",
+			d.Kind(), u.Plugin, err)
+	}
+}
+
+// clustered renders one cluster through the group template its
+// name selects.
+func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) {
+	t, held := b.groups[c.Group]
+	if !held {
+		f.sink.Errorf(UnknownGroup, f.at, f.origin,
+			"%s clusters %d declarations under %q, which has no group template, and they are skipped",
+			f.pass.name, len(c.Decls), c.Group)
+		return
+	}
+	if err := t.Execute(&f.out, c); err != nil {
+		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
+			"the %s group template refused a cluster of %s: %v",
+			c.Group, u.Plugin, err)
+	}
+}
+
 // stmts spells a statement run through the language's printer,
 // each spelling recording into the file's import set.
 func (f *frame) stmts(out *strings.Builder, items []emit.Stmt) error {
@@ -723,20 +881,7 @@ func (f *frame) file(g *group, b *bound) ([]byte, bool) {
 	f.at = position.Pos{File: g.name}
 	for _, u := range g.units {
 		f.plugin = u.Plugin
-		for _, d := range u.Decls {
-			t, spelt := b.kinds[d.Kind()]
-			if !spelt {
-				f.sink.Errorf(UnspeltKind, f.at, f.origin,
-					"%s holds no template for %s, and the declaration is skipped",
-					f.pass.name, d.Kind())
-				continue
-			}
-			if err := t.Execute(&f.out, d); err != nil {
-				f.sink.Errorf(RefusedTemplate, f.at, f.origin,
-					"the %s template refused a declaration of %s: %v",
-					d.Kind(), u.Plugin, err)
-			}
-		}
+		f.declRun(u, b)
 	}
 	if err := b.file.Execute(&f.fileOut, fileView{Name: g.name, Pkg: g.pkg}); err != nil {
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,

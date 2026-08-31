@@ -208,9 +208,10 @@ facts, so both are declared beside Naming and both default to off.
 
 ```go
 // Split reshapes one unit into the units the target files
-// separately: Java returns one unit per file-level type, keyed by
-// the declaration's name, so Naming spells the filename the
-// language demands. A nil Split keeps every unit whole. The pass
+// separately: Java returns one unit per file-level type, and its
+// Naming reads the lone type's name, so the filename the language
+// demands spells while the routing key keeps carrying the source
+// derivation. A nil Split keeps every unit whole. The pass
 // applies it before naming, preserves order, and calls it once
 // per unit, so a pure function keeps the render deterministic.
 type Split func(u plugin.Unit) []plugin.Unit

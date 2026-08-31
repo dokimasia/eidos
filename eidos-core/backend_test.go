@@ -229,6 +229,25 @@ func TestBackendBuilder(t *testing.T) {
 							Build()
 					},
 				},
+				{
+					name: "one group spelt twice",
+					build: func() {
+						kitBackend("printer", "stub").
+							Groups(map[render.GroupName]string{"block": "types\n"}).
+							Groups(map[render.GroupName]string{"block": "again\n"}).
+							Build()
+					},
+				},
+				{
+					name: "a cluster without group templates",
+					build: func() {
+						kitBackend("printer", "stub").
+							Cluster(func([]symbol.Symbol) []render.Clustered {
+								return nil
+							}).
+							Build()
+					},
+				},
 			}
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
@@ -237,6 +256,30 @@ func TestBackendBuilder(t *testing.T) {
 						"a wrong declaration panics on the first Build in any test")
 				})
 			}
+		})
+
+		t.Run("lowers the split to the pass", func(t *testing.T) {
+			t.Parallel()
+
+			b := kitBackend("printer", "stub").
+				Split(func(u plugin.Unit) []plugin.Unit {
+					out := make([]plugin.Unit, 0, len(u.Decls))
+					for i, d := range u.Decls {
+						su := u
+						su.Decls = u.Decls[i : i+1]
+						su.Word = strings.ToLower(d.Kind().String())
+						out = append(out, su)
+					}
+					return out
+				}).
+				Build()
+			files := kitRender(t, b)
+			names := make([]string, 0, len(files))
+			for _, f := range files {
+				names = append(names, f.Name)
+			}
+			assert.Equal(t, names, []string{"function.txt", "struct.txt"},
+				"the declared split reshapes units before the naming")
 		})
 
 		t.Run("panics with every kit defect in one message", func(t *testing.T) {
