@@ -500,15 +500,23 @@ func (x *SumVariant) EmbedList() []symbol.Symbol {
 // a positional Sum variant payload is, leaves Name empty and
 // carries only its type.
 //
+// Tag holds the tag text in the source language's spelling with
+// its enclosing delimiters stripped, unevaluated, the way
+// [Constant.Value] holds an expression; the target's template
+// supplies the delimiters its language writes. Only languages with
+// per-field tags fill it.
+//
 // This is the emit spelling of the kind.
 type Field struct {
 	Origin     symbol.Identity   `json:"origin,omitzero"`
 	Doc        []string          `json:"doc,omitzero"`
-	Name       string            `json:"name,omitzero"` // "" when positional
+	Comment    string            `json:"comment,omitzero"` // trailing line comment; "" when none
+	Name       string            `json:"name,omitzero"`    // "" when positional
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
 	Level      symbol.Level      `json:"level,omitzero"`
 	Mutability symbol.Mutability `json:"mutability,omitzero"`
 	Type       *TypeRef          `json:"type,omitzero"`
+	Tag        string            `json:"tag,omitzero"` // tag text without delimiters; "" when none
 }
 
 // Kind returns [symbol.KindField].
@@ -547,6 +555,7 @@ func (x *Field) TypeRef() symbol.Symbol {
 type Variable struct {
 	Origin     symbol.Identity   `json:"origin,omitzero"`
 	Doc        []string          `json:"doc,omitzero"`
+	Comment    string            `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name       string            `json:"name,omitzero"`
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
 	Mutability symbol.Mutability `json:"mutability,omitzero"`
@@ -585,6 +594,7 @@ func (x *Variable) TypeRef() symbol.Symbol {
 type Constant struct {
 	Origin     symbol.Identity   `json:"origin,omitzero"`
 	Doc        []string          `json:"doc,omitzero"`
+	Comment    string            `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name       string            `json:"name,omitzero"`
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
 	Type       *TypeRef          `json:"type,omitzero"`  // nil when untyped

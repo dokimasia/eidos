@@ -4,7 +4,7 @@ title: The symbol schema and its contract
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Accepted
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-08-31
 discussion: none
 supersedes: none
 superseded-by: none
@@ -473,11 +473,13 @@ type Field struct {
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
+    Comment    string            `eidos:"both"` // trailing line comment; "" when none
     Name       string            `eidos:"both"` // "" when positional
     Visibility symbol.Visibility `eidos:"both"`
     Level      symbol.Level      `eidos:"both"`
     Mutability symbol.Mutability `eidos:"both"`
     Type       *TypeRef          `eidos:"both,walk"`
+    Tag        string            `eidos:"both"` // tag text without delimiters; "" when none
     Host       symbol.Identity   `eidos:"node"`
 }
 
@@ -486,6 +488,7 @@ type Variable struct {
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
+    Comment    string            `eidos:"both"` // trailing line comment; "" when none
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
     Mutability symbol.Mutability `eidos:"both"`
@@ -497,6 +500,7 @@ type Constant struct {
     Origin     symbol.Identity   `eidos:"emit"`
     Pos        position.Pos      `eidos:"node"`
     Doc        []string          `eidos:"both"`
+    Comment    string            `eidos:"both"` // trailing line comment; "" when none
     Name       string            `eidos:"both"`
     Visibility symbol.Visibility `eidos:"both"`
     Type       *TypeRef          `eidos:"both,walk"` // nil when untyped
@@ -538,6 +542,16 @@ type Embed struct {
     Host symbol.Identity `eidos:"node"`
 }
 ```
+
+Doc and Comment split the way a parser splits them: Doc is the
+block above a declaration, and Comment is the trailing text on the
+declaration's own line, where a constant's meaning often sits. A
+field's Tag carries the tag text in the source language's spelling
+with its enclosing delimiters stripped, unevaluated, the way Value
+carries a constant's expression; the target's template supplies
+the delimiters its language writes. Languages without either leave
+them empty, and emptiness claims nothing, so a graph rendering
+back into its own language loses neither.
 
 The schema deliberately carries no metadata accessor, no directive
 storage and no emit body model. Those seams belong to the metadata,

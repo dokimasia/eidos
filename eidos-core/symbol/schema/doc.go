@@ -32,7 +32,7 @@
 //
 // # Field conventions
 //
-// Five fields recur across the kinds and mean the same thing every
+// Six fields recur across the kinds and mean the same thing every
 // time, so the per-kind documentation does not repeat them.
 //
 //   - Id: the node-side [symbol.Identity]. It is zero until a
@@ -44,6 +44,9 @@
 //     have none, so the field is node-only.
 //   - Doc: the declaration's documentation, one entry per line,
 //     with the comment markers already stripped.
+//   - Comment: the trailing text on the declaration's own line,
+//     markers stripped, "" when none. Doc sits above and Comment
+//     beside, which is the split a parser makes.
 //   - Host: the identity of the declaration that owns an owned
 //     kind, set when a frontend creates the child. It is an
 //     identity rather than a pointer, so it can be stored,

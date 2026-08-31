@@ -19,17 +19,25 @@ import (
 // a positional Sum variant payload is, leaves Name empty and
 // carries only its type.
 //
+// Tag holds the tag text in the source language's spelling with
+// its enclosing delimiters stripped, unevaluated, the way
+// [Constant.Value] holds an expression; the target's template
+// supplies the delimiters its language writes. Only languages with
+// per-field tags fill it.
+//
 //eidos:subject
 type Field struct {
 	ID         symbol.Identity   `eidos:"node"`
 	Origin     symbol.Identity   `eidos:"emit"`
 	Pos        position.Pos      `eidos:"node"`
 	Doc        []string          `eidos:"both"`
+	Comment    string            `eidos:"both"` // trailing line comment; "" when none
 	Name       string            `eidos:"both"` // "" when positional
 	Visibility symbol.Visibility `eidos:"both"`
 	Level      symbol.Level      `eidos:"both"`
 	Mutability symbol.Mutability `eidos:"both"`
 	Type       *TypeRef          `eidos:"both,walk"`
+	Tag        string            `eidos:"both"` // tag text without delimiters; "" when none
 	Host       symbol.Identity   `eidos:"node"`
 }
 
@@ -52,6 +60,7 @@ type Variable struct {
 	Origin     symbol.Identity   `eidos:"emit"`
 	Pos        position.Pos      `eidos:"node"`
 	Doc        []string          `eidos:"both"`
+	Comment    string            `eidos:"both"` // trailing line comment; "" when none
 	Name       string            `eidos:"both"`
 	Visibility symbol.Visibility `eidos:"both"`
 	Mutability symbol.Mutability `eidos:"both"`
@@ -73,6 +82,7 @@ type Constant struct {
 	Origin     symbol.Identity   `eidos:"emit"`
 	Pos        position.Pos      `eidos:"node"`
 	Doc        []string          `eidos:"both"`
+	Comment    string            `eidos:"both"` // trailing line comment; "" when none
 	Name       string            `eidos:"both"`
 	Visibility symbol.Visibility `eidos:"both"`
 	Type       *TypeRef          `eidos:"both,walk"` // nil when untyped

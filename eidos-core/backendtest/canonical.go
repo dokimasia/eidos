@@ -281,10 +281,12 @@ func rowStruct() *emit.Struct {
 		Name:   "Row",
 	}
 	s.Fields.Append(&emit.Field{
-		Origin: memberOf("Row", "Name", symbol.KindField),
-		Doc:    []string{"Name keys the row."},
-		Name:   "Name",
-		Type:   typeRef("string"),
+		Origin:  memberOf("Row", "Name", symbol.KindField),
+		Doc:     []string{"Name keys the row."},
+		Comment: "unique per store",
+		Name:    "Name",
+		Type:    typeRef("string"),
+		Tag:     `json:"name"`,
 	})
 	for _, c := range formCallables() {
 		s.Methods.Append(&emit.Method{
@@ -353,13 +355,15 @@ func idAlias() *emit.Alias {
 }
 
 // limitConstant returns the constant, untyped the way a target
-// without one spells it anyway.
+// without one spells it anyway, its trailing comment stated so a
+// target that renders one proves it.
 func limitConstant() *emit.Constant {
 	return &emit.Constant{
-		Origin: originOf("Limit", symbol.KindConstant),
-		Doc:    []string{"Limit bounds one fetch."},
-		Name:   "Limit",
-		Value:  "8",
+		Origin:  originOf("Limit", symbol.KindConstant),
+		Doc:     []string{"Limit bounds one fetch."},
+		Comment: "rows per call",
+		Name:    "Limit",
+		Value:   "8",
 	}
 }
 
