@@ -39,8 +39,9 @@
 //
 // # Dependency position
 //
-// The module imports core/plugin, the shared helpers of
-// eidos-lang, and the Go stdlib. It never imports eidos-lang's
-// grammar packages: the frontend parses with the standard library,
-// and the backend renders through the kernel's own pass.
+// The module imports the kernel's root authoring package and the
+// SPI packages beneath it, the shared helpers of eidos-lang, and
+// the Go stdlib. It never imports eidos-lang's grammar packages:
+// the frontend parses with the standard library, and the backend
+// renders through the kernel's own pass.
 package golang

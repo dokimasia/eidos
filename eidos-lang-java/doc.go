@@ -34,6 +34,7 @@
 //
 // # Dependency position
 //
-// The module imports core/plugin, the shared helpers of
-// eidos-lang, and the Go stdlib.
+// The module imports the kernel's root authoring package and the
+// SPI packages beneath it, the shared helpers of eidos-lang, and
+// the Go stdlib.
 package java
