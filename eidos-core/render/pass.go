@@ -302,7 +302,11 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		return cmp.Compare(a.name, b.name)
 	})
 
-	seed := &frame{pass: p, sink: ctx.Sink, trees: ctx.Trees}
+	origin := ctx.Plugin
+	if origin == "" {
+		origin = p.name
+	}
+	seed := &frame{pass: p, sink: ctx.Sink, origin: origin, trees: ctx.Trees}
 	merged := seed.mergeVocabulary(ctx)
 
 	// Files are independent after grouping, so workers share the
@@ -322,7 +326,10 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	var wg sync.WaitGroup
 	for range workers {
 		wg.Go(func() {
-			w := &frame{pass: p, sink: ctx.Sink, trees: ctx.Trees, merged: merged}
+			w := &frame{
+				pass: p, sink: ctx.Sink, origin: origin,
+				trees: ctx.Trees, merged: merged,
+			}
 			b, err := p.bind(w)
 			if err != nil {
 				bindErr.CompareAndSwap(nil, &err)
@@ -363,8 +370,11 @@ type fileView struct {
 // under render, which the builtins read. One frame serves one
 // call, which is what keeps a Pass safe for concurrent renders.
 type frame struct {
-	pass    *Pass
-	sink    *diag.Sink
+	pass *Pass
+	sink *diag.Sink
+	// origin is the identity findings carry: the context's plugin,
+	// or the pass's own name where the context carries none.
+	origin  diag.Origin
 	trees   map[plugin.ID]fs.FS
 	merged  template.FuncMap
 	out     bytes.Buffer
@@ -409,11 +419,11 @@ func (f *frame) mergeVocabulary(ctx *plugin.RenderContext) template.FuncMap {
 			_, shared := f.pass.shared[name]
 			switch {
 			case reserved(name):
-				f.sink.Errorf(UndeclaredOverride, at, f.pass.name,
+				f.sink.Errorf(UndeclaredOverride, at, f.origin,
 					"%s claims %q, which is a builtin, and the builtin stands",
 					id, name)
 			case shared && !declared[name]:
-				f.sink.Errorf(UndeclaredOverride, at, f.pass.name,
+				f.sink.Errorf(UndeclaredOverride, at, f.origin,
 					"%s shadows the shared helper %q without declaring the override, and the shared helper stands",
 					id, name)
 			default:
@@ -504,7 +514,7 @@ func (f *frame) body(d any) (string, error) {
 func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
 	form, err := b.Form()
 	if err != nil {
-		f.sink.Errorf(BodyConflict, f.at, f.pass.name,
+		f.sink.Errorf(BodyConflict, f.at, f.origin,
 			"%s emitted a body holding two forms: %v", f.plugin, err)
 	}
 	if form == emit.FormTemplate {
@@ -545,14 +555,14 @@ func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
 func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 	tree, held := f.trees[f.plugin]
 	if !held {
-		f.sink.Errorf(UnresolvedRef, f.at, f.pass.name,
+		f.sink.Errorf(UnresolvedRef, f.at, f.origin,
 			"%s references %q, and no tree is declared for it",
 			f.plugin, b.Ref.Name)
 		return "", false
 	}
 	src, err := fs.ReadFile(tree, b.Ref.Name)
 	if err != nil {
-		f.sink.Errorf(UnresolvedRef, f.at, f.pass.name,
+		f.sink.Errorf(UnresolvedRef, f.at, f.origin,
 			"%s references %q, which its tree does not hold",
 			f.plugin, b.Ref.Name)
 		return "", false
@@ -566,19 +576,19 @@ func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 			BuiltinUse:   f.use,
 		}).Parse(string(src))
 	if err != nil {
-		f.sink.Errorf(UnresolvedRef, f.at, f.pass.name,
+		f.sink.Errorf(UnresolvedRef, f.at, f.origin,
 			"%s's template %q does not parse: %v", f.plugin, b.Ref.Name, err)
 		return "", false
 	}
 	var out strings.Builder
 	data := struct{ Decl, Data any }{Decl: d, Data: b.Ref.Data}
 	if err := t.Execute(&out, data); err != nil {
-		f.sink.Errorf(RefusedTemplate, f.at, f.pass.name,
+		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 			"%s's template %q refused: %v", f.plugin, b.Ref.Name, err)
 		return "", false
 	}
 	if n := pl.pending(); n > 0 {
-		f.sink.Errorf(DroppedSlots, f.at, f.pass.name,
+		f.sink.Errorf(DroppedSlots, f.at, f.origin,
 			"%s's template %q places no marker for %d pending statements",
 			f.plugin, b.Ref.Name, n)
 	}
@@ -688,26 +698,26 @@ func (f *frame) file(g *group, b *bound) ([]byte, bool) {
 		for _, d := range u.Decls {
 			t, spelt := b.kinds[d.Kind()]
 			if !spelt {
-				f.sink.Errorf(UnspeltKind, f.at, f.pass.name,
+				f.sink.Errorf(UnspeltKind, f.at, f.origin,
 					"%s holds no template for %s, and the declaration is skipped",
 					f.pass.name, d.Kind())
 				continue
 			}
 			if err := t.Execute(&f.out, d); err != nil {
-				f.sink.Errorf(RefusedTemplate, f.at, f.pass.name,
+				f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 					"the %s template refused a declaration of %s: %v",
 					d.Kind(), u.Plugin, err)
 			}
 		}
 	}
 	if err := b.file.Execute(&f.fileOut, fileView{Name: g.name, Pkg: g.pkg}); err != nil {
-		f.sink.Errorf(RefusedTemplate, f.at, f.pass.name,
+		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 			"the file skeleton refused %s: %v", g.name, err)
 		return nil, false
 	}
 	body, err := f.pass.final(f.fileOut.Bytes())
 	if err != nil {
-		f.sink.Errorf(UnformattedFile, f.at, f.pass.name,
+		f.sink.Errorf(UnformattedFile, f.at, f.origin,
 			"%s cannot be formatted and is withheld: %v", g.name, err)
 		return nil, false
 	}

@@ -203,6 +203,36 @@ func TestPass(t *testing.T) {
 			"the file keeps what rendered")
 	})
 
+	t.Run("findings carry the context's plugin as origin", func(t *testing.T) {
+		t.Parallel()
+
+		u := unitOf("gen", "store.go", "Alpha")
+		u.Decls = append(u.Decls, &emit.Method{
+			Origin: coretest.Struct(coretest.StorePath, "M").ID,
+			Name:   "Handle",
+		})
+
+		p, err := render.New("printer", language())
+		assert.NoError(t, err, "the language composes")
+		sink := diag.NewSink()
+		_, err = p.Render(&plugin.RenderContext{
+			Emit: seeded(t, u), Sink: sink, Plugin: "composed",
+		})
+		assert.NoError(t, err, "the pass runs whole")
+		for d := range sink.All() {
+			assert.Equal(t, d.Origin, diag.Origin("composed"),
+				"the composition's identity, not the pass's own name")
+		}
+
+		sink = diag.NewSink()
+		_, err = p.Render(&plugin.RenderContext{Emit: seeded(t, u), Sink: sink})
+		assert.NoError(t, err, "the pass runs whole")
+		for d := range sink.All() {
+			assert.Equal(t, d.Origin, diag.Origin("printer"),
+				"a zero context identity falls back to the pass's name")
+		}
+	})
+
 	t.Run("a format failure continues with the remaining files", func(t *testing.T) {
 		t.Parallel()
 
