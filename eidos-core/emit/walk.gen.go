@@ -33,6 +33,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.Returns {
 			Walk(child, visit)
 		}
+		for _, child := range x.Throws {
+			Walk(child, visit)
+		}
 	case *Method:
 		if x.Receiver != nil {
 			Walk(x.Receiver, visit)
@@ -47,6 +50,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 			Walk(child, visit)
 		}
 		for _, child := range x.Returns {
+			Walk(child, visit)
+		}
+		for _, child := range x.Throws {
 			Walk(child, visit)
 		}
 	case *Param:

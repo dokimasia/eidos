@@ -27,18 +27,20 @@ import (
 //
 //eidos:subject
 type Field struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Comment    string            `eidos:"both"` // trailing line comment; "" when none
-	Name       string            `eidos:"both"` // "" when positional
-	Visibility symbol.Visibility `eidos:"both"`
-	Level      symbol.Level      `eidos:"both"`
-	Mutability symbol.Mutability `eidos:"both"`
-	Type       *TypeRef          `eidos:"both,walk"`
-	Tag        string            `eidos:"both"` // tag text without delimiters; "" when none
-	Host       symbol.Identity   `eidos:"node"`
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Comment     string            `eidos:"both"` // trailing line comment; "" when none
+	Name        string            `eidos:"both"` // "" when positional
+	Visibility  symbol.Visibility `eidos:"both"`
+	Level       symbol.Level      `eidos:"both"`
+	Mutability  symbol.Mutability `eidos:"both"`
+	Type        *TypeRef          `eidos:"both,walk"`
+	Value       string            `eidos:"both"` // initializer's source spelling, unevaluated; "" when none
+	Tag         string            `eidos:"both"` // tag text without delimiters; "" when none
+	Annotations Annotations       `eidos:"emit"`
+	Host        symbol.Identity   `eidos:"node"`
 }
 
 // Variable is a binding declared outside any type: a Go
@@ -56,15 +58,17 @@ type Field struct {
 //
 //eidos:subject
 type Variable struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Comment    string            `eidos:"both"` // trailing line comment; "" when none
-	Name       string            `eidos:"both"`
-	Visibility symbol.Visibility `eidos:"both"`
-	Mutability symbol.Mutability `eidos:"both"`
-	Type       *TypeRef          `eidos:"both,walk"` // nil when the source states none
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Comment     string            `eidos:"both"` // trailing line comment; "" when none
+	Name        string            `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both"`
+	Mutability  symbol.Mutability `eidos:"both"`
+	Type        *TypeRef          `eidos:"both,walk"` // nil when the source states none
+	Value       string            `eidos:"both"`      // initializer's source spelling, unevaluated; "" when none
+	Annotations Annotations       `eidos:"emit"`
 }
 
 // Constant is a binding fixed at compile time: a Go const, a Java
@@ -78,13 +82,14 @@ type Variable struct {
 //
 //eidos:subject
 type Constant struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Comment    string            `eidos:"both"` // trailing line comment; "" when none
-	Name       string            `eidos:"both"`
-	Visibility symbol.Visibility `eidos:"both"`
-	Type       *TypeRef          `eidos:"both,walk"` // nil when untyped
-	Value      string            `eidos:"both"`      // source spelling, unevaluated
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Comment     string            `eidos:"both"` // trailing line comment; "" when none
+	Name        string            `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both"`
+	Type        *TypeRef          `eidos:"both,walk"` // nil when untyped
+	Value       string            `eidos:"both"`      // source spelling, unevaluated
+	Annotations Annotations       `eidos:"emit"`
 }

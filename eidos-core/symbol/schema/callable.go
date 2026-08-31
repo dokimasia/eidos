@@ -12,6 +12,16 @@ import (
 // free function, a Python module-level def, a TypeScript exported
 // function.
 //
+// Async marks a result that arrives asynchronously in the
+// language's own form: a TypeScript async function, a Rust async
+// fn, a Python async def. Go leaves it false, because its
+// concurrency is caller-side and invisible in signatures.
+//
+// Throws lists the failure types the declaration announces: Java
+// checked exceptions, Swift typed throws. A language without
+// declared throws leaves it empty, and the error model stays the
+// projection's neutral question.
+//
 // The node model carries the signature and never a body, because
 // parsed bodies are out of scope entirely. The emit model carries
 // what a generated body holds in its Body field: the standard
@@ -19,16 +29,19 @@ import (
 //
 //eidos:subject
 type Function struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Name       string            `eidos:"both"`
-	Visibility symbol.Visibility `eidos:"both"`
-	TypeParams []*TypeParam      `eidos:"both,walk"`
-	Params     []*Param          `eidos:"both,walk"`
-	Returns    []*Return         `eidos:"both,walk"`
-	Body       Body              `eidos:"emit"`
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Name        string            `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both"`
+	Async       bool              `eidos:"both"`
+	TypeParams  []*TypeParam      `eidos:"both,walk"`
+	Params      []*Param          `eidos:"both,walk"`
+	Returns     []*Return         `eidos:"both,walk"`
+	Throws      []*TypeRef        `eidos:"both,walk"`
+	Annotations Annotations       `eidos:"emit"`
+	Body        Body              `eidos:"emit"`
 }
 
 // Method is a callable attached to a type.
@@ -58,29 +71,36 @@ type Function struct {
 // It differs from Abstract's inverse, because a class method with a
 // body is ordinary rather than a default.
 //
+// Async and Throws carry what [Function]'s carry: the
+// asynchronous result in the language's own form, and the failure
+// types the declaration announces.
+//
 // The node model carries the signature and never a body; the emit
 // model carries what a generated body holds in its Body field.
 //
 //eidos:subject
 type Method struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Name       string            `eidos:"both"`
-	Visibility symbol.Visibility `eidos:"both"`
-	Level      symbol.Level      `eidos:"both"`
-	Abstract   bool              `eidos:"both"`      // no body; a subtype must supply one
-	Final      bool              `eidos:"both"`      // overriding is forbidden
-	Override   bool              `eidos:"both"`      // replaces a supertype's member
-	HasDefault bool              `eidos:"both"`      // an interface method with a body
-	Receiver   *Param            `eidos:"both,walk"` // nil where the receiver is implicit
-	Receives   *TypeRef          `eidos:"both,walk"` // set when declared outside the type it attaches to
-	TypeParams []*TypeParam      `eidos:"both,walk"`
-	Params     []*Param          `eidos:"both,walk"`
-	Returns    []*Return         `eidos:"both,walk"`
-	Body       Body              `eidos:"emit"`
-	Host       symbol.Identity   `eidos:"node"`
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Name        string            `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both"`
+	Level       symbol.Level      `eidos:"both"`
+	Abstract    bool              `eidos:"both"` // no body; a subtype must supply one
+	Final       bool              `eidos:"both"` // overriding is forbidden
+	Override    bool              `eidos:"both"` // replaces a supertype's member
+	HasDefault  bool              `eidos:"both"` // an interface method with a body
+	Async       bool              `eidos:"both"`
+	Receiver    *Param            `eidos:"both,walk"` // nil where the receiver is implicit
+	Receives    *TypeRef          `eidos:"both,walk"` // set when declared outside the type it attaches to
+	TypeParams  []*TypeParam      `eidos:"both,walk"`
+	Params      []*Param          `eidos:"both,walk"`
+	Returns     []*Return         `eidos:"both,walk"`
+	Throws      []*TypeRef        `eidos:"both,walk"`
+	Annotations Annotations       `eidos:"emit"`
+	Body        Body              `eidos:"emit"`
+	Host        symbol.Identity   `eidos:"node"`
 }
 
 // Param is one parameter of a callable, or its receiver.
@@ -102,13 +122,14 @@ type Method struct {
 // parameters only, and frontends enforce that rather than the
 // model.
 type Param struct {
-	ID       symbol.Identity `eidos:"node"`
-	Pos      position.Pos    `eidos:"node"`
-	Name     string          `eidos:"both"` // "" when unnamed
-	Label    string          `eidos:"both"` // caller-facing name; Swift and Objective-C
-	Type     *TypeRef        `eidos:"both,walk"`
-	Default  string          `eidos:"both"` // source spelling, unevaluated; "" when none
-	Variadic symbol.Variadic `eidos:"both"` // positional or keyword
+	ID          symbol.Identity `eidos:"node"`
+	Pos         position.Pos    `eidos:"node"`
+	Name        string          `eidos:"both"` // "" when unnamed
+	Label       string          `eidos:"both"` // caller-facing name; Swift and Objective-C
+	Type        *TypeRef        `eidos:"both,walk"`
+	Default     string          `eidos:"both"` // source spelling, unevaluated; "" when none
+	Variadic    symbol.Variadic `eidos:"both"` // positional or keyword
+	Annotations Annotations     `eidos:"emit"`
 }
 
 // Return is one result of a callable.

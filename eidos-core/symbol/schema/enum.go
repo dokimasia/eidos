@@ -21,15 +21,16 @@ import (
 //
 //eidos:subject
 type Enum struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Name       string            `eidos:"both"`
-	Visibility symbol.Visibility `eidos:"both"`
-	Variants   []*EnumVariant    `eidos:"both,walk,slot=variants"`
-	Fields     []*Field          `eidos:"both,walk,slot=fields"`  // Java enums carry instance state
-	Methods    []*Method         `eidos:"both,walk,slot=methods"` // and behaviour
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Name        string            `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both"`
+	Variants    []*EnumVariant    `eidos:"both,walk,slot=variants"`
+	Fields      []*Field          `eidos:"both,walk,slot=fields"`  // Java enums carry instance state
+	Methods     []*Method         `eidos:"both,walk,slot=methods"` // and behaviour
+	Annotations Annotations       `eidos:"emit"`
 }
 
 // EnumVariant is one member of an [Enum].
@@ -40,13 +41,14 @@ type Enum struct {
 // it is the language's job, not the model's, and a variant whose
 // language assigns values implicitly leaves it empty.
 type EnumVariant struct {
-	ID     symbol.Identity `eidos:"node"`
-	Origin symbol.Identity `eidos:"emit"`
-	Pos    position.Pos    `eidos:"node"`
-	Doc    []string        `eidos:"both"`
-	Name   string          `eidos:"both"`
-	Value  string          `eidos:"both"` // source spelling, unevaluated
-	Host   symbol.Identity `eidos:"node"`
+	ID          symbol.Identity `eidos:"node"`
+	Origin      symbol.Identity `eidos:"emit"`
+	Pos         position.Pos    `eidos:"node"`
+	Doc         []string        `eidos:"both"`
+	Name        string          `eidos:"both"`
+	Value       string          `eidos:"both"` // source spelling, unevaluated
+	Annotations Annotations     `eidos:"emit"`
+	Host        symbol.Identity `eidos:"node"`
 }
 
 // Sum is a closed set of named variants carrying payloads: a Rust
@@ -60,15 +62,16 @@ type EnumVariant struct {
 //
 //eidos:subject
 type Sum struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Name       string            `eidos:"both"`
-	Visibility symbol.Visibility `eidos:"both"`
-	TypeParams []*TypeParam      `eidos:"both,walk"` // Rust data enums are generic
-	Variants   []*SumVariant     `eidos:"both,walk,slot=variants"`
-	Methods    []*Method         `eidos:"both,walk,slot=methods"`
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Name        string            `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both"`
+	TypeParams  []*TypeParam      `eidos:"both,walk"` // Rust data enums are generic
+	Variants    []*SumVariant     `eidos:"both,walk,slot=variants"`
+	Methods     []*Method         `eidos:"both,walk,slot=methods"`
+	Annotations Annotations       `eidos:"emit"`
 }
 
 // SumVariant is one variant of a [Sum]: a name and a field list.
@@ -76,11 +79,12 @@ type Sum struct {
 // A variant whose payload is positional, as a Rust tuple variant
 // is, fills Fields with unnamed entries in declaration order.
 type SumVariant struct {
-	ID     symbol.Identity `eidos:"node"`
-	Origin symbol.Identity `eidos:"emit"`
-	Pos    position.Pos    `eidos:"node"`
-	Doc    []string        `eidos:"both"`
-	Name   string          `eidos:"both"`
-	Fields []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
-	Host   symbol.Identity `eidos:"node"`
+	ID          symbol.Identity `eidos:"node"`
+	Origin      symbol.Identity `eidos:"emit"`
+	Pos         position.Pos    `eidos:"node"`
+	Doc         []string        `eidos:"both"`
+	Name        string          `eidos:"both"`
+	Fields      []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
+	Annotations Annotations     `eidos:"emit"`
+	Host        symbol.Identity `eidos:"node"`
 }

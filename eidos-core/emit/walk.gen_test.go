@@ -34,13 +34,14 @@ func TestWalk(t *testing.T) {
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 			subject.Params = append(subject.Params, &Param{})
 			subject.Returns = append(subject.Returns, &Return{})
+			subject.Throws = append(subject.Throws, &TypeRef{})
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 4,
+			assert.Equal(t, seen, 5,
 				"the walk descends into every traversed field")
 		})
 
@@ -53,13 +54,14 @@ func TestWalk(t *testing.T) {
 			subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 			subject.Params = append(subject.Params, &Param{})
 			subject.Returns = append(subject.Returns, &Return{})
+			subject.Throws = append(subject.Throws, &TypeRef{})
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 6,
+			assert.Equal(t, seen, 7,
 				"the walk descends into every traversed field")
 		})
 
@@ -314,6 +316,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
+				subject.Throws = append(subject.Throws, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -330,6 +333,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
+				subject.Throws = append(subject.Throws, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -550,6 +554,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
+				subject.Throws = append(subject.Throws, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -570,6 +575,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
+				subject.Throws = append(subject.Throws, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -850,6 +856,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
+				subject.Throws = append(subject.Throws, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -866,6 +873,7 @@ func TestWalk(t *testing.T) {
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Params = append(subject.Params, &Param{})
 				subject.Returns = append(subject.Returns, &Return{})
+				subject.Throws = append(subject.Throws, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++

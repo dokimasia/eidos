@@ -54,6 +54,14 @@ const (
 	// the schema declares it emit-side.
 	BodyMarkerName = "Body"
 
+	// AnnotationsMarkerName is the schema's annotation marker: a
+	// field of this type carries the structured markers a generated
+	// declaration writes. It passes through bare the way the body
+	// marker does, resolving to the emit package's own Annotations
+	// value, and the node model never sees it, because a source
+	// declaration's annotations are the frontend's metadata.
+	AnnotationsMarkerName = "Annotations"
+
 	// HostField names the owning declaration of an owned kind. It
 	// holds an identity rather than a pointer, so it is resolved
 	// through a tracked read like any other cross-reference.

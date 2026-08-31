@@ -32,8 +32,8 @@
 //
 // # Field conventions
 //
-// Six fields recur across the kinds and mean the same thing every
-// time, so the per-kind documentation does not repeat them.
+// Seven fields recur across the kinds and mean the same thing
+// every time, so the per-kind documentation does not repeat them.
 //
 //   - Id: the node-side [symbol.Identity]. It is zero until a
 //     frontend assigns it, and zero claims nothing.
@@ -47,6 +47,10 @@
 //   - Comment: the trailing text on the declaration's own line,
 //     markers stripped, "" when none. Doc sits above and Comment
 //     beside, which is the split a parser makes.
+//   - Annotations: the structured markers a generated declaration
+//     writes, emit-side through the [Annotations] marker. A source
+//     declaration's annotations are the frontend's own metadata
+//     instead, where authority and overrides apply.
 //   - Host: the identity of the declaration that owns an owned
 //     kind, set when a frontend creates the child. It is an
 //     identity rather than a pointer, so it can be stored,

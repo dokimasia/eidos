@@ -35,21 +35,22 @@ import (
 //
 //eidos:subject
 type Struct struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Name       string            `eidos:"both"`
-	Visibility symbol.Visibility `eidos:"both"`
-	Abstract   bool              `eidos:"both"` // no value of it can be made directly
-	Final      bool              `eidos:"both"` // subclassing is forbidden
-	TypeParams []*TypeParam      `eidos:"both,walk"`
-	Fields     []*Field          `eidos:"both,walk,slot=fields"`
-	Methods    []*Method         `eidos:"both,walk,slot=methods"`
-	Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations
-	Embeds     []*Embed          `eidos:"both,walk"`            // compositional promotion
-	Extends    []*TypeRef        `eidos:"both,walk"`            // nominal supertypes
-	Implements []*TypeRef        `eidos:"both,walk"`
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Name        string            `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both"`
+	Abstract    bool              `eidos:"both"` // no value of it can be made directly
+	Final       bool              `eidos:"both"` // subclassing is forbidden
+	TypeParams  []*TypeParam      `eidos:"both,walk"`
+	Fields      []*Field          `eidos:"both,walk,slot=fields"`
+	Methods     []*Method         `eidos:"both,walk,slot=methods"`
+	Types       []Symbol          `eidos:"both,walk,slot=types"` // nested declarations
+	Embeds      []*Embed          `eidos:"both,walk"`            // compositional promotion
+	Extends     []*TypeRef        `eidos:"both,walk"`            // nominal supertypes
+	Implements  []*TypeRef        `eidos:"both,walk"`
+	Annotations Annotations       `eidos:"emit"`
 }
 
 // Interface is a shape values are checked against: a Go or Java
@@ -73,18 +74,19 @@ type Struct struct {
 //
 //eidos:subject
 type Interface struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Name       string            `eidos:"both"`
-	Visibility symbol.Visibility `eidos:"both"`
-	TypeParams []*TypeParam      `eidos:"both,walk"`
-	Fields     []*Field          `eidos:"both,walk,slot=fields"` // properties, not just methods
-	Methods    []*Method         `eidos:"both,walk,slot=methods"`
-	Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations and associated types
-	Embeds     []*Embed          `eidos:"both,walk"`
-	Extends    []*TypeRef        `eidos:"both,walk"`
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Name        string            `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both"`
+	TypeParams  []*TypeParam      `eidos:"both,walk"`
+	Fields      []*Field          `eidos:"both,walk,slot=fields"` // properties, not just methods
+	Methods     []*Method         `eidos:"both,walk,slot=methods"`
+	Types       []Symbol          `eidos:"both,walk,slot=types"` // nested declarations and associated types
+	Embeds      []*Embed          `eidos:"both,walk"`
+	Extends     []*TypeRef        `eidos:"both,walk"`
+	Annotations Annotations       `eidos:"emit"`
 }
 
 // Alias is a name for another type: a Go type alias or defined
@@ -98,12 +100,13 @@ type Interface struct {
 //
 //eidos:subject
 type Alias struct {
-	ID         symbol.Identity   `eidos:"node"`
-	Origin     symbol.Identity   `eidos:"emit"`
-	Pos        position.Pos      `eidos:"node"`
-	Doc        []string          `eidos:"both"`
-	Name       string            `eidos:"both"`
-	Visibility symbol.Visibility `eidos:"both"`
-	TypeParams []*TypeParam      `eidos:"both,walk"`
-	Target     *TypeRef          `eidos:"both,walk"` // nil for an associated type
+	ID          symbol.Identity   `eidos:"node"`
+	Origin      symbol.Identity   `eidos:"emit"`
+	Pos         position.Pos      `eidos:"node"`
+	Doc         []string          `eidos:"both"`
+	Name        string            `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both"`
+	TypeParams  []*TypeParam      `eidos:"both,walk"`
+	Target      *TypeRef          `eidos:"both,walk"` // nil for an associated type
+	Annotations Annotations       `eidos:"emit"`
 }

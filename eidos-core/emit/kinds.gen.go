@@ -14,6 +14,16 @@ import (
 // free function, a Python module-level def, a TypeScript exported
 // function.
 //
+// Async marks a result that arrives asynchronously in the
+// language's own form: a TypeScript async function, a Rust async
+// fn, a Python async def. Go leaves it false, because its
+// concurrency is caller-side and invisible in signatures.
+//
+// Throws lists the failure types the declaration announces: Java
+// checked exceptions, Swift typed throws. A language without
+// declared throws leaves it empty, and the error model stays the
+// projection's neutral question.
+//
 // The node model carries the signature and never a body, because
 // parsed bodies are out of scope entirely. The emit model carries
 // what a generated body holds in its Body field: the standard
@@ -21,14 +31,17 @@ import (
 //
 // This is the emit spelling of the kind.
 type Function struct {
-	Origin     symbol.Identity   `json:"origin,omitzero"`
-	Doc        []string          `json:"doc,omitzero"`
-	Name       string            `json:"name,omitzero"`
-	Visibility symbol.Visibility `json:"visibility,omitzero"`
-	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
-	Params     []*Param          `json:"params,omitzero"`
-	Returns    []*Return         `json:"returns,omitzero"`
-	Body       Body              `json:"body,omitzero"`
+	Origin      symbol.Identity   `json:"origin,omitzero"`
+	Doc         []string          `json:"doc,omitzero"`
+	Name        string            `json:"name,omitzero"`
+	Visibility  symbol.Visibility `json:"visibility,omitzero"`
+	Async       bool              `json:"async,omitzero"`
+	TypeParams  []*TypeParam      `json:"typeParams,omitzero"`
+	Params      []*Param          `json:"params,omitzero"`
+	Returns     []*Return         `json:"returns,omitzero"`
+	Throws      []*TypeRef        `json:"throws,omitzero"`
+	Annotations Annotations       `json:"annotations,omitzero"`
+	Body        Body              `json:"body,omitzero"`
 }
 
 // Kind returns [symbol.KindFunction].
@@ -68,26 +81,33 @@ func (x *Function) Docs() []string { return x.Doc }
 // It differs from Abstract's inverse, because a class method with a
 // body is ordinary rather than a default.
 //
+// Async and Throws carry what [Function]'s carry: the
+// asynchronous result in the language's own form, and the failure
+// types the declaration announces.
+//
 // The node model carries the signature and never a body; the emit
 // model carries what a generated body holds in its Body field.
 //
 // This is the emit spelling of the kind.
 type Method struct {
-	Origin     symbol.Identity   `json:"origin,omitzero"`
-	Doc        []string          `json:"doc,omitzero"`
-	Name       string            `json:"name,omitzero"`
-	Visibility symbol.Visibility `json:"visibility,omitzero"`
-	Level      symbol.Level      `json:"level,omitzero"`
-	Abstract   bool              `json:"abstract,omitzero"`   // no body; a subtype must supply one
-	Final      bool              `json:"final,omitzero"`      // overriding is forbidden
-	Override   bool              `json:"override,omitzero"`   // replaces a supertype's member
-	HasDefault bool              `json:"hasDefault,omitzero"` // an interface method with a body
-	Receiver   *Param            `json:"receiver,omitzero"`   // nil where the receiver is implicit
-	Receives   *TypeRef          `json:"receives,omitzero"`   // set when declared outside the type it attaches to
-	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
-	Params     []*Param          `json:"params,omitzero"`
-	Returns    []*Return         `json:"returns,omitzero"`
-	Body       Body              `json:"body,omitzero"`
+	Origin      symbol.Identity   `json:"origin,omitzero"`
+	Doc         []string          `json:"doc,omitzero"`
+	Name        string            `json:"name,omitzero"`
+	Visibility  symbol.Visibility `json:"visibility,omitzero"`
+	Level       symbol.Level      `json:"level,omitzero"`
+	Abstract    bool              `json:"abstract,omitzero"`   // no body; a subtype must supply one
+	Final       bool              `json:"final,omitzero"`      // overriding is forbidden
+	Override    bool              `json:"override,omitzero"`   // replaces a supertype's member
+	HasDefault  bool              `json:"hasDefault,omitzero"` // an interface method with a body
+	Async       bool              `json:"async,omitzero"`
+	Receiver    *Param            `json:"receiver,omitzero"` // nil where the receiver is implicit
+	Receives    *TypeRef          `json:"receives,omitzero"` // set when declared outside the type it attaches to
+	TypeParams  []*TypeParam      `json:"typeParams,omitzero"`
+	Params      []*Param          `json:"params,omitzero"`
+	Returns     []*Return         `json:"returns,omitzero"`
+	Throws      []*TypeRef        `json:"throws,omitzero"`
+	Annotations Annotations       `json:"annotations,omitzero"`
+	Body        Body              `json:"body,omitzero"`
 }
 
 // Kind returns [symbol.KindMethod].
@@ -121,11 +141,12 @@ func (x *Method) Docs() []string { return x.Doc }
 //
 // This is the emit spelling of the kind.
 type Param struct {
-	Name     string          `json:"name,omitzero"`  // "" when unnamed
-	Label    string          `json:"label,omitzero"` // caller-facing name; Swift and Objective-C
-	Type     *TypeRef        `json:"type,omitzero"`
-	Default  string          `json:"default,omitzero"`  // source spelling, unevaluated; "" when none
-	Variadic symbol.Variadic `json:"variadic,omitzero"` // positional or keyword
+	Name        string          `json:"name,omitzero"`  // "" when unnamed
+	Label       string          `json:"label,omitzero"` // caller-facing name; Swift and Objective-C
+	Type        *TypeRef        `json:"type,omitzero"`
+	Default     string          `json:"default,omitzero"`  // source spelling, unevaluated; "" when none
+	Variadic    symbol.Variadic `json:"variadic,omitzero"` // positional or keyword
+	Annotations Annotations     `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindParam].
@@ -326,13 +347,14 @@ func (x *Binding) Docs() []string { return nil }
 //
 // This is the emit spelling of the kind.
 type Enum struct {
-	Origin     symbol.Identity    `json:"origin,omitzero"`
-	Doc        []string           `json:"doc,omitzero"`
-	Name       string             `json:"name,omitzero"`
-	Visibility symbol.Visibility  `json:"visibility,omitzero"`
-	Variants   Slot[*EnumVariant] `json:"variants,omitzero"`
-	Fields     Slot[*Field]       `json:"fields,omitzero"`  // Java enums carry instance state
-	Methods    Slot[*Method]      `json:"methods,omitzero"` // and behaviour
+	Origin      symbol.Identity    `json:"origin,omitzero"`
+	Doc         []string           `json:"doc,omitzero"`
+	Name        string             `json:"name,omitzero"`
+	Visibility  symbol.Visibility  `json:"visibility,omitzero"`
+	Variants    Slot[*EnumVariant] `json:"variants,omitzero"`
+	Fields      Slot[*Field]       `json:"fields,omitzero"`  // Java enums carry instance state
+	Methods     Slot[*Method]      `json:"methods,omitzero"` // and behaviour
+	Annotations Annotations        `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindEnum].
@@ -378,10 +400,11 @@ func (x *Enum) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type EnumVariant struct {
-	Origin symbol.Identity `json:"origin,omitzero"`
-	Doc    []string        `json:"doc,omitzero"`
-	Name   string          `json:"name,omitzero"`
-	Value  string          `json:"value,omitzero"` // source spelling, unevaluated
+	Origin      symbol.Identity `json:"origin,omitzero"`
+	Doc         []string        `json:"doc,omitzero"`
+	Name        string          `json:"name,omitzero"`
+	Value       string          `json:"value,omitzero"` // source spelling, unevaluated
+	Annotations Annotations     `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindEnumVariant].
@@ -405,13 +428,14 @@ func (x *EnumVariant) Docs() []string { return x.Doc }
 //
 // This is the emit spelling of the kind.
 type Sum struct {
-	Origin     symbol.Identity   `json:"origin,omitzero"`
-	Doc        []string          `json:"doc,omitzero"`
-	Name       string            `json:"name,omitzero"`
-	Visibility symbol.Visibility `json:"visibility,omitzero"`
-	TypeParams []*TypeParam      `json:"typeParams,omitzero"` // Rust data enums are generic
-	Variants   Slot[*SumVariant] `json:"variants,omitzero"`
-	Methods    Slot[*Method]     `json:"methods,omitzero"`
+	Origin      symbol.Identity   `json:"origin,omitzero"`
+	Doc         []string          `json:"doc,omitzero"`
+	Name        string            `json:"name,omitzero"`
+	Visibility  symbol.Visibility `json:"visibility,omitzero"`
+	TypeParams  []*TypeParam      `json:"typeParams,omitzero"` // Rust data enums are generic
+	Variants    Slot[*SumVariant] `json:"variants,omitzero"`
+	Methods     Slot[*Method]     `json:"methods,omitzero"`
+	Annotations Annotations       `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindSum].
@@ -454,10 +478,11 @@ func (x *Sum) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type SumVariant struct {
-	Origin symbol.Identity `json:"origin,omitzero"`
-	Doc    []string        `json:"doc,omitzero"`
-	Name   string          `json:"name,omitzero"`
-	Fields Slot[*Field]    `json:"fields,omitzero"` // the payload; unnamed when positional
+	Origin      symbol.Identity `json:"origin,omitzero"`
+	Doc         []string        `json:"doc,omitzero"`
+	Name        string          `json:"name,omitzero"`
+	Fields      Slot[*Field]    `json:"fields,omitzero"` // the payload; unnamed when positional
+	Annotations Annotations     `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindSumVariant].
@@ -508,15 +533,17 @@ func (x *SumVariant) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Field struct {
-	Origin     symbol.Identity   `json:"origin,omitzero"`
-	Doc        []string          `json:"doc,omitzero"`
-	Comment    string            `json:"comment,omitzero"` // trailing line comment; "" when none
-	Name       string            `json:"name,omitzero"`    // "" when positional
-	Visibility symbol.Visibility `json:"visibility,omitzero"`
-	Level      symbol.Level      `json:"level,omitzero"`
-	Mutability symbol.Mutability `json:"mutability,omitzero"`
-	Type       *TypeRef          `json:"type,omitzero"`
-	Tag        string            `json:"tag,omitzero"` // tag text without delimiters; "" when none
+	Origin      symbol.Identity   `json:"origin,omitzero"`
+	Doc         []string          `json:"doc,omitzero"`
+	Comment     string            `json:"comment,omitzero"` // trailing line comment; "" when none
+	Name        string            `json:"name,omitzero"`    // "" when positional
+	Visibility  symbol.Visibility `json:"visibility,omitzero"`
+	Level       symbol.Level      `json:"level,omitzero"`
+	Mutability  symbol.Mutability `json:"mutability,omitzero"`
+	Type        *TypeRef          `json:"type,omitzero"`
+	Value       string            `json:"value,omitzero"` // initializer's source spelling, unevaluated; "" when none
+	Tag         string            `json:"tag,omitzero"`   // tag text without delimiters; "" when none
+	Annotations Annotations       `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindField].
@@ -553,13 +580,15 @@ func (x *Field) TypeRef() symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Variable struct {
-	Origin     symbol.Identity   `json:"origin,omitzero"`
-	Doc        []string          `json:"doc,omitzero"`
-	Comment    string            `json:"comment,omitzero"` // trailing line comment; "" when none
-	Name       string            `json:"name,omitzero"`
-	Visibility symbol.Visibility `json:"visibility,omitzero"`
-	Mutability symbol.Mutability `json:"mutability,omitzero"`
-	Type       *TypeRef          `json:"type,omitzero"` // nil when the source states none
+	Origin      symbol.Identity   `json:"origin,omitzero"`
+	Doc         []string          `json:"doc,omitzero"`
+	Comment     string            `json:"comment,omitzero"` // trailing line comment; "" when none
+	Name        string            `json:"name,omitzero"`
+	Visibility  symbol.Visibility `json:"visibility,omitzero"`
+	Mutability  symbol.Mutability `json:"mutability,omitzero"`
+	Type        *TypeRef          `json:"type,omitzero"`  // nil when the source states none
+	Value       string            `json:"value,omitzero"` // initializer's source spelling, unevaluated; "" when none
+	Annotations Annotations       `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindVariable].
@@ -592,13 +621,14 @@ func (x *Variable) TypeRef() symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Constant struct {
-	Origin     symbol.Identity   `json:"origin,omitzero"`
-	Doc        []string          `json:"doc,omitzero"`
-	Comment    string            `json:"comment,omitzero"` // trailing line comment; "" when none
-	Name       string            `json:"name,omitzero"`
-	Visibility symbol.Visibility `json:"visibility,omitzero"`
-	Type       *TypeRef          `json:"type,omitzero"`  // nil when untyped
-	Value      string            `json:"value,omitzero"` // source spelling, unevaluated
+	Origin      symbol.Identity   `json:"origin,omitzero"`
+	Doc         []string          `json:"doc,omitzero"`
+	Comment     string            `json:"comment,omitzero"` // trailing line comment; "" when none
+	Name        string            `json:"name,omitzero"`
+	Visibility  symbol.Visibility `json:"visibility,omitzero"`
+	Type        *TypeRef          `json:"type,omitzero"`  // nil when untyped
+	Value       string            `json:"value,omitzero"` // source spelling, unevaluated
+	Annotations Annotations       `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindConstant].
@@ -647,19 +677,20 @@ func (x *Constant) TypeRef() symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Struct struct {
-	Origin     symbol.Identity     `json:"origin,omitzero"`
-	Doc        []string            `json:"doc,omitzero"`
-	Name       string              `json:"name,omitzero"`
-	Visibility symbol.Visibility   `json:"visibility,omitzero"`
-	Abstract   bool                `json:"abstract,omitzero"` // no value of it can be made directly
-	Final      bool                `json:"final,omitzero"`    // subclassing is forbidden
-	TypeParams []*TypeParam        `json:"typeParams,omitzero"`
-	Fields     Slot[*Field]        `json:"fields,omitzero"`
-	Methods    Slot[*Method]       `json:"methods,omitzero"`
-	Types      Slot[symbol.Symbol] `json:"types,omitzero"`   // nested declarations
-	Embeds     []*Embed            `json:"embeds,omitzero"`  // compositional promotion
-	Extends    []*TypeRef          `json:"extends,omitzero"` // nominal supertypes
-	Implements []*TypeRef          `json:"implements,omitzero"`
+	Origin      symbol.Identity     `json:"origin,omitzero"`
+	Doc         []string            `json:"doc,omitzero"`
+	Name        string              `json:"name,omitzero"`
+	Visibility  symbol.Visibility   `json:"visibility,omitzero"`
+	Abstract    bool                `json:"abstract,omitzero"` // no value of it can be made directly
+	Final       bool                `json:"final,omitzero"`    // subclassing is forbidden
+	TypeParams  []*TypeParam        `json:"typeParams,omitzero"`
+	Fields      Slot[*Field]        `json:"fields,omitzero"`
+	Methods     Slot[*Method]       `json:"methods,omitzero"`
+	Types       Slot[symbol.Symbol] `json:"types,omitzero"`   // nested declarations
+	Embeds      []*Embed            `json:"embeds,omitzero"`  // compositional promotion
+	Extends     []*TypeRef          `json:"extends,omitzero"` // nominal supertypes
+	Implements  []*TypeRef          `json:"implements,omitzero"`
+	Annotations Annotations         `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindStruct].
@@ -720,16 +751,17 @@ func (x *Struct) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Interface struct {
-	Origin     symbol.Identity     `json:"origin,omitzero"`
-	Doc        []string            `json:"doc,omitzero"`
-	Name       string              `json:"name,omitzero"`
-	Visibility symbol.Visibility   `json:"visibility,omitzero"`
-	TypeParams []*TypeParam        `json:"typeParams,omitzero"`
-	Fields     Slot[*Field]        `json:"fields,omitzero"` // properties, not just methods
-	Methods    Slot[*Method]       `json:"methods,omitzero"`
-	Types      Slot[symbol.Symbol] `json:"types,omitzero"` // nested declarations and associated types
-	Embeds     []*Embed            `json:"embeds,omitzero"`
-	Extends    []*TypeRef          `json:"extends,omitzero"`
+	Origin      symbol.Identity     `json:"origin,omitzero"`
+	Doc         []string            `json:"doc,omitzero"`
+	Name        string              `json:"name,omitzero"`
+	Visibility  symbol.Visibility   `json:"visibility,omitzero"`
+	TypeParams  []*TypeParam        `json:"typeParams,omitzero"`
+	Fields      Slot[*Field]        `json:"fields,omitzero"` // properties, not just methods
+	Methods     Slot[*Method]       `json:"methods,omitzero"`
+	Types       Slot[symbol.Symbol] `json:"types,omitzero"` // nested declarations and associated types
+	Embeds      []*Embed            `json:"embeds,omitzero"`
+	Extends     []*TypeRef          `json:"extends,omitzero"`
+	Annotations Annotations         `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindInterface].
@@ -780,12 +812,13 @@ func (x *Interface) EmbedList() []symbol.Symbol {
 //
 // This is the emit spelling of the kind.
 type Alias struct {
-	Origin     symbol.Identity   `json:"origin,omitzero"`
-	Doc        []string          `json:"doc,omitzero"`
-	Name       string            `json:"name,omitzero"`
-	Visibility symbol.Visibility `json:"visibility,omitzero"`
-	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
-	Target     *TypeRef          `json:"target,omitzero"` // nil for an associated type
+	Origin      symbol.Identity   `json:"origin,omitzero"`
+	Doc         []string          `json:"doc,omitzero"`
+	Name        string            `json:"name,omitzero"`
+	Visibility  symbol.Visibility `json:"visibility,omitzero"`
+	TypeParams  []*TypeParam      `json:"typeParams,omitzero"`
+	Target      *TypeRef          `json:"target,omitzero"` // nil for an associated type
+	Annotations Annotations       `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindAlias].

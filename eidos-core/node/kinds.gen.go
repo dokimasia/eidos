@@ -14,6 +14,16 @@ import (
 // free function, a Python module-level def, a TypeScript exported
 // function.
 //
+// Async marks a result that arrives asynchronously in the
+// language's own form: a TypeScript async function, a Rust async
+// fn, a Python async def. Go leaves it false, because its
+// concurrency is caller-side and invisible in signatures.
+//
+// Throws lists the failure types the declaration announces: Java
+// checked exceptions, Swift typed throws. A language without
+// declared throws leaves it empty, and the error model stays the
+// projection's neutral question.
+//
 // The node model carries the signature and never a body, because
 // parsed bodies are out of scope entirely. The emit model carries
 // what a generated body holds in its Body field: the standard
@@ -26,9 +36,11 @@ type Function struct {
 	Doc        []string          `json:"doc,omitzero"`
 	Name       string            `json:"name,omitzero"`
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Async      bool              `json:"async,omitzero"`
 	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
 	Params     []*Param          `json:"params,omitzero"`
 	Returns    []*Return         `json:"returns,omitzero"`
+	Throws     []*TypeRef        `json:"throws,omitzero"`
 }
 
 // Kind returns [symbol.KindFunction].
@@ -72,6 +84,10 @@ func (x *Function) Identity() symbol.Identity { return x.ID }
 // It differs from Abstract's inverse, because a class method with a
 // body is ordinary rather than a default.
 //
+// Async and Throws carry what [Function]'s carry: the
+// asynchronous result in the language's own form, and the failure
+// types the declaration announces.
+//
 // The node model carries the signature and never a body; the emit
 // model carries what a generated body holds in its Body field.
 //
@@ -87,11 +103,13 @@ type Method struct {
 	Final      bool              `json:"final,omitzero"`      // overriding is forbidden
 	Override   bool              `json:"override,omitzero"`   // replaces a supertype's member
 	HasDefault bool              `json:"hasDefault,omitzero"` // an interface method with a body
-	Receiver   *Param            `json:"receiver,omitzero"`   // nil where the receiver is implicit
-	Receives   *TypeRef          `json:"receives,omitzero"`   // set when declared outside the type it attaches to
+	Async      bool              `json:"async,omitzero"`
+	Receiver   *Param            `json:"receiver,omitzero"` // nil where the receiver is implicit
+	Receives   *TypeRef          `json:"receives,omitzero"` // set when declared outside the type it attaches to
 	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
 	Params     []*Param          `json:"params,omitzero"`
 	Returns    []*Return         `json:"returns,omitzero"`
+	Throws     []*TypeRef        `json:"throws,omitzero"`
 	Host       symbol.Identity   `json:"host,omitzero"`
 }
 
@@ -607,7 +625,8 @@ type Field struct {
 	Level      symbol.Level      `json:"level,omitzero"`
 	Mutability symbol.Mutability `json:"mutability,omitzero"`
 	Type       *TypeRef          `json:"type,omitzero"`
-	Tag        string            `json:"tag,omitzero"` // tag text without delimiters; "" when none
+	Value      string            `json:"value,omitzero"` // initializer's source spelling, unevaluated; "" when none
+	Tag        string            `json:"tag,omitzero"`   // tag text without delimiters; "" when none
 	Host       symbol.Identity   `json:"host,omitzero"`
 }
 
@@ -656,7 +675,8 @@ type Variable struct {
 	Name       string            `json:"name,omitzero"`
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
 	Mutability symbol.Mutability `json:"mutability,omitzero"`
-	Type       *TypeRef          `json:"type,omitzero"` // nil when the source states none
+	Type       *TypeRef          `json:"type,omitzero"`  // nil when the source states none
+	Value      string            `json:"value,omitzero"` // initializer's source spelling, unevaluated; "" when none
 }
 
 // Kind returns [symbol.KindVariable].

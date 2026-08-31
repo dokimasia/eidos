@@ -239,13 +239,26 @@ proposal needs it.
 ### The schema
 
 `symbol/schema` is the single hand-written definition of the kinds.
-It contains plain structs, one per kind, plus one marker:
+It contains plain structs, one per kind, plus the markers the
+generator reads by name rather than by structure:
 
 ```go
 // Symbol marks a field that holds any declaration kind. The
 // generator maps it to symbol.Symbol on both sides.
 type Symbol interface{}
-```
+
+// Body marks a callable's emit-side content; the spelling passes
+// through to the emit package's own Body value.
+type Body any
+
+// Annotations marks the structured markers a generated
+// declaration writes, emit-side only: a source declaration's
+// annotations are the frontend's metadata, where authority and
+// overrides apply, and a generated declaration has no bag, so
+// what it must carry rides the model. Each Annotation is a name
+// without its sigil plus argument spellings carried verbatim; the
+// target's template supplies the sigil and delimiters.
+type Annotations any
 
 The tag vocabulary is closed: `eidos:"side[,walk][,slot=name]"`
 with side one of `both`, `node`, `emit`. An unknown token fails
@@ -326,137 +339,153 @@ type Binding struct {
 // Structural type declarations.
 
 type Struct struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    Abstract   bool              `eidos:"both"` // no value of it can be made directly
-    Final      bool              `eidos:"both"` // subclassing is forbidden
-    TypeParams []*TypeParam      `eidos:"both,walk"`
-    Fields     []*Field          `eidos:"both,walk,slot=fields"`
-    Methods    []*Method         `eidos:"both,walk,slot=methods"`
-    Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations
-    Embeds     []*Embed          `eidos:"both,walk"`            // compositional promotion
-    Extends    []*TypeRef        `eidos:"both,walk"`            // nominal supertypes
-    Implements []*TypeRef        `eidos:"both,walk"`
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Name        string            `eidos:"both"`
+    Visibility  symbol.Visibility `eidos:"both"`
+    Abstract    bool              `eidos:"both"` // no value of it can be made directly
+    Final       bool              `eidos:"both"` // subclassing is forbidden
+    TypeParams  []*TypeParam      `eidos:"both,walk"`
+    Fields      []*Field          `eidos:"both,walk,slot=fields"`
+    Methods     []*Method         `eidos:"both,walk,slot=methods"`
+    Types       []Symbol          `eidos:"both,walk,slot=types"` // nested declarations
+    Embeds      []*Embed          `eidos:"both,walk"`            // compositional promotion
+    Extends     []*TypeRef        `eidos:"both,walk"`            // nominal supertypes
+    Implements  []*TypeRef        `eidos:"both,walk"`
+    Annotations Annotations       `eidos:"emit"`
 }
 
 type Interface struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    TypeParams []*TypeParam      `eidos:"both,walk"`
-    Fields     []*Field          `eidos:"both,walk,slot=fields"` // properties, not just methods
-    Methods    []*Method         `eidos:"both,walk,slot=methods"`
-    Types      []Symbol          `eidos:"both,walk,slot=types"` // nested declarations and associated types
-    Embeds     []*Embed          `eidos:"both,walk"`
-    Extends    []*TypeRef        `eidos:"both,walk"`
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Name        string            `eidos:"both"`
+    Visibility  symbol.Visibility `eidos:"both"`
+    TypeParams  []*TypeParam      `eidos:"both,walk"`
+    Fields      []*Field          `eidos:"both,walk,slot=fields"` // properties, not just methods
+    Methods     []*Method         `eidos:"both,walk,slot=methods"`
+    Types       []Symbol          `eidos:"both,walk,slot=types"` // nested declarations and associated types
+    Embeds      []*Embed          `eidos:"both,walk"`
+    Extends     []*TypeRef        `eidos:"both,walk"`
+    Annotations Annotations       `eidos:"emit"`
 }
 
 type Alias struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    TypeParams []*TypeParam      `eidos:"both,walk"`
-    Target     *TypeRef          `eidos:"both,walk"` // nil for an associated type
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Name        string            `eidos:"both"`
+    Visibility  symbol.Visibility `eidos:"both"`
+    TypeParams  []*TypeParam      `eidos:"both,walk"`
+    Target      *TypeRef          `eidos:"both,walk"` // nil for an associated type
+    Annotations Annotations       `eidos:"emit"`
 }
 
 // Enumerated type declarations.
 
 type Enum struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    Variants   []*EnumVariant    `eidos:"both,walk,slot=variants"`
-    Fields     []*Field          `eidos:"both,walk,slot=fields"`  // Java enums carry instance state
-    Methods    []*Method         `eidos:"both,walk,slot=methods"` // and behaviour
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Name        string            `eidos:"both"`
+    Visibility  symbol.Visibility `eidos:"both"`
+    Variants    []*EnumVariant    `eidos:"both,walk,slot=variants"`
+    Fields      []*Field          `eidos:"both,walk,slot=fields"`  // Java enums carry instance state
+    Methods     []*Method         `eidos:"both,walk,slot=methods"` // and behaviour
+    Annotations Annotations       `eidos:"emit"`
 }
 
 type EnumVariant struct {
-    ID     symbol.Identity `eidos:"node"`
-    Origin symbol.Identity `eidos:"emit"`
-    Pos    position.Pos    `eidos:"node"`
-    Doc    []string        `eidos:"both"`
-    Name   string          `eidos:"both"`
-    Value  string          `eidos:"both"` // source spelling, unevaluated
-    Host   symbol.Identity `eidos:"node"`
+    ID          symbol.Identity `eidos:"node"`
+    Origin      symbol.Identity `eidos:"emit"`
+    Pos         position.Pos    `eidos:"node"`
+    Doc         []string        `eidos:"both"`
+    Name        string          `eidos:"both"`
+    Value       string          `eidos:"both"` // source spelling, unevaluated
+    Annotations Annotations     `eidos:"emit"`
+    Host        symbol.Identity `eidos:"node"`
 }
 
 type Sum struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    TypeParams []*TypeParam      `eidos:"both,walk"` // Rust data enums are generic
-    Variants   []*SumVariant     `eidos:"both,walk,slot=variants"`
-    Methods    []*Method         `eidos:"both,walk,slot=methods"`
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Name        string            `eidos:"both"`
+    Visibility  symbol.Visibility `eidos:"both"`
+    TypeParams  []*TypeParam      `eidos:"both,walk"` // Rust data enums are generic
+    Variants    []*SumVariant     `eidos:"both,walk,slot=variants"`
+    Methods     []*Method         `eidos:"both,walk,slot=methods"`
+    Annotations Annotations       `eidos:"emit"`
 }
 
 type SumVariant struct {
-    ID     symbol.Identity `eidos:"node"`
-    Origin symbol.Identity `eidos:"emit"`
-    Pos    position.Pos    `eidos:"node"`
-    Doc    []string        `eidos:"both"`
-    Name   string          `eidos:"both"`
-    Fields []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
-    Host   symbol.Identity `eidos:"node"`
+    ID          symbol.Identity `eidos:"node"`
+    Origin      symbol.Identity `eidos:"emit"`
+    Pos         position.Pos    `eidos:"node"`
+    Doc         []string        `eidos:"both"`
+    Name        string          `eidos:"both"`
+    Fields      []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
+    Annotations Annotations     `eidos:"emit"`
+    Host        symbol.Identity `eidos:"node"`
 }
 
 // Callables and parameters.
 
 type Function struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    TypeParams []*TypeParam      `eidos:"both,walk"`
-    Params     []*Param          `eidos:"both,walk"`
-    Returns    []*Return         `eidos:"both,walk"`
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Name        string            `eidos:"both"`
+    Visibility  symbol.Visibility `eidos:"both"`
+    Async       bool              `eidos:"both"`
+    TypeParams  []*TypeParam      `eidos:"both,walk"`
+    Params      []*Param          `eidos:"both,walk"`
+    Returns     []*Return         `eidos:"both,walk"`
+    Throws      []*TypeRef        `eidos:"both,walk"`
+    Annotations Annotations       `eidos:"emit"`
+    Body        Body              `eidos:"emit"`
 }
 
 type Method struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    Level      symbol.Level      `eidos:"both"`
-    Abstract   bool              `eidos:"both"`      // no body; a subtype must supply one
-    Final      bool              `eidos:"both"`      // overriding is forbidden
-    Override   bool              `eidos:"both"`      // replaces a supertype's member
-    HasDefault bool              `eidos:"both"`      // an interface method with a body
-    Receiver   *Param            `eidos:"both,walk"` // nil where the receiver is implicit
-    Receives   *TypeRef          `eidos:"both,walk"` // set when declared outside the type it attaches to
-    TypeParams []*TypeParam      `eidos:"both,walk"`
-    Params     []*Param          `eidos:"both,walk"`
-    Returns    []*Return         `eidos:"both,walk"`
-    Host       symbol.Identity   `eidos:"node"`
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Name        string            `eidos:"both"`
+    Visibility  symbol.Visibility `eidos:"both"`
+    Level       symbol.Level      `eidos:"both"`
+    Abstract    bool              `eidos:"both"`      // no body; a subtype must supply one
+    Final       bool              `eidos:"both"`      // overriding is forbidden
+    Override    bool              `eidos:"both"`      // replaces a supertype's member
+    HasDefault  bool              `eidos:"both"`      // an interface method with a body
+    Async       bool              `eidos:"both"`
+    Receiver    *Param            `eidos:"both,walk"` // nil where the receiver is implicit
+    Receives    *TypeRef          `eidos:"both,walk"` // set when declared outside the type it attaches to
+    TypeParams  []*TypeParam      `eidos:"both,walk"`
+    Params      []*Param          `eidos:"both,walk"`
+    Returns     []*Return         `eidos:"both,walk"`
+    Throws      []*TypeRef        `eidos:"both,walk"`
+    Annotations Annotations       `eidos:"emit"`
+    Body        Body              `eidos:"emit"`
+    Host        symbol.Identity   `eidos:"node"`
 }
 
 type Param struct {
-    ID       symbol.Identity `eidos:"node"`
-    Pos      position.Pos    `eidos:"node"`
-    Name     string          `eidos:"both"` // "" when unnamed
-    Label    string          `eidos:"both"` // caller-facing name; Swift and Objective-C
-    Type     *TypeRef        `eidos:"both,walk"`
-    Default  string          `eidos:"both"` // source spelling, unevaluated; "" when none
-    Variadic symbol.Variadic `eidos:"both"` // positional or keyword
+    ID          symbol.Identity `eidos:"node"`
+    Pos         position.Pos    `eidos:"node"`
+    Name        string          `eidos:"both"` // "" when unnamed
+    Label       string          `eidos:"both"` // caller-facing name; Swift and Objective-C
+    Type        *TypeRef        `eidos:"both,walk"`
+    Default     string          `eidos:"both"` // source spelling, unevaluated; "" when none
+    Variadic    symbol.Variadic `eidos:"both"` // positional or keyword
+    Annotations Annotations     `eidos:"emit"`
 }
 
 type Return struct {
@@ -469,42 +498,47 @@ type Return struct {
 // Members and bindings.
 
 type Field struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Comment    string            `eidos:"both"` // trailing line comment; "" when none
-    Name       string            `eidos:"both"` // "" when positional
-    Visibility symbol.Visibility `eidos:"both"`
-    Level      symbol.Level      `eidos:"both"`
-    Mutability symbol.Mutability `eidos:"both"`
-    Type       *TypeRef          `eidos:"both,walk"`
-    Tag        string            `eidos:"both"` // tag text without delimiters; "" when none
-    Host       symbol.Identity   `eidos:"node"`
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Comment     string            `eidos:"both"` // trailing line comment; "" when none
+    Name        string            `eidos:"both"` // "" when positional
+    Visibility  symbol.Visibility `eidos:"both"`
+    Level       symbol.Level      `eidos:"both"`
+    Mutability  symbol.Mutability `eidos:"both"`
+    Type        *TypeRef          `eidos:"both,walk"`
+    Value       string            `eidos:"both"` // initializer's source spelling, unevaluated; "" when none
+    Tag         string            `eidos:"both"` // tag text without delimiters; "" when none
+    Annotations Annotations       `eidos:"emit"`
+    Host        symbol.Identity   `eidos:"node"`
 }
 
 type Variable struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Comment    string            `eidos:"both"` // trailing line comment; "" when none
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    Mutability symbol.Mutability `eidos:"both"`
-    Type       *TypeRef          `eidos:"both,walk"` // nil when the source states none
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Comment     string            `eidos:"both"` // trailing line comment; "" when none
+    Name        string            `eidos:"both"`
+    Visibility  symbol.Visibility `eidos:"both"`
+    Mutability  symbol.Mutability `eidos:"both"`
+    Type        *TypeRef          `eidos:"both,walk"` // nil when the source states none
+    Value       string            `eidos:"both"`      // initializer's source spelling, unevaluated; "" when none
+    Annotations Annotations       `eidos:"emit"`
 }
 
 type Constant struct {
-    ID         symbol.Identity   `eidos:"node"`
-    Origin     symbol.Identity   `eidos:"emit"`
-    Pos        position.Pos      `eidos:"node"`
-    Doc        []string          `eidos:"both"`
-    Comment    string            `eidos:"both"` // trailing line comment; "" when none
-    Name       string            `eidos:"both"`
-    Visibility symbol.Visibility `eidos:"both"`
-    Type       *TypeRef          `eidos:"both,walk"` // nil when untyped
-    Value      string            `eidos:"both"`      // source spelling, unevaluated
+    ID          symbol.Identity   `eidos:"node"`
+    Origin      symbol.Identity   `eidos:"emit"`
+    Pos         position.Pos      `eidos:"node"`
+    Doc         []string          `eidos:"both"`
+    Comment     string            `eidos:"both"` // trailing line comment; "" when none
+    Name        string            `eidos:"both"`
+    Visibility  symbol.Visibility `eidos:"both"`
+    Type        *TypeRef          `eidos:"both,walk"` // nil when untyped
+    Value       string            `eidos:"both"`      // source spelling, unevaluated
+    Annotations Annotations       `eidos:"emit"`
 }
 
 // Type machinery.
@@ -553,8 +587,20 @@ the delimiters its language writes. Languages without either leave
 them empty, and emptiness claims nothing, so a graph rendering
 back into its own language loses neither.
 
-The schema deliberately carries no metadata accessor, no directive
-storage and no emit body model. Those seams belong to the metadata,
+Four spellings ride the callables and the value-carrying kinds
+under the same conventions. Async marks a result that arrives
+asynchronously in the language's own form, and Go leaves it false
+because its concurrency never shows in a signature. Throws lists
+the failure types a declaration announces, Java's checked
+exceptions and Swift's typed throws, while the error model stays
+the projection's neutral question. A field's or a variable's Value
+is its initializer's source spelling, unevaluated, the contract a
+constant's Value already carries. Annotations is the emit-side
+marker list the Annotations marker types, because a generated
+declaration writes what a source declaration keeps in metadata.
+
+The schema deliberately carries no metadata accessor and no
+directive storage. Those seams belong to the metadata,
 directive and rendering designs, and their absence forecloses
 nothing: adding a field is a schema edit plus a regeneration, which
 is the model rule this whole arrangement exists to keep.
