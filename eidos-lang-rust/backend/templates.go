@@ -62,6 +62,17 @@ const (
 		"    {{.Name}}{{with .Value}} = {{.}}{{end}},\n" +
 		"{{- end}}\n}\n"
 
+	// SumTemplate spells a data enum: attribute lines above the
+	// declaration, its visibility and type parameters behind the
+	// name, one variant per line under its own doc lines and
+	// attributes, each payload inline as named fields in braces or
+	// bare types in parentheses.
+	SumTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
+		"{{summods .}}enum {{.Name}}{{typeparams .TypeParams}} {\n" +
+		"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"    {{.Name}}{{sumpayload .}},\n" +
+		"{{- end}}\n}\n"
+
 	// AliasTemplate spells a type alias, its visibility and type
 	// parameters behind the name; a defined type refuses through
 	// the keywords helper, because a Rust alias is transparent.
@@ -86,6 +97,7 @@ func KindTemplates() map[symbol.Kind]string {
 		symbol.KindInterface: InterfaceTemplate,
 		symbol.KindFunction:  FunctionTemplate,
 		symbol.KindEnum:      EnumTemplate,
+		symbol.KindSum:       SumTemplate,
 		symbol.KindAlias:     AliasTemplate,
 		symbol.KindConstant:  ConstantTemplate,
 	}

@@ -23,6 +23,7 @@ func New() plugin.Backend {
 		Funcs(Funcs()).
 		Naming(spell.Filename).
 		Respell(spell.Name).
+		Lower(Lower).
 		Split(Split).
 		Scaffold(Scaffold).
 		Imports(Imports).

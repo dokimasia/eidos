@@ -51,7 +51,7 @@ func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 // ceiling pinned from measurement with headroom.
 func BenchmarkNew(b *testing.B) {
 	backendtest.BenchRender(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 9_400_000})
+		backendtest.Budget{MaxAllocs: 10_200_000})
 }
 
 // BenchmarkSettle measures the settle over the suite's scaled
@@ -59,7 +59,7 @@ func BenchmarkNew(b *testing.B) {
 // ceiling pinned from measurement with headroom.
 func BenchmarkSettle(b *testing.B) {
 	backendtest.BenchSettle(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 4_100_000})
+		backendtest.Budget{MaxAllocs: 4_300_000})
 }
 
 // The backend is the module's write half: the kernel suite holds

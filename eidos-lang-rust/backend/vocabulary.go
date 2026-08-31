@@ -48,6 +48,10 @@ const (
 	FuncSupertraits = "supertraits"
 	// FuncEnumMods writes an enum's keywords.
 	FuncEnumMods = "enummods"
+	// FuncSumMods writes a data enum's keywords.
+	FuncSumMods = "summods"
+	// FuncSumPayload writes a data enum variant's payload.
+	FuncSumPayload = "sumpayload"
 	// FuncAliasMods writes a type alias's keywords.
 	FuncAliasMods = "aliasmods"
 )
@@ -71,6 +75,8 @@ func Funcs() template.FuncMap {
 		FuncAttrs:       Attrs,
 		FuncSupertraits: Supertraits,
 		FuncEnumMods:    EnumMods,
+		FuncSumMods:     SumMods,
+		FuncSumPayload:  SumPayload,
 		FuncAliasMods:   AliasMods,
 	}
 }
@@ -221,6 +227,80 @@ func EnumMods(e *emit.Enum) (string, error) {
 			"rust: an enum holds variants alone, and %s states members", e.Name)
 	}
 	return Vis(e.Visibility, e.Name)
+}
+
+// SumMods writes a data enum's keywords: its visibility alone. A
+// sum carrying methods refuses, because Rust holds behaviour in
+// impl blocks.
+func SumMods(s *emit.Sum) (string, error) {
+	if s.Methods.Len() > 0 {
+		return "", fmt.Errorf(
+			"rust: a data enum holds variants alone, and %s states methods",
+			s.Name)
+	}
+	return Vis(s.Visibility, s.Name)
+}
+
+// SumPayload writes one variant's payload: nothing for an empty
+// variant, named fields in braces for a struct variant, bare
+// types in parentheses for a tuple variant. A payload mixing
+// named and unnamed entries refuses, and so does an entry stating
+// anything an inline spelling cannot carry.
+func SumPayload(v *emit.SumVariant) (string, error) {
+	fields := v.Fields.Items()
+	if len(fields) == 0 {
+		return "", nil
+	}
+	named := fields[0].Name != ""
+	parts := make([]string, 0, len(fields))
+	for _, f := range fields {
+		if err := inlineEntry(v.Name, f); err != nil {
+			return "", err
+		}
+		if (f.Name != "") != named {
+			return "", fmt.Errorf(
+				"rust: a payload spells one way, and %s mixes named and "+
+					"unnamed entries", v.Name)
+		}
+		if named {
+			parts = append(parts, f.Name+": "+Spell(f.Type))
+		} else {
+			parts = append(parts, Spell(f.Type))
+		}
+	}
+	if named {
+		return " { " + strings.Join(parts, ", ") + " }", nil
+	}
+	return "(" + strings.Join(parts, ", ") + ")", nil
+}
+
+// inlineEntry refuses the payload facts an inline spelling cannot
+// carry: a payload entry spells as a name and a type alone, on the
+// variant's own line.
+func inlineEntry(variant string, f *emit.Field) error {
+	switch {
+	case len(f.Doc) > 0 || len(f.Annotations) > 0:
+		return fmt.Errorf(
+			"rust: a payload entry spells inline, and one in %s states "+
+				"documentation or attributes", variant)
+	case f.Visibility != symbol.VisibilityUnknown:
+		return fmt.Errorf(
+			"rust: a payload follows its enum's visibility, and an entry in "+
+				"%s states its own", variant)
+	case f.Level == symbol.LevelType:
+		return fmt.Errorf(
+			"rust: an enum holds no statics, and a payload entry in %s "+
+				"states type level", variant)
+	case f.Mutability == symbol.MutabilityImmutable:
+		return fmt.Errorf(
+			"rust: a payload's mutability follows its owning binding, and "+
+				"an entry in %s states its own", variant)
+	case f.Value != "":
+		return fmt.Errorf(
+			"rust: a payload declares no defaults, and an entry in %s "+
+				"states one", variant)
+	}
+	return nil
 }
 
 // AliasMods writes a type alias's keywords: its visibility alone.

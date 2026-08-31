@@ -253,6 +253,45 @@ func TestTemplates(t *testing.T) {
 			"one variant per line, a stated value as its discriminant")
 	})
 
+	t.Run("sum", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Sum{
+			Doc:        []string{"Shape is one closed figure."},
+			Name:       "Shape",
+			TypeParams: []*emit.TypeParam{{Name: "T"}},
+		}
+		circle := &emit.SumVariant{
+			Doc:  []string{"Circle bounds by a radius."},
+			Name: "Circle",
+		}
+		circle.Fields.Append(&emit.Field{Name: "radius", Type: ref("f64")})
+		write := &emit.SumVariant{Name: "Write"}
+		write.Fields.Append(
+			&emit.Field{Type: ref("String")},
+			&emit.Field{Type: ref("T")},
+		)
+		s.Variants.Append(circle, write, &emit.SumVariant{Name: "Quit"})
+		assert.Equal(t, execute(t, backend.SumTemplate, s),
+			"/// Shape is one closed figure.\n"+
+				"pub enum Shape<T> {\n"+
+				"    /// Circle bounds by a radius.\n"+
+				"    Circle { radius: f64 },\n"+
+				"    Write(String, T),\n"+
+				"    Quit,\n"+
+				"}\n",
+			"a struct variant in braces, a tuple variant in parentheses, "+
+				"a unit variant bare")
+
+		withMethods := &emit.Sum{Name: "Shape"}
+		withMethods.Methods.Append(&emit.Method{Name: "area"})
+		tmpl, err := template.New("kind").Funcs(backend.Funcs()).Parse(backend.SumTemplate)
+		assert.NoError(t, err, "the template parses")
+		var b strings.Builder
+		assert.HasError(t, tmpl.Execute(&b, withMethods),
+			"a sum carrying methods refuses: behaviour goes in impl blocks")
+	})
+
 	t.Run("the file skeleton is uses then declarations", func(t *testing.T) {
 		t.Parallel()
 

@@ -16,6 +16,22 @@ import (
 // ref is the fixture type reference.
 func ref(s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s} }
 
+// variantOf is the fixture variant carrying one payload entry.
+func variantOf(f *emit.Field) *emit.SumVariant {
+	v := &emit.SumVariant{Name: "Write"}
+	v.Fields.Append(f)
+	return v
+}
+
+// payload spells one entry's payload and requires it to hold.
+func payload(t *testing.T, f *emit.Field) string {
+	t.Helper()
+
+	got, err := backend.SumPayload(variantOf(f))
+	assert.NoError(t, err, "the payload spells")
+	return got
+}
+
 // The vocabulary is what every kind template spells through, so
 // each helper's output is pinned byte for byte.
 func TestVocabulary(t *testing.T) {
@@ -233,6 +249,52 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "a struct holds no statics")
 		_, err = backend.FieldMods(&emit.Field{Name: "key", Value: "1"})
 		assert.HasError(t, err, "a struct declares no field defaults")
+	})
+
+	t.Run("SumMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.SumMods(&emit.Sum{Name: "Shape"})
+		assert.NoError(t, err, "a plain sum spells")
+		assert.Equal(t, got, "pub ", "public by default")
+
+		withMethods := &emit.Sum{Name: "Shape"}
+		withMethods.Methods.Append(&emit.Method{Name: "area"})
+		_, err = backend.SumMods(withMethods)
+		assert.HasError(t, err, "behaviour goes in impl blocks")
+	})
+
+	t.Run("SumPayload", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, payload(t, &emit.Field{Name: "radius", Type: ref("f64")}),
+			" { radius: f64 }", "named entries brace")
+		assert.Equal(t, payload(t, &emit.Field{Type: ref("String")}),
+			"(String)", "unnamed entries parenthesise")
+		got, err := backend.SumPayload(&emit.SumVariant{Name: "Quit"})
+		assert.NoError(t, err, "an empty payload spells")
+		assert.Equal(t, got, "", "as nothing")
+
+		mixed := &emit.SumVariant{Name: "Write"}
+		mixed.Fields.Append(
+			&emit.Field{Name: "at", Type: ref("u32")},
+			&emit.Field{Type: ref("String")},
+		)
+		_, err = backend.SumPayload(mixed)
+		assert.HasError(t, err, "a payload spells one way")
+
+		refused := []*emit.Field{
+			{Name: "at", Doc: []string{"documented"}},
+			{Name: "at", Visibility: symbol.VisibilityPublic},
+			{Name: "at", Level: symbol.LevelType},
+			{Name: "at", Mutability: symbol.MutabilityImmutable},
+			{Name: "at", Value: "1"},
+		}
+		for _, f := range refused {
+			_, err := backend.SumPayload(variantOf(f))
+			assert.HasError(t, err,
+				"an inline entry carries a name and a type alone")
+		}
 	})
 
 	t.Run("Attrs", func(t *testing.T) {

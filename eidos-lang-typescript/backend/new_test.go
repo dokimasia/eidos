@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"maps"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -11,18 +12,21 @@ import (
 	"go.dokimi.dev/eidos/core/backendtest"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 	typescript "go.dokimi.dev/eidos/lang-typescript"
 	"go.dokimi.dev/eidos/lang-typescript/backend"
 )
 
 // setup builds the backend over the kernel's canonical fixture,
-// filtered to this module's declared inventory.
+// filtered to this module's rendered coverage: the declared kind
+// templates, plus the sum kind the lowering reshapes into variant
+// interfaces and a union alias before any template runs.
 func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	tb.Helper()
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.CanonicalFixture(tb, backend.KindTemplates())
+	return r, backendtest.CanonicalFixture(tb, inventory())
 }
 
 // benchSetup builds the backend over the suite's scaled corpus,
@@ -32,7 +36,15 @@ func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.ScaledFixture(tb, backend.KindTemplates())
+	return r, backendtest.ScaledFixture(tb, inventory())
+}
+
+// inventory is the module's rendered coverage: the declared kind
+// templates plus the kind the lowering consumes.
+func inventory() map[symbol.Kind]string {
+	i := maps.Clone(backend.KindTemplates())
+	i[symbol.KindSum] = ""
+	return i
 }
 
 // BenchmarkNew measures the composed backend over the suite's
@@ -41,7 +53,7 @@ func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 // with headroom.
 func BenchmarkNew(b *testing.B) {
 	backendtest.BenchRender(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 8_700_000})
+		backendtest.Budget{MaxAllocs: 10_900_000})
 }
 
 // BenchmarkSettle measures the settle over the suite's scaled
@@ -49,7 +61,7 @@ func BenchmarkNew(b *testing.B) {
 // ceiling pinned from measurement with headroom.
 func BenchmarkSettle(b *testing.B) {
 	backendtest.BenchSettle(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 3_800_000})
+		backendtest.Budget{MaxAllocs: 5_100_000})
 }
 
 // The backend is the module's write half: the kernel suite holds
@@ -88,5 +100,10 @@ func TestNew(t *testing.T) {
 			"a neutral row takes Pascal")
 		assert.Contains(t, string(text), "  boot(): void {",
 			"and a neutral boot stays camel")
+		assert.Contains(t, string(text), `  kind: "circle";`,
+			"a lowered variant leads with its discriminant")
+		assert.Contains(t, string(text),
+			"export type Shape = ShapeCircle | ShapeEmpty;",
+			"and the union alias joins the lowered interfaces")
 	})
 }
