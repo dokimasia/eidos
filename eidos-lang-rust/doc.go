@@ -17,7 +17,7 @@
 //     with payloads — and payload-free variant sets onto Enum.
 //   - The error model is ResultType; async functions and Streams
 //     are signature-visible.
-//   - Ownership answers through the ownership rules: by-value,
+//   - Ownership is read through the ownership rules: by-value,
 //     borrow, or mutable borrow per parameter.
 //   - Default trait method bodies carry on the method's
 //     has-default flag; mod nesting maps into hierarchical

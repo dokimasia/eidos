@@ -19,8 +19,8 @@
 //     never executed.
 //   - Backed and pure enums land on the Enum kind; traits ride
 //     Embeds with the trait spelling kept in language metadata.
-//   - The error model is Thrown; constructors answer through the
-//     construct rules.
+//   - The error model is Thrown; constructors are read through
+//     the construct rules.
 //
 // # Parsing
 //

@@ -17,10 +17,10 @@
 //     structured, queryable, overridable metadata — never
 //     executed.
 //   - Generics are erased; the generics rules report erasure and
-//     answer witnesses and substitution.
+//     supply witnesses and substitution.
 //   - Overloads are legal: member lists are slices, and identity
 //     carries a signature discriminator.
-//   - Checked exceptions answer through the throws rules; enums
+//   - Checked exceptions are read through the throws rules; enums
 //     are classes and carry members.
 //   - Unannotated references are nullability-unknown: a metadata
 //     fact plus a workspace lowering policy, never a third

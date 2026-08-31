@@ -32,7 +32,7 @@
 // Detectors read only the neutral Callable projection and the
 // canonical type shapes; parameter resolution goes through the
 // neutral resolve rules. One detector therefore serves every
-// language that answers Tier 1 — the catalog grows by
+// language that reaches Tier 1 — the catalog grows by
 // classification, never by language.
 //
 // # Spec-first

@@ -13,21 +13,21 @@
 //
 // # Projection facts
 //
-// Go's answers to the neutral vocabulary are fixed by the
+// What Go says to the neutral vocabulary is fixed by the
 // language, not by configuration:
 //
 //   - Callables are Sync always: Go concurrency is caller-side
 //     and invisible in signatures.
-//   - The error model is LastReturn; sentinel conventions answer
-//     through the error-value rules as paired name/predicate
-//     inverses.
-//   - Composition is Embeds, never Extends: promotion answers
+//   - The error model is LastReturn; sentinel conventions are
+//     read through the error-value rules as paired
+//     name/predicate inverses.
+//   - Composition is Embeds, never Extends: promotion is read
 //     through the members projection and the promotion rules.
-//   - Optionality projects from pointers; comparability answers
+//   - Optionality projects from pointers; comparability is read
 //     through the equality rules, naming the members that poison
 //     it (slices, maps, funcs).
-//   - Struct tags answer through the tag rules; const-group enums
-//     through the enum rules, iota arithmetic included.
+//   - Struct tags are read through the tag rules, const-group
+//     enums through the enum rules, iota arithmetic included.
 //
 // # Parsing
 //

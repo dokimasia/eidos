@@ -17,7 +17,7 @@
 //     is declaration-site and carries on type parameters.
 //   - suspend is signature-visible and projects as Async; Flow
 //     projects as an async Stream.
-//   - Properties answer through the property rules as a computed
+//   - Properties are read through the property rules as a computed
 //     view, never a model mutation; companions are Type-level
 //     members.
 //   - internal visibility normalizes with the raw spelling kept

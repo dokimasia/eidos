@@ -4,7 +4,7 @@
 // Package lang is the tree-sitter platform shared by the
 // tree-sitter-based language satellites: one binding layer and the
 // pinned grammar set, so every satellite parses through the same
-// machinery and a grammar or binding upgrade lands once.
+// machinery and a grammar or binding upgrade happens once.
 //
 // The seam exists so satellites never import tree-sitter directly.
 // Grammars and bindings are version-pinned here, which keeps
@@ -16,7 +16,7 @@
 //
 // The TypeScript, Java, Kotlin, PHP, and Rust satellites parse
 // through this module. Go and protobuf do not: their frontends use
-// first-class pure-Go parsers (the standard library's go/parser
+// established pure-Go parsers (the standard library's go/parser
 // and bufbuild/protocompile) and take no dependency on this
 // module.
 //
