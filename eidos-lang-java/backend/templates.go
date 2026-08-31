@@ -21,22 +21,29 @@ const FileTemplate = "{{" + FuncPackage + " .Pkg}}{{" + render.BuiltinImports + 
 // other kind is reported as one the target cannot spell. Members
 // render as public, because a generated API exists to be called.
 const (
-	// StructTemplate spells a class: fields, then methods with
-	// their bodies, each member under its own doc block.
-	StructTemplate = "{{docs .Doc}}public class {{.Name}} {\n" +
+	// StructTemplate spells a class, its type parameters behind
+	// the name: fields, then methods with their bodies, each
+	// member under its own doc block. A generic method's own
+	// parameter list spells before its return type, which is where
+	// Java states it.
+	StructTemplate = "{{docs .Doc}}public class {{.Name}}{{typeparams .TypeParams}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}" +
 		"    public {{spell .Type}} {{.Name}};\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}" +
-		"    public {{results .Returns}} {{.Name}}({{params .Params}}) {\n" +
+		"    public {{with typeparams .TypeParams}}{{.}} {{end}}" +
+		"{{results .Returns}} {{.Name}}({{params .Params}}) {\n" +
 		"{{body .}}    }\n" +
 		"{{- end}}\n}\n"
 
-	// InterfaceTemplate spells an interface: signatures alone,
-	// implicitly public the way Java reads them.
-	InterfaceTemplate = "{{docs .Doc}}public interface {{.Name}} {\n" +
+	// InterfaceTemplate spells an interface, its type parameters
+	// behind the name: signatures alone, implicitly public the way
+	// Java reads them, a generic method's own parameter list
+	// before its return type.
+	InterfaceTemplate = "{{docs .Doc}}public interface {{.Name}}{{typeparams .TypeParams}} {\n" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}" +
-		"    {{results .Returns}} {{.Name}}({{params .Params}});\n" +
+		"    {{with typeparams .TypeParams}}{{.}} {{end}}" +
+		"{{results .Returns}} {{.Name}}({{params .Params}});\n" +
 		"{{- end}}\n}\n"
 )
 

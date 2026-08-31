@@ -44,7 +44,7 @@ func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 // with headroom.
 func BenchmarkNew(b *testing.B) {
 	backendtest.BenchRender(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 15_500_000})
+		backendtest.Budget{MaxAllocs: 17_000_000})
 }
 
 // The backend is the module's write half: the kernel suite holds

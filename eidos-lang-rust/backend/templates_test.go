@@ -107,6 +107,50 @@ func TestTemplates(t *testing.T) {
 			"pub const MAX: u32 = 10;\n", "a constant states its type")
 	})
 
+	t.Run("generics", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Box", TypeParams: []*emit.TypeParam{{Name: "T"}}}
+		s.Fields.Append(&emit.Field{Name: "item", Type: ref("T")})
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"pub struct Box<T> {\n    pub item: T,\n}\n",
+			"the struct's parameter list behind its name")
+
+		i := &emit.Interface{
+			Name: "Keyed",
+			TypeParams: []*emit.TypeParam{
+				{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}},
+			},
+		}
+		i.Methods.Append(&emit.Method{
+			Name:    "pick",
+			Params:  []*emit.Param{{Name: "key", Type: ref("K")}},
+			Returns: []*emit.Return{{Type: ref("K")}},
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"pub trait Keyed<K: Codec> {\n    fn pick(&self, key: K) -> K;\n}\n",
+			"the bound behind the colon, members referencing it")
+
+		f := &emit.Function{
+			Name:       "sort",
+			TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			Params:     []*emit.Param{{Name: "items", Type: ref("T")}},
+			Returns:    []*emit.Return{{Type: ref("T")}},
+		}
+		assert.Equal(t, execute(t, backend.FunctionTemplate, f),
+			"pub fn sort<T: Codec>(items: T) -> T {\n    body();\n}\n",
+			"the function's parameter list behind its name")
+
+		a := &emit.Alias{
+			Name:       "Match",
+			TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			Target:     &emit.TypeRef{Spelling: "Keyed", Args: []*emit.TypeRef{ref("T")}},
+		}
+		assert.Equal(t, execute(t, backend.AliasTemplate, a),
+			"pub type Match<T: Codec> = Keyed<T>;\n",
+			"the alias parameterizes and its target restates the argument")
+	})
+
 	t.Run("the file skeleton is uses then declarations", func(t *testing.T) {
 		t.Parallel()
 

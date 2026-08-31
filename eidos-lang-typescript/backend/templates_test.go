@@ -105,6 +105,61 @@ func TestTemplates(t *testing.T) {
 			"export let count;\n", "an untyped binding stays untyped")
 	})
 
+	t.Run("generics", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Box", TypeParams: []*emit.TypeParam{{Name: "T"}}}
+		s.Fields.Append(&emit.Field{Name: "item", Type: ref("T")})
+		s.Methods.Append(&emit.Method{
+			Name:       "map",
+			TypeParams: []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			Params:     []*emit.Param{{Name: "item", Type: ref("U")}},
+			Returns:    []*emit.Return{{Type: ref("U")}},
+		})
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"export class Box<T> {\n"+
+				"  item: T;\n"+
+				"  map<U extends Codec>(item: U): U {\n    body();\n  }\n"+
+				"}\n",
+			"the class's parameter list behind its name, the member's behind its own")
+
+		i := &emit.Interface{
+			Name: "Keyed",
+			TypeParams: []*emit.TypeParam{
+				{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}},
+			},
+		}
+		i.Methods.Append(&emit.Method{
+			Name:    "pick",
+			Params:  []*emit.Param{{Name: "key", Type: ref("K")}},
+			Returns: []*emit.Return{{Type: ref("K")}},
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"export interface Keyed<K extends Codec> {\n"+
+				"  pick(key: K): K;\n"+
+				"}\n",
+			"the bound behind the parameter, members referencing it")
+
+		f := &emit.Function{
+			Name:       "sort",
+			TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			Params:     []*emit.Param{{Name: "items", Type: ref("T")}},
+			Returns:    []*emit.Return{{Type: ref("T")}},
+		}
+		assert.Equal(t, execute(t, backend.FunctionTemplate, f),
+			"export function sort<T extends Codec>(items: T): T {\n    body();\n}\n",
+			"the function's parameter list behind its name")
+
+		a := &emit.Alias{
+			Name:       "Match",
+			TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			Target:     &emit.TypeRef{Spelling: "Keyed", Args: []*emit.TypeRef{ref("T")}},
+		}
+		assert.Equal(t, execute(t, backend.AliasTemplate, a),
+			"export type Match<T extends Codec> = Keyed<T>;\n",
+			"the alias parameterizes and its target restates the argument")
+	})
+
 	t.Run("the file skeleton is imports then declarations", func(t *testing.T) {
 		t.Parallel()
 

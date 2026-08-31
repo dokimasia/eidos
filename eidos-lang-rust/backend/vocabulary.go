@@ -4,10 +4,12 @@
 package backend
 
 import (
+	"fmt"
 	"strings"
 	"text/template"
 
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // The vocabulary names, so a template and its helper cannot drift
@@ -17,6 +19,10 @@ const (
 	FuncDocs = "docs"
 	// FuncSpell writes a type reference.
 	FuncSpell = "spell"
+	// FuncTypeParams writes a type parameter list.
+	FuncTypeParams = "typeparams"
+	// FuncBinder writes an impl block's binder.
+	FuncBinder = "binder"
 	// FuncParams writes a parameter list.
 	FuncParams = "params"
 	// FuncResults writes a return annotation.
@@ -26,10 +32,12 @@ const (
 // Funcs is the shared template vocabulary the kind templates call.
 func Funcs() template.FuncMap {
 	return template.FuncMap{
-		FuncDocs:    Docs,
-		FuncSpell:   Spell,
-		FuncParams:  Params,
-		FuncResults: Results,
+		FuncDocs:       Docs,
+		FuncSpell:      Spell,
+		FuncTypeParams: TypeParams,
+		FuncBinder:     Binder,
+		FuncParams:     Params,
+		FuncResults:    Results,
 	}
 }
 
@@ -51,12 +59,86 @@ func Docs(lines []string, prefix ...string) string {
 // Spell writes a type reference: the source spelling verbatim. A
 // declaration stating no type has no Rust spelling at all, so the
 // unit type stands in where a template reaches one, and the
-// compiler's refusal names the file.
+// compiler's refusal names the file. A reference carrying
+// arguments holds its bare name in Spelling, and the argument
+// list spells here in angle brackets.
 func Spell(t *emit.TypeRef) string {
 	if t == nil || t.Spelling == "" {
 		return "()"
 	}
-	return t.Spelling
+	if len(t.Args) == 0 {
+		return t.Spelling
+	}
+	args := make([]string, 0, len(t.Args))
+	for _, a := range t.Args {
+		args = append(args, Spell(a))
+	}
+	return t.Spelling + "<" + strings.Join(args, ", ") + ">"
+}
+
+// TypeParams writes a type parameter list in angle brackets, or
+// nothing for a declaration stating none: bounds joined by plus
+// signs behind a colon, the default behind an equals sign, and a
+// value parameter in the const form with its value's type.
+// Variance refuses: Rust infers it from use, a declaration states
+// none, and dropping it would misstate the declaration.
+func TypeParams(ps []*emit.TypeParam) (string, error) {
+	if len(ps) == 0 {
+		return "", nil
+	}
+	parts := make([]string, 0, len(ps))
+	for _, p := range ps {
+		if p.Variance != symbol.VarianceInvariant {
+			return "", fmt.Errorf(
+				"rust: a type parameter states no variance, and %s states one: "+
+					"variance is inferred from use", p.Name)
+		}
+		parts = append(parts, typeParam(p))
+	}
+	return "<" + strings.Join(parts, ", ") + ">", nil
+}
+
+// typeParam writes one parameter: the const form with its value
+// type and default spelling, or the name behind its bounds with
+// its default type.
+func typeParam(p *emit.TypeParam) string {
+	if p.Const {
+		part := "const " + p.Name + ": " + Spell(p.Type)
+		if p.DefaultValue != "" {
+			part += " = " + p.DefaultValue
+		}
+		return part
+	}
+	part := p.Name
+	if len(p.Bounds) > 0 {
+		bounds := make([]string, 0, len(p.Bounds))
+		for _, b := range p.Bounds {
+			bounds = append(bounds, Spell(b))
+		}
+		part += ": " + strings.Join(bounds, " + ")
+	}
+	if p.Default != nil {
+		part += " = " + Spell(p.Default)
+	}
+	return part
+}
+
+// Binder writes the impl binder restating a receiver's type
+// arguments, or nothing for a receiver taking none. Each argument
+// restates as the name the receiver references, bare: a bound
+// stays on the methods the way Rust's own practice bounds
+// functions rather than type definitions, and a receiver
+// instantiated at a const argument has no restatable binder,
+// which stays a declared limit.
+func Binder(t *emit.TypeRef) string {
+	if t == nil || len(t.Args) == 0 {
+		return ""
+	}
+	args := make([]string, 0, len(t.Args))
+	for _, a := range t.Args {
+		args = append(args, Spell(a))
+	}
+	return "<" + strings.Join(args, ", ") + ">"
 }
 
 // Params writes a parameter list. An unnamed parameter binds to

@@ -36,9 +36,48 @@ func TestVocabulary(t *testing.T) {
 		t.Parallel()
 
 		assert.Equal(t, backend.Spell(ref("Row[]")), "Row[]",
-			"the source spelling rides through verbatim")
+			"the source spelling passes through verbatim")
 		assert.Equal(t, backend.Spell(nil), "unknown",
 			"a declaration stating no type spells unknown, not any")
+		assert.Equal(t, backend.Spell(&emit.TypeRef{
+			Spelling: "Map",
+			Args: []*emit.TypeRef{
+				ref("string"),
+				{Spelling: "Set", Args: []*emit.TypeRef{ref("Row")}},
+			},
+		}), "Map<string, Set<Row>>",
+			"an argument list spells in angle brackets, arguments recursing")
+	})
+
+	t.Run("TypeParams", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.TypeParams(nil)
+		assert.NoError(t, err, "no parameters spell")
+		assert.Equal(t, got, "", "as nothing")
+
+		got, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "T", Bounds: []*emit.TypeRef{ref("Codec"), ref("Closer")}},
+			{Name: "U", Default: ref("string")},
+		})
+		assert.NoError(t, err, "bounds and defaults spell")
+		assert.Equal(t, got, "<T extends Codec & Closer, U = string>",
+			"bounds intersect behind extends, the default behind equals")
+
+		got, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "T", Variance: symbol.VarianceIn},
+			{Name: "U", Variance: symbol.VarianceOut},
+		})
+		assert.NoError(t, err, "variance spells")
+		assert.Equal(t, got, "<in T, out U>",
+			"the declaration-site keyword before the name")
+
+		_, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "N", Const: true, Type: ref("number")},
+		})
+		assert.HasError(t, err,
+			"a value parameter refuses, because TypeScript's const "+
+				"modifier narrows a type parameter instead")
 	})
 
 	t.Run("Params", func(t *testing.T) {

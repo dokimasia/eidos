@@ -34,9 +34,47 @@ func TestVocabulary(t *testing.T) {
 		t.Parallel()
 
 		assert.Equal(t, backend.Spell(ref("List<Row>")), "List<Row>",
-			"the source spelling rides through verbatim")
+			"the source spelling passes through verbatim")
 		assert.Equal(t, backend.Spell(nil), "Object",
 			"a declaration stating no type spells the root type")
+		assert.Equal(t, backend.Spell(&emit.TypeRef{
+			Spelling: "Map",
+			Args: []*emit.TypeRef{
+				ref("String"),
+				{Spelling: "List", Args: []*emit.TypeRef{ref("Row")}},
+			},
+		}), "Map<String, List<Row>>",
+			"an argument list spells in angle brackets, arguments recursing")
+	})
+
+	t.Run("TypeParams", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.TypeParams(nil)
+		assert.NoError(t, err, "no parameters spell")
+		assert.Equal(t, got, "", "as nothing")
+
+		got, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "K"},
+			{Name: "V", Bounds: []*emit.TypeRef{ref("Codec"), ref("Closeable")}},
+		})
+		assert.NoError(t, err, "bounded parameters spell")
+		assert.Equal(t, got, "<K, V extends Codec & Closeable>",
+			"bounds joined by ampersands behind extends")
+
+		_, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "T", Variance: symbol.VarianceOut},
+		})
+		assert.HasError(t, err,
+			"variance refuses, because Java's wildcard is use-site")
+		_, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "N", Const: true, Type: ref("int")},
+		})
+		assert.HasError(t, err, "a value parameter refuses")
+		_, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "T", Default: ref("String")},
+		})
+		assert.HasError(t, err, "a default refuses")
 	})
 
 	t.Run("Params", func(t *testing.T) {

@@ -21,31 +21,36 @@ const FileTemplate = "{{" + render.BuiltinImports + "}}{{" + render.BuiltinDecls
 // host's template, and a standalone method is reported as a kind
 // the target cannot spell.
 const (
-	// StructTemplate spells a class: fields, then methods with
-	// their bodies, each member under its own doc block.
-	StructTemplate = "{{docs .Doc}}export class {{.Name}} {\n" +
+	// StructTemplate spells a class, its type parameters behind
+	// the name: fields, then methods with their bodies and their
+	// own parameter lists, each member under its own doc block.
+	StructTemplate = "{{docs .Doc}}export class {{.Name}}{{typeparams .TypeParams}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{.Name}}: {{spell .Type}};\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
-		"  {{.Name}}({{params .Params}}){{results .Returns}} {\n{{body .}}  }\n" +
+		"  {{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}} {\n" +
+		"{{body .}}  }\n" +
 		"{{- end}}\n}\n"
 
-	// InterfaceTemplate spells an interface: properties and method
-	// signatures, no bodies.
-	InterfaceTemplate = "{{docs .Doc}}export interface {{.Name}} {\n" +
+	// InterfaceTemplate spells an interface, its type parameters
+	// behind the name: properties and method signatures with their
+	// own parameter lists, no bodies.
+	InterfaceTemplate = "{{docs .Doc}}export interface {{.Name}}{{typeparams .TypeParams}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{.Name}}: {{spell .Type}};\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
-		"  {{.Name}}({{params .Params}}){{results .Returns}};\n" +
+		"  {{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};\n" +
 		"{{- end}}\n}\n"
 
-	// FunctionTemplate spells a module-level function and places
-	// its body.
-	FunctionTemplate = "{{docs .Doc}}export function {{.Name}}({{params .Params}})" +
-		"{{results .Returns}} {\n{{body .}}}\n"
+	// FunctionTemplate spells a module-level function, its type
+	// parameters behind the name, and places its body.
+	FunctionTemplate = "{{docs .Doc}}export function {{.Name}}{{typeparams .TypeParams}}" +
+		"({{params .Params}}){{results .Returns}} {\n{{body .}}}\n"
 
-	// AliasTemplate spells a type alias.
-	AliasTemplate = "{{docs .Doc}}export type {{.Name}} = {{spell .Target}};\n"
+	// AliasTemplate spells a type alias, its type parameters
+	// behind the name.
+	AliasTemplate = "{{docs .Doc}}export type {{.Name}}{{typeparams .TypeParams}}" +
+		" = {{spell .Target}};\n"
 
 	// ConstantTemplate spells a constant, typed where the
 	// declaration states a type.

@@ -4,6 +4,7 @@
 package backend
 
 import (
+	"fmt"
 	"path"
 	"strings"
 	"text/template"
@@ -19,6 +20,8 @@ const (
 	FuncDocs = "docs"
 	// FuncSpell writes a type reference.
 	FuncSpell = "spell"
+	// FuncTypeParams writes a type parameter list.
+	FuncTypeParams = "typeparams"
 	// FuncParams writes a parameter list.
 	FuncParams = "params"
 	// FuncResults writes a return type.
@@ -33,10 +36,11 @@ const Anonymous = "unknown"
 // Funcs is the shared template vocabulary the kind templates call.
 func Funcs() template.FuncMap {
 	return template.FuncMap{
-		FuncDocs:    Docs,
-		FuncSpell:   Spell,
-		FuncParams:  Params,
-		FuncResults: Results,
+		FuncDocs:       Docs,
+		FuncSpell:      Spell,
+		FuncTypeParams: TypeParams,
+		FuncParams:     Params,
+		FuncResults:    Results,
 	}
 }
 
@@ -62,13 +66,70 @@ func Docs(lines []string, prefix ...string) string {
 	return b.String()
 }
 
-// Spell writes a type reference. The source spelling rides
-// through verbatim; a missing one spells [Anonymous].
+// Spell writes a type reference. The source spelling passes
+// through verbatim; a missing one spells [Anonymous]. A reference
+// carrying arguments holds its bare name in Spelling, and the
+// argument list spells here in angle brackets.
 func Spell(t *emit.TypeRef) string {
 	if t == nil || t.Spelling == "" {
 		return Anonymous
 	}
-	return t.Spelling
+	if len(t.Args) == 0 {
+		return t.Spelling
+	}
+	args := make([]string, 0, len(t.Args))
+	for _, a := range t.Args {
+		args = append(args, Spell(a))
+	}
+	return t.Spelling + "<" + strings.Join(args, ", ") + ">"
+}
+
+// TypeParams writes a type parameter list in angle brackets, or
+// nothing for a declaration stating none: the declared variance
+// before the name, bounds folded into an intersection behind
+// extends, and the default behind an equals sign. A value
+// parameter refuses: the model's Const takes a value argument,
+// TypeScript's const modifier narrows inference on a type one,
+// and spelling one as the other would misstate the declaration.
+func TypeParams(ps []*emit.TypeParam) (string, error) {
+	if len(ps) == 0 {
+		return "", nil
+	}
+	parts := make([]string, 0, len(ps))
+	for _, p := range ps {
+		if p.Const {
+			return "", fmt.Errorf(
+				"typescript: a type parameter takes a type, and %s takes a value",
+				p.Name)
+		}
+		part := variance(p.Variance) + p.Name
+		if len(p.Bounds) > 0 {
+			bounds := make([]string, 0, len(p.Bounds))
+			for _, b := range p.Bounds {
+				bounds = append(bounds, Spell(b))
+			}
+			part += " extends " + strings.Join(bounds, " & ")
+		}
+		if p.Default != nil {
+			part += " = " + Spell(p.Default)
+		}
+		parts = append(parts, part)
+	}
+	return "<" + strings.Join(parts, ", ") + ">", nil
+}
+
+// variance writes the declaration-site keyword TypeScript places
+// before a parameter's name: in for contravariant, out for
+// covariant, nothing for invariant.
+func variance(v symbol.Variance) string {
+	switch v {
+	case symbol.VarianceIn:
+		return "in "
+	case symbol.VarianceOut:
+		return "out "
+	default:
+		return ""
+	}
 }
 
 // Params writes a parameter list, the rest marker included.

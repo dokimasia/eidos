@@ -35,11 +35,52 @@ func TestVocabulary(t *testing.T) {
 		t.Parallel()
 
 		assert.Equal(t, backend.Spell(ref("[]store.Row")), "[]store.Row",
-			"the source spelling rides through verbatim")
+			"the source spelling passes through verbatim")
 		assert.Equal(t, backend.Spell(nil), "any",
 			"a declaration stating no type spells the empty interface")
 		assert.Equal(t, backend.Spell(&emit.TypeRef{}), "any",
 			"and so does a reference spelling nothing")
+		assert.Equal(t, backend.Spell(&emit.TypeRef{
+			Spelling: "Map",
+			Args: []*emit.TypeRef{
+				ref("string"),
+				{Spelling: "List", Args: []*emit.TypeRef{ref("User")}},
+			},
+		}), "Map[string, List[User]]",
+			"an argument list spells in brackets, arguments recursing")
+	})
+
+	t.Run("TypeParams", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.TypeParams(nil)
+		assert.NoError(t, err, "no parameters spell")
+		assert.Equal(t, got, "", "as nothing")
+
+		got, err = backend.TypeParams([]*emit.TypeParam{{Name: "T"}})
+		assert.NoError(t, err, "an unbounded parameter spells")
+		assert.Equal(t, got, "[T any]", "under the any constraint")
+
+		got, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "K", Bounds: []*emit.TypeRef{ref("comparable")}},
+			{Name: "V", Bounds: []*emit.TypeRef{ref("Codec"), ref("Closer")}},
+		})
+		assert.NoError(t, err, "bounded parameters spell")
+		assert.Equal(t, got, "[K comparable, V interface{ Codec; Closer }]",
+			"one bound stands alone, several fold into a constraint interface")
+
+		_, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "T", Variance: symbol.VarianceOut},
+		})
+		assert.HasError(t, err, "variance refuses, because Go states none")
+		_, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "N", Const: true, Type: ref("int")},
+		})
+		assert.HasError(t, err, "a value parameter refuses")
+		_, err = backend.TypeParams([]*emit.TypeParam{
+			{Name: "T", Default: ref("string")},
+		})
+		assert.HasError(t, err, "a default refuses")
 	})
 
 	t.Run("Params", func(t *testing.T) {

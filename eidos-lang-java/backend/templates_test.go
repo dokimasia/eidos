@@ -97,6 +97,56 @@ func TestTemplates(t *testing.T) {
 			"implicitly public, no body, void for no result")
 	})
 
+	t.Run("generics", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Box", TypeParams: []*emit.TypeParam{{Name: "T"}}}
+		s.Fields.Append(&emit.Field{Name: "item", Type: ref("T")})
+		s.Methods.Append(&emit.Method{
+			Name:       "map",
+			TypeParams: []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			Params:     []*emit.Param{{Name: "item", Type: ref("U")}},
+			Returns:    []*emit.Return{{Type: ref("U")}},
+		})
+		got, err := execute(backend.StructTemplate, s)
+		assert.NoError(t, err, "the generic class renders")
+		assert.Equal(t, got,
+			"public class Box<T> {\n"+
+				"    public T item;\n"+
+				"    public <U extends Codec> U map(U item) {\n"+
+				"        body();\n"+
+				"    }\n"+
+				"}\n",
+			"the class's parameter list behind its name, the method's "+
+				"before its return type")
+
+		i := &emit.Interface{
+			Name: "Keyed",
+			TypeParams: []*emit.TypeParam{
+				{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}},
+			},
+		}
+		i.Methods.Append(&emit.Method{
+			Name:    "pick",
+			Params:  []*emit.Param{{Name: "key", Type: ref("K")}},
+			Returns: []*emit.Return{{Type: ref("K")}},
+		})
+		got, err = execute(backend.InterfaceTemplate, i)
+		assert.NoError(t, err, "the generic interface renders")
+		assert.Equal(t, got,
+			"public interface Keyed<K extends Codec> {\n"+
+				"    K pick(K key);\n"+
+				"}\n",
+			"the bound behind the parameter, members referencing it")
+
+		v := &emit.Struct{Name: "Sink", TypeParams: []*emit.TypeParam{
+			{Name: "T", Variance: symbol.VarianceIn},
+		}}
+		_, err = execute(backend.StructTemplate, v)
+		assert.HasError(t, err,
+			"declaration-site variance refuses, because Java's wildcard is use-site")
+	})
+
 	t.Run("a second return value refuses at render", func(t *testing.T) {
 		t.Parallel()
 

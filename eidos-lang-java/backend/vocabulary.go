@@ -19,6 +19,8 @@ const (
 	FuncDocs = "docs"
 	// FuncSpell writes a type reference.
 	FuncSpell = "spell"
+	// FuncTypeParams writes a type parameter list.
+	FuncTypeParams = "typeparams"
 	// FuncParams writes a parameter list.
 	FuncParams = "params"
 	// FuncResults writes the one return type.
@@ -34,11 +36,12 @@ const Anonymous = "Object"
 // Funcs is the shared template vocabulary the kind templates call.
 func Funcs() template.FuncMap {
 	return template.FuncMap{
-		FuncDocs:    Docs,
-		FuncSpell:   Spell,
-		FuncParams:  Params,
-		FuncResults: Results,
-		FuncPackage: PackageClause,
+		FuncDocs:       Docs,
+		FuncSpell:      Spell,
+		FuncTypeParams: TypeParams,
+		FuncParams:     Params,
+		FuncResults:    Results,
+		FuncPackage:    PackageClause,
 	}
 }
 
@@ -64,13 +67,59 @@ func Docs(lines []string, prefix ...string) string {
 	return b.String()
 }
 
-// Spell writes a type reference. The source spelling rides
-// through verbatim; a missing one spells [Anonymous].
+// Spell writes a type reference. The source spelling passes
+// through verbatim; a missing one spells [Anonymous]. A reference
+// carrying arguments holds its bare name in Spelling, and the
+// argument list spells here in angle brackets.
 func Spell(t *emit.TypeRef) string {
 	if t == nil || t.Spelling == "" {
 		return Anonymous
 	}
-	return t.Spelling
+	if len(t.Args) == 0 {
+		return t.Spelling
+	}
+	args := make([]string, 0, len(t.Args))
+	for _, a := range t.Args {
+		args = append(args, Spell(a))
+	}
+	return t.Spelling + "<" + strings.Join(args, ", ") + ">"
+}
+
+// TypeParams writes a type parameter list in angle brackets, or
+// nothing for a declaration stating none, bounds joined by
+// ampersands behind extends. Variance, defaults and value
+// parameters refuse: Java's variance is a use-site wildcard, its
+// parameters take no default and no value, and dropping any of
+// the three would misstate the declaration.
+func TypeParams(ps []*emit.TypeParam) (string, error) {
+	if len(ps) == 0 {
+		return "", nil
+	}
+	parts := make([]string, 0, len(ps))
+	for _, p := range ps {
+		switch {
+		case p.Variance != symbol.VarianceInvariant:
+			return "", fmt.Errorf(
+				"java: a type parameter states no variance, and %s states one: "+
+					"the wildcard is use-site", p.Name)
+		case p.Const:
+			return "", fmt.Errorf(
+				"java: a type parameter takes a type, and %s takes a value", p.Name)
+		case p.Default != nil:
+			return "", fmt.Errorf(
+				"java: a type parameter takes no default, and %s states one", p.Name)
+		}
+		part := p.Name
+		if len(p.Bounds) > 0 {
+			bounds := make([]string, 0, len(p.Bounds))
+			for _, b := range p.Bounds {
+				bounds = append(bounds, Spell(b))
+			}
+			part += " extends " + strings.Join(bounds, " & ")
+		}
+		parts = append(parts, part)
+	}
+	return "<" + strings.Join(parts, ", ") + ">", nil
 }
 
 // Params writes a parameter list, the variadic marker included.

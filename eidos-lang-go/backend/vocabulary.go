@@ -4,6 +4,7 @@
 package backend
 
 import (
+	"fmt"
 	"path"
 	"strings"
 	"text/template"
@@ -19,6 +20,8 @@ const (
 	FuncDocs = "docs"
 	// FuncSpell writes a type reference.
 	FuncSpell = "spell"
+	// FuncTypeParams writes a type parameter list.
+	FuncTypeParams = "typeparams"
 	// FuncParams writes a parameter list.
 	FuncParams = "params"
 	// FuncResults writes a result list.
@@ -40,12 +43,13 @@ const Anonymous = "any"
 // own additions.
 func Funcs() template.FuncMap {
 	return template.FuncMap{
-		FuncDocs:     Docs,
-		FuncSpell:    Spell,
-		FuncParams:   Params,
-		FuncResults:  Results,
-		FuncReceiver: Receiver,
-		FuncPackage:  Package,
+		FuncDocs:       Docs,
+		FuncSpell:      Spell,
+		FuncTypeParams: TypeParams,
+		FuncParams:     Params,
+		FuncResults:    Results,
+		FuncReceiver:   Receiver,
+		FuncPackage:    Package,
 	}
 }
 
@@ -67,12 +71,68 @@ func Docs(lines []string, prefix ...string) string {
 
 // Spell writes a type reference. A reference the graph never
 // resolved carries its source spelling, which is what a Go graph
-// rendering back to Go needs; a missing one spells [Anonymous].
+// rendering back to Go needs; a missing one spells [Anonymous]. A
+// reference carrying arguments holds its bare name in Spelling,
+// and the argument list spells here in Go's brackets.
 func Spell(t *emit.TypeRef) string {
 	if t == nil || t.Spelling == "" {
 		return Anonymous
 	}
-	return t.Spelling
+	if len(t.Args) == 0 {
+		return t.Spelling
+	}
+	args := make([]string, 0, len(t.Args))
+	for _, a := range t.Args {
+		args = append(args, Spell(a))
+	}
+	return t.Spelling + "[" + strings.Join(args, ", ") + "]"
+}
+
+// TypeParams writes a type parameter list in brackets, or nothing
+// for a declaration stating none. A parameter without a bound
+// spells [Anonymous], one bound spells itself, and several fold
+// into an inline constraint interface, which is Go's intersection;
+// the formatter settles that interface's layout. Variance,
+// defaults and value parameters refuse: Go's parameters state none
+// of the three, and dropping one would misstate the declaration.
+func TypeParams(ps []*emit.TypeParam) (string, error) {
+	if len(ps) == 0 {
+		return "", nil
+	}
+	parts := make([]string, 0, len(ps))
+	for _, p := range ps {
+		switch {
+		case p.Variance != symbol.VarianceInvariant:
+			return "", fmt.Errorf(
+				"go: a type parameter states no variance, and %s states one", p.Name)
+		case p.Const:
+			return "", fmt.Errorf(
+				"go: a type parameter takes a type, and %s takes a value", p.Name)
+		case p.Default != nil:
+			return "", fmt.Errorf(
+				"go: a type parameter takes no default, and %s states one", p.Name)
+		}
+		parts = append(parts, p.Name+" "+bound(p.Bounds))
+	}
+	return "[" + strings.Join(parts, ", ") + "]", nil
+}
+
+// bound writes one parameter's constraint: [Anonymous] for none,
+// the bound itself for one, and an inline constraint interface
+// for several.
+func bound(bs []*emit.TypeRef) string {
+	switch len(bs) {
+	case 0:
+		return Anonymous
+	case 1:
+		return Spell(bs[0])
+	default:
+		parts := make([]string, 0, len(bs))
+		for _, b := range bs {
+			parts = append(parts, Spell(b))
+		}
+		return "interface{ " + strings.Join(parts, "; ") + " }"
+	}
 }
 
 // Params writes a parameter list, variadic marker included.

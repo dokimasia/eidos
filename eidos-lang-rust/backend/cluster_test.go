@@ -78,4 +78,43 @@ func TestCluster(t *testing.T) {
 				"}\n",
 			"the receiver-first signature under the attached type's block")
 	})
+
+	t.Run("a generic receiver opens the binder", func(t *testing.T) {
+		t.Parallel()
+
+		tmpl, err := template.New("impl").
+			Funcs(backend.Funcs()).
+			Funcs(template.FuncMap{
+				"body": func(any) string { return "        return;\n" },
+			}).
+			Parse(backend.ImplTemplate)
+		assert.NoError(t, err, "the template parses")
+
+		fold := &emit.Method{
+			Name: "fold",
+			Receives: &emit.TypeRef{
+				Spelling: "Box",
+				Args:     []*emit.TypeRef{{Spelling: "T"}},
+			},
+			TypeParams: []*emit.TypeParam{
+				{Name: "U", Bounds: []*emit.TypeRef{{Spelling: "Codec"}}},
+			},
+			Params:  []*emit.Param{{Name: "item", Type: &emit.TypeRef{Spelling: "U"}}},
+			Returns: []*emit.Return{{Type: &emit.TypeRef{Spelling: "U"}}},
+		}
+		fold.Body = emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}
+		var b strings.Builder
+		assert.NoError(t, tmpl.Execute(&b, render.Clustered{
+			Group: backend.ImplGroup,
+			Decls: []symbol.Symbol{fold},
+		}), "the template executes")
+		assert.Equal(t, b.String(),
+			"impl<T> Box<T> {\n"+
+				"    pub fn fold<U: Codec>(&self, item: U) -> U {\n"+
+				"        return;\n"+
+				"    }\n"+
+				"}\n",
+			"the receiver's arguments restate as the binder, the method's "+
+				"own parameters behind its name")
+	})
 }

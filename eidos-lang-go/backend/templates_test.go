@@ -135,6 +135,60 @@ func TestTemplates(t *testing.T) {
 			"var count int\n", "the variable shape")
 	})
 
+	t.Run("generics", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Box", TypeParams: []*emit.TypeParam{{Name: "T"}}}
+		s.Fields.Append(&emit.Field{Name: "Item", Type: ref("T")})
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"type Box[T any] struct {\n\tItem T\n}\n",
+			"the struct's parameter list behind its name")
+
+		i := &emit.Interface{
+			Name:       "Keyed",
+			TypeParams: []*emit.TypeParam{{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}}},
+		}
+		i.Methods.Append(&emit.Method{
+			Name:    "Pick",
+			Params:  []*emit.Param{{Name: "key", Type: ref("K")}},
+			Returns: []*emit.Return{{Type: ref("K")}},
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"type Keyed[K Codec] interface {\n\tPick(key K) K\n}\n",
+			"the bound behind the parameter, members referencing it")
+
+		f := &emit.Function{
+			Name:       "Sort",
+			TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			Params:     []*emit.Param{{Name: "items", Type: ref("T")}},
+			Returns:    []*emit.Return{{Type: ref("T")}},
+		}
+		assert.Equal(t, execute(t, backend.FunctionTemplate, f),
+			"func Sort[T Codec](items T) T {\n\tbody()\n}\n",
+			"the function's parameter list behind its name")
+
+		m := &emit.Method{
+			Name:       "Fold",
+			Receives:   &emit.TypeRef{Spelling: "Box", Args: []*emit.TypeRef{ref("T")}},
+			TypeParams: []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			Params:     []*emit.Param{{Name: "item", Type: ref("U")}},
+			Returns:    []*emit.Return{{Type: ref("U")}},
+		}
+		assert.Equal(t, execute(t, backend.MethodTemplate, m),
+			"func (Box[T]) Fold[U Codec](item U) U {\n\tbody()\n}\n",
+			"the receiver restates the host's argument, and the method "+
+				"declares its own, which Go spells since 1.27")
+
+		a := &emit.Alias{
+			Name:       "Match",
+			TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			Target:     &emit.TypeRef{Spelling: "Keyed", Args: []*emit.TypeRef{ref("T")}},
+		}
+		assert.Equal(t, execute(t, backend.AliasTemplate, a),
+			"type Match[T Codec] = Keyed[T]\n",
+			"the alias parameterizes and its target restates the argument")
+	})
+
 	t.Run("the file skeleton", func(t *testing.T) {
 		t.Parallel()
 
