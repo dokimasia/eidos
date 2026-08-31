@@ -28,11 +28,32 @@ func TestImportSet(t *testing.T) {
 		assert.Equal(t, s.Len(), 2, "the count agrees")
 	})
 
+	t.Run("binds names beside paths", func(t *testing.T) {
+		t.Parallel()
+
+		var s render.ImportSet
+		s.AddNamed("svc/store", "Store")
+		s.AddNamed("svc/store", "Row")
+		s.AddNamed("svc/store", "Row")
+		s.Add("svc/store")
+		s.Add("side/effect")
+		assert.Equal(t, s.Entries(), []render.Entry{
+			{Path: "side/effect"},
+			{Path: "svc/store"},
+			{Path: "svc/store", Name: "Row"},
+			{Path: "svc/store", Name: "Store"},
+		}, "entries dedupe and sort by path then name, the bare form first")
+		assert.Equal(t, s.Paths(), []string{"side/effect", "svc/store"},
+			"paths stay distinct whatever names bind under them")
+		assert.Equal(t, s.Len(), 2, "the count follows the paths")
+	})
+
 	t.Run("resets for the next file", func(t *testing.T) {
 		t.Parallel()
 
 		var s render.ImportSet
 		s.Add("alpha")
+		s.AddNamed("alpha", "A")
 		s.Reset()
 		assert.Equal(t, s.Len(), 0, "a reset set holds nothing")
 		s.Add("beta")

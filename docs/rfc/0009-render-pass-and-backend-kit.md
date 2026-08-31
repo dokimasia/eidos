@@ -4,7 +4,7 @@ title: The render pass and the backend kit
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Review
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-08-31
 discussion: none
 supersedes: none
 superseded-by: none
@@ -197,6 +197,79 @@ package render
 type Naming func(u plugin.Unit) string
 ```
 
+### Splitting and clustering
+
+Two language facts force two optional seams. A Java file holds one
+public type, so a unit holding two must become two files, named
+after the types they hold; and a Rust method renders only inside
+an impl block grouped by the type it attaches to, which no
+per-declaration template can write. Both are the target's own
+facts, so both are declared beside Naming and both default to off.
+
+```go
+// Split reshapes one unit into the units the target files
+// separately: Java returns one unit per file-level type, keyed by
+// the declaration's name, so Naming spells the filename the
+// language demands. A nil Split keeps every unit whole. The pass
+// applies it before naming, preserves order, and calls it once
+// per unit, so a pure function keeps the render deterministic.
+type Split func(u plugin.Unit) []plugin.Unit
+
+// GroupName names a declaration cluster a group template spells.
+type GroupName string
+
+// Cluster assigns one unit's declarations to named groups: Rust
+// gathers methods under its impl group by the type they attach
+// to. A declaration the function leaves unassigned renders
+// through its kind template; a cluster renders through the group
+// template its name selects, in place of its members' kind
+// templates, at the position of its first member. A group
+// template receives the cluster and spells its members itself,
+// through the shared vocabulary and the body builtin. A nil
+// Cluster leaves every declaration a singleton. Clusters stay
+// inside one unit, so plugin attribution and canonical order
+// survive.
+type Cluster func(decls []symbol.Symbol) []Clustered
+
+// Clustered is one cluster: the group template that spells it
+// and the declarations it holds, in unit order.
+type Clustered struct {
+    Group GroupName
+    Decls []symbol.Symbol
+}
+```
+
+A standalone callable in a target with no file-level callable
+kind stays reported under the unspelt-kind finding. The pass does
+not adopt orphans into hosts: manufacturing a wrapper declaration
+is a generator's move through slots, on the model, where
+provenance and composition hold, and a render-level adoption
+would be the transform the model level already refuses.
+
+### The import entries
+
+An import set entry carries the path a spelling qualified with
+and, where the language's import form binds one, the simple name
+it binds. TypeScript writes the bound names in braces before the
+path, Java binds one qualified name per statement, Rust one use
+path; Go reads the paths alone and a bare path is the side-effect
+or whole-namespace form everywhere.
+
+```go
+// Entry is one collected import: the path, and the name it binds
+// where the language's import form binds one. A bare path leaves
+// Name empty.
+type Entry struct {
+    Path string
+    Name string
+}
+
+// Add records a bare path; AddNamed records a bound name under a
+// path. Paths returns the distinct paths sorted, for a renderer
+// that binds no names; Entries returns the full set sorted by
+// path then name.
+```
+
 ### The backend kit
 
 The author supplies what the language varies in; the kit owns the
@@ -233,6 +306,17 @@ func (b *BackendBuilder) Funcs(fs template.FuncMap) *BackendBuilder
 
 // Naming sets the target's filename spelling.
 func (b *BackendBuilder) Naming(n Naming) *BackendBuilder
+
+// Split sets the target's unit reshaping; undeclared, every unit
+// files whole.
+func (b *BackendBuilder) Split(s render.Split) *BackendBuilder
+
+// Cluster sets the target's declaration clustering, and Groups
+// the templates its group names select. A cluster without group
+// templates, a group name declared twice and a group template
+// that does not parse are defects at Build.
+func (b *BackendBuilder) Cluster(c render.Cluster) *BackendBuilder
+func (b *BackendBuilder) Groups(gs map[render.GroupName]string) *BackendBuilder
 
 // Imports sets the renderer for a file's collected import set:
 // grouping and sorting are language facts.
@@ -283,14 +367,17 @@ sequenceDiagram
     R-->>C: files as values, findings on the sink
 ```
 
-1. **Group.** Every unit maps to one file through the target's
-   Naming; units sharing a name merge into one file in unit order,
-   and a name collision across plans is the output contract's to
-   refuse, because only it sees every plan.
+1. **Group.** Every unit passes the target's Split, and every
+   unit that leaves it maps to one file through the target's
+   Naming; units sharing a name merge into one file in unit
+   order, and a name collision across plans is the output
+   contract's to refuse, because only it sees every plan.
 2. **Render declarations** through the kind templates, in
    canonical order: origin identity, then the unit's declaration
-   order. A kind template exists for every kind by Build's own
-   refusal.
+   order. Declarations the target's Cluster gathers render
+   together through their group template instead, at the position
+   of the cluster's first member. A kind the language spells
+   neither way is the unspelt-kind finding.
 3. **Splice slots.** Slot contents render through the same kind
    machinery, in the order they were appended, and the pass adds
    no sort of its own, because a slot item carries no attribution
@@ -434,14 +521,22 @@ the output contract has to validate twice.
 - Per-file parallelism makes render findings arrive in file order
   only after the sink sorts them; the pass itself reports in
   completion order.
+- Split and Cluster widen Language by two functions and a template
+  map, all optional; a target that needs none carries nil fields.
+  A group template spells its members itself, so the lint parses
+  it against the vocabulary but cannot check member completeness
+  the way it checks a kind template's bound type.
+- Entries widen the import set's surface by one type and two
+  reads. A renderer that binds no names keeps reading Paths, and a
+  bare Add and a named AddNamed under one path stay two entries,
+  which is what a side-effect import beside a named one means.
 
 ## Open questions
 
-- Should the kit's `Imports` and `ImportSet` arrive in this package
-  or beside the lowering seam that feeds them? The set is a per
-  file accumulator and the spelling helpers that fill it are the
-  lowering's; this proposal keeps the set with the pass and leaves
-  the helpers where the seam arrives.
+- The set's home is settled: it stays with the pass, and its
+  entries carry the bound name beside the path, so a named import
+  form renders from the set alone while the spelling helpers that
+  fill it stay the lowering's.
 - Does `RunBackendSuite` need a check refusing an undeclared kind
   template, or is Build's panic the whole answer? The proposal
   relies on Build.
