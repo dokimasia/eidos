@@ -24,7 +24,7 @@ declaration beats any inference, whatever order the plugins ran in.
 fix-it script that has to outrank even the directives it is
 rewriting. Nothing in a normal run writes at that authority.
 
-Plugins never call each other. A fact that has to travel goes on the
+Plugins never call each other. A fact that has to move between plugins goes on the
 graph.
 
 **A boolean key is written only when the fact holds.** Absence is
@@ -33,7 +33,7 @@ load-bearing, because you cannot negate a stamped boolean by writing
 a lower value. So the kernel `meta` directive has a drop form,
 `+gen:meta drop=shape.comparable`, which takes a key or a declared
 fact group and removes the fact, or every member of the group
-including stamps that land later. A drop writes at `directive`
+including stamps that arrive later. A drop writes at `directive`
 authority: it outranks a `plugin` stamp and loses to `manual`, like
 any other directive write. `explain` shows it as a deletion somebody
 authored rather than as a fact nobody wrote
@@ -92,7 +92,7 @@ any registered name.
 Groups exist because facts ship in families. Negating a
 classification means removing the family, and an author forced to
 list a writer's keys by hand is coupled to exactly the internals the
-visibility law hides ([06b-authoring.md](06b-authoring.md)). The
+visibility rule hides ([06b-authoring.md](06b-authoring.md)). The
 group name is public API, and its membership is the writer's to
 grow. `meta drop` accepts a key or a group, resolved against the
 registry at Build, so a typo names the candidates instead of missing
@@ -165,7 +165,7 @@ silently turns into a red check.
 
 ## Provenance carries the read set
 
-Provenance answers who wrote a fact, at what authority and where,
+Provenance returns who wrote a fact, at what authority and where,
 and what they derived it from, meaning the (symbol, key) reads that
 produced it. One mechanism serves two consumers.
 
@@ -178,7 +178,7 @@ the other.
 
 ## Language-specific metadata
 
-This is the mechanism for everything the degradation ladder
+This is the mechanism for everything the degradation scale
 preserves but the projection cannot hold
 ([03-projection.md](03-projection.md)).
 

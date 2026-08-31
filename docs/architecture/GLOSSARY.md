@@ -11,11 +11,11 @@ The document named in each row carries the full contract.
 | node / emit | the two generated models: what frontends produce, and what generators produce | [02](02-symbol-model.md) |
 | freeze | the seal after Annotate. From then on the store refuses structural writes | [08](08-workspace-and-plans.md) |
 | bag | a symbol's typed metadata container, `meta.Bag` | [04](04-metadata.md) |
-| authority | the override ladder on every metadata write: `plugin < directive < manual` | [04](04-metadata.md) |
+| authority | the override order on every metadata write: `plugin < directive < manual` | [04](04-metadata.md) |
 | completeness contract | a key's promise that it is stamped on every X by phase Y, checked in audit mode | [04](04-metadata.md) |
 | projection | a neutral view of language facts: Callable, TypeShape, Resolve, Members, Values | [03](03-projection.md) |
 | tier | where a language question may live: 1 mandatory, 2 optional and found by asserting, 3 the language sdk | [03](03-projection.md) |
-| degradation ladder | the four levels a source construct can land on: projected fully, projected partly with metadata, opaque with metadata, or refused at lowering | [03](03-projection.md) |
+| degradation scale | the four levels a source construct can sit at: projected fully, projected partly with metadata, opaque with metadata, or refused at lowering | [03](03-projection.md) |
 | carrier | where a directive physically sits in source, such as `//+gen:` or an attribute | [05](05-directives.md) |
 | directive | the canonical parsed annotation: one grammar, params checked against a schema | [05](05-directives.md) |
 | slot | a typed append point on an emit value. Every body carries `prologue` and `epilogue` | [07](07-rendering.md) |
@@ -31,7 +31,7 @@ The document named in each row carries the full contract.
 | early cutoff | recompute only when a read *value* changed, not merely when its input was touched | [09](09-incrementality.md) |
 | sealed graph | the persisted symbol graph. Regions decode on first touch, so opening it costs what the run reads | [09](09-incrementality.md) |
 | warm≡cold | the check proving that a cached run and a cold run produce byte-identical manifests | [13](13-testing-and-conformance.md) |
-| check | one layer of the conformance ladder | [13](13-testing-and-conformance.md) |
+| check | one suite of the conformance set | [13](13-testing-and-conformance.md) |
 | manifest | the versioned record of every generated file: its plan, its hash, and what it derives from | [17](17-output-and-determinism.md) |
 | drift | a manifested file whose hash on disk no longer matches. Someone edited it, and eidos never overwrites it | [17](17-output-and-determinism.md) |
 | adoption | claiming a byte-equal pre-existing file into the manifest on the first run | [17](17-output-and-determinism.md) |
@@ -59,7 +59,7 @@ The document named in each row carries the full contract.
 | provenance trailer | the `<brand>:provenance sha256:<body-hash>` line ending every generated file. It proves ownership and detects drift without the manifest | [17](17-output-and-determinism.md) |
 | fact group | a bundle of metadata keys its writer declares, which `meta drop` can remove under one public name | [04](04-metadata.md) |
 | Members | the Tier-1 projection giving a type's effective member set across embeds and supertypes, and where each member came from | [03](03-projection.md) |
-| Build | the validation ladder that runs once per composition and produces the immutable Workspace. Every boundary string resolves here | [08](08-workspace-and-plans.md) |
-| parse memo | the content-addressed store of parsed regions keyed by unit fingerprint. It answers branch switches, where the sealed state answers the edit loop | [09](09-incrementality.md) |
+| Build | the validation sequence that runs once per composition and produces the immutable Workspace. Every boundary string resolves here | [08](08-workspace-and-plans.md) |
+| parse memo | the content-addressed store of parsed regions keyed by unit fingerprint. It returns branch switches, where the sealed state returns the edit loop | [09](09-incrementality.md) |
 | Reader | the tracked, scope-filtered read handle. Targeted reads record identity edges; enumerations record set-membership edges | [02](02-symbol-model.md) |
 | classification form | shape, mixin or contract: the spec field that pins a classification's cardinality, arbitration, inference and directive shape | [12](12-shape-catalog.md) |

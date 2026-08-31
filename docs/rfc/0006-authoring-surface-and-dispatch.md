@@ -30,15 +30,15 @@ a stamped fact rather than a filter inside the handler. The handler's
 second parameter picks its effect, and every rule set lowers to the
 SPI roles. Dispatch is indexed: a gated rule visits its matches
 through the store's kind and directive indexes and the fact store's
-key index, so a rule costs what it matches, and only a bare rule pays
-for the whole graph.
+key index, so a rule costs what it matches, and only a bare rule visits
+the whole graph.
 
 ## Motivation
 
 The kernel now holds everything a plugin acts on: a frozen graph with
 tracked readers, arbitrated fact bags, and validated typed
 directives. It holds no way to write a plugin. Without this layer,
-three of the framework's laws cannot be enforced at all:
+three of the framework's rules cannot be enforced at all:
 
 - **Gates must be data.** A handler that starts with `if` contains
   selectivity the engine cannot see. Dispatch then degrades into
@@ -58,7 +58,7 @@ three of the framework's laws cannot be enforced at all:
   across plugins and two of them disagree the first time a map
   iterates.
 
-The role interfaces alone cannot carry these laws. A bare role
+The role interfaces alone cannot carry these rules. A bare role
 implementation is honest but expensive: it subscribes to everything
 in scope, reads at whole-phase grain, and keeps its selectivity
 private. That form stays public, because some plugins genuinely
@@ -68,7 +68,7 @@ form to exist.
 
 One more requirement shapes the design. The seams that come after
 this layer, meaning rendering, routing, incremental re-runs,
-parallel buckets, new languages and new subject kinds, must land as
+parallel buckets, new languages and new subject kinds, must arrive as
 additions rather than reworks. Every section below states which
 addition it expects and why the surface holds still when it
 arrives.
@@ -127,7 +127,7 @@ type Plugin interface {
     Name() ID
 }
 
-// Role names one phase seat a plugin can hold. Priorities are per
+// Role names one phase role a plugin can hold. Priorities are per
 // role: one shared number cannot place a dual-role plugin's two
 // halves independently.
 type Role uint8
@@ -223,7 +223,7 @@ on:
 - The composition populates over those defaults, refuses an unknown
   key or a mistyped value as a collected fault naming the plugin
   and the field, and folds the populated struct into the
-  fingerprint. `Options()` answers the same pointer.
+  fingerprint. `Options()` returns the same pointer.
 
 The struct is the schema. There is no parallel spec list to drift
 from it, and every consumer of the schema reads the same tags.
@@ -245,13 +245,13 @@ a plugin's read and must not record one.
 // Index wraps the graph rather than exposing it, and the wrapping
 // is load-bearing twice over. Nothing reachable from a context can
 // make a structural write, because AddPackage and AttachDirectives
-// are not here; and nothing reachable can read a stranger's raw
+// are not here; and nothing reachable can read another plugin's raw
 // directives. What dispatch needs is exactly what is here.
 type Index struct { /* graph, facts, validated, skips, scope */ }
 
 // NewIndex builds the routing surface. It is refused over an
 // unfrozen graph. validated holds each subject's typed instances
-// in position order, as validation answered them; the index keeps
+// in position order, as validation returned them; the index keeps
 // the map, and the caller does not mutate it after handing it
 // over. A nil scope admits everything.
 func NewIndex(
@@ -266,11 +266,11 @@ func (ix *Index) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol]
 func (ix *Index) ByDirective(n directive.Name) iter.Seq[symbol.Symbol]
 func (ix *Index) ByFactKey(id meta.KeyID) iter.Seq[symbol.Identity]
 
-// Lookup answers one declaration, untracked: how a fact-gated
+// Lookup returns one declaration, untracked: how a fact-gated
 // candidate resolves to its declaration and kind.
 func (ix *Index) Lookup(id symbol.Identity) (symbol.Symbol, bool)
 
-// DirectivesOf answers a subject's validated instances, position
+// DirectivesOf returns a subject's validated instances, position
 // order. This is the gate's read, not a plugin's: a handler sees
 // only the one instance that caused its call.
 func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive
@@ -278,7 +278,7 @@ func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive
 // Skipped reports whether the kernel skip directive excludes a
 // subject: for every plugin with no argument, for one plugin under
 // skip plugin=<name>. The table is computed once at NewIndex, so a
-// match pays one probe of a map holding only the subjects that
+// match costs one probe of a map holding only the subjects that
 // carry skip.
 func (ix *Index) Skipped(id symbol.Identity, p diag.PluginID) bool
 
@@ -295,7 +295,7 @@ twin of the reader's existing lookup:
 ```go
 package store
 
-// PackageOf answers the package holding a declaration, untracked:
+// PackageOf returns the package holding a declaration, untracked:
 // the kernel's own path, beside the tracked [Reader.PackageOf].
 func (g *Graph) PackageOf(id symbol.Identity) (*node.Package, bool)
 ```
@@ -326,7 +326,7 @@ type GeneratorContext struct {
 }
 ```
 
-A hand-rolled plugin reads through `ctx.Reader` and prices as one
+A hand-rolled plugin reads through `ctx.Reader` and counts as one
 implicit subscription to everything in scope. The facade never
 touches `ctx.Reader`: it mints one reader per handler invocation
 through the index, which is what makes a fact write's provenance
@@ -383,7 +383,7 @@ type Unit struct {
     Pkg symbol.Identity
     // Decls holds the emit declarations, ordered by origin
     // identity, then instance order under a repeatable directive,
-    // then insertion, so contributions land in canonical subject
+    // then insertion, so contributions arrive in canonical subject
     // order and never in dispatch order.
     Decls []symbol.Symbol
     // Origins holds the node identities this unit derives from,
@@ -393,7 +393,7 @@ type Unit struct {
 
 // Emit holds one plan's accumulated units, plus a per-kind index
 // over their declarations that is maintained at Add: each unit's
-// tree is walked once when it lands, so an emit-triggered rule
+// tree is walked once when it arrives, so an emit-triggered rule
 // enumerates its matches rather than the emit graph.
 //
 // Emit is not safe for concurrent use: annotators and generators
@@ -410,17 +410,17 @@ func NewEmit() *Emit
 func (e *Emit) Add(u Unit) error
 
 // Units enumerates every unit: by plugin, then cardinality, then
-// key, then tag. The order is total, so two runs answer alike.
+// key, then tag. The order is total, so two runs agree.
 func (e *Emit) Units() iter.Seq[Unit]
 
 // ByKind enumerates the emit declarations of one kind across every
 // unit, in Units order, each unit's tree walked depth first. This
 // is the OnEmit trigger's enumeration: a weaver subscribing to
 // methods visits every emitted method, wherever a slot holds it.
-// Only values carrying a nonzero Origin answer, because every
+// Only values carrying a nonzero Origin are returned, because every
 // emit-trigger mechanism resolves through the origin: predicates,
 // skip and reporting alike. A value whose author left Origin zero
-// still lands in its unit; it is just not a subject.
+// still arrives in its unit; it is just not a subject.
 func (e *Emit) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol]
 ```
 
@@ -444,7 +444,7 @@ const (
 )
 
 // Subscription is one gate tuple as data. A rule gated on two fact
-// keys answers two records with one RuleID.
+// keys returns two records with one RuleID.
 type Subscription struct {
     Rule      RuleID
     Kind      symbol.Kind    // zero for a graph-wide rule
@@ -456,7 +456,7 @@ type Subscription struct {
 // Subscribed is what Build produces: the plugin plus its gate
 // tuples. A hand-rolled plugin may skip it entirely, which reads
 // as one implicit subscription to everything in scope. That is
-// honest, and it prices as full-graph dispatch.
+// honest, and it costs full-graph dispatch.
 type Subscribed interface {
     Plugin
     Subscriptions() []Subscription
@@ -466,7 +466,7 @@ type Subscribed interface {
 In this proposal the records are declaration data: the run reads
 them to know what a plugin watches, and the conformance suite
 asserts their stability. Nothing re-runs a single rule for a single
-subject; the seat for that is a method beside `Subscriptions`, not
+subject; the role for that is a method beside `Subscriptions`, not
 proposed here.
 
 ### The authoring surface: a plugin is a value
@@ -486,7 +486,7 @@ func (b *Builder) Requires(caps ...plugin.Capability) *Builder
 func (b *Builder) Options(cfg any) *Builder           // carried; populated at composition
 func (b *Builder) Handle(rules ...Rule) *Builder
 
-// Build freezes the declaration and answers the lowered plugin.
+// Build freezes the declaration and returns the lowered plugin.
 // The dynamic type implements the roles the rules imply and no
 // others: Stamper rules make an Annotator, Emitter rules a
 // Generator, a mixed set both. It also implements Subscribed and
@@ -544,7 +544,7 @@ the mark on a kind without a node-side identity, and regeneration is
 what adds a trigger. Marking a new subject kind produces its Match
 type and constructor; forgetting the mark produces nothing. The model
 therefore bounds the trigger set, and use cases do not: a kind that
-earns subject treatment in its own right, say a package under
+justifies subject treatment in its own right, say a package under
 aggregate annotation, is a schema mark plus a regeneration rather
 than a new mechanism. The member,
 container and type-machinery kinds stay unmarked on purpose, Param,
@@ -561,7 +561,7 @@ type InterfaceMatch struct {
     Interface *node.Interface
 }
 
-// OnInterface fires the handler once per interface in scope, or
+// OnInterface runs the handler once per interface in scope, or
 // once per gating instance under a Directive wrapper.
 func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule
 ```
@@ -573,7 +573,7 @@ Two structural triggers are hand-written beside them:
 // match's reader. It has no subject identity.
 type GraphMatch struct{ match }
 
-// OnGraph fires the handler once per phase call: the pressure
+// OnGraph runs the handler once per phase call: the pressure
 // valve for logic that genuinely spans subjects. It takes the
 // Emitter only. A stamper writes to its subject's bag and a graph
 // rule names no subject; an annotator that wants facts on many
@@ -589,10 +589,10 @@ type EmitMatch struct {
     Value symbol.Symbol // the emit declaration, assert to its kind
 }
 
-// Origin answers the node identity the emit value derives from.
+// Origin returns the node identity the emit value derives from.
 func (m *EmitMatch) Origin() symbol.Identity
 
-// OnEmit fires the handler once per emit value of one kind,
+// OnEmit runs the handler once per emit value of one kind,
 // wherever a slot holds it. It takes the Emitter only: emit is per
 // plan and plans run in parallel, so a fact stamped from the emit
 // side would live in a universe sibling plans never see. A fact
@@ -603,7 +603,7 @@ func OnEmit(k symbol.Kind, h func(*EmitMatch, *Emitter) error) Rule
 
 A plugin's own emit is invisible to its own emit rules by
 construction: accumulators flush into the store when the phase call
-returns, after every rule ran. That is the order-independence law
+returns, after every rule ran. That is the order-independence rule
 made structural, because no rule can observe whether a sibling rule
 ran first.
 
@@ -652,14 +652,14 @@ index and evaluates its predicates on each carrier.
 Every generated Match embeds one base surface:
 
 ```go
-// Reader answers the invocation's tracked read handle, minted on
+// Reader returns the invocation's tracked read handle, minted on
 // first use, so a handler that never reads costs no tracking. A
 // handler that needs a sibling declaration looks it up like anyone
 // else, instead of escaping to a graph-wide rule for an ordinary
 // lookup.
 func (m *match) Reader() *store.Reader
 
-// Directive answers the gating instance, nil for bare and
+// Directive returns the gating instance, nil for bare and
 // fact-gated matches. Under a repeatable schema the handler runs
 // once per instance and each match carries its one instance, so
 // the accessor stays singular.
@@ -698,13 +698,13 @@ lives on the key rather than the surface:
 // matches satisfy it.
 type Matcher interface { /* unexported */ }
 
-// Fact answers the subject's winning value for k, recording the
+// Fact returns the subject's winning value for k, recording the
 // read at (subject, key) into the invocation's read set; a miss
 // records too. On an emit match the subject is the origin; on a
-// graph match there is no subject and Fact answers false.
+// graph match there is no subject and Fact returns false.
 func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool)
 
-// FactOf answers another declaration's winning value, recorded the
+// FactOf returns another declaration's winning value, recorded the
 // same way: reading a sibling's stamped facts is the sanctioned
 // channel between plugins.
 func FactOf[T meta.FactValue](
@@ -722,11 +722,11 @@ method beside `Reader`.
 // Tag selects a declared output family; the zero value is the
 // primary. Addressing an undeclared family panics: the family set
 // is the plugin's own declaration, so the mismatch is a defect
-// that fires on the first matching test.
+// that panics on the first matching test.
 type Tag string
 
 // Emitter is a handler's write surface, scoped to its subject.
-// Each accessor answers the one accumulator for its (cardinality
+// Each accessor returns the one accumulator for its (cardinality
 // key, family): created on first touch, appended to thereafter, so
 // two interfaces in one source file assemble one per-source unit
 // and a package's matches assemble one registry.
@@ -739,7 +739,7 @@ func (e *Emitter) PlanFile(tags ...Tag) *Out    // key: the plan
 // Out is one accumulator seen from one match. The handle carries
 // the match's subject, so an append is attributed without shared
 // mutable state: two matches hold two handles onto one
-// accumulator, which is what lets a parallel bucket land as a lock
+// accumulator, which is what lets a parallel bucket arrive as a lock
 // inside the accumulator rather than a new API.
 type Out struct { /* accumulator, subject, instance */ }
 
@@ -767,7 +767,7 @@ One signature-mirroring helper lives in the framework, because its
 correctness lesson is universal and easy to get wrong per plugin:
 
 ```go
-// Mirror answers an emit method mirroring a node method's
+// Mirror returns an emit method mirroring a node method's
 // signature, type spellings verbatim, origin set. The receiver is
 // named against the host type's name and the parameter names: a
 // method declaring Put(s Session) must not bind its receiver to s,
@@ -850,7 +850,7 @@ Each invocation reuses its rule's match with a fresh read set,
 minted lazily, and its own effect handle, so the reads a handler
 makes are the reads its artifact records: a stamp's derivation names what this match
 read, not what the phase read. Handlers are order-independent
-within a plugin by law, and dispatch is sequential in this
+within a plugin by rule, and dispatch is sequential in this
 proposal; the read grain is what makes the parallelism opt-in
 possible without changing any plugin.
 
@@ -996,7 +996,7 @@ sequenceDiagram
 
 Stated per mechanism, so a regression is measurable rather than
 felt. The indexes this dispatch enumerates are built and measured:
-the store's directive index answers at 1.4ns per carrier with 20k
+the store's directive index returns at 1.4ns per carrier with 20k
 carriers, its kind index fills once at freeze, and the fact-key
 index is maintained at stamp time.
 
@@ -1012,11 +1012,11 @@ index is maintained at stamp time.
 - Per invocation the steady-state cost is zero allocations: each
   rule reuses one match per phase call, valid for the duration of
   its handler call, and the read set and reader allocate on the
-  first tracked read, so a handler that only writes pays no
+  first tracked read, so a handler that only writes allocates no
   tracking. Retaining a match past its call is a defect, under the
-  same law that forbids state on the plugin struct.
+  same rule that forbids state on the plugin struct.
 - Emit rules enumerate the per-kind index maintained at `Add`, one
-  tree walk per unit when it lands, instead of re-walking the emit
+  tree walk per unit when it arrives, instead of re-walking the emit
   graph per rule.
 - Flush sorts each accumulator once by its ordering key and each
   unit's origins once.
@@ -1043,7 +1043,7 @@ the zero value tells them apart.
 The guarantee this buys: a facade-authored plugin and a hand-rolled
 SPI twin are indistinguishable to the run. The conformance suite
 holds both spellings of one plugin to byte-equal emit, which is
-what keeps the SPI honest as a public floor rather than an
+what keeps the SPI honest as a public base contract rather than an
 implementation detail.
 
 ### What generates, what is written by hand
@@ -1081,7 +1081,7 @@ could drive every (rule, subject) pair itself, invoking through a
 per-rule entry beside `Subscriptions`. A warm run wants exactly that
 shape, so it can re-run one rule for one dirty subject. It is still
 not proposed here: nothing consumes recorded edges yet, the entry
-seat is an interface addition when something does, and giving the run
+role is an interface addition when something does, and giving the run
 a per-rule entry now would freeze an invocation ABI before any
 consumer exists. The role method stays the unit of invocation;
 subscriptions stay data.
@@ -1092,7 +1092,7 @@ One package for both sides was weighed. The store's contract is the
 read side: it freezes, and everything after the freeze is a read. An
 emit store runs the opposite lifecycle. It is all writes, per plan,
 and stays unfrozen for the whole generate phase. Placing it in
-`plugin` keeps the store's law intact and puts the accumulation type
+`plugin` keeps the store's rule intact and puts the accumulation type
 beside the context that carries it.
 
 ### Rules registered at package initialization
@@ -1129,10 +1129,10 @@ claim's derivation and the parallel opt-in exact.
 ### A graph trigger that also annotates
 
 Letting the graph rule take a Stamper was weighed for aggregate
-annotators. It breaks the one law that makes annotation analyzable,
+annotators. It breaks the one rule that makes annotation analyzable,
 that the write target is statically known from the trigger, because
 a graph rule names no subject. The design refuses it and keeps two
-answers that compose: an annotator that wants facts on many
+returns that compose: an annotator that wants facts on many
 declarations subscribes to their kinds, and a kind that deserves
 aggregate annotation in its own right is marked a subject in the
 schema and regenerated.
@@ -1145,7 +1145,7 @@ schema and regenerated.
   the lowering guarantee is a design statement.
 - The root package is wide: ten generated Match types and
   constructors, roughly fifteen hand-written exported symbols, and
-  the `plugin` package another dozen. That is the priced cost of
+  the `plugin` package another dozen. That is the counted cost of
   kind-indexed triggers and typed effects; the bound is the
   schema's subject marks, not use cases.
 - `RuleID` is a declaration ordinal, so reordering rules renumbers
@@ -1154,14 +1154,14 @@ schema and regenerated.
   behaviour. The conformance suite's declaration check makes that
   visible; it cannot make it free.
 - `Index` sits on every context, so a hand-rolled plugin can
-  enumerate untracked. The law "a plugin reads through its Reader"
+  enumerate untracked. The rule "a plugin reads through its Reader"
   is enforced for facade authors by construction and for hand-rolled
   plugins only by conformance. Hiding the index would take a second,
   kernel-only context type plus a privileged path for the facade,
   which opens a bigger hole than the one it covers.
 - A generic constraint in the primary authoring signature. If
   `Effect` inference confuses more than it helps, every plugin
-  written before a narrowing pays the migration.
+  written before a narrowing is worth the migration.
 - Sequential dispatch leaves bucket parallelism on the table. The
   read grain is chosen so turning it on is a dispatcher change, not
   a plugin change, but nothing proves that until it exists.
@@ -1173,11 +1173,11 @@ schema and regenerated.
 
 ## Open questions
 
-- Should `Emit.ByKind` also answer the enclosing unit, so a weaver
+- Should `Emit.ByKind` also return the enclosing unit, so a weaver
   can ask which family it is appending beside? Nothing needs it
   yet, and a second iterator is a compatible addition, but if the
   conformance suite wants it for attribution assertions it should
-  land here instead.
+  arrive here instead.
 - Is the `doc` struct tag the right home for option documentation
   once options run long? A tag cannot hold paragraphs, and the
   alternative, a parallel spec list, reintroduces the drift the
@@ -1201,10 +1201,10 @@ schema and regenerated.
   whose stamps name their target and whose subscription is marked
   write-dynamic, so the engine can quarantine what it cannot
   bound. A widened `Effect` generic is not that shape: the two
-  answers that compose, subscribing per kind and marking a kind a
+  returns that compose, subscribing per kind and marking a kind a
   subject, stay the default.
 - Retaining generate-side per-invocation read sets, the
-  unit-to-reads record a warm run consumes, has a natural seat in
+  unit-to-reads record a warm run consumes, has a natural role in
   the dispatcher, which already creates the sets; nothing retains
   them here.
 - Bucket-parallel dispatch is an opt-in the read grain already
@@ -1219,7 +1219,7 @@ schema and regenerated.
 - [06-plugins.md](../architecture/06-plugins.md), the plugin SPI and
   the role contracts
 - [06b-authoring.md](../architecture/06b-authoring.md), the authoring
-  surface, the `Stamp` and `Fact` effects and the visibility law
+  surface, the `Stamp` and `Fact` effects and the visibility rule
 - [04-metadata.md](../architecture/04-metadata.md), the rank fields a
   claim envelope carries
 - [05-directives.md](../architecture/05-directives.md), the kernel

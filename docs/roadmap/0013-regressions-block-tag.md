@@ -27,7 +27,7 @@ both the canary and the benchmark rig.
 - [ ] The seven macro scenarios and the micro suite run with per-phase
       attribution, peak RSS and allocation counts, and every micro
       benchmark pins allocations per operation.
-- [ ] `budgets.yaml` is committed. Scaling-law and allocation gates
+- [ ] `budgets.yaml` is committed. Scaling-rule and allocation gates
       run in ordinary CI; absolute-time gates run on the dedicated
       runner profile and compare distributions against the recorded
       baseline.
@@ -68,13 +68,13 @@ the canary ring of
   the compatibility artifacts. This milestone builds the machinery
   that blocks a tag; 0014 adds what the tag publishes.
 - The catalog and declarative plugins joining the ring: they join as
-  they land (0011, 0012); the ring runs whatever exists.
+  they arrive (0011, 0012); the ring runs whatever exists.
 
 ## Risks to the sequence
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| The L-size target misses on the dedicated profile | 0014, with rework landing back in 0007's layers | That is what measuring before tagging is for. The scenario matrix attributes the miss to a phase, and the profile flags ship with the harness |
+| The L-size target misses on the dedicated profile | 0014, with rework arriving back in 0007's layers | That is what measuring before tagging is for. The scenario matrix attributes the miss to a phase, and the profile flags ship with the harness |
 | No dedicated runner exists yet, and someone has to provision one | 0013, 0014 | Provision it while 0008 runs. Scaling and allocation gates run on ordinary CI meanwhile, so only the absolute-time gates wait |
 
 ## Changes

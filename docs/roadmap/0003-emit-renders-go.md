@@ -19,7 +19,7 @@ backends to formatter-clean files, byte-identical across two runs,
 with the generated-file header, the provenance trailer, and sinks
 that write atomically and only on change. Two backends from the
 start is deliberate: the kit's API is held by having two consumers
-of the ritual, not one.
+of the render procedure, not one.
 
 ## Done when
 
@@ -84,13 +84,13 @@ rendering spells types through it.
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| text/template reports errors at execute time and checks nothing statically | 0005 | The template-lint check is the designed answer, and it lands in this milestone rather than later |
-| One kit API serving two languages grows a per-language escape hatch | 0009 | Two backends land together, so a law that fits only one language is found here, where changing the kit is free, and not at the cross-language milestone |
+| text/template reports errors at execute time and checks nothing statically | 0005 | The template-lint check is the designed answer, and it arrives in this milestone rather than later |
+| One kit API serving two languages grows a per-language escape hatch | 0009 | Two backends arrive together, so a rule that fits only one language is found here, where changing the kit is free, and not at the cross-language milestone |
 
 ## Changes
 
 | Date | What changed | Why |
 |---|---|---|
-| 2026-08-30 | The marker-law bullet names the emitter and a count, not both plugins | A slot statement carries no attribution, so the contributor is unknowable by construction; the emitter whose template dropped the marker is the party that can fix it |
-| 2026-08-30 | Added the TypeScript backend beside Go | Two consumers of the render ritual are what hold the kit's API; the Go-to-TypeScript lowering and its contested mappings stay at their own milestone, because a backend renders the neutral emit graph and needs no policy machinery |
+| 2026-08-30 | The marker-rule bullet names the emitter and a count, not both plugins | A slot statement carries no attribution, so the contributor is unknowable by construction; the emitter whose template dropped the marker is the party that can fix it |
+| 2026-08-30 | Added the TypeScript backend beside Go | Two consumers of the render procedure are what hold the kit's API; the Go-to-TypeScript lowering and its contested mappings stay at their own milestone, because a backend renders the neutral emit graph and needs no policy machinery |
 | 2026-08-30 | Added at position 3 | Rendering is testable over hand-built emit graphs, so it runs in parallel with 0002 rather than after it |

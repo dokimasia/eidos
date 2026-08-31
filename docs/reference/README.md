@@ -13,5 +13,5 @@ per-language support matrices. A stale page blocks the release, and
 [14-distribution-and-cli.md](../architecture/14-distribution-and-cli.md)
 explains why.
 
-Write a page here by hand only when no registry can answer for it. Anything
+Write a page here by hand only when no registry can return for it. Anything
 hand-written stops matching the code within two releases.

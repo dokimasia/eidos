@@ -63,8 +63,8 @@ workspace.
 **Whole files only.** eidos writes complete files that it manifests
 and nothing else. It never merges into, appends to, or rewrites part
 of a file it does not wholly own. Owning half a file gives you no
-determinism story, since the other half is uncontrolled input, no
-sweep story and no drift story. A plugin that must contribute into a
+determinism, since the other half is uncontrolled input, no sweep
+and no drift detection. A plugin that must contribute into a
 hand-written file does it through a generated sibling that the
 hand-written file imports.
 
@@ -91,7 +91,7 @@ type Written struct {
 Commit renames each file atomically, but not all of them jointly. A
 crash mid-commit leaves a mixed tree, where new files are owned by
 their trailers and old files by the previous manifest, and the next
-run heals it by construction: derive again, write if changed, and
+run corrects it by construction: derive again, write if changed, and
 rewrite the manifest. No repair pass exists because none is needed.
 
 ## Drift
@@ -186,7 +186,7 @@ append-past-the-marker case.
 outputs from Load
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)), adoption,
 refusing to overwrite drift, and CI verification all work in a fresh
-clone, because the proof travels in the bytes. A CI gate regenerates
+clone, because the proof is carried in the bytes. A CI gate regenerates
 and compares body hashes, and reads no state directory at all.
 
 The hash comes from the content, so the trailer is as deterministic
@@ -212,7 +212,7 @@ It lives in the brand's state directory, at
 `.<brand>/manifest.json` ([20-cli.md](20-cli.md)), and it is **not
 committed**. Committed, it generates merge conflicts. Uncommitted,
 nothing is lost, because every per-file answer it speeds up, meaning
-ownership, drift and adoption, also rides in the provenance trailer.
+ownership, drift and adoption, is also carried in the provenance trailer.
 
 The document is versioned at the root and names its workspace
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)):

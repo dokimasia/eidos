@@ -17,7 +17,7 @@ produces-adr: tbd
 
 This RFC makes a backend invokable. The service provider interface
 gains the render seam: a `Renderer` takes one plan's emit store and
-answers files as values, bytes against names, with nothing landing
+returns files as values, bytes against names, with nothing arriving
 on disk. The kernel package `render` owns the pass every backend
 runs: group units into files, render declarations through the
 language's kind templates in canonical order, splice slot
@@ -35,7 +35,7 @@ the output contract's seams, consumed here and proposed elsewhere.
 ## Motivation
 
 The emit model now says everything about what to render, bodies
-included, and nothing renders it. Three laws have to be settled
+included, and nothing renders it. Three rules have to be settled
 before the first language arrives, because retrofitting them means
 rewriting every backend that came first:
 
@@ -43,16 +43,16 @@ rewriting every backend that came first:
   resolution, the format-failure rule and the merge order are the
   same work in every language. Written per satellite they drift
   apart, and the drift is exactly the kind byte-identity cannot
-  tolerate. The kit owns the ritual; the author supplies what the
+  tolerate. The kit owns the procedure; the author supplies what the
   language varies in.
-- **No plugin renders a stranger's values.** Slot contributions
+- **No plugin renders another plugin's values.** Slot contributions
   render through the backend's kind machinery whichever mode the
   host uses, and a template reference resolves in its emitting
   plugin's tree alone. Both rules need the pass to enforce them,
   because no template can.
 - **text/template fails late, so the lint must run early.** The
   engine reports at execute time and checks nothing statically.
-  Both weaknesses are handled in the conformance ladder: the lint
+  Both weaknesses are handled by the conformance checks: the lint
   check parses every declared template against each target's merged
   funcmap before any run exists, and an execute-time error maps to
   a template file and line with the emitting plugin named.
@@ -63,7 +63,7 @@ rewriting every backend that came first:
 
 A backend is composed and validated where plans are; rendering is
 what it does when a caller hands it a plan's emit. The contract
-answers values, because what lands on disk, and whether anything
+returns values, because what arrives on disk, and whether anything
 does, belongs to the sink:
 
 ```go
@@ -91,7 +91,7 @@ type RenderedFile struct {
 // Renderer renders one plan's emit into files as values. A
 // problem with one file attaches to the context's sink and the
 // pass continues with the remaining files; a returned error is
-// fatal to the pass. Two calls over one store answer the same
+// fatal to the pass. Two calls over one store return the same
 // bytes, which the conformance suite holds every renderer to.
 type Renderer interface {
     Render(ctx *RenderContext) ([]RenderedFile, error)
@@ -192,7 +192,7 @@ package render
 // Naming spells a unit's filename for one target: the join and
 // extension of the family's word, the tag's treatment, and the
 // cardinality key's stem. It is total: every unit the plan admits
-// answers a name, and units answering one name assemble one file,
+// returns a name, and units returning one name assemble one file,
 // which is how two plugins share it.
 type Naming func(u plugin.Unit) string
 ```
@@ -200,7 +200,7 @@ type Naming func(u plugin.Unit) string
 ### The backend kit
 
 The author supplies what the language varies in; the kit owns the
-ritual and lowers to the SPI, the same boundary the plugin builder
+procedure and lowers to the SPI, the same boundary the plugin builder
 holds:
 
 ```go
@@ -244,9 +244,9 @@ func (b *BackendBuilder) Imports(r func(set *render.ImportSet) string) *BackendB
 // unformatted file.
 func (b *BackendBuilder) Finalise(f func(src []byte) ([]byte, error)) *BackendBuilder
 
-// Build freezes the declaration and answers the backend, which
+// Build freezes the declaration and returns the backend, which
 // implements plugin.Backend and plugin.Renderer both. It panics
-// on a declaration defect, the same law the plugin builder holds:
+// on a declaration defect, the same rule the plugin builder holds:
 // an empty name, a zero target, an empty kind-template set, no naming, a
 // template that does not parse.
 func (b *BackendBuilder) Build() plugin.Backend
@@ -294,13 +294,13 @@ sequenceDiagram
 3. **Splice slots.** Slot contents render through the same kind
    machinery, in the order they were appended, and the pass adds
    no sort of its own, because a slot item carries no attribution
-   to sort by. The ordering law holds by construction: a
+   to sort by. The ordering rule holds by construction: a
    contribution arrives only through a handler the run's bucket
    schedule already sequenced, so insertion order is the lowered
    order, priority, capability topology, then name.
 4. **Resolve references.** A body whose form is a template claim
    resolves its name in the emitting plugin's tree for this
-   target, never the backend's or a stranger's. The template must
+   target, never the backend's or another plugin's. The template must
    place the slot markers: a pending contribution into a body
    whose template dropped them is an Error naming the emitting
    plugin and counting what went unplaced, because a slot
@@ -336,7 +336,7 @@ Field references check wherever the bound type is known, which is
 always for kind templates and for the emit-value half of body
 templates, and never for a reference's payload. The verbatim form
 is the one thing the lint cannot see into at all, which is the cost
-verbatim was priced at.
+verbatim carries.
 
 ### The conformance checks this opens
 
@@ -361,7 +361,7 @@ type Fixture struct {
 // renders, fresh per call, the way the plugin suite's Setup does.
 type Setup func(tb assert.TB) (plugin.Renderer, *Fixture)
 
-// RunBackendSuite holds a renderer to the checks a render answers
+// RunBackendSuite holds a renderer to the checks a render returns
 // as values: two runs produce byte-identical files, every emit
 // kind renders, slot contents render through the kind machinery,
 // and a format failure reports positioned and does not stop the
@@ -387,9 +387,9 @@ carry without rendering.
 
 Letting each backend own its loop and giving it helpers was
 weighed: it is how most template engines are consumed. It lost
-because the loop is where the three laws in Motivation hold, and
+because the loop is where the three rules in Motivation hold, and
 the helpers are not. A backend owning the loop can splice a
-stranger's values through its own templates, resolve a reference in
+another plugin's values through its own templates, resolve a reference in
 the wrong tree, or stop at the first format failure, and nothing
 but review would notice.
 
@@ -416,7 +416,7 @@ the output contract has to validate twice.
 - The kit is the second builder on the root package, and its
   surface is seven methods. The precedent is the plugin builder;
   the cost is a wider root package either way.
-- `Schedule` rides the context as data, so a fixture can hand a
+- `Schedule` is carried on the context as data, so a fixture can hand a
   render pass an order the composition would never produce. The
   suite renders what it is given; only the composed path
   guarantees the order is the lowered one.
@@ -437,11 +437,11 @@ the output contract has to validate twice.
 
 ## Open questions
 
-- Should the kit's `Imports` and `ImportSet` land in this package
+- Should the kit's `Imports` and `ImportSet` arrive in this package
   or beside the lowering seam that feeds them? The set is a per
   file accumulator and the spelling helpers that fill it are the
   lowering's; this proposal keeps the set with the pass and leaves
-  the helpers where the seam lands.
+  the helpers where the seam arrives.
 - Does `RunBackendSuite` need a check refusing an undeclared kind
   template, or is Build's panic the whole answer? The proposal
   relies on Build.
@@ -464,7 +464,7 @@ the output contract has to validate twice.
 ## References
 
 - [07-rendering.md](../architecture/07-rendering.md), the verbs,
-  the dispatch ladder, the funcmap and the engine choice
+  the dispatch order, the funcmap and the engine choice
 - [11-languages.md](../architecture/11-languages.md), the kit
   surfaces and the comment syntax
 - [18-routing-and-layout.md](../architecture/18-routing-and-layout.md),

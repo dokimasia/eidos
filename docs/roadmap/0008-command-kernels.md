@@ -31,7 +31,7 @@ code to get them.
       `--overwrite-drift`, `--cold` and `--plan` behave per contract;
       pattern narrowing applies the narrowed-sweep rule; and
       `mybrand run .` works from a `//go:generate` line.
-- [ ] `explain` answers all four target forms across plans from
+- [ ] `explain` returns all four target forms across plans from
       persisted provenance.
 - [ ] `prune` removes orphans and never touches a drifted or
       unmanifested file; its `--dry-run` lists what would go.

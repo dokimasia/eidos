@@ -1,6 +1,6 @@
 ---
 rfc: 0007
-title: The Build ladder and the fixture run
+title: The Build steps and the fixture run
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Accepted
 created: 2026-08-30
@@ -11,7 +11,7 @@ superseded-by: none
 produces-adr: tbd
 ---
 
-# RFC-0007: The Build ladder and the fixture run
+# RFC-0007: The Build steps and the fixture run
 
 ## Summary
 
@@ -26,7 +26,7 @@ provider interface: a key provider, so a plugin's metadata keys
 register the way its directive schemas already do, and a minimal
 target name with the backend contract that carries it. The
 conformance suite gains the options-schema check, and the
-composition's own tests hold Build to the whole bill: a fixture
+composition's own tests hold Build to the full fault list: a fixture
 seeded with five distinct faults reports all five in one error.
 
 ## Motivation
@@ -42,7 +42,7 @@ validation happens, what a fault at composition looks like.
 
 Three requirements shape the frame:
 
-- **The whole bill at once.** A consumer fixing a composition wants
+- **Every fault at once.** A consumer fixing a composition wants
   every fault in one error, not an instalment plan. That forces
   collect-everything validation: no step may stop at its first
   finding, and every registry must refuse a duplicate by naming
@@ -60,7 +60,7 @@ Three requirements shape the frame:
 ### Two additions to the service provider interface
 
 Directive schemas already register through a provider. Metadata
-keys have no equivalent: registration is a function call answering
+keys have no equivalent: registration is a function call returning
 typed handles, so a data-only declaration cannot give the plugin
 its handles back. The provider therefore takes the registry:
 
@@ -69,10 +69,10 @@ package plugin
 
 // KeyProvider registers the plugin's metadata keys at composition.
 // The call runs at Build, once per workspace, and the plugin keeps
-// the typed handles it is answered: they are composition
+// the typed handles it is returned: they are composition
 // constants, the same class as a directive schema, not run state.
 // Faults are collected, so the error names what failed rather than
-// stopping the bill.
+// stopping the collection.
 type KeyProvider interface {
     Keys(r *meta.Registry) error
 }
@@ -103,7 +103,7 @@ The authoring surface passes the key seam through:
 package eidos
 
 // Keys declares the registration the plugin performs at
-// composition; the built value answers it through the provider.
+// composition; the built value returns it through the provider.
 func (b *Builder) Keys(register func(r *meta.Registry) error) *Builder
 ```
 
@@ -120,7 +120,7 @@ package plugin
 
 // ValidateOptions holds a plugin's options struct to the tag
 // contract: a pointer to a struct, exported fields only, every
-// field documented, no duplicate keys. It answers one error per
+// field documented, no duplicate keys. It returns one error per
 // finding and nil where the plugin declares no options. The
 // composition runs it before populating; the conformance suite
 // runs it as a check.
@@ -140,7 +140,7 @@ type Config struct {
     Options map[string]map[string]any
 }
 
-// New answers an empty builder.
+// New returns an empty builder.
 func New() *Builder
 
 // Annotators registers the read side's stamping plugins.
@@ -159,7 +159,7 @@ func (b *Builder) Keys(register ...func(r *meta.Registry) error) *Builder
 // Config hands over the values options populate from.
 func (b *Builder) Config(c Config) *Builder
 
-// Build climbs the ladder and answers the immutable workspace, or
+// Build runs every step and returns the immutable workspace, or
 // one error joining every fault it found.
 func (b *Builder) Build() (*Workspace, error)
 
@@ -177,12 +177,12 @@ type Plan struct {
 }
 ```
 
-### The ladder
+### The steps
 
 Build validates in one pass and collects. Every step runs even when
 an earlier one found faults, except where a fault empties a
 following check for that one item. The error is `errors.Join` over
-everything found, so a consumer reads the whole bill.
+everything found, so a consumer reads every fault at once.
 
 1. **The roster.** The plugin universe is the annotators, every
    plan's generators, and every backend, deduplicated by instance:
@@ -190,7 +190,7 @@ everything found, so a consumer reads the whole bill.
    plugins under one name are a fault naming both, because the
    name is the identity everything downstream keys on. A plugin
    named after a kernel phase is refused the same way, because its
-   findings would answer under the kernel's identity.
+   findings would report under the kernel's identity.
 2. **Registries.** The kernel's four directive schemas register
    first, because validation of the skip and meta instances reads
    them. Then every plugin's `KeyProvider` registers its keys, the
@@ -221,7 +221,7 @@ everything found, so a consumer reads the whole bill.
    generate schedule are fixed: ordered plugin lists with bucket
    numbers. The run executes them as data and decides nothing.
 
-This ladder carries no policy step and no version handshake:
+This sequence carries no policy step and no version handshake:
 no policy registry and no second versioned component exist to
 check against. Adding either is a step in this function, between
 the ones that are here.
@@ -237,10 +237,10 @@ type Workspace struct { /* schedules, registries, plans, config */ }
 // Run takes one loaded graph through the frame: seal, directive
 // validation, annotate buckets, per-plan generation. The caller
 // loads packages and attaches raw directives before handing the
-// graph over, which is the fixture's seat until a load phase owns
+// graph over, which is the fixture's role until a load phase owns
 // it; Run seals the graph itself and refuses one already frozen.
 //
-// Run answers the report and ErrRunFailed when any Error-severity
+// Run returns the report and ErrRunFailed when any Error-severity
 // finding was reported. Per-item findings never stop the frame: a
 // subject whose directives fail validation loses those instances
 // and everything else still runs, so one report carries every
@@ -311,7 +311,7 @@ sequenceDiagram
 
 At this scope the run does no loading and no link step, because the
 caller hands over a loaded graph with identities already assigned.
-It does no layout, render, sink or manifest, because nothing lands
+It does no layout, render, sink or manifest, because nothing arrives
 on disk. It does no close, no sweep and no cross-plan checks,
 because there are no records to merge. It holds no ledger and no
 sealed state, because nothing invalidates. Each of those is an
@@ -324,13 +324,13 @@ The workspace imports the service provider interface and the
 stores beneath it: core/plugin, core/store, core/meta,
 core/directive, core/diag and the Go stdlib. It never imports the
 root package, for the same reason the conformance harness does
-not: plugins arrive built, so the composition works at the floor
+not: plugins arrive built, so the composition works directly on the SPI
 every authoring layer lowers to.
 
 ### The conformance checks this completes
 
 The suite gains the options check, and the composition's tests hold
-Build to the bill:
+Build to the full fault list:
 
 ```go
 package plugintest
@@ -344,22 +344,22 @@ func AssertOptionsSchema(tb assert.TB, setup Setup)
 `RunPluginSuite` runs it when the plugin declares options. The
 five-fault check is a workspace test rather than a check, because
 its subject is the composition, not a plugin: a fixture composed
-with five distinct faults across the ladder's steps asserts that
+with five distinct faults across the steps asserts that
 Build's one error names all five.
 
 ## Alternatives considered
 
 ### Keys as declared data instead of a provider callback
 
-Every other provider answers data, and a data-only key declaration
+Every other provider returns data, and a data-only key declaration
 was weighed first: `Keys() []meta.KeySpec`. It cannot work, because
-registration answers the typed handles the plugin's own handlers
-close over, and data cannot answer anything back. Two ways round
+registration returns the typed handles the plugin's own handlers
+close over, and data cannot return anything back. Two ways round
 that are worse. Resolving handles lazily at first use puts a
 registry lookup on the hot path and moves the failure into the
 wrong phase. Resolving them into a struct the workspace populates
 by reflection makes key identity stringly. The callback runs plugin
-code at Build, which is already true of `Build()` itself; the law
+code at Build, which is already true of `Build()` itself; the rule
 about never executing plugin code binds dispatch discovery, not
 composition.
 
@@ -371,7 +371,7 @@ build-fix cycles, and it quietly permits registries that refuse
 duplicates by failing on the second claimant without naming the
 first. Collect-everything costs each step a fault slice and one
 `errors.Join`, and it is the reason every registry in the tree
-answers errors instead of panicking.
+returns errors instead of panicking.
 
 ### The run as a state machine
 
@@ -385,7 +385,7 @@ can observe. The conductor stays a function.
 
 Keeping `Target` inside `workspace` would spare the SPI a type.
 The backend contract then cannot mention it without importing the
-workspace, which inverts the dependency: the SPI is the floor and
+workspace, which inverts the dependency: the SPI is the base and
 the workspace composes it. The name lives with the contract that
 carries it.
 
@@ -403,22 +403,22 @@ post-freeze pass, parallel per subject.
 - Two more provider surfaces on the SPI: `KeyProvider` and
   `Backend`, plus the `Target` name and one builder method on the
   authoring surface. The SPI is now eleven interfaces; each is
-  small, but the floor is wider.
+  small, but the base is wider.
 - `KeyProvider` executes plugin code at Build. A provider that
-  panics takes the composition down rather than landing on the
-  bill; wrapping every provider call in a recover would convert
+  panics takes the composition down rather than joining the
+  collected faults; wrapping every provider call in a recover would convert
   defects into faults and was deliberately not done, because a
   panicking registration is a broken plugin, not a broken
   composition.
-- The run's phases are hand-ordered code, and the ladder is one
-  function per step. Nothing enforces that a new phase lands in
+- The run's phases are hand-ordered code, and the build sequence is one
+  function per step. Nothing enforces that a new phase arrives in
   the right place except review and the frame's tests.
 - `Config.Options` is `map[string]map[string]any`: typed at the
   field only after population. A config value of a wrong type is
   caught at Build, but nothing catches a misspelled plugin name
   except the unknown-name fault, which cannot suggest the right
   one.
-- The five-fault test pins the bill's completeness but not its
+- The five-fault test pins the list's completeness but not its
   wording; a fault message regression passes it.
 - Plans run in parallel over one fact store: reads are lock-free,
   but the report's `Facts` is shared state a test could misuse as
@@ -430,7 +430,7 @@ post-freeze pass, parallel per subject.
   needs it yet; the store's raw walk plus the sink's findings
   cover today's assertions, and adding a field is compatible.
 - Is one `KeyProvider` panic worth converting to a fault via
-  recover after all, so the bill survives a broken plugin? The
+  recover after all, so the collection survives a broken plugin? The
   proposal says no; a defect should look like one.
 
 ## Unresolved and future work
@@ -447,7 +447,7 @@ post-freeze pass, parallel per subject.
 ## References
 
 - [08-workspace-and-plans.md](../architecture/08-workspace-and-plans.md),
-  the frame, the ladder and the runtime split this scopes down from
+  the frame, the build sequence and the runtime split this scopes down from
 - [06-plugins.md](../architecture/06-plugins.md), the provider
   surfaces and the capability topology
 - [13-testing-and-conformance.md](../architecture/13-testing-and-conformance.md),

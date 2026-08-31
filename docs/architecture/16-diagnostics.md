@@ -81,7 +81,7 @@ the exit falls outside the exit-code contract.
 Two facts make that safe to hold. The two-phase commit
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)) means a
 crash mid-run leaves disk exactly as the previous generation wrote
-it: staging is discarded and nothing partial lands. And the
+it: staging is discarded and nothing partial arrives. And the
 conformance suite asserts that fixtures do not panic
 ([13-testing-and-conformance.md](13-testing-and-conformance.md)),
 which is where panics get caught before a plugin ships.
@@ -107,7 +107,7 @@ opt-out that cannot decay into a blanket mute.
   the plugin, and a kernel Error is never suppressible, because it
   reports a broken run rather than an opinion.
 - Suppressions are audited. The run summary counts them per code,
-  and `doctor` lists every suppression whose code no longer fires.
+  and `doctor` lists every suppression whose code no longer occurs.
   Dead suppressions are this system's lint debt.
 
 ## Machine output

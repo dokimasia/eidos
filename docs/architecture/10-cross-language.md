@@ -111,12 +111,12 @@ type Policy interface {
 }
 ```
 
-## Refusal is first-class
+## Refusal is fully supported
 
 A lowering that cannot spell a shape refuses, with a stable
 diagnostic code, at the declaration that forced it. Go `chan T` has
 no TypeScript spelling. A Union has no Go spelling. It never
-guesses. This is check 4 of the degradation ladder, and the
+guesses. This is level 4 of the degradation scale, and the
 completeness check tests it per language.
 
 ## Names across the boundary
@@ -128,7 +128,7 @@ such as `go.name`, at `plugin` authority. A consumer can therefore
 override any single name at the declaration with a directive, and
 `explain` shows where every spelling came from.
 
-The timing matters. The stamps land during **Annotate**, written by
+The timing matters. The stamps arrive during **Annotate**, written by
 a naming annotator that each target language provides and the
 workspace registers automatically whenever a plan targets that
 language. Plans read the shared graph and never write it. Stamping

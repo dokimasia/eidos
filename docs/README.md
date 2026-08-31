@@ -19,10 +19,10 @@
 | What is being proposed, and the argument | [RFCs](rfc/README.md) |
 | What problems we decided were worth solving | [PRDs](prd/README.md) |
 | What we found out about the world outside | [Research](research/README.md) |
-| How to build, test, and land a change | [CONTRIBUTING](../CONTRIBUTING.md) |
+| How to build, test, and arrive a change | [CONTRIBUTING](../CONTRIBUTING.md) |
 
 If eidos is new to you, read
-[one declaration's journey](architecture/00-one-declarations-journey.md). It
+[one declaration, end to end](architecture/00-one-declaration-end-to-end.md). It
 follows a single declaration through the whole system. Keep the
 [glossary](architecture/GLOSSARY.md) open beside it.
 

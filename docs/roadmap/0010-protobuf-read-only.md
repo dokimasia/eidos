@@ -16,7 +16,7 @@ rfc: none
 
 A proto file's messages and services project into the graph, and one
 workspace turns them into Go and TypeScript output. This is the
-schema-in story, and the satellite that carries it is read-only by
+schema-in work, and the satellite that carries it is read-only by
 design.
 
 ## Done when
@@ -27,7 +27,7 @@ design.
 - [ ] A service fixture generates Go server scaffolding and TypeScript
       client types in one run.
 - [ ] `oneof` projects as Sum, messages as Struct, and proto enums
-      answer through `EnumRules`. The scalar policy table resolves,
+      arrive through `EnumRules`. The scalar policy table resolves,
       and Timestamp and Duration map to the well-known canonical
       identities and lower to `time.Time` and `Date`.
 - [ ] frontendtest passes for the satellite, `testdata/features/`
@@ -58,10 +58,10 @@ protocompile (D16), and the well-known-type mappings of
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| protocompile's model diverges from the projection vocabulary in some corner of proto3 | 0014, through this milestone only | Carry the remainder as `proto.*` metadata on level 2 of the ladder, and declare it in the feature matrix |
+| protocompile's model diverges from the projection vocabulary in some corner of proto3 | 0014, through this milestone only | Carry the remainder as `proto.*` metadata at level 2 of the scale, and declare it in the feature matrix |
 
 ## Changes
 
 | Date | What changed | Why |
 |---|---|---|
-| 2026-08-30 | Added at position 10 | Cheapest satellite, placed where its demo (proto in, Go and TypeScript out) has both targets to land on |
+| 2026-08-30 | Added at position 10 | Cheapest satellite, placed where its demo (proto in, Go and TypeScript out) has both targets to arrive on |

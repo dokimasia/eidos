@@ -17,7 +17,7 @@ Accepted
 
 Two statements in the architecture specification contradict each
 other. The kernel map lists "one Kind enum" among the hand-written
-contents of `symbol/`. The symbol model's own law says that adding a
+contents of `symbol/`. The symbol model's own rule says that adding a
 kind is "a schema edit and nothing else". Both cannot hold: a
 hand-written enum makes every new kind a two-place edit, the schema
 struct plus the constant, and the two copies can drift until
@@ -32,7 +32,7 @@ switches on them.
 Generate the `Kind` constants and their `String` method into
 `symbol/kind.gen.go` from `symbol/schema`, because the enum's content
 is the schema's struct list and nothing more, and a second
-hand-written copy breaks the schema-edit-only law. The `Kind` type
+hand-written copy breaks the schema-edit-only rule. The `Kind` type
 itself stays hand-written in `symbol/`.
 
 ## Alternatives Considered
@@ -60,7 +60,7 @@ unpinned `go run ...@version` fetch at generate time.
 **Positive:**
 
 - Adding a kind is one edit and one regeneration, which is what the
-  symbol model's law promises.
+  symbol model's rule promises.
 - `String` can never disagree with the constants, because both render
   from the same list in the same pass.
 
@@ -85,5 +85,5 @@ unpinned `go run ...@version` fetch at generate time.
 - [01-repos-and-kernel.md](../architecture/01-repos-and-kernel.md),
   the kernel map that lists the enum as hand-written
 - [02-symbol-model.md](../architecture/02-symbol-model.md), the
-  schema-edit-only law
+  schema-edit-only rule
 - [RFC-0002](../rfc/0002-model-generator.md), the model generator

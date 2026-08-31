@@ -11,7 +11,7 @@ more, with warm regeneration under a second.
 
 The premise it is built on: loading and type-checking source
 dominates end-to-end time. A cache sitting *below* the loader would
-memoise the cheap part and pay serialization on top, which loses.
+memoise the cheap part and add serialization on top, which loses.
 Every layer here sits above the expensive work it skips.
 
 Every number in this document is a target until the
@@ -34,14 +34,14 @@ Edges key on canonical symbol identity
 ([02-symbol-model.md](02-symbol-model.md)), so a reparse that leaves
 a declaration unchanged leaves its identity intact, and every edge
 through it with it. The same edges serve `explain`, where provenance
-answers what a fact was derived from
+returns what a fact was derived from
 ([04-metadata.md](04-metadata.md)), and invalidation. Neither can
 drift from the other, because they are the same edges.
 
 ## The layers, cheapest first
 
 **1. The fingerprint gate, above the loader.** A stat-first pass
-decides whether to load anything at all. Size and mtime answer for
+decides whether to load anything at all. Size and mtime stand in for
 an unchanged file, and a content hash runs only on suspicion,
 meaning a file whose stat moved. That is orders of magnitude cheaper
 than the load it skips, and the target is on the order of 100ms for
@@ -179,7 +179,7 @@ out so that O(dirty) names an algorithm rather than a hope.
    identities ([02-symbol-model.md](02-symbol-model.md)), and the
    changed remainder seeds the dirty symbol frontier S.
 4. **Link the frontier.** A resolution that changed, meaning a
-   spelling that now lands on a different identity, extends S.
+   spelling that now arrives on a different identity, extends S.
 5. **Annotate.** Run exactly the rules whose gate tuple, one of
    (kind), (kind, directive) or (kind, factKey), intersects S. Every
    re-stamp compares against the persisted fact value. Equal stops
@@ -212,7 +212,7 @@ derived artifact, so comparing edges compares integers.
 
 At L scale, memory comes down to the bags. A symbol's `meta.Bag` is
 backed by a small slice over interned key IDs, and upgrades to a map
-only past a threshold, because a two-fact bag must not pay a map's
+only past a threshold, because a two-fact bag must not carry a map's
 overhead a few million times over.
 
 ## The sealed state, designed
@@ -252,7 +252,7 @@ with no translation layer between them.
 The index maps unit identity to an offset, a length, a fingerprint
 and a checksum, so opening the file costs the header, the index and
 the intern table. Regions decode on first touch: dirty regions
-eagerly at Load, and clean regions only when a tracked read lands in
+eagerly at Load, and clean regions only when a tracked read arrives in
 one.
 
 Lazy regions are the contract, meaning open cost proportional to
@@ -313,7 +313,7 @@ manifest uncommitted, made worse by binary conflicts.
 
 ## The parse memo
 
-The sealed state answers the edit loop. The memo answers
+The sealed state returns the edit loop. The memo returns
 **history**.
 
 It is a second, optional persistence layer: a content-addressed

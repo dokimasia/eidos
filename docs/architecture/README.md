@@ -14,7 +14,7 @@ document argues its own decisions where it defines them, and
 [21-decisions.md](21-decisions.md) indexes every decision in one
 table.
 
-**Read [00-one-declarations-journey.md](00-one-declarations-journey.md)
+**Read [00-one-declaration-end-to-end.md](00-one-declaration-end-to-end.md)
 first.** It follows a single declaration through the whole system
 and links into the specification at every step. Keep the
 [glossary](GLOSSARY.md) open beside the rest.
@@ -39,7 +39,7 @@ and links into the specification at every step. Keep the
   or more, warm regeneration under a second, the graph resident in
   memory with scoped loading. There is no separate full-rebuild
   path: regenerating only what changed is how every run works.
-- **Languages.** Go and TypeScript are first-class. protobuf is
+- **Languages.** Go and TypeScript are fully supported. protobuf is
   read-only by design. The vocabulary already holds Rust, Python,
   Java, Kotlin, PHP, C# and Swift. C and C++ are out of scope,
   because there is no declaration model worth projecting without a
@@ -82,7 +82,7 @@ and links into the specification at every step. Keep the
 |---|---|
 | [01-repos-and-kernel.md](01-repos-and-kernel.md) | Module topology, kernel package tree, import paths |
 | [02-symbol-model.md](02-symbol-model.md) | The symbol vocabulary; node and emit as generated mirrors |
-| [03-projection.md](03-projection.md) | The rules tiers: what every language answers |
+| [03-projection.md](03-projection.md) | The rules tiers: what every language returns |
 | [04-metadata.md](04-metadata.md) | Typed metadata, authority, provenance, namespaces |
 | [05-directives.md](05-directives.md) | Grammar, carriers, schemas |
 | [06-plugins.md](06-plugins.md) | Roles, capabilities, plugin values, the declarative host |
@@ -93,7 +93,7 @@ and links into the specification at every step. Keep the
 | [10-cross-language.md](10-cross-language.md) | Canonical types, lowering, policy, refusal |
 | [11-languages.md](11-languages.md) | Satellite anatomy, the language landscape, completeness |
 | [12-shape-catalog.md](12-shape-catalog.md) | eidos-plugin-shape: classification, written as specs first |
-| [13-testing-and-conformance.md](13-testing-and-conformance.md) | The check ladder, harness skeletons, fixtures |
+| [13-testing-and-conformance.md](13-testing-and-conformance.md) | The eight checks, harness skeletons, fixtures |
 | [14-distribution-and-cli.md](14-distribution-and-cli.md) | Library-only delivery, command kernels, consumer binaries |
 | [15-compatibility.md](15-compatibility.md) | Versioning, the canary ring, deprecation |
 | [16-diagnostics.md](16-diagnostics.md) | Severities, failure semantics, suppression, codes |

@@ -114,11 +114,11 @@ each addition:
 
 | Model element | Content |
 |---|---|
-| `TypeParam.Variance` | `Invariant \| In \| Out` (Kotlin, C# and Java wildcards; Go and Rust answer Invariant) |
+| `TypeParam.Variance` | `Invariant \| In \| Out` (Kotlin, C# and Java wildcards; Go and Rust carry Invariant) |
 | `Struct.Extends` / `Struct.Implements` | nominal supertypes, kept separate from `Embeds`, which is compositional promotion. Go fills only Embeds, JVM languages only the former, Python fills Extends in MRO order |
 | `Sum` kind | tagged variants with payloads: Rust data enums, sealed classes, proto `oneof`. Distinct from the untagged `Union` type shape. Each `SumVariant` carries a name and a field list, and the projection rule goes by payload: a variant set with no payloads projects as `Enum`, one with any payload as `Sum` |
 | `Visibility` | normalized to `Public \| Package \| Protected \| Private \| Internal` on every declaration. The raw spelling stays in language metadata |
-| `Level` on members | `Instance \| Type`, covering statics and companions. Go always answers Instance |
+| `Level` on members | `Instance \| Type`, covering statics and companions. Go always returns Instance |
 | `Method.HasDefault` | interface methods with default bodies: Java 8 and later, Kotlin, Rust default impls. Go leaves it false |
 | `Enum.Methods` | Java enums are classes with members. Most languages leave it empty |
 | `Package.Path` | hierarchical segments. Rust `mod` nesting and TypeScript namespaces map into them, and the original spelling stays in language metadata |
@@ -159,7 +159,7 @@ How anything crosses a file or package boundary:
   ([03-projection.md](03-projection.md)) knows what a spelling means
   there, but the result is neutral: an identity.
 - **Lookup** is the join, in any phase after Link.
-  `Reader.Lookup(Identity) (Symbol, ok)` answers the same way across
+  `Reader.Lookup(Identity) (Symbol, ok)` returns the same way across
   files, packages and signature-only dependencies, and it goes
   through the tracked Reader, so a cross-package read becomes an
   incrementality edge like any other
@@ -202,15 +202,15 @@ type Reader interface {
   the per-identity edges the enumerator recorded for the symbols it
   actually touched while iterating.
 
-The economics match the gate-free handler law, extended to reads. A
+The economics match the gate-free handler rule, extended to reads. A
 targeted read is a cheap precise edge, and an enumeration honestly
-prices "I asked for the whole set" as sensitivity to membership. No
+makes "I asked for the whole set" cost sensitivity to membership. No
 read costs more than what it observed. Scope filtering composes,
 because recorded edges stay inside the Reader's scope, so a change
 outside a plan's scope cannot re-run a plan that could never have
 seen it.
 
-## Model laws
+## Model rules
 
 - **Admit with empties.** A kind carries what any language in scope
   needs, other languages leave the rest empty, and emptiness never

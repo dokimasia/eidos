@@ -66,7 +66,7 @@ Timing on a shared CI runner is noise, and a gate that flakes
 teaches people to ignore it. So the budgets split by what is
 independent of the machine.
 
-**Scaling-law gates run everywhere.** They compare ratios rather
+**Scaling-rule gates run everywhere.** They compare ratios rather
 than milliseconds: warm-no-change must not grow with corpus size,
 with the L/M ratio bounded near 1; warm-one-edit must track the
 dirty set, with the same edit at M and L staying within a bounded
@@ -106,7 +106,7 @@ profile records its distributions, and the budgets commit to the
 repository as that baseline times a stated headroom factor, 1.2 by
 default. Tighten a budget deliberately; never loosen one quietly. A
 budget that predates its baseline is a target and says so, and the
-suite marks it advisory until the baseline lands. This is the one
+suite marks it advisory until the baseline arrives. This is the one
 place where the specification's numbers are allowed to be
 provisional, and it is labelled.
 

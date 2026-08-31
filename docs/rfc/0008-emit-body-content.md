@@ -48,7 +48,7 @@ it in a shape three other mechanisms can hold on to:
   visibly the form the machinery cannot see into. Nothing can check
   free-shaped content at all.
 - **Determinism needs values, not functions.** A generator that
-  names a template instead of executing one stays blind to
+  names a template instead of executing one stays never seeing
   languages, and the same emit graph renders through a Go tree in
   one plan and a TypeScript tree in another. That requires the
   reference to be a plain value on the model.
@@ -74,7 +74,7 @@ package schema
 // Body marks a field that holds a callable's emit-side content.
 // The generator maps it to the emit model's Body value; the node
 // model never carries one, because parsed bodies are out of scope
-// and the signature is the node side's whole story.
+// and the signature is all the node side carries.
 type Body any
 ```
 
@@ -86,7 +86,7 @@ Body Body `eidos:"emit"`
 Three things follow from that field. Each callable's emit struct
 gains a `Body` under the usual omit-when-zero JSON tag. The walk
 does not descend into it, because a body holds statements rather
-than declarations. And the schema stays the one place that answers
+than declarations. And the schema stays the one place that returns
 which kinds have bodies.
 
 The callables' shared docblocks change in the same edit. Today they
@@ -115,7 +115,7 @@ type Body struct {
     Epilogue Slot[Stmt] `json:"epilogue,omitzero"`
     // Slots holds the owner's declared extension points, in
     // declaration order, rendered between the standard pair. The
-    // elements are pointers because Declare answers handles into
+    // elements are pointers because Declare returns handles into
     // the list, and a following declaration must not move what an
     // earlier caller already holds.
     Slots []*NamedSlot `json:"slots,omitzero"`
@@ -135,17 +135,17 @@ type NamedSlot struct {
     Slot Slot[Stmt] `json:"stmts,omitzero"`
 }
 
-// Declare answers the named slot, adding it in declaration order
-// on first use; declaring a name twice answers the existing slot.
+// Declare returns the named slot, adding it in declaration order
+// on first use; declaring a name twice returns the existing slot.
 // Declaring is the owner's act: a contributor looks a slot up.
 func (b *Body) Declare(name string) *Slot[Stmt]
 
-// Slot answers a declared slot and false for a name the owner
+// Slot returns a declared slot and false for a name the owner
 // never declared, so a contribution into an invented extension
 // point fails where it is made.
 func (b *Body) Slot(name string) (*Slot[Stmt], bool)
 
-// Form answers which content form the body holds, and an error
+// Form returns which content form the body holds, and an error
 // naming the forms where more than one is set: a body built with
 // two contents is a defect, and the render and the lint check both
 // ask this one question.
@@ -184,7 +184,7 @@ it.
 ```go
 // TemplateRef claims a body for a template. The name resolves in
 // the emitting plugin's template tree for the plan's target, never
-// in the backend's or a stranger's, so the same emit graph renders
+// in the backend's or another plugin's, so the same emit graph renders
 // through a different tree per plan. Data is the plugin-supplied
 // payload the template executes over; the codec carries it as
 // generic JSON values, so a decoded reference reads its payload
@@ -211,7 +211,7 @@ const (
     // zero.
     StmtReturn StmtKind = iota + 1
     // StmtAssign binds Value to Names, one target or several,
-    // because a delegate answering a result and a failure binds
+    // because a delegate returning a result and a failure binds
     // two; Declare introduces the names.
     StmtAssign
     // StmtExpr evaluates Value for its effect: a delegate call.
@@ -271,13 +271,13 @@ slot contents order, what the `{{slots}}` marker demands of a
 body-claiming template, and the lint that enforces it are the
 render pass's contracts, stated where that pass is proposed. This
 RFC also carries no `Sample` and no literal expression: both are
-the rendered form of projection answers, and no projection
-machinery exists to answer them; adding a literal kind is one more
+the rendered form of projection returns, and no projection
+machinery exists to return them; adding a literal kind is one more
 `ExprKind` constant beside the two that are here.
 
 Slot content ordering at render, capability topology then name, is
 likewise recorded where rendering is: a slot stores insertion
-order, and canonical order is the reader's law, the same split the
+order, and canonical order is the reader's rule, the same split the
 emit store's units already follow.
 
 ## Alternatives considered
@@ -319,7 +319,7 @@ a hand-written file.
 A free-floating text value among typed declarations would make
 claiming a whole file unnecessary for one odd construct. It lost
 because the slot machinery, the collision logic and the import
-resolver would all be blind to such a value, and the file-claim
+resolver would all be never seeing such a value, and the file-claim
 path already serves a plugin that wants that much control.
 
 ### Named markers without standard slots
@@ -334,11 +334,11 @@ written by the one author who cannot ask the owner for one.
 - Four more hand-written types with codecs beside the generated
   model: `Body`, `NamedSlot`, `TemplateRef` and the two unions,
   roughly three source files and their test twins.
-- The exactly-one-form law is checked where `Form` is asked, not
+- The exactly-one-form rule is checked where `Form` is asked, not
   where the body is built: a two-form body is a defect the render
   or the lint check reports, and nothing at append time refuses it.
 - `TemplateRef.Data` is `any`: the codec round-trips it as generic
-  JSON values, so a decoded reference does not answer the author's
+  JSON values, so a decoded reference does not return the author's
   concrete type. Templates read their payload dynamically either
   way, and `encoding/json` orders map keys, so the bytes stay
   deterministic.
@@ -354,26 +354,26 @@ written by the one author who cannot ask the owner for one.
 
 ## Open questions
 
-- Should `Declare` refuse a duplicate name instead of answering the
+- Should `Declare` refuse a duplicate name instead of returning the
   existing slot? Idempotence is friendlier to builders that declare
   in a loop; refusal catches two owners fighting over one name.
-  The proposal answers the existing slot.
+  The proposal returns the existing slot.
 - Do property accessors want bodies? The two callable kinds cover
   every emitter the fixture suites hold; a getter with content is
   one schema field on the member kind when a language demands it.
 
 ## Unresolved and future work
 
-- The render pass, the backend kit, the `{{slots}}` marker law and
+- The render pass, the backend kit, the `{{slots}}` marker rule and
   the template-lint check consume these values and are proposed
   separately.
 - `Sample` and a literal expression kind wait on the projection
-  machinery whose answers they render.
+  machinery whose returns they render.
 
 ## References
 
 - [07-rendering.md](../architecture/07-rendering.md), the verbs,
-  the body forms and the render-dispatch ladder this vocabulary
+  the body forms and the render-dispatch order this vocabulary
   serves
 - [02-symbol-model.md](../architecture/02-symbol-model.md), the
   schema, the side tags and the slot declarations

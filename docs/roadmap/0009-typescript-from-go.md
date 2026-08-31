@@ -24,8 +24,8 @@ shape the target cannot spell is refused with a positioned code.
 - [ ] eidos-lang holds the tree-sitter bindings and the pinned
       TypeScript grammar and is their only importer.
       eidos-lang-typescript ships the full satellite anatomy.
-- [ ] The journey completes: the fixture from
-      [00-one-declarations-journey.md](../architecture/00-one-declarations-journey.md)
+- [ ] The end-to-end path completes: the fixture from
+      [00-one-declaration-end-to-end.md](../architecture/00-one-declaration-end-to-end.md)
       produces `store_stub_test.go` and `store.ts` in one run.
 - [ ] Policy works per
       [10-cross-language.md](../architecture/10-cross-language.md):
@@ -34,7 +34,7 @@ shape the target cannot spell is refused with a positioned code.
       the `Policy` a lowering receives is total.
 - [ ] Naming annotators register automatically for every targeted
       language, and `explain` traces a `ts.name` stamp to its origin.
-- [ ] Refusal is first-class: `chan int` into the TypeScript plan and
+- [ ] Refusal is fully supported: `chan int` into the TypeScript plan and
       a TypeScript union into a Go plan each report a stable
       positioned code, and neither guesses.
 - [ ] TypeScript decorators lower as native sugar to canonical
@@ -76,5 +76,5 @@ module per [01-repos-and-kernel.md](../architecture/01-repos-and-kernel.md).
 
 | Date | What changed | Why |
 |---|---|---|
-| 2026-08-30 | The TypeScript backend moved to milestone 0003 | Two consumers hold the render kit's API, so the backend lands beside Go's; this milestone keeps the frontend anatomy, the hub, the policies and the lowering |
-| 2026-08-30 | Added at position 9 | The second language proves the hub. TypeScript before protobuf because the schema-in story (0010) wants a second target to land on |
+| 2026-08-30 | The TypeScript backend moved to milestone 0003 | Two consumers hold the render kit's API, so the backend arrives beside Go's; this milestone keeps the frontend anatomy, the hub, the policies and the lowering |
+| 2026-08-30 | Added at position 9 | The second language proves the hub. TypeScript before protobuf because the schema-in work (0010) wants a second target to arrive on |

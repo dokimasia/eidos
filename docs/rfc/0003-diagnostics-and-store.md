@@ -123,7 +123,7 @@ type CodeSpec struct {
 }
 ```
 
-Registration answers an error rather than panicking, because Build
+Registration returns an error rather than panicking, because Build
 collects every fault in one pass and a panic would report the first.
 
 ### Codes are declared where they are registered
@@ -152,13 +152,13 @@ declares itself.
 
 `MustRegister` panics, and only it does: a duplicate code is a
 programming error at package initialization, before a run exists to
-report into. `Register` answers an error for the registries Build
+report into. `Register` returns an error for the registries Build
 populates from config.
 
 ### The sink
 
 A finding has to reach somewhere, and every role's contract is the
-same: attach the finding and carry on, or answer an error and stop
+same: attach the finding and carry on, or return an error and stop
 the phase.
 
 ```go
@@ -166,7 +166,7 @@ the phase.
 //
 // It is safe for concurrent use: frontends, and annotators under
 // the parallelism opt-in, report while running alongside each
-// other. Findings answer in report order per origin, and the run
+// other. Findings arrive in report order per origin, and the run
 // sorts them for output, so a parallel run reports what a serial
 // one does.
 type Sink struct{ ... }
@@ -184,7 +184,7 @@ func (s *Sink) Errorf(c Code, at position.Pos, by PluginID, format string, args 
 // decides the run's outcome.
 func (s *Sink) Failed() bool
 
-// All answers every finding, in a stable order.
+// All returns every finding, in a stable order.
 func (s *Sink) All() iter.Seq[Diag]
 ```
 
@@ -231,10 +231,10 @@ func (g *Graph) Frozen() bool
 // the phase.
 func (g *Graph) Reader(rs *ReadSet, sc Scope) (*Reader, error)
 
-// ByKind and Lookup answer untracked. They are the kernel's own
+// ByKind and Lookup return untracked. They are the kernel's own
 // path, for the dispatcher deciding which rules a phase runs:
 // dispatch is not a plugin's read and must not record one, and it
-// answers for every plan rather than one. Everything a plugin
+// serves every plan rather than one. Everything a plugin
 // reaches goes through a Reader.
 func (g *Graph) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol]
 func (g *Graph) Lookup(id symbol.Identity) (symbol.Symbol, bool)
@@ -261,7 +261,7 @@ sequenceDiagram
     RD->>RD: does Scope admit the owning package?
     alt outside scope
         RD-->>PL: not found
-        Note over RS: neither answered nor recorded
+        Note over RS: neither returned nor recorded
     else in scope
         RD->>G: Lookup(id)
         G-->>RD: the declaration
@@ -281,12 +281,12 @@ type Reader struct{ ... }
 // that kind is added or removed, and never when one merely changes.
 func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol]
 
-// Lookup answers one declaration by identity. It records a
+// Lookup returns one declaration by identity. It records a
 // per-identity edge, so a change to that declaration alone re-runs
 // the reader.
 func (r *Reader) Lookup(id symbol.Identity) (symbol.Symbol, bool)
 
-// PackageOf answers the package holding a declaration, recording a
+// PackageOf returns the package holding a declaration, recording a
 // per-identity edge on the package.
 func (r *Reader) PackageOf(id symbol.Identity) (*node.Package, bool)
 ```
@@ -303,8 +303,8 @@ A reader sees one plan's source packages and nothing else.
 type Scope func(pkg symbol.Identity) bool
 ```
 
-A declaration outside scope is neither answered nor recorded. Both
-halves matter: answering it would let one plan observe another's
+A declaration outside scope is neither returned nor recorded. Both
+halves matter: returning it would let one plan observe another's
 sources, and recording it would let a change the plan could never
 have seen re-run it. Scope filtering and edge recording therefore
 compose, rather than the second undoing the first.
@@ -325,11 +325,12 @@ a read from costing more than it observed.
 | `Lookup`, `PackageOf`, walking a declaration's members | per identity | that declaration changes |
 | `ByKind`, a package's declaration list | set membership | a declaration enters or leaves the set |
 
-An enumeration prices "I asked for the whole set" honestly, as
+An enumeration makes "I asked for the whole set" cost what it
+means:
 sensitivity to membership. Sensitivity to a change inside the set
 comes from somewhere else: the enumerator records a per-identity edge
 for each declaration the caller touches while iterating. That is why
-`ByKind` answers an iterator rather than a slice. It records what the
+`ByKind` returns an iterator rather than a slice. It records what the
 caller reached rather than what it might have.
 
 ```go
@@ -367,7 +368,7 @@ it is. The graph is shared; the bookkeeping is not.
 
 Loading and annotating are different phases, and the difference is
 enforced rather than documented: after Freeze the graph refuses any
-write that adds or removes a declaration, answering a registered
+write that adds or removes a declaration, returning a registered
 kernel code. Metadata writes are not structural and stay legal,
 which is the entire point of the seal.
 
@@ -378,12 +379,12 @@ does not carry it.
 
 ## Alternatives considered
 
-### A reader that answers slices rather than iterators
+### A reader that returns slices rather than iterators
 
 `ByKind` returning `[]symbol.Symbol` is simpler to consume. It lost
 because the enumeration would have to record a per-identity edge for
 every declaration of that kind, whether the caller looked at it or
-not, which prices the read at the size of the set rather than at
+not, which makes the read cost the size of the set rather than at
 what it observed. An iterator records as the caller advances.
 
 ### Recording reads outside the reader
@@ -397,15 +398,15 @@ One door, always tracked, is what makes the completeness structural.
 
 Registration could panic, since a duplicate is a programming error.
 It lost because Build collects every fault in one pass so a consumer
-fixing a composition gets the whole bill; a panic reports one.
+fixing a composition gets every fault at once; a panic reports one.
 
 ## Drawbacks
 
 - The reader records edges nothing reads yet, so the bookkeeping is
-  cost without benefit until the engine lands. It is a map insert
+  cost without benefit until the engine arrives. It is a map insert
   per distinct read, and the alternative is changing every call site
   later.
-- The graph carries the lock every write pays for, including the
+- The graph carries the lock every write takes, including the
   single-threaded fixture case that never contends. The alternative
   puts the rule in every frontend, where one of them will forget it.
 - Codes are API from the first registration, so a code whose meaning

@@ -5,7 +5,7 @@
 [17](17-output-and-determinism.md) (ownership and collisions).
 Feeds: [20](20-cli.md) (prune).*
 
-Where generated files land. Routing is one of the largest surfaces
+Where generated files arrive. Routing is one of the largest surfaces
 consumers touch: a platform team configures it, a source author
 overrides it per declaration, and the collision rules defend it.
 
@@ -36,8 +36,8 @@ emitters that order contributions by canonical subject identity
 below apply to them unchanged.
 
 **2. Plan layout policy**, the plan-level default. Under
-`alongside-source`, files land beside the declarations they come
-from, named by the derivation below. Under `centralised`, they land
+`alongside-source`, files arrive beside the declarations they come
+from, named by the derivation below. Under `centralised`, they arrive
 under a configured output directory, grouped by package.
 
 **3. Configured refinements**, meaning per-plugin and
@@ -80,7 +80,7 @@ Filename derivation belongs to the language satellite, in
 `lowering/`, and its input is the whole family declaration:
 cardinality, word and tag. The plugin declares the meaning and the
 target spells it. A declaration in `store.go` through a `PerSource`
-family with the word `stub` lands in `store_stub.go` under the Go
+family with the word `stub` arrives in `store_stub.go` under the Go
 lowering and `store.stub.ts` under the TypeScript one. Join
 conventions, case rules and extensions are language facts, never
 plugin declarations.
@@ -123,7 +123,7 @@ An output directory outside every known module has no derivable
 identity, and the plan's layout config then supplies `importBase`,
 which Build validates.
 
-Where neither answers, the lowering refuses, at the referencing
+Where neither returns, the lowering refuses, at the referencing
 declaration, with a stable code, and only when a cross-reference
 actually needs the qualification. Refusing at the point of need
 costs nothing for a centralised file that nothing imports, and a

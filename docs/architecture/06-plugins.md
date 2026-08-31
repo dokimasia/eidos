@@ -68,9 +68,9 @@ Four structural rules bind the roles:
 - Annotators never add or remove symbols. The node graph freezes
   after Annotate, and the store enforces that rather than a
   docblock.
-- Generators are blind to languages. They read projections and emit
+- Generators are never seeing languages. They read projections and emit
   neutral values.
-- No state travels on the plugin struct between phases. The graph is
+- No state is carried on the plugin struct between phases. The graph is
   the only memory. A field on the plugin skips the tracked read set,
   which produces output that is stale and looks current.
 - `WorkspaceCheck`
@@ -99,7 +99,7 @@ validated at Build against the declared providers.
 **Priorities are per role.** A plugin declares a priority for each
 role it implements, because one shared number cannot place a
 dual-role plugin's annotator half and generator half independently,
-and the two phases' bucket ladders have no reason to share integers.
+and the two phases' bucket sequences have no reason to share integers.
 
 ## The concurrency contract
 
@@ -137,7 +137,7 @@ completes plugin options the way it completes workspace ones
 
 Most of what a plugin declares is data: templates, outputs, words,
 rules bindings. So declarations are values, built once and frozen,
-rather than methods answered per call.
+rather than methods returned per call.
 
 The same idea scales up. **Plans are values too**
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)), so a
@@ -147,7 +147,7 @@ satellite or a consumer may export a preset plan such as
 Plans are not plugins. A plan owns an emit graph, a manifest slice,
 a sweep scope and a position in the schedule, which are the things
 the surrounding frame enforces between plugins. Make a plan a plugin
-and the first question becomes "who isolates two plans", answered by
+and the first question becomes "who isolates two plans", returned by
 a workspace one level up that you have just reinvented. You compose
 plugins the way you compose code, and plans the way you compose
 config.
@@ -202,7 +202,7 @@ means writing the plugin in Go. The manifest schema is public API,
 versioned under the compatibility policy.
 
 What this buys a public ecosystem: a declarative plugin is inert
-files, which is safe to adopt from a stranger, while a typed plugin
+files, which is safe to adopt from another plugin, while a typed plugin
 is code you have to vet. A consumer whose binary compiles in the
 loader gives its own users extension without any toolchain
 ([14-distribution-and-cli.md](14-distribution-and-cli.md)).
@@ -210,7 +210,7 @@ loader gives its own users extension without any toolchain
 ## The authoring surface
 
 The role interfaces above are the SPI: what the workspace invokes,
-what the declarative host adapts onto, and the floor everything
+what the declarative host adapts onto, and the base contract everything
 lowers to.
 
 Authors write against a second layer, the kernel module's root
@@ -226,12 +226,12 @@ everything lowers to the SPI.
 Three separate reasons rule it out.
 
 Rewriting user source breaks whole-file ownership, and eidos has no
-determinism, sweep or drift story for a file it does not wholly own
+determinism, sweep or drift guarantee for a file it does not wholly own
 ([17-output-and-determinism.md](17-output-and-determinism.md)).
 
 Transforming the node graph forks the one graph, after which
 explain, invalidation and cross-plan checks all have to ask "which
-variant" before they can answer anything
+variant" before they can return anything
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
 Rewriting another plugin's emit is the wrap verb, which the render

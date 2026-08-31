@@ -201,17 +201,17 @@ parallel except across export edges. Render runs per file inside the
 kit. Close runs single-threaded over immutable records. A dry run is
 this same Run with the staging discarded.
 
-## Build: the validation ladder
+## Build: the validation sequence
 
 Build runs once, in the consumer's `main`, and produces the
 immutable Workspace above, or an error naming *everything* that is
 wrong at once. Build collects rather than stopping at the first
-fault, because a consumer fixing a composition wants the whole bill
+fault, because a consumer fixing a composition wants every fault at once
 rather than an instalment plan. A Build that succeeds has resolved
 every human-typed name in the composition, so nothing after it can
 fail on a name.
 
-The ladder, in order, where each step assumes the ones before it:
+The steps, in order, where each assumes the ones before it:
 
 1. **Registries.** Language identities, metadata keys with their
    namespaces, groups, kinds and contracts, diagnostic codes and
@@ -271,7 +271,7 @@ type ExportedSymbol struct {
     Signature TypeSig             // canonical TypeShape terms
     Spelling  string              // what the producing lowering named it
     Import    string              // the path a dependent qualifies with
-    File      string              // where it landed
+    File      string              // where it arrived
 }
 ```
 
@@ -309,7 +309,7 @@ sources:
 ```
 
 Nothing else. No negation, and no unions of predicates. A plan that
-needs a stranger scope is two plans. Growing the vocabulary is a
+needs another plugin scope is two plans. Growing the vocabulary is a
 kernel change, additive under the compatibility policy. `golang`
 here is the human spelling, resolved against the language registry
 at Build, and a plan composed in Go uses the satellite's exported
@@ -343,7 +343,7 @@ public API, because binding correctness leans on it
 records the kind, the canonical-type signature in TypeShape terms
 ([03-projection.md](03-projection.md)), and **the spelling the
 plan's lowering chose**, meaning the qualified name, the import path
-and the file it landed in.
+and the file it arrived in.
 
 A dependent reads spellings from the export rather than recomputing
 naming conventions, which is the entire point: the producing plan's

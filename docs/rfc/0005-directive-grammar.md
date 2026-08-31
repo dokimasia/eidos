@@ -19,7 +19,7 @@ This RFC pins `directive`: the parser for the one grammar every
 carrier lowers to, the schema registry that types and closes every
 directive an author can write, and the freeze-time validation that
 reports every violation as a positioned Error before any handler
-runs. It also lands the store's directive side: instances attach to
+runs. It also arrives the store's directive side: instances attach to
 subjects before the seal, the directive index builds in the same
 pass as the kind index, and the read set gains the membership grain
 an enumeration by directive records.
@@ -48,7 +48,7 @@ which is why the form is worth an argument before the code.
 Role scoping failed the same way one layer up: roles existed as
 prose, so every plugin interpreted `role=` in its handler. A gate
 hidden in a handler is selectivity the kernel cannot see; the same
-law that bans it for dispatch bans it here.
+rule that bans it for dispatch bans it here.
 
 ## Detailed design
 
@@ -108,7 +108,7 @@ type RawValue struct {
 // is the text after the carrier marker, one logical line with
 // continuations already joined.
 //
-// A payload outside the grammar answers an error carrying the
+// A payload outside the grammar returns an error carrying the
 // byte offset where reading stopped; the caller owns the file
 // position and converts. Parse never panics, whatever the bytes.
 func Parse(payload string) (Raw, error)
@@ -288,15 +288,15 @@ func (r *Registry) Register(s Schema) error
 // all.
 func (r *Registry) Seal() []error
 
-// ResolveName answers the schema a spelling addresses.
+// ResolveName returns the schema a spelling addresses.
 //
 // A prefixed spelling addresses its owner's schema. A bare
 // spelling addresses the schema iff exactly one plugin claims it;
-// with two claimants it answers false, and Candidates names them
+// with two claimants it returns false, and Candidates names them
 // for the diagnostic.
 func (r *Registry) ResolveName(n Name) (Schema, bool)
 
-// Candidates answers every prefixed spelling that claims a bare
+// Candidates returns every prefixed spelling that claims a bare
 // name, for the ambiguity Error.
 func (r *Registry) Candidates(n Name) []Name
 ```
@@ -337,7 +337,7 @@ type Directive struct {
     Instance int
 }
 
-// Param answers a keyed value and whether the instance carries it.
+// Param returns a keyed value and whether the instance carries it.
 func (d *Directive) Param(k ParamKey) (Value, bool)
 ```
 
@@ -350,7 +350,7 @@ repeatability or constraints from.
 ```go
 // Validate types and checks every instance on one subject,
 // reporting each violation as a positioned Error on sink and
-// answering the instances that passed, in source order, with
+// returning the instances that passed, in source order, with
 // repeatable instances numbered.
 //
 // The checks, each under its own registered code: an unclaimed
@@ -362,7 +362,7 @@ repeatability or constraints from.
 // instance of a single-instance directive naming both positions, a
 // requirement no directive on the subject meets naming the
 // requiring position, a conflict naming both positions, and a
-// metadata reference no key or group answers naming the
+// metadata reference no key or group returns naming the
 // candidates.
 //
 // keys resolves ResolveMetadataKey params. Validation of one
@@ -399,7 +399,7 @@ sequenceDiagram
     Note over V: the schema registry is sealed,<br/>and subjects validate independently
     V->>S: one positioned Error per violation
     V-->>X: the instances that passed, typed, in source order
-    X->>G: ByDirective(each spelling the schema answers to)
+    X->>G: ByDirective(each spelling the schema recognises)
     G-->>X: the subjects carrying it
 ```
 
@@ -422,14 +422,14 @@ func (g *Graph) AttachDirectives(subject symbol.Identity, ds []directive.Raw) er
 // is not fails validation as dangling. The index builds at Freeze
 // in the same pass as the kind index and is keyed by the name as
 // written: the store holds no registry, so the dispatcher, which
-// does, queries each spelling a schema answers to.
+// does, queries each spelling a schema recognises.
 func (g *Graph) ByDirective(n directive.Name) iter.Seq[symbol.Symbol]
 
-// DirectivesOf answers a subject's raw instances, untracked, in
+// DirectivesOf returns a subject's raw instances, untracked, in
 // position order, so two concurrent attachments answer one order.
 // It is the validator's read. No tracked equivalent exists: a
-// plugin never reads a stranger's annotations, so the reader
-// deliberately cannot answer them.
+// plugin never reads another plugin's annotations, so the reader
+// deliberately cannot return them.
 func (g *Graph) DirectivesOf(id symbol.Identity) []directive.Raw
 
 // Directives enumerates every subject holding instances, with its
@@ -442,7 +442,7 @@ The tracked reader gains the membership grain and nothing else:
 ```go
 // ByDirective enumerates the declarations carrying a spelling,
 // under the reader's scope: a subject outside it is neither
-// answered nor recorded. It records a directive-membership edge,
+// returned nor recorded. It records a directive-membership edge,
 // so the reader runs again when a subject gains or loses the
 // directive, plus a per-identity edge for each declaration the
 // caller reached.
@@ -450,7 +450,7 @@ func (r *Reader) ByDirective(n directive.Name) iter.Seq[symbol.Symbol]
 
 // On ReadSet:
 
-// Directives answers every recorded membership edge, in name
+// Directives returns every recorded membership edge, in name
 // order. Len counts all four grains.
 func (s *ReadSet) Directives() iter.Seq[directive.Name]
 ```
@@ -459,14 +459,14 @@ A dangling attachment, meaning a subject the graph never got, is a
 validation Error positioned at the directive. Reporting nothing there
 would swallow a typo in an identity.
 
-One amendment lands outside the package: the metadata registry
+One amendment arrives outside the package: the metadata registry
 gains the enumeration its own proposal reserved for the first
 consumer, because naming a drop typo's candidates needs it.
 
 ```go
 // In package meta.
 
-// Keys answers every registered key's spelling, in registration
+// Keys returns every registered key's spelling, in registration
 // order: what the candidate-naming refusals enumerate.
 func (r *Registry) Keys() iter.Seq[KeyName]
 ```
@@ -478,7 +478,7 @@ composition makes, with their names and param keys declared as
 constants beside their schemas:
 
 ```go
-// Kernel answers the kernel-owned schemas: meta, out, diag and
+// Kernel returns the kernel-owned schemas: meta, out, diag and
 // skip. The registry refuses these names from any plugin.
 func Kernel() []Schema
 
@@ -522,7 +522,7 @@ exports, nothing drifts, and no generator exists.
 
 ### One parse step, typed against the registry
 
-Parse could take the registry and answer typed instances directly.
+Parse could take the registry and return typed instances directly.
 It lost because every frontend would hold the registry, a parse
 error and a schema violation would report as one kind of failure
 from two audiences' mistakes, and fixtures could not attach an
@@ -543,7 +543,7 @@ lost because repeatability and cross-directive constraints are
 properties of a subject's list, and a signature that never sees the
 list cannot check them. The two-position Errors those checks report
 are the reason the kernel validates at all: no plugin can see a
-stranger's directive, so a contradiction is caught here or nowhere.
+another plugin's directive, so a contradiction is caught here or nowhere.
 
 ### Roles as an uninterpreted key
 
@@ -559,7 +559,7 @@ and buys the same validation every other value gets.
 Instances could live on each declaration, a schema edit plus a
 regeneration. It lost for this proposal because the model is the
 language-neutral projection of source, and a directive is workspace
-input that happens to travel in comments: the store owns run input.
+input that happens to be carried in comments: the store owns run input.
 The schema edit stays available if the sealed form wants instances
 inline; nothing here forecloses it.
 
@@ -569,7 +569,7 @@ The directive index could canonicalize spellings, so one query
 finds bare and prefixed instances. It lost because canonicalizing
 needs the registry inside `Freeze`, whose signature takes nothing,
 and the dispatcher holds the registry anyway: querying each
-spelling a schema answers to is one loop over at most two
+spelling a schema recognises is one loop over at most two
 spellings.
 
 ## Drawbacks
@@ -583,12 +583,12 @@ spellings.
   alternative special-cases the drop param inside the kernel
   schema, which is the same dependency hidden.
 - Role scoping adds two slice fields and one validation rule per
-  schema. A schema without roles pays an empty-set check per
+  schema. A schema without roles costs an empty-set check per
   instance.
 - The store index keyed by spelled name means a rule's dispatcher
   queries up to two spellings per schema. The cost is one extra
   map lookup per gated rule per run.
-- Eleven-plus registered codes land at once, and each is API from
+- Eleven-plus registered codes arrive at once, and each is API from
   the moment it registers: a wrong meaning is superseded, never
   edited.
 - The four kernel schemas pin four names and five param keys as
@@ -617,7 +617,7 @@ in source files.
   declaration and are excluded; their spellings pin with their
   machinery.
 - The workspace-level opt-out for unclaimed directives is
-  configuration and lands with the composition that owns config.
+  configuration and arrives with the composition that owns config.
 - Native sugar lowers to `Raw` in each language satellite; the
   form here is its target.
 
@@ -627,7 +627,7 @@ in source files.
   layers, the grammar EBNF, the schema contract and the kernel
   names
 - [06b-authoring.md](../architecture/06b-authoring.md), the
-  Directive wrapper, `m.Directive()` and the visibility law
+  Directive wrapper, `m.Directive()` and the visibility rule
 - [04-metadata.md](../architecture/04-metadata.md), the drop form
   and directive authority
 - [18-routing-and-layout.md](../architecture/18-routing-and-layout.md),

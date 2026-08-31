@@ -51,7 +51,7 @@ package position
 // Pos locates a declaration in the workspace. File is
 // workspace-relative and slash-separated on every platform; Line
 // and Col are 1-based. The zero Pos means "no source position",
-// which is what synthesized emit values answer.
+// which is what synthesized emit values carry.
 type Pos struct {
     File string
     Line int
@@ -82,7 +82,7 @@ func ParseKind(name string) (Kind, bool)
 
 // Visibility is the normalized five-way visibility of declarations.
 // The zero value is Unknown: emptiness never claims anything, so a
-// frontend that has not answered has not silently answered Public.
+// frontend that has not returned has not silently returned Public.
 // The raw source spelling stays in language metadata.
 type Visibility uint8
 
@@ -106,7 +106,7 @@ const (
 )
 
 // Variance is the variance of a type parameter. The zero value is
-// Invariant, which is what Go and Rust always answer.
+// Invariant, which is what Go and Rust always carry.
 type Variance uint8
 
 const (
@@ -117,7 +117,7 @@ const (
 
 // Mutability says whether a binding may be reassigned after
 // initialization. The zero value is Unknown, because a language
-// that does not distinguish the two has not answered immutable:
+// that does not distinguish the two has not returned immutable:
 // Kotlin val against var, TypeScript readonly, Java final.
 type Mutability uint8
 
@@ -142,14 +142,14 @@ const (
 
 The specification lists four walk interfaces: `Symbol`, `Membered`,
 `Typed` and `Documented`. This RFC folds `Documented` into `Symbol`,
-because every kind can answer `Docs()` and an undocumented kind
-answers nil, so neutral code holds one interface instead of two. Go
+because every kind can return `Docs()` and an undocumented kind
+returns nil, so neutral code holds one interface instead of two. Go
 forbids a field and a method sharing a name, so the interface methods
 are named apart from the generated struct fields: `Fields` is the
 field, `FieldList()` the method, following `go/ast`.
 
 ```go
-// Symbol is the least any declaration answers.
+// Symbol is the least any declaration returns.
 type Symbol interface {
     Kind() Kind
     Position() position.Pos // zero for synthesized emit values
@@ -258,7 +258,7 @@ validation list. Three fields follow conventions rather than tags:
 - `Origin symbol.Identity` is emit-side on every declaration-shaped
   kind: the node symbol an emit value derives from. Origin points one
   way, and no node field refers to emit, which is the symbol model's
-  one-way origin law.
+  one-way origin rule.
 - `Host symbol.Identity` is node-side on every owned kind: the
   identity of the declaration that holds it, set when a frontend
   creates the child. It is an identity rather than a pointer for the
@@ -543,7 +543,7 @@ The schema deliberately carries no metadata accessor, no directive
 storage and no emit body model. Those seams belong to the metadata,
 directive and rendering designs, and their absence forecloses
 nothing: adding a field is a schema edit plus a regeneration, which
-is the model law this whole arrangement exists to keep.
+is the model rule this whole arrangement exists to keep.
 
 ### The generated surface
 
@@ -553,7 +553,7 @@ Per side, from the schema above; RFC-0002 owns how:
 // node/kinds.gen.go, emit/kinds.gen.go: one struct per kind with
 // that side's fields, plus interface satisfaction:
 func (x *Struct) Kind() symbol.Kind
-func (x *Struct) Position() position.Pos // emit side answers the zero Pos
+func (x *Struct) Position() position.Pos // emit side returns the zero Pos
 func (x *Struct) Docs() []string
 func (x *Struct) FieldList() []symbol.Symbol  // Membered, adapted
 func (x *Field) TypeRef() symbol.Symbol       // Typed
@@ -606,7 +606,7 @@ instead.
 
 The symbol model specification lists it among the walk interfaces.
 Implementing it as a fourth interface means every neutral consumer
-type-asserts twice for a question every kind can answer. Folding
+type-asserts twice for a question every kind can return. Folding
 `Docs()` into `Symbol` with nil for undocumented kinds keeps one
 assertion, and loses nothing: nil already means "no docs".
 
@@ -626,8 +626,8 @@ the documented spellings; the struct keeps `Kind` for equality.
   them in every schema-touching diff; the mirror guard keeps them
   honest.
 - The `[]Symbol` adapters on `Membered` and `Typed` allocate a slice
-  per call. Neutral tooling pays it; hot paths use the concrete
-  structs and pay nothing.
+  per call. Neutral tooling carries it; hot paths use the concrete
+  structs and cost nothing.
 - `Identity` at six fields is wide for a value the engine uses as a
   map key throughout. The engine's interning replaces it with dense
   run-local IDs; the struct is the boundary form.
@@ -671,7 +671,7 @@ the documented spellings; the struct keeps `Kind` for equality.
   symbol model specification this contract pins
 - [03-projection.md](../architecture/03-projection.md), the
   projection tiers and `rules.Source` / `rules.Target`
-- [00-one-declarations-journey.md](../architecture/00-one-declarations-journey.md)
+- [00-one-declaration-end-to-end.md](../architecture/00-one-declaration-end-to-end.md)
   and
   [17-output-and-determinism.md](../architecture/17-output-and-determinism.md),
   the worked identity spellings

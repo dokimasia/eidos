@@ -1,4 +1,4 @@
-# One declaration's journey
+# One declaration, end to end
 
 *The on-ramp. Every mechanism below has its own document with the
 full contract and the full argument. This page just follows one

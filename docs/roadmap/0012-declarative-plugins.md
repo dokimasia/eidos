@@ -44,7 +44,7 @@ This starts after 0005: the loader adapts manifests onto the plugin
 surface, and the templates render through the machinery that 0005 put
 under a real run. Past 0005 its position is capacity: no scheduled
 milestone consumes it, but 0014 freezes its manifest schema as public
-API, so it must land before the release.
+API, so it must arrive before the release.
 
 ## Scope
 

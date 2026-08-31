@@ -64,7 +64,7 @@ in another language's spelling.
 So a detector reads **only `rules.Callable`** and the canonical
 shapes ([03-projection.md](03-projection.md)), and resolves
 parameters through `rules.Resolve`. One detector then serves every
-language that answers Tier 1, which makes the cost 90 + N rather
+language that returns Tier 1, which makes the cost 90 + N rather
 than 90 × N. The module's CI enforces the Tier-3 import ban.
 
 The contract a detector satisfies, pinned:
@@ -79,7 +79,7 @@ type Detector interface {
 Detectors register as an **ordered list inside one annotator**, the
 umbrella plugin, and the first claim wins per callable. They cannot
 be separate rules, because the kernel's handler order-independence
-law ([06b-authoring.md](06b-authoring.md)) forbids ordering across
+rule ([06b-authoring.md](06b-authoring.md)) forbids ordering across
 handlers. Precedence therefore has to live where order is data,
 which is the list, and the list's order is generated from the specs'
 precedence declarations.
@@ -107,7 +107,7 @@ check:
   ([05-directives.md](05-directives.md)). Adversarial inputs that no
   derivation could invent are declared rather than discovered.
 - **Falsifiability**: what turns red if you delete the subject's
-  handling. This catches the hollow law, meaning a law that binds
+  handling. This catches the hollow rule, meaning a rule that binds
   only derived samples, built from inputs constructed to be
   accepted, which runs, stays green after you delete the subject's
   handling, and tests nothing. Making it a mandatory spec section
@@ -118,7 +118,7 @@ check:
   such as `Delete(v) error` being both writer-shaped and
   deleter-shaped, it says which shape claims the callable and which
   yields. Since detectors are an ordered list inside one annotator,
-  and the handler order-independence law
+  and the handler order-independence rule
   ([06b-authoring.md](06b-authoring.md)) forbids hanging precedence
   on separate rules, precedence is catalog data the spec declares
   rather than an accident of registration order.
@@ -138,7 +138,7 @@ list:
 name: writer
 form: shape
 claim: >
-  The callable persists exactly one input value and answers
+  The callable persists exactly one input value and returns
   success solely through its error model.
 observation: >
   A check must see the persisted value through a sibling reader;
@@ -154,7 +154,7 @@ falsifiability: >
 counterexamples:
   invalid: a value the subject must refuse
   unsafe: a value that must never reach the reader unescaped
-  refused: a callable answering a value beside the error —
+  refused: a callable returning a value beside the error —
     that is answeringwriter, not writer
 precedence:
   yields_to: [deleter]    # same signature under a removal name

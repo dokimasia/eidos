@@ -27,10 +27,10 @@ per-key grain a fact read records at.
 Metadata is the only channel between plugins. A shape detector
 concludes that a struct is a writer; a generator in another module
 needs that conclusion; neither imports the other. The channel has
-to exist before either side does, because its laws are what both
+to exist before either side does, because its rules are what both
 sides compile against.
 
-Three of those laws cannot be retrofitted.
+Three of those rules cannot be retrofitted.
 
 Writes arbitrate by rank rather than by arrival order. Annotators
 run in parallel under an opt-in, and two plugins stamping one key
@@ -38,7 +38,7 @@ must produce the same winner as a serial run. If the first
 implementation lets arrival order decide, every test written
 against it encodes a schedule.
 
-Every claim is kept, not just the winner. Attribution answers why a
+Every claim is kept, not just the winner. Attribution returns why a
 fact holds and who lost, and a losing write that vanishes leaves
 nobody able to explain why their own stamp did not take. Nothing
 here walks the record for a human; the record itself starts with
@@ -66,7 +66,7 @@ package meta
 // [Key].
 type KeyName string
 
-// Namespace answers the segment before the first dot, which names
+// Namespace returns the segment before the first dot, which names
 // the module that owns the key.
 func (n KeyName) Namespace() string
 
@@ -84,7 +84,7 @@ type FactValue interface {
     string | int64 | bool | []string | symbol.Identity
 }
 
-// Key is the typed handle registration answers. Reads, writes and
+// Key is the typed handle registration returns. Reads, writes and
 // gate predicates all go through it, so the value type is checked
 // where the code compiles rather than where the run fails.
 type Key[T FactValue] struct{ ... }
@@ -122,11 +122,11 @@ func NewRegistry() *Registry
 // registration rather than reading as a new namespace.
 func (r *Registry) ClaimNamespace(ns, owner string) error
 
-// Register records a key and answers its typed handle.
+// Register records a key and returns its typed handle.
 //
 // It refuses, with an error naming both claimants where two exist:
 // a name without a claimed namespace, a name registered twice, and
-// a spec without documentation. It answers an error rather than
+// a spec without documentation. It returns an error rather than
 // panicking because composition collects every fault in one pass.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error)
 
@@ -156,14 +156,14 @@ type Completeness struct {
     Severity diag.Severity
 }
 
-// Resolve answers the id a boundary spelling names, and false for
+// Resolve returns the id a boundary spelling names, and false for
 // a spelling nothing registered.
 func (r *Registry) Resolve(name KeyName) (KeyID, bool)
 
-// Spec answers a registered key's spec.
+// Spec returns a registered key's spec.
 func (r *Registry) Spec(id KeyID) (KeySpec, bool)
 
-// Group answers a group's member keys, in registration order.
+// Group returns a group's member keys, in registration order.
 func (r *Registry) Group(g GroupName) iter.Seq[KeyID]
 ```
 
@@ -173,7 +173,7 @@ nothing drifts from the registry and no generator is needed. The
 same argument settled diagnostic codes; the difference is when.
 Codes register at package initialization and panic on a duplicate.
 Keys register while the workspace composes, where faults are
-collected, so `Register` answers an error and no `Must` variant
+collected, so `Register` returns an error and no `Must` variant
 exists.
 
 ### Claims
@@ -236,11 +236,11 @@ plugin is.
 //
 // Facts is safe for concurrent use and serializes writes per bag,
 // so two annotators stamping two subjects do not contend. Rank
-// decides every winner, so a parallel run answers what a serial
+// decides every winner, so a parallel run returns what a serial
 // one does, whatever order the writes arrived.
 type Facts struct{ ... }
 
-// NewFacts answers an empty fact store reading specs from r.
+// NewFacts returns an empty fact store reading specs from r.
 // Registration completes before the first write; the store does
 // not lock the registry.
 func NewFacts(r *Registry) *Facts
@@ -261,23 +261,23 @@ func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error
 func (f *Facts) DropKey(k KeyID, c Claim) error
 
 // DropGroup claims absence for every member of g, including
-// members whose stamps land after the drop: the tombstone covers
+// members whose stamps arrive after the drop: the tombstone covers
 // the group, so arbitration finds it whichever member is read.
 func (f *Facts) DropGroup(g GroupName, c Claim) error
 
-// Get answers the winning value, untracked, and false where the
+// Get returns the winning value, untracked, and false where the
 // winner is a drop or nothing was stamped. Slice values are
 // copied out, so a caller cannot reach into a bag.
 func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool)
 
-// Fact answers what Get does and records the read at
+// Fact returns what Get does and records the read at
 // (subject, key) into rec. A miss records too: the reader asked,
 // so it runs again when the fact appears. It is the read every
 // plugin makes; Get is the kernel's own untracked path.
 func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T, bool)
 
 // Recorder records fact reads. The store's read set implements
-// it, so one artifact's declaration reads and fact reads land in
+// it, so one artifact's declaration reads and fact reads arrive in
 // one set.
 type Recorder interface {
     RecordFact(subject symbol.Identity, key KeyName)
@@ -289,7 +289,7 @@ type Recorder interface {
 // rather than the graph.
 func (f *Facts) ByKey(k KeyID) iter.Seq[symbol.Identity]
 
-// Claims answers every claim on (subject, key) in rank order,
+// Claims returns every claim on (subject, key) in rank order,
 // winner first, drops included. This is the record attribution
 // walks: a losing write stays visible instead of mysterious.
 func (f *Facts) Claims(id symbol.Identity, k KeyID) iter.Seq[ClaimView]
@@ -338,7 +338,7 @@ A drop competes in the same ranking. Reading a key considers its
 value claims, the drops on the key, and the drops on the key's
 group; the best rank wins, and a winning drop reads as absent.
 Arrival order appears nowhere. That is what "covers stamps that
-land later" means mechanically: a tombstone outranks a stamp
+arrive later" means mechanically: a tombstone outranks a stamp
 whenever the stamp arrives, so the two never race.
 
 ### The read grain
@@ -354,7 +354,7 @@ recording would re-run every reader of a bag on any stamp.
 // satisfies meta.Recorder.
 func (s *ReadSet) RecordFact(subject symbol.Identity, key meta.KeyName)
 
-// Facts answers every recorded fact read, in subject then key
+// Facts returns every recorded fact read, in subject then key
 // order.
 func (s *ReadSet) Facts() iter.Seq2[symbol.Identity, meta.KeyName]
 ```
@@ -399,7 +399,7 @@ write time. The registry holds who claimed a namespace, but only
 the dispatch knows which plugin is writing, so only the dispatch
 can refuse a write outside that plugin's own namespace. A handler
 is an opaque function, and no layer below it can tell. It carries
-no scope: the fact store answers any subject it holds, because a
+no scope: the fact store returns any subject it holds, because a
 handler only receives subjects its plan's dispatch admitted, and
 reading another plan's facts on a shared subject is the channel
 working as intended. It persists nothing: values are held in
@@ -411,7 +411,7 @@ memory, and the sealed form belongs to the engine.
 
 Keep claims unordered and scan by rank on every `Get`. It lost
 because reads outnumber writes, since every gate predicate and every
-generator read is a `Get`, and the scan prices the hot path for the
+generator read is a `Get`, and the scan sets the hot path's cost for the
 cold one. Re-ranking at write is O(claims on that key), and claims
 per key are few.
 
@@ -419,7 +419,7 @@ per key are few.
 
 A single append log per subject, filtered by key at read. It lost
 because the read grain and the value diff both work per key;
-every read would scan the whole bag to answer one key.
+every read would scan the whole bag to return one key.
 
 ### Provenance as a reference to the artifact's read set
 
@@ -448,7 +448,7 @@ under a group; a declaration reference is an identity.
 
 Model booleans as a presence type so false cannot be written. It
 lost because the boundary writes `key=true` and reads want a
-typed `bool`; refusing `false` at `Stamp` enforces the same law
+typed `bool`; refusing `false` at `Stamp` enforces the same rule
 without a sixth vocabulary term.
 
 ## Drawbacks
@@ -465,7 +465,7 @@ without a sixth vocabulary term.
   engine's.
 - The claim envelope is ceremony for a fixture: four rank fields
   and a position, filled by hand wherever no dispatch fills them.
-  Every fact-store test pays it.
+  Every fact-store test carries it.
 - A lower-rank write after a drop does nothing, silently. That is
   the design: rank decides, and the loser stays in the record.
   `Claims` is the only way to reach it, and nothing renders it for

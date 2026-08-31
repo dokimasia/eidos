@@ -17,7 +17,7 @@ rfc: none
 The Go frontend parses real packages into the frozen graph through the
 frontend kit: identities, docs and positions, canonical directives out
 of `//+gen:` carriers, `go.*` and `gen.module` facts, and Link
-resolving cross-package spellings. The projections answer Tier 1 for
+resolving cross-package spellings. The projections cover Tier 1 for
 Go.
 
 ## Done when
@@ -38,7 +38,7 @@ Go.
       silences it.
 - [ ] The kernel-owned `sample` and `witness` directives stamp their
       `gen.*` keys through the default annotators, and `SamplesOf`
-      and `Witnesses` answer from those stamps before deriving
+      and `Witnesses` read from those stamps before deriving
       anything (D64).
 - [ ] `go.work` and `go.mod` are read declaratively, `gen.module` and
       `gen.moduleRoot` are stamped, and a static check asserts the
@@ -49,9 +49,9 @@ Go.
 - [ ] Test files parse and carry `go.testFile`. The kit excludes
       nothing except workspace-owned outputs, which it refuses before
       `Parse` when a fixture provides the trailer or manifest proof.
-- [ ] Tier 1 answers for Go: `CallableOf`, `TypeOf` into canonical
+- [ ] Tier 1 is covered for Go: `CallableOf`, `TypeOf` into canonical
       shapes, `Resolve`, `MembersOf` across embeds with per-member
-      provenance and refusal reasons, the three Values answers, and
+      provenance and refusal reasons, the three Values returns, and
       `TypeName`. Tier 2 where Go satisfies it: enums with a small
       iota evaluator, sentinel names, struct tags, promotion,
       comparability, and generics with authored witnesses.
@@ -90,15 +90,15 @@ plus the completeness check from
   Milestone 0007.
 - eidos-lang and tree-sitter: milestone 0009.
 - Types the declarations do not state (inferred `var x = f()`): these
-  land on level 2 with `go.inferred` carrying the spelling, per the
-  degradation ladder. That is the declared behaviour, not deferred
+  sits at level 2 with `go.inferred` carrying the spelling, per the
+  degradation scale. That is the declared behaviour, not deferred
   work.
 
 ## Risks to the sequence
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| `MembersOf` and generics substitution are the deepest rules code, and wrong answers make later generators ship incomplete doubles silently | 0005, 0011 | The MemberSet failure reasons and the completeness check make degradation visible. Rows land on level 2 or 3 honestly instead of blocking the milestone |
+| `MembersOf` and generics substitution are the deepest rules code, and wrong returns make later generators ship incomplete doubles silently | 0005, 0011 | The MemberSet failure reasons and the completeness check make degradation visible. Rows sits at level 2 or 3 honestly instead of blocking the milestone |
 
 ## Changes
 

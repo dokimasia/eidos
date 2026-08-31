@@ -40,7 +40,7 @@ four surfaces over one comparison core.
 | `bench` | fails a benchmark that exceeds a declared ceiling |
 
 A conformance gate holds `assert` and `expect` to one
-language-neutral standard. A `Recorder` seat lets a test read what
+language-neutral standard. A `Recorder` role lets a test read what
 an assertion reported, which is how an assertion gets tested. Every
 assertion takes a contract message last and prints it as the
 failure's first line, followed by a structural diff that reaches
@@ -86,8 +86,8 @@ replace directive per module.
   that follows is structural, reaches unexported fields, and is
   rendered once by one library instead of per call site.
 - The fixtures' failure branches become testable: `Rejects` drives
-  a check against a wrong implementation on a `Recorder` seat and
-  answers the failure message, so a helper's rejections are
+  a check against a wrong implementation on a `Recorder` role and
+  returns the failure message, so a helper's rejections are
   assertions like any other.
 - One comparison semantics repository-wide: nil-versus-empty,
   NaN, and float exactness are decided once, with per-call options

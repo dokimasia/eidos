@@ -130,7 +130,7 @@ regenerate.
 ### The intermediate representation
 
 ```go
-// Side says which model a field lands in.
+// Side says which model a field arrives in.
 type Side uint8 // Node | Emit | Both
 
 // KindSpec is one declaration kind, lowered from its schema struct.
@@ -240,7 +240,7 @@ The generator writes a test beside each model file, and the models
 carry compile-time assertions that every kind satisfies the
 vocabulary's interfaces. A generated test constructs each kind
 through the public surface and checks what the schema says is true
-of it: the kind constant it answers, its position and documentation,
+of it: the kind constant it returns, its position and documentation,
 which member lists it carries, and that a traversal reaches one
 child in every traversed field and stops when a visitor prunes.
 

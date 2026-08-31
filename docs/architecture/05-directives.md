@@ -109,9 +109,9 @@ assume. The schema declares:
   those names against the registry, so an unknown name is a Build
   error, and Freeze enforces them over each subject's full directive
   list, reporting one Error naming both positions. The kernel
-  validator has to do this check, because the visibility law
+  validator has to do this check, because the visibility rule
   ([06b-authoring.md](06b-authoring.md)) leaves no plugin able to
-  see a stranger's directive. A contradiction between annotations is
+  see another plugin's directive. A contradiction between annotations is
   caught here or not at all.
 
 Every schema **generates constants** for its directive name and its
@@ -159,7 +159,7 @@ written ([04-metadata.md](04-metadata.md)).
 `skip` excludes a declaration from bare and fact-gated triggers, and
 optionally from one plugin through `skip plugin=mockgen`. The
 authoring dispatch honours it directly, so opting out of a generator
-that fires on everything never becomes per-plugin boilerplate
+that applies to everything never becomes per-plugin boilerplate
 ([06b-authoring.md](06b-authoring.md)). Directive-gated rules are
 unaffected, because a subject that opted in explicitly withdraws by
 deleting the directive rather than by adding a second annotation to
@@ -171,7 +171,7 @@ carries one concrete type per type parameter, as `T=int`. Both
 validate their keys against the subject's own declaration. Their
 handlers ship as default annotators rather than in the kernel, but
 the spellings and the `gen.*` keys they stamp are kernel API,
-because the Tier-1 Values and Tier-2 Witnesses answers read those
+because the Tier-1 Values and Tier-2 Witnesses returns read those
 stamps ([03-projection.md](03-projection.md)). The surface least
 able to absorb change cannot belong to whichever annotator happens
 to be registered.
@@ -182,8 +182,8 @@ the output of the directive they are already writing does not write
 a second one. Both spellings lower to the same routing override, and
 a plugin schema cannot claim either key.
 
-Facts that come from directives land in the same bags at `directive`
-authority, so the override story stays one story.
+Facts that come from directives arrive in the same bags at `directive`
+authority, so overrides stay one mechanism.
 
 ## Stability
 

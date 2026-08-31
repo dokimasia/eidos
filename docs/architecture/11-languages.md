@@ -51,18 +51,18 @@ the rest, as policy defaults.
 
 ## The language landscape
 
-Go and TypeScript are first-class. protobuf is read-only.
+Go and TypeScript are fully supported. protobuf is read-only.
 
 The vocabulary already anticipates the rest, and each row below
 names the language that forced the model or tier addition
 ([02-symbol-model.md](02-symbol-model.md),
 [03-projection.md](03-projection.md)):
 
-| Construct | Forced by | Where it lands |
+| Construct | Forced by | Where it arrives |
 |---|---|---|
 | Variance on type params | Kotlin, C#, Java wildcards | Tier 1 symbol |
 | Extends and Implements against Embeds | JVM and Python against Go | Tier 1 symbol |
-| Overloads | Java, Kotlin, C#, TS | a model law: member slices |
+| Overloads | Java, Kotlin, C#, TS | a model rule: member slices |
 | Sum against Union | Rust enums, sealed classes and `oneof` against TS unions | Tier 1, two shapes |
 | Normalized Visibility | Java, Kotlin `internal`, Rust `pub(crate)` | Tier 1 symbol, raw spelling in metadata |
 | Instance and Type member level | JVM statics, companions | Tier 1 symbol |
@@ -84,11 +84,11 @@ a real compiler frontend.
 ## Completeness is checkable
 
 Three rules make "supports language X" something you can check
-([03-projection.md](03-projection.md) has the ladder).
+([03-projection.md](03-projection.md) has the scale).
 
 First, the symbol model admits what any language needs, and other
 languages leave those parts empty. Second, every construct sits on
-one level of the degradation ladder. Third, the **completeness check**
+one level of the degradation scale. Third, the **completeness check**
 drives `testdata/features/`, holding one small source file per
 landscape row beside its expectation:
 
@@ -98,8 +98,8 @@ level: 1                      # 1 full | 2 partial+meta | 3 opaque+meta | 4 refu
 meta: [rust.lifetimeParams]  # checks 2–3: the keys carrying the remainder
 ```
 
-The check verifies that each fixture lands exactly where it declared.
-A feature that lands *better* than declared fails too, because a
+The check verifies that each fixture arrives exactly where it declared.
+A feature that arrives *better* than declared fails too, because a
 capability nobody declared is a capability nobody tested. The
 published per-language support matrix is generated from that run, so
 "what does eidos-lang-java support" is a build artifact.
@@ -110,7 +110,7 @@ Frontends and backends produce and finish the graph rather than
 subscribing to it, so they are not rules
 ([06b-authoring.md](06b-authoring.md)). They get **kits**: the
 author supplies the handful of things that genuinely belong to the
-language, and the kit owns the ritual every satellite would
+language, and the kit owns the steps every satellite would
 otherwise reimplement differently.
 
 **Each satellite declares one `CommentSyntax` value** in `lang.go`,
@@ -222,7 +222,7 @@ It also owns **per-file render parallelism**. Files are independent
 and ImportSets are per file, so the kit parallelises the render
 loop, and a thousand `Finalise` calls stop being a serial tail.
 
-The marker law, the format-error rule and the merge order all
+The marker rule, the format-error rule and the merge order all
 become kernel behaviour, tested once, rather than reimplemented
 differently in each language.
 
@@ -260,13 +260,13 @@ toolchain the machine happens to supply.** A version-pinned parser
 dependency is hermetic and deterministic whatever its origin, be
 that the standard library, a Go module or a tree-sitter grammar,
 because the same workspace resolves the same parser everywhere. A
-toolchain found on PATH answers differently per machine and per
+toolchain found on PATH returns differently per machine and per
 version, which hermeticity refuses and warm≡cold cannot absorb.
 
 Within that rule, **tree-sitter is the platform**: one grammar
 model, and one binding layer in the shared `eidos-lang` module,
 which pins every grammar and is the only importer of the bindings.
-A satellite deviates only where a first-class pure-Go parser already
+A satellite deviates only where a fully supported pure-Go parser already
 exists and is proven, which means Go's standard-library parser and
 protobuf's protocompile. Those two take no `eidos-lang` dependency,
 and the kit keeps even that deviation invisible downstream:
@@ -278,7 +278,7 @@ and the kit keeps even that deviation invisible downstream:
 | protobuf | `bufbuild/protocompile` | pure Go, declarative, proven |
 | Rust | tree-sitter-rust | no production pure-Go Rust parser exists, and the grammar is org-maintained |
 | Python | tree-sitter-python | the same, and docstrings enter through the kit's `Doc` and `DocLines` door |
-| Java | tree-sitter-java plus the class-file reader (D31) | a mature grammar, and JARs answer signature-only dependencies |
+| Java | tree-sitter-java plus the class-file reader (D31) | a mature grammar, and JARs supply signature-only dependencies |
 | Kotlin | tree-sitter-kotlin, **flagged** | the community grammar reports a 61% structural match against the JetBrains PSI reference. Sequence this satellite late and expect more level-2 and level-3 rows in its feature matrix until the grammar closes the gap |
 | PHP | tree-sitter-php | a pure-Go parser exists, VKCOM's `php-parser` for PHP 8, but nobody has maintained it since 2022. Adopt it only with a maintenance commitment |
 
@@ -296,17 +296,17 @@ not qualify, and neither does a compiler that exists only as a
 machine toolchain, such as javac or a JVM. If one publishes a public
 API for a language that has become a heavy source language for
 semantic generation, that satellite revisits the choice. Until then
-the ladder carries the residue.
+the scale carries the residue.
 
-### What syntax plus the graph answers, and what it cannot
+### What syntax plus the graph returns, and what it cannot
 
 A tree-sitter frontend never type-checks, but the frontend was never
-the layer that answered semantic questions. **The frontend parses,
+the layer that returned semantic questions. **The frontend parses,
 Link resolves, and the rules project.** A satellite's `rules/`
-answers over the Link-resolved graph
+returns over the Link-resolved graph
 ([02-symbol-model.md](02-symbol-model.md)), which gives
 whole-workspace declaration knowledge without a toolchain, and every
-question lands on a declared source of truth:
+question arrives on a declared source of truth:
 
 | Question | Answered by |
 |---|---|
@@ -317,11 +317,11 @@ question lands on a declared source of truth:
 | comparability, zero values, samples | `rules/` walking the linked graph |
 | dependencies distributed without source | declared artifacts such as JARs and `.d.ts`, parsed and never executed |
 | inferred types, such as `var x = f()` with no annotation | level 2: the declaration projects with the type opaque, and `<lang>.inferred` carries the spelling |
-| anything needing execution or macro expansion | checks 3 and 4 of the ladder |
+| anything needing execution or macro expansion | levels 3 and 4 of the scale |
 
 The residue is honest and small: what a compiler infers that the
 declarations do not state. Every such row sits on the degradation
-ladder, and the completeness check verifies where
+scale, and the completeness check verifies where
 ([13-testing-and-conformance.md](13-testing-and-conformance.md)).
 "Syntax-derived" is a declared property per feature row rather than
 a blanket caveat.
@@ -333,7 +333,7 @@ from, never how much it knows.
 
 Considered and refused. **Toolchain frontends** that fork `go list`,
 invoke Node or require a JVM: each drags its language's toolchain
-into every consumer's runs, and its answers move with whatever
+into every consumer's runs, and its returns move with whatever
 version the machine carries, which warm≡cold across machines cannot
 absorb. **Hybrid loading**, using the toolchain when present and a
 parser library otherwise: one workspace producing different graphs
@@ -353,11 +353,11 @@ already holds.
 **eidos-lang-rust and eidos-lang-python** are anticipated by
 decision (D6): Result and async in Tier 1, ownership in Tier 2,
 Optional surviving `None`, and dynamic typing degrading through the
-ladder.
+scale.
 
 **eidos-lang-php** forces no new model element. Native union types
 are already in the shape vocabulary, since TypeScript forced them.
-Attributes ride `AnnotationRules`. PHP 8.1 enums land on the Enum
+Attributes ride `AnnotationRules`. PHP 8.1 enums arrive on the Enum
 kind. Traits ride Embeds with `php.trait` metadata. The parser table
 above names its options, and the Kotlin sequencing note applies in
 reverse: PHP is cheap and can come early.

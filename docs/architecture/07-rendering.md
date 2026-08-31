@@ -73,8 +73,8 @@ without touching the other plugin's template.
 
 ## Render dispatch: whose template renders what
 
-Every plugin author asks this first. The answer is a ladder of
-granularity, smallest claim first: scaffolding statements, then a
+Every plugin author asks this first. The answer is a fixed order of
+claims, smallest first: scaffolding statements, then a
 body through `TemplateRef`, then a file through a claimed output,
 and nothing larger.
 
@@ -92,7 +92,7 @@ backend executes it at render time inside the kind template's body
 slot. The declaration half stays structured and machine-checked,
 covering the signature, the docs, slot placement and imports, while
 the body renders the plugin's way. The generator names the template
-and never executes one, which keeps generators blind to languages
+and never executes one, which keeps generators never seeing languages
 while the same emit graph renders through
 `templates/golang/method1.tpl` in one plan and
 `templates/typescript/method1.tpl` in another.
@@ -106,7 +106,7 @@ belongs to the plugin rather than to the language.
 
 **Slot contents always render through the backend's kind
 machinery**, whichever mode the host uses. So a cross-cutting
-plugin's contribution looks the same in every file it lands in, and
+plugin's contribution looks the same in every file it arrives in, and
 no plugin's template ever renders another plugin's values. A
 slot-appended value may carry a `TemplateRef` like any other, and it
 resolves in its own emitter's tree.
@@ -149,16 +149,16 @@ around it:
   it is an Error naming the emitting plugin and counting what went
   unplaced, because a slot contribution carries no attribution to
   name its contributor by.
-- **`Verbatim`**, which is literal text. It is the sharp knife for a
-  genuine one-liner, and it costs three things: the template-lint
+- **`Verbatim`**, which is literal text. It is for the genuine
+  one-liner only, and it costs three things: the template-lint
   check cannot see into it, it contributes no imports, and nothing
   can compose with it. A `TemplateRef` avoids all three and is
   almost always the better tool. `Verbatim` exists only inside
   bodies, never as a declaration-level value.
 
-The marker law binds body-claiming templates alone. A kind template
+The marker rule binds body-claiming templates alone. A kind template
 that never calls the body builtin renders its declarations
-signature-only, and no law fires: what a language's own templates
+signature-only, and no rule applies: what a language's own templates
 choose to place is the template author's responsibility.
 
 ## Template ownership
@@ -194,7 +194,7 @@ render text, and rejected for config too
 
 text/template has two real weaknesses: errors surface when the
 template executes, and nothing is checked statically. Both are
-handled where they belong, in the conformance ladder.
+handled where they belong, in the conformance checks.
 
 **The template-lint check** parses every template of every plugin
 against the merged funcmap of each language it declares, at CI time.
@@ -223,7 +223,7 @@ use either or both.
 A backend renders one plan's emit graph. There is one backend per
 plan ([08-workspace-and-plans.md](08-workspace-and-plans.md)), so
 import resolution, formatting and layout each have exactly one
-language to answer for.
+language to return for.
 
 The kit owns the render pass ([11-languages.md](11-languages.md))
 and the output contract finishes it
@@ -237,9 +237,9 @@ flow runs the same way in every satellite:
 2. **Render declarations** through the language's kind templates, in
    canonical order: origin identity, then the unit's declaration
    order. A plugin's claimed file template takes the whole group
-   instead, per the ladder above.
+   instead, per the order above.
 3. **Splice slot contributions** through the same kind machinery, so
-   a contribution renders identically in every file it lands in.
+   a contribution renders identically in every file it arrives in.
 4. **Resolve each `TemplateRef`** in its emitting plugin's tree for
    the plan's target, and execute it inside the kind template's body
    slot. The template must place the slot marker. A pending
@@ -267,6 +267,6 @@ type TemplateRef struct {
 ```
 
 Byte-determinism is the backend's contract: the same emit graph
-produces the same bytes on every machine. The conformance ladder
-asserts it, and everything downstream assumes it, including
+produces the same bytes on every machine. The conformance checks
+assert it, and everything downstream assumes it, including
 manifests, sweeps and warm≡cold.

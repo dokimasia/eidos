@@ -9,7 +9,7 @@ Everything here ships in the kernel's `conformance/` package, and
 satellites and consumers run it too. Claims about compatibility,
 determinism and language support are executed rather than asserted.
 
-## The check ladder
+## The eight checks
 
 Eight checks, each proving something the others cannot:
 
@@ -38,7 +38,7 @@ failures are written once.
 **plugintest**, through `RunPluginSuite(t, setup Setup)`, where the
 setup builds the plugin with its fixture fresh per call. Per plugin
 it checks: declaration stability, meaning the name, the gate
-records, the outputs and the owned schemas answer identically
+records, the outputs and the owned schemas come back identical
 across builds;
 determinism, meaning two runs over one fixture store produce
 byte-equal emit under `-count=2`; annotator idempotence; that no
@@ -54,11 +54,11 @@ hand-rolled SPI twin produce byte-equal output, which is where 06b's
 promise is held.
 
 **backendtest**, through `RunBackendSuite(t, setup Setup)`. Over a
-hand-built emit fixture it checks: that the fixture is inhabited,
+hand-built emit fixture it checks: that the fixture is populated,
 because an empty store passes everything vacuously; byte-stable
 render, two isolated runs compared as files and as a finding set;
 that every emit kind the fixture carries renders; that every body
-lands whole, with slot contents spliced through the kind machinery;
+arrives whole, with slot contents spliced through the kind machinery;
 and that a file's failure reports positioned and attributed while
 the render continues per [07-rendering.md](07-rendering.md), the
 refused file withheld. The header and trailer checks are the output
@@ -82,7 +82,7 @@ output. It is the only check that builds what was generated.
 
 **completeness** drives `testdata/features/` per
 [11-languages.md](11-languages.md): every row sits exactly on the
-level it declared, and a feature that lands better than declared
+level it declared, and a feature that does better than declared
 fails too.
 
 Beside plugintest ships the **Tier-3 import lint**, a static pass

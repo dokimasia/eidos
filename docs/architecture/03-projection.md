@@ -22,7 +22,7 @@ judgement call.
 > and stays there.
 
 ```
-Tier 1  every language answers        Callable · TypeShape · Resolve
+Tier 1  every language returns        Callable · TypeShape · Resolve
         (the language contract)       · Members · Values · naming
 Tier 2  declared by satisfying,       EnumRules · AnnotationRules ·
         found by asserting            GenericsRules · …
@@ -35,9 +35,9 @@ Tier 3  language sdk, importable      the Go-only, Java-only
 
 `rules.Source` and `rules.Target` are distinct types over an
 interned registry. A generator asks about the language a declaration
-was written in. A backend answers for the language a plan renders
+was written in. A backend serves the language a plan renders
 into. Both identities share one namespace, so a frontend stamps the
-same name a lowering answers to, but confusing the two directions
+same name a lowering recognises, but confusing the two directions
 does not compile.
 
 Each satellite's `lang.go` exports its identity as typed values, and
@@ -47,7 +47,7 @@ string. The string exists only where a human types it, such as
 it resolves against the registry at workspace Build
 ([README](README.md)).
 
-## Tier 1: every language answers
+## Tier 1: every language returns
 
 Five projections and the naming joins. Implementing Tier 1 is what
 makes something a language ([11-languages.md](11-languages.md)).
@@ -90,14 +90,14 @@ covers Kotlin Flow, Rust Stream, TypeScript AsyncIterator and Python
 async generators.
 
 **ErrorModel** is `None | LastReturn | ResultType | Thrown |
-Raised`. That turns "does this answer an error" into one question
+Raised`. That turns "does this return an error" into one question
 across Go's last return, Rust's `Result`, TypeScript's `throw`,
 Python's `raise` and Java's checked `throws`. Whether a `throws` is
 checked is a Tier-2 question.
 
 **Async** is `Sync | Async`, covering TypeScript functions returning
 Promise, Rust futures, Python `async def` and Kotlin `suspend`. Go
-always answers Sync, because its concurrency lives in the caller and
+always returns Sync, because its concurrency lives in the caller and
 never shows in a signature. That is the honest projection.
 
 ### TypeShape
@@ -166,7 +166,7 @@ resolved through Link identities.
 
 Every generator that builds a double asks this first, wanting the
 full contract of an interface, and nothing outside the language
-contract can answer it. Promotion, override, merge and MRO are
+contract can return it. Promotion, override, merge and MRO are
 language rules. Go promotes, Java overrides, TypeScript interfaces
 merge, and Python linearises. A generator that re-derives any of
 them gets it wrong for the next language.
@@ -184,7 +184,7 @@ any other read ([09-incrementality.md](09-incrementality.md)).
 
 Value synthesis, which every check-emitting generator depends on.
 
-`SamplesOf` answers with **two distinct values** of a type. Two
+`SamplesOf` returns with **two distinct values** of a type. Two
 rather than one, because a check that compares against a single
 value passes whenever the subject already held that value, and you
 cannot always know what it held. The hint names the declaration the
@@ -193,7 +193,7 @@ where it came from.
 
 `ZeroLiteral` spells the type's zero, which is what a declared
 default gets compared against. The spellings differ per language,
-`nil` against `None`, so a kernel table would be answering for one
+`nil` against `None`, so a kernel table would be returning for one
 language.
 
 `LiteralFor` renders text as a literal of a type and reports false
@@ -202,7 +202,7 @@ consumed the language's quoting, where bare text is the right
 literal for some types and not for others.
 
 All three refuse instead of guessing. A type the language cannot
-reason about answers not-OK, and never a zero value you would
+reason about returns not-OK, and never a zero value you would
 compare against.
 
 **Authored values beat derived ones.** The kernel registers the
@@ -226,7 +226,7 @@ A language declares an optional capability by implementing the
 interface. A consumer asserts for it, and when the assertion fails,
 reports once and generates nothing. That beats building a projection
 on a default nobody chose. If these were required instead, a
-language without the concept would have to answer by refusing.
+language without the concept would have to return by refusing.
 
 The contract shapes, pinned to the same standard as Tier 1:
 
@@ -292,7 +292,7 @@ rule, so the conformance suite ships the lint that does
 Tier 3 is where language-only vocabulary lives legally: present,
 bounded, and unable to reach neutral code without somebody noticing.
 
-## The degradation ladder
+## The degradation scale
 
 Every source construct sits on exactly one check:
 
@@ -314,7 +314,7 @@ level it declared.
 ## Generics, split across the tiers
 
 **Structure is Tier 1.** `TypeParams` carry variance and bounds as
-refs on the symbol model, and every anticipated language answers it.
+refs on the symbol model, and every anticipated language returns it.
 
 **Reasoning is Tier 2**, through `GenericsRules`: witnesses, meaning
 one concrete type per parameter and all of them or none, since a

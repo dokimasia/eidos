@@ -28,7 +28,7 @@ ones.
       kind-indexed triggers with generated Match types, `OnEmit` and
       `OnGraph`, `Directive` and `Where` gates, the Emitter and
       Stamper effects, and `NewPlugin(...).Build()`.
-- [x] Build runs the validation ladder of
+- [x] Build runs the validation sequence of
       [08-workspace-and-plans.md](../architecture/08-workspace-and-plans.md)
       and collects faults: a fixture composition seeded with five
       distinct faults reports all five in one error.
@@ -83,7 +83,7 @@ plan is arbitrary. Milestone 0005 runs this dispatch over real source.
 [06b-authoring.md](../architecture/06b-authoring.md),
 [04-metadata.md](../architecture/04-metadata.md), the grammar and
 validation halves of [05-directives.md](../architecture/05-directives.md),
-the Build ladder of
+the Build sequence of
 [08-workspace-and-plans.md](../architecture/08-workspace-and-plans.md),
 the store and Reader of
 [02-symbol-model.md](../architecture/02-symbol-model.md), and
@@ -92,7 +92,7 @@ plugintest from
 
 ## Not in this milestone
 
-- Any user-visible generation: nothing parses and nothing lands on
+- Any user-visible generation: nothing parses and nothing arrives on
   disk until milestones 0004 and 0005. Build here validates plans
   against fake backends and a fake registered target.
 - The template-lint half of plugintest: needs the template machinery,
@@ -115,7 +115,7 @@ plugintest from
 | Date | What changed | Why |
 |---|---|---|
 | 2026-08-30 | Status Planned to Done | Every exit criterion is met and `make check` passes; RFC-0003 through RFC-0007 are accepted and linked |
-| 2026-08-30 | Reworded the ladder bullet from seven steps to the validation ladder | The accepted ladder carries no policy step and no version handshake: no policy registry or second versioned component exists to check against, and each is an addition between the steps that are |
+| 2026-08-30 | Reworded the bullet from seven steps to the validation sequence | The accepted sequence carries no policy step and no version handshake: no policy registry or second versioned component exists to check against, and each is an addition between the steps that are |
 | 2026-08-30 | Pinned the `skip` directive and the no-panic assertion into Done when | A coverage audit against the architecture found them held by Scope reference only, so nothing forced them to exist |
 | 2026-08-30 | Retitled from "Typed plugins compose and Build validates"; goal restated over fixture graphs | The old title claimed a composition capability that only exists at 0005. The plugin frame still comes second: a frontend is a plugin, so 0004 needs these seams first |
 | 2026-08-30 | Added at position 2 | The middle of the machine comes before the edges: plugins and Build are testable over hand-built graphs, so no language needs to exist first |

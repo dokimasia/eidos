@@ -33,7 +33,7 @@ and a satellite's own binary.
 ## Motivation
 
 The render pass ends at bytes in memory, deliberately: two calls
-over one store answer the same values, and the conformance suite
+over one store return the same values, and the conformance suite
 holds every renderer to that. Three problems remain between those
 values and a file a person reviews.
 
@@ -45,15 +45,15 @@ before the package clause, and every ecosystem has its spelling.
 Without a marker, generated output reads as hand-written code,
 and gets reviewed, linted and edited like it.
 
-Second, nothing answers where a file came from. Ownership needs
+Second, nothing says where a file came from. Ownership needs
 proof: a generator may only overwrite or delete what it can prove
-it produced, and the proof has to travel in the file itself,
+it produced, and the proof has to be carried in the file itself,
 because the manifest that would answer faster is not committed,
 and a fresh clone or a CI runner arrives with no state. And a
 reviewer needs attribution: the question at the top of a
 generated file is which plugins produced it and from what, and
 the file is the only record that is reliably present to answer
-it. A trailer carrying the brand and a hash of the body makes
+the question. A trailer carrying the brand and a hash of the body makes
 ownership and integrity decidable per file; derivation lines
 carrying the plugins and sources make attribution readable where
 the reader already is.
@@ -105,10 +105,10 @@ type Contract struct { /* brand, comment spelling */ }
 // the frame.
 func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error)
 
-// Stamp answers the finished bytes: the marker line, one
+// Stamp returns the finished bytes: the marker line, one
 // derivation line per plugin and per source, one blank line, the
 // file's body unchanged, and the trailer as the final line. Two
-// calls over one file answer the same bytes.
+// calls over one file return the same bytes.
 //
 // It refuses a body that contains a carriage return or does not
 // end in a newline, and a plugin or source value containing a
@@ -132,17 +132,17 @@ type Provenance struct {
 
 // Read parses the frame of any brand's stamped file: the marker,
 // the derivation lines, and the trailer as the final line. It
-// answers false where no frame is present. Read checks nothing:
+// returns false where no frame is present. Read checks nothing:
 // pairing the record with an integrity check is Verify's job,
-// and reading a stranger's record is how adoption tells another
+// and reading another plugin's record is how adoption tells another
 // tool's intact file from a hand-written one.
 func Read(stamped []byte) (Provenance, bool)
 
 // Verify reads a stamped file back and holds it whole: the frame
 // parses, the trailer carries this contract's brand, the trailer
 // is the file's final line, and its hash matches the body. It
-// answers the record it verified; anything appended after the
-// trailer, a stranger's brand, or a hash mismatch answers an
+// returns the record it verified; anything appended after the
+// trailer, another plugin's brand, or a hash mismatch returns an
 // error naming what broke.
 func (c *Contract) Verify(stamped []byte) (Provenance, error)
 ```
@@ -178,7 +178,7 @@ could pick, and because a review diff then shows a derivation
 change as one line per entry. The order is fixed and the entries
 are sorted, so the lines are as deterministic as the body. A
 file that derives from nothing, such as a plan-level file,
-carries no source line and says so by silence. The grammar is
+carries no source line at all. The grammar is
 keyed, and a reader skips keys it does not know, so a record can
 grow a key without breaking an older reader.
 
@@ -190,7 +190,7 @@ guessing.
 **The trailer** is one comment line, `<brand>:provenance
 sha256:<hex>`, and it is the file's final bytes. The hash covers
 the body: the bytes between the blank line and the trailer line,
-which are exactly the bytes the renderer answered. Hashing the
+which are exactly the bytes the renderer returned. Hashing the
 body rather than the whole file keeps the proof attached to what
 was generated: renaming the brand, or a derivation change that
 leaves the body identical, changes the frame and not the hash,
@@ -252,7 +252,7 @@ type Sink interface {
     Write(path string, body []byte) error
     // Commit makes the staged files real, one atomic rename per
     // file, write-if-changed: identical bytes leave the file and
-    // its mtime untouched. It answers one record per staged
+    // its mtime untouched. It returns one record per staged
     // file, sorted by path, and keeps going past a file that
     // fails, joining the errors.
     Commit() ([]Written, error)
@@ -266,7 +266,7 @@ type Sink interface {
 type Written struct {
     // Path is the staged path, workspace-relative.
     Path string
-    // Action answers what the commit did.
+    // Action returns what the commit did.
     Action Action
     // Hash is "sha256:" and the hex hash of the file's bytes as
     // written: the stamped file, frame included.
@@ -338,14 +338,14 @@ sequenceDiagram
 // close the root; the sink serves one staging.
 func NewDisk(root string) (*Disk, error)
 
-// NewMem stages in memory, for tests and dry runs. Files answers
-// the committed files; before Commit it answers nothing, because
+// NewMem stages in memory, for tests and dry runs. Files returns
+// the committed files; before Commit it returns nothing, because
 // staged means invisible everywhere.
 func NewMem() *Mem
 func (m *Mem) Files() map[string][]byte
 
 // NewTee stages into several sinks at once. Every call fans out
-// and the errors join; Commit answers the first sink's records,
+// and the errors join; Commit returns the first sink's records,
 // so the first sink is the one of record.
 func NewTee(first Sink, rest ...Sink) Sink
 ```
@@ -373,7 +373,7 @@ two halves, beside the suite rather than inside it:
 // AssertStamped renders the fixture, stamps every file through
 // the contract, and holds the frame: every stamp is accepted,
 // the marker is the first line, the trailer is the final line,
-// and Verify answers the derivation the file declared.
+// and Verify returns the derivation the file declared.
 func AssertStamped(tb assert.TB, setup Setup, c *output.Contract)
 ```
 
@@ -390,7 +390,7 @@ and the record that carries it is the manifest's. There is no
 manifest, no drift comparison, no adoption, no overwrite
 refusal, no workspace lock and no prune; every one of those
 consumes the records this proposal defines, and none of them is
-needed to hold the stamp and the sinks to their laws. Deriving a
+needed to hold the stamp and the sinks to their rules. Deriving a
 path from a file's package and name belongs to layout, which is
 its own seam; every consumer here hands the sink a finished
 workspace-relative path.
@@ -403,8 +403,7 @@ A manifest keyed by path already records the hash, plugins and
 sources. It lost because the manifest is not committed: a fresh
 clone, a CI runner and a colleague's machine all arrive with no
 state, and the ownership and attribution questions have to be
-answerable there. The proof travels in the file or it does not
-travel.
+answerable there. The proof is in the file, or it is nowhere.
 
 ### Ownership by VCS attributes
 
@@ -429,7 +428,7 @@ change, and leaves the marker line identical for every file.
 Putting the plugin and source lines at the end keeps the top of
 the file to one line. It lost because attribution is for the
 reader, and readers meet a file at the top; the trailer's own
-law also stays simpler when it is a single final line, because
+rule also stays simpler when it is a single final line, because
 "anything after the trailer is drift" needs no block parsing.
 
 ### The hash in the marker line
@@ -438,7 +437,7 @@ One frame line instead of two. It lost because a leading hash
 leaves the end of the file unguarded: bytes appended after the
 generated block still verify, and appended code is exactly the
 hand edit most likely to happen. The trailer is the final line
-by law, so the append case fails verification.
+by rule, so the append case fails verification.
 
 ### Hashing the whole stamped file
 
@@ -487,7 +486,7 @@ impossible at the API instead of documented against.
   comparing whole values see them; renderers that set neither
   lose only the derivation lines.
 - The derivation lines sit outside the body hash. A hand edit to
-  a plugin or source line passes `Verify` and is only healed on
+  a plugin or source line passes `Verify` and is only corrected on
   the next run, when the regenerated frame differs and
   write-if-changed rewrites the file. Pulling them under the
   hash would make integrity depend on attribution, which is the
@@ -499,11 +498,11 @@ impossible at the API instead of documented against.
   plugins from three keys opens with eight comment lines. The
   entries are routing keys, not member files, which bounds it.
 - One filename suffix, ".stage", is reserved workspace-wide: a
-  naming that answers it is refused at Write.
+  naming that returns it is refused at Write.
 - Staging holds a plan's whole output in memory until Commit. At
   the bench scale of two hundred thousand declarations that is
   about forty megabytes of rendered bytes, held once.
-- The frame law rests on the first blank line. A language whose
+- The frame rule rests on the first blank line. A language whose
   comment opener cannot precede a blank line, or a body that
   must begin before any blank line, has no room in this frame;
   no known target does either.
@@ -515,15 +514,15 @@ impossible at the API instead of documented against.
   directly.
 - `os.Root` pins the disk sink to the platform's confinement
   semantics; where the OS lacks a beneath-resolution primitive,
-  Go emulates it with a per-component walk, which prices a
-  commit at a few extra opens per directory level.
+  Go emulates it with a per-component walk, which costs a
+  commit a few extra opens per directory level.
 
 ## Open questions
 
 - Is the brand charset too tight? Lowercase, digits and hyphens
   covers `acme` and `acme-gen`; a reverse-DNS consumer wanting
   `io.acme.gen` needs dots admitted, and dots are safe in every
-  place the brand lands.
+  place the brand arrives.
 - Does the frame need an explicit version key, or is the keyed
   grammar with readers skipping unknown keys enough? A version
   line is one more byte of ceremony on every file; its absence
@@ -533,7 +532,7 @@ impossible at the API instead of documented against.
 
 - The manifest, drift refusal, adoption and the workspace lock
   consume these records and are proposed separately.
-- Wiring a sink seat into the plan and a render step into the
+- Wiring a sink role into the plan and a render step into the
   run is the composition's own change, proposed with it; the
   plan's name joins the manifest's record there, not the frame.
 - Path derivation from a file's package and name is the layout
@@ -547,7 +546,7 @@ impossible at the API instead of documented against.
 - [08-workspace-and-plans.md](../architecture/08-workspace-and-plans.md):
   plans as the write side that stages and commits together.
 - [RFC-0009](0009-render-pass-and-backend-kit.md): the render
-  pass that answers files as values and the comment syntax the
+  pass that returns files as values and the comment syntax the
   backend carries.
 - [Go generated-code convention](https://golang.org/s/generatedcode)
   and `ast.IsGenerated`, checked at go1.27.0: the marker line's

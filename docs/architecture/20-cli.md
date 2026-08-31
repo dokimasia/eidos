@@ -138,7 +138,7 @@ argument takes four forms, told apart by shape:
 | key at position | `shape.name@svc/store.go:41` | who stamped it, at what authority, from which reads |
 | code at position | `EIDGO-0412@svc/store.go:41` | the facts and reads behind the diagnostic |
 
-Each answers across plans. This is the tool that makes fixing a
+Each returns across plans. This is the tool that makes fixing a
 diagnostic cheaper than suppressing it.
 
 ### prune

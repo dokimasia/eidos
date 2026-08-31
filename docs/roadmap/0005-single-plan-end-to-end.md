@@ -18,7 +18,7 @@ One `Workspace.Run` over real Go source executes Load, Link, Freeze,
 Annotate, Generate, Layout, Render, Sink and Close for one plan, and
 leaves committed files, a manifest and provenance behind. The stubgen
 half of
-[one declaration's journey](../architecture/00-one-declarations-journey.md)
+[one declaration, end to end](../architecture/00-one-declaration-end-to-end.md)
 runs as a fixture.
 
 ## Done when
@@ -26,9 +26,9 @@ runs as a fixture.
 - [ ] `RunPipelineSuite` passes: fixture plugins plus the Go backend
       over Go source produce the expected bytes, routed per layout,
       with a manifest slice and clean diagnostic discipline.
-- [ ] The journey fixture works: an interface carrying
+- [ ] The end-to-end fixture works: an interface carrying
       `//+gen:stub tag=test` produces `svc/store_stub_test.go` beside
-      its source, as the journey document narrates, minus the
+      its source, as the end-to-end document describes, minus the
       TypeScript plan.
 - [ ] Layout resolves per
       [18-routing-and-layout.md](../architecture/18-routing-and-layout.md):
@@ -44,16 +44,16 @@ runs as a fixture.
 - [ ] Drift and adoption work: editing a generated file makes the next
       run refuse with an Error naming the file, and a byte-equal
       unmanifested file is adopted silently.
-- [ ] Close runs for one plan: the versioned manifest lands in
+- [ ] Close runs for one plan: the versioned manifest arrives in
       `.<brand>/`, the in-scope sweep removes an orphaned output, and
       audit mode reports a fixture completeness contract at its
       declared severity.
 - [ ] The commit is two-phase: staging, then the plan commit, then
       `CommitRun` strictly last. A test crashes between the last two
-      and the next run heals by deriving again and writing nothing
+      and the next run corrects by deriving again and writing nothing
       new.
 - [ ] Cancelling the run's context stops it between units of work:
-      writes stay atomic, nothing lands mid-file or mid-manifest, and
+      writes stay atomic, nothing arrives mid-file or mid-manifest, and
       the report says what committed.
 - [ ] Running twice produces byte-identical trees, and the second run
       touches no mtime.

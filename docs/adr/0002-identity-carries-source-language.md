@@ -18,7 +18,7 @@ Accepted
 The symbol model specification defines a canonical identity as
 "package path, kind, name, and a signature discriminator". Every
 worked example in the same document set spells a fifth part: the
-journey document and the determinism rules both write identities as
+end-to-end document and the determinism rules both write identities as
 `golang:svc/store.Store#Get(ctx,string)`, with a language prefix the
 field list never mentions.
 
@@ -67,7 +67,7 @@ ambiguous where nothing can disambiguate it.
 
 - The key widens by one field, and every identity the engine handles
   in volume carries it. The interning commitments keep that off the
-  hot path; the boundary form pays one more string.
+  hot path; the boundary form costs one more string.
 - Stored identities depend on language names never changing meaning.
   Language names are registered API already, so this adds no new
   promise, but it does bind the stored state to it.
@@ -79,7 +79,7 @@ ambiguous where nothing can disambiguate it.
 
 ## References
 
-- [00-one-declarations-journey.md](../architecture/00-one-declarations-journey.md)
+- [00-one-declaration-end-to-end.md](../architecture/00-one-declaration-end-to-end.md)
   and
   [17-output-and-determinism.md](../architecture/17-output-and-determinism.md),
   the worked identity spellings

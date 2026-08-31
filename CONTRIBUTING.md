@@ -107,6 +107,18 @@ decision. Write a full [ADR](docs/adr/README.md) for a decision when the
 event you said would make you reconsider it actually happens, or when the
 reasoning no longer fits in one table row.
 
+## Vocabulary
+
+Write plain English, in code comments and documents alike. A word
+stays when it names a mechanism a reader can look up (seam,
+provenance, manifest, drift) or is the ordinary word for the thing;
+it goes when it is imagery standing in for a plain verb. Functions
+return; booleans report whether. Banned, with their replacements:
+rung and ladder (check, step, level, scale), answers as a verb for
+returns, fires, lands, rides, travels, seat, floor, bill, ritual,
+story, journey, stranger, world, inhabited, first-class, pays,
+priced, earns, heals, and blind to.
+
 ## Security
 
 Do not open an issue for a vulnerability. Read [SECURITY](SECURITY.md).

@@ -23,7 +23,7 @@ and pins the toolchain for CI. It holds no packages and is not a
 workspace member. The kernel module's root package is called
 `eidos`, so plugin authors write `eidos.NewPlugin(…)`.
 
-Go and TypeScript are first-class, and protobuf is read-only. The
+Go and TypeScript are fully supported, and protobuf is read-only. The
 Java, Kotlin, PHP and Rust satellites hold the anticipated
 languages' places in the same anatomy, and further languages such as
 `eidos-lang-python` join as new modules
@@ -36,7 +36,7 @@ tree-sitter bindings and the pinned grammars that the tree-sitter
 satellites parse through, and it registers no language of its own.
 It depends only on the kernel. TypeScript, Java, Kotlin, PHP and
 Rust depend on it alongside the kernel; Go and protobuf have
-first-class pure-Go parsers and do not depend on it at all. This
+fully supported pure-Go parsers and do not depend on it at all. This
 does not weaken the rule that a satellite never imports a satellite,
 because `eidos-lang` sits below the satellites rather than beside
 them. It is also where the tree-sitter cgo dependency stays, so the
@@ -78,7 +78,7 @@ eidos-core/
                  the sealed-graph persistence format
   sink/ writer/ manifest/
                  output: sinks, text emission + import sets, manifests
-  conformance/   every check of the test ladder, the toolchain-adapter
+  conformance/   every conformance check, the toolchain-adapter
                  skeleton, the completeness check, the warm≡cold check,
                  the benchmark harness and corpus generator
   cli/           command kernels: run, plan, explain, prune, doctor,
@@ -120,7 +120,7 @@ The tree encodes three constraints:
 - Any binary. eidos ships no executable
   ([14-distribution-and-cli.md](14-distribution-and-cli.md)).
 - Any language satellite content, including a helper table added
-  "just this once". The degradation ladder and the metadata
+  "just this once". The degradation scale and the metadata
   namespaces exist so the kernel never needs a language exception.
 - A daemon or a client-server protocol
   ([09-incrementality.md](09-incrementality.md), decision D9).

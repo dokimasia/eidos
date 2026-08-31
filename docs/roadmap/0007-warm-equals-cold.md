@@ -34,7 +34,7 @@ warm≡cold check.
       generation directories with an atomic `CURRENT` swap, a
       region-lazy graph (a probe counts decoded regions against
       touched ones), persisted facts that early cutoff diffs against,
-      and the artifact table answering dirtiness by lookup.
+      and the artifact table returning dirtiness by lookup.
 - [ ] A truncated or version-skewed generation falls back to cold with
       one Info, and the run completes correctly.
 - [ ] Early cutoff works: an annotator that re-runs and stamps

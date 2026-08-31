@@ -21,7 +21,7 @@ its statement. The symbol model specification made that a pointer to
 the owner and generated a `RewireOwners` pass to fill it after a
 graph was assembled.
 
-The schema already answers the same question differently everywhere
+The schema already returns the same question differently everywhere
 else. A `TypeRef` names what it resolves to with a
 `symbol.Identity`, and the specification gives the reason: a key can
 be stored, compared and carried across runs, and a pointer cannot.

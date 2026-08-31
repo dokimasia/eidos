@@ -8,7 +8,7 @@ keys).*
 
 The role interfaces in [06](06-plugins.md) are the SPI: what the
 workspace invokes, what the declarative host adapts onto, and the
-floor everything lowers to. Authors write against a second layer,
+base contract everything lowers to. Authors write against a second layer,
 the kernel module's root package, and the whole design fits in one
 sentence:
 
@@ -21,7 +21,7 @@ rules pairing a trigger with a handler, and every handler is
 
 Frontends and backends produce and finish the graph, so they get
 **kits** instead ([11-languages.md](11-languages.md)): declarations
-plus a handful of language callbacks, with the kit owning the ritual
+plus a handful of language callbacks, with the kit owning the shared steps
 every satellite would otherwise repeat, and the correctness lessons
 that go with it. Everything below covers the subscriber surface. The
 kits live with the satellite anatomy.
@@ -98,7 +98,7 @@ from the store's index; subjects by directive name, built for free
 at Freeze, where validation already visits every directive; and
 symbols by fact key, maintained at stamp time. A rule therefore
 costs O(its matches) rather than O(graph), and only a bare rule,
-which honestly asked for everything, pays full price.
+which honestly asked for everything, costs the full scan.
 
 The gate tuples are also **subscription records**. `(kind,
 directive)` and `(kind, originFact)` are exactly what the
@@ -132,7 +132,7 @@ type Subscription struct {
 
 A hand-rolled plugin may implement bare `Generator` and skip
 `Subscribed` entirely. That is one implicit subscription to
-everything in scope: honest, and priced accordingly, with
+everything in scope: honest, and costed accordingly, with
 full-graph dispatch cold, full re-execution on any warm change, and
 `stats` saying so.
 
@@ -151,7 +151,7 @@ instead of escaping to `OnGraph` for an ordinary lookup.
 
 ## The Emitter
 
-**Every target is an accumulator, and the Emitter owns the ritual.**
+**Every target is an accumulator, and the Emitter owns the bookkeeping.**
 `File(tag?)`, `PackageFile(tag?)` and `PlanFile(tag?)` each return
 *the* file for a given cardinality key and family, created on first
 touch and appended to thereafter. Two interfaces in one source file
@@ -181,7 +181,7 @@ depend on another match of the same plugin having run first.
 
 **Accumulator files order contributions** by subject identity, then
 by directive-instance source order, then by insertion. So repeatable
-instances land in the order the author wrote them, and never in the
+instances arrive in the order the author wrote them, and never in the
 order the dispatcher happened to run them. Metadata writes obey the
 same canonical order through first-claim-wins arbitration
 ([04-metadata.md](04-metadata.md)).
@@ -282,7 +282,7 @@ handler serves two schemas.
 matches get nil, and the *other* directives on a subject, meaning
 other plugins' annotations, are invisible by design. A directive's
 meaning belongs to the plugin that owns it, and its effects are
-consumed through stamped facts rather than by reading a stranger's
+consumed through stamped facts rather than by reading another plugin's
 annotations raw.
 
 Anything else would make every directive's params public API for
@@ -331,7 +331,7 @@ Handle(Directive(Schema(),      // registered once
 
 **Routing is addressed, never inferred.** Families are independent
 accumulators under the same key, and the handler names the family at
-each emit site. A declaration lands in the test companion because it
+each emit site. A declaration arrives in the test companion because it
 was written through the `TagTest` handle, not because anything
 guessed:
 
@@ -414,7 +414,7 @@ func KeyEquals[T comparable](k meta.Key[T], v T) Pred
 // plus its subject field (.Interface, .Enum, {.Host, .Method}, …).
 // EmitMatch also carries Origin(), the emit value's source symbol,
 // with tracked fact reads, so a weaver can ask whose output it is
-// looking at without ever seeing a stranger's directive.
+// looking at without ever seeing another plugin's directive.
 // Tracked fact reads: func Fact[T any](m Matcher, k meta.Key[T]) (T, bool)
 
 // Bodies a Mirror or Method accepts: the four forms of 07.
@@ -424,7 +424,7 @@ func Stmts(ss ...Stmt) Body                    // the scaffolding vocabulary
 func Ref(name string, data any) Body           // TemplateRef, emitter's tree
 
 // Emitter: every target is an accumulator keyed by (key, family),
-// and the write-side spellings live here. The plan's target answers
+// and the write-side spellings live here. The plan's target returns
 // them, never the plugin's declaration.
 func (e *Emitter) File(tag ...Tag) *FileBuilder        // per source file
 func (e *Emitter) PackageFile(tag ...Tag) *FileBuilder // per package
