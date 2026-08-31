@@ -27,6 +27,17 @@ func TestImports(t *testing.T) {
 			"double colons for slashes, sorted, a blank line after")
 	})
 
+	t.Run("binds a named entry beside a bare one", func(t *testing.T) {
+		t.Parallel()
+
+		var set render.ImportSet
+		set.AddNamed("std/collections", "HashMap")
+		set.Add("svc/store")
+		assert.Equal(t, backend.Imports(&set),
+			"use std::collections::HashMap;\nuse svc::store;\n\n",
+			"path::Name for the bound form, the path alone for the bare")
+	})
+
 	t.Run("a file importing nothing renders no block", func(t *testing.T) {
 		t.Parallel()
 

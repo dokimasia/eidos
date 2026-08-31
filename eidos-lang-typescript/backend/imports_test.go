@@ -12,9 +12,7 @@ import (
 	"go.dokimi.dev/eidos/lang-typescript/backend"
 )
 
-// The import block is pinned byte for byte, and its limit is
-// stated: the set carries paths and no names, so only the
-// side-effect form can be written from it today.
+// The import block is pinned byte for byte.
 func TestImports(t *testing.T) {
 	t.Parallel()
 
@@ -27,6 +25,20 @@ func TestImports(t *testing.T) {
 		assert.Equal(t, backend.Imports(&set),
 			"import \"./store\";\nimport \"node:path\";\n\n",
 			"one import per path, sorted, a blank line after the block")
+	})
+
+	t.Run("renders the names bound under a path", func(t *testing.T) {
+		t.Parallel()
+
+		var set render.ImportSet
+		set.AddNamed("./store", "Store")
+		set.AddNamed("./store", "Row")
+		set.Add("./store")
+		set.Add("side/effect")
+		assert.Equal(t, backend.Imports(&set),
+			"import { Row, Store } from \"./store\";\n"+
+				"import \"side/effect\";\n\n",
+			"named form covers its path, side-effect form the rest")
 	})
 
 	t.Run("a file importing nothing renders no block", func(t *testing.T) {

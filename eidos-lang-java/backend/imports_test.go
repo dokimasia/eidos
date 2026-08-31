@@ -27,6 +27,18 @@ func TestImports(t *testing.T) {
 			"dots for slashes, sorted, a blank line after the block")
 	})
 
+	t.Run("binds a named entry and dedupes its bare twin", func(t *testing.T) {
+		t.Parallel()
+
+		var set render.ImportSet
+		set.AddNamed("java/util", "List")
+		set.AddNamed("svc/api", "Store")
+		set.Add("svc/api/Store")
+		assert.Equal(t, backend.Imports(&set),
+			"import java.util.List;\nimport svc.api.Store;\n\n",
+			"path.Name per statement, one statement per spelling")
+	})
+
 	t.Run("a file importing nothing renders no block", func(t *testing.T) {
 		t.Parallel()
 
