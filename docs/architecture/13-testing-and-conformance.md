@@ -35,9 +35,11 @@ caller supplies. Harnesses and plugins supply fixtures and never
 assertion logic, so the assertion set and the wording of its
 failures are written once.
 
-**plugintest**, through `RunPluginSuite(t, f PluginFixture)`. Per
-plugin it checks: declaration stability, meaning Name, Version,
-Provides, Outputs and EmitVersions answer identically across calls;
+**plugintest**, through `RunPluginSuite(t, setup Setup)`, where the
+setup builds the plugin with its fixture fresh per call. Per plugin
+it checks: declaration stability, meaning the name, the gate
+records, the outputs and the owned schemas answer identically
+across builds;
 determinism, meaning two runs over one fixture store produce
 byte-equal emit under `-count=2`; annotator idempotence; that no
 structural write happened, since the node count is unchanged; that
@@ -51,12 +53,16 @@ lowering guarantee, meaning a facade-authored plugin and its
 hand-rolled SPI twin produce byte-equal output, which is where 06b's
 promise is held.
 
-**backendtest**, through `RunBackendSuite(t, f BackendFixture)`.
-Over a hand-built emit graph it checks: byte-stable render, run
-twice and compared; that every emit kind renders; that slot contents
-render through the kind machinery; that the header and trailer are
-present and well formed; and that a format failure continues per
-[07-rendering.md](07-rendering.md).
+**backendtest**, through `RunBackendSuite(t, setup Setup)`. Over a
+hand-built emit fixture it checks: that the fixture is inhabited,
+because an empty store passes everything vacuously; byte-stable
+render, two isolated runs compared as files and as a finding set;
+that every emit kind the fixture carries renders; that every body
+lands whole, with slot contents spliced through the kind machinery;
+and that a file's failure reports positioned and attributed while
+the render continues per [07-rendering.md](07-rendering.md), the
+refused file withheld. The header and trailer rungs are the output
+contract's and join the suite with it.
 
 **pipelinetest**, through `RunPipelineSuite(t, f PipelineFixture)`.
 Plugins plus a real backend driving one plan: end-to-end bytes,

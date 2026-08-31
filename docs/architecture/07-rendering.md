@@ -146,13 +146,20 @@ around it:
   `{{slots}}` marker or named markers. The template-lint rung checks
   statically that every body-claiming template contains the marker,
   and at run time a contribution into a body whose template dropped
-  it is an Error naming both plugins.
+  it is an Error naming the emitting plugin and counting what went
+  unplaced, because a slot contribution carries no attribution to
+  name its contributor by.
 - **`Verbatim`**, which is literal text. It is the sharp knife for a
   genuine one-liner, and it costs three things: the template-lint
   rung cannot see into it, it contributes no imports, and nothing
   can compose with it. A `TemplateRef` avoids all three and is
   almost always the better tool. `Verbatim` exists only inside
   bodies, never as a declaration-level value.
+
+The marker law binds body-claiming templates alone. A kind template
+that never calls the body builtin renders its declarations
+signature-only, and no law fires: what a language's own templates
+choose to place is the template author's responsibility.
 
 ## Template ownership
 
@@ -218,23 +225,26 @@ plan ([08-workspace-and-plans.md](08-workspace-and-plans.md)), so
 import resolution, formatting and layout each have exactly one
 language to answer for.
 
-The kit owns the pass itself ([11-languages.md](11-languages.md)),
-and it runs the same way in every satellite:
+The kit owns the render pass ([11-languages.md](11-languages.md))
+and the output contract finishes it
+([17-output-and-determinism.md](17-output-and-determinism.md)); the
+flow runs the same way in every satellite:
 
-1. **Group** the plan's emit values by `Target`. Each group is one
-   file, and the files are independent from here, so the kit
-   parallelises the per-file loop.
+1. **Group** the plan's units into files through the target's
+   `Naming`: units sharing a name assemble one file, and the files
+   are independent from here, so the kit parallelises the per-file
+   loop.
 2. **Render declarations** through the language's kind templates, in
-   canonical order: subject identity, then slot order. A plugin's
-   claimed file template takes the whole group instead, per the
-   ladder above.
+   canonical order: origin identity, then the unit's declaration
+   order. A plugin's claimed file template takes the whole group
+   instead, per the ladder above.
 3. **Splice slot contributions** through the same kind machinery, so
    a contribution renders identically in every file it lands in.
 4. **Resolve each `TemplateRef`** in its emitting plugin's tree for
    the plan's target, and execute it inside the kind template's body
    slot. The template must place the slot marker. A pending
    contribution into a body whose template dropped it is an Error
-   naming both plugins.
+   naming the emitting plugin and counting what went unplaced.
 5. **Collect imports** as a side effect of spelling types into the
    file's one `ImportSet`. The language's `Imports` renderer groups
    and sorts them.

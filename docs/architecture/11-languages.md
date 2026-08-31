@@ -115,12 +115,13 @@ otherwise reimplement differently.
 
 **Each satellite declares one `CommentSyntax` value** in `lang.go`,
 shared by both kits. The frontend strips comments with it, and the
-backend writes the generated-file header with it:
+backend carries it for the output contract, which writes the
+generated-file header through it:
 
 ```go
 type CommentSyntax struct {
-    Line   []string  // "//", "///", "//!", "#", …
-    Blocks []Block   // {Open, Close, Gutter}: {"/**", "*/", "*"}
+    Line   []string        // "//", "///", "//!", "#", …
+    Blocks []CommentBlock  // {Open, Close, Gutter}: {"/**", "*/", "*"}
 }
 ```
 
@@ -194,30 +195,34 @@ Signatures`.
 varies in, and the kit assembles:
 
 ```go
-eidos.NewBackend(target, syntax).
-    FileTemplate(skeleton).      // {{header}}{{package}}{{imports}}{{decls}};
-                                 // kit default provided
+eidos.NewBackend(name, target, syntax).
+    FileTemplate(skeleton).      // {{imports}}{{decls}} is the kit
+                                 // default; the header is not the
+                                 // skeleton's to spell
     KindTemplates(kinds).        // how this language spells each kind
     Funcs(langFuncmap).          // funcmap-once, per 07
+    Naming(spellFilename).       // word, tag and key join per target
+    Scaffold(spellStmt).         // the neutral statement vocabulary
     Imports(renderImports).      // grouping/sorting are language facts
     Finalise(format.Source).
-    Build()
+    Build()                      // panics on a declaration defect
 ```
 
-The kit owns the same work for every satellite: grouping by target,
-rendering the generated-file header
-([17-output-and-determinism.md](17-output-and-determinism.md))
-through the shared syntax, merging plugin templates and overrides
-([07-rendering.md](07-rendering.md)), splicing slots, resolving
-`TemplateRef`s, collecting imports through the spelling helpers, the
-`CodeRender` continue-on-failure flow, and write routing.
+The kit owns the same work for every satellite: grouping units into
+files through the target's naming, merging plugin helpers and
+declared overrides ([07-rendering.md](07-rendering.md)), splicing
+slots, resolving `TemplateRef`s, collecting imports through the
+spelling helpers, and the continue-on-failure flow. The render ends
+at files as values: the generated-file header, the provenance
+trailer and write routing are the output contract's
+([17-output-and-determinism.md](17-output-and-determinism.md)),
+stamped after the formatter ran.
 
-It also owns **per-file render parallelism**. Files are independent,
-ImportSets are per file, and sinks are atomic, so the kit
-parallelises the render loop the way it owns the header, and a
-thousand `Finalise` calls stop being a serial tail.
+It also owns **per-file render parallelism**. Files are independent
+and ImportSets are per file, so the kit parallelises the render
+loop, and a thousand `Finalise` calls stop being a serial tail.
 
-The header rule, the format-error rule and the merge order all
+The marker law, the format-error rule and the merge order all
 become kernel behaviour, tested once, rather than reimplemented
 differently in each language.
 
