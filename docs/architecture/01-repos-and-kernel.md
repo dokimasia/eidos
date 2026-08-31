@@ -34,12 +34,13 @@ pairwise ([10-cross-language.md](10-cross-language.md)).
 `eidos-lang` is neither the kernel nor a satellite. It holds the
 tree-sitter bindings and the pinned grammars that the tree-sitter
 satellites parse through, and it registers no language of its own.
-It depends only on the kernel. TypeScript, Java, Kotlin, PHP and
-Rust depend on it alongside the kernel; Go and protobuf have
-fully supported pure-Go parsers and do not depend on it at all. This
-does not weaken the rule that a satellite never imports a satellite,
-because `eidos-lang` sits below the satellites rather than beside
-them. It is also where the tree-sitter cgo dependency stays, so the
+It depends only on the kernel. Every satellite depends on it for
+the pure helper packages it shares, case conversion first among
+them; the tree-sitter satellites parse through it as well, while
+Go and protobuf have fully supported pure-Go parsers and never
+import the grammar packages. This does not weaken the rule that a
+satellite never imports a satellite, because `eidos-lang` sits
+below the satellites rather than beside them. It is also where the tree-sitter cgo dependency stays, so the
 kernel keeps its zero dependencies and a binding or grammar upgrade
 touches one module.
 
@@ -92,6 +93,7 @@ Dependencies point one way and only one way:
 
 ```
 consumers (dokimi, org binaries) ──► satellites (eidos-lang-go, …) ──► kernel
+                                     satellites ──► eidos-lang (helpers) ──► kernel
                                      eidos-plugin-shape ─────────────► kernel
                                      tree-sitter satellites ──► eidos-lang ──► kernel
 ```

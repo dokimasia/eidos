@@ -17,8 +17,19 @@
 // The TypeScript, Java, Kotlin, PHP, and Rust satellites parse
 // through this module. Go and protobuf do not: their frontends use
 // established pure-Go parsers (the standard library's go/parser
-// and bufbuild/protocompile) and take no dependency on this
-// module.
+// and bufbuild/protocompile) and never import the grammar
+// packages, so no consumer of theirs is taxed with the binding
+// toolchain.
+//
+// # Shared helpers
+//
+// Beside the grammars, the module holds the pure packages every
+// satellite shares, [go.dokimi.dev/eidos/lang/naming] first among
+// them. They import the Go stdlib alone, so a satellite reaching
+// for a helper pulls no grammar machinery with it. Language
+// helpers live here rather than in the kernel, because the kernel
+// calls none of them: what only satellites consume belongs below
+// the satellites, not inside the kernel.
 //
 // # Grammars
 //

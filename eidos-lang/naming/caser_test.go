@@ -9,7 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/naming"
+	"go.dokimi.dev/eidos/lang/naming"
 )
 
 // The Caser holds the one thing case conversion is configurable

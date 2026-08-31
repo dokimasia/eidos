@@ -8,7 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/naming"
+	"go.dokimi.dev/eidos/lang/naming"
 )
 
 // Splitting is the primitive every style is built on, so its

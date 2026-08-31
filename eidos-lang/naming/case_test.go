@@ -8,7 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/naming"
+	"go.dokimi.dev/eidos/lang/naming"
 )
 
 // style is one conversion case: the input, what it spells, and

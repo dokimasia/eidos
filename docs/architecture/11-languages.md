@@ -95,7 +95,7 @@ landscape row beside its expectation:
 ```yaml
 # testdata/features/sum-types/expect.yaml
 level: 1                      # 1 full | 2 partial+meta | 3 opaque+meta | 4 refused
-meta: [rust.lifetimeParams]  # checks 2–3: the keys carrying the remainder
+meta: [rust.lifetimeParams]  # levels 2–3: the keys carrying the remainder
 ```
 
 The check verifies that each fixture arrives exactly where it declared.
@@ -268,8 +268,10 @@ model, and one binding layer in the shared `eidos-lang` module,
 which pins every grammar and is the only importer of the bindings.
 A satellite deviates only where a fully supported pure-Go parser already
 exists and is proven, which means Go's standard-library parser and
-protobuf's protocompile. Those two take no `eidos-lang` dependency,
-and the kit keeps even that deviation invisible downstream:
+protobuf's protocompile. Those two never import the grammar
+packages; `eidos-lang`'s pure helper packages, such as its case
+conversion, are shared by every satellite, and the kit keeps even
+the parser deviation invisible downstream:
 
 | Language | Parser | Why |
 |---|---|---|

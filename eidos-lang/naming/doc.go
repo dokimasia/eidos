@@ -44,7 +44,9 @@
 //
 // # Dependency position
 //
-// core/naming imports the Go stdlib and nothing else. It knows no
-// language: which spellings a target reserves, and which style it
-// names files or types in, are the satellite's own knowledge.
+// lang/naming imports the Go stdlib and nothing else, so importing
+// it pulls none of the module's grammar machinery. It knows no
+// single language: which spellings a target reserves, and which
+// style it names files or types in, are each satellite's own
+// knowledge.
 package naming
