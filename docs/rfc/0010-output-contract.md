@@ -283,6 +283,9 @@ type Written struct {
 // Action is what one commit did to one path.
 type Action uint8
 
+// String spells the action for a diagnostic or a dry run.
+func (a Action) String() string
+
 const (
     // ActionCreated: the path did not exist.
     ActionCreated Action = iota
@@ -354,7 +357,7 @@ func (m *Mem) Files() map[string][]byte
 // NewTee stages into several sinks at once. Every call fans out
 // and the errors join; Commit returns the first sink's records,
 // so the first sink is the one of record.
-func NewTee(first Sink, rest ...Sink) Sink
+func NewTee(first Sink, rest ...Sink) *Tee
 ```
 
 The disk sink stages bytes in memory and touches the tree only

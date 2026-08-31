@@ -160,16 +160,16 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 
 	var out bytes.Buffer
 	out.Grow(len(f.Body) + frameWidth(c, len(plugins)+len(sources)))
-	c.line(&out, markerPrefix+string(c.brand)+markerSuffix)
+	c.line(&out, markerPrefix, string(c.brand), markerSuffix)
 	for _, p := range plugins {
-		c.line(&out, c.key(keyPlugin)+p)
+		c.line(&out, string(c.brand), ":", keyPlugin, " ", p)
 	}
 	for _, s := range sources {
-		c.line(&out, c.key(keySource)+s)
+		c.line(&out, string(c.brand), ":", keySource, " ", s)
 	}
 	out.WriteByte('\n')
 	out.Write(f.Body)
-	c.line(&out, c.key(keyProvenance)+digest(f.Body))
+	c.line(&out, string(c.brand), ":", keyProvenance, " ", digest(f.Body))
 	return out.Bytes(), nil
 }
 
@@ -327,15 +327,13 @@ func (c *Contract) entry(line string) (key, value string, held bool) {
 	return strings.Cut(text, " ")
 }
 
-// key spells one frame key with its trailing space.
-func (c *Contract) key(name string) string {
-	return string(c.brand) + ":" + name + " "
-}
-
-// line writes one frame line in the language's comment form.
-func (c *Contract) line(out *bytes.Buffer, text string) {
+// line writes one frame line in the language's comment form,
+// taking its text in parts so a frame costs no string joins.
+func (c *Contract) line(out *bytes.Buffer, parts ...string) {
 	out.WriteString(c.opener)
-	out.WriteString(text)
+	for _, part := range parts {
+		out.WriteString(part)
+	}
 	out.WriteString(c.closer)
 	out.WriteByte('\n')
 }

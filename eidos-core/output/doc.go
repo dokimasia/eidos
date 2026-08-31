@@ -36,6 +36,23 @@
 // phrasing started them, and a record that grows a key still
 // reads, because a reader skips the keys it does not know.
 //
+// # The sinks
+//
+// A [Sink] takes stamped bytes to their destination in two steps,
+// stage then commit, so a failed or abandoned plan leaves the
+// previous generation of files exactly in place and a dry run is
+// a sink that never commits. [NewDisk] writes into a directory
+// tree, [NewMem] into memory, and [NewTee] into several at once.
+//
+// A commit writes if changed: identical bytes leave the file and
+// its mtime untouched, because build systems key on mtimes.
+// Anything else is written to a staging file and renamed over the
+// target, so a reader sees the old file or the new one and never
+// half of either. The disk sink resolves every path inside a root
+// opened once, so a symlink pointing out of the tree does not
+// escape it: the jail is the operating system's, and the path
+// check at staging is only the first refusal.
+//
 // # Failure semantics
 //
 // Everything here returns errors and nothing panics. [Stamp]
@@ -43,6 +60,12 @@
 // return or not ending in a newline, and an empty or multi-line
 // plugin or source name. The text policy is LF, and a formatter
 // emitting CRLF is where that violation is fixed.
+//
+// A sink refuses a path that is invalid, climbs out of the root,
+// ends in the reserved staging suffix, or was staged before, and
+// answers [ErrFinished] to every call after Commit or Discard. A
+// commit keeps going past a file that fails and joins the errors,
+// so one unwritable path does not withhold the rest.
 //
 // # Dependency position
 //

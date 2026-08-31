@@ -4,6 +4,8 @@
 package output_test
 
 import (
+	"bytes"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -342,4 +344,43 @@ func TestContract(t *testing.T) {
 			}
 		})
 	})
+}
+
+// benchFiles returns n rendered files of a realistic size: a
+// two-kilobyte body, two emitters and one source each.
+func benchFiles(n int) []plugin.RenderedFile {
+	body := append(bytes.Repeat([]byte("\tcall()\n"), 250), '\n')
+	files := make([]plugin.RenderedFile, 0, n)
+	for i := range n {
+		at := "svc/pkg" + strconv.Itoa(i) + "/store.go"
+		files = append(files, plugin.RenderedFile{
+			Name:    "store_stub.go",
+			Plugins: []plugin.ID{"stubgen", "acme-audit"},
+			Sources: []string{at},
+			Body:    body,
+		})
+	}
+	return files
+}
+
+// BenchmarkStamp measures the frame at the canonical file count:
+// 1000 files of two kilobytes, which is one sha256 pass over two
+// megabytes plus the frame's own bytes. The digest is the floor
+// and the rest is one buffer per file.
+func BenchmarkStamp(b *testing.B) {
+	b.ReportAllocs()
+
+	c, err := output.NewContract("acme", goSyntax())
+	if err != nil {
+		b.Fatalf("NewContract: unexpected error: %v", err)
+	}
+	files := benchFiles(1_000)
+	b.ResetTimer()
+	for b.Loop() {
+		for _, f := range files {
+			if _, err := c.Stamp(f); err != nil {
+				b.Fatalf("Stamp: unexpected error: %v", err)
+			}
+		}
+	}
 }
