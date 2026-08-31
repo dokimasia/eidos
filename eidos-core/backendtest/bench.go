@@ -237,6 +237,7 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 			Origin: originOf("Count"+i, symbol.KindVariable),
 			Name:   "Count" + i,
 			Type:   typeRef("int"),
+			Value:  "0",
 		}
 	}
 }

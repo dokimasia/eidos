@@ -508,12 +508,14 @@ func limitConstant() *emit.Constant {
 }
 
 // countVariable returns the variable, typed so every target has a
-// spelling to write.
+// spelling to write, its initializer stated so a target that
+// renders one proves it.
 func countVariable() *emit.Variable {
 	return &emit.Variable{
 		Origin: originOf("Count", symbol.KindVariable),
 		Doc:    []string{"Count tracks fetches."},
 		Name:   "Count",
 		Type:   typeRef("int"),
+		Value:  "0",
 	}
 }
