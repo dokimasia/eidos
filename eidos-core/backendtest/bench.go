@@ -183,6 +183,7 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 			TypeParams: []*emit.TypeParam{
 				{Name: "K", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 			},
+			Extends: []*emit.TypeRef{typeRef("Closer")},
 		}
 		iface.Methods.Append(&emit.Method{
 			Origin:  memberOf("Store"+i, "Get", symbol.KindMethod),

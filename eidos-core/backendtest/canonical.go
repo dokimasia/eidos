@@ -363,12 +363,14 @@ func boxStruct() *emit.Struct {
 
 // storeInterface returns the interface: one documented method
 // signature with a parameter and a result, which is what the
-// signature vocabulary renders.
+// signature vocabulary renders, and one widened contract, which
+// every target spells in its own supertype form.
 func storeInterface() *emit.Interface {
 	i := &emit.Interface{
-		Origin: originOf("Store", symbol.KindInterface),
-		Doc:    []string{"Store reads rows back."},
-		Name:   "Store",
+		Origin:  originOf("Store", symbol.KindInterface),
+		Doc:     []string{"Store reads rows back."},
+		Name:    "Store",
+		Extends: []*emit.TypeRef{typeRef("Closer")},
 	}
 	i.Methods.Append(&emit.Method{
 		Origin:  memberOf("Store", "Get", symbol.KindMethod),
