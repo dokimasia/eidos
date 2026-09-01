@@ -46,6 +46,23 @@ const (
 	LevelType
 )
 
+// Accessor says whether a callable is a property accessor rather
+// than an ordinary method.
+//
+// The zero value is [AccessorNone], which every ordinary method
+// carries. TypeScript, C# and Kotlin state accessors in syntax;
+// languages spelling properties as conventions never set it.
+type Accessor uint8
+
+const (
+	// AccessorNone is an ordinary method.
+	AccessorNone Accessor = iota
+	// AccessorGet reads the property: no parameters, one result.
+	AccessorGet
+	// AccessorSet writes the property: one parameter, no result.
+	AccessorSet
+)
+
 // Variance is the variance of a type parameter.
 //
 // The zero value is [VarianceInvariant], which Go and Rust always

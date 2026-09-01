@@ -22,10 +22,15 @@ const (
 	FactFinal
 	FactOverride
 	FactDefaultBody
+	FactAccessor
+	FactIndexer
+	FactConstructs
+	FactHardPrivate
 	FactLabel
 	FactParamDefault
 	FactVariadic
 	FactNamedReturn
+	FactConstEnum
 	FactFields
 	FactMethods
 	FactValue
@@ -59,10 +64,15 @@ var factNames = [...]string{
 	FactFinal:            "Final",
 	FactOverride:         "Override",
 	FactDefaultBody:      "DefaultBody",
+	FactAccessor:         "Accessor",
+	FactIndexer:          "Indexer",
+	FactConstructs:       "Constructs",
+	FactHardPrivate:      "HardPrivate",
 	FactLabel:            "Label",
 	FactParamDefault:     "ParamDefault",
 	FactVariadic:         "Variadic",
 	FactNamedReturn:      "NamedReturn",
+	FactConstEnum:        "ConstEnum",
 	FactFields:           "Fields",
 	FactMethods:          "Methods",
 	FactValue:            "Value",
@@ -105,10 +115,15 @@ func Facts() []Fact {
 		FactFinal,
 		FactOverride,
 		FactDefaultBody,
+		FactAccessor,
+		FactIndexer,
+		FactConstructs,
+		FactHardPrivate,
 		FactLabel,
 		FactParamDefault,
 		FactVariadic,
 		FactNamedReturn,
+		FactConstEnum,
 		FactFields,
 		FactMethods,
 		FactValue,

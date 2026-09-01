@@ -104,8 +104,12 @@ type Method struct {
 	Override   bool              `json:"override,omitzero"`   // replaces a supertype's member
 	HasDefault bool              `json:"hasDefault,omitzero"` // an interface method with a body
 	Async      bool              `json:"async,omitzero"`
-	Receiver   *Param            `json:"receiver,omitzero"` // nil where the receiver is implicit
-	Receives   *TypeRef          `json:"receives,omitzero"` // set when declared outside the type it attaches to
+	Accessor   symbol.Accessor   `json:"accessor,omitzero"`   // a get or set property accessor
+	Indexer    bool              `json:"indexer,omitzero"`    // an index signature: one key parameter, one result
+	Constructs bool              `json:"constructs,omitzero"` // a construct signature on an interface
+	Hard       bool              `json:"hard,omitzero"`       // runtime-private: TypeScript's # names
+	Receiver   *Param            `json:"receiver,omitzero"`   // nil where the receiver is implicit
+	Receives   *TypeRef          `json:"receives,omitzero"`   // set when declared outside the type it attaches to
 	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
 	Params     []*Param          `json:"params,omitzero"`
 	Returns    []*Return         `json:"returns,omitzero"`
@@ -417,6 +421,7 @@ type Enum struct {
 	Doc        []string          `json:"doc,omitzero"`
 	Name       string            `json:"name,omitzero"`
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Const      bool              `json:"const,omitzero"` // inlined at use: TypeScript's const enum
 	Variants   []*EnumVariant    `json:"variants,omitzero"`
 	Fields     []*Field          `json:"fields,omitzero"`  // Java enums carry instance state
 	Methods    []*Method         `json:"methods,omitzero"` // and behaviour
@@ -624,6 +629,7 @@ type Field struct {
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
 	Level      symbol.Level      `json:"level,omitzero"`
 	Mutability symbol.Mutability `json:"mutability,omitzero"`
+	Hard       bool              `json:"hard,omitzero"` // runtime-private: TypeScript's # names
 	Type       *TypeRef          `json:"type,omitzero"`
 	Value      string            `json:"value,omitzero"` // initializer's source spelling, unevaluated; "" when none
 	Tag        string            `json:"tag,omitzero"`   // tag text without delimiters; "" when none

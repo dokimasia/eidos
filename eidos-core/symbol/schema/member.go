@@ -36,6 +36,7 @@ type Field struct {
 	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
 	Level       symbol.Level      `eidos:"both,fact=Level"`
 	Mutability  symbol.Mutability `eidos:"both,fact=Mutability"`
+	Hard        bool              `eidos:"both,fact=HardPrivate"` // runtime-private: TypeScript's # names
 	Type        *TypeRef          `eidos:"both,walk"`
 	Value       string            `eidos:"both,fact=Value"` // initializer's source spelling, unevaluated; "" when none
 	Tag         string            `eidos:"both,fact=Tag"`   // tag text without delimiters; "" when none

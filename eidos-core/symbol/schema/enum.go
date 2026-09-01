@@ -27,6 +27,7 @@ type Enum struct {
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	Const       bool              `eidos:"both,fact=ConstEnum"` // inlined at use: TypeScript's const enum
 	Variants    []*EnumVariant    `eidos:"both,walk,slot=variants"`
 	Fields      []*Field          `eidos:"both,walk,slot=fields,fact=Fields"`   // Java enums carry instance state
 	Methods     []*Method         `eidos:"both,walk,slot=methods,fact=Methods"` // and behaviour

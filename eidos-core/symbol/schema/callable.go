@@ -92,6 +92,10 @@ type Method struct {
 	Override    bool              `eidos:"both,fact=Override"`    // replaces a supertype's member
 	HasDefault  bool              `eidos:"both,fact=DefaultBody"` // an interface method with a body
 	Async       bool              `eidos:"both,fact=Async"`
+	Accessor    symbol.Accessor   `eidos:"both,fact=Accessor"`   // a get or set property accessor
+	Indexer     bool              `eidos:"both,fact=Indexer"`    // an index signature: one key parameter, one result
+	Constructs  bool              `eidos:"both,fact=Constructs"` // a construct signature on an interface
+	Hard        bool              `eidos:"both,fact=HardPrivate"` // runtime-private: TypeScript's # names
 	Receiver    *Param            `eidos:"both,walk"` // nil where the receiver is implicit
 	Receives    *TypeRef          `eidos:"both,walk"` // set when declared outside the type it attaches to
 	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`

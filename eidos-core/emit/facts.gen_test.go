@@ -172,6 +172,42 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Method{}
+			subject.Accessor = 1
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindMethod, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactAccessor, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Method{}
+			subject.Indexer = true
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindMethod, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactIndexer, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Method{}
+			subject.Constructs = true
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindMethod, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactConstructs, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Method{}
+			subject.Hard = true
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindMethod, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactHardPrivate, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Method{}
 			subject.TypeParams = []*TypeParam{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -291,6 +327,15 @@ func TestFacts(t *testing.T) {
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindEnum, "under its kind")
 			assert.Equal(t, facts[0], symbol.FactVisibility, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Enum{}
+			subject.Const = true
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindEnum, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactConstEnum, "as itself")
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
@@ -481,6 +526,15 @@ func TestFacts(t *testing.T) {
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindField, "under its kind")
 			assert.Equal(t, facts[0], symbol.FactMutability, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Field{}
+			subject.Hard = true
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindField, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactHardPrivate, "as itself")
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
@@ -915,13 +969,13 @@ func TestFacts(t *testing.T) {
 		table := KindFacts()
 		assert.Length(t, table[symbol.KindFunction], 6,
 			"the Function facts in schema order")
-		assert.Length(t, table[symbol.KindMethod], 11,
+		assert.Length(t, table[symbol.KindMethod], 15,
 			"the Method facts in schema order")
 		assert.Length(t, table[symbol.KindParam], 4,
 			"the Param facts in schema order")
 		assert.Length(t, table[symbol.KindReturn], 1,
 			"the Return facts in schema order")
-		assert.Length(t, table[symbol.KindEnum], 4,
+		assert.Length(t, table[symbol.KindEnum], 5,
 			"the Enum facts in schema order")
 		assert.Length(t, table[symbol.KindEnumVariant], 2,
 			"the EnumVariant facts in schema order")
@@ -929,7 +983,7 @@ func TestFacts(t *testing.T) {
 			"the Sum facts in schema order")
 		assert.Length(t, table[symbol.KindSumVariant], 1,
 			"the SumVariant facts in schema order")
-		assert.Length(t, table[symbol.KindField], 7,
+		assert.Length(t, table[symbol.KindField], 8,
 			"the Field facts in schema order")
 		assert.Length(t, table[symbol.KindVariable], 5,
 			"the Variable facts in schema order")

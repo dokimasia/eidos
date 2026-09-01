@@ -86,6 +86,18 @@ func statedFacts(
 		if x.Async {
 			f(host, symbol.KindMethod, symbol.FactAsync)
 		}
+		if x.Accessor != 0 {
+			f(host, symbol.KindMethod, symbol.FactAccessor)
+		}
+		if x.Indexer {
+			f(host, symbol.KindMethod, symbol.FactIndexer)
+		}
+		if x.Constructs {
+			f(host, symbol.KindMethod, symbol.FactConstructs)
+		}
+		if x.Hard {
+			f(host, symbol.KindMethod, symbol.FactHardPrivate)
+		}
 		if len(x.TypeParams) > 0 {
 			f(host, symbol.KindMethod, symbol.FactTypeParams)
 		}
@@ -130,6 +142,9 @@ func statedFacts(
 	case *Enum:
 		if x.Visibility != 0 {
 			f(host, symbol.KindEnum, symbol.FactVisibility)
+		}
+		if x.Const {
+			f(host, symbol.KindEnum, symbol.FactConstEnum)
 		}
 		if x.Fields.Len() > 0 {
 			f(host, symbol.KindEnum, symbol.FactFields)
@@ -197,6 +212,9 @@ func statedFacts(
 		}
 		if x.Mutability != 0 {
 			f(host, symbol.KindField, symbol.FactMutability)
+		}
+		if x.Hard {
+			f(host, symbol.KindField, symbol.FactHardPrivate)
 		}
 		if x.Value != "" {
 			f(host, symbol.KindField, symbol.FactValue)
@@ -373,6 +391,10 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactOverride,
 			symbol.FactDefaultBody,
 			symbol.FactAsync,
+			symbol.FactAccessor,
+			symbol.FactIndexer,
+			symbol.FactConstructs,
+			symbol.FactHardPrivate,
 			symbol.FactTypeParams,
 			symbol.FactMultiReturn,
 			symbol.FactThrows,
@@ -389,6 +411,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 		},
 		symbol.KindEnum: {
 			symbol.FactVisibility,
+			symbol.FactConstEnum,
 			symbol.FactFields,
 			symbol.FactMethods,
 			symbol.FactAnnotations,
@@ -411,6 +434,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactVisibility,
 			symbol.FactLevel,
 			symbol.FactMutability,
+			symbol.FactHardPrivate,
 			symbol.FactValue,
 			symbol.FactTag,
 			symbol.FactAnnotations,
