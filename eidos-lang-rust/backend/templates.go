@@ -25,12 +25,20 @@ const (
 	// StructTemplate spells a struct and its fields: attribute
 	// lines above the declaration, its visibility and type
 	// parameters behind the name, each field under its own doc
-	// lines and attributes with its own visibility.
+	// lines and attributes with its own visibility. Member methods
+	// follow in one impl block, the struct's parameters restated
+	// on the impl and its target, because Rust states methods
+	// outside the type they attach to.
 	StructTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{structmods .}}struct {{.Name}}{{typeparams .TypeParams}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{fieldmods .}}{{.Name}}: {{spell .Type}},{{with .Comment}} // {{.}}{{end}}\n" +
-		"{{- end}}\n}\n"
+		"{{- end}}\n}\n" +
+		"{{if .Methods.Len}}\nimpl{{typeparams .TypeParams}} {{.Name}}{{typenames .TypeParams}} {\n" +
+		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"    {{implfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
+		"{{results .Returns}} {\n{{body .}}    }\n" +
+		"{{- end}}\n}\n{{end}}"
 
 	// InterfaceTemplate spells a trait, its visibility and type
 	// parameters behind the name: associated types first, the bare

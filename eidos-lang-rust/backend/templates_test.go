@@ -77,6 +77,26 @@ func TestTemplates(t *testing.T) {
 				"a trailing comment behind its comma")
 	})
 
+	t.Run("struct methods render in an impl block", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Cache"}
+		s.TypeParams = []*emit.TypeParam{{Name: "T"}}
+		s.Fields.Append(&emit.Field{Name: "item", Type: ref("T")})
+		s.Methods.Append(&emit.Method{Name: "get", Returns: []*emit.Return{{Type: ref("T")}}})
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"pub struct Cache<T> {\n"+
+				"    pub item: T,\n"+
+				"}\n"+
+				"\nimpl<T> Cache<T> {\n"+
+				"    pub fn get(&self) -> T {\n"+
+				"    body();\n"+
+				"    }\n"+
+				"}\n",
+			"member methods follow in one impl block, the parameters "+
+				"restated on the impl and its target")
+	})
+
 	t.Run("trait takes the receiver by reference", func(t *testing.T) {
 		t.Parallel()
 

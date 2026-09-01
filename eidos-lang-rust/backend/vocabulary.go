@@ -37,6 +37,10 @@ const (
 	FuncTraitFn = "traitfn"
 	// FuncImplFn writes an impl method's keywords.
 	FuncImplFn = "implfn"
+
+	// FuncTypeNames writes a parameter list's names alone, for an
+	// impl block's target.
+	FuncTypeNames = "typenames"
 	// FuncSelfParams writes a method's parameter list with its
 	// receiver.
 	FuncSelfParams = "selfparams"
@@ -72,6 +76,7 @@ func Funcs() template.FuncMap {
 		FuncFnMods:      FnMods,
 		FuncTraitFn:     TraitFn,
 		FuncImplFn:      ImplFn,
+		FuncTypeNames:   TypeNames,
 		FuncSelfParams:  SelfParams,
 		FuncFieldMods:   FieldMods,
 		FuncAttrs:       Attrs,
@@ -140,6 +145,20 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 		parts = append(parts, typeParam(p))
 	}
 	return "<" + strings.Join(parts, ", ") + ">", nil
+}
+
+// TypeNames writes a parameter list's names alone, the form an
+// impl block's target repeats: the bounds stay on the impl's own
+// parameter list, and the target names the type they apply to.
+func TypeNames(ps []*emit.TypeParam) string {
+	if len(ps) == 0 {
+		return ""
+	}
+	parts := make([]string, 0, len(ps))
+	for _, p := range ps {
+		parts = append(parts, p.Name)
+	}
+	return "<" + strings.Join(parts, ", ") + ">"
 }
 
 // typeParam writes one parameter: the const form with its value
