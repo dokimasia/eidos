@@ -13,7 +13,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
-	"go.dokimi.dev/eidos/core/internal/fakelang"
+	"go.dokimi.dev/eidos/core/frontendtest"
 	"go.dokimi.dev/eidos/core/load"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
@@ -50,7 +50,7 @@ func loadTree(
 	sink := diag.NewSink()
 	cfg := load.Config{
 		FS:         tree,
-		Frontends:  []plugin.Frontend{fakelang.New()},
+		Frontends:  []plugin.Frontend{frontendtest.NewScripted()},
 		Sink:       sink,
 		PluginSet:  []byte("set-1"),
 		Signatures: []string{"svc/dep"},
@@ -76,7 +76,7 @@ func carries(sink *diag.Sink, c diag.Code) bool {
 // rowID is the standard tree's one struct in svc/store.
 func rowID() symbol.Identity {
 	return symbol.Identity{
-		Lang: fakelang.Lang, Package: "svc/store", Name: "Row", Kind: symbol.KindStruct,
+		Lang: frontendtest.ScriptedLang, Package: "svc/store", Name: "Row", Kind: symbol.KindStruct,
 	}
 }
 
@@ -98,11 +98,11 @@ func TestLoad(t *testing.T) {
 		pkg, held := g.PackageOf(rowID())
 		assert.True(t, held, "under its package")
 		assert.Equal(t, pkg.ID, symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/store", Kind: symbol.KindPackage,
+			Lang: frontendtest.ScriptedLang, Package: "svc/store", Kind: symbol.KindPackage,
 		}, "whose identity is canonical")
 
 		_, held = g.Lookup(symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/store", Name: "svc/store/row.zz", Kind: symbol.KindFile,
+			Lang: frontendtest.ScriptedLang, Package: "svc/store", Name: "svc/store/row.zz", Kind: symbol.KindFile,
 		})
 		assert.True(t, held, "the file is a declaration of its package")
 	})
@@ -112,12 +112,12 @@ func TestLoad(t *testing.T) {
 
 		g, report, _ := loadTree(t, stdTree())
 		_, held := g.Lookup(symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/store", Name: "rowmax", Kind: symbol.KindConstant,
+			Lang: frontendtest.ScriptedLang, Package: "svc/store", Name: "rowmax", Kind: symbol.KindConstant,
 		})
 		assert.True(t, held, "a full unit keeps its constants")
 
 		_, held = g.Lookup(symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/dep", Name: "hidden", Kind: symbol.KindConstant,
+			Lang: frontendtest.ScriptedLang, Package: "svc/dep", Name: "hidden", Kind: symbol.KindConstant,
 		})
 		assert.False(t, held, "a signature unit drops what its parse skipped")
 
@@ -150,7 +150,7 @@ func TestLoad(t *testing.T) {
 		}
 		g, _, _ := loadTree(t, tree)
 		file := symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/api", Name: "svc/api/user_test.zz",
+			Lang: frontendtest.ScriptedLang, Package: "svc/api", Name: "svc/api/user_test.zz",
 			Kind: symbol.KindFile,
 		}
 		stamps := g.StampsOf(file)
@@ -172,7 +172,7 @@ func TestLoad(t *testing.T) {
 		assert.True(t, carries(sink, load.DuplicateDeclaration), "the second reports")
 
 		twin, held := g.Lookup(symbol.Identity{
-			Lang: fakelang.Lang, Package: "shared", Name: "Twin", Kind: symbol.KindStruct,
+			Lang: frontendtest.ScriptedLang, Package: "shared", Name: "Twin", Kind: symbol.KindStruct,
 		})
 		assert.True(t, held, "one Twin stands")
 		assert.Equal(t, twin.(*node.Struct).Fields[0].Type.Spelling, "left",
@@ -188,7 +188,7 @@ func TestLoad(t *testing.T) {
 		_, _, sink := loadTree(t, tree)
 		found := false
 		for d := range sink.All() {
-			if d.Code == fakelang.BadFile {
+			if d.Code == frontendtest.ScriptedBadFile {
 				found = true
 				assert.Equal(t, d.Origin, diag.Origin("fakefront"), "origin-bound")
 				assert.Equal(t, d.Pos.File, "bad/oops.zz", "positioned")
@@ -200,12 +200,12 @@ func TestLoad(t *testing.T) {
 	t.Run("refuses two claims on one file", func(t *testing.T) {
 		t.Parallel()
 
-		rival := fakelang.New()
+		rival := frontendtest.NewScripted()
 		rival.ID = "rival"
 		sink := diag.NewSink()
 		_, _, err := load.Load(context.Background(), load.Config{
 			FS:        stdTree(),
-			Frontends: []plugin.Frontend{fakelang.New(), rival},
+			Frontends: []plugin.Frontend{frontendtest.NewScripted(), rival},
 			Sink:      sink,
 		})
 		assert.HasError(t, err, "an overlapping claim is a composition defect")
@@ -219,7 +219,7 @@ func TestLoad(t *testing.T) {
 		sink := diag.NewSink()
 		_, _, err := load.Load(context.Background(), load.Config{
 			FS:        stdTree(),
-			Frontends: []plugin.Frontend{versionless{fakelang.New()}},
+			Frontends: []plugin.Frontend{versionless{frontendtest.NewScripted()}},
 			Sink:      sink,
 		})
 		assert.HasError(t, err, "every unit key folds the version")
@@ -230,7 +230,7 @@ func TestLoad(t *testing.T) {
 // versionless hides the fake's version, which the driver must
 // refuse.
 type versionless struct {
-	f *fakelang.Frontend
+	f *frontendtest.Scripted
 }
 
 func (v versionless) Name() plugin.ID              { return v.f.Name() }

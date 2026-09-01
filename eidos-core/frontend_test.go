@@ -15,7 +15,6 @@ import (
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/frontendtest"
-	"go.dokimi.dev/eidos/core/internal/fakelang"
 	"go.dokimi.dev/eidos/core/load"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -26,8 +25,8 @@ import (
 // test-file stamp moved from a parse statement into a classifier,
 // which is the seam under test.
 func kitFake() plugin.Frontend {
-	inner := fakelang.New()
-	return eidos.NewFrontend("kitfake", fakelang.Lang, inner.Syntax()).
+	inner := frontendtest.NewScripted()
+	return eidos.NewFrontend("kitfake", frontendtest.ScriptedLang, inner.Syntax()).
 		Version(inner.Ver).
 		Match(inner.Sel...).
 		Units(inner.Partition).
@@ -46,7 +45,7 @@ func markTests(u *plugin.SourceUnit) error {
 		for _, f := range pkg.Files {
 			if strings.HasSuffix(f.Path, "_test.zz") {
 				gb.Stamp(f, meta.RawStamp{
-					Key: fakelang.TestFileKey, Value: "classified", Pos: f.Pos,
+					Key: frontendtest.ScriptedTestKey, Value: "classified", Pos: f.Pos,
 				})
 			}
 		}
@@ -89,8 +88,8 @@ func TestNewFrontend(t *testing.T) {
 			return kitFake(), &frontendtest.Fixture{
 				Sources:    kitTree(),
 				Signatures: []string{"svc/dep"},
-				Schemas:    fakelang.Schemas(),
-				Keys:       fakelang.Keys,
+				Schemas:    frontendtest.ScriptedSchemas(),
+				Keys:       frontendtest.ScriptedKeys,
 			}
 		})
 	})
@@ -106,12 +105,12 @@ func TestNewFrontend(t *testing.T) {
 		})
 		assert.NoError(t, err, "the fixture loads")
 		file := symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/store",
+			Lang: frontendtest.ScriptedLang, Package: "svc/store",
 			Name: "svc/store/row_test.zz", Kind: symbol.KindFile,
 		}
 		stamps := g.StampsOf(file)
 		assert.Length(t, stamps, 1, "the classifier's stamp reached the store")
-		assert.Equal(t, stamps[0].Key, fakelang.TestFileKey, "under its key")
+		assert.Equal(t, stamps[0].Key, frontendtest.ScriptedTestKey, "under its key")
 		assert.Equal(t, stamps[0].Value.(string), "classified", "with the classifier's value")
 	})
 
@@ -119,8 +118,8 @@ func TestNewFrontend(t *testing.T) {
 		t.Parallel()
 
 		broken := errors.New("kitfake: the classifier refuses")
-		inner := fakelang.New()
-		f := eidos.NewFrontend("kitfake", fakelang.Lang, inner.Syntax()).
+		inner := frontendtest.NewScripted()
+		f := eidos.NewFrontend("kitfake", frontendtest.ScriptedLang, inner.Syntax()).
 			Version("1").
 			Match(inner.Sel...).
 			Units(inner.Partition).
@@ -139,8 +138,8 @@ func TestNewFrontend(t *testing.T) {
 	t.Run("declares options only when declared", func(t *testing.T) {
 		t.Parallel()
 
-		inner := fakelang.New()
-		bare := eidos.NewFrontend("bare", fakelang.Lang, inner.Syntax()).
+		inner := frontendtest.NewScripted()
+		bare := eidos.NewFrontend("bare", frontendtest.ScriptedLang, inner.Syntax()).
 			Version("1").Match("**/*.zz").
 			Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
 			Build()
@@ -154,15 +153,15 @@ func TestNewFrontend(t *testing.T) {
 	t.Run("panics on a declaration defect", func(t *testing.T) {
 		t.Parallel()
 
-		inner := fakelang.New()
+		inner := frontendtest.NewScripted()
 		whole := func() *eidos.FrontendBuilder {
-			return eidos.NewFrontend("kitfake", fakelang.Lang, inner.Syntax()).
+			return eidos.NewFrontend("kitfake", frontendtest.ScriptedLang, inner.Syntax()).
 				Version("1").Match("**/*.zz").
 				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve)
 		}
 		assert.NotPanics(t, func() { whole().Build() }, "the whole declaration builds")
 		assert.Panics(t, func() {
-			eidos.NewFrontend("", fakelang.Lang, inner.Syntax()).Build()
+			eidos.NewFrontend("", frontendtest.ScriptedLang, inner.Syntax()).Build()
 		}, "an empty name is a defect")
 		assert.Panics(t, func() {
 			eidos.NewFrontend("kitfake", "", inner.Syntax()).
@@ -170,27 +169,27 @@ func TestNewFrontend(t *testing.T) {
 				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
 		}, "an empty language is a defect")
 		assert.Panics(t, func() {
-			eidos.NewFrontend("kitfake", fakelang.Lang, inner.Syntax()).
+			eidos.NewFrontend("kitfake", frontendtest.ScriptedLang, inner.Syntax()).
 				Match("**/*.zz").
 				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
 		}, "a missing version is a defect, because every unit key folds it")
 		assert.Panics(t, func() {
-			eidos.NewFrontend("kitfake", fakelang.Lang, inner.Syntax()).
+			eidos.NewFrontend("kitfake", frontendtest.ScriptedLang, inner.Syntax()).
 				Version("1").
 				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
 		}, "an empty claim is a defect")
 		assert.Panics(t, func() {
-			eidos.NewFrontend("kitfake", fakelang.Lang, inner.Syntax()).
+			eidos.NewFrontend("kitfake", frontendtest.ScriptedLang, inner.Syntax()).
 				Version("1").Match("**/*.zz").
 				Parse(inner.Parse).Resolve(inner.Resolve).Build()
 		}, "a missing partition is a defect")
 		assert.Panics(t, func() {
-			eidos.NewFrontend("kitfake", fakelang.Lang, inner.Syntax()).
+			eidos.NewFrontend("kitfake", frontendtest.ScriptedLang, inner.Syntax()).
 				Version("1").Match("**/*.zz").
 				Units(inner.Partition).Resolve(inner.Resolve).Build()
 		}, "a missing parse is a defect")
 		assert.Panics(t, func() {
-			eidos.NewFrontend("kitfake", fakelang.Lang, inner.Syntax()).
+			eidos.NewFrontend("kitfake", frontendtest.ScriptedLang, inner.Syntax()).
 				Version("1").Match("**/*.zz").
 				Units(inner.Partition).Parse(inner.Parse).Build()
 		}, "a missing resolve is a defect: silence is written, never defaulted")

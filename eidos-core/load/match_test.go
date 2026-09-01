@@ -11,7 +11,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
-	"go.dokimi.dev/eidos/core/internal/fakelang"
+	"go.dokimi.dev/eidos/core/frontendtest"
 	"go.dokimi.dev/eidos/core/load"
 	"go.dokimi.dev/eidos/core/plugin"
 )
@@ -44,7 +44,7 @@ func TestMatch(t *testing.T) {
 	t.Run("refuses a pattern outside the grammar", func(t *testing.T) {
 		t.Parallel()
 
-		broken := fakelang.New()
+		broken := frontendtest.NewScripted()
 		broken.Sel = []string{"[bad"}
 		_, _, err := load.Load(context.Background(), load.Config{
 			FS:        fstest.MapFS{"x.zz": {Data: []byte("package p\n")}},

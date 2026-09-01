@@ -1,22 +1,7 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Package fakelang is the scripted language the read-side kernel
-// tests drive: small enough to hold in the head, wide enough to
-// reach every phase — packages, bindings, cross-package
-// references, members, directives, classification stamps and a
-// signature-sensitive declaration.
-//
-// One statement per line:
-//
-//	package PATH          the file's package path
-//	import ALIAS PATH...  bind an alias to one or more packages
-//	type NAME REF...      a struct, fields f0..fn typed by the refs
-//	method NAME REF...    a method on the last type, params by ref
-//	const name            a constant; skipped at signature depth
-//	+NAME ARGS            a directive on the last type
-//	stamp KEY VALUE       a classification stamp on the file
-package fakelang
+package frontendtest
 
 import (
 	"context"
@@ -32,64 +17,79 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Lang is the language every fake declaration carries.
-const Lang symbol.Lang = "fake"
+// ScriptedLang is the language every scripted declaration carries.
+const ScriptedLang symbol.Lang = "fake"
 
-// TestFileKey is the classification key the scripted stamps write.
-const TestFileKey meta.KeyName = "fake.testFile"
+// ScriptedTestKey is the classification key the scripted stamps
+// write.
+const ScriptedTestKey meta.KeyName = "fake.testFile"
 
-// BadFile is the frontend's one finding: a file with no package
-// line declares nothing.
-var BadFile = diag.MustRegister(diag.Prefix("FAKE"), diag.CodeSpec{
+// ScriptedBadFile is the scripted frontend's one finding: a file
+// with no package line declares nothing.
+var ScriptedBadFile = diag.MustRegister(diag.Prefix("FAKE"), diag.CodeSpec{
 	Number:  1,
 	Meaning: "a fake file opens without a package line",
 })
 
-// Options is the frontend's declared configuration.
-type Options struct {
+// ScriptedOptions is the scripted frontend's declared
+// configuration.
+type ScriptedOptions struct {
 	Tag string
 }
 
-// Frontend drives the pipeline in tests: partition by directory,
-// one shared input when the tree carries mod.zz at its root. The
-// fields are open so a test can rename, re-version, re-claim or
-// re-tag it.
-type Frontend struct {
+// Scripted is the language the suite proves itself on and any
+// consumer can drive: small enough to hold in the head, wide
+// enough to reach every phase — packages, bindings, cross-package
+// references, members, directives, classification stamps and a
+// signature-sensitive declaration. One statement per line:
+//
+//	package PATH          the file's package path
+//	import ALIAS PATH...  bind an alias to one or more packages
+//	type NAME REF...      a struct, fields f0..fn typed by the refs
+//	method NAME REF...    a method on the last type, params by ref
+//	const name            a constant; skipped at signature depth
+//	+NAME ARGS            a directive on the last type
+//	stamp KEY VALUE       a classification stamp on the file
+//
+// It partitions by directory, one shared input when the tree
+// carries mod.zz at its root, and the fields are open so a test
+// can rename, re-version, re-claim or re-tag it.
+type Scripted struct {
 	ID   plugin.ID
 	Ver  string
 	Sel  []string
-	Opts *Options
+	Opts *ScriptedOptions
 }
 
-// New returns the frontend under its usual claim.
-func New() *Frontend {
-	return &Frontend{
+// NewScripted returns the scripted frontend under its usual claim.
+func NewScripted() *Scripted {
+	return &Scripted{
 		ID:  "fakefront",
 		Ver: "1",
 		// The manifest is a shared input, never source: the claim
 		// carves it out and the partition reads it instead.
 		Sel:  []string{"**/*.zz", "!mod.zz", "!**/skip/**"},
-		Opts: &Options{Tag: "steady"},
+		Opts: &ScriptedOptions{Tag: "steady"},
 	}
 }
 
-// Keys registers the classification key the scripted stamps write,
+// ScriptedKeys registers the classification key the scripted stamps write,
 // in the shape a suite fixture declares its keys.
-func Keys(r *meta.Registry) error {
+func ScriptedKeys(r *meta.Registry) error {
 	if err := r.ClaimNamespace("fake", "fake"); err != nil {
 		return err
 	}
 	_, err := meta.Register[string](r, meta.KeySpec{
-		Name:  TestFileKey,
+		Name:  ScriptedTestKey,
 		Kinds: []symbol.Kind{symbol.KindFile},
 		Doc:   "marks a file the scripted language stamps as a test",
 	})
 	return err
 }
 
-// Schemas declares the one directive the scripted carriers write,
+// ScriptedSchemas declares the one directive the scripted carriers write,
 // in the shape a suite fixture declares its schemas.
-func Schemas() []directive.Schema {
+func ScriptedSchemas() []directive.Schema {
 	return []directive.Schema{{
 		Plugin: "gen",
 		Name:   "table",
@@ -103,28 +103,28 @@ func Schemas() []directive.Schema {
 }
 
 // Name returns the declared name.
-func (f *Frontend) Name() plugin.ID { return f.ID }
+func (f *Scripted) Name() plugin.ID { return f.ID }
 
 // Lang returns the one language every fake declaration carries.
-func (*Frontend) Lang() symbol.Lang { return Lang }
+func (*Scripted) Lang() symbol.Lang { return ScriptedLang }
 
 // Version returns the declared version, which every unit key folds.
-func (f *Frontend) Version() string { return f.Ver }
+func (f *Scripted) Version() string { return f.Ver }
 
 // Options returns the declared configuration.
-func (f *Frontend) Options() any { return f.Opts }
+func (f *Scripted) Options() any { return f.Opts }
 
 // Selection returns the file claim.
-func (f *Frontend) Selection() []string { return f.Sel }
+func (f *Scripted) Selection() []string { return f.Sel }
 
 // Syntax returns the language's one comment form.
-func (*Frontend) Syntax() plugin.CommentSyntax {
+func (*Scripted) Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{Line: []string{"//"}}
 }
 
 // Partition groups by directory, in path order, and declares the
 // tree's mod.zz a shared input of every unit when it exists.
-func (*Frontend) Partition(
+func (*Scripted) Partition(
 	_ context.Context, files []plugin.SourceRef, r plugin.FileReader,
 ) ([][]plugin.SourceRef, error) {
 	var shared []string
@@ -148,7 +148,7 @@ func (*Frontend) Partition(
 }
 
 // Parse reads each member line by line into the unit's builder.
-func (f *Frontend) Parse(_ context.Context, u *plugin.SourceUnit) error {
+func (f *Scripted) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	for _, ref := range u.Files() {
 		if err := f.ParseFile(u, ref.Path); err != nil {
 			return err
@@ -159,7 +159,7 @@ func (f *Frontend) Parse(_ context.Context, u *plugin.SourceUnit) error {
 
 // ParseFile reads and lowers one member, so a test can drive a
 // unit partially — the shape a broken frontend takes.
-func (f *Frontend) ParseFile(u *plugin.SourceUnit, path string) error {
+func (f *Scripted) ParseFile(u *plugin.SourceUnit, path string) error {
 	b, err := u.Read(path)
 	if err != nil {
 		return err
@@ -171,23 +171,23 @@ func (f *Frontend) ParseFile(u *plugin.SourceUnit, path string) error {
 // Resolve probes the file's bindings: "alias.Name" through each
 // package the alias binds, a capitalized bare spelling in the
 // file's own package, and anything else is a builtin.
-func (*Frontend) Resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
+func (*Scripted) Resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
 	bindings, _ := scope.Bindings.(map[string][]string)
 	if alias, name, qualified := strings.Cut(spelling, "."); qualified {
 		var out []symbol.Identity
 		for _, pkg := range bindings[alias] {
-			out = append(out, symbol.Identity{Lang: Lang, Package: pkg, Name: name})
+			out = append(out, symbol.Identity{Lang: ScriptedLang, Package: pkg, Name: name})
 		}
 		return out
 	}
 	if spelling[0] >= 'A' && spelling[0] <= 'Z' {
-		return []symbol.Identity{{Lang: Lang, Package: scope.File.Package, Name: spelling}}
+		return []symbol.Identity{{Lang: ScriptedLang, Package: scope.File.Package, Name: spelling}}
 	}
 	return nil
 }
 
 // parseFile lowers one file's statements.
-func (*Frontend) parseFile(u *plugin.SourceUnit, filePath, content string) {
+func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 	gb := u.Graph()
 	var (
 		file     *node.File
@@ -207,7 +207,7 @@ func (*Frontend) parseFile(u *plugin.SourceUnit, filePath, content string) {
 			file = &node.File{Path: filePath, Pos: at}
 			pkg.Files = append(pkg.Files, file)
 		case file == nil:
-			u.Errorf(BadFile, at, "%s opens with %q, not a package line", filePath, fields[0])
+			u.Errorf(ScriptedBadFile, at, "%s opens with %q, not a package line", filePath, fields[0])
 			return
 		case fields[0] == "import" && len(fields) >= 3:
 			bindings[fields[1]] = append(bindings[fields[1]], fields[2:]...)
@@ -241,7 +241,7 @@ func (*Frontend) parseFile(u *plugin.SourceUnit, filePath, content string) {
 		case strings.HasPrefix(fields[0], "+") && last != nil:
 			raw, err := directive.Parse(strings.TrimPrefix(strings.TrimSpace(line), "+"))
 			if err != nil {
-				u.Errorf(BadFile, at, "%s carries a directive outside the grammar: %v", filePath, err)
+				u.Errorf(ScriptedBadFile, at, "%s carries a directive outside the grammar: %v", filePath, err)
 				continue
 			}
 			raw.Pos = at

@@ -10,7 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/internal/fakelang"
+	"go.dokimi.dev/eidos/core/frontendtest"
 	"go.dokimi.dev/eidos/core/load"
 	"go.dokimi.dev/eidos/core/plugin"
 )
@@ -84,7 +84,7 @@ func TestKeys(t *testing.T) {
 			"the same bytes at two depths key differently")
 
 		bumped := base(t, func(cfg *load.Config) {
-			f := fakelang.New()
+			f := frontendtest.NewScripted()
 			f.Ver = "2"
 			cfg.Frontends = []plugin.Frontend{f}
 		})
@@ -92,7 +92,7 @@ func TestKeys(t *testing.T) {
 			"a declared version change re-keys")
 
 		retagged := base(t, func(cfg *load.Config) {
-			f := fakelang.New()
+			f := frontendtest.NewScripted()
 			f.Opts.Tag = "moved"
 			cfg.Frontends = []plugin.Frontend{f}
 		})

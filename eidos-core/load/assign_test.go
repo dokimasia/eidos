@@ -11,7 +11,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
-	"go.dokimi.dev/eidos/core/internal/fakelang"
+	"go.dokimi.dev/eidos/core/frontendtest"
 	"go.dokimi.dev/eidos/core/load"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -34,13 +34,13 @@ func TestIdentities(t *testing.T) {
 
 		g, _, _ := loadTree(t, tree)
 		user := symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/api", Name: "User", Kind: symbol.KindStruct,
+			Lang: frontendtest.ScriptedLang, Package: "svc/api", Name: "User", Kind: symbol.KindStruct,
 		}
 		_, held := g.Lookup(user)
 		assert.True(t, held, "a top-level declaration is lang:package.Name")
 
 		field, held := g.Lookup(symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/api", Owner: "User", Name: "f0", Kind: symbol.KindField,
+			Lang: frontendtest.ScriptedLang, Package: "svc/api", Owner: "User", Name: "f0", Kind: symbol.KindField,
 		})
 		assert.True(t, held, "a member is lang:package.Owner#Name")
 		assert.Equal(t, field.(*node.Field).Host, user, "its host the standing owner")
@@ -51,14 +51,14 @@ func TestIdentities(t *testing.T) {
 
 		g, _, sink := loadTree(t, tree)
 		wide, held := g.Lookup(symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/api", Owner: "User", Name: "Get",
+			Lang: frontendtest.ScriptedLang, Package: "svc/api", Owner: "User", Name: "Get",
 			Kind: symbol.KindMethod, Disc: "string,int",
 		})
 		assert.True(t, held, "the parameter spellings discriminate")
 		assert.Length(t, wide.(*node.Method).Params, 2, "the wide overload")
 
 		_, held = g.Lookup(symbol.Identity{
-			Lang: fakelang.Lang, Package: "svc/api", Owner: "User", Name: "Get",
+			Lang: frontendtest.ScriptedLang, Package: "svc/api", Owner: "User", Name: "Get",
 			Kind: symbol.KindMethod,
 		})
 		assert.True(t, held, "the nullary overload spells an empty discriminator")
@@ -69,7 +69,7 @@ func TestIdentities(t *testing.T) {
 	t.Run("panics on a symbol outside the node model", func(t *testing.T) {
 		t.Parallel()
 
-		evil := &foreign{Frontend: fakelang.New()}
+		evil := &foreign{Scripted: frontendtest.NewScripted()}
 		assert.Panics(t, func() {
 			_, _, _ = load.Load(context.Background(), load.Config{
 				FS:        fstest.MapFS{"p/x.zz": {Data: []byte("ignored\n")}},
@@ -83,7 +83,7 @@ func TestIdentities(t *testing.T) {
 // foreign builds a declaration the node model does not admit at
 // file level.
 type foreign struct {
-	*fakelang.Frontend
+	*frontendtest.Scripted
 }
 
 // Parse ignores the source and plants a Param in the file's

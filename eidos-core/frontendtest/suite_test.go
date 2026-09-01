@@ -10,7 +10,6 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/frontendtest"
-	"go.dokimi.dev/eidos/core/internal/fakelang"
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
@@ -37,14 +36,14 @@ func fixture() *frontendtest.Fixture {
 			"bad/oops.zz": {Data: []byte("type Lost string\n")},
 		},
 		Signatures: []string{"svc/dep"},
-		Schemas:    fakelang.Schemas(),
-		Keys:       fakelang.Keys,
+		Schemas:    frontendtest.ScriptedSchemas(),
+		Keys:       frontendtest.ScriptedKeys,
 	}
 }
 
 // setup builds the scripted frontend over the whole-contract tree.
 func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
-	return fakelang.New(), fixture()
+	return frontendtest.NewScripted(), fixture()
 }
 
 // The suite is the read side's conformance bar, so it must hold

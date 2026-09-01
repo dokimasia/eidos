@@ -10,7 +10,6 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/frontendtest"
-	"go.dokimi.dev/eidos/core/internal/fakelang"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -25,7 +24,7 @@ func TestChecks(t *testing.T) {
 
 		msg := assert.Rejects(t, "a mute resolver over a two-package fixture", func(tb assert.TB) {
 			frontendtest.AssertLinked(tb, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
-				return &mute{fakelang.New()}, fixture()
+				return &mute{frontendtest.NewScripted()}, fixture()
 			})
 		})
 		assert.Contains(t, msg, "resolving nothing", "the rejection says what never happened")
@@ -36,7 +35,7 @@ func TestChecks(t *testing.T) {
 
 		msg := assert.Rejects(t, "a parse that swallows a file", func(tb assert.TB) {
 			frontendtest.AssertClassified(tb, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
-				return &swallower{fakelang.New()}, fixture()
+				return &swallower{frontendtest.NewScripted()}, fixture()
 			})
 		})
 		assert.Contains(t, msg, "silently dropped", "the rejection names the class")
@@ -45,7 +44,7 @@ func TestChecks(t *testing.T) {
 
 // mute resolves nothing, which a two-package fixture must expose.
 type mute struct {
-	*fakelang.Frontend
+	*frontendtest.Scripted
 }
 
 // Resolve answers no candidate for any spelling.
@@ -54,7 +53,7 @@ func (*mute) Resolve(plugin.ImportScope, string) []symbol.Identity { return nil 
 // swallower parses every unit's first member alone and says
 // nothing about the rest, which the no-drop check must expose.
 type swallower struct {
-	*fakelang.Frontend
+	*frontendtest.Scripted
 }
 
 // Parse hands only the first member to the real lowering, leaving

@@ -1,7 +1,7 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-package fakelang_test
+package frontendtest_test
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
-	"go.dokimi.dev/eidos/core/internal/fakelang"
+	"go.dokimi.dev/eidos/core/frontendtest"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -30,7 +30,7 @@ func TestFrontend(t *testing.T) {
 	t.Run("partitions by directory and parses the statements", func(t *testing.T) {
 		t.Parallel()
 
-		f := fakelang.New()
+		f := frontendtest.NewScripted()
 		parts, err := f.Partition(context.Background(),
 			[]plugin.SourceRef{{Path: "svc/a.zz"}}, reader{tree})
 		assert.NoError(t, err, "the partition groups")
@@ -52,9 +52,9 @@ func TestFrontend(t *testing.T) {
 	t.Run("resolves through bindings and leaves builtins", func(t *testing.T) {
 		t.Parallel()
 
-		f := fakelang.New()
+		f := frontendtest.NewScripted()
 		scope := plugin.ImportScope{
-			File:     symbol.Identity{Lang: fakelang.Lang, Package: "svc"},
+			File:     symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc"},
 			Bindings: map[string][]string{"api": {"dep"}},
 		}
 		got := f.Resolve(scope, "api.B")
