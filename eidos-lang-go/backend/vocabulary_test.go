@@ -165,7 +165,7 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "an immutable variable refuses, because that is a constant")
 		_, err = backend.Guard(&emit.Constant{
 			Name:        "Max",
-			Annotations: emit.Annotations{{Name: "nolint"}},
+			Annotations: symbol.Annotations{{Name: "nolint"}},
 		})
 		assert.NoError(t, err,
 			"annotations pass the guard, because they render as directive lines")
@@ -187,7 +187,7 @@ func TestVocabulary(t *testing.T) {
 		t.Parallel()
 
 		assert.Equal(t, backend.Directives(nil), "", "no annotations, no lines")
-		assert.Equal(t, backend.Directives(emit.Annotations{
+		assert.Equal(t, backend.Directives(symbol.Annotations{
 			{Name: "go:embed", Args: []string{"schema.sql"}},
 			{Name: "nolint", Args: []string{"errcheck"}},
 		}),

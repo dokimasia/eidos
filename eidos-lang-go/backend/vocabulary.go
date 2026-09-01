@@ -335,7 +335,7 @@ func unannotated(name string) error {
 // where one is given. Go's directives are comments whose spelling
 // is the contract, so the annotation passes through verbatim and
 // undocumented names stay the generator's own risk.
-func Directives(as emit.Annotations, indent ...string) string {
+func Directives(as symbol.Annotations, indent ...string) string {
 	if len(as) == 0 {
 		return ""
 	}
