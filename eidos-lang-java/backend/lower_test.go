@@ -8,9 +8,9 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/emit"
-	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/lang-java/backend"
+	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // sumOf is the fixture sum: one variant carrying a named payload

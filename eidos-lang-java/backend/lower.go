@@ -6,9 +6,9 @@ package backend
 import (
 	"fmt"
 
-	"go.dokimi.dev/eidos/core/emit"
-	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // Lower reshapes the constructs Java states in other declarations.

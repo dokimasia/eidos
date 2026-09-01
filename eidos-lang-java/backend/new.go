@@ -4,10 +4,10 @@
 package backend
 
 import (
-	eidos "go.dokimi.dev/eidos/core"
-	"go.dokimi.dev/eidos/core/plugin"
 	java "go.dokimi.dev/eidos/lang-java"
 	"go.dokimi.dev/eidos/lang-java/spell"
+	"go.dokimi.dev/eidos/sdk"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // New returns the Java rendering backend: the module's declared
@@ -17,7 +17,7 @@ import (
 // printer, and hermeticity refuses a machine-supplied one, so the
 // templates' own spelling is what reaches the stamp.
 func New() plugin.Backend {
-	return eidos.NewBackend(java.Name, java.Target, java.Syntax()).
+	return sdk.NewBackend(java.Name, java.Target, java.Syntax()).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
 		Coverage(Coverage()).

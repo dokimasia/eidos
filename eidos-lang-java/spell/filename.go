@@ -7,10 +7,10 @@ import (
 	"path"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/emit"
-	"go.dokimi.dev/eidos/core/plugin"
 	java "go.dokimi.dev/eidos/lang-java"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // Filename spells a unit's filename. Java names a file after the

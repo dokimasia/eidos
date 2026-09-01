@@ -8,9 +8,9 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/render"
-	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/lang-java/backend"
+	"go.dokimi.dev/eidos/sdk/render"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The suite holds the declaration total and the rendered findings

@@ -4,9 +4,9 @@
 package backend
 
 import (
-	"go.dokimi.dev/eidos/core/emit"
-	"go.dokimi.dev/eidos/core/plugin"
-	"go.dokimi.dev/eidos/core/symbol"
+	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // Split reshapes one unit into one unit per file-level type,

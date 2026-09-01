@@ -8,8 +8,8 @@ import (
 	"strings"
 	"text/template"
 
-	"go.dokimi.dev/eidos/core/emit"
-	"go.dokimi.dev/eidos/core/symbol"
+	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The vocabulary names, so a template and its helper cannot drift
