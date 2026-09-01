@@ -10,8 +10,8 @@
 //
 // # Dependency position
 //
-// sdk/frontendtest imports core/frontendtest, go.dokimi.dev/assert
-// and the Go stdlib.
+// sdk/frontendtest imports core/frontendtest, sdk/directive,
+// sdk/meta, go.dokimi.dev/assert and the Go stdlib.
 package frontendtest
 
 import (
@@ -20,6 +20,8 @@ import (
 	"go.dokimi.dev/assert"
 
 	core "go.dokimi.dev/eidos/core/frontendtest"
+	"go.dokimi.dev/eidos/sdk/directive"
+	"go.dokimi.dev/eidos/sdk/meta"
 )
 
 // AssertDeterministicParse loads the fixture twice and compares
@@ -84,6 +86,57 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 // joins the same targets afterwards.
 func AssertLinked(tb assert.TB, setup Setup) {
 	core.AssertLinked(tb, setup)
+}
+
+// ScriptedLang is the language every scripted declaration carries.
+const ScriptedLang = core.ScriptedLang
+
+// ScriptedTestKey is the classification key the scripted stamps
+// write.
+const ScriptedTestKey = core.ScriptedTestKey
+
+// ScriptedBadFile is the scripted frontend's one finding: a file
+// with no package line declares nothing.
+var ScriptedBadFile = core.ScriptedBadFile
+
+// ScriptedOptions is the scripted frontend's declared
+// configuration.
+type ScriptedOptions = core.ScriptedOptions
+
+// Scripted is the language the suite proves itself on and any
+// consumer can drive: small enough to hold in the head, wide
+// enough to reach every phase — packages, bindings, cross-package
+// references, members, directives, classification stamps and a
+// signature-sensitive declaration. One statement per line:
+//
+//	package PATH          the file's package path
+//	import ALIAS PATH...  bind an alias to one or more packages
+//	type NAME REF...      a struct, fields f0..fn typed by the refs
+//	method NAME REF...    a method on the last type, params by ref
+//	const name            a constant; skipped at signature depth
+//	+NAME ARGS            a directive on the last type
+//	stamp KEY VALUE       a classification stamp on the file
+//
+// It partitions by directory, one shared input when the tree
+// carries mod.zz at its root, and the fields are open so a test
+// can rename, re-version, re-claim or re-tag it.
+type Scripted = core.Scripted
+
+// NewScripted returns the scripted frontend under its usual claim.
+func NewScripted() *Scripted {
+	return core.NewScripted()
+}
+
+// ScriptedKeys registers the classification key the scripted stamps write,
+// in the shape a suite fixture declares its keys.
+func ScriptedKeys(r *meta.Registry) error {
+	return core.ScriptedKeys(r)
+}
+
+// ScriptedSchemas declares the one directive the scripted carriers write,
+// in the shape a suite fixture declares its schemas.
+func ScriptedSchemas() []directive.Schema {
+	return core.ScriptedSchemas()
 }
 
 // Fixture is what a frontend brings to the suite: the tree the
