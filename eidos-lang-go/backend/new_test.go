@@ -52,11 +52,11 @@ func BenchmarkNew(b *testing.B) {
 }
 
 // BenchmarkSettle measures the settle over the suite's scaled
-// corpus, the corpus build inside the number, under its own
-// ceiling pinned from measurement with headroom.
+// corpus, the corpus build excluded from the measurement, under
+// its own ceiling pinned from measurement with headroom.
 func BenchmarkSettle(b *testing.B) {
 	backendtest.BenchSettle(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 4_800_000})
+		backendtest.Budget{MaxAllocs: 1_800_000})
 }
 
 // The backend is the module's write half: the kernel suite holds

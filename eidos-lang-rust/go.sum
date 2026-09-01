@@ -1,4 +1,4 @@
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
-go.dokimi.dev/assert v0.0.0-20260831070102-e149efb43525 h1:pyhgj2ii+Kjn93DADw3Ebu6rK8RW9lokTgewHwHmZbY=
-go.dokimi.dev/assert v0.0.0-20260831070102-e149efb43525/go.mod h1:BsuINBkmhOK/EVx3iFJLyE+8JXZYzI81zhK4VF4XXjk=
+go.dokimi.dev/assert v0.0.0-20260901091249-1b972b4685a8 h1:9eKH/93AuPZWlAm84bed58sUhObyUENYTx5H/u2kO0s=
+go.dokimi.dev/assert v0.0.0-20260901091249-1b972b4685a8/go.mod h1:BsuINBkmhOK/EVx3iFJLyE+8JXZYzI81zhK4VF4XXjk=
