@@ -8,7 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	golang "go.dokimi.dev/eidos/lang-go"
+	golang "go.dokimi.dev/eidos/lang/go"
 )
 
 // The identity, the extension and the comment forms are what the

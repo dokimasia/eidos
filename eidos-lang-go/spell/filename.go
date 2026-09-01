@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	golang "go.dokimi.dev/eidos/lang-go"
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )

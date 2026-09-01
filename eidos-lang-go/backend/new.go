@@ -6,8 +6,8 @@ package backend
 import (
 	"go/format"
 
-	golang "go.dokimi.dev/eidos/lang-go"
-	"go.dokimi.dev/eidos/lang-go/spell"
+	golang "go.dokimi.dev/eidos/lang/go"
+	"go.dokimi.dev/eidos/lang/go/spell"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )

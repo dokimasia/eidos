@@ -9,8 +9,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	golang "go.dokimi.dev/eidos/lang-go"
-	"go.dokimi.dev/eidos/lang-go/backend"
+	golang "go.dokimi.dev/eidos/lang/go"
+	"go.dokimi.dev/eidos/lang/go/backend"
 	"go.dokimi.dev/eidos/sdk/backendtest"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
