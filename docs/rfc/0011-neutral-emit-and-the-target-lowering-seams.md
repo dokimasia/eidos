@@ -123,7 +123,7 @@ reports a positioned finding rather than narrowing the output.
 | Initializers | tokens; fields refuse | tokens | tokens | refuse |
 | Field tags | tokens | refuse | refuse | refuse |
 | Interface properties | refuse | tokens | refuse | refuse |
-| Docs, comments, variadic parameters | tokens | tokens | tokens | tokens |
+| Docs, comments, variadic parameters | tokens | tokens | tokens | tokens; variadics refuse |
 | Several returns | tokens | tokens | refuse | tokens |
 | Supertypes | tokens; implements holds | tokens | tokens | tokens; structs refuse |
 | Method attachment | tokens | tokens | tokens | group |
