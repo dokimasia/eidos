@@ -40,7 +40,7 @@ type Field struct {
 	Optional    bool              `eidos:"both,fact=Optional"`    // present-or-absent: TypeScript's ?
 	Type        *TypeRef          `eidos:"both,walk"`
 	Value       string            `eidos:"both,fact=Value"` // initializer's source spelling, unevaluated; "" when none
-	Tag         string            `eidos:"both,fact=Tag"`   // tag text without delimiters; "" when none
+	Tag         string            `eidos:"both,fact=Tag"`   // tag text without delimiters, "" when none; a later plugin reshapes it through OnEmit
 	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 	Host        symbol.Identity   `eidos:"node"`
 }

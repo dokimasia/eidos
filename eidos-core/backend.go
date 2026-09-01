@@ -27,6 +27,7 @@ type BackendBuilder struct {
 	name    plugin.ID
 	target  plugin.Target
 	syntax  plugin.CommentSyntax
+	version string
 	lang    render.Language
 	lower   plugin.Lower
 	respell plugin.Respell
@@ -45,6 +46,15 @@ func NewBackend(
 			Groups: map[render.GroupName]string{},
 		},
 	}
+}
+
+// Version sets the version the run fingerprint folds in: bump it
+// with every change to the rendered output, because a warm cache
+// keyed without it serves the old bytes after a backend change
+// and nothing reports why.
+func (b *BackendBuilder) Version(v string) *BackendBuilder {
+	b.version = v
+	return b
 }
 
 // FileTemplate sets the file skeleton; undeclared, the pass's
@@ -210,7 +220,8 @@ func (b *BackendBuilder) Build() plugin.Backend {
 			err.Error())
 	}
 	base := &builtBackend{
-		name: b.name, target: b.target, syntax: b.syntax, pass: pass,
+		name: b.name, target: b.target, syntax: b.syntax,
+		version: b.version, pass: pass,
 	}
 	switch {
 	case b.lower != nil && b.respell != nil:
@@ -227,14 +238,19 @@ func (b *BackendBuilder) Build() plugin.Backend {
 // builtBackend is a lowered backend declaration: the roles the
 // plan validates as data, and the composed pass Render lowers to.
 type builtBackend struct {
-	name   plugin.ID
-	target plugin.Target
-	syntax plugin.CommentSyntax
-	pass   *render.Pass
+	name    plugin.ID
+	target  plugin.Target
+	syntax  plugin.CommentSyntax
+	version string
+	pass    *render.Pass
 }
 
 // Name returns the backend's one identity.
 func (b *builtBackend) Name() plugin.ID { return b.name }
+
+// Version implements [plugin.Versioned]: the declared version, ""
+// where none was.
+func (b *builtBackend) Version() string { return b.version }
 
 // Target returns the target the backend's plan resolves at
 // composition.

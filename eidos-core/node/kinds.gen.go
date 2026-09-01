@@ -634,7 +634,7 @@ type Field struct {
 	Optional   bool              `json:"optional,omitzero"` // present-or-absent: TypeScript's ?
 	Type       *TypeRef          `json:"type,omitzero"`
 	Value      string            `json:"value,omitzero"` // initializer's source spelling, unevaluated; "" when none
-	Tag        string            `json:"tag,omitzero"`   // tag text without delimiters; "" when none
+	Tag        string            `json:"tag,omitzero"`   // tag text without delimiters, "" when none; a later plugin reshapes it through OnEmit
 	Host       symbol.Identity   `json:"host,omitzero"`
 }
 

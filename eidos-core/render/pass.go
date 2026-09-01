@@ -84,6 +84,15 @@ var UnknownGroup = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 28, Meaning: "a cluster names a group the target language declares no template for",
 })
 
+// HelperCollision reports two plugins registering one template
+// helper name the shared vocabulary does not own: the first
+// registration in composition order stands, because a helper
+// whose meaning follows the schedule renders different bytes from
+// one declaration.
+var HelperCollision = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 36, Meaning: "two plugins register one template helper name",
+})
+
 // The builtin names every template resolves against: what a kind
 // template, a file skeleton or a body-claiming template calls, and
 // what the template lint checks for. No vocabulary may claim them.
@@ -533,6 +542,7 @@ func (f *frame) mergeVocabulary(ctx *plugin.RenderContext) template.FuncMap {
 		}
 	}
 	at := position.Pos{File: string(f.pass.name)}
+	owners := map[string]plugin.ID{}
 	for _, id := range order {
 		declared := map[string]bool{}
 		for _, name := range ctx.Overrides[id] {
@@ -550,6 +560,15 @@ func (f *frame) mergeVocabulary(ctx *plugin.RenderContext) template.FuncMap {
 				f.sink.Errorf(UndeclaredOverride, at, f.origin,
 					"%s shadows the shared helper %q without declaring the override, and the shared helper stands",
 					id, name)
+			case !shared:
+				if owner, taken := owners[name]; taken {
+					f.sink.Errorf(HelperCollision, at, f.origin,
+						"%s and %s both register the helper %q, and %s's stands",
+						owner, id, name, owner)
+					continue
+				}
+				owners[name] = id
+				merged[name] = fm[name]
 			default:
 				merged[name] = fm[name]
 			}
