@@ -76,12 +76,15 @@ type Frontend interface {
     // Partition groups the selected files into units, the
     // language's own grain: package directories for Go, whatever
     // the language's own compilation unit is elsewhere. Every
-    // selected file appears in exactly one unit. The reader is
-    // the same jailed door Parse gets, because a grain can live
-    // inside the bytes — a package clause, a proto package
-    // qualifier — and a partition that cannot look would guess;
-    // every partition read folds into every resulting unit's
-    // fingerprint, because the partition decided their shape.
+    // selected file appears as a member of exactly one unit, and
+    // the refs a unit returns carry the shared inputs the
+    // frontend declares for them. The reader is recorded rather
+    // than jailed, because a grain can live inside bytes the
+    // selection must not claim — a package clause sits in a
+    // selected file, a module boundary in go.mod — and a
+    // partition that cannot look would guess; every partition
+    // read folds into every resulting unit's fingerprint, because
+    // the partition decided their shape.
     Partition(ctx context.Context, files []SourceRef, r FileReader) ([][]SourceRef, error)
 
     // Parse loads one unit through its handle. A unit's problem
@@ -113,16 +116,20 @@ files, TypeScript its config chain, proto its root mapping, and
 every declared input's bytes fold into the dependent unit's
 fingerprint.
 
-`ImportScope` is what the frontend recorded at parse time for one
-file: the file's identity, and its bindings in the language's own
+`ImportScope` is what the resolution phase hands a language's
+`Resolve` for one file: the file's assigned identity, and the
+bindings the frontend recorded at parse time in the language's own
 form — `Bindings any`, stored by the kernel, type-asserted back
 by that language's `Resolve` alone. Go binds package aliases,
 TypeScript binds members with rename and form, proto scopes per
 declaration site, and a kernel that fixed one shape would fix
 Go's; the cost is that a binding-shape mistake reports at Link
 rather than compile, which the suite's linked fixture exercises
-per language. `FileReader` is the partition's limited door: the
-same jailed, recorded reads, before units exist — it is not the
+per language. `FileReader` is the partition's recorded door over
+the workspace tree, before units exist: not jailed to the
+selection, because a unit's shape can depend on a file the
+selection must not claim — a Go module file, a TypeScript config —
+and hermeticity holds through the fold alone. It is not the
 graph's [store.Reader], and the two never meet. Link is a
 kernel phase after every frontend finished: it visits every
 `TypeRef` in the graph, nested type arguments included, asks the
@@ -154,23 +161,24 @@ shared inputs, and every accepted read folds path and content into
 the unit fingerprint. The fingerprint closes over the read set by
 construction: a frontend cannot depend on bytes the cache does not
 know about, because there is no other way to bytes. A unit's
-recorded key folds, in a defined order: every read's path and
+recorded key folds, by value, in this order: every read's path and
 content, the partition's reads, the unit's `Depth` — the same
 bytes at `Signatures` produce a different graph and must key
 differently — the frontend's declared version, the frontend's
-configuration in its canonical encoding, and the kernel's model
-fingerprint, because a schema change reshapes the graph the same
-source produces. Configuration is in the fold by contract: a knob
-that changes the graph without changing a read — a tag set, an
-embedded-descriptor toggle — must key, and bytes a frontend ships
-embedded count as configuration. The composition's plugin-set
-fingerprint folds too, supplied by the load's driver: a recorded
-graph carries stamps a changed plugin set reinterprets, the
+configuration in its canonical encoding, the composition's
+plugin-set fingerprint, and the kernel's model fingerprint,
+because a schema change reshapes the graph the same source
+produces. Each part is length-prefixed, so two parts cannot trade
+bytes and collide, and the one stated order holds because a key
+derived two ways diverges. Configuration is in the fold by
+contract: a knob that changes the graph without changing a read —
+a tag set, an embedded-descriptor toggle — must key, and bytes a
+frontend ships embedded count as configuration. The plugin-set
+fingerprint is supplied by the load's driver: a recorded graph
+carries stamps a changed plugin set reinterprets, the
 incrementality architecture already requires the fold, and the
 old kernel spelled it as its one capitalised MUST after learning
-why — deriving it at milestone 0007 instead would fork the key.
-The fold is by value, in the order stated here, because a key
-derived two ways diverges. The version is the declared
+why — deriving it at milestone 0007 instead would fork the key. The version is the declared
 [plugin.Versioned] one, bumped with any change to the produced
 graph; the old kernel's history shows a hand constant serving
 stale graphs across every stamping change, so the suite holds the
@@ -192,28 +200,39 @@ the unit:
 
 ```go
 gb.Package(path) *node.Package          // created once per path
-gb.Add(decl symbol.Symbol)              // node declarations, in order
-gb.Scope(file symbol.Identity, s ImportScope)  // what Resolve reads
-gb.Attach(subject symbol.Identity, raw directive.Raw)
+gb.Scope(file *node.File, bindings any) // what Resolve reads
+gb.Attach(subject symbol.Symbol, raw directive.Raw)
 ```
+
+Scopes and attachments are recorded by node pointer rather than by
+identity, because canonical identities do not exist until the
+splice assigns them, and a derivation spelled once per frontend
+would drift.
 
 A unit declares as many packages as its bytes do: a Go directory
 holds `foo` beside its external `foo_test`, one proto load spells
 several packages, and a nested module spells a sub-path — the
 grain is the unit's, the package set is the source's. Two units
-contributing one package path merge at the splice, declarations
-appended in unit order, so the shape stays deterministic without
-a cardinality rule the languages would each break. The builder
-validates at the append: an emit-side symbol or a declaration
-without an identity is a defect and panics, because a malformed
-graph discovered at Link points away from the frontend that built
-it. A second declaration under one identity is not a defect — it
-is the unit's own source broken mid-edit, or a platform-variant
-collision the language must resolve — so it reports through the
-unit's diagnostics and the first stands. Identities
-follow the canonical rules the model fixes; reparsing an unchanged
-file yields the same identities, which is what 0007's
-diff-by-identity later stands on. Directive carriers strip through
+contributing one language and package path merge at the splice,
+files appended in unit order, so the shape stays deterministic
+without a cardinality rule the languages would each break. The
+splice validates what a unit built: an emit-side symbol or a
+nameless declaration of a named kind panics naming the frontend,
+because a malformed graph discovered at Link points away from the
+frontend that built it. The resolution step then assigns every
+identity under the canonical rules the model fixes — a package is
+lang:path, a file is named by its whole workspace-relative path, a
+member's owner is the dotted chain of enclosing type names, and a
+callable's discriminator is its parameter type spellings,
+comma-joined, so overloads spell apart. A second declaration
+spelling one identity is not a defect — it is the unit's own
+source broken mid-edit, or a platform-variant collision the
+language must resolve — so it reports through the diagnostics, the
+first stands, and the duplicate's subtree leaves every index; an
+attachment on the duplicate re-homes onto the survivor, whose
+identity is the same derivation. Reparsing an unchanged file
+yields the same identities, which is what 0007's diff-by-identity
+later stands on. Directive carriers strip through
 the syntax value, parse under the kernel grammar, and attach as
 raw instances; validation against schemas stays the freeze's, the
 step between Link and the first handler, exactly as the plugin
