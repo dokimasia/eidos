@@ -17,8 +17,8 @@ import (
 // value refuses, because a valued constant takes the constructor
 // form the templates do not spell, and a sum's methods refuse,
 // because the lowering's variant classes would owe bodies the
-// model does not carry. Nested types refuse today; the inner-class
-// spelling is the recorded idiom and lands as a satellite change.
+// model does not carry. Nested types render at member depth
+// through their own kind templates.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{
@@ -43,7 +43,7 @@ func Coverage() render.Coverage {
 			symbol.FactComment:          render.Renders,
 			symbol.FactMutability:       render.Renders,
 			symbol.FactTag:              render.Refuses,
-			symbol.FactTypes:            render.Refuses,
+			symbol.FactTypes:            render.Renders,
 			symbol.FactEmbeds:           render.Refuses,
 			symbol.FactExtends:          render.Renders,
 			symbol.FactImplements:       render.Renders,

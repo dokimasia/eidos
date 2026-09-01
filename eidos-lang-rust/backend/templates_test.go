@@ -81,6 +81,9 @@ func TestTemplates(t *testing.T) {
 		t.Parallel()
 
 		i := &emit.Interface{Name: "Store"}
+		i.Types.Append(&emit.Alias{
+			Doc: []string{"Item is what the store yields."}, Name: "Item",
+		})
 		i.Methods.Append(
 			&emit.Method{Name: "close"},
 			&emit.Method{
@@ -91,10 +94,13 @@ func TestTemplates(t *testing.T) {
 		)
 		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
 			"pub trait Store {\n"+
+				"    /// Item is what the store yields.\n"+
+				"    type Item;\n"+
 				"    fn close(&self);\n"+
 				"    fn load(&self, key: String) -> Row;\n"+
 				"}\n",
-			"self alone where no parameter follows, joined where one does")
+			"the associated type first as a bare name, then self alone "+
+				"where no parameter follows, joined where one does")
 	})
 
 	t.Run("function, alias and constant", func(t *testing.T) {

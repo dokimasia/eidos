@@ -28,6 +28,6 @@ func TestCoverage(t *testing.T) {
 		"decorators apply to classes")
 	assert.Equal(t, c.Of(symbol.KindInterface, symbol.FactAnnotations), render.Refuses,
 		"and to nothing else")
-	assert.Equal(t, c.Of(symbol.KindParam, symbol.FactParamDefault), render.Refuses,
-		"a parameter default refuses until its spelling lands")
+	assert.Equal(t, c.Of(symbol.KindParam, symbol.FactParamDefault), render.Renders,
+		"a parameter default renders behind its equals sign")
 }

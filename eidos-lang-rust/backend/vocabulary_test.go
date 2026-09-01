@@ -251,6 +251,29 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "a struct declares no field defaults")
 	})
 
+	t.Run("AssocType", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.AssocType(&emit.Alias{Name: "Item"})
+		assert.NoError(t, err, "a bare alias spells")
+		assert.Equal(t, got, "type Item;", "as the associated type")
+
+		_, err = backend.AssocType(&emit.Struct{Name: "Inner"})
+		assert.HasError(t, err, "a trait nests associated types alone")
+		_, err = backend.AssocType(&emit.Alias{Name: "Item", Target: ref("Row")})
+		assert.HasError(t, err, "the implementation supplies the target")
+		_, err = backend.AssocType(&emit.Alias{Name: "Item", Defined: true})
+		assert.HasError(t, err, "an associated type defines nothing itself")
+		_, err = backend.AssocType(&emit.Alias{
+			Name: "Item", TypeParams: []*emit.TypeParam{{Name: "T"}},
+		})
+		assert.HasError(t, err, "a generic associated type stays a limit")
+		_, err = backend.AssocType(&emit.Alias{
+			Name: "Item", Visibility: symbol.VisibilityInternal,
+		})
+		assert.HasError(t, err, "a trait item carries the trait's visibility")
+	})
+
 	t.Run("SumMods", func(t *testing.T) {
 		t.Parallel()
 

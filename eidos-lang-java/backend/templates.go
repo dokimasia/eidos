@@ -25,11 +25,13 @@ const (
 	// declaration, its keywords and type parameters behind the
 	// name, then fields with initializers and methods with their
 	// bodies, each member under its own doc block and annotations,
-	// its keywords in Java's stated order. An overriding method
-	// carries the Override annotation, and an abstract method is a
-	// signature alone. A generic method's own parameter list
-	// spells before its return type, which is where Java states
-	// it.
+	// its keywords in Java's stated order, then the nested types
+	// at member depth through their own kind templates. An
+	// overriding method carries the Override annotation, and an
+	// abstract method is a signature alone. A generic method's own
+	// parameter list spells before its return type, which is where
+	// Java states it. A nested class spells without static,
+	// because the model states no nesting level.
 	StructTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 		"{{typemods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
@@ -41,22 +43,25 @@ const (
 		"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
 		"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}\n" +
-		"{{- end}}\n}\n"
+		"{{- end}}" +
+		"{{- range .Types.Items}}\n{{nested \"    \" .}}\n{{- end}}\n}\n"
 
 	// InterfaceTemplate spells an interface: annotation lines
 	// above the declaration, its keywords and type parameters
 	// behind the name, then signatures, implicitly public the way
 	// Java reads them, a generic method's own parameter list
-	// before its return type. A method carrying a body spells
-	// default at instance level or static at type level, and
-	// places the body.
+	// before its return type, then the nested types at member
+	// depth through their own kind templates. A method carrying a
+	// body spells default at instance level or static at type
+	// level, and places the body.
 	InterfaceTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 		"{{typemods .}}interface {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
 		"    {{sigmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
 		"{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}\n" +
-		"{{- end}}\n}\n"
+		"{{- end}}" +
+		"{{- range .Types.Items}}\n{{nested \"    \" .}}\n{{- end}}\n}\n"
 )
 
 // EnumTemplate spells an enum class: annotation lines above the

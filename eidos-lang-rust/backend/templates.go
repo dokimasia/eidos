@@ -33,13 +33,16 @@ const (
 		"{{- end}}\n}\n"
 
 	// InterfaceTemplate spells a trait, its visibility and type
-	// parameters behind the name: method signatures taking the
-	// receiver by reference at instance level and standing alone
-	// at type level, async where stated, each with its own
-	// parameter list. A method carrying a default body places it;
-	// the rest close as signatures.
+	// parameters behind the name: associated types first, the bare
+	// name each, then method signatures taking the receiver by
+	// reference at instance level and standing alone at type
+	// level, async where stated, each with its own parameter list.
+	// A method carrying a default body places it; the rest close
+	// as signatures.
 	InterfaceTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{vis .Visibility .Name}}trait {{.Name}}{{typeparams .TypeParams}}{{supertraits .}} {\n" +
+		"{{- range .Types.Items}}\n{{docs .Doc \"    \"}}    {{assoctype .}}\n" +
+		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{traitfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
 		"{{results .Returns}}{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}\n" +

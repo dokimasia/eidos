@@ -48,6 +48,8 @@ const (
 	FuncSupertraits = "supertraits"
 	// FuncEnumMods writes an enum's keywords.
 	FuncEnumMods = "enummods"
+	// FuncAssocType writes a trait's associated type.
+	FuncAssocType = "assoctype"
 	// FuncSumMods writes a data enum's keywords.
 	FuncSumMods = "summods"
 	// FuncSumPayload writes a data enum variant's payload.
@@ -75,6 +77,7 @@ func Funcs() template.FuncMap {
 		FuncAttrs:       Attrs,
 		FuncSupertraits: Supertraits,
 		FuncEnumMods:    EnumMods,
+		FuncAssocType:   AssocType,
 		FuncSumMods:     SumMods,
 		FuncSumPayload:  SumPayload,
 		FuncAliasMods:   AliasMods,
@@ -227,6 +230,43 @@ func EnumMods(e *emit.Enum) (string, error) {
 			"rust: an enum holds variants alone, and %s states members", e.Name)
 	}
 	return Vis(e.Visibility, e.Name)
+}
+
+// AssocType writes one associated type: the bare name behind the
+// keyword, which is what a trait declares and an implementation
+// supplies. Only a transparent alias without a target spells that
+// way, so anything else nested in a trait refuses, and so does a
+// stated visibility, definedness or parameter list: a trait item
+// carries the trait's visibility, an alias with a target is a
+// default the stable language does not take, and a generic
+// associated type stays a declared limit.
+func AssocType(s symbol.Symbol) (string, error) {
+	a, held := s.(*emit.Alias)
+	if !held {
+		return "", fmt.Errorf(
+			"rust: a trait nests associated types alone, and it holds a %s",
+			s.Kind())
+	}
+	switch {
+	case a.Target != nil:
+		return "", fmt.Errorf(
+			"rust: an associated type names what the implementation "+
+				"supplies, and %s states a target", a.Name)
+	case a.Defined:
+		return "", fmt.Errorf(
+			"rust: an associated type defines nothing itself, and %s "+
+				"states a defined type", a.Name)
+	case len(a.TypeParams) > 0:
+		return "", fmt.Errorf(
+			"rust: a generic associated type stays a declared limit, and "+
+				"%s states parameters", a.Name)
+	case a.Visibility != symbol.VisibilityUnknown &&
+		a.Visibility != symbol.VisibilityPublic:
+		return "", fmt.Errorf(
+			"rust: a trait item carries the trait's visibility, and %s "+
+				"states its own", a.Name)
+	}
+	return "type " + a.Name + ";", nil
 }
 
 // SumMods writes a data enum's keywords: its visibility alone. A

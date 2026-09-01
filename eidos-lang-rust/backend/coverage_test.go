@@ -31,4 +31,8 @@ func TestCoverage(t *testing.T) {
 		"a variant's value is its discriminant")
 	assert.Equal(t, c.Of(symbol.KindField, symbol.FactLevel), render.Refuses,
 		"no statics inside types")
+	assert.Equal(t, c.Of(symbol.KindInterface, symbol.FactTypes), render.Renders,
+		"a trait's nested types are its associated types")
+	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactTypes), render.Refuses,
+		"and Rust nests nothing else")
 }

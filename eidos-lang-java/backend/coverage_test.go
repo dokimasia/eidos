@@ -29,4 +29,6 @@ func TestCoverage(t *testing.T) {
 		"an enum carries behaviour")
 	assert.Equal(t, c.Of(symbol.KindSum, symbol.FactMethods), render.Refuses,
 		"where a sum's variant classes would owe bodies")
+	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactTypes), render.Renders,
+		"nested types render at member depth")
 }

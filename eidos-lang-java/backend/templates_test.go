@@ -27,6 +27,9 @@ func execute(src string, data any) (string, error) {
 			"decls":   func() string { return "DECLS\n" },
 			"slots":   func() string { return "" },
 			"slot":    func(string) string { return "" },
+			"nested": func(indent string, s symbol.Symbol) string {
+				return indent + "NESTED " + s.Kind().String()
+			},
 		}).
 		Parse(src)
 	if err != nil {
@@ -301,6 +304,32 @@ func TestTemplates(t *testing.T) {
 		_, err = execute(backend.EnumTemplate, valued)
 		assert.HasError(t, err,
 			"a stated value refuses, because it takes the constructor form")
+	})
+
+	t.Run("nested types place at member depth", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Row"}
+		s.Fields.Append(&emit.Field{
+			Name: "key", Type: &emit.TypeRef{Spelling: "String"},
+		})
+		s.Types.Append(&emit.Struct{Name: "Inner"})
+		got, err := execute(backend.StructTemplate, s)
+		assert.NoError(t, err, "the nesting class renders")
+		assert.Equal(t, got,
+			"public class Row {\n"+
+				"    public String key;\n"+
+				"    NESTED Struct\n"+
+				"}\n",
+			"the nested builtin runs after the members, at member depth")
+
+		i := &emit.Interface{Name: "Store"}
+		i.Types.Append(&emit.Enum{Name: "Phase"})
+		got, err = execute(backend.InterfaceTemplate, i)
+		assert.NoError(t, err, "the nesting interface renders")
+		assert.Equal(t, got,
+			"public interface Store {\n    NESTED Enum\n}\n",
+			"an interface nests the same way")
 	})
 
 	t.Run("the file skeleton opens with the package clause", func(t *testing.T) {

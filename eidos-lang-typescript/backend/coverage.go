@@ -14,9 +14,8 @@ import (
 //
 // Decorators apply to classes and their members, so annotations
 // refuse everywhere else, the parameter position included. A
-// parameter's default refuses today; the equals spelling is the
-// recorded idiom and lands as a satellite change. Field tags stay
-// a Go idiom and refuse.
+// parameter's default renders behind its equals sign. Field tags
+// stay a Go idiom and refuse.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{
@@ -32,7 +31,7 @@ func Coverage() render.Coverage {
 			symbol.FactOverride:         render.Renders,
 			symbol.FactDefaultBody:      render.Refuses,
 			symbol.FactLabel:            render.Refuses,
-			symbol.FactParamDefault:     render.Refuses,
+			symbol.FactParamDefault:     render.Renders,
 			symbol.FactVariadic:         render.Renders,
 			symbol.FactNamedReturn:      render.Refuses,
 			symbol.FactFields:           render.Refuses,

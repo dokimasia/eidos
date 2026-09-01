@@ -83,13 +83,30 @@ func TestVocabulary(t *testing.T) {
 	t.Run("Params", func(t *testing.T) {
 		t.Parallel()
 
-		assert.Equal(t, backend.Params([]*emit.Param{
+		got, err := backend.Params([]*emit.Param{
 			{Name: "key", Type: ref("string")},
 			{Name: "rest", Type: ref("number"), Variadic: symbol.VariadicPositional},
-		}), "key: string, ...rest: number[]",
+		})
+		assert.NoError(t, err, "the list spells")
+		assert.Equal(t, got, "key: string, ...rest: number[]",
 			"colon-typed names and the rest marker with its array type")
-		assert.Equal(t, backend.Params([]*emit.Param{{Type: ref("string")}}),
-			"_: string", "an unnamed parameter still needs a name")
+
+		got, err = backend.Params([]*emit.Param{{Type: ref("string")}})
+		assert.NoError(t, err, "an unnamed parameter spells")
+		assert.Equal(t, got, "_: string", "under the discard name")
+
+		got, err = backend.Params([]*emit.Param{
+			{Name: "limit", Type: ref("number"), Default: "8"},
+		})
+		assert.NoError(t, err, "a defaulted parameter spells")
+		assert.Equal(t, got, "limit: number = 8",
+			"its default verbatim behind the equals sign")
+
+		_, err = backend.Params([]*emit.Param{{
+			Name: "rest", Type: ref("number"),
+			Variadic: symbol.VariadicPositional, Default: "8",
+		}})
+		assert.HasError(t, err, "a rest parameter takes no default")
 	})
 
 	t.Run("Results", func(t *testing.T) {

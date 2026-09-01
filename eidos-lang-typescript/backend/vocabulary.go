@@ -467,8 +467,11 @@ func undecorated(name string) error {
 			"states annotations elsewhere", name)
 }
 
-// Params writes a parameter list, the rest marker included.
-func Params(ps []*emit.Param) string {
+// Params writes a parameter list, the rest marker included and a
+// stated default behind its equals sign, verbatim the way the
+// model carries it. A rest parameter stating a default refuses,
+// because TypeScript initializes no rest.
+func Params(ps []*emit.Param) (string, error) {
 	parts := make([]string, 0, len(ps))
 	for _, p := range ps {
 		name := p.Name
@@ -476,12 +479,21 @@ func Params(ps []*emit.Param) string {
 			name = "_"
 		}
 		if p.Variadic != symbol.VariadicNone {
+			if p.Default != "" {
+				return "", fmt.Errorf(
+					"typescript: a rest parameter takes no default, and %s "+
+						"states one", name)
+			}
 			parts = append(parts, "..."+name+": "+Spell(p.Type)+"[]")
 			continue
 		}
-		parts = append(parts, name+": "+Spell(p.Type))
+		part := name + ": " + Spell(p.Type)
+		if p.Default != "" {
+			part += " = " + p.Default
+		}
+		parts = append(parts, part)
 	}
-	return strings.Join(parts, ", ")
+	return strings.Join(parts, ", "), nil
 }
 
 // Results writes a return type annotation: void for none, the

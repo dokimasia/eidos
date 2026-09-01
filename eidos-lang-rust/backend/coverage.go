@@ -15,11 +15,13 @@ import (
 // Final holds, because nothing subclasses. A trait widens through
 // supertraits, so an interface's extends renders while a struct's
 // refuses, and implements refuses everywhere until something
-// spells impl blocks for stated contracts. Throws refuses today;
-// the Result lowering is the recorded idiom and lands as a
-// satellite change. An enum variant's value renders as its
-// discriminant where a field's initializer refuses, because a
-// struct declares no field defaults.
+// spells impl blocks for stated contracts. A trait's nested types
+// render as associated types where every other kind's refuse,
+// because Rust nests nothing else. Throws refuses today; the
+// Result lowering is the recorded idiom and lands as a satellite
+// change. An enum variant's value renders as its discriminant
+// where a field's initializer refuses, because a struct declares
+// no field defaults.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{
@@ -63,6 +65,9 @@ func Coverage() render.Coverage {
 			},
 			symbol.KindStruct: {
 				symbol.FactExtends: render.Refuses, // nothing inherits
+			},
+			symbol.KindInterface: {
+				symbol.FactTypes: render.Renders, // associated types
 			},
 			symbol.KindParam: {
 				symbol.FactAnnotations: render.Refuses,
