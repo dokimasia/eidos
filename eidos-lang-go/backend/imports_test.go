@@ -18,6 +18,26 @@ import (
 func TestImports(t *testing.T) {
 	t.Parallel()
 
+	t.Run("groups the standard library apart and spells bindings", func(t *testing.T) {
+		t.Parallel()
+
+		var set render.ImportSet
+		set.Add("context")
+		set.AddNamed("database/sql", "_")
+		set.AddNamed("go.dokimi.dev/eidos/sdk", "eidos")
+		set.Add("go.dokimi.dev/assert")
+		assert.Equal(t, backend.Imports(&set),
+			"import (\n"+
+				"\t\"context\"\n"+
+				"\t_ \"database/sql\"\n"+
+				"\n"+
+				"\t\"go.dokimi.dev/assert\"\n"+
+				"\teidos \"go.dokimi.dev/eidos/sdk\"\n"+
+				")\n",
+			"standard library first, a blank line, then module paths, "+
+				"aliases and blank imports spelt before their path")
+	})
+
 	t.Run("renders one sorted parenthesised block", func(t *testing.T) {
 		t.Parallel()
 
