@@ -20,6 +20,7 @@ import (
 // blank-line runs.
 func New() plugin.Backend {
 	return sdk.NewBackend(java.Name, java.Target, java.Syntax()).
+		Version(java.Version).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
 		Coverage(Coverage()).
