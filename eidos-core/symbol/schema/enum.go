@@ -26,11 +26,11 @@ type Enum struct {
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
 	Variants    []*EnumVariant    `eidos:"both,walk,slot=variants"`
-	Fields      []*Field          `eidos:"both,walk,slot=fields"`  // Java enums carry instance state
-	Methods     []*Method         `eidos:"both,walk,slot=methods"` // and behaviour
-	Annotations Annotations       `eidos:"emit"`
+	Fields      []*Field          `eidos:"both,walk,slot=fields,fact=Fields"`   // Java enums carry instance state
+	Methods     []*Method         `eidos:"both,walk,slot=methods,fact=Methods"` // and behaviour
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 }
 
 // EnumVariant is one member of an [Enum].
@@ -46,8 +46,8 @@ type EnumVariant struct {
 	Pos         position.Pos    `eidos:"node"`
 	Doc         []string        `eidos:"both"`
 	Name        string          `eidos:"both,name"`
-	Value       string          `eidos:"both"` // source spelling, unevaluated
-	Annotations Annotations     `eidos:"emit"`
+	Value       string          `eidos:"both,fact=Value"` // source spelling, unevaluated
+	Annotations Annotations     `eidos:"emit,fact=Annotations"`
 	Host        symbol.Identity `eidos:"node"`
 }
 
@@ -67,11 +67,11 @@ type Sum struct {
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both"`
-	TypeParams  []*TypeParam      `eidos:"both,walk"` // Rust data enums are generic
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"` // Rust data enums are generic
 	Variants    []*SumVariant     `eidos:"both,walk,slot=variants"`
-	Methods     []*Method         `eidos:"both,walk,slot=methods"`
-	Annotations Annotations       `eidos:"emit"`
+	Methods     []*Method         `eidos:"both,walk,slot=methods,fact=Methods"`
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 }
 
 // SumVariant is one variant of a [Sum]: a name and a field list.
@@ -85,6 +85,6 @@ type SumVariant struct {
 	Doc         []string        `eidos:"both"`
 	Name        string          `eidos:"both,name"`
 	Fields      []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
-	Annotations Annotations     `eidos:"emit"`
+	Annotations Annotations     `eidos:"emit,fact=Annotations"`
 	Host        symbol.Identity `eidos:"node"`
 }

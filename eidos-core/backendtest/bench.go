@@ -245,12 +245,14 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 			Name:       "row" + i,
 			TypeParams: []*emit.TypeParam{{Name: "T"}},
 		}
+		// The canonical fixture states the field tag; the scaled
+		// corpus leaves it out, so a target refusing tags measures
+		// its render rather than a warning per struct.
 		s.Fields.Append(&emit.Field{
 			Origin:  memberOf("row"+i, "name", symbol.KindField),
 			Comment: "unique per store",
 			Name:    "name",
 			Type:    typeRef("string"),
-			Tag:     `json:"name"`,
 		})
 		s.Methods.Append(&emit.Method{
 			Origin: memberOf("row"+i, "fetch", symbol.KindMethod),

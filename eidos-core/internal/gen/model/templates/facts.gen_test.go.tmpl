@@ -1,0 +1,81 @@
+{{template "header" .}}
+import (
+	"testing"
+
+	"go.dokimi.dev/assert"
+
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// stated collects one subject's stated facts.
+func stated(s symbol.Symbol) (hosts []symbol.Symbol, kinds []symbol.Kind, facts []symbol.Fact) {
+	Facts(s, func(host symbol.Symbol, kind symbol.Kind, fact symbol.Fact) {
+		hosts = append(hosts, host)
+		kinds = append(kinds, kind)
+		facts = append(facts, fact)
+	})
+	return hosts, kinds, facts
+}
+
+// Every stated fact arrives through the traversal: nothing from a
+// zero declaration, each fact alone when its field alone is set,
+// and a member's fact under its host.
+func TestFacts(t *testing.T) {
+	t.Parallel()
+{{- range .Views}}
+{{- $v := .}}
+{{- if or .Facts .FactWalked}}
+
+	t.Run("{{.Name}}", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, none := stated(&{{.Name}}{})
+		assert.Length(t, none, 0, "a zero declaration states nothing")
+{{- range .Facts}}
+		{
+			subject := &{{$v.Name}}{}
+			{{.Set}}
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.Kind{{$v.Name}}, "under its kind")
+			assert.Equal(t, facts[0], symbol.Fact{{.Fact}}, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+{{- end}}
+{{- with .FactChild}}
+		{
+			subject := &{{$v.Name}}{}
+			{{- range .Stmts}}
+			{{.}}
+			{{- end}}
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the child's fact arrives")
+			assert.Equal(t, kinds[0], symbol.Kind{{.Kind}}, "under the child's kind")
+			assert.Equal(t, facts[0], symbol.Fact{{.Fact}}, "as itself")
+			assert.True(t, hosts[0] == symbol.Symbol(subject),
+				"a member's host is its enclosing declaration")
+		}
+{{- end}}
+	})
+{{- end}}
+{{- end}}
+
+	t.Run("a nil symbol walks nothing", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, none := stated(nil)
+		assert.Length(t, none, 0, "nothing to walk is not a fault")
+	})
+
+	t.Run("KindFacts states each kind's own surface", func(t *testing.T) {
+		t.Parallel()
+
+		table := KindFacts()
+{{- range .Views}}
+{{- if .Facts}}
+		assert.Length(t, table[symbol.Kind{{.Name}}], {{len .Facts}},
+			"the {{.Name}} facts in schema order")
+{{- end}}
+{{- end}}
+	})
+}

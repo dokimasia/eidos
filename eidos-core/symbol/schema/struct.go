@@ -40,17 +40,17 @@ type Struct struct {
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both"`
-	Abstract    bool              `eidos:"both"` // no value of it can be made directly
-	Final       bool              `eidos:"both"` // subclassing is forbidden
-	TypeParams  []*TypeParam      `eidos:"both,walk"`
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	Abstract    bool              `eidos:"both,fact=Abstract"` // no value of it can be made directly
+	Final       bool              `eidos:"both,fact=Final"`    // subclassing is forbidden
+	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
 	Fields      []*Field          `eidos:"both,walk,slot=fields"`
 	Methods     []*Method         `eidos:"both,walk,slot=methods"`
-	Types       []Symbol          `eidos:"both,walk,slot=types"` // nested declarations
-	Embeds      []*Embed          `eidos:"both,walk"`            // compositional promotion
-	Extends     []*TypeRef        `eidos:"both,walk"`            // nominal supertypes
-	Implements  []*TypeRef        `eidos:"both,walk"`
-	Annotations Annotations       `eidos:"emit"`
+	Types       []Symbol          `eidos:"both,walk,slot=types,fact=Types"` // nested declarations
+	Embeds      []*Embed          `eidos:"both,walk,fact=Embeds"`           // compositional promotion
+	Extends     []*TypeRef        `eidos:"both,walk,fact=Extends"`          // nominal supertypes
+	Implements  []*TypeRef        `eidos:"both,walk,fact=Implements"`
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 }
 
 // Interface is a shape values are checked against: a Go or Java
@@ -79,14 +79,14 @@ type Interface struct {
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both"`
-	TypeParams  []*TypeParam      `eidos:"both,walk"`
-	Fields      []*Field          `eidos:"both,walk,slot=fields"` // properties, not just methods
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
+	Fields      []*Field          `eidos:"both,walk,slot=fields,fact=Properties"` // properties, not just methods
 	Methods     []*Method         `eidos:"both,walk,slot=methods"`
-	Types       []Symbol          `eidos:"both,walk,slot=types"` // nested declarations and associated types
-	Embeds      []*Embed          `eidos:"both,walk"`
-	Extends     []*TypeRef        `eidos:"both,walk"`
-	Annotations Annotations       `eidos:"emit"`
+	Types       []Symbol          `eidos:"both,walk,slot=types,fact=Types"` // nested declarations and associated types
+	Embeds      []*Embed          `eidos:"both,walk,fact=Embeds"`
+	Extends     []*TypeRef        `eidos:"both,walk,fact=Extends"`
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 }
 
 // Alias is a name for another type: a Go type alias or defined
@@ -111,9 +111,9 @@ type Alias struct {
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both"`
-	Defined     bool              `eidos:"both"` // a distinct type, not a transparent alias
-	TypeParams  []*TypeParam      `eidos:"both,walk"`
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	Defined     bool              `eidos:"both,fact=Defined"` // a distinct type, not a transparent alias
+	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
 	Target      *TypeRef          `eidos:"both,walk"` // nil for an associated type
-	Annotations Annotations       `eidos:"emit"`
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 }

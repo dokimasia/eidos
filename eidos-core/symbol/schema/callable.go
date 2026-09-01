@@ -34,13 +34,13 @@ type Function struct {
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both"`
-	Async       bool              `eidos:"both"`
-	TypeParams  []*TypeParam      `eidos:"both,walk"`
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	Async       bool              `eidos:"both,fact=Async"`
+	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
 	Params      []*Param          `eidos:"both,walk"`
-	Returns     []*Return         `eidos:"both,walk"`
-	Throws      []*TypeRef        `eidos:"both,walk"`
-	Annotations Annotations       `eidos:"emit"`
+	Returns     []*Return         `eidos:"both,walk,fact=MultiReturn"`
+	Throws      []*TypeRef        `eidos:"both,walk,fact=Throws"`
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 	Body        Body              `eidos:"emit"`
 }
 
@@ -85,20 +85,20 @@ type Method struct {
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both"`
-	Level       symbol.Level      `eidos:"both"`
-	Abstract    bool              `eidos:"both"` // no body; a subtype must supply one
-	Final       bool              `eidos:"both"` // overriding is forbidden
-	Override    bool              `eidos:"both"` // replaces a supertype's member
-	HasDefault  bool              `eidos:"both"` // an interface method with a body
-	Async       bool              `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	Level       symbol.Level      `eidos:"both,fact=Level"`
+	Abstract    bool              `eidos:"both,fact=Abstract"`    // no body; a subtype must supply one
+	Final       bool              `eidos:"both,fact=Final"`       // overriding is forbidden
+	Override    bool              `eidos:"both,fact=Override"`    // replaces a supertype's member
+	HasDefault  bool              `eidos:"both,fact=DefaultBody"` // an interface method with a body
+	Async       bool              `eidos:"both,fact=Async"`
 	Receiver    *Param            `eidos:"both,walk"` // nil where the receiver is implicit
 	Receives    *TypeRef          `eidos:"both,walk"` // set when declared outside the type it attaches to
-	TypeParams  []*TypeParam      `eidos:"both,walk"`
+	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
 	Params      []*Param          `eidos:"both,walk"`
-	Returns     []*Return         `eidos:"both,walk"`
-	Throws      []*TypeRef        `eidos:"both,walk"`
-	Annotations Annotations       `eidos:"emit"`
+	Returns     []*Return         `eidos:"both,walk,fact=MultiReturn"`
+	Throws      []*TypeRef        `eidos:"both,walk,fact=Throws"`
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 	Body        Body              `eidos:"emit"`
 	Host        symbol.Identity   `eidos:"node"`
 }
@@ -124,12 +124,12 @@ type Method struct {
 type Param struct {
 	ID          symbol.Identity `eidos:"node"`
 	Pos         position.Pos    `eidos:"node"`
-	Name        string          `eidos:"both,name"` // "" when unnamed
-	Label       string          `eidos:"both"`      // caller-facing name; Swift and Objective-C
+	Name        string          `eidos:"both,name"`       // "" when unnamed
+	Label       string          `eidos:"both,fact=Label"` // caller-facing name; Swift and Objective-C
 	Type        *TypeRef        `eidos:"both,walk"`
-	Default     string          `eidos:"both"` // source spelling, unevaluated; "" when none
-	Variadic    symbol.Variadic `eidos:"both"` // positional or keyword
-	Annotations Annotations     `eidos:"emit"`
+	Default     string          `eidos:"both,fact=ParamDefault"` // source spelling, unevaluated; "" when none
+	Variadic    symbol.Variadic `eidos:"both,fact=Variadic"`     // positional or keyword
+	Annotations Annotations     `eidos:"emit,fact=Annotations"`
 }
 
 // Return is one result of a callable.
@@ -140,6 +140,6 @@ type Param struct {
 type Return struct {
 	ID   symbol.Identity `eidos:"node"`
 	Pos  position.Pos    `eidos:"node"`
-	Name string          `eidos:"both,name"` // Go named results; "" elsewhere
+	Name string          `eidos:"both,name,fact=NamedReturn"` // Go named results; "" elsewhere
 	Type *TypeRef        `eidos:"both,walk"`
 }

@@ -6,6 +6,7 @@ package backendtest
 import (
 	"cmp"
 	"slices"
+	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -51,6 +52,101 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertSettledShape(t, setup)
 	})
+	t.Run("stated facts stay covered", func(t *testing.T) {
+		t.Parallel()
+		AssertCoveredFacts(t, setup)
+	})
+}
+
+// AssertCoveredFacts holds a backend's declared fact coverage to
+// the render: the declaration is total over the fact set, its
+// exceptions stay on facts their kind can state, the settled
+// fixture's run reports exactly the refusals the declaration
+// states, and no stated fact meets an undeclared verdict. A
+// renderer declaring no coverage passes vacuously, which is what a
+// backend predating the contract runs under.
+func AssertCoveredFacts(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	r, f := setup(tb)
+	if f == nil || f.Emit == nil {
+		tb.Errorf("the setup carries no fixture")
+		return
+	}
+	c, covered := r.(render.Coverer)
+	if !covered || !c.Coverage().Declared() {
+		return
+	}
+	coverage := c.Coverage()
+
+	for _, fact := range symbol.Facts() {
+		if coverage.Facts[fact] == render.VerdictUndeclared {
+			tb.Errorf("the coverage takes no stance on %s: a declaration is "+
+				"total over the fact set", fact)
+		}
+	}
+	can := emit.KindFacts()
+	for kind, facts := range coverage.Except {
+		for fact := range facts {
+			if !slices.Contains(can[kind], fact) {
+				tb.Errorf("the coverage excepts %s on a %s, which states no "+
+					"such fact", fact, kind)
+			}
+		}
+	}
+
+	if b, held := r.(plugin.Backend); held {
+		sink := diag.NewSink()
+		if err := plugin.Settle(f.Emit, b, sink); err != nil {
+			tb.Errorf("the settle completes: %v", err)
+			return
+		}
+		if sink.Failed() {
+			tb.Errorf("the suite's fixture settles clean")
+			return
+		}
+	}
+	type statedOn struct {
+		kind symbol.Kind
+		fact symbol.Fact
+	}
+	expect := map[statedOn]int{}
+	total := 0
+	for u := range f.Emit.Units() {
+		for _, d := range u.Decls {
+			emit.Facts(d, func(_ symbol.Symbol, kind symbol.Kind, fact symbol.Fact) {
+				if coverage.Of(kind, fact) == render.Refuses {
+					expect[statedOn{kind: kind, fact: fact}]++
+					total++
+				}
+			})
+		}
+	}
+
+	sink := diag.NewSink()
+	if _, err := r.Render(f.context(sink)); err != nil {
+		tb.Errorf("the render completes: %v", err)
+		return
+	}
+	var refusals []string
+	for _, d := range slices.Collect(sink.All()) {
+		switch d.Code {
+		case render.UndeclaredFact:
+			tb.Errorf("a stated fact met no verdict: %s", d.Msg)
+		case render.RefusedFact:
+			refusals = append(refusals, d.Msg)
+		}
+	}
+	assert.Equal(tb, len(refusals), total,
+		"the run reports exactly the refusals the declaration states")
+	for key := range expect {
+		held := slices.ContainsFunc(refusals, func(msg string) bool {
+			return strings.Contains(msg, key.fact.String()) &&
+				strings.Contains(msg, key.kind.String())
+		})
+		assert.True(tb, held, "a stated "+key.fact.String()+" on a "+
+			key.kind.String()+" reports its refusal")
+	}
 }
 
 // RenderSettled settles one setup's fixture and renders it once,

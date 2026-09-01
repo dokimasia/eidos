@@ -152,6 +152,16 @@ func (b *BackendBuilder) Finalise(f func(src []byte) ([]byte, error)) *BackendBu
 	return b
 }
 
+// Coverage declares the language's fact coverage: one verdict per
+// fact, with per-kind exceptions. It arms the render's guard, and
+// the built backend implements [render.Coverer], which is how the
+// conformance suite holds the declaration total and the rendered
+// findings against it.
+func (b *BackendBuilder) Coverage(c render.Coverage) *BackendBuilder {
+	b.lang.Coverage = c
+	return b
+}
+
 // Lower sets the construct lowering the settle applies: one
 // declaration in, the target's declaration shapes out, before any
 // name respells. The built backend implements [plugin.Lowerer],
@@ -234,6 +244,10 @@ func (b *builtBackend) Target() plugin.Target { return b.target }
 // output contract: the generated-file header is written through
 // them, after the formatter ran.
 func (b *builtBackend) Syntax() plugin.CommentSyntax { return b.syntax }
+
+// Coverage implements [render.Coverer] through the composed pass,
+// so the suite reads the same data the render's guard does.
+func (b *builtBackend) Coverage() render.Coverage { return b.pass.Coverage() }
 
 // Render implements [plugin.Renderer] through the composed pass.
 func (b *builtBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {

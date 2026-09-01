@@ -63,6 +63,10 @@ var outputs = []output{
 	{Path: "node/walk.gen_test.go", Template: "walk.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
 	{Path: "symbol/kind.gen.go", Template: "kind.gen.go.tmpl", Package: SymbolPackage},
 	{Path: "symbol/kind.gen_test.go", Template: "kind.gen_test.go.tmpl", Package: SymbolPackage},
+	{Path: "symbol/fact.gen.go", Template: "fact.gen.go.tmpl", Package: SymbolPackage},
+	{Path: "symbol/fact.gen_test.go", Template: "fact.gen_test.go.tmpl", Package: SymbolPackage},
+	{Path: "emit/facts.gen.go", Template: "facts.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{Path: "emit/facts.gen_test.go", Template: "facts.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 }
 
 // OwnedDirs are the directories the generator writes into. The
@@ -88,6 +92,9 @@ type data struct {
 	// Originated says whether any kind on this side carries origin
 	// storage, which is why the side gets the OriginOf function.
 	Originated bool
+	// Facts are the declared fact constant suffixes, first
+	// encounter across kinds in schema order.
+	Facts []string
 }
 
 // Generate renders every generated file from the schema under
@@ -193,6 +200,7 @@ func render(out output, kinds []KindSpec) ([]byte, error) {
 		NeedsSymbol: slotsUseSymbol(views),
 		Identified:  viewsIdentified(views),
 		Originated:  viewsOriginated(views),
+		Facts:       factsOf(kinds),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("model: render %s: %w", out.Path, err)

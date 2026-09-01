@@ -83,6 +83,9 @@ type FieldSpec struct {
 	IsSymbol bool
 	// IsName marks a declared name the respell traversal visits.
 	IsName bool
+	// Fact names the stated fact the field carries, empty for a
+	// field stating none: the generated constant's suffix.
+	Fact string
 }
 
 // Lower parses and type-checks the schema in dir and returns its
@@ -270,10 +273,12 @@ func lowerField(
 			spec.IsName = true
 		case strings.HasPrefix(tok, SlotPrefix):
 			spec.Slot = strings.TrimPrefix(tok, SlotPrefix)
+		case strings.HasPrefix(tok, FactPrefix):
+			spec.Fact = strings.TrimPrefix(tok, FactPrefix)
 		default:
 			return FieldSpec{}, at(fset, expr.Pos(),
-				"%s carries unknown tag token %q: the vocabulary is %s, %s, %s and a side",
-				name, tok, WalkToken, NameToken, SlotPrefix)
+				"%s carries unknown tag token %q: the vocabulary is %s, %s, %s, %s and a side",
+				name, tok, WalkToken, NameToken, SlotPrefix, FactPrefix)
 		}
 	}
 	return spec, validate(fset, expr.Pos(), spec)
@@ -298,7 +303,36 @@ func validate(fset *token.FileSet, pos token.Pos, spec FieldSpec) error {
 			"%s is tagged %s but %s is not a string: a name is one spelling",
 			spec.Name, NameToken, spec.Type)
 	}
+	if spec.Fact != "" {
+		if !spec.Side.OnEmit() {
+			return at(fset, pos,
+				"%s states the %s fact on the node side alone: coverage is "+
+					"a render question, so a fact field is emit-visible",
+				spec.Name, spec.Fact)
+		}
+		if !exportedIdent(spec.Fact) {
+			return at(fset, pos,
+				"%s states fact %q, which is not an exported identifier: "+
+					"the value becomes the generated constant's suffix",
+				spec.Name, spec.Fact)
+		}
+	}
 	return nil
+}
+
+// exportedIdent reports whether a fact value spells as an exported
+// Go identifier: a capital, then letters and digits.
+func exportedIdent(s string) bool {
+	if s == "" || s[0] < 'A' || s[0] > 'Z' {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		c := s[i]
+		if (c < 'A' || c > 'Z') && (c < 'a' || c > 'z') && (c < '0' || c > '9') {
+			return false
+		}
+	}
+	return true
 }
 
 // describe renders a field's type as the generated model spells it

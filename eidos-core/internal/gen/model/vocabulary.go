@@ -37,6 +37,14 @@ const (
 	// carries it: a name is one spelling, never a list.
 	NameToken = "name"
 
+	// FactPrefix opens a fact declaration, "fact=Async": the field
+	// states the named fact when it is set, and the generated facts
+	// traversal visits it. The value is the generated constant's
+	// suffix, so it spells as an exported identifier. Only an
+	// emit-visible field carries it, because coverage is a render
+	// question.
+	FactPrefix = "fact="
+
 	// SubjectMark is the doc directive that makes a kind a dispatch
 	// subject, written as its own "//eidos:subject" line in the
 	// kind's documentation. A marked kind gets its generated Match

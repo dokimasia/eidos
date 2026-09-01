@@ -1,0 +1,64 @@
+{{template "header" .}}
+import (
+	"testing"
+
+	"go.dokimi.dev/assert"
+)
+
+// factNamings pairs every fact with the name String returns.
+var factNamings = []struct {
+	fact Fact
+	want string
+}{
+	{fact: FactInvalid, want: "Invalid"},
+{{- range .Facts}}
+	{fact: Fact{{.}}, want: "{{.}}"},
+{{- end}}
+}
+
+func TestFact(t *testing.T) {
+	t.Parallel()
+
+	t.Run("String", func(t *testing.T) {
+		t.Parallel()
+
+		for _, tt := range factNamings {
+			t.Run(tt.want, func(t *testing.T) {
+				t.Parallel()
+				assert.Equal(t, tt.fact.String(), tt.want,
+					"the fact spells its schema name")
+			})
+		}
+
+		t.Run("names are unique", func(t *testing.T) {
+			t.Parallel()
+
+			seen := make(map[string]struct{}, len(factNamings))
+			for _, tt := range factNamings {
+				seen[tt.want] = struct{}{}
+			}
+			assert.Length(t, seen, len(factNamings),
+				"every fact returns its own name")
+		})
+
+		t.Run("a value outside the set returns a placeholder", func(t *testing.T) {
+			t.Parallel()
+
+			outside := Fact(len(factNamings) + 1)
+			assert.NotEqual(t, outside.String(), "",
+				"a value outside the set returns a placeholder")
+		})
+	})
+
+	t.Run("Facts", func(t *testing.T) {
+		t.Parallel()
+
+		all := Facts()
+		assert.Length(t, all, len(factNamings)-1,
+			"every declared fact arrives, the invalid zero left out")
+		for i, f := range all {
+			assert.Equal(t, f, factNamings[i+1].fact,
+				"in constant order")
+		}
+	})
+}

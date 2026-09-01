@@ -191,6 +191,13 @@ type Language struct {
 	Imports func(set *ImportSet) string
 	// Finalise is the language formatter, run last per file.
 	Finalise func(src []byte) ([]byte, error)
+	// Coverage is the language's declared fact coverage. Declared,
+	// it arms the guard: a stated fact the declaration refuses
+	// reports and the declaration renders without it, and one the
+	// declaration misses reports a defect. Left empty, the guard
+	// stays off, which is what a language predating the coverage
+	// contract renders under.
+	Coverage Coverage
 }
 
 // Pass is one composed language's render procedure. A Pass is safe
@@ -211,7 +218,12 @@ type Pass struct {
 	scaffold func(s emit.Stmt, set *ImportSet) ([]byte, error)
 	imports  func(set *ImportSet) string
 	final    func(src []byte) ([]byte, error)
+	coverage Coverage
 }
+
+// Coverage returns the language's declared fact coverage, so a
+// consumer holding the pass reads the same data the guard does.
+func (p *Pass) Coverage() Coverage { return p.coverage }
 
 // reserved reports whether a name belongs to the pass's builtins,
 // which no vocabulary may claim.
@@ -304,6 +316,7 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 		name: name, kinds: kinds, groups: groups, file: file, shared: shared,
 		spell: l.Naming, split: l.Split, cluster: l.Cluster,
 		scaffold: l.Scaffold, imports: l.Imports, final: l.Finalise,
+		coverage: l.Coverage,
 	}, nil
 }
 
@@ -830,6 +843,7 @@ func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) {
 			f.pass.name, d.Kind())
 		return
 	}
+	f.guard(d)
 	if err := t.Execute(&f.out, d); err != nil {
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 			"the %s template refused a declaration of %s: %v",
@@ -847,11 +861,42 @@ func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) {
 			f.pass.name, len(c.Decls), c.Group)
 		return
 	}
+	for _, d := range c.Decls {
+		f.guard(d)
+	}
 	if err := t.Execute(&f.out, c); err != nil {
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 			"the %s group template refused a cluster of %s: %v",
 			c.Group, u.Plugin, err)
 	}
+}
+
+// guard reports the stated facts the declared coverage refuses or
+// misses, before a declaration's template runs: a refused fact is
+// a warning that keeps the narrowing loud, and an undeclared one
+// is an error naming a defect in the backend's own declaration.
+// The template still runs, so what the output holds stays the
+// template's own answer: most declarations render without the
+// refused fact, and a vocabulary helper refusing the combination
+// outright reports beside the warning. An undeclared coverage
+// leaves the guard off.
+func (f *frame) guard(d symbol.Symbol) {
+	if !f.pass.coverage.Declared() {
+		return
+	}
+	emit.Facts(d, func(_ symbol.Symbol, kind symbol.Kind, fact symbol.Fact) {
+		switch f.pass.coverage.Of(kind, fact) {
+		case Refuses:
+			f.sink.Warnf(RefusedFact, f.at, f.origin,
+				"%s declares no spelling for %s stated on a %s",
+				f.pass.name, fact, kind)
+		case VerdictUndeclared:
+			f.sink.Errorf(UndeclaredFact, f.at, f.origin,
+				"%s takes no stance on %s stated on a %s: the coverage "+
+					"declaration is incomplete", f.pass.name, fact, kind)
+		case Renders, Holds:
+		}
+	})
 }
 
 // stmts spells a statement run through the language's printer,

@@ -6,6 +6,7 @@ package backendtest_test
 import (
 	"errors"
 	"io/fs"
+	"maps"
 	"strconv"
 	"strings"
 	"testing"
@@ -53,7 +54,17 @@ func fnOf(name string, body emit.Body) *emit.Function {
 func wellBackend(tb assert.TB) plugin.Renderer {
 	tb.Helper()
 
-	b := eidos.NewBackend("printer", "stub",
+	r, held := wellBuilder(tb).Build().(plugin.Renderer)
+	assert.True(tb, held, "the kit backend renders")
+	return r
+}
+
+// wellBuilder accumulates the fixture backend's declaration, so a
+// test can widen it before Build.
+func wellBuilder(tb assert.TB) *eidos.BackendBuilder {
+	tb.Helper()
+
+	return eidos.NewBackend("printer", "stub",
 		plugin.CommentSyntax{Line: []string{"//"}}).
 		KindTemplates(map[symbol.Kind]string{
 			symbol.KindStruct:   "type {{.Name}} struct{}\n",
@@ -77,11 +88,7 @@ func wellBackend(tb assert.TB) plugin.Renderer {
 			}
 			return "import (" + strings.Join(set.Paths(), " ") + ")\n"
 		}).
-		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
-		Build()
-	r, held := b.(plugin.Renderer)
-	assert.True(tb, held, "the kit backend renders")
-	return r
+		Finalise(func(src []byte) ([]byte, error) { return src, nil })
 }
 
 // wellFixture returns the valid fixture: a store carrying every
@@ -235,6 +242,97 @@ func TestAssertDeterministicRender(t *testing.T) {
 			})
 		assert.Contains(t, failure, "same bytes",
 			"the check names the byte-identity contract")
+	})
+}
+
+// total returns a coverage declaring one verdict for every fact,
+// with the given overrides.
+func total(over map[symbol.Fact]render.Verdict) render.Coverage {
+	facts := map[symbol.Fact]render.Verdict{}
+	for _, f := range symbol.Facts() {
+		facts[f] = render.Renders
+	}
+	maps.Copy(facts, over)
+	return render.Coverage{Facts: facts}
+}
+
+func TestAssertCoveredFacts(t *testing.T) {
+	t.Parallel()
+
+	t.Run("passes a renderer declaring no coverage", func(t *testing.T) {
+		t.Parallel()
+
+		backendtest.AssertCoveredFacts(t, scripted(
+			func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
+				return nil, nil
+			}))
+	})
+
+	t.Run("accepts a total declaration whose refusals report", func(t *testing.T) {
+		t.Parallel()
+
+		setup := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+			tb.Helper()
+
+			r, held := wellBuilder(tb).
+				Coverage(total(map[symbol.Fact]render.Verdict{
+					symbol.FactAbstract: render.Refuses,
+				})).
+				Build().(plugin.Renderer)
+			assert.True(tb, held, "the covered backend renders")
+			f := wellFixture(tb)
+			for u := range f.Emit.Units() {
+				for _, d := range u.Decls {
+					if s, isStruct := d.(*emit.Struct); isStruct {
+						s.Abstract = true
+					}
+				}
+			}
+			return r, f
+		}
+		backendtest.AssertCoveredFacts(t, setup)
+	})
+
+	t.Run("rejects a declaration missing a fact", func(t *testing.T) {
+		t.Parallel()
+
+		partial := total(nil)
+		delete(partial.Facts, symbol.FactAsync)
+		failure := assert.Rejects(t, "a coverage hole must fail",
+			func(tb assert.TB) {
+				backendtest.AssertCoveredFacts(tb,
+					func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+						tb.Helper()
+						r, held := wellBuilder(tb).Coverage(partial).
+							Build().(plugin.Renderer)
+						assert.True(tb, held, "the covered backend renders")
+						return r, wellFixture(tb)
+					})
+			})
+		assert.Contains(t, failure, symbol.FactAsync.String(),
+			"the refusal names the missing fact")
+	})
+
+	t.Run("rejects an exception on a kind that cannot state it", func(t *testing.T) {
+		t.Parallel()
+
+		astray := total(nil)
+		astray.Except = map[symbol.Kind]map[symbol.Fact]render.Verdict{
+			symbol.KindStruct: {symbol.FactTag: render.Refuses},
+		}
+		failure := assert.Rejects(t, "a stray exception must fail",
+			func(tb assert.TB) {
+				backendtest.AssertCoveredFacts(tb,
+					func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+						tb.Helper()
+						r, held := wellBuilder(tb).Coverage(astray).
+							Build().(plugin.Renderer)
+						assert.True(tb, held, "the covered backend renders")
+						return r, wellFixture(tb)
+					})
+			})
+		assert.Contains(t, failure, symbol.FactTag.String(),
+			"the refusal names the stray fact")
 	})
 }
 

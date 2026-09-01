@@ -54,12 +54,12 @@ type TypeParam struct {
 	ID           symbol.Identity `eidos:"node"`
 	Pos          position.Pos    `eidos:"node"`
 	Name         string          `eidos:"both,name"`
-	Variance     symbol.Variance `eidos:"both"`
+	Variance     symbol.Variance `eidos:"both,fact=Variance"`
 	Bounds       []*TypeRef      `eidos:"both,walk"`
-	Default      *TypeRef        `eidos:"both,walk"` // default type argument; nil when none
-	Const        bool            `eidos:"both"`      // the argument is a value, not a type
-	Type         *TypeRef        `eidos:"both,walk"` // the value's type, when Const
-	DefaultValue string          `eidos:"both"`      // default value spelling, when Const
+	Default      *TypeRef        `eidos:"both,walk,fact=TypeParamDefault"` // default type argument; nil when none
+	Const        bool            `eidos:"both,fact=ConstParam"`            // the argument is a value, not a type
+	Type         *TypeRef        `eidos:"both,walk"`                       // the value's type, when Const
+	DefaultValue string          `eidos:"both"`                            // default value spelling, when Const
 }
 
 // Constraint is a named, reusable bound: a Go constraint interface

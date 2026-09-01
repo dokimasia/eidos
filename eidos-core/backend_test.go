@@ -318,6 +318,25 @@ func TestBackendBuilder(t *testing.T) {
 			assert.True(t, len(files) > 0, "whole")
 		})
 
+		t.Run("carries the declared coverage to the guard and back", func(t *testing.T) {
+			t.Parallel()
+
+			declared := render.Coverage{
+				Facts: map[symbol.Fact]render.Verdict{
+					symbol.FactAbstract: render.Refuses,
+				},
+			}
+			b := kitBackend("printer", "stub").Coverage(declared).Build()
+			c, held := b.(render.Coverer)
+			assert.True(t, held, "a kit backend reads its coverage back")
+			assert.Equal(t, c.Coverage().Of(symbol.KindStruct, symbol.FactAbstract),
+				render.Refuses, "as declared")
+
+			plain, held := kitBackend("plain", "stub").Build().(render.Coverer)
+			assert.True(t, held, "an undeclared coverage still reads")
+			assert.False(t, plain.Coverage().Declared(), "as undeclared")
+		})
+
 		t.Run("panics with every kit defect in one message", func(t *testing.T) {
 			t.Parallel()
 

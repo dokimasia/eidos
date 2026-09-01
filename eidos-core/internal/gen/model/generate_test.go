@@ -36,6 +36,8 @@ func TestGenerate(t *testing.T) {
 			set, err := model.Generate(moduleRoot(t))
 			assert.NoError(t, err, "the schema generates")
 			want := []string{
+				"emit/facts.gen.go",
+				"emit/facts.gen_test.go",
 				"emit/kinds.gen.go",
 				"emit/kinds.gen_test.go",
 				"emit/names.gen.go",
@@ -53,6 +55,8 @@ func TestGenerate(t *testing.T) {
 				"node/symbols.gen_test.go",
 				"node/walk.gen.go",
 				"node/walk.gen_test.go",
+				"symbol/fact.gen.go",
+				"symbol/fact.gen_test.go",
 				"symbol/kind.gen.go",
 				"symbol/kind.gen_test.go",
 			}

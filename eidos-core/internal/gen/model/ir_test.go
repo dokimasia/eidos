@@ -61,6 +61,10 @@ func TestIR(t *testing.T) {
 			assert.Equal(t, parts.Type, "[]*Part", "and the declared spelling")
 			assert.True(t, fields["Decls"].IsSymbol, "the marker type is recognized")
 			assert.True(t, fields["Decls"].Walk, "and walked")
+			assert.Equal(t, fields["Async"].Fact, "Async",
+				"a fact tag names the constant suffix")
+			assert.Equal(t, fields["Name"].Fact, "",
+				"a field without one states no fact")
 		})
 
 		t.Run("skips a field carrying no tag", func(t *testing.T) {
@@ -124,6 +128,8 @@ func TestIR(t *testing.T) {
 				{"duplicate slot name", "testdata/dupslot", "parts"},
 				{"slot on a field that is not a slice", "testdata/slotnotslice", model.SlotPrefix},
 				{"walk on a field that is not a kind", "testdata/walkbadtype", model.WalkToken},
+				{"fact on a node-only field", "testdata/factnode", "emit-visible"},
+				{"fact that is not an exported identifier", "testdata/factbadname", "suffix"},
 				{"declaration that is not a struct", "testdata/nonstruct", "Alias"},
 				{"declaration that is not a type", "testdata/notatype", "types and imports"},
 			}

@@ -31,15 +31,15 @@ type Field struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Comment     string            `eidos:"both"`      // trailing line comment; "" when none
-	Name        string            `eidos:"both,name"` // "" when positional
-	Visibility  symbol.Visibility `eidos:"both"`
-	Level       symbol.Level      `eidos:"both"`
-	Mutability  symbol.Mutability `eidos:"both"`
+	Comment     string            `eidos:"both,fact=Comment"` // trailing line comment; "" when none
+	Name        string            `eidos:"both,name"`         // "" when positional
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	Level       symbol.Level      `eidos:"both,fact=Level"`
+	Mutability  symbol.Mutability `eidos:"both,fact=Mutability"`
 	Type        *TypeRef          `eidos:"both,walk"`
-	Value       string            `eidos:"both"` // initializer's source spelling, unevaluated; "" when none
-	Tag         string            `eidos:"both"` // tag text without delimiters; "" when none
-	Annotations Annotations       `eidos:"emit"`
+	Value       string            `eidos:"both,fact=Value"` // initializer's source spelling, unevaluated; "" when none
+	Tag         string            `eidos:"both,fact=Tag"`   // tag text without delimiters; "" when none
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 	Host        symbol.Identity   `eidos:"node"`
 }
 
@@ -62,13 +62,13 @@ type Variable struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Comment     string            `eidos:"both"` // trailing line comment; "" when none
+	Comment     string            `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both"`
-	Mutability  symbol.Mutability `eidos:"both"`
-	Type        *TypeRef          `eidos:"both,walk"` // nil when the source states none
-	Value       string            `eidos:"both"`      // initializer's source spelling, unevaluated; "" when none
-	Annotations Annotations       `eidos:"emit"`
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	Mutability  symbol.Mutability `eidos:"both,fact=Mutability"`
+	Type        *TypeRef          `eidos:"both,walk"`       // nil when the source states none
+	Value       string            `eidos:"both,fact=Value"` // initializer's source spelling, unevaluated; "" when none
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 }
 
 // Constant is a binding fixed at compile time: a Go const, a Java
@@ -86,10 +86,10 @@ type Constant struct {
 	Origin      symbol.Identity   `eidos:"emit"`
 	Pos         position.Pos      `eidos:"node"`
 	Doc         []string          `eidos:"both"`
-	Comment     string            `eidos:"both"` // trailing line comment; "" when none
+	Comment     string            `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both"`
+	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
 	Type        *TypeRef          `eidos:"both,walk"` // nil when untyped
 	Value       string            `eidos:"both"`      // source spelling, unevaluated
-	Annotations Annotations       `eidos:"emit"`
+	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 }

@@ -148,6 +148,16 @@ type view struct {
 	// how many names the respell traversal then visits.
 	NameChildren []string
 	NameVisits   int
+	// Facts are the stated facts the kind carries directly, in
+	// schema field order, and FactWalked the traversed fields that
+	// reach a fact-carrying kind: the facts traversal's descent
+	// set.
+	Facts      []factView
+	FactWalked []fieldView
+	// FactChild builds one child stating one fact and says what the
+	// traversal yields for it; nil where no descent field reaches a
+	// fact-carrying kind.
+	FactChild *factChildView
 	// Malformed is an encoding naming this kind whose first field
 	// holds the wrong JSON type, so a decoder places the kind and
 	// then fails on its body.
@@ -166,6 +176,32 @@ type memberView struct {
 	Items string
 	Len   string
 }
+
+// factView is one stated fact as the facts traversal reads it.
+type factView struct {
+	// Fact is the generated constant's suffix, from the schema tag.
+	Fact string
+	// Stated is the expression reporting the fact stated, read off
+	// the traversal's receiver.
+	Stated string
+	// Set is the statement a test uses to state the fact on its
+	// subject.
+	Set string
+}
+
+// factChildView is the statements a test uses to give a subject
+// one child stating one fact, with what the traversal then yields.
+type factChildView struct {
+	Stmts []string
+	Kind  string
+	Fact  string
+}
+
+// multiReturnFact is the one fact whose statedness is not the
+// field's own shape: a callable returns several values when the
+// list holds more than one, so the threshold is two rather than
+// presence.
+const multiReturnFact = "MultiReturn"
 
 // fieldView is one field as one model side carries it.
 type fieldView struct {
@@ -211,6 +247,198 @@ func viewsFor(kinds []KindSpec, side string) []view {
 	out := make([]view, 0, len(kinds))
 	for _, kind := range kinds {
 		out = append(out, viewOf(kind, side, reach, named))
+	}
+	fillFacts(kinds, side, out)
+	return out
+}
+
+// fillFacts prepares the facts traversal's views on the emit side:
+// each kind's own stated facts, the descent fields that reach a
+// fact-carrying kind, and one stated child for the generated twin.
+// It runs after viewOf so a child's setter can name any kind's
+// first fact.
+func fillFacts(kinds []KindSpec, side string, views []view) {
+	if side != EmitPackage {
+		return
+	}
+	reach := factReach(kinds)
+	first := map[string]factView{}
+	for i, k := range kinds {
+		v := &views[i]
+		for _, f := range k.Fields {
+			if f.Fact == "" || !f.Side.OnEmit() {
+				continue
+			}
+			fv := fieldOf(f, side)
+			v.Facts = append(v.Facts, factView{
+				Fact:   f.Fact,
+				Stated: factStated(f, fv),
+				Set:    factSetter(f, fv, "subject", k.Name),
+			})
+			if _, held := first[k.Name]; !held {
+				first[k.Name] = factView{
+					Fact: f.Fact,
+					Set:  factSetter(f, fv, "child", k.Name),
+				}
+			}
+		}
+		for _, f := range k.Fields {
+			if !f.Walk || !f.Side.OnEmit() || (!f.IsSymbol && !reach[f.Elem]) {
+				continue
+			}
+			v.FactWalked = append(v.FactWalked, fieldOf(f, side))
+		}
+	}
+	for i, k := range kinds {
+		views[i].FactChild = factChildOf(k, first, side)
+	}
+}
+
+// factReach computes which kinds the facts traversal descends
+// into: every kind that states a fact or walks to one. A
+// marker-typed walk field reaches by construction, because any
+// kind may sit in it.
+func factReach(kinds []KindSpec) map[string]bool {
+	reach := map[string]bool{}
+	for _, k := range kinds {
+		for _, f := range k.Fields {
+			if f.Fact != "" && f.Side.OnEmit() {
+				reach[k.Name] = true
+				break
+			}
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, k := range kinds {
+			if reach[k.Name] {
+				continue
+			}
+			for _, f := range k.Fields {
+				if f.Walk && f.Side.OnEmit() && (f.IsSymbol || reach[f.Elem]) {
+					reach[k.Name] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	return reach
+}
+
+// factStated writes the expression reporting one fact stated, read
+// off the traversal's receiver. Statedness follows the field's
+// shape: a bool is stated true, a string non-empty, a shared
+// vocabulary value non-zero, a reference non-nil, a list
+// non-empty; the several-returns fact alone asks for more than
+// one, because a single result is every language's ordinary case.
+// A shape outside the set renders text gofmt refuses, so a
+// mis-tagged field fails the generation rather than walking wrong.
+func factStated(field FieldSpec, f fieldView) string {
+	switch {
+	case field.Fact == multiReturnFact:
+		return f.Len + " > 1"
+	case field.Type == "bool":
+		return f.selector()
+	case field.Type == "string":
+		return f.selector() + ` != ""`
+	case strings.HasPrefix(field.Type, symbolQualifier):
+		return f.selector() + " != 0"
+	case field.Type == AnnotationsMarkerName:
+		return "len(" + f.selector() + ") > 0"
+	case field.Slice:
+		return f.Len + " > 0"
+	case f.Pointer:
+		return f.selector() + " != nil"
+	}
+	return "" // gofmt refuses the rendered file, naming the fault
+}
+
+// factSetter writes the statement a test uses to state one fact on
+// the given receiver.
+func factSetter(field FieldSpec, f fieldView, receiver, enclosing string) string {
+	target := receiver + "." + f.Storage
+	switch {
+	case field.Fact == multiReturnFact:
+		return target + " = " + qualify(field.Type) + "{{}, {}}"
+	case field.Type == "bool":
+		return target + " = true"
+	case field.Type == "string":
+		return target + ` = "x"`
+	case strings.HasPrefix(field.Type, symbolQualifier):
+		return target + " = 1"
+	case field.Type == AnnotationsMarkerName:
+		return target + " = " + AnnotationsMarkerName + "{{}}"
+	case field.Slice:
+		if f.Accessor != "" {
+			elem := field.Elem
+			if elem == "" {
+				elem = enclosing
+			}
+			return receiver + "." + f.Accessor + "()." + appendMethod +
+				"(" + addressOf + elem + zeroLiteral + ")"
+		}
+		return target + " = " + qualify(field.Type) + "{{}}"
+	case f.Pointer:
+		return target + " = " + addressOf +
+			strings.TrimPrefix(qualify(field.Type), pointerMarker) + zeroLiteral
+	}
+	return "" // gofmt refuses the rendered file, naming the fault
+}
+
+// factChildOf writes the statements giving a subject one child
+// stating one fact, through the first descent field whose element
+// states one directly, and says what the traversal yields for it.
+// A descent field that is itself fact-tagged is passed over,
+// because filling it would state the subject's own fact beside the
+// child's.
+func factChildOf(k KindSpec, first map[string]factView, side string) *factChildView {
+	for _, f := range k.Fields {
+		if !f.Walk || !f.Side.OnEmit() || f.Fact != "" {
+			continue
+		}
+		elem := f.Elem
+		if f.IsSymbol {
+			elem = k.Name
+		}
+		fv, held := first[elem]
+		if !held {
+			continue
+		}
+		field := fieldOf(f, side)
+		stmts := []string{
+			"child := " + addressOf + elem + zeroLiteral,
+			fv.Set,
+		}
+		target := "subject." + field.Storage
+		switch {
+		case field.Accessor != "":
+			stmts = append(stmts,
+				"subject."+field.Accessor+"()."+appendMethod+"(child)")
+		case field.Slice:
+			stmts = append(stmts, target+" = append("+target+", child)")
+		default:
+			stmts = append(stmts, target+" = child")
+		}
+		return &factChildView{Stmts: stmts, Kind: elem, Fact: fv.Fact}
+	}
+	return nil
+}
+
+// factsOf collects the fact constant suffixes the schema declares,
+// first encounter across kinds in schema order, which is what
+// fixes the generated constants.
+func factsOf(kinds []KindSpec) []string {
+	var out []string
+	seen := map[string]bool{}
+	for _, k := range kinds {
+		for _, f := range k.Fields {
+			if f.Fact == "" || seen[f.Fact] {
+				continue
+			}
+			seen[f.Fact] = true
+			out = append(out, f.Fact)
+		}
 	}
 	return out
 }

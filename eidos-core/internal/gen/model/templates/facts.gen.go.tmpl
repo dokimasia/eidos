@@ -1,0 +1,75 @@
+{{template "header" .}}
+import (
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// Facts calls f for every stated fact s carries, its own and its
+// members', parameters', type parameters' and variants', depth
+// first in schema field order. Host is the declaration a fact's
+// carrier sits in, nil at the top level, so a caller can judge a
+// member's fact under its host. A fact is stated by shape: a bool
+// set, a string filled, a shared vocabulary value chosen, a
+// reference present, a list holding entries; a callable states
+// the several-returns fact when its list holds more than one.
+//
+// A reference is not a carrier: a type reference states nothing,
+// because its spelling belongs to the declaration that mentions
+// it.
+func Facts(
+	s symbol.Symbol,
+	f func(host symbol.Symbol, kind symbol.Kind, fact symbol.Fact),
+) {
+	statedFacts(nil, s, f)
+}
+
+// statedFacts carries the enclosing declaration through the
+// descent.
+func statedFacts(
+	host symbol.Symbol,
+	s symbol.Symbol,
+	f func(host symbol.Symbol, kind symbol.Kind, fact symbol.Fact),
+) {
+	switch x := s.(type) {
+{{- range .Views}}
+{{- $v := .}}
+{{- if or .Facts .FactWalked}}
+	case *{{.Name}}:
+{{- range .Facts}}
+		if {{.Stated}} {
+			f(host, symbol.Kind{{$v.Name}}, symbol.Fact{{.Fact}})
+		}
+{{- end}}
+{{- range .FactWalked}}
+{{- if .Slice}}
+		for _, child := range {{.Items}} {
+			statedFacts(x, child, f)
+		}
+{{- else}}
+		if x.{{.Storage}} != nil {
+			statedFacts(x, x.{{.Storage}}, f)
+		}
+{{- end}}
+{{- end}}
+{{- end}}
+{{- end}}
+	}
+}
+
+// KindFacts returns the facts each emit kind states directly, in
+// schema field order: the surface a coverage declaration is held
+// total against, member kinds included. A kind absent from the map
+// states no fact of its own.
+func KindFacts() map[symbol.Kind][]symbol.Fact {
+	return map[symbol.Kind][]symbol.Fact{
+{{- range .Views}}
+{{- $v := .}}
+{{- if .Facts}}
+		symbol.Kind{{.Name}}: {
+{{- range .Facts}}
+			symbol.Fact{{.Fact}},
+{{- end}}
+		},
+{{- end}}
+{{- end}}
+	}
+}

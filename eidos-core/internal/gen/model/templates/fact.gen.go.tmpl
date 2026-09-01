@@ -1,0 +1,37 @@
+{{template "header" .}}
+import "strconv"
+
+// The stated facts, one per fact the schema tags, in first
+// encounter order across the schema.
+const (
+	FactInvalid Fact = iota
+{{- range .Facts}}
+	Fact{{.}}
+{{- end}}
+)
+
+// factNames backs [Fact.String].
+var factNames = [...]string{
+	FactInvalid: "Invalid",
+{{- range .Facts}}
+	Fact{{.}}: "{{.}}",
+{{- end}}
+}
+
+// String names the fact, or "Fact(n)" for a value outside the set.
+func (f Fact) String() string {
+	if int(f) >= len(factNames) {
+		return "Fact(" + strconv.Itoa(int(f)) + ")"
+	}
+	return factNames[f]
+}
+
+// Facts returns every declared fact in constant order, which is
+// what a coverage declaration is held total against.
+func Facts() []Fact {
+	return []Fact{
+{{- range .Facts}}
+		Fact{{.}},
+{{- end}}
+	}
+}
