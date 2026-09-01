@@ -30,8 +30,8 @@ and links into the specification at every step. Keep the
   compatibility claim.
 - **One repository, one module per component.** The kernel is
   `go.dokimi.dev/eidos/core`. The satellites are
-  `go.dokimi.dev/eidos/lang-go`, `/lang-typescript`,
-  `/lang-protobuf`, `/plugin-shape` and `/reference`, and the
+  `go.dokimi.dev/eidos/lang/go`, `/lang/typescript`,
+  `/lang/protobuf`, `/plugin-shape` and `/reference`, and the
   tree-sitter satellites share `/lang`. Each module is tagged and
   released on its own. Everything is written in Go: a satellite is
   a packaging boundary, not a rewrite in that language.

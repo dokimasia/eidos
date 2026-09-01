@@ -25,13 +25,13 @@ their own schedule.
 |---|---|---|
 | [eidos-core](eidos-core) | `go.dokimi.dev/eidos/core` | the kernel: symbol model, projections, directives, plugins, workspace, engine, conformance, command kernels |
 | [eidos-lang](eidos-lang) | `go.dokimi.dev/eidos/lang` | tree-sitter binding layer and pinned grammars, shared by the tree-sitter satellites |
-| [eidos-lang-go](eidos-lang-go) | `go.dokimi.dev/eidos/lang-go` | Go language satellite |
-| [eidos-lang-typescript](eidos-lang-typescript) | `go.dokimi.dev/eidos/lang-typescript` | TypeScript satellite |
-| [eidos-lang-protobuf](eidos-lang-protobuf) | `go.dokimi.dev/eidos/lang-protobuf` | protobuf satellite, read-only by design |
-| [eidos-lang-java](eidos-lang-java) | `go.dokimi.dev/eidos/lang-java` | Java satellite, not written yet |
-| [eidos-lang-kotlin](eidos-lang-kotlin) | `go.dokimi.dev/eidos/lang-kotlin` | Kotlin satellite, not written yet |
-| [eidos-lang-php](eidos-lang-php) | `go.dokimi.dev/eidos/lang-php` | PHP satellite, not written yet |
-| [eidos-lang-rust](eidos-lang-rust) | `go.dokimi.dev/eidos/lang-rust` | Rust satellite, not written yet |
+| [eidos-lang-go](eidos-lang-go) | `go.dokimi.dev/eidos/lang/go` | Go language satellite |
+| [eidos-lang-typescript](eidos-lang-typescript) | `go.dokimi.dev/eidos/lang/typescript` | TypeScript satellite |
+| [eidos-lang-protobuf](eidos-lang-protobuf) | `go.dokimi.dev/eidos/lang/protobuf` | protobuf satellite, read-only by design |
+| [eidos-lang-java](eidos-lang-java) | `go.dokimi.dev/eidos/lang/java` | Java satellite |
+| [eidos-lang-kotlin](eidos-lang-kotlin) | `go.dokimi.dev/eidos/lang/kotlin` | Kotlin satellite, not written yet |
+| [eidos-lang-php](eidos-lang-php) | `go.dokimi.dev/eidos/lang/php` | PHP satellite, not written yet |
+| [eidos-lang-rust](eidos-lang-rust) | `go.dokimi.dev/eidos/lang/rust` | Rust satellite |
 | [eidos-plugin-shape](eidos-plugin-shape) | `go.dokimi.dev/eidos/plugin-shape` | the classification catalog: shapes, mixins and contracts, written as specs first |
 | [eidos-reference](eidos-reference) | `go.dokimi.dev/eidos/reference` | the reference plugin ensemble, which is also the compatibility canary and the benchmark rig |
 

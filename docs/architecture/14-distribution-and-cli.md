@@ -62,7 +62,7 @@ What a consumer's `go.mod` takes on, and under what discipline:
 | Dependency | Discipline |
 |---|---|
 | `go.dokimi.dev/eidos/core` | semver, canary-tested, additive within a major ([15-compatibility.md](15-compatibility.md)) |
-| `go.dokimi.dev/eidos/lang-<lang>` | its own cadence; declares a kernel range and proves it in CI |
+| `go.dokimi.dev/eidos/lang/<lang>` | its own cadence; declares a kernel range and proves it in CI |
 | `go.dokimi.dev/eidos/plugin-shape` | its own cadence; the catalog grows by spec |
 | third-party typed plugins | code you vet; the conformance suite is the acceptance test |
 | declarative plugins | inert files; the manifest hashes into the fingerprint |
