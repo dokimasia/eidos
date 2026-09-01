@@ -107,19 +107,25 @@ type Frontend = core.Frontend
 // into any dependent unit's fingerprint.
 type SourceRef = core.SourceRef
 
-// FileReader is the partition's limited door: the same jailed,
-// recorded reads Parse gets, before units exist. It is not the
-// graph's [go.dokimi.dev/eidos/sdk/store.Reader], and the two
-// never meet.
+// FileReader is the partition's recorded door: reads over the
+// workspace tree, before units exist. It is not jailed to the
+// selection, because a unit's shape can depend on a file the
+// selection must not claim — a Go module file, a TypeScript config
+// — and a partition that cannot look would guess; hermeticity holds
+// because every read folds into every resulting unit's fingerprint
+// instead. It is not the graph's
+// [go.dokimi.dev/eidos/sdk/store.Reader], and the two never meet.
 type FileReader = core.FileReader
 
-// ImportScope is what a frontend recorded at parse time for one
-// file: the file's identity, and its bindings in the language's
-// own form. The kernel stores the bindings and hands them back to
-// that language's Resolve alone, which type-asserts its own
-// shape: Go binds package aliases, TypeScript binds members with
-// rename and form, proto scopes per declaration site, and a
-// kernel that fixed one shape would fix one language's.
+// ImportScope is what the resolution phase hands a language's
+// Resolve for one file: the file's assigned identity, and the
+// bindings the frontend recorded at parse time through
+// [GraphBuilder.Scope], in the language's own form. The kernel
+// stores the bindings and hands them back to that language's
+// Resolve alone, which type-asserts its own shape: Go binds
+// package aliases, TypeScript binds members with rename and form,
+// proto scopes per declaration site, and a kernel that fixed one
+// shape would fix one language's.
 type ImportScope = core.ImportScope
 
 // Index is the dispatcher's routing surface over one frozen run:
@@ -431,5 +437,23 @@ func NewSourceUnit(files []SourceRef, fsys fs.FS, depth Depth, syntax CommentSyn
 // GraphBuilder is the unit's write handle into the node model. A
 // unit declares as many packages as its bytes do; two units
 // contributing one package path merge at the splice, declarations
-// appended in unit order.
+// appended in unit order. The splice validates what a unit built
+// and panics on a structural defect — an emit-side symbol, a named
+// kind without a name — because a malformed graph discovered at the
+// resolution step points away from the frontend that built it.
 type GraphBuilder = core.GraphBuilder
+
+// ScopeRecord pairs one parsed file with its import bindings, in
+// the language's own form. The file is the node the unit built,
+// because canonical identities do not exist until the splice
+// assigns them, and a derivation spelled twice would drift; the
+// kernel derives the identity there and hands the bindings back to
+// that language's Resolve alone.
+type ScopeRecord = core.ScopeRecord
+
+// Attachment is one raw directive instance on a declaration this
+// unit built. The subject is a pointer for the reason
+// [ScopeRecord]'s file is: the splice resolves it to the assigned
+// identity, so an attachment on a declaration another unit already
+// declared attaches to the identity that stands.
+type Attachment = core.Attachment

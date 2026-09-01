@@ -20,6 +20,16 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// ModelFingerprint identifies the node model's shape: a sha256 over
+// every kind and node-side field the schema declares, hex-spelled.
+//
+// Every unit key folds it, because a schema change reshapes the
+// graph the same source produces: a graph recorded under one shape
+// must not be served under another. The hash reads the lowered
+// schema rather than the rendered files, so a documentation edit
+// does not change it.
+const ModelFingerprint = core.ModelFingerprint
+
 // Function is a callable declared outside any type: a Go or Rust
 // free function, a Python module-level def, a TypeScript exported
 // function.
