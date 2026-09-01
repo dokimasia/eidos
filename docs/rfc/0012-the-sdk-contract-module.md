@@ -82,13 +82,23 @@ nothing at run time.
 ### Generation
 
 A generator under the kernel's `internal/gen` reads the curated
-list, loads each package through the type checker, and emits the
-facade with the source documentation carried over, the way the
-model generator carries the schema's. The mirror guard holds the
-committed facade byte-equal to a fresh run, so the facade cannot
-rot against the kernel: a kernel surface change fails the guard
-until the facade regenerates, and the diff shows exactly what the
-supported surface gained or lost.
+list, parses each package from source, and emits the facade with
+the source documentation carried over — kernel import paths
+respelt to facade ones — the way the model generator carries the
+schema's. Emission works on syntax alone: the conformance kits
+spell assert-module types in exported signatures, and a
+type-checking load would need that module resolvable wherever
+generation runs, while reprinting parsed declarations does not.
+What syntax cannot re-export faithfully — a dot import, an
+unexported type in an exported signature, a kernel package
+outside the curated list — refuses at its position rather than
+narrowing silently.
+
+The mirror guard holds the committed facade byte-equal to a
+fresh run, so the facade cannot rot against the kernel: a kernel
+surface change fails the guard until the facade regenerates, and
+the diff shows exactly what the supported surface gained or
+lost.
 
 ### What the facade does and does not promise
 
@@ -103,11 +113,18 @@ happens in the kernel, once, for both spellings.
 
 ### Enforcement
 
-The repository's lint refuses a `go.dokimi.dev/eidos/core/...`
-import in a plugin module's source, tests included. The module
-graph is not the boundary: `go.mod` carries the kernel
-transitively, and that is deliberate — the rule lives where the
-drift happens, in import statements.
+The repository's lint enforces the rule: a depguard rule in the
+shared golangci configuration denies `go.dokimi.dev/eidos/core`
+imports across every plugin module's tree, tests included, and
+`ergon lint` runs golangci per module, so the refusal is
+reported in the module that drifted. A plugin repository outside
+this one states the same rule in its own lint configuration. The
+reference module stays outside the deny list, because a
+reference composition is host side and composes the workspace,
+which the facade does not re-export. The module graph is not the
+boundary: `go.mod` carries the kernel transitively, and that is
+deliberate — the rule lives where the drift happens, in import
+statements.
 
 ## Alternatives considered
 
