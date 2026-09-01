@@ -165,9 +165,10 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "an immutable variable refuses, because that is a constant")
 		_, err = backend.Guard(&emit.Constant{
 			Name:        "Max",
-			Annotations: emit.Annotations{{Name: "deprecated"}},
+			Annotations: emit.Annotations{{Name: "nolint"}},
 		})
-		assert.HasError(t, err, "annotations refuse on every kind")
+		assert.NoError(t, err,
+			"annotations pass the guard, because they render as directive lines")
 		_, err = backend.Guard(&emit.Alias{
 			Name: "ID", Visibility: symbol.VisibilityProtected,
 		})
@@ -180,6 +181,36 @@ func TestVocabulary(t *testing.T) {
 		assert.NoError(t, err,
 			"supertypes pass: extends spells as embedding, and implements "+
 				"holds through structural satisfaction")
+	})
+
+	t.Run("Directives", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, backend.Directives(nil), "", "no annotations, no lines")
+		assert.Equal(t, backend.Directives(emit.Annotations{
+			{Name: "go:embed", Args: []string{"schema.sql"}},
+			{Name: "nolint", Args: []string{"errcheck"}},
+		}),
+			"//go:embed schema.sql\n//nolint errcheck\n",
+			"one directive comment per annotation, arguments space-joined, "+
+				"the spelling verbatim")
+	})
+
+	t.Run("VarType", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.VarType(&emit.Variable{Name: "count", Type: ref("int")})
+		assert.NoError(t, err, "a typed variable spells")
+		assert.Equal(t, got, " int", "its type behind the space")
+
+		got, err = backend.VarType(&emit.Variable{Name: "count", Value: "8"})
+		assert.NoError(t, err, "an initialized variable spells")
+		assert.Equal(t, got, "", "no type, so Go infers instead of any")
+
+		_, err = backend.VarType(&emit.Variable{Name: "count"})
+		assert.HasError(t, err,
+			"a variable stating neither refuses, because var x alone "+
+				"declares nothing Go accepts")
 	})
 
 	t.Run("SigGuard", func(t *testing.T) {

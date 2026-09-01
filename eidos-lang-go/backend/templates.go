@@ -34,7 +34,7 @@ const (
 	// declarations, the receiver the lowering filled, because Go
 	// states a method outside the type it attaches to. The guard
 	// refuses what Go states nowhere before a byte renders.
-	StructTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
+	StructTemplate = "{{docs .Doc}}{{directives .Annotations}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
 		"{{- range .Embeds}}\n\t{{spell .Ref}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
@@ -50,7 +50,7 @@ const (
 	// states no body, no receiver and no parameter list of its
 	// own, which Go refuses on interface methods, so it is a
 	// signature alone under its own guard.
-	InterfaceTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} interface {\n" +
+	InterfaceTemplate = "{{docs .Doc}}{{directives .Annotations}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} interface {\n" +
 		"{{- range .Embeds}}\n\t{{spell .Ref}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"\\t\"}}{{sigguard .}}" +
@@ -59,7 +59,7 @@ const (
 
 	// FunctionTemplate spells a function, its type parameters
 	// behind the name, and places its body, under the guard.
-	FunctionTemplate = "{{docs .Doc}}{{guard .}}func {{.Name}}{{typeparams .TypeParams}}" +
+	FunctionTemplate = "{{docs .Doc}}{{directives .Annotations}}{{guard .}}func {{.Name}}{{typeparams .TypeParams}}" +
 		"({{params .Params}}){{results .Returns}} {\n{{body .}}}\n"
 
 	// MethodTemplate spells a method: Go states one at the package
@@ -68,7 +68,7 @@ const (
 	// form Go accepts since 1.27; the receiver's spell inside the
 	// receiver's reference. The guard refuses what Go states
 	// nowhere.
-	MethodTemplate = "{{docs .Doc}}{{guard .}}func ({{receiver .}}) " +
+	MethodTemplate = "{{docs .Doc}}{{directives .Annotations}}{{guard .}}func ({{receiver .}}) " +
 		"{{.Name}}{{typeparams .TypeParams}}({{params .Params}})" +
 		"{{results .Returns}} {\n{{body .}}}\n"
 
@@ -76,20 +76,20 @@ const (
 	// type parameters behind the name, under the guard: the equals
 	// sign is the transparent alias's, and a defined type drops it,
 	// which is what makes its constants and methods its own.
-	AliasTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} " +
+	AliasTemplate = "{{docs .Doc}}{{directives .Annotations}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} " +
 		"{{if not .Defined}}= {{end}}{{spell .Target}}\n"
 
 	// ConstantTemplate spells a constant, typed where the
 	// declaration states a type, its trailing comment beside the
 	// value where one is stated, under the guard.
-	ConstantTemplate = "{{docs .Doc}}{{guard .}}const {{.Name}}" +
+	ConstantTemplate = "{{docs .Doc}}{{directives .Annotations}}{{guard .}}const {{.Name}}" +
 		"{{with .Type}} {{spell .}}{{end}} = {{.Value}}" +
 		"{{with .Comment}} // {{.}}{{end}}\n"
 
 	// VariableTemplate spells a variable, its initializer behind
 	// an equals sign and its trailing comment beside the type
 	// where the declaration states them, under the guard.
-	VariableTemplate = "{{docs .Doc}}{{guard .}}var {{.Name}} {{spell .Type}}" +
+	VariableTemplate = "{{docs .Doc}}{{directives .Annotations}}{{guard .}}var {{.Name}}{{vartype .}}" +
 		"{{with .Value}} = {{.}}{{end}}{{with .Comment}} // {{.}}{{end}}\n"
 )
 

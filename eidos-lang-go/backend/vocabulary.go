@@ -34,6 +34,11 @@ const (
 	FuncGuard = "guard"
 	// FuncSigGuard refuses what an interface method states nowhere.
 	FuncSigGuard = "sigguard"
+	// FuncDirectives writes annotations as directive comment lines.
+	FuncDirectives = "directives"
+	// FuncVarType writes a variable's type slot, empty where an
+	// initializer lets Go infer.
+	FuncVarType = "vartype"
 )
 
 // Anonymous is what Go writes where a declaration states no type.
@@ -56,6 +61,8 @@ func Funcs() template.FuncMap {
 		FuncPackage:    Package,
 		FuncGuard:      Guard,
 		FuncSigGuard:   SigGuard,
+		FuncDirectives: Directives,
+		FuncVarType:    VarType,
 	}
 }
 
@@ -230,21 +237,14 @@ func Guard(d symbol.Symbol) (string, error) {
 		switch {
 		case t.Abstract:
 			return "", refuse("every struct can be made, and %s states abstract", t.Name)
-		case len(t.Annotations) > 0:
-			return "", unannotated(t.Name)
 		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Interface:
-		if len(t.Annotations) > 0 {
-			return "", unannotated(t.Name)
-		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Function:
 		switch {
 		case t.Async:
 			return "", refuse("concurrency is caller-side, and %s states async", t.Name)
-		case len(t.Annotations) > 0:
-			return "", unannotated(t.Name)
 		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Method:
@@ -259,8 +259,6 @@ func Guard(d symbol.Symbol) (string, error) {
 			return "", refuse("default bodies belong to interfaces elsewhere, and %s states one", t.Name)
 		case t.Level == symbol.LevelType:
 			return "", refuse("a type-level callable is a function, and %s states a static method", t.Name)
-		case len(t.Annotations) > 0:
-			return "", unannotated(t.Name)
 		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Field:
@@ -271,26 +269,16 @@ func Guard(d symbol.Symbol) (string, error) {
 			return "", refuse("a field's mutability follows its binding, and %s states its own", t.Name)
 		case t.Value != "":
 			return "", refuse("a struct declares no field defaults, and %s states one", t.Name)
-		case len(t.Annotations) > 0:
-			return "", unannotated(t.Name)
 		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Alias:
-		if len(t.Annotations) > 0 {
-			return "", unannotated(t.Name)
-		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Constant:
-		if len(t.Annotations) > 0 {
-			return "", unannotated(t.Name)
-		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Variable:
 		switch {
 		case t.Mutability == symbol.MutabilityImmutable:
 			return "", refuse("an immutable binding is a constant, and %s states a variable", t.Name)
-		case len(t.Annotations) > 0:
-			return "", unannotated(t.Name)
 		}
 		return "", cased(t.Visibility, t.Name)
 	default:
@@ -335,10 +323,50 @@ func cased(v symbol.Visibility, name string) error {
 	}
 }
 
-// unannotated is the refusal for an annotation list: Go writes
-// none.
+// unannotated is the refusal for an annotation list where no
+// directive line may sit.
 func unannotated(name string) error {
-	return refuse("declarations carry no annotations, and %s states some", name)
+	return refuse("an interface method carries no annotations, and %s states some", name)
+}
+
+// Directives writes a declaration's annotations as Go directive
+// comment lines — //go:embed, //nolint — one per annotation, its
+// arguments space-joined behind the name, at the member's depth
+// where one is given. Go's directives are comments whose spelling
+// is the contract, so the annotation passes through verbatim and
+// undocumented names stay the generator's own risk.
+func Directives(as emit.Annotations, indent ...string) string {
+	if len(as) == 0 {
+		return ""
+	}
+	prefix := ""
+	if len(indent) > 0 {
+		prefix = indent[0]
+	}
+	var b strings.Builder
+	for _, a := range as {
+		b.WriteString(prefix + "//" + a.Name)
+		if len(a.Args) > 0 {
+			b.WriteString(" " + strings.Join(a.Args, " "))
+		}
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
+// VarType writes a variable's type slot: the spelled type behind a
+// space, nothing where an initializer lets Go infer, and a refusal
+// where the declaration states neither, because `var x` alone
+// declares nothing Go accepts.
+func VarType(v *emit.Variable) (string, error) {
+	switch {
+	case v.Type != nil:
+		return " " + Spell(v.Type), nil
+	case v.Value != "":
+		return "", nil
+	default:
+		return "", refuse("a variable states a type or an initializer, and %s states neither", v.Name)
+	}
 }
 
 // refuse builds a guard refusal under the package's error prefix.

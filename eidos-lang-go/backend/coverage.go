@@ -14,9 +14,8 @@ import (
 //
 // Visibility renders through the respell, which is where Go's case
 // convention lives. Final and a struct's implements hold: nothing
-// subclasses, and satisfaction is structural. Throws refuses
-// today; the error-return lowering is the recorded idiom and lands
-// as a satellite change. A field's initializer refuses where a
+// subclasses, and satisfaction is structural. Throws
+// lowers into the appended error return. A field's initializer refuses where a
 // variable's renders, because Go declares no field defaults.
 func Coverage() render.Coverage {
 	return render.Coverage{
@@ -28,10 +27,11 @@ func Coverage() render.Coverage {
 			symbol.FactConstructs:       render.Refuses,
 			symbol.FactHardPrivate:      render.Refuses,
 			symbol.FactConstEnum:        render.Refuses,
+			symbol.FactOptional:         render.Refuses,
 			symbol.FactTypeParams:       render.Renders,
 			symbol.FactMultiReturn:      render.Renders,
 			symbol.FactThrows:           render.Renders,
-			symbol.FactAnnotations:      render.Refuses,
+			symbol.FactAnnotations:      render.Renders,
 			symbol.FactLevel:            render.Refuses,
 			symbol.FactAbstract:         render.Refuses,
 			symbol.FactFinal:            render.Holds,

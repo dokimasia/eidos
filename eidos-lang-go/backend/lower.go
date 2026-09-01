@@ -36,12 +36,35 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	case *emit.Method:
 		d.Returns, d.Throws = thrown(d.Returns, d.Throws), nil
 	case *emit.Struct:
+		if err := uniqueMethods(d.Name, d.Methods.Items()); err != nil {
+			return nil, err
+		}
 		lowerMembers(d.Methods.Items())
 		receive(d.Name, d.Origin, d.Methods.Items())
 	case *emit.Interface:
+		if err := uniqueMethods(d.Name, d.Methods.Items()); err != nil {
+			return nil, err
+		}
 		lowerMembers(d.Methods.Items())
 	}
 	return nil, nil
+}
+
+// uniqueMethods refuses two member methods under one name: Go
+// overloads nothing, and two contributions colliding on a shared
+// host would otherwise render a file the compiler rejects far
+// from the plugin that caused it.
+func uniqueMethods(host string, methods []*emit.Method) error {
+	seen := make(map[string]bool, len(methods))
+	for _, m := range methods {
+		if seen[m.Name] {
+			return fmt.Errorf(
+				"go: method %s declared twice on %s, and Go overloads "+
+					"nothing", m.Name, host)
+		}
+		seen[m.Name] = true
+	}
+	return nil
 }
 
 // lowerMembers rewrites a host's member methods the way the
