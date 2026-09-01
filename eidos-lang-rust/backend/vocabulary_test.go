@@ -8,7 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/lang-rust/backend"
+	"go.dokimi.dev/eidos/lang/rust/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )

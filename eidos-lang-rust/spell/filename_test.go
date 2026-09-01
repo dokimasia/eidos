@@ -8,7 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/lang-rust/spell"
+	"go.dokimi.dev/eidos/lang/rust/spell"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 

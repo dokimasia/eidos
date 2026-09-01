@@ -9,8 +9,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	rust "go.dokimi.dev/eidos/lang-rust"
-	"go.dokimi.dev/eidos/lang-rust/backend"
+	rust "go.dokimi.dev/eidos/lang/rust"
+	"go.dokimi.dev/eidos/lang/rust/backend"
 	"go.dokimi.dev/eidos/sdk/backendtest"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"

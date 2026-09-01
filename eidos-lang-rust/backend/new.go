@@ -4,8 +4,8 @@
 package backend
 
 import (
-	rust "go.dokimi.dev/eidos/lang-rust"
-	"go.dokimi.dev/eidos/lang-rust/spell"
+	rust "go.dokimi.dev/eidos/lang/rust"
+	"go.dokimi.dev/eidos/lang/rust/spell"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )

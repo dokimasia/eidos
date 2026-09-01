@@ -7,8 +7,8 @@ import (
 	"path"
 	"strings"
 
-	rust "go.dokimi.dev/eidos/lang-rust"
 	"go.dokimi.dev/eidos/lang/naming"
+	rust "go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 

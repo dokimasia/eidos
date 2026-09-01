@@ -8,7 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	rust "go.dokimi.dev/eidos/lang-rust"
+	rust "go.dokimi.dev/eidos/lang/rust"
 )
 
 // The identity, the extension and the comment forms are what the
