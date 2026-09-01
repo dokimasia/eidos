@@ -20,6 +20,7 @@ import (
 // blank-line runs.
 func New() plugin.Backend {
 	return sdk.NewBackend(typescript.Name, typescript.Target, typescript.Syntax()).
+		Version(typescript.Version).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
 		Coverage(Coverage()).
