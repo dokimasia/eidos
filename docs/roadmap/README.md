@@ -37,7 +37,7 @@ flowchart LR
 |---|---|---|---|---|
 | 1 | [0001](0001-one-schema-two-models.md) One schema generates both models | Done | none | unscheduled |
 | 2 | [0002](0002-plugin-over-fixture-graph.md) A typed plugin runs over a hand-built graph | Done | 0001 | unscheduled |
-| 3 | [0003](0003-emit-renders-go.md) Emit renders to deterministic Go | Planned | 0001 | unscheduled |
+| 3 | [0003](0003-emit-renders-go.md) Emit renders to deterministic Go and TypeScript | Done | 0001 | unscheduled |
 | 4 | [0004](0004-go-loads-into-graph.md) Go source loads into the symbol graph | Planned | 0001, 0002 | unscheduled |
 | 5 | [0005](0005-single-plan-end-to-end.md) A single plan runs end to end | Planned | 0002, 0003, 0004 | unscheduled |
 | 6 | [0006](0006-multi-plan-workspace.md) Several plans run in one workspace | Planned | 0005 | unscheduled |

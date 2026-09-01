@@ -1,7 +1,7 @@
 ---
 milestone: 0003
 title: Emit renders to deterministic Go and TypeScript
-status: Planned
+status: Done
 depends-on: 0001
 ships-in: unscheduled
 deadline: none
@@ -23,36 +23,36 @@ of the render procedure, not one.
 
 ## Done when
 
-- [ ] `RunBackendSuite` passes for eidos-lang-go and
+- [x] `RunBackendSuite` passes for eidos-lang-go and
       eidos-lang-typescript over hand-built emit fixtures: every emit
       kind renders, two runs produce identical bytes, and a format
       failure reports a positioned Error while the pass continues with
       the remaining files.
-- [ ] The backend kit exists with the surface in
+- [x] The backend kit exists with the surface in
       [11-languages.md](../architecture/11-languages.md):
       `FileTemplate`, `KindTemplates`, `Funcs`, `Imports`, `Finalise`,
       and one `CommentSyntax` value shared with the future frontend.
-- [ ] Slot contents render through the kind machinery, ordered by
+- [x] Slot contents render through the kind machinery, ordered by
       capability topology then plugin name. Appending a method into a
       field slot fails at the append, naming the slot.
-- [ ] A body renders from each of the four content forms in
+- [x] A body renders from each of the four content forms in
       [07-rendering.md](../architecture/07-rendering.md): empty,
       scaffolding statements, a `TemplateRef` resolved in the emitting
       plugin's tree, and `Verbatim`.
-- [ ] A body-claiming template that drops the `{{slots}}` marker fails
+- [x] A body-claiming template that drops the `{{slots}}` marker fails
       template lint, and a pending contribution into such a body is an
       Error naming the emitting plugin and counting what went
       unplaced. This completes the template-lint half of plugintest
       that milestone 0002 left open.
-- [ ] Spelling a type feeds the file's one `ImportSet`, and the
+- [x] Spelling a type feeds the file's one `ImportSet`, and the
       rendered import block is grouped and sorted the way the target's
       own formatter leaves it: gofmt for Go, the satellite's canonical
       printer for TypeScript.
-- [ ] The sink stages, then commits: identical bytes leave the file
+- [x] The sink stages, then commits: identical bytes leave the file
       and its mtime untouched, renames are atomic, a path escaping the
       root is refused, and `Discard` leaves no trace. Disk, memory and
       fan-out sinks ship.
-- [ ] Every rendered file opens with the generated-code header and
+- [x] Every rendered file opens with the generated-code header and
       ends with the `<brand>:provenance sha256:<hash>` trailer, and a
       test recomputes the hash from the body bytes.
 
@@ -92,6 +92,9 @@ rendering spells types through it.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-09-01 | Marked Done | Every bullet holds under the committed suites; the render surface grew past the goal on the way — Java and Rust render beside the pair, and every backend declares its fact coverage as data |
+| 2026-09-01 | The slot rule landed as compile time, not a failing append | Slots generate as `Slot[T]`, so appending a method into a field slot does not compile; the mistake dies earlier than the bullet asked |
+| 2026-09-01 | Contribution order spells as origin, gating instance and insertion | Capability topology orders the schedule's buckets; within a slot, the emitting origin and its gating instance are the stable key the determinism contract pins |
 | 2026-08-31 | Took the TypeScript-formatter risk from milestone 0009 | The TypeScript backend moved here on 2026-08-30 and the risk row stayed behind; the printer is due with the backend that needs it |
 | 2026-08-30 | The marker-rule bullet names the emitter and a count, not both plugins | A slot statement carries no attribution, so the contributor is unknowable by construction; the emitter whose template dropped the marker is the party that can fix it |
 | 2026-08-30 | Added the TypeScript backend beside Go | Two consumers of the render procedure are what hold the kit's API; the Go-to-TypeScript lowering and its contested mappings stay at their own milestone, because a backend renders the neutral emit graph and needs no policy machinery |
