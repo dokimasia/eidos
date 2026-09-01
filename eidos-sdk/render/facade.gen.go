@@ -130,6 +130,13 @@ var DroppedSlots = core.DroppedSlots
 // skipped and the file renders without them.
 var UnknownGroup = core.UnknownGroup
 
+// HelperCollision reports two plugins registering one template
+// helper name the shared vocabulary does not own: the first
+// registration in composition order stands, because a helper
+// whose meaning follows the schedule renders different bytes from
+// one declaration.
+var HelperCollision = core.HelperCollision
+
 // The builtin names every template resolves against: what a kind
 // template, a file skeleton or a body-claiming template calls, and
 // what the template lint checks for. No vocabulary may claim them.
