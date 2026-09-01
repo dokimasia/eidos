@@ -131,6 +131,27 @@ func TestCode(t *testing.T) {
 			_, err := r.Register("", diag.CodeSpec{Number: 1, Meaning: "unowned"})
 			assert.HasError(t, err, "a code belongs to whoever owns its prefix")
 		})
+
+		t.Run("refuses a prefix the spelled code cannot split from", func(t *testing.T) {
+			t.Parallel()
+
+			r := diag.NewRegistry()
+			for _, p := range []diag.Prefix{"eid", "E-D", "E1D", "E D"} {
+				_, err := r.Register(p, diag.CodeSpec{Number: 1, Meaning: "styled"})
+				assert.HasError(t, err,
+					"a prefix is uppercase letters alone, so PREFIX-NNNN reads back")
+			}
+		})
+	})
+
+	t.Run("Valid", func(t *testing.T) {
+		t.Parallel()
+
+		assert.True(t, diag.KernelPrefix.Valid(), "the kernel's own prefix holds")
+		assert.True(t, diag.Prefix("GOLANG").Valid(), "uppercase letters hold")
+		for _, p := range []diag.Prefix{"", "eid", "E1D", "E-D", "E D", "ÉID"} {
+			assert.False(t, p.Valid(), "anything else refuses: "+string(p))
+		}
 	})
 
 	// The kernel registry is package state, so its cases run in

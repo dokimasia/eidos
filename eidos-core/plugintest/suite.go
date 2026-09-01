@@ -36,11 +36,11 @@ type Setup func(tb assert.TB) (plugin.Plugin, *Fixture)
 func RunPluginSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
-	probe, _ := setup(t)
+	probe, fixture := setup(t)
 	_, annotates := probe.(plugin.Annotator)
 	_, generates := probe.(plugin.Generator)
 	options, optioned := probe.(plugin.OptionsProvider)
-	_, templated := probe.(plugin.TemplateProvider)
+	templated := declaresTree(probe, fixture)
 
 	t.Run("declaration stability", func(t *testing.T) {
 		t.Parallel()
@@ -122,29 +122,55 @@ func AssertStableDeclaration(tb assert.TB, setup Setup) {
 	}
 }
 
+// declaresTree reports whether the plugin declares a template tree
+// for any language the fixture carries. The facade gives every
+// plugin the provider's shape, so the shape alone proves nothing:
+// the suite gates its lint on a declared tree, never on the
+// interface.
+func declaresTree(p plugin.Plugin, f *Fixture) bool {
+	tp, held := p.(plugin.TemplateProvider)
+	if !held || f == nil {
+		return false
+	}
+	for target := range f.Languages {
+		if _, declared := tp.Templates(target); declared {
+			return true
+		}
+	}
+	return false
+}
+
 // AssertTemplates holds every declared template tree to the static
 // template rules, through the same lint the render pass runs, per
 // language the fixture carries: a plugin failing at CI fails in
-// its own tests first.
+// its own tests first. A setup declaring no tree for any fixture
+// language fails the check, because a lint over nothing proves
+// nothing; [RunPluginSuite] runs it only for a plugin declaring
+// one.
 func AssertTemplates(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	p, f := setup(tb)
 	tp, held := p.(plugin.TemplateProvider)
 	if !held {
+		tb.Errorf("the plugin declares no templates, and the check proves nothing")
 		return
 	}
+	linted := 0
 	for _, target := range slices.Sorted(maps.Keys(f.Languages)) {
 		tree, declared := tp.Templates(target)
 		if !declared {
 			continue
 		}
+		linted++
 		pass, err := render.New("lint", f.Languages[target])
 		assert.NoError(tb, err, "the fixture language composes")
 		for _, finding := range pass.Lint(tree, tp.TemplateFuncs(target), tp.Overrides()) {
 			assert.NoError(tb, finding, "the tree holds the template rules")
 		}
 	}
+	assert.True(tb, linted > 0,
+		"no fixture language meets a declared tree, and the check proves nothing")
 }
 
 // AssertOptionsSchema holds the plugin's options struct to the tag

@@ -206,6 +206,31 @@ func TestAssertTemplates(t *testing.T) {
 			})
 		assert.Contains(t, failure, "marker", "the check names the rule")
 	})
+
+	t.Run("rejects a setup declaring no tree", func(t *testing.T) {
+		t.Parallel()
+
+		bare := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+			f, _, _ := twoStructs(tb)
+			f.Languages = map[plugin.Target]render.Language{
+				"fixture": fixtureLanguage(),
+			}
+			p := eidos.NewPlugin("bare").
+				Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
+				Handle(eidos.OnGraph(func(*eidos.GraphMatch, *eidos.Emitter) error {
+					return nil
+				})).
+				Build()
+			return p, f
+		}
+		failure := assert.Rejects(t, "a lint over nothing must fail the check",
+			func(tb assert.TB) {
+				plugintest.AssertTemplates(tb, bare)
+			})
+		assert.Contains(t, failure, "proves nothing",
+			"the facade gives every plugin the provider's shape, so the "+
+				"check refuses to pass on the shape alone")
+	})
 }
 
 func TestAssertPositionedDiagnostics(t *testing.T) {

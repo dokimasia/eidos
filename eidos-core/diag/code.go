@@ -11,8 +11,26 @@ import (
 )
 
 // Prefix owns a range of codes: the kernel's, a satellite's, and a
-// consumer's own registered when the workspace builds.
+// consumer's own registered when the workspace builds. Uppercase
+// letters, nothing else, so the spelled code splits back into its
+// prefix and number without escaping: a hyphen inside the prefix
+// would blur the join, and a digit would blur where the number
+// begins.
 type Prefix string
+
+// Valid reports whether p is spelled the way a code requires: one
+// character at least, every one an uppercase letter.
+func (p Prefix) Valid() bool {
+	if p == "" {
+		return false
+	}
+	for i := range len(p) {
+		if p[i] < 'A' || p[i] > 'Z' {
+			return false
+		}
+	}
+	return true
+}
 
 // KernelPrefix owns every code the kernel reports.
 const KernelPrefix Prefix = "EID"
@@ -60,8 +78,11 @@ func NewRegistry() *Registry {
 // the first one's identity. It returns an error rather than
 // panicking so that a caller collecting faults reports every one.
 func (r *Registry) Register(p Prefix, s CodeSpec) (Code, error) {
-	if p == "" {
-		return Code{}, fmt.Errorf("diag: code %d names no prefix: a code belongs to whoever owns it", s.Number)
+	if !p.Valid() {
+		return Code{}, fmt.Errorf(
+			"diag: code %d claims prefix %q, which is not uppercase letters: "+
+				"a code belongs to whoever owns it, spelled so it splits back",
+			s.Number, p)
 	}
 	if s.Meaning == "" {
 		return Code{}, fmt.Errorf("diag: %s-%0*d names no meaning: the index anchors to it",
