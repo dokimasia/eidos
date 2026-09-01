@@ -4,6 +4,7 @@
 package backendtest
 
 import (
+	"bytes"
 	"cmp"
 	"slices"
 	"strings"
@@ -56,6 +57,98 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertCoveredFacts(t, setup)
 	})
+	t.Run("every member arrives", func(t *testing.T) {
+		t.Parallel()
+		AssertRenderedMembers(t, setup)
+	})
+}
+
+// AssertRenderedMembers settles one setup's fixture, renders it,
+// and holds every member declaration to appearing in the output:
+// each settled field, method and variant name occurs in the
+// rendered bytes, or a finding names it. A host template that
+// ranges some member lists and forgets one drops those members
+// with no finding — the drop is invisible to the kind and fact
+// checks, because neither visits a member a template never
+// renders, so this check reads the bytes instead.
+func AssertRenderedMembers(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	r, f := setup(tb)
+	sink := diag.NewSink()
+	if b, held := r.(plugin.Backend); held {
+		if err := plugin.Settle(f.Emit, b, sink); err != nil {
+			tb.Errorf("the settle completes: %v", err)
+			return
+		}
+	}
+	files, err := r.Render(f.context(sink))
+	assert.NoError(tb, err, "the settled fixture renders")
+
+	var out bytes.Buffer
+	for _, file := range files {
+		out.Write(file.Body)
+	}
+	var excused strings.Builder
+	for d := range sink.All() {
+		excused.WriteString(d.Msg)
+		excused.WriteString("\n")
+	}
+
+	for u := range f.Emit.Units() {
+		for _, d := range u.Decls {
+			host, members := memberNames(d)
+			for _, name := range members {
+				if bytes.Contains(out.Bytes(), []byte(name)) ||
+					strings.Contains(excused.String(), name) {
+					continue
+				}
+				tb.Errorf("member %s of %s renders nowhere and no finding names it",
+					name, host)
+			}
+		}
+	}
+}
+
+// memberNames returns a declaration's name and its member names:
+// what the presence check hunts for in the rendered bytes.
+func memberNames(s symbol.Symbol) (string, []string) {
+	var names []string
+	member := func(n string) {
+		if n != "" {
+			names = append(names, n)
+		}
+	}
+	switch d := s.(type) {
+	case *emit.Struct:
+		for _, m := range d.Fields.Items() {
+			member(m.Name)
+		}
+		for _, m := range d.Methods.Items() {
+			member(m.Name)
+		}
+		return d.Name, names
+	case *emit.Interface:
+		for _, m := range d.Fields.Items() {
+			member(m.Name)
+		}
+		for _, m := range d.Methods.Items() {
+			member(m.Name)
+		}
+		return d.Name, names
+	case *emit.Enum:
+		for _, v := range d.Variants.Items() {
+			member(v.Name)
+		}
+		return d.Name, names
+	case *emit.Sum:
+		for _, v := range d.Variants.Items() {
+			member(v.Name)
+		}
+		return d.Name, names
+	default:
+		return "", nil
+	}
 }
 
 // AssertCoveredFacts holds a backend's declared fact coverage to
