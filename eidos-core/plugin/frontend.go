@@ -74,8 +74,12 @@ type Frontend interface {
 	// returned error is fatal to the whole load, every
 	// frontend's, because the resolution phase runs over the
 	// union of every frontend's graph and a partial union
-	// resolves wrong. The context carries cancellation into a
-	// long parse.
+	// resolves wrong. Units parse in parallel, so Parse is called
+	// concurrently on one frontend: per-unit state belongs on the
+	// unit, and a frontend holding its own is broken under any
+	// worker count. The context carries cancellation into a long
+	// parse; a frontend observing it returns the error rather
+	// than a half-built unit, because nil says the unit is whole.
 	Parse(ctx context.Context, u *SourceUnit) error
 
 	// Resolve says what a spelling could mean in one file's
