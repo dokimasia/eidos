@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/render"
+	"go.dokimi.dev/eidos/sdk/render"
 )
 
 // Imports renders the file's collected paths as one parenthesised

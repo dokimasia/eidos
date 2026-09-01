@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/emit"
-	"go.dokimi.dev/eidos/core/render"
 	"go.dokimi.dev/eidos/lang/scaffold"
+	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/render"
 )
 
 // indent is one level of Go indentation. Bodies are written at

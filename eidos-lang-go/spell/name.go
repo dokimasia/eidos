@@ -6,8 +6,8 @@ package spell
 import (
 	"fmt"
 
-	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // Name spells one declared name in Go's convention, which is where

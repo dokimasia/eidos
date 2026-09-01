@@ -8,8 +8,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/render"
 	"go.dokimi.dev/eidos/lang-go/backend"
+	"go.dokimi.dev/eidos/sdk/render"
 )
 
 // The import block is pinned byte for byte: it is the one part of

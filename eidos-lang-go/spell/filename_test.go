@@ -8,8 +8,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/lang-go/spell"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // The spelling is total over the units a plan admits, and every

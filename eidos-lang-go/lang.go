@@ -3,7 +3,7 @@
 
 package golang
 
-import "go.dokimi.dev/eidos/core/plugin"
+import "go.dokimi.dev/eidos/sdk/plugin"
 
 // Target names the rendering target a plan resolves to reach the
 // Go backend.

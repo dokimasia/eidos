@@ -9,12 +9,12 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/backendtest"
-	"go.dokimi.dev/eidos/core/output"
-	"go.dokimi.dev/eidos/core/plugin"
-	"go.dokimi.dev/eidos/core/symbol"
 	golang "go.dokimi.dev/eidos/lang-go"
 	"go.dokimi.dev/eidos/lang-go/backend"
+	"go.dokimi.dev/eidos/sdk/backendtest"
+	"go.dokimi.dev/eidos/sdk/output"
+	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // setup builds the backend over the kernel's canonical fixture,

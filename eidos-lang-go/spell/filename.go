@@ -7,9 +7,9 @@ import (
 	"path"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/plugin"
 	golang "go.dokimi.dev/eidos/lang-go"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // Filename spells a unit's filename. Go names files in snake case,

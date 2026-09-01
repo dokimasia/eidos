@@ -6,10 +6,10 @@ package backend
 import (
 	"go/format"
 
-	eidos "go.dokimi.dev/eidos/core"
-	"go.dokimi.dev/eidos/core/plugin"
 	golang "go.dokimi.dev/eidos/lang-go"
 	"go.dokimi.dev/eidos/lang-go/spell"
+	"go.dokimi.dev/eidos/sdk"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // New returns the Go rendering backend: the module's declared
@@ -19,7 +19,7 @@ import (
 // withheld and reported rather than written, and the bytes that
 // remain are the bytes gofmt leaves.
 func New() plugin.Backend {
-	return eidos.NewBackend(golang.Name, golang.Target, golang.Syntax()).
+	return sdk.NewBackend(golang.Name, golang.Target, golang.Syntax()).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
 		Coverage(Coverage()).
