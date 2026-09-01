@@ -43,7 +43,8 @@ func Name(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error)
 	if reserved[spelt] {
 		return "", fmt.Errorf(
 			"typescript: %s spells the reserved word %s, which no "+
-				"declaration may take", name, spelt)
+				"declaration may take", name, spelt,
+		)
 	}
 	return spelt, nil
 }

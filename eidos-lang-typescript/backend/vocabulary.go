@@ -90,7 +90,8 @@ func PropKey(f *emit.Field) (string, error) {
 	if f.Hard {
 		return "", fmt.Errorf(
 			"typescript: a hard-private name admits no quoted form, and "+
-				"%s is not an identifier", f.Name)
+				"%s is not an identifier", f.Name,
+		)
 	}
 	return quote(f.Name), nil
 }
@@ -161,7 +162,8 @@ func Hard(s symbol.Symbol) (string, error) {
 	case vis != symbol.VisibilityUnknown:
 		return "", fmt.Errorf(
 			"typescript: a hard-private name carries its privacy in the "+
-				"name, and %s states a visibility beside it", name)
+				"name, and %s states a visibility beside it", name,
+		)
 	}
 	return "#", nil
 }
@@ -175,15 +177,18 @@ func IndexSig(m *emit.Method) (string, error) {
 	case len(m.Params) != 1 || m.Params[0].Name == "" || m.Params[0].Type == nil:
 		return "", fmt.Errorf(
 			"typescript: an index signature takes one named, typed key, "+
-				"and %s does not", m.Name)
+				"and %s does not", m.Name,
+		)
 	case len(m.Returns) != 1:
 		return "", fmt.Errorf(
 			"typescript: an index signature states one element type, "+
-				"and %s does not", m.Name)
+				"and %s does not", m.Name,
+		)
 	case len(m.TypeParams) != 0 || m.Accessor != symbol.AccessorNone:
 		return "", fmt.Errorf(
 			"typescript: an index signature admits no type parameters "+
-				"and no accessor, and %s states one", m.Name)
+				"and no accessor, and %s states one", m.Name,
+		)
 	}
 	return "[" + m.Params[0].Name + ": " + Spell(m.Params[0].Type) + "]: " +
 		Spell(m.Returns[0].Type) + ";", nil

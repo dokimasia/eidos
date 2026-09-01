@@ -21,17 +21,17 @@ import (
 //
 //eidos:subject
 type Enum struct {
-	ID          symbol.Identity   `eidos:"node"`
-	Origin      symbol.Identity   `eidos:"emit"`
-	Pos         position.Pos      `eidos:"node"`
-	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
-	Const       bool              `eidos:"both,fact=ConstEnum"` // inlined at use: TypeScript's const enum
-	Variants    []*EnumVariant    `eidos:"both,walk,slot=variants"`
-	Fields      []*Field          `eidos:"both,walk,slot=fields,fact=Fields"`   // Java enums carry instance state
-	Methods     []*Method         `eidos:"both,walk,slot=methods,fact=Methods"` // and behaviour
-	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
+	ID          symbol.Identity    `eidos:"node"`
+	Origin      symbol.Identity    `eidos:"emit"`
+	Pos         position.Pos       `eidos:"node"`
+	Doc         []string           `eidos:"both"`
+	Name        string             `eidos:"both,name"`
+	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
+	Const       bool               `eidos:"both,fact=ConstEnum"` // inlined at use: TypeScript's const enum
+	Variants    []*EnumVariant     `eidos:"both,walk,slot=variants"`
+	Fields      []*Field           `eidos:"both,walk,slot=fields,fact=Fields"`   // Java enums carry instance state
+	Methods     []*Method          `eidos:"both,walk,slot=methods,fact=Methods"` // and behaviour
+	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 }
 
 // EnumVariant is one member of an [Enum].
@@ -42,14 +42,14 @@ type Enum struct {
 // it is the language's job, not the model's, and a variant whose
 // language assigns values implicitly leaves it empty.
 type EnumVariant struct {
-	ID          symbol.Identity `eidos:"node"`
-	Origin      symbol.Identity `eidos:"emit"`
-	Pos         position.Pos    `eidos:"node"`
-	Doc         []string        `eidos:"both"`
-	Name        string          `eidos:"both,name"`
-	Value       string          `eidos:"both,fact=Value"` // source spelling, unevaluated
-	Annotations symbol.Annotations     `eidos:"both,fact=Annotations"`
-	Host        symbol.Identity `eidos:"node"`
+	ID          symbol.Identity    `eidos:"node"`
+	Origin      symbol.Identity    `eidos:"emit"`
+	Pos         position.Pos       `eidos:"node"`
+	Doc         []string           `eidos:"both"`
+	Name        string             `eidos:"both,name"`
+	Value       string             `eidos:"both,fact=Value"` // source spelling, unevaluated
+	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
+	Host        symbol.Identity    `eidos:"node"`
 }
 
 // Sum is a closed set of named variants carrying payloads: a Rust
@@ -63,16 +63,16 @@ type EnumVariant struct {
 //
 //eidos:subject
 type Sum struct {
-	ID          symbol.Identity   `eidos:"node"`
-	Origin      symbol.Identity   `eidos:"emit"`
-	Pos         position.Pos      `eidos:"node"`
-	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
-	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"` // Rust data enums are generic
-	Variants    []*SumVariant     `eidos:"both,walk,slot=variants"`
-	Methods     []*Method         `eidos:"both,walk,slot=methods,fact=Methods"`
-	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
+	ID          symbol.Identity    `eidos:"node"`
+	Origin      symbol.Identity    `eidos:"emit"`
+	Pos         position.Pos       `eidos:"node"`
+	Doc         []string           `eidos:"both"`
+	Name        string             `eidos:"both,name"`
+	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
+	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"` // Rust data enums are generic
+	Variants    []*SumVariant      `eidos:"both,walk,slot=variants"`
+	Methods     []*Method          `eidos:"both,walk,slot=methods,fact=Methods"`
+	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 }
 
 // SumVariant is one variant of a [Sum]: a name and a field list.
@@ -80,12 +80,12 @@ type Sum struct {
 // A variant whose payload is positional, as a Rust tuple variant
 // is, fills Fields with unnamed entries in declaration order.
 type SumVariant struct {
-	ID          symbol.Identity `eidos:"node"`
-	Origin      symbol.Identity `eidos:"emit"`
-	Pos         position.Pos    `eidos:"node"`
-	Doc         []string        `eidos:"both"`
-	Name        string          `eidos:"both,name"`
-	Fields      []*Field        `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
-	Annotations symbol.Annotations     `eidos:"both,fact=Annotations"`
-	Host        symbol.Identity `eidos:"node"`
+	ID          symbol.Identity    `eidos:"node"`
+	Origin      symbol.Identity    `eidos:"emit"`
+	Pos         position.Pos       `eidos:"node"`
+	Doc         []string           `eidos:"both"`
+	Name        string             `eidos:"both,name"`
+	Fields      []*Field           `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
+	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
+	Host        symbol.Identity    `eidos:"node"`
 }

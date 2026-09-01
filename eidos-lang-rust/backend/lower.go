@@ -70,7 +70,8 @@ func uniqueMethods(host string, methods []*emit.Method) error {
 		if seen[m.Name] {
 			return fmt.Errorf(
 				"rust: method %s declared twice on %s, and Rust overloads "+
-					"nothing", m.Name, host)
+					"nothing", m.Name, host,
+			)
 		}
 		seen[m.Name] = true
 	}

@@ -29,19 +29,19 @@ import (
 //
 //eidos:subject
 type Function struct {
-	ID          symbol.Identity   `eidos:"node"`
-	Origin      symbol.Identity   `eidos:"emit"`
-	Pos         position.Pos      `eidos:"node"`
-	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
-	Async       bool              `eidos:"both,fact=Async"`
-	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
-	Params      []*Param          `eidos:"both,walk"`
-	Returns     []*Return         `eidos:"both,walk,fact=MultiReturn"`
-	Throws      []*TypeRef        `eidos:"both,walk,fact=Throws"`
-	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
-	Body        Body              `eidos:"emit"`
+	ID          symbol.Identity    `eidos:"node"`
+	Origin      symbol.Identity    `eidos:"emit"`
+	Pos         position.Pos       `eidos:"node"`
+	Doc         []string           `eidos:"both"`
+	Name        string             `eidos:"both,name"`
+	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
+	Async       bool               `eidos:"both,fact=Async"`
+	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"`
+	Params      []*Param           `eidos:"both,walk"`
+	Returns     []*Return          `eidos:"both,walk,fact=MultiReturn"`
+	Throws      []*TypeRef         `eidos:"both,walk,fact=Throws"`
+	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
+	Body        Body               `eidos:"emit"`
 }
 
 // Method is a callable attached to a type.
@@ -80,31 +80,31 @@ type Function struct {
 //
 //eidos:subject
 type Method struct {
-	ID          symbol.Identity   `eidos:"node"`
-	Origin      symbol.Identity   `eidos:"emit"`
-	Pos         position.Pos      `eidos:"node"`
-	Doc         []string          `eidos:"both"`
-	Name        string            `eidos:"both,name"`
-	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
-	Level       symbol.Level      `eidos:"both,fact=Level"`
-	Abstract    bool              `eidos:"both,fact=Abstract"`    // no body; a subtype must supply one
-	Final       bool              `eidos:"both,fact=Final"`       // overriding is forbidden
-	Override    bool              `eidos:"both,fact=Override"`    // replaces a supertype's member
-	HasDefault  bool              `eidos:"both,fact=DefaultBody"` // an interface method with a body
-	Async       bool              `eidos:"both,fact=Async"`
-	Accessor    symbol.Accessor   `eidos:"both,fact=Accessor"`   // a get or set property accessor
-	Indexer     bool              `eidos:"both,fact=Indexer"`    // an index signature: one key parameter, one result
-	Constructs  bool              `eidos:"both,fact=Constructs"` // a construct signature on an interface
-	Hard        bool              `eidos:"both,fact=HardPrivate"` // runtime-private: TypeScript's # names
-	Receiver    *Param            `eidos:"both,walk"` // nil where the receiver is implicit
-	Receives    *TypeRef          `eidos:"both,walk"` // set when declared outside the type it attaches to
-	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
-	Params      []*Param          `eidos:"both,walk"`
-	Returns     []*Return         `eidos:"both,walk,fact=MultiReturn"`
-	Throws      []*TypeRef        `eidos:"both,walk,fact=Throws"`
-	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
-	Body        Body              `eidos:"emit"`
-	Host        symbol.Identity   `eidos:"node"`
+	ID          symbol.Identity    `eidos:"node"`
+	Origin      symbol.Identity    `eidos:"emit"`
+	Pos         position.Pos       `eidos:"node"`
+	Doc         []string           `eidos:"both"`
+	Name        string             `eidos:"both,name"`
+	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
+	Level       symbol.Level       `eidos:"both,fact=Level"`
+	Abstract    bool               `eidos:"both,fact=Abstract"`    // no body; a subtype must supply one
+	Final       bool               `eidos:"both,fact=Final"`       // overriding is forbidden
+	Override    bool               `eidos:"both,fact=Override"`    // replaces a supertype's member
+	HasDefault  bool               `eidos:"both,fact=DefaultBody"` // an interface method with a body
+	Async       bool               `eidos:"both,fact=Async"`
+	Accessor    symbol.Accessor    `eidos:"both,fact=Accessor"`    // a get or set property accessor
+	Indexer     bool               `eidos:"both,fact=Indexer"`     // an index signature: one key parameter, one result
+	Constructs  bool               `eidos:"both,fact=Constructs"`  // a construct signature on an interface
+	Hard        bool               `eidos:"both,fact=HardPrivate"` // runtime-private: TypeScript's # names
+	Receiver    *Param             `eidos:"both,walk"`             // nil where the receiver is implicit
+	Receives    *TypeRef           `eidos:"both,walk"`             // set when declared outside the type it attaches to
+	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"`
+	Params      []*Param           `eidos:"both,walk"`
+	Returns     []*Return          `eidos:"both,walk,fact=MultiReturn"`
+	Throws      []*TypeRef         `eidos:"both,walk,fact=Throws"`
+	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
+	Body        Body               `eidos:"emit"`
+	Host        symbol.Identity    `eidos:"node"`
 }
 
 // Param is one parameter of a callable, or its receiver.
@@ -126,15 +126,15 @@ type Method struct {
 // parameters only, and frontends enforce that rather than the
 // model.
 type Param struct {
-	ID          symbol.Identity `eidos:"node"`
-	Pos         position.Pos    `eidos:"node"`
-	Name        string          `eidos:"both,name"`       // "" when unnamed
-	Label       string          `eidos:"both,fact=Label"` // caller-facing name; Swift and Objective-C
-	Type        *TypeRef        `eidos:"both,walk"`
-	Default     string          `eidos:"both,fact=ParamDefault"` // source spelling, unevaluated; "" when none
-	Optional    bool            `eidos:"both,fact=Optional"`     // present-or-absent: TypeScript's ?, Swift's defaulted trailing
-	Variadic    symbol.Variadic `eidos:"both,fact=Variadic"`     // positional or keyword
-	Annotations symbol.Annotations     `eidos:"both,fact=Annotations"`
+	ID          symbol.Identity    `eidos:"node"`
+	Pos         position.Pos       `eidos:"node"`
+	Name        string             `eidos:"both,name"`       // "" when unnamed
+	Label       string             `eidos:"both,fact=Label"` // caller-facing name; Swift and Objective-C
+	Type        *TypeRef           `eidos:"both,walk"`
+	Default     string             `eidos:"both,fact=ParamDefault"` // source spelling, unevaluated; "" when none
+	Optional    bool               `eidos:"both,fact=Optional"`     // present-or-absent: TypeScript's ?, Swift's defaulted trailing
+	Variadic    symbol.Variadic    `eidos:"both,fact=Variadic"`     // positional or keyword
+	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
 }
 
 // Return is one result of a callable.

@@ -23,4 +23,3 @@ type Symbol any
 // parsed bodies are out of scope. Like [Symbol], it is a marker
 // read by name.
 type Body any
-
