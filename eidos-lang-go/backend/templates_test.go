@@ -30,6 +30,9 @@ func execute(t *testing.T, src string, data any) string {
 			"decls":   func() string { return "DECLS\n" },
 			"slots":   func() string { return "" },
 			"slot":    func(string) string { return "" },
+			"nested": func(indent string, s symbol.Symbol) string {
+				return indent + "NESTED " + s.Kind().String()
+			},
 		}).
 		Parse(src)
 	assert.NoError(t, err, "the template parses")
@@ -76,6 +79,21 @@ func TestTemplates(t *testing.T) {
 				"\tN int `json:\"n\"` // counted\n"+
 				"}\n",
 			"fields under their own docblocks, tag and trailing comment beside")
+	})
+
+	t.Run("struct methods follow the type", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Row"}
+		s.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
+		s.Methods.Append(&emit.Method{Name: "Load"})
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"type Row struct {\n"+
+				"\tKey string\n"+
+				"}\n"+
+				"\nNESTED Method\n",
+			"a member method renders after its type through the kind template, "+
+				"because Go states methods at the package level")
 	})
 
 	t.Run("interface", func(t *testing.T) {

@@ -99,6 +99,28 @@ func TestLower(t *testing.T) {
 			"a bare thrower returns the error alone")
 	})
 
+	t.Run("a struct's methods gain the host receiver", func(t *testing.T) {
+		t.Parallel()
+
+		origin := symbol.Identity{Package: "svc/store", Name: "row"}
+		s := &emit.Struct{Name: "row", Origin: origin}
+		s.Methods.Append(
+			&emit.Method{Name: "load"},
+			&emit.Method{Name: "save", Receiver: &emit.Param{Name: "r", Type: &emit.TypeRef{Spelling: "*row"}}},
+		)
+		_, err := backend.Lower(s)
+		assert.NoError(t, err, "the struct lowers")
+
+		filled := s.Methods.Items()[0]
+		assert.True(t, filled.Receives != nil, "an unstated receiver is filled")
+		assert.Equal(t, filled.Receives.Spelling, "row", "with the host's name")
+		assert.Equal(t, filled.Receives.Target, origin,
+			"bound to the host's origin, so the settle respells both together")
+		stated := s.Methods.Items()[1]
+		assert.True(t, stated.Receives == nil,
+			"a method stating its own receiver keeps it")
+	})
+
 	t.Run("everything else passes through unchanged", func(t *testing.T) {
 		t.Parallel()
 

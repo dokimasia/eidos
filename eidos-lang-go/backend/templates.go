@@ -30,14 +30,17 @@ const (
 	// structural, and the methods themselves carry the claim.
 	// Fields follow, each under its own docblock, carrying its tag
 	// in backquotes and its trailing comment where the declaration
-	// states them. The guard refuses what Go states nowhere before
-	// a byte renders.
+	// states them. Member methods follow the type as package-level
+	// declarations, the receiver the lowering filled, because Go
+	// states a method outside the type it attaches to. The guard
+	// refuses what Go states nowhere before a byte renders.
 	StructTemplate = "{{docs .Doc}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
 		"{{- range .Embeds}}\n\t{{spell .Ref}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
 		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
-		"{{- end}}\n}\n"
+		"{{- end}}\n}\n" +
+		"{{range .Methods.Items}}\n{{nested \"\" .}}\n{{end}}"
 
 	// InterfaceTemplate spells an interface and the methods it
 	// requires, its type parameters behind the name: embedded

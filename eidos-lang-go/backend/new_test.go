@@ -48,7 +48,7 @@ func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 // allocation ceiling pinned from measurement with headroom.
 func BenchmarkNew(b *testing.B) {
 	backendtest.BenchRender(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 14_800_000})
+		backendtest.Budget{MaxAllocs: 16_500_000})
 }
 
 // BenchmarkSettle measures the settle over the suite's scaled

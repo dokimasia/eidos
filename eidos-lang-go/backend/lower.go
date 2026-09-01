@@ -37,6 +37,7 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 		d.Returns, d.Throws = thrown(d.Returns, d.Throws), nil
 	case *emit.Struct:
 		lowerMembers(d.Methods.Items())
+		receive(d.Name, d.Origin, d.Methods.Items())
 	case *emit.Interface:
 		lowerMembers(d.Methods.Items())
 	}
@@ -49,6 +50,22 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 func lowerMembers(methods []*emit.Method) {
 	for _, m := range methods {
 		m.Returns, m.Throws = thrown(m.Returns, m.Throws), nil
+	}
+}
+
+// receive gives a struct's member methods their receiver: Go
+// states a method at the package level, so the template spells
+// each one after its type and the receiver has to name that type.
+// The reference carries the struct's origin, so the settle
+// respells receiver and type together. A method stating its own
+// receiver keeps it, which is how a generator asks for a pointer
+// or a named receiver.
+func receive(name string, origin symbol.Identity, methods []*emit.Method) {
+	for _, m := range methods {
+		if m.Receiver != nil || m.Receives != nil {
+			continue
+		}
+		m.Receives = &emit.TypeRef{Target: origin, Spelling: name}
 	}
 }
 
