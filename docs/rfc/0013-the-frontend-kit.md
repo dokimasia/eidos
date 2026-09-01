@@ -33,12 +33,15 @@ The render side settled its shape by building the kit before the
 second consumer arrived: the declaration is data, the kit owns the
 merge, the failure flow and the parallelism, and four backends now
 share one tested procedure. The read side has nothing yet — no
-`Frontend` role in the SPI, no unit contract, no harness — and the
-Go frontend is about to be written. Building the parser first and
-the contract second would harden one language's habits into the
-contract; the kit and its suite come first so the Go frontend is
-the first consumer of a surface a TypeScript frontend can also
-implement.
+`Frontend` role in the SPI, no unit contract, no harness — and
+five frontends are about to be written together: Go, protobuf,
+TypeScript, Rust and Java, per capability, over one shared
+corpus. Building any parser first and the contract second would
+harden that language's habits into the contract; the kit and its
+suite come first, and four audits of the old frontends against
+this document already did what the wave will keep doing — every
+contract defect they found arrived through a language the others
+did not share.
 
 Two properties must be mechanisms rather than review rules, and
 both live in this contract. Hermeticity: a frontend that can open
@@ -52,8 +55,8 @@ stamps what it saw.
 
 ### The role
 
-`core/plugin` gains the frontend role, lowered to like every other
-role and public for the exotic case:
+`core/plugin` gains the frontend role, which the kit lowers to
+and the exotic case implements directly:
 
 ```go
 // Frontend loads one language's source into the node graph.
@@ -79,7 +82,7 @@ type Frontend interface {
     // qualifier — and a partition that cannot look would guess;
     // every partition read folds into every resulting unit's
     // fingerprint, because the partition decided their shape.
-    Partition(ctx context.Context, files []SourceRef, r Reader) ([][]SourceRef, error)
+    Partition(ctx context.Context, files []SourceRef, r FileReader) ([][]SourceRef, error)
 
     // Parse loads one unit through its handle. A unit's problem
     // reports through the handle and parsing continues; a
@@ -111,11 +114,16 @@ every declared input's bytes fold into the dependent unit's
 fingerprint.
 
 `ImportScope` is what the frontend recorded at parse time for one
-file: the file's identity and its bindings in the language's own
-form, carried opaque by the kernel and read by that language's
-`Resolve` alone — Go binds package aliases, TypeScript binds
-members with rename and form, proto scopes per declaration site,
-and a kernel that fixed one shape would fix Go's. Link is a
+file: the file's identity, and its bindings in the language's own
+form — `Bindings any`, stored by the kernel, type-asserted back
+by that language's `Resolve` alone. Go binds package aliases,
+TypeScript binds members with rename and form, proto scopes per
+declaration site, and a kernel that fixed one shape would fix
+Go's; the cost is that a binding-shape mistake reports at Link
+rather than compile, which the suite's linked fixture exercises
+per language. `FileReader` is the partition's limited door: the
+same jailed, recorded reads, before units exist — it is not the
+graph's [store.Reader], and the two never meet. Link is a
 kernel phase after every frontend finished: it visits every
 `TypeRef` in the graph, nested type arguments included, asks the
 owning language's `Resolve` for each node's spelling, keeps the
@@ -210,9 +218,12 @@ the syntax value, parse under the kernel grammar, and attach as
 raw instances; validation against schemas stays the freeze's, the
 step between Link and the first handler, exactly as the plugin
 fixture does it today. Two frontends claiming one file is a
-composition defect refused before anything parses, naming both:
-selection claims partition the tree, and an overlap resolved by
-splice order would resolve by accident. Directive
+composition defect the workspace's Build refuses at milestone
+0005, before anything parses, naming both: selection claims
+partition the tree, and an overlap resolved by splice order would
+resolve by accident. The suite drives one frontend and cannot
+meet the case, which is a stated hole in the stand-in, not a
+forgotten one. Directive
 comment lines — `//go:build`, `//nolint` and their kin — are not
 documentation: the comment pipeline drops them from doc lines, so
 a pragma can never render double-commented downstream.
@@ -298,11 +309,13 @@ own failure path is testable:
   on the fixture's units, and no file was silently dropped — every
   selected file's declarations or refusal findings appear.
 - `AssertFingerprinted`: the load report's keys fold every read,
-  the depth, the declared version, the configuration and the
-  model fingerprint — an untouched unit's key is stable across
-  two parses, one unit parsed at the two depths keys differently,
-  and a changed version or configuration changes every key, which
-  is what keeps the fold honest against a constant nobody bumped.
+  the partition's reads, the depth, the declared version, the
+  configuration, the plugin-set fingerprint the suite drives, and
+  the model fingerprint — an untouched unit's key is stable
+  across two parses, one unit parsed at the two depths keys
+  differently, and a changed version or configuration changes
+  every key, which is what keeps the fold honest against a
+  constant nobody bumped.
 - `AssertJailedReads`: a scripted frontend reaching outside its
   unit is refused at `Read`, and the refusal names the path.
 - `AssertSignatureDepth`: a unit parsed at `Signatures` carries no
@@ -311,9 +324,10 @@ own failure path is testable:
 - `AssertAttachedDirectives`: `//+gen:` carriers strip from the
   documentation, parse under the kernel grammar, attach as raw
   instances on the subjects that carried them, and validate under
-  the fixture's schemas after the splice — the suite stands in
-  for the workspace until milestone 0005, and a stand-in that
-  skips validation re-opens the silent-acceptance window the old
+  the fixture's schemas at the suite's freeze, after Link — the
+  same point the workspace validates at, because the suite stands
+  in for it until milestone 0005 and a stand-in that skips
+  validation re-opens the silent-acceptance window the old
   kernel's cache lesson closed.
 - `AssertLinked`: over a two-package fixture, in-graph spellings
   resolve to canonical identities, builtins and externals keep
@@ -350,11 +364,12 @@ Tier-1 projections (`rules/`) are the milestone's later slices and
 their own design: the kit hands them a frozen graph and nothing
 here constrains their shape. The toolchain adapter is specified in
 the testing architecture and arrives with the last slice. Native
-attribute sugar — Rust's `#[gen::…]`, TypeScript decorators
-lowering to canonical directives — is a kit addition beside
-`Classify` that arrives with the first language carrying it, at
-milestone 0009; deferred here so its shape is decided against a
-real carrier rather than invented for Go, which has none. The
+attribute sugar — Rust's `#[gen::…]`, TypeScript decorators,
+Java annotations lowering to canonical directives — is a kit
+addition beside `Classify` that arrives with the wave's directive
+slice, now that three in-wave languages carry real sugar; its
+shape is decided against those carriers, not invented for Go,
+which has none. The
 workspace's Load step — driving selection, partitioning and
 parallel `Parse` across registered frontends, then Link, then
 Freeze — is milestone 0005's join; the suite stands in for it
@@ -409,8 +424,9 @@ until then.
   return — re-derive as rules beside milestone 0004's Tier-2 set;
   a classifier runs before Link and cannot know them.
 - Dependency artifacts (`u.Artifacts()` for JARs and `.d.ts`
-  trees) stay out until a language needs them; Go resolves from
-  source.
+  trees) arrive with the Java frontend's dependency loading, the
+  first consumer with no source to read; until then a dependency
+  type keeps its spelling, which is the recorded degradation.
 - The facade's curated list grows by `frontendtest` and the
   frontend surfaces when they exist; the mirror guard shows the
   addition.

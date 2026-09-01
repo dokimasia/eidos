@@ -106,5 +106,6 @@ plus the completeness check from
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-09-01 | Widened to a horizontal wave: Go, protobuf, TypeScript, Rust and Java frontends build together, per capability, over one shared cross-language feature corpus with read-side coverage declared as data | Four audits of the old frontends against RFC-0013 found every contract defect through a language the others did not share; the backend kit held for the same reason two consumers arrived together. Pulls the tree-sitter platform forward from 0009; Java forces the two surfaces no sibling touches, dependency artifacts and read-side annotations; 0009 and 0010 keep their policy halves |
 | 2026-08-30 | Pinned the `sample`/`witness` directives and the toolchain-adapter skeleton into Done when | A coverage audit against the architecture found them held by Scope reference only |
 | 2026-08-30 | Added at position 4 | First real language. Go comes first because its parser needs no tree-sitter layer |
