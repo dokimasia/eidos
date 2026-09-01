@@ -17,7 +17,7 @@ import (
 	"fmt"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/sdk/emit"
 )
 
 // Expr writes one expression of the neutral vocabulary into b.

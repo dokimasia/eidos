@@ -9,8 +9,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/lang/scaffold"
+	"go.dokimi.dev/eidos/sdk/emit"
 )
 
 // name and call are the fixture spellings.
