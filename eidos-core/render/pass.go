@@ -105,6 +105,12 @@ const (
 	BuiltinSlots = "slots"
 	// BuiltinSlot places one named slot where the template says.
 	BuiltinSlot = "slot"
+	// BuiltinNested renders one nested declaration through its
+	// kind template, every line behind the given indentation: how
+	// a host places its inner declarations at member depth. A
+	// nested kind without a template reports and spells nothing,
+	// which is the unspelt-kind rule one level down.
+	BuiltinNested = "nested"
 )
 
 // skeletonName labels the parsed file skeleton.
@@ -230,7 +236,7 @@ func (p *Pass) Coverage() Coverage { return p.coverage }
 func reserved(name string) bool {
 	switch name {
 	case BuiltinBody, BuiltinUse, BuiltinImports, BuiltinDecls,
-		BuiltinSlots, BuiltinSlot:
+		BuiltinSlots, BuiltinSlot, BuiltinNested:
 		return true
 	}
 	return false
@@ -331,6 +337,7 @@ func unbound() template.FuncMap {
 		BuiltinUse:     func(string) (string, error) { return refuse() },
 		BuiltinImports: refuse,
 		BuiltinDecls:   refuse,
+		BuiltinNested:  func(string, symbol.Symbol) (string, error) { return refuse() },
 	}
 }
 
@@ -422,6 +429,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 				bindErr.CompareAndSwap(nil, &err)
 				return
 			}
+			w.bound = b
 			for {
 				i := int(next.Add(1)) - 1
 				if i >= len(order) {
@@ -494,6 +502,9 @@ type frame struct {
 	set     ImportSet
 	at      position.Pos
 	plugin  plugin.ID
+	// bound holds the frame's own template set once bind ran, which
+	// is what the nested builtin renders through.
+	bound *bound
 }
 
 // mergeVocabulary folds the plugins' helpers over the shared
@@ -564,6 +575,7 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 		BuiltinUse:     f.use,
 		BuiltinImports: f.importsBlock,
 		BuiltinDecls:   f.decls,
+		BuiltinNested:  f.nested,
 	}
 	kinds := make(map[symbol.Kind]*template.Template, len(p.kinds))
 	for k, t := range p.kinds {
@@ -897,6 +909,52 @@ func (f *frame) guard(d symbol.Symbol) {
 		case Renders, Holds:
 		}
 	})
+}
+
+// nested renders one nested declaration through its kind template,
+// every line behind the given indentation, so a host places its
+// inner declarations at member depth; it is the nested builtin. A
+// kind without a template reports and spells nothing, the way an
+// unspelt file-level declaration does; a template refusing the
+// declaration propagates, so a host never renders around a
+// half-spelt member. The block returns without its trailing line
+// break, because the host's template supplies the separators its
+// member layout uses.
+func (f *frame) nested(indent string, s symbol.Symbol) (string, error) {
+	t, spelt := f.bound.kinds[s.Kind()]
+	if !spelt {
+		f.sink.Errorf(UnspeltKind, f.at, f.origin,
+			"%s holds no template for %s, and the nested declaration is skipped",
+			f.pass.name, s.Kind())
+		return "", nil
+	}
+	var out strings.Builder
+	if err := t.Execute(&out, s); err != nil {
+		return "", err
+	}
+	return indented(out.String(), indent), nil
+}
+
+// indented prefixes every non-empty line and drops the trailing
+// line break, keeping blank lines bare, so an indented block
+// carries no trailing spaces.
+func indented(text, indent string) string {
+	text = strings.TrimSuffix(text, "\n")
+	if text == "" {
+		return ""
+	}
+	lines := strings.Split(text, "\n")
+	var b strings.Builder
+	for i, line := range lines {
+		if i > 0 {
+			b.WriteByte('\n')
+		}
+		if line != "" {
+			b.WriteString(indent)
+			b.WriteString(line)
+		}
+	}
+	return b.String()
 }
 
 // stmts spells a statement run through the language's printer,

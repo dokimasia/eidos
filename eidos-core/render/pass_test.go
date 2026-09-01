@@ -7,6 +7,7 @@ import (
 	"errors"
 	"io/fs"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -722,6 +723,65 @@ func TestPass(t *testing.T) {
 		_, err := render.New("printer", l)
 		assert.HasError(t, err, "clustering needs group templates")
 		assert.Contains(t, err.Error(), "group templates", "naming the gap")
+	})
+
+	t.Run("nests declarations through their kind templates", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Kinds[symbol.KindStruct] = "type {{.Name}} {\n" +
+			"{{- range .Types.Items}}\n{{nested \"\t\" .}}{{- end}}\n}\n"
+		host := &emit.Struct{Name: "Row"}
+		inner := &emit.Struct{Name: "Inner"}
+		inner.Types.Append(&emit.Struct{Name: "Deepest"})
+		host.Types.Append(inner)
+		u := unitOf("gen", "store.go")
+		u.Decls = append(u.Decls, host)
+
+		files, sink := runPass(t, l, seeded(t, u))
+		assert.Length(t, slices.Collect(sink.All()), 0, "the nesting renders clean")
+		assert.Equal(t, string(files[0].Body),
+			"type Row {\n"+
+				"\ttype Inner {\n"+
+				"\t\ttype Deepest {\n"+
+				"\t\t}\n"+
+				"\t}\n"+
+				"}\n",
+			"each level indents once more, blank lines stay bare")
+	})
+
+	t.Run("a nested kind without a template reports and is skipped", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Kinds[symbol.KindStruct] = "type {{.Name}} {\n" +
+			"{{- range .Types.Items}}\n{{nested \"\t\" .}}{{- end}}\n}\n"
+		host := &emit.Struct{Name: "Row"}
+		host.Types.Append(&emit.Enum{Name: "Phase"})
+		u := unitOf("gen", "store.go")
+		u.Decls = append(u.Decls, host)
+
+		files, sink := runPass(t, l, seeded(t, u))
+		var codes []diag.Code
+		for d := range sink.All() {
+			codes = append(codes, d.Code)
+		}
+		assert.Equal(t, codes, []diag.Code{render.UnspeltKind},
+			"the unspelt nested kind is one finding")
+		assert.Equal(t, string(files[0].Body), "type Row {\n\n}\n",
+			"and the host renders without it")
+	})
+
+	t.Run("a vocabulary claiming the nested builtin is a fault", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Funcs = template.FuncMap{
+			"nested": func(string, symbol.Symbol) (string, error) { return "", nil },
+		}
+		_, err := render.New("printer", l)
+		assert.HasError(t, err, "the builtin names stay the pass's")
+		assert.Contains(t, err.Error(), "builtin", "naming the claim")
 	})
 }
 

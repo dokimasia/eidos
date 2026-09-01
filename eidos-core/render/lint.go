@@ -10,6 +10,8 @@ import (
 	"slices"
 	"text/template"
 	"text/template/parse"
+
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // Lint holds one plugin's template tree to the static half of the
@@ -65,6 +67,7 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides []string) []er
 		BuiltinDecls:   func() (string, error) { return "", nil },
 		BuiltinSlots:   func() (string, error) { return "", nil },
 		BuiltinSlot:    func(string) (string, error) { return "", nil },
+		BuiltinNested:  func(string, symbol.Symbol) (string, error) { return "", nil },
 	}
 
 	walk := func(name string) error {
