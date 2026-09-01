@@ -5,7 +5,9 @@ package model
 
 import (
 	"bytes"
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"fmt"
 	"path"
 	"strings"
@@ -61,6 +63,14 @@ var outputs = []output{
 	{Path: "node/kinds.gen_test.go", Template: "kinds.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
 	{Path: "node/walk.gen.go", Template: "walk.gen.go.tmpl", Package: NodePackage, Side: NodePackage},
 	{Path: "node/walk.gen_test.go", Template: "walk.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
+	{
+		Path: "node/fingerprint.gen.go", Template: "fingerprint.gen.go.tmpl",
+		Package: NodePackage, Side: NodePackage,
+	},
+	{
+		Path: "node/fingerprint.gen_test.go", Template: "fingerprint.gen_test.go.tmpl",
+		Package: NodePackage, Side: NodePackage,
+	},
 	{Path: "symbol/kind.gen.go", Template: "kind.gen.go.tmpl", Package: SymbolPackage},
 	{Path: "symbol/kind.gen_test.go", Template: "kind.gen_test.go.tmpl", Package: SymbolPackage},
 	{Path: "symbol/fact.gen.go", Template: "fact.gen.go.tmpl", Package: SymbolPackage},
@@ -95,6 +105,9 @@ type data struct {
 	// Facts are the declared fact constant suffixes, first
 	// encounter across kinds in schema order.
 	Facts []string
+	// Fingerprint is the node model's shape hash, which every unit
+	// key folds.
+	Fingerprint string
 }
 
 // Generate renders every generated file from the schema under
@@ -126,6 +139,29 @@ func Generate(modRoot string) (genfile.Set, error) {
 		set[out.Path] = formatted
 	}
 	return set, nil
+}
+
+// fingerprintOf hashes the node model's shape: every kind and every
+// node-side field, name and type spelling, in schema order.
+//
+// The hash reads the lowered schema rather than the rendered files,
+// so a documentation edit does not change it; only a change that
+// reshapes the graph the same source produces does. Every unit key
+// folds the result, which is what keeps a recorded graph from being
+// served across a schema change.
+func fingerprintOf(kinds []KindSpec) string {
+	h := sha256.New()
+	for _, k := range kinds {
+		fmt.Fprintf(h, "kind %s\n", k.Name)
+		for _, f := range k.Fields {
+			if f.Side == SideEmit {
+				continue
+			}
+			fmt.Fprintf(h, "field %s %s elem=%s slice=%t symbol=%t\n",
+				f.Name, f.Type, f.Elem, f.Slice, f.IsSymbol)
+		}
+	}
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 // slotsUseSymbol reports whether any slot holds values typed by the
@@ -201,6 +237,7 @@ func render(out output, kinds []KindSpec) ([]byte, error) {
 		Identified:  viewsIdentified(views),
 		Originated:  viewsOriginated(views),
 		Facts:       factsOf(kinds),
+		Fingerprint: fingerprintOf(kinds),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("model: render %s: %w", out.Path, err)

@@ -56,15 +56,17 @@ type Frontend interface {
 	// Partition groups the selected files into units, the
 	// language's own grain: package directories for Go, whatever
 	// the language's own compilation unit is elsewhere. Every
-	// selected file appears in exactly one unit. The reader is
-	// the same jailed door Parse gets, because a grain can live
-	// inside the bytes — a package clause, a proto package
-	// qualifier — and a partition that cannot look would guess;
-	// every partition read folds into every resulting unit's
-	// fingerprint, because the partition decided their shape. A
-	// returned error is fatal to the load: unit shape is
-	// structural, and a frontend that cannot say what its units
-	// are has nothing to parse.
+	// selected file appears as a member of exactly one unit, and a
+	// unit's refs carry the shared inputs the frontend declares for
+	// them — a module file, a config chain. The reader is recorded
+	// rather than jailed, because a grain can live inside bytes the
+	// selection must not claim — a package clause sits in a
+	// selected file, a module boundary in go.mod — and a partition
+	// that cannot look would guess; every partition read folds into
+	// every resulting unit's fingerprint, because the partition
+	// decided their shape. A returned error is fatal to the load:
+	// unit shape is structural, and a frontend that cannot say what
+	// its units are has nothing to parse.
 	Partition(ctx context.Context, files []SourceRef, r FileReader) ([][]SourceRef, error)
 
 	// Parse loads one unit through its handle. A unit's problem
@@ -100,24 +102,30 @@ type SourceRef struct {
 	Shared []string
 }
 
-// FileReader is the partition's limited door: the same jailed,
-// recorded reads Parse gets, before units exist. It is not the
-// graph's [go.dokimi.dev/eidos/core/store.Reader], and the two
-// never meet.
+// FileReader is the partition's recorded door: reads over the
+// workspace tree, before units exist. It is not jailed to the
+// selection, because a unit's shape can depend on a file the
+// selection must not claim — a Go module file, a TypeScript config
+// — and a partition that cannot look would guess; hermeticity holds
+// because every read folds into every resulting unit's fingerprint
+// instead. It is not the graph's
+// [go.dokimi.dev/eidos/core/store.Reader], and the two never meet.
 type FileReader interface {
-	// Read returns one selected file's bytes. A path outside the
-	// selection refuses, and every accepted read is recorded into
-	// the fingerprints of the units the partition produces.
+	// Read returns one file's bytes from the workspace tree, and
+	// records the read into the fingerprints of the units the
+	// partition produces.
 	Read(path string) ([]byte, error)
 }
 
-// ImportScope is what a frontend recorded at parse time for one
-// file: the file's identity, and its bindings in the language's
-// own form. The kernel stores the bindings and hands them back to
-// that language's Resolve alone, which type-asserts its own
-// shape: Go binds package aliases, TypeScript binds members with
-// rename and form, proto scopes per declaration site, and a
-// kernel that fixed one shape would fix one language's.
+// ImportScope is what the resolution phase hands a language's
+// Resolve for one file: the file's assigned identity, and the
+// bindings the frontend recorded at parse time through
+// [GraphBuilder.Scope], in the language's own form. The kernel
+// stores the bindings and hands them back to that language's
+// Resolve alone, which type-asserts its own shape: Go binds
+// package aliases, TypeScript binds members with rename and form,
+// proto scopes per declaration site, and a kernel that fixed one
+// shape would fix one language's.
 type ImportScope struct {
 	// File is the identity of the file the scope belongs to.
 	File symbol.Identity

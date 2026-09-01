@@ -49,6 +49,8 @@ func TestGenerate(t *testing.T) {
 				"emit/walk.gen_test.go",
 				"match.gen.go",
 				"match.gen_test.go",
+				"node/fingerprint.gen.go",
+				"node/fingerprint.gen_test.go",
 				"node/kinds.gen.go",
 				"node/kinds.gen_test.go",
 				"node/symbols.gen.go",

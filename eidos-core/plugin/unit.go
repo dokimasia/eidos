@@ -8,10 +8,10 @@ import (
 	"fmt"
 	"hash"
 	"io/fs"
-	"sort"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -72,7 +72,8 @@ func (u *SourceUnit) Files() []SourceRef { return u.files }
 func (u *SourceUnit) Read(path string) ([]byte, error) {
 	if !u.allowed[path] {
 		return nil, fmt.Errorf(
-			"plugin: %s is outside the unit's files and shared inputs", path)
+			"plugin: %s is outside the unit's files and shared inputs", path,
+		)
 	}
 	b, err := fs.ReadFile(u.fsys, path)
 	if err != nil {
@@ -103,7 +104,7 @@ func (u *SourceUnit) Doc(raw string) []string {
 
 // DocLines filters lines the author already holds clean: the
 // directive-line rule applies, nothing else changes.
-func (u *SourceUnit) DocLines(lines []string) []string {
+func (*SourceUnit) DocLines(lines []string) []string {
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if directiveLine(line) {
@@ -164,8 +165,8 @@ func stripComment(raw string, syntax CommentSyntax) []string {
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		for _, p := range syntax.Line {
-			if strings.HasPrefix(trimmed, p) {
-				trimmed = strings.TrimPrefix(strings.TrimPrefix(trimmed, p), " ")
+			if rest, marked := strings.CutPrefix(trimmed, p); marked {
+				trimmed = strings.TrimPrefix(rest, " ")
 				break
 			}
 		}
@@ -206,19 +207,41 @@ func directiveLine(line string) bool {
 // GraphBuilder is the unit's write handle into the node model. A
 // unit declares as many packages as its bytes do; two units
 // contributing one package path merge at the splice, declarations
-// appended in unit order.
+// appended in unit order. The splice validates what a unit built
+// and panics on a structural defect — an emit-side symbol, a named
+// kind without a name — because a malformed graph discovered at the
+// resolution step points away from the frontend that built it.
 type GraphBuilder struct {
-	packages map[string]*node.Package
-	order    []string
-	scopes   map[symbol.Identity]ImportScope
+	packages    map[string]*node.Package
+	order       []string
+	scopes      []ScopeRecord
+	attachments []Attachment
+}
+
+// ScopeRecord pairs one parsed file with its import bindings, in
+// the language's own form. The file is the node the unit built,
+// because canonical identities do not exist until the splice
+// assigns them, and a derivation spelled twice would drift; the
+// kernel derives the identity there and hands the bindings back to
+// that language's Resolve alone.
+type ScopeRecord struct {
+	File     *node.File
+	Bindings any
+}
+
+// Attachment is one raw directive instance on a declaration this
+// unit built. The subject is a pointer for the reason
+// [ScopeRecord]'s file is: the splice resolves it to the assigned
+// identity, so an attachment on a declaration another unit already
+// declared attaches to the identity that stands.
+type Attachment struct {
+	Subject symbol.Symbol
+	Raw     directive.Raw
 }
 
 // newGraphBuilder returns an empty builder; the unit owns it.
 func newGraphBuilder() *GraphBuilder {
-	return &GraphBuilder{
-		packages: map[string]*node.Package{},
-		scopes:   map[symbol.Identity]ImportScope{},
-	}
+	return &GraphBuilder{packages: map[string]*node.Package{}}
 }
 
 // Package returns the package for one path, created on first
@@ -236,11 +259,24 @@ func (gb *GraphBuilder) Package(path string) *node.Package {
 	return p
 }
 
-// Scope records one file's import scope: the record the owning
-// language's Resolve reads at the resolution phase, its bindings
-// the language's own.
-func (gb *GraphBuilder) Scope(file symbol.Identity, s ImportScope) {
-	gb.scopes[file] = s
+// Scope records one file's import bindings: what the owning
+// language's Resolve reads at the resolution phase. A nil file is a
+// frontend defect and panics, because nothing could ever join the
+// record to a parsed file.
+func (gb *GraphBuilder) Scope(file *node.File, bindings any) {
+	if file == nil {
+		panic("plugin: a scope on a nil file records nothing")
+	}
+	gb.scopes = append(gb.scopes, ScopeRecord{File: file, Bindings: bindings})
+}
+
+// Attach records one raw directive instance on a declaration this
+// unit built. A nil subject is a frontend defect and panics.
+func (gb *GraphBuilder) Attach(subject symbol.Symbol, raw directive.Raw) {
+	if subject == nil {
+		panic("plugin: a directive on a nil subject attaches nowhere")
+	}
+	gb.attachments = append(gb.attachments, Attachment{Subject: subject, Raw: raw})
 }
 
 // Packages returns the unit's packages in first-touch order: what
@@ -254,15 +290,9 @@ func (gb *GraphBuilder) Packages() []*node.Package {
 	return out
 }
 
-// Scopes returns the recorded import scopes, sorted by file, for
-// the resolution phase.
-func (gb *GraphBuilder) Scopes() []ImportScope {
-	out := make([]ImportScope, 0, len(gb.scopes))
-	for _, s := range gb.scopes {
-		out = append(out, s)
-	}
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].File.String() < out[j].File.String()
-	})
-	return out
-}
+// Scopes returns the recorded bindings in record order, which the
+// unit's single parse goroutine makes the frontend's own.
+func (gb *GraphBuilder) Scopes() []ScopeRecord { return gb.scopes }
+
+// Attachments returns the recorded attachments, in record order.
+func (gb *GraphBuilder) Attachments() []Attachment { return gb.attachments }

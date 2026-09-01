@@ -11,6 +11,8 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -106,11 +108,26 @@ func TestSourceUnit(t *testing.T) {
 		assert.Equal(t, len(gb.Packages()), 2, "both created")
 		assert.True(t, gb.Packages()[0] == a && gb.Packages()[1] == b,
 			"in first-touch order, which partition order fixed")
+	})
 
-		file := symbol.Identity{Package: "svc/store", Name: "row.go"}
-		gb.Scope(file, plugin.ImportScope{File: file, Bindings: map[string]string{"emit": "core/emit"}})
+	t.Run("records bindings and attachments in record order", func(t *testing.T) {
+		t.Parallel()
+
+		gb := unitOf(t, tree).Graph()
+		file := &node.File{Path: "svc/store/row.go"}
+		gb.Scope(file, map[string]string{"emit": "core/emit"})
 		scopes := gb.Scopes()
-		assert.Length(t, scopes, 1, "the scope is recorded")
-		assert.Equal(t, scopes[0].File, file, "under its file")
+		assert.Length(t, scopes, 1, "the binding record is kept")
+		assert.True(t, scopes[0].File == file, "under its file node")
+
+		row := &node.Struct{Name: "Row"}
+		gb.Attach(row, directive.Raw{Name: "gen:table"})
+		attached := gb.Attachments()
+		assert.Length(t, attached, 1, "the attachment is kept")
+		assert.True(t, attached[0].Subject == symbol.Symbol(row), "on its subject")
+		assert.Equal(t, attached[0].Raw.Name, directive.Name("gen:table"), "carrying the instance")
+
+		assert.Panics(t, func() { gb.Scope(nil, nil) }, "a nil file is a defect")
+		assert.Panics(t, func() { gb.Attach(nil, directive.Raw{}) }, "a nil subject is a defect")
 	})
 }

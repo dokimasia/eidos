@@ -1,0 +1,18 @@
+{{template "header" .}}
+import (
+	"testing"
+
+	"go.dokimi.dev/assert"
+)
+
+// Every unit key folds the fingerprint, so its shape is pinned: one
+// sha256, hex-spelled.
+func TestModelFingerprint(t *testing.T) {
+	t.Parallel()
+
+	assert.Equal(t, len(ModelFingerprint), 64, "a sha256, hex-spelled")
+	for _, r := range ModelFingerprint {
+		assert.True(t, r >= '0' && r <= '9' || r >= 'a' && r <= 'f',
+			"the hex alphabet alone")
+	}
+}
