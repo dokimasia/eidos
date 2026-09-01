@@ -110,13 +110,16 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 		switch {
 		case p.Variance != symbol.VarianceInvariant:
 			return "", fmt.Errorf(
-				"go: a type parameter states no variance, and %s states one", p.Name)
+				"go: a type parameter states no variance, and %s states one", p.Name,
+			)
 		case p.Const:
 			return "", fmt.Errorf(
-				"go: a type parameter takes a type, and %s takes a value", p.Name)
+				"go: a type parameter takes a type, and %s takes a value", p.Name,
+			)
 		case p.Default != nil:
 			return "", fmt.Errorf(
-				"go: a type parameter takes no default, and %s states one", p.Name)
+				"go: a type parameter takes no default, and %s states one", p.Name,
+			)
 		}
 		parts = append(parts, p.Name+" "+bound(p.Bounds))
 	}

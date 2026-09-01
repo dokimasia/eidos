@@ -134,7 +134,8 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 		if p.Variance != symbol.VarianceInvariant {
 			return "", fmt.Errorf(
 				"rust: a type parameter states no variance, and %s states one: "+
-					"variance is inferred from use", p.Name)
+					"variance is inferred from use", p.Name,
+			)
 		}
 		parts = append(parts, typeParam(p))
 	}
@@ -200,7 +201,8 @@ func Vis(v symbol.Visibility, name string) (string, error) {
 	default:
 		return "", fmt.Errorf(
 			"rust: visibility scopes by module, and %s states a scope "+
-				"modules cannot spell", name)
+				"modules cannot spell", name,
+		)
 	}
 }
 
@@ -212,11 +214,13 @@ func StructMods(s *emit.Struct) (string, error) {
 	switch {
 	case s.Abstract:
 		return "", fmt.Errorf(
-			"rust: every struct can be made, and %s states abstract", s.Name)
+			"rust: every struct can be made, and %s states abstract", s.Name,
+		)
 	case len(s.Extends) > 0 || len(s.Implements) > 0 || len(s.Embeds) > 0:
 		return "", fmt.Errorf(
 			"rust: a struct neither inherits nor promotes, and %s states "+
-				"supertypes", s.Name)
+				"supertypes", s.Name,
+		)
 	}
 	return Vis(s.Visibility, s.Name)
 }
@@ -227,7 +231,8 @@ func StructMods(s *emit.Struct) (string, error) {
 func EnumMods(e *emit.Enum) (string, error) {
 	if e.Fields.Len() > 0 || e.Methods.Len() > 0 {
 		return "", fmt.Errorf(
-			"rust: an enum holds variants alone, and %s states members", e.Name)
+			"rust: an enum holds variants alone, and %s states members", e.Name,
+		)
 	}
 	return Vis(e.Visibility, e.Name)
 }
@@ -245,22 +250,26 @@ func AssocType(s symbol.Symbol) (string, error) {
 	if !held {
 		return "", fmt.Errorf(
 			"rust: a trait nests associated types alone, and it holds a %s",
-			s.Kind())
+			s.Kind(),
+		)
 	}
 	switch {
 	case a.Target != nil:
 		return "", fmt.Errorf(
 			"rust: an associated type names what the implementation "+
-				"supplies, and %s states a target", a.Name)
+				"supplies, and %s states a target", a.Name,
+		)
 	case a.Defined:
 		return "", fmt.Errorf(
 			"rust: an associated type defines nothing itself, and %s "+
-				"states a defined type", a.Name)
+				"states a defined type", a.Name,
+		)
 	case a.Visibility != symbol.VisibilityUnknown &&
 		a.Visibility != symbol.VisibilityPublic:
 		return "", fmt.Errorf(
 			"rust: a trait item carries the trait's visibility, and %s "+
-				"states its own", a.Name)
+				"states its own", a.Name,
+		)
 	}
 	params, err := TypeParams(a.TypeParams)
 	if err != nil {
@@ -276,7 +285,8 @@ func SumMods(s *emit.Sum) (string, error) {
 	if s.Methods.Len() > 0 {
 		return "", fmt.Errorf(
 			"rust: a data enum holds variants alone, and %s states methods",
-			s.Name)
+			s.Name,
+		)
 	}
 	return Vis(s.Visibility, s.Name)
 }
@@ -300,7 +310,8 @@ func SumPayload(v *emit.SumVariant) (string, error) {
 		if (f.Name != "") != named {
 			return "", fmt.Errorf(
 				"rust: a payload spells one way, and %s mixes named and "+
-					"unnamed entries", v.Name)
+					"unnamed entries", v.Name,
+			)
 		}
 		if named {
 			parts = append(parts, f.Name+": "+Spell(f.Type))
@@ -322,23 +333,28 @@ func inlineEntry(variant string, f *emit.Field) error {
 	case len(f.Doc) > 0 || f.Comment != "" || len(f.Annotations) > 0:
 		return fmt.Errorf(
 			"rust: a payload entry spells inline, and one in %s states "+
-				"documentation, a comment or attributes", variant)
+				"documentation, a comment or attributes", variant,
+		)
 	case f.Visibility != symbol.VisibilityUnknown:
 		return fmt.Errorf(
 			"rust: a payload follows its enum's visibility, and an entry in "+
-				"%s states its own", variant)
+				"%s states its own", variant,
+		)
 	case f.Level == symbol.LevelType:
 		return fmt.Errorf(
 			"rust: an enum holds no statics, and a payload entry in %s "+
-				"states type level", variant)
+				"states type level", variant,
+		)
 	case f.Mutability == symbol.MutabilityImmutable:
 		return fmt.Errorf(
 			"rust: a payload's mutability follows its owning binding, and "+
-				"an entry in %s states its own", variant)
+				"an entry in %s states its own", variant,
+		)
 	case f.Value != "":
 		return fmt.Errorf(
 			"rust: a payload declares no defaults, and an entry in %s "+
-				"states one", variant)
+				"states one", variant,
+		)
 	}
 	return nil
 }
@@ -349,7 +365,8 @@ func AliasMods(a *emit.Alias) (string, error) {
 	if a.Defined {
 		return "", fmt.Errorf(
 			"rust: an alias is transparent, and %s states a defined type",
-			a.Name)
+			a.Name,
+		)
 	}
 	return Vis(a.Visibility, a.Name)
 }
@@ -362,7 +379,8 @@ func Supertraits(i *emit.Interface) (string, error) {
 	if len(i.Embeds) > 0 {
 		return "", fmt.Errorf(
 			"rust: a trait widens through supertraits alone, and %s states "+
-				"embeds", i.Name)
+				"embeds", i.Name,
+		)
 	}
 	if len(i.Extends) == 0 {
 		return "", nil
@@ -398,13 +416,16 @@ func TraitFn(m *emit.Method) (string, error) {
 		m.Visibility != symbol.VisibilityPublic:
 		return "", fmt.Errorf(
 			"rust: a trait item carries the trait's visibility, and %s "+
-				"states its own", m.Name)
+				"states its own", m.Name,
+		)
 	case m.Final:
 		return "", fmt.Errorf(
-			"rust: a method admits no final, and %s states it", m.Name)
+			"rust: a method admits no final, and %s states it", m.Name,
+		)
 	case m.Override:
 		return "", fmt.Errorf(
-			"rust: a method overrides nothing, and %s states it", m.Name)
+			"rust: a method overrides nothing, and %s states it", m.Name,
+		)
 	}
 	if m.Async {
 		return "async ", nil
@@ -421,17 +442,21 @@ func ImplFn(m *emit.Method) (string, error) {
 	case m.Abstract:
 		return "", fmt.Errorf(
 			"rust: an impl method carries its body outright, and %s states "+
-				"abstract", m.Name)
+				"abstract", m.Name,
+		)
 	case m.HasDefault:
 		return "", fmt.Errorf(
 			"rust: default bodies belong to traits, and %s is an impl "+
-				"method", m.Name)
+				"method", m.Name,
+		)
 	case m.Final:
 		return "", fmt.Errorf(
-			"rust: a method admits no final, and %s states it", m.Name)
+			"rust: a method admits no final, and %s states it", m.Name,
+		)
 	case m.Override:
 		return "", fmt.Errorf(
-			"rust: a method overrides nothing, and %s states it", m.Name)
+			"rust: a method overrides nothing, and %s states it", m.Name,
+		)
 	}
 	part, err := Vis(m.Visibility, m.Name)
 	if err != nil {
@@ -465,15 +490,18 @@ func FieldMods(f *emit.Field) (string, error) {
 	switch {
 	case f.Level == symbol.LevelType:
 		return "", fmt.Errorf(
-			"rust: a struct holds no statics, and %s states type level", f.Name)
+			"rust: a struct holds no statics, and %s states type level", f.Name,
+		)
 	case f.Mutability == symbol.MutabilityImmutable:
 		return "", fmt.Errorf(
 			"rust: a field's mutability follows its owning binding, and %s "+
-				"states its own", f.Name)
+				"states its own", f.Name,
+		)
 	case f.Value != "":
 		return "", fmt.Errorf(
 			"rust: a struct declares no field defaults, and %s states one",
-			f.Name)
+			f.Name,
+		)
 	}
 	return Vis(f.Visibility, f.Name)
 }

@@ -79,7 +79,8 @@ func thrown(returns []*emit.Return, throws []*emit.TypeRef) []*emit.Return {
 func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 	if e.Fields.Len() > 0 || e.Methods.Len() > 0 {
 		return nil, fmt.Errorf(
-			"go: a constant group holds no members, and %s states some", e.Name)
+			"go: a constant group holds no members, and %s states some", e.Name,
+		)
 	}
 	variants := e.Variants.Items()
 	out := make([]symbol.Symbol, 0, 1+len(variants))

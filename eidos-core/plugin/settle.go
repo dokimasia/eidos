@@ -146,7 +146,8 @@ func lowerAll(e *Emit, l Lowerer, by diag.Origin, sink *diag.Sink) error {
 					return fmt.Errorf(
 						"plugin: %s lowers a declaration of origin %s into one carrying %s: "+
 							"every output carries the input's origin",
-						by, origin, produced)
+						by, origin, produced,
+					)
 				}
 			}
 			lowered = append(lowered, out...)

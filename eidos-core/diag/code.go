@@ -82,7 +82,8 @@ func (r *Registry) Register(p Prefix, s CodeSpec) (Code, error) {
 		return Code{}, fmt.Errorf(
 			"diag: code %d claims prefix %q, which is not uppercase letters: "+
 				"a code belongs to whoever owns it, spelled so it splits back",
-			s.Number, p)
+			s.Number, p,
+		)
 	}
 	if s.Meaning == "" {
 		return Code{}, fmt.Errorf("diag: %s-%0*d names no meaning: the index anchors to it",

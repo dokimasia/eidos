@@ -82,11 +82,13 @@ func wrapped(
 	case len(throws) > 1:
 		return nil, fmt.Errorf(
 			"rust: a result carries one failure type, and %s announces %d",
-			name, len(throws))
+			name, len(throws),
+		)
 	case len(returns) > 1:
 		return nil, fmt.Errorf(
 			"rust: a result wraps one value, and %s returns %d beside a "+
-				"throw", name, len(returns))
+				"throw", name, len(returns),
+		)
 	}
 	value := &emit.TypeRef{Spelling: unitType}
 	out := &emit.Return{}

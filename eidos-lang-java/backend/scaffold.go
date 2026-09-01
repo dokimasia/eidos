@@ -86,7 +86,8 @@ func assignStmt(b *strings.Builder, s emit.Stmt, depth int) error {
 		return fmt.Errorf(
 			"java: an assignment binds %d names, and Java destructures none: "+
 				"a delegate's second result arrives thrown, not returned",
-			len(s.Names))
+			len(s.Names),
+		)
 	}
 	b.WriteString(strings.Repeat(indent, depth))
 	if s.Declare {

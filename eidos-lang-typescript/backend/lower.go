@@ -55,15 +55,18 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	case sum.Methods.Len() > 0:
 		return nil, fmt.Errorf(
 			"typescript: a union carries no members, and %s states methods",
-			sum.Name)
+			sum.Name,
+		)
 	case sum.Variants.Len() == 0:
 		return nil, fmt.Errorf(
 			"typescript: a union joins at least one variant, and %s states "+
-				"none", sum.Name)
+				"none", sum.Name,
+		)
 	case len(sum.Annotations) > 0:
 		return nil, fmt.Errorf(
 			"typescript: decorators apply to classes, and the sum %s states "+
-				"some", sum.Name)
+				"some", sum.Name,
+		)
 	}
 	variants := sum.Variants.Items()
 	out := make([]symbol.Symbol, 0, 1+len(variants))
@@ -94,7 +97,8 @@ func variantInterface(
 	if len(v.Annotations) > 0 {
 		return nil, "", fmt.Errorf(
 			"typescript: decorators apply to classes, and the variant %s "+
-				"states some", v.Name)
+				"states some", v.Name,
+		)
 	}
 	name, err := spell.Name(symbol.KindInvalid, symbol.KindInterface,
 		sum.Visibility, sum.Name+naming.Pascal(v.Name))
@@ -117,7 +121,8 @@ func variantInterface(
 		if f.Name == "" {
 			return nil, "", fmt.Errorf(
 				"typescript: a property carries a name, and a payload entry "+
-					"in %s states none", v.Name)
+					"in %s states none", v.Name,
+			)
 		}
 		iface.Fields.Append(f)
 	}

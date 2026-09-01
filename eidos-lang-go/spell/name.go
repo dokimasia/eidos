@@ -35,6 +35,7 @@ func Name(_, kind symbol.Kind, v symbol.Visibility, name string) (string, error)
 	default:
 		return "", fmt.Errorf(
 			"go: visibility spells through the name's case, and %s states a "+
-				"scope no case carries", name)
+				"scope no case carries", name,
+		)
 	}
 }

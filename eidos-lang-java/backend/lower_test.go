@@ -129,7 +129,8 @@ func TestLower(t *testing.T) {
 
 		positional := sumOf()
 		positional.Variants.Items()[0].Fields.Append(
-			&emit.Field{Type: ref("String")})
+			&emit.Field{Type: ref("String")},
+		)
 		_, err = backend.Lower(positional)
 		assert.HasError(t, err, "a field carries a name")
 	})

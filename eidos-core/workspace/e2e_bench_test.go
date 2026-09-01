@@ -237,7 +237,8 @@ func peakRSS() uint64 {
 			continue
 		}
 		kb, err := strconv.ParseUint(strings.TrimSuffix(
-			strings.TrimSpace(strings.TrimPrefix(line, "VmHWM:")), " kB"), 10, 64)
+			strings.TrimSpace(strings.TrimPrefix(line, "VmHWM:")), " kB",
+		), 10, 64)
 		if err != nil {
 			return 0
 		}

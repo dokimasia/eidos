@@ -106,7 +106,8 @@ func (s *staging) stage(path string, body []byte) error {
 	}
 	if _, held := s.files[path]; held {
 		return fmt.Errorf(
-			"output: %q is staged twice: one sink writes each path once", path)
+			"output: %q is staged twice: one sink writes each path once", path,
+		)
 	}
 	if s.files == nil {
 		s.files = map[string][]byte{}
@@ -135,14 +136,17 @@ func stageable(path string) error {
 	switch {
 	case !fs.ValidPath(path) || path == ".":
 		return fmt.Errorf(
-			"output: %q is not a workspace-relative, slash-separated file path", path)
+			"output: %q is not a workspace-relative, slash-separated file path", path,
+		)
 	case strings.ContainsRune(path, '\\'):
 		return fmt.Errorf(
 			"output: %q separates with a backslash, and paths are slash-separated "+
-				"on every platform", path)
+				"on every platform", path,
+		)
 	case strings.HasSuffix(path, stageSuffix):
 		return fmt.Errorf(
-			"output: %q ends in %s, which a commit stages through", path, stageSuffix)
+			"output: %q ends in %s, which a commit stages through", path, stageSuffix,
+		)
 	}
 	return nil
 }

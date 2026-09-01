@@ -121,7 +121,8 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 		if p.Const {
 			return "", fmt.Errorf(
 				"typescript: a type parameter takes a type, and %s takes a value",
-				p.Name)
+				p.Name,
+			)
 		}
 		part := variance(p.Variance) + p.Name
 		if len(p.Bounds) > 0 {
@@ -166,7 +167,8 @@ func Mods(d symbol.Symbol) (string, error) {
 	case *emit.Struct:
 		if t.Final {
 			return "", fmt.Errorf(
-				"typescript: a class admits no final, and %s states it", t.Name)
+				"typescript: a class admits no final, and %s states it", t.Name,
+			)
 		}
 		part, err := exported(t.Visibility, t.Name)
 		if err != nil {
@@ -203,7 +205,8 @@ func Mods(d symbol.Symbol) (string, error) {
 		case t.Defined:
 			return "", fmt.Errorf(
 				"typescript: an alias is transparent, and %s states a "+
-					"defined type", t.Name)
+					"defined type", t.Name,
+			)
 		}
 		return exported(t.Visibility, t.Name)
 	case *emit.Enum:
@@ -213,7 +216,8 @@ func Mods(d symbol.Symbol) (string, error) {
 		case t.Fields.Len() > 0 || t.Methods.Len() > 0:
 			return "", fmt.Errorf(
 				"typescript: an enum carries values alone, and %s states "+
-					"members", t.Name)
+					"members", t.Name,
+			)
 		}
 		return exported(t.Visibility, t.Name)
 	case *emit.Constant:
@@ -228,7 +232,8 @@ func Mods(d symbol.Symbol) (string, error) {
 		return exported(t.Visibility, t.Name)
 	default:
 		return "", fmt.Errorf(
-			"typescript: no module-level keywords spell a %s", d.Kind())
+			"typescript: no module-level keywords spell a %s", d.Kind(),
+		)
 	}
 }
 
@@ -244,7 +249,8 @@ func exported(v symbol.Visibility, name string) (string, error) {
 	default:
 		return "", fmt.Errorf(
 			"typescript: a module-level declaration exports or stays "+
-				"module-scoped, and %s states another scope", name)
+				"module-scoped, and %s states another scope", name,
+		)
 	}
 }
 
@@ -271,11 +277,13 @@ func MemberMods(d symbol.Symbol) (string, error) {
 		switch {
 		case t.Final:
 			return "", fmt.Errorf(
-				"typescript: a method admits no final, and %s states it", t.Name)
+				"typescript: a method admits no final, and %s states it", t.Name,
+			)
 		case t.HasDefault:
 			return "", fmt.Errorf(
 				"typescript: a class method carries its body outright, and %s "+
-					"states a default", t.Name)
+					"states a default", t.Name,
+			)
 		case len(t.Throws) > 0:
 			return "", unthrown(t.Name)
 		}
@@ -298,7 +306,8 @@ func MemberMods(d symbol.Symbol) (string, error) {
 		return part, nil
 	default:
 		return "", fmt.Errorf(
-			"typescript: no member keywords spell a %s", d.Kind())
+			"typescript: no member keywords spell a %s", d.Kind(),
+		)
 	}
 }
 
@@ -316,7 +325,8 @@ func accessibility(v symbol.Visibility, name string) (string, error) {
 	default:
 		return "", fmt.Errorf(
 			"typescript: a class member states public, private or protected, "+
-				"and %s states another scope", name)
+				"and %s states another scope", name,
+		)
 	}
 }
 
@@ -332,11 +342,13 @@ func PropMods(f *emit.Field) (string, error) {
 		f.Visibility != symbol.VisibilityPublic:
 		return "", fmt.Errorf(
 			"typescript: an interface property is public by shape, and %s "+
-				"states a scope", f.Name)
+				"states a scope", f.Name,
+		)
 	case f.Level == symbol.LevelType:
 		return "", fmt.Errorf(
 			"typescript: an interface property has no static level, and %s "+
-				"states one", f.Name)
+				"states one", f.Name,
+		)
 	}
 	if f.Mutability == symbol.MutabilityImmutable {
 		return "readonly ", nil
@@ -355,12 +367,14 @@ func SigMods(m *emit.Method) (string, error) {
 		m.Visibility != symbol.VisibilityPublic:
 		return "", fmt.Errorf(
 			"typescript: an interface method is public by shape, and %s "+
-				"states a scope", m.Name)
+				"states a scope", m.Name,
+		)
 	case m.Level == symbol.LevelType || m.Abstract || m.Final ||
 		m.Override || m.HasDefault || m.Async:
 		return "", fmt.Errorf(
 			"typescript: an interface method is a bare signature, and %s "+
-				"states a modifier", m.Name)
+				"states a modifier", m.Name,
+		)
 	case len(m.Throws) > 0:
 		return "", unthrown(m.Name)
 	}
@@ -386,7 +400,8 @@ func Heritage(d symbol.Symbol) (string, error) {
 		default:
 			return "", fmt.Errorf(
 				"typescript: a class extends one base, and %s states %d",
-				t.Name, len(t.Extends))
+				t.Name, len(t.Extends),
+			)
 		}
 		if len(t.Implements) > 0 {
 			part += " implements " + joined(t.Implements)
@@ -402,7 +417,8 @@ func Heritage(d symbol.Symbol) (string, error) {
 		return "", nil
 	default:
 		return "", fmt.Errorf(
-			"typescript: no heritage clause spells a %s", d.Kind())
+			"typescript: no heritage clause spells a %s", d.Kind(),
+		)
 	}
 }
 
@@ -420,13 +436,15 @@ func joined(ts []*emit.TypeRef) string {
 func unthrown(name string) error {
 	return fmt.Errorf(
 		"typescript: a signature declares no failure types, and %s states "+
-			"throws", name)
+			"throws", name,
+	)
 }
 
 // unembedded is the refusal for embeds: nothing promotes members.
 func unembedded(name string) error {
 	return fmt.Errorf(
-		"typescript: nothing promotes members, and %s states embeds", name)
+		"typescript: nothing promotes members, and %s states embeds", name,
+	)
 }
 
 // Binding writes a module-level binding's keyword: const for an
@@ -464,7 +482,8 @@ func Decorators(a emit.Annotations, prefix ...string) string {
 func undecorated(name string) error {
 	return fmt.Errorf(
 		"typescript: decorators mark classes and their members, and %s "+
-			"states annotations elsewhere", name)
+			"states annotations elsewhere", name,
+	)
 }
 
 // Params writes a parameter list, the rest marker included and a
@@ -482,7 +501,8 @@ func Params(ps []*emit.Param) (string, error) {
 			if p.Default != "" {
 				return "", fmt.Errorf(
 					"typescript: a rest parameter takes no default, and %s "+
-						"states one", name)
+						"states one", name,
+				)
 			}
 			parts = append(parts, "..."+name+": "+Spell(p.Type)+"[]")
 			continue

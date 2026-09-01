@@ -276,7 +276,8 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 	}
 	if l.Cluster != nil && len(l.Groups) == 0 {
 		faults = append(faults, errors.New(
-			"render: the language clusters declarations and declares no group templates"))
+			"render: the language clusters declarations and declares no group templates",
+		))
 	}
 	groups := make(map[GroupName]*template.Template, len(l.Groups))
 	for _, g := range slices.Sorted(maps.Keys(l.Groups)) {

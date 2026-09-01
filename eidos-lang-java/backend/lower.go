@@ -35,7 +35,8 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	if sum.Methods.Len() > 0 {
 		return nil, fmt.Errorf(
 			"java: a variant class would owe method bodies the model does "+
-				"not carry, and %s states methods", sum.Name)
+				"not carry, and %s states methods", sum.Name,
+		)
 	}
 	variants := sum.Variants.Items()
 	permits := make([]*emit.TypeRef, 0, len(variants))
@@ -82,7 +83,8 @@ func variantClass(sum *emit.Sum, v *emit.SumVariant) (*emit.Struct, error) {
 		if f.Name == "" {
 			return nil, fmt.Errorf(
 				"java: a field carries a name, and a payload entry in %s "+
-					"states none", v.Name)
+					"states none", v.Name,
+			)
 		}
 		cls.Fields.Append(f)
 	}

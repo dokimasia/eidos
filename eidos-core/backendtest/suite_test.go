@@ -265,7 +265,8 @@ func TestAssertCoveredFacts(t *testing.T) {
 		backendtest.AssertCoveredFacts(t, scripted(
 			func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
 				return nil, nil
-			}))
+			},
+		))
 	})
 
 	t.Run("accepts a total declaration whose refusals report", func(t *testing.T) {

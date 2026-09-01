@@ -107,7 +107,8 @@ type Contract struct {
 func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error) {
 	if !b.Valid() {
 		return nil, fmt.Errorf(
-			"output: %q is not a brand: lowercase letters, digits and hyphens", string(b))
+			"output: %q is not a brand: lowercase letters, digits and hyphens", string(b),
+		)
 	}
 	c := &Contract{brand: b}
 	switch {
@@ -118,7 +119,8 @@ func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error) {
 		c.closer = " " + s.Blocks[0].Close
 	default:
 		return nil, errors.New(
-			"output: the comment syntax carries neither a line form nor a block form")
+			"output: the comment syntax carries neither a line form nor a block form",
+		)
 	}
 	return c, nil
 }
@@ -143,7 +145,8 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 	}
 	if bytes.IndexByte(f.Body, '\r') >= 0 {
 		return nil, errors.New(
-			"output: the body carries a carriage return, and the text policy is LF")
+			"output: the body carries a carriage return, and the text policy is LF",
+		)
 	}
 	plugins := make([]string, 0, len(f.Plugins))
 	for _, p := range f.Plugins {
@@ -184,17 +187,20 @@ func (c *Contract) Verify(stamped []byte) (Provenance, error) {
 	f, held := parse(stamped)
 	if !held {
 		return Provenance{}, errors.New(
-			"output: the bytes carry no frame, so nothing here was generated")
+			"output: the bytes carry no frame, so nothing here was generated",
+		)
 	}
 	if f.record.Brand != c.brand {
 		return Provenance{}, fmt.Errorf(
 			"output: the file is branded %q and this contract stamps %q",
-			string(f.record.Brand), string(c.brand))
+			string(f.record.Brand), string(c.brand),
+		)
 	}
 	if got := digest(f.body); got != f.record.Hash {
 		return Provenance{}, fmt.Errorf(
 			"output: the body hashes to %s and the trailer claims %s",
-			got, f.record.Hash)
+			got, f.record.Hash,
+		)
 	}
 	return f.record, nil
 }
@@ -357,7 +363,8 @@ func derivation(values []string, key string) ([]string, error) {
 		if strings.ContainsAny(v, "\r\n") {
 			return nil, fmt.Errorf(
 				"output: the %s %q carries a line break, and a derivation line is one line",
-				key, v)
+				key, v,
+			)
 		}
 	}
 	return values, nil

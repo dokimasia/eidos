@@ -125,13 +125,16 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 		case p.Variance != symbol.VarianceInvariant:
 			return "", fmt.Errorf(
 				"java: a type parameter states no variance, and %s states one: "+
-					"the wildcard is use-site", p.Name)
+					"the wildcard is use-site", p.Name,
+			)
 		case p.Const:
 			return "", fmt.Errorf(
-				"java: a type parameter takes a type, and %s takes a value", p.Name)
+				"java: a type parameter takes a type, and %s takes a value", p.Name,
+			)
 		case p.Default != nil:
 			return "", fmt.Errorf(
-				"java: a type parameter takes no default, and %s states one", p.Name)
+				"java: a type parameter takes no default, and %s states one", p.Name,
+			)
 		}
 		part := p.Name
 		if len(p.Bounds) > 0 {
@@ -175,7 +178,8 @@ func Results(rs []*emit.Return) (string, error) {
 	default:
 		return "", fmt.Errorf(
 			"java: a callable returns one value, and this one states %d: "+
-				"a second result arrives thrown, not returned", len(rs))
+				"a second result arrives thrown, not returned", len(rs),
+		)
 	}
 }
 
@@ -230,7 +234,8 @@ func TypeMods(d symbol.Symbol) (string, error) {
 		return access(t.Visibility, t.Name, true)
 	default:
 		return "", fmt.Errorf(
-			"java: no file-level keywords spell a %s", d.Kind())
+			"java: no file-level keywords spell a %s", d.Kind(),
+		)
 	}
 }
 
@@ -241,7 +246,8 @@ func EnumVariantName(v *emit.EnumVariant) (string, error) {
 	if v.Value != "" {
 		return "", fmt.Errorf(
 			"java: an enum constant spells its name alone, and %s states a "+
-				"value", v.Name)
+				"value", v.Name,
+		)
 	}
 	return v.Name, nil
 }
@@ -271,11 +277,13 @@ func MethodMods(m *emit.Method) (string, error) {
 	switch {
 	case m.Async:
 		return "", fmt.Errorf(
-			"java: a signature carries no asynchrony, and %s states it", m.Name)
+			"java: a signature carries no asynchrony, and %s states it", m.Name,
+		)
 	case m.HasDefault:
 		return "", fmt.Errorf(
 			"java: default belongs to interface methods, and %s is a class "+
-				"member", m.Name)
+				"member", m.Name,
+		)
 	}
 	part, err := access(m.Visibility, m.Name, false)
 	if err != nil {
@@ -302,14 +310,17 @@ func SigMods(m *emit.Method) (string, error) {
 	switch {
 	case m.Final:
 		return "", fmt.Errorf(
-			"java: an interface method admits no final, and %s states it", m.Name)
+			"java: an interface method admits no final, and %s states it", m.Name,
+		)
 	case m.Override:
 		return "", fmt.Errorf(
 			"java: an interface method overrides nothing, and %s states it",
-			m.Name)
+			m.Name,
+		)
 	case m.Async:
 		return "", fmt.Errorf(
-			"java: a signature carries no asynchrony, and %s states it", m.Name)
+			"java: a signature carries no asynchrony, and %s states it", m.Name,
+		)
 	}
 	var part string
 	switch m.Visibility {
@@ -320,7 +331,8 @@ func SigMods(m *emit.Method) (string, error) {
 	default:
 		return "", fmt.Errorf(
 			"java: an interface method is public or private, and %s states "+
-				"another scope", m.Name)
+				"another scope", m.Name,
+		)
 	}
 	switch {
 	case m.Level == symbol.LevelType:
@@ -352,7 +364,8 @@ func access(v symbol.Visibility, name string, fileLevel bool) (string, error) {
 		}
 	}
 	return "", fmt.Errorf(
-		"java: no access keyword spells the scope %s states", name)
+		"java: no access keyword spells the scope %s states", name,
+	)
 }
 
 // Heritage writes a type's heritage clauses: one superclass
@@ -376,7 +389,8 @@ func Heritage(d symbol.Symbol) (string, error) {
 		default:
 			return "", fmt.Errorf(
 				"java: a class extends one superclass, and %s states %d",
-				t.Name, len(t.Extends))
+				t.Name, len(t.Extends),
+			)
 		}
 		if len(t.Implements) > 0 {
 			part += " implements " + joined(t.Implements)
@@ -393,7 +407,8 @@ func Heritage(d symbol.Symbol) (string, error) {
 		return part + permitted(t.Permits), nil
 	default:
 		return "", fmt.Errorf(
-			"java: no heritage clause spells a %s", d.Kind())
+			"java: no heritage clause spells a %s", d.Kind(),
+		)
 	}
 }
 
@@ -428,7 +443,8 @@ func joined(ts []*emit.TypeRef) string {
 // unembedded is the refusal for embeds: nothing promotes members.
 func unembedded(name string) error {
 	return fmt.Errorf(
-		"java: nothing promotes members, and %s states embeds", name)
+		"java: nothing promotes members, and %s states embeds", name,
+	)
 }
 
 // Annotate writes a declaration's annotation lines, one per
