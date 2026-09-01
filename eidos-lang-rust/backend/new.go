@@ -20,6 +20,7 @@ import (
 // blank-line runs.
 func New() plugin.Backend {
 	return sdk.NewBackend(rust.Name, rust.Target, rust.Syntax()).
+		Version(rust.Version).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
 		Coverage(Coverage()).
