@@ -46,6 +46,14 @@ type Claim = core.Claim
 // a fact read at (subject, key) otherwise.
 type Read = core.Read
 
+// RefusedStamp reports a stamp the fact store refused: the write
+// named an unregistered key, a subject kind the key does not admit,
+// a false boolean, a second value from one rank source, or — on the
+// raw path — a value outside the vocabulary. The refusal arrives at
+// the subject's position under the stamping plugin's identity, and
+// the phase continues.
+var RefusedStamp = core.RefusedStamp
+
 // Facts is the run's stamped facts: one bag per subject.
 //
 // Facts is safe for concurrent use and serializes writes per bag,
@@ -157,3 +165,10 @@ type Completeness = core.Completeness
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	return core.Register[T](r, s)
 }
+
+// RawStamp is one classification stamp as a frontend recorded it:
+// a pre-claim that crossed a phase as data, the way a raw
+// directive does. The name resolves through the registry when the
+// stamp applies, because the typed handle is a composition
+// constant no record can carry.
+type RawStamp = core.RawStamp

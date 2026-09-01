@@ -457,3 +457,10 @@ type ScopeRecord = core.ScopeRecord
 // identity, so an attachment on a declaration another unit already
 // declared attaches to the identity that stands.
 type Attachment = core.Attachment
+
+// StampRecord is one classification stamp on a declaration this
+// unit built: the second raw attachment class, resolved at the
+// splice the way [Attachment] is. The stamp's origin is the
+// kernel's to fill there — a frontend's own value is overwritten,
+// so a stamp cannot speak for another plugin.
+type StampRecord = core.StampRecord

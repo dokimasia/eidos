@@ -51,11 +51,12 @@ func NewPlugin(name plugin.ID) *Builder {
 	return core.NewPlugin(name)
 }
 
-// RefusedStamp reports a stamp the fact store refused: the write
-// named an unregistered key, a subject kind the key does not admit,
-// a false boolean, or a second value from one rank source. The
-// refusal arrives at the subject's position under the stamping
-// plugin's identity, and the phase continues.
+// RefusedStamp is [meta.RefusedStamp], re-exported where annotator
+// authors read: the fact store refused a stamp, the refusal arrives
+// at the subject's position under the stamping plugin's identity,
+// and the phase continues. The registration lives with the store
+// the code describes, because the classification path reports it
+// too.
 var RefusedStamp = core.RefusedStamp
 
 // Tag selects a declared output family; the zero value is the
