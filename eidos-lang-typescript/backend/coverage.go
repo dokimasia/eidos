@@ -26,6 +26,7 @@ func Coverage() render.Coverage {
 			symbol.FactConstructs:       render.Renders,
 			symbol.FactHardPrivate:      render.Renders,
 			symbol.FactConstEnum:        render.Renders,
+			symbol.FactOptional:         render.Renders,
 			symbol.FactTypeParams:       render.Renders,
 			symbol.FactMultiReturn:      render.Renders,
 			symbol.FactThrows:           render.Refuses,

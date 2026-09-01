@@ -19,9 +19,9 @@
 //   - Async is signature-visible: Promise returns project as
 //     Async, AsyncIterator as an async Stream.
 //   - The error model is Thrown.
-//   - Optionality lowers as the undefined-union spelling;
-//     interfaces are property-majority and carry fields under
-//     admit-with-empties.
+//   - Optionality spells as the ? marker on fields and
+//     parameters; interfaces are property-majority and carry
+//     fields under admit-with-empties.
 //   - Decorators read statically through the annotation rules;
 //     namespaces map into hierarchical package paths.
 //

@@ -30,7 +30,7 @@ const (
 	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
 		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
-		"  {{membermods .}}{{hard .}}{{.Name}}: {{spell .Type}}{{with .Value}} = {{.}}{{end}};" +
+		"  {{membermods .}}{{hard .}}{{propkey .}}{{if .Optional}}?{{end}}: {{spell .Type}}{{with .Value}} = {{.}}{{end}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
@@ -45,7 +45,7 @@ const (
 	// and no other keywords.
 	InterfaceTemplate = "{{docs .Doc}}{{mods .}}interface {{.Name}}" +
 		"{{typeparams .TypeParams}}{{heritage .}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{propmods .}}{{.Name}}: {{spell .Type}};" +
+		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{propmods .}}{{propkey .}}{{if .Optional}}?{{end}}: {{spell .Type}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +

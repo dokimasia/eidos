@@ -46,6 +46,9 @@ const (
 	FuncHard = "hard"
 	// FuncIndexSig writes an index signature whole.
 	FuncIndexSig = "indexsig"
+	// FuncPropKey writes a field's property key, quoted where the
+	// name is not an identifier.
+	FuncPropKey = "propkey"
 )
 
 // Anonymous is what TypeScript writes where a declaration states
@@ -71,7 +74,42 @@ func Funcs() template.FuncMap {
 		FuncAccessor:   AccessorKw,
 		FuncHard:       Hard,
 		FuncIndexSig:   IndexSig,
+		FuncPropKey:    PropKey,
 	}
+}
+
+// PropKey writes a field's property key: an identifier bare, and
+// anything else — a wire name like content-type, a digit-led key —
+// in single quotes, so the declared name reaches the type whole
+// instead of rendering invalid TypeScript. A hard-private field
+// must be an identifier, because # admits no quoted form.
+func PropKey(f *emit.Field) (string, error) {
+	if identifier(f.Name) {
+		return f.Name, nil
+	}
+	if f.Hard {
+		return "", fmt.Errorf(
+			"typescript: a hard-private name admits no quoted form, and "+
+				"%s is not an identifier", f.Name)
+	}
+	return quote(f.Name), nil
+}
+
+// identifier reports whether a name spells bare in TypeScript:
+// a letter, underscore or dollar first, those and digits after.
+func identifier(name string) bool {
+	if name == "" {
+		return false
+	}
+	for i, r := range name {
+		head := r == '_' || r == '$' ||
+			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
+		if head || (i > 0 && r >= '0' && r <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 // AccessorKw writes a method's accessor keyword and holds the
@@ -588,22 +626,43 @@ func undecorated(name string) error {
 // because TypeScript initializes no rest.
 func Params(ps []*emit.Param) (string, error) {
 	parts := make([]string, 0, len(ps))
+	unnamed := 0
 	for _, p := range ps {
 		name := p.Name
 		if name == "" {
 			name = "_"
+			if unnamed > 0 {
+				name = fmt.Sprintf("_%d", unnamed)
+			}
+			unnamed++
 		}
 		if p.Variadic != symbol.VariadicNone {
-			if p.Default != "" {
+			switch {
+			case p.Default != "":
 				return "", fmt.Errorf(
 					"typescript: a rest parameter takes no default, and %s "+
 						"states one", name,
+				)
+			case p.Optional:
+				return "", fmt.Errorf(
+					"typescript: a rest parameter is optional by shape, and "+
+						"%s states it", name,
 				)
 			}
 			parts = append(parts, "..."+name+": "+Spell(p.Type)+"[]")
 			continue
 		}
-		part := name + ": " + Spell(p.Type)
+		if p.Optional && p.Default != "" {
+			return "", fmt.Errorf(
+				"typescript: a default already makes %s optional, and it "+
+					"states the marker beside it", name,
+			)
+		}
+		part := name
+		if p.Optional {
+			part += "?"
+		}
+		part += ": " + Spell(p.Type)
 		if p.Default != "" {
 			part += " = " + p.Default
 		}
