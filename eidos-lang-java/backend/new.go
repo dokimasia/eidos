@@ -6,6 +6,7 @@ package backend
 import (
 	java "go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/java/spell"
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
@@ -13,9 +14,10 @@ import (
 // New returns the Java rendering backend: the module's declared
 // pieces composed through the kernel's kit, implementing
 // [plugin.Backend] and [plugin.Renderer] both. Rendered files
-// pass through Finalise unchanged: the module ships no Java
-// printer, and hermeticity refuses a machine-supplied one, so the
-// templates' own spelling is what reaches the stamp.
+// finalise through the shared normalizer: the module ships no
+// printer and hermeticity refuses a machine-supplied one, so the
+// templates' spelling stands, minus trailing whitespace and
+// blank-line runs.
 func New() plugin.Backend {
 	return sdk.NewBackend(java.Name, java.Target, java.Syntax()).
 		FileTemplate(FileTemplate).
@@ -28,12 +30,6 @@ func New() plugin.Backend {
 		Split(Split).
 		Scaffold(Scaffold).
 		Imports(Imports).
-		Finalise(passthrough).
+		Finalise(textfmt.Normalize).
 		Build()
-}
-
-// passthrough is the identity formatter of a module shipping no
-// printer: the rendered bytes stand as the templates spelt them.
-func passthrough(src []byte) ([]byte, error) {
-	return src, nil
 }
