@@ -70,6 +70,7 @@ var Surfaces = []Surface{
 	{Rel: "render", Name: "render"},
 	{Rel: "output", Name: "output"},
 	{Rel: "backendtest", Name: "backendtest"},
+	{Rel: "frontendtest", Name: "frontendtest"},
 	{Rel: "plugintest", Name: "plugintest"},
 }
 

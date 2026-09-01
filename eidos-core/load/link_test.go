@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/internal/fakelang"
 	"go.dokimi.dev/eidos/core/load"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -28,7 +29,7 @@ func TestLink(t *testing.T) {
 		fields := row.(*node.Struct).Fields
 
 		assert.Equal(t, fields[0].Type.Target, symbol.Identity{
-			Lang: fakeLang, Package: "svc/api", Name: "User", Kind: symbol.KindStruct,
+			Lang: fakelang.Lang, Package: "svc/api", Name: "User", Kind: symbol.KindStruct,
 		}, "a bound spelling resolves to the declaring identity")
 		assert.True(t, fields[1].Type.Target.IsZero(),
 			"a builtin keeps its spelling alone")
@@ -44,10 +45,10 @@ func TestLink(t *testing.T) {
 		}
 		g, _, sink := loadTree(t, tree)
 		holder, _ := g.Lookup(symbol.Identity{
-			Lang: fakeLang, Package: "svc/hold", Name: "Holder", Kind: symbol.KindStruct,
+			Lang: fakelang.Lang, Package: "svc/hold", Name: "Holder", Kind: symbol.KindStruct,
 		})
 		assert.Equal(t, holder.(*node.Struct).Fields[0].Type.Target, symbol.Identity{
-			Lang: fakeLang, Package: "a/left", Name: "Thing", Kind: symbol.KindStruct,
+			Lang: fakelang.Lang, Package: "a/left", Name: "Thing", Kind: symbol.KindStruct,
 		}, "the first candidate in probe order stands")
 
 		named := false

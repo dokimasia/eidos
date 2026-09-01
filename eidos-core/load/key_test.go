@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/internal/fakelang"
 	"go.dokimi.dev/eidos/core/load"
 	"go.dokimi.dev/eidos/core/plugin"
 )
@@ -83,16 +84,16 @@ func TestKeys(t *testing.T) {
 			"the same bytes at two depths key differently")
 
 		bumped := base(t, func(cfg *load.Config) {
-			f := newFake()
-			f.version = "2"
+			f := fakelang.New()
+			f.Ver = "2"
 			cfg.Frontends = []plugin.Frontend{f}
 		})
 		assert.False(t, bytes.Equal(before["svc/api/user.zz"], bumped["svc/api/user.zz"]),
 			"a declared version change re-keys")
 
 		retagged := base(t, func(cfg *load.Config) {
-			f := newFake()
-			f.opts.Tag = "moved"
+			f := fakelang.New()
+			f.Opts.Tag = "moved"
 			cfg.Frontends = []plugin.Frontend{f}
 		})
 		assert.False(t, bytes.Equal(before["svc/api/user.zz"], retagged["svc/api/user.zz"]),

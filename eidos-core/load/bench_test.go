@@ -11,6 +11,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/internal/fakelang"
 	"go.dokimi.dev/eidos/core/load"
 	"go.dokimi.dev/eidos/core/plugin"
 )
@@ -51,7 +52,7 @@ func scaledTree() fstest.MapFS {
 // number is a ceiling on driver overhead, not a frontend budget.
 func BenchmarkLoad(b *testing.B) {
 	tree := scaledTree()
-	fronts := []plugin.Frontend{newFake()}
+	fronts := []plugin.Frontend{fakelang.New()}
 
 	b.ReportAllocs()
 	b.ResetTimer()
