@@ -23,8 +23,25 @@ func TestImports(t *testing.T) {
 		set.Add("./store")
 		set.Add("node:path")
 		assert.Equal(t, backend.Imports(&set),
-			"import \"./store\";\nimport \"node:path\";\n\n",
-			"one import per path, sorted, a blank line after the block")
+			"import 'node:path';\nimport './store';\n\n",
+			"one import per path, packages before relative specifiers, "+
+				"single quotes, a blank line after the block")
+	})
+
+	t.Run("renders type-only bindings as import type", func(t *testing.T) {
+		t.Parallel()
+
+		var set render.ImportSet
+		set.AddType("./store", "Row")
+		set.AddType("./store", "Keyed")
+		set.AddType("./codec", "Codec")
+		set.AddNamed("./codec", "decode")
+		assert.Equal(t, backend.Imports(&set),
+			"import { Codec, decode } from './codec';\n"+
+				"import type { Keyed, Row } from './store';\n\n",
+			"a path bound only for the type checker imports type; one "+
+				"value binding beside a type-only one makes the whole "+
+				"import a value import")
 	})
 
 	t.Run("renders the names bound under a path", func(t *testing.T) {
@@ -36,8 +53,8 @@ func TestImports(t *testing.T) {
 		set.Add("./store")
 		set.Add("side/effect")
 		assert.Equal(t, backend.Imports(&set),
-			"import { Row, Store } from \"./store\";\n"+
-				"import \"side/effect\";\n\n",
+			"import 'side/effect';\n"+
+				"import { Row, Store } from './store';\n\n",
 			"named form covers its path, side-effect form the rest")
 	})
 
