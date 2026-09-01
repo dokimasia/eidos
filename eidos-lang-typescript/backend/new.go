@@ -4,8 +4,8 @@
 package backend
 
 import (
-	typescript "go.dokimi.dev/eidos/lang-typescript"
-	"go.dokimi.dev/eidos/lang-typescript/spell"
+	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript/spell"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )

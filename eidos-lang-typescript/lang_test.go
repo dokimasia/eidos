@@ -8,7 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	typescript "go.dokimi.dev/eidos/lang-typescript"
+	typescript "go.dokimi.dev/eidos/lang/typescript"
 )
 
 // The identity, the extension and the comment forms are what the

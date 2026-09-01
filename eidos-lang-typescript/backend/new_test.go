@@ -9,8 +9,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	typescript "go.dokimi.dev/eidos/lang-typescript"
-	"go.dokimi.dev/eidos/lang-typescript/backend"
+	typescript "go.dokimi.dev/eidos/lang/typescript"
+	"go.dokimi.dev/eidos/lang/typescript/backend"
 	"go.dokimi.dev/eidos/sdk/backendtest"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"

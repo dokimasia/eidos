@@ -7,8 +7,8 @@ import (
 	"path"
 	"strings"
 
-	typescript "go.dokimi.dev/eidos/lang-typescript"
 	"go.dokimi.dev/eidos/lang/naming"
+	typescript "go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
