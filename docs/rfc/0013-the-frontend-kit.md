@@ -93,7 +93,7 @@ type Frontend interface {
     // carries cancellation into a long parse; the old kernel
     // recorded how expensive threading it in later proved, so it
     // is in the shape from the start.
-    Parse(ctx context.Context, u *Unit) error
+    Parse(ctx context.Context, u *SourceUnit) error
 
     // Resolve says what a spelling could mean in one file's
     // recorded import scope: the candidate identities in the
@@ -136,7 +136,7 @@ say what its units are has nothing to parse.
 
 ### The unit
 
-`Unit` is kernel-owned and is the only surface a `Parse` call
+`SourceUnit` is kernel-owned and is the only surface a `Parse` call
 touches:
 
 ```go

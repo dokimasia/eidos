@@ -11,10 +11,12 @@
 // # Dependency position
 //
 // sdk/plugin imports core/plugin, sdk/diag, sdk/directive,
-// sdk/meta, sdk/store and sdk/symbol.
+// sdk/meta, sdk/store, sdk/symbol and the Go stdlib.
 package plugin
 
 import (
+	"io/fs"
+
 	core "go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/directive"
@@ -76,6 +78,49 @@ type Emit = core.Emit
 func NewEmit() *Emit {
 	return core.NewEmit()
 }
+
+// Depth says how deep one unit loads.
+//
+// Signature-only loading is the same Parse observing
+// [DepthSignatures] and skipping bodies and unexported members:
+// one code path, so a dependency package cannot drift from the
+// in-scope parse.
+type Depth = core.Depth
+
+const (
+	// DepthFull loads everything the unit's source states.
+	DepthFull = core.DepthFull
+	// DepthSignatures loads the exported shape alone: no bodies,
+	// no unexported members. The same bytes at the two depths
+	// produce two graphs and key differently.
+	DepthSignatures = core.DepthSignatures
+)
+
+// Frontend loads one language's source into the node graph. The
+// kit lowers to this role and the exotic case implements it
+// directly; either way the conformance suite holds both to the
+// same checks.
+type Frontend = core.Frontend
+
+// SourceRef names a file without opening it: the
+// workspace-relative path, and the shared inputs whose bytes fold
+// into any dependent unit's fingerprint.
+type SourceRef = core.SourceRef
+
+// FileReader is the partition's limited door: the same jailed,
+// recorded reads Parse gets, before units exist. It is not the
+// graph's [go.dokimi.dev/eidos/sdk/store.Reader], and the two
+// never meet.
+type FileReader = core.FileReader
+
+// ImportScope is what a frontend recorded at parse time for one
+// file: the file's identity, and its bindings in the language's
+// own form. The kernel stores the bindings and hands them back to
+// that language's Resolve alone, which type-asserts its own
+// shape: Go binds package aliases, TypeScript binds members with
+// rename and form, proto scopes per declaration site, and a
+// kernel that fixed one shape would fix one language's.
+type ImportScope = core.ImportScope
 
 // Index is the dispatcher's routing surface over one frozen run:
 // untracked, scope-filtered enumeration, plus the validated
@@ -367,3 +412,24 @@ type CommentSyntax = core.CommentSyntax
 // CommentBlock is one block-comment form, gutter included, so a
 // doc block's continuation lines strip and render the same way.
 type CommentBlock = core.CommentBlock
+
+// SourceUnit is one frontend compilation unit under parse: the only
+// surface a Parse call touches. Bytes enter through Read alone,
+// jailed to the unit's files and their declared shared inputs,
+// and every accepted read folds into the unit's fingerprint, so a
+// frontend cannot depend on bytes the cache does not know about.
+type SourceUnit = core.SourceUnit
+
+// NewSourceUnit assembles a unit for the load driver and the
+// conformance suite: the member files, the tree reads resolve in,
+// the depth, the language's comment syntax, and the sink findings
+// report to under the frontend's origin.
+func NewSourceUnit(files []SourceRef, fsys fs.FS, depth Depth, syntax CommentSyntax, sink *diag.Sink, origin diag.Origin) *SourceUnit {
+	return core.NewSourceUnit(files, fsys, depth, syntax, sink, origin)
+}
+
+// GraphBuilder is the unit's write handle into the node model. A
+// unit declares as many packages as its bytes do; two units
+// contributing one package path merge at the splice, declarations
+// appended in unit order.
+type GraphBuilder = core.GraphBuilder
