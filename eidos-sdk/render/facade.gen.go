@@ -69,7 +69,11 @@ type Coverer = core.Coverer
 // with, and the name it binds where the language's import form
 // binds one. A bare path leaves Name empty, which is the
 // side-effect or whole-namespace form; a bare and a named entry
-// under one path stay two entries.
+// under one path stay two entries. TypeOnly marks a binding a
+// language erases at run time — TypeScript's import type — and a
+// value binding beside a type-only one under one path makes the
+// whole import a value import, which is the renderer's join to
+// make.
 type Entry = core.Entry
 
 // ImportSet is one file's collected imports: every entry the
