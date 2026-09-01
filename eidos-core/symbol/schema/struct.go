@@ -62,7 +62,7 @@ type Struct struct {
 	Extends     []*TypeRef        `eidos:"both,walk,fact=Extends"`          // nominal supertypes
 	Implements  []*TypeRef        `eidos:"both,walk,fact=Implements"`
 	Permits     []*TypeRef        `eidos:"both,walk,fact=Permits"` // the enumerated subtypes
-	Annotations Annotations       `eidos:"emit,fact=Annotations"`
+	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
 }
 
 // Interface is a shape values are checked against: a Go or Java
@@ -104,7 +104,7 @@ type Interface struct {
 	Embeds      []*Embed          `eidos:"both,walk,fact=Embeds"`
 	Extends     []*TypeRef        `eidos:"both,walk,fact=Extends"`
 	Permits     []*TypeRef        `eidos:"both,walk,fact=Permits"` // the enumerated subtypes
-	Annotations Annotations       `eidos:"emit,fact=Annotations"`
+	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
 }
 
 // Alias is a name for another type: a Go type alias or defined
@@ -133,5 +133,5 @@ type Alias struct {
 	Defined     bool              `eidos:"both,fact=Defined"` // a distinct type, not a transparent alias
 	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
 	Target      *TypeRef          `eidos:"both,walk"` // nil for an associated type
-	Annotations Annotations       `eidos:"emit,fact=Annotations"`
+	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
 }

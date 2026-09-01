@@ -159,15 +159,14 @@ func collect(fset *token.FileSet, files []*ast.File) ([]declaration, error) {
 					return nil, at(fset, spec.Pos(), "a schema declares types only")
 				}
 				if typeSpec.Name.Name == MarkerName ||
-					typeSpec.Name.Name == BodyMarkerName ||
-					typeSpec.Name.Name == AnnotationsMarkerName {
+					typeSpec.Name.Name == BodyMarkerName {
 					continue
 				}
 				structType, ok := typeSpec.Type.(*ast.StructType)
 				if !ok || typeSpec.Assign.IsValid() {
 					return nil, at(fset, typeSpec.Pos(),
-						"%s is not a struct: a schema declares kinds and the %s, %s and %s markers only",
-						typeSpec.Name.Name, MarkerName, BodyMarkerName, AnnotationsMarkerName)
+						"%s is not a struct: a schema declares kinds and the %s and %s markers only",
+						typeSpec.Name.Name, MarkerName, BodyMarkerName)
 				}
 				if !typeSpec.Name.IsExported() {
 					return nil, at(fset, typeSpec.Pos(),

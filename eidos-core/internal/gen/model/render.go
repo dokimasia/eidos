@@ -342,10 +342,10 @@ func factStated(field FieldSpec, f fieldView) string {
 		return f.selector()
 	case field.Type == "string":
 		return f.selector() + ` != ""`
+	case field.Type == annotationsType:
+		return "len(" + f.selector() + ") > 0"
 	case strings.HasPrefix(field.Type, symbolQualifier):
 		return f.selector() + " != 0"
-	case field.Type == AnnotationsMarkerName:
-		return "len(" + f.selector() + ") > 0"
 	case field.Slice:
 		return f.Len + " > 0"
 	case f.Pointer:
@@ -365,10 +365,10 @@ func factSetter(field FieldSpec, f fieldView, receiver, enclosing string) string
 		return target + " = true"
 	case field.Type == "string":
 		return target + ` = "x"`
+	case field.Type == annotationsType:
+		return target + " = " + annotationsType + "{{}}"
 	case strings.HasPrefix(field.Type, symbolQualifier):
 		return target + " = 1"
-	case field.Type == AnnotationsMarkerName:
-		return target + " = " + AnnotationsMarkerName + "{{}}"
 	case field.Slice:
 		if f.Accessor != "" {
 			elem := field.Elem

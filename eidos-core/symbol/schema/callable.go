@@ -40,7 +40,7 @@ type Function struct {
 	Params      []*Param          `eidos:"both,walk"`
 	Returns     []*Return         `eidos:"both,walk,fact=MultiReturn"`
 	Throws      []*TypeRef        `eidos:"both,walk,fact=Throws"`
-	Annotations Annotations       `eidos:"emit,fact=Annotations"`
+	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
 	Body        Body              `eidos:"emit"`
 }
 
@@ -102,7 +102,7 @@ type Method struct {
 	Params      []*Param          `eidos:"both,walk"`
 	Returns     []*Return         `eidos:"both,walk,fact=MultiReturn"`
 	Throws      []*TypeRef        `eidos:"both,walk,fact=Throws"`
-	Annotations Annotations       `eidos:"emit,fact=Annotations"`
+	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
 	Body        Body              `eidos:"emit"`
 	Host        symbol.Identity   `eidos:"node"`
 }
@@ -134,7 +134,7 @@ type Param struct {
 	Default     string          `eidos:"both,fact=ParamDefault"` // source spelling, unevaluated; "" when none
 	Optional    bool            `eidos:"both,fact=Optional"`     // present-or-absent: TypeScript's ?, Swift's defaulted trailing
 	Variadic    symbol.Variadic `eidos:"both,fact=Variadic"`     // positional or keyword
-	Annotations Annotations     `eidos:"emit,fact=Annotations"`
+	Annotations symbol.Annotations     `eidos:"both,fact=Annotations"`
 }
 
 // Return is one result of a callable.

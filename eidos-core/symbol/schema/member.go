@@ -41,7 +41,7 @@ type Field struct {
 	Type        *TypeRef          `eidos:"both,walk"`
 	Value       string            `eidos:"both,fact=Value"` // initializer's source spelling, unevaluated; "" when none
 	Tag         string            `eidos:"both,fact=Tag"`   // tag text without delimiters, "" when none; a later plugin reshapes it through OnEmit
-	Annotations Annotations       `eidos:"emit,fact=Annotations"`
+	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
 	Host        symbol.Identity   `eidos:"node"`
 }
 
@@ -70,7 +70,7 @@ type Variable struct {
 	Mutability  symbol.Mutability `eidos:"both,fact=Mutability"`
 	Type        *TypeRef          `eidos:"both,walk"`       // nil when the source states none
 	Value       string            `eidos:"both,fact=Value"` // initializer's source spelling, unevaluated; "" when none
-	Annotations Annotations       `eidos:"emit,fact=Annotations"`
+	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
 }
 
 // Constant is a binding fixed at compile time: a Go const, a Java
@@ -93,5 +93,5 @@ type Constant struct {
 	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
 	Type        *TypeRef          `eidos:"both,walk"` // nil when untyped
 	Value       string            `eidos:"both"`      // source spelling, unevaluated
-	Annotations Annotations       `eidos:"emit,fact=Annotations"`
+	Annotations symbol.Annotations       `eidos:"both,fact=Annotations"`
 }

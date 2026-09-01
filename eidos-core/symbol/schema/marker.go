@@ -24,15 +24,3 @@ type Symbol any
 // read by name.
 type Body any
 
-// Annotations marks a field that holds the structured markers a
-// generated declaration writes: Java annotations, Rust attributes,
-// TypeScript and Python decorators, C# attributes.
-//
-// The generator carries the field through to the emit model, where
-// the spelling resolves to that package's own Annotations value.
-// The node model never sees the field, because a source
-// declaration's annotations are lifted into the frontend's own
-// metadata namespace, where authority and overrides apply; a
-// generated declaration has no metadata bag, so what it must carry
-// rides the model. Like [Symbol], it is a marker read by name.
-type Annotations any

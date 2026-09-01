@@ -81,7 +81,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Function{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindFunction, "under its kind")
@@ -235,7 +235,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Method{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindMethod, "under its kind")
@@ -299,7 +299,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Param{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindParam, "under its kind")
@@ -367,7 +367,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Enum{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindEnum, "under its kind")
@@ -404,7 +404,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &EnumVariant{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindEnumVariant, "under its kind")
@@ -447,7 +447,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Sum{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindSum, "under its kind")
@@ -457,7 +457,7 @@ func TestFacts(t *testing.T) {
 		{
 			subject := &Sum{}
 			child := &SumVariant{}
-			child.Annotations = Annotations{{}}
+			child.Annotations = symbol.Annotations{{}}
 			subject.VariantsSlot().Append(child)
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the child's fact arrives")
@@ -475,7 +475,7 @@ func TestFacts(t *testing.T) {
 		assert.Length(t, none, 0, "a zero declaration states nothing")
 		{
 			subject := &SumVariant{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindSumVariant, "under its kind")
@@ -575,7 +575,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Field{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindField, "under its kind")
@@ -627,7 +627,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Variable{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindVariable, "under its kind")
@@ -661,7 +661,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Constant{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindConstant, "under its kind")
@@ -776,7 +776,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Struct{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindStruct, "under its kind")
@@ -876,7 +876,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Interface{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindInterface, "under its kind")
@@ -931,7 +931,7 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Alias{}
-			subject.Annotations = Annotations{{}}
+			subject.Annotations = symbol.Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindAlias, "under its kind")
