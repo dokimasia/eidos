@@ -48,6 +48,7 @@ func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 	report := &Report{Sink: sink, Facts: facts, Emits: map[string]*plugin.Emit{}}
 
 	table := w.validated(g, sink)
+	applyStamps(g, facts, sink)
 	if err := w.applyDrops(table, facts); err != nil {
 		return report, errors.Join(err, failure(sink))
 	}
@@ -111,6 +112,30 @@ func (w *Workspace) validated(
 		}
 	}
 	return table
+}
+
+// applyStamps replays the load's classification stamps into the
+// fact store at plugin authority, before any drop or annotator
+// runs. Rank decides every winner, so a directive-authority drop
+// still beats a stamp whichever applied first; the order here
+// exists for the findings, not the outcome. A refusal reports
+// under the fact store's own code at the stamp's position, and the
+// frame continues.
+func applyStamps(g *store.Graph, facts *meta.Facts, sink *diag.Sink) {
+	for id, stamps := range g.Stamps() {
+		for i, s := range stamps {
+			claim := meta.Claim{
+				Subject:   id,
+				Authority: meta.AuthorityPlugin,
+				Plugin:    s.Origin,
+				Seq:       i,
+				Pos:       s.Pos,
+			}
+			if err := facts.StampRaw(s, claim); err != nil {
+				sink.Errorf(meta.RefusedStamp, s.Pos, s.Origin, "%v", err)
+			}
+		}
+	}
 }
 
 // applyDrops applies every validated meta instance's drop before

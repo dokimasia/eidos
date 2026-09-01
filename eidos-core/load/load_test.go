@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/load"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
@@ -136,6 +137,27 @@ func TestLoad(t *testing.T) {
 		assert.Length(t, raws, 1, "the carrier's instance is attached")
 		assert.Equal(t, raws[0].Name, directive.Name("gen:table"), "under its spelling")
 		assert.Equal(t, raws[0].Args[0].Key, "name", "arguments parsed")
+	})
+
+	t.Run("carries classification stamps to the store", func(t *testing.T) {
+		t.Parallel()
+
+		tree := fstest.MapFS{
+			"svc/api/user_test.zz": {Data: []byte(
+				"package svc/api\nstamp fake.testFile yes\ntype UserTest string\n",
+			)},
+		}
+		g, _, _ := loadTree(t, tree)
+		file := symbol.Identity{
+			Lang: fakeLang, Package: "svc/api", Name: "svc/api/user_test.zz",
+			Kind: symbol.KindFile,
+		}
+		stamps := g.StampsOf(file)
+		assert.Length(t, stamps, 1, "the classifier's stamp is carried")
+		assert.Equal(t, stamps[0].Key, meta.KeyName("fake.testFile"), "under its key")
+		assert.Equal(t, stamps[0].Value.(string), "yes", "with its value")
+		assert.Equal(t, stamps[0].Origin, diag.Origin("fakefront"),
+			"the origin is the kernel's fill, not the frontend's word")
 	})
 
 	t.Run("keeps the first of two declarations spelling one identity", func(t *testing.T) {

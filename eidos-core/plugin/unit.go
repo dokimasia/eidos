@@ -12,6 +12,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -216,6 +217,7 @@ type GraphBuilder struct {
 	order       []string
 	scopes      []ScopeRecord
 	attachments []Attachment
+	stamps      []StampRecord
 }
 
 // ScopeRecord pairs one parsed file with its import bindings, in
@@ -237,6 +239,16 @@ type ScopeRecord struct {
 type Attachment struct {
 	Subject symbol.Symbol
 	Raw     directive.Raw
+}
+
+// StampRecord is one classification stamp on a declaration this
+// unit built: the second raw attachment class, resolved at the
+// splice the way [Attachment] is. The stamp's origin is the
+// kernel's to fill there — a frontend's own value is overwritten,
+// so a stamp cannot speak for another plugin.
+type StampRecord struct {
+	Subject symbol.Symbol
+	Stamp   meta.RawStamp
 }
 
 // newGraphBuilder returns an empty builder; the unit owns it.
@@ -279,6 +291,17 @@ func (gb *GraphBuilder) Attach(subject symbol.Symbol, raw directive.Raw) {
 	gb.attachments = append(gb.attachments, Attachment{Subject: subject, Raw: raw})
 }
 
+// Stamp records one classification stamp on a declaration this
+// unit built: what a classifier saw, bound for the fact store at
+// plugin authority once the run's registry is in hand. A nil
+// subject is a frontend defect and panics.
+func (gb *GraphBuilder) Stamp(subject symbol.Symbol, s meta.RawStamp) {
+	if subject == nil {
+		panic("plugin: a stamp on a nil subject indexes nowhere")
+	}
+	gb.stamps = append(gb.stamps, StampRecord{Subject: subject, Stamp: s})
+}
+
 // Packages returns the unit's packages in first-touch order: what
 // the splice appends, deterministically, because partition order
 // fixed the touches.
@@ -296,3 +319,6 @@ func (gb *GraphBuilder) Scopes() []ScopeRecord { return gb.scopes }
 
 // Attachments returns the recorded attachments, in record order.
 func (gb *GraphBuilder) Attachments() []Attachment { return gb.attachments }
+
+// StampRecords returns the recorded stamps, in record order.
+func (gb *GraphBuilder) StampRecords() []StampRecord { return gb.stamps }

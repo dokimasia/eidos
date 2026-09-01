@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
@@ -25,6 +26,7 @@ import (
 //	method NAME REF...    a method on the last type, params by ref
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
+//	stamp KEY VALUE       a classification stamp on the file
 const fakeLang symbol.Lang = "fake"
 
 // fakeBadFile is the fake frontend's one finding: a file with no
@@ -154,6 +156,10 @@ func (*fake) parseFile(u *plugin.SourceUnit, filePath, content string) {
 				continue
 			}
 			file.Decls = append(file.Decls, &node.Constant{Name: fields[1], Value: "0", Pos: at})
+		case fields[0] == "stamp" && len(fields) == 3:
+			gb.Stamp(file, meta.RawStamp{
+				Key: meta.KeyName(fields[1]), Value: fields[2], Pos: at,
+			})
 		case strings.HasPrefix(fields[0], "+") && last != nil:
 			raw, err := directive.Parse(strings.TrimPrefix(strings.TrimSpace(line), "+"))
 			if err != nil {

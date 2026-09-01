@@ -12,6 +12,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -127,7 +128,13 @@ func TestSourceUnit(t *testing.T) {
 		assert.True(t, attached[0].Subject == symbol.Symbol(row), "on its subject")
 		assert.Equal(t, attached[0].Raw.Name, directive.Name("gen:table"), "carrying the instance")
 
+		gb.Stamp(file, meta.RawStamp{Key: "fake.testFile", Value: true})
+		stamps := gb.StampRecords()
+		assert.Length(t, stamps, 1, "the stamp is kept")
+		assert.True(t, stamps[0].Subject == symbol.Symbol(file), "on its subject")
+
 		assert.Panics(t, func() { gb.Scope(nil, nil) }, "a nil file is a defect")
 		assert.Panics(t, func() { gb.Attach(nil, directive.Raw{}) }, "a nil subject is a defect")
+		assert.Panics(t, func() { gb.Stamp(nil, meta.RawStamp{}) }, "a nil stamp subject is a defect")
 	})
 }

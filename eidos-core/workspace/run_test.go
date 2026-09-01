@@ -159,6 +159,49 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, units(report.Emits["plan"]), "so the flag gates nothing")
 	})
 
+	t.Run("a load stamp applies at plugin authority", func(t *testing.T) {
+		t.Parallel()
+
+		b, flag := flagged()
+		w, err := b.Build()
+		assert.NoError(t, err, "the keyed composition composes")
+		g, s := alpha(t)
+		pkg := symbol.Identity{
+			Lang: s.Identity().Lang, Package: s.Identity().Package, Kind: symbol.KindPackage,
+		}
+		assert.NoError(t, g.AttachStamps(pkg, []meta.RawStamp{{
+			Key: "shape.flag", Value: true,
+			Pos:    position.Pos{File: "alpha.go", Line: 1},
+			Origin: "fakefront",
+		}}), "the raw stamp attaches before the seal")
+
+		report, err := w.Run(t.Context(), g)
+		assert.NoError(t, err, "the run is clean")
+		v, held := meta.Get(report.Facts, pkg, *flag)
+		assert.True(t, held && v,
+			"the load's classification reads back through the typed handle")
+	})
+
+	t.Run("a refused stamp reports and the frame continues", func(t *testing.T) {
+		t.Parallel()
+
+		b, _ := flagged()
+		w, err := b.Build()
+		assert.NoError(t, err, "the keyed composition composes")
+		g, s := alpha(t)
+		assert.NoError(t, g.AttachStamps(s.Identity(), []meta.RawStamp{{
+			Key: "shape.ghost", Value: true,
+			Pos:    position.Pos{File: "alpha.go", Line: 2},
+			Origin: "fakefront",
+		}}), "the stray stamp attaches")
+
+		report, err := w.Run(t.Context(), g)
+		assert.ErrorIs(t, err, workspace.ErrRunFailed, "an Error finding fails the run")
+		assert.Contains(t, codesOf(report.Sink), meta.RefusedStamp,
+			"under the fact store's refusal code")
+		assert.Length(t, units(report.Emits["plan"]), 1, "and the frame still ran whole")
+	})
+
 	t.Run("a rejected instance never gates and fails the run", func(t *testing.T) {
 		t.Parallel()
 

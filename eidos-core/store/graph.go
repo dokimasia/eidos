@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -85,6 +86,12 @@ type Graph struct {
 	directives     map[symbol.Identity][]directive.Raw
 	directiveOrder []symbol.Identity
 	byDirective    map[directive.Name][]node.Declaration
+
+	// stamped holds raw classification stamps per subject as they
+	// arrive; the seal sorts them the way it sorts directives.
+	stamped    sync.Map
+	stamps     map[symbol.Identity][]meta.RawStamp
+	stampOrder []symbol.Identity
 }
 
 // New returns an unfrozen graph holding nothing.
@@ -191,6 +198,7 @@ func (g *Graph) Freeze() {
 	fill.Wait()
 
 	g.freezeDirectives()
+	g.freezeStamps()
 
 	// The collected slices are spent: the indexes hold everything.
 	for _, entry := range loaded {

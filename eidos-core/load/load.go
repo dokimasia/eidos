@@ -18,6 +18,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
@@ -138,7 +139,7 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 		}
 	}
 
-	packages, scopes, attachments := splice(units, cfg.Sink)
+	packages, scopes, attachments, stamps := splice(units, cfg.Sink)
 	ix := assign(packages, cfg.Sink)
 	link(packages, scopes, ix, cfg.Sink)
 
@@ -149,6 +150,9 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 		}
 	}
 	if err := attach(g, attachments, ix); err != nil {
+		return nil, nil, err
+	}
+	if err := attachStamps(g, stamps, ix); err != nil {
 		return nil, nil, err
 	}
 	g.Freeze()
@@ -420,11 +424,18 @@ type attachEntry struct {
 	origin  diag.Origin
 }
 
+// stampEntry is one recorded classification stamp, its origin
+// already the kernel's.
+type stampEntry struct {
+	subject symbol.Symbol
+	stamp   meta.RawStamp
+}
+
 // splice merges the unit graphs in unit order. Two units
 // contributing one language-and-path merge into one package, files
 // appended in unit order; the scope and attachment records carry
 // through with their frontends.
-func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachEntry) {
+func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachEntry, []stampEntry) {
 	type mergeKey struct {
 		lang symbol.Lang
 		path string
@@ -434,6 +445,7 @@ func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachE
 		packages    []*spliced
 		scopes      []scopeEntry
 		attachments []attachEntry
+		stamps      []stampEntry
 	)
 	for _, u := range units {
 		lang := u.frontend.Lang()
@@ -465,8 +477,14 @@ func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachE
 		for _, a := range gb.Attachments() {
 			attachments = append(attachments, attachEntry{subject: a.Subject, raw: a.Raw, origin: origin})
 		}
+		for _, s := range gb.StampRecords() {
+			// The origin is the kernel's to fill: a stamp cannot
+			// speak for another plugin.
+			s.Stamp.Origin = origin
+			stamps = append(stamps, stampEntry{subject: s.Subject, stamp: s.Stamp})
+		}
 	}
-	return packages, scopes, attachments
+	return packages, scopes, attachments, stamps
 }
 
 // attach records every attachment on its assigned identity. A
@@ -491,6 +509,32 @@ func attach(g *store.Graph, attachments []attachEntry, ix *index) error {
 	}
 	for _, id := range order {
 		if err := g.AttachDirectives(id, byID[id]); err != nil {
+			return fmt.Errorf("load: %w", err)
+		}
+	}
+	return nil
+}
+
+// attachStamps records every classification stamp on its assigned
+// identity, resolving subjects the way [attach] does.
+func attachStamps(g *store.Graph, stamps []stampEntry, ix *index) error {
+	byID := map[symbol.Identity][]meta.RawStamp{}
+	var order []symbol.Identity
+	for _, e := range stamps {
+		id := subjectIdentity(e.subject, ix)
+		if id.IsZero() {
+			panic(fmt.Sprintf(
+				"load: %s stamped a %s the resolution step never identified",
+				e.stamp.Origin, e.subject.Kind(),
+			))
+		}
+		if _, met := byID[id]; !met {
+			order = append(order, id)
+		}
+		byID[id] = append(byID[id], e.stamp)
+	}
+	for _, id := range order {
+		if err := g.AttachStamps(id, byID[id]); err != nil {
 			return fmt.Errorf("load: %w", err)
 		}
 	}
