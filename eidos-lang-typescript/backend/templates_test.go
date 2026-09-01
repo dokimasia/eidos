@@ -203,7 +203,7 @@ func TestTemplates(t *testing.T) {
 		s := &emit.Struct{
 			Name:        "Row",
 			Abstract:    true,
-			Annotations: emit.Annotations{{Name: "injectable"}},
+			Annotations: symbol.Annotations{{Name: "injectable"}},
 		}
 		s.Fields.Append(&emit.Field{
 			Name:       "key",

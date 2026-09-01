@@ -159,7 +159,7 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "a protected module-level scope refuses")
 		_, err = backend.Mods(&emit.Function{
 			Name:        "load",
-			Annotations: emit.Annotations{{Name: "log"}},
+			Annotations: symbol.Annotations{{Name: "log"}},
 		})
 		assert.HasError(t, err, "decorators mark classes and members alone")
 	})
@@ -334,7 +334,7 @@ func TestVocabulary(t *testing.T) {
 		t.Parallel()
 
 		assert.Equal(t, backend.Decorators(nil), "", "no annotations, no lines")
-		assert.Equal(t, backend.Decorators(emit.Annotations{
+		assert.Equal(t, backend.Decorators(symbol.Annotations{
 			{Name: "injectable"},
 			{Name: "route", Args: []string{`"/rows"`, "true"}},
 		}, "  "),

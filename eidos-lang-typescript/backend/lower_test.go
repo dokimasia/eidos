@@ -120,13 +120,13 @@ func TestLower(t *testing.T) {
 		assert.HasError(t, err, "a union joins at least one variant")
 
 		decorated := sumOf()
-		decorated.Annotations = emit.Annotations{{Name: "injectable"}}
+		decorated.Annotations = symbol.Annotations{{Name: "injectable"}}
 		_, err = backend.Lower(decorated)
 		assert.HasError(t, err, "decorators apply to classes")
 
 		decoratedVariant := sumOf()
 		first := decoratedVariant.Variants.Items()[0]
-		first.Annotations = emit.Annotations{{Name: "injectable"}}
+		first.Annotations = symbol.Annotations{{Name: "injectable"}}
 		_, err = backend.Lower(decoratedVariant)
 		assert.HasError(t, err, "on a variant too")
 
