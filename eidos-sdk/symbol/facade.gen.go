@@ -38,6 +38,7 @@ const (
 	FactHardPrivate      = core.FactHardPrivate
 	FactLabel            = core.FactLabel
 	FactParamDefault     = core.FactParamDefault
+	FactOptional         = core.FactOptional
 	FactVariadic         = core.FactVariadic
 	FactNamedReturn      = core.FactNamedReturn
 	FactConstEnum        = core.FactConstEnum
