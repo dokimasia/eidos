@@ -20,6 +20,7 @@ func New() plugin.Backend {
 	return eidos.NewBackend(java.Name, java.Target, java.Syntax()).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
+		Coverage(Coverage()).
 		Funcs(Funcs()).
 		Naming(spell.Filename).
 		Respell(spell.Name).

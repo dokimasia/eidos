@@ -33,7 +33,8 @@ const (
 	StructTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 		"{{typemods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
-		"    {{fieldmods .}}{{spell .Type}} {{.Name}}{{with .Value}} = {{.}}{{end}};\n" +
+		"    {{fieldmods .}}{{spell .Type}} {{.Name}}{{with .Value}} = {{.}}{{end}};" +
+		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
 		"{{if .Override}}    @Override\n{{end}}" +
@@ -70,7 +71,8 @@ const EnumTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 	"{{- end}}" +
 	"{{- if or .Fields.Len .Methods.Len}}\n    ;{{end}}" +
 	"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
-	"    {{fieldmods .}}{{spell .Type}} {{.Name}}{{with .Value}} = {{.}}{{end}};\n" +
+	"    {{fieldmods .}}{{spell .Type}} {{.Name}}{{with .Value}} = {{.}}{{end}};" +
+	"{{with .Comment}} // {{.}}{{end}}\n" +
 	"{{- end}}" +
 	"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
 	"{{if .Override}}    @Override\n{{end}}" +

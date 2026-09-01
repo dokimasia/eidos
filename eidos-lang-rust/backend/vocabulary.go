@@ -279,10 +279,10 @@ func SumPayload(v *emit.SumVariant) (string, error) {
 // variant's own line.
 func inlineEntry(variant string, f *emit.Field) error {
 	switch {
-	case len(f.Doc) > 0 || len(f.Annotations) > 0:
+	case len(f.Doc) > 0 || f.Comment != "" || len(f.Annotations) > 0:
 		return fmt.Errorf(
 			"rust: a payload entry spells inline, and one in %s states "+
-				"documentation or attributes", variant)
+				"documentation, a comment or attributes", variant)
 	case f.Visibility != symbol.VisibilityUnknown:
 		return fmt.Errorf(
 			"rust: a payload follows its enum's visibility, and an entry in "+

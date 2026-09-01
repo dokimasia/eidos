@@ -68,6 +68,10 @@ func TestTemplates(t *testing.T) {
 			Doc: []string{"Key addresses the row."}, Name: "key",
 			Type: &emit.TypeRef{Spelling: "String"},
 		})
+		s.Fields.Append(&emit.Field{
+			Name: "count", Type: &emit.TypeRef{Spelling: "int"},
+			Comment: "rows per call",
+		})
 		s.Methods.Append(&emit.Method{
 			Name:    "load",
 			Params:  []*emit.Param{{Name: "key", Type: &emit.TypeRef{Spelling: "String"}}},
@@ -80,11 +84,13 @@ func TestTemplates(t *testing.T) {
 				"public class Row {\n"+
 				"    /**\n     * Key addresses the row.\n     */\n"+
 				"    public String key;\n"+
+				"    public int count; // rows per call\n"+
 				"    public Row load(String key) {\n"+
 				"        body();\n"+
 				"    }\n"+
 				"}\n",
-			"members public at member depth, docs indented whole")
+			"members public at member depth, docs indented whole, a "+
+				"trailing comment behind its semicolon")
 	})
 
 	t.Run("interface carries signatures alone", func(t *testing.T) {

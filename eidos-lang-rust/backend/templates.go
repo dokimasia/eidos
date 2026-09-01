@@ -29,7 +29,7 @@ const (
 	StructTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{structmods .}}struct {{.Name}}{{typeparams .TypeParams}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
-		"    {{fieldmods .}}{{.Name}}: {{spell .Type}},\n" +
+		"    {{fieldmods .}}{{.Name}}: {{spell .Type}},{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n"
 
 	// InterfaceTemplate spells a trait, its visibility and type
@@ -80,11 +80,13 @@ const (
 		"{{aliasmods .}}type {{.Name}}{{typeparams .TypeParams}}" +
 		" = {{spell .Target}};\n"
 
-	// ConstantTemplate spells a constant. Rust states a constant's
-	// type always, so a declaration stating none reaches the unit
-	// type and the compiler's refusal names the file.
+	// ConstantTemplate spells a constant, its trailing comment
+	// behind the semicolon. Rust states a constant's type always,
+	// so a declaration stating none reaches the unit type and the
+	// compiler's refusal names the file.
 	ConstantTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
-		"{{vis .Visibility .Name}}const {{.Name}}: {{spell .Type}} = {{.Value}};\n"
+		"{{vis .Visibility .Name}}const {{.Name}}: {{spell .Type}} = {{.Value}};" +
+		"{{with .Comment}} // {{.}}{{end}}\n"
 )
 
 // KindTemplates maps each emit kind to the template that spells

@@ -30,7 +30,8 @@ const (
 	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
 		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
-		"  {{membermods .}}{{.Name}}: {{spell .Type}}{{with .Value}} = {{.}}{{end}};\n" +
+		"  {{membermods .}}{{.Name}}: {{spell .Type}}{{with .Value}} = {{.}}{{end}};" +
+		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
 		"  {{membermods .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}}" +
@@ -43,7 +44,8 @@ const (
 	// and no other keywords.
 	InterfaceTemplate = "{{docs .Doc}}{{mods .}}interface {{.Name}}" +
 		"{{typeparams .TypeParams}}{{heritage .}} {\n" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{propmods .}}{{.Name}}: {{spell .Type}};\n" +
+		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{propmods .}}{{.Name}}: {{spell .Type}};" +
+		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
 		"  {{sigmods .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};\n" +
@@ -69,15 +71,19 @@ const (
 		"{{- end}}\n}\n"
 
 	// ConstantTemplate spells a constant, typed where the
-	// declaration states a type.
+	// declaration states a type, its trailing comment behind the
+	// semicolon.
 	ConstantTemplate = "{{docs .Doc}}{{mods .}}const {{.Name}}" +
-		"{{with .Type}}: {{spell .}}{{end}} = {{.Value}};\n"
+		"{{with .Type}}: {{spell .}}{{end}} = {{.Value}};" +
+		"{{with .Comment}} // {{.}}{{end}}\n"
 
 	// VariableTemplate spells a module-level binding: const where
 	// the declaration is immutable, let otherwise, its
-	// initializer behind an equals sign where one is stated.
+	// initializer behind an equals sign where one is stated, its
+	// trailing comment behind the semicolon.
 	VariableTemplate = "{{docs .Doc}}{{mods .}}{{binding .}} {{.Name}}" +
-		"{{with .Type}}: {{spell .}}{{end}}{{with .Value}} = {{.}}{{end}};\n"
+		"{{with .Type}}: {{spell .}}{{end}}{{with .Value}} = {{.}}{{end}};" +
+		"{{with .Comment}} // {{.}}{{end}}\n"
 )
 
 // KindTemplates maps each emit kind to the template that spells

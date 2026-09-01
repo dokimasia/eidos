@@ -101,6 +101,13 @@ func TestTemplates(t *testing.T) {
 				&emit.Constant{Name: "MAX", Type: ref("number"), Value: "10"}),
 			"export const MAX: number = 10;\n", "a typed constant")
 		assert.Equal(t,
+			execute(t, backend.ConstantTemplate, &emit.Constant{
+				Name: "MAX", Type: ref("number"), Value: "10",
+				Comment: "rows per call",
+			}),
+			"export const MAX: number = 10; // rows per call\n",
+			"a trailing comment behind the semicolon")
+		assert.Equal(t,
 			execute(t, backend.VariableTemplate, &emit.Variable{Name: "count"}),
 			"export let count;\n", "an untyped binding stays untyped")
 	})

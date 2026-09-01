@@ -20,6 +20,7 @@ func New() plugin.Backend {
 	return eidos.NewBackend(rust.Name, rust.Target, rust.Syntax()).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
+		Coverage(Coverage()).
 		Funcs(Funcs()).
 		Naming(spell.Filename).
 		Respell(spell.Name).

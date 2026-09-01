@@ -22,6 +22,7 @@ func New() plugin.Backend {
 	return eidos.NewBackend(golang.Name, golang.Target, golang.Syntax()).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
+		Coverage(Coverage()).
 		Funcs(Funcs()).
 		Naming(spell.Filename).
 		Respell(spell.Name).

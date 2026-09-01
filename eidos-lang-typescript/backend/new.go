@@ -20,6 +20,7 @@ func New() plugin.Backend {
 	return eidos.NewBackend(typescript.Name, typescript.Target, typescript.Syntax()).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
+		Coverage(Coverage()).
 		Funcs(Funcs()).
 		Naming(spell.Filename).
 		Respell(spell.Name).

@@ -63,13 +63,18 @@ func TestTemplates(t *testing.T) {
 		s.Fields.Append(&emit.Field{
 			Doc: []string{"Key addresses the row."}, Name: "key", Type: ref("String"),
 		})
+		s.Fields.Append(&emit.Field{
+			Name: "count", Type: ref("u32"), Comment: "rows per call",
+		})
 		assert.Equal(t, execute(t, backend.StructTemplate, s),
 			"/// Row is one record.\n"+
 				"pub struct Row {\n"+
 				"    /// Key addresses the row.\n"+
 				"    pub key: String,\n"+
+				"    pub count: u32, // rows per call\n"+
 				"}\n",
-			"fields public with trailing commas, docs at field depth")
+			"fields public with trailing commas, docs at field depth, "+
+				"a trailing comment behind its comma")
 	})
 
 	t.Run("trait takes the receiver by reference", func(t *testing.T) {
