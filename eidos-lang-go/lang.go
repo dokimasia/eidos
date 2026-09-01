@@ -16,6 +16,10 @@ const Name plugin.ID = "golang"
 // Extension is the suffix every Go file carries.
 const Extension = ".go"
 
+// Version is the backend's behavior version, folded into the run
+// fingerprint: bump it with any change to the rendered output.
+const Version = "0.1.0"
+
 // Syntax is Go's comment forms, declared once and shared: the
 // frontend strips comments with it, and the output contract writes
 // the generated-file frame through it.

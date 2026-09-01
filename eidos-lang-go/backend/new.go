@@ -20,6 +20,7 @@ import (
 // remain are the bytes gofmt leaves.
 func New() plugin.Backend {
 	return sdk.NewBackend(golang.Name, golang.Target, golang.Syntax()).
+		Version(golang.Version).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
 		Coverage(Coverage()).
