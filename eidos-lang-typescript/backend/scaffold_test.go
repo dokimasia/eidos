@@ -8,8 +8,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/lang-typescript/backend"
+	"go.dokimi.dev/eidos/sdk/emit"
 )
 
 // nameOf and callOf are the fixture expression spellings.

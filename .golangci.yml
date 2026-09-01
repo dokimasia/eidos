@@ -18,6 +18,7 @@ linters:
   enable:
     # Correctness
     - copyloopvar
+    - depguard
     - durationcheck
     - errcheck
     - errorlint
@@ -55,6 +56,28 @@ linters:
     - usetesting
 
   settings:
+    depguard:
+      rules:
+        # Plugin modules speak the facade alone (RFC-0012); the
+        # kernel arrives transitively through go.dokimi.dev/eidos/sdk.
+        # eidos-reference stays out: a reference composition is host
+        # side and composes the workspace, which the facade does not
+        # re-export.
+        plugin-modules:
+          files:
+            - "**/eidos-lang/**"
+            - "**/eidos-lang-go/**"
+            - "**/eidos-lang-java/**"
+            - "**/eidos-lang-kotlin/**"
+            - "**/eidos-lang-php/**"
+            - "**/eidos-lang-protobuf/**"
+            - "**/eidos-lang-rust/**"
+            - "**/eidos-lang-typescript/**"
+            - "**/eidos-plugin-shape/**"
+          deny:
+            - pkg: go.dokimi.dev/eidos/core
+              desc: plugin source speaks the facade; import go.dokimi.dev/eidos/sdk instead
+
     funcorder:
       constructor: true
       struct-method: true

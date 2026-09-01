@@ -8,10 +8,10 @@ import (
 	"strconv"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/emit"
-	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/lang-typescript/spell"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // discriminant is the property every lowered variant interface

@@ -4,10 +4,10 @@
 package backend
 
 import (
-	eidos "go.dokimi.dev/eidos/core"
-	"go.dokimi.dev/eidos/core/plugin"
 	typescript "go.dokimi.dev/eidos/lang-typescript"
 	"go.dokimi.dev/eidos/lang-typescript/spell"
+	"go.dokimi.dev/eidos/sdk"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // New returns the TypeScript rendering backend: the module's
@@ -17,7 +17,7 @@ import (
 // printer, and hermeticity refuses a machine-supplied one, so the
 // templates' own spelling is what reaches the stamp.
 func New() plugin.Backend {
-	return eidos.NewBackend(typescript.Name, typescript.Target, typescript.Syntax()).
+	return sdk.NewBackend(typescript.Name, typescript.Target, typescript.Syntax()).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
 		Coverage(Coverage()).

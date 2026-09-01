@@ -9,12 +9,12 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/backendtest"
-	"go.dokimi.dev/eidos/core/output"
-	"go.dokimi.dev/eidos/core/plugin"
-	"go.dokimi.dev/eidos/core/symbol"
 	typescript "go.dokimi.dev/eidos/lang-typescript"
 	"go.dokimi.dev/eidos/lang-typescript/backend"
+	"go.dokimi.dev/eidos/sdk/backendtest"
+	"go.dokimi.dev/eidos/sdk/output"
+	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // setup builds the backend over the kernel's canonical fixture,

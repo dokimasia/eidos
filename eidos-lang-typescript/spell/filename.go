@@ -7,9 +7,9 @@ import (
 	"path"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/plugin"
 	typescript "go.dokimi.dev/eidos/lang-typescript"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // Filename spells a unit's filename. TypeScript names files in
