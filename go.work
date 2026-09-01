@@ -5,6 +5,7 @@ go 1.27.0
 // module path and pin the toolchain version for CI. Every ergon
 // per-module command iterates the list below.
 use (
+	./eidos-conformance
 	./eidos-core
 	./eidos-lang
 	./eidos-lang-go

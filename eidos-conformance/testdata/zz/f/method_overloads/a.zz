@@ -1,0 +1,4 @@
+package f/method_overloads
+type Box string
+method Fill int
+method Fill

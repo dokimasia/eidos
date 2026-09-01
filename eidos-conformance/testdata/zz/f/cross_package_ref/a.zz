@@ -1,0 +1,3 @@
+package f/cross_package_ref
+import dep f/cross_package_ref/dep
+type Holder dep.Target

@@ -52,6 +52,8 @@ checks:
 
   coverage:
     packages:
+      - path: eidos-conformance/...
+        line: 75
       - path: eidos-core/...
         line: 85
       - path: eidos-lang/...
@@ -97,6 +99,7 @@ checks:
       - deps
       - revert
     scopes:
+      - conformance
       - core
       - lang
       - go

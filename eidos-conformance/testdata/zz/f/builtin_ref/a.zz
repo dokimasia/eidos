@@ -1,0 +1,2 @@
+package f/builtin_ref
+type Plain int

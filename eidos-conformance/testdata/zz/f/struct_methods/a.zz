@@ -1,0 +1,3 @@
+package f/struct_methods
+type Store string
+method Get int

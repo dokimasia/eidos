@@ -1,0 +1,3 @@
+package f/test_classification
+stamp fake.testFile yes
+type Probe string

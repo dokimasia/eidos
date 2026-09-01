@@ -1,0 +1,3 @@
+package f/directive_carrier
+type Table string
++gen:table name=t

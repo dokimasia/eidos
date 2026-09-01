@@ -1,0 +1,2 @@
+package f/struct_fields
+type Point int int
