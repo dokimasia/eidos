@@ -32,10 +32,15 @@ const (
 	FactFinal            = core.FactFinal
 	FactOverride         = core.FactOverride
 	FactDefaultBody      = core.FactDefaultBody
+	FactAccessor         = core.FactAccessor
+	FactIndexer          = core.FactIndexer
+	FactConstructs       = core.FactConstructs
+	FactHardPrivate      = core.FactHardPrivate
 	FactLabel            = core.FactLabel
 	FactParamDefault     = core.FactParamDefault
 	FactVariadic         = core.FactVariadic
 	FactNamedReturn      = core.FactNamedReturn
+	FactConstEnum        = core.FactConstEnum
 	FactFields           = core.FactFields
 	FactMethods          = core.FactMethods
 	FactValue            = core.FactValue
@@ -199,6 +204,23 @@ const (
 	// LevelType belongs to the type: JVM statics, Kotlin
 	// companions, TypeScript static members.
 	LevelType = core.LevelType
+)
+
+// Accessor says whether a callable is a property accessor rather
+// than an ordinary method.
+//
+// The zero value is [AccessorNone], which every ordinary method
+// carries. TypeScript, C# and Kotlin state accessors in syntax;
+// languages spelling properties as conventions never set it.
+type Accessor = core.Accessor
+
+const (
+	// AccessorNone is an ordinary method.
+	AccessorNone = core.AccessorNone
+	// AccessorGet reads the property: no parameters, one result.
+	AccessorGet = core.AccessorGet
+	// AccessorSet writes the property: one parameter, no result.
+	AccessorSet = core.AccessorSet
 )
 
 // Variance is the variance of a type parameter.
