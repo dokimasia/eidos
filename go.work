@@ -16,4 +16,5 @@ use (
 	./eidos-lang-typescript
 	./eidos-plugin-shape
 	./eidos-reference
+	./eidos-sdk
 )
