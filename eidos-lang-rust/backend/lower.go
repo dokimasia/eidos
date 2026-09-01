@@ -43,15 +43,38 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 		}
 		d.Returns, d.Throws = returns, nil
 	case *emit.Struct:
+		if err := uniqueMethods(d.Name, d.Methods.Items()); err != nil {
+			return nil, err
+		}
 		if err := lowerMembers(d.Methods.Items()); err != nil {
 			return nil, err
 		}
 	case *emit.Interface:
+		if err := uniqueMethods(d.Name, d.Methods.Items()); err != nil {
+			return nil, err
+		}
 		if err := lowerMembers(d.Methods.Items()); err != nil {
 			return nil, err
 		}
 	}
 	return nil, nil
+}
+
+// uniqueMethods refuses two member methods under one name: Rust
+// overloads nothing, and a duplicated fn in one impl or trait
+// block renders a file the compiler rejects far from the plugin
+// that caused it.
+func uniqueMethods(host string, methods []*emit.Method) error {
+	seen := make(map[string]bool, len(methods))
+	for _, m := range methods {
+		if seen[m.Name] {
+			return fmt.Errorf(
+				"rust: method %s declared twice on %s, and Rust overloads "+
+					"nothing", m.Name, host)
+		}
+		seen[m.Name] = true
+	}
+	return nil
 }
 
 // lowerMembers rewrites a host's member methods the way the
