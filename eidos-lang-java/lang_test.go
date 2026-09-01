@@ -8,7 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	java "go.dokimi.dev/eidos/lang-java"
+	java "go.dokimi.dev/eidos/lang/java"
 )
 
 // The identity, the extension and the comment forms are what the

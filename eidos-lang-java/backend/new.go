@@ -4,8 +4,8 @@
 package backend
 
 import (
-	java "go.dokimi.dev/eidos/lang-java"
-	"go.dokimi.dev/eidos/lang-java/spell"
+	java "go.dokimi.dev/eidos/lang/java"
+	"go.dokimi.dev/eidos/lang/java/spell"
 	"go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )

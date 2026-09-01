@@ -7,7 +7,7 @@ import (
 	"path"
 	"strings"
 
-	java "go.dokimi.dev/eidos/lang-java"
+	java "go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/plugin"
