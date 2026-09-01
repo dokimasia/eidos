@@ -40,6 +40,12 @@ const (
 	FuncDecorators = "decorators"
 	// FuncHeritage writes a type's heritage clauses.
 	FuncHeritage = "heritage"
+	// FuncAccessor writes a method's accessor keyword.
+	FuncAccessor = "accessor"
+	// FuncHard writes a member's hard-private prefix.
+	FuncHard = "hard"
+	// FuncIndexSig writes an index signature whole.
+	FuncIndexSig = "indexsig"
 )
 
 // Anonymous is what TypeScript writes where a declaration states
@@ -62,7 +68,87 @@ func Funcs() template.FuncMap {
 		FuncBinding:    Binding,
 		FuncDecorators: Decorators,
 		FuncHeritage:   Heritage,
+		FuncAccessor:   AccessorKw,
+		FuncHard:       Hard,
+		FuncIndexSig:   IndexSig,
 	}
+}
+
+// AccessorKw writes a method's accessor keyword and holds the
+// declaration to the accessor's shape: a getter takes nothing and
+// returns one value, a setter takes one value and returns
+// nothing, and neither declares type parameters, because
+// TypeScript's accessors admit none.
+func AccessorKw(m *emit.Method) (string, error) {
+	switch m.Accessor {
+	case symbol.AccessorNone:
+		return "", nil
+	case symbol.AccessorGet:
+		switch {
+		case len(m.Params) != 0:
+			return "", fmt.Errorf("typescript: a getter takes nothing, and %s takes parameters", m.Name)
+		case len(m.Returns) == 0:
+			return "", fmt.Errorf("typescript: a getter returns its property, and %s returns nothing", m.Name)
+		case len(m.TypeParams) != 0:
+			return "", fmt.Errorf("typescript: an accessor admits no type parameters, and %s declares some", m.Name)
+		}
+		return "get ", nil
+	default:
+		switch {
+		case len(m.Params) != 1:
+			return "", fmt.Errorf("typescript: a setter takes its one value, and %s does not", m.Name)
+		case len(m.Returns) != 0:
+			return "", fmt.Errorf("typescript: a setter returns nothing, and %s returns", m.Name)
+		case len(m.TypeParams) != 0:
+			return "", fmt.Errorf("typescript: an accessor admits no type parameters, and %s declares some", m.Name)
+		}
+		return "set ", nil
+	}
+}
+
+// Hard writes a member's hard-private prefix. A hard-private name
+// is runtime privacy in the name itself, so a stated visibility
+// beside it refuses: the two mechanisms cannot combine.
+func Hard(s symbol.Symbol) (string, error) {
+	name, hard, vis := "", false, symbol.VisibilityUnknown
+	switch d := s.(type) {
+	case *emit.Field:
+		name, hard, vis = d.Name, d.Hard, d.Visibility
+	case *emit.Method:
+		name, hard, vis = d.Name, d.Hard, d.Visibility
+	}
+	switch {
+	case !hard:
+		return "", nil
+	case vis != symbol.VisibilityUnknown:
+		return "", fmt.Errorf(
+			"typescript: a hard-private name carries its privacy in the "+
+				"name, and %s states a visibility beside it", name)
+	}
+	return "#", nil
+}
+
+// IndexSig writes an index signature whole: the one key parameter
+// in brackets, the element type behind the colon. Anything an
+// index signature cannot state — more parameters, no result, type
+// parameters, an accessor — refuses.
+func IndexSig(m *emit.Method) (string, error) {
+	switch {
+	case len(m.Params) != 1 || m.Params[0].Name == "" || m.Params[0].Type == nil:
+		return "", fmt.Errorf(
+			"typescript: an index signature takes one named, typed key, "+
+				"and %s does not", m.Name)
+	case len(m.Returns) != 1:
+		return "", fmt.Errorf(
+			"typescript: an index signature states one element type, "+
+				"and %s does not", m.Name)
+	case len(m.TypeParams) != 0 || m.Accessor != symbol.AccessorNone:
+		return "", fmt.Errorf(
+			"typescript: an index signature admits no type parameters "+
+				"and no accessor, and %s states one", m.Name)
+	}
+	return "[" + m.Params[0].Name + ": " + Spell(m.Params[0].Type) + "]: " +
+		Spell(m.Returns[0].Type) + ";", nil
 }
 
 // Docs writes a declaration's documentation as a TSDoc block,
@@ -336,6 +422,11 @@ func accessibility(v symbol.Visibility, name string) (string, error) {
 // decorator.
 func PropMods(f *emit.Field) (string, error) {
 	switch {
+	case f.Hard:
+		return "", fmt.Errorf(
+			"typescript: an interface property has no runtime, and %s "+
+				"states a hard-private name", f.Name,
+		)
 	case len(f.Annotations) > 0:
 		return "", undecorated(f.Name)
 	case f.Visibility != symbol.VisibilityUnknown &&
@@ -368,6 +459,11 @@ func SigMods(m *emit.Method) (string, error) {
 		return "", fmt.Errorf(
 			"typescript: an interface method is public by shape, and %s "+
 				"states a scope", m.Name,
+		)
+	case m.Accessor != symbol.AccessorNone || m.Hard:
+		return "", fmt.Errorf(
+			"typescript: an interface states properties, not accessors or "+
+				"hard-private names, and %s states one", m.Name,
 		)
 	case m.Level == symbol.LevelType || m.Abstract || m.Final ||
 		m.Override || m.HasDefault || m.Async:

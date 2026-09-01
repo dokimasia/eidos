@@ -30,12 +30,13 @@ const (
 	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
 		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
-		"  {{membermods .}}{{.Name}}: {{spell .Type}}{{with .Value}} = {{.}}{{end}};" +
+		"  {{membermods .}}{{hard .}}{{.Name}}: {{spell .Type}}{{with .Value}} = {{.}}{{end}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
-		"  {{membermods .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}}" +
-		"{{if .Abstract}};{{else}} {\n{{body .}}  }{{end}}\n" +
+		"{{if .Indexer}}  {{indexsig .}}{{else}}" +
+		"  {{membermods .}}{{accessor .}}{{hard .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}}" +
+		"{{if .Abstract}};{{else}} {\n{{body .}}  }{{end}}{{end}}\n" +
 		"{{- end}}\n}\n"
 
 	// InterfaceTemplate spells an interface, its type parameters
@@ -48,7 +49,9 @@ const (
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
-		"  {{sigmods .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};\n" +
+		"{{if .Indexer}}  {{indexsig .}}" +
+		"{{else if .Constructs}}  new {{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};" +
+		"{{else}}  {{sigmods .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};{{end}}\n" +
 		"{{- end}}\n}\n"
 
 	// FunctionTemplate spells a module-level function, async
@@ -65,7 +68,7 @@ const (
 	// EnumTemplate spells an enum: one member per variant, its
 	// stated value behind an equals sign, each under its own doc
 	// block.
-	EnumTemplate = "{{docs .Doc}}{{mods .}}enum {{.Name}} {\n" +
+	EnumTemplate = "{{docs .Doc}}{{mods .}}{{if .Const}}const {{end}}enum {{.Name}} {\n" +
 		"{{- range .Variants.Items}}\n{{docs .Doc \"  \"}}" +
 		"  {{.Name}}{{with .Value}} = {{.}}{{end}},\n" +
 		"{{- end}}\n}\n"

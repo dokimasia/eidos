@@ -218,6 +218,76 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "a stated modifier refuses on an interface method")
 	})
 
+	t.Run("AccessorKw", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.AccessorKw(&emit.Method{Name: "load"})
+		assert.NoError(t, err, "an ordinary method passes")
+		assert.Equal(t, got, "", "and spells nothing")
+
+		got, err = backend.AccessorKw(&emit.Method{
+			Name: "size", Accessor: symbol.AccessorGet,
+			Returns: []*emit.Return{{Type: ref("number")}},
+		})
+		assert.NoError(t, err, "a getter spells")
+		assert.Equal(t, got, "get ", "its keyword before the name")
+
+		got, err = backend.AccessorKw(&emit.Method{
+			Name: "size", Accessor: symbol.AccessorSet,
+			Params: []*emit.Param{{Name: "v", Type: ref("number")}},
+		})
+		assert.NoError(t, err, "a setter spells")
+		assert.Equal(t, got, "set ", "its keyword before the name")
+
+		_, err = backend.AccessorKw(&emit.Method{
+			Name: "size", Accessor: symbol.AccessorGet,
+			Params:  []*emit.Param{{Name: "v", Type: ref("number")}},
+			Returns: []*emit.Return{{Type: ref("number")}},
+		})
+		assert.HasError(t, err, "a getter taking parameters refuses")
+		_, err = backend.AccessorKw(&emit.Method{
+			Name: "size", Accessor: symbol.AccessorSet,
+			Params:  []*emit.Param{{Name: "v", Type: ref("number")}},
+			Returns: []*emit.Return{{Type: ref("number")}},
+		})
+		assert.HasError(t, err, "a setter returning refuses")
+	})
+
+	t.Run("Hard", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.Hard(&emit.Field{Name: "key", Hard: true})
+		assert.NoError(t, err, "a hard-private field spells")
+		assert.Equal(t, got, "#", "the prefix carrying the privacy")
+
+		got, err = backend.Hard(&emit.Method{Name: "load"})
+		assert.NoError(t, err, "an ordinary member passes")
+		assert.Equal(t, got, "", "unprefixed")
+
+		_, err = backend.Hard(&emit.Field{
+			Name: "key", Hard: true, Visibility: symbol.VisibilityPrivate,
+		})
+		assert.HasError(t, err,
+			"a stated visibility beside the hard name refuses, because "+
+				"the privacy lives in the name")
+	})
+
+	t.Run("IndexSig", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.IndexSig(&emit.Method{
+			Name:    "index",
+			Indexer: true,
+			Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
+			Returns: []*emit.Return{{Type: ref("Row")}},
+		})
+		assert.NoError(t, err, "an index signature spells")
+		assert.Equal(t, got, "[key: string]: Row;", "whole, key and element typed")
+
+		_, err = backend.IndexSig(&emit.Method{Name: "index", Indexer: true})
+		assert.HasError(t, err, "one named typed key is required")
+	})
+
 	t.Run("Heritage", func(t *testing.T) {
 		t.Parallel()
 

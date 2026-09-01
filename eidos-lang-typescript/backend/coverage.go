@@ -21,6 +21,11 @@ func Coverage() render.Coverage {
 		Facts: map[symbol.Fact]render.Verdict{
 			symbol.FactVisibility:       render.Renders,
 			symbol.FactAsync:            render.Renders,
+			symbol.FactAccessor:         render.Renders,
+			symbol.FactIndexer:          render.Renders,
+			symbol.FactConstructs:       render.Renders,
+			symbol.FactHardPrivate:      render.Renders,
+			symbol.FactConstEnum:        render.Renders,
 			symbol.FactTypeParams:       render.Renders,
 			symbol.FactMultiReturn:      render.Renders,
 			symbol.FactThrows:           render.Refuses,

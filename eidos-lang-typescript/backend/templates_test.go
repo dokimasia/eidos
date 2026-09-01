@@ -259,6 +259,68 @@ func TestTemplates(t *testing.T) {
 			"an immutable binding is const with its initializer")
 	})
 
+	t.Run("accessors, hard names and signatures", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Cache"}
+		s.Fields.Append(&emit.Field{Name: "store", Hard: true, Type: ref("Map")})
+		s.Methods.Append(
+			&emit.Method{
+				Name: "size", Accessor: symbol.AccessorGet,
+				Returns: []*emit.Return{{Type: ref("number")}},
+			},
+			&emit.Method{
+				Name:    "index",
+				Indexer: true,
+				Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
+				Returns: []*emit.Return{{Type: ref("Row")}},
+			},
+		)
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"export class Cache {\n"+
+				"  #store: Map;\n"+
+				"  get size(): number {\n"+
+				"    body();\n"+
+				"  }\n"+
+				"  [key: string]: Row;\n"+
+				"}\n",
+			"the hard prefix on the name, the accessor keyword before it, "+
+				"the index signature whole")
+
+		i := &emit.Interface{Name: "Rows"}
+		i.Methods.Append(
+			&emit.Method{
+				Name:    "index",
+				Indexer: true,
+				Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
+				Returns: []*emit.Return{{Type: ref("Row")}},
+			},
+			&emit.Method{
+				Name:       "make",
+				Constructs: true,
+				Returns:    []*emit.Return{{Type: ref("Rows")}},
+			},
+		)
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"export interface Rows {\n"+
+				"  [key: string]: Row;\n"+
+				"  new (): Rows;\n"+
+				"}\n",
+			"index and construct signatures spell nameless")
+	})
+
+	t.Run("const enum", func(t *testing.T) {
+		t.Parallel()
+
+		e := &emit.Enum{Name: "Phase", Const: true}
+		e.Variants.Append(&emit.EnumVariant{Name: "Active"})
+		assert.Equal(t, execute(t, backend.EnumTemplate, e),
+			"export const enum Phase {\n"+
+				"  Active,\n"+
+				"}\n",
+			"the const keyword before enum, inlined at use")
+	})
+
 	t.Run("enum", func(t *testing.T) {
 		t.Parallel()
 
