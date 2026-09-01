@@ -62,41 +62,69 @@ type Frontend interface {
     Lang() symbol.Lang
     Syntax() CommentSyntax
 
-    // Selection is the include-shaped file claim, gitignore-style
-    // globs against workspace-relative paths.
+    // Selection is the file claim, gitignore-style globs against
+    // workspace-relative paths, negations included: a testdata
+    // tree is not Go source by Go's own definition, and that
+    // belongs in the claim. What stays out of it is policy —
+    // whether test files take part is the consumer's call through
+    // scopes, never a selection line.
     Selection() []string
 
     // Partition groups the selected files into units, the
-    // language's own grain: package directories for Go, files for
-    // TypeScript. Every selected file appears in exactly one unit.
-    Partition(files []SourceRef) ([][]SourceRef, error)
+    // language's own grain: package directories for Go, whatever
+    // the language's own compilation unit is elsewhere. Every
+    // selected file appears in exactly one unit. The reader is
+    // the same jailed door Parse gets, because a grain can live
+    // inside the bytes — a package clause, a proto package
+    // qualifier — and a partition that cannot look would guess;
+    // every partition read folds into every resulting unit's
+    // fingerprint, because the partition decided their shape.
+    Partition(ctx context.Context, files []SourceRef, r Reader) ([][]SourceRef, error)
 
     // Parse loads one unit through its handle. A unit's problem
-    // reports through the handle and parsing continues; a returned
-    // error is fatal to the load.
-    Parse(u *Unit) error
+    // reports through the handle and parsing continues; a
+    // returned error is fatal to the whole load, every frontend's
+    // — Link resolves over the union, and a partial union
+    // resolves wrong, so a broken satellite stops the run rather
+    // than shipping a graph missing its language. The context
+    // carries cancellation into a long parse; the old kernel
+    // recorded how expensive threading it in later proved, so it
+    // is in the shape from the start.
+    Parse(ctx context.Context, u *Unit) error
 
-    // Resolve says what a spelling means in one file's recorded
-    // import scope: the candidate identity Link checks against the
-    // graph. A spelling outside the scope returns false, and the
-    // reference keeps spelling only.
-    Resolve(scope ImportScope, spelling string) (symbol.Identity, bool)
+    // Resolve says what a spelling could mean in one file's
+    // recorded import scope: the candidate identities in the
+    // language's own probe order. Link keeps the first candidate
+    // the graph holds; several present candidates are the
+    // ambiguity finding, and none leaves the reference spelling
+    // only.
+    Resolve(scope ImportScope, spelling string) []symbol.Identity
 }
 ```
 
 `SourceRef` names a file without opening it: the workspace-relative
-path and the declared shared inputs that apply to it. `ImportScope`
-is what the frontend recorded at parse time for one file: the
-file's identity and its local name bindings, `alias → package
-path` for Go. Link is a kernel phase after every frontend
-finished: it visits every `TypeRef` in the graph, nested type
-arguments included, asks the owning language's `Resolve` for each
-node's spelling, keeps the identity when the graph holds that
-declaration — in scope or signature-only — and leaves builtins and
-externals as spellings, which is degradation the reader can ask
-about, not failure. A `Partition` error is fatal to the load: unit
-shape is structural, and a frontend that cannot say what its units
-are has nothing to parse.
+path and its declared shared inputs — a list of workspace paths
+per file, the shape fixed here so no language reshapes it later;
+the members are each language's own. Go declares its module
+files, TypeScript its config chain, proto its root mapping, and
+every declared input's bytes fold into the dependent unit's
+fingerprint.
+
+`ImportScope` is what the frontend recorded at parse time for one
+file: the file's identity and its bindings in the language's own
+form, carried opaque by the kernel and read by that language's
+`Resolve` alone — Go binds package aliases, TypeScript binds
+members with rename and form, proto scopes per declaration site,
+and a kernel that fixed one shape would fix Go's. Link is a
+kernel phase after every frontend finished: it visits every
+`TypeRef` in the graph, nested type arguments included, asks the
+owning language's `Resolve` for each node's spelling, keeps the
+first candidate the graph holds — in scope or signature-only —
+reports several present candidates as an ambiguity, and leaves
+builtins and externals as spellings, which is degradation the
+reader can ask about, not failure. A `Partition` error is fatal
+to the load: unit shape is structural, and a frontend that cannot
+say what its units are has nothing to parse.
 
 ### The unit
 
@@ -119,13 +147,29 @@ the unit fingerprint. The fingerprint closes over the read set by
 construction: a frontend cannot depend on bytes the cache does not
 know about, because there is no other way to bytes. A unit's
 recorded key folds, in a defined order: every read's path and
-content, the unit's `Depth` — the same bytes at `Signatures`
-produce a different graph and must key differently — the
-frontend's version, and the kernel's model fingerprint, because a
-schema change reshapes the graph the same source produces. The
-load's report carries each unit's key, which is where the
-conformance suite reads them; milestone 0007 consumes them, this
-milestone records them.
+content, the partition's reads, the unit's `Depth` — the same
+bytes at `Signatures` produce a different graph and must key
+differently — the frontend's declared version, the frontend's
+configuration in its canonical encoding, and the kernel's model
+fingerprint, because a schema change reshapes the graph the same
+source produces. Configuration is in the fold by contract: a knob
+that changes the graph without changing a read — a tag set, an
+embedded-descriptor toggle — must key, and bytes a frontend ships
+embedded count as configuration. The composition's plugin-set
+fingerprint folds too, supplied by the load's driver: a recorded
+graph carries stamps a changed plugin set reinterprets, the
+incrementality architecture already requires the fold, and the
+old kernel spelled it as its one capitalised MUST after learning
+why — deriving it at milestone 0007 instead would fork the key.
+The fold is by value, in the order stated here, because a key
+derived two ways diverges. The version is the declared
+[plugin.Versioned] one, bumped with any change to the produced
+graph; the old kernel's history shows a hand constant serving
+stale graphs across every stamping change, so the suite holds the
+fold honest rather than trusting the discipline. The load's
+report carries each unit's key, which is where the conformance
+suite reads them; milestone 0007 consumes them, this milestone
+records them.
 
 `Depth` is the kit telling the frontend how deep this unit loads.
 Signature-only loading is the same `Parse` observing
@@ -139,22 +183,36 @@ parse.
 the unit:
 
 ```go
-gb.Package(path) *node.Package          // one per unit, created once
+gb.Package(path) *node.Package          // created once per path
 gb.Add(decl symbol.Symbol)              // node declarations, in order
 gb.Scope(file symbol.Identity, s ImportScope)  // what Resolve reads
 gb.Attach(subject symbol.Identity, raw directive.Raw)
 ```
 
-The builder validates at the append: an emit-side symbol, a
-declaration without an identity, or a second package in one unit
-is a defect and panics, because a malformed graph discovered at
-Link points away from the frontend that built it. Identities
+A unit declares as many packages as its bytes do: a Go directory
+holds `foo` beside its external `foo_test`, one proto load spells
+several packages, and a nested module spells a sub-path — the
+grain is the unit's, the package set is the source's. Two units
+contributing one package path merge at the splice, declarations
+appended in unit order, so the shape stays deterministic without
+a cardinality rule the languages would each break. The builder
+validates at the append: an emit-side symbol or a declaration
+without an identity is a defect and panics, because a malformed
+graph discovered at Link points away from the frontend that built
+it. A second declaration under one identity is not a defect — it
+is the unit's own source broken mid-edit, or a platform-variant
+collision the language must resolve — so it reports through the
+unit's diagnostics and the first stands. Identities
 follow the canonical rules the model fixes; reparsing an unchanged
 file yields the same identities, which is what 0007's
 diff-by-identity later stands on. Directive carriers strip through
 the syntax value, parse under the kernel grammar, and attach as
-raw instances; validation against schemas stays the workspace
-seal's, exactly as the plugin fixture does it today. Directive
+raw instances; validation against schemas stays the freeze's, the
+step between Link and the first handler, exactly as the plugin
+fixture does it today. Two frontends claiming one file is a
+composition defect refused before anything parses, naming both:
+selection claims partition the tree, and an overlap resolved by
+splice order would resolve by accident. Directive
 comment lines — `//go:build`, `//nolint` and their kin — are not
 documentation: the comment pipeline drops them from doc lines, so
 a pragma can never render double-commented downstream.
@@ -185,8 +243,24 @@ A `Classifier` inspects a parsed unit and stamps classification
 facts — `go.testFile`, the generated-marker for foreign
 generators' output — through the same fact store discipline
 annotators use, at plugin authority under the frontend's
-identity: the ladder gains no new rank, a directive or a manual
-override still wins, and a second same-rank write still refuses. The kit refuses exclusion
+identity: the authority order gains no new level, a directive or
+a manual override still wins, and a second write at the same
+authority still refuses.
+
+A frontend that needs configuration declares it the way any
+plugin does, through [plugin.OptionsProvider], and the kit folds
+the options' canonical encoding into every unit key. Conditional
+compilation is the worked case: the Go frontend's configuration
+states one build-constraint set per load, every selected file
+parses, a file outside the set contributes its classification —
+the constraint stamped as a fact — and its declarations stay out,
+because two platform variants of one function share one canonical
+identity and a graph holding both would misreport each. Another
+platform is another load under another configuration, which the
+key separates by construction. This is the language's own
+semantics, not an exclusion policy: whether test files take part
+is a consumer's call, but which `//go:build` variant compiles
+never was. The kit refuses exclusion
 by construction: there is no API that drops a parseable file. The
 one exclusion is the kernel's own, enforced before `Parse` sees a
 unit: files this workspace generated itself, proven by a manifest
@@ -224,17 +298,23 @@ own failure path is testable:
   on the fixture's units, and no file was silently dropped — every
   selected file's declarations or refusal findings appear.
 - `AssertFingerprinted`: the load report's keys fold every read,
-  the depth, the frontend version and the model fingerprint — an
-  untouched unit's key is stable across two parses, and one unit
-  parsed at the two depths keys differently.
+  the depth, the declared version, the configuration and the
+  model fingerprint — an untouched unit's key is stable across
+  two parses, one unit parsed at the two depths keys differently,
+  and a changed version or configuration changes every key, which
+  is what keeps the fold honest against a constant nobody bumped.
 - `AssertJailedReads`: a scripted frontend reaching outside its
   unit is refused at `Read`, and the refusal names the path.
 - `AssertSignatureDepth`: a unit parsed at `Signatures` carries no
   bodies and no unexported members, and the same unit at `Full`
   is a superset under the same identities.
 - `AssertAttachedDirectives`: `//+gen:` carriers strip from the
-  documentation, parse under the kernel grammar, and attach as
-  raw instances on the subjects that carried them.
+  documentation, parse under the kernel grammar, attach as raw
+  instances on the subjects that carried them, and validate under
+  the fixture's schemas after the splice — the suite stands in
+  for the workspace until milestone 0005, and a stand-in that
+  skips validation re-opens the silent-acceptance window the old
+  kernel's cache lesson closed.
 - `AssertLinked`: over a two-package fixture, in-graph spellings
   resolve to canonical identities, builtins and externals keep
   spelling only, and `Reader.Lookup` joins across the packages
@@ -294,9 +374,16 @@ until then.
 - **On-demand resolution instead of a Link phase** — resolve
   `TypeRef`s lazily at first read. Two packages parse in parallel
   and neither can resolve into the other until both exist; a lazy
-  resolver either blocks on load order or answers differently
+  resolver either blocks on load order or resolves differently
   before and after the graph completes. One phase over the whole
-  graph answers once.
+  graph resolves once.
+- **Three old-kernel surfaces retire without successors, by
+  choice** — the `value` directive's cases move to `meta` at
+  directive authority; the consumer directive-prefix override
+  gives way to one kernel grammar with plugin-prefixed names; the
+  `pkg=` routing key gives way to package identity derived from
+  the `gen.module` facts. Recorded here so the next audit does
+  not re-open them.
 
 ## Drawbacks
 
@@ -310,10 +397,17 @@ until then.
 
 ## Unresolved and future work
 
-- The shape of declared shared inputs on `SourceRef` — Go needs
-  `go.mod` and `go.work` folded into dependent fingerprints; the
-  exact declaration surface is decided when the Go frontend
-  states its own.
+- Export surfaces arrive with the TypeScript frontend at
+  milestone 0009: a re-export binds no local name and declares
+  nothing with an identity, so resolving through a barrel needs
+  an export-surface record to walk and a Link that rewrites a
+  candidate to the canonical declaring identity. The
+  candidate-ordered `Resolve` here is shaped so that growth
+  extends the seam instead of reshaping it.
+- Cross-package semantic facts the old Go frontend stamped
+  through its type checker — a Stringer satisfaction, an iter.Seq
+  return — re-derive as rules beside milestone 0004's Tier-2 set;
+  a classifier runs before Link and cannot know them.
 - Dependency artifacts (`u.Artifacts()` for JARs and `.d.ts`
   trees) stay out until a language needs them; Go resolves from
   source.

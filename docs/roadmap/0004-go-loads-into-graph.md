@@ -54,7 +54,9 @@ Go.
       provenance and refusal reasons, the three Values returns, and
       `TypeName`. Tier 2 where Go satisfies it: enums with a small
       iota evaluator, sentinel names, struct tags, promotion,
-      comparability, and generics with authored witnesses.
+      comparability, generics with authored witnesses, and the
+      whole-graph facts the old frontend stamped through its type
+      checker: Stringer satisfaction and iter.Seq returns.
 - [ ] `testdata/features/` holds one fixture per Go row of the
       landscape table, and the completeness check, built in the kernel
       as part of this milestone, passes with every row on its declared
