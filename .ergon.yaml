@@ -45,6 +45,8 @@ checks:
   excludes:
     - path: "**/*_test.go"
       reason: tests are the gate, not its subject
+    - path: "eidos-sdk/**"
+      reason: generated re-exports; the mirror guard and the satellites' suites are the tests
 
   skips: []
 
@@ -106,5 +108,6 @@ checks:
       - typescript
       - shape
       - reference
+      - sdk
     max_subject_length: 80
     body_max_line_length: 100
