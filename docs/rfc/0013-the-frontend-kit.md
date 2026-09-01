@@ -137,7 +137,10 @@ owning language's `Resolve` for each node's spelling, keeps the
 first candidate the graph holds — in scope or signature-only —
 reports several present candidates as an ambiguity, and leaves
 builtins and externals as spellings, which is degradation the
-reader can ask about, not failure. A `Partition` error is fatal
+reader can ask about, not failure. A file whose parse recorded no
+scope resolves nothing: there are no bindings to resolve through,
+and the suite's linked check is what catches a frontend that
+forgot to record them. A `Partition` error is fatal
 to the load: unit shape is structural, and a frontend that cannot
 say what its units are has nothing to parse.
 
