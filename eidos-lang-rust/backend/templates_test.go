@@ -205,7 +205,7 @@ func TestTemplates(t *testing.T) {
 
 		s := &emit.Struct{
 			Name:        "Row",
-			Annotations: emit.Annotations{{Name: "derive", Args: []string{"Debug"}}},
+			Annotations: symbol.Annotations{{Name: "derive", Args: []string{"Debug"}}},
 		}
 		s.Fields.Append(&emit.Field{
 			Name: "key", Visibility: symbol.VisibilityInternal, Type: ref("String"),
@@ -267,7 +267,7 @@ func TestTemplates(t *testing.T) {
 		e := &emit.Enum{
 			Doc:         []string{"Phase names a step."},
 			Name:        "Phase",
-			Annotations: emit.Annotations{{Name: "derive", Args: []string{"Debug"}}},
+			Annotations: symbol.Annotations{{Name: "derive", Args: []string{"Debug"}}},
 		}
 		e.Variants.Append(
 			&emit.EnumVariant{Doc: []string{"Open admits writes."}, Name: "Open"},

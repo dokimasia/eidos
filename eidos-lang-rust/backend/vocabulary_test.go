@@ -326,7 +326,7 @@ func TestVocabulary(t *testing.T) {
 		t.Parallel()
 
 		assert.Equal(t, backend.Attrs(nil), "", "no annotations, no lines")
-		assert.Equal(t, backend.Attrs(emit.Annotations{
+		assert.Equal(t, backend.Attrs(symbol.Annotations{
 			{Name: "derive", Args: []string{"Debug", "Clone"}},
 			{Name: "non_exhaustive"},
 		}, "    "),
