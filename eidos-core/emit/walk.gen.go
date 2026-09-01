@@ -121,6 +121,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.Implements {
 			Walk(child, visit)
 		}
+		for _, child := range x.Permits {
+			Walk(child, visit)
+		}
 	case *Interface:
 		for _, child := range x.TypeParams {
 			Walk(child, visit)
@@ -138,6 +141,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 			Walk(child, visit)
 		}
 		for _, child := range x.Extends {
+			Walk(child, visit)
+		}
+		for _, child := range x.Permits {
 			Walk(child, visit)
 		}
 	case *Alias:

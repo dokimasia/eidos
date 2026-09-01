@@ -57,6 +57,11 @@ var VerbatimParams = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 // the lowered fact in the target's shape rather than the model's,
 // so a second settle changes nothing. An error is the target
 // refusing the construct.
+//
+// A nil list without an error keeps the declaration as it stands,
+// so the common pass-through spends no allocation; a hook that
+// reshaped the declaration in place returns nil the same way,
+// because the store already holds it.
 type Lower func(symbol.Symbol) ([]symbol.Symbol, error)
 
 // Lowerer is the provider a backend implements when its target
@@ -128,6 +133,10 @@ func lowerAll(e *Emit, l Lowerer, by diag.Origin, sink *diag.Sink) error {
 			out, err := l.Lower(d)
 			if err != nil {
 				sink.Errorf(RefusedConstruct, d.Position(), by, "%v", err)
+				continue
+			}
+			if out == nil {
+				lowered = append(lowered, d)
 				continue
 			}
 			origin, _ := emit.OriginOf(d)

@@ -49,7 +49,7 @@ const discriminant = "kind"
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	sum, held := s.(*emit.Sum)
 	if !held {
-		return []symbol.Symbol{s}, nil
+		return nil, nil // the declaration stands
 	}
 	switch {
 	case sum.Methods.Len() > 0:

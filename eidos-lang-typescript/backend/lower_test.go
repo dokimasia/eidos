@@ -41,11 +41,9 @@ func TestLower(t *testing.T) {
 	t.Run("a non-sum passes through unchanged", func(t *testing.T) {
 		t.Parallel()
 
-		s := &emit.Struct{Name: "row"}
-		out, err := backend.Lower(s)
+		out, err := backend.Lower(&emit.Struct{Name: "row"})
 		assert.NoError(t, err, "a struct is not lowered")
-		assert.Equal(t, len(out), 1, "one declaration stays one")
-		assert.Equal(t, out[0], symbol.Symbol(s), "the same declaration")
+		assert.Length(t, out, 0, "a nil list keeps the declaration as it stands")
 	})
 
 	t.Run("a sum becomes variant interfaces and the union alias", func(t *testing.T) {

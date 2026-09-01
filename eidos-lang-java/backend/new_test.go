@@ -56,7 +56,7 @@ func inventory() map[symbol.Kind]string {
 // with headroom.
 func BenchmarkNew(b *testing.B) {
 	backendtest.BenchRender(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 26_800_000})
+		backendtest.Budget{MaxAllocs: 28_700_000})
 }
 
 // BenchmarkSettle measures the settle over the suite's scaled
@@ -64,7 +64,7 @@ func BenchmarkNew(b *testing.B) {
 // its own ceiling pinned from measurement with headroom.
 func BenchmarkSettle(b *testing.B) {
 	backendtest.BenchSettle(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 3_050_000})
+		backendtest.Budget{MaxAllocs: 3_400_000})
 }
 
 // The backend is the module's write half: the kernel suite holds
@@ -106,5 +106,8 @@ func TestNew(t *testing.T) {
 		assert.Contains(t, string(text),
 			"public final class ShapeCircle implements Shape",
 			"a lowered variant implements the respelled principal")
+		assert.Contains(t, string(text),
+			"public sealed interface Shape permits ShapeCircle, ShapeEmpty",
+			"and the sealed principal permits the respelled classes")
 	})
 }

@@ -200,13 +200,14 @@ func TestWalk(t *testing.T) {
 			subject.Embeds = append(subject.Embeds, &Embed{})
 			subject.Extends = append(subject.Extends, &TypeRef{})
 			subject.Implements = append(subject.Implements, &TypeRef{})
+			subject.Permits = append(subject.Permits, &TypeRef{})
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 8,
+			assert.Equal(t, seen, 9,
 				"the walk descends into every traversed field")
 		})
 
@@ -220,13 +221,14 @@ func TestWalk(t *testing.T) {
 			subject.TypesSlot().Append(&Interface{})
 			subject.Embeds = append(subject.Embeds, &Embed{})
 			subject.Extends = append(subject.Extends, &TypeRef{})
+			subject.Permits = append(subject.Permits, &TypeRef{})
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 7,
+			assert.Equal(t, seen, 8,
 				"the walk descends into every traversed field")
 		})
 
@@ -452,6 +454,7 @@ func TestWalk(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -469,6 +472,7 @@ func TestWalk(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -730,6 +734,7 @@ func TestWalk(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -751,6 +756,7 @@ func TestWalk(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -992,6 +998,7 @@ func TestWalk(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1009,6 +1016,7 @@ func TestWalk(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++

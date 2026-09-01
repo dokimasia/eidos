@@ -31,7 +31,16 @@ import (
 //
 // Types holds declarations nested inside this one, which Java,
 // Kotlin, C#, TypeScript and Python all allow. Without it the walk
-// never reaches an inner class and no generator can see one.
+// never reaches an inner class and no generator can see one. Level
+// says whether a nested type binds to an enclosing instance, which
+// a Java inner class and a Kotlin inner class do, or stands at
+// type level, which Java writes as static; a file-level type
+// leaves it unstated.
+//
+// Sealed says the direct subtypes are enumerated, which Java and
+// Kotlin declare; Permits carries the enumeration where the
+// language states one beyond the file, as Java's permits clause
+// does.
 //
 //eidos:subject
 type Struct struct {
@@ -41,8 +50,10 @@ type Struct struct {
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	Level       symbol.Level      `eidos:"both,fact=Level"`    // a nested type's binding
 	Abstract    bool              `eidos:"both,fact=Abstract"` // no value of it can be made directly
 	Final       bool              `eidos:"both,fact=Final"`    // subclassing is forbidden
+	Sealed      bool              `eidos:"both,fact=Sealed"`   // the direct subtypes are enumerated
 	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
 	Fields      []*Field          `eidos:"both,walk,slot=fields"`
 	Methods     []*Method         `eidos:"both,walk,slot=methods"`
@@ -50,6 +61,7 @@ type Struct struct {
 	Embeds      []*Embed          `eidos:"both,walk,fact=Embeds"`           // compositional promotion
 	Extends     []*TypeRef        `eidos:"both,walk,fact=Extends"`          // nominal supertypes
 	Implements  []*TypeRef        `eidos:"both,walk,fact=Implements"`
+	Permits     []*TypeRef        `eidos:"both,walk,fact=Permits"` // the enumerated subtypes
 	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 }
 
@@ -72,6 +84,10 @@ type Struct struct {
 // implementation supplies, rather than a parameter the caller
 // chooses.
 //
+// Sealed and Permits carry what [Struct]'s carry: the direct
+// subtypes are enumerated, and the enumeration where the language
+// states one.
+//
 //eidos:subject
 type Interface struct {
 	ID          symbol.Identity   `eidos:"node"`
@@ -80,12 +96,14 @@ type Interface struct {
 	Doc         []string          `eidos:"both"`
 	Name        string            `eidos:"both,name"`
 	Visibility  symbol.Visibility `eidos:"both,fact=Visibility"`
+	Sealed      bool              `eidos:"both,fact=Sealed"` // the direct subtypes are enumerated
 	TypeParams  []*TypeParam      `eidos:"both,walk,fact=TypeParams"`
 	Fields      []*Field          `eidos:"both,walk,slot=fields,fact=Properties"` // properties, not just methods
 	Methods     []*Method         `eidos:"both,walk,slot=methods"`
 	Types       []Symbol          `eidos:"both,walk,slot=types,fact=Types"` // nested declarations and associated types
 	Embeds      []*Embed          `eidos:"both,walk,fact=Embeds"`
 	Extends     []*TypeRef        `eidos:"both,walk,fact=Extends"`
+	Permits     []*TypeRef        `eidos:"both,walk,fact=Permits"` // the enumerated subtypes
 	Annotations Annotations       `eidos:"emit,fact=Annotations"`
 }
 

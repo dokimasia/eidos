@@ -127,6 +127,17 @@ func TestVocabulary(t *testing.T) {
 		assert.NoError(t, err, "an abstract class spells")
 		assert.Equal(t, got, "public abstract ", "abstract behind the access")
 
+		got, err = backend.TypeMods(&emit.Struct{
+			Name: "Inner", Level: symbol.LevelType, Final: true, Sealed: true,
+		})
+		assert.NoError(t, err, "a static sealed final class spells")
+		assert.Equal(t, got, "public static final sealed ",
+			"static, final and sealed in Java's stated order")
+
+		got, err = backend.TypeMods(&emit.Interface{Name: "Shape", Sealed: true})
+		assert.NoError(t, err, "a sealed interface spells")
+		assert.Equal(t, got, "public sealed ", "sealed behind the access")
+
 		_, err = backend.TypeMods(&emit.Struct{
 			Name: "Row", Visibility: symbol.VisibilityPrivate,
 		})
@@ -211,6 +222,15 @@ func TestVocabulary(t *testing.T) {
 		assert.NoError(t, err, "an interface heritage spells")
 		assert.Equal(t, got, " extends Keyed, Closeable",
 			"the widened contracts joined behind extends")
+
+		got, err = backend.Heritage(&emit.Interface{
+			Name:    "Shape",
+			Extends: []*emit.TypeRef{ref("Figure")},
+			Permits: []*emit.TypeRef{ref("Circle"), ref("Square")},
+		})
+		assert.NoError(t, err, "a sealed heritage spells")
+		assert.Equal(t, got, " extends Figure permits Circle, Square",
+			"the enumerated subtypes last, behind permits")
 
 		_, err = backend.Heritage(&emit.Struct{
 			Name:    "Row",

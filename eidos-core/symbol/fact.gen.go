@@ -32,10 +32,12 @@ const (
 	FactComment
 	FactMutability
 	FactTag
+	FactSealed
 	FactTypes
 	FactEmbeds
 	FactExtends
 	FactImplements
+	FactPermits
 	FactProperties
 	FactDefined
 	FactVariance
@@ -67,10 +69,12 @@ var factNames = [...]string{
 	FactComment:          "Comment",
 	FactMutability:       "Mutability",
 	FactTag:              "Tag",
+	FactSealed:           "Sealed",
 	FactTypes:            "Types",
 	FactEmbeds:           "Embeds",
 	FactExtends:          "Extends",
 	FactImplements:       "Implements",
+	FactPermits:          "Permits",
 	FactProperties:       "Properties",
 	FactDefined:          "Defined",
 	FactVariance:         "Variance",
@@ -111,10 +115,12 @@ func Facts() []Fact {
 		FactComment,
 		FactMutability,
 		FactTag,
+		FactSealed,
 		FactTypes,
 		FactEmbeds,
 		FactExtends,
 		FactImplements,
+		FactPermits,
 		FactProperties,
 		FactDefined,
 		FactVariance,

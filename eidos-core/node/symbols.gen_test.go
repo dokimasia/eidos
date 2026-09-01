@@ -518,6 +518,7 @@ func TestSymbols(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				encoded, err := EncodeJSON(subject)
 				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
@@ -528,7 +529,7 @@ func TestSymbols(t *testing.T) {
 					walked++
 					return true
 				})
-				assert.Equal(t, walked, 8,
+				assert.Equal(t, walked, 9,
 					"with every child the original held")
 			}
 
@@ -540,6 +541,7 @@ func TestSymbols(t *testing.T) {
 				subject.Types = append(subject.Types, &Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				encoded, err := EncodeJSON(subject)
 				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
@@ -550,7 +552,7 @@ func TestSymbols(t *testing.T) {
 					walked++
 					return true
 				})
-				assert.Equal(t, walked, 7,
+				assert.Equal(t, walked, 8,
 					"with every child the original held")
 			}
 

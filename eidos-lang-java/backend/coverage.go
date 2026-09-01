@@ -31,6 +31,8 @@ func Coverage() render.Coverage {
 			symbol.FactLevel:            render.Renders,
 			symbol.FactAbstract:         render.Renders,
 			symbol.FactFinal:            render.Renders,
+			symbol.FactSealed:           render.Renders,
+			symbol.FactPermits:          render.Renders,
 			symbol.FactOverride:         render.Renders,
 			symbol.FactDefaultBody:      render.Renders,
 			symbol.FactLabel:            render.Refuses,

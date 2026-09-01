@@ -24,6 +24,7 @@ func New() plugin.Backend {
 		Funcs(Funcs()).
 		Naming(spell.Filename).
 		Respell(spell.Name).
+		Lower(Lower).
 		Cluster(Cluster).
 		Groups(Groups()).
 		Scaffold(Scaffold).

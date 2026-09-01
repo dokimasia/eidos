@@ -25,8 +25,10 @@ func TestCoverage(t *testing.T) {
 		"implements holds: satisfaction is structural")
 	assert.Equal(t, c.Of(symbol.KindField, symbol.FactTag), render.Renders,
 		"the field tag is Go's own idiom")
-	assert.Equal(t, c.Of(symbol.KindMethod, symbol.FactThrows), render.Refuses,
-		"throws refuses until the error-return lowering lands")
+	assert.Equal(t, c.Of(symbol.KindMethod, symbol.FactThrows), render.Renders,
+		"an announced failure lowers into the error return")
+	assert.Equal(t, c.Of(symbol.KindInterface, symbol.FactSealed), render.Refuses,
+		"nothing seals")
 	assert.Equal(t, c.Of(symbol.KindField, symbol.FactValue), render.Refuses,
 		"a field's initializer refuses")
 	assert.Equal(t, c.Of(symbol.KindVariable, symbol.FactValue), render.Renders,

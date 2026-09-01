@@ -237,11 +237,17 @@ func statedFacts(
 		if x.Visibility != 0 {
 			f(host, symbol.KindStruct, symbol.FactVisibility)
 		}
+		if x.Level != 0 {
+			f(host, symbol.KindStruct, symbol.FactLevel)
+		}
 		if x.Abstract {
 			f(host, symbol.KindStruct, symbol.FactAbstract)
 		}
 		if x.Final {
 			f(host, symbol.KindStruct, symbol.FactFinal)
+		}
+		if x.Sealed {
+			f(host, symbol.KindStruct, symbol.FactSealed)
 		}
 		if len(x.TypeParams) > 0 {
 			f(host, symbol.KindStruct, symbol.FactTypeParams)
@@ -257,6 +263,9 @@ func statedFacts(
 		}
 		if len(x.Implements) > 0 {
 			f(host, symbol.KindStruct, symbol.FactImplements)
+		}
+		if len(x.Permits) > 0 {
+			f(host, symbol.KindStruct, symbol.FactPermits)
 		}
 		if len(x.Annotations) > 0 {
 			f(host, symbol.KindStruct, symbol.FactAnnotations)
@@ -277,6 +286,9 @@ func statedFacts(
 		if x.Visibility != 0 {
 			f(host, symbol.KindInterface, symbol.FactVisibility)
 		}
+		if x.Sealed {
+			f(host, symbol.KindInterface, symbol.FactSealed)
+		}
 		if len(x.TypeParams) > 0 {
 			f(host, symbol.KindInterface, symbol.FactTypeParams)
 		}
@@ -291,6 +303,9 @@ func statedFacts(
 		}
 		if len(x.Extends) > 0 {
 			f(host, symbol.KindInterface, symbol.FactExtends)
+		}
+		if len(x.Permits) > 0 {
+			f(host, symbol.KindInterface, symbol.FactPermits)
 		}
 		if len(x.Annotations) > 0 {
 			f(host, symbol.KindInterface, symbol.FactAnnotations)
@@ -414,22 +429,27 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 		},
 		symbol.KindStruct: {
 			symbol.FactVisibility,
+			symbol.FactLevel,
 			symbol.FactAbstract,
 			symbol.FactFinal,
+			symbol.FactSealed,
 			symbol.FactTypeParams,
 			symbol.FactTypes,
 			symbol.FactEmbeds,
 			symbol.FactExtends,
 			symbol.FactImplements,
+			symbol.FactPermits,
 			symbol.FactAnnotations,
 		},
 		symbol.KindInterface: {
 			symbol.FactVisibility,
+			symbol.FactSealed,
 			symbol.FactTypeParams,
 			symbol.FactProperties,
 			symbol.FactTypes,
 			symbol.FactEmbeds,
 			symbol.FactExtends,
+			symbol.FactPermits,
 			symbol.FactAnnotations,
 		},
 		symbol.KindAlias: {

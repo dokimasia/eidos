@@ -12,15 +12,15 @@ import (
 )
 
 // Lower reshapes the constructs Java states in other declarations.
-// A sum becomes the principal interface keeping the sum's name and
-// one final class per variant: each class joins the sum's name and
-// its variant's in the neutral camel form, carries the variant's
-// payload as its fields, restates the sum's type parameters, and
-// implements the principal through a reference resolved to the
-// sum's origin, so every name follows the settle the way the rest
-// of the store does. Sealing stays a recorded limit: the templates
-// spell no permits clause, so the hierarchy closes by convention
-// rather than by the compiler.
+// A sum becomes the sealed principal interface keeping the sum's
+// name and one final class per variant: each class joins the sum's
+// name and its variant's in the neutral camel form, carries the
+// variant's payload as its fields, restates the sum's type
+// parameters, and implements the principal through a reference
+// resolved to the sum's origin, so every name follows the settle
+// the way the rest of the store does. The principal permits each
+// class the same resolved way, because the split files every type
+// apart and Java then demands the enumeration spelled.
 //
 // Every output carries the sum's origin and none restates the sum,
 // so a second settle changes nothing. A sum stating methods
@@ -30,7 +30,7 @@ import (
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	sum, held := s.(*emit.Sum)
 	if !held {
-		return []symbol.Symbol{s}, nil
+		return nil, nil // the declaration stands
 	}
 	if sum.Methods.Len() > 0 {
 		return nil, fmt.Errorf(
@@ -38,13 +38,22 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 				"not carry, and %s states methods", sum.Name)
 	}
 	variants := sum.Variants.Items()
+	permits := make([]*emit.TypeRef, 0, len(variants))
+	for _, v := range variants {
+		permits = append(permits, &emit.TypeRef{
+			Target:   sum.Origin,
+			Spelling: sum.Name + naming.Pascal(v.Name),
+		})
+	}
 	out := make([]symbol.Symbol, 0, 1+len(variants))
 	out = append(out, &emit.Interface{
 		Origin:      sum.Origin,
 		Doc:         sum.Doc,
 		Name:        sum.Name,
 		Visibility:  sum.Visibility,
+		Sealed:      true,
 		TypeParams:  sum.TypeParams,
+		Permits:     permits,
 		Annotations: sum.Annotations,
 	})
 	for _, v := range variants {

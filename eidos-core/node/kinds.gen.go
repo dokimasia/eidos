@@ -769,7 +769,16 @@ func (x *Constant) TypeRef() symbol.Symbol {
 //
 // Types holds declarations nested inside this one, which Java,
 // Kotlin, C#, TypeScript and Python all allow. Without it the walk
-// never reaches an inner class and no generator can see one.
+// never reaches an inner class and no generator can see one. Level
+// says whether a nested type binds to an enclosing instance, which
+// a Java inner class and a Kotlin inner class do, or stands at
+// type level, which Java writes as static; a file-level type
+// leaves it unstated.
+//
+// Sealed says the direct subtypes are enumerated, which Java and
+// Kotlin declare; Permits carries the enumeration where the
+// language states one beyond the file, as Java's permits clause
+// does.
 //
 // This is the node spelling of the kind.
 type Struct struct {
@@ -778,8 +787,10 @@ type Struct struct {
 	Doc        []string          `json:"doc,omitzero"`
 	Name       string            `json:"name,omitzero"`
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Level      symbol.Level      `json:"level,omitzero"`    // a nested type's binding
 	Abstract   bool              `json:"abstract,omitzero"` // no value of it can be made directly
 	Final      bool              `json:"final,omitzero"`    // subclassing is forbidden
+	Sealed     bool              `json:"sealed,omitzero"`   // the direct subtypes are enumerated
 	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
 	Fields     []*Field          `json:"fields,omitzero"`
 	Methods    []*Method         `json:"methods,omitzero"`
@@ -787,6 +798,7 @@ type Struct struct {
 	Embeds     []*Embed          `json:"embeds,omitzero"`  // compositional promotion
 	Extends    []*TypeRef        `json:"extends,omitzero"` // nominal supertypes
 	Implements []*TypeRef        `json:"implements,omitzero"`
+	Permits    []*TypeRef        `json:"permits,omitzero"` // the enumerated subtypes
 }
 
 // Kind returns [symbol.KindStruct].
@@ -849,6 +861,10 @@ func (x *Struct) EmbedList() []symbol.Symbol {
 // implementation supplies, rather than a parameter the caller
 // chooses.
 //
+// Sealed and Permits carry what [Struct]'s carry: the direct
+// subtypes are enumerated, and the enumeration where the language
+// states one.
+//
 // This is the node spelling of the kind.
 type Interface struct {
 	ID         symbol.Identity   `json:"id,omitzero"`
@@ -856,12 +872,14 @@ type Interface struct {
 	Doc        []string          `json:"doc,omitzero"`
 	Name       string            `json:"name,omitzero"`
 	Visibility symbol.Visibility `json:"visibility,omitzero"`
+	Sealed     bool              `json:"sealed,omitzero"` // the direct subtypes are enumerated
 	TypeParams []*TypeParam      `json:"typeParams,omitzero"`
 	Fields     []*Field          `json:"fields,omitzero"` // properties, not just methods
 	Methods    []*Method         `json:"methods,omitzero"`
 	Types      Symbols           `json:"types,omitzero"` // nested declarations and associated types
 	Embeds     []*Embed          `json:"embeds,omitzero"`
 	Extends    []*TypeRef        `json:"extends,omitzero"`
+	Permits    []*TypeRef        `json:"permits,omitzero"` // the enumerated subtypes
 }
 
 // Kind returns [symbol.KindInterface].

@@ -614,6 +614,15 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Struct{}
+			subject.Level = 1
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindStruct, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactLevel, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Struct{}
 			subject.Abstract = true
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -628,6 +637,15 @@ func TestFacts(t *testing.T) {
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindStruct, "under its kind")
 			assert.Equal(t, facts[0], symbol.FactFinal, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Struct{}
+			subject.Sealed = true
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindStruct, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactSealed, "as itself")
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
@@ -677,6 +695,15 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Struct{}
+			subject.Permits = []*TypeRef{{}}
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindStruct, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactPermits, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Struct{}
 			subject.Annotations = Annotations{{}}
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -710,6 +737,15 @@ func TestFacts(t *testing.T) {
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindInterface, "under its kind")
 			assert.Equal(t, facts[0], symbol.FactVisibility, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Interface{}
+			subject.Sealed = true
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindInterface, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactSealed, "as itself")
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
@@ -755,6 +791,15 @@ func TestFacts(t *testing.T) {
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindInterface, "under its kind")
 			assert.Equal(t, facts[0], symbol.FactExtends, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Interface{}
+			subject.Permits = []*TypeRef{{}}
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindInterface, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactPermits, "as itself")
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
@@ -890,9 +935,9 @@ func TestFacts(t *testing.T) {
 			"the Variable facts in schema order")
 		assert.Length(t, table[symbol.KindConstant], 3,
 			"the Constant facts in schema order")
-		assert.Length(t, table[symbol.KindStruct], 9,
+		assert.Length(t, table[symbol.KindStruct], 12,
 			"the Struct facts in schema order")
-		assert.Length(t, table[symbol.KindInterface], 7,
+		assert.Length(t, table[symbol.KindInterface], 9,
 			"the Interface facts in schema order")
 		assert.Length(t, table[symbol.KindAlias], 4,
 			"the Alias facts in schema order")

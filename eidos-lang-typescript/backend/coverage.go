@@ -28,6 +28,8 @@ func Coverage() render.Coverage {
 			symbol.FactLevel:            render.Renders,
 			symbol.FactAbstract:         render.Renders,
 			symbol.FactFinal:            render.Refuses,
+			symbol.FactSealed:           render.Refuses,
+			symbol.FactPermits:          render.Refuses,
 			symbol.FactOverride:         render.Renders,
 			symbol.FactDefaultBody:      render.Refuses,
 			symbol.FactLabel:            render.Refuses,
@@ -80,6 +82,9 @@ func Coverage() render.Coverage {
 			},
 			symbol.KindParam: {
 				symbol.FactAnnotations: render.Refuses,
+			},
+			symbol.KindStruct: {
+				symbol.FactLevel: render.Refuses, // no static classes
 			},
 		},
 	}

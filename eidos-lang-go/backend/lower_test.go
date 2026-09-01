@@ -67,19 +67,48 @@ func TestLower(t *testing.T) {
 		assert.HasError(t, err, "a constant group holds no members")
 	})
 
+	t.Run("an announced failure gains the error return", func(t *testing.T) {
+		t.Parallel()
+
+		f := &emit.Function{
+			Name:    "fetch",
+			Returns: []*emit.Return{{Type: &emit.TypeRef{Spelling: "row"}}},
+			Throws: []*emit.TypeRef{
+				{Spelling: "notFound"}, {Spelling: "timeout"},
+			},
+		}
+		out, err := backend.Lower(f)
+		assert.NoError(t, err, "the throwing function lowers")
+		assert.Length(t, out, 0, "in place: a nil list keeps the declaration")
+		assert.Length(t, f.Throws, 0, "the fact is consumed")
+		assert.Length(t, f.Returns, 2, "the error return appends")
+		assert.Equal(t, f.Returns[1].Type.Spelling, "error",
+			"one error whatever the announced count, because the "+
+				"concrete types arrive through errors.As")
+
+		host := &emit.Struct{Name: "row"}
+		host.Methods.Append(&emit.Method{
+			Name:   "save",
+			Throws: []*emit.TypeRef{{Spelling: "conflict"}},
+		})
+		_, err = backend.Lower(host)
+		assert.NoError(t, err, "a host's member methods lower with it")
+		m := host.Methods.Items()[0]
+		assert.Length(t, m.Throws, 0, "consumed")
+		assert.Equal(t, m.Returns[0].Type.Spelling, "error",
+			"a bare thrower returns the error alone")
+	})
+
 	t.Run("everything else passes through unchanged", func(t *testing.T) {
 		t.Parallel()
 
-		s := &emit.Struct{Name: "row"}
-		out, err := backend.Lower(s)
+		out, err := backend.Lower(&emit.Struct{Name: "row"})
 		assert.NoError(t, err, "a struct passes")
-		assert.Length(t, out, 1, "alone")
-		assert.True(t, out[0] == symbol.Symbol(s), "and untouched")
+		assert.Length(t, out, 0, "as a nil list, so the store keeps it")
 
-		sum := &emit.Sum{Name: "shape"}
-		out, err = backend.Lower(sum)
+		out, err = backend.Lower(&emit.Sum{Name: "shape"})
 		assert.NoError(t, err, "a sum passes too")
-		assert.True(t, out[0] == symbol.Symbol(sum),
+		assert.Length(t, out, 0,
 			"for the render to report as the unspelt kind it is")
 	})
 }

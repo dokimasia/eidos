@@ -264,10 +264,12 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "the implementation supplies the target")
 		_, err = backend.AssocType(&emit.Alias{Name: "Item", Defined: true})
 		assert.HasError(t, err, "an associated type defines nothing itself")
-		_, err = backend.AssocType(&emit.Alias{
+		got, err = backend.AssocType(&emit.Alias{
 			Name: "Item", TypeParams: []*emit.TypeParam{{Name: "T"}},
 		})
-		assert.HasError(t, err, "a generic associated type stays a limit")
+		assert.NoError(t, err, "a generic associated type spells")
+		assert.Equal(t, got, "type Item<T>;",
+			"its parameter list in angle brackets")
 		_, err = backend.AssocType(&emit.Alias{
 			Name: "Item", Visibility: symbol.VisibilityInternal,
 		})

@@ -61,7 +61,7 @@ func BenchmarkNew(b *testing.B) {
 // its own ceiling pinned from measurement with headroom.
 func BenchmarkSettle(b *testing.B) {
 	backendtest.BenchSettle(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 2_100_000})
+		backendtest.Budget{MaxAllocs: 1_900_000})
 }
 
 // The backend is the module's write half: the kernel suite holds

@@ -148,6 +148,31 @@ func TestSettle(t *testing.T) {
 		assert.Equal(t, structs, 1, "and holds the target's shape")
 	})
 
+	t.Run("a nil answer keeps the declaration as it stands", func(t *testing.T) {
+		t.Parallel()
+
+		b := &loweringOnly{}
+		b.name = "golang"
+		b.fn = func(s symbol.Symbol) ([]symbol.Symbol, error) {
+			if m, held := s.(*emit.Method); held {
+				m.Async = false // an in-place rewrite returns nil the same way
+			}
+			return nil, nil
+		}
+		origin := settleOrigin("track", symbol.KindMethod)
+		kept := &emit.Method{Origin: origin, Name: "track", Async: true}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", kept))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
+		assert.False(t, sink.Failed(), "a pass-through reports nothing")
+
+		for u := range e.Units() {
+			assert.Length(t, u.Decls, 1, "the declaration stays")
+			assert.True(t, u.Decls[0] == symbol.Symbol(kept), "itself")
+		}
+		assert.False(t, kept.Async, "carrying the in-place rewrite")
+	})
+
 	t.Run("withholds a refused construct under a positioned finding", func(t *testing.T) {
 		t.Parallel()
 

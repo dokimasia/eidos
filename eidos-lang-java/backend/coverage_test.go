@@ -31,4 +31,8 @@ func TestCoverage(t *testing.T) {
 		"where a sum's variant classes would owe bodies")
 	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactTypes), render.Renders,
 		"nested types render at member depth")
+	assert.Equal(t, c.Of(symbol.KindInterface, symbol.FactSealed), render.Renders,
+		"sealing is Java's own")
+	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactLevel), render.Renders,
+		"a type-level nesting spells static")
 }

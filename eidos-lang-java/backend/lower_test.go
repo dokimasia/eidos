@@ -42,11 +42,9 @@ func TestLower(t *testing.T) {
 	t.Run("a non-sum passes through unchanged", func(t *testing.T) {
 		t.Parallel()
 
-		s := &emit.Struct{Name: "row"}
-		out, err := backend.Lower(s)
+		out, err := backend.Lower(&emit.Struct{Name: "row"})
 		assert.NoError(t, err, "a struct is not lowered")
-		assert.Equal(t, len(out), 1, "one declaration stays one")
-		assert.Equal(t, out[0], symbol.Symbol(s), "the same declaration")
+		assert.Length(t, out, 0, "a nil list keeps the declaration as it stands")
 	})
 
 	t.Run("a sum becomes the interface and its final classes", func(t *testing.T) {
@@ -62,6 +60,12 @@ func TestLower(t *testing.T) {
 		assert.Equal(t, principal.Name, "shape",
 			"keeping the sum's name, so references follow the settle")
 		assert.Equal(t, principal.Doc, sum.Doc, "and the sum's documentation")
+		assert.True(t, principal.Sealed, "sealed, because the set is closed")
+		assert.Length(t, principal.Permits, 2, "permitting each variant class")
+		assert.Equal(t, principal.Permits[0].Spelling, "shapeCircle",
+			"in the neutral form, so the respell decides the case")
+		assert.Equal(t, principal.Permits[0].Target, sum.Origin,
+			"resolved to the sum's origin, so the settle follows it precisely")
 
 		circle, held := out[1].(*emit.Struct)
 		assert.True(t, held, "a variant lowers to a class")

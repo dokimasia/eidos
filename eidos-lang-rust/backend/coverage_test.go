@@ -35,4 +35,6 @@ func TestCoverage(t *testing.T) {
 		"a trait's nested types are its associated types")
 	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactTypes), render.Refuses,
 		"and Rust nests nothing else")
+	assert.Equal(t, c.Of(symbol.KindMethod, symbol.FactThrows), render.Renders,
+		"an announced failure lowers into the Result return")
 }

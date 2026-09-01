@@ -232,14 +232,14 @@ func EnumMods(e *emit.Enum) (string, error) {
 	return Vis(e.Visibility, e.Name)
 }
 
-// AssocType writes one associated type: the bare name behind the
-// keyword, which is what a trait declares and an implementation
+// AssocType writes one associated type: the name behind the
+// keyword, its parameter list in angle brackets where the type is
+// generic, which is what a trait declares and an implementation
 // supplies. Only a transparent alias without a target spells that
 // way, so anything else nested in a trait refuses, and so does a
-// stated visibility, definedness or parameter list: a trait item
-// carries the trait's visibility, an alias with a target is a
-// default the stable language does not take, and a generic
-// associated type stays a declared limit.
+// stated visibility or definedness: a trait item carries the
+// trait's visibility, and an alias with a target is a default the
+// stable language does not take.
 func AssocType(s symbol.Symbol) (string, error) {
 	a, held := s.(*emit.Alias)
 	if !held {
@@ -256,17 +256,17 @@ func AssocType(s symbol.Symbol) (string, error) {
 		return "", fmt.Errorf(
 			"rust: an associated type defines nothing itself, and %s "+
 				"states a defined type", a.Name)
-	case len(a.TypeParams) > 0:
-		return "", fmt.Errorf(
-			"rust: a generic associated type stays a declared limit, and "+
-				"%s states parameters", a.Name)
 	case a.Visibility != symbol.VisibilityUnknown &&
 		a.Visibility != symbol.VisibilityPublic:
 		return "", fmt.Errorf(
 			"rust: a trait item carries the trait's visibility, and %s "+
 				"states its own", a.Name)
 	}
-	return "type " + a.Name + ";", nil
+	params, err := TypeParams(a.TypeParams)
+	if err != nil {
+		return "", err
+	}
+	return "type " + a.Name + params + ";", nil
 }
 
 // SumMods writes a data enum's keywords: its visibility alone. A

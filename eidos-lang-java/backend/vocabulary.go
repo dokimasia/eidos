@@ -190,9 +190,11 @@ func PackageClause(id symbol.Identity) string {
 	return "package " + strings.ReplaceAll(id.Package, "/", ".") + ";\n\n"
 }
 
-// TypeMods writes a file-level type's keywords: public for a
-// public or unstated visibility, nothing for a package-scoped
-// one, then abstract or final on a class where stated. A private,
+// TypeMods writes a type's keywords in Java's stated order:
+// access, then abstract, static, final and sealed on a class
+// where stated, sealed alone on an interface. Static spells a
+// type-level nesting; a file-level type states none, and one that
+// does reaches javac's refusal naming the file. A private,
 // protected or internal visibility refuses, because Java's
 // file-level types take public or default access alone.
 func TypeMods(d symbol.Symbol) (string, error) {
@@ -205,12 +207,25 @@ func TypeMods(d symbol.Symbol) (string, error) {
 		if t.Abstract {
 			part += "abstract "
 		}
+		if t.Level == symbol.LevelType {
+			part += "static "
+		}
 		if t.Final {
 			part += "final "
 		}
+		if t.Sealed {
+			part += "sealed "
+		}
 		return part, nil
 	case *emit.Interface:
-		return access(t.Visibility, t.Name, true)
+		part, err := access(t.Visibility, t.Name, true)
+		if err != nil {
+			return "", err
+		}
+		if t.Sealed {
+			part += "sealed "
+		}
+		return part, nil
 	case *emit.Enum:
 		return access(t.Visibility, t.Name, true)
 	default:
@@ -342,9 +357,11 @@ func access(v symbol.Visibility, name string, fileLevel bool) (string, error) {
 
 // Heritage writes a type's heritage clauses: one superclass
 // behind extends and the contracts behind implements on a class,
-// the widened contracts behind extends on an interface. A second
-// superclass refuses, because Java extends one, and an embed
-// refuses on either, because nothing promotes members.
+// the widened contracts behind extends on an interface, and the
+// enumerated subtypes behind permits on either, last the way Java
+// states them. A second superclass refuses, because Java extends
+// one, and an embed refuses on either, because nothing promotes
+// members.
 func Heritage(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -364,19 +381,29 @@ func Heritage(d symbol.Symbol) (string, error) {
 		if len(t.Implements) > 0 {
 			part += " implements " + joined(t.Implements)
 		}
-		return part, nil
+		return part + permitted(t.Permits), nil
 	case *emit.Interface:
 		if len(t.Embeds) > 0 {
 			return "", unembedded(t.Name)
 		}
+		var part string
 		if len(t.Extends) > 0 {
-			return " extends " + joined(t.Extends), nil
+			part = " extends " + joined(t.Extends)
 		}
-		return "", nil
+		return part + permitted(t.Permits), nil
 	default:
 		return "", fmt.Errorf(
 			"java: no heritage clause spells a %s", d.Kind())
 	}
+}
+
+// permitted writes the permits clause, or nothing where no
+// subtypes are enumerated.
+func permitted(ts []*emit.TypeRef) string {
+	if len(ts) == 0 {
+		return ""
+	}
+	return " permits " + joined(ts)
 }
 
 // Throws writes a callable's throws clause: the declared failure

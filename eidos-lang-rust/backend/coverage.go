@@ -29,11 +29,13 @@ func Coverage() render.Coverage {
 			symbol.FactAsync:            render.Renders,
 			symbol.FactTypeParams:       render.Renders,
 			symbol.FactMultiReturn:      render.Renders,
-			symbol.FactThrows:           render.Refuses,
+			symbol.FactThrows:           render.Renders,
 			symbol.FactAnnotations:      render.Renders,
 			symbol.FactLevel:            render.Renders,
 			symbol.FactAbstract:         render.Refuses,
 			symbol.FactFinal:            render.Holds,
+			symbol.FactSealed:           render.Refuses,
+			symbol.FactPermits:          render.Refuses,
 			symbol.FactOverride:         render.Refuses,
 			symbol.FactDefaultBody:      render.Renders,
 			symbol.FactLabel:            render.Refuses,
@@ -65,6 +67,7 @@ func Coverage() render.Coverage {
 			},
 			symbol.KindStruct: {
 				symbol.FactExtends: render.Refuses, // nothing inherits
+				symbol.FactLevel:   render.Refuses, // no static types
 			},
 			symbol.KindInterface: {
 				symbol.FactTypes: render.Renders, // associated types

@@ -320,6 +320,7 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
 					"a member list the kind carries returns its members")
 			}
@@ -333,6 +334,7 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
 					"a member list the kind carries returns its members")
 			}
@@ -346,6 +348,7 @@ func TestKinds(t *testing.T) {
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Implements = append(subject.Implements, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.EmbedList(),
 					"a member list the kind carries returns its members")
 			}
@@ -358,6 +361,7 @@ func TestKinds(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.FieldList(),
 					"a member list the kind carries returns its members")
 			}
@@ -370,6 +374,7 @@ func TestKinds(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.MethodList(),
 					"a member list the kind carries returns its members")
 			}
@@ -382,6 +387,7 @@ func TestKinds(t *testing.T) {
 				subject.TypesSlot().Append(&Interface{})
 				subject.Embeds = append(subject.Embeds, &Embed{})
 				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.EmbedList(),
 					"a member list the kind carries returns its members")
 			}
