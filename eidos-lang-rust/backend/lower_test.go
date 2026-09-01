@@ -8,8 +8,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/lang-rust/backend"
+	"go.dokimi.dev/eidos/sdk/emit"
 )
 
 // The lowering folds an announced failure into the Result return;

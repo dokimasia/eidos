@@ -7,9 +7,9 @@ import (
 	"path"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/plugin"
 	rust "go.dokimi.dev/eidos/lang-rust"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // Filename spells a unit's filename. Rust names modules in snake

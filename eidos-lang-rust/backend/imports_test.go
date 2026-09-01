@@ -8,8 +8,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/render"
 	"go.dokimi.dev/eidos/lang-rust/backend"
+	"go.dokimi.dev/eidos/sdk/render"
 )
 
 // The use block is pinned byte for byte.

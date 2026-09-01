@@ -4,8 +4,8 @@
 package backend
 
 import (
-	"go.dokimi.dev/eidos/core/render"
-	"go.dokimi.dev/eidos/core/symbol"
+	"go.dokimi.dev/eidos/sdk/render"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // FileTemplate is the Rust file skeleton: the use block the file

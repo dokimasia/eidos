@@ -4,8 +4,8 @@
 package spell
 
 import (
-	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/lang/naming"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // Name spells one declared name in Rust's convention: types and

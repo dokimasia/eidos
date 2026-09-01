@@ -8,8 +8,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/lang-rust/spell"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The convention is what the settle spells every declared name

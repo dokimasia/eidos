@@ -8,8 +8,8 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/lang-rust/spell"
+	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
 // The naming is total over the units a plan admits, and every

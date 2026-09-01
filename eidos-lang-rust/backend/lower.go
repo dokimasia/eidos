@@ -6,8 +6,8 @@ package backend
 import (
 	"fmt"
 
-	"go.dokimi.dev/eidos/core/emit"
-	"go.dokimi.dev/eidos/core/symbol"
+	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The spellings a lowered failure composes: the wrapper the value

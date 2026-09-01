@@ -10,9 +10,9 @@ import (
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/emit"
-	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/lang-rust/backend"
+	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // execute runs one template over one declaration the way the
