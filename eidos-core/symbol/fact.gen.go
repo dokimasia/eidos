@@ -28,6 +28,7 @@ const (
 	FactHardPrivate
 	FactLabel
 	FactParamDefault
+	FactOptional
 	FactVariadic
 	FactNamedReturn
 	FactConstEnum
@@ -70,6 +71,7 @@ var factNames = [...]string{
 	FactHardPrivate:      "HardPrivate",
 	FactLabel:            "Label",
 	FactParamDefault:     "ParamDefault",
+	FactOptional:         "Optional",
 	FactVariadic:         "Variadic",
 	FactNamedReturn:      "NamedReturn",
 	FactConstEnum:        "ConstEnum",
@@ -121,6 +123,7 @@ func Facts() []Fact {
 		FactHardPrivate,
 		FactLabel,
 		FactParamDefault,
+		FactOptional,
 		FactVariadic,
 		FactNamedReturn,
 		FactConstEnum,

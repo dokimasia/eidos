@@ -129,6 +129,9 @@ func statedFacts(
 		if x.Default != "" {
 			f(host, symbol.KindParam, symbol.FactParamDefault)
 		}
+		if x.Optional {
+			f(host, symbol.KindParam, symbol.FactOptional)
+		}
 		if x.Variadic != 0 {
 			f(host, symbol.KindParam, symbol.FactVariadic)
 		}
@@ -215,6 +218,9 @@ func statedFacts(
 		}
 		if x.Hard {
 			f(host, symbol.KindField, symbol.FactHardPrivate)
+		}
+		if x.Optional {
+			f(host, symbol.KindField, symbol.FactOptional)
 		}
 		if x.Value != "" {
 			f(host, symbol.KindField, symbol.FactValue)
@@ -403,6 +409,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 		symbol.KindParam: {
 			symbol.FactLabel,
 			symbol.FactParamDefault,
+			symbol.FactOptional,
 			symbol.FactVariadic,
 			symbol.FactAnnotations,
 		},
@@ -435,6 +442,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactLevel,
 			symbol.FactMutability,
 			symbol.FactHardPrivate,
+			symbol.FactOptional,
 			symbol.FactValue,
 			symbol.FactTag,
 			symbol.FactAnnotations,

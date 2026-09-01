@@ -132,6 +132,7 @@ type Param struct {
 	Label       string          `eidos:"both,fact=Label"` // caller-facing name; Swift and Objective-C
 	Type        *TypeRef        `eidos:"both,walk"`
 	Default     string          `eidos:"both,fact=ParamDefault"` // source spelling, unevaluated; "" when none
+	Optional    bool            `eidos:"both,fact=Optional"`     // present-or-absent: TypeScript's ?, Swift's defaulted trailing
 	Variadic    symbol.Variadic `eidos:"both,fact=Variadic"`     // positional or keyword
 	Annotations Annotations     `eidos:"emit,fact=Annotations"`
 }

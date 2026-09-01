@@ -281,6 +281,15 @@ func TestFacts(t *testing.T) {
 		}
 		{
 			subject := &Param{}
+			subject.Optional = true
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindParam, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactOptional, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Param{}
 			subject.Variadic = 1
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -535,6 +544,15 @@ func TestFacts(t *testing.T) {
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
 			assert.Equal(t, kinds[0], symbol.KindField, "under its kind")
 			assert.Equal(t, facts[0], symbol.FactHardPrivate, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Field{}
+			subject.Optional = true
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindField, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactOptional, "as itself")
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
@@ -971,7 +989,7 @@ func TestFacts(t *testing.T) {
 			"the Function facts in schema order")
 		assert.Length(t, table[symbol.KindMethod], 15,
 			"the Method facts in schema order")
-		assert.Length(t, table[symbol.KindParam], 4,
+		assert.Length(t, table[symbol.KindParam], 5,
 			"the Param facts in schema order")
 		assert.Length(t, table[symbol.KindReturn], 1,
 			"the Return facts in schema order")
@@ -983,7 +1001,7 @@ func TestFacts(t *testing.T) {
 			"the Sum facts in schema order")
 		assert.Length(t, table[symbol.KindSumVariant], 1,
 			"the SumVariant facts in schema order")
-		assert.Length(t, table[symbol.KindField], 8,
+		assert.Length(t, table[symbol.KindField], 9,
 			"the Field facts in schema order")
 		assert.Length(t, table[symbol.KindVariable], 5,
 			"the Variable facts in schema order")

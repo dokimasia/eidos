@@ -34,6 +34,7 @@ var factNamings = []struct {
 	{fact: FactHardPrivate, want: "HardPrivate"},
 	{fact: FactLabel, want: "Label"},
 	{fact: FactParamDefault, want: "ParamDefault"},
+	{fact: FactOptional, want: "Optional"},
 	{fact: FactVariadic, want: "Variadic"},
 	{fact: FactNamedReturn, want: "NamedReturn"},
 	{fact: FactConstEnum, want: "ConstEnum"},

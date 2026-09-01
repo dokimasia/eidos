@@ -149,6 +149,7 @@ type Param struct {
 	Label       string          `json:"label,omitzero"` // caller-facing name; Swift and Objective-C
 	Type        *TypeRef        `json:"type,omitzero"`
 	Default     string          `json:"default,omitzero"`  // source spelling, unevaluated; "" when none
+	Optional    bool            `json:"optional,omitzero"` // present-or-absent: TypeScript's ?, Swift's defaulted trailing
 	Variadic    symbol.Variadic `json:"variadic,omitzero"` // positional or keyword
 	Annotations Annotations     `json:"annotations,omitzero"`
 }
@@ -545,7 +546,8 @@ type Field struct {
 	Visibility  symbol.Visibility `json:"visibility,omitzero"`
 	Level       symbol.Level      `json:"level,omitzero"`
 	Mutability  symbol.Mutability `json:"mutability,omitzero"`
-	Hard        bool              `json:"hard,omitzero"` // runtime-private: TypeScript's # names
+	Hard        bool              `json:"hard,omitzero"`     // runtime-private: TypeScript's # names
+	Optional    bool              `json:"optional,omitzero"` // present-or-absent: TypeScript's ?
 	Type        *TypeRef          `json:"type,omitzero"`
 	Value       string            `json:"value,omitzero"` // initializer's source spelling, unevaluated; "" when none
 	Tag         string            `json:"tag,omitzero"`   // tag text without delimiters; "" when none
