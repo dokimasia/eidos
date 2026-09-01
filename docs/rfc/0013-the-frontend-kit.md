@@ -205,12 +205,13 @@ the unit:
 gb.Package(path) *node.Package          // created once per path
 gb.Scope(file *node.File, bindings any) // what Resolve reads
 gb.Attach(subject symbol.Symbol, raw directive.Raw)
+gb.Stamp(subject symbol.Symbol, s meta.RawStamp)
 ```
 
-Scopes and attachments are recorded by node pointer rather than by
-identity, because canonical identities do not exist until the
-splice assigns them, and a derivation spelled once per frontend
-would drift.
+Scopes, attachments and stamps are recorded by node pointer rather
+than by identity, because canonical identities do not exist until
+the splice assigns them, and a derivation spelled once per
+frontend would drift.
 
 A unit declares as many packages as its bytes do: a Go directory
 holds `foo` beside its external `foo_test`, one proto load spells
@@ -278,7 +279,16 @@ generators' output — through the same fact store discipline
 annotators use, at plugin authority under the frontend's
 identity: the authority order gains no new level, a directive or
 a manual override still wins, and a second write at the same
-authority still refuses.
+authority still refuses. The mechanism is the raw directive's: a
+stamp records against the parsed node as a pre-claim carrying the
+key's boundary name, the store carries it beside the raw
+directives, and the phase holding the registry — the workspace run
+today, the suite standing in — applies it between the seal and
+the first handler, refusals reported under the fact store's own
+code. The stamp's origin is the kernel's to fill at the splice, so
+a stamp cannot speak for another plugin, and rank decides every
+winner at read, so a directive-authority drop beats a
+classification stamp whichever applied first.
 
 A frontend that needs configuration declares it the way any
 plugin does, through [plugin.OptionsProvider], and the kit folds
