@@ -234,16 +234,14 @@ func Package(id symbol.Identity) string {
 func Guard(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
-		switch {
-		case t.Abstract:
+		if t.Abstract {
 			return "", refuse("every struct can be made, and %s states abstract", t.Name)
 		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Interface:
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Function:
-		switch {
-		case t.Async:
+		if t.Async {
 			return "", refuse("concurrency is caller-side, and %s states async", t.Name)
 		}
 		return "", cased(t.Visibility, t.Name)
@@ -276,8 +274,7 @@ func Guard(d symbol.Symbol) (string, error) {
 	case *emit.Constant:
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Variable:
-		switch {
-		case t.Mutability == symbol.MutabilityImmutable:
+		if t.Mutability == symbol.MutabilityImmutable {
 			return "", refuse("an immutable binding is a constant, and %s states a variable", t.Name)
 		}
 		return "", cased(t.Visibility, t.Name)
