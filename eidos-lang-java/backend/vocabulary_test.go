@@ -258,7 +258,7 @@ func TestVocabulary(t *testing.T) {
 		t.Parallel()
 
 		assert.Equal(t, backend.Annotate(nil), "", "no annotations, no lines")
-		assert.Equal(t, backend.Annotate(emit.Annotations{
+		assert.Equal(t, backend.Annotate(symbol.Annotations{
 			{Name: "Deprecated"},
 			{Name: "SuppressWarnings", Args: []string{`"unchecked"`}},
 		}, "    "),

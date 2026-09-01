@@ -451,7 +451,7 @@ func unembedded(name string) error {
 // annotation, each prefixed with the given indentation: the name
 // behind its marker, and the argument spellings verbatim in
 // parentheses where any are stated.
-func Annotate(a emit.Annotations, prefix ...string) string {
+func Annotate(a symbol.Annotations, prefix ...string) string {
 	at := strings.Join(prefix, "")
 	var b strings.Builder
 	for _, an := range a {

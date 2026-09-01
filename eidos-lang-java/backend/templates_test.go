@@ -206,7 +206,7 @@ func TestTemplates(t *testing.T) {
 		s := &emit.Struct{
 			Name:        "Row",
 			Abstract:    true,
-			Annotations: emit.Annotations{{Name: "Entity"}},
+			Annotations: symbol.Annotations{{Name: "Entity"}},
 		}
 		s.Fields.Append(&emit.Field{
 			Name:       "MAX",
