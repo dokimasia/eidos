@@ -80,6 +80,30 @@ type Emitter = core.Emitter
 // handles onto one accumulator.
 type Out = core.Out
 
+// Classifier inspects a parsed unit and stamps classification
+// facts through the unit's builder — a test-file marker, a foreign
+// generator's output — at plugin authority under the frontend's
+// identity. It runs after the author's parse, on the same unit, so
+// what it inspects is what the parse declared; a returned error is
+// fatal to the load the way a parse error is. There is no
+// exclusion hook beside it: a classifier stamps what it saw and
+// drops nothing, because whether a classified file takes part is
+// the consumer's call.
+type Classifier = core.Classifier
+
+// FrontendBuilder accumulates a frontend declaration: the identity
+// and language every declaration carries, the comment syntax the
+// parse strips through, the file claim, and the functions the
+// pipeline varies in. Everything on it is data except the
+// functions; Build freezes it, and a FrontendBuilder is not reused
+// afterwards.
+type FrontendBuilder = core.FrontendBuilder
+
+// NewFrontend starts a frontend declaration for one language.
+func NewFrontend(name plugin.ID, lang symbol.Lang, syntax plugin.CommentSyntax) *FrontendBuilder {
+	return core.NewFrontend(name, lang, syntax)
+}
+
 // FunctionMatch is the OnFunction subject.
 type FunctionMatch = core.FunctionMatch
 
