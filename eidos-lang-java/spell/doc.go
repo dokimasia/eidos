@@ -1,5 +1,5 @@
 // Copyright ThesmOS B.V. 2026
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package spell writes Java's spellings of naming facts: a file
 // is named after the lone public type its unit holds, and a

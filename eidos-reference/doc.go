@@ -1,5 +1,5 @@
 // Copyright ThesmOS B.V. 2026
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package reference is the reference plugin ensemble: a complete,
 // API-typical consumer of the kernel's authoring surface —

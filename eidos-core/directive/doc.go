@@ -1,5 +1,5 @@
 // Copyright ThesmOS B.V. 2026
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package directive holds the one grammar every carrier lowers to,
 // the schemas that close it, and the validation that types it.

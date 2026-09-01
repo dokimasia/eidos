@@ -69,4 +69,4 @@ security@dokimi.dev, as [SECURITY](SECURITY.md) explains.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+Apache-2.0. See [LICENSE](LICENSE).

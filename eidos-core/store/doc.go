@@ -1,5 +1,5 @@
 // Copyright ThesmOS B.V. 2026
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package store holds the node graph and the tracked reads over it.
 //

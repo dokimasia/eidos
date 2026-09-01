@@ -1,5 +1,5 @@
 // Copyright ThesmOS B.V. 2026
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package output takes rendered files the last step, from values
 // to bytes a person reviews and a run can prove it owns.

@@ -1,5 +1,5 @@
 // Copyright ThesmOS B.V. 2026
-// SPDX-License-Identifier: MIT
+// SPDX-License-Identifier: Apache-2.0
 
 // Package scaffold spells the parts of the neutral statement
 // vocabulary every C-family target writes identically. A name is

@@ -7,4 +7,4 @@
 # Edit the copyright holder + SPDX identifier to suit your project.
 header: |
   // Copyright ThesmOS B.V. {{YEAR}}
-  // SPDX-License-Identifier: MIT
+  // SPDX-License-Identifier: Apache-2.0
