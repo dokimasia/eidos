@@ -48,6 +48,20 @@ func TestImportSet(t *testing.T) {
 		assert.Equal(t, s.Len(), 2, "the count follows the paths")
 	})
 
+	t.Run("keeps type-only bindings apart from value bindings", func(t *testing.T) {
+		t.Parallel()
+
+		var s render.ImportSet
+		s.AddType("svc/store", "Row")
+		s.AddNamed("svc/store", "Row")
+		s.AddType("svc/store", "Row")
+		assert.Equal(t, s.Entries(), []render.Entry{
+			{Path: "svc/store", Name: "Row"},
+			{Path: "svc/store", Name: "Row", TypeOnly: true},
+		}, "one name binds twice, the value form first, so a renderer's "+
+			"join reads the pair in one pass")
+	})
+
 	t.Run("resets for the next file", func(t *testing.T) {
 		t.Parallel()
 

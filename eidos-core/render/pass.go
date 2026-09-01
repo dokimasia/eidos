@@ -335,7 +335,7 @@ func unbound() template.FuncMap {
 	}
 	return template.FuncMap{
 		BuiltinBody:    func(any) (string, error) { return refuse() },
-		BuiltinUse:     func(string) (string, error) { return refuse() },
+		BuiltinUse:     func(string, ...string) (string, error) { return refuse() },
 		BuiltinImports: refuse,
 		BuiltinDecls:   refuse,
 		BuiltinNested:  func(string, symbol.Symbol) (string, error) { return refuse() },
@@ -605,9 +605,19 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 }
 
 // use records one import path into the file under render; it is
-// the builtin a kind template qualifies with.
-func (f *frame) use(path string) (string, error) {
-	f.set.Add(path)
+// the builtin a kind template qualifies with. A second argument
+// records the name the import binds — an alias, a side-effect
+// blank — for the languages whose import form binds one; more
+// than one refuses, because one call records one binding.
+func (f *frame) use(path string, name ...string) (string, error) {
+	switch len(name) {
+	case 0:
+		f.set.Add(path)
+	case 1:
+		f.set.AddNamed(path, name[0])
+	default:
+		return "", fmt.Errorf("render: use records one binding, got %d", len(name))
+	}
 	return "", nil
 }
 
