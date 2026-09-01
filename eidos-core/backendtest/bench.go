@@ -87,13 +87,12 @@ func BenchRender(b *testing.B, setup Setup, budget Budget) {
 }
 
 // BenchSettle measures the settle over the setup's corpus: every
-// iteration builds a fresh fixture and settles it whole, because
-// a settled store settles to itself and a second pass would
-// measure the short circuit. The corpus build rides inside the
-// number and is identical across backends, so the ceiling pins
-// build plus settle and a settle regression still moves it; the
-// render benchmarks settle before their loop, so the two numbers
-// split the pipeline between them.
+// iteration builds a fresh fixture, because a settled store
+// settles to itself and a second pass would measure the short
+// circuit, and the build runs outside the measurement, so the
+// ceiling pins the settle alone. The render benchmarks settle
+// before their loop, so the two numbers split the pipeline
+// between them.
 func BenchSettle(b *testing.B, setup Setup, budget Budget) {
 	b.Helper()
 
@@ -103,7 +102,13 @@ func BenchSettle(b *testing.B, setup Setup, budget Budget) {
 	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
 	defer c.End()
 	for c.Loop() {
-		r, f := setup(b)
+		var r plugin.Renderer
+		var f *Fixture
+		var sink *diag.Sink
+		c.Excluding(func() {
+			r, f = setup(b)
+			sink = diag.NewSink()
+		})
 		if f == nil || f.Emit == nil {
 			b.Fatal("the setup carries no fixture")
 		}
@@ -111,7 +116,6 @@ func BenchSettle(b *testing.B, setup Setup, budget Budget) {
 		if !held {
 			b.Fatal("the settle takes the backend's declared seams")
 		}
-		sink := diag.NewSink()
 		if err := plugin.Settle(f.Emit, bk, sink); err != nil {
 			b.Fatalf("the settle completes: %v", err)
 		}
