@@ -152,6 +152,18 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 	core.RunBackendSuite(t, setup)
 }
 
+// AssertRenderedMembers settles one setup's fixture, renders it,
+// and holds every member declaration to appearing in the output:
+// each settled field, method and variant name occurs in the
+// rendered bytes, or a finding names it. A host template that
+// ranges some member lists and forgets one drops those members
+// with no finding — the drop is invisible to the kind and fact
+// checks, because neither visits a member a template never
+// renders, so this check reads the bytes instead.
+func AssertRenderedMembers(tb assert.TB, setup Setup) {
+	core.AssertRenderedMembers(tb, setup)
+}
+
 // AssertCoveredFacts holds a backend's declared fact coverage to
 // the render: the declaration is total over the fact set, its
 // exceptions stay on facts their kind can state, the settled
