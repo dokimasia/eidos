@@ -319,6 +319,8 @@ type Fixture struct {
     Sources    fs.FS    // the unit tree the suite selects from
     Signatures []string // unit roots loaded signature-only;
                         // everything else loads Full
+    Schemas []directive.Schema      // what the carriers validate under
+    Keys    func(*meta.Registry) error // what the stamps apply under
 }
 type Setup func(tb assert.TB) (plugin.Frontend, *Fixture)
 
