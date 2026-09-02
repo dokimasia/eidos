@@ -803,6 +803,10 @@ func TestSymbols(t *testing.T) {
 			assert.NoError(t, json.Unmarshal([]byte("null"), &decoded),
 				"null unmarshals")
 			assert.Nil(t, decoded, "to nothing, so a value re-encodes as it arrived")
+
+			one, err := DecodeJSON([]byte("null"))
+			assert.NoError(t, err, "a null element decodes the way it encoded")
+			assert.Nil(t, one, "to the nil declaration EncodeJSON produced it from")
 		})
 
 		t.Run("refuses an element it cannot place", func(t *testing.T) {

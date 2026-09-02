@@ -42,6 +42,10 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 	options, optioned := probe.(plugin.OptionsProvider)
 	templated := declaresTree(probe, fixture)
 
+	t.Run("populated fixture", func(t *testing.T) {
+		t.Parallel()
+		AssertPopulatedFixture(t, setup)
+	})
 	t.Run("declaration stability", func(t *testing.T) {
 		t.Parallel()
 		AssertStableDeclaration(t, setup)
@@ -89,6 +93,31 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 			runAll(t, p, f)
 		}, "a fixture run never panics")
 	})
+}
+
+// AssertPopulatedFixture refuses a fixture whose graph holds no
+// declarations: every other check in the suite passes vacuously
+// over an empty run and proves nothing, which is the emptiness
+// this kit's siblings already refuse.
+func AssertPopulatedFixture(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	_, f := setup(tb)
+	if f == nil || f.Graph == nil {
+		tb.Errorf("the setup carries no fixture graph")
+		return
+	}
+	// The check owns this setup's fixture, so sealing it here is
+	// the same seal the first phase call would make.
+	f.Graph.Freeze()
+	for range f.Graph.ByKind(symbol.KindFile) {
+		return
+	}
+	for range f.Graph.ByKind(symbol.KindStruct) {
+		return
+	}
+	tb.Errorf("the fixture graph holds no files and no structs: an " +
+		"empty run passes vacuously and proves nothing")
 }
 
 // AssertStableDeclaration holds two builds of one plugin to the

@@ -34,8 +34,8 @@ const (
 	FactConstEnum
 	FactFields
 	FactMethods
-	FactValue
 	FactComment
+	FactValue
 	FactMutability
 	FactTag
 	FactSealed
@@ -77,8 +77,8 @@ var factNames = [...]string{
 	FactConstEnum:        "ConstEnum",
 	FactFields:           "Fields",
 	FactMethods:          "Methods",
-	FactValue:            "Value",
 	FactComment:          "Comment",
+	FactValue:            "Value",
 	FactMutability:       "Mutability",
 	FactTag:              "Tag",
 	FactSealed:           "Sealed",
@@ -129,8 +129,8 @@ func Facts() []Fact {
 		FactConstEnum,
 		FactFields,
 		FactMethods,
-		FactValue,
 		FactComment,
+		FactValue,
 		FactMutability,
 		FactTag,
 		FactSealed,

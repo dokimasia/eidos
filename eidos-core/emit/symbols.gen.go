@@ -6,6 +6,7 @@
 package emit
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 
@@ -136,6 +137,9 @@ func EncodeJSON(s symbol.Symbol) ([]byte, error) {
 // rest. JSON null decodes to a nil declaration, and an unknown or
 // absent kind is an error naming what it read.
 func DecodeJSON(data []byte) (symbol.Symbol, error) {
+	if string(bytes.TrimSpace(data)) == "null" {
+		return nil, nil
+	}
 	var probe struct {
 		Kind string `json:"kind"`
 	}

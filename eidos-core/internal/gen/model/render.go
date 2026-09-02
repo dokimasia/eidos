@@ -84,7 +84,7 @@ var memberMethods = []struct {
 	Method string
 	Fields []string
 }{
-	{Method: "FieldList", Fields: []string{"Fields", "Variants"}},
+	{Method: "FieldList", Fields: []string{"Fields"}},
 	{Method: "MethodList", Fields: []string{"Methods"}},
 	{Method: "EmbedList", Fields: []string{"Embeds"}},
 }

@@ -84,9 +84,11 @@ var outputs = []output{
 	{Path: "emit/facts.gen_test.go", Template: "facts.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 }
 
-// OwnedDirs are the directories the generator writes into. The
-// mirror guard scans them for strays.
-var OwnedDirs = []string{SymbolPackage, NodePackage, EmitPackage}
+// OwnedDirs are the directories the generator writes into, the
+// module root included because the match file sits there. The
+// mirror guard scans them for strays; the root scans its own
+// files alone.
+var OwnedDirs = []string{".", SymbolPackage, NodePackage, EmitPackage}
 
 // data is what a template renders against.
 type data struct {

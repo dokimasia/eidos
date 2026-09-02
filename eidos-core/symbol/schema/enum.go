@@ -46,6 +46,7 @@ type EnumVariant struct {
 	Origin      symbol.Identity    `eidos:"emit"`
 	Pos         position.Pos       `eidos:"node"`
 	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Value       string             `eidos:"both,fact=Value"` // source spelling, unevaluated
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`

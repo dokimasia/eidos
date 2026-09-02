@@ -408,6 +408,7 @@ func (x *Enum) EmbedList() []symbol.Symbol {
 type EnumVariant struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
 	Doc         []string           `json:"doc,omitzero"`
+	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string             `json:"name,omitzero"`
 	Value       string             `json:"value,omitzero"` // source spelling, unevaluated
 	Annotations symbol.Annotations `json:"annotations,omitzero"`
@@ -454,13 +455,9 @@ func (x *Sum) Position() position.Pos { return position.Pos{} }
 // none.
 func (x *Sum) Docs() []string { return x.Doc }
 
-// FieldList returns the member list, adapted for neutral code.
+// FieldList returns the member list, adapted for neutral code. This kind carries none, so it returns nil.
 func (x *Sum) FieldList() []symbol.Symbol {
-	out := make([]symbol.Symbol, 0, x.Variants.Len())
-	for _, member := range x.Variants.Items() {
-		out = append(out, member)
-	}
-	return out
+	return nil
 }
 
 // MethodList returns the member list, adapted for neutral code.

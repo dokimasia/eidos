@@ -255,6 +255,9 @@ func TestKinds(t *testing.T) {
 			assert.Nil(t, (&Enum{}).EmbedList(),
 				"a member list the kind does not carry returns nil")
 
+			assert.Nil(t, (&Sum{}).FieldList(),
+				"a member list the kind does not carry returns nil")
+
 			assert.Nil(t, (&Sum{}).EmbedList(),
 				"a member list the kind does not carry returns nil")
 
@@ -283,15 +286,6 @@ func TestKinds(t *testing.T) {
 				subject.FieldsSlot().Append(&Field{})
 				subject.MethodsSlot().Append(&Method{})
 				assert.NotEmpty(t, subject.MethodList(),
-					"a member list the kind carries returns its members")
-			}
-
-			{
-				subject := &Sum{}
-				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
-				subject.VariantsSlot().Append(&SumVariant{})
-				subject.MethodsSlot().Append(&Method{})
-				assert.NotEmpty(t, subject.FieldList(),
 					"a member list the kind carries returns its members")
 			}
 

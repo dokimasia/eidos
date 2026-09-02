@@ -16,8 +16,11 @@ type Symbol interface {
 	Docs() []string
 }
 
-// Membered is any kind that carries members: Struct, Interface,
-// Enum and Sum satisfy it.
+// Membered is any kind that carries a member list: Struct,
+// Interface, Enum, Sum, SumVariant and the callables' hosts
+// satisfy it, each returning nil for a list its shape does not
+// hold — a Sum's members are its variants, so its FieldList is
+// nil.
 //
 // The slices hold the side's concrete kinds, adapted to []Symbol so
 // neutral code needs no side import. Each call allocates the

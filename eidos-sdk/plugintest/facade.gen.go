@@ -74,6 +74,14 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 	core.RunPluginSuite(t, setup)
 }
 
+// AssertPopulatedFixture refuses a fixture whose graph holds no
+// declarations: every other check in the suite passes vacuously
+// over an empty run and proves nothing, which is the emptiness
+// this kit's siblings already refuse.
+func AssertPopulatedFixture(tb assert.TB, setup Setup) {
+	core.AssertPopulatedFixture(tb, setup)
+}
+
 // AssertStableDeclaration holds two builds of one plugin to the
 // same declaration: the name, the gate records, the outputs and
 // the owned schemas. A declaration that varies between builds

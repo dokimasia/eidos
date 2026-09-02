@@ -5,6 +5,7 @@ package eidos
 
 import (
 	"io/fs"
+	"maps"
 	"slices"
 	"strconv"
 
@@ -180,7 +181,7 @@ func (b *Builder) Build() plugin.Plugin {
 		version:  b.version,
 		outputs:  slices.Clone(b.outputs),
 		outByTag: outByTag,
-		priority: b.priority,
+		priority: maps.Clone(b.priority),
 		provides: slices.Clone(b.provides),
 		requires: slices.Clone(b.requires),
 		options:  b.options,

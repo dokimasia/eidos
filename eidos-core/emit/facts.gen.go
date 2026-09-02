@@ -168,6 +168,9 @@ func statedFacts(
 			statedFacts(x, child, f)
 		}
 	case *EnumVariant:
+		if x.Comment != "" {
+			f(host, symbol.KindEnumVariant, symbol.FactComment)
+		}
 		if x.Value != "" {
 			f(host, symbol.KindEnumVariant, symbol.FactValue)
 		}
@@ -424,6 +427,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactAnnotations,
 		},
 		symbol.KindEnumVariant: {
+			symbol.FactComment,
 			symbol.FactValue,
 			symbol.FactAnnotations,
 		},

@@ -394,12 +394,12 @@ func TestFacts(t *testing.T) {
 			// stated in Enum.Variants
 			subject := &Enum{}
 			child := &EnumVariant{}
-			child.Value = "x"
+			child.Comment = "x"
 			subject.VariantsSlot().Append(child)
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the child's fact arrives")
 			assert.Equal(t, kinds[0], symbol.KindEnumVariant, "under the child's kind")
-			assert.Equal(t, facts[0], symbol.FactValue, "as itself")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
 			assert.True(t, hosts[0] == symbol.Symbol(subject),
 				"a member's host is its enclosing declaration")
 		}
@@ -410,6 +410,15 @@ func TestFacts(t *testing.T) {
 
 		_, _, none := stated(&EnumVariant{})
 		assert.Length(t, none, 0, "a zero declaration states nothing")
+		{
+			subject := &EnumVariant{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindEnumVariant, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
 		{
 			subject := &EnumVariant{}
 			subject.Value = "x"
@@ -1029,7 +1038,7 @@ func TestFacts(t *testing.T) {
 			"the Return facts in schema order")
 		assert.Length(t, table[symbol.KindEnum], 5,
 			"the Enum facts in schema order")
-		assert.Length(t, table[symbol.KindEnumVariant], 2,
+		assert.Length(t, table[symbol.KindEnumVariant], 3,
 			"the EnumVariant facts in schema order")
 		assert.Length(t, table[symbol.KindSum], 4,
 			"the Sum facts in schema order")

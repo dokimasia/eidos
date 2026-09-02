@@ -132,15 +132,26 @@ func strays(root string, set Set, dirs []string) ([]string, error) {
 				return nil
 			case err != nil:
 				return err
-			case d.IsDir() || !generated(d.Name()):
+			case d.IsDir():
+				// The root entry "." scans its own files alone, so a
+				// generator writing beside its owned directories is
+				// covered without claiming every other directory of
+				// the module.
+				if dir == "." && path != base {
+					return fs.SkipDir
+				}
+				return nil
+			case !generated(d.Name()):
 				return nil
 			}
 			rel, err := filepath.Rel(root, path)
 			if err != nil {
 				return err
 			}
-			if slash := filepath.ToSlash(rel); set[slash] == nil {
-				found = append(found, slash)
+			if slash := filepath.ToSlash(rel); slash != "" {
+				if _, claimed := set[slash]; !claimed {
+					found = append(found, slash)
+				}
 			}
 			return nil
 		})
