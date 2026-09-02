@@ -68,8 +68,11 @@
 //
 // # Stamps
 //
-// Beside the classifications, the parse stamps what it alone can
-// see: a pointer receiver, the iterator return shapes, an empty or
+// Every package a unit declares carries the kernel's neutral
+// module identity — gen.module with the module path, gen.moduleRoot
+// with the directory its go.mod sits in — and a directory outside
+// every module carries neither. Beside the classifications, the
+// parse stamps what it alone can see: a pointer receiver, the iterator return shapes, an empty or
 // constraint interface, a defined type's underlying shape — on the
 // enum when one stands for it — and each constant's exact value
 // where the package's own scope evaluates it, iota arithmetic
@@ -84,9 +87,12 @@
 // never the answer: value spellings in the model stay verbatim
 // and implicit carriers empty, the exact values living in the
 // stamp; a constant an import feeds stays unstamped, absent over
-// wrong; it reads neither the legacy +build form nor vendor and
-// workspace semantics, which are the workspace join's; an
-// import's local name defaults to the path's last segment, the
+// wrong; it reads neither the legacy +build form nor vendor
+// directories; it reads go.mod and never go.work, because an
+// eidos workspace spans toolchain modules by configuration, so the
+// module set a go.work lists decides nothing about what loads, and
+// bytes that cannot change the graph must not key it; an import's
+// local name defaults to the path's last segment, the
 // unbound-qualifier probe catching the mismatch for workspace
 // packages. Free-floating documentation and tool directives
 // between declarations have no model home and drop; their
@@ -95,6 +101,9 @@
 // # Dependency position
 //
 // lang/go/frontend imports the sdk facade and the Go toolchain's
-// own parsing packages; the conformance corpus and the workspace
-// composition import it, and nothing beneath does.
+// own parsing packages, and nothing that executes a process: a
+// frontend reads what it can parse and never runs a build tool,
+// which the package's own test holds over its whole import graph.
+// The conformance corpus and the workspace composition import it,
+// and nothing beneath does.
 package frontend

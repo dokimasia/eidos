@@ -58,7 +58,23 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 	for _, pkgPath := range st.order {
 		stampConstValues(u, st.fset, st.batches[pkgPath])
 	}
+	stampModule(u, root)
 	return nil
+}
+
+// stampModule stamps every package the unit declared with the
+// kernel's neutral module identity: the module path and the
+// directory its go.mod sits in. A directory outside every module
+// stamps nothing, because absence is the negative.
+func stampModule(u *plugin.SourceUnit, root moduleRoot) {
+	if root.module == "" {
+		return
+	}
+	gb := u.Graph()
+	for _, pkg := range gb.Packages() {
+		gb.Stamp(pkg, meta.RawStamp{Key: meta.ModuleKey, Value: root.module, Pos: pkg.Pos})
+		gb.Stamp(pkg, meta.RawStamp{Key: meta.ModuleRootKey, Value: root.dir, Pos: pkg.Pos})
+	}
 }
 
 // parseState is one unit's shared parse machinery: the file set

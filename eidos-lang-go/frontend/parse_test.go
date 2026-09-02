@@ -12,6 +12,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/go/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -432,6 +433,45 @@ func TestParse(t *testing.T) {
 		assert.Equal(t, keys["golang.iterSeq2"], 1, "and the two-arity one")
 		assert.Equal(t, keys["golang.emptyInterface"], 1, "the memberless interface marks")
 		assert.Equal(t, keys["golang.underlyingKind"], 1, "the defined type carries its shape")
+	})
+
+	t.Run("stamps the package's module identity", func(t *testing.T) {
+		t.Parallel()
+
+		tree := fstest.MapFS{
+			"go.mod":      {Data: []byte("module example.test/fix\n")},
+			"a/x.go":      {Data: []byte("package a\n\ntype A int\n")},
+			"a/x_test.go": {Data: []byte("package a_test\n\ntype Probe int\n")},
+		}
+		f := frontend.New(nil)
+		u := unitOf(t, f, tree, "a/x.go")
+		assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+
+		stamped := map[string]map[string]string{}
+		for _, s := range u.Graph().StampRecords() {
+			pkg, is := s.Subject.(*node.Package)
+			if !is {
+				continue
+			}
+			if stamped[pkg.ID.Package] == nil {
+				stamped[pkg.ID.Package] = map[string]string{}
+			}
+			value, _ := s.Stamp.Value.(string)
+			stamped[pkg.ID.Package][string(s.Stamp.Key)] = value
+		}
+		assert.Equal(t, stamped["example.test/fix/a"], map[string]string{
+			string(meta.ModuleKey):     "example.test/fix",
+			string(meta.ModuleRootKey): ".",
+		}, "the package carries the neutral module facts")
+		assert.Equal(t, stamped["example.test/fix/a_test"][string(meta.ModuleKey)],
+			"example.test/fix", "and so does the external test package beside it")
+
+		free := unitOf(t, f, fstest.MapFS{"f/one/x.go": {Data: []byte("package one\n")}}, "f/one/x.go")
+		assert.NoError(t, f.Parse(context.Background(), free), "a moduleless unit parses")
+		for _, s := range free.Graph().StampRecords() {
+			assert.False(t, s.Stamp.Key == meta.ModuleKey || s.Stamp.Key == meta.ModuleRootKey,
+				"and stamps no module identity: absence is the negative")
+		}
 	})
 
 	t.Run("loads shallow at signature depth", func(t *testing.T) {
