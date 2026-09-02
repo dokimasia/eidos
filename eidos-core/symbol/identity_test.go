@@ -43,6 +43,28 @@ func parseCases() []parseCase {
 			want: symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"},
 		},
 		{
+			// The discriminator search admits an opening paren at the
+			// very front, so a spelling that is nothing but a
+			// discriminator is refused for its missing name rather
+			// than read as a package.
+			name:    "a discriminator with nothing before it",
+			in:      "golang:(int)",
+			wantErr: true,
+		},
+		{
+			// The name search admits a dot at the very front of the
+			// last segment, so a name directly after the slash keeps
+			// its package rather than reading as one whole path.
+			name: "a name opening the segment after the slash",
+			in:   "golang:svc/.Name",
+			want: symbol.Identity{Lang: "golang", Package: "svc/", Name: "Name"},
+		},
+		{
+			name: "a name opening a spelling that has no slash",
+			in:   "golang:.Name",
+			want: symbol.Identity{Lang: "golang", Name: "Name"},
+		},
+		{
 			name: "function",
 			in:   "golang:svc/store.Open(string)",
 			want: symbol.Identity{

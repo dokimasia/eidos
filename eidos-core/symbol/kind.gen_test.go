@@ -71,9 +71,16 @@ func TestKind(t *testing.T) {
 		t.Run("a value outside the set returns a placeholder", func(t *testing.T) {
 			t.Parallel()
 
+			// The first value past the set is the one the bound
+			// itself decides: a guard admitting it would index the
+			// name table out of range.
+			edge := Kind(len(kindNamings))
+			assert.NotEqual(t, edge.String(), "",
+				"the first value outside the set returns a placeholder")
+
 			outside := Kind(len(kindNamings) + 1)
 			assert.NotEqual(t, outside.String(), "",
-				"a value outside the set returns a placeholder")
+				"and so does one well past it")
 		})
 	})
 
