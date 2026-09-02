@@ -14,6 +14,7 @@ import (
 	"text/template"
 
 	"go.dokimi.dev/eidos/core/internal/genfile"
+	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
 //go:embed templates/*.tmpl
@@ -51,6 +52,10 @@ var outputs = []output{
 	{Path: "emit/kinds.gen.go", Template: "kinds.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/kinds.gen_test.go", Template: "kinds.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/slots.gen.go", Template: "slots.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{
+		Path: "emit/slots.gen_test.go", Template: "slots.gen_test.go.tmpl",
+		Package: EmitPackage, Side: EmitPackage,
+	},
 	{Path: "emit/names.gen.go", Template: "names.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/names.gen_test.go", Template: "names.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/walk.gen.go", Template: "walk.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
@@ -139,6 +144,25 @@ func Generate(modRoot string) (genfile.Set, error) {
 		set[out.Path] = formatted
 	}
 	return set, nil
+}
+
+// Regenerate renders the models from the schema of the module
+// enclosing dir and writes them into it.
+//
+// It is the whole of what the go:generate wrapper does, so the
+// wrapper holds nothing but the exit status. A directory outside
+// any module is refused, and nothing is written unless every file
+// rendered.
+func Regenerate(dir string) error {
+	root, err := gosource.ModuleRoot(dir)
+	if err != nil {
+		return err
+	}
+	set, err := Generate(root)
+	if err != nil {
+		return err
+	}
+	return genfile.Write(root, set)
 }
 
 // fingerprintOf hashes the node model's shape: every kind and every

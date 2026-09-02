@@ -19,6 +19,19 @@ func TestImporter(t *testing.T) {
 	modRoot, err := filepath.Abs("testdata/mod")
 	assert.NoError(t, err, "the fixture module root resolves")
 
+	t.Run("NewImporter", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports a module root holding no go.mod", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := gosource.NewImporter(token.NewFileSet(), t.TempDir())
+			assert.HasError(t, err, "a module root holding no go.mod is reported")
+			assert.Contains(t, err.Error(), goModName, "naming the file it could not read")
+			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
+		})
+	})
+
 	t.Run("Import", func(t *testing.T) {
 		t.Parallel()
 

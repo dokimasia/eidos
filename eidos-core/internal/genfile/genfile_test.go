@@ -15,6 +15,26 @@ import (
 
 const wellFormed = "package p\n\ntype T struct{ A int }\n"
 
+// The one generated file most cases work with, named once so a
+// case reads the fault rather than the path.
+const (
+	ownedDir  = "node"
+	ownedPath = ownedDir + "/kinds.gen.go"
+	ownedName = "kinds.gen.go"
+)
+
+// blocked puts a directory where the set's file belongs and
+// returns the root. The parent directory then creates, and the
+// read or the write of the file itself is what fails.
+func blocked(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, ownedDir, ownedName), 0o750),
+		"the blocking directory is created")
+	return root
+}
+
 func TestGenfile(t *testing.T) {
 	t.Parallel()
 
@@ -69,12 +89,21 @@ func TestGenfile(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			blocker := filepath.Join(root, "node")
+			blocker := filepath.Join(root, ownedDir)
 			assert.NoError(t, os.WriteFile(blocker, []byte("not a directory"), 0o600),
 				"the blocking file writes")
-			set := genfile.Set{"node/kinds.gen.go": []byte(wellFormed)}
+			set := genfile.Set{ownedPath: []byte(wellFormed)}
 			assert.HasError(t, genfile.Write(root, set),
 				"a directory it cannot create is reported")
+		})
+
+		t.Run("reports a file it cannot write", func(t *testing.T) {
+			t.Parallel()
+
+			err := genfile.Write(blocked(t), genfile.Set{ownedPath: []byte(wellFormed)})
+			assert.HasError(t, err, "a file it cannot write is reported")
+			assert.Contains(t, err.Error(), ownedPath, "naming the file it could not put down")
+			assert.HasPrefix(t, err.Error(), "genfile: ", "under the package prefix")
 		})
 	})
 
@@ -94,6 +123,33 @@ func TestGenfile(t *testing.T) {
 
 			err := genfile.Verify(t.TempDir(), genfile.Set{}, []string{"../elsewhere"})
 			assert.HasError(t, err, "an owned directory escaping the root is refused")
+		})
+
+		t.Run("reports a file it cannot read", func(t *testing.T) {
+			t.Parallel()
+
+			err := genfile.Verify(blocked(t), genfile.Set{ownedPath: []byte(wellFormed)}, nil)
+			assert.HasError(t, err, "a set path it cannot read is reported")
+			assert.Contains(t, err.Error(), ownedPath, "naming the file it could not read")
+			assert.HasPrefix(t, err.Error(), "genfile: ", "under the package prefix")
+		})
+
+		t.Run("reports a directory it cannot scan", func(t *testing.T) {
+			t.Parallel()
+
+			if os.Geteuid() == 0 {
+				t.Skip("root reads a directory whatever its mode")
+			}
+			root := t.TempDir()
+			locked := filepath.Join(root, ownedDir, "locked")
+			assert.NoError(t, os.MkdirAll(locked, 0o750), "the locked directory is created")
+			assert.NoError(t, os.Chmod(locked, 0o000), "and is closed to the scan")
+			t.Cleanup(func() { _ = os.Chmod(locked, 0o750) })
+
+			err := genfile.Verify(root, genfile.Set{}, []string{ownedDir})
+			assert.HasError(t, err, "a directory it cannot scan is reported")
+			assert.Contains(t, err.Error(), ownedDir, "naming the owned directory it was scanning")
+			assert.HasPrefix(t, err.Error(), "genfile: ", "under the package prefix")
 		})
 
 		t.Run("passes over a directory the generator has not created", func(t *testing.T) {

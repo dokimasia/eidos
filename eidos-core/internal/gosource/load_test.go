@@ -5,12 +5,20 @@ package gosource_test
 
 import (
 	"go/token"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/internal/gosource"
+)
+
+// The unparseable file a case writes to fault the parse step: a
+// parameter list that never closes.
+const (
+	brokenName   = "broken.go"
+	brokenSource = "package p\n\nfunc F(\n"
 )
 
 func TestLoad(t *testing.T) {
@@ -67,6 +75,27 @@ func TestLoad(t *testing.T) {
 			_, err := gosource.ParseDir(token.NewFileSet(), "testdata/empty", gosource.HandWritten)
 			assert.HasError(t, err, "a directory holding no readable file is reported")
 		})
+
+		t.Run("reports a file it cannot parse", func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			assert.NoError(t,
+				os.WriteFile(filepath.Join(dir, brokenName), []byte(brokenSource), 0o600),
+				"the unparseable file writes")
+			_, err := gosource.ParseDir(token.NewFileSet(), dir, gosource.HandWritten)
+			assert.HasError(t, err, "a file that does not parse is reported")
+			assert.Contains(t, err.Error(), brokenName, "naming the file it could not read")
+			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
+		})
+
+		t.Run("reports a directory it cannot read", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := gosource.ParseDir(token.NewFileSet(), "testdata/nonexistent", gosource.HandWritten)
+			assert.HasError(t, err, "a directory that does not exist is reported")
+			assert.Contains(t, err.Error(), "nonexistent", "naming the directory")
+		})
 	})
 
 	t.Run("Load", func(t *testing.T) {
@@ -111,6 +140,33 @@ func TestLoad(t *testing.T) {
 				gosource.HandWritten,
 			)
 			assert.HasError(t, err, "a package that does not type-check is reported")
+		})
+
+		t.Run("returns what resolved from a package that does not type-check", func(t *testing.T) {
+			t.Parallel()
+
+			pkg, files, err := gosource.Load(
+				token.NewFileSet(), "testdata/mod/app", "example.test/fixture/app", "",
+				gosource.Complete,
+			)
+			assert.NoError(t, err,
+				"complete mode collects the type-checking errors instead of stopping")
+			assert.Length(t, files, 2, "every file is still read")
+			assert.NotNil(t, pkg.Scope().Lookup("Upper"),
+				"and the names that resolved come back, so a dependency that does not "+
+					"compile still yields its surface")
+		})
+
+		t.Run("reports a module root it cannot resolve imports against", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, err := gosource.Load(
+				token.NewFileSet(), "testdata/mod/app", "example.test/fixture/app", t.TempDir(),
+				gosource.HandWritten,
+			)
+			assert.HasError(t, err, "a module root holding no go.mod is reported")
+			assert.Contains(t, err.Error(), goModName, "naming the file it could not read")
+			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
 		})
 	})
 }

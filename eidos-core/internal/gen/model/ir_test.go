@@ -120,18 +120,51 @@ func TestIR(t *testing.T) {
 			t.Parallel()
 
 			tests := []struct {
-				name string
-				dir  string
-				want string
+				name  string
+				dir   string
+				wants []string
 			}{
-				{"unknown tag token", "testdata/badtoken", "walkk"},
-				{"duplicate slot name", "testdata/dupslot", "parts"},
-				{"slot on a field that is not a slice", "testdata/slotnotslice", model.SlotPrefix},
-				{"walk on a field that is not a kind", "testdata/walkbadtype", model.WalkToken},
-				{"fact on a node-only field", "testdata/factnode", "emit-visible"},
-				{"fact that is not an exported identifier", "testdata/factbadname", "suffix"},
-				{"declaration that is not a struct", "testdata/nonstruct", "Alias"},
-				{"declaration that is not a type", "testdata/notatype", "types and imports"},
+				{"unknown tag token", "testdata/badtoken", []string{"walkk"}},
+				{"unknown side", "testdata/badside", []string{"sideways", "unknown side"}},
+				{"duplicate slot name", "testdata/dupslot", []string{"parts"}},
+				{
+					"slot on a field that is not a slice", "testdata/slotnotslice",
+					[]string{model.SlotPrefix},
+				},
+				{
+					"walk on a field that is not a kind", "testdata/walkbadtype",
+					[]string{model.WalkToken},
+				},
+				{
+					"walk on a shape the schema cannot reference", "testdata/walkbadshape",
+					[]string{"Stream", model.WalkToken},
+				},
+				{
+					"name on a field that is not a string", "testdata/namenotstring",
+					[]string{"Count", "not a string"},
+				},
+				{"fact on a node-only field", "testdata/factnode", []string{"emit-visible"}},
+				{
+					"fact that does not open with a capital", "testdata/factbadname",
+					[]string{"suffix"},
+				},
+				{
+					"fact holding a character an identifier cannot", "testdata/factbadchar",
+					[]string{"As-ync", "suffix"},
+				},
+				{"declaration that is not a struct", "testdata/nonstruct", []string{"Alias"}},
+				{
+					"declaration that is not exported", "testdata/unexported",
+					[]string{"thing", "not exported"},
+				},
+				{
+					"declaration that is not a type", "testdata/notatype",
+					[]string{"types and imports"},
+				},
+				{
+					"subject carrying no node identity", "testdata/nosubjectid",
+					[]string{"Thing", "cannot be dispatched"},
+				},
 			}
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
@@ -139,7 +172,9 @@ func TestIR(t *testing.T) {
 
 					_, err := model.Lower(tt.dir, "")
 					assert.HasError(t, err, "a schema breaking the contract is refused")
-					assert.Contains(t, err.Error(), tt.want, "naming what broke it")
+					for _, want := range tt.wants {
+						assert.Contains(t, err.Error(), want, "naming what broke it")
+					}
 					assert.Contains(t, err.Error(), ".go:", "at a schema position")
 					assert.HasPrefix(t, err.Error(), "model: ", "under the package prefix")
 				})
