@@ -40,7 +40,7 @@ bench:
 
 checks:
   enabled: []
-  disabled: [coverage]
+  disabled: []
 
   excludes:
     - path: "**/*_test.go"
@@ -50,36 +50,69 @@ checks:
 
   skips: []
 
+  # Each floor sits under the layer's measured coverage with room for
+  # ordinary work, so the gate catches a regression rather than every
+  # commit that adds a branch. Raise a floor when its layer settles
+  # above it; never lower one to make a red build green.
   coverage:
     packages:
       - path: eidos-conformance/...
-        line: 75
+        line: 90
       - path: eidos-core/...
-        line: 85
+        line: 95
       - path: eidos-lang/...
-        line: 85
+        line: 90
       - path: eidos-lang-go/...
-        line: 75
+        line: 85
       - path: eidos-lang-java/...
-        line: 75
-      - path: eidos-lang-kotlin/...
-        line: 75
-      - path: eidos-lang-php/...
-        line: 75
-      - path: eidos-lang-protobuf/...
-        line: 75
+        line: 90
       - path: eidos-lang-rust/...
-        line: 75
+        line: 90
       - path: eidos-lang-typescript/...
-        line: 75
-      - path: eidos-plugin-shape/...
-        line: 75
-      - path: eidos-reference/...
-        line: 75
+        line: 85
+      # The remaining modules hold a package comment and no
+      # declarations, so their coverage is 0 of 0 statements and any
+      # floor fails them. Each takes an entry when it holds code:
+      # eidos-lang-protobuf, eidos-lang-kotlin, eidos-lang-php,
+      # eidos-plugin-shape, eidos-reference.
     top_n: 10
 
   mutation:
-    packages: []
+    packages:
+      - path: eidos-core/symbol/...
+        score: 80
+        coverage: 80
+      - path: eidos-core/position/...
+        score: 80
+        coverage: 80
+      - path: eidos-core/diag/...
+        score: 80
+        coverage: 80
+      - path: eidos-core/meta/...
+        score: 80
+        coverage: 80
+      - path: eidos-core/directive/...
+        score: 80
+        coverage: 80
+      # store sizes every index from its tallies before filling any,
+      # so a mutant that changes a capacity hint changes no observable
+      # behaviour and no test can kill it. Its whole surviving set is
+      # that code, which is why its floor sits below the rest.
+      - path: eidos-core/store/...
+        score: 70
+        coverage: 80
+      - path: eidos-core/emit/...
+        score: 80
+        coverage: 80
+      - path: eidos-core/node/...
+        score: 80
+        coverage: 80
+      - path: eidos-core/output/...
+        score: 80
+        coverage: 80
+      - path: eidos-core/plugin/...
+        score: 80
+        coverage: 80
     gremlins:
       workers: 2
       test_cpu: 2
