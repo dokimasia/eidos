@@ -280,7 +280,7 @@ func TestTemplates(t *testing.T) {
 		e := &emit.Enum{Doc: []string{"Phase names a step."}, Name: "Phase"}
 		e.Variants.Append(
 			&emit.EnumVariant{Doc: []string{"OPEN admits writes."}, Name: "OPEN"},
-			&emit.EnumVariant{Name: "CLOSED"},
+			&emit.EnumVariant{Name: "CLOSED", Comment: "terminal"},
 		)
 		e.Fields.Append(&emit.Field{
 			Name: "steps", Level: symbol.LevelType, Type: ref("int"), Value: "2",
@@ -292,7 +292,7 @@ func TestTemplates(t *testing.T) {
 				"public enum Phase {\n"+
 				"    /**\n     * OPEN admits writes.\n     */\n"+
 				"    OPEN,\n"+
-				"    CLOSED,\n"+
+				"    CLOSED, // terminal\n"+
 				"    ;\n"+
 				"    public static int steps = 2;\n"+
 				"}\n",

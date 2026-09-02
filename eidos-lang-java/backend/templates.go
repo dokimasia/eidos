@@ -73,7 +73,7 @@ const (
 const EnumTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 	"{{typemods .}}enum {{.Name}} {\n" +
 	"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
-	"    {{enumvariant .}},\n" +
+	"    {{enumvariant .}},{{with .Comment}} // {{.}}{{end}}\n" +
 	"{{- end}}" +
 	"{{- if or .Fields.Len .Methods.Len}}\n    ;{{end}}" +
 	"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
