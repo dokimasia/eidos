@@ -8,6 +8,8 @@ import (
 	"strings"
 	"text/template"
 
+	"go.dokimi.dev/eidos/lang/spellref"
+	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -76,19 +78,7 @@ func Docs(lines []string, prefix ...string) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	at := strings.Join(prefix, "")
-	var b strings.Builder
-	b.WriteString(at)
-	b.WriteString("/**\n")
-	for _, line := range lines {
-		b.WriteString(at)
-		b.WriteString(" * ")
-		b.WriteString(line)
-		b.WriteByte('\n')
-	}
-	b.WriteString(at)
-	b.WriteString(" */\n")
-	return b.String()
+	return textfmt.BlockDocs(lines, "/**", " * ", " */", prefix...)
 }
 
 // Spell writes a type reference. The source spelling passes
@@ -96,17 +86,7 @@ func Docs(lines []string, prefix ...string) string {
 // carrying arguments holds its bare name in Spelling, and the
 // argument list spells here in angle brackets.
 func Spell(t *emit.TypeRef) string {
-	if t == nil || t.Spelling == "" {
-		return Anonymous
-	}
-	if len(t.Args) == 0 {
-		return t.Spelling
-	}
-	args := make([]string, 0, len(t.Args))
-	for _, a := range t.Args {
-		args = append(args, Spell(a))
-	}
-	return t.Spelling + "<" + strings.Join(args, ", ") + ">"
+	return spellref.Spell(t, "<", ">", Anonymous)
 }
 
 // TypeParams writes a type parameter list in angle brackets, or
@@ -455,18 +435,5 @@ func unembedded(name string) error {
 // behind its marker, and the argument spellings verbatim in
 // parentheses where any are stated.
 func Annotate(a symbol.Annotations, prefix ...string) string {
-	at := strings.Join(prefix, "")
-	var b strings.Builder
-	for _, an := range a {
-		b.WriteString(at)
-		b.WriteString("@")
-		b.WriteString(an.Name)
-		if len(an.Args) > 0 {
-			b.WriteString("(")
-			b.WriteString(strings.Join(an.Args, ", "))
-			b.WriteString(")")
-		}
-		b.WriteString("\n")
-	}
-	return b.String()
+	return textfmt.Marked(a, "@", "", prefix...)
 }

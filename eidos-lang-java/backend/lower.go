@@ -6,6 +6,7 @@ package backend
 import (
 	"fmt"
 
+	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -83,7 +84,7 @@ func variantClass(sum *emit.Sum, v *emit.SumVariant) (*emit.Struct, error) {
 		Name:        sum.Name + naming.Pascal(v.Name),
 		Visibility:  sum.Visibility,
 		Final:       true,
-		TypeParams:  copyTypeParams(sum.TypeParams),
+		TypeParams:  lowering.CopyTypeParams(sum.TypeParams),
 		Implements:  []*emit.TypeRef{principalRef(sum)},
 		Annotations: v.Annotations,
 	}
@@ -108,44 +109,4 @@ func principalRef(sum *emit.Sum) *emit.TypeRef {
 		t.Args = append(t.Args, &emit.TypeRef{Spelling: p.Name})
 	}
 	return t
-}
-
-// copyTypeParams restates a parameter list without sharing nodes,
-// so the settle's walks visit each output's list once: fresh
-// parameters, fresh bound and default references.
-func copyTypeParams(ps []*emit.TypeParam) []*emit.TypeParam {
-	if len(ps) == 0 {
-		return nil
-	}
-	out := make([]*emit.TypeParam, 0, len(ps))
-	for _, p := range ps {
-		c := *p
-		c.Bounds = copyTypeRefs(p.Bounds)
-		c.Default = copyTypeRef(p.Default)
-		c.Type = copyTypeRef(p.Type)
-		out = append(out, &c)
-	}
-	return out
-}
-
-// copyTypeRefs restates references without sharing nodes.
-func copyTypeRefs(ts []*emit.TypeRef) []*emit.TypeRef {
-	if len(ts) == 0 {
-		return nil
-	}
-	out := make([]*emit.TypeRef, 0, len(ts))
-	for _, t := range ts {
-		out = append(out, copyTypeRef(t))
-	}
-	return out
-}
-
-// copyTypeRef restates one reference tree without sharing nodes.
-func copyTypeRef(t *emit.TypeRef) *emit.TypeRef {
-	if t == nil {
-		return nil
-	}
-	c := *t
-	c.Args = copyTypeRefs(t.Args)
-	return &c
 }
