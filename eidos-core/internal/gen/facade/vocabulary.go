@@ -58,6 +58,8 @@ type Surface struct {
 // reviewed artifact rather than an accident of kernel layout.
 var Surfaces = []Surface{
 	{Rel: "", Name: "sdk"},
+	{Rel: "frontend", Name: "frontend"},
+	{Rel: "backend", Name: "backend"},
 	{Rel: "plugin", Name: "plugin"},
 	{Rel: "emit", Name: "emit"},
 	{Rel: "node", Name: "node"},
@@ -67,11 +69,11 @@ var Surfaces = []Surface{
 	{Rel: "meta", Name: "meta"},
 	{Rel: "directive", Name: "directive"},
 	{Rel: "store", Name: "store"},
-	{Rel: "render", Name: "render"},
+	{Rel: "backend/render", Name: "render"},
 	{Rel: "output", Name: "output"},
-	{Rel: "backendtest", Name: "backendtest"},
-	{Rel: "frontendtest", Name: "frontendtest"},
-	{Rel: "plugintest", Name: "plugintest"},
+	{Rel: "backend/backendtest", Name: "backendtest"},
+	{Rel: "frontend/frontendtest", Name: "frontendtest"},
+	{Rel: "plugin/plugintest", Name: "plugintest"},
 }
 
 // OwnedDirs are the repository-relative directories the generator

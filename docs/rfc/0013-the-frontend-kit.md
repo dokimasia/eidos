@@ -264,7 +264,7 @@ declaration is data, `Build` freezes it and panics on a
 declaration defect:
 
 ```go
-eidos.NewFrontend(name, lang, syntax).
+frontend.New(name, lang, syntax).
     Match("**/*.go").
     Classify(classifiers...).   // stamps facts; excludes nothing
     Units(partition).
@@ -311,8 +311,8 @@ entry or a provenance trailer, do not load.
 
 ### The conformance suite
 
-`core/frontendtest` is to frontends what backendtest is to
-renderers: fixtures in, checks the kernel owns.
+`core/frontend/frontendtest` is to frontends what backendtest is
+to renderers: fixtures in, checks the kernel owns.
 
 ```go
 type Fixture struct {

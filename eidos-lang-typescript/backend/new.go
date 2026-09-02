@@ -7,7 +7,7 @@ import (
 	"go.dokimi.dev/eidos/lang/textfmt"
 	typescript "go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/spell"
-	"go.dokimi.dev/eidos/sdk"
+	"go.dokimi.dev/eidos/sdk/backend"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
@@ -19,7 +19,7 @@ import (
 // templates' spelling stands, minus trailing whitespace and
 // blank-line runs.
 func New() plugin.Backend {
-	return sdk.NewBackend(typescript.Name, typescript.Target, typescript.Syntax()).
+	return backend.New(typescript.Name, typescript.Target, typescript.Syntax()).
 		Version(typescript.Version).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).

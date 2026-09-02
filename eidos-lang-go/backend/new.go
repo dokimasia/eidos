@@ -8,7 +8,7 @@ import (
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/spell"
-	"go.dokimi.dev/eidos/sdk"
+	"go.dokimi.dev/eidos/sdk/backend"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
@@ -19,7 +19,7 @@ import (
 // withheld and reported rather than written, and the bytes that
 // remain are the bytes gofmt leaves.
 func New() plugin.Backend {
-	return sdk.NewBackend(golang.Name, golang.Target, golang.Syntax()).
+	return backend.New(golang.Name, golang.Target, golang.Syntax()).
 		Version(golang.Version).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).

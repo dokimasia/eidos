@@ -41,10 +41,11 @@
 // [go.dokimi.dev/eidos/core/plugin], which remain public for what
 // the facade does not fit.
 //
-// A backend is declared the same way: [NewBackend] takes the
-// identity, target and comment syntax, the language pieces are
-// data, and [BackendBuilder.Build] lowers them to the render pass,
-// returning the Backend and Renderer roles both.
+// A frontend or backend is declared the same way, in
+// [go.dokimi.dev/eidos/core/frontend] and
+// [go.dokimi.dev/eidos/core/backend]: identity and language facts
+// as data, the role's functions declared once, and a Build that
+// lowers to the same SPI roles.
 //
 // # Dispatch
 //
@@ -77,8 +78,8 @@
 //
 // # Dependency position
 //
-// The root package imports core/plugin, core/diag, core/directive,
-// core/emit, core/meta, core/node, core/position, core/render,
-// core/store, core/symbol and the Go stdlib. Nothing in the module
-// imports the root package back.
+// The root package imports core/plugin, core/diag,
+// core/directive, core/emit, core/meta, core/node, core/position,
+// core/store, core/symbol and the Go stdlib. Nothing in the
+// module imports the root package back.
 package eidos

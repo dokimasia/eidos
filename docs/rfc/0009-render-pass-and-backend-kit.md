@@ -24,7 +24,7 @@ language's kind templates in canonical order, splice slot
 contributions through the same machinery, resolve each template
 reference in its emitting plugin's tree, collect imports, and
 finalise through the language formatter, continuing past a format
-failure. The root package gains `NewBackend`, the kit that builds a
+failure. The kernel gains `backend.New`, the kit that builds a
 renderer from the handful of things a language genuinely varies in.
 Template lint checks every declared template statically, and the
 conformance suite gains `backendtest` with the checks a valueless
@@ -278,63 +278,63 @@ procedure and lowers to the SPI, the same boundary the plugin builder
 holds:
 
 ```go
-// NewBackend starts a backend declaration for one target.
-func NewBackend(name plugin.ID, target plugin.Target, syntax plugin.CommentSyntax) *BackendBuilder
+// New starts a backend declaration for one target.
+func New(name plugin.ID, target plugin.Target, syntax plugin.CommentSyntax) *Builder
 
 // FileTemplate sets the file skeleton; a kit default renders the
 // package clause, the import block and the declarations in that
 // order. The header is not the skeleton's: the output contract
 // prepends it when it stamps, after the formatter ran.
-func (b *BackendBuilder) FileTemplate(t string) *BackendBuilder
+func (b *Builder) FileTemplate(t string) *Builder
 
 // KindTemplates declares how the language spells each emit kind,
 // keyed by kind. Build refuses an empty set; the conformance
 // suite's every-kind check is what holds a backend to the full
 // inventory, because which kinds render standalone and which
 // render inside their hosts is the language's own split.
-func (b *BackendBuilder) KindTemplates(ts map[symbol.Kind]string) *BackendBuilder
+func (b *Builder) KindTemplates(ts map[symbol.Kind]string) *Builder
 
 // Scaffold sets the language's statement printer: how each kind
 // of the neutral scaffolding vocabulary spells, recording into
 // the file's import set whatever it qualifies with. The body
 // builtin calls it for slot contributions and scaffold content
 // alike.
-func (b *BackendBuilder) Scaffold(f func(s emit.Stmt, set *render.ImportSet) ([]byte, error)) *BackendBuilder
+func (b *Builder) Scaffold(f func(s emit.Stmt, set *render.ImportSet) ([]byte, error)) *Builder
 
 // Funcs registers the language's shared template vocabulary, once,
 // into the overrideable bucket.
-func (b *BackendBuilder) Funcs(fs template.FuncMap) *BackendBuilder
+func (b *Builder) Funcs(fs template.FuncMap) *Builder
 
 // Naming sets the target's filename spelling.
-func (b *BackendBuilder) Naming(n Naming) *BackendBuilder
+func (b *Builder) Naming(n Naming) *Builder
 
 // Split sets the target's unit reshaping; undeclared, every unit
 // files whole.
-func (b *BackendBuilder) Split(s render.Split) *BackendBuilder
+func (b *Builder) Split(s render.Split) *Builder
 
 // Cluster sets the target's declaration clustering, and Groups
 // the templates its group names select. A cluster without group
 // templates, a group name declared twice and a group template
 // that does not parse are defects at Build.
-func (b *BackendBuilder) Cluster(c render.Cluster) *BackendBuilder
-func (b *BackendBuilder) Groups(gs map[render.GroupName]string) *BackendBuilder
+func (b *Builder) Cluster(c render.Cluster) *Builder
+func (b *Builder) Groups(gs map[render.GroupName]string) *Builder
 
 // Imports sets the renderer for a file's collected import set:
 // grouping and sorting are language facts.
-func (b *BackendBuilder) Imports(r func(set *render.ImportSet) string) *BackendBuilder
+func (b *Builder) Imports(r func(set *render.ImportSet) string) *Builder
 
 // Finalise sets the language formatter, run last per file. A
 // failure is a positioned Error carrying the file, and the pass
 // continues with the remaining files; the sink never receives an
 // unformatted file.
-func (b *BackendBuilder) Finalise(f func(src []byte) ([]byte, error)) *BackendBuilder
+func (b *Builder) Finalise(f func(src []byte) ([]byte, error)) *Builder
 
 // Build freezes the declaration and returns the backend, which
 // implements plugin.Backend and plugin.Renderer both. It panics
 // on a declaration defect, the same rule the plugin builder holds:
 // an empty name, a zero target, an empty kind-template set, no naming, a
 // template that does not parse.
-func (b *BackendBuilder) Build() plugin.Backend
+func (b *Builder) Build() plugin.Backend
 ```
 
 ### The pass, in order

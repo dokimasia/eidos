@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	golang "go.dokimi.dev/eidos/lang/go"
-	sdk "go.dokimi.dev/eidos/sdk"
 	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/frontend"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -67,7 +67,7 @@ func New(opts *Options) plugin.Frontend {
 		opts = &Options{}
 	}
 	f := &goFrontend{opts: opts}
-	return sdk.NewFrontend(golang.Name, Lang, golang.Syntax()).
+	return frontend.New(golang.Name, Lang, golang.Syntax()).
 		Version(golang.Version).
 		Match("**/*"+golang.Extension, "!**/testdata/**").
 		Units(f.partition).

@@ -76,13 +76,26 @@ func (s Surface) KernelImportPath() string {
 	return KernelModule + "/" + s.Rel
 }
 
+// FacadeRel returns the facade package's directory relative to the
+// facade module root, slash-separated; empty names the module root.
+//
+// The facade lays its packages flat under one namespace whatever
+// shape the kernel takes, so a kernel regroup moves no facade
+// import path.
+func (s Surface) FacadeRel() string {
+	if s.Rel == "" {
+		return ""
+	}
+	return s.Name
+}
+
 // FacadeImportPath returns the facade import path of a curated
 // entry.
 func (s Surface) FacadeImportPath() string {
-	if s.Rel == "" {
-		return FacadeModule
+	if rel := s.FacadeRel(); rel != "" {
+		return FacadeModule + "/" + rel
 	}
-	return FacadeModule + "/" + s.Rel
+	return FacadeModule
 }
 
 // validate refuses what re-export cannot survive: files disagreeing

@@ -33,7 +33,7 @@ func Generate(repoRoot string) (genfile.Set, error) {
 		if err != nil {
 			return nil, err
 		}
-		p := path.Join(FacadeDir, ps.Rel, FileName)
+		p := path.Join(FacadeDir, ps.FacadeRel(), FileName)
 		formatted, err := genfile.Format(p, rendered)
 		if err != nil {
 			return nil, err

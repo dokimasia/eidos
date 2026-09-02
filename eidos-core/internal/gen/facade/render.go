@@ -563,7 +563,7 @@ func (r *renderer) classify(p string, id *ast.Ident) (importRec, error) {
 			return importRec{}, r.ps.at(id.Pos(),
 				"%s leaks into the exported surface without a facade package", p)
 		}
-		return importRec{path: FacadeModule + "/" + rel, qual: name, group: groupEidos}, nil
+		return importRec{path: FacadeModule + "/" + name, qual: name, group: groupEidos}, nil
 	}
 
 	group := groupExternal
@@ -682,10 +682,10 @@ func wrap(s string, width int) []string {
 // subject is the package's short spelling in its own dependency
 // position, mirroring how the kernel packages state theirs.
 func (r *renderer) subject() string {
-	if r.ps.Rel == "" {
-		return "sdk"
+	if rel := r.ps.FacadeRel(); rel != "" {
+		return "sdk/" + rel
 	}
-	return "sdk/" + r.ps.Rel
+	return "sdk"
 }
 
 // dependencies lists what the generated file imports, shortest

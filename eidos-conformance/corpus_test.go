@@ -10,7 +10,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/conformance"
-	"go.dokimi.dev/eidos/core/frontendtest"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 )
 
 // scriptedCorpus is the scripted language's entry: the corpus tree

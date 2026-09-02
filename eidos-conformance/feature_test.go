@@ -12,8 +12,8 @@ import (
 
 	"go.dokimi.dev/eidos/conformance"
 	"go.dokimi.dev/eidos/core/diag"
-	"go.dokimi.dev/eidos/core/frontendtest"
-	"go.dokimi.dev/eidos/core/load"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )

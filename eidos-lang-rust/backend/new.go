@@ -7,7 +7,7 @@ import (
 	rust "go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/spell"
 	"go.dokimi.dev/eidos/lang/textfmt"
-	"go.dokimi.dev/eidos/sdk"
+	"go.dokimi.dev/eidos/sdk/backend"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
@@ -19,7 +19,7 @@ import (
 // templates' spelling stands, minus trailing whitespace and
 // blank-line runs.
 func New() plugin.Backend {
-	return sdk.NewBackend(rust.Name, rust.Target, rust.Syntax()).
+	return backend.New(rust.Name, rust.Target, rust.Syntax()).
 		Version(rust.Version).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).

@@ -38,10 +38,11 @@ func TestVocabulary(t *testing.T) {
 				continue
 			}
 			assert.Equal(t, s.Name, path.Base(s.Rel),
-				"a sibling's package name is its directory, which is what "+
-					"keeps the source qualifier the printed qualifier")
-			assert.False(t, strings.Contains(s.Rel, "/"),
-				"curated packages sit directly under the kernel root")
+				"a sibling's package name is its kernel directory's base, "+
+					"which is what keeps the source qualifier the printed qualifier")
+			assert.Equal(t, s.FacadeRel(), s.Name,
+				"a sibling's facade directory is its name, flat under the "+
+					"module root however the kernel groups its packages")
 		}
 	})
 

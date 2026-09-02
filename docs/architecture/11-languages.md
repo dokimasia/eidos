@@ -140,7 +140,7 @@ declared carrier ([05-directives.md](05-directives.md)).
 the kit owns everything around it:
 
 ```go
-eidos.NewFrontend(lang, syntax).
+frontend.New(lang, syntax).
     Match("*.go").                      // include-shaped selection
     Classify(eidos.TestFiles(isTest)).  // stamps go.testFile; excludes NOTHING
     Units(byDirectory).                 // the language defines the unit
@@ -195,7 +195,7 @@ Signatures`.
 varies in, and the kit assembles:
 
 ```go
-eidos.NewBackend(name, target, syntax).
+backend.New(name, target, syntax).
     FileTemplate(skeleton).      // {{imports}}{{decls}} is the kit
                                  // default; the header is not the
                                  // skeleton's to spell

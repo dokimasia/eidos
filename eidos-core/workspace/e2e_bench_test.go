@@ -16,12 +16,13 @@ import (
 	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/backend"
+	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
-	"go.dokimi.dev/eidos/core/render"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -160,7 +161,7 @@ func e2eBackend() plugin.Backend {
 	for _, f := range symbol.Facts() {
 		facts[f] = render.Renders
 	}
-	return eidos.NewBackend("printer", "fixture",
+	return backend.New("printer", "fixture",
 		plugin.CommentSyntax{Line: []string{"//"}}).
 		KindTemplates(map[symbol.Kind]string{
 			symbol.KindStruct: "type {{.Name}} {\n" +

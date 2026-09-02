@@ -36,7 +36,7 @@ func TestGenerate(t *testing.T) {
 		want := make([]string, 0, len(facade.Surfaces))
 		for _, s := range facade.Surfaces {
 			want = append(want, filepath.ToSlash(filepath.Join(
-				facade.FacadeDir, s.Rel, facade.FileName,
+				facade.FacadeDir, s.FacadeRel(), facade.FileName,
 			)))
 		}
 		slices.Sort(want)
