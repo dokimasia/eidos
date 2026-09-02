@@ -598,6 +598,7 @@ func limitConstant() *emit.Constant {
 		Doc:     []string{"Limit bounds one fetch."},
 		Comment: "rows per call",
 		Name:    "limit",
+		Type:    &emit.TypeRef{Spelling: "int32"},
 		Value:   "8",
 	}
 }
