@@ -71,6 +71,9 @@ func Coverage() render.Coverage {
 			symbol.KindParam: {
 				symbol.FactAnnotations: render.Refuses,
 			},
+			symbol.KindStruct: {
+				symbol.FactLevel: render.Refuses, // static is illegal at file scope
+			},
 		},
 	}
 }

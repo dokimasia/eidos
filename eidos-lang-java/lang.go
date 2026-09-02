@@ -16,9 +16,9 @@ const Name plugin.ID = "java"
 // Extension is the suffix every Java file carries.
 const Extension = ".java"
 
-// Version is the backend's behavior version, folded into the run
-// fingerprint: bump it with any change to the rendered output.
-const Version = "0.1.0"
+// Version is the backend's behavior version, folded into the
+// composition fingerprint: bump it with any change to the rendered output.
+const Version = "0.2.0"
 
 // Syntax is Java's comment forms, declared once and shared: the
 // frontend strips comments with it, and the output contract

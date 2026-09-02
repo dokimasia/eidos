@@ -36,6 +36,20 @@ func TestName(t *testing.T) {
 		assert.Equal(t, got, "rowKey", "camel")
 	})
 
+	t.Run("refuses a wire name and a reserved landing", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := spell.Name(symbol.KindStruct, symbol.KindField,
+			symbol.VisibilityPublic, "content-type")
+		assert.HasError(t, err, "a convention must not respell a wire name")
+		assert.Contains(t, err.Error(), "content-type", "naming it")
+
+		_, err = spell.Name(symbol.KindStruct, symbol.KindField,
+			symbol.VisibilityPublic, "class")
+		assert.HasError(t, err, "Java grants no escape for a reserved word")
+		assert.Contains(t, err.Error(), "reserved", "saying why")
+	})
+
 	t.Run("the host turns an interface field into a constant", func(t *testing.T) {
 		t.Parallel()
 

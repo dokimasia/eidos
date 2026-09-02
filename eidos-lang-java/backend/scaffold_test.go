@@ -69,11 +69,8 @@ func TestScaffold(t *testing.T) {
 				want: "    audit(ctx);\n",
 			},
 			{
-				name: "a guard spells nothing, because a thrown failure propagates",
-				stmt: emit.Stmt{
-					Kind: emit.StmtGuard, Name: "err",
-					Then: []emit.Stmt{{Kind: emit.StmtReturn, Value: nameOf("err")}},
-				},
+				name: "a bare guard spells nothing, because a thrown failure propagates",
+				stmt: emit.Stmt{Kind: emit.StmtGuard, Name: "err"},
 				want: "",
 			},
 		}
@@ -99,6 +96,14 @@ func TestScaffold(t *testing.T) {
 				emit.Stmt{
 					Kind: emit.StmtAssign, Names: []string{"res", "err"},
 					Value: callOf("next"), Declare: true,
+				},
+			},
+			{
+				"a guard carrying actions, because failures throw and the " +
+					"actions would drop",
+				emit.Stmt{
+					Kind: emit.StmtGuard, Name: "err",
+					Then: []emit.Stmt{{Kind: emit.StmtReturn, Value: nameOf("err")}},
 				},
 			},
 			{"an assignment binding no name", emit.Stmt{Kind: emit.StmtAssign, Value: nameOf("v")}},

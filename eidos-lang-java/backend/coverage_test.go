@@ -33,6 +33,6 @@ func TestCoverage(t *testing.T) {
 		"nested types render at member depth")
 	assert.Equal(t, c.Of(symbol.KindInterface, symbol.FactSealed), render.Renders,
 		"sealing is Java's own")
-	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactLevel), render.Renders,
-		"a type-level nesting spells static")
+	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactLevel), render.Refuses,
+		"static is illegal at the file scope every rendered type sits at")
 }

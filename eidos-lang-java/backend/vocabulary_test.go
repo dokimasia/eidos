@@ -127,12 +127,12 @@ func TestVocabulary(t *testing.T) {
 		assert.NoError(t, err, "an abstract class spells")
 		assert.Equal(t, got, "public abstract ", "abstract behind the access")
 
-		got, err = backend.TypeMods(&emit.Struct{
+		_, err = backend.TypeMods(&emit.Struct{
 			Name: "Inner", Level: symbol.LevelType, Final: true, Sealed: true,
 		})
-		assert.NoError(t, err, "a static sealed final class spells")
-		assert.Equal(t, got, "public static final sealed ",
-			"static, final and sealed in Java's stated order")
+		assert.HasError(t, err, "a type-level nesting refuses at file scope")
+		assert.Contains(t, err.Error(), "static",
+			"naming the keyword javac rejects here")
 
 		got, err = backend.TypeMods(&emit.Interface{Name: "Shape", Sealed: true})
 		assert.NoError(t, err, "a sealed interface spells")

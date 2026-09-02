@@ -39,6 +39,14 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 		)
 	}
 	variants := sum.Variants.Items()
+	if len(variants) == 0 {
+		// javac rejects a sealed type with no permits clause, so a
+		// variantless sum has no legal Java spelling.
+		return nil, fmt.Errorf(
+			"java: a sealed interface owes its permits clause, and %s "+
+				"states no variants", sum.Name,
+		)
+	}
 	permits := make([]*emit.TypeRef, 0, len(variants))
 	for _, v := range variants {
 		permits = append(permits, &emit.TypeRef{

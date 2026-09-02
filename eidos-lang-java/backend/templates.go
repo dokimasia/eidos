@@ -30,8 +30,9 @@ const (
 	// overriding method carries the Override annotation, and an
 	// abstract method is a signature alone. A generic method's own
 	// parameter list spells before its return type, which is where
-	// Java states it. A nested class spells without static,
-	// because the model states no nesting level.
+	// Java states it. A type-level nesting refuses through the
+	// keyword helper, because every rendered type sits at file
+	// scope, where javac rejects static.
 	StructTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 		"{{typemods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +

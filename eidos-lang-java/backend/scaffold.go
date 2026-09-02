@@ -55,8 +55,17 @@ func statement(b *strings.Builder, s emit.Stmt, depth int) error {
 		b.WriteString(";\n")
 		return nil
 	case emit.StmtGuard:
-		// A thrown failure propagates on its own: the guard renders
-		// as that propagation, which is nothing at all.
+		// A thrown failure propagates on its own, so a bare guard
+		// renders as that propagation, which is nothing at all. A
+		// guard carrying its own actions has no Java spelling —
+		// there is no failure value to test — and dropping the
+		// actions would narrow silently, so it refuses.
+		if len(s.Then) > 0 {
+			return fmt.Errorf(
+				"java: a guard's actions have no spelling where failures throw, "+
+					"and this one states %d statements", len(s.Then),
+			)
+		}
 		return nil
 	default:
 		return fmt.Errorf("java: no spelling for the %s statement", s.Kind)

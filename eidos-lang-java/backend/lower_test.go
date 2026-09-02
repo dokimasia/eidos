@@ -109,13 +109,13 @@ func TestLower(t *testing.T) {
 		assert.Equal(t, circle.Implements[0].Args[0].Spelling, "T", "by name")
 	})
 
-	t.Run("an empty sum is the interface alone", func(t *testing.T) {
+	t.Run("an empty sum refuses", func(t *testing.T) {
 		t.Parallel()
 
-		out, err := backend.Lower(&emit.Sum{Name: "shape"})
-		assert.NoError(t, err,
-			"a variantless contract is legal Java, unlike a variantless union")
-		assert.Equal(t, len(out), 1, "the principal and nothing else")
+		_, err := backend.Lower(&emit.Sum{Name: "shape"})
+		assert.HasError(t, err,
+			"javac rejects a sealed interface with no permits clause")
+		assert.Contains(t, err.Error(), "permits", "naming the clause it owes")
 	})
 
 	t.Run("refusals", func(t *testing.T) {

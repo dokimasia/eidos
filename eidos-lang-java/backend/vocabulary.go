@@ -195,12 +195,12 @@ func PackageClause(id symbol.Identity) string {
 }
 
 // TypeMods writes a type's keywords in Java's stated order:
-// access, then abstract, static, final and sealed on a class
-// where stated, sealed alone on an interface. Static spells a
-// type-level nesting; a file-level type states none, and one that
-// does reaches javac's refusal naming the file. A private,
-// protected or internal visibility refuses, because Java's
-// file-level types take public or default access alone.
+// access, then abstract, final and sealed on a class where stated,
+// sealed alone on an interface. A type-level nesting refuses:
+// every type this backend renders sits at file scope, where javac
+// rejects static, so the fact has no legal spelling here. A
+// private, protected or internal visibility refuses, because
+// Java's file-level types take public or default access alone.
 func TypeMods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -212,7 +212,10 @@ func TypeMods(d symbol.Symbol) (string, error) {
 			part += "abstract "
 		}
 		if t.Level == symbol.LevelType {
-			part += "static "
+			return "", fmt.Errorf(
+				"java: a file-level class takes no static, and %s states "+
+					"a type-level nesting", t.Name,
+			)
 		}
 		if t.Final {
 			part += "final "
