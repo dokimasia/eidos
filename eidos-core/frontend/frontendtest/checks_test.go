@@ -143,6 +143,38 @@ func TestChecks(t *testing.T) {
 			})
 			assert.Contains(t, msg, "walks", "the rejection names the step that could not run")
 		})
+
+		t.Run("holds a fixture whose selection claims one file", func(t *testing.T) {
+			t.Parallel()
+
+			lone := plainFixture()
+			lone.Sources = fstest.MapFS{apiFile: {Data: []byte(apiSource)}}
+			frontendtest.AssertJailedReads(t, setupOver(lone))
+		})
+	})
+
+	t.Run("AssertSignatureDepth", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("holds a fixture whose root covers every unit", func(t *testing.T) {
+			t.Parallel()
+
+			deep := plainFixture()
+			deep.Signatures = []string{serviceRoot}
+			frontendtest.AssertSignatureDepth(t, setupOver(deep))
+		})
+
+		t.Run("rejects a stated root no unit sits under", func(t *testing.T) {
+			t.Parallel()
+
+			astray := plainFixture()
+			astray.Signatures = []string{absentRoot}
+			msg := assert.Rejects(t, "a signature root the load never applies", func(tb assert.TB) {
+				frontendtest.AssertSignatureDepth(tb, setupOver(astray))
+			})
+			assert.Contains(t, msg, "at least one unit shallow",
+				"the rejection names what the stated root owes")
+		})
 	})
 
 	t.Run("AssertAttachedDirectives", func(t *testing.T) {
@@ -185,6 +217,30 @@ func TestChecks(t *testing.T) {
 			})
 			assert.Contains(t, msg, "does not hold", "the rejection names the class")
 		})
+
+		t.Run("holds a fixture that declares schemas and no keys", func(t *testing.T) {
+			t.Parallel()
+
+			keyless := plainFixture()
+			keyless.Sources = fstest.MapFS{
+				apiFile:   {Data: []byte(apiSource)},
+				storeFile: {Data: []byte(crossSource + carrierStatement)},
+			}
+			keyless.Schemas = frontendtest.ScriptedSchemas()
+			frontendtest.AssertAttachedDirectives(t, setupOver(keyless))
+		})
+
+		t.Run("rejects a fixture whose carriers attach nothing", func(t *testing.T) {
+			t.Parallel()
+
+			barren := plainFixture()
+			barren.Schemas = frontendtest.ScriptedSchemas()
+			msg := assert.Rejects(t, "schemas no carrier in the tree writes", func(tb assert.TB) {
+				frontendtest.AssertAttachedDirectives(tb, setupOver(barren))
+			})
+			assert.Contains(t, msg, "must attach something",
+				"the rejection names what the declared schemas owe")
+		})
 	})
 
 	t.Run("AssertLinked", func(t *testing.T) {
@@ -197,6 +253,16 @@ func TestChecks(t *testing.T) {
 				frontendtest.AssertLinked(tb, over(&mute{frontendtest.NewScripted()}, fixture()))
 			})
 			assert.Contains(t, msg, "resolving nothing", "the rejection says what never happened")
+		})
+
+		t.Run("rejects a Resolve that never answers across exactly two packages", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a mute resolver over the least multi-package fixture",
+				func(tb assert.TB) {
+					frontendtest.AssertLinked(tb, over(&mute{frontendtest.NewScripted()}, plainFixture()))
+				})
+			assert.Contains(t, msg, "resolving nothing", "two packages are already across packages")
 		})
 
 		t.Run("asks nothing across packages of a single-package fixture", func(t *testing.T) {

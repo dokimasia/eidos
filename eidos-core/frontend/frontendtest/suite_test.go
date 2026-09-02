@@ -26,10 +26,15 @@ const (
 	notesFile    = "notes.txt"
 	depRoot      = "svc/dep"
 	serviceRoot  = "svc"
+	absentRoot   = "vendor"
 	carrierLine  = "gen:table name=users"
 	apiSource    = "package svc/api\ntype User string\nmethod Get int\n"
 	crossSource  = "package svc/store\nimport api svc/api\ntype Row api.User int\n"
 	singleSource = "package svc/api\ntype User string\ntype Row User int\n"
+
+	// carrierStatement is the carrier line as a scripted statement,
+	// for a case appending one to a source the fixtures share.
+	carrierStatement = "+" + carrierLine + "\n"
 )
 
 // fixture is the scripted language's whole-contract tree: two

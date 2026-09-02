@@ -69,6 +69,16 @@ func TestLink(t *testing.T) {
 	t.Run("resolve", func(t *testing.T) {
 		t.Parallel()
 
+		t.Run("reports nothing for a reference with one held candidate", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, stdTree())
+			row, _ := g.Lookup(rowID())
+			assert.False(t, row.(*node.Struct).Fields[0].Type.Target.IsZero(),
+				"the bound spelling resolved")
+			coretest.AssertCodes(t, sink)
+		})
+
 		t.Run("reports an ambiguous reference and keeps the first candidate", func(t *testing.T) {
 			t.Parallel()
 

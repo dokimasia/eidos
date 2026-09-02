@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -29,6 +30,22 @@ const (
 	boundName   = "api.B"
 	ownSpelling = "Own"
 	builtinName = "int"
+)
+
+// The spellings at each end of the capital range, which is where a
+// resolver's own bound decides whether a bare name is its package's.
+const (
+	firstCapital = "Alpha"
+	lastCapital  = "Zeta"
+)
+
+// The lowering's positional facts about the one-file tree: which
+// line each statement sits on, and what the second field of a
+// two-reference type is called.
+const (
+	packageStatementLine = 1
+	typeStatementLine    = 3
+	secondFieldName      = "f1"
 )
 
 // unitOver assembles one unit over a tree, the way the driver does.
@@ -69,6 +86,27 @@ func TestScripted(t *testing.T) {
 			assert.Length(t, parts, 1, "one directory, one unit")
 			assert.Equal(t, parts[0][0].Path, svcFile, "holding the directory's file")
 		})
+
+		t.Run("declares the manifest a shared input where the tree holds one", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontendtest.NewScripted()
+			manifested := fstest.MapFS{
+				modFile: {Data: []byte("mod v1\n")},
+				svcFile: tree[svcFile],
+			}
+			parts, err := f.Partition(context.Background(),
+				[]plugin.SourceRef{{Path: svcFile}}, reader{manifested})
+			assert.NoError(t, err, "the partition groups")
+			assert.Equal(t, parts[0][0].Shared, []string{modFile},
+				"a manifest the tree holds is every member's shared input")
+
+			bare, err := f.Partition(context.Background(),
+				[]plugin.SourceRef{{Path: svcFile}}, reader{tree})
+			assert.NoError(t, err, "the partition groups")
+			assert.Empty(t, bare[0][0].Shared,
+				"a tree without the manifest gives its members no shared input")
+		})
 	})
 
 	t.Run("Parse", func(t *testing.T) {
@@ -86,6 +124,13 @@ func TestScripted(t *testing.T) {
 			assert.Length(t, gb.Packages(), 1, "one package declared")
 			file := gb.Packages()[0].Files[0]
 			assert.Length(t, file.Decls, 2, "a type and a constant")
+			assert.Equal(t, file.Pos.Line, packageStatementLine,
+				"the file sits on its package line, counted from one")
+			declared := file.Decls[0].(*node.Struct)
+			assert.Equal(t, declared.Pos.Line, typeStatementLine,
+				"and every statement on the line it was written on")
+			assert.Equal(t, declared.Fields[1].Name, secondFieldName,
+				"fields are named f0 upward, one per reference in order")
 			assert.Length(t, gb.Scopes(), 1, "the bindings recorded")
 			assert.Length(t, gb.Attachments(), 1, "the directive recorded")
 			assert.Length(t, gb.StampRecords(), 1, "the stamp recorded")
@@ -137,6 +182,19 @@ func TestScripted(t *testing.T) {
 			assert.Length(t, f.Resolve(scope, ownSpelling), 1,
 				"a bare capital probes its own package")
 			assert.Empty(t, f.Resolve(scope, builtinName), "a builtin is nobody's")
+		})
+
+		t.Run("probes a bare spelling at either end of the capital range", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontendtest.NewScripted()
+			scope := plugin.ImportScope{
+				File: symbol.Identity{Lang: frontendtest.ScriptedLang, Package: svcPath},
+			}
+			assert.Length(t, f.Resolve(scope, firstCapital), 1,
+				"a spelling opening at A is its own package's")
+			assert.Length(t, f.Resolve(scope, lastCapital), 1,
+				"and so is one opening at Z")
 		})
 	})
 
