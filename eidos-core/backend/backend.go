@@ -48,10 +48,10 @@ func New(
 	}
 }
 
-// Version sets the version the run fingerprint folds in: bump it
-// with every change to the rendered output, because a warm cache
-// keyed without it serves the old bytes after a backend change
-// and nothing reports why.
+// Version sets the version the composition fingerprint folds in:
+// bump it with every change to the rendered output, because work
+// keyed without it survives a backend change with nothing
+// reporting why.
 func (b *Builder) Version(v string) *Builder {
 	b.version = v
 	return b

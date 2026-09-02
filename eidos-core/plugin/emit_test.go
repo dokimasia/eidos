@@ -115,6 +115,15 @@ func TestEmit(t *testing.T) {
 			assert.HasError(t, plugin.NewEmit().Add(u),
 				"a plan has one output, so a keyed plan unit is a defect")
 		})
+
+		t.Run("refuses a nil declaration", func(t *testing.T) {
+			t.Parallel()
+
+			u := unit("stubgen", "svc/store/unit.go")
+			u.Decls = append(u.Decls, nil)
+			assert.HasError(t, plugin.NewEmit().Add(u),
+				"a nil declaration would abort a render worker, so the door refuses it")
+		})
 	})
 
 	t.Run("Units", func(t *testing.T) {

@@ -243,6 +243,14 @@ func TestLoad(t *testing.T) {
 			assert.Contains(t, err.Error(), "version",
 				"every unit key folds the declared version")
 		})
+
+		t.Run("refuses options hiding a field from the key", func(t *testing.T) {
+			t.Parallel()
+
+			err := refuse(t, stdTree(), with(hiddenOptions{frontendtest.NewScripted()}))
+			assert.Contains(t, err.Error(), "secret",
+				"naming the knob the encoding cannot see")
+		})
 	})
 
 	t.Run("treeFiles", func(t *testing.T) {
@@ -464,6 +472,25 @@ func TestLoad(t *testing.T) {
 			assert.Equal(t, pkg.Files[1].Path, twoFile, "which the splice fixed")
 		})
 
+		t.Run("resolves a record on any unit's package node", func(t *testing.T) {
+			t.Parallel()
+
+			tree := fstest.MapFS{
+				oneFile: {Data: []byte("package shared\ntype Twin left\n")},
+				twoFile: {Data: []byte("package shared\npkgnote gen:table\n")},
+			}
+			g, _, sink := loadTree(t, tree)
+			coretest.AssertCodes(t, sink)
+
+			pkgID := symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: sharedPath, Kind: symbol.KindPackage,
+			}
+			raws := g.DirectivesOf(pkgID)
+			assert.Length(t, raws, 1,
+				"a directive through the merged-away node reaches the identity that stands")
+			assert.Equal(t, string(raws[0].Name), "gen:table", "carrying the instance")
+		})
+
 		t.Run("reports one package path declared under two names", func(t *testing.T) {
 			t.Parallel()
 
@@ -635,6 +662,20 @@ func (f failingFS) Open(name string) (fs.File, error) {
 
 // versionless hides the fake's version, which the driver must
 // refuse.
+// hiddenOptions declares an options struct with an unexported
+// field, which the canonical encoding cannot see and the load must
+// refuse.
+type hiddenOptions struct {
+	*frontendtest.Scripted
+}
+
+func (hiddenOptions) Options() any {
+	return &struct {
+		Tag    string
+		secret string
+	}{}
+}
+
 type versionless struct {
 	f *frontendtest.Scripted
 }

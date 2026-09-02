@@ -54,6 +54,7 @@ type ScriptedOptions struct {
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
 //	stamp KEY VALUE       a classification stamp on the file
+//	pkgnote NAME ARGS     a directive on the package node itself
 //
 // It partitions by directory, one shared input when the tree
 // carries mod.zz at its root, and the fields are open so a test
@@ -195,6 +196,7 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 	gb := u.Graph()
 	var (
 		file     *node.File
+		pkgPath  string
 		bindings = map[string][]string{}
 		last     *node.Struct
 	)
@@ -206,8 +208,9 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 		}
 		switch {
 		case fields[0] == "package" && len(fields) == 2:
-			pkg := gb.Package(fields[1])
-			pkg.Name = path.Base(fields[1])
+			pkgPath = fields[1]
+			pkg := gb.Package(pkgPath)
+			pkg.Name = path.Base(pkgPath)
 			file = &node.File{Path: filePath, Pos: at}
 			pkg.Files = append(pkg.Files, file)
 		case file == nil:
@@ -242,6 +245,17 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 			gb.Stamp(file, meta.RawStamp{
 				Key: meta.KeyName(fields[1]), Value: fields[2], Pos: at,
 			})
+		case fields[0] == "pkgnote" && len(fields) >= 2:
+			// A directive on the package node itself, so the suite
+			// can hold the splice to re-homing records from every
+			// unit of a merged package.
+			raw, err := directive.Parse(strings.Join(fields[1:], " "))
+			if err != nil {
+				u.Errorf(ScriptedBadFile, at, "%s carries a package directive outside the grammar: %v", filePath, err)
+				continue
+			}
+			raw.Pos = at
+			gb.Attach(gb.Package(pkgPath), raw)
 		case strings.HasPrefix(fields[0], "+") && last != nil:
 			raw, err := directive.Parse(strings.TrimPrefix(strings.TrimSpace(line), "+"))
 			if err != nil {

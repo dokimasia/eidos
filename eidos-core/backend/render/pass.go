@@ -385,6 +385,16 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		units := []plugin.Unit{u}
 		if p.split != nil {
 			units = p.split(u)
+			if len(units) == 0 && len(u.Decls) > 0 {
+				// A split that returns nothing for a populated unit
+				// would vanish its declarations without a finding,
+				// which is the narrowing the engine exists to
+				// refuse.
+				ctx.Sink.Errorf(RefusedTemplate, position.Pos{}, p.name,
+					"%s splits a %s unit of %d declarations into nothing, and they are skipped",
+					p.name, u.Word, len(u.Decls))
+				continue
+			}
 		}
 		for _, su := range units {
 			key := fileKey{pkg: su.Pkg, name: p.spell(su)}
@@ -508,10 +518,14 @@ type frame struct {
 	trees   map[plugin.ID]fs.FS
 	merged  template.FuncMap
 	out     bytes.Buffer
-	fileOut bytes.Buffer
-	set     ImportSet
-	at      position.Pos
-	plugin  plugin.ID
+	scratch bytes.Buffer // one declaration's render, adopted on success
+	// refCache holds referenced templates parsed once per frame,
+	// stub-bound; execution clones and binds the body's placement.
+	refCache map[string]*template.Template
+	fileOut  bytes.Buffer
+	set      ImportSet
+	at       position.Pos
+	plugin   plugin.ID
 	// bound holds the frame's own template set once bind ran, which
 	// is what the nested builtin renders through.
 	bound *bound
@@ -717,35 +731,57 @@ func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
 // plugin's tree. A false answer means nothing resolved, the
 // finding is on the sink, and the caller falls back to the slots;
 // a true answer is the template's own output, the marker rule
-// checked behind it.
+// checked behind it. The parse caches per referenced name the way
+// bind caches the pass's own templates — stub functions at parse,
+// the body's own placement bound on a clone per execution — so a
+// tree read and a parse price each name once per frame rather
+// than once per declaration.
 func (f *frame) reference(d any, b *emit.Body) (string, bool) {
-	tree, held := f.trees[f.plugin]
-	if !held {
-		f.sink.Errorf(UnresolvedRef, f.at, f.origin,
-			"%s references %q, and no tree is declared for it",
-			f.plugin, b.Ref.Name)
-		return "", false
-	}
-	src, err := fs.ReadFile(tree, b.Ref.Name)
-	if err != nil {
-		f.sink.Errorf(UnresolvedRef, f.at, f.origin,
-			"%s references %q, which its tree does not hold",
-			f.plugin, b.Ref.Name)
-		return "", false
+	parsed, cached := f.refCache[b.Ref.Name]
+	if !cached {
+		tree, held := f.trees[f.plugin]
+		if !held {
+			f.sink.Errorf(UnresolvedRef, f.at, f.origin,
+				"%s references %q, and no tree is declared for it",
+				f.plugin, b.Ref.Name)
+			return "", false
+		}
+		src, err := fs.ReadFile(tree, b.Ref.Name)
+		if err != nil {
+			f.sink.Errorf(UnresolvedRef, f.at, f.origin,
+				"%s references %q, which its tree does not hold",
+				f.plugin, b.Ref.Name)
+			return "", false
+		}
+		parsed, err = template.New(b.Ref.Name).
+			Funcs(f.pass.shared).Funcs(f.merged).
+			Funcs(template.FuncMap{
+				BuiltinSlots: func() (string, error) { return "", nil },
+				BuiltinSlot:  func(string) (string, error) { return "", nil },
+				BuiltinUse:   func(string) (string, error) { return "", nil },
+			}).Parse(string(src))
+		if err != nil {
+			f.sink.Errorf(UnresolvedRef, f.at, f.origin,
+				"%s's template %q does not parse: %v", f.plugin, b.Ref.Name, err)
+			return "", false
+		}
+		if f.refCache == nil {
+			f.refCache = map[string]*template.Template{}
+		}
+		f.refCache[b.Ref.Name] = parsed
 	}
 	pl := &placement{frame: f, body: b, named: make([]bool, len(b.Slots))}
-	t, err := template.New(b.Ref.Name).
-		Funcs(f.pass.shared).Funcs(f.merged).
-		Funcs(template.FuncMap{
-			BuiltinSlots: pl.all,
-			BuiltinSlot:  pl.one,
-			BuiltinUse:   f.use,
-		}).Parse(string(src))
+	t, err := parsed.Clone()
 	if err != nil {
 		f.sink.Errorf(UnresolvedRef, f.at, f.origin,
-			"%s's template %q does not parse: %v", f.plugin, b.Ref.Name, err)
+			"%s's template %q does not clone: %v", f.plugin, b.Ref.Name, err)
 		return "", false
 	}
+	t.Funcs(template.FuncMap{
+		BuiltinSlots: pl.all,
+		BuiltinSlot:  pl.one,
+		BuiltinUse:   f.use,
+	})
 	var out strings.Builder
 	data := struct{ Decl, Data any }{Decl: d, Data: b.Ref.Data}
 	if err := t.Execute(&out, data); err != nil {
@@ -876,7 +912,10 @@ func (f *frame) declRun(u plugin.Unit, b *bound) {
 	}
 }
 
-// singleton renders one declaration through its kind template.
+// singleton renders one declaration through its kind template,
+// into scratch first: a template that refuses mid-write must leave
+// no fragment in the file, because the finding says the
+// declaration was skipped and the file must agree.
 func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) {
 	t, spelt := b.kinds[d.Kind()]
 	if !spelt {
@@ -886,15 +925,19 @@ func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) {
 		return
 	}
 	f.guard(d)
-	if err := t.Execute(&f.out, d); err != nil {
+	f.scratch.Reset()
+	if err := t.Execute(&f.scratch, d); err != nil {
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 			"the %s template refused a declaration of %s: %v",
 			d.Kind(), u.Plugin, err)
+		return
 	}
+	f.out.WriteString(f.scratch.String())
 }
 
 // clustered renders one cluster through the group template its
-// name selects.
+// name selects, into the same scratch singleton uses and for the
+// same reason.
 func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) {
 	t, held := b.groups[c.Group]
 	if !held {
@@ -906,11 +949,14 @@ func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) {
 	for _, d := range c.Decls {
 		f.guard(d)
 	}
-	if err := t.Execute(&f.out, c); err != nil {
+	f.scratch.Reset()
+	if err := t.Execute(&f.scratch, c); err != nil {
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 			"the %s group template refused a cluster of %s: %v",
 			c.Group, u.Plugin, err)
+		return
 	}
+	f.out.WriteString(f.scratch.String())
 }
 
 // guard reports the stated facts the declared coverage refuses or

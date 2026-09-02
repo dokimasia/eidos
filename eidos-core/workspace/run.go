@@ -120,9 +120,19 @@ func (w *Workspace) validated(
 // still beats a stamp whichever applied first; the order here
 // exists for the findings, not the outcome. A refusal reports
 // under the fact store's own code at the stamp's position, and the
-// frame continues.
+// frame continues. A stamp whose subject the graph does not hold
+// dangles the way a directive's does, reported rather than filed:
+// a ghost fact would enumerate under a subject no reader can
+// reach.
 func applyStamps(g *store.Graph, facts *meta.Facts, sink *diag.Sink) {
 	for id, stamps := range g.Stamps() {
+		if _, held := g.Lookup(id); !held {
+			for _, s := range stamps {
+				sink.Errorf(directive.DanglingSubject, s.Pos, s.Origin,
+					"a %s stamp names %s, which the graph does not hold", s.Key, id)
+			}
+			continue
+		}
 		for i, s := range stamps {
 			claim := meta.Claim{
 				Subject:   id,

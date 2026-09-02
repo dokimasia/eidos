@@ -170,6 +170,28 @@ func TestSourceUnit(t *testing.T) {
 			"the same reads fold to the same key")
 	})
 
+	t.Run("seeds the fold with the roster itself", func(t *testing.T) {
+		t.Parallel()
+
+		one := plugin.NewSourceUnit(
+			[]plugin.SourceRef{{Path: "svc/store/row.go"}}, tree, plugin.DepthFull,
+			goSyntax(), diag.NewSink(), diag.Origin("golang"),
+		)
+		wider := plugin.NewSourceUnit(
+			[]plugin.SourceRef{{Path: "svc/store/row.go"}, {Path: "svc/other/x.go"}},
+			tree, plugin.DepthFull, goSyntax(), diag.NewSink(), diag.Origin("golang"),
+		)
+		assert.False(t, bytes.Equal(one.ReadSum(), wider.ReadSum()),
+			"a member no parse read still shapes the key")
+
+		shared := plugin.NewSourceUnit(
+			[]plugin.SourceRef{{Path: "svc/store/row.go", Shared: []string{"go.mod"}}},
+			tree, plugin.DepthFull, goSyntax(), diag.NewSink(), diag.Origin("golang"),
+		)
+		assert.False(t, bytes.Equal(one.ReadSum(), shared.ReadSum()),
+			"a declared shared input shapes it the same way")
+	})
+
 	t.Run("takes a comment apart into docs, carriers and annotations", func(t *testing.T) {
 		t.Parallel()
 
@@ -178,16 +200,61 @@ func TestSourceUnit(t *testing.T) {
 			"/**\n * Row is one record.\n * +gen:table name=rows\n * go:embed schema.sql\n */",
 			position.Pos{File: "svc/store/row.go", Line: 3},
 		)
-		assert.Equal(t, parts.Docs, []string{"Row is one record."},
-			"neither a carrier nor a directive is documentation")
+		assert.Equal(t, parts.Docs, []string{"Row is one record.", "go:embed schema.sql"},
+			"a block comment carries no directives, the way the toolchains read them")
 		assert.Length(t, parts.Carriers, 1, "the carrier splits out")
 		assert.Equal(t, parts.Carriers[0].Payload, "gen:table name=rows", "marker stripped")
 		assert.Equal(t, parts.Carriers[0].Pos.Line, 5,
 			"positioned at its own line inside the block")
-		assert.Length(t, parts.Annotations, 1, "the directive lowers as an annotation")
-		assert.Equal(t, parts.Annotations[0], symbol.Annotation{
-			Name: "go:embed", Args: []string{"schema.sql"},
-		}, "named without its marker, arguments split")
+		assert.Length(t, parts.Annotations, 0, "nothing lowers off a block")
+	})
+
+	t.Run("reads directives off adjacent line markers alone", func(t *testing.T) {
+		t.Parallel()
+
+		u := unitOf(t, tree)
+		parts := u.Comment(
+			"//go:embed schema.sql\n// go:generate reruns this\n//export CFunc\n// export is prose here",
+			position.Pos{File: "svc/store/row.go", Line: 1},
+		)
+		assert.Equal(t, parts.Annotations, symbol.Annotations{
+			{Name: "go:embed", Args: []string{"schema.sql"}},
+			{Name: "export", Args: []string{"CFunc"}},
+		}, "the colon form and the legacy space form both need the marker adjacent")
+		assert.Equal(t, parts.Docs, []string{
+			"go:generate reruns this", "export is prose here",
+		}, "a spaced marker keeps prose as prose")
+	})
+
+	t.Run("opens a carrier only where a letter follows the mark", func(t *testing.T) {
+		t.Parallel()
+
+		u := unitOf(t, tree)
+		parts := u.Comment(
+			"// Options:\n// + item one\n// +1 point\n// +gen:table name=rows",
+			position.Pos{File: "svc/store/row.go", Line: 1},
+		)
+		assert.Length(t, parts.Carriers, 1, "a bullet and a bare mark never carry intent")
+		assert.Equal(t, parts.Carriers[0].Payload, "gen:table name=rows", "the real one does")
+		assert.Equal(t, parts.Docs, []string{
+			"Options:", "+ item one", "+1 point",
+		}, "everything else stays documentation")
+	})
+
+	t.Run("folds a continued carrier into one payload", func(t *testing.T) {
+		t.Parallel()
+
+		u := unitOf(t, tree)
+		parts := u.Comment(
+			"// +gen:out user.go \\\n// plugin=buildergen \\\n// pkg=usersx\n// Trailing doc.",
+			position.Pos{File: "svc/store/row.go", Line: 4},
+		)
+		assert.Length(t, parts.Carriers, 1, "the continuation folds")
+		assert.Equal(t, parts.Carriers[0].Payload, "gen:out user.go plugin=buildergen pkg=usersx",
+			"joined by single spaces, backslashes gone")
+		assert.Equal(t, parts.Carriers[0].Pos.Line, 4, "at the opening line")
+		assert.Equal(t, parts.Docs, []string{"Trailing doc."},
+			"the continuation lines are spent")
 	})
 
 	t.Run("mines no annotations for a language without the convention", func(t *testing.T) {
@@ -325,5 +392,27 @@ func TestSourceUnit(t *testing.T) {
 		assert.Panics(t, func() { gb.Scope(nil, nil) }, "a nil file is a defect")
 		assert.Panics(t, func() { gb.Attach(nil, directive.Raw{}) }, "a nil subject is a defect")
 		assert.Panics(t, func() { gb.Stamp(nil, meta.RawStamp{}) }, "a nil stamp subject is a defect")
+	})
+
+	t.Run("rehomes records onto the subject that stands", func(t *testing.T) {
+		t.Parallel()
+
+		gb := unitOf(t, tree).Graph()
+		old := &node.Alias{Name: "Color"}
+		standing := &node.Enum{Name: "Color"}
+		other := &node.Struct{Name: "Row"}
+		gb.Attach(old, directive.Raw{Name: "gen:stringer"})
+		gb.Attach(other, directive.Raw{Name: "gen:table"})
+		gb.Stamp(old, meta.RawStamp{Key: "fake.underlying", Value: "basic"})
+
+		gb.Rehome(old, standing)
+		assert.True(t, gb.Attachments()[0].Subject == symbol.Symbol(standing),
+			"the attachment follows the replacement")
+		assert.True(t, gb.Attachments()[1].Subject == symbol.Symbol(other),
+			"an unrelated subject stays put")
+		assert.True(t, gb.StampRecords()[0].Subject == symbol.Symbol(standing),
+			"the stamp follows the same way")
+		assert.Panics(t, func() { gb.Rehome(nil, standing) }, "a nil source is a defect")
+		assert.Panics(t, func() { gb.Rehome(old, nil) }, "a nil destination is a defect")
 	})
 }

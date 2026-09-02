@@ -11,11 +11,14 @@ import (
 )
 
 // unitKey folds one unit's key, by value, in the stated order: the
-// unit's recorded reads, the partition's recorded reads, the
-// depth, the frontend's declared version, the frontend's options
-// in their canonical encoding, the composition's plugin-set
-// fingerprint, and the node model's fingerprint. The order is part
-// of the contract, because a key derived two ways diverges.
+// unit's roster-seeded reads, the partition's recorded reads, the
+// depth, the frontend's name, language and declared version, the
+// frontend's options in their canonical encoding, the
+// composition's plugin-set fingerprint, and the node model's
+// fingerprint. The order is part of the contract, because a key
+// derived two ways diverges. The name and language fold because
+// both shape every identity the unit produces; the comment syntax
+// stays covered by the version's bump-on-any-graph-change rule.
 //
 // Each part is length-prefixed, so two parts cannot trade bytes
 // and collide.
@@ -30,6 +33,8 @@ func unitKey(u *unit, pluginSet []byte) []byte {
 	part(u.src.ReadSum())
 	part(u.partition)
 	part([]byte{byte(u.depth)})
+	part([]byte(u.frontend.Name()))
+	part([]byte(u.frontend.Lang()))
 	part([]byte(u.version))
 	part(u.config)
 	part(pluginSet)

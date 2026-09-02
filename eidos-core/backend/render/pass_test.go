@@ -870,6 +870,17 @@ func TestPass(t *testing.T) {
 			"one file per split unit, named from the rewritten key")
 	})
 
+	t.Run("reports a split that vanishes a populated unit", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Split = func(plugin.Unit) []plugin.Unit { return nil }
+		files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+		assert.Length(t, files, 0, "nothing routed, nothing rendered")
+		assert.Contains(t, reported(t, sink, render.RefusedTemplate), "into nothing",
+			"the vanishing reports instead of narrowing silently")
+	})
+
 	t.Run("clusters declarations under a group template", func(t *testing.T) {
 		t.Parallel()
 
@@ -1065,8 +1076,8 @@ func TestPass(t *testing.T) {
 			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
 			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "carries no body",
 				"the refusal names what the builtin was handed")
-			assert.Equal(t, string(files[0].Body), "type Alpha struct{}\n",
-				"and the file keeps only what the template wrote before it")
+			assert.Equal(t, string(files[0].Body), "",
+				"and no fragment reaches the file the finding says was skipped")
 		})
 	})
 
@@ -1109,9 +1120,9 @@ func TestPass(t *testing.T) {
 				files, sink := runPass(t, language(), seeded(t,
 					fn("store.go", "Handle", tt.body())))
 				coretest.AssertCodes(t, sink, render.RefusedTemplate)
-				assert.Equal(t, string(files[0].Body), "func Handle() {\n",
-					"the template stops at the refusal, so no unspelt statement "+
-						"and no closing shape reaches the file")
+				assert.Equal(t, string(files[0].Body), "",
+					"the refusal withholds the whole declaration, "+
+						"so no half-opened shape reaches the file")
 			})
 		}
 	})
@@ -1245,9 +1256,9 @@ func TestPass(t *testing.T) {
 				body, sink := renderRef(t, refTree(tt.tpl), tt.body())
 				assert.Contains(t, reported(t, sink, render.RefusedTemplate),
 					refName, "the printer's refusal reaches the referencing template")
-				assert.Equal(t, body, "func Handle() {\n",
-					"the template stops at the refusal, so no unspelt statement "+
-						"and no closing shape reaches the file")
+				assert.Equal(t, body, "",
+					"the refusal withholds the whole declaration, "+
+						"so no half-opened shape reaches the file")
 			})
 		}
 	})

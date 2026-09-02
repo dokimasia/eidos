@@ -120,6 +120,7 @@ type ScriptedOptions = core.ScriptedOptions
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
 //	stamp KEY VALUE       a classification stamp on the file
+//	pkgnote NAME ARGS     a directive on the package node itself
 //
 // It partitions by directory, one shared input when the tree
 // carries mod.zz at its root, and the fields are open so a test

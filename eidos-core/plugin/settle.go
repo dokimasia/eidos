@@ -104,14 +104,16 @@ func Settle(e *Emit, b Backend, sink *diag.Sink) error {
 	if e == nil || e.settled {
 		return nil
 	}
-	e.settled = true
 	if b == nil {
+		e.settled = true
 		return nil
 	}
 	by := b.Name()
 
 	if l, held := b.(Lowerer); held {
 		if err := lowerAll(e, l, by, sink); err != nil {
+			// The flag stays down: a store abandoned mid-lowering is
+			// not settled, and Settled must not say it is.
 			return err
 		}
 	}
@@ -119,8 +121,14 @@ func Settle(e *Emit, b Backend, sink *diag.Sink) error {
 		respellAll(e, r, by, sink)
 	}
 	e.reindex()
+	e.settled = true
 	return nil
 }
+
+// unitPos positions a settle finding: an emit declaration carries
+// no source position, so the unit's routing key names the output
+// the declaration was bound for.
+func unitPos(u *Unit) position.Pos { return position.Pos{File: u.Key} }
 
 // lowerAll rewrites every declaration through the lowering hook. A
 // refusal withholds the declaration under a positioned finding; an
@@ -132,7 +140,7 @@ func lowerAll(e *Emit, l Lowerer, by diag.Origin, sink *diag.Sink) error {
 		for _, d := range u.Decls {
 			out, err := l.Lower(d)
 			if err != nil {
-				sink.Errorf(RefusedConstruct, d.Position(), by, "%v", err)
+				sink.Errorf(RefusedConstruct, unitPos(u), by, "%v", err)
 				continue
 			}
 			if out == nil {
@@ -469,13 +477,16 @@ func applyNames(
 		for j, d := range u.Decls {
 			list = plans.of(i, j)
 			if refused := firstErr(list); refused != nil {
-				sink.Errorf(RefusedName, d.Position(), by, "%v", refused.err)
+				sink.Errorf(RefusedName, unitPos(u), by, "%v", refused.err)
 				continue
 			}
 			at, warned = 0, nil
 			_ = emit.RespellNames(d, apply)
-			for host := range warned {
-				sink.Errorf(VerbatimParams, d.Position(), by,
+			hosts := slices.SortedFunc(maps.Keys(warned), func(a, b symbol.Symbol) int {
+				return strings.Compare(pinnedName(a), pinnedName(b))
+			})
+			for _, host := range hosts {
+				sink.Errorf(VerbatimParams, unitPos(u), by,
 					"a verbatim body pins its parameter names, and one on %s "+
 						"would have respelled", pinnedName(host))
 			}

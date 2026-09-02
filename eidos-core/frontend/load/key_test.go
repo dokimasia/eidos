@@ -102,5 +102,13 @@ func TestKeys(t *testing.T) {
 		reset := base(t, func(cfg *load.Config) { cfg.PluginSet = []byte("set-2") })
 		assert.False(t, bytes.Equal(before["svc/api/user.zz"], reset["svc/api/user.zz"]),
 			"the composition's fingerprint folds")
+
+		renamed := base(t, func(cfg *load.Config) {
+			f := frontendtest.NewScripted()
+			f.ID = "fake2"
+			cfg.Frontends = []plugin.Frontend{f}
+		})
+		assert.False(t, bytes.Equal(before["svc/api/user.zz"], renamed["svc/api/user.zz"]),
+			"the frontend's own identity folds, because it shapes every identity")
 	})
 }

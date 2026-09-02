@@ -321,6 +321,25 @@ func TestRun(t *testing.T) {
 		coretest.AssertReports(t, report.Sink, directive.DanglingSubject)
 	})
 
+	t.Run("a dangling stamp subject reports the same way", func(t *testing.T) {
+		t.Parallel()
+
+		b, _ := flagged()
+		w, err := b.Build()
+		assert.NoError(t, err, "the keyed composition composes")
+		g, _ := alpha(t)
+		ghost := coretest.Struct("example.com/elsewhere", "Ghost")
+		assert.NoError(t,
+			g.AttachStamps(ghost.Identity(), []meta.RawStamp{{
+				Key: "shape.ghostly", Value: true,
+			}}),
+			"the dangling stamp arrives before the seal")
+		report, err := w.Run(t.Context(), g)
+		assert.ErrorIs(t, err, workspace.ErrRunFailed,
+			"a ghost fact would enumerate under a subject no reader reaches")
+		coretest.AssertReports(t, report.Sink, directive.DanglingSubject)
+	})
+
 	t.Run("an annotator error stops the frame", func(t *testing.T) {
 		t.Parallel()
 

@@ -54,7 +54,9 @@ func fnOf(name string, body emit.Body) *emit.Function {
 func wellBackend(tb assert.TB) plugin.Renderer {
 	tb.Helper()
 
-	r, held := wellBuilder(tb).Build().(plugin.Renderer)
+	r, held := wellBuilder(tb).
+		Coverage(total(nil)).
+		Build().(plugin.Renderer)
 	assert.True(tb, held, "the kit backend renders")
 	return r
 }
@@ -790,14 +792,19 @@ func total(over map[symbol.Fact]render.Verdict) render.Coverage {
 func TestAssertCoveredFacts(t *testing.T) {
 	t.Parallel()
 
-	t.Run("passes a renderer declaring no coverage", func(t *testing.T) {
+	t.Run("rejects a renderer declaring no coverage", func(t *testing.T) {
 		t.Parallel()
 
-		backendtest.AssertCoveredFacts(t, scripted(
-			func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-				return nil, nil
-			},
-		))
+		failure := assert.Rejects(t, "an undeclared coverage must fail",
+			func(tb assert.TB) {
+				backendtest.AssertCoveredFacts(tb, scripted(
+					func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
+						return nil, nil
+					},
+				))
+			})
+		assert.Contains(t, failure, "coverage",
+			"the refusal names the missing declaration")
 	})
 
 	t.Run("accepts a total declaration whose refusals report", func(t *testing.T) {

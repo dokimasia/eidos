@@ -235,10 +235,15 @@ type CapabilityProvider = core.CapabilityProvider
 // OptionsProvider declares a typed options struct: a pointer whose
 // exported fields are the options, whose tags document them, and
 // whose constructed values are the defaults. The composition
-// populates it and folds the populated value into the fingerprint.
+// populates it; the workspace folds it into the composition
+// fingerprint a load keys units by.
 type OptionsProvider = core.OptionsProvider
 
-// Versioned contributes to the run fingerprint.
+// Versioned declares a behavior version. Bump it with any change
+// to what the plugin produces: a frontend's version folds into
+// every unit key, and every version folds into the composition
+// fingerprint, so a stale version serves stale cached work with
+// nothing reporting why.
 type Versioned = core.Versioned
 
 // RenderedFile is one rendered output as a value: the derived

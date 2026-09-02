@@ -42,7 +42,8 @@ func NewPlugin(name plugin.ID) *Builder {
 	return &Builder{name: name, priority: map[plugin.Role]int{}}
 }
 
-// Version sets the version the run fingerprint folds in.
+// Version sets the version the composition fingerprint folds in:
+// bump it with any change to what the plugin produces.
 func (b *Builder) Version(v string) *Builder {
 	b.version = v
 	return b

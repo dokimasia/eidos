@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"hash"
 	"io/fs"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -58,7 +59,10 @@ type Config struct {
 
 	// PluginSet is the composition's fingerprint, folded into every
 	// unit key: a recorded graph carries stamps a changed plugin
-	// set reinterprets.
+	// set reinterprets. A composed workspace derives it —
+	// [go.dokimi.dev/eidos/core/workspace.Workspace.Fingerprint] —
+	// and a hand-written literal is a fixture's shortcut, never a
+	// production caller's.
 	PluginSet []byte
 
 	// Signatures are the directory roots loaded signature-only: a
@@ -304,17 +308,46 @@ func checkPartition(name plugin.ID, claimed []string, parts [][]plugin.SourceRef
 
 // encodeOptions returns the frontend's options in their canonical
 // encoding, and nothing for a frontend that declares none. A knob
-// that changes the graph without changing a read must key.
+// that changes the graph without changing a read must key, so an
+// unexported field refuses: the encoding cannot see it, and a knob
+// outside the key poisons every warm reuse of the graph it shaped.
 func encodeOptions(f plugin.Frontend) ([]byte, error) {
 	op, has := f.(plugin.OptionsProvider)
 	if !has {
 		return nil, nil
+	}
+	if field, hidden := unexportedField(op.Options()); hidden {
+		return nil, fmt.Errorf(
+			"load: %s options hide %s from the encoding; a knob the key cannot see is a cache defect",
+			f.Name(), field,
+		)
 	}
 	b, err := json.Marshal(op.Options())
 	if err != nil {
 		return nil, fmt.Errorf("load: encode %s options: %w", f.Name(), err)
 	}
 	return b, nil
+}
+
+// unexportedField returns the first unexported field of the
+// options struct, however the value wraps it.
+func unexportedField(o any) (string, bool) {
+	v := reflect.ValueOf(o)
+	for v.Kind() == reflect.Pointer {
+		if v.IsNil() {
+			return "", false
+		}
+		v = v.Elem()
+	}
+	if v.Kind() != reflect.Struct {
+		return "", false
+	}
+	for i := range v.NumField() {
+		if !v.Type().Field(i).IsExported() {
+			return v.Type().Field(i).Name, true
+		}
+	}
+	return "", false
 }
 
 // depthOf picks a unit's depth: signature-only when any member
@@ -453,9 +486,13 @@ func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachE
 		gb := u.src.Graph()
 		for _, p := range gb.Packages() {
 			key := mergeKey{lang: lang, path: p.ID.Package}
+			// The canonical identity lands on every unit's node,
+			// merged or standing, so an attachment recorded against
+			// a merged-away package node still resolves to the
+			// identity that stands.
+			p.ID = symbol.Identity{Lang: lang, Package: p.ID.Package, Kind: symbol.KindPackage}
 			held, met := merged[key]
 			if !met {
-				p.ID = symbol.Identity{Lang: lang, Package: p.ID.Package, Kind: symbol.KindPackage}
 				held = &spliced{pkg: p, lang: lang, origin: origin}
 				merged[key] = held
 				packages = append(packages, held)

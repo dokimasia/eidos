@@ -77,6 +77,11 @@ var (
 // a name before the first argument.
 type Name = core.Name
 
+// Continuation ends a carrier line whose payload continues on the
+// next: the one spelling [Join] folds, exported so a comment split
+// recognizes a continued carrier without respelling the grammar.
+const Continuation = core.Continuation
+
 // Raw is one instance as a carrier hands it over: the grammar
 // parsed, the values untyped.
 //

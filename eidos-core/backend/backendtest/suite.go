@@ -156,8 +156,9 @@ func memberNames(s symbol.Symbol) (string, []string) {
 // exceptions stay on facts their kind can state, the settled
 // fixture's run reports exactly the refusals the declaration
 // states, and no stated fact meets an undeclared verdict. A
-// renderer declaring no coverage passes vacuously, which is what a
-// backend predating the contract runs under.
+// renderer declaring no coverage fails: without a declaration the
+// guard is disarmed and every narrowing goes silent, which is the
+// defect class the contract exists to refuse.
 func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -168,6 +169,8 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	}
 	c, covered := r.(render.Coverer)
 	if !covered || !c.Coverage().Declared() {
+		tb.Errorf("the renderer declares no coverage, and an undeclared " +
+			"coverage disarms the narrowing guard")
 		return
 	}
 	coverage := c.Coverage()

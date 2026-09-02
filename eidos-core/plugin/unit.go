@@ -44,11 +44,22 @@ func NewSourceUnit(
 	syntax CommentSyntax, sink *diag.Sink, origin diag.Origin,
 ) *SourceUnit {
 	allowed := make(map[string]bool, len(files)*2)
+	reads := sha256.New()
 	for _, f := range files {
 		allowed[f.Path] = true
+		// The roster seeds the fold before any read: the member
+		// paths, their order and their shared inputs shape the
+		// graph whether or not the parse reads every one, so a
+		// member added, dropped or reordered re-keys the unit even
+		// under a frontend that reads lazily.
+		reads.Write([]byte(f.Path))
+		reads.Write([]byte{0})
 		for _, s := range f.Shared {
 			allowed[s] = true
+			reads.Write([]byte(s))
+			reads.Write([]byte{0})
 		}
+		reads.Write([]byte{0})
 	}
 	return &SourceUnit{
 		files:   files,
@@ -59,7 +70,7 @@ func NewSourceUnit(
 		sink:    sink,
 		origin:  origin,
 		graph:   newGraphBuilder(),
-		reads:   sha256.New(),
+		reads:   reads,
 	}
 }
 
@@ -121,38 +132,64 @@ type CommentParts struct {
 // Doc strips one raw comment's markers through the language's
 // syntax and returns the clean lines: line prefixes dropped,
 // block delimiters and gutters removed, and — when the syntax
-// declares the convention — directive lines excluded, because a
-// pragma is not documentation and would render double-commented
-// downstream.
+// declares the convention — marker-adjacent directive lines
+// excluded, because a pragma is not documentation and would render
+// double-commented downstream. Carrier lines stay, because Doc
+// states nothing about them; a caller splitting carriers out uses
+// [SourceUnit.Comment].
 func (u *SourceUnit) Doc(raw string) []string {
-	return u.DocLines(stripComment(raw, u.syntax))
+	lines := commentLines(raw, u.syntax)
+	out := make([]string, 0, len(lines))
+	for _, line := range lines {
+		if u.syntax.Directives && line.adjacent &&
+			(directiveLine(line.text) || legacyDirective(line.text)) {
+			continue
+		}
+		out = append(out, line.text)
+	}
+	return trimBlank(out)
 }
 
 // Comment takes one raw comment apart through the language's
 // syntax, each part positioned at its own line from the given
-// base: documentation, carriers, and — when the syntax declares
-// the convention — tool directives lowered as annotations, the
-// name without its marker, the arguments split on spaces, which
-// is the spelling the render side writes back.
+// base: documentation, carriers with their continuations folded,
+// and — when the syntax declares the convention — tool directives
+// lowered as annotations, the name without its marker, the
+// arguments split on spaces, which is the spelling the render side
+// writes back. A carrier opens only where the mark is followed by
+// a letter, so a markdown bullet stays documentation; a directive
+// needs its marker adjacent, the way the host toolchain reads it,
+// so prose after a spaced marker stays prose.
 func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 	var parts CommentParts
-	for i, line := range commentLines(raw, u.syntax) {
+	lines := commentLines(raw, u.syntax)
+	for i := 0; i < len(lines); i++ {
+		line := lines[i]
 		lineAt := at
 		lineAt.Line += i
 		switch {
-		case strings.HasPrefix(line, CarrierMark):
-			parts.Carriers = append(parts.Carriers, Carrier{
-				Payload: strings.TrimPrefix(line, CarrierMark), Pos: lineAt,
-			})
-		case u.syntax.Directives && directiveLine(line):
-			name, rest, _ := strings.Cut(line, " ")
+		case carrierLine(line.text):
+			payload := strings.TrimPrefix(line.text, CarrierMark)
+			if strings.HasSuffix(payload, directive.Continuation) {
+				span := []string{payload}
+				for strings.HasSuffix(span[len(span)-1], directive.Continuation) &&
+					i+1 < len(lines) {
+					i++
+					span = append(span, lines[i].text)
+				}
+				payload = directive.Join(span)
+			}
+			parts.Carriers = append(parts.Carriers, Carrier{Payload: payload, Pos: lineAt})
+		case u.syntax.Directives && line.adjacent &&
+			(directiveLine(line.text) || legacyDirective(line.text)):
+			name, rest, _ := strings.Cut(line.text, " ")
 			annotation := symbol.Annotation{Name: name}
 			if rest != "" {
 				annotation.Args = strings.Fields(rest)
 			}
 			parts.Annotations = append(parts.Annotations, annotation)
 		default:
-			parts.Docs = append(parts.Docs, line)
+			parts.Docs = append(parts.Docs, line.text)
 		}
 	}
 	parts.Docs = trimBlank(parts.Docs)
@@ -160,8 +197,12 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 }
 
 // DocLines filters lines the author already holds clean: the
-// directive-line rule applies under the syntax's declaration,
-// nothing else changes.
+// tool:name directive shape excludes under the syntax's
+// declaration, nothing else changes. Marker adjacency is gone from
+// a clean line, so the legacy space forms — line, extern, export —
+// stay, because those words open ordinary prose too; a caller
+// holding raw comments uses [SourceUnit.Doc], which still knows
+// the marker.
 func (u *SourceUnit) DocLines(lines []string) []string {
 	if !u.syntax.Directives {
 		return lines
@@ -194,53 +235,82 @@ func (u *SourceUnit) Infof(c diag.Code, at position.Pos, format string, a ...any
 	u.sink.Infof(c, at, u.origin, format, a...)
 }
 
-// ReadSum returns the fold of every read the unit accepted, in
-// read order: the reads' half of the unit key. The driver folds
-// the rest — partition reads, depth, versions, configuration —
-// and the load report carries the finished key.
+// ReadSum returns the fold of the unit's roster and every read the
+// unit accepted, in read order: the reads' half of the unit key,
+// seeded with the member paths and shared inputs at construction
+// so the roster itself cannot escape it. The driver folds the
+// rest — partition reads, depth, versions, configuration — and the
+// load report carries the finished key.
 func (u *SourceUnit) ReadSum() []byte { return u.reads.Sum(nil) }
 
-// stripComment removes one comment's markers and trims the blank
-// edges the delimiters leave behind.
-func stripComment(raw string, syntax CommentSyntax) []string {
-	return trimBlank(commentLines(raw, syntax))
+// commentLine is one comment line with its markers stripped: the
+// clean text, and whether a line marker sat immediately against
+// it, which the directive rule requires and a block form never
+// grants — the host toolchains read directives off line comments
+// alone.
+type commentLine struct {
+	text     string
+	adjacent bool
 }
 
 // commentLines removes one comment's markers, one entry per source
 // line so an index maps back to a line offset: the first matching
 // line prefix, or a block's delimiters and per-line gutter, one
 // leading space tolerated after either.
-func commentLines(raw string, syntax CommentSyntax) []string {
+func commentLines(raw string, syntax CommentSyntax) []commentLine {
 	text := raw
 	for _, b := range syntax.Blocks {
 		if strings.HasPrefix(text, b.Open) && strings.HasSuffix(text, b.Close) {
 			body := strings.TrimSuffix(strings.TrimPrefix(text, b.Open), b.Close)
 			lines := strings.Split(body, "\n")
-			out := make([]string, 0, len(lines))
+			out := make([]commentLine, 0, len(lines))
 			for _, line := range lines {
 				trimmed := strings.TrimSpace(line)
 				if b.Gutter != "" {
 					trimmed = strings.TrimPrefix(trimmed, b.Gutter)
 					trimmed = strings.TrimPrefix(trimmed, " ")
 				}
-				out = append(out, trimmed)
+				out = append(out, commentLine{text: trimmed})
 			}
 			return out
 		}
 	}
 	lines := strings.Split(text, "\n")
-	out := make([]string, 0, len(lines))
+	out := make([]commentLine, 0, len(lines))
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
+		adjacent := false
 		for _, p := range syntax.Line {
 			if rest, marked := strings.CutPrefix(trimmed, p); marked {
+				adjacent = rest != "" && rest[0] != ' ' && rest[0] != '\t'
 				trimmed = strings.TrimPrefix(rest, " ")
 				break
 			}
 		}
-		out = append(out, trimmed)
+		out = append(out, commentLine{text: trimmed, adjacent: adjacent})
 	}
 	return out
+}
+
+// carrierLine reports whether a clean line opens a directive
+// carrier: the mark, then a letter, so a markdown bullet or a bare
+// mark never reads as authored intent.
+func carrierLine(line string) bool {
+	rest, marked := strings.CutPrefix(line, CarrierMark)
+	if !marked || rest == "" {
+		return false
+	}
+	c := rest[0]
+	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
+}
+
+// legacyDirective reports the three space-form directives the go
+// toolchain grandfathered — line, extern and export — which only a
+// marker-adjacent raw line can claim.
+func legacyDirective(line string) bool {
+	return strings.HasPrefix(line, "line ") ||
+		strings.HasPrefix(line, "extern ") ||
+		strings.HasPrefix(line, "export ")
 }
 
 // trimBlank drops leading and trailing empty lines, which comment
@@ -371,6 +441,28 @@ func (gb *GraphBuilder) Stamp(subject symbol.Symbol, s meta.RawStamp) {
 		panic("plugin: a stamp on a nil subject indexes nowhere")
 	}
 	gb.stamps = append(gb.stamps, StampRecord{Subject: subject, Stamp: s})
+}
+
+// Rehome moves every recorded attachment and stamp from one
+// subject onto another: what a frontend calls when a rewrite pass
+// replaces a declaration it already attached to, so authored
+// intent follows the declaration that stands instead of dangling
+// on one the graph will never identify. A nil subject on either
+// side is a frontend defect and panics.
+func (gb *GraphBuilder) Rehome(from, to symbol.Symbol) {
+	if from == nil || to == nil {
+		panic("plugin: a rehoming between nil subjects moves nothing")
+	}
+	for i := range gb.attachments {
+		if gb.attachments[i].Subject == from {
+			gb.attachments[i].Subject = to
+		}
+	}
+	for i := range gb.stamps {
+		if gb.stamps[i].Subject == from {
+			gb.stamps[i].Subject = to
+		}
+	}
 }
 
 // Packages returns the unit's packages in first-touch order: what

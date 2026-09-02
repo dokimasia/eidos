@@ -142,6 +142,14 @@ func (e *Emit) Add(u Unit) error {
 			u.Plugin, u.Key,
 		)
 	}
+	for _, d := range u.Decls {
+		if d == nil {
+			return fmt.Errorf(
+				"plugin: %s flushes a nil declaration, which no renderer could spell",
+				u.Plugin,
+			)
+		}
+	}
 	k := unitKey{plugin: u.Plugin, tag: u.Tag, key: u.Key}
 	if _, taken := e.held[k]; taken {
 		return fmt.Errorf(

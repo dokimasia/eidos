@@ -22,16 +22,20 @@ type Name string
 // The grammar's punctuation. The spellings live here once, so the
 // parser and its refusals agree on every byte.
 const (
-	prefixSep    = ':'
-	keySep       = '='
-	listOpen     = '['
-	listClose    = ']'
-	listSep      = ','
-	quote        = '"'
-	escape       = '\\'
-	continuation = `\`
-	joinSep      = " "
+	prefixSep = ':'
+	keySep    = '='
+	listOpen  = '['
+	listClose = ']'
+	listSep   = ','
+	quote     = '"'
+	escape    = '\\'
+	joinSep   = " "
 )
+
+// Continuation ends a carrier line whose payload continues on the
+// next: the one spelling [Join] folds, exported so a comment split
+// recognizes a continued carrier without respelling the grammar.
+const Continuation = `\`
 
 // Raw is one instance as a carrier hands it over: the grammar
 // parsed, the values untyped.
@@ -96,7 +100,7 @@ type RawValue struct {
 func Join(lines []string) string {
 	parts := make([]string, 0, len(lines))
 	for _, line := range lines {
-		trimmed, continued := strings.CutSuffix(line, continuation)
+		trimmed, continued := strings.CutSuffix(line, Continuation)
 		if continued {
 			// Whatever sat before the marker, the join is exactly
 			// one space.
