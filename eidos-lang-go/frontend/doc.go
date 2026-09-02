@@ -69,17 +69,18 @@
 // # Stamps
 //
 // Every package a unit declares carries the kernel's neutral
-// module identity — gen.module with the module path, gen.moduleRoot
-// with the directory its go.mod sits in — and a directory outside
-// every module carries neither. Beside the classifications, the
-// parse stamps what it alone can see: a pointer receiver, the iterator return shapes, an empty or
-// constraint interface, a defined type's underlying shape — on the
-// enum when one stands for it — and each constant's exact value
+// module identity: gen.module with the module path, and
+// gen.moduleRoot with the directory its go.mod sits in. A
+// directory outside every module carries neither. Beside the
+// classifications, the parse stamps what it alone can see: a
+// pointer receiver, the iterator return shapes, an empty or
+// constraint interface, a defined type's underlying shape (on the
+// enum when one stands for it), and each constant's exact value
 // where the package's own scope evaluates it, iota arithmetic
 // included, through the checker's machinery with imports stubbed.
-// What needs the whole graph — interface satisfaction, embedded
-// interfaces, comparability — stamps from the annotate sibling
-// over the sealed graph, where the proof is.
+// What needs the whole graph, such as interface satisfaction,
+// embedded interfaces and comparability, stamps from the annotate
+// sibling over the sealed graph, where the proof is.
 //
 // # Stated refusals
 //
