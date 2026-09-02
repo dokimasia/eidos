@@ -1,0 +1,250 @@
+// Copyright ThesmOS B.V. 2026
+// SPDX-License-Identifier: Apache-2.0
+
+package coretest
+
+import (
+	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// The names the every-kind fixture declares, one per kind. A case
+// asserting over the whole vocabulary reads the kind out of the
+// name, so a failure message says which kind failed without a
+// lookup.
+const (
+	FunctionName    = "Load"
+	MethodName      = "Scan"
+	EnumName        = "Status"
+	EnumVariantName = "StatusOpen"
+	SumName         = "Result"
+	SumVariantName  = "ResultOk"
+	FieldName       = "Column"
+	VariableName    = "Registry"
+	ConstantName    = "Version"
+	InterfaceName   = "Reader"
+	AliasName       = "RowID"
+
+	// ForeignName is what [Foreign] is called, which no fixture of a
+	// model kind answers to.
+	ForeignName = "Ghost"
+)
+
+// Function returns a function declaration in one package, carrying
+// the identity the resolution step would have assigned it.
+func Function(path, name string) *node.Function {
+	return &node.Function{
+		ID:         ID(path, name, symbol.KindFunction),
+		Name:       name,
+		Visibility: symbol.VisibilityPublic,
+	}
+}
+
+// Method returns a method attached to host, carrying host's
+// identity in its back-pointer the way a loaded member does.
+func Method(path, host, name string) *node.Method {
+	return &node.Method{
+		ID:         ID(path, name, symbol.KindMethod),
+		Name:       name,
+		Visibility: symbol.VisibilityPublic,
+		Level:      symbol.LevelInstance,
+		Host:       ID(path, host, symbol.KindStruct),
+	}
+}
+
+// Field returns a field on host, carrying host's identity in its
+// back-pointer the way a loaded member does.
+func Field(path, host, name string) *node.Field {
+	return &node.Field{
+		ID:         ID(path, name, symbol.KindField),
+		Name:       name,
+		Visibility: symbol.VisibilityPublic,
+		Level:      symbol.LevelInstance,
+		Mutability: symbol.MutabilityMutable,
+		Host:       ID(path, host, symbol.KindStruct),
+	}
+}
+
+// Enum returns an enumeration holding one variant per name, each
+// carrying the enum's identity in its back-pointer.
+func Enum(path, name string, variants ...string) *node.Enum {
+	held := make([]*node.EnumVariant, 0, len(variants))
+	for _, variant := range variants {
+		held = append(held, &node.EnumVariant{
+			ID:   ID(path, variant, symbol.KindEnumVariant),
+			Name: variant,
+			Host: ID(path, name, symbol.KindEnum),
+		})
+	}
+	return &node.Enum{
+		ID:         ID(path, name, symbol.KindEnum),
+		Name:       name,
+		Visibility: symbol.VisibilityPublic,
+		Variants:   held,
+	}
+}
+
+// Sum returns a sum type holding one variant per name, each
+// carrying the sum's identity in its back-pointer.
+func Sum(path, name string, variants ...string) *node.Sum {
+	held := make([]*node.SumVariant, 0, len(variants))
+	for _, variant := range variants {
+		held = append(held, &node.SumVariant{
+			ID:   ID(path, variant, symbol.KindSumVariant),
+			Name: variant,
+			Host: ID(path, name, symbol.KindSum),
+		})
+	}
+	return &node.Sum{
+		ID:         ID(path, name, symbol.KindSum),
+		Name:       name,
+		Visibility: symbol.VisibilityPublic,
+		Variants:   held,
+	}
+}
+
+// Variable returns a package-level variable declaration.
+func Variable(path, name string) *node.Variable {
+	return &node.Variable{
+		ID:         ID(path, name, symbol.KindVariable),
+		Name:       name,
+		Visibility: symbol.VisibilityPublic,
+		Mutability: symbol.MutabilityMutable,
+	}
+}
+
+// Constant returns a package-level constant declaration.
+func Constant(path, name string) *node.Constant {
+	return &node.Constant{
+		ID:         ID(path, name, symbol.KindConstant),
+		Name:       name,
+		Visibility: symbol.VisibilityPublic,
+	}
+}
+
+// Interface returns an interface declaring one method.
+func Interface(path, name string) *node.Interface {
+	m := Method(path, name, MethodName)
+	m.Host = ID(path, name, symbol.KindInterface)
+	m.Abstract = true
+	return &node.Interface{
+		ID:         ID(path, name, symbol.KindInterface),
+		Name:       name,
+		Visibility: symbol.VisibilityPublic,
+		Methods:    []*node.Method{m},
+	}
+}
+
+// Alias returns a type alias naming its target by spelling alone,
+// as an unlinked reference arrives.
+func Alias(path, name string) *node.Alias {
+	return &node.Alias{
+		ID:         ID(path, name, symbol.KindAlias),
+		Name:       name,
+		Visibility: symbol.VisibilityPublic,
+		Target:     &node.TypeRef{Spelling: StructName},
+	}
+}
+
+// StructName is the struct the every-kind fixture hangs its members
+// on, and the target [Alias] points at.
+const StructName = "Row"
+
+// Populated returns a struct carrying one field and one method, so
+// a traversal that descends into members meets both.
+func Populated(path, name string) *node.Struct {
+	s := Struct(path, name)
+	s.Fields = []*node.Field{Field(path, name, FieldName)}
+	s.Methods = []*node.Method{Method(path, name, MethodName)}
+	return s
+}
+
+// EveryKind returns a package holding one declaration of every kind
+// a rule can match: the ten kinds the generated constructors cover,
+// with the member kinds hanging on their hosts rather than sitting
+// loose in the file.
+//
+// A case over the whole vocabulary uses this rather than naming
+// kinds one at a time, because a fixture that omits a kind reports
+// as a passing test over a rule that never fired.
+func EveryKind(path string) *node.Package {
+	return Package(path,
+		Populated(path, StructName),
+		Interface(path, InterfaceName),
+		Enum(path, EnumName, EnumVariantName),
+		Sum(path, SumName, SumVariantName),
+		Alias(path, AliasName),
+		Function(path, FunctionName),
+		Variable(path, VariableName),
+		Constant(path, ConstantName),
+	)
+}
+
+// MatchableKinds are the kinds [EveryKind] declares, which is the
+// set the generated match constructors cover. A case asserting that
+// it reached the whole vocabulary compares against this.
+func MatchableKinds() []symbol.Kind {
+	return []symbol.Kind{
+		symbol.KindStruct,
+		symbol.KindField,
+		symbol.KindMethod,
+		symbol.KindInterface,
+		symbol.KindEnum,
+		symbol.KindSum,
+		symbol.KindAlias,
+		symbol.KindFunction,
+		symbol.KindVariable,
+		symbol.KindConstant,
+	}
+}
+
+// KindCount returns how many declarations of one kind the packages
+// hold.
+//
+// It counts what the store indexes: a declaration that names itself
+// and carries an identity. A case dispatching over the same packages
+// compares its invocations against this rather than a written-out
+// number, so a fixture that grows a kind does not quietly weaken the
+// case.
+func KindCount(kind symbol.Kind, pkgs ...*node.Package) int {
+	count := 0
+	for _, pkg := range pkgs {
+		for decl := range node.Declarations(pkg) {
+			if decl.Kind() == kind && !decl.Identity().IsZero() {
+				count++
+			}
+		}
+	}
+	return count
+}
+
+// Foreign returns a declaration that names a kind and an identity
+// without being the node model's type for that kind, as a symbol
+// another model placed in a declaration list would be.
+//
+// The store indexes it under the kind it names, so a rule of that
+// kind is dispatched to it and the rule's own type assertion refuses
+// it. Nothing built from the model's kinds reaches that guard.
+func Foreign(path, name string, kind symbol.Kind) node.Declaration {
+	return foreign{id: ID(path, name, kind)}
+}
+
+// foreign is [Foreign]'s declaration: an identity, the kind that
+// identity names, and nothing the node model would recognize.
+type foreign struct{ id symbol.Identity }
+
+func (f foreign) Kind() symbol.Kind         { return f.id.Kind }
+func (foreign) Position() position.Pos      { return position.Pos{} }
+func (foreign) Docs() []string              { return nil }
+func (f foreign) Identity() symbol.Identity { return f.id }
+
+// ID returns the identity the resolution step assigns a declaration
+// of that kind in one package.
+//
+// Every fixture identity is built here, so a case comparing two of
+// them compares the same spelling rules rather than two hand-built
+// literals that agree by luck.
+func ID(path, name string, kind symbol.Kind) symbol.Identity {
+	return symbol.Identity{Lang: Lang, Package: path, Name: name, Kind: kind}
+}

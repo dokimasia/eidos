@@ -30,12 +30,12 @@ const UnitFile = "unit.go"
 
 // PackageID returns the identity a package of that path returns.
 func PackageID(path string) symbol.Identity {
-	return symbol.Identity{Lang: Lang, Package: path, Kind: symbol.KindPackage}
+	return ID(path, "", symbol.KindPackage)
 }
 
 // FileID returns the identity of the file [Package] builds.
 func FileID(path string) symbol.Identity {
-	return symbol.Identity{Lang: Lang, Package: path, Name: UnitFile, Kind: symbol.KindFile}
+	return ID(path, UnitFile, symbol.KindFile)
 }
 
 // Struct returns a struct declaration in one package, carrying the
