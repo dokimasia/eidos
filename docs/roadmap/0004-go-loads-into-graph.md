@@ -22,18 +22,18 @@ Go.
 
 ## Done when
 
-- [ ] `RunFrontendSuite` passes for eidos-lang-go: the same fixture
+- [x] `RunFrontendSuite` passes for eidos-lang-go: the same fixture
       parses to an identical graph twice, diagnostics are positioned,
       classification stamps are present, and a probe cache observes
       that fingerprint keys fold in the unit fingerprint and the
       frontend version.
-- [ ] Link works: a two-package fixture resolves `TypeRef` spellings
+- [x] Link works: a two-package fixture resolves `TypeRef` spellings
       to canonical identities, builtins and external types keep
       spelling only, and `Reader.Lookup` joins across the packages
       afterwards.
-- [ ] Reparsing an unchanged file yields the same identities. This
+- [x] Reparsing an unchanged file yields the same identities. This
       seeds milestone 0007's diff-by-identity.
-- [ ] `//+gen:` carriers strip and parse to canonical directives. An
+- [x] `//+gen:` carriers strip and parse to canonical directives. An
       unclaimed directive is reported, and the workspace opt-out
       silences it.
 - [ ] The kernel-owned `sample` and `witness` directives stamp their
@@ -43,10 +43,10 @@ Go.
 - [ ] `go.work` and `go.mod` are read declaratively, `gen.module` and
       `gen.moduleRoot` are stamped, and a static check asserts the
       frontend never imports `os/exec`.
-- [ ] Signature-only loading works: an out-of-scope dependency package
+- [x] Signature-only loading works: an out-of-scope dependency package
       loads through the same `Parse` with `Depth() == Signatures`,
       bodies and private members absent.
-- [ ] Test files parse and carry `go.testFile`. The kit excludes
+- [x] Test files parse and carry `go.testFile`. The kit excludes
       nothing except workspace-owned outputs, which it refuses before
       `Parse` when a fixture provides the trailer or manifest proof.
 - [ ] Tier 1 is covered for Go: `CallableOf`, `TypeOf` into canonical
