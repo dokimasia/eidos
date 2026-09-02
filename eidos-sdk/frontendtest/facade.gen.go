@@ -91,6 +91,10 @@ func AssertLinked(tb assert.TB, setup Setup) {
 // ScriptedLang is the language every scripted declaration carries.
 const ScriptedLang = core.ScriptedLang
 
+// ScriptedID is the name the scripted frontend declares, which is
+// the origin every finding it reports carries.
+const ScriptedID = core.ScriptedID
+
 // ScriptedTestKey is the classification key the scripted stamps
 // write.
 const ScriptedTestKey = core.ScriptedTestKey

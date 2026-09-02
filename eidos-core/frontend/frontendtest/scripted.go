@@ -20,6 +20,10 @@ import (
 // ScriptedLang is the language every scripted declaration carries.
 const ScriptedLang symbol.Lang = "fake"
 
+// ScriptedID is the name the scripted frontend declares, which is
+// the origin every finding it reports carries.
+const ScriptedID plugin.ID = "fakefront"
+
 // ScriptedTestKey is the classification key the scripted stamps
 // write.
 const ScriptedTestKey meta.KeyName = "fake.testFile"
@@ -64,7 +68,7 @@ type Scripted struct {
 // NewScripted returns the scripted frontend under its usual claim.
 func NewScripted() *Scripted {
 	return &Scripted{
-		ID:  "fakefront",
+		ID:  ScriptedID,
 		Ver: "1",
 		// The manifest is a shared input, never source: the claim
 		// carves it out and the partition reads it instead.
