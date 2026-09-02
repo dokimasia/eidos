@@ -360,7 +360,9 @@ func (r *renderer) expr(e ast.Expr) (string, error) {
 	case *ast.SelectorExpr:
 		x, ok := e.X.(*ast.Ident)
 		if !ok {
-			return "", r.ps.at(e.Pos(), "unsupported qualified expression")
+			return "", r.ps.at(e.Pos(),
+				"the qualifier of .%s is not a package name, so the "+
+					"reference has nothing to respell against", e.Sel.Name)
 		}
 		qual, err := r.qualify(x)
 		if err != nil {

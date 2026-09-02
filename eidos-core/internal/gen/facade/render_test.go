@@ -334,7 +334,7 @@ func TestRender(t *testing.T) {
 				name: "a qualified expression syntax cannot resolve",
 				poison: "import \"example.test/dep\"\n\n" +
 					"// N takes an array sized by a nested selector.\nfunc N(v [dep.Sub.N]int) {}\n",
-				wants: []string{"unsupported qualified expression"},
+				wants: []string{"qualifier of .N", "not a package name"},
 			},
 		}
 
