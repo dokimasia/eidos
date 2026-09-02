@@ -78,6 +78,9 @@ type Graph struct {
 	byID   map[symbol.Identity]node.Declaration
 	byKind map[symbol.Kind][]node.Declaration
 	byPkg  map[symbol.Identity]*node.Package
+	// pkgOrder holds the same packages in identity order, so an
+	// enumeration is deterministic without sorting per call.
+	pkgOrder []*node.Package
 
 	// attached holds raw directive instances per subject as they
 	// arrive; the seal sorts them and builds the directive index
@@ -179,6 +182,7 @@ func (g *Graph) Freeze() {
 	// maps and share only reads of the collected slices. Each fills
 	// in sorted package order, so both stay deterministic.
 	loaded := g.loaded()
+	g.pkgOrder = make([]*node.Package, 0, len(loaded))
 	var fill sync.WaitGroup
 	fill.Go(func() {
 		for _, entry := range loaded {
@@ -190,6 +194,7 @@ func (g *Graph) Freeze() {
 	fill.Go(func() {
 		for _, entry := range loaded {
 			g.byPkg[entry.pkg.ID] = entry.pkg
+			g.pkgOrder = append(g.pkgOrder, entry.pkg)
 			for _, decl := range entry.decls {
 				g.byKind[decl.Kind()] = append(g.byKind[decl.Kind()], decl)
 			}
@@ -257,6 +262,33 @@ func (g *Graph) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 		return nil, false
 	}
 	return decl, true
+}
+
+// Holds reports whether the graph carries a subject under this
+// identity, untracked: a declaration through the identity index,
+// or a package through the package index, because a package is the
+// container its declarations sit in rather than one of them. A
+// caller checking whether an attachment's subject survived the
+// load asks here, where Lookup alone would call every package's
+// record dangling.
+func (g *Graph) Holds(id symbol.Identity) bool {
+	if _, held := g.byID[id]; held {
+		return true
+	}
+	_, held := g.byPkg[id]
+	return held
+}
+
+// Packages enumerates the loaded packages in identity order,
+// untracked: the roster the seal fixed, which holds across runs.
+func (g *Graph) Packages() iter.Seq[*node.Package] {
+	return func(yield func(*node.Package) bool) {
+		for _, pkg := range g.pkgOrder {
+			if !yield(pkg) {
+				return
+			}
+		}
+	}
 }
 
 // PackageOf returns the package holding a declaration, untracked:

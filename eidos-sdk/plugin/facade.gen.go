@@ -228,7 +228,7 @@ type KeyProvider = core.KeyProvider
 // OutputProvider declares the file families a generator emits.
 type OutputProvider = core.OutputProvider
 
-// CapabilityProvider orders a plugin: a priority per role role,
+// CapabilityProvider orders a plugin: a priority per role,
 // plus the capability topology inside one priority bucket.
 type CapabilityProvider = core.CapabilityProvider
 

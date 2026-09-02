@@ -96,7 +96,7 @@ func (w *Workspace) validated(
 	for i := range subjects {
 		wg.Go(func() {
 			s := subjects[i]
-			if _, held := g.Lookup(s.subject); !held {
+			if !g.Holds(s.subject) {
 				sink.Errorf(directive.DanglingSubject, s.raws[0].Pos, diag.PhaseFreeze,
 					"directives on %s name a subject the graph does not hold", s.subject)
 				return
@@ -126,7 +126,7 @@ func (w *Workspace) validated(
 // reach.
 func applyStamps(g *store.Graph, facts *meta.Facts, sink *diag.Sink) {
 	for id, stamps := range g.Stamps() {
-		if _, held := g.Lookup(id); !held {
+		if !g.Holds(id) {
 			for _, s := range stamps {
 				sink.Errorf(directive.DanglingSubject, s.Pos, s.Origin,
 					"a %s stamp names %s, which the graph does not hold", s.Key, id)

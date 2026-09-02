@@ -29,7 +29,7 @@ import (
 func RunBackendSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
-	t.Run("an populated fixture", func(t *testing.T) {
+	t.Run("a populated fixture", func(t *testing.T) {
 		t.Parallel()
 		AssertPopulatedFixture(t, setup)
 	})
@@ -235,13 +235,28 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	}
 	assert.Equal(tb, len(refusals), total,
 		"the run reports exactly the refusals the declaration states")
-	for key := range expect {
-		held := slices.ContainsFunc(refusals, func(msg string) bool {
-			return strings.Contains(msg, key.fact.String()) &&
-				strings.Contains(msg, key.kind.String())
-		})
-		assert.True(tb, held, "a stated "+key.fact.String()+" on a "+
-			key.kind.String()+" reports its refusal")
+	// Per key rather than per total: matching counts with one
+	// refusal missing and one undeclared cancel out, and the
+	// undeclared half is exactly the silent narrowing the coverage
+	// exists to catch.
+	seen := map[statedOn]int{}
+	for _, msg := range refusals {
+		matched := false
+		for key := range expect {
+			if strings.Contains(msg, key.fact.String()) &&
+				strings.Contains(msg, key.kind.String()) {
+				seen[key]++
+				matched = true
+				break
+			}
+		}
+		if !matched {
+			tb.Errorf("the run refuses what the declaration does not state: %s", msg)
+		}
+	}
+	for key, want := range expect {
+		assert.Equal(tb, seen[key], want, "a stated "+key.fact.String()+" on a "+
+			key.kind.String()+" reports its refusal once per statement")
 	}
 }
 

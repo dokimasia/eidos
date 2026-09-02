@@ -42,7 +42,7 @@ func (b *built) Version() string { return b.version }
 // Outputs returns the declared file families, in declaration order.
 func (b *built) Outputs() []plugin.Output { return b.outputs }
 
-// Priority returns the declared priority for one role role, zero
+// Priority returns the declared priority for one role, zero
 // where none was declared.
 func (b *built) Priority(r plugin.Role) int { return b.priority[r] }
 

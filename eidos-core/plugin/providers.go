@@ -35,7 +35,7 @@ type OutputProvider interface {
 	Outputs() []Output
 }
 
-// CapabilityProvider orders a plugin: a priority per role role,
+// CapabilityProvider orders a plugin: a priority per role,
 // plus the capability topology inside one priority bucket.
 type CapabilityProvider interface {
 	Priority(r Role) int

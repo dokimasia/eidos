@@ -321,6 +321,23 @@ func TestRun(t *testing.T) {
 		coretest.AssertReports(t, report.Sink, directive.DanglingSubject)
 	})
 
+	t.Run("validates a record on the package itself", func(t *testing.T) {
+		t.Parallel()
+
+		b, _ := flagged()
+		w, err := b.Build()
+		assert.NoError(t, err, "the keyed composition composes")
+		g, _ := alpha(t)
+		pkgID := coretest.PackageID(coretest.StorePath)
+		assert.NoError(t,
+			g.AttachDirectives(pkgID, []directive.Raw{rawMeta("shape.flag", 9)}),
+			"a package-subject directive attaches before the seal")
+		report, err := w.Run(t.Context(), g)
+		assert.NoError(t, err,
+			"a package is a subject the graph holds, not a dangling one")
+		coretest.AssertCodes(t, report.Sink)
+	})
+
 	t.Run("a dangling stamp subject reports the same way", func(t *testing.T) {
 		t.Parallel()
 

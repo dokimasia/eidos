@@ -703,7 +703,7 @@ func TestAssertPopulatedFixture(t *testing.T) {
 				backendtest.AssertPopulatedFixture(tb, hollow)
 			})
 		assert.Contains(t, failure, "unit",
-			"the check demands an populated fixture")
+			"the check demands a populated fixture")
 	})
 
 	t.Run("rejects a fixture carrying no store", func(t *testing.T) {

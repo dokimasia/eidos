@@ -185,6 +185,43 @@ func TestGraph(t *testing.T) {
 		})
 	})
 
+	t.Run("Holds", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("carries declarations and their packages alike", func(t *testing.T) {
+			t.Parallel()
+
+			want := coretest.Struct(coretest.StorePath, "Store")
+			pkg := coretest.Package(coretest.StorePath, want)
+			g := coretest.Frozen(t, pkg)
+
+			assert.True(t, g.Holds(want.ID), "a declaration is held")
+			assert.True(t, g.Holds(pkg.ID),
+				"and so is the package it sits in, which Lookup alone would call dangling")
+			assert.False(t, g.Holds(coretest.Struct(coretest.CachePath, "Cache").ID),
+				"an identity nothing holds is not")
+		})
+	})
+
+	t.Run("Packages", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("enumerates the roster in identity order", func(t *testing.T) {
+			t.Parallel()
+
+			g := coretest.Frozen(t,
+				coretest.Package(coretest.StorePath),
+				coretest.Package(coretest.CachePath),
+			)
+			var paths []string
+			for pkg := range g.Packages() {
+				paths = append(paths, pkg.ID.Package)
+			}
+			assert.Equal(t, paths, []string{coretest.CachePath, coretest.StorePath},
+				"the seal's own order, which holds across runs")
+		})
+	})
+
 	t.Run("PackageOf", func(t *testing.T) {
 		t.Parallel()
 
