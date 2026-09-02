@@ -16,7 +16,7 @@ import (
 	"strconv"
 	"strings"
 
-	"go.dokimi.dev/eidos/sdk/directive"
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -24,14 +24,24 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// carrierMark opens a directive carrier line inside a doc comment.
-const carrierMark = "+"
+// maxSyntaxFindings caps the per-file error flood; the count past
+// the cap reports once.
+const maxSyntaxFindings = 10
+
+// pendingUnderlying is one defined type's shape, stamped once the
+// promotion has decided whether an enum stands for it.
+type pendingUnderlying struct {
+	alias *node.Alias
+	kind  string
+}
 
 // parse loads one unit: each member through go/parser, lowered
-// into the unit's builder. A syntax error is the source's problem
-// and reports positioned; a file whose build constraint falls
-// outside the load's tag set contributes its file node and a
-// constraint stamp and no declarations.
+// into the unit's builder. A syntax error is the source's problem:
+// every error reports positioned and every declaration the parser
+// still recovered loads, because one bad token must not erase a
+// file. A file whose build constraint — spelled or
+// filename-implied — falls outside the load's tag set contributes
+// its file node and a golang.constraint stamp and no declarations.
 func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 	root := (&moduleProbe{reader: unitReader{u}, roots: map[string]moduleRoot{}}).
 		governing(path.Dir(u.Files()[0].Path))
@@ -61,12 +71,15 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, root moduleRoot, filePath s
 	}
 
 	fset := token.NewFileSet()
-	parsed, err := parser.ParseFile(fset, filePath, src, parser.ParseComments|parser.SkipObjectResolution)
+	parsed, err := parser.ParseFile(fset, filePath, src,
+		parser.ParseComments|parser.SkipObjectResolution|parser.AllErrors)
 	if err != nil {
-		u.Errorf(UnparsedFile, parseErrorPos(filePath, err), "%v", err)
+		reportSyntax(u, filePath, err)
+	}
+	if parsed == nil || parsed.Name == nil {
 		return nil
 	}
-	l := &lowered{fset: fset, src: src}
+	l := &lowered{fset: fset, src: src, consumed: map[*ast.CommentGroup]bool{}}
 	gb := u.Graph()
 
 	pkgPath := root.importPath(path.Dir(filePath))
@@ -80,124 +93,171 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, root moduleRoot, filePath s
 	file := &node.File{Path: filePath, Pos: l.at(parsed.Package)}
 	pkg.Files = append(pkg.Files, file)
 
-	fileBinds := bindings{}
+	fileBinds := newBindings()
+	cgo := false
 	for _, spec := range parsed.Imports {
 		lowerImport(l, file, fileBinds, spec)
+		if imported, unquoteErr := strconv.Unquote(spec.Path.Value); unquoteErr == nil && imported == "C" {
+			cgo = true
+		}
 	}
 	gb.Scope(file, fileBinds)
 
-	docs, carriers := f.split(u, parsed.Doc)
-	file.Doc = docs
-	attach(u, gb, file, carriers)
+	// The package clause's doc belongs to the package: the text
+	// hoists to the first non-empty doc across the unit's files,
+	// and its carriers attach to the package rather than the file.
+	// Tool directives above the clause have no model home yet and
+	// drop, stated in the package documentation.
+	parts := l.split(u, parsed.Doc)
+	file.Doc = parts.Docs
+	if len(pkg.Doc) == 0 {
+		pkg.Doc = parts.Docs
+	}
+	attachCarriers(u, gb, pkg, parts.Carriers)
 
-	if line, excluded := f.excluded(src); excluded {
-		gb.Stamp(file, meta.RawStamp{
-			Key: ConstraintKey, Value: line, Pos: file.Pos,
-		})
+	if cgo {
+		gb.Stamp(file, meta.RawStamp{Key: golang.CgoKey, Value: true, Pos: file.Pos})
+	}
+	if marker, generated := generatedMarker(parsed); generated {
+		gb.Stamp(file, meta.RawStamp{Key: golang.GeneratedKey, Value: marker, Pos: file.Pos})
+	}
+	if line, excluded := f.excluded(parsed, filePath); excluded {
+		gb.Stamp(file, meta.RawStamp{Key: golang.ConstraintKey, Value: line, Pos: file.Pos})
 		return nil
 	}
 	for _, decl := range parsed.Decls {
 		f.lowerDecl(u, l, file, decl)
 	}
+	promoted := promoteEnums(file)
+	for _, pending := range l.underlyings {
+		var subject symbol.Symbol = pending.alias
+		if enum, replaced := promoted[pending.alias]; replaced {
+			subject = enum
+		}
+		gb.Stamp(subject, meta.RawStamp{
+			Key: golang.UnderlyingKey, Value: pending.kind, Pos: subject.Position(),
+		})
+	}
+	stampConstValues(u, fset, parsed, file)
+
+	// The sweep: a carrier in a comment no declaration consumed —
+	// floating between declarations, or beside a parameter, whose
+	// comments the parser attaches to nothing — refuses positioned
+	// rather than vanishing.
+	for _, group := range parsed.Comments {
+		if l.consumed[group] {
+			continue
+		}
+		floating := l.split(u, group)
+		refuseCarriers(u, floating.Carriers, "a comment no declaration owns")
+	}
 	return nil
 }
 
-// excluded reports whether a file's go:build constraint falls
-// outside the load's tag set, and the constraint line when it
-// does. The legacy +build form is not read: the gofmt of every
-// supported toolchain writes go:build, and a file carrying only
-// the legacy form loads unconditionally.
-func (f *goFrontend) excluded(src []byte) (string, bool) {
-	for line := range strings.SplitSeq(string(src), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "package ") {
+// reportSyntax reports each recovered syntax error at its own
+// position, capped, the remainder counted once.
+func reportSyntax(u *plugin.SourceUnit, filePath string, err error) {
+	var list scanner.ErrorList
+	if !errors.As(err, &list) || len(list) == 0 {
+		u.Errorf(UnparsedFile, position.Pos{File: filePath, Line: 1, Col: 1}, "%v", err)
+		return
+	}
+	for i, e := range list {
+		if i == maxSyntaxFindings {
+			u.Errorf(UnparsedFile,
+				position.Pos{File: filePath, Line: e.Pos.Line, Col: e.Pos.Column},
+				"and %d more syntax errors", len(list)-maxSyntaxFindings)
 			break
 		}
-		if !constraint.IsGoBuild(trimmed) {
-			continue
+		u.Errorf(UnparsedFile,
+			position.Pos{File: filePath, Line: e.Pos.Line, Col: e.Pos.Column}, "%s", e.Msg)
+	}
+}
+
+// excluded reports whether a file falls outside the load's tag
+// set, and the constraint that says so: a go:build line read off
+// the parsed comments before the package clause — a spelling
+// inside a block comment is not a constraint, which a raw line
+// scan gets wrong — or the filename's own implied GOOS and GOARCH
+// suffixes.
+func (f *goFrontend) excluded(parsed *ast.File, filePath string) (string, bool) {
+	for _, group := range parsed.Comments {
+		if group.Pos() >= parsed.Package {
+			break
 		}
-		expr, err := constraint.Parse(trimmed)
-		if err != nil {
-			continue
+		for _, c := range group.List {
+			if !strings.HasPrefix(c.Text, "//") || !constraint.IsGoBuild(c.Text) {
+				continue
+			}
+			expr, err := constraint.Parse(c.Text)
+			if err != nil {
+				continue
+			}
+			if !expr.Eval(f.satisfies) {
+				return c.Text, true
+			}
 		}
-		satisfied := expr.Eval(func(tag string) bool {
-			return slices.Contains(f.opts.Tags, tag)
-		})
-		if !satisfied {
-			return trimmed, true
+	}
+	if implied, constrained := filenameConstraint(path.Base(filePath)); constrained {
+		for _, tag := range implied {
+			if !f.satisfies(tag) {
+				return strings.Join(implied, " && "), true
+			}
 		}
 	}
 	return "", false
 }
 
-// parseErrorPos positions a parse failure at its first error.
-func parseErrorPos(filePath string, err error) position.Pos {
-	var list scanner.ErrorList
-	if errors.As(err, &list) && len(list) > 0 {
-		return position.Pos{File: filePath, Line: list[0].Pos.Line, Col: list[0].Pos.Column}
+// satisfies reports whether the load's tag set holds a tag.
+func (f *goFrontend) satisfies(tag string) bool {
+	return slices.Contains(f.opts.Tags, tag)
+}
+
+// generatedMarker returns the Go convention's generated-file
+// marker when one sits before the package clause.
+func generatedMarker(parsed *ast.File) (string, bool) {
+	for _, group := range parsed.Comments {
+		if group.Pos() >= parsed.Package {
+			break
+		}
+		for _, c := range group.List {
+			if strings.HasPrefix(c.Text, "// Code generated ") &&
+				strings.HasSuffix(c.Text, " DO NOT EDIT.") {
+				return c.Text, true
+			}
+		}
 	}
-	return position.Pos{File: filePath, Line: 1, Col: 1}
+	return "", false
 }
 
 // lowerImport records one import: the model's record on the file,
-// and the binding Resolve reads. A blank import binds nothing and
-// a dot import binds every exported name, which the record carries
-// as a wildcard and resolution does not yet probe.
-func lowerImport(l *lowered, file *node.File, b bindings, spec *ast.ImportSpec) {
+// and the binding Resolve reads. A dot import binds every exported
+// name, carried as a wildcard the resolution does not yet probe; a
+// blank import keeps its underscore as the alias, so a side-effect
+// import round-trips as one. The default local name is the path's
+// last segment, a stated heuristic: without a cross-package read,
+// a package whose clause differs from its path resolves nothing,
+// and the spelling stays visible.
+func lowerImport(l *lowered, file *node.File, b *bindings, spec *ast.ImportSpec) {
 	imported, err := strconv.Unquote(spec.Path.Value)
 	if err != nil {
 		return
 	}
 	record := &node.Import{Path: imported, Pos: l.at(spec.Pos())}
-	local := path.Base(imported)
 	switch {
 	case spec.Name == nil:
-		b[local] = imported
+		b.named[path.Base(imported)] = imported
 	case spec.Name.Name == "_":
+		record.Alias = "_"
 	case spec.Name.Name == ".":
 		record.Wildcard = true
+		b.dots = append(b.dots, imported)
 	default:
 		record.Alias = spec.Name.Name
-		b[spec.Name.Name] = imported
+		b.named[spec.Name.Name] = imported
 	}
+	b.all = append(b.all, imported)
 	file.Imports = append(file.Imports, record)
-}
-
-// split strips one doc comment through the unit's pipeline and
-// separates the carrier lines: a +-prefixed line is a directive,
-// never documentation.
-func (*goFrontend) split(u *plugin.SourceUnit, doc *ast.CommentGroup) ([]string, []string) {
-	if doc == nil {
-		return nil, nil
-	}
-	raw := make([]string, 0, len(doc.List))
-	for _, c := range doc.List {
-		raw = append(raw, c.Text)
-	}
-	var docs, carriers []string
-	for _, line := range u.Doc(strings.Join(raw, "\n")) {
-		if rest, carried := strings.CutPrefix(line, carrierMark); carried {
-			carriers = append(carriers, rest)
-			continue
-		}
-		docs = append(docs, line)
-	}
-	return docs, carriers
-}
-
-// attach parses each carrier under the kernel grammar and records
-// it on its subject; a carrier outside the grammar reports and
-// attaches nothing.
-func attach(u *plugin.SourceUnit, gb *plugin.GraphBuilder, subject symbol.Symbol, carriers []string) {
-	for _, payload := range carriers {
-		raw, err := directive.Parse(payload)
-		if err != nil {
-			u.Errorf(BadCarrier, subject.Position(), "%q: %v", carrierMark+payload, err)
-			continue
-		}
-		raw.Pos = subject.Position()
-		gb.Attach(subject, raw)
-	}
 }
 
 // lowerDecl lowers one top-level declaration, observing the unit's
@@ -210,121 +270,233 @@ func (f *goFrontend) lowerDecl(u *plugin.SourceUnit, l *lowered, file *node.File
 		}
 		f.lowerFunc(u, l, file, d)
 	case *ast.GenDecl:
+		group := l.split(u, d.Doc)
+		// An empty const spec repeats the previous one, the type
+		// included: Go's own inheritance rule, applied here so an
+		// implicit iota row still knows what it is typed by.
+		var inherited ast.Expr
 		for _, spec := range d.Specs {
 			switch s := spec.(type) {
 			case *ast.TypeSpec:
 				if u.Depth() == plugin.DepthSignatures && !ast.IsExported(s.Name.Name) {
 					continue
 				}
-				f.lowerType(u, l, file, d, s)
+				f.lowerType(u, l, file, group, s)
 			case *ast.ValueSpec:
-				f.lowerValues(u, l, file, d, s)
+				specType := s.Type
+				if d.Tok == token.CONST {
+					switch {
+					case s.Type != nil:
+						inherited = s.Type
+					case len(s.Values) == 0:
+						specType = inherited
+					default:
+						inherited = nil
+					}
+				}
+				f.lowerValues(u, l, file, group, d.Tok, s, specType)
 			}
 		}
 	}
 }
 
+// declParts joins a spec's own comments with its group's: the
+// nearer doc text stands, and carriers and annotations union
+// across the group doc, the spec doc and the trailing comment,
+// because a directive is authored intent wherever it sits.
+func (l *lowered) declParts(
+	u *plugin.SourceUnit, group plugin.CommentParts, doc, trailing *ast.CommentGroup,
+) plugin.CommentParts {
+	parts := merge(l.split(u, doc), group)
+	tail := l.split(u, trailing)
+	parts.Carriers = append(parts.Carriers, tail.Carriers...)
+	parts.Annotations = append(parts.Annotations, tail.Annotations...)
+	return parts
+}
+
 // lowerFunc lowers a function or, with a receiver, a method whose
-// owner is the receiver's named type.
-func (f *goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, d *ast.FuncDecl) {
-	docs, carriers := f.split(u, d.Doc)
-	if d.Recv == nil {
+// owner is the receiver's named type. A receiver list the parser
+// accepted empty lowers as a function, because there is no type to
+// own it.
+func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, d *ast.FuncDecl) {
+	parts := l.declParts(u, plugin.CommentParts{}, d.Doc, nil)
+	if d.Recv == nil || len(d.Recv.List) == 0 {
 		fn := &node.Function{
-			Name: d.Name.Name, Pos: l.at(d.Pos()), Doc: docs,
-			Visibility: visibilityOf(d.Name.Name),
-			TypeParams: l.typeParams(d.Type.TypeParams),
-			Params:     l.params(d.Type.Params),
-			Returns:    l.returns(d.Type.Results),
+			Name: d.Name.Name, Pos: l.at(d.Pos()), Doc: parts.Docs,
+			Visibility:  visibilityOf(d.Name.Name),
+			TypeParams:  l.typeParams(d.Type.TypeParams),
+			Params:      l.params(d.Type.Params),
+			Returns:     l.returns(d.Type.Results),
+			Annotations: parts.Annotations,
 		}
 		file.Decls = append(file.Decls, fn)
-		attach(u, u.Graph(), fn, carriers)
+		attachCarriers(u, u.Graph(), fn, parts.Carriers)
+		stampIter(u, fn, fn.Returns)
 		return
 	}
 	recv := d.Recv.List[0]
 	m := &node.Method{
-		Name: d.Name.Name, Pos: l.at(d.Pos()), Doc: docs,
-		Visibility: visibilityOf(d.Name.Name),
-		Receives:   &node.TypeRef{Spelling: l.bareName(recv.Type), Pos: l.at(recv.Pos())},
-		Receiver:   l.param(recv),
-		TypeParams: l.typeParams(d.Type.TypeParams),
-		Params:     l.params(d.Type.Params),
-		Returns:    l.returns(d.Type.Results),
+		Name: d.Name.Name, Pos: l.at(d.Pos()), Doc: parts.Docs,
+		Visibility:  visibilityOf(d.Name.Name),
+		Receives:    &node.TypeRef{Spelling: l.bareName(recv.Type), Pos: l.at(recv.Pos())},
+		Receiver:    l.param(recv),
+		TypeParams:  l.typeParams(d.Type.TypeParams),
+		Params:      l.params(d.Type.Params),
+		Returns:     l.returns(d.Type.Results),
+		Annotations: parts.Annotations,
 	}
 	file.Decls = append(file.Decls, m)
-	attach(u, u.Graph(), m, carriers)
+	attachCarriers(u, u.Graph(), m, parts.Carriers)
+	stampIter(u, m, m.Returns)
+	if _, pointer := unparen(recv.Type).(*ast.StarExpr); pointer {
+		u.Graph().Stamp(m, meta.RawStamp{
+			Key: golang.ReceiverPointerKey, Value: true, Pos: m.Pos,
+		})
+	}
 }
 
-// lowerType lowers one type spec: an alias, a struct, an
-// interface, or a defined type over another spelling.
-func (f *goFrontend) lowerType(u *plugin.SourceUnit, l *lowered, file *node.File, d *ast.GenDecl, s *ast.TypeSpec) {
-	doc := s.Doc
-	if doc == nil {
-		doc = d.Doc
+// stampIter marks a callable whose first result is one of the
+// iterator shapes, read off the spelling: iter.Seq and iter.Seq2
+// are their own announcement.
+func stampIter(u *plugin.SourceUnit, callable symbol.Symbol, returns []*node.Return) {
+	if len(returns) == 0 || returns[0].Type == nil {
+		return
 	}
-	docs, carriers := f.split(u, doc)
+	spelling := returns[0].Type.Spelling
+	switch {
+	case spelling == "iter.Seq2" || strings.HasPrefix(spelling, "iter.Seq2["):
+		u.Graph().Stamp(callable, meta.RawStamp{
+			Key: golang.IterSeq2Key, Value: true, Pos: callable.Position(),
+		})
+	case spelling == "iter.Seq" || strings.HasPrefix(spelling, "iter.Seq["):
+		u.Graph().Stamp(callable, meta.RawStamp{
+			Key: golang.IterSeqKey, Value: true, Pos: callable.Position(),
+		})
+	}
+}
+
+// unparen unwraps the parentheses an expression may wear.
+func unparen(e ast.Expr) ast.Expr {
+	for {
+		paren, wrapped := e.(*ast.ParenExpr)
+		if !wrapped {
+			return e
+		}
+		e = paren.X
+	}
+}
+
+// lowerType lowers one type spec. The alias check comes before the
+// shape switch: `type A = struct{...}` states a transparent alias
+// of an inline shape, and lowering it as a defined struct would
+// fabricate type identity the source refused.
+func (f *goFrontend) lowerType(
+	u *plugin.SourceUnit, l *lowered, file *node.File, group plugin.CommentParts, s *ast.TypeSpec,
+) {
+	parts := l.declParts(u, group, s.Doc, s.Comment)
 	name, pos := s.Name.Name, l.at(s.Pos())
 	vis := visibilityOf(name)
 	tps := l.typeParams(s.TypeParams)
 
-	var lowered symbol.Symbol
+	var declared symbol.Symbol
 	switch t := s.Type.(type) {
 	case *ast.StructType:
+		if s.Assign.IsValid() {
+			declared = l.aliasOf(s, parts, name, pos, vis, tps)
+			break
+		}
 		st := &node.Struct{
-			Name: name, Pos: pos, Doc: docs, Visibility: vis, TypeParams: tps,
+			Name: name, Pos: pos, Doc: parts.Docs, Visibility: vis,
+			TypeParams: tps, Annotations: parts.Annotations,
 		}
 		f.lowerStructBody(u, l, st, t)
-		lowered = st
+		declared = st
 	case *ast.InterfaceType:
+		if s.Assign.IsValid() {
+			declared = l.aliasOf(s, parts, name, pos, vis, tps)
+			break
+		}
 		it := &node.Interface{
-			Name: name, Pos: pos, Doc: docs, Visibility: vis, TypeParams: tps,
+			Name: name, Pos: pos, Doc: parts.Docs, Visibility: vis,
+			TypeParams: tps, Annotations: parts.Annotations,
 		}
 		f.lowerInterfaceBody(u, l, it, t)
-		lowered = it
+		declared = it
 	default:
-		lowered = &node.Alias{
-			Name: name, Pos: pos, Doc: docs, Visibility: vis, TypeParams: tps,
-			Defined: !s.Assign.IsValid(),
-			Target:  l.typeRef(s.Type),
+		alias := l.aliasOf(s, parts, name, pos, vis, tps)
+		alias.Defined = !s.Assign.IsValid()
+		if alias.Defined {
+			l.underlyings = append(l.underlyings, pendingUnderlying{
+				alias: alias, kind: underlyingKind(s.Type),
+			})
 		}
+		declared = alias
 	}
-	file.Decls = append(file.Decls, lowered)
-	attach(u, u.Graph(), lowered, carriers)
+	file.Decls = append(file.Decls, declared)
+	attachCarriers(u, u.Graph(), declared, parts.Carriers)
+}
+
+// aliasOf builds the alias shape a type spec lowers to when its
+// target stays a spelling.
+func (l *lowered) aliasOf(
+	s *ast.TypeSpec, parts plugin.CommentParts, name string, pos position.Pos,
+	vis symbol.Visibility, tps []*node.TypeParam,
+) *node.Alias {
+	return &node.Alias{
+		Name: name, Pos: pos, Doc: parts.Docs, Visibility: vis,
+		TypeParams: tps, Target: l.typeRef(s.Type), Annotations: parts.Annotations,
+	}
 }
 
 // lowerStructBody lowers fields and embeds, unexported fields
-// staying out at signature depth.
-func (f *goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.Struct, t *ast.StructType) {
+// staying out at signature depth. A carrier on an embedded field
+// refuses positioned: the model cannot address an embed.
+func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.Struct, t *ast.StructType) {
 	for _, field := range t.Fields.List {
+		parts := l.declParts(u, plugin.CommentParts{}, field.Doc, field.Comment)
 		if len(field.Names) == 0 {
 			st.Embeds = append(st.Embeds, &node.Embed{
 				Ref: l.typeRef(field.Type), Pos: l.at(field.Pos()),
 			})
+			refuseCarriers(u, parts.Carriers, "an embedded field")
 			continue
 		}
-		docs, _ := f.split(u, field.Doc)
 		for _, name := range field.Names {
 			if u.Depth() == plugin.DepthSignatures && !ast.IsExported(name.Name) {
 				continue
 			}
-			st.Fields = append(st.Fields, &node.Field{
-				Name: name.Name, Pos: l.at(name.Pos()), Doc: docs,
-				Visibility: visibilityOf(name.Name),
-				Type:       l.typeRef(field.Type),
-				Tag:        tagOf(field.Tag),
-				Comment:    lineComment(field.Comment),
-			})
+			lowered := &node.Field{
+				Name: name.Name, Pos: l.at(name.Pos()), Doc: parts.Docs,
+				Visibility:  visibilityOf(name.Name),
+				Type:        l.typeRef(field.Type),
+				Tag:         tagOf(field.Tag),
+				Comment:     commentText(l, u, field.Comment),
+				Annotations: parts.Annotations,
+			}
+			st.Fields = append(st.Fields, lowered)
+			attachCarriers(u, u.Graph(), lowered, parts.Carriers)
 		}
 	}
 }
 
 // lowerInterfaceBody lowers method signatures and embedded
-// interfaces.
-func (f *goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node.Interface, t *ast.InterfaceType) {
+// interfaces. A constraint element — a union or an approximation —
+// is not an embed: its verbatim spellings stamp onto the interface
+// as its type set, the language metadata the model routes them to.
+func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node.Interface, t *ast.InterfaceType) {
+	var terms []string
 	for _, member := range t.Methods.List {
+		parts := l.declParts(u, plugin.CommentParts{}, member.Doc, member.Comment)
 		if len(member.Names) == 0 {
+			if constraintElement(member.Type) {
+				terms = append(terms, l.spelling(member.Type))
+				refuseCarriers(u, parts.Carriers, "a constraint element")
+				continue
+			}
 			it.Embeds = append(it.Embeds, &node.Embed{
 				Ref: l.typeRef(member.Type), Pos: l.at(member.Pos()),
 			})
+			refuseCarriers(u, parts.Carriers, "an embedded interface")
 			continue
 		}
 		sig, is := member.Type.(*ast.FuncType)
@@ -332,26 +504,60 @@ func (f *goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *no
 			continue
 		}
 		name := member.Names[0].Name
+		if name == "_" {
+			continue // a blank method binds nothing, as blank values do
+		}
 		if u.Depth() == plugin.DepthSignatures && !ast.IsExported(name) {
 			continue
 		}
-		docs, _ := f.split(u, member.Doc)
-		it.Methods = append(it.Methods, &node.Method{
-			Name: name, Pos: l.at(member.Pos()), Doc: docs,
-			Visibility: visibilityOf(name),
-			Abstract:   true,
-			Params:     l.params(sig.Params),
-			Returns:    l.returns(sig.Results),
+		m := &node.Method{
+			Name: name, Pos: l.at(member.Pos()), Doc: parts.Docs,
+			Visibility:  visibilityOf(name),
+			Abstract:    true,
+			Params:      l.params(sig.Params),
+			Returns:     l.returns(sig.Results),
+			Annotations: parts.Annotations,
+		}
+		it.Methods = append(it.Methods, m)
+		attachCarriers(u, u.Graph(), m, parts.Carriers)
+	}
+	if len(terms) > 0 {
+		u.Graph().Stamp(it, meta.RawStamp{Key: golang.TypeSetKey, Value: terms, Pos: it.Pos})
+		u.Graph().Stamp(it, meta.RawStamp{
+			Key: golang.ConstraintInterfaceKey, Value: true, Pos: it.Pos,
+		})
+	}
+	if len(it.Methods) == 0 && len(it.Embeds) == 0 && len(terms) == 0 {
+		u.Graph().Stamp(it, meta.RawStamp{
+			Key: golang.EmptyInterfaceKey, Value: true, Pos: it.Pos,
 		})
 	}
 }
 
+// constraintElement reports a type-set element no embed can carry:
+// a union, an approximation, or a parenthesized nest of either.
+func constraintElement(e ast.Expr) bool {
+	switch t := e.(type) {
+	case *ast.BinaryExpr, *ast.UnaryExpr:
+		return true
+	case *ast.ParenExpr:
+		return constraintElement(t.X)
+	default:
+		return false
+	}
+}
+
 // lowerValues lowers one const or var spec, a declaration per
-// bound name. An implicit constant — an iota carrier with no
-// expression of its own — keeps an empty value, unevaluated by
-// contract.
-func (f *goFrontend) lowerValues(u *plugin.SourceUnit, l *lowered, file *node.File, d *ast.GenDecl, s *ast.ValueSpec) {
-	docs, carriers := f.split(u, firstDoc(s.Doc, d.Doc))
+// bound name; a blank name binds nothing and is skipped, as the
+// old frontend skipped it. An implicit constant — an iota carrier
+// with no expression of its own — keeps an empty value,
+// unevaluated by contract; one call initializing several names
+// carries its spelling to each.
+func (*goFrontend) lowerValues(
+	u *plugin.SourceUnit, l *lowered, file *node.File, group plugin.CommentParts,
+	tok token.Token, s *ast.ValueSpec, specType ast.Expr,
+) {
+	parts := l.declParts(u, group, s.Doc, s.Comment)
 	for i, name := range s.Names {
 		if name.Name == "_" {
 			continue
@@ -360,30 +566,35 @@ func (f *goFrontend) lowerValues(u *plugin.SourceUnit, l *lowered, file *node.Fi
 			continue
 		}
 		var value string
-		if i < len(s.Values) {
+		switch {
+		case i < len(s.Values):
 			value = l.spelling(s.Values[i])
+		case len(s.Values) == 1:
+			value = l.spelling(s.Values[0])
 		}
 		var declared symbol.Symbol
-		if d.Tok == token.CONST {
+		if tok == token.CONST {
 			declared = &node.Constant{
-				Name: name.Name, Pos: l.at(name.Pos()), Doc: docs,
-				Visibility: visibilityOf(name.Name),
-				Type:       l.typeRef(s.Type),
-				Value:      value,
-				Comment:    lineComment(s.Comment),
+				Name: name.Name, Pos: l.at(name.Pos()), Doc: parts.Docs,
+				Visibility:  visibilityOf(name.Name),
+				Type:        l.typeRef(specType),
+				Value:       value,
+				Comment:     commentText(l, u, s.Comment),
+				Annotations: parts.Annotations,
 			}
 		} else {
 			declared = &node.Variable{
-				Name: name.Name, Pos: l.at(name.Pos()), Doc: docs,
-				Visibility: visibilityOf(name.Name),
-				Mutability: symbol.MutabilityMutable,
-				Type:       l.typeRef(s.Type),
-				Value:      value,
-				Comment:    lineComment(s.Comment),
+				Name: name.Name, Pos: l.at(name.Pos()), Doc: parts.Docs,
+				Visibility:  visibilityOf(name.Name),
+				Mutability:  symbol.MutabilityMutable,
+				Type:        l.typeRef(specType),
+				Value:       value,
+				Comment:     commentText(l, u, s.Comment),
+				Annotations: parts.Annotations,
 			}
 		}
 		file.Decls = append(file.Decls, declared)
-		attach(u, u.Graph(), declared, carriers)
+		attachCarriers(u, u.Graph(), declared, parts.Carriers)
 	}
 }
 
@@ -405,8 +616,10 @@ func (l *lowered) typeParams(fields *ast.FieldList) []*node.TypeParam {
 	return out
 }
 
-// params lowers a parameter list, one entry per bound name and one
-// for an unnamed parameter.
+// params lowers a parameter list, one entry per bound name at its
+// own position and one for an unnamed parameter. The parser
+// attaches no comments to parameters, so a carrier beside one is
+// the sweep's to refuse.
 func (l *lowered) params(fields *ast.FieldList) []*node.Param {
 	if fields == nil {
 		return nil
@@ -420,6 +633,7 @@ func (l *lowered) params(fields *ast.FieldList) []*node.Param {
 		for _, name := range field.Names {
 			p := l.param(field)
 			p.Name = name.Name
+			p.Pos = l.at(name.Pos())
 			out = append(out, p)
 		}
 	}
@@ -442,7 +656,8 @@ func (l *lowered) param(field *ast.Field) *node.Param {
 	return p
 }
 
-// returns lowers a result list.
+// returns lowers a result list; a blank result name normalizes to
+// none.
 func (l *lowered) returns(fields *ast.FieldList) []*node.Return {
 	if fields == nil {
 		return nil
@@ -454,8 +669,12 @@ func (l *lowered) returns(fields *ast.FieldList) []*node.Return {
 			continue
 		}
 		for _, name := range field.Names {
+			bound := name.Name
+			if bound == "_" {
+				bound = ""
+			}
 			out = append(out, &node.Return{
-				Name: name.Name, Pos: l.at(name.Pos()), Type: l.typeRef(field.Type),
+				Name: bound, Pos: l.at(name.Pos()), Type: l.typeRef(field.Type),
 			})
 		}
 	}
@@ -483,19 +702,51 @@ func tagOf(tag *ast.BasicLit) string {
 	return unquoted
 }
 
-// lineComment returns a field's trailing comment text, empty when
-// none.
-func lineComment(group *ast.CommentGroup) string {
+// commentText returns a trailing comment's documentation text,
+// carriers and directives excluded, empty when nothing remains.
+func commentText(l *lowered, u *plugin.SourceUnit, group *ast.CommentGroup) string {
 	if group == nil {
 		return ""
 	}
-	return strings.TrimSpace(group.Text())
+	return strings.Join(l.split(u, group).Docs, " ")
 }
 
-// firstDoc prefers a spec's own doc over its group's.
-func firstDoc(spec, group *ast.CommentGroup) *ast.CommentGroup {
-	if spec != nil {
-		return spec
+// filenameConstraint returns the GOOS and GOARCH tags a filename
+// implies under the go tool's own suffix rules, after the _test
+// suffix strips.
+func filenameConstraint(base string) ([]string, bool) {
+	name := strings.TrimSuffix(base, ".go")
+	name = strings.TrimSuffix(name, "_test")
+	parts := strings.Split(name, "_")
+	if len(parts) < 2 {
+		return nil, false
 	}
-	return group
+	last := parts[len(parts)-1]
+	prev := ""
+	if len(parts) > 2 {
+		prev = parts[len(parts)-2]
+	}
+	switch {
+	case knownArch[last] && knownOS[prev]:
+		return []string{prev, last}, true
+	case knownArch[last] || knownOS[last]:
+		return []string{last}, true
+	}
+	return nil, false
+}
+
+// The go tool's own suffix vocabularies, pinned here because no
+// stdlib package exports them; a new port extends the lists.
+var knownOS = map[string]bool{
+	"aix": true, "android": true, "darwin": true, "dragonfly": true,
+	"freebsd": true, "hurd": true, "illumos": true, "ios": true,
+	"js": true, "linux": true, "netbsd": true, "openbsd": true,
+	"plan9": true, "solaris": true, "wasip1": true, "windows": true,
+}
+
+var knownArch = map[string]bool{
+	"386": true, "amd64": true, "arm": true, "arm64": true,
+	"loong64": true, "mips": true, "mips64": true, "mips64le": true,
+	"mipsle": true, "ppc64": true, "ppc64le": true, "riscv64": true,
+	"s390x": true, "sparc64": true, "wasm": true,
 }

@@ -12,10 +12,16 @@ import (
 )
 
 // lowered carries what one file's lowering reads everywhere: the
-// file set for positions and the raw bytes for verbatim spellings.
+// file set for positions, the raw bytes for verbatim spellings,
+// and the comment groups a declaration consumed, so the sweep can
+// refuse a carrier left floating between declarations.
 type lowered struct {
-	fset *token.FileSet
-	src  []byte
+	fset     *token.FileSet
+	src      []byte
+	consumed map[*ast.CommentGroup]bool
+	// underlyings defer the defined types' shape stamps until the
+	// enum promotion has decided who stands for each type.
+	underlyings []pendingUnderlying
 }
 
 // at converts one token position.
@@ -43,6 +49,10 @@ func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 		return nil
 	}
 	switch t := e.(type) {
+	case *ast.ParenExpr:
+		// The parentheses are punctuation the reference must not
+		// wear: `type P (int)` names int.
+		return l.typeRef(t.X)
 	case *ast.IndexExpr:
 		return &node.TypeRef{
 			Spelling: l.spelling(t.X),
@@ -67,6 +77,8 @@ func (l *lowered) bareName(e ast.Expr) string {
 	for {
 		switch t := e.(type) {
 		case *ast.StarExpr:
+			e = t.X
+		case *ast.ParenExpr:
 			e = t.X
 		case *ast.IndexExpr:
 			e = t.X

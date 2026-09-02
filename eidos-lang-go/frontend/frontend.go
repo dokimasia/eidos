@@ -17,19 +17,15 @@ import (
 // Lang is the source language every loaded declaration carries.
 const Lang symbol.Lang = "golang"
 
-// TestFileKey classifies a file the go tool would treat as a test.
-const TestFileKey meta.KeyName = "golang.testFile"
+// The classification keys live at the satellite root beside the
+// annotator's: one namespace, one registration, two stamping roles.
 
-// ConstraintKey classifies a file whose build constraint falls
-// outside the load's tag set; the value is the constraint line as
-// written.
-const ConstraintKey meta.KeyName = "golang.constraint"
-
-// UnparsedFile reports a Go file the parser refused: the source's
-// problem, positioned, and the load continues around it.
+// UnparsedFile reports a syntax error, positioned at it: the
+// source's problem, and the load continues with every declaration
+// the parser still recovered.
 var UnparsedFile = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 	Number:  1,
-	Meaning: "a Go file failed to parse",
+	Meaning: "a Go file carries a syntax error",
 })
 
 // BadCarrier reports a +-prefixed doc line the kernel grammar
@@ -37,6 +33,15 @@ var UnparsedFile = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 var BadCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 	Number:  2,
 	Meaning: "a directive carrier is outside the kernel grammar",
+})
+
+// UnaddressedCarrier reports a directive carrier on a subject the
+// model cannot address — an embedded field, a parameter — so the
+// author learns the directive attached nowhere instead of trusting
+// it silently.
+var UnaddressedCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
+	Number:  3,
+	Meaning: "a directive carrier sits on a subject the model cannot address",
 })
 
 // Options is the frontend's declared configuration: one build
@@ -50,26 +55,10 @@ type Options struct {
 	Tags []string
 }
 
-// Keys registers the classification keys this frontend stamps, in
-// the shape a composition and a corpus fixture declare them.
-func Keys(r *meta.Registry) error {
-	if err := r.ClaimNamespace("golang", string(golang.Name)); err != nil {
-		return err
-	}
-	if _, err := meta.Register[bool](r, meta.KeySpec{
-		Name:  TestFileKey,
-		Kinds: []symbol.Kind{symbol.KindFile},
-		Doc:   "marks a file the go tool treats as a test",
-	}); err != nil {
-		return err
-	}
-	_, err := meta.Register[string](r, meta.KeySpec{
-		Name:  ConstraintKey,
-		Kinds: []symbol.Kind{symbol.KindFile},
-		Doc:   "carries the build constraint that kept a file's declarations out",
-	})
-	return err
-}
+// Keys registers every golang key: the satellite root's one
+// registration, re-exported here where the corpus and the suite
+// fixtures reach for it.
+var Keys = golang.Keys
 
 // New builds the Go frontend through the kit. A nil options value
 // loads with no build tags satisfied.
@@ -102,7 +91,7 @@ func markTests(u *plugin.SourceUnit) error {
 		for _, file := range pkg.Files {
 			if strings.HasSuffix(file.Path, "_test"+golang.Extension) {
 				gb.Stamp(file, meta.RawStamp{
-					Key: TestFileKey, Value: true, Pos: file.Pos,
+					Key: golang.TestFileKey, Value: true, Pos: file.Pos,
 				})
 			}
 		}

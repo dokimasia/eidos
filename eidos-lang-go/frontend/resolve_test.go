@@ -57,8 +57,24 @@ func TestResolve(t *testing.T) {
 		assert.Length(t, renamed, 1, "a renamed import binds its alias")
 		assert.Equal(t, renamed[0].Package, "example.test/fix/other", "at its path")
 
-		assert.Empty(t, f.Resolve(scope, "blank.X"), "a blank import binds nothing")
-		assert.Empty(t, f.Resolve(scope, "ghost.X"), "an unbound qualifier answers nothing")
+		fallback := f.Resolve(scope, "ghost.X")
+		assert.Length(t, fallback, 3,
+			"an unbound qualifier probes every import, because a package's clause can differ from its path")
+		assert.Equal(t, fallback[0].Package, "example.test/fix/api",
+			"in source order, the graph deciding which is present")
+	})
+
+	t.Run("probes dot imports for bare exported spellings", func(t *testing.T) {
+		t.Parallel()
+
+		dotted := "package p\n\nimport . \"example.test/fix/flood\"\n\nvar _ = Thing{}\n"
+		f, scope := scopeOf(t, dotted)
+		got := f.Resolve(scope, "Thing")
+		assert.Length(t, got, 2, "the own package first, then the dot import")
+		assert.Equal(t, got[0].Package, "p", "home before flood")
+		assert.Equal(t, got[1].Package, "example.test/fix/flood", "the flooded scope probes")
+		assert.Length(t, f.Resolve(scope, "thing"), 1,
+			"a dot import floods exported names alone")
 	})
 
 	t.Run("strips decoration before probing", func(t *testing.T) {
@@ -69,6 +85,11 @@ func TestResolve(t *testing.T) {
 			"pointers and slices unwrap")
 		assert.Equal(t, f.Resolve(scope, "[4]api.User")[0].Name, "User",
 			"array lengths unwrap")
+		assert.Equal(t, f.Resolve(scope, "*List[api.User]")[0], symbol.Identity{
+			Lang: frontend.Lang, Package: "p", Name: "List",
+		}, "a decorated instantiation resolves the way a bare one does")
+		assert.Equal(t, f.Resolve(scope, "(row)")[0].Name, "row",
+			"parentheses are punctuation")
 		assert.Equal(t, f.Resolve(scope, "row")[0], symbol.Identity{
 			Lang: frontend.Lang, Package: "p", Name: "row",
 		}, "a bare spelling probes its own package, whatever its case")
@@ -82,5 +103,7 @@ func TestResolve(t *testing.T) {
 		assert.Empty(t, f.Resolve(scope, "map[string]int"), "a map is a shape")
 		assert.Empty(t, f.Resolve(scope, "func(int) error"), "a func type is a shape")
 		assert.Empty(t, f.Resolve(scope, "chan int"), "a channel is a shape")
+		assert.Empty(t, f.Resolve(scope, "~int"), "an approximation is a term, not a name")
+		assert.Empty(t, f.Resolve(scope, "A|B"), "a union never fabricates an identity")
 	})
 }
