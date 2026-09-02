@@ -42,6 +42,14 @@ func boolKey(tb assert.TB) (meta.Key[bool], *meta.Facts) {
 	return key, meta.NewFacts(reg)
 }
 
+// gateName is the directive the gated dispatch cases attach and
+// gate on.
+const gateName directive.Name = "stub"
+
+// emitHandler is the handler shape every struct-triggered emitter
+// rule takes, so a case can vary the rule and keep the handler.
+type emitHandler = func(m *eidos.StructMatch, e *eidos.Emitter) error
+
 // fixtureGraph returns a frozen graph holding two positioned structs
 // in the store package.
 func fixtureGraph(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
@@ -163,6 +171,185 @@ func TestDispatch(t *testing.T) {
 			assert.ErrorIs(t, err, boom, "a returned error is fatal to the phase")
 			assert.Contains(t, err.Error(), "weaver", "naming the plugin")
 			assert.Contains(t, err.Error(), "rule 0", "and the rule that failed")
+		})
+
+		t.Run("a handler error is fatal on every dispatch path", func(t *testing.T) {
+			t.Parallel()
+
+			// Each indexed path resolves its subjects differently, so
+			// each carries its own error return. A path that swallowed
+			// one would finish the phase over a handler that failed.
+			schema := stubSchema(gateName)
+			for _, tt := range []struct {
+				path string
+				rule func(handler emitHandler) eidos.Rule
+			}{
+				{
+					path: "bare",
+					rule: eidos.OnStruct[*eidos.Emitter],
+				},
+				{
+					path: "fact-gated",
+					rule: func(h emitHandler) eidos.Rule {
+						key, _ := boolKey(t)
+						return eidos.Where(eidos.HasKey(key), eidos.OnStruct(h))
+					},
+				},
+				{
+					path: "directive-gated",
+					rule: func(h emitHandler) eidos.Rule {
+						return eidos.Directive(schema, eidos.OnStruct(h))
+					},
+				},
+			} {
+				t.Run(tt.path, func(t *testing.T) {
+					t.Parallel()
+
+					alpha := coretest.Struct(coretest.StorePath, "Alpha")
+					g := store.New()
+					assert.NoError(t,
+						g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
+						"the fixture package is admitted")
+					assert.NoError(t, g.AttachDirectives(alpha.ID,
+						[]directive.Raw{{Name: gateName}}),
+						"the gating instance attaches")
+					g.Freeze()
+
+					key, facts := boolKey(t)
+					assert.NoError(t,
+						meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
+						"the fact gate has a stamped subject to find")
+					validated := map[symbol.Identity][]directive.Directive{
+						alpha.ID: {{Name: schema.Canonical(), Instance: 0}},
+					}
+
+					boom := errors.New("boom")
+					p := eidos.NewPlugin("stubgen").
+						Handle(tt.rule(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+							return boom
+						})).
+						Build()
+
+					err := generatorOf(t, p).
+						Generate(genContext(t, g, facts, validated))
+					assert.ErrorIs(t, err, boom,
+						"the "+tt.path+" path stops the phase on a handler error")
+				})
+			}
+		})
+
+		t.Run("skips a stamped subject the scope does not hold", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			key, facts := boolKey(t)
+			ghost := coretest.ID(coretest.StorePath, "Ghost", symbol.KindStruct)
+			assert.NoError(t,
+				meta.Stamp(facts, key, true, meta.Claim{Subject: ghost}),
+				"a fact stamps on a subject no package declares")
+			assert.NoError(t,
+				meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
+				"and on one the scope does hold")
+
+			visited := []symbol.Identity{}
+			p := eidos.NewPlugin("gated").
+				Handle(eidos.Where(eidos.HasKey(key),
+					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						visited = append(visited, m.Struct.Identity())
+						return nil
+					}))).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
+				"the phase call passes")
+			assert.Equal(t, visited, []symbol.Identity{alpha.ID},
+				"the fact index names a subject the scope cannot resolve, "+
+					"so the rule passes over it rather than inventing one")
+		})
+
+		t.Run("skips a carrier of another kind", func(t *testing.T) {
+			t.Parallel()
+
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			reader := coretest.Interface(coretest.StorePath, coretest.InterfaceName)
+			g := store.New()
+			assert.NoError(t,
+				g.AddPackage(coretest.Package(coretest.StorePath, alpha, reader)),
+				"the fixture package is admitted")
+			for _, id := range []symbol.Identity{alpha.ID, reader.ID} {
+				assert.NoError(t, g.AttachDirectives(id,
+					[]directive.Raw{{Name: gateName}}),
+					"the directive attaches to both kinds")
+			}
+			g.Freeze()
+
+			schema := stubSchema(gateName)
+			canonical := schema.Canonical()
+			validated := map[symbol.Identity][]directive.Directive{
+				alpha.ID:  {{Name: canonical, Instance: 0}},
+				reader.ID: {{Name: canonical, Instance: 0}},
+			}
+			_, facts := boolKey(t)
+
+			visited := []symbol.Identity{}
+			p := eidos.NewPlugin("stubgen").
+				Handle(eidos.Directive(schema,
+					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						visited = append(visited, m.Struct.Identity())
+						return nil
+					}))).
+				Build()
+			assert.NoError(t,
+				generatorOf(t, p).Generate(genContext(t, g, facts, validated)),
+				"the phase call passes")
+			assert.Equal(t, visited, []symbol.Identity{alpha.ID},
+				"the same directive on an interface is indexed under the "+
+					"carrier, and a struct trigger passes over it")
+		})
+
+		t.Run("gates an emit rule per instance on the origin", func(t *testing.T) {
+			t.Parallel()
+
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			g := store.New()
+			assert.NoError(t,
+				g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
+				"the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{
+				{Name: gateName}, {Name: gateName},
+			}), "two gating instances attach to the origin")
+			g.Freeze()
+
+			schema := stubSchema(gateName)
+			canonical := schema.Canonical()
+			validated := map[symbol.Identity][]directive.Directive{
+				alpha.ID: {
+					{Name: canonical, Instance: 0},
+					{Name: canonical, Instance: 1},
+				},
+			}
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, validated)
+			seed(t, ctx, emitted(alpha))
+
+			instances := []int{}
+			p := eidos.NewPlugin("stubgen").
+				Output(plugin.Output{Per: plugin.PerPlan, Word: "audit"}).
+				Handle(eidos.Directive(schema,
+					eidos.OnEmit(symbol.KindStruct,
+						func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+							gate := m.Directive()
+							assert.NotNil(t, gate, "a gated emit match carries its instance")
+							if gate != nil {
+								instances = append(instances, gate.Instance)
+							}
+							return nil
+						}))).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx),
+				"the phase call passes")
+			assert.Equal(t, instances, []int{0, 1},
+				"an emit rule under a gate runs once per instance on the "+
+					"value's origin, in source order")
 		})
 
 		t.Run("panics on an undeclared tag", func(t *testing.T) {

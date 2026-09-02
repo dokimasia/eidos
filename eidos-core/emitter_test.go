@@ -10,7 +10,9 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -161,6 +163,75 @@ func TestEmitter(t *testing.T) {
 			assert.Length(t, got.Decls, 0, "holding nothing")
 			assert.Length(t, got.Origins, 0,
 				"an empty append fabricates no provenance")
+		})
+	})
+
+	t.Run("File", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keys one accumulator per subject's source file", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+
+			p := eidos.NewPlugin("perfile").
+				Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.File().Append(&emit.Struct{
+						Origin: m.Struct.Identity(), Name: "Gen" + m.Struct.Name,
+					})
+					return nil
+				})).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+
+			byKey := map[string]plugin.Unit{}
+			for u := range ctx.Emit.Units() {
+				byKey[u.Key] = u
+			}
+			assert.Length(t, byKey, 2,
+				"two subjects in two files assemble two units")
+			assert.Equal(t, byKey[alpha.Pos.File].Per, plugin.PerSource,
+				"each is keyed per source")
+			assert.Length(t, byKey[alpha.Pos.File].Decls, 1,
+				"the first file's unit took only its own subject")
+			assert.Length(t, byKey[beta.Pos.File].Decls, 1,
+				"and the second file's only its own")
+		})
+
+		t.Run("keys the empty string for a subject with no position", func(t *testing.T) {
+			t.Parallel()
+
+			placed := coretest.Struct(coretest.StorePath, "Placed")
+			placed.Pos = position.Pos{File: "placed.go", Line: 1, Col: 1}
+			loose := coretest.Struct(coretest.StorePath, "Loose")
+			g := coretest.Frozen(t,
+				coretest.Package(coretest.StorePath, placed, loose))
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+
+			p := eidos.NewPlugin("perfile").
+				Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.File().Append(&emit.Struct{
+						Origin: m.Struct.Identity(), Name: "Gen" + m.Struct.Name,
+					})
+					return nil
+				})).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+
+			keys := map[string]int{}
+			for u := range ctx.Emit.Units() {
+				keys[u.Key] = len(u.Decls)
+			}
+			assert.Equal(t, keys[""], 1,
+				"a subject carrying no position keys the empty string "+
+					"rather than joining another file's unit")
+			assert.Equal(t, keys[placed.Pos.File], 1,
+				"and the positioned subject keeps its own file")
 		})
 	})
 }

@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -123,4 +124,97 @@ func TestRule(t *testing.T) {
 				"and the shared wrapper's gate")
 		})
 	})
+
+	t.Run("KeyEquals", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("visits only the subject whose value matches", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			key, facts := rankKey(t)
+			assert.NoError(t,
+				meta.Stamp(facts, key, wantedRank, meta.Claim{Subject: alpha.ID}),
+				"the matching subject carries the wanted value")
+			assert.NoError(t,
+				meta.Stamp(facts, key, otherRank, meta.Claim{Subject: beta.ID}),
+				"and the other a different one, so the gate has something to reject")
+
+			visited := gatedVisits(t, g, facts, eidos.KeyEquals(key, wantedRank))
+			assert.Equal(t, visited, []symbol.Identity{alpha.ID},
+				"the gate admits the equal value and rejects the unequal one")
+		})
+
+		t.Run("rejects a subject carrying no value for the key", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			key, facts := rankKey(t)
+			assert.NoError(t,
+				meta.Stamp(facts, key, wantedRank, meta.Claim{Subject: alpha.ID}),
+				"one subject is stamped and the other never is")
+
+			visited := gatedVisits(t, g, facts, eidos.KeyEquals(key, wantedRank))
+			assert.Equal(t, visited, []symbol.Identity{alpha.ID},
+				"an unstamped subject holds no value, so the gate rejects it "+
+					"rather than comparing against a zero")
+		})
+
+		t.Run("visits nothing when no value equals", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			key, facts := rankKey(t)
+			assert.NoError(t,
+				meta.Stamp(facts, key, otherRank, meta.Claim{Subject: alpha.ID}),
+				"the only stamped subject holds a different value")
+
+			visited := gatedVisits(t, g, facts, eidos.KeyEquals(key, wantedRank))
+			assert.Length(t, visited, 0, "a gate nothing satisfies visits nothing")
+		})
+	})
+}
+
+// The two values the equality gate tells apart. A string key is what
+// the cases need: the fact store refuses a false bool, holding that
+// absence is the negative, so a bool key cannot carry two values to
+// compare.
+const (
+	wantedRank = "first"
+	otherRank  = "second"
+)
+
+// rankKey returns a registered string key and the fact store it was
+// registered in.
+func rankKey(tb assert.TB) (meta.Key[string], *meta.Facts) {
+	tb.Helper()
+
+	reg := meta.NewRegistry()
+	assert.NoError(tb, reg.ClaimNamespace("t", "the test"),
+		"the namespace is claimed")
+	key, err := meta.Register[string](reg, meta.KeySpec{
+		Name: "t.rank", Doc: "ranks a fixture subject",
+	})
+	assert.NoError(tb, err, "the key registers")
+	return key, meta.NewFacts(reg)
+}
+
+// gatedVisits returns the subjects a struct rule under pred visited,
+// in visit order.
+func gatedVisits(
+	tb assert.TB, g *store.Graph, facts *meta.Facts, pred eidos.Pred,
+) []symbol.Identity {
+	tb.Helper()
+
+	visited := []symbol.Identity{}
+	p := eidos.NewPlugin("gated").
+		Handle(eidos.Where(pred,
+			eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+				visited = append(visited, m.Struct.Identity())
+				return nil
+			}))).
+		Build()
+	assert.NoError(tb, generatorOf(tb, p).Generate(genContext(tb, g, facts, nil)),
+		"the phase call passes")
+	return visited
 }

@@ -9,7 +9,11 @@ import (
 	"go.dokimi.dev/assert"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -89,5 +93,71 @@ func TestTrigger(t *testing.T) {
 				"the phase call passes")
 			assert.True(t, ran, "the handler ran")
 		})
+
+		t.Run("reports at the position the handler names", func(t *testing.T) {
+			t.Parallel()
+
+			at := position.Pos{File: "chosen.go", Line: 11, Col: 2}
+			ctx := graphRun(t, func(m *eidos.GraphMatch) {
+				m.Warnf(graphReported, at, "the graph carries %d packages", 1)
+			})
+
+			coretest.AssertCodes(t, ctx.Sink, graphReported)
+			one := onlyFinding(t, ctx.Sink)
+			assert.Equal(t, one.Severity, diag.SeverityWarning,
+				"Warnf reports at Warning severity, which never fails a run")
+			assert.Equal(t, one.Pos, at,
+				"a graph match has no subject, so the handler's position stands")
+			assert.False(t, ctx.Sink.Failed(),
+				"a Warning leaves the run passing")
+			assert.Contains(t, one.Msg, "1 packages",
+				"the handler's own formatting arrives verbatim")
+		})
+
+		t.Run("carries provenance without a verdict", func(t *testing.T) {
+			t.Parallel()
+
+			at := position.Pos{File: "chosen.go", Line: 3, Col: 4}
+			ctx := graphRun(t, func(m *eidos.GraphMatch) {
+				m.Infof(graphReported, at, "the graph phase ran")
+			})
+
+			one := onlyFinding(t, ctx.Sink)
+			assert.Equal(t, one.Severity, diag.SeverityInfo,
+				"Infof carries provenance, never a verdict")
+			assert.Equal(t, one.Pos, at, "at the position the handler named")
+			assert.False(t, ctx.Sink.Failed(),
+				"an Info finding leaves the run passing")
+		})
 	})
+}
+
+// graphReported is the code the graph reporting cases carry.
+var graphReported = diag.MustRegister(diag.Prefix("TRIGGERTEST"), diag.CodeSpec{
+	Number:  1,
+	Meaning: "a fixture finding a graph reporting case asserts over",
+})
+
+// graphRun dispatches report from one graph rule and returns the
+// context it reported into.
+func graphRun(
+	tb assert.TB, report func(m *eidos.GraphMatch),
+) *plugin.GeneratorContext {
+	tb.Helper()
+
+	g, _, _ := fixtureGraph(tb)
+	_, facts := boolKey(tb)
+	ctx := genContext(tb, g, facts, nil)
+
+	ran := false
+	p := eidos.NewPlugin("grapher").
+		Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+			ran = true
+			report(m)
+			return nil
+		})).
+		Build()
+	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+	assert.True(tb, ran, "the graph handler ran")
+	return ctx
 }
