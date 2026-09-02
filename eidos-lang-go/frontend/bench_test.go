@@ -60,7 +60,7 @@ func BenchmarkParse(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for range b.N {
+	for b.Loop() {
 		for _, unit := range units {
 			u := plugin.NewSourceUnit(unit, tree, plugin.DepthFull,
 				f.Syntax(), diag.NewSink(), f.Name())

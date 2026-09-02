@@ -119,10 +119,6 @@ func normalize(spelling string) string {
 			if slices.Contains([]string{"map", "func", "chan", "struct", "interface"}, s) {
 				return ""
 			}
-			if rest, directed := strings.CutPrefix(s, "<-"); directed {
-				s = rest
-				continue
-			}
 			return s
 		}
 	}

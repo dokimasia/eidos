@@ -4,11 +4,15 @@
 package frontend_test
 
 import (
+	"context"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
 	golang "go.dokimi.dev/eidos/lang/go"
+	"go.dokimi.dev/eidos/lang/go/frontend"
+	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
@@ -57,5 +61,43 @@ func TestStampConstValues(t *testing.T) {
 		values := stampsOf(gb, string(golang.ConstValueKey))
 		assert.Equal(t, values, []any{"2"},
 			"what the package cannot evaluate stays absent, never wrong")
+	})
+
+	t.Run("evaluates a constant reading a sibling file's type", func(t *testing.T) {
+		t.Parallel()
+
+		tree := fstest.MapFS{
+			"p/a.go": {Data: []byte("package p\n\ntype Size int\n")},
+			"p/b.go": {Data: []byte("package p\n\nconst Big Size = 1 << 10\n")},
+		}
+		f := frontend.New(nil)
+		u := plugin.NewSourceUnit(
+			[]plugin.SourceRef{{Path: "p/a.go"}, {Path: "p/b.go"}}, tree,
+			plugin.DepthFull, f.Syntax(), diag.NewSink(), f.Name(),
+		)
+		assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+		values := stampsOf(u.Graph(), string(golang.ConstValueKey))
+		assert.Equal(t, values, []any{"1024"},
+			"the package evaluates as one scope, whichever file declared the type")
+	})
+
+	t.Run("converts a typed constant through the checker", func(t *testing.T) {
+		t.Parallel()
+
+		gb := parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\nconst Ratio float32 = 0.1\n")
+		values := stampsOf(gb, string(golang.ConstValueKey))
+		assert.Equal(t, values, []any{"13421773/134217728"},
+			"the declared type converts the value before it stamps")
+	})
+
+	t.Run("normalizes a literal to its exact form", func(t *testing.T) {
+		t.Parallel()
+
+		gb := parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\nconst Mask = 0x10\n")
+		values := stampsOf(gb, string(golang.ConstValueKey))
+		assert.Equal(t, values, []any{"16"},
+			"a literal stamps the spelling the checker would")
 	})
 }

@@ -18,14 +18,17 @@ const Extension = ".go"
 
 // Version is the backend's behavior version, folded into the run
 // fingerprint: bump it with any change to the rendered output.
-const Version = "0.2.0"
+const Version = "0.2.1"
 
 // Syntax is Go's comment forms, declared once and shared: the
 // frontend strips comments with it, and the output contract writes
-// the generated-file frame through it.
+// the generated-file frame through it. Directives holds because
+// the go:build kin is Go's own convention, the open tool:name
+// shape gofmt itself preserves.
 func Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{
-		Line:   []string{"//"},
-		Blocks: []plugin.CommentBlock{{Open: "/*", Close: "*/"}},
+		Line:       []string{"//"},
+		Blocks:     []plugin.CommentBlock{{Open: "/*", Close: "*/"}},
+		Directives: true,
 	}
 }

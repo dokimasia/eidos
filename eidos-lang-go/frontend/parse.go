@@ -45,12 +45,50 @@ type pendingUnderlying struct {
 func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 	root := (&moduleProbe{reader: unitReader{u}, roots: map[string]moduleRoot{}}).
 		governing(path.Dir(u.Files()[0].Path))
+	st := &parseState{
+		fset:    token.NewFileSet(),
+		intern:  map[string]string{},
+		batches: map[string]*constBatch{},
+	}
 	for _, ref := range u.Files() {
-		if err := f.parseFile(u, root, ref.Path); err != nil {
+		if err := f.parseFile(u, root, st, ref.Path); err != nil {
 			return err
 		}
 	}
+	for _, pkgPath := range st.order {
+		stampConstValues(u, st.fset, st.batches[pkgPath])
+	}
 	return nil
+}
+
+// parseState is one unit's shared parse machinery: the file set
+// every member joins, the spelling intern the lowerings share, and
+// the per-package batches the constant evaluation runs over once
+// each, so a constant referencing a sibling file's type still
+// evaluates.
+type parseState struct {
+	fset    *token.FileSet
+	intern  map[string]string
+	batches map[string]*constBatch
+	order   []string
+}
+
+// constBatch is one package's included files, parsed and lowered.
+type constBatch struct {
+	name   string
+	parsed []*ast.File
+	files  []*node.File
+}
+
+// batch returns the package's batch, created on first touch.
+func (st *parseState) batch(pkgPath, name string) *constBatch {
+	if b, held := st.batches[pkgPath]; held {
+		return b
+	}
+	b := &constBatch{name: name}
+	st.batches[pkgPath] = b
+	st.order = append(st.order, pkgPath)
+	return b
 }
 
 // unitReader adapts the unit's jailed door to the partition's
@@ -64,14 +102,15 @@ type unitReader struct {
 func (r unitReader) Read(path string) ([]byte, error) { return r.u.Read(path) }
 
 // parseFile lowers one member.
-func (f *goFrontend) parseFile(u *plugin.SourceUnit, root moduleRoot, filePath string) error {
+func (f *goFrontend) parseFile(
+	u *plugin.SourceUnit, root moduleRoot, st *parseState, filePath string,
+) error {
 	src, err := u.Read(filePath)
 	if err != nil {
 		return err
 	}
 
-	fset := token.NewFileSet()
-	parsed, err := parser.ParseFile(fset, filePath, src,
+	parsed, err := parser.ParseFile(st.fset, filePath, src,
 		parser.ParseComments|parser.SkipObjectResolution|parser.AllErrors)
 	if err != nil {
 		reportSyntax(u, filePath, err)
@@ -79,7 +118,10 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, root moduleRoot, filePath s
 	if parsed == nil || parsed.Name == nil {
 		return nil
 	}
-	l := &lowered{fset: fset, src: src, consumed: map[*ast.CommentGroup]bool{}}
+	l := &lowered{
+		file: st.fset.File(parsed.Package), src: src,
+		intern: st.intern, consumed: map[*ast.CommentGroup]bool{},
+	}
 	gb := u.Graph()
 
 	pkgPath := root.importPath(path.Dir(filePath))
@@ -138,7 +180,9 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, root moduleRoot, filePath s
 			Key: golang.UnderlyingKey, Value: pending.kind, Pos: subject.Position(),
 		})
 	}
-	stampConstValues(u, fset, parsed, file)
+	batch := st.batch(pkgPath, pkgName)
+	batch.parsed = append(batch.parsed, parsed)
+	batch.files = append(batch.files, file)
 
 	// The sweep: a carrier in a comment no declaration consumed —
 	// floating between declarations, or beside a parameter, whose
@@ -357,18 +401,19 @@ func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, 
 
 // stampIter marks a callable whose first result is one of the
 // iterator shapes, read off the spelling: iter.Seq and iter.Seq2
-// are their own announcement.
+// are their own announcement. An instantiation lowers to the bare
+// name with its arguments split out, so the bare spelling is the
+// whole comparison.
 func stampIter(u *plugin.SourceUnit, callable symbol.Symbol, returns []*node.Return) {
 	if len(returns) == 0 || returns[0].Type == nil {
 		return
 	}
-	spelling := returns[0].Type.Spelling
-	switch {
-	case spelling == "iter.Seq2" || strings.HasPrefix(spelling, "iter.Seq2["):
+	switch returns[0].Type.Spelling {
+	case "iter.Seq2":
 		u.Graph().Stamp(callable, meta.RawStamp{
 			Key: golang.IterSeq2Key, Value: true, Pos: callable.Position(),
 		})
-	case spelling == "iter.Seq" || strings.HasPrefix(spelling, "iter.Seq["):
+	case "iter.Seq":
 		u.Graph().Stamp(callable, meta.RawStamp{
 			Key: golang.IterSeqKey, Value: true, Pos: callable.Position(),
 		})

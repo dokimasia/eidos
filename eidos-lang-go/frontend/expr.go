@@ -12,32 +12,53 @@ import (
 )
 
 // lowered carries what one file's lowering reads everywhere: the
-// file set for positions, the raw bytes for verbatim spellings,
-// and the comment groups a declaration consumed, so the sweep can
-// refuse a carrier left floating between declarations.
+// file's position table, the raw bytes for verbatim spellings, the
+// unit's spelling intern, and the comment groups a declaration
+// consumed, so the sweep can refuse a carrier left floating between
+// declarations.
 type lowered struct {
-	fset     *token.FileSet
+	file     *token.File
 	src      []byte
+	intern   map[string]string
 	consumed map[*ast.CommentGroup]bool
 	// underlyings defer the defined types' shape stamps until the
 	// enum promotion has decided who stands for each type.
 	underlyings []pendingUnderlying
 }
 
-// at converts one token position.
+// at converts one token position through the file's own table.
 func (l *lowered) at(p token.Pos) position.Pos {
-	pos := l.fset.Position(p)
+	if !p.IsValid() {
+		return position.Pos{File: l.file.Name()}
+	}
+	pos := l.file.Position(p)
 	return position.Pos{File: pos.Filename, Line: pos.Line, Col: pos.Column}
 }
 
-// spelling returns an expression's verbatim source text.
+// offset returns a position's byte offset, and -1 for one outside
+// the file, which a recovered parse can synthesize.
+func (l *lowered) offset(p token.Pos) int {
+	base := token.Pos(l.file.Base())
+	if p < base || p > base+token.Pos(l.file.Size()) {
+		return -1
+	}
+	return l.file.Offset(p)
+}
+
+// spelling returns an expression's verbatim source text, interned
+// so a spelling the unit repeats is one string.
 func (l *lowered) spelling(e ast.Expr) string {
-	from := l.fset.Position(e.Pos()).Offset
-	to := l.fset.Position(e.End()).Offset
-	if from < 0 || to > len(l.src) || from >= to {
+	from, to := l.offset(e.Pos()), l.offset(e.End())
+	if from < 0 || to < 0 || to > len(l.src) || from >= to {
 		return ""
 	}
-	return string(l.src[from:to])
+	text := l.src[from:to]
+	if s, held := l.intern[string(text)]; held {
+		return s
+	}
+	s := string(text)
+	l.intern[s] = s
+	return s
 }
 
 // typeRef lowers one type expression: the verbatim spelling, with
