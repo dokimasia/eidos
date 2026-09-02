@@ -434,6 +434,23 @@ func NewSourceUnit(files []SourceRef, fsys fs.FS, depth Depth, syntax CommentSyn
 	return core.NewSourceUnit(files, fsys, depth, syntax, sink, origin)
 }
 
+// CarrierMark opens a directive carrier line inside a comment: the
+// kit's one cross-language convention, so a directive spells the
+// same way whatever language carries it.
+const CarrierMark = core.CarrierMark
+
+// Carrier is one directive payload and the line it sits on, marker
+// stripped, ready for the kernel grammar.
+type Carrier = core.Carrier
+
+// CommentParts is one raw comment taken apart three ways: the
+// documentation lines, the carrier lines, and the tool-directive
+// lines — the go:build kin — as annotations. What a language does
+// with each part is its own: a frontend filters its configuration
+// lines out of the annotations and its legacy forms out of the
+// carriers before attaching anything.
+type CommentParts = core.CommentParts
+
 // GraphBuilder is the unit's write handle into the node model. A
 // unit declares as many packages as its bytes do; two units
 // contributing one package path merge at the splice, declarations
