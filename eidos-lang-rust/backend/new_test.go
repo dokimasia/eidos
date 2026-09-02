@@ -26,9 +26,7 @@ func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	inventory := maps.Clone(backend.KindTemplates())
-	inventory[symbol.KindMethod] = ""
-	return r, backendtest.CanonicalFixture(tb, inventory)
+	return r, backendtest.CanonicalFixture(tb, inventory())
 }
 
 // benchSetup builds the backend over the suite's scaled corpus,
@@ -40,9 +38,7 @@ func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	inventory := maps.Clone(backend.KindTemplates())
-	inventory[symbol.KindMethod] = ""
-	return r, backendtest.ScaledFixture(tb, inventory)
+	return r, backendtest.ScaledFixture(tb, inventory())
 }
 
 // BenchmarkNew measures the composed backend over the suite's
@@ -99,4 +95,13 @@ func TestNew(t *testing.T) {
 		assert.Contains(t, string(text), "pub fn track(&self)",
 			"and a neutral track takes snake")
 	})
+}
+
+// inventory is the kind set the fixtures span: the declared
+// templates plus the method kind the impl cluster renders without
+// one of its own.
+func inventory() map[symbol.Kind]string {
+	out := maps.Clone(backend.KindTemplates())
+	out[symbol.KindMethod] = ""
+	return out
 }
