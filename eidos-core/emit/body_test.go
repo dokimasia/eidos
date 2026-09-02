@@ -131,17 +131,60 @@ func TestBody(t *testing.T) {
 			}
 		})
 
-		t.Run("refuses two forms naming both", func(t *testing.T) {
+		t.Run("refuses more than one form, naming each", func(t *testing.T) {
 			t.Parallel()
 
-			b := emit.Body{
-				Stmts:    []emit.Stmt{delegate()},
-				Verbatim: "return nil",
+			tests := []struct {
+				name  string
+				body  emit.Body
+				names []string
+			}{
+				{
+					name: "scaffolding and verbatim",
+					body: emit.Body{
+						Stmts:    []emit.Stmt{delegate()},
+						Verbatim: "return nil",
+					},
+					names: []string{"scaffolding", "verbatim"},
+				},
+				{
+					name: "scaffolding and a template claim",
+					body: emit.Body{
+						Stmts: []emit.Stmt{delegate()},
+						Ref:   &emit.TemplateRef{Name: "method1"},
+					},
+					names: []string{"scaffolding", "template"},
+				},
+				{
+					name: "a template claim and verbatim",
+					body: emit.Body{
+						Ref:      &emit.TemplateRef{Name: "method1"},
+						Verbatim: "return nil",
+					},
+					names: []string{"template", "verbatim"},
+				},
+				{
+					name: "all three at once",
+					body: emit.Body{
+						Stmts:    []emit.Stmt{delegate()},
+						Ref:      &emit.TemplateRef{Name: "method1"},
+						Verbatim: "return nil",
+					},
+					names: []string{"scaffolding", "template", "verbatim"},
+				},
 			}
-			_, err := b.Form()
-			assert.HasError(t, err, "content is exactly one form")
-			assert.Contains(t, err.Error(), "scaffolding", "naming one")
-			assert.Contains(t, err.Error(), "verbatim", "and the other")
+			for _, tt := range tests {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					form, err := tt.body.Form()
+					assert.HasError(t, err, "content is exactly one form")
+					assert.Equal(t, form, emit.FormDefault,
+						"and a body holding two claims none")
+					assert.ContainsInOrder(t, err.Error(), tt.names,
+						"the refusal names every form the body holds, in field order")
+				})
+			}
 		})
 	})
 

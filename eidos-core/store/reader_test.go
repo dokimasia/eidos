@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -133,6 +134,35 @@ func TestReader(t *testing.T) {
 				break
 			}
 			assert.Equal(t, seen, 1, "the enumeration stops when the range stops")
+		})
+	})
+
+	t.Run("ByDirective", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("stops when the range stops", func(t *testing.T) {
+			t.Parallel()
+
+			one := coretest.Struct(coretest.StorePath, "Store")
+			two := coretest.Struct(coretest.StorePath, "Cache")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, one, two)),
+				"the package loads")
+			assert.NoError(t, g.AttachDirectives(one.ID, []directive.Raw{stubAt(1)}), "one attaches")
+			assert.NoError(t, g.AttachDirectives(two.ID, []directive.Raw{stubAt(2)}), "and two")
+			g.Freeze()
+			reads := store.NewReadSet()
+			r, err := g.Reader(reads, nil)
+			assert.NoError(t, err, "the sealed graph hands out a reader")
+
+			seen := 0
+			for range r.ByDirective("stub") {
+				seen++
+				break
+			}
+			assert.Equal(t, seen, 1, "the enumeration stops when the range stops")
+			assert.Length(t, slices.Collect(reads.Identities()), 1,
+				"and records what the caller reached, not the set")
 		})
 	})
 

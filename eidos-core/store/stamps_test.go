@@ -60,6 +60,32 @@ func TestStamps(t *testing.T) {
 		assert.Equal(t, subjects, 1, "the walk visits each subject once")
 	})
 
+	t.Run("Stamps", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("stops when the range stops", func(t *testing.T) {
+			t.Parallel()
+
+			other := symbol.Identity{Lang: "fake", Package: "svc/cache", Kind: symbol.KindPackage}
+			g := store.New()
+			assert.NoError(t, g.AddPackage(&node.Package{ID: stampSubject()}), "one subject loads")
+			assert.NoError(t, g.AddPackage(&node.Package{ID: other}), "and a second")
+			assert.NoError(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(1)}),
+				"the first attaches")
+			assert.NoError(t, g.AttachStamps(other, []meta.RawStamp{stampAt(2)}), "and the second")
+			g.Freeze()
+
+			var seen []symbol.Identity
+			for id := range g.Stamps() {
+				seen = append(seen, id)
+				break
+			}
+			assert.Equal(t, seen, []symbol.Identity{stampSubject()},
+				"the walk stops at the first subject in identity order when "+
+					"the range stops")
+		})
+	})
+
 	t.Run("refuses what cannot index", func(t *testing.T) {
 		t.Parallel()
 

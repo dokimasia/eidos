@@ -46,6 +46,18 @@ func plugAt(seq int) meta.Claim {
 	}
 }
 
+// termKey registers one key of value type T and returns its handle,
+// so a case naming several vocabulary terms states each one once.
+func termKey[T meta.FactValue](tb assert.TB, r *meta.Registry, name meta.KeyName) meta.Key[T] {
+	tb.Helper()
+
+	key, err := meta.Register[T](r, meta.KeySpec{
+		Name: name, Doc: "a fixture key holding one term of the value vocabulary",
+	})
+	assert.NoError(tb, err, "the fixture key registers")
+	return key
+}
+
 // The raw path is the classification stamp's: a pre-claim that
 // crossed a phase as data, held to the same checks as a typed
 // write.
@@ -82,6 +94,73 @@ func TestStampRaw(t *testing.T) {
 		err = f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: 3.14}, plugAt(0))
 		assert.HasError(t, err, "a value outside the vocabulary refuses")
 		assert.Contains(t, err.Error(), "float64", "naming the type")
+	})
+
+	t.Run("carries every term of the value vocabulary", func(t *testing.T) {
+		t.Parallel()
+
+		r := meta.NewRegistry()
+		assert.NoError(t, r.ClaimNamespace("fake", "fake"), "the namespace claims")
+		text := termKey[string](t, r, "fake.text")
+		number := termKey[int64](t, r, "fake.number")
+		flag := termKey[bool](t, r, "fake.flag")
+		list := termKey[[]string](t, r, "fake.list")
+		named := termKey[symbol.Identity](t, r, "fake.named")
+		f := meta.NewFacts(r)
+
+		tests := []struct {
+			name  string
+			key   meta.KeyName
+			value any
+			read  func() (any, bool)
+		}{
+			{
+				name: "a string", key: text.Name(), value: "writer",
+				read: func() (any, bool) { return meta.Get(f, subjectFile(), text) },
+			},
+			{
+				name: "an integer", key: number.Name(), value: int64(7),
+				read: func() (any, bool) { return meta.Get(f, subjectFile(), number) },
+			},
+			{
+				name: "a boolean", key: flag.Name(), value: true,
+				read: func() (any, bool) { return meta.Get(f, subjectFile(), flag) },
+			},
+			{
+				name: "a string list", key: list.Name(), value: []string{"a", "b"},
+				read: func() (any, bool) { return meta.Get(f, subjectFile(), list) },
+			},
+			{
+				name: "an identity", key: named.Name(), value: subjectFile(),
+				read: func() (any, bool) { return meta.Get(f, subjectFile(), named) },
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.NoError(t,
+					f.StampRaw(meta.RawStamp{Key: tt.key, Value: tt.value}, plugAt(0)),
+					"a term of the vocabulary crosses the phase as data")
+				got, held := tt.read()
+				assert.True(t, held, "and the typed handle reads it back")
+				assert.Equal(t, got, tt.value, "carrying the value the frontend recorded")
+			})
+		}
+	})
+
+	t.Run("a typed read of a mistyped raw value reads absence", func(t *testing.T) {
+		t.Parallel()
+
+		f, key := stampFixture(t)
+		assert.NoError(t,
+			f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: "true"}, plugAt(0)),
+			"the registry records no value type, so a string admits under a boolean key")
+
+		got, held := meta.Get(f, subjectFile(), key)
+		assert.False(t, held,
+			"the type discipline is the typed handle's: a mistyped raw value reads absent")
+		assert.False(t, got, "with the zero value")
 	})
 
 	t.Run("ranks like any other claim", func(t *testing.T) {

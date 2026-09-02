@@ -12,6 +12,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -87,15 +88,6 @@ func validate(tb assert.TB, payloads ...string) ([]directive.Directive, *diag.Si
 		raws = append(raws, parse(tb, payload, i+1))
 	}
 	return directive.Validate(validationSubject, raws, r, keyed(tb), sink), sink
-}
-
-// failures returns the codes the sink holds, in report order.
-func failures(sink *diag.Sink) []diag.Code {
-	var out []diag.Code
-	for d := range sink.All() {
-		out = append(out, d.Code)
-	}
-	return out
 }
 
 func TestValidate(t *testing.T) {
@@ -215,6 +207,18 @@ func TestValidate(t *testing.T) {
 				naming:   "extra",
 			},
 			{
+				name:     "a list where a positional takes a scalar",
+				payloads: []string{"indexer:index [a, b]"},
+				want:     directive.TypeMismatch,
+				naming:   "kind",
+			},
+			{
+				name:     "an extra positional written as a list",
+				payloads: []string{"indexer:index btree [a, b]"},
+				want:     directive.ExtraPositional,
+				naming:   "a list",
+			},
+			{
 				name:     "an omitted required param",
 				payloads: []string{"indexer:index depth=1"},
 				want:     directive.MissingParam,
@@ -276,7 +280,7 @@ func TestValidate(t *testing.T) {
 				got, sink := validate(t, tt.payloads...)
 				assert.Empty(t, got, "a failing instance is not returned")
 				assert.True(t, sink.Failed(), "and the run fails")
-				assert.True(t, slices.Contains(failures(sink), tt.want),
+				assert.True(t, slices.Contains(coretest.Codes(sink), tt.want),
 					"under the check's own code")
 				found := false
 				for d := range sink.All() {
@@ -302,7 +306,7 @@ func TestValidate(t *testing.T) {
 				[]directive.Raw{parse(t, "strictgen:index btree", 1)}, r, keyed(t), sink)
 
 			assert.Empty(t, got, "the bare instance is refused")
-			assert.True(t, slices.Contains(failures(sink), directive.MissingRole),
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.MissingRole),
 				"under the omitted-role code")
 		})
 
@@ -331,7 +335,7 @@ func TestValidate(t *testing.T) {
 			got = directive.Validate(validationSubject,
 				[]directive.Raw{parse(t, "scopegen:expose role=server", 1)}, r, keyed(t), sink)
 			assert.Empty(t, got, "the server instance without it is refused")
-			assert.True(t, slices.Contains(failures(sink), directive.MissingParam),
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.MissingParam),
 				"under the omitted-param code")
 		})
 	})
@@ -346,7 +350,7 @@ func TestValidate(t *testing.T) {
 				"stubgen:index mode=a",
 				"stubgen:index mode=b")
 			assert.Empty(t, got, "the contradiction is refused whole")
-			assert.True(t, slices.Contains(failures(sink), directive.DuplicateInstance),
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.DuplicateInstance),
 				"under the duplicate-instance code")
 			var related int
 			for d := range sink.All() {
@@ -386,7 +390,7 @@ func TestValidate(t *testing.T) {
 			got := directive.Validate(validationSubject,
 				[]directive.Raw{parse(t, "weaver:weave", 1)}, r, keyed(t), sink)
 			assert.Empty(t, got, "the unmet requirement refuses the instance")
-			assert.True(t, slices.Contains(failures(sink), directive.RequirementUnmet),
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.RequirementUnmet),
 				"under the requirement code")
 		})
 
@@ -403,7 +407,7 @@ func TestValidate(t *testing.T) {
 				parse(t, "weaver:weave", 2),
 			}, r, keyed(t), sink)
 			assert.Empty(t, got, "the pair is refused whole")
-			assert.True(t, slices.Contains(failures(sink), directive.Conflict),
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.Conflict),
 				"under the conflict code")
 			var related int
 			for d := range sink.All() {
@@ -427,6 +431,34 @@ func TestValidate(t *testing.T) {
 			assert.Length(t, got, 1, "and so does a registered group")
 			assert.False(t, sink.Failed(), "without a report")
 		})
+	})
+
+	t.Run("a list param stating no element type refuses its elements", func(t *testing.T) {
+		t.Parallel()
+
+		// Registration refuses a list of lists and an untyped param,
+		// but a list whose ListOf is unset states a type for itself
+		// and none for what it holds, so the elements refuse here.
+		untyped := directive.Schema{
+			Plugin: "listgen", Name: "collect", Doc: "collects the named members",
+			Params: []directive.ParamSpec{
+				{Key: "members", Type: directive.TypeList, Doc: "the collected members"},
+			},
+		}
+		r := sealed(t, untyped)
+
+		sink := diag.NewSink()
+		got := directive.Validate(validationSubject,
+			[]directive.Raw{parse(t, "listgen:collect members=[a]", 1)}, r, keyed(t), sink)
+
+		assert.Empty(t, got, "the instance is refused")
+		assert.True(t, slices.Contains(coretest.Codes(sink), directive.TypeMismatch),
+			"under the type-mismatch code")
+		found := false
+		for d := range sink.All() {
+			found = found || strings.Contains(d.Msg, "members")
+		}
+		assert.True(t, found, "naming the param whose elements state no type")
 	})
 
 	t.Run("validating nothing returns nothing", func(t *testing.T) {

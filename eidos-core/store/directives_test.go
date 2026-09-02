@@ -205,6 +205,27 @@ func TestDirectives(t *testing.T) {
 				"the walk is the validator's: every attachment, dangling included, "+
 					"in identity order")
 		})
+
+		t.Run("stops when the range stops", func(t *testing.T) {
+			t.Parallel()
+
+			one := coretest.Struct(coretest.StorePath, "Store")
+			two := coretest.Struct(coretest.StorePath, "Cache")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, one, two)),
+				"the package loads")
+			assert.NoError(t, g.AttachDirectives(one.ID, []directive.Raw{stubAt(1)}), "one attaches")
+			assert.NoError(t, g.AttachDirectives(two.ID, []directive.Raw{stubAt(2)}), "and two")
+			g.Freeze()
+
+			var seen []symbol.Identity
+			for id := range g.Directives() {
+				seen = append(seen, id)
+				break
+			}
+			assert.Equal(t, seen, []symbol.Identity{two.ID},
+				"the walk stops at the first subject when the range stops")
+		})
 	})
 
 	t.Run("Reader", func(t *testing.T) {

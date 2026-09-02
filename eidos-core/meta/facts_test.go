@@ -227,6 +227,28 @@ func TestFacts(t *testing.T) {
 		})
 	})
 
+	t.Run("DropGroup", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("a higher-authority write outranks the group tombstone", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			drop := by("defaults", 1)
+			drop.Authority = meta.AuthorityDirective
+			assert.NoError(t, f.DropGroup("shape.writer", drop), "the group drop arrives")
+			manual := by("migrate", 1)
+			manual.Authority = meta.AuthorityManual
+			assert.NoError(t, meta.Stamp(f, role, "kept", manual),
+				"a manual write on a member arrives after it")
+
+			got, held := meta.Get(f, subject, role)
+			assert.True(t, held,
+				"a tombstone covering the group is still a claim, and rank decides it")
+			assert.Equal(t, got, "kept", "so the outranking value stands")
+		})
+	})
+
 	t.Run("Get", func(t *testing.T) {
 		t.Parallel()
 

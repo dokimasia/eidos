@@ -12,6 +12,99 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// parseCase is one spelling and what [symbol.Parse] makes of it.
+type parseCase struct {
+	name    string
+	in      string
+	want    symbol.Identity
+	wantErr bool
+}
+
+// parseCases returns the pinned grammar: the spellings Parse accepts
+// with the identities it reads, and the spellings it refuses.
+//
+// [FuzzParse] seeds its corpus from the same table, so the fuzzer
+// starts inside the grammar rather than spending its budget
+// discovering the colon.
+func parseCases() []parseCase {
+	return []parseCase{
+		{
+			name: "package",
+			in:   "golang:svc/store",
+			want: symbol.Identity{
+				Lang:    "golang",
+				Package: "svc/store",
+				Kind:    symbol.KindPackage,
+			},
+		},
+		{
+			name: "top-level name leaves the kind undetermined",
+			in:   "golang:svc/store.Store",
+			want: symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"},
+		},
+		{
+			name: "function",
+			in:   "golang:svc/store.Open(string)",
+			want: symbol.Identity{
+				Lang:    "golang",
+				Package: "svc/store",
+				Name:    "Open",
+				Disc:    "string",
+				Kind:    symbol.KindFunction,
+			},
+		},
+		{
+			name: "member leaves the kind undetermined",
+			in:   "golang:svc/store.Store#timeout",
+			want: symbol.Identity{
+				Lang:    "golang",
+				Package: "svc/store",
+				Owner:   "Store",
+				Name:    "timeout",
+			},
+		},
+		{
+			name: "method",
+			in:   "golang:svc/store.Store#Get(ctx,string)",
+			want: symbol.Identity{
+				Lang:    "golang",
+				Package: "svc/store",
+				Owner:   "Store",
+				Name:    "Get",
+				Disc:    "ctx,string",
+				Kind:    symbol.KindMethod,
+			},
+		},
+		{
+			name: "nullary method",
+			in:   "golang:svc/store.Store#Close()",
+			want: symbol.Identity{
+				Lang:    "golang",
+				Package: "svc/store",
+				Owner:   "Store",
+				Name:    "Close",
+				Kind:    symbol.KindMethod,
+			},
+		},
+		{name: "rejects empty input", in: "", wantErr: true},
+		{name: "rejects missing separator", in: "nolang", wantErr: true},
+		{name: "rejects empty path", in: "golang:", wantErr: true},
+		{name: "rejects empty language", in: ":svc/store", wantErr: true},
+		{
+			name:    "rejects unclosed discriminator",
+			in:      "golang:svc/store.Open(string",
+			wantErr: true,
+		},
+		{name: "rejects empty owner", in: "golang:svc/store.#name", wantErr: true},
+		{
+			name:    "rejects a discriminator on a bare package",
+			in:      "golang:svc/store()",
+			wantErr: true,
+		},
+		{name: "rejects an empty name after the dot", in: "golang:svc/store.", wantErr: true},
+	}
+}
+
 func TestIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -110,82 +203,7 @@ func TestIdentity(t *testing.T) {
 	t.Run("Parse", func(t *testing.T) {
 		t.Parallel()
 
-		tests := []struct {
-			name    string
-			in      string
-			want    symbol.Identity
-			wantErr bool
-		}{
-			{
-				name: "package",
-				in:   "golang:svc/store",
-				want: symbol.Identity{
-					Lang:    "golang",
-					Package: "svc/store",
-					Kind:    symbol.KindPackage,
-				},
-			},
-			{
-				name: "top-level name leaves the kind undetermined",
-				in:   "golang:svc/store.Store",
-				want: symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"},
-			},
-			{
-				name: "function",
-				in:   "golang:svc/store.Open(string)",
-				want: symbol.Identity{
-					Lang:    "golang",
-					Package: "svc/store",
-					Name:    "Open",
-					Disc:    "string",
-					Kind:    symbol.KindFunction,
-				},
-			},
-			{
-				name: "member leaves the kind undetermined",
-				in:   "golang:svc/store.Store#timeout",
-				want: symbol.Identity{
-					Lang:    "golang",
-					Package: "svc/store",
-					Owner:   "Store",
-					Name:    "timeout",
-				},
-			},
-			{
-				name: "method",
-				in:   "golang:svc/store.Store#Get(ctx,string)",
-				want: symbol.Identity{
-					Lang:    "golang",
-					Package: "svc/store",
-					Owner:   "Store",
-					Name:    "Get",
-					Disc:    "ctx,string",
-					Kind:    symbol.KindMethod,
-				},
-			},
-			{
-				name: "nullary method",
-				in:   "golang:svc/store.Store#Close()",
-				want: symbol.Identity{
-					Lang:    "golang",
-					Package: "svc/store",
-					Owner:   "Store",
-					Name:    "Close",
-					Kind:    symbol.KindMethod,
-				},
-			},
-			{name: "rejects empty input", in: "", wantErr: true},
-			{name: "rejects missing separator", in: "nolang", wantErr: true},
-			{name: "rejects empty path", in: "golang:", wantErr: true},
-			{name: "rejects empty language", in: ":svc/store", wantErr: true},
-			{
-				name:    "rejects unclosed discriminator",
-				in:      "golang:svc/store.Open(string",
-				wantErr: true,
-			},
-			{name: "rejects empty owner", in: "golang:svc/store.#name", wantErr: true},
-		}
-		for _, tt := range tests {
+		for _, tt := range parseCases() {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 				got, err := symbol.Parse(tt.in)
@@ -355,6 +373,38 @@ func TestIdentity(t *testing.T) {
 			assert.Equal(t, shuffled, ordered,
 				"Compare sorts a slice into the one canonical order")
 		})
+	})
+}
+
+// Parse reads spellings a person typed into a manifest or a
+// directive, so it meets bytes nothing generated. It answers on any
+// of them, and the grammar is closed under the round trip: an
+// identity it read spells back into the same identity.
+func FuzzParse(f *testing.F) {
+	for _, tt := range parseCases() {
+		f.Add(tt.in)
+	}
+
+	f.Fuzz(func(t *testing.T, in string) {
+		var (
+			id       symbol.Identity
+			refusal  error
+			respelt  symbol.Identity
+			spelling string
+		)
+		assert.NotPanics(t, func() { id, refusal = symbol.Parse(in) },
+			"Parse answers on any bytes rather than panicking")
+		if refusal != nil {
+			assert.Equal(t, id, symbol.Identity{},
+				"a refused spelling names nothing")
+			return
+		}
+
+		assert.NotPanics(t, func() { spelling = id.String() },
+			"an identity spells on any parts rather than panicking")
+		respelt, refusal = symbol.Parse(spelling)
+		assert.NoError(t, refusal, "what Parse read spells back into the grammar")
+		assert.Equal(t, respelt, id, "and reads back as the identity it spelled")
 	})
 }
 
