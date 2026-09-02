@@ -105,7 +105,9 @@ func (s *Symbols) UnmarshalJSON(data []byte) error {
 //
 // The fields come from the declaration's own struct tags; this adds
 // the kind in front of them. A nil declaration encodes as JSON
-// null.
+// null, which [DecodeJSON] reads back as one. A declaration whose
+// own encoding is not an object refuses, because the kind could
+// not be spliced in front of it.
 func EncodeJSON(s symbol.Symbol) ([]byte, error) {
 	if s == nil {
 		return []byte("null"), nil
@@ -113,6 +115,16 @@ func EncodeJSON(s symbol.Symbol) ([]byte, error) {
 	body, err := json.Marshal(s)
 	if err != nil {
 		return nil, fmt.Errorf("node: encode %v: %w", s.Kind(), err)
+	}
+	if len(body) < 2 || body[0] != '{' || body[len(body)-1] != '}' {
+		// The splice below opens the encoded object to put the kind
+		// in front of its fields, so anything but an object would
+		// splice into invalid JSON. Only a foreign declaration
+		// spelling its own encoding reaches here.
+		return nil, fmt.Errorf(
+			"node: encode %v: the declaration encodes as %s rather than an object",
+			s.Kind(), body,
+		)
 	}
 
 	// A kind's name is a Go type name, so it needs no escaping and

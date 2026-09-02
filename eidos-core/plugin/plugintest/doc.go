@@ -20,9 +20,10 @@
 // composition does, sharing one key registry and one graph.
 // [RunPluginSuite] composes the granular assertions over it,
 // skipping the roles and surfaces a plugin does not hold:
-// [AssertStableDeclaration], [AssertOptionsSchema],
-// [AssertTemplates], [AssertDeterministicEmit],
-// [AssertIdempotentAnnotate], [AssertPositionedDiagnostics] and
+// [AssertPopulatedFixture], [AssertStableDeclaration],
+// [AssertOptionsSchema], [AssertTemplates],
+// [AssertDeterministicEmit], [AssertIdempotentAnnotate],
+// [AssertPositionedDiagnostics], [AssertNoStructuralWrites] and
 // [AssertAttributedEmit]. [AssertTwins] holds two spellings of one
 // plugin to byte-equal emit, which is how the lowering guarantee
 // is checked from the outside. Each assertion takes the

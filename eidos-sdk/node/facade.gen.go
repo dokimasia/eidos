@@ -449,7 +449,9 @@ type Symbols = core.Symbols
 //
 // The fields come from the declaration's own struct tags; this adds
 // the kind in front of them. A nil declaration encodes as JSON
-// null.
+// null, which [DecodeJSON] reads back as one. A declaration whose
+// own encoding is not an object refuses, because the kind could
+// not be spliced in front of it.
 func EncodeJSON(s symbol.Symbol) ([]byte, error) {
 	return core.EncodeJSON(s)
 }

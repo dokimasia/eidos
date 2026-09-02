@@ -18,12 +18,11 @@
 //
 // Every schema field carries an `eidos` tag opening with a side and
 // followed by tokens from a closed set; see [TagKey]. Lowering
-// refuses an unknown token, a slot or owner tag on a field that is
-// not a slice of kinds, a walk tag on a field that is neither a
-// kind nor the marker, an owner slice whose element declares no
-// host, a walk-tagged host, a duplicate slot name within one kind,
-// and any declaration that is neither an exported struct nor the
-// marker. Every refusal names the schema position.
+// refuses an unknown token, a slot tag on a field that is not a
+// slice of kinds, a walk tag on a field that is neither a kind nor
+// the marker, a duplicate slot name within one kind, and any
+// declaration that is neither an exported struct nor the marker.
+// Every refusal names the schema position.
 //
 // # Dependency position
 //

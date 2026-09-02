@@ -118,10 +118,11 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 //
 // Build panics on a declaration defect: an empty name, no rules, a
 // duplicate output tag, an empty output word, a zero cardinality,
-// an empty capability label, a nil, zero-target or duplicate
-// template tree, a directive name carried by two wrappers, a rule
-// gating on two directives, a gate wrapped around a graph rule, a
-// zero predicate. A wrong declaration is a bug in
+// an empty capability label, a nil key registration, a nil,
+// zero-target or duplicate template tree, a directive name carried
+// by two wrappers, a rule gating on two directives, a gate wrapped
+// around a graph rule, a zero predicate, and a gate on a key the
+// declaration never registered. A wrong declaration is a bug in
 // the plugin's own constructor and panics on the first Build in any
 // test, before a run exists; composition faults stay collected
 // errors where the workspace composes.

@@ -72,11 +72,6 @@ const (
 	// declaration holds, and it states its fact when non-empty,
 	// which the symbol-qualified scalar rule would misjudge.
 	annotationsType = "symbol.Annotations"
-
-	// HostField names the owning declaration of an owned kind. It
-	// holds an identity rather than a pointer, so it is resolved
-	// through a tracked read like any other cross-reference.
-	HostField = "Host"
 )
 
 // The package the schema lives in, and the directory that holds it

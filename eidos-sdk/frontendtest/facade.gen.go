@@ -119,6 +119,10 @@ type ScriptedOptions = core.ScriptedOptions
 //	method NAME REF...    a method on the last type, params by ref
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
+//	// TEXT               a comment, split by the kernel: its
+//	                      documentation reaches the next type, a
+//	                      +marked line carries to the last one, and
+//	                      a tool:name line lowers as an annotation
 //	stamp KEY VALUE       a classification stamp on the file
 //	pkgnote NAME ARGS     a directive on the package node itself
 //

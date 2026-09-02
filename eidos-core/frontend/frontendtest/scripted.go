@@ -53,6 +53,10 @@ type ScriptedOptions struct {
 //	method NAME REF...    a method on the last type, params by ref
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
+//	// TEXT               a comment, split by the kernel: its
+//	                      documentation reaches the next type, a
+//	                      +marked line carries to the last one, and
+//	                      a tool:name line lowers as an annotation
 //	stamp KEY VALUE       a classification stamp on the file
 //	pkgnote NAME ARGS     a directive on the package node itself
 //
@@ -122,9 +126,12 @@ func (f *Scripted) Options() any { return f.Opts }
 // Selection returns the file claim.
 func (f *Scripted) Selection() []string { return f.Sel }
 
-// Syntax returns the language's one comment form.
+// Syntax returns the language's one comment form, the tool
+// directive convention declared: the suite's own language reads
+// its comments through the kernel's split, so a regression there
+// fails here rather than only in a satellite.
 func (*Scripted) Syntax() plugin.CommentSyntax {
-	return plugin.CommentSyntax{Line: []string{"//"}}
+	return plugin.CommentSyntax{Line: []string{"//"}, Directives: true}
 }
 
 // Partition groups by directory, in path order, and declares the
@@ -195,10 +202,13 @@ func (*Scripted) Resolve(scope plugin.ImportScope, spelling string) []symbol.Ide
 func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 	gb := u.Graph()
 	var (
-		file     *node.File
-		pkgPath  string
-		bindings = map[string][]string{}
-		last     *node.Struct
+		file        *node.File
+		pkgPath     string
+		bindings    = map[string][]string{}
+		last        *node.Struct
+		pending     []string
+		annotations symbol.Annotations
+		carried     []directive.Raw
 	)
 	for i, line := range strings.Split(content, "\n") {
 		at := position.Pos{File: filePath, Line: i + 1}
@@ -219,7 +229,14 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 		case fields[0] == "import" && len(fields) >= 3:
 			bindings[fields[1]] = append(bindings[fields[1]], fields[2:]...)
 		case fields[0] == "type" && len(fields) >= 2:
-			last = &node.Struct{Name: fields[1], Pos: at}
+			last = &node.Struct{
+				Name: fields[1], Pos: at,
+				Doc: pending, Annotations: annotations,
+			}
+			for _, raw := range carried {
+				gb.Attach(last, raw)
+			}
+			pending, annotations, carried = nil, nil, nil
 			for j, spelling := range fields[2:] {
 				last.Fields = append(last.Fields, &node.Field{
 					Name: "f" + string(rune('0'+j)),
@@ -256,6 +273,27 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 			}
 			raw.Pos = at
 			gb.Attach(gb.Package(pkgPath), raw)
+		case strings.HasPrefix(fields[0], "//"):
+			// The kernel's own split decides what a comment holds,
+			// so the reference language exercises it: documentation
+			// reaches the next declaration, a carrier attaches to
+			// the last one, and a tool directive lowers as an
+			// annotation.
+			parts := u.Comment(line, at)
+			pending = append(pending, parts.Docs...)
+			annotations = append(annotations, parts.Annotations...)
+			for _, c := range parts.Carriers {
+				raw, err := directive.Parse(c.Payload)
+				if err != nil {
+					u.Errorf(ScriptedBadFile, c.Pos,
+						"%s carries a directive outside the grammar: %v", filePath, err)
+					continue
+				}
+				raw.Pos = c.Pos
+				// A comment opens the declaration under it, so its
+				// carrier waits for the type it documents.
+				carried = append(carried, raw)
+			}
 		case strings.HasPrefix(fields[0], "+") && last != nil:
 			raw, err := directive.Parse(strings.TrimPrefix(strings.TrimSpace(line), "+"))
 			if err != nil {

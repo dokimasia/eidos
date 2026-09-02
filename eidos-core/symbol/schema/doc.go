@@ -29,6 +29,11 @@
 //     tree over a cyclic graph.
 //   - slot=<name>: on the emit side the field becomes slot storage
 //     with typed accessors instead of a plain slice.
+//   - name: the field is the declaration's own name, which the
+//     identity assignment and the settle's respelling read.
+//   - fact=<Fact>: the field states one fact of the coverage
+//     vocabulary, which is what a backend declares a verdict
+//     against and what the render guard reads.
 //
 // # Field conventions
 //

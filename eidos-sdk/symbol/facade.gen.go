@@ -116,12 +116,19 @@ type Identity = core.Identity
 // It fills Kind only where the string form determines it: a bare
 // path is [KindPackage], and a parenthesized discriminator makes a
 // callable ([KindFunction] without an owner, [KindMethod] with
-// one). Every other form leaves [KindInvalid], and the store
-// recovers the kind at lookup.
+// one). Every other form leaves [KindInvalid], which no reader
+// recovers: the store keys on the whole identity, so a parsed
+// identity missing its kind matches nothing. A caller parsing a
+// spelling supplies the kind it expects.
 //
-// File identities do not round-trip: their string form is
-// indistinguishable from a dotted top-level name, so it parses as
-// one.
+// Two forms do not round-trip. A file identity's string form is
+// indistinguishable from a dotted top-level name and parses as
+// one. So is a package whose last segment carries a dot —
+// gopkg.in/yaml.v2 — because the grammar cuts a path at the first
+// dot after the last slash: the package and the name it spells
+// are recovered wrong, and String is not injective across that
+// pair. Nothing in the framework parses identities back today;
+// a boundary that starts to must state which half it holds.
 func Parse(s string) (Identity, error) {
 	return core.Parse(s)
 }

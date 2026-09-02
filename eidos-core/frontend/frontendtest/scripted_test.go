@@ -136,6 +136,36 @@ func TestScripted(t *testing.T) {
 			assert.Length(t, gb.StampRecords(), 1, "the stamp recorded")
 		})
 
+		t.Run("reads a comment through the kernel's own split", func(t *testing.T) {
+			t.Parallel()
+
+			commented := fstest.MapFS{
+				svcFile: {Data: []byte(
+					"package svc\n" +
+						"// A records one row.\n" +
+						"//tool:keep forever\n" +
+						"// +gen:table name=t\n" +
+						"type A int\n",
+				)},
+			}
+			f := frontendtest.NewScripted()
+			u, sink := unitOver(f, commented, svcFile)
+			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+			coretest.AssertCodes(t, sink)
+
+			gb := u.Graph()
+			declared := gb.Packages()[0].Files[0].Decls[0].(*node.Struct)
+			assert.Equal(t, declared.Doc, []string{"A records one row."},
+				"the documentation reaches the declaration it opened, "+
+					"and a marker-adjacent directive line is not documentation")
+			assert.Equal(t, declared.Annotations, symbol.Annotations{
+				{Name: "tool:keep", Args: []string{"forever"}},
+			}, "a marker-adjacent tool directive lowers as an annotation")
+			assert.Length(t, gb.Attachments(), 1, "and the carrier attaches")
+			assert.Equal(t, string(gb.Attachments()[0].Raw.Name), "gen:table",
+				"under its own name, the mark stripped by the split")
+		})
+
 		t.Run("returns the read's own error for an absent member", func(t *testing.T) {
 			t.Parallel()
 

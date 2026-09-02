@@ -22,8 +22,12 @@
 // over an empty store passes vacuously, [AssertDeterministicRender]
 // holds two isolated renders to byte-equal files, [AssertSpeltKinds]
 // refuses a kind the language cannot spell, [AssertPlacedContent]
-// holds every body to arriving whole, and [AssertContinuedRender]
-// holds the failure semantics —
+// holds every body to arriving whole, [AssertSettledShape] holds
+// the settle to preserving what it rewrites, [AssertCoveredFacts]
+// holds the declared coverage total and its refusals counted per
+// key, [AssertRenderedMembers] reads the bytes for a member a
+// template forgot, and [AssertContinuedRender] holds the failure
+// semantics —
 // no fatal error for a file's problem, every finding positioned
 // and attributed, and a file the formatter refused withheld from
 // the values. Each assertion takes the [assert.TB] role, so its
