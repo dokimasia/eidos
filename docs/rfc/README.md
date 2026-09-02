@@ -23,3 +23,6 @@ the decision is already made and there is nothing left to argue, write an
 | [0009](0009-render-pass-and-backend-kit.md) | The render pass and the backend kit | Review |
 | [0010](0010-output-contract.md) | The output contract | Review |
 | [0011](0011-neutral-emit-and-the-target-lowering-seams.md) | Neutral emit and the target lowering seams | Review |
+| [0012](0012-the-sdk-contract-module.md) | The SDK facade module | Draft |
+| [0013](0013-the-frontend-kit.md) | The frontend kit and its conformance suite | Draft |
+| [0014](0014-the-projection-vocabulary.md) | The projection vocabulary and the rules seam | Draft |
