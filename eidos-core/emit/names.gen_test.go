@@ -33,474 +33,947 @@ func TestRespellNames(t *testing.T) {
 	t.Run("Function", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Function{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-		subject.Params = append(subject.Params, &Param{Name: "beta"})
-		subject.Returns = append(subject.Returns, &Return{Name: "beta"})
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 4, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Function{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+			subject.Params = append(subject.Params, &Param{Name: "beta"})
+			subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 4, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindFunction,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindFunction,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 4; stop++ {
+				subject := &Function{}
+				subject.Name = "alpha"
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+				subject.Params = append(subject.Params, &Param{Name: "beta"})
+				subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Method", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Method{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		subject.Receiver = &Param{Name: "beta"}
-		subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-		subject.Params = append(subject.Params, &Param{Name: "beta"})
-		subject.Returns = append(subject.Returns, &Return{Name: "beta"})
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 5, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Method{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			subject.Receiver = &Param{Name: "beta"}
+			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+			subject.Params = append(subject.Params, &Param{Name: "beta"})
+			subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 5, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindMethod,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindMethod,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 5; stop++ {
+				subject := &Method{}
+				subject.Name = "alpha"
+				subject.Receiver = &Param{Name: "beta"}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+				subject.Params = append(subject.Params, &Param{Name: "beta"})
+				subject.Returns = append(subject.Returns, &Return{Name: "beta"})
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Param", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Param{}
-		subject.Name = "alpha"
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 1, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Param{}
+			subject.Name = "alpha"
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindParam,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindParam,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 1; stop++ {
+				subject := &Param{}
+				subject.Name = "alpha"
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Return", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Return{}
-		subject.Name = "alpha"
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 1, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Return{}
+			subject.Name = "alpha"
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindReturn,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindReturn,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 1; stop++ {
+				subject := &Return{}
+				subject.Name = "alpha"
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Enum", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Enum{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		subject.VariantsSlot().Append(&EnumVariant{Name: "beta"})
-		subject.FieldsSlot().Append(&Field{Name: "beta"})
-		subject.MethodsSlot().Append(&Method{Name: "beta"})
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 4, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Enum{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			subject.VariantsSlot().Append(&EnumVariant{Name: "beta"})
+			subject.FieldsSlot().Append(&Field{Name: "beta"})
+			subject.MethodsSlot().Append(&Method{Name: "beta"})
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 4, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindEnum,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindEnum,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 4; stop++ {
+				subject := &Enum{}
+				subject.Name = "alpha"
+				subject.VariantsSlot().Append(&EnumVariant{Name: "beta"})
+				subject.FieldsSlot().Append(&Field{Name: "beta"})
+				subject.MethodsSlot().Append(&Method{Name: "beta"})
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("EnumVariant", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &EnumVariant{}
-		subject.Name = "alpha"
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 1, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &EnumVariant{}
+			subject.Name = "alpha"
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindEnumVariant,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindEnumVariant,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 1; stop++ {
+				subject := &EnumVariant{}
+				subject.Name = "alpha"
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Sum", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Sum{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-		subject.VariantsSlot().Append(&SumVariant{Name: "beta"})
-		subject.MethodsSlot().Append(&Method{Name: "beta"})
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 4, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Sum{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+			subject.VariantsSlot().Append(&SumVariant{Name: "beta"})
+			subject.MethodsSlot().Append(&Method{Name: "beta"})
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 4, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindSum,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindSum,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 4; stop++ {
+				subject := &Sum{}
+				subject.Name = "alpha"
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+				subject.VariantsSlot().Append(&SumVariant{Name: "beta"})
+				subject.MethodsSlot().Append(&Method{Name: "beta"})
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("SumVariant", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &SumVariant{}
-		subject.Name = "alpha"
-		subject.FieldsSlot().Append(&Field{Name: "beta"})
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 2, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &SumVariant{}
+			subject.Name = "alpha"
+			subject.FieldsSlot().Append(&Field{Name: "beta"})
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 2, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindSumVariant,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindSumVariant,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 2; stop++ {
+				subject := &SumVariant{}
+				subject.Name = "alpha"
+				subject.FieldsSlot().Append(&Field{Name: "beta"})
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Field", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Field{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 1, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Field{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindField,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindField,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 1; stop++ {
+				subject := &Field{}
+				subject.Name = "alpha"
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Variable", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Variable{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 1, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Variable{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindVariable,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindVariable,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 1; stop++ {
+				subject := &Variable{}
+				subject.Name = "alpha"
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Constant", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Constant{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 1, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Constant{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindConstant,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindConstant,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 1; stop++ {
+				subject := &Constant{}
+				subject.Name = "alpha"
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Struct", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Struct{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-		subject.FieldsSlot().Append(&Field{Name: "beta"})
-		subject.MethodsSlot().Append(&Method{Name: "beta"})
-		subject.TypesSlot().Append(&Struct{Name: "beta"})
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 5, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Struct{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+			subject.FieldsSlot().Append(&Field{Name: "beta"})
+			subject.MethodsSlot().Append(&Method{Name: "beta"})
+			subject.TypesSlot().Append(&Struct{Name: "beta"})
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 5, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindStruct,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindStruct,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 5; stop++ {
+				subject := &Struct{}
+				subject.Name = "alpha"
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+				subject.FieldsSlot().Append(&Field{Name: "beta"})
+				subject.MethodsSlot().Append(&Method{Name: "beta"})
+				subject.TypesSlot().Append(&Struct{Name: "beta"})
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Interface", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Interface{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-		subject.FieldsSlot().Append(&Field{Name: "beta"})
-		subject.MethodsSlot().Append(&Method{Name: "beta"})
-		subject.TypesSlot().Append(&Interface{Name: "beta"})
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 5, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Interface{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+			subject.FieldsSlot().Append(&Field{Name: "beta"})
+			subject.MethodsSlot().Append(&Method{Name: "beta"})
+			subject.TypesSlot().Append(&Interface{Name: "beta"})
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 5, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindInterface,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindInterface,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 5; stop++ {
+				subject := &Interface{}
+				subject.Name = "alpha"
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+				subject.FieldsSlot().Append(&Field{Name: "beta"})
+				subject.MethodsSlot().Append(&Method{Name: "beta"})
+				subject.TypesSlot().Append(&Interface{Name: "beta"})
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("Alias", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &Alias{}
-		subject.Name = "alpha"
-		subject.Visibility = symbol.VisibilityInternal
-		subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 2, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &Alias{}
+			subject.Name = "alpha"
+			subject.Visibility = symbol.VisibilityInternal
+			subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 2, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindAlias,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindAlias,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 2; stop++ {
+				subject := &Alias{}
+				subject.Name = "alpha"
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{Name: "beta"})
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("TypeParam", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &TypeParam{}
-		subject.Name = "alpha"
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), 1, "every declared name visits once")
-		assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
-		for i, h := range hosts {
-			if i == 0 {
-				continue
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &TypeParam{}
+			subject.Name = "alpha"
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), 1, "every declared name visits once")
+			assert.Equal(t, subject.Name, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			for i, h := range hosts {
+				if i == 0 {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.KindTypeParam,
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.KindTypeParam,
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= 1; stop++ {
+				subject := &TypeParam{}
+				subject.Name = "alpha"
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 
 	t.Run("propagates the hook's error", func(t *testing.T) {

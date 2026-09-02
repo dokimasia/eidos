@@ -25,7 +25,8 @@ func stated(s symbol.Symbol) (hosts []symbol.Symbol, kinds []symbol.Kind, facts 
 
 // Every stated fact arrives through the traversal: nothing from a
 // zero declaration, each fact alone when its field alone is set,
-// and a member's fact under its host.
+// and a member's fact under its host. Every descent field is filled
+// in turn, because each is its own recursion in the traversal.
 func TestFacts(t *testing.T) {
 	t.Parallel()
 
@@ -89,6 +90,7 @@ func TestFacts(t *testing.T) {
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
+			// stated in Function.Params
 			subject := &Function{}
 			child := &Param{}
 			child.Label = "x"
@@ -243,10 +245,24 @@ func TestFacts(t *testing.T) {
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
+			// stated in Method.Receiver
 			subject := &Method{}
 			child := &Param{}
 			child.Label = "x"
 			subject.Receiver = child
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the child's fact arrives")
+			assert.Equal(t, kinds[0], symbol.KindParam, "under the child's kind")
+			assert.Equal(t, facts[0], symbol.FactLabel, "as itself")
+			assert.True(t, hosts[0] == symbol.Symbol(subject),
+				"a member's host is its enclosing declaration")
+		}
+		{
+			// stated in Method.Params
+			subject := &Method{}
+			child := &Param{}
+			child.Label = "x"
+			subject.Params = append(subject.Params, child)
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the child's fact arrives")
 			assert.Equal(t, kinds[0], symbol.KindParam, "under the child's kind")
@@ -375,6 +391,7 @@ func TestFacts(t *testing.T) {
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
+			// stated in Enum.Variants
 			subject := &Enum{}
 			child := &EnumVariant{}
 			child.Value = "x"
@@ -455,6 +472,7 @@ func TestFacts(t *testing.T) {
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
+			// stated in Sum.Variants
 			subject := &Sum{}
 			child := &SumVariant{}
 			child.Annotations = symbol.Annotations{{}}
@@ -483,6 +501,7 @@ func TestFacts(t *testing.T) {
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
+			// stated in SumVariant.Fields
 			subject := &SumVariant{}
 			child := &Field{}
 			child.Comment = "x"
@@ -784,6 +803,7 @@ func TestFacts(t *testing.T) {
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
+			// stated in Struct.Fields
 			subject := &Struct{}
 			child := &Field{}
 			child.Comment = "x"
@@ -792,6 +812,19 @@ func TestFacts(t *testing.T) {
 			assert.Length(t, facts, 1, "the child's fact arrives")
 			assert.Equal(t, kinds[0], symbol.KindField, "under the child's kind")
 			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == symbol.Symbol(subject),
+				"a member's host is its enclosing declaration")
+		}
+		{
+			// stated in Struct.Methods
+			subject := &Struct{}
+			child := &Method{}
+			child.Visibility = 1
+			subject.MethodsSlot().Append(child)
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the child's fact arrives")
+			assert.Equal(t, kinds[0], symbol.KindMethod, "under the child's kind")
+			assert.Equal(t, facts[0], symbol.FactVisibility, "as itself")
 			assert.True(t, hosts[0] == symbol.Symbol(subject),
 				"a member's host is its enclosing declaration")
 		}
@@ -884,6 +917,7 @@ func TestFacts(t *testing.T) {
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 		{
+			// stated in Interface.Methods
 			subject := &Interface{}
 			child := &Method{}
 			child.Visibility = 1

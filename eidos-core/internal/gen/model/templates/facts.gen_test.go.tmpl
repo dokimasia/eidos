@@ -19,7 +19,8 @@ func stated(s symbol.Symbol) (hosts []symbol.Symbol, kinds []symbol.Kind, facts 
 
 // Every stated fact arrives through the traversal: nothing from a
 // zero declaration, each fact alone when its field alone is set,
-// and a member's fact under its host.
+// and a member's fact under its host. Every descent field is filled
+// in turn, because each is its own recursion in the traversal.
 func TestFacts(t *testing.T) {
 	t.Parallel()
 {{- range .Views}}
@@ -42,8 +43,9 @@ func TestFacts(t *testing.T) {
 			assert.True(t, hosts[0] == nil, "the top level has no host")
 		}
 {{- end}}
-{{- with .FactChild}}
+{{- range .FactChildren}}
 		{
+			// stated in {{$v.Name}}.{{.Field}}
 			subject := &{{$v.Name}}{}
 			{{- range .Stmts}}
 			{{.}}

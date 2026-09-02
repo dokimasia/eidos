@@ -5,43 +5,131 @@ import (
 	"go.dokimi.dev/assert"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// subjectPlugin is the identity every plugin here declares under.
+const subjectPlugin = "subjects"
+
+// dispatched runs p's generate phase over a graph holding pkgs, and
+// fails the test unless the phase call passes. It is what puts a
+// rule in front of real subjects rather than in front of its own
+// declaration.
+func dispatched(tb assert.TB, p plugin.Plugin, pkgs ...*node.Package) {
+	tb.Helper()
+
+	facts := meta.NewFacts(meta.NewRegistry())
+	ix, err := plugin.NewIndex(coretest.Frozen(tb, pkgs...), facts, nil, nil)
+	assert.NoError(tb, err, "the routing surface builds")
+	gen, generates := p.(plugin.Generator)
+	assert.True(tb, generates, "an emitter handler makes a generator")
+	assert.NoError(tb, gen.Generate(&plugin.GeneratorContext{
+		Index: ix, Facts: facts, Emit: plugin.NewEmit(),
+		Sink: diag.NewSink(), Plugin: subjectPlugin, Bucket: 1,
+	}), "the phase call passes")
+}
+
 // Every subject kind's constructor lowers one way: the effect
 // parameter picks the phase, the record carries the kind, and the
-// roles a plugin asserts are exactly what its handlers imply.
+// handler sees the subjects of its kind and nothing else. The
+// fixtures come from the every-kind package, so a kind the lowering
+// grows and the fixture does not is a compile error rather than a
+// case that passes over a rule which never fired.
 func TestMatches(t *testing.T) {
 	t.Parallel()
 {{- range .Views}}
 {{- if .Subject}}
 
-	t.Run("{{.Name}}", func(t *testing.T) {
+	t.Run("On{{.Name}}", func(t *testing.T) {
 		t.Parallel()
 
-		emits := eidos.NewPlugin("t").
-			Handle(eidos.On{{.Name}}(func(m *eidos.{{.Name}}Match, e *eidos.Emitter) error {
-				return nil
-			})).
-			Build()
-		_, generates := emits.(plugin.Generator)
-		assert.True(t, generates, "an emitter handler makes a generator")
-		subscribed, held := emits.(plugin.Subscribed)
-		assert.True(t, held, "a built plugin declares its gates")
-		assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{ {
-			Kind: symbol.Kind{{.Name}}, Phase: plugin.PhaseGenerate,
-		} }, "the record carries the trigger's kind in the generate phase")
+		t.Run("fires once per subject of its kind", func(t *testing.T) {
+			t.Parallel()
 
-		stamps := eidos.NewPlugin("t").
-			Handle(eidos.On{{.Name}}(func(m *eidos.{{.Name}}Match, st *eidos.Stamper) error {
-				return nil
-			})).
-			Build()
-		_, annotates := stamps.(plugin.Annotator)
-		assert.True(t, annotates, "a stamper handler makes an annotator")
-		_, alsoGenerates := stamps.(plugin.Generator)
-		assert.False(t, alsoGenerates, "and only an annotator")
+			store := coretest.EveryKind(coretest.StorePath)
+			cache := coretest.EveryKind(coretest.CachePath)
+			want := coretest.KindCount(symbol.Kind{{.Name}}, store, cache)
+			assert.True(t, want > 1,
+				"the fixture holds more than one {{.Name}}, so one rule meets several")
+
+			var subjects []symbol.Identity
+			var handles []*eidos.{{.Name}}Match
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.On{{.Name}}(func(m *eidos.{{.Name}}Match, e *eidos.Emitter) error {
+					subjects = append(subjects, m.{{.Name}}.{{.IDStorage}})
+					handles = append(handles, m)
+					return nil
+				})).
+				Build(), store, cache)
+
+			assert.Length(t, subjects, want,
+				"the rule fires once per {{.Name}} the graph holds")
+			assert.Contains(t, subjects,
+				coretest.ID(coretest.StorePath, coretest.{{.Name}}Name, symbol.Kind{{.Name}}),
+				"and the match carries the declaration, not only its identity")
+			for _, id := range subjects {
+				assert.Equal(t, id.Kind, symbol.Kind{{.Name}},
+					"every subject a rule receives is of its own kind")
+			}
+			for _, m := range handles {
+				assert.True(t, m == handles[0],
+					"one match serves every invocation of the rule, which is what "+
+						"holds an invocation at zero steady-state allocations")
+			}
+		})
+
+		t.Run("passes over a value that is not its kind's type", func(t *testing.T) {
+			t.Parallel()
+
+			fired := false
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.On{{.Name}}(func(m *eidos.{{.Name}}Match, e *eidos.Emitter) error {
+					fired = true
+					return nil
+				})).
+				Build(),
+				coretest.Package(coretest.StorePath, coretest.Foreign(
+					coretest.StorePath, coretest.ForeignName, symbol.Kind{{.Name}})))
+			assert.False(t, fired,
+				"a declaration indexed under the kind that is not this model's "+
+					"type for it never reaches the handler")
+		})
+
+		t.Run("an emitter handler declares the generate phase", func(t *testing.T) {
+			t.Parallel()
+
+			emits := eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.On{{.Name}}(func(m *eidos.{{.Name}}Match, e *eidos.Emitter) error {
+					return nil
+				})).
+				Build()
+			_, generates := emits.(plugin.Generator)
+			assert.True(t, generates, "an emitter handler makes a generator")
+			subscribed, held := emits.(plugin.Subscribed)
+			assert.True(t, held, "a built plugin declares its gates")
+			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{ {
+				Kind: symbol.Kind{{.Name}}, Phase: plugin.PhaseGenerate,
+			} }, "the record carries the trigger's kind in the generate phase")
+		})
+
+		t.Run("a stamper handler annotates alone", func(t *testing.T) {
+			t.Parallel()
+
+			stamps := eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.On{{.Name}}(func(m *eidos.{{.Name}}Match, st *eidos.Stamper) error {
+					return nil
+				})).
+				Build()
+			_, annotates := stamps.(plugin.Annotator)
+			assert.True(t, annotates, "a stamper handler makes an annotator")
+			_, alsoGenerates := stamps.(plugin.Generator)
+			assert.False(t, alsoGenerates, "and only an annotator")
+		})
 	})
 {{- end}}
 {{- end}}

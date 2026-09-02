@@ -116,6 +116,31 @@ func TestWalk(t *testing.T) {
 {{- end}}
 {{- end}}
 		})
+
+		t.Run("stops the walk and not one subtree", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+{{- if ge .WalkVisits 3}}
+
+			{
+				subject := &{{.Name}}{}
+{{- range .Children}}
+				{{.}}
+{{- end}}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+{{- end}}
+{{- end}}
+		})
 	})
 {{- if .Originated}}
 

@@ -29,43 +29,78 @@ func TestRespellNames(t *testing.T) {
 	t.Run("{{.Name}}", func(t *testing.T) {
 		t.Parallel()
 
-		subject := &{{.Name}}{}
+		t.Run("visits every declared name it reaches", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &{{.Name}}{}
 {{- if .NameStorage}}
-		subject.{{.NameStorage}} = "alpha"
+			subject.{{.NameStorage}} = "alpha"
 {{- end}}
 {{- if and .NameStorage .VisStorage}}
-		subject.{{.VisStorage}} = symbol.VisibilityInternal
+			subject.{{.VisStorage}} = symbol.VisibilityInternal
 {{- end}}
 {{- range .NameChildren}}
-		{{.}}
+			{{.}}
 {{- end}}
-		var hosts []symbol.Kind
-		var seen []symbol.Visibility
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				hosts = append(hosts, hostKind(host))
-				seen = append(seen, v)
-				return strings.ToUpper(name), nil
-			})
-		assert.NoError(t, err, "the traversal completes")
-		assert.Equal(t, len(hosts), {{.NameVisits}}, "every declared name visits once")
+			var hosts []symbol.Kind
+			var seen []symbol.Visibility
+			err := RespellNames(subject,
+				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					hosts = append(hosts, hostKind(host))
+					seen = append(seen, v)
+					return strings.ToUpper(name), nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			assert.Equal(t, len(hosts), {{.NameVisits}}, "every declared name visits once")
 {{- if .NameStorage}}
-		assert.Equal(t, subject.{{.NameStorage}}, "ALPHA", "the settled spelling writes back")
-		assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
+			assert.Equal(t, subject.{{.NameStorage}}, "ALPHA", "the settled spelling writes back")
+			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 {{- if .VisStorage}}
-		assert.Equal(t, seen[0], symbol.VisibilityInternal,
-			"the carrier's visibility reaches the hook")
+			assert.Equal(t, seen[0], symbol.VisibilityInternal,
+				"the carrier's visibility reaches the hook")
 {{- end}}
 {{- end}}
-		for i, h := range hosts {
-			if {{if .NameStorage}}i == 0{{else}}false{{end}} {
-				continue
+			for i, h := range hosts {
+				if {{if .NameStorage}}i == 0{{else}}false{{end}} {
+					continue
+				}
+				_ = i
+				assert.Equal(t, h, symbol.Kind{{.Name}},
+					"a member's host is its enclosing kind")
 			}
-			_ = i
-			assert.Equal(t, h, symbol.Kind{{.Name}},
-				"a member's host is its enclosing kind")
-		}
-		_ = seen
+			_ = seen
+		})
+
+		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+			t.Parallel()
+
+			// The hook refuses at each visit in turn, so every place
+			// the traversal can return an error from is one of these
+			// rounds: the carrier's own name, then one per descent.
+			boom := errors.New("boom")
+			for stop := 1; stop <= {{.NameVisits}}; stop++ {
+				subject := &{{.Name}}{}
+{{- if .NameStorage}}
+				subject.{{.NameStorage}} = "alpha"
+{{- end}}
+{{- range .NameChildren}}
+				{{.}}
+{{- end}}
+				calls := 0
+				err := RespellNames(subject,
+					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+						calls++
+						if calls == stop {
+							return "", boom
+						}
+						return strings.ToUpper(name), nil
+					})
+				assert.True(t, errors.Is(err, boom),
+					"the refusal returns from however deep it was raised")
+				assert.Equal(t, calls, stop,
+					"and no name after it is offered: the first error stops the traversal")
+			}
+		})
 	})
 {{- end}}
 {{- end}}

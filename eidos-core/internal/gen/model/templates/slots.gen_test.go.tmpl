@@ -1,0 +1,38 @@
+{{template "header" .}}
+import (
+	"testing"
+
+	"go.dokimi.dev/assert"
+)
+
+// A slot accessor is the composition seam between plugins, so what
+// it hands back is contract: the value's own storage, never a copy
+// and never nil.
+func TestSlots(t *testing.T) {
+	t.Parallel()
+{{- range .Views}}{{$v := .}}
+{{- range .Slots}}
+
+	t.Run("{{$v.Name}}.{{.Accessor}}", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("hands back the value's own storage", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &{{$v.Name}}{}
+			slot := subject.{{.Accessor}}()
+			assert.NotNil(t, slot,
+				"the slot is part of the value, so the accessor never returns nil")
+			assert.Equal(t, slot.Len(), 0, "and an untouched slot holds nothing")
+
+			slot.Append({{.Child}})
+			assert.Equal(t, subject.{{.Storage}}.Len(), 1,
+				"what a plugin appends through the accessor is what the value holds")
+			assert.True(t, slot == subject.{{.Accessor}}(),
+				"and a second call addresses the same storage, so two plugins "+
+					"appending through it append into one list")
+		})
+	})
+{{- end}}
+{{- end}}
+}

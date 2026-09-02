@@ -2,11 +2,32 @@
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// errRefused is what [refusing] answers with, so a case can tell an
+// encoder's own fault from anything the codec added.
+var errRefused = errors.New("{{.Package}}: the encoder refused")
+
+// refusing is a declaration whose encoder always fails.
+//
+// Every kind in the model encodes, so nothing built from the model
+// reaches the encode path's error return; a declaration from outside
+// it is the only thing that does.
+type refusing struct{}
+
+func (refusing) Kind() symbol.Kind      { return symbol.Kind{{(index .Views 0).Name}} }
+func (refusing) Position() position.Pos { return position.Pos{} }
+func (refusing) Docs() []string         { return nil }
+
+// MarshalJSON refuses, which is what puts an encoder fault in front
+// of [EncodeJSON].
+func (refusing) MarshalJSON() ([]byte, error) { return nil, errRefused }
 
 func TestSymbols(t *testing.T) {
 	t.Parallel()
@@ -44,6 +65,37 @@ func TestSymbols(t *testing.T) {
 			assert.NoError(t, err, "a concrete field marshals through its tags")
 			assert.NotContains(t, string(encoded), `"kind"`,
 				"and needs no discriminator")
+		})
+
+		t.Run("returns the fault a declaration's own encoder raised", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := EncodeJSON(refusing{})
+			assert.ErrorIs(t, err, errRefused, "the encoder's fault returns")
+			assert.Contains(t, err.Error(), "{{.Package}}: encode ",
+				"named for the package and the kind it was encoding")
+		})
+	})
+
+	t.Run("MarshalJSON", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("carries the kind on every element", func(t *testing.T) {
+			t.Parallel()
+
+			encoded, err := Symbols{&{{(index .Views 0).Name}}{}}.MarshalJSON()
+			assert.NoError(t, err, "the list encodes")
+			assert.Contains(t, string(encoded), `"kind":"{{(index .Views 0).Name}}"`,
+				"each element in front of the fields its own tags produce")
+		})
+
+		t.Run("returns the fault an element raised", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := Symbols{refusing{}}.MarshalJSON()
+			assert.ErrorIs(t, err, errRefused,
+				"one element the encoder refuses fails the whole list, "+
+					"rather than encoding a list missing an entry")
 		})
 	})
 

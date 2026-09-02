@@ -1318,6 +1318,175 @@ func TestWalk(t *testing.T) {
 					"the iteration stops when the range stops")
 			}
 		})
+
+		t.Run("stops the walk and not one subtree", func(t *testing.T) {
+			t.Parallel()
+
+			{
+				subject := &Function{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				subject.Throws = append(subject.Throws, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &Method{}
+				subject.Receiver = &Param{}
+				subject.Receives = &TypeRef{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Params = append(subject.Params, &Param{})
+				subject.Returns = append(subject.Returns, &Return{})
+				subject.Throws = append(subject.Throws, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &File{}
+				subject.Imports = append(subject.Imports, &Import{})
+				subject.Exports = append(subject.Exports, &Export{})
+				subject.Decls = append(subject.Decls, &File{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &Enum{}
+				subject.Variants = append(subject.Variants, &EnumVariant{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &Sum{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Variants = append(subject.Variants, &SumVariant{})
+				subject.Methods = append(subject.Methods, &Method{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &Struct{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				subject.Types = append(subject.Types, &Struct{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Implements = append(subject.Implements, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &Interface{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				subject.Types = append(subject.Types, &Interface{})
+				subject.Embeds = append(subject.Embeds, &Embed{})
+				subject.Extends = append(subject.Extends, &TypeRef{})
+				subject.Permits = append(subject.Permits, &TypeRef{})
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &Alias{}
+				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
+				subject.Target = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &TypeParam{}
+				subject.Bounds = append(subject.Bounds, &TypeRef{})
+				subject.Default = &TypeRef{}
+				subject.Type = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+		})
 	})
 
 	t.Run("Declarations", func(t *testing.T) {

@@ -154,10 +154,10 @@ type view struct {
 	// set.
 	Facts      []factView
 	FactWalked []fieldView
-	// FactChild builds one child stating one fact and says what the
-	// traversal yields for it; nil where no descent field reaches a
-	// fact-carrying kind.
-	FactChild *factChildView
+	// FactChildren build one child stating one fact per descent
+	// field that reaches a fact-carrying kind, and say what the
+	// traversal yields for each; empty where no descent field does.
+	FactChildren []factChildView
 	// Malformed is an encoding naming this kind whose first field
 	// holds the wrong JSON type, so a decoder places the kind and
 	// then fails on its body.
@@ -192,6 +192,9 @@ type factView struct {
 // factChildView is the statements a test uses to give a subject
 // one child stating one fact, with what the traversal then yields.
 type factChildView struct {
+	// Field is the descent field the child sits in, which names the
+	// generated case.
+	Field string
 	Stmts []string
 	Kind  string
 	Fact  string
@@ -224,8 +227,10 @@ type fieldView struct {
 	Slice   bool
 	Pointer bool
 	// Accessor is the exported slot method, empty when the field is
-	// not a slot.
+	// not a slot, and Child the expression constructing one value
+	// the slot admits.
 	Accessor string
+	Child    string
 	// JSONName is the field's key in encoded form.
 	JSONName string
 	// JSONType is the type the codec's shadow struct declares. A
@@ -290,7 +295,7 @@ func fillFacts(kinds []KindSpec, side string, views []view) {
 		}
 	}
 	for i, k := range kinds {
-		views[i].FactChild = factChildOf(k, first, side)
+		views[i].FactChildren = factChildrenOf(k, first, side)
 	}
 }
 
@@ -386,13 +391,17 @@ func factSetter(field FieldSpec, f fieldView, receiver, enclosing string) string
 	return "" // gofmt refuses the rendered file, naming the fault
 }
 
-// factChildOf writes the statements giving a subject one child
-// stating one fact, through the first descent field whose element
-// states one directly, and says what the traversal yields for it.
-// A descent field that is itself fact-tagged is passed over,
-// because filling it would state the subject's own fact beside the
-// child's.
-func factChildOf(k KindSpec, first map[string]factView, side string) *factChildView {
+// factChildrenOf writes, for every descent field whose element
+// states a fact directly, the statements giving a subject one child
+// stating it, and says what the traversal yields for that child. A
+// descent field that is itself fact-tagged is passed over, because
+// filling it would state the subject's own fact beside the child's.
+//
+// Every such field gets an entry rather than only the first: each is
+// its own recursion in the generated traversal, and a field no case
+// fills is a descent nothing holds.
+func factChildrenOf(k KindSpec, first map[string]factView, side string) []factChildView {
+	var out []factChildView
 	for _, f := range k.Fields {
 		if !f.Walk || !f.Side.OnEmit() || f.Fact != "" {
 			continue
@@ -420,9 +429,11 @@ func factChildOf(k KindSpec, first map[string]factView, side string) *factChildV
 		default:
 			stmts = append(stmts, target+" = child")
 		}
-		return &factChildView{Stmts: stmts, Kind: elem, Fact: fv.Fact}
+		out = append(out, factChildView{
+			Field: field.Name, Stmts: stmts, Kind: elem, Fact: fv.Fact,
+		})
 	}
-	return nil
+	return out
 }
 
 // factsOf collects the fact constant suffixes the schema declares,
@@ -536,6 +547,7 @@ func viewOf(kind KindSpec, side string, reach map[string]bool, named map[string]
 			}
 		}
 		if f.Accessor != "" {
+			f.Child = childOf(f, kind.Name)
 			v.Slots = append(v.Slots, f)
 		}
 	}
@@ -610,11 +622,7 @@ func childrenOf(v view) (stmts []string, visits int) {
 	visits = 1
 	const subject = "subject"
 	for _, f := range v.Walked {
-		named := v.Name
-		if f.Elem != "" {
-			named = f.Elem
-		}
-		child := addressOf + named + zeroLiteral
+		child := childOf(f, v.Name)
 		target := subject + "." + f.Storage
 		switch {
 		case f.Accessor != "":
@@ -628,6 +636,18 @@ func childrenOf(v view) (stmts []string, visits int) {
 		visits++
 	}
 	return stmts, visits
+}
+
+// childOf writes the expression constructing one value a field
+// holds: the kind it references, or the enclosing kind for a
+// marker-typed field, which admits any kind and so is always
+// satisfied by the value that carries it.
+func childOf(f fieldView, enclosing string) string {
+	elem := f.Elem
+	if elem == "" {
+		elem = enclosing
+	}
+	return addressOf + elem + zeroLiteral
 }
 
 // membersOf returns the Membered methods a kind implements. It
