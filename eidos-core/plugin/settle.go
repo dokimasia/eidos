@@ -482,13 +482,18 @@ func applyNames(
 			}
 			at, warned = 0, nil
 			_ = emit.RespellNames(d, apply)
-			hosts := slices.SortedFunc(maps.Keys(warned), func(a, b symbol.Symbol) int {
-				return strings.Compare(pinnedName(a), pinnedName(b))
-			})
-			for _, host := range hosts {
-				sink.Errorf(VerbatimParams, unitPos(u), by,
-					"a verbatim body pins its parameter names, and one on %s "+
-						"would have respelled", pinnedName(host))
+			if len(warned) > 0 {
+				// Sorted for one finding order; the collect runs only
+				// where a pin met a rename, so the clean path allocates
+				// nothing here.
+				hosts := slices.SortedFunc(maps.Keys(warned), func(a, b symbol.Symbol) int {
+					return strings.Compare(pinnedName(a), pinnedName(b))
+				})
+				for _, host := range hosts {
+					sink.Errorf(VerbatimParams, unitPos(u), by,
+						"a verbatim body pins its parameter names, and one on %s "+
+							"would have respelled", pinnedName(host))
+				}
 			}
 			kept = append(kept, d)
 		}

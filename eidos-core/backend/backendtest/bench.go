@@ -319,6 +319,7 @@ func scaledDecl(k symbol.Kind, n int) symbol.Symbol {
 			Origin:  originOf("limit"+i, symbol.KindConstant),
 			Comment: "rows per call",
 			Name:    "limit" + i,
+			Type:    typeRef("int32"),
 			Value:   "8",
 		}
 	default: // symbol.KindVariable, by canonicalKinds
