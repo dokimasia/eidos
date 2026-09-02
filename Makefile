@@ -16,6 +16,20 @@
 
 ERGON ?= ergon
 
+# What holds the mutation run inside its own memory. A mutant can
+# turn a bounded loop unbounded, and a test binary allocating without
+# limit reaches tens of gigabytes long before any timeout fires: one
+# directive.test reached 32 GB and the global OOM killer took the
+# desktop session down with it.
+#
+# GOMEMLIMIT is what actually saves the run: the Go runtime collects
+# instead of growing, so a runaway mutant thrashes and gremlins times
+# it out and records it. The scope is the backstop for anything that
+# limit cannot hold, and it keeps the kernel reaping inside the run
+# rather than across the session.
+MUTATION_MEMORY ?= 24G
+MUTATION_GOMEMLIMIT ?= 2GiB
+
 help: ## Show this help (auto-generated from per-target annotations)
 	@awk 'BEGIN {FS = ":.*?## "; printf "Targets:\n"} \
 		/^[a-zA-Z][a-zA-Z_-]*:.*?## / {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}' \
@@ -82,13 +96,25 @@ bench-profile: ## Collect CPU+mem pprof artefacts (PATTERN=. PACKAGE=./... MODUL
 		$(if $(TIME),--time=$(TIME),) $(FLAGS)
 
 check: ## Run the umbrella pre-merge gate (mod, lint, test, coverage, ...; --only / --skip to narrow)
-	$(ERGON) check
+	@if command -v systemd-run >/dev/null 2>&1; then \
+		systemd-run --user --scope --quiet -p MemoryMax=$(MUTATION_MEMORY) \
+			-p MemorySwapMax=0 --setenv=GOMEMLIMIT=$(MUTATION_GOMEMLIMIT) -- \
+			$(ERGON) check; \
+	else \
+		GOMEMLIMIT=$(MUTATION_GOMEMLIMIT) $(ERGON) check; \
+	fi
 check-coverage: ## Enforce per-layer coverage thresholds
 	$(ERGON) check coverage
 check-uncovered: ## List every uncovered line across the tree (ignores layer config + excludes)
 	$(ERGON) check coverage uncovered
-check-mutation: ## Run gremlins mutation testing per layer, naming survivors (slow)
-	$(ERGON) check mutation --mutants
+check-mutation: ## Run gremlins mutation testing per layer, naming survivors (slow, memory-capped)
+	@if command -v systemd-run >/dev/null 2>&1; then \
+		systemd-run --user --scope --quiet -p MemoryMax=$(MUTATION_MEMORY) \
+			-p MemorySwapMax=0 --setenv=GOMEMLIMIT=$(MUTATION_GOMEMLIMIT) -- \
+			$(ERGON) check mutation --mutants; \
+	else \
+		GOMEMLIMIT=$(MUTATION_GOMEMLIMIT) $(ERGON) check mutation --mutants; \
+	fi
 check-branch: ## Run gobco branch-coverage gating per layer (slow)
 	$(ERGON) check branch
 

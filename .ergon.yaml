@@ -79,6 +79,10 @@ checks:
 
   mutation:
     packages:
+      # The kernel's root package takes no entry: a path of
+      # eidos-core/ selects the whole module, so it re-mutates every
+      # layer below at once. Its own files stay unmeasured until a
+      # path form that stops at the package exists.
       - path: eidos-core/symbol/...
         score: 80
         coverage: 80
@@ -111,6 +115,20 @@ checks:
         score: 80
         coverage: 80
       - path: eidos-core/plugin/...
+        score: 80
+        coverage: 80
+      - path: eidos-core/backend/...
+        score: 80
+        coverage: 80
+      # frontend kills every mutant its tests reach, so its floor
+      # sits above the rest with room for ordinary work. What it
+      # does not reach is the scripted stand-in's statement switch:
+      # Go instruments a case body and not the case condition, so
+      # those mutants never run and never score.
+      - path: eidos-core/frontend/...
+        score: 90
+        coverage: 80
+      - path: eidos-core/workspace/...
         score: 80
         coverage: 80
     gremlins:
