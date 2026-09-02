@@ -20,9 +20,14 @@ import (
 // independently and the graph merges later.
 //
 // The rewrite runs after a file lowers, over its own declarations
-// alone, and returns what it replaced, so a stamp recorded against
-// the defined type re-homes onto the enum that stands for it.
-func promoteEnums(file *node.File) map[*node.Alias]*node.Enum {
+// alone, and returns what it replaced two ways: the alias→enum map
+// the deferred underlying stamps read, and the full consumed→
+// standing map the caller re-homes recorded attachments and stamps
+// through, so authored intent follows the declaration that stands.
+// Folded methods keep their own nodes and need no re-homing.
+func promoteEnums(
+	file *node.File,
+) (map[*node.Alias]*node.Enum, map[symbol.Symbol]symbol.Symbol) {
 	aliases := map[string]*node.Alias{}
 	for _, decl := range file.Decls {
 		if alias, is := decl.(*node.Alias); is && alias.Defined && basicUnderlying(alias) {
@@ -30,11 +35,12 @@ func promoteEnums(file *node.File) map[*node.Alias]*node.Enum {
 		}
 	}
 	if len(aliases) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	variants := map[string][]*node.EnumVariant{}
 	consumed := map[symbol.Symbol]bool{}
+	moved := map[symbol.Symbol]symbol.Symbol{}
 	for _, decl := range file.Decls {
 		c, is := decl.(*node.Constant)
 		if !is || c.Type == nil || len(c.Type.Args) > 0 {
@@ -44,15 +50,17 @@ func promoteEnums(file *node.File) map[*node.Alias]*node.Enum {
 		if !matches {
 			continue
 		}
-		variants[alias.Name] = append(variants[alias.Name], &node.EnumVariant{
+		variant := &node.EnumVariant{
 			Pos: c.Pos, Doc: c.Doc, Name: c.Name,
 			Value:       c.Value,
 			Annotations: c.Annotations,
-		})
+		}
+		variants[alias.Name] = append(variants[alias.Name], variant)
 		consumed[c] = true
+		moved[c] = variant
 	}
 	if len(consumed) == 0 {
-		return nil
+		return nil, nil
 	}
 
 	methods := map[string][]*node.Method{}
@@ -86,10 +94,11 @@ func promoteEnums(file *node.File) map[*node.Alias]*node.Enum {
 			Annotations: alias.Annotations,
 		}
 		promoted[alias] = enum
+		moved[alias] = enum
 		out = append(out, enum)
 	}
 	file.Decls = out
-	return promoted
+	return promoted, moved
 }
 
 // basicUnderlying reports whether a defined type's target is one

@@ -40,6 +40,20 @@ func TestSplit(t *testing.T) {
 		assert.Equal(t, d.Doc, []string{"D holds."}, "and is not documentation")
 	})
 
+	t.Run("folds a continuation across the group's comments", func(t *testing.T) {
+		t.Parallel()
+
+		gb := parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\n// D holds.\n// +gen:out user.go \\\n// plugin=buildergen\nvar D int\n")
+		assert.Length(t, gb.Attachments(), 1, "one folded instance attaches")
+		raw := gb.Attachments()[0].Raw
+		assert.Equal(t, string(raw.Name), "gen:out", "under its own name")
+		assert.Length(t, raw.Args, 2, "the continued line's argument arrives joined")
+		d := onlyFile(t, gb).Decls[0].(*node.Variable)
+		assert.Equal(t, d.Doc, []string{"D holds."},
+			"the continuation lines are spent, not documentation")
+	})
+
 	t.Run("keeps a carrier whose name begins with build", func(t *testing.T) {
 		t.Parallel()
 

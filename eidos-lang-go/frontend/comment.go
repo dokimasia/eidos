@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -24,15 +25,16 @@ const goBuild = "go:build"
 // split takes one comment group apart through the unit's own
 // pipeline, then filters what is Go's alone: the legacy +build
 // form out of the carriers, the go:build directive out of the
-// annotations.
+// annotations. Consecutive line comments feed the pipeline as one
+// text, so a carrier's continuation folds across them the way the
+// author reads it.
 func (l *lowered) split(u *plugin.SourceUnit, group *ast.CommentGroup) plugin.CommentParts {
 	var parts plugin.CommentParts
 	if group == nil {
 		return parts
 	}
 	l.consumed[group] = true
-	for _, c := range group.List {
-		one := u.Comment(c.Text, l.at(c.Pos()))
+	take := func(one plugin.CommentParts) {
 		for _, carried := range one.Carriers {
 			if carried.Payload == legacyBuild ||
 				strings.HasPrefix(carried.Payload, legacyBuild+" ") {
@@ -48,6 +50,26 @@ func (l *lowered) split(u *plugin.SourceUnit, group *ast.CommentGroup) plugin.Co
 		}
 		parts.Docs = append(parts.Docs, one.Docs...)
 	}
+	var run []string
+	var runAt position.Pos
+	flush := func() {
+		if len(run) > 0 {
+			take(u.Comment(strings.Join(run, "\n"), runAt))
+			run = run[:0]
+		}
+	}
+	for _, c := range group.List {
+		if strings.HasPrefix(c.Text, "//") {
+			if len(run) == 0 {
+				runAt = l.at(c.Pos())
+			}
+			run = append(run, c.Text)
+			continue
+		}
+		flush()
+		take(u.Comment(c.Text, l.at(c.Pos())))
+	}
+	flush()
 	return parts
 }
 

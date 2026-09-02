@@ -70,6 +70,25 @@ func fixture(tb assert.TB) *store.Graph {
 			Type: &node.TypeRef{Spelling: "[]int"},
 		}},
 	}
+	leaky := &node.Struct{
+		ID: id("", "Leaky", symbol.KindStruct), Name: "Leaky",
+		Embeds: []*node.Embed{{
+			Ref: &node.TypeRef{Spelling: "Slippery", Target: slippery.ID},
+		}},
+	}
+	holder := &node.Struct{
+		ID: id("", "Holder", symbol.KindStruct), Name: "Holder",
+		Fields: []*node.Field{{
+			ID: id("Holder", "h", symbol.KindField), Name: "h",
+			Type: &node.TypeRef{Spelling: "interfaceHolder"},
+		}},
+	}
+	nested := &node.Interface{
+		ID: id("", "Nested", symbol.KindInterface), Name: "Nested",
+		Embeds: []*node.Embed{{
+			Ref: &node.TypeRef{Spelling: "Stringish", Target: stringer.ID},
+		}},
+	}
 
 	g := store.New()
 	assert.NoError(tb, g.AddPackage(&node.Package{
@@ -80,6 +99,7 @@ func fixture(tb assert.TB) *store.Graph {
 			Path: "fix/a.go",
 			Decls: node.Symbols{
 				stringer, failer, errMethod, wrapper, flat, slippery,
+				leaky, holder, nested,
 			},
 		}},
 	}), "the fixture loads")
@@ -104,10 +124,14 @@ func TestNew(t *testing.T) {
 	assert.NoError(t, err, "the graph indexes")
 	reader, err := index.Reader(store.NewReadSet())
 	assert.NoError(t, err, "a tracked reader mints")
+	sink := diag.NewSink()
 	assert.NoError(t, annotator.Annotate(&plugin.AnnotatorContext{
 		Index: index, Reader: reader, Facts: facts,
-		Sink: diag.NewSink(), Plugin: golang.Name, Bucket: 0,
+		Sink: sink, Plugin: golang.Name, Bucket: 0,
 	}), "the annotator runs clean")
+	for d := range sink.All() {
+		t.Errorf("the annotator reported %v, and a proof pass states nothing", d)
+	}
 
 	stamped := func(key meta.KeyName) map[string]bool {
 		out := map[string]bool{}
@@ -131,11 +155,14 @@ func TestNew(t *testing.T) {
 		assert.True(t, stringers["Wrapper"], "and the embed carries it across")
 	})
 
-	t.Run("marks interface embedding", func(t *testing.T) {
+	t.Run("marks interface embedding on structs alone", func(t *testing.T) {
 		t.Parallel()
 
-		assert.True(t, stamped(golang.EmbedsInterfaceKey)["Wrapper"],
+		embedded := stamped(golang.EmbedsInterfaceKey)
+		assert.True(t, embedded["Wrapper"],
 			"the graph holds the embed as an interface")
+		assert.False(t, embedded["Nested"],
+			"an interface embedding an interface is the norm, not a fact")
 	})
 
 	t.Run("proves comparability and refuses to guess it", func(t *testing.T) {
@@ -144,5 +171,9 @@ func TestNew(t *testing.T) {
 		provenComparable := stamped(golang.ComparableKey)
 		assert.True(t, provenComparable["Flat"], "ints and a comparable struct compare")
 		assert.False(t, provenComparable["Slippery"], "a slice field never does")
+		assert.False(t, provenComparable["Leaky"],
+			"an embedded field takes part in comparison, and its slice refuses")
+		assert.False(t, provenComparable["Holder"],
+			"an identifier merely starting with interface stays unproven")
 	})
 }

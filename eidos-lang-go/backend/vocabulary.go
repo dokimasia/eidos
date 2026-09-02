@@ -327,11 +327,14 @@ func unannotated(name string) error {
 }
 
 // Directives writes a declaration's annotations as Go directive
-// comment lines — //go:embed, //nolint — one per annotation, its
-// arguments space-joined behind the name, at the member's depth
-// where one is given. Go's directives are comments whose spelling
-// is the contract, so the annotation passes through verbatim and
-// undocumented names stay the generator's own risk.
+// comment lines — //go:embed, //nolint:gosec — one per annotation,
+// its arguments space-joined behind the name, at the member's
+// depth where one is given. Go's directives are comments whose
+// spelling is the contract, so the annotation passes through
+// verbatim and undocumented names stay the generator's own risk. A
+// name outside the tool:name shape and the legacy space forms
+// re-reads as documentation on the frontend side, which is that
+// shape's own nature.
 func Directives(as symbol.Annotations, indent ...string) string {
 	if len(as) == 0 {
 		return ""

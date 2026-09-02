@@ -27,7 +27,10 @@ func New() plugin.Annotator {
 		if facts.satisfiesStringer {
 			sdk.Stamp(st, h.SatisfiesStringer, true)
 		}
-		if facts.embedsInterface {
+		if facts.embedsInterface && m.subject().Kind == symbol.KindStruct {
+			// The key speaks for structs alone: an interface
+			// embedding an interface is the language's norm, not a
+			// fact, and the key's kind set refuses it.
 			sdk.Stamp(st, h.EmbedsInterface, true)
 		}
 		if facts.comparable {
@@ -123,7 +126,7 @@ func prove(
 			}
 		}
 	}
-	out.comparable = comparableFields(r, fields, map[symbol.Identity]bool{})
+	out.comparable = comparableShape(r, fields, embeds, map[symbol.Identity]bool{})
 	return out
 }
 
@@ -183,15 +186,23 @@ func hasNullaryString(set []*node.Method, name string) bool {
 	return false
 }
 
-// comparableFields proves every field comparable under Go's own
-// rules, or answers false the moment one is unprovable: slices,
-// maps and funcs never are, workspace types recurse, and a type
-// the graph does not hold stays unproven.
-func comparableFields(
-	r *store.Reader, fields []*node.Field, visiting map[symbol.Identity]bool,
+// comparableShape proves a struct shape comparable under Go's own
+// rules, embedded fields included, or reports false the moment one
+// part is unprovable: slices, maps and funcs never are, workspace
+// types recurse, and a type the graph does not hold stays unproven.
+func comparableShape(
+	r *store.Reader, fields []*node.Field, embeds []*node.Embed,
+	visiting map[symbol.Identity]bool,
 ) bool {
 	for _, f := range fields {
 		if f.Type == nil || !comparableRef(r, f.Type, visiting) {
+			return false
+		}
+	}
+	for _, e := range embeds {
+		// An embedded field takes part in comparison the way a
+		// named one does.
+		if e.Ref == nil || !comparableRef(r, e.Ref, visiting) {
 			return false
 		}
 	}
@@ -204,11 +215,11 @@ func comparableRef(r *store.Reader, ref *node.TypeRef, visiting map[symbol.Ident
 	switch {
 	case strings.HasPrefix(s, "[]"),
 		strings.HasPrefix(s, "map["),
-		strings.HasPrefix(s, "func"):
+		wordPrefix(s, "func"):
 		return false
-	case strings.HasPrefix(s, "*"), strings.HasPrefix(s, "chan "), s == "chan":
+	case strings.HasPrefix(s, "*"), wordPrefix(s, "chan"):
 		return true
-	case strings.HasPrefix(s, "interface"):
+	case wordPrefix(s, "interface"):
 		return true
 	}
 	if comparableBuiltins[s] {
@@ -227,7 +238,7 @@ func comparableRef(r *store.Reader, ref *node.TypeRef, visiting map[symbol.Ident
 	}
 	switch t := decl.(type) {
 	case *node.Struct:
-		return comparableFields(r, t.Fields, visiting)
+		return comparableShape(r, t.Fields, t.Embeds, visiting)
 	case *node.Interface:
 		return true
 	case *node.Enum:
@@ -240,6 +251,21 @@ func comparableRef(r *store.Reader, ref *node.TypeRef, visiting map[symbol.Ident
 	default:
 		return false
 	}
+}
+
+// wordPrefix reports whether s starts with word as a whole word:
+// the word alone, or followed by a non-identifier character, so an
+// identifier merely starting with the word does not match.
+func wordPrefix(s, word string) bool {
+	rest, prefixed := strings.CutPrefix(s, word)
+	if !prefixed {
+		return false
+	}
+	if rest == "" {
+		return true
+	}
+	c := rest[0]
+	return c != '_' && (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') && (c < '0' || c > '9')
 }
 
 // comparableBuiltins are the predeclared types Go compares.

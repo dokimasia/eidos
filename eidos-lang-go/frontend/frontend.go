@@ -69,7 +69,9 @@ func New(opts *Options) plugin.Frontend {
 	f := &goFrontend{opts: opts}
 	return frontend.New(golang.Name, Lang, golang.Syntax()).
 		Version(golang.Version).
-		Match("**/*"+golang.Extension, "!**/testdata/**").
+		Match("**/*"+golang.Extension,
+			"!**/testdata/**", "!**/_*"+golang.Extension, "!**/.*"+golang.Extension,
+			"!**/_*/**", "!**/.*/**").
 		Units(f.partition).
 		Parse(f.parse).
 		Classify(markTests).

@@ -170,7 +170,13 @@ func (f *goFrontend) parseFile(
 	for _, decl := range parsed.Decls {
 		f.lowerDecl(u, l, file, decl)
 	}
-	promoted := promoteEnums(file)
+	promoted, moved := promoteEnums(file)
+	for from, to := range moved {
+		// A carrier or stamp recorded against a consumed alias or
+		// constant follows the enum or variant that stands, so the
+		// splice never meets a subject the promotion removed.
+		gb.Rehome(from, to)
+	}
 	for _, pending := range l.underlyings {
 		var subject symbol.Symbol = pending.alias
 		if enum, replaced := promoted[pending.alias]; replaced {
@@ -767,10 +773,7 @@ func filenameConstraint(base string) ([]string, bool) {
 		return nil, false
 	}
 	last := parts[len(parts)-1]
-	prev := ""
-	if len(parts) > 2 {
-		prev = parts[len(parts)-2]
-	}
+	prev := parts[len(parts)-2]
 	switch {
 	case knownArch[last] && knownOS[prev]:
 		return []string{prev, last}, true
@@ -785,13 +788,16 @@ func filenameConstraint(base string) ([]string, bool) {
 var knownOS = map[string]bool{
 	"aix": true, "android": true, "darwin": true, "dragonfly": true,
 	"freebsd": true, "hurd": true, "illumos": true, "ios": true,
-	"js": true, "linux": true, "netbsd": true, "openbsd": true,
-	"plan9": true, "solaris": true, "wasip1": true, "windows": true,
+	"js": true, "linux": true, "nacl": true, "netbsd": true,
+	"openbsd": true, "plan9": true, "solaris": true, "wasip1": true,
+	"windows": true, "zos": true,
 }
 
 var knownArch = map[string]bool{
-	"386": true, "amd64": true, "arm": true, "arm64": true,
-	"loong64": true, "mips": true, "mips64": true, "mips64le": true,
-	"mipsle": true, "ppc64": true, "ppc64le": true, "riscv64": true,
-	"s390x": true, "sparc64": true, "wasm": true,
+	"386": true, "amd64": true, "amd64p32": true, "arm": true,
+	"arm64": true, "arm64be": true, "armbe": true, "loong64": true,
+	"mips": true, "mips64": true, "mips64le": true, "mips64p32": true,
+	"mips64p32le": true, "mipsle": true, "ppc": true, "ppc64": true,
+	"ppc64le": true, "riscv": true, "riscv64": true, "s390": true,
+	"s390x": true, "sparc": true, "sparc64": true, "wasm": true,
 }

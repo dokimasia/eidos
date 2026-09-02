@@ -308,6 +308,21 @@ func TestParse(t *testing.T) {
 		assert.Length(t, onlyFile(t, tagged).Decls, 1, "inside the set it declares")
 	})
 
+	t.Run("pairs a two-part filename the way the go tool does", func(t *testing.T) {
+		t.Parallel()
+
+		archOnly := parsedFile(t, &frontend.Options{Tags: []string{"amd64"}},
+			plugin.DepthFull, "package p\n\ntype Gone struct{}\n", "p/linux_amd64.go")
+		assert.Length(t, onlyFile(t, archOnly).Decls, 0,
+			"linux_amd64.go implies both suffixes, so the arch alone stays out")
+		assert.Equal(t, archOnly.StampRecords()[0].Stamp.Value.(string), "linux && amd64",
+			"the pair spells whole")
+
+		both := parsedFile(t, &frontend.Options{Tags: []string{"linux", "amd64"}},
+			plugin.DepthFull, "package p\n\ntype Gone struct{}\n", "p/linux_amd64.go")
+		assert.Length(t, onlyFile(t, both).Decls, 1, "both tags admit it")
+	})
+
 	t.Run("ignores a go:build spelling inside a block comment", func(t *testing.T) {
 		t.Parallel()
 

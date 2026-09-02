@@ -54,6 +54,27 @@ func TestPromoteEnums(t *testing.T) {
 		t.Fatalf("the underlying stamp survives the promotion")
 	})
 
+	t.Run("re-homes carriers onto the enum and its variants", func(t *testing.T) {
+		t.Parallel()
+
+		gb := parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\n// Color is a palette.\n// +gen:stringer\ntype Color int\n\n"+
+				"const (\n\t// Red leads.\n\t// +gen:mark\n\tRed Color = iota\n\tGreen\n)\n")
+		attached := gb.Attachments()
+		assert.Length(t, attached, 2, "both carriers survive the promotion")
+		var onEnum, onVariant bool
+		for _, a := range attached {
+			switch subject := a.Subject.(type) {
+			case *node.Enum:
+				onEnum = subject.Name == "Color"
+			case *node.EnumVariant:
+				onVariant = subject.Name == "Red"
+			}
+		}
+		assert.True(t, onEnum, "the type's carrier follows the enum that stands")
+		assert.True(t, onVariant, "the constant's carrier follows its variant")
+	})
+
 	t.Run("promotes only what the idiom states", func(t *testing.T) {
 		t.Parallel()
 
