@@ -707,8 +707,9 @@ func (l *lowered) param(field *ast.Field) *node.Param {
 	return p
 }
 
-// returns lowers a result list; a blank result name normalizes to
-// none.
+// returns lowers a result list, blank names kept as written: Go
+// admits a mixed list only fully named, so dropping the
+// underscore would strand the siblings.
 func (l *lowered) returns(fields *ast.FieldList) []*node.Return {
 	if fields == nil {
 		return nil
@@ -720,12 +721,11 @@ func (l *lowered) returns(fields *ast.FieldList) []*node.Return {
 			continue
 		}
 		for _, name := range field.Names {
-			bound := name.Name
-			if bound == "_" {
-				bound = ""
-			}
+			// The underscore stays: a mixed list re-renders only
+			// with every slot named, and go/parser rejects the
+			// half-named form dropping it would produce.
 			out = append(out, &node.Return{
-				Name: bound, Pos: l.at(name.Pos()), Type: l.typeRef(field.Type),
+				Name: name.Name, Pos: l.at(name.Pos()), Type: l.typeRef(field.Type),
 			})
 		}
 	}

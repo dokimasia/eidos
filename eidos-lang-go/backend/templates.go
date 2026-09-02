@@ -37,7 +37,7 @@ const (
 	StructTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
 		"{{- range .Embeds}}\n\t{{spell .Ref}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
-		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
+		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}{{with .Annotations}}{{directives . \"\\t\"}}{{end}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
 		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n" +
 		"{{range .Methods.Items}}\n{{nested \"\" .}}\n{{end}}"

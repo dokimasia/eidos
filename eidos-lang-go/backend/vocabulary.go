@@ -225,8 +225,8 @@ func Package(id symbol.Identity) string {
 }
 
 // Guard writes nothing and refuses what Go states nowhere, so a
-// stated fact never drops in silence: annotations on any kind,
-// asynchrony, abstractness, an override or default marker, a
+// stated fact never drops in silence: asynchrony, abstractness,
+// an override or default marker, a
 // type-level member, a field's own mutability or initializer, an
 // immutable variable, and every visibility beyond the exported
 // and package scopes the name's case carries. Final holds on a

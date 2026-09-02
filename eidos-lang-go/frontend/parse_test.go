@@ -409,7 +409,9 @@ func TestParse(t *testing.T) {
 		fn := file.Decls[0].(*node.Function)
 		assert.True(t, fn.Params[0].Pos.Col < fn.Params[1].Pos.Col,
 			"each parameter sits at its own name")
-		assert.Equal(t, fn.Returns[0].Name, "", "a blank result binds no name")
+		assert.Equal(t, fn.Returns[0].Name, "_",
+			"a blank result keeps its underscore, because a mixed list "+
+				"re-renders only fully named")
 		assert.Equal(t, fn.Returns[1].Name, "err", "a named one keeps it")
 	})
 
