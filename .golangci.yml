@@ -78,6 +78,32 @@ linters:
             - pkg: go.dokimi.dev/eidos/core
               desc: plugin source speaks the facade; import go.dokimi.dev/eidos/sdk instead
 
+        # The read side parses source into the graph and never
+        # renders: core/frontend reaches the store and the node
+        # builders, and knows nothing of emit or the write side.
+        frontend-seam:
+          files:
+            - "**/eidos-core/frontend/**"
+          deny:
+            - pkg: go.dokimi.dev/eidos/core/emit
+              desc: the read side loads declarations; emit is the write side's vocabulary
+            - pkg: go.dokimi.dev/eidos/core/backend
+              desc: the read side never renders
+
+        # The write side renders a settled store and never loads:
+        # core/backend works on the SPI and the emit vocabulary, and
+        # reaches neither the graph builders nor the read side.
+        backend-seam:
+          files:
+            - "**/eidos-core/backend/**"
+          deny:
+            - pkg: go.dokimi.dev/eidos/core/node
+              desc: the write side renders what the store settled; node builds the graph
+            - pkg: go.dokimi.dev/eidos/core/store
+              desc: the write side reads its subjects through the render context, not the store
+            - pkg: go.dokimi.dev/eidos/core/frontend
+              desc: the write side never loads
+
     funcorder:
       constructor: true
       struct-method: true
