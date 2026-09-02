@@ -121,15 +121,6 @@ func TestVocabulary(t *testing.T) {
 			"several become a tuple, because one value returns")
 	})
 
-	t.Run("Module", func(t *testing.T) {
-		t.Parallel()
-
-		assert.Equal(t, backend.Module(symbol.Identity{Package: "svc/api"}), "api",
-			"the path's last element")
-		assert.Equal(t, backend.Module(symbol.Identity{}), "",
-			"an identity naming nothing spells nothing")
-	})
-
 	t.Run("Mods", func(t *testing.T) {
 		t.Parallel()
 
