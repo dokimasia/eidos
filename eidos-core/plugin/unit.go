@@ -120,18 +120,20 @@ type CommentParts struct {
 
 // Doc strips one raw comment's markers through the language's
 // syntax and returns the clean lines: line prefixes dropped,
-// block delimiters and gutters removed, directive lines — the
-// //go:build kin — excluded, because a pragma is not
-// documentation and would render double-commented downstream.
+// block delimiters and gutters removed, and — when the syntax
+// declares the convention — directive lines excluded, because a
+// pragma is not documentation and would render double-commented
+// downstream.
 func (u *SourceUnit) Doc(raw string) []string {
 	return u.DocLines(stripComment(raw, u.syntax))
 }
 
 // Comment takes one raw comment apart through the language's
 // syntax, each part positioned at its own line from the given
-// base: documentation, carriers, and tool directives lowered as
-// annotations — the name without its marker, the arguments split
-// on spaces, which is the spelling the render side writes back.
+// base: documentation, carriers, and — when the syntax declares
+// the convention — tool directives lowered as annotations, the
+// name without its marker, the arguments split on spaces, which
+// is the spelling the render side writes back.
 func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 	var parts CommentParts
 	for i, line := range commentLines(raw, u.syntax) {
@@ -142,7 +144,7 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 			parts.Carriers = append(parts.Carriers, Carrier{
 				Payload: strings.TrimPrefix(line, CarrierMark), Pos: lineAt,
 			})
-		case directiveLine(line):
+		case u.syntax.Directives && directiveLine(line):
 			name, rest, _ := strings.Cut(line, " ")
 			annotation := symbol.Annotation{Name: name}
 			if rest != "" {
@@ -158,8 +160,12 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 }
 
 // DocLines filters lines the author already holds clean: the
-// directive-line rule applies, nothing else changes.
-func (*SourceUnit) DocLines(lines []string) []string {
+// directive-line rule applies under the syntax's declaration,
+// nothing else changes.
+func (u *SourceUnit) DocLines(lines []string) []string {
+	if !u.syntax.Directives {
+		return lines
+	}
 	out := make([]string, 0, len(lines))
 	for _, line := range lines {
 		if directiveLine(line) {
@@ -251,11 +257,14 @@ func trimBlank(lines []string) []string {
 }
 
 // directiveLine reports whether a clean line is a tool directive
-// rather than documentation: the go:build kin, spelled
-// tool:name with no space before the colon.
+// rather than documentation: the go:build kin, spelled tool:name.
+// The rule is go/ast's own — everything up to and including the
+// character after the colon is lowercase alphanumeric — so a doc
+// line carrying a bare URL stays documentation: the slash after
+// "https:" fails the check.
 func directiveLine(line string) bool {
-	head, _, found := strings.Cut(line, ":")
-	if !found || head == "" || strings.ContainsAny(head, " \t") {
+	head, rest, found := strings.Cut(line, ":")
+	if !found || head == "" || rest == "" {
 		return false
 	}
 	for _, r := range head {
@@ -263,7 +272,8 @@ func directiveLine(line string) bool {
 			return false
 		}
 	}
-	return true
+	next := rest[0]
+	return (next >= 'a' && next <= 'z') || (next >= '0' && next <= '9')
 }
 
 // GraphBuilder is the unit's write handle into the node model. A

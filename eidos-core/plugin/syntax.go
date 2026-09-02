@@ -12,6 +12,13 @@ type CommentSyntax struct {
 	Line []string
 	// Blocks holds the block forms.
 	Blocks []CommentBlock
+	// Directives declares that the language's comments carry tool
+	// directives — the go:build kin, an open tool:name shape the
+	// host toolchain itself defines. The comment split lowers a
+	// directive line as an annotation only under this declaration;
+	// a language without the convention keeps every such line as
+	// documentation, because prose spelling word:word is prose.
+	Directives bool
 }
 
 // CommentBlock is one block-comment form, gutter included, so a
