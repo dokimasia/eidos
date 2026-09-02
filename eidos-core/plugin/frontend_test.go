@@ -15,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -79,6 +80,26 @@ func TestSourceUnit(t *testing.T) {
 		assert.NoError(t, err, "the twin reads the same bytes")
 		assert.True(t, bytes.Equal(u.ReadSum(), twin.ReadSum()),
 			"the same reads fold to the same key")
+	})
+
+	t.Run("takes a comment apart into docs, carriers and annotations", func(t *testing.T) {
+		t.Parallel()
+
+		u := unitOf(t, tree)
+		parts := u.Comment(
+			"/**\n * Row is one record.\n * +gen:table name=rows\n * go:embed schema.sql\n */",
+			position.Pos{File: "svc/store/row.go", Line: 3},
+		)
+		assert.Equal(t, parts.Docs, []string{"Row is one record."},
+			"neither a carrier nor a directive is documentation")
+		assert.Length(t, parts.Carriers, 1, "the carrier splits out")
+		assert.Equal(t, parts.Carriers[0].Payload, "gen:table name=rows", "marker stripped")
+		assert.Equal(t, parts.Carriers[0].Pos.Line, 5,
+			"positioned at its own line inside the block")
+		assert.Length(t, parts.Annotations, 1, "the directive lowers as an annotation")
+		assert.Equal(t, parts.Annotations[0], symbol.Annotation{
+			Name: "go:embed", Args: []string{"schema.sql"},
+		}, "named without its marker, arguments split")
 	})
 
 	t.Run("strips comments through the syntax", func(t *testing.T) {

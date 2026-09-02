@@ -94,6 +94,30 @@ func (u *SourceUnit) Depth() Depth { return u.depth }
 // Graph returns the unit's write handle into the node model.
 func (u *SourceUnit) Graph() *GraphBuilder { return u.graph }
 
+// CarrierMark opens a directive carrier line inside a comment: the
+// kit's one cross-language convention, so a directive spells the
+// same way whatever language carries it.
+const CarrierMark = "+"
+
+// Carrier is one directive payload and the line it sits on, marker
+// stripped, ready for the kernel grammar.
+type Carrier struct {
+	Payload string
+	Pos     position.Pos
+}
+
+// CommentParts is one raw comment taken apart three ways: the
+// documentation lines, the carrier lines, and the tool-directive
+// lines — the go:build kin — as annotations. What a language does
+// with each part is its own: a frontend filters its configuration
+// lines out of the annotations and its legacy forms out of the
+// carriers before attaching anything.
+type CommentParts struct {
+	Docs        []string
+	Carriers    []Carrier
+	Annotations symbol.Annotations
+}
+
 // Doc strips one raw comment's markers through the language's
 // syntax and returns the clean lines: line prefixes dropped,
 // block delimiters and gutters removed, directive lines — the
@@ -101,6 +125,36 @@ func (u *SourceUnit) Graph() *GraphBuilder { return u.graph }
 // documentation and would render double-commented downstream.
 func (u *SourceUnit) Doc(raw string) []string {
 	return u.DocLines(stripComment(raw, u.syntax))
+}
+
+// Comment takes one raw comment apart through the language's
+// syntax, each part positioned at its own line from the given
+// base: documentation, carriers, and tool directives lowered as
+// annotations — the name without its marker, the arguments split
+// on spaces, which is the spelling the render side writes back.
+func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
+	var parts CommentParts
+	for i, line := range commentLines(raw, u.syntax) {
+		lineAt := at
+		lineAt.Line += i
+		switch {
+		case strings.HasPrefix(line, CarrierMark):
+			parts.Carriers = append(parts.Carriers, Carrier{
+				Payload: strings.TrimPrefix(line, CarrierMark), Pos: lineAt,
+			})
+		case directiveLine(line):
+			name, rest, _ := strings.Cut(line, " ")
+			annotation := symbol.Annotation{Name: name}
+			if rest != "" {
+				annotation.Args = strings.Fields(rest)
+			}
+			parts.Annotations = append(parts.Annotations, annotation)
+		default:
+			parts.Docs = append(parts.Docs, line)
+		}
+	}
+	parts.Docs = trimBlank(parts.Docs)
+	return parts
 }
 
 // DocLines filters lines the author already holds clean: the
@@ -140,10 +194,17 @@ func (u *SourceUnit) Infof(c diag.Code, at position.Pos, format string, a ...any
 // and the load report carries the finished key.
 func (u *SourceUnit) ReadSum() []byte { return u.reads.Sum(nil) }
 
-// stripComment removes one comment's markers: the first matching
+// stripComment removes one comment's markers and trims the blank
+// edges the delimiters leave behind.
+func stripComment(raw string, syntax CommentSyntax) []string {
+	return trimBlank(commentLines(raw, syntax))
+}
+
+// commentLines removes one comment's markers, one entry per source
+// line so an index maps back to a line offset: the first matching
 // line prefix, or a block's delimiters and per-line gutter, one
 // leading space tolerated after either.
-func stripComment(raw string, syntax CommentSyntax) []string {
+func commentLines(raw string, syntax CommentSyntax) []string {
 	text := raw
 	for _, b := range syntax.Blocks {
 		if strings.HasPrefix(text, b.Open) && strings.HasSuffix(text, b.Close) {
@@ -158,7 +219,7 @@ func stripComment(raw string, syntax CommentSyntax) []string {
 				}
 				out = append(out, trimmed)
 			}
-			return trimBlank(out)
+			return out
 		}
 	}
 	lines := strings.Split(text, "\n")
@@ -173,7 +234,7 @@ func stripComment(raw string, syntax CommentSyntax) []string {
 		}
 		out = append(out, trimmed)
 	}
-	return trimBlank(out)
+	return out
 }
 
 // trimBlank drops leading and trailing empty lines, which comment
