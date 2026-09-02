@@ -24,12 +24,13 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The brands the ownership check stamps under, and the suffix the
-// stamped copies take beside the file they copy.
+// The brands the ownership check stamps under, and the suffixes
+// the stamped copies take beside the file they copy.
 const (
-	ownBrand     output.Brand = "frontendtest"
-	foreignBrand output.Brand = "frontendtest-foreign"
-	ownedSuffix               = "_owned"
+	ownBrand      output.Brand = "frontendtest"
+	foreignBrand  output.Brand = "frontendtest-foreign"
+	ownedSuffix                = "_owned"
+	foreignSuffix              = "_foreign"
 )
 
 // AssertDeterministicParse loads the fixture twice and compares
@@ -145,7 +146,7 @@ func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 	stem := strings.TrimSuffix(files[0], ext)
 	tree := copyTree(tb, fx.Sources)
 	own := stem + ownedSuffix + ext
-	foreign := stem + ownedSuffix + "2" + ext
+	foreign := stem + foreignSuffix + ext
 	tree[own] = &fstest.MapFile{Data: framed(tb, f, ownBrand, own, source)}
 	tree[foreign] = &fstest.MapFile{Data: framed(tb, f, foreignBrand, foreign, source)}
 	assert.True(tb, load.Match(f.Selection(), own),

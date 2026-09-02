@@ -112,8 +112,8 @@ func (b *Builder) Config(c Config) *Builder {
 
 // Ignore opts the composition out of reporting unclaimed
 // directives under these spellings: a foreign tool's carriers
-// living in the same comments. A full name ignores one directive;
-// a plugin prefix ending in its colon, "k8s:", ignores every
+// living in the same comments. A full name ignores one directive.
+// A plugin prefix ending in its colon, "k8s:", ignores every
 // directive under it. A spelling a registered schema claims is a
 // Build fault, because silencing a registered directive would hide
 // its validation.

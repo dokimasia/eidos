@@ -28,10 +28,9 @@
 // own [Config.Brand] is the workspace's own output, and it does not
 // load: the exclusion runs on the bytes, after selection and
 // before anything partitions, and the report lists what it
-// refused. A file another brand stamped is ordinary input — parsed,
-// classified by the language as generated, gated by consumers like
-// any other fact. The proof is the trailer alone; a manifest entry
-// joins it when the sealed state exists.
+// refused. A file another brand stamped is ordinary input: parsed,
+// classified by the language as generated, and gated by consumers
+// like any other fact. The proof is the trailer alone.
 //
 // # Keys
 //

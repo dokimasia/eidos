@@ -226,9 +226,8 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 			file = &node.File{Path: filePath, Pos: at}
 			pkg.Files = append(pkg.Files, file)
 		case strings.HasPrefix(fields[0], "//") && file == nil:
-			// A comment above the package line is the file's header —
-			// the generated-file frame sits there — and reads as
-			// nothing.
+			// A comment above the package line is the file's header,
+			// where a generated-file frame sits, and reads as nothing.
 		case file == nil:
 			u.Errorf(ScriptedBadFile, at, "%s opens with %q, not a package line", filePath, fields[0])
 			return

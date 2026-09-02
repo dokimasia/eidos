@@ -7,9 +7,9 @@
 // [Builder] collects the composition: annotators, plans, target
 // names, metadata key registrations, ignored directive spellings
 // and config. [Builder.Build] runs six validation steps in one
-// pass: the roster, the registries — the kernel's own keys and
-// schemas first — the lowering into priority buckets, the options,
-// the plans, and the compiled schedule. Every step runs even when
+// pass: the roster, the registries with the kernel's own keys and
+// schemas registered first, the lowering into priority buckets,
+// the options, the plans, and the compiled schedule. Every step runs even when
 // an earlier one found faults, and the answer is either the
 // [Workspace] or one error joining everything found, so the
 // composition's author reads every fault at once. A Build that

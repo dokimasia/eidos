@@ -39,7 +39,7 @@ func NewRegistry() *Registry {
 
 // Ignore records a spelling whose unclaimed instances validation
 // drops in silence: a foreign tool's carriers living in the same
-// comments. A full name ignores that directive; a plugin prefix
+// comments. A full name ignores that directive. A plugin prefix
 // ending in its colon, as in "k8s:", ignores every directive under
 // it. Ignoring a claimed name is refused, at the call when the
 // schema registered first and at the seal otherwise, because
@@ -48,7 +48,7 @@ func (r *Registry) Ignore(n Name) error {
 	if r.sealed {
 		return fmt.Errorf("directive: ignoring %s after the seal: registration ends there", n)
 	}
-	if n == "" || n == ":" {
+	if n == "" || n == Name(prefixSep) {
 		return errors.New("directive: an empty spelling ignores nothing")
 	}
 	if slices.Contains(kernelNames, n) {

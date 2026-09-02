@@ -13,6 +13,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
@@ -50,21 +51,34 @@ func scaledTree() fstest.MapFS {
 // select, partition, parse, splice, assign, resolve, seal, key.
 // The fake language's parse is part of the measurement, so the
 // number is a ceiling on driver overhead, not a frontend budget.
+// The branded case adds the ownership proof, one read per claimed
+// file, which is the exclusion's whole cost.
 func BenchmarkLoad(b *testing.B) {
 	tree := scaledTree()
 	fronts := []plugin.Frontend{frontendtest.NewScripted()}
 
-	b.ReportAllocs()
-	b.ResetTimer()
-	for range b.N {
-		g, report, err := load.Load(context.Background(), load.Config{
-			FS:        tree,
-			Frontends: fronts,
-			Sink:      diag.NewSink(),
-			PluginSet: []byte("bench"),
+	for _, tc := range []struct {
+		name  string
+		brand output.Brand
+	}{
+		{name: "unbranded"},
+		{name: "branded", brand: "bench"},
+	} {
+		b.Run(tc.name, func(b *testing.B) {
+			b.ReportAllocs()
+			b.ResetTimer()
+			for range b.N {
+				g, report, err := load.Load(context.Background(), load.Config{
+					FS:        tree,
+					Frontends: fronts,
+					Sink:      diag.NewSink(),
+					PluginSet: []byte("bench"),
+					Brand:     tc.brand,
+				})
+				if err != nil || !g.Frozen() || len(report.Units) != benchPackages {
+					b.Fatalf("the corpus loads: %v", err)
+				}
+			}
 		})
-		if err != nil || !g.Frozen() || len(report.Units) != benchPackages {
-			b.Fatalf("the corpus loads: %v", err)
-		}
 	}
 }

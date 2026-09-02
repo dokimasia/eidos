@@ -16,9 +16,9 @@ const (
 )
 
 // The kernel-owned keys every frontend spells the same way. Module
-// identity is a neutral fact because kernel machinery — scope
-// matching, layout — reads it and knows no language; the raw
-// toolchain spelling stays in the frontend's own namespace.
+// identity is a neutral fact because scope matching and layout read
+// it and know no language. The raw toolchain spelling stays in the
+// frontend's own namespace.
 const (
 	// ModuleKey carries a package's toolchain-module identity: a Go
 	// module path, a Maven artifact, a crate name. Absent on a

@@ -451,5 +451,5 @@ type carved struct {
 
 // Selection returns the inner claim with the copies negated.
 func (c *carved) Selection() []string {
-	return append(c.Frontend.Selection(), "!**/*_owned*.zz")
+	return append(c.Frontend.Selection(), "!**/*_owned.zz")
 }

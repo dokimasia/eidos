@@ -242,13 +242,12 @@ func claim(frontends []plugin.Frontend, files []string) ([][]string, error) {
 	return out, nil
 }
 
-// disown drops every claimed file the workspace proves it owns —
-// a provenance trailer under the load's own brand — from the
-// claims, and returns what it dropped in tree order. The proof is
-// read from the bytes, because an output family is a cheap
-// pre-filter and no more: an out= redirect and the orphaned
-// output of a removed plugin match no current declaration. A zero
-// brand proves nothing and drops nothing.
+// disown drops every claimed file carrying a provenance trailer
+// under the load's own brand from the claims, and returns what it
+// dropped in tree order. The proof is read from the bytes rather
+// than matched against declared output families: an out= redirect
+// and the orphaned output of a removed plugin match no current
+// declaration. A zero brand proves nothing and drops nothing.
 func disown(cfg Config, claims [][]string) ([]string, error) {
 	if cfg.Brand == "" {
 		return nil, nil

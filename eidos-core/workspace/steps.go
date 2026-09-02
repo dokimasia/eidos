@@ -141,8 +141,8 @@ func sameProvider(seated, p plugin.Plugin) bool {
 // Capability labels and target names collect here too, because
 // both are registries in everything but shape. The kernel's own
 // keys and schemas register first, so an impersonation is a plain
-// duplicate by the time it arrives, and the ignores register last,
-// so one covering a registered name is refused with the name.
+// duplicate by the time it arrives. The ignores register last, so
+// one covering a registered name is refused naming it.
 func (b *Builder) register(
 	roster []plugin.Plugin,
 ) (*meta.Registry, *directive.Registry, map[plugin.Target]bool, []error) {
