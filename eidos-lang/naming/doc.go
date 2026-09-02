@@ -17,9 +17,6 @@
 //   - [Snake] spells snake_case
 //   - [ScreamingSnake] spells SCREAMING_SNAKE_CASE
 //   - [Kebab] spells kebab-case
-//   - [ScreamingKebab] spells SCREAMING-KEBAB-CASE
-//   - [Dot] spells dot.case
-//   - [Title] spells Title Case
 //
 // Each delegates through a [Caser] holding the initialisms it
 // recognises. That recognition is what lets snake round-trip
@@ -27,11 +24,13 @@
 // becomes "URLPath" rather than "UrlPath". The package-level
 // functions use a [Default] Caser carrying [CommonInitialisms];
 // a consumer needing another set builds one with [New] and
-// [Caser.WithInitialisms].
+// [Caser.WithInitialisms], which is how a language whose acronym
+// vocabulary differs configures its own.
 //
-// [Identifier] is a separate concern: it sanitises arbitrary text
-// into a spelling the C-family languages accept, without changing
-// case.
+// [IsIdentifier] is a separate concern: it reports the ASCII
+// identifier shape, which a backend refusing to respell wire
+// names tests before any convention runs. [SnakeFilename] joins
+// the filename shape the snake-cased languages share.
 //
 // # Allocation contract
 //

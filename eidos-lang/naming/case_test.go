@@ -58,9 +58,6 @@ func TestCase(t *testing.T) {
 			{"Snake", naming.Snake, "row_count"},
 			{"ScreamingSnake", naming.ScreamingSnake, "MAX_ROWS"},
 			{"Kebab", naming.Kebab, "row-count"},
-			{"ScreamingKebab", naming.ScreamingKebab, "MAX-ROWS"},
-			{"Dot", naming.Dot, "row.count"},
-			{"Title", naming.Title, "HTTP Row"},
 		}
 		for _, c := range styled {
 			assert.Equal(t, c.fn(c.in), c.in,
@@ -135,34 +132,6 @@ func TestCase(t *testing.T) {
 		})
 	})
 
-	t.Run("ScreamingKebab", func(t *testing.T) {
-		t.Parallel()
-		runStyles(t, (*naming.Caser).ScreamingKebab, []style{
-			{name: "empty input spells nothing", in: "", want: ""},
-			{name: "pascal becomes screaming kebab", in: "HelloWorld", want: "HELLO-WORLD"},
-		})
-	})
-
-	t.Run("Dot", func(t *testing.T) {
-		t.Parallel()
-		runStyles(t, (*naming.Caser).Dot, []style{
-			{name: "empty input spells nothing", in: "", want: ""},
-			{name: "pascal becomes dot case", in: "HelloWorld", want: "hello.world"},
-		})
-	})
-
-	t.Run("Title", func(t *testing.T) {
-		t.Parallel()
-		runStyles(t, (*naming.Caser).Title, []style{
-			{name: "empty input spells nothing", in: "", want: ""},
-			{name: "camel becomes title case", in: "helloWorld", want: "Hello World"},
-			{
-				name: "an initialism survives the words around it",
-				in:   "user_id_fetcher", want: "User ID Fetcher",
-			},
-		})
-	})
-
 	t.Run("the package functions spell through the default Caser", func(t *testing.T) {
 		t.Parallel()
 
@@ -179,9 +148,6 @@ func TestCase(t *testing.T) {
 			{"Snake", naming.Snake(in), c.Snake(in), "user_id_fetcher"},
 			{"ScreamingSnake", naming.ScreamingSnake(in), c.ScreamingSnake(in), "USER_ID_FETCHER"},
 			{"Kebab", naming.Kebab(in), c.Kebab(in), "user-id-fetcher"},
-			{"ScreamingKebab", naming.ScreamingKebab(in), c.ScreamingKebab(in), "USER-ID-FETCHER"},
-			{"Dot", naming.Dot(in), c.Dot(in), "user.id.fetcher"},
-			{"Title", naming.Title(in), c.Title(in), "User ID Fetcher"},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

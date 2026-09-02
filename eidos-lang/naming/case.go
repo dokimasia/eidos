@@ -63,35 +63,6 @@ func (c *Caser) ScreamingSnake(s string) string { return c.joined(s, '_', true) 
 // Kebab converts s to kebab-case (lower-case words joined by '-').
 func (c *Caser) Kebab(s string) string { return c.joined(s, '-', false) }
 
-// ScreamingKebab converts s to SCREAMING-KEBAB-CASE (upper-case words
-// joined by '-').
-func (c *Caser) ScreamingKebab(s string) string { return c.joined(s, '-', true) }
-
-// Dot converts s to dot.case (lower-case words joined by '.').
-func (c *Caser) Dot(s string) string { return c.joined(s, '.', false) }
-
-// Title converts s to Title Case (each word title-cased per the rules
-// of [Caser.Pascal], joined by single spaces). An input already in
-// the style returns itself and allocates nothing.
-func (c *Caser) Title(s string) string {
-	if c.matchesTitled(s, ' ', false) {
-		return s
-	}
-	words := c.Words(s)
-	if len(words) == 0 {
-		return ""
-	}
-	var b strings.Builder
-	b.Grow(len(s))
-	for i, w := range words {
-		if i > 0 {
-			b.WriteByte(' ')
-		}
-		c.writeTitleWord(&b, w)
-	}
-	return b.String()
-}
-
 // joined splits s and writes its words into one Builder, separated by
 // sep and case-mapped by up. It is the shared body of the five
 // separator styles.
@@ -269,12 +240,3 @@ func ScreamingSnake(s string) string { return Default().ScreamingSnake(s) }
 
 // Kebab converts s to kebab-case using the default Caser.
 func Kebab(s string) string { return Default().Kebab(s) }
-
-// ScreamingKebab converts s to SCREAMING-KEBAB-CASE using the default Caser.
-func ScreamingKebab(s string) string { return Default().ScreamingKebab(s) }
-
-// Dot converts s to dot.case using the default Caser.
-func Dot(s string) string { return Default().Dot(s) }
-
-// Title converts s to Title Case using the default Caser.
-func Title(s string) string { return Default().Title(s) }
