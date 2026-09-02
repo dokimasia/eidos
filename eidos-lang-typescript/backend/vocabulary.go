@@ -46,6 +46,9 @@ const (
 	FuncHard = "hard"
 	// FuncIndexSig writes an index signature whole.
 	FuncIndexSig = "indexsig"
+	// FuncMethodKey writes a method's member key, quoted where the
+	// name is no identifier.
+	FuncMethodKey = "methodkey"
 	// FuncPropKey writes a field's property key, quoted where the
 	// name is not an identifier.
 	FuncPropKey = "propkey"
@@ -75,6 +78,7 @@ func Funcs() template.FuncMap {
 		FuncHard:       Hard,
 		FuncIndexSig:   IndexSig,
 		FuncPropKey:    PropKey,
+		FuncMethodKey:  MethodKey,
 	}
 }
 
@@ -94,6 +98,23 @@ func PropKey(f *emit.Field) (string, error) {
 		)
 	}
 	return quote(f.Name), nil
+}
+
+// MethodKey spells a method's member key: the identifier bare, and
+// anything else quoted, which TypeScript admits on classes and
+// interfaces alike. A hard-private name refuses the quoted form
+// the way a property's does.
+func MethodKey(m *emit.Method) (string, error) {
+	if identifier(m.Name) {
+		return m.Name, nil
+	}
+	if m.Hard {
+		return "", fmt.Errorf(
+			"typescript: a hard-private name admits no quoted form, and "+
+				"%s is not an identifier", m.Name,
+		)
+	}
+	return quote(m.Name), nil
 }
 
 // identifier reports whether a name spells bare in TypeScript:
@@ -483,6 +504,11 @@ func PropMods(f *emit.Field) (string, error) {
 			"typescript: an interface property has no static level, and %s "+
 				"states one", f.Name,
 		)
+	case f.Value != "":
+		return "", fmt.Errorf(
+			"typescript: an interface property carries no initializer, and "+
+				"%s states one", f.Name,
+		)
 	}
 	if f.Mutability == symbol.MutabilityImmutable {
 		return "readonly ", nil
@@ -640,6 +666,11 @@ func Params(ps []*emit.Param) (string, error) {
 				name = fmt.Sprintf("_%d", unnamed)
 			}
 			unnamed++
+		} else if !identifier(name) {
+			return "", fmt.Errorf(
+				"typescript: a parameter admits no quoted form, and %q is "+
+					"not an identifier", name,
+			)
 		}
 		if p.Variadic != symbol.VariadicNone {
 			switch {

@@ -309,6 +309,29 @@ func TestTemplates(t *testing.T) {
 			"index and construct signatures spell nameless")
 	})
 
+	t.Run("a constructing method spells the constructor form", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Store"}
+		s.Methods.Append(&emit.Method{
+			Name: "make", Constructs: true,
+			Params: []*emit.Param{{Name: "db", Type: ref("Db")}},
+		})
+		got := execute(t, backend.StructTemplate, s)
+		assert.Contains(t, got, "constructor(db: Db) {",
+			"the name and results drop, because the language grants neither")
+	})
+
+	t.Run("a quoted method key survives its wire spelling", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Client"}
+		s.Methods.Append(&emit.Method{Name: "do-fetch"})
+		got := execute(t, backend.StructTemplate, s)
+		assert.Contains(t, got, `'do-fetch'()`,
+			"TypeScript admits the quoted member, so the wire name stands")
+	})
+
 	t.Run("const enum", func(t *testing.T) {
 		t.Parallel()
 

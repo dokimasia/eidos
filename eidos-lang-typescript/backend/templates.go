@@ -26,7 +26,9 @@ const (
 	// name, then fields with initializers and methods with their
 	// bodies, each member under its own doc block and decorators,
 	// its keywords in TypeScript's stated order. An abstract
-	// method is a signature alone.
+	// method is a signature alone; a constructing method spells
+	// the constructor form, its own name and results dropped
+	// because the language grants a constructor neither.
 	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
 		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
@@ -34,8 +36,9 @@ const (
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
-		"{{if .Indexer}}  {{indexsig .}}{{else}}" +
-		"  {{membermods .}}{{accessor .}}{{hard .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}}" +
+		"{{if .Indexer}}  {{indexsig .}}{{else if .Constructs}}" +
+		"  {{membermods .}}constructor({{params .Params}}) {\n{{body .}}  }{{else}}" +
+		"  {{membermods .}}{{accessor .}}{{hard .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}}" +
 		"{{if .Abstract}};{{else}} {\n{{body .}}  }{{end}}{{end}}\n" +
 		"{{- end}}\n}\n"
 
@@ -51,7 +54,7 @@ const (
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
 		"{{if .Indexer}}  {{indexsig .}}" +
 		"{{else if .Constructs}}  new {{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};" +
-		"{{else}}  {{sigmods .}}{{.Name}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};{{end}}\n" +
+		"{{else}}  {{sigmods .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};{{end}}\n" +
 		"{{- end}}\n}\n"
 
 	// FunctionTemplate spells a module-level function, async

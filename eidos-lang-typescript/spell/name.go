@@ -21,8 +21,10 @@ import (
 // content-type, a digit-led key — passes through unchanged, so a
 // convention cannot silently rename what a consumer matches by
 // string; the backend quotes it where TypeScript admits a quoted
-// key. A spelling that comes out a reserved word refuses, because
-// the declaration it would produce does not parse.
+// key, on properties and method members, and refuses it where no
+// quoted form exists, on parameters. A spelling that comes out a
+// reserved word refuses, because the declaration it would produce
+// does not parse.
 func Name(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 	if !identifier(name) {
 		return name, nil
