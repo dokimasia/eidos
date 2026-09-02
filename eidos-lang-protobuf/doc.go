@@ -1,29 +1,29 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Package protobuf makes protobuf a source language for eidos
-// workspaces.
+// Package protobuf is the module protobuf takes as a source
+// language for eidos workspaces.
 //
-// The module is read-only by design: a schema language is read,
-// never written, so it provides a frontend and projection rules
-// and no lowering, backend, or sdk — a complete satellite of the
-// read-only shape, not a partial one.
+// # Scope
 //
-// # Projection facts
+// The satellite is read-only by design: a schema language is read
+// and never written, so its shape is a frontend and projection
+// rules with no lowering, backend or sdk — a complete satellite of
+// the read-only shape rather than a partial one.
 //
-//   - oneof projects onto the tagged Sum shape, never the
-//     untagged Union.
-//   - Messages project as structs, services as interfaces, enums
-//     onto the Enum kind with their declared values.
-//   - Well-known types (Timestamp, Duration) map into the type
-//     hub's blessed references, shipped as policy defaults so
-//     contested spellings (int64 width classes) resolve per
-//     workspace.
+// Protobuf's projection decisions, which the frontend is built
+// against:
 //
-// # Parsing
+//   - A oneof is the tagged Sum shape, never an untagged union.
+//   - A message is a struct, a service an interface, an enum the
+//     Enum kind carrying its declared values.
+//   - A well-known type keeps its qualified spelling; a reference
+//     the workspace does not hold resolves to nothing and degrades
+//     visibly, which is the read side's own rule.
 //
-// The frontend parses with the pinned bufbuild/protocompile
-// library — pure Go, declarative, never a machine-supplied
-// toolchain — so the same workspace resolves the same parser
-// everywhere.
+// The frontend reads bufbuild/protocompile, pinned as a library
+// rather than a machine-supplied toolchain, so one workspace
+// resolves one parser everywhere.
+//
+// The module holds this statement of scope and no code.
 package protobuf
