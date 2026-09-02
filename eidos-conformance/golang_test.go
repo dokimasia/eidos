@@ -13,10 +13,9 @@ import (
 )
 
 // Go's corpus entry: the first real language against the shared
-// inventory. The two refusals are Go's own semantics — overloads
-// do not exist, and a value set spells as a defined type with
-// constants, whose enum-ness is a projection's judgement rather
-// than a parse's.
+// inventory. The one refusal is Go's own semantics: overloads do
+// not exist. A typed constant group loads as the enum the schema
+// names it.
 func TestGolang(t *testing.T) {
 	t.Parallel()
 
@@ -33,7 +32,7 @@ func TestGolang(t *testing.T) {
 			"directive_carrier":   conformance.Loads,
 			"test_classification": conformance.Loads,
 			"interfaces":          conformance.Loads,
-			"enum_values":         conformance.Refuses,
+			"enum_values":         conformance.Loads,
 		},
 		Signatures: []string{"f/constants"},
 		Schemas:    frontendtest.ScriptedSchemas(),
