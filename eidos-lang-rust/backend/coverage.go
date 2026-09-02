@@ -17,9 +17,9 @@ import (
 // refuses, and implements refuses everywhere until something
 // spells impl blocks for stated contracts. A trait's nested types
 // render as associated types where every other kind's refuse,
-// because Rust nests nothing else. Throws refuses today; the
-// Result lowering is the recorded idiom and lands as a satellite
-// change. An enum variant's value renders as its discriminant
+// because Rust nests nothing else. Throws renders through the
+// Result fold the lowering spells. An enum variant's value
+// renders as its discriminant
 // where a field's initializer refuses, because a struct declares
 // no field defaults.
 func Coverage() render.Coverage {

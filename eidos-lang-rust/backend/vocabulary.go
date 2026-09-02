@@ -60,6 +60,9 @@ const (
 	FuncSumPayload = "sumpayload"
 	// FuncAliasMods writes a type alias's keywords.
 	FuncAliasMods = "aliasmods"
+	// FuncConstType writes a constant's stated type, refusing an
+	// unstated one.
+	FuncConstType = "consttype"
 )
 
 // Funcs is the shared template vocabulary the kind templates call.
@@ -86,7 +89,20 @@ func Funcs() template.FuncMap {
 		FuncSumMods:     SumMods,
 		FuncSumPayload:  SumPayload,
 		FuncAliasMods:   AliasMods,
+		FuncConstType:   ConstType,
 	}
+}
+
+// ConstType writes a constant's stated type, refusing an unstated
+// one: rustc requires the annotation, and the unit type standing
+// in would ship broken output no formatter catches.
+func ConstType(c *emit.Constant) (string, error) {
+	if c.Type == nil || c.Type.Spelling == "" {
+		return "", fmt.Errorf(
+			"rust: a constant states its type, and %s states none", c.Name,
+		)
+	}
+	return Spell(c.Type), nil
 }
 
 // Docs writes a declaration's documentation as outer doc

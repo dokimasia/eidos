@@ -10,7 +10,7 @@ import (
 )
 
 // Imports renders the file's collected entries as use statements,
-// double colons for slashes, sorted, a blank line after the
+// double colons for slashes, in the set's path order, a blank line after the
 // block. A named entry binds path::Name; a bare entry renders its
 // path alone, which imports the module. Two entries spelling one
 // statement render it once.

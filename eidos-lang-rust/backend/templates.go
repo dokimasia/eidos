@@ -96,7 +96,7 @@ const (
 	// so a declaration stating none reaches the unit type and the
 	// compiler's refusal names the file.
 	ConstantTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
-		"{{vis .Visibility .Name}}const {{.Name}}: {{spell .Type}} = {{.Value}};" +
+		"{{vis .Visibility .Name}}const {{.Name}}: {{consttype .}} = {{.Value}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n"
 )
 

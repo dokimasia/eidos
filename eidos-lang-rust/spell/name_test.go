@@ -36,6 +36,23 @@ func TestName(t *testing.T) {
 		assert.Equal(t, got, "row_count", "snake too")
 	})
 
+	t.Run("escapes keywords raw and refuses what raw cannot carry", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := spell.Name(symbol.KindStruct, symbol.KindField,
+			symbol.VisibilityPublic, "type")
+		assert.NoError(t, err, "a keyword field takes the raw form")
+		assert.Equal(t, got, "r#type", "spelled r#type")
+
+		_, err = spell.Name(symbol.KindStruct, symbol.KindField,
+			symbol.VisibilityPublic, "self")
+		assert.HasError(t, err, "rustc rejects r#self, so the spelling refuses")
+
+		_, err = spell.Name(symbol.KindStruct, symbol.KindField,
+			symbol.VisibilityPublic, "content-type")
+		assert.HasError(t, err, "a convention must not respell a wire name")
+	})
+
 	t.Run("constants scream and type parameters stand", func(t *testing.T) {
 		t.Parallel()
 
