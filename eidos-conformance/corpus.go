@@ -66,21 +66,29 @@ type Corpus struct {
 	Keys func(*meta.Registry) error
 
 	// PackageOf derives the package path a feature's declarations
-	// load under; nil derives the corpus convention, f/<id>. A
-	// language whose canonical paths differ states its own.
-	PackageOf func(featureID string) string
+	// load under, sub naming a feature's sibling package and empty
+	// naming its own; nil derives the corpus convention, f/<id> and
+	// f/<id>/<sub>. A language whose canonical paths differ — a
+	// dotted namespace, a module prefix — states its own, and the
+	// join is its own too, because a slash is not every language's
+	// separator.
+	PackageOf func(featureID, sub string) string
 }
 
 // featureRoot is where the corpus convention places features, as a
 // directory and as the default package prefix.
 const featureRoot = "f/"
 
-// pkg derives one feature package path.
-func (c Corpus) pkg(featureID string) string {
+// pkg derives one feature package path, sub naming a sibling
+// package and empty naming the feature's own.
+func (c Corpus) pkg(featureID, sub string) string {
 	if c.PackageOf != nil {
-		return c.PackageOf(featureID)
+		return c.PackageOf(featureID, sub)
 	}
-	return featureRoot + featureID
+	if sub == "" {
+		return featureRoot + featureID
+	}
+	return featureRoot + featureID + "/" + sub
 }
 
 // Run holds one language's corpus to the shared inventory:
@@ -117,7 +125,7 @@ func Run(t *testing.T, c Corpus) {
 		case Refuses:
 			t.Run("refuses "+f.ID, func(t *testing.T) {
 				t.Parallel()
-				AssertRefusedFeature(t, c, f)
+				AssertRefusedFeature(t, c, g, f)
 			})
 		}
 	}
@@ -160,12 +168,7 @@ func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	ctx := func(decl symbol.Symbol) *Ctx {
 		return &Ctx{
 			Lang: lang, Decl: decl, Graph: g,
-			Pkg: func(sub string) string {
-				if sub == "" {
-					return c.pkg(f.ID)
-				}
-				return c.pkg(f.ID) + "/" + sub
-			},
+			Pkg: func(sub string) string { return c.pkg(f.ID, sub) },
 		}
 	}
 	for _, d := range f.Declares {
@@ -187,9 +190,14 @@ func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	}
 }
 
-// AssertRefusedFeature holds one refusal honest: the tree carries
-// nothing under the feature's directory.
-func AssertRefusedFeature(tb assert.TB, c Corpus, f Feature) {
+// AssertRefusedFeature holds one refusal honest two ways: the tree
+// carries nothing under the feature's directory, and the load
+// carries no package the feature would occupy. The second is what
+// catches a spelling filed somewhere else — a shared file, a
+// rehomed tree the directory check never walks — because a
+// refusal's proof is what the graph holds, not where the bytes
+// sat.
+func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	tb.Helper()
 
 	dir := featureRoot + f.ID
@@ -204,6 +212,17 @@ func AssertRefusedFeature(tb assert.TB, c Corpus, f Feature) {
 		return nil
 	})
 	assert.NoError(tb, err, "the corpus tree walks")
+
+	occupied := map[string]bool{c.pkg(f.ID, ""): true}
+	for _, d := range f.Declares {
+		occupied[c.pkg(f.ID, d.Sub)] = true
+	}
+	for pkg := range g.Packages() {
+		if occupied[pkg.ID.Package] {
+			tb.Errorf("%s is refused and the load holds %s anyway: a refusal "+
+				"covers nothing, wherever the spelling sat", f.ID, pkg.ID.Package)
+		}
+	}
 }
 
 // corpusGraph loads the whole tree once, full depth, for the

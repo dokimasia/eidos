@@ -11,6 +11,9 @@ import (
 
 	"go.dokimi.dev/eidos/conformance"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/store"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // scriptedCorpus is the scripted language's entry: the corpus tree
@@ -79,9 +82,34 @@ func TestCoverage(t *testing.T) {
 		contradicted := scriptedCorpus()
 		contradicted.Coverage["struct_fields"] = conformance.Refuses
 		msg := assert.Rejects(t, "a refusal the tree contradicts", func(tb assert.TB) {
-			conformance.AssertRefusedFeature(tb, contradicted, featureByID(t, "struct_fields"))
+			conformance.AssertRefusedFeature(tb, contradicted, store.New(),
+				featureByID(t, "struct_fields"))
 		})
 		assert.Contains(t, msg, "struct_fields", "naming the contradiction")
+	})
+
+	t.Run("rejects a refusal the load contradicts", func(t *testing.T) {
+		t.Parallel()
+
+		// The tree is empty under the feature, so only the graph can
+		// catch the spelling: the corpus convention's package stands
+		// in the load whatever file declared it.
+		hidden := scriptedCorpus()
+		hidden.Coverage["interfaces"] = conformance.Refuses
+		g := store.New()
+		assert.NoError(t, g.AddPackage(&node.Package{
+			ID: symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: "f/interfaces",
+				Kind: symbol.KindPackage,
+			},
+			Path: []string{"f", "interfaces"},
+		}), "the hidden package is admitted")
+		g.Freeze()
+
+		msg := assert.Rejects(t, "a refusal the load contradicts", func(tb assert.TB) {
+			conformance.AssertRefusedFeature(tb, hidden, g, featureByID(t, "interfaces"))
+		})
+		assert.Contains(t, msg, "f/interfaces", "naming the package that stood")
 	})
 }
 

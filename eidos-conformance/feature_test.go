@@ -27,7 +27,7 @@ func TestFeature(t *testing.T) {
 
 	tree := fstest.MapFS{
 		"f/struct_fields/a.zz": {Data: []byte(
-			"package own/struct_fields\ntype Point int string\n",
+			"package own.struct_fields\ntype Point int string\n",
 		)},
 	}
 	sink := diag.NewSink()
@@ -39,9 +39,17 @@ func TestFeature(t *testing.T) {
 	assert.NoError(t, err, "the rehomed tree loads")
 
 	c := conformance.Corpus{
-		Frontend:  frontendtest.NewScripted(),
-		Sources:   tree,
-		PackageOf: func(id string) string { return "own/" + id },
+		Frontend: frontendtest.NewScripted(),
+		Sources:  tree,
+		PackageOf: func(id, sub string) string {
+			// A dotted namespace joins its own way, which is the
+			// hook's whole point: the armature never spells the
+			// separator for it.
+			if sub == "" {
+				return "own." + id
+			}
+			return "own." + id + "." + sub
+		},
 	}
 	checked := false
 	f := conformance.Feature{
@@ -50,10 +58,10 @@ func TestFeature(t *testing.T) {
 			Name: "Point", Kind: symbol.KindStruct,
 			Check: func(tb assert.TB, ctx *conformance.Ctx) {
 				checked = true
-				assert.Equal(tb, ctx.Pkg(""), "own/struct_fields",
+				assert.Equal(tb, ctx.Pkg(""), "own.struct_fields",
 					"the derivation is the corpus's own")
-				assert.Equal(tb, ctx.Pkg("dep"), "own/struct_fields/dep",
-					"a subpackage extends it")
+				assert.Equal(tb, ctx.Pkg("dep"), "own.struct_fields.dep",
+					"and so is the join a sibling package takes")
 			},
 		}},
 	}
