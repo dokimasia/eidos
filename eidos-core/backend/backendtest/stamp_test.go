@@ -69,4 +69,46 @@ func TestAssertStamped(t *testing.T) {
 		assert.Contains(t, failure, "derivation",
 			"the check names what the frame carries")
 	})
+
+	t.Run("rejects sources the file did not sort", func(t *testing.T) {
+		t.Parallel()
+
+		unsorted := scripted(func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
+			return []plugin.RenderedFile{{
+				Name:    "a.txt",
+				Sources: []string{"b.src", "a.src"},
+				Body:    []byte("package a\n"),
+			}}, nil
+		})
+
+		failure := assert.Rejects(t, "a rendered file carries its sources sorted",
+			func(tb assert.TB) {
+				backendtest.AssertStamped(tb, unsorted, fixtureContract(tb))
+			})
+		assert.Contains(t, failure, "sources",
+			"the check names what the frame derives from")
+		assert.Contains(t, failure, "distinct and sorted",
+			"and refuses them before the frame reorders them, so the file "+
+				"carrying no emitter is not what fails")
+	})
+
+	t.Run("reports every file the frame refuses", func(t *testing.T) {
+		t.Parallel()
+
+		faulty := scripted(func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
+			return []plugin.RenderedFile{
+				{Name: "a.txt", Body: []byte("no newline")},
+				{Name: "b.txt", Body: []byte("a carriage\r\n")},
+			}, nil
+		})
+
+		rec := assert.NewRecorder()
+		backendtest.AssertStamped(rec, faulty, fixtureContract(t))
+		assert.Equal(t, len(rec.Failures()), 2,
+			"a file the frame refuses is reported and the next one is still read")
+		for i, name := range []string{"a.txt", "b.txt"} {
+			assert.Contains(t, rec.Failures()[i].Contract, name,
+				"each refusal names the file it read")
+		}
+	})
 }

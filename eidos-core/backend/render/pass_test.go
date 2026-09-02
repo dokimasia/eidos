@@ -133,11 +133,180 @@ func runPass(
 	return files, sink
 }
 
+// refName is the template every reference-form fixture body names.
+const refName = "method1.tpl"
+
+// refTree returns the emitting plugin's tree holding src under
+// [refName].
+func refTree(src string) map[plugin.ID]fs.FS {
+	return map[plugin.ID]fs.FS{
+		"gen": fstest.MapFS{refName: &fstest.MapFile{Data: []byte(src)}},
+	}
+}
+
+// refBody returns a body claiming [refName] and nothing else, so a
+// case adds only the slots it is about.
+func refBody() emit.Body {
+	return emit.Body{Ref: &emit.TemplateRef{Name: refName}}
+}
+
+// refused returns a statement the fixture's scaffold cannot spell:
+// the real printer failure an error path needs.
+func refused() emit.Stmt {
+	return emit.Stmt{Kind: emit.StmtGuard, Name: "err"}
+}
+
+// method returns a per-source unit holding one method carrying
+// body, the second callable kind the body builtin takes.
+func method(key, name string, body emit.Body) plugin.Unit {
+	u := unitOf("gen", key)
+	m := &emit.Method{
+		Origin: coretest.Method(coretest.StorePath, coretest.StructName, name).ID,
+		Name:   name,
+	}
+	m.Body = body
+	u.Decls = append(u.Decls, m)
+	return u
+}
+
+// renderRef renders one function whose body is b, with trees as the
+// emitting plugin's template trees, and returns the file's bytes
+// beside the run's findings. An empty answer means the file was
+// withheld.
+func renderRef(
+	tb assert.TB, trees map[plugin.ID]fs.FS, b emit.Body,
+) (string, *diag.Sink) {
+	tb.Helper()
+
+	p, err := render.New("printer", language())
+	assert.NoError(tb, err, "the language composes")
+	sink := diag.NewSink()
+	files, err := p.Render(&plugin.RenderContext{
+		Emit:  seeded(tb, fn("store.go", "Handle", b)),
+		Trees: trees, Sink: sink, Plugin: "printer",
+	})
+	assert.NoError(tb, err, "the pass runs whole")
+	if len(files) == 0 {
+		return "", sink
+	}
+	return string(files[0].Body), sink
+}
+
+// reported returns the message of the first finding under code,
+// which is what a case asserting the wording reads.
+func reported(tb assert.TB, sink *diag.Sink, code diag.Code) string {
+	tb.Helper()
+
+	coretest.AssertReports(tb, sink, code)
+	for d := range sink.All() {
+		if d.Code == code {
+			return d.Msg
+		}
+	}
+	return ""
+}
+
 // The pass is the procedure every language shares: group through the
 // naming, render kinds in canonical order, finalise per file and
 // continue past a failure.
 func TestPass(t *testing.T) {
 	t.Parallel()
+
+	t.Run("New", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("names every gap of an empty language at once", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := render.New("printer", render.Language{})
+			assert.HasError(t, err, "a language declaring nothing composes into nothing")
+			for _, gap := range []string{
+				"spells no kinds", "spells no filenames", "spells no scaffolding",
+				"renders no import block", "holds no formatter",
+			} {
+				assert.Contains(t, err.Error(), gap,
+					"a composition reads every fault at once, "+gap+" included")
+			}
+		})
+
+		t.Run("a kind template that does not parse is a fault", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Kinds[symbol.KindEnum] = "{{"
+			_, err := render.New("printer", l)
+			assert.HasError(t, err, "an unparseable spelling never reaches a render")
+			assert.Contains(t, err.Error(), symbol.KindEnum.String(),
+				"and the fault names the kind it could not parse")
+		})
+
+		t.Run("a group template that does not parse is a fault", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Groups = map[render.GroupName]string{"block": "{{"}
+			_, err := render.New("printer", l)
+			assert.HasError(t, err, "an unparseable group spelling is the same fault")
+			assert.Contains(t, err.Error(), "block",
+				"and the fault names the group it could not parse")
+		})
+
+		t.Run("a file skeleton that does not parse is a fault", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.File = "{{"
+			_, err := render.New("printer", l)
+			assert.HasError(t, err, "an unparseable skeleton never assembles a file")
+			assert.Contains(t, err.Error(), "file skeleton",
+				"and the fault names the skeleton")
+		})
+	})
+
+	t.Run("Coverage", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reads the language's declaration back", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Coverage = render.Coverage{Facts: map[symbol.Fact]render.Verdict{
+				symbol.FactAbstract: render.Refuses,
+			}}
+			p, err := render.New("printer", l)
+			assert.NoError(t, err, "the language composes")
+			assert.Equal(t, p.Coverage().Of(symbol.KindStruct, symbol.FactAbstract),
+				render.Refuses,
+				"a consumer holding the pass reads the data the guard reads")
+		})
+
+		t.Run("reads undeclared where the language declared none", func(t *testing.T) {
+			t.Parallel()
+
+			p, err := render.New("printer", language())
+			assert.NoError(t, err, "the language composes")
+			assert.False(t, p.Coverage().Declared(),
+				"an undeclared coverage leaves the guard off")
+		})
+	})
+
+	t.Run("refuses a context it cannot render from", func(t *testing.T) {
+		t.Parallel()
+
+		p, err := render.New("printer", language())
+		assert.NoError(t, err, "the language composes")
+
+		_, err = p.Render(nil)
+		assert.HasError(t, err, "a nil context carries no store")
+		assert.Contains(t, err.Error(), "emit store", "and names what it needs")
+
+		_, err = p.Render(&plugin.RenderContext{Sink: diag.NewSink()})
+		assert.HasError(t, err, "and neither does a context holding no store")
+
+		_, err = p.Render(&plugin.RenderContext{Emit: seeded(t)})
+		assert.HasError(t, err, "a context without a sink has nowhere to report")
+		assert.Contains(t, err.Error(), "sink", "and names what it needs")
+	})
 
 	t.Run("groups units into files through the naming", func(t *testing.T) {
 		t.Parallel()
@@ -609,6 +778,55 @@ func TestPass(t *testing.T) {
 			assert.HasError(t, err, "the builtins' names are the pass's own")
 			assert.Contains(t, err.Error(), "body", "naming the collision")
 		})
+
+		t.Run("a plugin the schedule does not hold still merges", func(t *testing.T) {
+			t.Parallel()
+
+			b := refBody()
+			b.Ref.Data = map[string]any{"x": "go"}
+			body, sink := runMerged(t, shouting(), &plugin.RenderContext{
+				Emit:  seeded(t, fn("store.go", "Handle", b)),
+				Funcs: map[plugin.ID]template.FuncMap{"gen": {"mark": strings.ToUpper}},
+				Trees: refTree("\t{{mark .Data.x}}()\n{{slots}}"),
+			})
+			assert.False(t, sink.Failed(), "a helper needs no schedule position to merge")
+			assert.Contains(t, body, "\tGO()\n",
+				"and a fixture without a schedule still renders through it")
+		})
+
+		t.Run("a plugin claiming a builtin is refused", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := runMerged(t, shouting(), &plugin.RenderContext{
+				Emit: seeded(t, fn("store.go", "Handle",
+					emit.Body{Stmts: []emit.Stmt{call("content")}})),
+				Schedule: []plugin.ID{"gen"},
+				Funcs: map[plugin.ID]template.FuncMap{
+					"gen": {render.BuiltinBody: strings.ToUpper},
+				},
+			})
+			coretest.AssertCodes(t, sink, render.UndeclaredOverride)
+			assert.Contains(t, body, "\tcontent()\n",
+				"and the builtin stands, so the body still places its content")
+		})
+
+		t.Run("two plugins registering one helper collide", func(t *testing.T) {
+			t.Parallel()
+
+			b := refBody()
+			b.Ref.Data = map[string]any{"x": "go"}
+			body, sink := runMerged(t, shouting(), &plugin.RenderContext{
+				Emit: seeded(t, fn("store.go", "Handle", b)),
+				Funcs: map[plugin.ID]template.FuncMap{
+					"alpha": {"mark": strings.ToUpper},
+					"beta":  {"mark": strings.ToLower},
+				},
+				Trees: refTree("\t{{mark .Data.x}}()\n{{slots}}"),
+			})
+			coretest.AssertCodes(t, sink, render.HelperCollision)
+			assert.Contains(t, body, "\tGO()\n",
+				"the first registration in composition order stands")
+		})
 	})
 
 	t.Run("two runs produce the same bytes", func(t *testing.T) {
@@ -782,6 +1000,371 @@ func TestPass(t *testing.T) {
 		_, err := render.New("printer", l)
 		assert.HasError(t, err, "the builtin names stay the pass's")
 		assert.Contains(t, err.Error(), "builtin", "naming the claim")
+	})
+
+	t.Run("records the bindings a use declares", func(t *testing.T) {
+		t.Parallel()
+
+		bound := func() render.Language {
+			l := language()
+			l.Imports = func(set *render.ImportSet) string {
+				var b strings.Builder
+				for _, e := range set.Entries() {
+					b.WriteString("use " + e.Path + " as " + e.Name + "\n")
+				}
+				return b.String()
+			}
+			return l
+		}
+
+		t.Run("a second argument records the name the import binds", func(t *testing.T) {
+			t.Parallel()
+
+			l := bound()
+			l.Kinds[symbol.KindStruct] = "{{use \"svc/store\" \"Store\"}}type {{.Name}} struct{}\n"
+			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+			assert.False(t, sink.Failed(), "one binding per call is valid")
+			assert.Contains(t, string(files[0].Body), "use svc/store as Store\n",
+				"the binding reaches the block beside its path")
+		})
+
+		t.Run("more than one binding refuses the declaration", func(t *testing.T) {
+			t.Parallel()
+
+			l := bound()
+			l.Kinds[symbol.KindStruct] = "{{use \"svc/store\" \"Store\" \"Row\"}}type {{.Name}} struct{}\n"
+			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "one binding",
+				"the refusal names the rule: one call records one binding")
+			assert.NotContains(t, string(files[0].Body), "Alpha",
+				"and the declaration is skipped rather than half-qualified")
+		})
+	})
+
+	t.Run("places a body only where one is carried", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("a method's body composes like a function's", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Kinds[symbol.KindMethod] = "func (r) {{.Name}}() {\n{{body .}}}\n"
+			files, sink := runPass(t, l, seeded(t, method("store.go", "Handle",
+				emit.Body{Stmts: []emit.Stmt{call("content")}})))
+			assert.False(t, sink.Failed(), "a method carries a body")
+			assert.Equal(t, string(files[0].Body),
+				"func (r) Handle() {\n\tcontent()\n}\n",
+				"the same fixed composition, under the method's own spelling")
+		})
+
+		t.Run("a declaration carrying none refuses the template", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Kinds[symbol.KindStruct] = "type {{.Name}} struct{}\n{{body .}}"
+			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "carries no body",
+				"the refusal names what the builtin was handed")
+			assert.Equal(t, string(files[0].Body), "type Alpha struct{}\n",
+				"and the file keeps only what the template wrote before it")
+		})
+	})
+
+	t.Run("a scaffold refusal fails the declaration wherever it sits", func(t *testing.T) {
+		t.Parallel()
+
+		placements := []struct {
+			name string
+			body func() emit.Body
+		}{
+			{
+				name: "in the prologue",
+				body: func() emit.Body {
+					var b emit.Body
+					b.Prologue.Append(refused())
+					return b
+				},
+			},
+			{
+				name: "in a named slot",
+				body: func() emit.Body {
+					var b emit.Body
+					b.Declare("checks").Append(refused())
+					return b
+				},
+			},
+			{
+				name: "in the epilogue",
+				body: func() emit.Body {
+					var b emit.Body
+					b.Epilogue.Append(refused())
+					return b
+				},
+			},
+		}
+		for _, tt := range placements {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				files, sink := runPass(t, language(), seeded(t,
+					fn("store.go", "Handle", tt.body())))
+				coretest.AssertCodes(t, sink, render.RefusedTemplate)
+				assert.Equal(t, string(files[0].Body), "func Handle() {\n",
+					"the template stops at the refusal, so no unspelt statement "+
+						"and no closing shape reaches the file")
+			})
+		}
+	})
+
+	t.Run("a reference the tree cannot serve falls back to the slots", func(t *testing.T) {
+		t.Parallel()
+
+		withPrologue := func() emit.Body {
+			b := refBody()
+			b.Prologue.Append(call("pro"))
+			return b
+		}
+
+		t.Run("a name the tree does not hold", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := renderRef(t, map[plugin.ID]fs.FS{
+				"gen": fstest.MapFS{"other.tpl": &fstest.MapFile{Data: []byte("{{slots}}")}},
+			}, withPrologue())
+			assert.Contains(t, reported(t, sink, render.UnresolvedRef), refName,
+				"the finding names the template the tree does not hold")
+			assert.Contains(t, body, "\tpro()\n",
+				"and the slots survive the broken claim")
+		})
+
+		t.Run("a template that does not parse", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := renderRef(t, refTree("{{"), withPrologue())
+			assert.Contains(t, reported(t, sink, render.UnresolvedRef), "does not parse",
+				"the finding names why nothing resolved")
+			assert.Contains(t, body, "\tpro()\n",
+				"and the extension points survive it")
+		})
+
+		t.Run("a template that refuses at execute time", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := renderRef(t, refTree("{{slot \"ghost\"}}"), withPrologue())
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "ghost",
+				"the finding names the slot the body never declared")
+			assert.Contains(t, body, "\tpro()\n",
+				"and the fallback still places the pending content")
+		})
+	})
+
+	t.Run("places the pending slots a marker asks for", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("the catch-all takes the named slots too", func(t *testing.T) {
+			t.Parallel()
+
+			b := refBody()
+			b.Declare("checks").Append(call("named"))
+			body, sink := renderRef(t, refTree("\tmid()\n{{slots}}"), b)
+			assert.False(t, sink.Failed(), "a placed marker is valid")
+			assert.ContainsInOrder(t, body, []string{"mid", "named"},
+				"the catch-all places every slot no named marker claimed")
+		})
+
+		t.Run("a named marker skips the slots before it", func(t *testing.T) {
+			t.Parallel()
+
+			b := refBody()
+			b.Declare("first").Append(call("early"))
+			b.Declare("second").Append(call("late"))
+			body, sink := renderRef(t, refTree("{{slot \"second\"}}{{slots}}"), b)
+			assert.False(t, sink.Failed(), "named markers are valid")
+			assert.ContainsInOrder(t, body, []string{"late", "early"},
+				"the named slot arrives where the template says, the rest after")
+		})
+
+		t.Run("an unplaced named slot counts against the marker rule", func(t *testing.T) {
+			t.Parallel()
+
+			b := refBody()
+			b.Declare("checks").Append(call("named"))
+			body, sink := renderRef(t, refTree("\tbare()\n"), b)
+			assert.Contains(t, reported(t, sink, render.DroppedSlots), "1 pending",
+				"the finding counts the statements no marker placed")
+			assert.NotContains(t, body, "named",
+				"and nothing is appended for a template that owns its layout")
+		})
+
+		markers := []struct {
+			name string
+			tpl  string
+			body func() emit.Body
+		}{
+			{
+				name: "the catch-all over a refused prologue",
+				tpl:  "{{slots}}",
+				body: func() emit.Body {
+					b := refBody()
+					b.Prologue.Append(refused())
+					return b
+				},
+			},
+			{
+				name: "the catch-all over a refused named slot",
+				tpl:  "{{slots}}",
+				body: func() emit.Body {
+					b := refBody()
+					b.Declare("checks").Append(refused())
+					return b
+				},
+			},
+			{
+				name: "the catch-all over a refused epilogue",
+				tpl:  "{{slots}}",
+				body: func() emit.Body {
+					b := refBody()
+					b.Epilogue.Append(refused())
+					return b
+				},
+			},
+			{
+				name: "a named marker over a refused slot",
+				tpl:  "{{slot \"checks\"}}",
+				body: func() emit.Body {
+					b := refBody()
+					b.Declare("checks").Append(refused())
+					return b
+				},
+			},
+		}
+		for _, tt := range markers {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				body, sink := renderRef(t, refTree(tt.tpl), tt.body())
+				assert.Contains(t, reported(t, sink, render.RefusedTemplate),
+					refName, "the printer's refusal reaches the referencing template")
+				assert.Equal(t, body, "func Handle() {\n",
+					"the template stops at the refusal, so no unspelt statement "+
+						"and no closing shape reaches the file")
+			})
+		}
+	})
+
+	t.Run("clusters claim a declaration once", func(t *testing.T) {
+		t.Parallel()
+
+		grouped := func(c render.Cluster) render.Language {
+			l := language()
+			l.Cluster = c
+			l.Groups = map[render.GroupName]string{
+				"first":  "first(\n{{range .Decls}}\t{{.Name}}\n{{end}})\n",
+				"second": "second(\n{{range .Decls}}\t{{.Name}}\n{{end}})\n",
+			}
+			return l
+		}
+
+		t.Run("a member the unit does not hold is ignored", func(t *testing.T) {
+			t.Parallel()
+
+			stranger := &emit.Struct{
+				Origin: coretest.Struct(coretest.StorePath, "Stranger").ID,
+				Name:   "Stranger",
+			}
+			l := grouped(func([]symbol.Symbol) []render.Clustered {
+				return []render.Clustered{{
+					Group: "first", Decls: []symbol.Symbol{stranger},
+				}}
+			})
+			files, sink := runPass(t, l, seeded(t,
+				unitOf("gen", "store.go", "Alpha", "Beta")))
+			assert.False(t, sink.Failed(), "an outside claim is ignored, not reported")
+			assert.Equal(t, string(files[0].Body),
+				"type Alpha struct{}\ntype Beta struct{}\n",
+				"every declaration renders as the singleton it stayed")
+		})
+
+		t.Run("a declaration two clusters claim goes to the first", func(t *testing.T) {
+			t.Parallel()
+
+			l := grouped(func(decls []symbol.Symbol) []render.Clustered {
+				return []render.Clustered{
+					{Group: "first", Decls: decls[:1]},
+					{Group: "second", Decls: decls[:1]},
+				}
+			})
+			files, sink := runPass(t, l, seeded(t,
+				unitOf("gen", "store.go", "Alpha", "Beta")))
+			assert.False(t, sink.Failed(), "the second claim is dropped silently")
+			assert.Equal(t, string(files[0].Body),
+				"first(\n\tAlpha\n)\ntype Beta struct{}\n",
+				"the first cluster renders it, and the second renders nothing")
+		})
+
+		t.Run("a group template refusing its cluster reports", func(t *testing.T) {
+			t.Parallel()
+
+			l := grouped(func(decls []symbol.Symbol) []render.Clustered {
+				return []render.Clustered{{Group: "first", Decls: decls}}
+			})
+			l.Groups["first"] = "{{.Missing}}"
+			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "group template",
+				"the finding names the template that refused")
+			assert.Equal(t, string(files[0].Body), "",
+				"and the cluster's declarations render nowhere")
+		})
+	})
+
+	t.Run("nests through the member's own kind template", func(t *testing.T) {
+		t.Parallel()
+
+		hosting := func() render.Language {
+			l := language()
+			l.Kinds[symbol.KindStruct] = "type {{.Name}} {\n" +
+				"{{- range .Types.Items}}\n{{nested \"\t\" .}}{{- end}}\n}\n"
+			return l
+		}
+		hostOf := func(inner symbol.Symbol) plugin.Unit {
+			host := &emit.Struct{Name: "Row"}
+			host.Types.Append(inner)
+			u := unitOf("gen", "store.go")
+			u.Decls = append(u.Decls, host)
+			return u
+		}
+
+		t.Run("a member's refusal propagates to its host", func(t *testing.T) {
+			t.Parallel()
+
+			l := hosting()
+			l.Kinds[symbol.KindEnum] = "{{.Missing}}"
+			_, sink := runPass(t, l, seeded(t, hostOf(&emit.Enum{Name: "Phase"})))
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "Missing",
+				"a host never renders around a half-spelt member")
+		})
+
+		t.Run("a member spelling nothing indents nothing", func(t *testing.T) {
+			t.Parallel()
+
+			l := hosting()
+			l.Kinds[symbol.KindEnum] = ""
+			files, sink := runPass(t, l, seeded(t, hostOf(&emit.Enum{Name: "Phase"})))
+			assert.False(t, sink.Failed(), "an empty spelling is a spelling")
+			assert.Equal(t, string(files[0].Body), "type Row {\n\n}\n",
+				"the block carries no indentation of its own")
+		})
+	})
+
+	t.Run("a skeleton refusing a file withholds it", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.File = "{{.Missing}}"
+		files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+		assert.Contains(t, reported(t, sink, render.RefusedTemplate), "store_stub.txt",
+			"the finding names the file the skeleton refused")
+		assert.Length(t, files, 0, "and the sink never receives a half-assembled file")
 	})
 }
 
