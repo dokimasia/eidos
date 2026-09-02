@@ -336,12 +336,12 @@ func TestTemplates(t *testing.T) {
 		t.Parallel()
 
 		e := &emit.Enum{Name: "Phase", Const: true}
-		e.Variants.Append(&emit.EnumVariant{Name: "Active"})
+		e.Variants.Append(&emit.EnumVariant{Name: "Active", Comment: "the default"})
 		assert.Equal(t, execute(t, backend.EnumTemplate, e),
 			"export const enum Phase {\n"+
-				"  Active,\n"+
+				"  Active, // the default\n"+
 				"}\n",
-			"the const keyword before enum, inlined at use")
+			"the const keyword before enum, the trailing comment behind the comma")
 	})
 
 	t.Run("enum", func(t *testing.T) {

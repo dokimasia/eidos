@@ -73,7 +73,7 @@ const (
 	// block.
 	EnumTemplate = "{{docs .Doc}}{{mods .}}{{if .Const}}const {{end}}enum {{.Name}} {\n" +
 		"{{- range .Variants.Items}}\n{{docs .Doc \"  \"}}" +
-		"  {{.Name}}{{with .Value}} = {{.}}{{end}},\n" +
+		"  {{.Name}}{{with .Value}} = {{.}}{{end}},{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n"
 
 	// ConstantTemplate spells a constant, typed where the
