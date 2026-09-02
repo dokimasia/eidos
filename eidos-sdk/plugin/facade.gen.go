@@ -262,6 +262,13 @@ type Renderer = core.Renderer
 // RenderContext carries what one render call may touch.
 type RenderContext = core.RenderContext
 
+// SyntaxProvider declares a target's comment forms: what the
+// output contract writes a generated file's frame through, and
+// what a frontend reading that file back recognizes it by. A
+// backend implements it, and a composition staging output asks
+// through it rather than restating the language's own spelling.
+type SyntaxProvider = core.SyntaxProvider
+
 // TemplateProvider declares a plugin's template trees: the bodies
 // its references name, per target, and the helpers those templates
 // call. Overrides names the shared vocabulary entries the plugin

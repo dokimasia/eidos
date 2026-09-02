@@ -40,12 +40,18 @@
 //
 // A phase call attaches per-subject problems to its context's sink
 // and continues; a returned error is fatal to the phase. A defect
-// returns a plain error: a unit flushed twice or unroutable, a
-// routing surface built over a moving graph. Nothing here panics.
+// returns a plain error: a unit flushed twice, one carrying a nil
+// declaration, a routing surface built over a moving graph.
+//
+// One defect class panics instead: a record on a nil subject —
+// [GraphBuilder.Scope], [GraphBuilder.Attach], [GraphBuilder.Stamp]
+// and [GraphBuilder.Rehome] — because nothing could ever join it
+// to a declaration, and a frontend that records one is broken in
+// its own constructor rather than on its input.
 //
 // # Dependency position
 //
 // core/plugin imports core/diag, core/directive, core/emit,
-// core/meta, core/node, core/store, core/symbol and the Go
-// stdlib.
+// core/meta, core/node, core/position, core/store, core/symbol
+// and the Go stdlib.
 package plugin

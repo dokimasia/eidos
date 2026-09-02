@@ -50,7 +50,7 @@
 // # Dependency position
 //
 // core/frontend/load imports core/plugin, core/store, core/node,
-// core/directive, core/diag, core/symbol, core/position and the
+// core/directive, core/meta, core/diag, core/symbol, core/position and the
 // Go stdlib; it drives frontends and writes the store, so the
 // read side's pieces meet here and nothing beneath imports it
 // back.

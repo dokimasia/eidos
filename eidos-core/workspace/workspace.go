@@ -9,6 +9,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
@@ -21,6 +22,9 @@ type Workspace struct {
 	directives *directive.Registry
 	annotate   []annEntry
 	plans      []compiledPlan
+	// sink stages and commits what the plans render, nil for a
+	// composition that stops after the settle.
+	sink output.Sink
 }
 
 // ErrRunFailed classifies a run that reported errors; the findings
@@ -32,6 +36,10 @@ var ErrRunFailed = errors.New("workspace: the run reported errors")
 type Report struct {
 	Sink  *diag.Sink
 	Facts *meta.Facts
+	// Written records what the run committed to its sink, in the
+	// order the sink reports: empty for a composition declaring no
+	// output, and for a run whose findings kept it from writing.
+	Written []output.Written
 	// Emits holds each plan's store, keyed by plan name. It is
 	// empty where the frame stopped before the plans ran.
 	Emits map[string]*plugin.Emit

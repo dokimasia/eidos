@@ -19,18 +19,33 @@
 //
 // [Workspace.Run] takes one loaded graph through the frame: seal,
 // per-subject directive validation, the kernel meta drops, the
-// annotate schedule in bucket order, and the plans in parallel.
-// Each plan owns its emit store, its scoped index and its readers,
-// and plans exchange nothing, so one plan's failure does not stop
-// its siblings. A Workspace is safe for concurrent runs: nothing
-// on it mutates after Build, and every mutable structure a run
-// touches is created per call.
+// stamp replay, the annotate schedule in bucket order, and the
+// plans in parallel. Each plan owns its emit store, its scoped
+// index and its readers, and plans exchange nothing, so one plan's
+// failure does not stop its siblings. A Workspace is safe for
+// concurrent runs: nothing on it mutates after Build, and every
+// mutable structure a run touches is created per call.
+//
+// # The output
+//
+// A composition declaring output through [Builder.Output] carries
+// the frame one step further: each plan settles, renders through
+// its backend and stamps every file through the output contract,
+// and the run writes what every plan staged into the sink and
+// commits once. The render is parallel per plan and the write is
+// sequential in plan order, so one run writes one tree in one
+// order however the plans interleaved. A run that reported an
+// Error writes nothing and discards its staging, because half a
+// tree is worse than none. A composition declaring no output
+// stops after the settle, and its plans' emit stores are the run's
+// whole product.
 //
 // # Failure semantics
 //
 // Build returns errors and collects them; every registry beneath
 // it refuses a duplicate naming both claimants. Run refuses a
-// missing or pre-frozen graph with a plain error, wraps a
+// missing graph with a plain error, takes one the load already
+// sealed as it stands, wraps a
 // handler's returned error with its role and stops the frame, and
 // never stops for a finding: findings arrive in the report's sink,
 // and any Error among them classifies the run under
@@ -39,7 +54,8 @@
 // # Dependency position
 //
 // core/workspace imports core/plugin, core/store, core/meta,
-// core/directive, core/diag, core/symbol and the Go stdlib. It
+// core/directive, core/output, core/diag, core/symbol and the Go
+// stdlib. It
 // never imports the root authoring package: plugins arrive built,
 // so the composition works on the base contract every authoring layer
 // lowers to.

@@ -7,8 +7,10 @@ import (
 	"errors"
 
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // Config carries what the composition populates from: option
@@ -31,9 +33,15 @@ type Plan struct {
 	// Generators run in bucket order within the plan, whatever
 	// order they are listed in.
 	Generators []plugin.Generator
-	// Backend is carried and validated: exactly one per plan, its
-	// target registered. Nothing invokes it at this scope.
+	// Backend renders the plan's settled store: exactly one per
+	// plan, its target registered.
 	Backend plugin.Backend
+	// Layout derives the path a rendered file takes in the output
+	// tree, from its owning package and its target-spelled name;
+	// nil takes the convention, the package path and the name
+	// joined by a slash, and the name alone for a plan file. A
+	// composition whose tree is laid out otherwise states its own.
+	Layout func(pkg symbol.Identity, name string) string
 }
 
 // Builder collects a composition. Every method appends or sets
@@ -43,6 +51,8 @@ type Builder struct {
 	annotators []plugin.Annotator
 	plans      []Plan
 	targets    []plugin.Target
+	sink       output.Sink
+	brand      output.Brand
 	keys       []func(r *meta.Registry) error
 	config     Config
 }
@@ -61,6 +71,19 @@ func (b *Builder) Annotators(as ...plugin.Annotator) *Builder {
 // Plans registers the write sides.
 func (b *Builder) Plans(ps ...Plan) *Builder {
 	b.plans = append(b.plans, ps...)
+	return b
+}
+
+// Output declares where a run's rendered files go: the sink that
+// stages and commits them, and the brand the output contract
+// stamps each file's frame with.
+//
+// A composition declaring none stops after the settle, and its
+// plans' emit stores are the run's whole product. That is the
+// difference between a composition that answers what it would
+// write and one that writes it.
+func (b *Builder) Output(sink output.Sink, brand output.Brand) *Builder {
+	b.sink, b.brand = sink, brand
 	return b
 }
 
@@ -98,6 +121,9 @@ func (b *Builder) Build() (*Workspace, error) {
 	faults = append(faults, configure(roster, byName, b.config)...)
 	plans, perr := compilePlans(b.plans, gens, targets)
 	faults = append(faults, perr...)
+	if b.sink != nil {
+		faults = append(faults, stampable(plans, b.brand)...)
+	}
 	if len(faults) > 0 {
 		return nil, errors.Join(faults...)
 	}
@@ -106,5 +132,6 @@ func (b *Builder) Build() (*Workspace, error) {
 		directives: dirs,
 		annotate:   ann,
 		plans:      plans,
+		sink:       b.sink,
 	}, nil
 }

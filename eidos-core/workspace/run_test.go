@@ -135,7 +135,7 @@ func flagged() (*workspace.Builder, *meta.Key[bool]) {
 func TestRun(t *testing.T) {
 	t.Parallel()
 
-	t.Run("refuses a graph already frozen", func(t *testing.T) {
+	t.Run("takes a graph the load already sealed", func(t *testing.T) {
 		t.Parallel()
 
 		w, err := valid().Build()
@@ -143,9 +143,9 @@ func TestRun(t *testing.T) {
 		g, _ := alpha(t)
 		g.Freeze()
 		report, err := w.Run(t.Context(), g)
-		assert.HasError(t, err, "the seal is Run's own")
-		assert.Contains(t, err.Error(), "frozen", "the refusal says why")
-		assert.Nil(t, report, "nothing ran")
+		assert.NoError(t, err,
+			"a sealed graph is what the load driver hands over, so the run takes it")
+		assert.NotNil(t, report, "and the frame ran whole")
 	})
 
 	t.Run("refuses a missing graph", func(t *testing.T) {

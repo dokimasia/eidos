@@ -15,8 +15,10 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // annEntry is one scheduled annotator. The bucket number is the
@@ -44,6 +46,10 @@ type compiledPlan struct {
 	scope   store.Scope
 	entries []genEntry
 	backend plugin.Backend
+	layout  func(pkg symbol.Identity, name string) string
+	// contract stamps the plan's rendered files, nil for a
+	// composition declaring no output.
+	contract *output.Contract
 }
 
 // kernelPhases holds the origins the kernel reports under. A
@@ -552,8 +558,41 @@ func compilePlans(
 			))
 		}
 		out = append(out, compiledPlan{
-			name: pl.Name, scope: pl.Scope, entries: roles, backend: pl.Backend,
+			name: pl.Name, scope: pl.Scope, entries: roles,
+			backend: pl.Backend, layout: pl.Layout,
 		})
 	}
 	return out, faults
+}
+
+// stampable builds each plan's output contract from the brand and
+// the backend's own comment syntax, and reports what cannot be
+// stamped: an invalid brand, or a backend stating no syntax to
+// frame a generated file through. It runs only where a
+// composition declares output, because a run that writes nothing
+// needs no frame.
+func stampable(plans []compiledPlan, brand output.Brand) []error {
+	var faults []error
+	for i := range plans {
+		pl := &plans[i]
+		if pl.backend == nil {
+			continue // the plan's own fault is already collected
+		}
+		syn, states := pl.backend.(plugin.SyntaxProvider)
+		if !states {
+			faults = append(faults, fmt.Errorf(
+				"workspace: plan %q writes output and its backend %s states no "+
+					"comment syntax to frame a generated file through",
+				pl.name, pl.backend.Name(),
+			))
+			continue
+		}
+		contract, err := output.NewContract(brand, syn.Syntax())
+		if err != nil {
+			faults = append(faults, fmt.Errorf("workspace: plan %q: %w", pl.name, err))
+			continue
+		}
+		pl.contract = contract
+	}
+	return faults
 }

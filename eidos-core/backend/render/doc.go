@@ -24,7 +24,7 @@
 //
 // # Dependency position
 //
-// core/backend/render imports core/plugin, core/diag,
+// core/backend/render imports core/plugin, core/emit, core/diag,
 // core/position, core/symbol and the Go stdlib, text/template
 // included. It never imports the root authoring package: the
 // backend kit there lowers to this pass, so the pass works

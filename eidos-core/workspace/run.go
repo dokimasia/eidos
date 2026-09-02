@@ -21,10 +21,14 @@ import (
 
 // Run takes one loaded graph through the frame: seal, directive
 // validation, the kernel meta drops, annotate buckets, per-plan
-// generation. The caller loads packages and attaches raw
-// directives before handing the graph over; Run seals it itself
-// and refuses one already frozen, because attach-after-seal faults
-// would otherwise blame the wrong party.
+// generation, and — where the composition declares output — the
+// render, the stamp and the commit.
+//
+// The caller loads packages and attaches raw directives before
+// handing the graph over. Run seals the graph itself, and takes
+// one the load already sealed as it stands: sealing is idempotent,
+// and a write after the seal refuses at the store under its own
+// code, which is where that fault belongs.
 //
 // A handler's returned error stops the frame, wrapped with its
 // role, and the report holds whatever ran before it. Findings
@@ -35,11 +39,6 @@ import (
 func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 	if g == nil {
 		return nil, errors.New("workspace: Run needs a loaded graph")
-	}
-	if g.Frozen() {
-		return nil, errors.New(
-			"workspace: the graph is already frozen, and the seal is Run's own",
-		)
 	}
 	g.Freeze()
 
@@ -58,9 +57,23 @@ func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 	if err := w.annotateAll(ctx, g, facts, table, sink); err != nil {
 		return report, errors.Join(err, failure(sink))
 	}
-	errs := w.generateAll(ctx, g, facts, table, sink, report.Emits)
+	files, errs := w.generateAll(ctx, g, facts, table, sink, report.Emits)
 	if err := failure(sink); err != nil {
 		errs = append(errs, err)
+	}
+	if len(errs) == 0 {
+		// A run that reported nothing writes; one that failed keeps
+		// its staging unwritten, because half a tree is worse than
+		// none and the findings say why.
+		written, err := w.commit(files)
+		if err != nil {
+			errs = append(errs, err)
+		}
+		report.Written = written
+	} else if w.sink != nil {
+		if err := w.sink.Discard(); err != nil {
+			errs = append(errs, fmt.Errorf("workspace: discard the staging: %w", err))
+		}
 	}
 	return report, errors.Join(errs...)
 }
@@ -235,14 +248,15 @@ func (w *Workspace) generateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
 	emits map[string]*plugin.Emit,
-) []error {
+) ([][]staged, []error) {
 	stores := make([]*plugin.Emit, len(w.plans))
+	files := make([][]staged, len(w.plans))
 	failures := make([]error, len(w.plans))
 	var wg sync.WaitGroup
 	for i := range w.plans {
 		wg.Go(func() {
 			stores[i] = plugin.NewEmit()
-			failures[i] = runPlan(ctx, g, facts, table, sink, w.plans[i], stores[i])
+			files[i], failures[i] = runPlan(ctx, g, facts, table, sink, w.plans[i], stores[i])
 		})
 	}
 	wg.Wait()
@@ -253,7 +267,7 @@ func (w *Workspace) generateAll(
 			errs = append(errs, fmt.Errorf("workspace: plan %q: %w", pl.name, failures[i]))
 		}
 	}
-	return errs
+	return files, errs
 }
 
 // runPlan runs one plan's roles in bucket order, which is what an
@@ -263,18 +277,18 @@ func runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
 	pl compiledPlan, into *plugin.Emit,
-) error {
+) ([]staged, error) {
 	ix, err := plugin.NewIndex(g, facts, table, pl.scope)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, s := range pl.entries {
 		if err := ctx.Err(); err != nil {
-			return err
+			return nil, err
 		}
 		reader, err := ix.Reader(store.NewReadSet())
 		if err != nil {
-			return err
+			return nil, err
 		}
 		call := &plugin.GeneratorContext{
 			Index:  ix,
@@ -286,11 +300,11 @@ func runPlan(
 			Bucket: s.bucket,
 		}
 		if err := s.run.Generate(call); err != nil {
-			return fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
+			return nil, fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
 		}
 	}
 	if err := plugin.Settle(into, pl.backend, sink); err != nil {
-		return fmt.Errorf("settle: %w", err)
+		return nil, fmt.Errorf("settle: %w", err)
 	}
-	return nil
+	return render(pl, into, sink)
 }

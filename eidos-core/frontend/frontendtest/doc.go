@@ -22,7 +22,7 @@
 //
 // core/frontend/frontendtest imports core/frontend/load,
 // core/plugin, core/store, core/node, core/directive, core/meta,
-// core/diag, core/symbol and the assert module; it drives the
+// core/diag, core/symbol, core/position and the assert module; it drives the
 // read side end to end, so it sits beside core/frontend/load at
 // the top and nothing beneath imports it back.
 package frontendtest
