@@ -62,6 +62,7 @@ func Inventory() []Feature {
 					Check: func(tb assert.TB, c *Ctx) {
 						holder, is := c.Decl.(*node.Struct)
 						assert.True(tb, is, "the holder loads as a struct")
+						assert.Length(tb, holder.Fields, 1, "with its one field")
 						assert.Equal(tb, holder.Fields[0].Type.Target, symbol.Identity{
 							Lang: c.Lang, Package: c.Pkg("dep"),
 							Name: "Target", Kind: symbol.KindStruct,
@@ -79,6 +80,7 @@ func Inventory() []Feature {
 					Check: func(tb assert.TB, c *Ctx) {
 						plain, is := c.Decl.(*node.Struct)
 						assert.True(tb, is, "the type loads as a struct")
+						assert.Length(tb, plain.Fields, 1, "with its one field")
 						assert.True(tb, plain.Fields[0].Type.Target.IsZero(),
 							"a builtin resolves to nothing and degrades visibly")
 					},

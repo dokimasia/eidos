@@ -211,12 +211,19 @@ func AssertRefusedFeature(tb assert.TB, c Corpus, f Feature) {
 func corpusGraph(tb assert.TB, c Corpus) *store.Graph {
 	tb.Helper()
 
+	sink := diag.NewSink()
 	g, _, err := load.Load(context.Background(), load.Config{
 		FS:        c.Sources,
 		Frontends: []plugin.Frontend{c.Frontend},
-		Sink:      diag.NewSink(),
+		Sink:      sink,
 		PluginSet: []byte("conformance"),
 	})
 	assert.NoError(tb, err, "the corpus loads")
+	for d := range sink.All() {
+		if d.Severity == diag.SeverityError {
+			tb.Errorf("the corpus load reported %v: a tree the language "+
+				"refuses proves nothing about its expectations", d)
+		}
+	}
 	return g
 }
