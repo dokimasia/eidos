@@ -4,9 +4,6 @@
 package spell
 
 import (
-	"path"
-	"strings"
-
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -20,15 +17,5 @@ import (
 // A plan unit carries no key, so its filename is the word and the
 // tag alone.
 func Filename(u plugin.Unit) string {
-	parts := make([]string, 0, 3)
-	if stem := path.Base(u.Key); u.Key != "" && stem != "." {
-		parts = append(parts, strings.TrimSuffix(stem, path.Ext(stem)))
-	}
-	if u.Word != "" {
-		parts = append(parts, u.Word)
-	}
-	if u.Tag != "" {
-		parts = append(parts, u.Tag)
-	}
-	return naming.Snake(strings.Join(parts, "_")) + golang.Extension
+	return naming.SnakeFilename(u.Key, u.Word, u.Tag, golang.Extension)
 }
