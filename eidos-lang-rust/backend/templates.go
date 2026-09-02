@@ -70,7 +70,7 @@ const (
 	EnumTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{enummods .}}enum {{.Name}} {\n" +
 		"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
-		"    {{.Name}}{{with .Value}} = {{.}}{{end}},\n" +
+		"    {{.Name}}{{with .Value}} = {{.}}{{end}},{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n"
 
 	// SumTemplate spells a data enum: attribute lines above the

@@ -271,7 +271,7 @@ func TestTemplates(t *testing.T) {
 		}
 		e.Variants.Append(
 			&emit.EnumVariant{Doc: []string{"Open admits writes."}, Name: "Open"},
-			&emit.EnumVariant{Name: "Closed", Value: "9"},
+			&emit.EnumVariant{Name: "Closed", Value: "9", Comment: "terminal"},
 		)
 		assert.Equal(t, execute(t, backend.EnumTemplate, e),
 			"/// Phase names a step.\n"+
@@ -279,9 +279,10 @@ func TestTemplates(t *testing.T) {
 				"pub enum Phase {\n"+
 				"    /// Open admits writes.\n"+
 				"    Open,\n"+
-				"    Closed = 9,\n"+
+				"    Closed = 9, // terminal\n"+
 				"}\n",
-			"one variant per line, a stated value as its discriminant")
+			"one variant per line, a stated value as its discriminant, "+
+				"the trailing comment behind the comma")
 	})
 
 	t.Run("sum", func(t *testing.T) {
