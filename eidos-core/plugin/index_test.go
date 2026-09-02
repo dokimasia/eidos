@@ -56,6 +56,11 @@ func index(
 	return ix
 }
 
+// everything is the scope that admits every package, which is not
+// the same as no scope: a case about the scoped code path states
+// one rather than passing nil.
+func everything(symbol.Identity) bool { return true }
+
 // names collects the yielded declarations' names.
 func names(tb assert.TB, seq func(func(symbol.Symbol) bool)) []string {
 	tb.Helper()
@@ -65,6 +70,34 @@ func names(tb assert.TB, seq func(func(symbol.Symbol) bool)) []string {
 		decl, ok := s.(node.Declaration)
 		assert.True(tb, ok, "the index yields held declarations")
 		out = append(out, decl.Identity().Name)
+	}
+	return out
+}
+
+// flagged stamps one boolean fact on each subject and returns the
+// store together with the key it registered.
+func flagged(tb assert.TB, subjects ...symbol.Identity) (*meta.Facts, meta.Key[bool]) {
+	tb.Helper()
+
+	reg := meta.NewRegistry()
+	assert.NoError(tb, reg.ClaimNamespace("t", "the test"), "the namespace is claimed")
+	key, err := meta.Register[bool](reg, meta.KeySpec{
+		Name: "t.flag", Doc: "marks a fixture subject",
+	})
+	assert.NoError(tb, err, "the key registers")
+	facts := meta.NewFacts(reg)
+	for _, id := range subjects {
+		assert.NoError(tb, meta.Stamp(facts, key, true, meta.Claim{Subject: id}),
+			"the fixture fact stamps")
+	}
+	return facts, key
+}
+
+// subjects collects the identities a fact enumeration yielded.
+func subjects(seq func(func(symbol.Identity) bool)) []string {
+	var out []string
+	for id := range seq {
+		out = append(out, id.Name)
 	}
 	return out
 }
@@ -137,6 +170,20 @@ func TestIndex(t *testing.T) {
 			}
 			assert.Equal(t, got, 1, "the iteration stops when the range stops")
 		})
+
+		t.Run("stops when the range stops under a scope", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := twoPackages(t)
+			var got int
+			for range index(t, g, nil, everything).ByKind(symbol.KindStruct) {
+				got++
+				break
+			}
+			assert.Equal(t, got, 1,
+				"the scope filter passes the range's refusal through rather than "+
+					"draining the enumeration behind it")
+		})
 	})
 
 	t.Run("ByDirective", func(t *testing.T) {
@@ -160,30 +207,64 @@ func TestIndex(t *testing.T) {
 			t.Parallel()
 
 			g, inStore, inCache := twoPackages(t)
-
-			reg := meta.NewRegistry()
-			assert.NoError(t, reg.ClaimNamespace("t", "the test"),
-				"the namespace is claimed")
-			key, err := meta.Register[bool](reg, meta.KeySpec{
-				Name: "t.flag", Doc: "marks a fixture subject",
-			})
-			assert.NoError(t, err, "the key registers")
-			facts := meta.NewFacts(reg)
-			for _, id := range []symbol.Identity{inStore.ID, inCache.ID} {
-				assert.NoError(t,
-					meta.Stamp(facts, key, true, meta.Claim{Subject: id}),
-					"the fixture fact stamps")
-			}
-
+			facts, key := flagged(t, inStore.ID, inCache.ID)
 			ix, err := plugin.NewIndex(g, facts, nil, storeOnly)
 			assert.NoError(t, err, "the routing surface builds")
 
-			var got []string
-			for id := range ix.ByFactKey(key.ID()) {
-				got = append(got, id.Name)
-			}
-			assert.Equal(t, got, []string{"Store"},
+			assert.Equal(t, subjects(ix.ByFactKey(key.ID())), []string{"Store"},
 				"a stamped subject outside scope is not returned")
+		})
+
+		t.Run("returns every stamped subject without a scope", func(t *testing.T) {
+			t.Parallel()
+
+			g, inStore, inCache := twoPackages(t)
+			facts, key := flagged(t, inStore.ID, inCache.ID)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(t, err, "the routing surface builds")
+
+			assert.Equal(t, subjects(ix.ByFactKey(key.ID())), []string{"Cache", "Store"},
+				"a nil scope hands the fact store's own enumeration back, in identity order")
+		})
+
+		t.Run("stops when the range stops under a scope", func(t *testing.T) {
+			t.Parallel()
+
+			g, inStore, inCache := twoPackages(t)
+			facts, key := flagged(t, inStore.ID, inCache.ID)
+			ix, err := plugin.NewIndex(g, facts, nil, everything)
+			assert.NoError(t, err, "the routing surface builds")
+
+			var got int
+			for range ix.ByFactKey(key.ID()) {
+				got++
+				break
+			}
+			assert.Equal(t, got, 1,
+				"a fact-gated rule that stops looking stops the enumeration with it")
+		})
+	})
+
+	t.Run("PackageOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the package holding a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			g, inStore, _ := twoPackages(t)
+			pkg, held := index(t, g, nil, nil).PackageOf(inStore.ID)
+			assert.True(t, held, "a held identity resolves to its namespace")
+			assert.Equal(t, pkg.ID, coretest.PackageID(coretest.StorePath),
+				"which is what a flush addresses its unit by")
+		})
+
+		t.Run("returns false outside scope", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, inCache := twoPackages(t)
+			_, held := index(t, g, nil, storeOnly).PackageOf(inCache.ID)
+			assert.False(t, held,
+				"a declaration outside scope has no namespace to flush under")
 		})
 	})
 
@@ -268,6 +349,14 @@ func TestIndex(t *testing.T) {
 			other := coretest.Struct(coretest.StorePath, "Other")
 			assert.False(t, ix.Skipped(other.ID, "stubgen"),
 				"a subject carrying no skip matches as ever")
+		})
+
+		t.Run("excludes nothing where the run carries no skip at all", func(t *testing.T) {
+			t.Parallel()
+
+			bare, inStore, _ := twoPackages(t)
+			assert.False(t, index(t, bare, nil, nil).Skipped(inStore.ID, "stubgen"),
+				"a run nothing skipped costs no probe and excludes nobody")
 		})
 	})
 

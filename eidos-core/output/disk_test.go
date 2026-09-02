@@ -158,19 +158,82 @@ func TestDisk(t *testing.T) {
 			assert.Length(t, got, 1, "the commit kept going past the refusal")
 			assert.Equal(t, got[0].Path, "kept.go", "and its sibling is on disk")
 		})
+
+		t.Run("reports a directory it cannot make", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			assert.NoError(t, os.Symlink("ghost", filepath.Join(root, "svc")),
+				"the fixture leaves a dangling link where the directory belongs")
+
+			s := disk(t, root)
+			assert.NoError(t, s.Write("svc/store.go", []byte("package svc\n")),
+				"the staging takes")
+			assert.NoError(t, s.Write("kept.go", []byte("package svc\n")),
+				"and its sibling stages too")
+
+			got, err := s.Commit()
+			assert.HasError(t, err, "the directory cannot be made over the link")
+			assert.Contains(t, err.Error(), `"svc/store.go"`, "the error names the file")
+			assert.Length(t, got, 1, "the commit kept going past the refusal")
+			assert.Equal(t, got[0].Path, "kept.go", "and its sibling is on disk")
+		})
+
+		t.Run("reports a staging file it cannot write", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			assert.NoError(t, os.Mkdir(filepath.Join(root, "store.go.stage"), 0o755),
+				"the fixture occupies the staging path with a directory")
+
+			s := disk(t, root)
+			assert.NoError(t, s.Write("store.go", []byte("package svc\n")),
+				"the staging takes")
+
+			got, err := s.Commit()
+			assert.HasError(t, err, "the bytes reach the tree through the staging file alone")
+			assert.Contains(t, err.Error(), "staging", "the error names the step that failed")
+			assert.Empty(t, got, "and no record claims a file that was never written")
+			_, statErr := os.Stat(filepath.Join(root, "store.go"))
+			assert.True(t, os.IsNotExist(statErr),
+				"a failed staging writes nothing to the target")
+		})
 	})
 
-	t.Run("Discard leaves the tree as it was", func(t *testing.T) {
+	t.Run("Discard", func(t *testing.T) {
 		t.Parallel()
 
-		root := t.TempDir()
-		s := disk(t, root)
-		assert.NoError(t, s.Write("store.go", []byte("package svc\n")),
-			"the staging takes")
-		assert.NoError(t, s.Discard(), "the discard runs")
+		t.Run("leaves the tree as it was", func(t *testing.T) {
+			t.Parallel()
 
-		entries, err := os.ReadDir(root)
-		assert.NoError(t, err, "the root reads")
-		assert.Length(t, entries, 0, "a discarded sink leaves no trace")
+			root := t.TempDir()
+			s := disk(t, root)
+			assert.NoError(t, s.Write("store.go", []byte("package svc\n")),
+				"the staging takes")
+			assert.NoError(t, s.Discard(), "the discard runs")
+
+			entries, err := os.ReadDir(root)
+			assert.NoError(t, err, "the root reads")
+			assert.Length(t, entries, 0, "a discarded sink leaves no trace")
+		})
+
+		t.Run("refuses a second discard", func(t *testing.T) {
+			t.Parallel()
+
+			s := disk(t, t.TempDir())
+			assert.NoError(t, s.Discard(), "the first discard runs")
+			assert.ErrorIs(t, s.Discard(), output.ErrFinished,
+				"a sink serves one staging, so the second discard has no root to close")
+		})
+
+		t.Run("refuses a discard after the commit", func(t *testing.T) {
+			t.Parallel()
+
+			s := disk(t, t.TempDir())
+			_, err := s.Commit()
+			assert.NoError(t, err, "the commit runs")
+			assert.ErrorIs(t, s.Discard(), output.ErrFinished,
+				"the commit already closed the root")
+		})
 	})
 }

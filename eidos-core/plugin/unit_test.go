@@ -12,6 +12,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -30,16 +31,48 @@ func goSyntax() plugin.CommentSyntax {
 	}
 }
 
+// unitCode is a code for the source unit fixtures' findings.
+var unitCode = diag.Code{Prefix: "tst", Number: 5}
+
+// frontendOrigin is the origin the fixture unit reports under.
+const frontendOrigin = diag.Origin("golang")
+
+// unitFile is the one member the fixture unit declares, with the
+// module file as its shared input.
+func unitFile() plugin.SourceRef {
+	return plugin.SourceRef{Path: "svc/store/row.go", Shared: []string{"go.mod"}}
+}
+
 // unitOf builds a source unit over the given tree, one file with
 // one shared input, full depth.
 func unitOf(tb assert.TB, tree fstest.MapFS) *plugin.SourceUnit {
 	tb.Helper()
 
+	u, _ := reporting(tb, tree)
+	return u
+}
+
+// reporting builds the fixture unit together with the sink its
+// findings arrive in, so a case reads back what the frontend
+// reported rather than only that it returned.
+func reporting(tb assert.TB, tree fstest.MapFS) (*plugin.SourceUnit, *diag.Sink) {
+	tb.Helper()
+
+	sink := diag.NewSink()
 	return plugin.NewSourceUnit(
-		[]plugin.SourceRef{{Path: "svc/store/row.go", Shared: []string{"go.mod"}}},
-		tree, plugin.DepthFull, goSyntax(),
-		diag.NewSink(), diag.Origin("golang"),
-	)
+		[]plugin.SourceRef{unitFile()}, tree, plugin.DepthFull, goSyntax(),
+		sink, frontendOrigin,
+	), sink
+}
+
+// reported returns a sink's findings in report order, which is what
+// a case comparing severities and origins reads.
+func reported(s *diag.Sink) []diag.Diag {
+	var out []diag.Diag
+	for d := range s.All() {
+		out = append(out, d)
+	}
+	return out
 }
 
 // The source unit is the one door bytes enter a frontend through,
@@ -65,6 +98,59 @@ func TestSourceUnit(t *testing.T) {
 		_, err = u.Read("svc/other/x.go")
 		assert.HasError(t, err, "a path outside the unit refuses")
 		assert.Contains(t, err.Error(), "svc/other/x.go", "naming the path")
+	})
+
+	t.Run("Files", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the members in partition order", func(t *testing.T) {
+			t.Parallel()
+
+			members := []plugin.SourceRef{
+				{Path: "svc/store/row.go", Shared: []string{"go.mod"}},
+				{Path: "svc/store/col.go"},
+			}
+			u := plugin.NewSourceUnit(
+				members, tree, plugin.DepthFull, goSyntax(),
+				diag.NewSink(), frontendOrigin,
+			)
+			assert.Equal(t, u.Files(), members,
+				"the partition fixed the order, and the parse reads it back unchanged")
+		})
+	})
+
+	t.Run("Depth", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the depth the unit loads at", func(t *testing.T) {
+			t.Parallel()
+
+			u := plugin.NewSourceUnit(
+				[]plugin.SourceRef{unitFile()}, tree, plugin.DepthSignatures,
+				goSyntax(), diag.NewSink(), frontendOrigin,
+			)
+			assert.Equal(t, u.Depth(), plugin.DepthSignatures,
+				"signature-only loading and the full one share one code path, "+
+					"and this is what tells them apart")
+			assert.Equal(t, unitOf(t, tree).Depth(), plugin.DepthFull,
+				"a unit loading everything says so too")
+		})
+	})
+
+	t.Run("reports a declared file the tree does not hold", func(t *testing.T) {
+		t.Parallel()
+
+		u := plugin.NewSourceUnit(
+			[]plugin.SourceRef{{Path: "svc/store/absent.go"}}, tree, plugin.DepthFull,
+			goSyntax(), diag.NewSink(), frontendOrigin,
+		)
+		before := u.ReadSum()
+		_, err := u.Read("svc/store/absent.go")
+		assert.HasError(t, err, "the jail admits the path and the tree does not hold it")
+		assert.Contains(t, err.Error(), "svc/store/absent.go", "naming the path")
+		assert.True(t, bytes.Equal(u.ReadSum(), before),
+			"a read that returned nothing folds nothing, so the key names "+
+				"only the bytes the parse saw")
 	})
 
 	t.Run("folds every accepted read into the unit key", func(t *testing.T) {
@@ -135,6 +221,53 @@ func TestSourceUnit(t *testing.T) {
 			"Row is one record.", "https://example.test/spec", "note: keyed by name.",
 		}, "a URL's slash and a prose colon's space both fail the directive rule")
 		assert.Length(t, parts.Annotations, 0, "nothing lowers as a directive")
+	})
+
+	t.Run("keeps prose whose head is not a tool name", func(t *testing.T) {
+		t.Parallel()
+
+		u := unitOf(t, tree)
+		parts := u.Comment(
+			"// Row is one record.\n// Note:keyed by name.\n// go_embed:schema.sql",
+			position.Pos{File: "svc/store/row.go", Line: 1},
+		)
+		assert.Equal(t, parts.Docs, []string{
+			"Row is one record.", "Note:keyed by name.", "go_embed:schema.sql",
+		}, "a tool name is lowercase alphanumeric throughout, so a capital "+
+			"and an underscore each keep the line prose")
+		assert.Length(t, parts.Annotations, 0, "nothing lowers as a directive")
+	})
+
+	t.Run("Errorf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("files each severity under the frontend's origin", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, tree)
+			at := position.Pos{File: "svc/store/row.go", Line: 4, Col: 2}
+			u.Errorf(unitCode, at, "the declaration names %s twice", "Row")
+			u.Warnf(unitCode, at, "the declaration shadows an import")
+			u.Infof(unitCode, at, "the declaration loaded")
+
+			coretest.AssertCodes(t, sink, unitCode, unitCode, unitCode)
+			coretest.AssertPositioned(t, sink)
+			got := reported(sink)
+			assert.Equal(t,
+				[]diag.Severity{got[0].Severity, got[1].Severity, got[2].Severity},
+				[]diag.Severity{
+					diag.SeverityError, diag.SeverityWarning, diag.SeverityInfo,
+				},
+				"each door reports at its own severity, and only the first fails a run")
+			assert.True(t, sink.Failed(), "which the Error one does")
+			for _, d := range got {
+				assert.Equal(t, d.Origin, frontendOrigin,
+					"every finding is filed under the frontend that reported it")
+				assert.Equal(t, d.Pos, at, "at the position it was given")
+			}
+			assert.Equal(t, got[0].Msg, "the declaration names Row twice",
+				"the format arguments reach the message")
+		})
 	})
 
 	t.Run("strips comments through the syntax", func(t *testing.T) {

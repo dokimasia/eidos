@@ -71,13 +71,66 @@ func wellBehaved(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 	return p, f
 }
 
+// spare is a hand-rolled generator: it declares its family and
+// nothing else, so the suite meets a plugin the facade never gave
+// a template tree to.
+type spare struct{ handRolled }
+
+func (spare) Outputs() []plugin.Output {
+	return []plugin.Output{{Per: plugin.PerPackage, Word: "audit"}}
+}
+
+// bare returns the hand-rolled generator over the fixture.
+func bare(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+	tb.Helper()
+
+	f, _, _ := twoStructs(tb)
+	return spare{}, f
+}
+
+// treed returns a setup whose plugin declares tree for the fixture
+// target, which is what makes the suite run its template lint.
+func treed(tree fs.FS) plugintest.Setup {
+	return func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+		tb.Helper()
+
+		f, _, _ := twoStructs(tb)
+		f.Languages = map[plugin.Target]render.Language{"fixture": fixtureLanguage()}
+		p := eidos.NewPlugin("treed").
+			Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
+			Handle(eidos.OnGraph(func(*eidos.GraphMatch, *eidos.Emitter) error {
+				return nil
+			})).
+			Build()
+		return templated{Plugin: p, tree: tree}, f
+	}
+}
+
 // The suite is the contract a plugin author tests against, so it
 // has to accept a valid plugin through and reject each way of
 // cheating: that second half is what justifies it.
 func TestRunPluginSuite(t *testing.T) {
 	t.Parallel()
 
-	plugintest.RunPluginSuite(t, wellBehaved)
+	t.Run("waves a dual-role plugin through", func(t *testing.T) {
+		t.Parallel()
+
+		plugintest.RunPluginSuite(t, wellBehaved)
+	})
+
+	t.Run("lints the tree a plugin declares", func(t *testing.T) {
+		t.Parallel()
+
+		plugintest.RunPluginSuite(t, treed(fstest.MapFS{
+			"method1.tpl": &fstest.MapFile{Data: []byte("{{slots}}")},
+		}))
+	})
+
+	t.Run("skips the lint for a plugin declaring none", func(t *testing.T) {
+		t.Parallel()
+
+		plugintest.RunPluginSuite(t, bare)
+	})
 }
 
 func TestAssertDeterministicEmit(t *testing.T) {
@@ -173,24 +226,10 @@ func fixtureLanguage() render.Language {
 func TestAssertTemplates(t *testing.T) {
 	t.Parallel()
 
-	setupWith := func(tree fs.FS) plugintest.Setup {
-		return func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
-			f, _, _ := twoStructs(tb)
-			f.Languages = map[plugin.Target]render.Language{"fixture": fixtureLanguage()}
-			p := eidos.NewPlugin("treed").
-				Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
-				Handle(eidos.OnGraph(func(*eidos.GraphMatch, *eidos.Emitter) error {
-					return nil
-				})).
-				Build()
-			return templated{Plugin: p, tree: tree}, f
-		}
-	}
-
 	t.Run("waves a valid tree through", func(t *testing.T) {
 		t.Parallel()
 
-		plugintest.AssertTemplates(t, setupWith(fstest.MapFS{
+		plugintest.AssertTemplates(t, treed(fstest.MapFS{
 			"method1.tpl": &fstest.MapFile{Data: []byte("{{slots}}")},
 		}))
 	})
@@ -200,11 +239,22 @@ func TestAssertTemplates(t *testing.T) {
 
 		failure := assert.Rejects(t, "a dropped marker must fail the check",
 			func(tb assert.TB) {
-				plugintest.AssertTemplates(tb, setupWith(fstest.MapFS{
+				plugintest.AssertTemplates(tb, treed(fstest.MapFS{
 					"method1.tpl": &fstest.MapFile{Data: []byte("bare\n")},
 				}))
 			})
 		assert.Contains(t, failure, "marker", "the check names the rule")
+	})
+
+	t.Run("rejects a plugin holding no template surface", func(t *testing.T) {
+		t.Parallel()
+
+		failure := assert.Rejects(t, "a check over a plugin with no trees must fail",
+			func(tb assert.TB) {
+				plugintest.AssertTemplates(tb, bare)
+			})
+		assert.Contains(t, failure, "declares no templates",
+			"a lint the plugin cannot even be asked for proves nothing")
 	})
 
 	t.Run("rejects a setup declaring no tree", func(t *testing.T) {

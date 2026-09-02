@@ -109,6 +109,29 @@ func TestSink(t *testing.T) {
 		})
 	})
 
+	t.Run("String", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("spells what a commit did", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, output.ActionCreated.String(), "created",
+				"a path that was not there")
+			assert.Equal(t, output.ActionUpdated.String(), "updated",
+				"a path that held different bytes")
+			assert.Equal(t, output.ActionUnchanged.String(), "unchanged",
+				"a path the commit left alone")
+		})
+
+		t.Run("spells an action nothing declares by its number", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, output.Action(7).String(), "Action(7)",
+				"a diagnostic over an unknown action still names it, "+
+					"rather than reading as one of the three")
+		})
+	})
+
 	t.Run("Commit", func(t *testing.T) {
 		t.Parallel()
 

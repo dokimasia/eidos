@@ -12,6 +12,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -69,6 +70,30 @@ func storeOf(t *testing.T, units ...plugin.Unit) *plugin.Emit {
 		assert.NoError(t, e.Add(u), "the unit arrives")
 	}
 	return e
+}
+
+// messages returns a sink's findings as their message text, in
+// report order. A case about the order findings arrive in compares
+// against this, because the codes alone cannot tell one collision
+// from another.
+func messages(s *diag.Sink) []string {
+	var out []string
+	for d := range s.All() {
+		out = append(out, d.Msg)
+	}
+	return out
+}
+
+// prefixing returns a backend whose respell hook prefixes every
+// name it is handed, so a case reads the settled spelling straight
+// off the emitted one.
+func prefixing(name plugin.ID, prefix string) *respellingOnly {
+	b := &respellingOnly{}
+	b.name = name
+	b.fn = func(host, kind symbol.Kind, v symbol.Visibility, n string) (string, error) {
+		return prefix + n, nil
+	}
+	return b
 }
 
 // The settle is the stage between a plan's schedule and its
@@ -132,7 +157,7 @@ func TestSettle(t *testing.T) {
 			&emit.Alias{Origin: origin, Name: "state"}))
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
-		assert.False(t, sink.Failed(), "a clean lowering reports nothing")
+		coretest.AssertCodes(t, sink)
 
 		for u := range e.Units() {
 			assert.Equal(t, len(u.Decls), 2, "one declaration lowers into two")
@@ -164,7 +189,7 @@ func TestSettle(t *testing.T) {
 		e := storeOf(t, settleUnit("svc", "svc/a.src", kept))
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
-		assert.False(t, sink.Failed(), "a pass-through reports nothing")
+		coretest.AssertCodes(t, sink)
 
 		for u := range e.Units() {
 			assert.Length(t, u.Decls, 1, "the declaration stays")
@@ -191,12 +216,7 @@ func TestSettle(t *testing.T) {
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
 
-		var codes []diag.Code
-		for d := range sink.All() {
-			codes = append(codes, d.Code)
-		}
-		assert.Equal(t, codes, []diag.Code{plugin.RefusedConstruct},
-			"the refusal reports once")
+		coretest.AssertCodes(t, sink, plugin.RefusedConstruct)
 		for u := range e.Units() {
 			assert.Equal(t, len(u.Decls), 1, "the refused declaration is withheld")
 			assert.Equal(t, u.Decls[0].Kind(), symbol.KindConstant,
@@ -275,7 +295,7 @@ func TestSettle(t *testing.T) {
 		)
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
-		assert.False(t, sink.Failed(), "a clean respell reports nothing")
+		coretest.AssertCodes(t, sink)
 
 		assert.Equal(t, box.Name, "Tbox", "a file-level name settles")
 		assert.Equal(t, box.Fields.Items()[0].Name, "mitem", "a member settles under its host")
@@ -312,13 +332,46 @@ func TestSettle(t *testing.T) {
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
 
-		var codes []diag.Code
-		for d := range sink.All() {
-			codes = append(codes, d.Code)
-		}
-		assert.Equal(t, codes, []diag.Code{plugin.CollidingNames}, "one finding per collision")
+		coretest.AssertCodes(t, sink, plugin.CollidingNames)
 		assert.Equal(t, alpha.Name, "alpha", "the first keeps its emitted name")
 		assert.Equal(t, beta.Name, "beta", "and so does the second")
+	})
+
+	t.Run("reports one collision group per scope, in one order", func(t *testing.T) {
+		t.Parallel()
+
+		settles := map[string]string{
+			"alpha": "Same", "beta": "Same",
+			"gamma": "Other", "delta": "Other",
+			"epsilon": "Same", "zeta": "Same",
+		}
+		b := &respellingOnly{}
+		b.name = "golang"
+		b.fn = func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			return settles[name], nil
+		}
+		constant := func(name string) *emit.Constant {
+			return &emit.Constant{
+				Origin: settleOrigin(name, symbol.KindConstant), Name: name, Value: "1",
+			}
+		}
+		e := storeOf(t,
+			settleUnit("svc", "svc/a.src",
+				constant("gamma"), constant("delta"), constant("epsilon"), constant("zeta")),
+			settleUnit("api", "api/a.src", constant("alpha"), constant("beta")),
+		)
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
+
+		coretest.AssertCodes(t, sink,
+			plugin.CollidingNames, plugin.CollidingNames, plugin.CollidingNames)
+		got := messages(sink)
+		assert.Length(t, got, 3, "one finding per group")
+		assert.Contains(t, got[0], "in api", "the scopes order the findings")
+		assert.Contains(t, got[1], `to "Other"`,
+			"and inside one scope the settled spelling does")
+		assert.Contains(t, got[2], `to "Same"`,
+			"so two runs over one store report in one order")
 	})
 
 	t.Run("two receivers declare one method name without meeting", func(t *testing.T) {
@@ -342,8 +395,7 @@ func TestSettle(t *testing.T) {
 		e := storeOf(t, settleUnit("svc", "svc/a.src", first, second))
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
-		assert.False(t, sink.Failed(),
-			"the method scopes by its receiver, so nothing collides")
+		coretest.AssertCodes(t, sink)
 		assert.Equal(t, first.Name, "Track", "the first settles")
 		assert.Equal(t, second.Name, "Track", "and so does the second")
 
@@ -360,8 +412,9 @@ func TestSettle(t *testing.T) {
 		e2 := storeOf(t, settleUnit("svc", "svc/a.src", twice, again))
 		sink2 := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e2, b, sink2), "the settle completes")
-		assert.True(t, sink2.Failed(),
-			"one receiver's two spellings settling together still collide")
+		coretest.AssertCodes(t, sink2, plugin.CollidingNames)
+		assert.Equal(t, twice.Name, "Track", "one receiver's two spellings collide")
+		assert.Equal(t, again.Name, "track", "so each keeps its emitted name")
 	})
 
 	t.Run("reverts a member collision within one host", func(t *testing.T) {
@@ -384,11 +437,7 @@ func TestSettle(t *testing.T) {
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
 
-		var codes []diag.Code
-		for d := range sink.All() {
-			codes = append(codes, d.Code)
-		}
-		assert.Equal(t, codes, []diag.Code{plugin.CollidingNames}, "one finding per collision")
+		coretest.AssertCodes(t, sink, plugin.CollidingNames)
 		assert.Equal(t, box.Fields.Items()[0].Name, "x", "the members keep their emitted names")
 		assert.Equal(t, box.Fields.Items()[1].Name, "y", "both of them")
 	})
@@ -417,13 +466,7 @@ func TestSettle(t *testing.T) {
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
 
-		found := false
-		for d := range sink.All() {
-			if d.Code == plugin.AmbiguousReference {
-				found = true
-			}
-		}
-		assert.True(t, found, "the divergence reports")
+		coretest.AssertReports(t, sink, plugin.AmbiguousReference)
 		assert.Equal(t, holder.Type.Spelling, "row", "and the reference stands as written")
 	})
 
@@ -448,11 +491,7 @@ func TestSettle(t *testing.T) {
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
 
-		var codes []diag.Code
-		for d := range sink.All() {
-			codes = append(codes, d.Code)
-		}
-		assert.Equal(t, codes, []diag.Code{plugin.RefusedName}, "the refusal reports once")
+		coretest.AssertCodes(t, sink, plugin.RefusedName)
 		for u := range e.Units() {
 			assert.Equal(t, len(u.Decls), 1, "the refused declaration is withheld whole")
 			assert.Equal(t, u.Decls[0].Kind(), symbol.KindConstant, "and its sibling survives")
@@ -480,15 +519,199 @@ func TestSettle(t *testing.T) {
 		sink := diag.NewSink()
 		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
 
-		var codes []diag.Code
-		for d := range sink.All() {
-			codes = append(codes, d.Code)
-		}
-		assert.Equal(t, codes, []diag.Code{plugin.VerbatimParams}, "the pin reports once")
+		coretest.AssertCodes(t, sink, plugin.VerbatimParams)
 		assert.Equal(t, load.Params[0].Name, "rowCount",
 			"the parameter keeps the spelling the text reads")
 		assert.Equal(t, load.Body.Verbatim, "\tuse(rowCount)\n",
 			"and the text stands untouched")
+	})
+
+	t.Run("a verbatim pin on a method names the method", func(t *testing.T) {
+		t.Parallel()
+
+		b := &respellingOnly{}
+		b.name = "rust"
+		b.fn = func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			if kind == symbol.KindParam {
+				return strings.ToLower(name) + "_p", nil
+			}
+			return strings.ToLower(name), nil
+		}
+		scan := &emit.Method{
+			Origin:   settleOrigin("scan", symbol.KindMethod),
+			Name:     "Scan",
+			Receives: &emit.TypeRef{Spelling: "row"},
+			Params:   []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+			Body:     emit.Body{Verbatim: "\tuse(rowCount)\n"},
+		}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", scan))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
+
+		coretest.AssertCodes(t, sink, plugin.VerbatimParams)
+		assert.Contains(t, messages(sink)[0], "scan",
+			"the finding names the callable whose signature the text pinned")
+		assert.Equal(t, scan.Params[0].Name, "rowCount",
+			"and the parameter keeps the spelling the text reads")
+	})
+
+	t.Run("a bare parameter at file level is pinned by nothing", func(t *testing.T) {
+		t.Parallel()
+
+		loose := &emit.Param{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", loose))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, prefixing("golang", "p"), sink),
+			"the settle completes")
+
+		coretest.AssertCodes(t, sink)
+		assert.Equal(t, loose.Name, "prowCount",
+			"a parameter sitting outside a callable reads no verbatim body, "+
+				"so it settles like any other name")
+	})
+
+	t.Run("a name the plan never recorded stands as emitted", func(t *testing.T) {
+		t.Parallel()
+
+		load := &emit.Function{
+			Origin: settleOrigin("load", symbol.KindFunction),
+			Name:   "load",
+			Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+		}
+		grown := false
+		b := &respellingOnly{}
+		b.name = "golang"
+		b.fn = func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			// A hook reaching into the declaration it is handed is
+			// a backend defect; the apply pass replays the plan
+			// positionally and must not shift onto what it never
+			// planned.
+			if kind == symbol.KindParam && !grown {
+				grown = true
+				load.Params = append(load.Params,
+					&emit.Param{Name: "limit", Type: &emit.TypeRef{Spelling: "int"}})
+			}
+			return "p" + name, nil
+		}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", load))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
+
+		coretest.AssertCodes(t, sink)
+		assert.Equal(t, load.Name, "pload", "the planned name settles")
+		assert.Equal(t, load.Params[0].Name, "prowCount", "and so does the planned parameter")
+		assert.Equal(t, load.Params[1].Name, "limit",
+			"while the one the hook grew mid-plan stands as emitted")
+	})
+
+	t.Run("follows a name through the body's slots and guards", func(t *testing.T) {
+		t.Parallel()
+
+		body := emit.Body{Stmts: []emit.Stmt{{
+			Kind: emit.StmtGuard, Name: "rowCount",
+			Then: []emit.Stmt{{Kind: emit.StmtExpr, Value: emit.Expr{
+				Kind: emit.ExprCall,
+				Args: []emit.Expr{{Kind: emit.ExprName, Name: "rowCount"}},
+			}}},
+		}}}
+		body.Prologue.Append(emit.Stmt{
+			Kind: emit.StmtExpr,
+			Value: emit.Expr{
+				Kind: emit.ExprCall,
+				Fn:   &emit.Expr{Kind: emit.ExprName, Name: "max"},
+			},
+		})
+		body.Declare("checks").Append(emit.Stmt{
+			Kind:  emit.StmtExpr,
+			Value: emit.Expr{Kind: emit.ExprName, Name: "max"},
+		})
+		body.Epilogue.Append(emit.Stmt{
+			Kind:  emit.StmtExpr,
+			Value: emit.Expr{Kind: emit.ExprName, Name: "rowCount"},
+		})
+		load := &emit.Function{
+			Origin: settleOrigin("load", symbol.KindFunction),
+			Name:   "load",
+			Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+			Body:   body,
+		}
+		limit := &emit.Constant{
+			Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1",
+		}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", load, limit))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, prefixing("golang", "p"), sink),
+			"the settle completes")
+
+		coretest.AssertCodes(t, sink)
+		assert.Equal(t, load.Body.Stmts[0].Name, "prowCount",
+			"a guarded name follows the parameter it names")
+		assert.Equal(t, load.Body.Stmts[0].Then[0].Value.Args[0].Name, "prowCount",
+			"and so does a reference nested under the guard")
+		assert.Equal(t, load.Body.Prologue.Items()[0].Value.Fn.Name, "pmax",
+			"a prologue reference follows the package's table")
+		assert.Equal(t, load.Body.Slots[0].Slot.Items()[0].Value.Name, "pmax",
+			"a declared slot's statements follow it too")
+		assert.Equal(t, load.Body.Epilogue.Items()[0].Value.Name, "prowCount",
+			"and so does the epilogue's")
+	})
+
+	t.Run("a call without a callee stands", func(t *testing.T) {
+		t.Parallel()
+
+		load := &emit.Function{
+			Origin: settleOrigin("load", symbol.KindFunction),
+			Name:   "load",
+			Body: emit.Body{Stmts: []emit.Stmt{{
+				Kind: emit.StmtExpr, Value: emit.Expr{
+					Kind: emit.ExprCall,
+					Args: []emit.Expr{{Kind: emit.ExprName, Name: "max"}},
+				},
+			}}},
+		}
+		limit := &emit.Constant{
+			Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1",
+		}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", load, limit))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, prefixing("golang", "p"), sink),
+			"the settle completes")
+
+		coretest.AssertCodes(t, sink)
+		assert.Equal(t, load.Body.Stmts[0].Value.Args[0].Name, "pmax",
+			"a call naming no callee still has its arguments followed")
+	})
+
+	t.Run("an ambiguous body reference stands under a finding", func(t *testing.T) {
+		t.Parallel()
+
+		b := &respellingOnly{}
+		b.name = "golang"
+		b.fn = func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			if kind == symbol.KindStruct {
+				return "S" + name, nil
+			}
+			return "F" + name, nil
+		}
+		rowStruct := &emit.Struct{Origin: settleOrigin("row", symbol.KindStruct), Name: "row"}
+		rowFn := &emit.Function{Origin: settleOrigin("rowfn", symbol.KindFunction), Name: "row"}
+		caller := &emit.Function{
+			Origin: settleOrigin("call", symbol.KindFunction),
+			Name:   "call",
+			Body: emit.Body{Stmts: []emit.Stmt{{
+				Kind:  emit.StmtExpr,
+				Value: emit.Expr{Kind: emit.ExprName, Name: "row"},
+			}}},
+		}
+		other := settleUnit("svc", "svc/b.src", rowFn)
+		other.Plugin = "second"
+		e := storeOf(t, settleUnit("svc", "svc/a.src", rowStruct, caller), other)
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
+
+		coretest.AssertReports(t, sink, plugin.AmbiguousReference)
+		assert.Equal(t, caller.Body.Stmts[0].Value.Name, "row",
+			"a body reference matching two settled spellings stands as written")
 	})
 
 	t.Run("a nil store or backend settles to nothing", func(t *testing.T) {

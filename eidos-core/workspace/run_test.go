@@ -26,6 +26,10 @@ import (
 // runCode is a code for the run fixtures' findings.
 var runCode = diag.Code{Prefix: "tst", Number: 7}
 
+// flagGroup is the fact group the fixture key registers into, so a
+// case can drop the group rather than the key.
+const flagGroup meta.GroupName = "shape.all"
+
 // rawMeta returns a positioned raw instance of the kernel meta
 // directive dropping ref.
 func rawMeta(ref string, line int) directive.Raw {
@@ -34,6 +38,50 @@ func rawMeta(ref string, line int) directive.Raw {
 		Args: []directive.RawArg{{Key: "drop", Value: directive.RawValue{Text: ref}}},
 		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
 	}
+}
+
+// rawBareMeta returns a positioned meta instance carrying no drop:
+// the schema admits one, and the drop pass has to pass over it.
+func rawBareMeta(line int) directive.Raw {
+	return directive.Raw{
+		Name: "meta",
+		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+	}
+}
+
+// rawDiag returns a positioned kernel diag instance, which is a
+// validated directive the drop pass is not about.
+func rawDiag(code string, line int) directive.Raw {
+	return directive.Raw{
+		Name: "diag",
+		Args: []directive.RawArg{{Key: "off", Value: directive.RawValue{Text: code}}},
+		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+	}
+}
+
+// generatorAt returns a facade-built generator placed by priority,
+// running h once per struct in scope: two of them in one plan run
+// in the order their priorities fix.
+func generatorAt(
+	name plugin.ID, pri int, h func(*eidos.StructMatch, *eidos.Emitter) error,
+) plugin.Generator {
+	p, held := eidos.NewPlugin(name).
+		Priority(plugin.RoleGenerator, pri).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.OnStruct(h)).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// dropping is a backend whose lowering hook returns a declaration
+// carrying no origin: the defect the settle refuses, and the one
+// way a plan fails after its schedule ran whole.
+type dropping struct{ fakeBackend }
+
+func (dropping) Lower(symbol.Symbol) ([]symbol.Symbol, error) {
+	return []symbol.Symbol{&emit.Struct{Name: "made"}}, nil
 }
 
 // flagged returns a composition whose annotator registers and
@@ -49,7 +97,7 @@ func flagged() (*workspace.Builder, *meta.Key[bool]) {
 				return err
 			}
 			k, err := meta.Register[bool](r, meta.KeySpec{
-				Name: "shape.flag", Doc: "marks a fixture subject",
+				Name: "shape.flag", Group: flagGroup, Doc: "marks a fixture subject",
 			})
 			flag = k
 			return err
@@ -79,15 +127,6 @@ func flagged() (*workspace.Builder, *meta.Key[bool]) {
 			Backend:    fakeBackend{name: "printer", target: "fixture"},
 		})
 	return b, &flag
-}
-
-// codesOf collects every finding's code.
-func codesOf(sink *diag.Sink) []diag.Code {
-	var out []diag.Code
-	for d := range sink.All() {
-		out = append(out, d.Code)
-	}
-	return out
 }
 
 // Run is the frame: seal, validate, drop, annotate, generate. What
@@ -159,6 +198,49 @@ func TestRun(t *testing.T) {
 		assert.Empty(t, units(report.Emits["plan"]), "so the flag gates nothing")
 	})
 
+	t.Run("a group drop removes every member fact", func(t *testing.T) {
+		t.Parallel()
+
+		b, flag := flagged()
+		w, err := b.Build()
+		assert.NoError(t, err, "the keyed composition composes")
+		g, s := alpha(t)
+		assert.NoError(t,
+			g.AttachDirectives(s.Identity(),
+				[]directive.Raw{rawMeta(string(flagGroup), 4)}),
+			"the group drop attaches before the seal")
+		report, err := w.Run(t.Context(), g)
+		assert.NoError(t, err, "a drop is authored intent, not a finding")
+		coretest.AssertCodes(t, report.Sink)
+		_, held := meta.Get(report.Facts, s.Identity(), *flag)
+		assert.False(t, held,
+			"the tombstone covers the group, so every member reads absent")
+		assert.Empty(t, units(report.Emits["plan"]), "and the flag gates nothing")
+	})
+
+	t.Run("a directive that is not a drop leaves the facts alone", func(t *testing.T) {
+		t.Parallel()
+
+		b, flag := flagged()
+		w, err := b.Build()
+		assert.NoError(t, err, "the keyed composition composes")
+		g, s := alpha(t)
+		assert.NoError(t,
+			g.AttachDirectives(s.Identity(), []directive.Raw{
+				rawDiag("tst-0007", 4),
+				rawBareMeta(5),
+			}),
+			"the instances attach before the seal")
+		report, err := w.Run(t.Context(), g)
+		assert.NoError(t, err, "neither instance is a fault")
+		coretest.AssertCodes(t, report.Sink)
+		v, held := meta.Get(report.Facts, s.Identity(), *flag)
+		assert.True(t, held && v,
+			"a diag instance and a meta instance carrying no drop both pass "+
+				"the drop step without removing anything")
+		assert.Length(t, units(report.Emits["plan"]), 1, "so the flag still gates")
+	})
+
 	t.Run("a load stamp applies at plugin authority", func(t *testing.T) {
 		t.Parallel()
 
@@ -197,8 +279,7 @@ func TestRun(t *testing.T) {
 
 		report, err := w.Run(t.Context(), g)
 		assert.ErrorIs(t, err, workspace.ErrRunFailed, "an Error finding fails the run")
-		assert.Contains(t, codesOf(report.Sink), meta.RefusedStamp,
-			"under the fact store's refusal code")
+		coretest.AssertReports(t, report.Sink, meta.RefusedStamp)
 		assert.Length(t, units(report.Emits["plan"]), 1, "and the frame still ran whole")
 	})
 
@@ -218,8 +299,7 @@ func TestRun(t *testing.T) {
 		report, err := w.Run(t.Context(), g)
 		assert.ErrorIs(t, err, workspace.ErrRunFailed,
 			"an Error finding fails the run")
-		assert.Contains(t, codesOf(report.Sink), directive.UnclaimedName,
-			"under the validator's registered code")
+		coretest.AssertReports(t, report.Sink, directive.UnclaimedName)
 		assert.Length(t, units(report.Emits["plan"]), 1,
 			"and the frame still ran whole")
 	})
@@ -238,8 +318,7 @@ func TestRun(t *testing.T) {
 		report, err := w.Run(t.Context(), g)
 		assert.ErrorIs(t, err, workspace.ErrRunFailed,
 			"a dangling subject is an Error")
-		assert.Contains(t, codesOf(report.Sink), directive.DanglingSubject,
-			"under its reserved code")
+		coretest.AssertReports(t, report.Sink, directive.DanglingSubject)
 	})
 
 	t.Run("an annotator error stops the frame", func(t *testing.T) {
@@ -286,6 +365,34 @@ func TestRun(t *testing.T) {
 			"while the sibling ran whole")
 	})
 
+	t.Run("a settle refusal fails its plan", func(t *testing.T) {
+		t.Parallel()
+
+		w, err := workspace.New().
+			Targets("fixture").
+			Plans(workspace.Plan{
+				Name:       "plan",
+				Generators: []plugin.Generator{mirror("mirror")},
+				Backend:    dropping{fakeBackend{name: "printer", target: "fixture"}},
+			}).
+			Build()
+		assert.NoError(t, err, "a backend declaring a lowering seam still composes")
+		g, _ := alpha(t)
+		report, err := w.Run(t.Context(), g)
+		assert.HasError(t, err, "a lowering dropping the origin fails the plan")
+		assert.Contains(t, err.Error(), "settle", "the failure names the stage")
+		assert.Contains(t, err.Error(), "origin", "and the rule the backend broke")
+		assert.ErrorIsNot(t, err, workspace.ErrRunFailed,
+			"a backend defect is not a finding")
+
+		got := units(report.Emits["plan"])
+		assert.Length(t, got, 1, "the plan's store still arrives in the report")
+		emitted, held := got[0].Decls[0].(*emit.Struct)
+		assert.True(t, held && emitted.Name == "ForAlpha",
+			"carrying what the generator emitted, because a refused lowering "+
+				"replaces nothing")
+	})
+
 	t.Run("a cancelled context stops the frame", func(t *testing.T) {
 		t.Parallel()
 
@@ -297,6 +404,63 @@ func TestRun(t *testing.T) {
 		_, err = w.Run(ctx, g)
 		assert.ErrorIs(t, err, context.Canceled,
 			"the caller's cancellation returns")
+	})
+
+	t.Run("a cancellation mid-schedule stops the next annotator", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(t.Context())
+		later := false
+		w, err := workspace.New().
+			Annotators(
+				stamperAt("first", 1, nil, nil,
+					func(*eidos.StructMatch, *eidos.Stamper) error {
+						cancel()
+						return nil
+					}),
+				stamperAt("second", 2, nil, nil,
+					func(*eidos.StructMatch, *eidos.Stamper) error {
+						later = true
+						return nil
+					}),
+			).
+			Targets("fixture").
+			Plans(planTo("plan", "fixture", mirror("mirror"))).
+			Build()
+		assert.NoError(t, err, "the two-annotator composition composes")
+		g, _ := alpha(t)
+		_, err = w.Run(ctx, g)
+		assert.ErrorIs(t, err, context.Canceled,
+			"the cancellation returns rather than being swallowed")
+		assert.False(t, later,
+			"the schedule stops at the next role, not at the end of the bucket list")
+	})
+
+	t.Run("a cancellation mid-plan stops the next generator", func(t *testing.T) {
+		t.Parallel()
+
+		ctx, cancel := context.WithCancel(t.Context())
+		later := false
+		w, err := workspace.New().
+			Targets("fixture").
+			Plans(planTo("plan", "fixture",
+				generatorAt("first", 1, func(*eidos.StructMatch, *eidos.Emitter) error {
+					cancel()
+					return nil
+				}),
+				generatorAt("second", 2, func(*eidos.StructMatch, *eidos.Emitter) error {
+					later = true
+					return nil
+				}),
+			)).
+			Build()
+		assert.NoError(t, err, "the two-generator plan composes")
+		g, _ := alpha(t)
+		_, err = w.Run(ctx, g)
+		assert.ErrorIs(t, err, context.Canceled,
+			"the plan reports the cancellation under its own name")
+		assert.Contains(t, err.Error(), `"plan"`, "naming the plan")
+		assert.False(t, later, "and the later bucket never ran")
 	})
 
 	t.Run("an Error finding fails the run without stopping it", func(t *testing.T) {

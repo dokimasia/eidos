@@ -4,13 +4,17 @@
 package workspace_test
 
 import (
+	"errors"
+	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
@@ -31,11 +35,198 @@ func runOrdering(t *testing.T, anns ...plugin.Annotator) {
 	assert.NoError(t, err, "the ordering fixture runs")
 }
 
+// nameless is a hand-rolled annotator returning no name. The facade
+// cannot spell one, and the roster still has to refuse it, because
+// findings, units and claims all key on the name.
+type nameless struct{}
+
+func (nameless) Name() plugin.ID                         { return "" }
+func (nameless) Annotate(*plugin.AnnotatorContext) error { return nil }
+
+// declaring is a hand-rolled annotator returning its capability
+// lists verbatim, duplicates and empty labels included. The facade
+// refuses an empty label at its own Build, and the composition
+// still answers for one arriving through the service provider
+// interface.
+type declaring struct {
+	name     plugin.ID
+	provides []plugin.Capability
+	requires []plugin.Capability
+}
+
+func (d *declaring) Name() plugin.ID                       { return d.name }
+func (*declaring) Annotate(*plugin.AnnotatorContext) error { return nil }
+func (*declaring) Priority(plugin.Role) int                { return 1 }
+func (d *declaring) Provides() []plugin.Capability         { return d.provides }
+func (d *declaring) Requires() []plugin.Capability         { return d.requires }
+
+// capable spells one hand-rolled annotator's capability lists
+// inline.
+func capable(name plugin.ID, provides, requires []plugin.Capability) plugin.Annotator {
+	return &declaring{name: name, provides: provides, requires: requires}
+}
+
+// keyless returns an annotator whose key registration refuses.
+func keyless(name plugin.ID, because string) plugin.Annotator {
+	p, held := eidos.NewPlugin(name).
+		Keys(func(*meta.Registry) error { return errors.New(because) }).
+		Handle(eidos.OnStruct(quiet)).Build().(plugin.Annotator)
+	if !held {
+		panic("workspace_test: a stamper rule lowers to the annotator role")
+	}
+	return p
+}
+
+// schemad returns a generator owning s, so the registration step
+// meets a plugin's own schema.
+func schemad(name plugin.ID, s directive.Schema) plugin.Generator {
+	p, held := eidos.NewPlugin(name).
+		Output(plugin.Output{Per: plugin.PerPlan, Word: "gen"}).
+		Handle(eidos.Directive(s, eidos.OnEmit(symbol.KindStruct,
+			func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }))).
+		Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// sectioned returns a composition carrying one config section for
+// one plugin's options struct.
+func sectioned(name string, cfg any, section map[string]any) *workspace.Builder {
+	return valid().
+		Plans(planTo("second", "fixture", tuned(plugin.ID(name), cfg))).
+		Config(workspace.Config{Options: map[string]map[string]any{name: section}})
+}
+
 // The steps' output is the schedule, and the schedule is
 // observable twice over: the order handlers run in, and the bucket
 // number every claim carries.
 func TestSteps(t *testing.T) {
 	t.Parallel()
+
+	t.Run("assemble", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("refuses a plugin returning no name", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Annotators(nameless{}).Build()
+			assert.HasError(t, err, "everything durable keys on the name")
+			assert.Contains(t, err.Error(), "empty name", "and the fault says so")
+		})
+	})
+
+	t.Run("register", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("collects a plugin's own key registration fault", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().
+				Annotators(keyless("keyless", "the shape namespace is spoken for")).
+				Build()
+			assert.HasError(t, err, "a key provider's refusal is the composition's fault")
+			assert.Contains(t, err.Error(), "spoken for", "carrying its cause")
+		})
+
+		t.Run("collects a plugin's own schema fault", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Plans(planTo("second", "fixture",
+				schemad("picky", directive.Schema{Plugin: "picky", Name: "gate"}))).
+				Build()
+			assert.HasError(t, err, "a schema stating no semantics registers nowhere")
+			assert.Contains(t, err.Error(), "states no semantics", "and the fault says so")
+			assert.Contains(t, err.Error(), "gate", "naming the schema")
+		})
+	})
+
+	t.Run("capabilities", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("refuses an empty provided label", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Annotators(capable("hollow", caps(""), nil)).Build()
+			assert.HasError(t, err, "a label nothing spells orders nothing")
+			assert.Contains(t, err.Error(), "provides an empty capability label",
+				"and the fault says which side it came from")
+			assert.Contains(t, err.Error(), "hollow", "naming the plugin")
+		})
+
+		t.Run("refuses an empty required label", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Annotators(capable("wanting", nil, caps(""))).Build()
+			assert.HasError(t, err, "a label nothing spells orders nothing")
+			assert.Contains(t, err.Error(), "requires an empty capability label",
+				"and the fault says which side it came from")
+			assert.Contains(t, err.Error(), "wanting", "naming the plugin")
+		})
+
+		t.Run("one plugin naming a label twice is one provider", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().
+				Annotators(capable("twice", caps("json", "json"), nil)).
+				Build()
+			assert.NoError(t, err,
+				"a label listed twice by one plugin is not two providers, "+
+					"so it does not collide with itself")
+		})
+
+		t.Run("one plugin asking twice is asked about once", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().
+				Annotators(capable("asking", nil, caps("missing", "missing"))).
+				Build()
+			assert.HasError(t, err, "nothing provides the label")
+			assert.Equal(t,
+				strings.Count(err.Error(), `requires capability "missing"`), 1,
+				"and the composition's author reads the gap once, not once per mention")
+		})
+	})
+
+	t.Run("configure", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("the config replaces a constructed default", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &mirrorOptions{Depth: 1}
+			w, err := sectioned("tuned", opts, map[string]any{"depth": 3}).Build()
+			assert.NoError(t, err, "the section holds the tag contract")
+			assert.NotNil(t, w, "and the workspace composes")
+			assert.Equal(t, opts.Depth, 3,
+				"the plugin reads the configured value off the struct it declared")
+		})
+
+		t.Run("a plugin whose schema failed is not populated", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &struct {
+				Depth int `opt:"depth"`
+			}{}
+			_, err := sectioned("tuned", opts, map[string]any{"depth": 3}).Build()
+			assert.HasError(t, err, "the options struct is undocumented")
+			assert.Contains(t, err.Error(), "doc", "which is the fault reported")
+			assert.Equal(t, opts.Depth, 0,
+				"and population is skipped, so one broken struct is one fault")
+		})
+
+		t.Run("refuses a section for a plugin declaring no options", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Config(workspace.Config{
+				Options: map[string]map[string]any{"mirror": {"depth": 1}},
+			}).Build()
+			assert.HasError(t, err, "a section nothing reads is a typo, not a default")
+			assert.Contains(t, err.Error(), "declares no options", "and the fault says so")
+			assert.Contains(t, err.Error(), `"mirror"`, "naming the plugin")
+		})
+	})
 
 	t.Run("priority places the roles", func(t *testing.T) {
 		t.Parallel()
