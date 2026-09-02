@@ -24,7 +24,7 @@ func TestPromoteEnums(t *testing.T) {
 
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
 			"package p\n\n// Color is a palette.\ntype Color int\n\n"+
-				"const (\n\tRed Color = iota\n\tGreen\n\tBlue\n)\n\n"+
+				"const (\n\tRed Color = iota // leads\n\tGreen\n\tBlue\n)\n\n"+
 				"func (c Color) String() string { return \"\" }\n"))
 		assert.Length(t, file.Decls, 1, "type, constants and method fold into one")
 		enum := file.Decls[0].(*node.Enum)
@@ -32,6 +32,8 @@ func TestPromoteEnums(t *testing.T) {
 		assert.Equal(t, enum.Doc, []string{"Color is a palette."}, "with its doc")
 		assert.Length(t, enum.Variants, 3, "every constant is a variant")
 		assert.Equal(t, enum.Variants[0].Value, "iota", "values verbatim")
+		assert.Equal(t, enum.Variants[0].Comment, "leads",
+			"the trailing comment follows its constant into the variant")
 		assert.Equal(t, enum.Variants[1].Value, "", "implicit carriers stay empty")
 		assert.Length(t, enum.Methods, 1, "the method set carries")
 		assert.Equal(t, enum.Methods[0].Name, "String", "by name")

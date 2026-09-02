@@ -53,6 +53,7 @@ func promoteEnums(
 		variant := &node.EnumVariant{
 			Pos: c.Pos, Doc: c.Doc, Name: c.Name,
 			Value:       c.Value,
+			Comment:     c.Comment,
 			Annotations: c.Annotations,
 		}
 		variants[alias.Name] = append(variants[alias.Name], variant)

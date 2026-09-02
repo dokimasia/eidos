@@ -142,6 +142,7 @@ func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 		out = append(out, &emit.Constant{
 			Origin:      e.Origin,
 			Doc:         v.Doc,
+			Comment:     v.Comment,
 			Name:        e.Name + naming.Pascal(v.Name),
 			Visibility:  e.Visibility,
 			Type:        &emit.TypeRef{Spelling: e.Name},

@@ -18,7 +18,7 @@ const Extension = ".go"
 
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered output.
-const Version = "0.3.0"
+const Version = "0.3.1"
 
 // Syntax is Go's comment forms, declared once and shared: the
 // frontend strips comments with it, and the output contract writes
