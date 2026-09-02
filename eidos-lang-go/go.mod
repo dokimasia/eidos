@@ -3,7 +3,7 @@ module go.dokimi.dev/eidos/lang/go
 go 1.27.0
 
 require (
-	go.dokimi.dev/assert v0.0.0-20260901091249-1b972b4685a8
+	go.dokimi.dev/assert v0.0.0-20260902112452-9d6eca9d7234
 	go.dokimi.dev/eidos/lang v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/sdk v0.0.0-00010101000000-000000000000
 )
