@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"slices"
 	"testing"
 	"testing/fstest"
 
@@ -19,6 +20,7 @@ import (
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -107,6 +109,26 @@ func loadTree(
 	g, report, err := load.Load(context.Background(), cfg)
 	assert.NoError(tb, err, "the load finishes")
 	return g, report, sink
+}
+
+// The brands the ownership cases stamp under.
+const (
+	ownBrand     output.Brand = "own"
+	foreignBrand output.Brand = "foreign"
+)
+
+// stamped returns source framed as one brand's output, so a case
+// can put a generated file into a tree.
+func stamped(tb assert.TB, brand output.Brand, source string) []byte {
+	tb.Helper()
+
+	contract, err := output.NewContract(brand, frontendtest.NewScripted().Syntax())
+	assert.NoError(tb, err, "the fixture language carries the frame")
+	b, err := contract.Stamp(plugin.RenderedFile{
+		Name: "gen.zz", Plugins: []plugin.ID{"gen"}, Body: []byte(source),
+	})
+	assert.NoError(tb, err, "the source stamps")
+	return b
 }
 
 // refuse drives one load the case states must fail and returns the
@@ -250,6 +272,64 @@ func TestLoad(t *testing.T) {
 			err := refuse(t, stdTree(), with(hiddenOptions{frontendtest.NewScripted()}))
 			assert.Contains(t, err.Error(), "secret",
 				"naming the knob the encoding cannot see")
+		})
+	})
+
+	t.Run("disown", func(t *testing.T) {
+		t.Parallel()
+
+		ownedFile := "svc/store/row_gen.zz"
+		generated := "package svc/store\ntype Generated string\n"
+
+		t.Run("refuses the workspace's own outputs before anything partitions", func(t *testing.T) {
+			t.Parallel()
+
+			tree := stdTree()
+			tree[ownedFile] = &fstest.MapFile{Data: stamped(t, ownBrand, generated)}
+			g, report, sink := loadTree(t, tree, func(cfg *load.Config) { cfg.Brand = ownBrand })
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, report.Excluded, []string{ownedFile}, "the report lists the refusal")
+			for _, u := range report.Units {
+				assert.False(t, slices.Contains(u.Files, ownedFile),
+					"and no unit holds the file")
+			}
+			_, held := g.Lookup(symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: storePath,
+				Name: "Generated", Kind: symbol.KindStruct,
+			})
+			assert.False(t, held, "so its declarations never enter the graph")
+		})
+
+		t.Run("loads another brand's output as ordinary input", func(t *testing.T) {
+			t.Parallel()
+
+			tree := stdTree()
+			tree[ownedFile] = &fstest.MapFile{Data: stamped(t, foreignBrand, generated)}
+			g, report, _ := loadTree(t, tree, func(cfg *load.Config) { cfg.Brand = ownBrand })
+			assert.Empty(t, report.Excluded, "a foreign frame proves nothing to this load")
+			_, held := g.Lookup(symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: storePath,
+				Name: "Generated", Kind: symbol.KindStruct,
+			})
+			assert.True(t, held, "and the file's declarations load")
+		})
+
+		t.Run("excludes nothing under the zero brand", func(t *testing.T) {
+			t.Parallel()
+
+			tree := stdTree()
+			tree[ownedFile] = &fstest.MapFile{Data: stamped(t, ownBrand, generated)}
+			_, report, _ := loadTree(t, tree)
+			assert.Empty(t, report.Excluded, "a composition declaring no output owns nothing")
+		})
+
+		t.Run("returns a read's own error", func(t *testing.T) {
+			t.Parallel()
+
+			err := refuse(t, failingFS{tree: stdTree(), fail: storeFile}, func(cfg *load.Config) {
+				cfg.Brand = ownBrand
+			})
+			assert.Contains(t, err.Error(), storeFile, "naming the file the proof could not read")
 		})
 	})
 

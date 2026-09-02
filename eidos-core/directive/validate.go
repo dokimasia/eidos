@@ -163,6 +163,11 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	v.at = raw.Pos
 	schema, held := v.registry.ResolveName(raw.Name)
 	if !held {
+		if v.registry.Ignored(raw.Name) {
+			// The workspace opted out: a foreign tool's carrier drops
+			// without a finding.
+			return Directive{}, Schema{}, false
+		}
 		if candidates := v.registry.Candidates(raw.Name); len(candidates) > 1 {
 			v.report(AmbiguousName, raw.Pos,
 				"%s has two claimants: write one of %s", raw.Name, nameList(candidates))

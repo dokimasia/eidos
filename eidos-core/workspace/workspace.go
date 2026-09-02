@@ -25,7 +25,16 @@ type Workspace struct {
 	// sink stages and commits what the plans render, nil for a
 	// composition that stops after the settle.
 	sink output.Sink
+	// brand is what the output contract stamps under, and what the
+	// load refuses as the workspace's own output.
+	brand output.Brand
 }
+
+// Brand returns the output brand the composition declared, and the
+// zero brand for one declaring no output. It is what a load is
+// driven under, so the workspace never reads its own outputs as
+// source.
+func (w *Workspace) Brand() output.Brand { return w.brand }
 
 // ErrRunFailed classifies a run that reported errors; the findings
 // themselves are in the report's sink.

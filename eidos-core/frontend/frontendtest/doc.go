@@ -16,13 +16,17 @@
 // A fixture that cannot state a check skips it: no signature
 // roots skips the depth check, no schemas skips directive
 // validation, no keys skips the stamp apply. Each skip is stated
-// by the suite rather than passed in silence.
+// by the suite rather than passed in silence. The ownership check
+// states nothing: it frames a selected file under the load's own
+// brand and under another's itself, through the language's own
+// comment syntax, and holds the load to refusing the first alone.
 //
 // # Dependency position
 //
 // core/frontend/frontendtest imports core/frontend/load,
 // core/plugin, core/store, core/node, core/directive, core/meta,
-// core/diag, core/symbol, core/position and the assert module; it drives the
+// core/output, core/diag, core/symbol, core/position and the
+// assert module; it drives the
 // read side end to end, so it sits beside core/frontend/load at
 // the top and nothing beneath imports it back.
 package frontendtest

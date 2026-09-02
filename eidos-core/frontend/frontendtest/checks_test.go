@@ -84,6 +84,21 @@ func TestChecks(t *testing.T) {
 		})
 	})
 
+	t.Run("AssertOwnedExcluded", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("rejects a claim that never reaches the stamped copy", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a selection the check cannot place a copy under", func(tb assert.TB) {
+				frontendtest.AssertOwnedExcluded(tb, over(&carved{
+					frontendtest.NewScripted(),
+				}, fixture()))
+			})
+			assert.Contains(t, msg, "claim reaches it", "the rejection names the placement")
+		})
+	})
+
 	t.Run("AssertFingerprinted", func(t *testing.T) {
 		t.Parallel()
 
@@ -426,4 +441,15 @@ func (o optionless) Partition(
 
 func (o optionless) Resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
 	return o.f.Resolve(scope, spelling)
+}
+
+// carved carves the ownership check's copies out of the claim, so
+// the stamped file is neither refused nor loaded.
+type carved struct {
+	plugin.Frontend
+}
+
+// Selection returns the inner claim with the copies negated.
+func (c *carved) Selection() []string {
+	return append(c.Frontend.Selection(), "!**/*_owned*.zz")
 }

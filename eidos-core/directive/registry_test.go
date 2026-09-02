@@ -42,6 +42,53 @@ func sealed(tb assert.TB, schemas ...directive.Schema) *directive.Registry {
 func TestRegistry(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Ignore", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("silences a full name and a plugin prefix", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.Ignore("deepcopy-gen"), "a full name ignores")
+			assert.NoError(t, r.Ignore("k8s:"), "a plugin prefix ignores")
+			assert.Empty(t, r.Seal(), "an ignore covering nothing registered seals")
+			assert.True(t, r.Ignored("deepcopy-gen"), "the name is opted out")
+			assert.True(t, r.Ignored("k8s:openapi-gen"), "every name under the prefix is")
+			assert.False(t, r.Ignored("kubebuilder:validation"), "another plugin's is not")
+			assert.False(t, r.Ignored("k8s"), "nor the bare prefix spelled without its colon")
+		})
+
+		t.Run("refuses what would silence a schema", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.Register(wellFormed("mockgen", "stub")), "the schema registers")
+			err := r.Ignore("mockgen:stub")
+			assert.HasError(t, err, "ignoring a registered name is refused at the call")
+			assert.Contains(t, err.Error(), "mockgen:stub", "naming it")
+			err = r.Ignore("stub")
+			assert.HasError(t, err, "and so is its bare spelling while one plugin claims it")
+			err = r.Ignore("mockgen:")
+			assert.HasError(t, err, "and a prefix covering it")
+			assert.Contains(t, err.Error(), "mockgen:stub", "naming the schema it would silence")
+			assert.HasError(t, r.Ignore(directive.KernelSkip), "a kernel name is never ignored")
+			assert.HasError(t, r.Ignore(""), "an empty spelling ignores nothing")
+			assert.HasError(t, r.Ignore(":"), "and a bare colon is one")
+		})
+
+		t.Run("refuses at the seal when the schema registers second", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.Ignore("mockgen:"), "the prefix ignores while nothing is under it")
+			assert.NoError(t, r.Register(wellFormed("mockgen", "stub")), "then the schema registers")
+			faults := r.Seal()
+			assert.Length(t, faults, 1, "the seal reports the silenced schema")
+			assert.Contains(t, faults[0].Error(), "mockgen:stub", "naming it")
+			assert.HasError(t, r.Ignore("late"), "and nothing ignores after the seal")
+		})
+	})
+
 	t.Run("Register", func(t *testing.T) {
 		t.Parallel()
 

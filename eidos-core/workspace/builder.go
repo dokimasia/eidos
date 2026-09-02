@@ -6,6 +6,7 @@ package workspace
 import (
 	"errors"
 
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -54,6 +55,7 @@ type Builder struct {
 	sink       output.Sink
 	brand      output.Brand
 	keys       []func(r *meta.Registry) error
+	ignored    []directive.Name
 	config     Config
 }
 
@@ -108,6 +110,18 @@ func (b *Builder) Config(c Config) *Builder {
 	return b
 }
 
+// Ignore opts the composition out of reporting unclaimed
+// directives under these spellings: a foreign tool's carriers
+// living in the same comments. A full name ignores one directive;
+// a plugin prefix ending in its colon, "k8s:", ignores every
+// directive under it. A spelling a registered schema claims is a
+// Build fault, because silencing a registered directive would hide
+// its validation.
+func (b *Builder) Ignore(names ...directive.Name) *Builder {
+	b.ignored = append(b.ignored, names...)
+	return b
+}
+
 // Build runs every step and returns the immutable workspace, or
 // one error joining every fault it found. Each step runs even when
 // an earlier one found faults, except where a fault empties a
@@ -133,5 +147,6 @@ func (b *Builder) Build() (*Workspace, error) {
 		annotate:   ann,
 		plans:      plans,
 		sink:       b.sink,
+		brand:      b.brand,
 	}, nil
 }

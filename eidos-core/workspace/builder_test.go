@@ -267,6 +267,13 @@ func TestBuilder(t *testing.T) {
 				},
 				markers: []string{`"second"`, `"mars"`},
 			},
+			{
+				name: "an ignore covering a kernel name",
+				compose: func() *workspace.Builder {
+					return valid().Ignore(directive.KernelSkip)
+				},
+				markers: []string{"skip", "kernel"},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

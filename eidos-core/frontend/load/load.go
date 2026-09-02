@@ -21,6 +21,7 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -70,12 +71,25 @@ type Config struct {
 	// [plugin.DepthSignatures], everything else at
 	// [plugin.DepthFull].
 	Signatures []string
+
+	// Brand is the workspace's own output brand. A claimed file
+	// carrying this brand's provenance trailer is the workspace's
+	// own output and does not load: outputs are never inputs, and
+	// the exclusion runs before anything partitions. A file
+	// another brand stamped is ordinary input. A zero brand
+	// excludes nothing, which is what a composition declaring no
+	// output loads under.
+	Brand output.Brand
 }
 
 // Report is what one load records beside the graph.
 type Report struct {
 	// Units holds one entry per parsed unit, in splice order.
 	Units []UnitReport
+
+	// Excluded lists the claimed files the load refused as the
+	// workspace's own outputs, in tree order.
+	Excluded []string
 }
 
 // UnitReport is one unit's record.
@@ -130,6 +144,10 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	excluded, err := disown(cfg, claims)
+	if err != nil {
+		return nil, nil, err
+	}
 	units, err := partitionAll(ctx, cfg, claims)
 	if err != nil {
 		return nil, nil, err
@@ -161,7 +179,7 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 	}
 	g.Freeze()
 
-	report := &Report{Units: make([]UnitReport, 0, len(units))}
+	report := &Report{Units: make([]UnitReport, 0, len(units)), Excluded: excluded}
 	for _, u := range units {
 		report.Units = append(report.Units, UnitReport{
 			Frontend: u.frontend.Name(),
@@ -222,6 +240,37 @@ func claim(frontends []plugin.Frontend, files []string) ([][]string, error) {
 		}
 	}
 	return out, nil
+}
+
+// disown drops every claimed file the workspace proves it owns —
+// a provenance trailer under the load's own brand — from the
+// claims, and returns what it dropped in tree order. The proof is
+// read from the bytes, because an output family is a cheap
+// pre-filter and no more: an out= redirect and the orphaned
+// output of a removed plugin match no current declaration. A zero
+// brand proves nothing and drops nothing.
+func disown(cfg Config, claims [][]string) ([]string, error) {
+	if cfg.Brand == "" {
+		return nil, nil
+	}
+	var excluded []string
+	for i, paths := range claims {
+		kept := paths[:0]
+		for _, path := range paths {
+			b, err := fs.ReadFile(cfg.FS, path)
+			if err != nil {
+				return nil, fmt.Errorf("load: read %s: %w", path, err)
+			}
+			if prov, stamped := output.Read(b); stamped && prov.Brand == cfg.Brand {
+				excluded = append(excluded, path)
+				continue
+			}
+			kept = append(kept, path)
+		}
+		claims[i] = kept
+	}
+	slices.Sort(excluded)
+	return excluded, nil
 }
 
 // partitionAll partitions each frontend's claim into units, checks

@@ -15,7 +15,11 @@
 // [Validate] runs over one subject's full list and returns
 // [Directive] instances typed per schema, reporting every
 // violation as a positioned Error under its own registered code
-// before any handler runs.
+// before any handler runs. An unclaimed name is a violation like
+// any other, unless the workspace opted out of it through
+// [Registry.Ignore]: a foreign tool's carriers in the same
+// comments drop in silence, and a registered name can never be
+// ignored.
 //
 // # The kernel's names
 //

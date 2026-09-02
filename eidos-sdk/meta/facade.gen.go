@@ -102,6 +102,43 @@ func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T,
 // set.
 type Recorder = core.Recorder
 
+// KernelNamespace is the namespace the kernel's own keys register
+// under, and KernelOwner is who a collision with it names. No
+// plugin claims the namespace: the workspace registers it before
+// any plugin's registration runs, so an impersonation is a plain
+// duplicate by the time it arrives.
+const (
+	KernelNamespace = core.KernelNamespace
+	KernelOwner     = core.KernelOwner
+)
+
+// The kernel-owned keys every frontend spells the same way. Module
+// identity is a neutral fact because kernel machinery — scope
+// matching, layout — reads it and knows no language; the raw
+// toolchain spelling stays in the frontend's own namespace.
+const (
+	// ModuleKey carries a package's toolchain-module identity: a Go
+	// module path, a Maven artifact, a crate name. Absent on a
+	// package outside every module, which is what a bare
+	// directory tree loads as.
+	ModuleKey = core.ModuleKey
+	// ModuleRootKey carries the workspace-relative directory the
+	// package's module is declared in, "." for the tree's root.
+	ModuleRootKey = core.ModuleRootKey
+)
+
+// KernelKeys are the typed handles [Kernel] returns: what a reader
+// of the kernel's own facts holds.
+type KernelKeys = core.KernelKeys
+
+// Kernel claims the kernel namespace and registers the kernel-owned
+// keys. It refuses, with the registry's own errors, a namespace
+// already claimed and a key already registered, which is what a
+// composition registering it twice reads.
+func Kernel(r *Registry) (KernelKeys, error) {
+	return core.Kernel(r)
+}
+
 // KeyName is a key's boundary spelling: dotted segments with the
 // owning namespace first, as in "shape.role". It appears at the
 // boundary — a directive parameter, an attribution argument — and

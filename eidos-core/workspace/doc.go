@@ -5,9 +5,10 @@
 // value and runs a loaded graph through the frame.
 //
 // [Builder] collects the composition: annotators, plans, target
-// names, metadata key registrations and config. [Builder.Build]
-// runs six validation steps in one pass: the roster,
-// the registries, the lowering into priority buckets, the options,
+// names, metadata key registrations, ignored directive spellings
+// and config. [Builder.Build] runs six validation steps in one
+// pass: the roster, the registries — the kernel's own keys and
+// schemas first — the lowering into priority buckets, the options,
 // the plans, and the compiled schedule. Every step runs even when
 // an earlier one found faults, and the answer is either the
 // [Workspace] or one error joining everything found, so the
@@ -29,7 +30,9 @@
 // # The output
 //
 // A composition declaring output through [Builder.Output] carries
-// the frame one step further: each plan settles, renders through
+// the frame one step further, and its brand is what
+// [Workspace.Brand] returns for the load to refuse its own outputs
+// under: each plan settles, renders through
 // its backend and stamps every file through the output contract,
 // and the run writes what every plan staged into the sink and
 // commits once. The render is parallel per plan and the write is

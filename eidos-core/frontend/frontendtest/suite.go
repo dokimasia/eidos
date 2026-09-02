@@ -49,8 +49,9 @@ type Setup func(tb assert.TB) (plugin.Frontend, *Fixture)
 
 // RunFrontendSuite holds a frontend to the read side's contract:
 // deterministic parses, positioned findings, no silently dropped
-// file, honest unit keys, the jailed read, signature depth,
-// validated directive attachments and resolved references. It
+// file, the workspace's own outputs refused, honest unit keys, the
+// jailed read, signature depth, validated directive attachments
+// and resolved references. It
 // drives the SPI, so a kit-built frontend and a hand-rolled one
 // meet the same checks.
 func RunFrontendSuite(t *testing.T, setup Setup) {
@@ -67,6 +68,10 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 	t.Run("classifies without dropping a file", func(t *testing.T) {
 		t.Parallel()
 		AssertClassified(t, setup)
+	})
+	t.Run("refuses its own outputs", func(t *testing.T) {
+		t.Parallel()
+		AssertOwnedExcluded(t, setup)
 	})
 	t.Run("folds honest unit keys", func(t *testing.T) {
 		t.Parallel()

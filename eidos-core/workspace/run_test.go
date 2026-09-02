@@ -304,6 +304,25 @@ func TestRun(t *testing.T) {
 			"and the frame still ran whole")
 	})
 
+	t.Run("an ignored foreign directive never reaches validation", func(t *testing.T) {
+		t.Parallel()
+
+		b, _ := flagged()
+		w, err := b.Ignore("k8s:").Build()
+		assert.NoError(t, err, "the composition opts out of a foreign tool's prefix")
+		g, s := alpha(t)
+		foreign := directive.Raw{
+			Name: "k8s:deepcopy-gen",
+			Pos:  position.Pos{File: "alpha.go", Line: 5, Col: 1},
+		}
+		assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{foreign}),
+			"the foreign carrier attaches like any other")
+		report, err := w.Run(t.Context(), g)
+		assert.NoError(t, err, "and the run passes")
+		coretest.AssertCodes(t, report.Sink)
+		assert.Length(t, units(report.Emits["plan"]), 1, "the frame ran whole")
+	})
+
 	t.Run("a dangling subject reports its code", func(t *testing.T) {
 		t.Parallel()
 

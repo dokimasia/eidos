@@ -5,7 +5,10 @@ package frontendtest
 
 import (
 	"bytes"
+	"io/fs"
+	"path"
 	"slices"
+	"strings"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
@@ -15,9 +18,18 @@ import (
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// The brands the ownership check stamps under, and the suffix the
+// stamped copies take beside the file they copy.
+const (
+	ownBrand     output.Brand = "frontendtest"
+	foreignBrand output.Brand = "frontendtest-foreign"
+	ownedSuffix               = "_owned"
 )
 
 // AssertDeterministicParse loads the fixture twice and compares
@@ -94,6 +106,8 @@ func AssertClassified(tb assert.TB, setup Setup) {
 		return
 	}
 	registry := meta.NewRegistry()
+	_, err := meta.Kernel(registry)
+	assert.NoError(tb, err, "the kernel's own keys register, as the workspace registers them")
 	assert.NoError(tb, fx.Keys(registry), "the fixture's keys register")
 	facts := meta.NewFacts(registry)
 	for id, stamps := range got.graph.Stamps() {
@@ -108,6 +122,68 @@ func AssertClassified(tb assert.TB, setup Setup) {
 			assert.NoError(tb, err, "a recorded stamp applies under the fixture's keys")
 		}
 	}
+}
+
+// AssertOwnedExcluded holds the one exclusion the kernel owns: a
+// selected file framed under the load's own brand is the
+// workspace's output and never reaches a unit, while the same file
+// framed under another brand is ordinary input and loads. The
+// check stamps the copies itself through the language's own
+// comment syntax, so a fixture states nothing.
+func AssertOwnedExcluded(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	f, fx := setup(tb)
+	files := selected(tb, f, fx)
+	source, err := fs.ReadFile(fx.Sources, files[0])
+	assert.NoError(tb, err, "a selected file reads")
+	if len(source) == 0 || source[len(source)-1] != '\n' {
+		source = append(slices.Clone(source), '\n')
+	}
+
+	ext := path.Ext(files[0])
+	stem := strings.TrimSuffix(files[0], ext)
+	tree := copyTree(tb, fx.Sources)
+	own := stem + ownedSuffix + ext
+	foreign := stem + ownedSuffix + "2" + ext
+	tree[own] = &fstest.MapFile{Data: framed(tb, f, ownBrand, own, source)}
+	tree[foreign] = &fstest.MapFile{Data: framed(tb, f, foreignBrand, foreign, source)}
+	assert.True(tb, load.Match(f.Selection(), own),
+		"the stamped copy sits beside its source, where the claim reaches it")
+
+	got := drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures},
+		func(cfg *load.Config) { cfg.Brand = ownBrand })
+	assert.Equal(tb, got.report.Excluded, []string{own},
+		"the load refuses its own output and lists it")
+	for _, u := range got.report.Units {
+		assert.False(tb, slices.Contains(u.Files, own), "no unit holds the refused file")
+	}
+	held := false
+	for _, u := range got.report.Units {
+		held = held || slices.Contains(u.Files, foreign)
+	}
+	assert.True(tb, held, "another brand's output is ordinary input, held by a unit")
+	for decl := range got.graph.ByKind(symbol.KindFile) {
+		if file, is := decl.(*node.File); is {
+			assert.False(tb, file.Path == own, "the refused file declares nothing")
+		}
+	}
+}
+
+// framed stamps source as one brand's output through the
+// language's own comment syntax.
+func framed(
+	tb assert.TB, f plugin.Frontend, brand output.Brand, name string, source []byte,
+) []byte {
+	tb.Helper()
+
+	contract, err := output.NewContract(brand, f.Syntax())
+	assert.NoError(tb, err, "the language's syntax carries the frame")
+	b, err := contract.Stamp(plugin.RenderedFile{
+		Name: path.Base(name), Plugins: []plugin.ID{f.Name()}, Body: source,
+	})
+	assert.NoError(tb, err, "the source stamps")
+	return b
 }
 
 // AssertFingerprinted holds the unit keys honest: stable across

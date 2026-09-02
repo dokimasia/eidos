@@ -47,6 +47,16 @@ func AssertClassified(tb assert.TB, setup Setup) {
 	core.AssertClassified(tb, setup)
 }
 
+// AssertOwnedExcluded holds the one exclusion the kernel owns: a
+// selected file framed under the load's own brand is the
+// workspace's output and never reaches a unit, while the same file
+// framed under another brand is ordinary input and loads. The
+// check stamps the copies itself through the language's own
+// comment syntax, so a fixture states nothing.
+func AssertOwnedExcluded(tb assert.TB, setup Setup) {
+	core.AssertOwnedExcluded(tb, setup)
+}
+
 // AssertFingerprinted holds the unit keys honest: stable across
 // two identical loads, and changed by each folded part — a read, a
 // depth, a declared version, the options, the plugin set. The
@@ -121,8 +131,10 @@ type ScriptedOptions = core.ScriptedOptions
 //	+NAME ARGS            a directive on the last type
 //	// TEXT               a comment, split by the kernel: its
 //	                      documentation reaches the next type, a
-//	                      +marked line carries to the last one, and
-//	                      a tool:name line lowers as an annotation
+//	                      +marked line carries to it too, and a
+//	                      tool:name line lowers as an annotation;
+//	                      above the package line it is the file's
+//	                      header and reads as nothing
 //	stamp KEY VALUE       a classification stamp on the file
 //	pkgnote NAME ARGS     a directive on the package node itself
 //
@@ -160,8 +172,9 @@ type Setup = core.Setup
 
 // RunFrontendSuite holds a frontend to the read side's contract:
 // deterministic parses, positioned findings, no silently dropped
-// file, honest unit keys, the jailed read, signature depth,
-// validated directive attachments and resolved references. It
+// file, the workspace's own outputs refused, honest unit keys, the
+// jailed read, signature depth, validated directive attachments
+// and resolved references. It
 // drives the SPI, so a kit-built frontend and a hand-rolled one
 // meet the same checks.
 func RunFrontendSuite(t *testing.T, setup Setup) {

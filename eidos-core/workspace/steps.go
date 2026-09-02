@@ -139,12 +139,18 @@ func sameProvider(seated, p plugin.Plugin) bool {
 // them, then every plugin's keys, the builder's own registrations,
 // every plugin's schemas, and the seal that resolves constraints.
 // Capability labels and target names collect here too, because
-// both are registries in everything but shape.
+// both are registries in everything but shape. The kernel's own
+// keys and schemas register first, so an impersonation is a plain
+// duplicate by the time it arrives, and the ignores register last,
+// so one covering a registered name is refused with the name.
 func (b *Builder) register(
 	roster []plugin.Plugin,
 ) (*meta.Registry, *directive.Registry, map[plugin.Target]bool, []error) {
 	var faults []error
 	keys := meta.NewRegistry()
+	if _, err := meta.Kernel(keys); err != nil {
+		faults = append(faults, err)
+	}
 	dirs := directive.NewRegistry()
 	for _, s := range directive.Kernel() {
 		if err := dirs.Register(s); err != nil {
@@ -176,6 +182,11 @@ func (b *Builder) register(
 					faults = append(faults, err)
 				}
 			}
+		}
+	}
+	for _, n := range b.ignored {
+		if err := dirs.Ignore(n); err != nil {
+			faults = append(faults, err)
 		}
 	}
 	faults = append(faults, dirs.Seal()...)

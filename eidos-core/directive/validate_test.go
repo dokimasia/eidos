@@ -130,6 +130,28 @@ func TestValidate(t *testing.T) {
 		assert.Equal(t, d.Instance, 0, "the first instance is numbered zero")
 	})
 
+	t.Run("drops an ignored name without a finding", func(t *testing.T) {
+		t.Parallel()
+
+		r := directive.NewRegistry()
+		for _, s := range directive.Kernel() {
+			assert.NoError(t, r.Register(s), "the kernel schemas register first")
+		}
+		assert.NoError(t, r.Register(fullSchema()), "the fixture schema registers")
+		assert.NoError(t, r.Ignore("k8s:"), "the workspace opts out of a foreign tool's prefix")
+		assert.Empty(t, r.Seal(), "the registry seals")
+
+		sink := diag.NewSink()
+		got := directive.Validate(validationSubject, []directive.Raw{
+			parse(t, "k8s:deepcopy-gen package", 1),
+			parse(t, "indexer:index btree", 2),
+		}, r, keyed(t), sink)
+		assert.False(t, sink.Failed(), "the opted-out carrier reports nothing")
+		coretest.AssertCodes(t, sink)
+		assert.Length(t, got, 1, "and drops, while the claimed instance types")
+		assert.Equal(t, got[0].Name, directive.Name("indexer:index"), "under its schema")
+	})
+
 	t.Run("numbers repeatable instances in position order", func(t *testing.T) {
 		t.Parallel()
 

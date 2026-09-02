@@ -4,6 +4,7 @@
 package directive
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -21,7 +22,10 @@ type Registry struct {
 	// claimants holds, per bare name, the canonical spellings that
 	// claim it, in registration order.
 	claimants map[Name][]Name
-	sealed    bool
+	// ignored holds the spellings the workspace opted out of
+	// reporting: a full name, or a plugin prefix with its colon.
+	ignored map[Name]bool
+	sealed  bool
 }
 
 // NewRegistry returns a registry holding nothing.
@@ -29,7 +33,42 @@ func NewRegistry() *Registry {
 	return &Registry{
 		byCanonical: map[Name]Schema{},
 		claimants:   map[Name][]Name{},
+		ignored:     map[Name]bool{},
 	}
+}
+
+// Ignore records a spelling whose unclaimed instances validation
+// drops in silence: a foreign tool's carriers living in the same
+// comments. A full name ignores that directive; a plugin prefix
+// ending in its colon, as in "k8s:", ignores every directive under
+// it. Ignoring a claimed name is refused, at the call when the
+// schema registered first and at the seal otherwise, because
+// silencing a registered directive would hide its validation.
+func (r *Registry) Ignore(n Name) error {
+	if r.sealed {
+		return fmt.Errorf("directive: ignoring %s after the seal: registration ends there", n)
+	}
+	if n == "" || n == ":" {
+		return errors.New("directive: an empty spelling ignores nothing")
+	}
+	if slices.Contains(kernelNames, n) {
+		return fmt.Errorf("directive: %s is a kernel name, which no workspace ignores", n)
+	}
+	if err := r.claimedIgnore(n); err != nil {
+		return err
+	}
+	r.ignored[n] = true
+	return nil
+}
+
+// Ignored reports whether a spelling is opted out: by its full
+// name, or by the prefix of the plugin it names.
+func (r *Registry) Ignored(n Name) bool {
+	if r.ignored[n] {
+		return true
+	}
+	plugin, _, prefixed := strings.Cut(string(n), string(prefixSep))
+	return prefixed && r.ignored[Name(plugin+string(prefixSep))]
 }
 
 // Register records one schema.
@@ -62,11 +101,17 @@ func (r *Registry) Register(s Schema) error {
 }
 
 // Seal resolves every Requires and ConflictsWith against what
-// registered and closes the registry. Each unknown name is one
-// error, a self-reference is another; composition collects them
-// all.
+// registered, refuses an ignore covering a registered name, and
+// closes the registry. Each unknown name is one error, a
+// self-reference another, a silenced schema another; composition
+// collects them all.
 func (r *Registry) Seal() []error {
 	var faults []error
+	for _, n := range r.ignoredOrder() {
+		if err := r.claimedIgnore(n); err != nil {
+			faults = append(faults, err)
+		}
+	}
 	for _, canonical := range r.canonicalOrder() {
 		s := r.byCanonical[canonical]
 		for _, constraint := range [2][]Name{s.Requires, s.ConflictsWith} {
@@ -115,6 +160,25 @@ func (r *Registry) ResolveName(n Name) (Schema, bool) {
 // name, in registration order, for the ambiguity Error.
 func (r *Registry) Candidates(n Name) []Name {
 	return slices.Clone(r.claimants[n])
+}
+
+// claimedIgnore refuses an ignore that would silence a registered
+// schema: the name itself, or a prefix covering one.
+func (r *Registry) claimedIgnore(n Name) error {
+	if _, held := r.ResolveName(n); held {
+		return fmt.Errorf("directive: ignoring %s would silence its registered schema", n)
+	}
+	if !strings.HasSuffix(string(n), string(prefixSep)) {
+		return nil
+	}
+	for _, canonical := range r.canonicalOrder() {
+		if strings.HasPrefix(string(canonical), string(n)) {
+			return fmt.Errorf(
+				"directive: ignoring %s would silence %s, whose schema is registered", n, canonical,
+			)
+		}
+	}
+	return nil
 }
 
 // admissible checks one schema's own declaration.
@@ -203,6 +267,17 @@ func admissibleParam(
 		}
 	}
 	return nil
+}
+
+// ignoredOrder returns every ignored spelling, sorted, so the
+// seal's faults arrive in one order.
+func (r *Registry) ignoredOrder() []Name {
+	out := make([]Name, 0, len(r.ignored))
+	for n := range r.ignored {
+		out = append(out, n)
+	}
+	slices.SortFunc(out, func(a, b Name) int { return strings.Compare(string(a), string(b)) })
+	return out
 }
 
 // canonicalOrder returns every canonical spelling, sorted, so the

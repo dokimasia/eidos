@@ -55,8 +55,10 @@ type ScriptedOptions struct {
 //	+NAME ARGS            a directive on the last type
 //	// TEXT               a comment, split by the kernel: its
 //	                      documentation reaches the next type, a
-//	                      +marked line carries to the last one, and
-//	                      a tool:name line lowers as an annotation
+//	                      +marked line carries to it too, and a
+//	                      tool:name line lowers as an annotation;
+//	                      above the package line it is the file's
+//	                      header and reads as nothing
 //	stamp KEY VALUE       a classification stamp on the file
 //	pkgnote NAME ARGS     a directive on the package node itself
 //
@@ -223,6 +225,10 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 			pkg.Name = path.Base(pkgPath)
 			file = &node.File{Path: filePath, Pos: at}
 			pkg.Files = append(pkg.Files, file)
+		case strings.HasPrefix(fields[0], "//") && file == nil:
+			// A comment above the package line is the file's header —
+			// the generated-file frame sits there — and reads as
+			// nothing.
 		case file == nil:
 			u.Errorf(ScriptedBadFile, at, "%s opens with %q, not a package line", filePath, fields[0])
 			return
@@ -276,9 +282,8 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 		case strings.HasPrefix(fields[0], "//"):
 			// The kernel's own split decides what a comment holds,
 			// so the reference language exercises it: documentation
-			// reaches the next declaration, a carrier attaches to
-			// the last one, and a tool directive lowers as an
-			// annotation.
+			// and carriers reach the next declaration, and a tool
+			// directive lowers as an annotation.
 			parts := u.Comment(line, at)
 			pending = append(pending, parts.Docs...)
 			annotations = append(annotations, parts.Annotations...)

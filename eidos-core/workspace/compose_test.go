@@ -70,6 +70,7 @@ func TestCompose(t *testing.T) {
 		Output(output.NewMem(), "eidos").
 		Build()
 	assert.NoError(t, err, "the writing composition composes")
+	assert.Equal(t, w.Brand(), output.Brand("eidos"), "the composition states its brand")
 
 	tree := fstest.MapFS{
 		"svc/store/row.zz": {Data: []byte("package svc/store\ntype Row int string\n")},
@@ -80,6 +81,7 @@ func TestCompose(t *testing.T) {
 		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
 		Sink:      sink,
 		PluginSet: w.Fingerprint(),
+		Brand:     w.Brand(),
 	})
 	assert.NoError(t, err, "the source loads")
 	assert.Length(t, report.Units, 1, "one unit parsed")

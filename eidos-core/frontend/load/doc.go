@@ -22,6 +22,17 @@
 // validates between the seal and its first handler, which is where
 // the workspace run does it today.
 //
+// # Outputs are never inputs
+//
+// A claimed file carrying a provenance trailer under the load's
+// own [Config.Brand] is the workspace's own output, and it does not
+// load: the exclusion runs on the bytes, after selection and
+// before anything partitions, and the report lists what it
+// refused. A file another brand stamped is ordinary input — parsed,
+// classified by the language as generated, gated by consumers like
+// any other fact. The proof is the trailer alone; a manifest entry
+// joins it when the sealed state exists.
+//
 // # Keys
 //
 // Every unit's key folds, in order: the unit's recorded reads, the
@@ -50,8 +61,8 @@
 // # Dependency position
 //
 // core/frontend/load imports core/plugin, core/store, core/node,
-// core/directive, core/meta, core/diag, core/symbol, core/position and the
-// Go stdlib; it drives frontends and writes the store, so the
-// read side's pieces meet here and nothing beneath imports it
-// back.
+// core/directive, core/meta, core/output, core/diag, core/symbol,
+// core/position and the Go stdlib; it drives frontends and writes
+// the store, so the read side's pieces meet here and nothing
+// beneath imports it back.
 package load
