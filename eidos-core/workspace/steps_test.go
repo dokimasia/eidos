@@ -43,6 +43,19 @@ type nameless struct{}
 func (nameless) Name() plugin.ID                         { return "" }
 func (nameless) Annotate(*plugin.AnnotatorContext) error { return nil }
 
+// handmade is a hand-rolled annotator passed as a struct value
+// carrying a slice, so its type is no map key. The facade builds
+// pointers, and the composition still answers for a plugin arriving
+// through the service provider interface in any shape the interface
+// admits.
+type handmade struct {
+	name   plugin.ID
+	labels []string
+}
+
+func (h handmade) Name() plugin.ID                       { return h.name }
+func (handmade) Annotate(*plugin.AnnotatorContext) error { return nil }
+
 // declaring is a hand-rolled annotator returning its capability
 // lists verbatim, duplicates and empty labels included. The facade
 // refuses an empty label at its own Build, and the composition
@@ -114,6 +127,38 @@ func TestSteps(t *testing.T) {
 			_, err := valid().Annotators(nameless{}).Build()
 			assert.HasError(t, err, "everything durable keys on the name")
 			assert.Contains(t, err.Error(), "empty name", "and the fault says so")
+		})
+
+		t.Run("seats a plugin whose type is no map key", func(t *testing.T) {
+			t.Parallel()
+
+			one := handmade{name: "handmade", labels: []string{"a"}}
+			_, err := valid().Annotators(one).Build()
+			assert.NoError(t, err,
+				"composition reads a plugin through its name and never "+
+					"hashes the value, so a slice field is no obstacle")
+		})
+
+		t.Run("seats one provider listed twice once", func(t *testing.T) {
+			t.Parallel()
+
+			// One pointer repeated is the same provider named again,
+			// not two plugins under one name.
+			one := &handmade{name: "listed"}
+			_, err := valid().Annotators(one, one).Build()
+			assert.NoError(t, err,
+				"one provider listed twice is seated once, not a collision")
+		})
+
+		t.Run("refuses two providers under one name", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().
+				Annotators(&handmade{name: "twinned"}, &handmade{name: "twinned"}).
+				Build()
+			assert.HasError(t, err, "two plugins cannot share a name")
+			assert.Contains(t, err.Error(), "twinned",
+				"and the fault names the name they contend for")
 		})
 	})
 

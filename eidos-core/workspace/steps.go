@@ -61,36 +61,34 @@ var kernelPhases = map[plugin.ID]bool{
 }
 
 // assemble is the first step: the plugin universe, deduplicated by
-// instance, one name one plugin. The roster's order is the
-// declaration order, annotators first, then each plan's generators
-// and backend, and it is the registration order every later step
-// leans on for determinism.
+// name, one name one plugin. The roster's order is the declaration
+// order, annotators first, then each plan's generators and backend,
+// and it is the registration order every later step leans on for
+// determinism.
 func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []error) {
 	var roster []plugin.Plugin
 	var faults []error
 	byName := map[plugin.ID]plugin.Plugin{}
-	seen := map[plugin.Plugin]bool{}
 	admit := func(p plugin.Plugin) {
-		if seen[p] {
-			return
-		}
-		seen[p] = true
 		name := p.Name()
-		switch {
-		case name == "":
+		if name == "" {
 			faults = append(faults,
 				errors.New("workspace: a plugin returns an empty name"))
 			return
-		case kernelPhases[name]:
+		}
+		if held, seated := byName[name]; seated {
+			if !sameProvider(held, p) {
+				faults = append(faults, fmt.Errorf(
+					"workspace: two plugins carry the name %q", name,
+				))
+			}
+			return
+		}
+		if kernelPhases[name] {
 			faults = append(faults, fmt.Errorf(
 				"workspace: plugin %q is named after a kernel phase, whose findings it would report under",
 				name,
 			))
-		case byName[name] != nil:
-			faults = append(faults, fmt.Errorf(
-				"workspace: two plugins carry the name %q", name,
-			))
-			return
 		}
 		byName[name] = p
 		roster = append(roster, p)
@@ -116,6 +114,18 @@ func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []er
 		}
 	}
 	return roster, byName, faults
+}
+
+// sameProvider reports whether a plugin arriving under a name
+// already seated is that same provider listed again: the same
+// pointer, or an equal value of a comparable type. Composition
+// reads a plugin through its name and never hashes the value, so a
+// provider whose type is no map key still composes; two of them
+// under one name are two plugins, because nothing tells one copy
+// from another.
+func sameProvider(seated, p plugin.Plugin) bool {
+	v := reflect.ValueOf(seated)
+	return v.Comparable() && v.Equal(reflect.ValueOf(p))
 }
 
 // register is the second step: the kernel's directive schemas
@@ -485,9 +495,9 @@ func compilePlans(
 	declared []Plan, gens []genEntry, targets map[plugin.Target]bool,
 ) ([]compiledPlan, []error) {
 	var faults []error
-	seatOf := map[plugin.Generator]genEntry{}
+	seatOf := map[plugin.ID]genEntry{}
 	for _, s := range gens {
-		seatOf[s.run] = s
+		seatOf[s.name] = s
 	}
 	names := map[string]bool{}
 	out := make([]compiledPlan, 0, len(declared))
@@ -503,7 +513,7 @@ func compilePlans(
 		default:
 			names[pl.Name] = true
 		}
-		listed := map[plugin.Generator]bool{}
+		listed := map[plugin.ID]bool{}
 		var roles []genEntry
 		for _, g := range pl.Generators {
 			if g == nil {
@@ -512,14 +522,15 @@ func compilePlans(
 				))
 				continue
 			}
-			if listed[g] {
+			name := g.Name()
+			if listed[name] {
 				faults = append(faults, fmt.Errorf(
-					"workspace: plan %q lists %s twice", pl.Name, g.Name(),
+					"workspace: plan %q lists %s twice", pl.Name, name,
 				))
 				continue
 			}
-			listed[g] = true
-			roles = append(roles, seatOf[g])
+			listed[name] = true
+			roles = append(roles, seatOf[name])
 		}
 		if len(roles) == 0 {
 			faults = append(faults, fmt.Errorf(
