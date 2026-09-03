@@ -20,15 +20,18 @@ import (
 	"go.dokimi.dev/eidos/sdk/emit"
 )
 
-// Expr writes one expression of the neutral vocabulary into b.
+// Expr writes one expression of the neutral vocabulary into b,
+// through the target that spells the values it carries.
 //
 // A name spells itself: the vocabulary admits only locally
 // resolving names, so no target qualifies one. A call spells the
 // applied expression, an open parenthesis, its arguments joined
-// with commas, and a close. An empty name, a call applying no
-// function, and a kind nothing declares each return an error
+// with commas, and a close. A value goes to the target, which
+// spells its tree and records the imports its references need. An
+// empty name, a call applying no function, a value expression
+// carrying none, and a kind nothing declares each return an error
 // naming what is missing, and write nothing for it.
-func Expr(b *strings.Builder, e emit.Expr) error {
+func Expr(b *strings.Builder, e emit.Expr, t Target) error {
 	switch e.Kind {
 	case emit.ExprName:
 		if e.Name == "" {
@@ -37,18 +40,36 @@ func Expr(b *strings.Builder, e emit.Expr) error {
 		b.WriteString(e.Name)
 		return nil
 	case emit.ExprCall:
-		return call(b, e)
+		return call(b, e, t)
+	case emit.ExprValue:
+		return value(b, e, t)
 	default:
 		return fmt.Errorf("scaffold: no spelling for the %s expression", e.Kind)
 	}
 }
 
+// value writes one carried value through the target.
+func value(b *strings.Builder, e emit.Expr, t Target) error {
+	if e.Val == nil {
+		return fmt.Errorf("scaffold: a value expression carries no value")
+	}
+	if t == nil {
+		return fmt.Errorf("scaffold: a value expression needs a target to spell it")
+	}
+	spelled, err := Value(t, *e.Val)
+	if err != nil {
+		return err
+	}
+	b.WriteString(spelled)
+	return nil
+}
+
 // call writes an application of one expression to its arguments.
-func call(b *strings.Builder, e emit.Expr) error {
+func call(b *strings.Builder, e emit.Expr, t Target) error {
 	if e.Fn == nil {
 		return fmt.Errorf("scaffold: a call applies no function")
 	}
-	if err := Expr(b, *e.Fn); err != nil {
+	if err := Expr(b, *e.Fn, t); err != nil {
 		return err
 	}
 	b.WriteByte('(')
@@ -56,7 +77,7 @@ func call(b *strings.Builder, e emit.Expr) error {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		if err := Expr(b, arg); err != nil {
+		if err := Expr(b, arg, t); err != nil {
 			return err
 		}
 	}

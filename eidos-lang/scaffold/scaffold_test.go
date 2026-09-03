@@ -49,7 +49,7 @@ func TestExpr(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 				var b strings.Builder
-				assert.NoError(t, scaffold.Expr(&b, tt.expr), "the fixture spells")
+				assert.NoError(t, scaffold.Expr(&b, tt.expr, &scripted{}), "the fixture spells")
 				assert.Equal(t, b.String(), tt.want, tt.name)
 			})
 		}
@@ -71,7 +71,7 @@ func TestExpr(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 				var b strings.Builder
-				assert.HasError(t, scaffold.Expr(&b, tt.expr), tt.name)
+				assert.HasError(t, scaffold.Expr(&b, tt.expr, &scripted{}), tt.name)
 			})
 		}
 	})
