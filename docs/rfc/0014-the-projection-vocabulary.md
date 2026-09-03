@@ -2,7 +2,7 @@
 rfc: 0014
 title: The projection vocabulary and the rules seam
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-09-02
 updated: 2026-09-03
 discussion: none
@@ -195,7 +195,10 @@ Every method that reads takes the view it reads through, so a
 projection holds nothing across invocations and every read records
 on the invocation that asked. Two calls with one view over one graph
 return equal values, which the conformance suite holds every
-implementation to.
+implementation to. This contract replaces the Tier-1 shape the
+projection architecture pins, which placed the three walks on the
+language; accepting this RFC edits that document to read as this
+one states.
 
 ### The view
 
@@ -261,7 +264,7 @@ type Bound struct { /* unexported */ }
 func (b Bound) CallableOf(sym symbol.Symbol) (Callable, bool)
 func (b Bound) TypeOf(ref *node.TypeRef) TypeShape
 func (b Bound) MembersOf(sym symbol.Symbol) (MemberSet, bool)
-func (b Bound) SamplesOf(ref *node.TypeRef, hint string) (Sample, Sample)
+func (b Bound) SamplesOf(subject symbol.Identity, ref *node.TypeRef, hint string) (Sample, Sample) // subject: the declaration carrying the type; zero for none
 func (b Bound) ZeroValue(ref *node.TypeRef) (emit.Value, bool)
 func (b Bound) LiteralFor(f *node.File, ref *node.TypeRef, text string) (emit.Value, bool)
 func (b Bound) TypeName(word, base string) string
@@ -393,6 +396,14 @@ TypeScript conditional type stay in the spelling, and the
 reference's form is Inline where the language has no structure for
 what it parsed.
 
+The `Constraint` kind leaves the schema in the same edit. No
+frontend produces one: a Go constraint interface is an `Interface`
+whose type-set elements the frontend stamps under its own key, a
+Rust trait bound is a reference, and a bound is what the
+parameter's `Bounds` carries. The identity assignment drops its
+case for the kind, and the generated models, codecs and the model
+fingerprint follow the schema.
+
 ### TypeShape and the fold
 
 ```go
@@ -430,9 +441,10 @@ element folds to an eight-bit unsigned Scalar folds to Bytes, so
 Go's `[]byte`, Java's `byte[]` and Rust's `Vec<u8>` project alike.
 The Go rules classify builtins by name: the integer and float
 spellings as Scalar with their widths, `byte` as the eight-bit
-unsigned Scalar it aliases, `bool`, `string`, `any` and `error` as
-Opaque, and `time.Time` and `time.Duration` through the well-known
-registry. A channel projects as a synchronous Stream.
+unsigned Scalar it aliases, `bool` as Bool, `string` as Text, `any`,
+`error` and `comparable` as Opaque, and `time.Time` and
+`time.Duration` through the well-known registry. A channel projects as a synchronous Stream, and its
+direction stays in the spelling, which a Go-only question reads.
 
 ### Callable
 
@@ -723,6 +735,10 @@ address of the inner value; `time.Time` as a call and
 `time.Duration` as a conversion, from a curated table, because the
 standard library is never in the graph. An interface, a function
 type, a channel and an inline body refuse with `RefusedNoLiteral`.
+The value tree carries no function literal and no channel, because
+a check calling a sampled function asserts nothing about the
+subject, and a channel has no literal in any language in scope; a
+member of either type takes no check.
 
 ### Authored values
 
@@ -737,12 +753,16 @@ authored answer without knowing an annotator exists.
 //+gen:witness T=int U=time.Duration
 ```
 
-`sample` takes two string params, `value` and `alternate`, on any
-declaration that carries a type: a field, a parameter, a variable, a
-constant, an alias, a struct, an enum. An authored value is text in
-the source language, so it stamps as text and arrives as a
-`LiteralRaw`, which the source language's backend spells and another
-language's refuses.
+`sample` takes two string params, `value` and `alternate`, on every
+declaration that carries one type: a field, a parameter, a return, a
+variable, a constant, an alias, a struct, an enum, a sum. A callable
+carries several and is refused. A language whose comment placement
+cannot reach a parameter or a return, as Go's cannot, reports that
+carrier under its own refusal, positioned; the key admits the kind
+for the languages that can. An authored value is text in the source
+language, so it stamps as text and arrives as a `LiteralRaw`, which
+the source language's backend spells and another language's
+refuses.
 
 `witness` takes one key per type parameter, so its schema is open:
 
@@ -774,9 +794,11 @@ composition and every corpus fixture register them; the kernel's
 workspace never imports the authoring root, so it registers no
 plugin on anyone's behalf.
 
-The kernel reads `gen.sample` and `gen.alternate` on the declaration
-that carries the type before asking the language to derive, each
-half independently, because a derived first value is often fine
+The bound `SamplesOf` takes the declaration carrying the type and
+reads `gen.sample` and `gen.alternate` on it first, then on the
+declaration the type names where the reference has a target, and
+asks the language to derive only what neither stated. Each half
+reads independently, because a derived first value is often fine
 where the second has to differ in a way the derivation cannot know.
 `Witnesses` reads `gen.witness` per parameter first and derives only
 for a bound whose type set is knowable without loading the declaring
@@ -893,8 +915,8 @@ and read here. `Comparable` is the rule the Go annotator already
 applies to stamp `golang.comparable`; the annotator calls the rules
 rather than carrying a second copy, so the stamped fact and the
 projected answer cannot drift. The generics capability reads a
-bound's spelling from the parameter's `Bounds`; the model's
-`Constraint` kind stays unproduced and is not read.
+bound's target declaration where the graph holds one and its
+spelling otherwise.
 
 ### Reads, re-execution and the budget
 
@@ -947,16 +969,16 @@ the four levels of the degradation scale, and each level is a
 predicate the check evaluates over the feature's declarations:
 
 1. **Projects.** Every reference reachable from the feature's
-   declarations folds to a form other than Opaque, every callable
-   projects, every type's member set is complete, and the feature's
-   corpus entry names no remainder keys.
-2. **Projects partly.** At least one reference folds to Opaque or one
-   member set carries a gap, and every remainder key the feature's
-   corpus entry names is present on the declaration carrying the
-   remainder.
+   declarations folds to a form other than Opaque or Inline, every
+   callable projects, every type's member set is complete, and the
+   feature's corpus entry names no remainder keys.
+2. **Projects partly.** At least one reference folds to Opaque or
+   Inline or one member set carries a gap, and every remainder key
+   the feature's corpus entry names is present on the declaration
+   carrying the remainder.
 3. **Opaque.** The reference the feature declares itself folds to
-   Opaque, an alias of an inline body for instance, and every
-   declared key is present.
+   Opaque or Inline, an alias of an inline body for instance, and
+   every declared key is present.
 4. **Refuses.** The corpus carries nothing under the feature, as the
    read-side refusal already holds.
 
@@ -1051,20 +1073,11 @@ subject or the unit that caused it.
 
 ## Unresolved and future work
 
-- Which kinds `sample` admits beyond the typed declarations listed
-  here; a method's return is the open case.
-- Whether a Go channel projects as a synchronous Stream or as Opaque,
-  decided against the first consumer that reads streams.
-- The `Constraint` kind: no frontend produces one, the generics
-  capability reads bounds from the parameter, and the kind's own
-  ruling stands open.
-- A sample for a function type or a channel, which the Go rules
-  refuse; a value tree could carry a function literal, and no
-  consumer has asked for one.
-- The projection architecture pins the Tier-1 contract with the
-  three walks on the language, and the authoring surface pins an
-  unbound `Rules()`. Both documents change with this RFC's
-  acceptance to read as it states.
+None. Every question the design raised is decided above: which
+kinds `sample` admits, how a channel projects, that the `Constraint`
+kind leaves the schema, that a function-typed or channel-typed
+member takes no check, and that the projection architecture and the
+authoring surface read as this RFC states once it is accepted.
 
 ## References
 

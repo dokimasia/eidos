@@ -87,8 +87,7 @@ Hand-written rather than generated:
 
 Package, File, Import, Export, Binding, Struct, Interface, Method,
 Field, Function, Param, Return, Variable, Constant, Enum,
-EnumVariant, Sum, SumVariant, Alias, TypeParam, TypeRef, Embed,
-Constraint.
+EnumVariant, Sum, SumVariant, Alias, TypeParam, TypeRef, Embed.
 
 Import and Export carry a statement's whole binding list, and each
 bound name is a Binding, because `import {a as b, c} from 'x'` binds
@@ -222,6 +221,11 @@ seen it.
 - **Origin points one way.** An emit symbol links to the node symbol
   it came from, and a node symbol never refers to emit. The read
   side cannot observe the write side.
+- **A reference carries its spelling and its structure.** A type
+  reference holds the source spelling verbatim, the form the
+  frontend parsed from one closed enum, and its children in that
+  form's fixed order, so the resolution step reaches the named
+  types inside a composite and the projections parse nothing.
 - **A reference is an identity, never a pointer.** A type reference
   names what it resolves to, and an owned declaration names the
   declaration that holds it, both by canonical identity. A key can

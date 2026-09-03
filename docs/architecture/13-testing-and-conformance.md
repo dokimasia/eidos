@@ -21,7 +21,7 @@ Eight checks, each proving something the others cannot:
 | workspacetest | a full workspace: several plans, exports, and Close, covering collision detection, sweep, cross-plan checks and audit mode |
 | frontendtest | a real frontend with the plugin chain behind it |
 | acceptancetest | the consumer's binary end to end. The only check that compiles generated output |
-| completeness | every `testdata/features/` row sits on the degradation level it declared ([11-languages.md](11-languages.md)) |
+| completeness | every corpus feature sits on the degradation level its language declared ([11-languages.md](11-languages.md)) |
 | warm≡cold | the same workspace, run cold and warm, produces byte-identical manifests ([09-incrementality.md](09-incrementality.md)) |
 
 Two disciplines apply throughout. Run with `-count=2` at minimum, so
@@ -80,10 +80,10 @@ codes per [16-diagnostics.md](16-diagnostics.md), config discovery,
 idempotence at the process level, and compiling the generated
 output. It is the only check that builds what was generated.
 
-**completeness** drives `testdata/features/` per
-[11-languages.md](11-languages.md): every row sits exactly on the
-level it declared, and a feature that does better than declared
-fails too.
+**completeness** drives the conformance corpus per
+[11-languages.md](11-languages.md): every feature sits exactly on
+the level its language declared, evaluated through the projections,
+and a feature that does better than declared fails too.
 
 Beside plugintest ships the **Tier-3 import lint**, a static pass
 over a plugin module that refuses an import of any satellite `sdk/`

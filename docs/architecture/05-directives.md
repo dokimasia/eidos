@@ -84,22 +84,29 @@ assume. The schema declares:
 
 - **Typed params**: string, int, bool, list, reference.
 - **Resolution kinds** on reference params: callable-in-scope,
-  package-var, value-field, host-param, member-on-handle. These bind
-  through `rules.Resolve` ([03-projection.md](03-projection.md)), so
-  "this names a sibling callable" is schema rather than prose in
-  each plugin's documentation.
+  package-var, value-field, host-param, member-on-handle,
+  type-in-scope. Validation binds each one through the resolver the
+  workspace derives from the registered `rules.Resolve`
+  ([03-projection.md](03-projection.md)), so "this names a sibling
+  callable" is schema rather than prose in each plugin's
+  documentation, and the handler receives the bound identity beside
+  the spelling. A spelling that binds to nothing, or one written in
+  a language the composition registered no rules for, is a
+  positioned Error under `UnresolvedReference`.
 - **Counterexample marking**, for a param whose value names an input
   no derivation could invent.
 - **Closure**: unknown keys are denied by default, and a schema
-  lists what it accepts.
+  lists what it accepts. A schema stating `Open` types the keys it
+  does not name, for a directive whose keys are the subject's own,
+  one per type parameter; the reserved keys keep their meaning under
+  it.
 - **Required or optional, with role scoping.**
 - **Repeatability.** A schema says whether its directive may appear
   more than once on one subject. The default is single-instance,
   because a second `default=` on one field is a contradiction, and
   that is reported as a validation Error naming both positions
-  before any handler runs. `Repeatable: true` covers genuinely
-  repeatable declarations, where `index fields=[…]` twice means two
-  indexes. Dispatch then runs the handler once per instance, in
+  before any handler runs. `Repeatable: true` covers declarations that
+  repeat, where `index fields=[…]` twice means two indexes. Dispatch then runs the handler once per instance, in
   source order ([06b-authoring.md](06b-authoring.md)). Forcing a
   repeatable declaration into one directive pushes authors to invent
   list-of-lists encodings, which is the two-notations problem this

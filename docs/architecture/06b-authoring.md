@@ -199,11 +199,16 @@ Three things keep the effect small and analyzable.
 `Stamp(st, key, v)` writes with `plugin` authority and the plugin's
 origin already bound.
 
-**A Stamper writes only to its subject's bag.** A fact "about" a
-sibling is a fact on the host whose value names the sibling. Every
-write's target is therefore statically known from the trigger, which
-is what keeps invalidation edges and audit mode analyzable. A plugin
-that wants facts on many symbols subscribes to those kinds.
+**A Stamper writes only to its subject's bag, and to the bags of
+what the subject declares.** A fact "about" a sibling is a fact on
+the host whose value names the sibling. `StampOn(st, owned, key, v)`
+writes to one of the subject's own parameters, returns or type
+parameters, which a directive on the subject states something about
+and which no trigger of their own would reach with that directive;
+any other identity is refused. Every write's target is therefore
+statically known from the trigger, which is what keeps invalidation
+edges and audit mode analyzable. A plugin that wants facts on many
+symbols subscribes to those kinds.
 
 `Fact(m, key)` reads the subject's stamped facts through the tracked
 reader, so an annotator depending on another annotator becomes an
@@ -402,15 +407,19 @@ func OnGraph[E Effect](h func(*GraphMatch, E) error) Rule
 
 // Scoping wrappers compose around any rules.
 func Directive(s directive.Schema, rules ...Rule) Rule // gate + register
+func Gated(name directive.Name, rules ...Rule) Rule    // gate on a kernel directive
 func Where(p Pred, rules ...Rule) Rule                 // gate on facts
 func HasKey[T any](k meta.Key[T]) Pred
 func KeyEquals[T comparable](k meta.Key[T], v T) Pred
 
 // Every *Match embeds the base surface:
-//   Lang() rules.Source          Rules() rules.SourceRules
+//   Lang() symbol.Lang           Rules() rules.Bound  // the kernel's walks over the invocation's view
+//   RulesFor(symbol.Lang) rules.Bound                 // another language's
 //   Reader() *store.Reader       // incl. Lookup(Identity) after Link
 //   Directive() *DirectiveView   // the gating instance; nil otherwise
+//   Kernel() meta.KernelKeys     // the kernel's own keys, for its facts
 //   Errorf / Warnf(code, format, ...) // origin and position pre-bound
+//   ErrorfAt(pos, code, format, ...)  // at a carrier line instead
 // plus its subject field (.Interface, .Enum, {.Host, .Method}, …).
 // EmitMatch also carries Origin(), the emit value's source symbol,
 // with tracked fact reads, so a weaver can ask whose output it is
@@ -433,4 +442,5 @@ func (e *Emitter) JoinName(word, base string) string   // target's join
 
 // Stamper: authority and origin filled in by the dispatch.
 func Stamp[T any](st *Stamper, k meta.Key[T], v T)
+func StampOn[T any](st *Stamper, owned symbol.Identity, k meta.Key[T], v T) // a param, return or type param of the subject
 ```

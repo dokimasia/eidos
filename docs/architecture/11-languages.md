@@ -23,8 +23,9 @@ eidos-lang-<lang>/
                    scoped and signature-only loading, unit
                    fingerprints, the neutral gen.module facts,
                    <lang>.* metadata stamping
-  rules/           the read half: Tier-1 projections (Callable,
-                   TypeShape, Resolve, naming) + the Tier-2
+  rules/           the read half: the decisions the kernel's
+                   walks take (member policy, roles, builtins,
+                   Resolve, values, naming) + the Tier-2
                    optionals the language satisfies
   spell/           the write half: canonical-type spelling,
                    optionality, error model, naming joins — the
@@ -89,20 +90,22 @@ Three rules make "supports language X" something you can check
 First, the symbol model admits what any language needs, and other
 languages leave those parts empty. Second, every construct sits on
 one level of the degradation scale. Third, the **completeness check**
-drives `testdata/features/`, holding one small source file per
-landscape row beside its expectation:
+is the conformance corpus: one neutral feature inventory, one tree
+per language spelling each feature its own way, and a coverage
+verdict per feature per language on the four levels. Each level is a
+predicate the check evaluates through the projections: a feature
+projects fully when every reference folds to a form other than
+Opaque, every callable projects, every member set is complete and
+the entry names no remainder keys; partly when a reference folds to
+Opaque or a set carries a gap and every named remainder key is
+present; as Opaque when its own reference folds so and its keys are
+present; and it refuses when the tree carries nothing under it.
 
-```yaml
-# testdata/features/sum-types/expect.yaml
-level: 1                      # 1 full | 2 partial+meta | 3 opaque+meta | 4 refused
-meta: [rust.lifetimeParams]  # levels 2–3: the keys carrying the remainder
-```
-
-The check verifies that each fixture arrives exactly where it declared.
-A feature that arrives *better* than declared fails too, because a
-capability nobody declared is a capability nobody tested. The
-published per-language support matrix is generated from that run, so
-"what does eidos-lang-java support" is a build artifact.
+The check verifies that each feature arrives exactly where it
+declared. A feature that arrives *better* than declared fails too,
+because a capability nobody declared is a capability nobody tested.
+The published per-language support matrix is generated from that
+run, so "what does eidos-lang-java support" is a build artifact.
 
 ## The kits
 
@@ -290,6 +293,13 @@ a C toolchain and complicates cross-compilation. Wazero-based
 bindings, which are pure Go over WASM, exist but are pre-release.
 The binding choice is private to `eidos-lang`, so satellites migrate
 when those mature and nothing downstream changes.
+
+The Go frontend folds a package's methods onto the struct that
+declares their receiver, whichever file spelled them, so a type
+carries its members the way the model states them and the member
+walk sees them; a method on a defined type over a builtin stays a
+file-level declaration owned by the receiver's name, because the
+alias kind carries no members.
 
 The recorded revisit trigger, per satellite: a compiler-as-library
 frontend needs an importable, public API. A port that ships internal

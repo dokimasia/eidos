@@ -247,6 +247,7 @@ func (b *Builder) Frontends(fs ...plugin.Frontend) *Builder
 func (b *Builder) Annotators(as ...plugin.Annotator) *Builder
 func (b *Builder) Checks(cs ...plugin.WorkspaceCheck) *Builder
 func (b *Builder) Plans(ps ...Plan) *Builder
+func (b *Builder) Rules(rs ...rules.SourceRules) *Builder // one value per language; absent otherwise
 func (b *Builder) Config(c Config) *Builder   // same structs the YAML maps onto
 func (b *Builder) Build() (*Workspace, error) // collect-all; see above
 

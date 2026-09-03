@@ -51,32 +51,46 @@ it resolves against the registry at workspace Build
 
 Five projections and the naming joins. Implementing Tier 1 is what
 makes something a language ([11-languages.md](11-languages.md)).
-These spellings are stable enough to pin:
+The kernel owns the walks every language would otherwise repeat, and
+the language returns the decisions inside them:
+
+| Projection | The kernel owns | The language returns |
+|---|---|---|
+| Callable | mapping receiver, parameters, returns, variadic and async from the model | the role of each parameter, the role of each return, the error model |
+| TypeShape | folding a reference's form and children; classifying a resolved target | the meaning of a builtin spelling, and the well-known mapping |
+| MemberSet | the walk: cycle guard, depth budget, argument binding, provenance, gaps | which member lists contribute, in which order, and how names shadow |
+| Resolve | the resolution kinds and the validation binding | what a spelling names in a scope |
+| Values | the value tree, its refusal vocabulary, the authored-value precedence | deriving two values, the zero, and a value from text |
+| Naming | nothing | the join |
+
+The contract a language returns, pinned:
 
 ```go
-type Callable struct {
-    Receiver *ParamView            // nil for free functions
-    Params   []ParamView           // Role: Context | Input; Variadic on the last
-    Returns  []ReturnView          // Role: Value | OkBool | Stream (Async flag)
-    Errors   ErrorModel            // None | LastReturn | ResultType | Thrown | Raised
-    Async    bool
-}
-
 type SourceRules interface {
-    CallableOf(sym symbol.Symbol) (Callable, bool)
-    TypeOf(ref *symbol.TypeRef, r Resolver) TypeShape
-    Resolve(scope Scope, name string, kind ResolutionKind) (symbol.Symbol, error)
-    MembersOf(sym symbol.Symbol, r Resolver) (MemberSet, bool)
-    SamplesOf(ref *symbol.TypeRef, hint string, r Resolver) (sample, alternate Sample)
-    ZeroLiteral(ref *symbol.TypeRef, r Resolver) (string, bool)
-    LiteralFor(f *symbol.File, ref *symbol.TypeRef, text string, r Resolver) (string, bool)
+    Lang() symbol.Lang
+    Members() MemberPolicy                                          // which lists contribute, how names shadow, the depth
+    ParamRole(p *node.Param, v View) ParamRole                      // Context | Input
+    ReturnRoles(rs []*node.Return, v View) ([]ReturnRole, ErrorModel) // Value | OkBool | Stream | Error; None | LastReturn | ResultType | Thrown | Raised
+    Builtin(ref *node.TypeRef, v View) TypeShape                    // a spelling the resolution step left without a target
+    Resolve(scope Scope, name string, kind directive.ResolutionKind, v View) (symbol.Symbol, error)
+    SamplesOf(ref *node.TypeRef, hint string, v View) (sample, alternate Sample)
+    ZeroValue(ref *node.TypeRef, v View) (emit.Value, bool)
+    LiteralFor(f *node.File, ref *node.TypeRef, text string, v View) (emit.Value, bool)
     TypeName(word, base string) string
 }
 ```
 
+A handler reaches the kernel's walks through the bound `Rules()` on
+its match: `CallableOf`, `TypeOf`, `MembersOf`, `SamplesOf`,
+`ZeroValue`, `LiteralFor`, `Witnesses` and `TypeName`, over the
+invocation's tracked view. Every read a projection makes records on
+that invocation, and a value is safe for concurrent use because it
+holds nothing of its own.
+
 Call `OK()` on a `Sample` or any refusable answer before you use it.
-When a language cannot reason about a type, it refuses. It never
-hands back a zero value you would then compare against.
+When a language cannot reason about a type, it refuses with a
+reason. It never hands back a zero value you would then compare
+against.
 
 ### Callable
 
@@ -104,17 +118,19 @@ never shows in a signature. That is the honest projection.
 
 The canonical type vocabulary, and the hub that cross-language
 conversion turns on ([10-cross-language.md](10-cross-language.md)).
-The set is closed, so adding a shape is a kernel change:
+One closed enum, `symbol.TypeForm`, names the structure of a type
+reference and of a shape alike. The frontend sets the structural
+half from syntax on the reference, beside its verbatim spelling and
+in fixed child order, and the kernel's fold adds the leaves:
 
 ```
-Scalar{class: Int|Uint|Float, bits}   Bool   Text   Bytes
-List{elem, fixedLen?}                 Map{key, value}
-Tuple{elems}                          Optional{inner}
-Union{members}     — untagged (TS unions, Python |)
-Sum{ref}           — tagged variants; the Sum kind's shape
-Func{callable}     Stream{elem, async}
-Reference{symbol, typeArgs}           Opaque
+structural   Named   Optional   List   Array   Map   Func   Tuple
+             Union   Stream   Borrow   Wildcard   Inline
+leaves       Scalar{class: Int|Uint|Float, bits}   Bool   Text   Bytes
+             Reference{symbol, typeArgs}   Sum{ref}   Opaque
 ```
+
+Adding a form is a kernel change.
 
 Two exclusions are deliberate and recorded. There is **no Set**,
 because every set type in these ecosystems is a library type, so it
@@ -232,49 +248,49 @@ The contract shapes, pinned to the same standard as Tier 1:
 
 ```go
 type EnumRules interface {
-    EnumOf(e *symbol.Enum, constants []*symbol.Constant) EnumInfo
+    EnumOf(e *node.Enum, v View) EnumInfo
 }
 type ErrorValueRules interface {
     SentinelName(base string) string        // paired inverses, so the
     IsSentinelName(ident string) bool       // two can never drift
 }
 type TagRules interface {
-    Tag(f *symbol.Field, key string) (string, bool)
-}
-type AnnotationRules interface {
-    Annotations(sym symbol.Symbol) []Annotation   // {Name, Args}, read statically
+    Tag(f *node.Field, key string) (string, bool)
 }
 type GenericsRules interface {
-    Witnesses(params []*symbol.TypeParam) []Ref   // all-or-nothing; nil = no witness set
-    Substitute(ref *symbol.TypeRef, params []*symbol.TypeParam) *symbol.TypeRef
+    Derive(p *node.TypeParam, v View) (*node.TypeRef, bool)   // one witness the author left unstated
+    Substitute(ref *node.TypeRef, params []*node.TypeParam, args []*node.TypeRef) *node.TypeRef
     Reified() bool
 }
 type PropertyRules interface {
-    Properties(s *symbol.Struct) []Property       // computed view, never model mutation
+    Properties(s *node.Struct, v View) []Property       // computed view, never model mutation
 }
 type ConstructRules interface {
-    Constructors(s *symbol.Struct) []Callable
+    Constructors(s *node.Struct, v View) []Callable
 }
 type ThrowsRules interface {
-    Throws(c Callable) []Ref
+    Throws(c Callable) []*node.TypeRef
 }
 type OwnershipRules interface {
-    Ownership(p ParamView) Ownership              // ByValue | Borrow | BorrowMut
+    Ownership(p ParamView) Ownership                    // ByValue | Borrow | BorrowMut
 }
 type PromotionRules interface {
-    Settable(s *symbol.Struct) []Member           // declaration order
+    Settable(s *node.Struct, v View) []Member           // declaration order
 }
 type EqualityRules interface {
-    Comparable(ref *symbol.TypeRef, r Resolve) (ok bool, problems []Ref)
+    Comparable(ref *node.TypeRef, v View) (ok bool, problems []*node.TypeRef)
 }
 ```
+
+Annotations need no capability: every declaration kind carries
+`Annotations` on the model, read statically by the frontend, so the
+field is the projection.
 
 | Interface | Question | Exercised by |
 |---|---|---|
 | `EnumRules` | project an enumeration: form, zero, foreign values | Go const groups, Java enum classes, TS enums, proto |
 | `ErrorValueRules` | sentinel conventions, name against predicate, paired so they cannot drift | Go |
 | `TagRules` | stringly per-field tags | Go struct tags |
-| `AnnotationRules` | structured annotations, attributes and decorators, read statically and never executed | Java and Kotlin annotations, Rust attributes, Python and TS decorators |
 | `GenericsRules` | witnesses, constraint reasoning, whether generics are reified or erased | every generic language; erasure matters to a Java backend |
 | `PropertyRules` | the computed properties view, pairing getters with setters. A projection, never a change to the model | Kotlin, C#, Swift, Python `@property`, JavaBeans |
 | `ConstructRules` | constructors and how to spell instantiation | JVM, TS and Python real constructors; Go and Rust conventions |
