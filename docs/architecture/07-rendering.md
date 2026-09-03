@@ -131,6 +131,17 @@ comparing a sample. It is deliberately too small to write logic in.
 Anything beyond it belongs in a hand-written file that the generated
 one calls.
 
+One expression kind carries data rather than a spelling. `ExprValue`
+holds a `Value`, the tree a projection derives
+([03-projection.md](03-projection.md)), so a check's call takes a
+sample as an argument. Each target's scaffold spells the tree
+through the shared walk, recording the imports its references and
+callees need into the file's import set, and refuses a leaf it has
+no form for under `UnspeltValue`: raw text written in another
+language, an address in a language with no operator for one, a map
+literal in a language that states none. The declaration is skipped
+and the file renders without it, the way any refused spelling is.
+
 `Sample` is the rendered form of a Values-projection answer
 ([03-projection.md](03-projection.md)): a literal that a template or
 the builder places into a body, gated on `OK()` like every refusable

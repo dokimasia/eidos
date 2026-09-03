@@ -246,6 +246,11 @@ const (
     ExprName ExprKind = iota + 1
     // ExprCall applies Fn to Args.
     ExprCall
+    // ExprValue carries a Value: a sample, an alternate or a zero
+    // the projection derived, spelled by the target's own scaffold
+    // and qualified for the file it is written into. Added by
+    // RFC-0014; it is the one expression that resolves anything.
+    ExprValue
 )
 
 // Expr is one scaffolding expression. The zero Expr names
@@ -256,6 +261,7 @@ type Expr struct {
     Name string   `json:"name,omitzero"`
     Fn   *Expr    `json:"fn,omitzero"`
     Args []Expr   `json:"args,omitzero"`
+    Val  *Value   `json:"val,omitzero"` // ExprValue
 }
 ```
 
@@ -381,3 +387,5 @@ written by the one author who cannot ask the owner for one.
   kit that executes template references
 - [13-testing-and-conformance.md](../architecture/13-testing-and-conformance.md),
   the template-lint check that reads the closed shape
+- [RFC-0014: The projection vocabulary](0014-the-projection-vocabulary.md),
+  which adds the one expression kind carrying a derived value
