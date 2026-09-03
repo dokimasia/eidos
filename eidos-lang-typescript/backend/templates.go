@@ -39,8 +39,8 @@ const (
 		"{{if .Indexer}}  {{indexsig .}}{{else if .Constructs}}" +
 		"  {{membermods .}}constructor({{params .Params}}) {\n{{body .}}  }{{else}}" +
 		"  {{membermods .}}{{accessor .}}{{hard .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}}" +
-		"{{if .Abstract}};{{else}} {\n{{body .}}  }{{end}}{{end}}\n" +
-		"{{- end}}\n}\n"
+		"{{if .Abstract}};{{else}} {\n{{body .}}  }{{end}}{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// InterfaceTemplate spells an interface, its type parameters
 	// behind the name: properties, readonly where stated, and
@@ -54,19 +54,19 @@ const (
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
 		"{{if .Indexer}}  {{indexsig .}}" +
 		"{{else if .Constructs}}  new {{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};" +
-		"{{else}}  {{sigmods .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};{{end}}\n" +
-		"{{- end}}\n}\n"
+		"{{else}}  {{sigmods .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// FunctionTemplate spells a module-level function, async
 	// where stated, its type parameters behind the name, and
 	// places its body.
 	FunctionTemplate = "{{docs .Doc}}{{mods .}}function {{.Name}}{{typeparams .TypeParams}}" +
-		"({{params .Params}}){{results .Returns}} {\n{{body .}}}\n"
+		"({{params .Params}}){{results .Returns}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// AliasTemplate spells a type alias, its type parameters
 	// behind the name.
 	AliasTemplate = "{{docs .Doc}}{{mods .}}type {{.Name}}{{typeparams .TypeParams}}" +
-		" = {{spell .Target}};\n"
+		" = {{spell .Target}};{{with .Comment}} // {{.}}{{end}}\n"
 
 	// EnumTemplate spells an enum: one member per variant, its
 	// stated value behind an equals sign, each under its own doc
@@ -74,7 +74,7 @@ const (
 	EnumTemplate = "{{docs .Doc}}{{mods .}}{{if .Const}}const {{end}}enum {{.Name}} {\n" +
 		"{{- range .Variants.Items}}\n{{docs .Doc \"  \"}}" +
 		"  {{.Name}}{{with .Value}} = {{.}}{{end}},{{with .Comment}} // {{.}}{{end}}\n" +
-		"{{- end}}\n}\n"
+		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// ConstantTemplate spells a constant, typed where the
 	// declaration states a type, its trailing comment behind the

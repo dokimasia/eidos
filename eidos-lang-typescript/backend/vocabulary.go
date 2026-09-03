@@ -651,7 +651,7 @@ func Params(ps []*emit.Param) (string, error) {
 						"%s states it", name,
 				)
 			}
-			parts = append(parts, "..."+name+": "+Spell(p.Type)+"[]")
+			parts = append(parts, "..."+name+": "+Spell(p.Type)+"[]"+inlineComment(p.Comment))
 			continue
 		}
 		if p.Optional && p.Default != "" {
@@ -668,9 +668,19 @@ func Params(ps []*emit.Param) (string, error) {
 		if p.Default != "" {
 			part += " = " + p.Default
 		}
-		parts = append(parts, part)
+		parts = append(parts, part+inlineComment(p.Comment))
 	}
 	return strings.Join(parts, ", "), nil
+}
+
+// inlineComment spells a trailing comment inside a signature as a
+// block comment, the one form that survives on the line, and
+// nothing for none.
+func inlineComment(text string) string {
+	if text == "" {
+		return ""
+	}
+	return " /* " + text + " */"
 }
 
 // Results writes a return type annotation: void for none, the
@@ -681,11 +691,11 @@ func Results(rs []*emit.Return) string {
 	case 0:
 		return ": void"
 	case 1:
-		return ": " + Spell(rs[0].Type)
+		return ": " + Spell(rs[0].Type) + inlineComment(rs[0].Comment)
 	default:
 		parts := make([]string, 0, len(rs))
 		for _, r := range rs {
-			parts = append(parts, Spell(r.Type))
+			parts = append(parts, Spell(r.Type)+inlineComment(r.Comment))
 		}
 		return ": [" + strings.Join(parts, ", ") + "]"
 	}

@@ -83,6 +83,7 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	return append(out, &emit.Alias{
 		Origin:     sum.Origin,
 		Doc:        sum.Doc,
+		Comment:    sum.Comment,
 		Name:       sum.Name,
 		Visibility: sum.Visibility,
 		TypeParams: sum.TypeParams,
@@ -109,6 +110,7 @@ func variantInterface(
 	iface := &emit.Interface{
 		Origin:     sum.Origin,
 		Doc:        v.Doc,
+		Comment:    v.Comment,
 		Name:       name,
 		Visibility: sum.Visibility,
 		TypeParams: lowering.CopyTypeParams(sum.TypeParams),

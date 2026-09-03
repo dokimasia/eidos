@@ -112,6 +112,33 @@ func TestTemplates(t *testing.T) {
 			"export let count;\n", "an untyped binding stays untyped")
 	})
 
+	t.Run("trailing comments close every kind that ends a line", func(t *testing.T) {
+		t.Parallel()
+
+		i := &emit.Interface{Name: "Store", Comment: "read side"}
+		i.Methods.Append(&emit.Method{
+			Name: "get", Comment: "by key",
+			Params:  []*emit.Param{{Name: "key", Type: ref("string"), Comment: "the row key"}},
+			Returns: []*emit.Return{{Type: ref("string"), Comment: "the row"}},
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"export interface Store {\n"+
+				"  get(key: string /* the row key */): string /* the row */; // by key\n"+
+				"} // read side\n",
+			"a signature's comments spell as block comments, the method's and the interface's close their lines")
+		sort := &emit.Function{Name: "sort", Comment: "stable"}
+		assert.Equal(t, execute(t, backend.FunctionTemplate, sort),
+			"export function sort(): void {\n    body();\n} // stable\n",
+			"a function's comment follows its closing brace")
+		assert.Equal(t,
+			execute(t, backend.AliasTemplate, &emit.Alias{Name: "ID", Target: ref("string"), Comment: "opaque"}),
+			"export type ID = string; // opaque\n", "an alias's comment closes its line")
+		e := &emit.Enum{Name: "Phase", Comment: "closed set"}
+		e.Variants.Append(&emit.EnumVariant{Name: "Open"})
+		assert.Equal(t, execute(t, backend.EnumTemplate, e),
+			"export enum Phase {\n  Open,\n} // closed set\n", "and an enum's closes its brace")
+	})
+
 	t.Run("generics", func(t *testing.T) {
 		t.Parallel()
 
