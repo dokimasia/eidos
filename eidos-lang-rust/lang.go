@@ -3,7 +3,14 @@
 
 package rust
 
-import "go.dokimi.dev/eidos/sdk/plugin"
+import (
+	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/symbol"
+)
+
+// Lang is the source language a declaration of this language
+// carries, and the language the value target answers for.
+const Lang symbol.Lang = "rust"
 
 // Target names the rendering target a plan resolves to reach the
 // Rust backend.
