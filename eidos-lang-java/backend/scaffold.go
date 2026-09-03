@@ -24,32 +24,31 @@ const indent = "    "
 // a thrown failure propagates natively, so the guard is the
 // propagation and the propagation is silence.
 //
-// It records no import: a scaffolding name resolves locally by
-// construction, and a name needing qualification is a type
-// spelling rather than a statement. The set stays in the
-// signature for a spelling that delegates to a runtime helper,
-// which this one never does. A statement Java has no form for
+// A scaffolding name resolves locally by construction, so no name
+// records an import. A carried value does: its references and its
+// callees name packages the writing file may not import yet, and
+// each spelling records into the set. A statement Java has no form for
 // returns an error, and the render skips that declaration rather
 // than the file.
-func Scaffold(s emit.Stmt, _ *render.ImportSet) ([]byte, error) {
+func Scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 	var b strings.Builder
-	if err := statement(&b, s, 1); err != nil {
+	if err := statement(&b, s, 1, target{set: set}); err != nil {
 		return nil, err
 	}
 	return []byte(b.String()), nil
 }
 
 // statement writes one statement at depth levels of indentation.
-func statement(b *strings.Builder, s emit.Stmt, depth int) error {
+func statement(b *strings.Builder, s emit.Stmt, depth int, t target) error {
 	switch s.Kind {
 	case emit.StmtReturn:
 		b.WriteString(strings.Repeat(indent, depth))
-		return returnStmt(b, s)
+		return returnStmt(b, s, t)
 	case emit.StmtAssign:
-		return assignStmt(b, s, depth)
+		return assignStmt(b, s, depth, t)
 	case emit.StmtExpr:
 		b.WriteString(strings.Repeat(indent, depth))
-		if err := scaffold.Expr(b, s.Value); err != nil {
+		if err := scaffold.Expr(b, s.Value, t); err != nil {
 			return err
 		}
 		b.WriteString(";\n")
@@ -73,11 +72,11 @@ func statement(b *strings.Builder, s emit.Stmt, depth int) error {
 }
 
 // returnStmt writes a return, bare where it carries no value.
-func returnStmt(b *strings.Builder, s emit.Stmt) error {
+func returnStmt(b *strings.Builder, s emit.Stmt, t target) error {
 	b.WriteString("return")
 	if s.Value.Kind != 0 {
 		b.WriteByte(' ')
-		if err := scaffold.Expr(b, s.Value); err != nil {
+		if err := scaffold.Expr(b, s.Value, t); err != nil {
 			return err
 		}
 	}
@@ -87,7 +86,7 @@ func returnStmt(b *strings.Builder, s emit.Stmt) error {
 
 // assignStmt writes an assignment. A declaration binds with var;
 // several names are refused, because Java destructures nothing.
-func assignStmt(b *strings.Builder, s emit.Stmt, depth int) error {
+func assignStmt(b *strings.Builder, s emit.Stmt, depth int, t target) error {
 	if len(s.Names) == 0 {
 		return fmt.Errorf("java: an assignment binds no name")
 	}
@@ -104,7 +103,7 @@ func assignStmt(b *strings.Builder, s emit.Stmt, depth int) error {
 	}
 	b.WriteString(s.Names[0])
 	b.WriteString(" = ")
-	if err := scaffold.Expr(b, s.Value); err != nil {
+	if err := scaffold.Expr(b, s.Value, t); err != nil {
 		return err
 	}
 	b.WriteString(";\n")
