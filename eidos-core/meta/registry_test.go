@@ -131,6 +131,26 @@ func TestRegistry(t *testing.T) {
 		})
 	})
 
+	t.Run("Lookup", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("hands out the handle a spelling names, typed as registered", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			assert.NoError(t, r.ClaimNamespace("shape", "shape"), "the namespace claims")
+			registered, err := meta.Register[string](r, meta.KeySpec{Name: "shape.role", Doc: "a role"})
+			assert.NoError(t, err, "the key registers")
+			got, held := meta.Lookup[string](r, "shape.role")
+			assert.True(t, held, "the spelling names the key")
+			assert.Equal(t, got.ID(), registered.ID(), "as the same handle")
+			_, held = meta.Lookup[bool](r, "shape.role")
+			assert.False(t, held, "under another value type it names nothing")
+			_, held = meta.Lookup[string](r, "shape.ghost")
+			assert.False(t, held, "and an unregistered spelling names nothing")
+		})
+	})
+
 	t.Run("Resolve", func(t *testing.T) {
 		t.Parallel()
 

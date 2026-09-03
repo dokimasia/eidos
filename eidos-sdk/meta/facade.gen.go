@@ -125,10 +125,21 @@ const (
 	// ModuleRootKey carries the workspace-relative directory the
 	// package's module is declared in, "." for the tree's root.
 	ModuleRootKey = core.ModuleRootKey
+	// SampleKey and AlternateKey carry an author's two stated
+	// values of a declaration's type, as text in the source
+	// language: what the sample directive stamps and the value
+	// projection reads before deriving anything.
+	SampleKey    = core.SampleKey
+	AlternateKey = core.AlternateKey
+	// WitnessKey carries an author's concrete type for one type
+	// parameter, as the identity the witness directive resolved,
+	// with an empty package for a builtin.
+	WitnessKey = core.WitnessKey
 )
 
 // KernelKeys are the typed handles [Kernel] returns: what a reader
-// of the kernel's own facts holds.
+// of the kernel's own facts holds. The zero value names nothing,
+// so a reader handed one reads nothing rather than the wrong key.
 type KernelKeys = core.KernelKeys
 
 // Kernel claims the kernel namespace and registers the kernel-owned
@@ -201,6 +212,16 @@ type Completeness = core.Completeness
 // fault in one pass.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	return core.Register[T](r, s)
+}
+
+// Lookup returns the typed handle a boundary spelling names, for a
+// reader that knows a key by its spelling alone: a language's
+// rules reading what its frontend stamped, without the handle
+// registration returned. It returns false for a spelling nothing
+// registered, and for one registered under another value type, so
+// a handle that exists reads what was written.
+func Lookup[T FactValue](r *Registry, name KeyName) (Key[T], bool) {
+	return core.Lookup[T](r, name)
 }
 
 // RawStamp is one classification stamp as a frontend recorded it:

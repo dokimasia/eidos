@@ -223,6 +223,180 @@ func TestMatches(t *testing.T) {
 		})
 	})
 
+	t.Run("OnParam", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("fires once per subject of its kind", func(t *testing.T) {
+			t.Parallel()
+
+			store := coretest.EveryKind(coretest.StorePath)
+			cache := coretest.EveryKind(coretest.CachePath)
+			want := coretest.KindCount(symbol.KindParam, store, cache)
+			assert.True(t, want > 1,
+				"the fixture holds more than one Param, so one rule meets several")
+
+			var subjects []symbol.Identity
+			var handles []*eidos.ParamMatch
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnParam(func(m *eidos.ParamMatch, e *eidos.Emitter) error {
+					subjects = append(subjects, m.Param.ID)
+					handles = append(handles, m)
+					return nil
+				})).
+				Build(), store, cache)
+
+			assert.Length(t, subjects, want,
+				"the rule fires once per Param the graph holds")
+			assert.Contains(t, subjects,
+				coretest.ID(coretest.StorePath, coretest.ParamName, symbol.KindParam),
+				"and the match carries the declaration, not only its identity")
+			for _, id := range subjects {
+				assert.Equal(t, id.Kind, symbol.KindParam,
+					"every subject a rule receives is of its own kind")
+			}
+			for _, m := range handles {
+				assert.True(t, m == handles[0],
+					"one match serves every invocation of the rule, which is what "+
+						"holds an invocation at zero steady-state allocations")
+			}
+		})
+
+		t.Run("passes over a value that is not its kind's type", func(t *testing.T) {
+			t.Parallel()
+
+			fired := false
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnParam(func(m *eidos.ParamMatch, e *eidos.Emitter) error {
+					fired = true
+					return nil
+				})).
+				Build(),
+				coretest.Package(coretest.StorePath, coretest.Foreign(
+					coretest.StorePath, coretest.ForeignName, symbol.KindParam)))
+			assert.False(t, fired,
+				"a declaration indexed under the kind that is not this model's "+
+					"type for it never reaches the handler")
+		})
+
+		t.Run("an emitter handler declares the generate phase", func(t *testing.T) {
+			t.Parallel()
+
+			emits := eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnParam(func(m *eidos.ParamMatch, e *eidos.Emitter) error {
+					return nil
+				})).
+				Build()
+			_, generates := emits.(plugin.Generator)
+			assert.True(t, generates, "an emitter handler makes a generator")
+			subscribed, held := emits.(plugin.Subscribed)
+			assert.True(t, held, "a built plugin declares its gates")
+			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
+				Kind: symbol.KindParam, Phase: plugin.PhaseGenerate,
+			}}, "the record carries the trigger's kind in the generate phase")
+		})
+
+		t.Run("a stamper handler annotates alone", func(t *testing.T) {
+			t.Parallel()
+
+			stamps := eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnParam(func(m *eidos.ParamMatch, st *eidos.Stamper) error {
+					return nil
+				})).
+				Build()
+			_, annotates := stamps.(plugin.Annotator)
+			assert.True(t, annotates, "a stamper handler makes an annotator")
+			_, alsoGenerates := stamps.(plugin.Generator)
+			assert.False(t, alsoGenerates, "and only an annotator")
+		})
+	})
+
+	t.Run("OnReturn", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("fires once per subject of its kind", func(t *testing.T) {
+			t.Parallel()
+
+			store := coretest.EveryKind(coretest.StorePath)
+			cache := coretest.EveryKind(coretest.CachePath)
+			want := coretest.KindCount(symbol.KindReturn, store, cache)
+			assert.True(t, want > 1,
+				"the fixture holds more than one Return, so one rule meets several")
+
+			var subjects []symbol.Identity
+			var handles []*eidos.ReturnMatch
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnReturn(func(m *eidos.ReturnMatch, e *eidos.Emitter) error {
+					subjects = append(subjects, m.Return.ID)
+					handles = append(handles, m)
+					return nil
+				})).
+				Build(), store, cache)
+
+			assert.Length(t, subjects, want,
+				"the rule fires once per Return the graph holds")
+			assert.Contains(t, subjects,
+				coretest.ID(coretest.StorePath, coretest.ReturnName, symbol.KindReturn),
+				"and the match carries the declaration, not only its identity")
+			for _, id := range subjects {
+				assert.Equal(t, id.Kind, symbol.KindReturn,
+					"every subject a rule receives is of its own kind")
+			}
+			for _, m := range handles {
+				assert.True(t, m == handles[0],
+					"one match serves every invocation of the rule, which is what "+
+						"holds an invocation at zero steady-state allocations")
+			}
+		})
+
+		t.Run("passes over a value that is not its kind's type", func(t *testing.T) {
+			t.Parallel()
+
+			fired := false
+			dispatched(t, eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnReturn(func(m *eidos.ReturnMatch, e *eidos.Emitter) error {
+					fired = true
+					return nil
+				})).
+				Build(),
+				coretest.Package(coretest.StorePath, coretest.Foreign(
+					coretest.StorePath, coretest.ForeignName, symbol.KindReturn)))
+			assert.False(t, fired,
+				"a declaration indexed under the kind that is not this model's "+
+					"type for it never reaches the handler")
+		})
+
+		t.Run("an emitter handler declares the generate phase", func(t *testing.T) {
+			t.Parallel()
+
+			emits := eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnReturn(func(m *eidos.ReturnMatch, e *eidos.Emitter) error {
+					return nil
+				})).
+				Build()
+			_, generates := emits.(plugin.Generator)
+			assert.True(t, generates, "an emitter handler makes a generator")
+			subscribed, held := emits.(plugin.Subscribed)
+			assert.True(t, held, "a built plugin declares its gates")
+			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{{
+				Kind: symbol.KindReturn, Phase: plugin.PhaseGenerate,
+			}}, "the record carries the trigger's kind in the generate phase")
+		})
+
+		t.Run("a stamper handler annotates alone", func(t *testing.T) {
+			t.Parallel()
+
+			stamps := eidos.NewPlugin(subjectPlugin).
+				Handle(eidos.OnReturn(func(m *eidos.ReturnMatch, st *eidos.Stamper) error {
+					return nil
+				})).
+				Build()
+			_, annotates := stamps.(plugin.Annotator)
+			assert.True(t, annotates, "a stamper handler makes an annotator")
+			_, alsoGenerates := stamps.(plugin.Generator)
+			assert.False(t, alsoGenerates, "and only an annotator")
+		})
+	})
+
 	t.Run("OnEnum", func(t *testing.T) {
 		t.Parallel()
 

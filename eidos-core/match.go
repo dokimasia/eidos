@@ -8,6 +8,7 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -29,6 +30,10 @@ type match struct {
 	gate    *directive.Directive
 	reads   *store.ReadSet
 	reader  *store.Reader
+	// bound is the subject language's rules over the invocation's
+	// view, minted on first use, so a handler that never projects
+	// costs no memo.
+	bound *rules.Bound
 	// em and st are the invocation's effect handles, held in the
 	// match's own allocation so an invocation costs one heap
 	// object, not two.
@@ -79,6 +84,51 @@ func (m *match) Reader() *store.Reader {
 	return m.reader
 }
 
+// Lang returns the subject's language, and the zero language on a
+// graph match, which has no subject.
+func (m *match) Lang() symbol.Lang { return m.subject.Lang }
+
+// Rules returns the kernel's walks bound to the subject's language
+// over the invocation's view, minted on first use and reused for
+// the invocation, so a reference folds once however many rules
+// read it. Every read the walks make records into the invocation's
+// read set like a handler's own. On a graph match it binds the
+// absent rules.
+func (m *match) Rules() rules.Bound {
+	if m.bound == nil {
+		b := m.bind(m.subject.Lang)
+		m.bound = &b
+	}
+	return *m.bound
+}
+
+// RulesFor returns the walks bound to another language's rules
+// over the same view: what a handler projecting a contributor or
+// a target declared elsewhere asks for.
+func (m *match) RulesFor(lang symbol.Lang) rules.Bound { return m.bind(lang) }
+
+// rulesFor returns the registered rules for a language, and the
+// absent rules for one the composition registered none for,
+// warning once per phase call and language under
+// [rules.AbsentRules]. The zero language, a graph match's, binds
+// the absent rules without a finding: nothing was declared in it.
+func (rs *runState) rulesFor(lang symbol.Lang, at position.Pos) rules.SourceRules {
+	if rs.rules != nil {
+		if src, held := rs.rules.For(lang); held {
+			return src
+		}
+	}
+	if lang != "" && !rs.warned[lang] {
+		if rs.warned == nil {
+			rs.warned = map[symbol.Lang]bool{}
+		}
+		rs.warned[lang] = true
+		rs.sink.Warnf(rules.AbsentRules, at, rs.plugin,
+			"no rules are registered for %s: its walks run under the absent rules", lang)
+	}
+	return rules.Absent(lang)
+}
+
 // Directive returns the gating instance, nil for bare and
 // fact-gated matches. Under a repeatable schema the handler runs
 // once per instance and each match carries its one instance, so
@@ -102,6 +152,30 @@ func (m *match) Warnf(c diag.Code, format string, a ...any) {
 // provenance and progress, never a verdict.
 func (m *match) Infof(c diag.Code, format string, a ...any) {
 	m.rs.sink.Infof(c, m.pos, m.rs.plugin, format, a...)
+}
+
+// ErrorfAt reports at Error severity at a position of the
+// handler's own: a directive's carrier line rather than the
+// subject's, for a finding about what an author wrote there. The
+// origin stays pre-bound.
+func (m *match) ErrorfAt(at position.Pos, c diag.Code, format string, a ...any) {
+	m.rs.sink.Errorf(c, at, m.rs.plugin, format, a...)
+}
+
+// Kernel returns the kernel's registered keys, for a handler that
+// reads or stamps the kernel's own facts: the module identity, an
+// authored sample, a witness. The zero value arrives where the
+// phase call carried none.
+func (m *match) Kernel() meta.KernelKeys { return m.rs.kernel }
+
+// bind mints one binding over the invocation's view.
+func (m *match) bind(lang symbol.Lang) rules.Bound {
+	view := rules.View{
+		Decls: m.Reader(), Facts: m.rs.facts, Reads: m.readset(), Kernel: m.rs.kernel,
+	}
+	return rules.NewBound(m.rs.rulesFor(lang, m.pos), view, func(other symbol.Lang) rules.SourceRules {
+		return m.rs.rulesFor(other, m.pos)
+	})
 }
 
 // readset returns the invocation's read set, created on first use.

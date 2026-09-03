@@ -176,6 +176,9 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 			Walk(x.Target, visit)
 		}
 	case *TypeRef:
+		for _, child := range x.Elems {
+			Walk(child, visit)
+		}
 		for _, child := range x.Args {
 			Walk(child, visit)
 		}
@@ -188,10 +191,6 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		}
 		if x.Type != nil {
 			Walk(x.Type, visit)
-		}
-	case *Constraint:
-		for _, child := range x.Terms {
-			Walk(child, visit)
 		}
 	case *Embed:
 		if x.Ref != nil {

@@ -96,7 +96,7 @@ func (b *built) Subscriptions() []plugin.Subscription { return b.subs }
 
 // annotate dispatches the annotate-phase rules.
 func annotate(b *built, ctx *plugin.AnnotatorContext) error {
-	rs := newRunState(b, ctx.Index, ctx.Facts, ctx.Sink, nil, ctx.Plugin, ctx.Bucket)
+	rs := newRunState(b, ctx.Index, ctx.Facts, ctx.Sink, nil, ctx.Plugin, ctx.Bucket, ctx.Rules, ctx.Kernel)
 	return rs.run(plugin.PhaseAnnotate)
 }
 
@@ -105,7 +105,7 @@ func annotate(b *built, ctx *plugin.AnnotatorContext) error {
 // store — after every rule ran, which is what keeps a plugin's own
 // emit invisible to its own emit rules.
 func generate(b *built, ctx *plugin.GeneratorContext) error {
-	rs := newRunState(b, ctx.Index, ctx.Facts, ctx.Sink, ctx.Emit, ctx.Plugin, ctx.Bucket)
+	rs := newRunState(b, ctx.Index, ctx.Facts, ctx.Sink, ctx.Emit, ctx.Plugin, ctx.Bucket, ctx.Rules, ctx.Kernel)
 	if err := rs.run(plugin.PhaseGenerate, plugin.PhaseEmit); err != nil {
 		return err
 	}

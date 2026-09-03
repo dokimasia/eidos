@@ -33,6 +33,7 @@ type Function struct {
 	Origin      symbol.Identity    `eidos:"emit"`
 	Pos         position.Pos       `eidos:"node"`
 	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
 	Async       bool               `eidos:"both,fact=Async"`
@@ -84,6 +85,7 @@ type Method struct {
 	Origin      symbol.Identity    `eidos:"emit"`
 	Pos         position.Pos       `eidos:"node"`
 	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
 	Level       symbol.Level       `eidos:"both,fact=Level"`
@@ -125,11 +127,18 @@ type Method struct {
 // Python, Ruby and PHP have both. It is legal on the trailing
 // parameters only, and frontends enforce that rather than the
 // model.
+//
+// A parameter is a subject: an authored value sits on it in a
+// language whose comments reach it, and its identity is the host's
+// chain, its name or its position, and the host's discriminator.
+//
+//eidos:subject
 type Param struct {
 	ID          symbol.Identity    `eidos:"node"`
 	Pos         position.Pos       `eidos:"node"`
-	Name        string             `eidos:"both,name"`       // "" when unnamed
-	Label       string             `eidos:"both,fact=Label"` // caller-facing name; Swift and Objective-C
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
+	Name        string             `eidos:"both,name"`         // "" when unnamed
+	Label       string             `eidos:"both,fact=Label"`   // caller-facing name; Swift and Objective-C
 	Type        *TypeRef           `eidos:"both,walk"`
 	Default     string             `eidos:"both,fact=ParamDefault"` // source spelling, unevaluated; "" when none
 	Optional    bool               `eidos:"both,fact=Optional"`     // present-or-absent: TypeScript's ?, Swift's defaulted trailing
@@ -142,9 +151,15 @@ type Param struct {
 // The list is a slice because Go returns several values. A language
 // with one result fills one entry, and a language with none fills
 // none. Name carries a Go named result and is empty elsewhere.
+//
+// A return is a subject the way a parameter is, named by its
+// position where the language leaves it unnamed.
+//
+//eidos:subject
 type Return struct {
-	ID   symbol.Identity `eidos:"node"`
-	Pos  position.Pos    `eidos:"node"`
-	Name string          `eidos:"both,name,fact=NamedReturn"` // Go named results; "" elsewhere
-	Type *TypeRef        `eidos:"both,walk"`
+	ID      symbol.Identity `eidos:"node"`
+	Pos     position.Pos    `eidos:"node"`
+	Comment string          `eidos:"both,fact=Comment"`          // trailing line comment; "" when none
+	Name    string          `eidos:"both,name,fact=NamedReturn"` // Go named results; "" elsewhere
+	Type    *TypeRef        `eidos:"both,walk"`
 }

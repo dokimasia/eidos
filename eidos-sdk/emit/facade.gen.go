@@ -151,6 +151,10 @@ type Method = core.Method
 // parameters only, and frontends enforce that rather than the
 // model.
 //
+// A parameter is a subject: an authored value sits on it in a
+// language whose comments reach it, and its identity is the host's
+// chain, its name or its position, and the host's discriminator.
+//
 // This is the emit spelling of the kind.
 type Param = core.Param
 
@@ -159,6 +163,9 @@ type Param = core.Param
 // The list is a slice because Go returns several values. A language
 // with one result fills one entry, and a language with none fills
 // none. Name carries a Go named result and is empty elsewhere.
+//
+// A return is a subject the way a parameter is, named by its
+// position where the language leaves it unnamed.
 //
 // This is the emit spelling of the kind.
 type Return = core.Return
@@ -430,6 +437,19 @@ type Alias = core.Alias
 // list in its own brackets, so the one instantiation spells
 // Map[K, V] in Go and Map<K, V> in Java.
 //
+// Form and Elems carry the structure the frontend parsed, in the
+// form's fixed child order: one child for Optional, List, Array,
+// Stream and Borrow; the key then the value for Map; the
+// parameters then the returns for Func, the returns from Split;
+// the members for Tuple and Union; the bound for Wildcard, with
+// Variance; none for Inline and Named. The spelling stays verbatim
+// beside them, so a backend spells what it read, and the
+// resolution step reaches the named types inside a composite
+// through the children. A structural reference carries no target
+// of its own; its Named children do. Length holds a fixed array
+// length written as a literal, and 0 where the length is an
+// expression the spelling keeps.
+//
 // This is the emit spelling of the kind.
 type TypeRef = core.TypeRef
 
@@ -454,17 +474,6 @@ type TypeRef = core.TypeRef
 // This is the emit spelling of the kind.
 type TypeParam = core.TypeParam
 
-// Constraint is a named, reusable bound: a Go constraint interface
-// declared for reuse, a Rust trait bound alias.
-//
-// Terms holds the projectable members of the type set. A term the
-// projection cannot hold, such as an approximation element or a
-// union of underlying types, stays in language metadata, and the
-// declaration still projects with the terms that survive.
-//
-// This is the emit spelling of the kind.
-type Constraint = core.Constraint
-
 // Embed is one embedded type in a declaration that promotes
 // members: a Go embedded field or embedded interface, a PHP trait
 // use.
@@ -473,6 +482,11 @@ type Constraint = core.Constraint
 // arrive promoted rather than inherited, and resolving what a type
 // effectively holds across embeds is a language rule rather than a
 // model one.
+//
+// An embed is a declaration in its own right: it carries the
+// documentation, trailing comment, tag and annotations an embedded
+// field takes like any field, and its identity, named by the
+// embedded type's bare name, is what a directive attaches to.
 //
 // This is the emit spelling of the kind.
 type Embed = core.Embed
@@ -599,6 +613,87 @@ func DecodeJSON(data []byte) (symbol.Symbol, error) {
 // reference reads its payload dynamically, which is how a template
 // reads it anyway.
 type TemplateRef = core.TemplateRef
+
+// ValueKind selects a value's populated fields. The zero kind
+// names no value.
+type ValueKind = core.ValueKind
+
+const (
+	// ValueLiteral is Literal and Text: a number, a string's
+	// content, a truth value, the absent value, or raw text in the
+	// source language.
+	ValueLiteral = core.ValueLiteral
+	// ValueConversion applies Type to Inner: Weekday(42).
+	ValueConversion = core.ValueConversion
+	// ValueComposite is Type with Fields: Point{X: 42}, positional
+	// where a field has no name.
+	ValueComposite = core.ValueComposite
+	// ValueCall applies Callee to Args: time.Unix(42, 0).
+	ValueCall = core.ValueCall
+	// ValueAddress takes the address of Inner: &Point{X: 42}.
+	ValueAddress = core.ValueAddress
+)
+
+// LiteralKind says what a literal's text is, so a target spells
+// it its own way: the string's quotes, the absent value's name.
+// The zero kind names no literal.
+type LiteralKind = core.LiteralKind
+
+const (
+	// LiteralInt is an integer in decimal text.
+	LiteralInt = core.LiteralInt
+	// LiteralFloat is a floating-point number in decimal text.
+	LiteralFloat = core.LiteralFloat
+	// LiteralString is a string; Text holds the content, unquoted.
+	LiteralString = core.LiteralString
+	// LiteralBool is a truth value; Text is "true" or "false".
+	LiteralBool = core.LiteralBool
+	// LiteralNil is the language's absent value; Text is empty.
+	LiteralNil = core.LiteralNil
+	// LiteralRaw is Text in the source language, which only that
+	// language's backend spells and another language's refuses.
+	LiteralRaw = core.LiteralRaw
+)
+
+// Value is one value a generated body writes: a sample, a zero, a
+// literal read from text. Every reference in it is qualified by
+// the backend for the file it is written into, which is what text
+// alone could never do. Kind selects the populated fields, so a
+// consumer switches on it and reads without an assertion. The
+// zero Value names nothing.
+//
+// A Value is a plain value: copy it freely. Inner is the one
+// pointer in the vocabulary, because a struct cannot hold itself.
+type Value = core.Value
+
+// ValueField is one entry of a composite: named, or positional
+// where Name is empty.
+type ValueField = core.ValueField
+
+// Literal returns a literal value of one kind.
+func Literal(k LiteralKind, text string) Value {
+	return core.Literal(k, text)
+}
+
+// Conversion returns a value converted to a type.
+func Conversion(t *TypeRef, inner Value) Value {
+	return core.Conversion(t, inner)
+}
+
+// Composite returns a composite value of a type.
+func Composite(t *TypeRef, fields ...ValueField) Value {
+	return core.Composite(t, fields...)
+}
+
+// Call returns a call of a function, imported by identity.
+func Call(callee symbol.Identity, args ...Value) Value {
+	return core.Call(callee, args...)
+}
+
+// Address returns the address of a value.
+func Address(inner Value) Value {
+	return core.Address(inner)
+}
 
 // Walk visits s and every declaration it contains, depth first, in
 // schema field order.

@@ -35,13 +35,14 @@ type Package struct {
 // Decls holds any kind, because a file admits whatever its language
 // admits at top level.
 type File struct {
-	ID      symbol.Identity `eidos:"node"`
-	Pos     position.Pos    `eidos:"node"`
-	Doc     []string        `eidos:"both"`
-	Path    string          `eidos:"both"`      // workspace-relative, slash-separated
-	Imports []*Import       `eidos:"node,walk"` // the file's import scope, as written
-	Exports []*Export       `eidos:"node,walk"` // re-exports; a declaration's own export is its Visibility
-	Decls   []Symbol        `eidos:"node,walk"`
+	ID          symbol.Identity    `eidos:"node"`
+	Pos         position.Pos       `eidos:"node"`
+	Doc         []string           `eidos:"both"`
+	Path        string             `eidos:"both"`                  // workspace-relative, slash-separated
+	Annotations symbol.Annotations `eidos:"both,fact=Annotations"` // file-level tool directives no declaration owns
+	Imports     []*Import          `eidos:"node,walk"`             // the file's import scope, as written
+	Exports     []*Export          `eidos:"node,walk"`             // re-exports; a declaration's own export is its Visibility
+	Decls       []Symbol           `eidos:"node,walk"`
 }
 
 // Import is one import statement and everything it binds.
@@ -65,6 +66,8 @@ type File struct {
 type Import struct {
 	ID       symbol.Identity `eidos:"node"`
 	Pos      position.Pos    `eidos:"node"`
+	Doc      []string        `eidos:"node"`
+	Comment  string          `eidos:"node"` // trailing line comment; "" when none
 	Path     string          `eidos:"node"`
 	Alias    string          `eidos:"node"`      // module-level alias; "" when unaliased
 	Names    []*Binding      `eidos:"node,walk"` // per-symbol bindings

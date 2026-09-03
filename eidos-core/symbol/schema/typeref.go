@@ -25,12 +25,30 @@ import (
 // the bare name in Spelling, and a target writes the argument
 // list in its own brackets, so the one instantiation spells
 // Map[K, V] in Go and Map<K, V> in Java.
+//
+// Form and Elems carry the structure the frontend parsed, in the
+// form's fixed child order: one child for Optional, List, Array,
+// Stream and Borrow; the key then the value for Map; the
+// parameters then the returns for Func, the returns from Split;
+// the members for Tuple and Union; the bound for Wildcard, with
+// Variance; none for Inline and Named. The spelling stays verbatim
+// beside them, so a backend spells what it read, and the
+// resolution step reaches the named types inside a composite
+// through the children. A structural reference carries no target
+// of its own; its Named children do. Length holds a fixed array
+// length written as a literal, and 0 where the length is an
+// expression the spelling keeps.
 type TypeRef struct {
 	ID       symbol.Identity `eidos:"node"`
 	Pos      position.Pos    `eidos:"node"`
-	Spelling string          `eidos:"both"` // source text, verbatim
-	Target   symbol.Identity `eidos:"both"` // zero until resolution, and for builtins and externals
-	Args     []*TypeRef      `eidos:"both,walk"`
+	Spelling string          `eidos:"both"`      // source text, verbatim
+	Target   symbol.Identity `eidos:"both"`      // zero until resolution, and for builtins, externals and structural forms
+	Form     symbol.TypeForm `eidos:"both"`      // the structure; FormNamed by default
+	Elems    []*TypeRef      `eidos:"both,walk"` // the form's children, in the form's fixed order
+	Split    int             `eidos:"both"`      // FormFunc: the index in Elems where the returns begin
+	Length   int             `eidos:"both"`      // FormArray: the literal length; 0 when the spelling keeps an expression
+	Variance symbol.Variance `eidos:"both"`      // FormWildcard: In for a lower bound, Out for an upper one
+	Args     []*TypeRef      `eidos:"both,walk"` // the type arguments of an instantiation
 }
 
 // TypeParam is one parameter of a generic declaration.
@@ -62,19 +80,6 @@ type TypeParam struct {
 	DefaultValue string          `eidos:"both"`                            // default value spelling, when Const
 }
 
-// Constraint is a named, reusable bound: a Go constraint interface
-// declared for reuse, a Rust trait bound alias.
-//
-// Terms holds the projectable members of the type set. A term the
-// projection cannot hold, such as an approximation element or a
-// union of underlying types, stays in language metadata, and the
-// declaration still projects with the terms that survive.
-type Constraint struct {
-	ID    symbol.Identity `eidos:"node"`
-	Pos   position.Pos    `eidos:"node"`
-	Terms []*TypeRef      `eidos:"both,walk"` // the projectable terms
-}
-
 // Embed is one embedded type in a declaration that promotes
 // members: a Go embedded field or embedded interface, a PHP trait
 // use.
@@ -83,9 +88,18 @@ type Constraint struct {
 // arrive promoted rather than inherited, and resolving what a type
 // effectively holds across embeds is a language rule rather than a
 // model one.
+//
+// An embed is a declaration in its own right: it carries the
+// documentation, trailing comment, tag and annotations an embedded
+// field takes like any field, and its identity, named by the
+// embedded type's bare name, is what a directive attaches to.
 type Embed struct {
-	ID   symbol.Identity `eidos:"node"`
-	Pos  position.Pos    `eidos:"node"`
-	Ref  *TypeRef        `eidos:"both,walk"`
-	Host symbol.Identity `eidos:"node"`
+	ID          symbol.Identity    `eidos:"node"`
+	Pos         position.Pos       `eidos:"node"`
+	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
+	Ref         *TypeRef           `eidos:"both,walk"`
+	Tag         string             `eidos:"both,fact=Tag"` // tag text without delimiters, "" when none
+	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`
+	Host        symbol.Identity    `eidos:"node"`
 }

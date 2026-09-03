@@ -11,6 +11,7 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -318,6 +319,17 @@ func TestBuilder(t *testing.T) {
 			assert.Contains(t, err.Error(), marker,
 				"all five faults join the one error")
 		}
+	})
+
+	t.Run("refuses two rules for one language and a nil value", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := valid().Rules(native{}, native{}).Build()
+		assert.HasError(t, err, "one language, one rules value")
+		assert.Contains(t, err.Error(), string(coretest.Lang), "naming the language")
+		_, err = valid().Rules(nil).Build()
+		assert.HasError(t, err, "a nil value registers nothing")
+		assert.Contains(t, err.Error(), "nil", "and says so")
 	})
 }
 

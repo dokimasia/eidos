@@ -315,6 +315,7 @@ func TestWalk(t *testing.T) {
 			t.Parallel()
 
 			subject := &TypeRef{}
+			subject.Elems = append(subject.Elems, &TypeRef{})
 			subject.Args = append(subject.Args, &TypeRef{})
 
 			var seen int
@@ -322,7 +323,7 @@ func TestWalk(t *testing.T) {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 2,
+			assert.Equal(t, seen, 3,
 				"the walk descends into every traversed field")
 		})
 
@@ -340,21 +341,6 @@ func TestWalk(t *testing.T) {
 				return true
 			})
 			assert.Equal(t, seen, 4,
-				"the walk descends into every traversed field")
-		})
-
-		t.Run("descends into every traversed field of Constraint", func(t *testing.T) {
-			t.Parallel()
-
-			subject := &Constraint{}
-			subject.Terms = append(subject.Terms, &TypeRef{})
-
-			var seen int
-			Walk(subject, func(symbol.Symbol) bool {
-				seen++
-				return true
-			})
-			assert.Equal(t, seen, 2,
 				"the walk descends into every traversed field")
 		})
 
@@ -610,6 +596,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &TypeRef{}
+				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
@@ -625,18 +612,6 @@ func TestWalk(t *testing.T) {
 				subject.Bounds = append(subject.Bounds, &TypeRef{})
 				subject.Default = &TypeRef{}
 				subject.Type = &TypeRef{}
-				var seen int
-				Walk(subject, func(symbol.Symbol) bool {
-					seen++
-					return false
-				})
-				assert.Equal(t, seen, 1,
-					"answering false prunes the subtree")
-			}
-
-			{
-				subject := &Constraint{}
-				subject.Terms = append(subject.Terms, &TypeRef{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -968,6 +943,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &TypeRef{}
+				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
@@ -987,22 +963,6 @@ func TestWalk(t *testing.T) {
 				subject.Bounds = append(subject.Bounds, &TypeRef{})
 				subject.Default = &TypeRef{}
 				subject.Type = &TypeRef{}
-				var walked int
-				Walk(subject, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				var yielded int
-				for range All(subject) {
-					yielded++
-				}
-				assert.Equal(t, yielded, walked,
-					"All yields the same declarations Walk visits")
-			}
-
-			{
-				subject := &Constraint{}
-				subject.Terms = append(subject.Terms, &TypeRef{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -1270,6 +1230,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &TypeRef{}
+				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
 				var yielded int
 				for range All(subject) {
@@ -1285,18 +1246,6 @@ func TestWalk(t *testing.T) {
 				subject.Bounds = append(subject.Bounds, &TypeRef{})
 				subject.Default = &TypeRef{}
 				subject.Type = &TypeRef{}
-				var yielded int
-				for range All(subject) {
-					yielded++
-					break
-				}
-				assert.Equal(t, yielded, 1,
-					"the iteration stops when the range stops")
-			}
-
-			{
-				subject := &Constraint{}
-				subject.Terms = append(subject.Terms, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1458,6 +1407,22 @@ func TestWalk(t *testing.T) {
 				subject := &Alias{}
 				subject.TypeParams = append(subject.TypeParams, &TypeParam{})
 				subject.Target = &TypeRef{}
+				var yielded int
+				for range All(subject) {
+					yielded++
+					if yielded == 2 {
+						break
+					}
+				}
+				assert.Equal(t, yielded, 2,
+					"a stopped range yields nothing more, though the walk beneath "+
+						"it carries on to the siblings a pruned subtree left")
+			}
+
+			{
+				subject := &TypeRef{}
+				subject.Elems = append(subject.Elems, &TypeRef{})
+				subject.Args = append(subject.Args, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1780,6 +1745,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &TypeRef{}
+				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
 				var yielded int
 				for range All(subject) {
@@ -1798,21 +1764,6 @@ func TestWalk(t *testing.T) {
 				subject.Bounds = append(subject.Bounds, &TypeRef{})
 				subject.Default = &TypeRef{}
 				subject.Type = &TypeRef{}
-				var yielded int
-				for range All(subject) {
-					yielded++
-				}
-				var named int
-				for range Declarations(subject) {
-					named++
-				}
-				assert.Equal(t, named, yielded,
-					"Declarations yields every declaration All does")
-			}
-
-			{
-				subject := &Constraint{}
-				subject.Terms = append(subject.Terms, &TypeRef{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -2089,6 +2040,7 @@ func TestWalk(t *testing.T) {
 
 			{
 				subject := &TypeRef{}
+				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
 				var yielded int
 				for range Declarations(subject) {
@@ -2104,18 +2056,6 @@ func TestWalk(t *testing.T) {
 				subject.Bounds = append(subject.Bounds, &TypeRef{})
 				subject.Default = &TypeRef{}
 				subject.Type = &TypeRef{}
-				var yielded int
-				for range Declarations(subject) {
-					yielded++
-					break
-				}
-				assert.Equal(t, yielded, 1,
-					"the typed iteration stops when the range stops")
-			}
-
-			{
-				subject := &Constraint{}
-				subject.Terms = append(subject.Terms, &TypeRef{})
 				var yielded int
 				for range Declarations(subject) {
 					yielded++

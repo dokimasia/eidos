@@ -16,7 +16,9 @@
 //
 // The kinds, [Walk], [All] and [Declarations] generate from the
 // symbol schema. Editing a generated file fails the build, because
-// the mirror guard reruns the generator and compares.
+// the mirror guard reruns the generator and compares. [Imports] is
+// hand-written: a package's import list is the union of its files',
+// derived here and stored nowhere.
 //
 // # Dependency position
 //

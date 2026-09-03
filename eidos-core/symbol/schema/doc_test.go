@@ -205,6 +205,10 @@ func TestDoc(t *testing.T) {
 			},
 			{field: "Host", typ: reflect.TypeFor[symbol.Identity](), side: model.SideNodeToken},
 		}
+		// The module boundary is read and never generated, so its
+		// kinds carry every field node-side, the recurring ones
+		// included; the container cases hold that rule.
+		boundary := map[string]bool{"Import": true, "Export": true, "Binding": true}
 		for _, convention := range conventions {
 			t.Run(convention.field, func(t *testing.T) {
 				t.Parallel()
@@ -218,7 +222,7 @@ func TestDoc(t *testing.T) {
 					carried++
 					assert.Equal(t, field.Type.String(), convention.typ.String(),
 						name+"."+convention.field+" carries the shared type")
-					if convention.side == "" {
+					if convention.side == "" || boundary[name] {
 						continue
 					}
 					assert.Equal(t, annotation(t, kind, convention.field).side, convention.side,
@@ -243,7 +247,6 @@ func everyKind() map[string]reflect.Type {
 		"Alias":       reflect.TypeFor[schema.Alias](),
 		"Binding":     reflect.TypeFor[schema.Binding](),
 		"Constant":    reflect.TypeFor[schema.Constant](),
-		"Constraint":  reflect.TypeFor[schema.Constraint](),
 		"Embed":       reflect.TypeFor[schema.Embed](),
 		"Enum":        reflect.TypeFor[schema.Enum](),
 		"EnumVariant": reflect.TypeFor[schema.EnumVariant](),

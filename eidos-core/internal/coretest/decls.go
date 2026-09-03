@@ -15,6 +15,8 @@ import (
 // lookup.
 const (
 	FunctionName    = "Load"
+	ParamName       = "input"
+	ReturnName      = "output"
 	MethodName      = "Scan"
 	EnumName        = "Status"
 	EnumVariantName = "StatusOpen"
@@ -38,7 +40,21 @@ func Function(path, name string) *node.Function {
 		ID:         ID(path, name, symbol.KindFunction),
 		Name:       name,
 		Visibility: symbol.VisibilityPublic,
+		Params:     []*node.Param{Param(path, ParamName)},
+		Returns:    []*node.Return{Return(path, ReturnName)},
 	}
+}
+
+// Param returns a named parameter carrying an identity, as the
+// resolution step assigns one under its callable.
+func Param(path, name string) *node.Param {
+	return &node.Param{ID: ID(path, name, symbol.KindParam), Name: name}
+}
+
+// Return returns a named result carrying an identity, as the
+// resolution step assigns one under its callable.
+func Return(path, name string) *node.Return {
+	return &node.Return{ID: ID(path, name, symbol.KindReturn), Name: name}
 }
 
 // Method returns a method attached to host, carrying host's
@@ -161,9 +177,10 @@ func Populated(path, name string) *node.Struct {
 }
 
 // EveryKind returns a package holding one declaration of every kind
-// a rule can match: the ten kinds the generated constructors cover,
-// with the member kinds hanging on their hosts rather than sitting
-// loose in the file.
+// a rule can match: the twelve kinds the generated constructors
+// cover, with the member kinds hanging on their hosts rather than
+// sitting loose in the file, and the function's parameter and
+// return on its signature.
 //
 // A case over the whole vocabulary uses this rather than naming
 // kinds one at a time, because a fixture that omits a kind reports
@@ -194,6 +211,8 @@ func MatchableKinds() []symbol.Kind {
 		symbol.KindSum,
 		symbol.KindAlias,
 		symbol.KindFunction,
+		symbol.KindParam,
+		symbol.KindReturn,
 		symbol.KindVariable,
 		symbol.KindConstant,
 	}

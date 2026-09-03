@@ -38,7 +38,6 @@ var (
 	_ symbol.Symbol   = (*Alias)(nil)
 	_ symbol.Symbol   = (*TypeRef)(nil)
 	_ symbol.Symbol   = (*TypeParam)(nil)
-	_ symbol.Symbol   = (*Constraint)(nil)
 	_ symbol.Symbol   = (*Embed)(nil)
 	_ symbol.Membered = (*Enum)(nil)
 	_ symbol.Membered = (*Sum)(nil)
@@ -72,7 +71,6 @@ var (
 	_ Declaration     = (*Alias)(nil)
 	_ Declaration     = (*TypeRef)(nil)
 	_ Declaration     = (*TypeParam)(nil)
-	_ Declaration     = (*Constraint)(nil)
 	_ Declaration     = (*Embed)(nil)
 )
 
@@ -107,7 +105,6 @@ func TestKinds(t *testing.T) {
 			{subject: &Alias{}, want: symbol.KindAlias},
 			{subject: &TypeRef{}, want: symbol.KindTypeRef},
 			{subject: &TypeParam{}, want: symbol.KindTypeParam},
-			{subject: &Constraint{}, want: symbol.KindConstraint},
 			{subject: &Embed{}, want: symbol.KindEmbed},
 		}
 		for _, tt := range tests {
@@ -169,8 +166,6 @@ func TestKinds(t *testing.T) {
 				"a located declaration returns where it was written")
 			assert.Equal(t, (&TypeParam{Pos: at}).Position(), at,
 				"a located declaration returns where it was written")
-			assert.Equal(t, (&Constraint{Pos: at}).Position(), at,
-				"a located declaration returns where it was written")
 			assert.Equal(t, (&Embed{Pos: at}).Position(), at,
 				"a located declaration returns where it was written")
 		})
@@ -196,8 +191,8 @@ func TestKinds(t *testing.T) {
 				"a documented declaration returns its documentation")
 			assert.Length(t, (&File{Doc: lines}).Docs(), len(lines),
 				"a documented declaration returns its documentation")
-			assert.Nil(t, (&Import{}).Docs(),
-				"a kind carrying no documentation returns nil")
+			assert.Length(t, (&Import{Doc: lines}).Docs(), len(lines),
+				"a documented declaration returns its documentation")
 			assert.Length(t, (&Export{Doc: lines}).Docs(), len(lines),
 				"a documented declaration returns its documentation")
 			assert.Nil(t, (&Binding{}).Docs(),
@@ -226,10 +221,8 @@ func TestKinds(t *testing.T) {
 				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&TypeParam{}).Docs(),
 				"a kind carrying no documentation returns nil")
-			assert.Nil(t, (&Constraint{}).Docs(),
-				"a kind carrying no documentation returns nil")
-			assert.Nil(t, (&Embed{}).Docs(),
-				"a kind carrying no documentation returns nil")
+			assert.Length(t, (&Embed{Doc: lines}).Docs(), len(lines),
+				"a documented declaration returns its documentation")
 		})
 	})
 
@@ -282,8 +275,6 @@ func TestKinds(t *testing.T) {
 				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&TypeParam{ID: id}).Identity(), id,
 				"a named declaration returns the identity it was assigned")
-			assert.Equal(t, (&Constraint{ID: id}).Identity(), id,
-				"a named declaration returns the identity it was assigned")
 			assert.Equal(t, (&Embed{ID: id}).Identity(), id,
 				"a named declaration returns the identity it was assigned")
 		})
@@ -331,8 +322,6 @@ func TestKinds(t *testing.T) {
 			assert.True(t, (&TypeRef{}).Identity().IsZero(),
 				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&TypeParam{}).Identity().IsZero(),
-				"an unassigned declaration returns the zero identity")
-			assert.True(t, (&Constraint{}).Identity().IsZero(),
 				"an unassigned declaration returns the zero identity")
 			assert.True(t, (&Embed{}).Identity().IsZero(),
 				"an unassigned declaration returns the zero identity")

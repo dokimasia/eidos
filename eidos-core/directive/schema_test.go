@@ -95,4 +95,24 @@ func TestSchema(t *testing.T) {
 		assert.NotEqual(t, directive.ReservedOut, directive.ReservedTag,
 			"the two routing overrides stay two keys")
 	})
+
+	t.Run("ResolutionKind spelling", func(t *testing.T) {
+		t.Parallel()
+
+		want := map[directive.ResolutionKind]string{
+			directive.ResolveNone:            "no resolution",
+			directive.ResolveCallableInScope: "a callable in scope",
+			directive.ResolvePackageVar:      "a package variable",
+			directive.ResolveValueField:      "a field on the subject's type",
+			directive.ResolveHostParam:       "a parameter of the host callable",
+			directive.ResolveMemberOnHandle:  "a member on a handle",
+			directive.ResolveMetadataKey:     "a metadata key or group",
+			directive.ResolveTypeInScope:     "a type in scope",
+		}
+		for kind, spelling := range want {
+			assert.Equal(t, kind.String(), spelling, "each kind spells for a refusal")
+		}
+		assert.Equal(t, directive.ResolutionKind(99).String(), "resolution kind 99",
+			"an unknown value spells its number")
+	})
 }

@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -55,6 +56,13 @@ type runState struct {
 	bucket int
 	seq    int
 	accs   map[accKey]*accumulator
+	// rules and kernel are what a match binds the kernel's walks
+	// over; warned records the languages this phase call already
+	// reported as having no rules, so the warning comes once per
+	// plugin and language.
+	rules  *rules.Registry
+	kernel meta.KernelKeys
+	warned map[symbol.Lang]bool
 	// scratch holds one reusable match per rule, keyed by ordinal.
 	scratch []any
 	// handles is the pool the emitter's accessors are served from,
@@ -71,7 +79,7 @@ type runState struct {
 // newRunState binds one phase call.
 func newRunState(
 	b *built, ix *plugin.Index, facts *meta.Facts, sink *diag.Sink,
-	em *plugin.Emit, id plugin.ID, bucket int,
+	em *plugin.Emit, id plugin.ID, bucket int, rs *rules.Registry, kernel meta.KernelKeys,
 ) *runState {
 	return &runState{
 		b:       b,
@@ -83,6 +91,8 @@ func newRunState(
 		bucket:  bucket,
 		accs:    map[accKey]*accumulator{},
 		scratch: make([]any, len(b.rules)),
+		rules:   rs,
+		kernel:  kernel,
 	}
 }
 
@@ -118,7 +128,7 @@ func (rs *runState) dispatch(fr *flatRule) error {
 		return rs.invoke(fr, invocation{})
 	case fr.phase == plugin.PhaseEmit:
 		return rs.dispatchEmit(fr)
-	case fr.schema != nil:
+	case fr.gateOf() != "":
 		return rs.dispatchDirective(fr)
 	case len(fr.preds) > 0:
 		return rs.dispatchFacts(fr)
@@ -137,14 +147,15 @@ func (rs *runState) dispatchEmit(fr *flatRule) error {
 			continue
 		}
 		pos := rs.positionOf(origin)
-		if fr.schema == nil {
+		gate := fr.gateOf()
+		if gate == "" {
 			err := rs.invoke(fr, invocation{subject: origin, pos: pos, value: value})
 			if err != nil {
 				return err
 			}
 			continue
 		}
-		for _, gate := range gateViews(rs.index.DirectivesOf(origin), fr.schema) {
+		for _, gate := range gateViews(rs.index.DirectivesOf(origin), gate) {
 			err := rs.invoke(fr, invocation{
 				subject: origin, pos: pos, gate: gate, value: value,
 			})
@@ -156,12 +167,13 @@ func (rs *runState) dispatchEmit(fr *flatRule) error {
 	return nil
 }
 
-// dispatchDirective visits the carriers of the rule's schema, under
-// every spelling the schema recognises, one invocation per gating
-// instance in source order.
+// dispatchDirective visits the carriers of the rule's gating
+// directive, under every spelling it recognises, one invocation per
+// gating instance in source order.
 func (rs *runState) dispatchDirective(fr *flatRule) error {
 	seen := map[symbol.Identity]struct{}{}
-	for _, spelled := range spellingsOf(fr.schema) {
+	canonical := fr.gateOf()
+	for _, spelled := range spellingsOf(fr) {
 		for s := range rs.index.ByDirective(spelled) {
 			decl, names := s.(node.Declaration)
 			if !names || decl.Kind() != fr.kind {
@@ -175,7 +187,7 @@ func (rs *runState) dispatchDirective(fr *flatRule) error {
 			if !rs.admits(fr, id) {
 				continue
 			}
-			for _, gate := range gateViews(rs.index.DirectivesOf(id), fr.schema) {
+			for _, gate := range gateViews(rs.index.DirectivesOf(id), canonical) {
 				err := rs.invoke(fr, invocation{
 					subject: id, pos: decl.Position(), gate: gate, value: s,
 				})
@@ -233,7 +245,7 @@ func (rs *runState) dispatchBare(fr *flatRule) error {
 // rule is exempt from skip: its subject opted in explicitly and
 // withdraws by deleting the directive.
 func (rs *runState) admits(fr *flatRule, subject symbol.Identity) bool {
-	if fr.schema == nil && rs.index.Skipped(subject, rs.plugin) {
+	if fr.gateOf() == "" && rs.index.Skipped(subject, rs.plugin) {
 		return false
 	}
 	for _, p := range fr.preds {
@@ -267,8 +279,7 @@ func (rs *runState) positionOf(id symbol.Identity) position.Pos {
 // gateViews returns the instances of one schema on a subject, in
 // source order: one invocation each, which is how a repeatable
 // directive runs its handler per instance.
-func gateViews(ds []directive.Directive, s *directive.Schema) []*directive.Directive {
-	canonical := s.Canonical()
+func gateViews(ds []directive.Directive, canonical directive.Name) []*directive.Directive {
 	var out []*directive.Directive
 	for i := range ds {
 		if ds[i].Name == canonical {
@@ -278,13 +289,13 @@ func gateViews(ds []directive.Directive, s *directive.Schema) []*directive.Direc
 	return out
 }
 
-// spellingsOf returns the spellings a schema's carriers may be
-// indexed under: the canonical one, and the bare one where they
-// differ.
-func spellingsOf(s *directive.Schema) []directive.Name {
-	canonical := s.Canonical()
-	if canonical == s.Name {
+// spellingsOf returns the spellings a rule's gating directive may
+// be indexed under: the canonical one, and the bare one where a
+// schema's differ. A kernel gate has one spelling.
+func spellingsOf(fr *flatRule) []directive.Name {
+	canonical := fr.gateOf()
+	if fr.schema == nil || canonical == fr.schema.Name {
 		return []directive.Name{canonical}
 	}
-	return []directive.Name{canonical, s.Name}
+	return []directive.Name{canonical, fr.schema.Name}
 }

@@ -4,6 +4,7 @@
 package directive_test
 
 import (
+	"errors"
 	"slices"
 	"strings"
 	"testing"
@@ -87,7 +88,7 @@ func validate(tb assert.TB, payloads ...string) ([]directive.Directive, *diag.Si
 	for i, payload := range payloads {
 		raws = append(raws, parse(tb, payload, i+1))
 	}
-	return directive.Validate(validationSubject, raws, r, keyed(tb), sink), sink
+	return directive.Validate(validationSubject, raws, r, keyed(tb), nil, sink), sink
 }
 
 func TestValidate(t *testing.T) {
@@ -145,7 +146,7 @@ func TestValidate(t *testing.T) {
 		got := directive.Validate(validationSubject, []directive.Raw{
 			parse(t, "k8s:deepcopy-gen package", 1),
 			parse(t, "indexer:index btree", 2),
-		}, r, keyed(t), sink)
+		}, r, keyed(t), nil, sink)
 		assert.False(t, sink.Failed(), "the opted-out carrier reports nothing")
 		coretest.AssertCodes(t, sink)
 		assert.Length(t, got, 1, "and drops, while the claimed instance types")
@@ -325,7 +326,7 @@ func TestValidate(t *testing.T) {
 			r := sealed(t, strict)
 			sink := diag.NewSink()
 			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "strictgen:index btree", 1)}, r, keyed(t), sink)
+				[]directive.Raw{parse(t, "strictgen:index btree", 1)}, r, keyed(t), nil, sink)
 
 			assert.Empty(t, got, "the bare instance is refused")
 			assert.True(t, slices.Contains(coretest.Codes(sink), directive.MissingRole),
@@ -349,13 +350,13 @@ func TestValidate(t *testing.T) {
 
 			sink := diag.NewSink()
 			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "scopegen:expose role=client", 1)}, r, keyed(t), sink)
+				[]directive.Raw{parse(t, "scopegen:expose role=client", 1)}, r, keyed(t), nil, sink)
 			assert.Length(t, got, 1, "the client instance passes without the server param")
 			assert.False(t, sink.Failed(), "nothing required it there")
 
 			sink = diag.NewSink()
 			got = directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "scopegen:expose role=server", 1)}, r, keyed(t), sink)
+				[]directive.Raw{parse(t, "scopegen:expose role=server", 1)}, r, keyed(t), nil, sink)
 			assert.Empty(t, got, "the server instance without it is refused")
 			assert.True(t, slices.Contains(coretest.Codes(sink), directive.MissingParam),
 				"under the omitted-param code")
@@ -396,7 +397,7 @@ func TestValidate(t *testing.T) {
 			got := directive.Validate(validationSubject, []directive.Raw{
 				parse(t, "weaver:weave", 1),
 				parse(t, "indexer:index btree", 2),
-			}, r, keyed(t), sink)
+			}, r, keyed(t), nil, sink)
 			assert.Length(t, got, 2, "the requirement is met")
 			assert.False(t, sink.Failed(), "and nothing reports")
 		})
@@ -410,7 +411,7 @@ func TestValidate(t *testing.T) {
 
 			sink := diag.NewSink()
 			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "weaver:weave", 1)}, r, keyed(t), sink)
+				[]directive.Raw{parse(t, "weaver:weave", 1)}, r, keyed(t), nil, sink)
 			assert.Empty(t, got, "the unmet requirement refuses the instance")
 			assert.True(t, slices.Contains(coretest.Codes(sink), directive.RequirementUnmet),
 				"under the requirement code")
@@ -427,7 +428,7 @@ func TestValidate(t *testing.T) {
 			got := directive.Validate(validationSubject, []directive.Raw{
 				parse(t, "indexer:index btree", 1),
 				parse(t, "weaver:weave", 2),
-			}, r, keyed(t), sink)
+			}, r, keyed(t), nil, sink)
 			assert.Empty(t, got, "the pair is refused whole")
 			assert.True(t, slices.Contains(coretest.Codes(sink), directive.Conflict),
 				"under the conflict code")
@@ -471,7 +472,7 @@ func TestValidate(t *testing.T) {
 
 		sink := diag.NewSink()
 		got := directive.Validate(validationSubject,
-			[]directive.Raw{parse(t, "listgen:collect members=[a]", 1)}, r, keyed(t), sink)
+			[]directive.Raw{parse(t, "listgen:collect members=[a]", 1)}, r, keyed(t), nil, sink)
 
 		assert.Empty(t, got, "the instance is refused")
 		assert.True(t, slices.Contains(coretest.Codes(sink), directive.TypeMismatch),
@@ -488,7 +489,7 @@ func TestValidate(t *testing.T) {
 
 		r := sealed(t)
 		sink := diag.NewSink()
-		got := directive.Validate(validationSubject, nil, r, keyed(t), sink)
+		got := directive.Validate(validationSubject, nil, r, keyed(t), nil, sink)
 		assert.Nil(t, got, "no instances, no answer")
 		assert.False(t, sink.Failed(), "and no report")
 	})
@@ -502,7 +503,7 @@ func TestValidate(t *testing.T) {
 
 		sink := diag.NewSink()
 		got := directive.Validate(validationSubject,
-			[]directive.Raw{parse(t, "weaver:weave", 1)}, r, keyed(t), sink)
+			[]directive.Raw{parse(t, "weaver:weave", 1)}, r, keyed(t), nil, sink)
 		assert.Length(t, got, 1, "a conflict needs both sides present")
 		assert.False(t, sink.Failed(), "so nothing reports")
 	})
@@ -514,7 +515,7 @@ func TestValidate(t *testing.T) {
 		assert.NoError(t, r.Register(wellFormed("mockgen", "stub")), "the schema registers")
 		sink := diag.NewSink()
 		got := directive.Validate(validationSubject,
-			[]directive.Raw{parse(t, "mockgen:stub", 1)}, r, keyed(t), sink)
+			[]directive.Raw{parse(t, "mockgen:stub", 1)}, r, keyed(t), nil, sink)
 
 		assert.Empty(t, got, "nothing validates against a moving registry")
 		assert.True(t, sink.Failed(), "and the defect reports rather than passing silently")
@@ -529,6 +530,148 @@ func TestValidate(t *testing.T) {
 			assert.False(t, d.Pos.IsZero(), "every report is positioned")
 			assert.Equal(t, d.Origin, diag.PhaseFreeze, "from the freeze phase")
 		}
+	})
+
+	t.Run("open schemas", func(t *testing.T) {
+		t.Parallel()
+
+		bind := directive.Schema{
+			Plugin: "witnessy", Name: "bind",
+			Open:  &directive.ParamSpec{Type: directive.TypeInt, Doc: "a bound"},
+			Roles: []string{"client", "server"},
+			Doc:   "binds keys the instance names",
+		}
+
+		t.Run("types every undeclared key by the open spec", func(t *testing.T) {
+			t.Parallel()
+
+			r := sealed(t, bind)
+			sink := diag.NewSink()
+			got := directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "witnessy:bind T=1 U=2 out=x", 1)}, r, keyed(t), nil, sink)
+			assert.Length(t, got, 1, "the instance passes")
+			assert.False(t, sink.Failed(), "without a finding")
+			v, held := got[0].Param("T")
+			assert.True(t, held && v.Kind == directive.TypeInt && v.Int == 1, "T types as the spec says")
+			v, held = got[0].Param("U")
+			assert.True(t, held && v.Int == 2, "and so does U")
+			v, held = got[0].Param(directive.ReservedOut)
+			assert.True(t, held && v.Kind == directive.TypeString, "a reserved key keeps its meaning")
+		})
+
+		t.Run("holds an open value to the spec's type", func(t *testing.T) {
+			t.Parallel()
+
+			r := sealed(t, bind)
+			sink := diag.NewSink()
+			got := directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "witnessy:bind T=one", 1)}, r, keyed(t), nil, sink)
+			assert.Empty(t, got, "the instance drops")
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.BadSpelling),
+				"under the value's own refusal")
+		})
+
+		t.Run("scopes open keys by the spec's roles", func(t *testing.T) {
+			t.Parallel()
+
+			scoped := bind
+			scoped.Open = &directive.ParamSpec{
+				Type: directive.TypeInt, Roles: []string{"server"}, Doc: "a server bound",
+			}
+			r := sealed(t, scoped)
+			sink := diag.NewSink()
+			got := directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "witnessy:bind role=client T=1", 1)}, r, keyed(t), nil, sink)
+			assert.Empty(t, got, "a client instance may not bind")
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.UnknownKey),
+				"the key is unknown under that role")
+			got = directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "witnessy:bind role=server T=1", 2)}, r, keyed(t), nil, diag.NewSink())
+			assert.Length(t, got, 1, "a server instance binds")
+		})
+
+		t.Run("a closed schema still refuses what it does not declare", func(t *testing.T) {
+			t.Parallel()
+
+			r := sealed(t, wellFormed("closed", "keep"))
+			sink := diag.NewSink()
+			got := directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "closed:keep T=1", 1)}, r, keyed(t), nil, sink)
+			assert.Empty(t, got, "closure is the default")
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.UnknownKey), "under the key's refusal")
+		})
+	})
+
+	t.Run("reference resolution", func(t *testing.T) {
+		t.Parallel()
+
+		field := func(name string) symbol.Identity {
+			return symbol.Identity{Lang: "golang", Package: "svc/store", Name: name, Kind: symbol.KindField}
+		}
+
+		t.Run("binds a source reference through the resolver", func(t *testing.T) {
+			t.Parallel()
+
+			var askedKind directive.ResolutionKind
+			var askedSubject symbol.Identity
+			resolve := func(subject symbol.Identity, name string, kind directive.ResolutionKind) (symbol.Identity, error) {
+				askedSubject, askedKind = subject, kind
+				return field(name), nil
+			}
+			r := sealed(t, fullSchema())
+			sink := diag.NewSink()
+			got := directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "indexer:index btree fields=[id, name]", 1)},
+				r, keyed(t), resolve, sink)
+			assert.Length(t, got, 1, "the instance passes")
+			assert.Equal(t, askedSubject, validationSubject, "the resolver is asked from the subject")
+			assert.Equal(t, askedKind, directive.ResolveValueField, "at the param's declared kind")
+			fields, _ := got[0].Param("fields")
+			assert.Length(t, fields.List, 2, "each element binds")
+			assert.Equal(t, fields.List[0].Target, field("id"), "to what the resolver returned")
+			assert.Equal(t, fields.List[0].Ref, "id", "the spelling stays beside it")
+		})
+
+		t.Run("refuses a reference the resolver binds to nothing", func(t *testing.T) {
+			t.Parallel()
+
+			resolve := func(_ symbol.Identity, name string, _ directive.ResolutionKind) (symbol.Identity, error) {
+				return symbol.Identity{}, errors.New("no field named " + name)
+			}
+			r := sealed(t, fullSchema())
+			sink := diag.NewSink()
+			got := directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "indexer:index btree fields=[ghost]", 1)},
+				r, keyed(t), resolve, sink)
+			assert.Empty(t, got, "the instance drops")
+			f := onlyDiag(t, sink)
+			assert.Equal(t, f.Code, directive.UnresolvedReference, "under the reference's own code")
+			assert.Contains(t, f.Msg, "a field on the subject's type", "naming the kind it was read at")
+			assert.Contains(t, f.Msg, "no field named ghost", "and the resolver's reason")
+		})
+
+		t.Run("carries a source reference unbound without a resolver", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validate(t, "indexer:index btree fields=[id]")
+			assert.False(t, sink.Failed(), "nothing refuses")
+			fields, _ := got[0].Param("fields")
+			assert.True(t, fields.List[0].Target.IsZero(), "the spelling alone is carried")
+		})
+
+		t.Run("never asks the resolver for a metadata key", func(t *testing.T) {
+			t.Parallel()
+
+			resolve := func(symbol.Identity, string, directive.ResolutionKind) (symbol.Identity, error) {
+				return symbol.Identity{}, errors.New("asked")
+			}
+			r := sealed(t, fullSchema())
+			sink := diag.NewSink()
+			got := directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "meta drop=shape.role", 1)}, r, keyed(t), resolve, sink)
+			assert.Length(t, got, 1, "the metadata registry resolves it")
+			assert.False(t, sink.Failed(), "and the resolver was never asked")
+		})
 	})
 }
 
@@ -547,8 +690,20 @@ func BenchmarkValidate(b *testing.B) {
 
 	for b.Loop() {
 		sink := diag.NewSink()
-		if got := directive.Validate(validationSubject, raws, r, keys, sink); len(got) != 3 {
+		if got := directive.Validate(validationSubject, raws, r, keys, nil, sink); len(got) != 3 {
 			b.Fatalf("Validate returned %d instances, want 3", len(got))
 		}
 	}
+}
+
+// onlyDiag returns the one finding a sink holds.
+func onlyDiag(tb assert.TB, sink *diag.Sink) diag.Diag {
+	tb.Helper()
+
+	held := slices.Collect(sink.All())
+	assert.Length(tb, held, 1, "exactly one finding arrived")
+	if len(held) != 1 {
+		return diag.Diag{}
+	}
+	return held[0]
 }

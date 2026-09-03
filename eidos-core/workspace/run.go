@@ -14,7 +14,9 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -46,7 +48,7 @@ func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 	facts := meta.NewFacts(w.keys)
 	report := &Report{Sink: sink, Facts: facts, Emits: map[string]*plugin.Emit{}}
 
-	table := w.validated(g, sink)
+	table := w.validated(g, facts, sink)
 	applyStamps(g, facts, sink)
 	if err := w.applyDrops(table, facts); err != nil {
 		return report, errors.Join(err, failure(sink))
@@ -94,7 +96,7 @@ func failure(sink *diag.Sink) error {
 // table the routing indexes carry, so a rejected instance never
 // gates a rule.
 func (w *Workspace) validated(
-	g *store.Graph, sink *diag.Sink,
+	g *store.Graph, facts *meta.Facts, sink *diag.Sink,
 ) map[symbol.Identity][]directive.Directive {
 	type attached struct {
 		subject symbol.Identity
@@ -114,7 +116,9 @@ func (w *Workspace) validated(
 					"directives on %s name a subject the graph does not hold", s.subject)
 				return
 			}
-			results[i] = directive.Validate(s.subject, s.raws, w.directives, w.keys, sink)
+			results[i] = directive.Validate(
+				s.subject, s.raws, w.directives, w.keys, w.resolver(g, facts), sink,
+			)
 		})
 	}
 	wg.Wait()
@@ -125,6 +129,56 @@ func (w *Workspace) validated(
 		}
 	}
 	return table
+}
+
+// resolver binds a subject's reference params through the rules
+// registered for the subject's language, each call over a view of
+// its own whose reads the run discards, because validation runs
+// whole on every run and one subject validates per goroutine. A
+// language none registered for resolves nothing, naming itself.
+func (w *Workspace) resolver(g *store.Graph, facts *meta.Facts) directive.Resolver {
+	return func(subject symbol.Identity, name string, kind directive.ResolutionKind) (symbol.Identity, error) {
+		src, held := w.rules.For(subject.Lang)
+		if !held {
+			return symbol.Identity{}, fmt.Errorf("workspace: no rules are registered for %s", subject.Lang)
+		}
+		reader, err := g.Reader(store.NewReadSet(), nil)
+		if err != nil {
+			return symbol.Identity{}, err
+		}
+		view := rules.View{Decls: reader, Facts: facts, Kernel: w.kernel}
+		scope := rules.Scope{Subject: subject, File: fileOf(reader, subject)}
+		sym, err := src.Resolve(scope, name, kind, view)
+		if err != nil {
+			return symbol.Identity{}, err
+		}
+		decl, is := sym.(node.Declaration)
+		if !is {
+			return symbol.Identity{}, fmt.Errorf("workspace: %q resolves to a symbol without an identity", name)
+		}
+		return decl.Identity(), nil
+	}
+}
+
+// fileOf returns the file a declaration sits in, matched by the
+// declaration's position against its package's files, and nil for
+// one the reader does not hold.
+func fileOf(reader *store.Reader, subject symbol.Identity) *node.File {
+	decl, held := reader.Lookup(subject)
+	if !held {
+		return nil
+	}
+	pkg, held := reader.PackageOf(subject)
+	if !held {
+		return nil
+	}
+	at := decl.Position().File
+	for _, f := range pkg.Files {
+		if f != nil && f.Pos.File == at {
+			return f
+		}
+	}
+	return nil
 }
 
 // applyStamps replays the load's classification stamps into the
@@ -228,6 +282,8 @@ func (w *Workspace) annotateAll(
 			Reader: reader,
 			Facts:  facts,
 			Sink:   sink,
+			Rules:  w.rules,
+			Kernel: w.kernel,
 			Plugin: s.name,
 			Bucket: s.bucket,
 		}
@@ -256,7 +312,7 @@ func (w *Workspace) generateAll(
 	for i := range w.plans {
 		wg.Go(func() {
 			stores[i] = plugin.NewEmit()
-			files[i], failures[i] = runPlan(ctx, g, facts, table, sink, w.plans[i], stores[i])
+			files[i], failures[i] = w.runPlan(ctx, g, facts, table, sink, w.plans[i], stores[i])
 		})
 	}
 	wg.Wait()
@@ -273,7 +329,7 @@ func (w *Workspace) generateAll(
 // runPlan runs one plan's roles in bucket order, which is what an
 // emit-triggered rule's visibility is defined against: the store
 // holds earlier buckets' units when a later role runs.
-func runPlan(
+func (w *Workspace) runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
 	pl compiledPlan, into *plugin.Emit,
@@ -296,6 +352,8 @@ func runPlan(
 			Facts:  facts,
 			Emit:   into,
 			Sink:   sink,
+			Rules:  w.rules,
+			Kernel: w.kernel,
 			Plugin: s.name,
 			Bucket: s.bucket,
 		}

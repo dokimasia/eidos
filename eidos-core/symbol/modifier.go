@@ -98,6 +98,72 @@ const (
 	MutabilityImmutable
 )
 
+// TypeForm names the structure of a type reference and of a
+// projected shape, from one closed set.
+//
+// The structural forms are a frontend's to set from syntax, beside
+// the reference's verbatim spelling, with the children in a fixed
+// order per form. The leaf forms belong to the projection's fold
+// alone: a frontend never sets one, and the fold never returns a
+// structural form unfolded. The zero value is [FormNamed], a name
+// resolved or not, which is what a frontend that decomposes
+// nothing leaves on every reference.
+type TypeForm uint8
+
+const (
+	// FormNamed is a name, resolved or not: the default.
+	FormNamed TypeForm = iota
+	// FormOptional has one child: Go *T, Kotlin T?, TypeScript
+	// T | undefined.
+	FormOptional
+	// FormList has one child: a slice, an array of open length, a
+	// repeated field.
+	FormList
+	// FormArray has one child and a fixed length the reference
+	// records.
+	FormArray
+	// FormMap has two children, the key then the value.
+	FormMap
+	// FormFunc has the parameters then the returns as children,
+	// the returns from the index the reference records.
+	FormFunc
+	// FormTuple has its members as children, in order.
+	FormTuple
+	// FormUnion has its members as children, in order, untagged.
+	FormUnion
+	// FormStream has one child: a channel, an async iterator.
+	FormStream
+	// FormBorrow has one child: a Rust reference, a C++ reference.
+	FormBorrow
+	// FormWildcard has one child, the bound, and the reference
+	// records the variance.
+	FormWildcard
+	// FormInline has no children: an inline struct, interface or
+	// object body.
+	FormInline
+
+	// FormScalar is a number; the shape carries its class and
+	// width.
+	FormScalar
+	// FormBool is a truth value.
+	FormBool
+	// FormText is a string.
+	FormText
+	// FormBytes is a byte sequence.
+	FormBytes
+	// FormReference names a declaration the graph holds.
+	FormReference
+	// FormSum names a Sum declaration.
+	FormSum
+	// FormOpaque is representable and not projectable; the shape
+	// carries the spelling.
+	FormOpaque
+)
+
+// Structural reports whether a form is one a frontend sets from
+// syntax, as opposed to a leaf the fold returns.
+func (f TypeForm) Structural() bool { return f <= FormInline }
+
 // Variadic says how a parameter accepts a variable number of
 // arguments.
 //

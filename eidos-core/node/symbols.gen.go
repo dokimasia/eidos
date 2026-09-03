@@ -46,7 +46,6 @@ var newByKind = [...]func() symbol.Symbol{
 	symbol.KindAlias:       func() symbol.Symbol { return new(Alias) },
 	symbol.KindTypeRef:     func() symbol.Symbol { return new(TypeRef) },
 	symbol.KindTypeParam:   func() symbol.Symbol { return new(TypeParam) },
-	symbol.KindConstraint:  func() symbol.Symbol { return new(Constraint) },
 	symbol.KindEmbed:       func() symbol.Symbol { return new(Embed) },
 }
 

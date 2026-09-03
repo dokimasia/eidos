@@ -48,6 +48,7 @@ type Struct struct {
 	Origin      symbol.Identity    `eidos:"emit"`
 	Pos         position.Pos       `eidos:"node"`
 	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
 	Level       symbol.Level       `eidos:"both,fact=Level"`    // a nested type's binding
@@ -94,6 +95,7 @@ type Interface struct {
 	Origin      symbol.Identity    `eidos:"emit"`
 	Pos         position.Pos       `eidos:"node"`
 	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
 	Sealed      bool               `eidos:"both,fact=Sealed"` // the direct subtypes are enumerated
@@ -128,6 +130,7 @@ type Alias struct {
 	Origin      symbol.Identity    `eidos:"emit"`
 	Pos         position.Pos       `eidos:"node"`
 	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
 	Defined     bool               `eidos:"both,fact=Defined"` // a distinct type, not a transparent alias

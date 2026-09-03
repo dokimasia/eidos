@@ -32,7 +32,6 @@ const (
 	KindAlias
 	KindTypeRef
 	KindTypeParam
-	KindConstraint
 	KindEmbed
 )
 
@@ -60,7 +59,6 @@ var kindNames = [...]string{
 	KindAlias:       "Alias",
 	KindTypeRef:     "TypeRef",
 	KindTypeParam:   "TypeParam",
-	KindConstraint:  "Constraint",
 	KindEmbed:       "Embed",
 }
 
@@ -87,7 +85,6 @@ var kindByName = map[string]Kind{
 	"Alias":       KindAlias,
 	"TypeRef":     KindTypeRef,
 	"TypeParam":   KindTypeParam,
-	"Constraint":  KindConstraint,
 	"Embed":       KindEmbed,
 }
 

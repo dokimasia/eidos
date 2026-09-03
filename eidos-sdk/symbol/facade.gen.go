@@ -36,6 +36,7 @@ type Annotations = core.Annotations
 // encounter order across the schema.
 const (
 	FactInvalid          = core.FactInvalid
+	FactComment          = core.FactComment
 	FactVisibility       = core.FactVisibility
 	FactAsync            = core.FactAsync
 	FactTypeParams       = core.FactTypeParams
@@ -59,7 +60,6 @@ const (
 	FactConstEnum        = core.FactConstEnum
 	FactFields           = core.FactFields
 	FactMethods          = core.FactMethods
-	FactComment          = core.FactComment
 	FactValue            = core.FactValue
 	FactMutability       = core.FactMutability
 	FactTag              = core.FactTag
@@ -158,7 +158,6 @@ const (
 	KindAlias       = core.KindAlias
 	KindTypeRef     = core.KindTypeRef
 	KindTypeParam   = core.KindTypeParam
-	KindConstraint  = core.KindConstraint
 	KindEmbed       = core.KindEmbed
 )
 
@@ -279,6 +278,67 @@ const (
 	MutabilityMutable = core.MutabilityMutable
 	// MutabilityImmutable is fixed after initialization.
 	MutabilityImmutable = core.MutabilityImmutable
+)
+
+// TypeForm names the structure of a type reference and of a
+// projected shape, from one closed set.
+//
+// The structural forms are a frontend's to set from syntax, beside
+// the reference's verbatim spelling, with the children in a fixed
+// order per form. The leaf forms belong to the projection's fold
+// alone: a frontend never sets one, and the fold never returns a
+// structural form unfolded. The zero value is [FormNamed], a name
+// resolved or not, which is what a frontend that decomposes
+// nothing leaves on every reference.
+type TypeForm = core.TypeForm
+
+const (
+	// FormNamed is a name, resolved or not: the default.
+	FormNamed = core.FormNamed
+	// FormOptional has one child: Go *T, Kotlin T?, TypeScript
+	// T | undefined.
+	FormOptional = core.FormOptional
+	// FormList has one child: a slice, an array of open length, a
+	// repeated field.
+	FormList = core.FormList
+	// FormArray has one child and a fixed length the reference
+	// records.
+	FormArray = core.FormArray
+	// FormMap has two children, the key then the value.
+	FormMap = core.FormMap
+	// FormFunc has the parameters then the returns as children,
+	// the returns from the index the reference records.
+	FormFunc = core.FormFunc
+	// FormTuple has its members as children, in order.
+	FormTuple = core.FormTuple
+	// FormUnion has its members as children, in order, untagged.
+	FormUnion = core.FormUnion
+	// FormStream has one child: a channel, an async iterator.
+	FormStream = core.FormStream
+	// FormBorrow has one child: a Rust reference, a C++ reference.
+	FormBorrow = core.FormBorrow
+	// FormWildcard has one child, the bound, and the reference
+	// records the variance.
+	FormWildcard = core.FormWildcard
+	// FormInline has no children: an inline struct, interface or
+	// object body.
+	FormInline = core.FormInline
+	// FormScalar is a number; the shape carries its class and
+	// width.
+	FormScalar = core.FormScalar
+	// FormBool is a truth value.
+	FormBool = core.FormBool
+	// FormText is a string.
+	FormText = core.FormText
+	// FormBytes is a byte sequence.
+	FormBytes = core.FormBytes
+	// FormReference names a declaration the graph holds.
+	FormReference = core.FormReference
+	// FormSum names a Sum declaration.
+	FormSum = core.FormSum
+	// FormOpaque is representable and not projectable; the shape
+	// carries the spelling.
+	FormOpaque = core.FormOpaque
 )
 
 // Variadic says how a parameter accepts a variable number of

@@ -37,6 +37,15 @@ func TestFacts(t *testing.T) {
 		assert.Length(t, none, 0, "a zero declaration states nothing")
 		{
 			subject := &Function{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindFunction, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Function{}
 			subject.Visibility = 1
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -93,12 +102,12 @@ func TestFacts(t *testing.T) {
 			// stated in Function.Params
 			subject := &Function{}
 			child := &Param{}
-			child.Label = "x"
+			child.Comment = "x"
 			subject.Params = append(subject.Params, child)
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the child's fact arrives")
 			assert.Equal(t, kinds[0], symbol.KindParam, "under the child's kind")
-			assert.Equal(t, facts[0], symbol.FactLabel, "as itself")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
 			assert.True(t, hosts[0] == symbol.Symbol(subject),
 				"a member's host is its enclosing declaration")
 		}
@@ -109,6 +118,15 @@ func TestFacts(t *testing.T) {
 
 		_, _, none := stated(&Method{})
 		assert.Length(t, none, 0, "a zero declaration states nothing")
+		{
+			subject := &Method{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindMethod, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
 		{
 			subject := &Method{}
 			subject.Visibility = 1
@@ -248,12 +266,12 @@ func TestFacts(t *testing.T) {
 			// stated in Method.Receiver
 			subject := &Method{}
 			child := &Param{}
-			child.Label = "x"
+			child.Comment = "x"
 			subject.Receiver = child
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the child's fact arrives")
 			assert.Equal(t, kinds[0], symbol.KindParam, "under the child's kind")
-			assert.Equal(t, facts[0], symbol.FactLabel, "as itself")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
 			assert.True(t, hosts[0] == symbol.Symbol(subject),
 				"a member's host is its enclosing declaration")
 		}
@@ -261,12 +279,12 @@ func TestFacts(t *testing.T) {
 			// stated in Method.Params
 			subject := &Method{}
 			child := &Param{}
-			child.Label = "x"
+			child.Comment = "x"
 			subject.Params = append(subject.Params, child)
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the child's fact arrives")
 			assert.Equal(t, kinds[0], symbol.KindParam, "under the child's kind")
-			assert.Equal(t, facts[0], symbol.FactLabel, "as itself")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
 			assert.True(t, hosts[0] == symbol.Symbol(subject),
 				"a member's host is its enclosing declaration")
 		}
@@ -277,6 +295,15 @@ func TestFacts(t *testing.T) {
 
 		_, _, none := stated(&Param{})
 		assert.Length(t, none, 0, "a zero declaration states nothing")
+		{
+			subject := &Param{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindParam, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
 		{
 			subject := &Param{}
 			subject.Label = "x"
@@ -331,6 +358,15 @@ func TestFacts(t *testing.T) {
 		assert.Length(t, none, 0, "a zero declaration states nothing")
 		{
 			subject := &Return{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindReturn, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Return{}
 			subject.Name = "x"
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -340,11 +376,36 @@ func TestFacts(t *testing.T) {
 		}
 	})
 
+	t.Run("File", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, none := stated(&File{})
+		assert.Length(t, none, 0, "a zero declaration states nothing")
+		{
+			subject := &File{}
+			subject.Annotations = symbol.Annotations{{}}
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindFile, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactAnnotations, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+	})
+
 	t.Run("Enum", func(t *testing.T) {
 		t.Parallel()
 
 		_, _, none := stated(&Enum{})
 		assert.Length(t, none, 0, "a zero declaration states nothing")
+		{
+			subject := &Enum{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindEnum, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
 		{
 			subject := &Enum{}
 			subject.Visibility = 1
@@ -446,6 +507,15 @@ func TestFacts(t *testing.T) {
 		assert.Length(t, none, 0, "a zero declaration states nothing")
 		{
 			subject := &Sum{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindSum, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Sum{}
 			subject.Visibility = 1
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -484,12 +554,12 @@ func TestFacts(t *testing.T) {
 			// stated in Sum.Variants
 			subject := &Sum{}
 			child := &SumVariant{}
-			child.Annotations = symbol.Annotations{{}}
+			child.Comment = "x"
 			subject.VariantsSlot().Append(child)
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the child's fact arrives")
 			assert.Equal(t, kinds[0], symbol.KindSumVariant, "under the child's kind")
-			assert.Equal(t, facts[0], symbol.FactAnnotations, "as itself")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
 			assert.True(t, hosts[0] == symbol.Symbol(subject),
 				"a member's host is its enclosing declaration")
 		}
@@ -500,6 +570,15 @@ func TestFacts(t *testing.T) {
 
 		_, _, none := stated(&SumVariant{})
 		assert.Length(t, none, 0, "a zero declaration states nothing")
+		{
+			subject := &SumVariant{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindSumVariant, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
 		{
 			subject := &SumVariant{}
 			subject.Annotations = symbol.Annotations{{}}
@@ -705,6 +784,15 @@ func TestFacts(t *testing.T) {
 		assert.Length(t, none, 0, "a zero declaration states nothing")
 		{
 			subject := &Struct{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindStruct, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Struct{}
 			subject.Visibility = 1
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the stated fact alone arrives")
@@ -828,12 +916,12 @@ func TestFacts(t *testing.T) {
 			// stated in Struct.Methods
 			subject := &Struct{}
 			child := &Method{}
-			child.Visibility = 1
+			child.Comment = "x"
 			subject.MethodsSlot().Append(child)
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the child's fact arrives")
 			assert.Equal(t, kinds[0], symbol.KindMethod, "under the child's kind")
-			assert.Equal(t, facts[0], symbol.FactVisibility, "as itself")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
 			assert.True(t, hosts[0] == symbol.Symbol(subject),
 				"a member's host is its enclosing declaration")
 		}
@@ -844,6 +932,15 @@ func TestFacts(t *testing.T) {
 
 		_, _, none := stated(&Interface{})
 		assert.Length(t, none, 0, "a zero declaration states nothing")
+		{
+			subject := &Interface{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindInterface, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
 		{
 			subject := &Interface{}
 			subject.Visibility = 1
@@ -929,12 +1026,12 @@ func TestFacts(t *testing.T) {
 			// stated in Interface.Methods
 			subject := &Interface{}
 			child := &Method{}
-			child.Visibility = 1
+			child.Comment = "x"
 			subject.MethodsSlot().Append(child)
 			hosts, kinds, facts := stated(subject)
 			assert.Length(t, facts, 1, "the child's fact arrives")
 			assert.Equal(t, kinds[0], symbol.KindMethod, "under the child's kind")
-			assert.Equal(t, facts[0], symbol.FactVisibility, "as itself")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
 			assert.True(t, hosts[0] == symbol.Symbol(subject),
 				"a member's host is its enclosing declaration")
 		}
@@ -945,6 +1042,15 @@ func TestFacts(t *testing.T) {
 
 		_, _, none := stated(&Alias{})
 		assert.Length(t, none, 0, "a zero declaration states nothing")
+		{
+			subject := &Alias{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindAlias, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
 		{
 			subject := &Alias{}
 			subject.Visibility = 1
@@ -1017,6 +1123,40 @@ func TestFacts(t *testing.T) {
 		}
 	})
 
+	t.Run("Embed", func(t *testing.T) {
+		t.Parallel()
+
+		_, _, none := stated(&Embed{})
+		assert.Length(t, none, 0, "a zero declaration states nothing")
+		{
+			subject := &Embed{}
+			subject.Comment = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindEmbed, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactComment, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Embed{}
+			subject.Tag = "x"
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindEmbed, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactTag, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+		{
+			subject := &Embed{}
+			subject.Annotations = symbol.Annotations{{}}
+			hosts, kinds, facts := stated(subject)
+			assert.Length(t, facts, 1, "the stated fact alone arrives")
+			assert.Equal(t, kinds[0], symbol.KindEmbed, "under its kind")
+			assert.Equal(t, facts[0], symbol.FactAnnotations, "as itself")
+			assert.True(t, hosts[0] == nil, "the top level has no host")
+		}
+	})
+
 	t.Run("a nil symbol walks nothing", func(t *testing.T) {
 		t.Parallel()
 
@@ -1028,21 +1168,23 @@ func TestFacts(t *testing.T) {
 		t.Parallel()
 
 		table := KindFacts()
-		assert.Length(t, table[symbol.KindFunction], 6,
+		assert.Length(t, table[symbol.KindFunction], 7,
 			"the Function facts in schema order")
-		assert.Length(t, table[symbol.KindMethod], 15,
+		assert.Length(t, table[symbol.KindMethod], 16,
 			"the Method facts in schema order")
-		assert.Length(t, table[symbol.KindParam], 5,
+		assert.Length(t, table[symbol.KindParam], 6,
 			"the Param facts in schema order")
-		assert.Length(t, table[symbol.KindReturn], 1,
+		assert.Length(t, table[symbol.KindReturn], 2,
 			"the Return facts in schema order")
-		assert.Length(t, table[symbol.KindEnum], 5,
+		assert.Length(t, table[symbol.KindFile], 1,
+			"the File facts in schema order")
+		assert.Length(t, table[symbol.KindEnum], 6,
 			"the Enum facts in schema order")
 		assert.Length(t, table[symbol.KindEnumVariant], 3,
 			"the EnumVariant facts in schema order")
-		assert.Length(t, table[symbol.KindSum], 4,
+		assert.Length(t, table[symbol.KindSum], 5,
 			"the Sum facts in schema order")
-		assert.Length(t, table[symbol.KindSumVariant], 1,
+		assert.Length(t, table[symbol.KindSumVariant], 2,
 			"the SumVariant facts in schema order")
 		assert.Length(t, table[symbol.KindField], 9,
 			"the Field facts in schema order")
@@ -1050,13 +1192,15 @@ func TestFacts(t *testing.T) {
 			"the Variable facts in schema order")
 		assert.Length(t, table[symbol.KindConstant], 3,
 			"the Constant facts in schema order")
-		assert.Length(t, table[symbol.KindStruct], 12,
+		assert.Length(t, table[symbol.KindStruct], 13,
 			"the Struct facts in schema order")
-		assert.Length(t, table[symbol.KindInterface], 9,
+		assert.Length(t, table[symbol.KindInterface], 10,
 			"the Interface facts in schema order")
-		assert.Length(t, table[symbol.KindAlias], 4,
+		assert.Length(t, table[symbol.KindAlias], 5,
 			"the Alias facts in schema order")
 		assert.Length(t, table[symbol.KindTypeParam], 3,
 			"the TypeParam facts in schema order")
+		assert.Length(t, table[symbol.KindEmbed], 3,
+			"the Embed facts in schema order")
 	})
 }

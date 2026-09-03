@@ -13,4 +13,4 @@ package node
 // must not be served under another. The hash reads the lowered
 // schema rather than the rendered files, so a documentation edit
 // does not change it.
-const ModelFingerprint = "d23d5821cf629d369fedcd7665ab29b7e474e5c97bed5a6bf6f40f84fe3b2279"
+const ModelFingerprint = "c6d29e17647f39a8bfa0773c2138e0f0295515e4ed9f84d05639fb52dbe19611"

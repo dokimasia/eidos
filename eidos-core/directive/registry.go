@@ -225,7 +225,24 @@ func admissible(s Schema) error {
 			return err
 		}
 	}
+	if s.Open != nil {
+		return admissibleOpen(s, *s.Open, roles)
+	}
 	return nil
+}
+
+// admissibleOpen checks the spec an open schema types its
+// undeclared keys with: it names no key of its own, and is
+// otherwise a param.
+func admissibleOpen(s Schema, spec ParamSpec, roles map[string]struct{}) error {
+	if spec.Key != "" {
+		return fmt.Errorf(
+			"directive: %s opens under key %q: an open spec names no key, the instance's does",
+			s.Name, spec.Key,
+		)
+	}
+	spec.Key = openKey
+	return admissibleParam(s, spec, map[ParamKey]struct{}{}, roles)
 }
 
 // admissibleParam checks one param's declaration and claims its

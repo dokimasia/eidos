@@ -372,6 +372,46 @@ func TestRegistry(t *testing.T) {
 			assert.Empty(t, r.Candidates("nonexistent"), "with no candidates to name")
 		})
 	})
+	t.Run("Open", func(t *testing.T) {
+		t.Parallel()
+
+		open := func(spec directive.ParamSpec) directive.Schema {
+			s := wellFormed("witnessy", "bind")
+			s.Open = &spec
+			return s
+		}
+
+		t.Run("admits a spec naming no key", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.Register(open(directive.ParamSpec{
+				Type: directive.TypeReference, Resolution: directive.ResolveTypeInScope, Doc: "a witness",
+			})), "the instance's own spelling is the key")
+		})
+
+		t.Run("refuses a spec naming a key", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			err := r.Register(open(directive.ParamSpec{Key: "T", Type: directive.TypeInt, Doc: "a bound"}))
+			assert.HasError(t, err, "an open spec's key is the instance's")
+			assert.Contains(t, err.Error(), "names no key", "and the refusal says so")
+		})
+
+		t.Run("holds the spec to a param's own checks", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.HasError(t, r.Register(open(directive.ParamSpec{Type: directive.TypeInt})),
+				"no doc refuses like any param")
+			assert.HasError(t, r.Register(open(directive.ParamSpec{Doc: "untyped"})),
+				"no type refuses like any param")
+			assert.HasError(t, r.Register(open(directive.ParamSpec{
+				Type: directive.TypeInt, Roles: []string{"ghost"}, Doc: "scoped",
+			})), "an undeclared role refuses like any param")
+		})
+	})
 }
 
 // Resolution runs once per instance at validation and once per

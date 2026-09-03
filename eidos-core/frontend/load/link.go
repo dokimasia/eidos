@@ -35,7 +35,11 @@ func link(packages []*spliced, scopes []scopeEntry, ix *index, sink *diag.Sink) 
 			}
 			scope := plugin.ImportScope{File: f.ID, Bindings: entry.bindings}
 			node.Walk(f, func(s symbol.Symbol) bool {
-				if ref, is := s.(*node.TypeRef); is && ref.Spelling != "" && ref.Target.IsZero() {
+				// A structural reference carries no target of its
+				// own: the walk descends into its children, and the
+				// named ones resolve.
+				ref, is := s.(*node.TypeRef)
+				if is && ref.Form == symbol.FormNamed && ref.Spelling != "" && ref.Target.IsZero() {
 					resolve(ref, entry.frontend, scope, ix, sink)
 				}
 				return true

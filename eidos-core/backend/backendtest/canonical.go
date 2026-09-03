@@ -318,9 +318,10 @@ func scaffoldStmts() []emit.Stmt {
 // whose members render inside the host reaches every form.
 func rowStruct() *emit.Struct {
 	s := &emit.Struct{
-		Origin: originOf("row", symbol.KindStruct),
-		Doc:    []string{"Row holds one canonical record."},
-		Name:   "row",
+		Origin:  originOf("row", symbol.KindStruct),
+		Doc:     []string{"Row holds one canonical record."},
+		Comment: "one per fetch",
+		Name:    "row",
 	}
 	s.Fields.Append(&emit.Field{
 		Origin:  memberOf("row", "name", symbol.KindField),
@@ -347,9 +348,10 @@ func rowStruct() *emit.Struct {
 // diverge.
 func phaseEnum() *emit.Enum {
 	e := &emit.Enum{
-		Origin: originOf("phase", symbol.KindEnum),
-		Doc:    []string{"phase names a lifecycle step."},
-		Name:   "phase",
+		Origin:  originOf("phase", symbol.KindEnum),
+		Doc:     []string{"phase names a lifecycle step."},
+		Comment: "closed set",
+		Name:    "phase",
 	}
 	e.Variants.Append(
 		&emit.EnumVariant{
@@ -372,14 +374,16 @@ func phaseEnum() *emit.Enum {
 // each satellite's own tests, because their spellings diverge.
 func shapeSum() *emit.Sum {
 	s := &emit.Sum{
-		Origin: originOf("shape", symbol.KindSum),
-		Doc:    []string{"shape is one closed figure."},
-		Name:   "shape",
+		Origin:  originOf("shape", symbol.KindSum),
+		Doc:     []string{"shape is one closed figure."},
+		Comment: "tagged",
+		Name:    "shape",
 	}
 	circle := &emit.SumVariant{
-		Origin: memberOf("shape", "circle", symbol.KindSumVariant),
-		Doc:    []string{"circle bounds by a radius."},
-		Name:   "circle",
+		Origin:  memberOf("shape", "circle", symbol.KindSumVariant),
+		Doc:     []string{"circle bounds by a radius."},
+		Comment: "round",
+		Name:    "circle",
 	}
 	circle.Fields.Append(&emit.Field{
 		Origin: memberOf("circle", "radius", symbol.KindField),
@@ -462,15 +466,17 @@ func storeInterface() *emit.Interface {
 	i := &emit.Interface{
 		Origin:  originOf("store", symbol.KindInterface),
 		Doc:     []string{"Store reads rows back."},
+		Comment: "read side",
 		Name:    "store",
 		Extends: []*emit.TypeRef{typeRef("Closer")},
 	}
 	i.Methods.Append(&emit.Method{
 		Origin:  memberOf("store", "get", symbol.KindMethod),
 		Doc:     []string{"Get returns the row key names."},
+		Comment: "by key",
 		Name:    "get",
-		Params:  []*emit.Param{{Name: "key", Type: typeRef("string")}},
-		Returns: []*emit.Return{{Type: typeRef("string")}},
+		Params:  []*emit.Param{{Name: "key", Type: typeRef("string"), Comment: "the row key"}},
+		Returns: []*emit.Return{{Type: typeRef("string"), Comment: "the row"}},
 	})
 	return i
 }
@@ -515,9 +521,10 @@ func taskFunctions() []symbol.Symbol {
 // parameter its signature references.
 func sortFunction() symbol.Symbol {
 	return &emit.Function{
-		Origin: originOf("sort", symbol.KindFunction),
-		Doc:    []string{"Sort orders items in place."},
-		Name:   "sort",
+		Origin:  originOf("sort", symbol.KindFunction),
+		Doc:     []string{"Sort orders items in place."},
+		Comment: "stable",
+		Name:    "sort",
 		TypeParams: []*emit.TypeParam{
 			{Name: "T", Bounds: []*emit.TypeRef{typeRef(boundName)}},
 		},
@@ -532,6 +539,7 @@ func sortFunction() symbol.Symbol {
 func trackMethod() *emit.Method {
 	return &emit.Method{
 		Origin:   memberOf("row", "track", symbol.KindMethod),
+		Comment:  "detached",
 		Name:     "track",
 		Receives: typeRef("row"),
 		Body:     emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}},
@@ -564,10 +572,11 @@ func foldMethod() *emit.Method {
 // idAlias returns the alias.
 func idAlias() *emit.Alias {
 	return &emit.Alias{
-		Origin: originOf("id", symbol.KindAlias),
-		Doc:    []string{"ID names a row."},
-		Name:   "id",
-		Target: typeRef("string"),
+		Origin:  originOf("id", symbol.KindAlias),
+		Doc:     []string{"ID names a row."},
+		Comment: "opaque",
+		Name:    "id",
+		Target:  typeRef("string"),
 	}
 }
 

@@ -37,6 +37,9 @@ func statedFacts(
 ) {
 	switch x := s.(type) {
 	case *Function:
+		if x.Comment != "" {
+			f(host, symbol.KindFunction, symbol.FactComment)
+		}
 		if x.Visibility != 0 {
 			f(host, symbol.KindFunction, symbol.FactVisibility)
 		}
@@ -65,6 +68,9 @@ func statedFacts(
 			statedFacts(x, child, f)
 		}
 	case *Method:
+		if x.Comment != "" {
+			f(host, symbol.KindMethod, symbol.FactComment)
+		}
 		if x.Visibility != 0 {
 			f(host, symbol.KindMethod, symbol.FactVisibility)
 		}
@@ -123,6 +129,9 @@ func statedFacts(
 			statedFacts(x, child, f)
 		}
 	case *Param:
+		if x.Comment != "" {
+			f(host, symbol.KindParam, symbol.FactComment)
+		}
 		if x.Label != "" {
 			f(host, symbol.KindParam, symbol.FactLabel)
 		}
@@ -139,10 +148,20 @@ func statedFacts(
 			f(host, symbol.KindParam, symbol.FactAnnotations)
 		}
 	case *Return:
+		if x.Comment != "" {
+			f(host, symbol.KindReturn, symbol.FactComment)
+		}
 		if x.Name != "" {
 			f(host, symbol.KindReturn, symbol.FactNamedReturn)
 		}
+	case *File:
+		if len(x.Annotations) > 0 {
+			f(host, symbol.KindFile, symbol.FactAnnotations)
+		}
 	case *Enum:
+		if x.Comment != "" {
+			f(host, symbol.KindEnum, symbol.FactComment)
+		}
 		if x.Visibility != 0 {
 			f(host, symbol.KindEnum, symbol.FactVisibility)
 		}
@@ -178,6 +197,9 @@ func statedFacts(
 			f(host, symbol.KindEnumVariant, symbol.FactAnnotations)
 		}
 	case *Sum:
+		if x.Comment != "" {
+			f(host, symbol.KindSum, symbol.FactComment)
+		}
 		if x.Visibility != 0 {
 			f(host, symbol.KindSum, symbol.FactVisibility)
 		}
@@ -200,6 +222,9 @@ func statedFacts(
 			statedFacts(x, child, f)
 		}
 	case *SumVariant:
+		if x.Comment != "" {
+			f(host, symbol.KindSumVariant, symbol.FactComment)
+		}
 		if len(x.Annotations) > 0 {
 			f(host, symbol.KindSumVariant, symbol.FactAnnotations)
 		}
@@ -261,6 +286,9 @@ func statedFacts(
 			f(host, symbol.KindConstant, symbol.FactAnnotations)
 		}
 	case *Struct:
+		if x.Comment != "" {
+			f(host, symbol.KindStruct, symbol.FactComment)
+		}
 		if x.Visibility != 0 {
 			f(host, symbol.KindStruct, symbol.FactVisibility)
 		}
@@ -309,7 +337,13 @@ func statedFacts(
 		for _, child := range x.Types.Items() {
 			statedFacts(x, child, f)
 		}
+		for _, child := range x.Embeds {
+			statedFacts(x, child, f)
+		}
 	case *Interface:
+		if x.Comment != "" {
+			f(host, symbol.KindInterface, symbol.FactComment)
+		}
 		if x.Visibility != 0 {
 			f(host, symbol.KindInterface, symbol.FactVisibility)
 		}
@@ -349,7 +383,13 @@ func statedFacts(
 		for _, child := range x.Types.Items() {
 			statedFacts(x, child, f)
 		}
+		for _, child := range x.Embeds {
+			statedFacts(x, child, f)
+		}
 	case *Alias:
+		if x.Comment != "" {
+			f(host, symbol.KindAlias, symbol.FactComment)
+		}
 		if x.Visibility != 0 {
 			f(host, symbol.KindAlias, symbol.FactVisibility)
 		}
@@ -375,6 +415,16 @@ func statedFacts(
 		if x.Const {
 			f(host, symbol.KindTypeParam, symbol.FactConstParam)
 		}
+	case *Embed:
+		if x.Comment != "" {
+			f(host, symbol.KindEmbed, symbol.FactComment)
+		}
+		if x.Tag != "" {
+			f(host, symbol.KindEmbed, symbol.FactTag)
+		}
+		if len(x.Annotations) > 0 {
+			f(host, symbol.KindEmbed, symbol.FactAnnotations)
+		}
 	}
 }
 
@@ -385,6 +435,7 @@ func statedFacts(
 func KindFacts() map[symbol.Kind][]symbol.Fact {
 	return map[symbol.Kind][]symbol.Fact{
 		symbol.KindFunction: {
+			symbol.FactComment,
 			symbol.FactVisibility,
 			symbol.FactAsync,
 			symbol.FactTypeParams,
@@ -393,6 +444,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactAnnotations,
 		},
 		symbol.KindMethod: {
+			symbol.FactComment,
 			symbol.FactVisibility,
 			symbol.FactLevel,
 			symbol.FactAbstract,
@@ -410,6 +462,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactAnnotations,
 		},
 		symbol.KindParam: {
+			symbol.FactComment,
 			symbol.FactLabel,
 			symbol.FactParamDefault,
 			symbol.FactOptional,
@@ -417,9 +470,14 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactAnnotations,
 		},
 		symbol.KindReturn: {
+			symbol.FactComment,
 			symbol.FactNamedReturn,
 		},
+		symbol.KindFile: {
+			symbol.FactAnnotations,
+		},
 		symbol.KindEnum: {
+			symbol.FactComment,
 			symbol.FactVisibility,
 			symbol.FactConstEnum,
 			symbol.FactFields,
@@ -432,12 +490,14 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactAnnotations,
 		},
 		symbol.KindSum: {
+			symbol.FactComment,
 			symbol.FactVisibility,
 			symbol.FactTypeParams,
 			symbol.FactMethods,
 			symbol.FactAnnotations,
 		},
 		symbol.KindSumVariant: {
+			symbol.FactComment,
 			symbol.FactAnnotations,
 		},
 		symbol.KindField: {
@@ -464,6 +524,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactAnnotations,
 		},
 		symbol.KindStruct: {
+			symbol.FactComment,
 			symbol.FactVisibility,
 			symbol.FactLevel,
 			symbol.FactAbstract,
@@ -478,6 +539,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactAnnotations,
 		},
 		symbol.KindInterface: {
+			symbol.FactComment,
 			symbol.FactVisibility,
 			symbol.FactSealed,
 			symbol.FactTypeParams,
@@ -489,6 +551,7 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactAnnotations,
 		},
 		symbol.KindAlias: {
+			symbol.FactComment,
 			symbol.FactVisibility,
 			symbol.FactDefined,
 			symbol.FactTypeParams,
@@ -498,6 +561,11 @@ func KindFacts() map[symbol.Kind][]symbol.Fact {
 			symbol.FactVariance,
 			symbol.FactTypeParamDefault,
 			symbol.FactConstParam,
+		},
+		symbol.KindEmbed: {
+			symbol.FactComment,
+			symbol.FactTag,
+			symbol.FactAnnotations,
 		},
 	}
 }

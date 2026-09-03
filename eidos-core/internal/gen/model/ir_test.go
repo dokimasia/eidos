@@ -16,7 +16,7 @@ import (
 // wantKinds is the number of declaration kinds the schema holds.
 // It is asserted rather than derived, so adding a kind is a
 // deliberate edit here as well as in the schema.
-const wantKinds = 23
+const wantKinds = 22
 
 func TestIR(t *testing.T) {
 	t.Parallel()

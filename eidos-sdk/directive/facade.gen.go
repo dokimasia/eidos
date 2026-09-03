@@ -66,6 +66,10 @@ var (
 	// UnsealedRegistry refuses validation against a registry still
 	// registering: a defect in the composition, not in a carrier.
 	UnsealedRegistry = core.UnsealedRegistry
+	// UnresolvedReference refuses a source reference the resolver
+	// bound to nothing, naming the spelling and the kind it was
+	// read at.
+	UnresolvedReference = core.UnresolvedReference
 )
 
 // Name is a directive's spelling: bare while one plugin claims it,
@@ -151,7 +155,7 @@ type Value = core.Value
 // what the schema declares optional.
 type Directive = core.Directive
 
-// The four names that belong to the kernel. The registry refuses
+// The six names that belong to the kernel. The registry refuses
 // them from any plugin, and the composition registers their
 // schemas before any plugin's, so an impersonation is a plain
 // duplicate by the time it arrives.
@@ -168,6 +172,13 @@ const (
 	// KernelSkip excludes a declaration from bare and fact-gated
 	// rules, or from one plugin.
 	KernelSkip = core.KernelSkip
+	// KernelSample states a declaration's two authored values, as
+	// text in the source language.
+	KernelSample = core.KernelSample
+	// KernelWitness states a concrete type per type parameter of
+	// the declaration it sits on; its schema is open, one key per
+	// parameter.
+	KernelWitness = core.KernelWitness
 )
 
 // The kernel schemas' param keys, declared beside their schemas so
@@ -183,11 +194,16 @@ const (
 	DiagOff = core.DiagOff
 	// SkipPlugin narrows a skip to one plugin.
 	SkipPlugin = core.SkipPlugin
+	// SampleValue is the sample directive's first authored value.
+	SampleValue = core.SampleValue
+	// SampleAlternate is the sample directive's second authored
+	// value, one that differs from the first.
+	SampleAlternate = core.SampleAlternate
 )
 
-// Kernel returns the kernel-owned schemas: meta, out, diag and
-// skip. Their semantics stay with their owners; what registers
-// here is the spelling and its validation.
+// Kernel returns the kernel-owned schemas: meta, out, diag, skip,
+// sample and witness. Their semantics stay with their owners; what
+// registers here is the spelling and its validation.
 func Kernel() []Schema {
 	return core.Kernel()
 }
@@ -253,6 +269,9 @@ const (
 	// key's boundary spelling or a fact group's name. A typo is a
 	// validation Error naming the candidates.
 	ResolveMetadataKey = core.ResolveMetadataKey
+	// ResolveTypeInScope names a type the subject's file can see, a
+	// bare or qualified type spelling: what a witness names.
+	ResolveTypeInScope = core.ResolveTypeInScope
 )
 
 // ParamKey is a param's spelling. A schema's owner declares its
@@ -286,21 +305,32 @@ type ParamSpec = core.ParamSpec
 // A schema is a value with no behaviour. [Registry.Register]
 // checks it whole and refuses what the field comments below
 // forbid; [Validate] holds every instance to it and types the
-// values; nothing reads it after that. Closure is the only mode:
-// a key the schema does not declare is refused, so what a handler
-// may assume is exactly what the schema says.
+// values; nothing reads it after that. Closure is the default: a
+// key the schema does not declare is refused, so what a handler
+// may assume is exactly what the schema says, and only a schema
+// stating Open admits keys it does not name.
 type Schema = core.Schema
+
+// Resolver binds one source reference param: what a spelling
+// names from a subject, at a resolution kind. The workspace
+// derives it from the registered rules and a view minted over the
+// sealed graph for validation; the view's reads record into a set
+// the run discards, because validation runs whole on every run. An
+// error names what was looked for and not found.
+type Resolver = core.Resolver
 
 // Validate types and checks every instance on one subject,
 // reporting each violation as a positioned Error on sink and
 // returning the instances that passed, in position order, with
 // repeatable instances numbered.
 //
-// keys resolves ResolveMetadataKey params. Validation of one
-// subject is independent of every other, so a caller validates
-// subjects in parallel; the sink is safe for that. It refuses an
-// unsealed registry outright: that is a defect in the composition,
-// not in a carrier.
-func Validate(subject symbol.Identity, ds []Raw, r *Registry, keys *meta.Registry, sink *diag.Sink) []Directive {
-	return core.Validate(subject, ds, r, keys, sink)
+// keys resolves ResolveMetadataKey params; resolve binds every
+// other reference kind, and nil carries those spellings unbound.
+// Validation of one subject is independent of every other, so a
+// caller validates subjects in parallel; the sink is safe for
+// that, and the resolver is called from every goroutine. It
+// refuses an unsealed registry outright: that is a defect in the
+// composition, not in a carrier.
+func Validate(subject symbol.Identity, ds []Raw, r *Registry, keys *meta.Registry, resolve Resolver, sink *diag.Sink) []Directive {
+	return core.Validate(subject, ds, r, keys, resolve, sink)
 }

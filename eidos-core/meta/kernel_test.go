@@ -45,6 +45,35 @@ func TestKernel(t *testing.T) {
 			assert.HasError(t, err, "a file is not a subject the module keys admit")
 		})
 
+		t.Run("registers the authored-value keys on what carries a type", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			keys, err := meta.Kernel(r)
+			assert.NoError(t, err, "the kernel keys register")
+			assert.False(t, keys.IsZero(), "and the handles name their keys")
+			facts := meta.NewFacts(r)
+			field := symbol.Identity{
+				Lang: "fake", Package: "svc", Owner: "Row", Name: "name", Kind: symbol.KindField,
+			}
+			assert.NoError(t, meta.Stamp(facts, keys.Sample, `"us-east"`, meta.Claim{Subject: field}),
+				"a field carries an authored sample")
+			assert.NoError(t, meta.Stamp(facts, keys.Alternate, `"eu-west"`, meta.Claim{Subject: field}),
+				"and its alternate")
+			param := symbol.Identity{
+				Lang: "fake", Package: "svc", Owner: "Box", Name: "T", Kind: symbol.KindTypeParam,
+			}
+			want := symbol.Identity{Lang: "fake", Package: "time", Name: "Duration", Kind: symbol.KindAlias}
+			assert.NoError(t, meta.Stamp(facts, keys.Witness, want, meta.Claim{Subject: param}),
+				"a type parameter carries an authored witness, as an identity")
+			got, held := meta.Get(facts, param, keys.Witness)
+			assert.True(t, held, "which reads back")
+			assert.Equal(t, got, want, "whole")
+			pkg := symbol.Identity{Lang: "fake", Package: "svc", Kind: symbol.KindPackage}
+			assert.HasError(t, meta.Stamp(facts, keys.Sample, "x", meta.Claim{Subject: pkg}),
+				"a package carries no type, so it carries no sample")
+		})
+
 		t.Run("refuses a registry the kernel already claimed", func(t *testing.T) {
 			t.Parallel()
 

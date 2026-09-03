@@ -89,6 +89,28 @@ func OnMethod[E Effect](h func(*MethodMatch, E) error) Rule {
 	return core.OnMethod[E](h)
 }
 
+// ParamMatch is the OnParam subject.
+type ParamMatch = core.ParamMatch
+
+// OnParam fires the handler once per subject of its kind in
+// scope, or once per gating instance under a Directive wrapper.
+// The effect parameter picks the role: an Emitter generates, a
+// Stamper annotates.
+func OnParam[E Effect](h func(*ParamMatch, E) error) Rule {
+	return core.OnParam[E](h)
+}
+
+// ReturnMatch is the OnReturn subject.
+type ReturnMatch = core.ReturnMatch
+
+// OnReturn fires the handler once per subject of its kind in
+// scope, or once per gating instance under a Directive wrapper.
+// The effect parameter picks the role: an Emitter generates, a
+// Stamper annotates.
+func OnReturn[E Effect](h func(*ReturnMatch, E) error) Rule {
+	return core.OnReturn[E](h)
+}
+
 // EnumMatch is the OnEnum subject.
 type EnumMatch = core.EnumMatch
 
@@ -229,6 +251,16 @@ func Directive(s directive.Schema, rules ...Rule) Rule {
 	return core.Directive(s, rules...)
 }
 
+// Gated gates rules on a directive registered by someone else: one
+// of the kernel's, whose schema the composition registers before
+// any plugin's, so a plugin carrying it again would be refused as
+// a duplicate. The name is the schema's canonical spelling. A rule
+// under it runs once per validated instance like one under
+// [Directive].
+func Gated(name directive.Name, rules ...Rule) Rule {
+	return core.Gated(name, rules...)
+}
+
 // Where gates rules on stamped facts. Wrappers compose and
 // predicates conjoin; a disjunction is two rules. On an
 // emit-triggered rule the predicate evaluates against the origin.
@@ -263,11 +295,12 @@ func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 }
 
 // Stamper is the annotator effect: a write handle bound to its
-// match's subject. A stamper writes only to its subject's bag: a
-// fact "about" a sibling is a fact on the subject whose value names
-// the sibling, so every write's target is statically known from the
-// trigger, which is what keeps invalidation edges and audit output
-// analyzable.
+// match's subject. A stamper writes only to its subject's bag and
+// the bags of the declarations the subject owns, its parameters,
+// returns and type parameters: a fact "about" a sibling is a fact
+// on the subject whose value names the sibling, so every write's
+// target is statically known from the trigger, which is what keeps
+// invalidation edges and audit output analyzable.
 type Stamper = core.Stamper
 
 // Stamp records v under k with the envelope pre-bound: plugin
@@ -278,6 +311,16 @@ type Stamper = core.Stamper
 // [RefusedStamp], and the phase continues.
 func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
 	core.Stamp[T](st, k, v)
+}
+
+// StampOn records v under k on a declaration the subject owns: one
+// of its parameters, returns or type parameters, which no trigger
+// matches on their own where a directive on the subject states
+// something about them. The envelope is the subject's. An identity
+// the subject does not own is refused under [RefusedStamp] at the
+// subject's position, and the phase continues.
+func StampOn[T meta.FactValue](st *Stamper, owned symbol.Identity, k meta.Key[T], v T) {
+	core.StampOn[T](st, owned, k, v)
 }
 
 // GraphMatch is the OnGraph subject: the whole scope, through the

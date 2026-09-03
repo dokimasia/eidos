@@ -51,8 +51,12 @@ func effectFor[E Effect](rs *runState, m *match) E {
 // subscription records the engine reads.
 type Rule struct {
 	// leaf is set on a trigger rule; children on a wrapper.
-	leaf     *leaf
-	schema   *directive.Schema
+	leaf   *leaf
+	schema *directive.Schema
+	// gate names a directive the composition registers on its
+	// own, the kernel's, which the wrapper gates on without
+	// carrying a schema.
+	gate     directive.Name
 	preds    []Pred
 	children []Rule
 }
@@ -73,6 +77,16 @@ type leaf struct {
 // rule the gate is the origin's instance.
 func Directive(s directive.Schema, rules ...Rule) Rule {
 	return Rule{schema: &s, children: rules}
+}
+
+// Gated gates rules on a directive registered by someone else: one
+// of the kernel's, whose schema the composition registers before
+// any plugin's, so a plugin carrying it again would be refused as
+// a duplicate. The name is the schema's canonical spelling. A rule
+// under it runs once per validated instance like one under
+// [Directive].
+func Gated(name directive.Name, rules ...Rule) Rule {
+	return Rule{gate: name, children: rules}
 }
 
 // Where gates rules on stamped facts. Wrappers compose and

@@ -65,6 +65,18 @@ func (r *recorder) RecordFact(subject symbol.Identity, key meta.KeyName) {
 func TestFacts(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Registry", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the registry the store was created over", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			f := meta.NewFacts(r)
+			assert.True(t, f.Registry() == r, "a reader resolves keys by name against it")
+		})
+	})
+
 	t.Run("Stamp", func(t *testing.T) {
 		t.Parallel()
 

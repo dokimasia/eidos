@@ -25,6 +25,7 @@ type Enum struct {
 	Origin      symbol.Identity    `eidos:"emit"`
 	Pos         position.Pos       `eidos:"node"`
 	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
 	Const       bool               `eidos:"both,fact=ConstEnum"` // inlined at use: TypeScript's const enum
@@ -68,6 +69,7 @@ type Sum struct {
 	Origin      symbol.Identity    `eidos:"emit"`
 	Pos         position.Pos       `eidos:"node"`
 	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Visibility  symbol.Visibility  `eidos:"both,fact=Visibility"`
 	TypeParams  []*TypeParam       `eidos:"both,walk,fact=TypeParams"` // Rust data enums are generic
@@ -85,6 +87,7 @@ type SumVariant struct {
 	Origin      symbol.Identity    `eidos:"emit"`
 	Pos         position.Pos       `eidos:"node"`
 	Doc         []string           `eidos:"both"`
+	Comment     string             `eidos:"both,fact=Comment"` // trailing line comment; "" when none
 	Name        string             `eidos:"both,name"`
 	Fields      []*Field           `eidos:"both,walk,slot=fields"` // the payload; unnamed when positional
 	Annotations symbol.Annotations `eidos:"both,fact=Annotations"`

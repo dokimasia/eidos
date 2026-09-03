@@ -6,6 +6,7 @@ package plugin
 import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
 )
 
@@ -44,6 +45,12 @@ type AnnotatorContext struct {
 	Reader *store.Reader
 	Facts  *meta.Facts
 	Sink   *diag.Sink
+	// Rules holds the composition's registered language rules,
+	// and Kernel the kernel's registered keys: what the authoring
+	// surface binds the kernel's walks over. A nil registry binds
+	// every language to the absent rules.
+	Rules  *rules.Registry
+	Kernel meta.KernelKeys
 	// Plugin is the caller's identity: the diagnostic origin and
 	// the rank's plugin field.
 	Plugin ID
@@ -61,6 +68,10 @@ type GeneratorContext struct {
 	Facts  *meta.Facts
 	Emit   *Emit
 	Sink   *diag.Sink
+	// Rules and Kernel are what the annotator's context carries
+	// under the same names.
+	Rules  *rules.Registry
+	Kernel meta.KernelKeys
 	// Plugin is the caller's identity: the diagnostic origin and
 	// the emit attribution.
 	Plugin ID

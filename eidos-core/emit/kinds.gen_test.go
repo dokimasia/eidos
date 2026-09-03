@@ -38,7 +38,6 @@ var (
 	_ symbol.Symbol   = (*Alias)(nil)
 	_ symbol.Symbol   = (*TypeRef)(nil)
 	_ symbol.Symbol   = (*TypeParam)(nil)
-	_ symbol.Symbol   = (*Constraint)(nil)
 	_ symbol.Symbol   = (*Embed)(nil)
 	_ symbol.Membered = (*Enum)(nil)
 	_ symbol.Membered = (*Sum)(nil)
@@ -84,7 +83,6 @@ func TestKinds(t *testing.T) {
 			{subject: &Alias{}, want: symbol.KindAlias},
 			{subject: &TypeRef{}, want: symbol.KindTypeRef},
 			{subject: &TypeParam{}, want: symbol.KindTypeParam},
-			{subject: &Constraint{}, want: symbol.KindConstraint},
 			{subject: &Embed{}, want: symbol.KindEmbed},
 		}
 		for _, tt := range tests {
@@ -146,8 +144,6 @@ func TestKinds(t *testing.T) {
 				"a kind carrying no position returns the zero position")
 			assert.True(t, (&TypeParam{}).Position().IsZero(),
 				"a kind carrying no position returns the zero position")
-			assert.True(t, (&Constraint{}).Position().IsZero(),
-				"a kind carrying no position returns the zero position")
 			assert.True(t, (&Embed{}).Position().IsZero(),
 				"a kind carrying no position returns the zero position")
 		})
@@ -203,10 +199,8 @@ func TestKinds(t *testing.T) {
 				"a kind carrying no documentation returns nil")
 			assert.Nil(t, (&TypeParam{}).Docs(),
 				"a kind carrying no documentation returns nil")
-			assert.Nil(t, (&Constraint{}).Docs(),
-				"a kind carrying no documentation returns nil")
-			assert.Nil(t, (&Embed{}).Docs(),
-				"a kind carrying no documentation returns nil")
+			assert.Length(t, (&Embed{Doc: lines}).Docs(), len(lines),
+				"a documented declaration returns its documentation")
 		})
 	})
 

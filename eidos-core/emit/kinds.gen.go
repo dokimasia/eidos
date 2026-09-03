@@ -33,6 +33,7 @@ import (
 type Function struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
 	Doc         []string           `json:"doc,omitzero"`
+	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string             `json:"name,omitzero"`
 	Visibility  symbol.Visibility  `json:"visibility,omitzero"`
 	Async       bool               `json:"async,omitzero"`
@@ -92,6 +93,7 @@ func (x *Function) Docs() []string { return x.Doc }
 type Method struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
 	Doc         []string           `json:"doc,omitzero"`
+	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string             `json:"name,omitzero"`
 	Visibility  symbol.Visibility  `json:"visibility,omitzero"`
 	Level       symbol.Level       `json:"level,omitzero"`
@@ -143,10 +145,15 @@ func (x *Method) Docs() []string { return x.Doc }
 // parameters only, and frontends enforce that rather than the
 // model.
 //
+// A parameter is a subject: an authored value sits on it in a
+// language whose comments reach it, and its identity is the host's
+// chain, its name or its position, and the host's discriminator.
+//
 // This is the emit spelling of the kind.
 type Param struct {
-	Name        string             `json:"name,omitzero"`  // "" when unnamed
-	Label       string             `json:"label,omitzero"` // caller-facing name; Swift and Objective-C
+	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
+	Name        string             `json:"name,omitzero"`    // "" when unnamed
+	Label       string             `json:"label,omitzero"`   // caller-facing name; Swift and Objective-C
 	Type        *TypeRef           `json:"type,omitzero"`
 	Default     string             `json:"default,omitzero"`  // source spelling, unevaluated; "" when none
 	Optional    bool               `json:"optional,omitzero"` // present-or-absent: TypeScript's ?, Swift's defaulted trailing
@@ -179,10 +186,14 @@ func (x *Param) TypeRef() symbol.Symbol {
 // with one result fills one entry, and a language with none fills
 // none. Name carries a Go named result and is empty elsewhere.
 //
+// A return is a subject the way a parameter is, named by its
+// position where the language leaves it unnamed.
+//
 // This is the emit spelling of the kind.
 type Return struct {
-	Name string   `json:"name,omitzero"` // Go named results; "" elsewhere
-	Type *TypeRef `json:"type,omitzero"`
+	Comment string   `json:"comment,omitzero"` // trailing line comment; "" when none
+	Name    string   `json:"name,omitzero"`    // Go named results; "" elsewhere
+	Type    *TypeRef `json:"type,omitzero"`
 }
 
 // Kind returns [symbol.KindReturn].
@@ -242,8 +253,9 @@ func (x *Package) Docs() []string { return x.Doc }
 //
 // This is the emit spelling of the kind.
 type File struct {
-	Doc  []string `json:"doc,omitzero"`
-	Path string   `json:"path,omitzero"` // workspace-relative, slash-separated
+	Doc         []string           `json:"doc,omitzero"`
+	Path        string             `json:"path,omitzero"`        // workspace-relative, slash-separated
+	Annotations symbol.Annotations `json:"annotations,omitzero"` // file-level tool directives no declaration owns
 }
 
 // Kind returns [symbol.KindFile].
@@ -354,6 +366,7 @@ func (x *Binding) Docs() []string { return nil }
 type Enum struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
 	Doc         []string           `json:"doc,omitzero"`
+	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string             `json:"name,omitzero"`
 	Visibility  symbol.Visibility  `json:"visibility,omitzero"`
 	Const       bool               `json:"const,omitzero"` // inlined at use: TypeScript's const enum
@@ -437,6 +450,7 @@ func (x *EnumVariant) Docs() []string { return x.Doc }
 type Sum struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
 	Doc         []string           `json:"doc,omitzero"`
+	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string             `json:"name,omitzero"`
 	Visibility  symbol.Visibility  `json:"visibility,omitzero"`
 	TypeParams  []*TypeParam       `json:"typeParams,omitzero"` // Rust data enums are generic
@@ -483,6 +497,7 @@ func (x *Sum) EmbedList() []symbol.Symbol {
 type SumVariant struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
 	Doc         []string           `json:"doc,omitzero"`
+	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string             `json:"name,omitzero"`
 	Fields      Slot[*Field]       `json:"fields,omitzero"` // the payload; unnamed when positional
 	Annotations symbol.Annotations `json:"annotations,omitzero"`
@@ -693,6 +708,7 @@ func (x *Constant) TypeRef() symbol.Symbol {
 type Struct struct {
 	Origin      symbol.Identity     `json:"origin,omitzero"`
 	Doc         []string            `json:"doc,omitzero"`
+	Comment     string              `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string              `json:"name,omitzero"`
 	Visibility  symbol.Visibility   `json:"visibility,omitzero"`
 	Level       symbol.Level        `json:"level,omitzero"`    // a nested type's binding
@@ -774,6 +790,7 @@ func (x *Struct) EmbedList() []symbol.Symbol {
 type Interface struct {
 	Origin      symbol.Identity     `json:"origin,omitzero"`
 	Doc         []string            `json:"doc,omitzero"`
+	Comment     string              `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string              `json:"name,omitzero"`
 	Visibility  symbol.Visibility   `json:"visibility,omitzero"`
 	Sealed      bool                `json:"sealed,omitzero"` // the direct subtypes are enumerated
@@ -843,6 +860,7 @@ func (x *Interface) EmbedList() []symbol.Symbol {
 type Alias struct {
 	Origin      symbol.Identity    `json:"origin,omitzero"`
 	Doc         []string           `json:"doc,omitzero"`
+	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
 	Name        string             `json:"name,omitzero"`
 	Visibility  symbol.Visibility  `json:"visibility,omitzero"`
 	Defined     bool               `json:"defined,omitzero"` // a distinct type, not a transparent alias
@@ -879,11 +897,29 @@ func (x *Alias) Docs() []string { return x.Doc }
 // list in its own brackets, so the one instantiation spells
 // Map[K, V] in Go and Map<K, V> in Java.
 //
+// Form and Elems carry the structure the frontend parsed, in the
+// form's fixed child order: one child for Optional, List, Array,
+// Stream and Borrow; the key then the value for Map; the
+// parameters then the returns for Func, the returns from Split;
+// the members for Tuple and Union; the bound for Wildcard, with
+// Variance; none for Inline and Named. The spelling stays verbatim
+// beside them, so a backend spells what it read, and the
+// resolution step reaches the named types inside a composite
+// through the children. A structural reference carries no target
+// of its own; its Named children do. Length holds a fixed array
+// length written as a literal, and 0 where the length is an
+// expression the spelling keeps.
+//
 // This is the emit spelling of the kind.
 type TypeRef struct {
 	Spelling string          `json:"spelling,omitzero"` // source text, verbatim
-	Target   symbol.Identity `json:"target,omitzero"`   // zero until resolution, and for builtins and externals
-	Args     []*TypeRef      `json:"args,omitzero"`
+	Target   symbol.Identity `json:"target,omitzero"`   // zero until resolution, and for builtins, externals and structural forms
+	Form     symbol.TypeForm `json:"form,omitzero"`     // the structure; FormNamed by default
+	Elems    []*TypeRef      `json:"elems,omitzero"`    // the form's children, in the form's fixed order
+	Split    int             `json:"split,omitzero"`    // FormFunc: the index in Elems where the returns begin
+	Length   int             `json:"length,omitzero"`   // FormArray: the literal length; 0 when the spelling keeps an expression
+	Variance symbol.Variance `json:"variance,omitzero"` // FormWildcard: In for a lower bound, Out for an upper one
+	Args     []*TypeRef      `json:"args,omitzero"`     // the type arguments of an instantiation
 }
 
 // Kind returns [symbol.KindTypeRef].
@@ -944,29 +980,6 @@ func (x *TypeParam) TypeRef() symbol.Symbol {
 	return x.Type
 }
 
-// Constraint is a named, reusable bound: a Go constraint interface
-// declared for reuse, a Rust trait bound alias.
-//
-// Terms holds the projectable members of the type set. A term the
-// projection cannot hold, such as an approximation element or a
-// union of underlying types, stays in language metadata, and the
-// declaration still projects with the terms that survive.
-//
-// This is the emit spelling of the kind.
-type Constraint struct {
-	Terms []*TypeRef `json:"terms,omitzero"` // the projectable terms
-}
-
-// Kind returns [symbol.KindConstraint].
-func (x *Constraint) Kind() symbol.Kind { return symbol.KindConstraint }
-
-// Position returns where the declaration was written.
-func (x *Constraint) Position() position.Pos { return position.Pos{} }
-
-// Docs returns the declaration's documentation, nil when it carries
-// none.
-func (x *Constraint) Docs() []string { return nil }
-
 // Embed is one embedded type in a declaration that promotes
 // members: a Go embedded field or embedded interface, a PHP trait
 // use.
@@ -976,9 +989,18 @@ func (x *Constraint) Docs() []string { return nil }
 // effectively holds across embeds is a language rule rather than a
 // model one.
 //
+// An embed is a declaration in its own right: it carries the
+// documentation, trailing comment, tag and annotations an embedded
+// field takes like any field, and its identity, named by the
+// embedded type's bare name, is what a directive attaches to.
+//
 // This is the emit spelling of the kind.
 type Embed struct {
-	Ref *TypeRef `json:"ref,omitzero"`
+	Doc         []string           `json:"doc,omitzero"`
+	Comment     string             `json:"comment,omitzero"` // trailing line comment; "" when none
+	Ref         *TypeRef           `json:"ref,omitzero"`
+	Tag         string             `json:"tag,omitzero"` // tag text without delimiters, "" when none
+	Annotations symbol.Annotations `json:"annotations,omitzero"`
 }
 
 // Kind returns [symbol.KindEmbed].
@@ -989,4 +1011,4 @@ func (x *Embed) Position() position.Pos { return position.Pos{} }
 
 // Docs returns the declaration's documentation, nil when it carries
 // none.
-func (x *Embed) Docs() []string { return nil }
+func (x *Embed) Docs() []string { return x.Doc }

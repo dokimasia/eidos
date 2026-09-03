@@ -6,6 +6,7 @@ package load
 import (
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -155,7 +156,9 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 	switch x := s.(type) {
 	case *node.Function:
 		id := a.derive(x, owner, x.Name, symbol.KindFunction, discOf(x.Params))
-		x.ID, _ = a.claim(x, id, x.Pos, drop)
+		var dropping bool
+		x.ID, dropping = a.claim(x, id, x.Pos, drop)
+		a.signature(childOwner(owner, x.Name), id, dropping, x.TypeParams, x.Params, x.Returns)
 
 	case *node.Method:
 		at := owner
@@ -163,19 +166,23 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 			at = x.Receives.Spelling
 		}
 		id := a.derive(x, at, x.Name, symbol.KindMethod, discOf(x.Params))
-		x.ID, _ = a.claim(x, id, x.Pos, drop)
+		var dropping bool
+		x.ID, dropping = a.claim(x, id, x.Pos, drop)
 		x.Host = host
+		a.signature(childOwner(at, x.Name), id, dropping, x.TypeParams, x.Params, x.Returns)
 
 	case *node.Struct:
 		id := a.derive(x, owner, x.Name, symbol.KindStruct, "")
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
+		a.typeParams(childOwner(owner, x.Name), id, dropping, x.TypeParams)
 		a.members(childOwner(owner, x.Name), id, dropping, x.Fields, x.Methods, x.Types, x.Embeds)
 
 	case *node.Interface:
 		id := a.derive(x, owner, x.Name, symbol.KindInterface, "")
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
+		a.typeParams(childOwner(owner, x.Name), id, dropping, x.TypeParams)
 		a.members(childOwner(owner, x.Name), id, dropping, x.Fields, x.Methods, x.Types, x.Embeds)
 
 	case *node.Enum:
@@ -193,6 +200,7 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		id := a.derive(x, owner, x.Name, symbol.KindSum, "")
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
+		a.typeParams(childOwner(owner, x.Name), id, dropping, x.TypeParams)
 		a.members(childOwner(owner, x.Name), id, dropping, x.Variants, x.Methods, nil, nil)
 
 	case *node.SumVariant:
@@ -220,13 +228,17 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 
 	case *node.Alias:
 		id := a.derive(x, owner, x.Name, symbol.KindAlias, "")
-		x.ID, _ = a.claim(x, id, x.Pos, drop)
+		var dropping bool
+		x.ID, dropping = a.claim(x, id, x.Pos, drop)
+		a.typeParams(childOwner(owner, x.Name), id, dropping, x.TypeParams)
 
 	case *node.Embed:
-		x.Host = host // an embed is an edge; the reference names it
-
-	case *node.Constraint:
-		// The kind carries no name of its own, so nothing indexes it.
+		// An embed is named by the embedded type's bare name, which
+		// is the field name the language promotes it under and the
+		// subject a directive on it attaches to.
+		id := a.derive(x, owner, embedName(x.Ref), symbol.KindEmbed, "")
+		x.ID, _ = a.claim(x, id, x.Pos, drop)
+		x.Host = host
 
 	default:
 		panic(fmt.Sprintf(
@@ -235,6 +247,59 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		))
 	}
 }
+
+// signature assigns a callable's type parameters, parameters and
+// returns under the callable's owner chain. A parameter or a return
+// the language leaves unnamed is named by its position, so two
+// unnamed ones spell apart and no written name collides with the
+// spelling. Each carries the callable's discriminator, so the
+// parameters of two overloads spell apart too.
+func (a *assigner) signature(
+	owner string, host symbol.Identity, drop bool,
+	tps []*node.TypeParam, params []*node.Param, returns []*node.Return,
+) {
+	a.typeParams(owner, host, drop, tps)
+	for i, p := range params {
+		if p == nil {
+			continue
+		}
+		id := a.derive(p, owner, positional(p.Name, i), symbol.KindParam, host.Disc)
+		p.ID, _ = a.claim(p, id, p.Pos, drop)
+	}
+	for i, r := range returns {
+		if r == nil {
+			continue
+		}
+		id := a.derive(r, owner, positional(r.Name, i), symbol.KindReturn, host.Disc)
+		r.ID, _ = a.claim(r, id, r.Pos, drop)
+	}
+}
+
+// typeParams assigns a declaration's type parameters under its
+// owner chain, carrying the host's discriminator.
+func (a *assigner) typeParams(owner string, host symbol.Identity, drop bool, tps []*node.TypeParam) {
+	for _, tp := range tps {
+		if tp == nil {
+			continue
+		}
+		id := a.derive(tp, owner, tp.Name, symbol.KindTypeParam, host.Disc)
+		tp.ID, _ = a.claim(tp, id, tp.Pos, drop)
+	}
+}
+
+// positional returns a written name, or the position's spelling
+// for an unnamed parameter or return: a hash and the index, which
+// no language admits as an identifier.
+func positional(name string, i int) string {
+	if name != "" {
+		return name
+	}
+	return positionalPrefix + strconv.Itoa(i)
+}
+
+// positionalPrefix leads the spelling of an unnamed parameter's or
+// return's name.
+const positionalPrefix = "#"
 
 // members descends into up to four member lists, in order.
 func (a *assigner) members(
@@ -291,6 +356,29 @@ func (a *assigner) derive(
 		Kind:    kind,
 		Disc:    disc,
 	}
+}
+
+// embedName spells the name an embedded type contributes: the
+// named reference under the form's decoration, its spelling after
+// the last qualifier, which is the bare name for an instantiation
+// and the whole spelling for a name. A frontend that leaves a
+// decorated spelling on a Named reference strips the same way,
+// the leading pointer or borrow marks first.
+func embedName(ref *node.TypeRef) string {
+	for ref != nil && ref.Form != symbol.FormNamed && len(ref.Elems) == 1 {
+		ref = ref.Elems[0]
+	}
+	if ref == nil {
+		return ""
+	}
+	name := strings.TrimLeft(ref.Spelling, "*&")
+	if at := strings.LastIndexByte(name, '.'); at >= 0 {
+		name = name[at+1:]
+	}
+	if at := strings.IndexByte(name, '['); at >= 0 {
+		name = name[:at]
+	}
+	return name
 }
 
 // childOwner extends the dotted owner chain by one type name.

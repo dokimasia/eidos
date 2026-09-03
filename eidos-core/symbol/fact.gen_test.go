@@ -17,6 +17,7 @@ var factNamings = []struct {
 	want string
 }{
 	{fact: FactInvalid, want: "Invalid"},
+	{fact: FactComment, want: "Comment"},
 	{fact: FactVisibility, want: "Visibility"},
 	{fact: FactAsync, want: "Async"},
 	{fact: FactTypeParams, want: "TypeParams"},
@@ -40,7 +41,6 @@ var factNamings = []struct {
 	{fact: FactConstEnum, want: "ConstEnum"},
 	{fact: FactFields, want: "Fields"},
 	{fact: FactMethods, want: "Methods"},
-	{fact: FactComment, want: "Comment"},
 	{fact: FactValue, want: "Value"},
 	{fact: FactMutability, want: "Mutability"},
 	{fact: FactTag, want: "Tag"},

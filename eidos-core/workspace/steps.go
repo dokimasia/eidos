@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -143,12 +144,11 @@ func sameProvider(seated, p plugin.Plugin) bool {
 // keys and schemas register first, so an impersonation is a plain
 // duplicate by the time it arrives. The ignores register last, so
 // one covering a registered name is refused naming it.
-func (b *Builder) register(
-	roster []plugin.Plugin,
-) (*meta.Registry, *directive.Registry, map[plugin.Target]bool, []error) {
+func (b *Builder) register(roster []plugin.Plugin) (registries, []error) {
 	var faults []error
 	keys := meta.NewRegistry()
-	if _, err := meta.Kernel(keys); err != nil {
+	kernel, err := meta.Kernel(keys)
+	if err != nil {
 		faults = append(faults, err)
 	}
 	dirs := directive.NewRegistry()
@@ -206,7 +206,27 @@ func (b *Builder) register(
 			targets[t] = true
 		}
 	}
-	return keys, dirs, targets, faults
+	langs := rules.NewRegistry()
+	for _, r := range b.rules {
+		if r == nil {
+			faults = append(faults, errors.New("workspace: a registered rules value is nil"))
+			continue
+		}
+		if err := langs.Register(r); err != nil {
+			faults = append(faults, err)
+		}
+	}
+	return registries{keys: keys, kernel: kernel, directives: dirs, rules: langs, targets: targets}, faults
+}
+
+// registries is what the register step hands the workspace: every
+// sealed registry and the kernel's own keys.
+type registries struct {
+	keys       *meta.Registry
+	kernel     meta.KernelKeys
+	directives *directive.Registry
+	rules      *rules.Registry
+	targets    map[plugin.Target]bool
 }
 
 // capabilities collects the labels: one provider per label, and a

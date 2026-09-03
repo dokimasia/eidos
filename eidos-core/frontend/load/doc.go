@@ -13,7 +13,9 @@
 // never orders the graph. The resolution step assigns canonical
 // identities, keeps the first of two declarations spelling one,
 // and resolves type references through each language's own
-// bindings. The store then seals, and the report carries every
+// bindings: a named reference gains its target, and a structural
+// one carries none of its own, because its children resolve in
+// its place. The store then seals, and the report carries every
 // unit's key. Parse is the one parallel phase; everything before
 // and after it is sequential and ordered, which is where
 // determinism lives.

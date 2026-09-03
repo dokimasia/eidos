@@ -11,6 +11,7 @@ import "strconv"
 // encounter order across the schema.
 const (
 	FactInvalid Fact = iota
+	FactComment
 	FactVisibility
 	FactAsync
 	FactTypeParams
@@ -34,7 +35,6 @@ const (
 	FactConstEnum
 	FactFields
 	FactMethods
-	FactComment
 	FactValue
 	FactMutability
 	FactTag
@@ -54,6 +54,7 @@ const (
 // factNames backs [Fact.String].
 var factNames = [...]string{
 	FactInvalid:          "Invalid",
+	FactComment:          "Comment",
 	FactVisibility:       "Visibility",
 	FactAsync:            "Async",
 	FactTypeParams:       "TypeParams",
@@ -77,7 +78,6 @@ var factNames = [...]string{
 	FactConstEnum:        "ConstEnum",
 	FactFields:           "Fields",
 	FactMethods:          "Methods",
-	FactComment:          "Comment",
 	FactValue:            "Value",
 	FactMutability:       "Mutability",
 	FactTag:              "Tag",
@@ -106,6 +106,7 @@ func (f Fact) String() string {
 // what a coverage declaration is held total against.
 func Facts() []Fact {
 	return []Fact{
+		FactComment,
 		FactVisibility,
 		FactAsync,
 		FactTypeParams,
@@ -129,7 +130,6 @@ func Facts() []Fact {
 		FactConstEnum,
 		FactFields,
 		FactMethods,
-		FactComment,
 		FactValue,
 		FactMutability,
 		FactTag,

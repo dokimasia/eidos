@@ -19,9 +19,9 @@ func TestCallable(t *testing.T) {
 	t.Run("the callables a rule can match", func(t *testing.T) {
 		t.Parallel()
 
-		// A parameter and a result are parts of a signature, not
-		// declarations a rule fires on.
-		assertSubjects(t, "callable.go", "Function", "Method")
+		// A parameter and a return are subjects too: an authored
+		// value sits on one where a language's comments reach it.
+		assertSubjects(t, "callable.go", "Function", "Method", "Param", "Return")
 	})
 
 	t.Run("a method is owned and a function is not", func(t *testing.T) {

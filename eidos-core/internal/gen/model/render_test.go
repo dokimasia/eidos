@@ -162,7 +162,7 @@ func TestRender(t *testing.T) {
 			assert.Contains(t, matches,
 				"func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule",
 				"a marked kind gets its constructor and Match type")
-			assert.NotContains(t, matches, "OnParam",
+			assert.NotContains(t, matches, "OnTypeParam",
 				"an unmarked kind gets neither: the model bounds the set")
 			assert.Contains(t, generated(t, "match.gen_test.go"), "func TestMatches",
 				"the generated twin holds every kind to the lowering")

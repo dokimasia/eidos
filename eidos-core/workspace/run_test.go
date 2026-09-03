@@ -6,6 +6,8 @@ package workspace_test
 import (
 	"context"
 	"errors"
+	"fmt"
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -16,8 +18,11 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/rules"
+	"go.dokimi.dev/eidos/core/rules/rulestest"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -538,6 +543,113 @@ func TestRun(t *testing.T) {
 		assert.Length(t, units(report.Emits["plan"]), 1,
 			"and the frame ran to the end regardless")
 	})
+
+	t.Run("reference resolution", func(t *testing.T) {
+		t.Parallel()
+
+		refSchema := directive.Schema{
+			Plugin: "refy", Name: "ref",
+			Params: []directive.ParamSpec{{
+				Key: "to", Type: directive.TypeReference, Resolution: directive.ResolveCallableInScope,
+				Doc: "the struct the directive points at",
+			}},
+			Doc: "points at a sibling",
+		}
+		// pointing returns a composition whose one generator records
+		// what the ref directive's param bound to.
+		pointing := func(bound *symbol.Identity) *workspace.Builder {
+			gen, _ := eidos.NewPlugin("refy").
+				Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+				Handle(eidos.Directive(refSchema, eidos.OnStruct(
+					func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						v, _ := m.Directive().Param("to")
+						*bound = v.Target
+						return nil
+					},
+				))).Build().(plugin.Generator)
+			return workspace.New().
+				Targets("fixture").
+				Plans(workspace.Plan{
+					Name: "plan", Generators: []plugin.Generator{gen},
+					Backend: fakeBackend{name: "printer", target: "fixture"},
+				})
+		}
+
+		t.Run("binds a reference param through the registered rules", func(t *testing.T) {
+			t.Parallel()
+
+			var bound symbol.Identity
+			var seen rules.Scope
+			w, err := pointing(&bound).Rules(native{scope: &seen}).Build()
+			assert.NoError(t, err, "the composition composes")
+			s := coretest.Struct(coretest.StorePath, "Alpha")
+			s.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
+			pkg := coretest.Package(coretest.StorePath, s)
+			pkg.Files[0].Pos = position.Pos{File: "alpha.go", Line: 1, Col: 1}
+			g := store.New()
+			assert.NoError(t, g.AddPackage(pkg), "the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{rawRef("Alpha", 2)}),
+				"the directive attaches")
+			report, err := w.Run(t.Context(), g)
+			assert.NoError(t, err, "the run is clean")
+			assert.False(t, report.Sink.Failed(), "without a finding")
+			assert.Equal(t, bound, s.Identity(), "the handler receives the bound identity")
+			assert.Equal(t, seen.Subject, s.Identity(), "the rules were asked from the subject")
+			assert.NotNil(t, seen.File, "in the file the subject sits in")
+		})
+
+		t.Run("refuses a reference the rules bind to nothing", func(t *testing.T) {
+			t.Parallel()
+
+			var bound symbol.Identity
+			w, err := pointing(&bound).Rules(native{}).Build()
+			assert.NoError(t, err, "the composition composes")
+			g, s := alpha(t)
+			assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{rawRef("Ghost", 2)}),
+				"the directive attaches")
+			_, err = w.Run(t.Context(), g)
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
+			assert.True(t, bound.IsZero(), "and the rejected instance never gated the rule")
+		})
+
+		t.Run("refuses a reference for a language without rules", func(t *testing.T) {
+			t.Parallel()
+
+			var bound symbol.Identity
+			w, err := pointing(&bound).Build()
+			assert.NoError(t, err, "the composition composes without rules")
+			g, s := alpha(t)
+			assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{rawRef("Alpha", 2)}),
+				"the directive attaches")
+			report, err := w.Run(t.Context(), g)
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
+			assert.True(t, slices.Contains(coretest.Codes(report.Sink), directive.UnresolvedReference),
+				"under the reference's code")
+		})
+	})
+
+	t.Run("binds the registered rules to every match", func(t *testing.T) {
+		t.Parallel()
+
+		var form symbol.TypeForm
+		noter := stamper("noter", func(m *eidos.StructMatch, st *eidos.Stamper) error {
+			form = m.Rules().TypeOf(&node.TypeRef{Spelling: "int"}).Form
+			return nil
+		})
+		w, err := workspace.New().
+			Annotators(noter).
+			Rules(native{}).
+			Targets("fixture").
+			Plans(planTo("plan", "fixture", mirror("mirror"))).
+			Build()
+		assert.NoError(t, err, "the composition composes")
+		g, _ := alpha(t)
+		report, err := w.Run(t.Context(), g)
+		assert.NoError(t, err, "the run is clean")
+		assert.Equal(t, form, symbol.FormScalar, "the annotator's match folded through the registered rules")
+		assert.False(t, slices.Contains(coretest.Codes(report.Sink), rules.AbsentRules),
+			"and no language went unregistered")
+	})
 }
 
 // BenchmarkRun takes the frame over the canonical workspace: 1000
@@ -588,3 +700,62 @@ func BenchmarkRun(b *testing.B) {
 		}
 	})
 }
+
+// rawRef returns a positioned raw instance of the fixture ref
+// directive pointing at name.
+func rawRef(name string, line int) directive.Raw {
+	return directive.Raw{
+		Name: "refy:ref",
+		Args: []directive.RawArg{{Key: "to", Value: directive.RawValue{Text: name}}},
+		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+	}
+}
+
+// native is the scripted rules speaking the fixture's language,
+// resolving a name as a struct in the fixture package and recording
+// the scope it was asked from.
+type native struct {
+	scope *rules.Scope
+}
+
+func (native) Lang() symbol.Lang { return coretest.Lang }
+
+func (native) Members() rules.MemberPolicy { return rulestest.Scripted().Members() }
+
+func (native) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
+	return rulestest.Scripted().ParamRole(p, v)
+}
+
+func (native) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
+	return rulestest.Scripted().ReturnRoles(rs, v)
+}
+
+func (native) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
+	return rulestest.Scripted().Builtin(ref, v)
+}
+
+func (n native) Resolve(
+	scope rules.Scope, name string, _ directive.ResolutionKind, v rules.View,
+) (symbol.Symbol, error) {
+	if n.scope != nil {
+		*n.scope = scope
+	}
+	if sym, held := v.Lookup(coretest.ID(coretest.StorePath, name, symbol.KindStruct)); held {
+		return sym, nil
+	}
+	return nil, fmt.Errorf("nothing in %s is named %s", coretest.StorePath, name)
+}
+
+func (native) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+	return rulestest.Scripted().SamplesOf(ref, hint, v)
+}
+
+func (native) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
+	return rulestest.Scripted().ZeroValue(ref, v)
+}
+
+func (native) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
+	return rulestest.Scripted().LiteralFor(f, ref, text, v)
+}
+
+func (native) TypeName(word, base string) string { return rulestest.Scripted().TypeName(word, base) }

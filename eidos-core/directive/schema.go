@@ -3,6 +3,8 @@
 
 package directive
 
+import "strconv"
+
 // ParamType types a schema param.
 //
 // The zero value types nothing: every declared param states its
@@ -51,7 +53,34 @@ const (
 	// key's boundary spelling or a fact group's name. A typo is a
 	// validation Error naming the candidates.
 	ResolveMetadataKey
+	// ResolveTypeInScope names a type the subject's file can see, a
+	// bare or qualified type spelling: what a witness names.
+	ResolveTypeInScope
 )
+
+// String returns the kind's spelling, for a refusal.
+func (k ResolutionKind) String() string {
+	switch k {
+	case ResolveNone:
+		return "no resolution"
+	case ResolveCallableInScope:
+		return "a callable in scope"
+	case ResolvePackageVar:
+		return "a package variable"
+	case ResolveValueField:
+		return "a field on the subject's type"
+	case ResolveHostParam:
+		return "a parameter of the host callable"
+	case ResolveMemberOnHandle:
+		return "a member on a handle"
+	case ResolveMetadataKey:
+		return "a metadata key or group"
+	case ResolveTypeInScope:
+		return "a type in scope"
+	default:
+		return "resolution kind " + strconv.Itoa(int(k))
+	}
+}
 
 // ParamKey is a param's spelling. A schema's owner declares its
 // keys as constants, so a misspelled key is a compile error in a
@@ -111,9 +140,10 @@ type ParamSpec struct {
 // A schema is a value with no behaviour. [Registry.Register]
 // checks it whole and refuses what the field comments below
 // forbid; [Validate] holds every instance to it and types the
-// values; nothing reads it after that. Closure is the only mode:
-// a key the schema does not declare is refused, so what a handler
-// may assume is exactly what the schema says.
+// values; nothing reads it after that. Closure is the default: a
+// key the schema does not declare is refused, so what a handler
+// may assume is exactly what the schema says, and only a schema
+// stating Open admits keys it does not name.
 type Schema struct {
 	// Plugin names the owner. The kernel's own schemas leave it
 	// empty, and only they may.
@@ -125,9 +155,16 @@ type Schema struct {
 	// validation maps each bare argument to a name. An argument
 	// past the last declared positional is an Error.
 	Positional []ParamSpec
-	// Params declares the keyed params. Unknown keys are refused:
-	// closure is the only mode.
+	// Params declares the keyed params. Unknown keys are refused
+	// unless Open types them.
 	Params []ParamSpec
+	// Open types every key the Params do not declare; nil closes
+	// the schema, which is the default. The spec states no Key:
+	// the instance's own spelling is the key, and the value types
+	// as the spec says. The reserved keys keep their meaning under
+	// an open schema: role, out and tag are never read as open
+	// keys.
+	Open *ParamSpec
 	// Roles is the closed set of values the role key accepts. A
 	// schema listing none refuses the role key. Declaring roles is
 	// what reserves the key: no entry in Params spells "role".

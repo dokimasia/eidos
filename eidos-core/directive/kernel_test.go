@@ -29,12 +29,12 @@ func TestKernel(t *testing.T) {
 		return directive.Schema{}
 	}
 
-	t.Run("registers the four names cleanly", func(t *testing.T) {
+	t.Run("registers the six names cleanly", func(t *testing.T) {
 		t.Parallel()
 
 		r := directive.NewRegistry()
 		schemas := directive.Kernel()
-		assert.Length(t, schemas, 4, "meta, out, diag and skip")
+		assert.Length(t, schemas, 6, "meta, out, diag, skip, sample and witness")
 		for _, s := range schemas {
 			assert.NoError(t, r.Register(s), "every kernel schema passes its own registry")
 			assert.Equal(t, s.Plugin, "", "and belongs to the kernel")
@@ -87,5 +87,37 @@ func TestKernel(t *testing.T) {
 		plugin := s.Params[0]
 		assert.Equal(t, plugin.Key, directive.SkipPlugin, "under the plugin key")
 		assert.False(t, plugin.Required, "a bare skip excludes from everything")
+	})
+
+	t.Run("sample demands its first value and admits a second", func(t *testing.T) {
+		t.Parallel()
+
+		var sample directive.Schema
+		for _, s := range directive.Kernel() {
+			if s.Name == directive.KernelSample {
+				sample = s
+			}
+		}
+		assert.Length(t, sample.Params, 2, "value and alternate")
+		assert.Equal(t, sample.Params[0].Key, directive.SampleValue, "the first is the value")
+		assert.True(t, sample.Params[0].Required, "which every instance states")
+		assert.Equal(t, sample.Params[1].Key, directive.SampleAlternate, "the second is the alternate")
+		assert.False(t, sample.Params[1].Required, "which may be derived")
+		assert.False(t, sample.Repeatable, "one sample per subject")
+	})
+
+	t.Run("witness is open over types in scope", func(t *testing.T) {
+		t.Parallel()
+
+		var witness directive.Schema
+		for _, s := range directive.Kernel() {
+			if s.Name == directive.KernelWitness {
+				witness = s
+			}
+		}
+		assert.Empty(t, witness.Params, "no key is declared: the type parameters are")
+		assert.NotNil(t, witness.Open, "so the schema is open")
+		assert.Equal(t, witness.Open.Type, directive.TypeReference, "every key names a type")
+		assert.Equal(t, witness.Open.Resolution, directive.ResolveTypeInScope, "resolved in scope")
 	})
 }

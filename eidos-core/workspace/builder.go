@@ -10,6 +10,7 @@ import (
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -55,6 +56,7 @@ type Builder struct {
 	sink       output.Sink
 	brand      output.Brand
 	keys       []func(r *meta.Registry) error
+	rules      []rules.SourceRules
 	ignored    []directive.Name
 	config     Config
 }
@@ -104,6 +106,15 @@ func (b *Builder) Keys(register ...func(r *meta.Registry) error) *Builder {
 	return b
 }
 
+// Rules registers the language rules the kernel's walks run
+// under, one value per language. A run binds a subject's rules by
+// its language; a language none registered for binds the absent
+// rules and warns. Two values for one language are a Build fault.
+func (b *Builder) Rules(rs ...rules.SourceRules) *Builder {
+	b.rules = append(b.rules, rs...)
+	return b
+}
+
 // Config hands over the values options populate from.
 func (b *Builder) Config(c Config) *Builder {
 	b.config = c
@@ -128,12 +139,12 @@ func (b *Builder) Ignore(names ...directive.Name) *Builder {
 // following check for that one item, so the fault list is complete.
 func (b *Builder) Build() (*Workspace, error) {
 	roster, byName, faults := b.assemble()
-	keys, dirs, targets, rerr := b.register(roster)
+	reg, rerr := b.register(roster)
 	faults = append(faults, rerr...)
 	ann, gens, lerr := lower(roster)
 	faults = append(faults, lerr...)
 	faults = append(faults, configure(roster, byName, b.config)...)
-	plans, perr := compilePlans(b.plans, gens, targets)
+	plans, perr := compilePlans(b.plans, gens, reg.targets)
 	faults = append(faults, perr...)
 	if b.sink != nil {
 		faults = append(faults, stampable(plans, b.brand)...)
@@ -142,8 +153,10 @@ func (b *Builder) Build() (*Workspace, error) {
 		return nil, errors.Join(faults...)
 	}
 	return &Workspace{
-		keys:       keys,
-		directives: dirs,
+		keys:       reg.keys,
+		kernel:     reg.kernel,
+		directives: reg.directives,
+		rules:      reg.rules,
 		annotate:   ann,
 		plans:      plans,
 		sink:       b.sink,

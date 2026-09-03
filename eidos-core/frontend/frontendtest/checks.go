@@ -352,7 +352,7 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 			continue
 		}
 		vsink := diag.NewSink()
-		directive.Validate(id, raws, registry, keys, vsink)
+		directive.Validate(id, raws, registry, keys, nil, vsink)
 		for d := range vsink.All() {
 			if d.Severity == diag.SeverityError {
 				tb.Errorf("an attached instance fails validation: %s %s", d.Code, d.Msg)

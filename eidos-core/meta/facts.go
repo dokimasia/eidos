@@ -71,6 +71,10 @@ func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
 	return f.write(c.Subject, k.ID(), k.Name(), stored{claim: c, value: cloneValue(any(v))})
 }
 
+// Registry returns the registry the store was created over: what
+// a reader resolves a key by name against.
+func (f *Facts) Registry() *Registry { return f.registry }
+
 // DropKey claims the fact's absence.
 //
 // A drop is a claim like any other: it wins and loses by rank, so a

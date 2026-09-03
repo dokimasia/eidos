@@ -3,7 +3,10 @@
 
 package directive
 
-import "go.dokimi.dev/eidos/core/position"
+import (
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
+)
 
 // Value is one validated param value.
 //
@@ -23,9 +26,14 @@ type Value struct {
 	Int  int64
 	Bool bool
 	List []Value
-	// Ref is a reference's spelling, carried unresolved for the
-	// source kinds and validated for the metadata kind.
+	// Ref is a reference's spelling: validated for the metadata
+	// kind, and bound through the resolver for the source kinds.
 	Ref string
+	// Target is the identity a source reference resolved to. It is
+	// zero for a metadata reference, and for a source reference
+	// validated without a resolver, which carries the spelling
+	// alone.
+	Target symbol.Identity
 }
 
 // Directive is one validated instance: what a handler receives

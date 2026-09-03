@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"reflect"
 	"slices"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -27,6 +28,9 @@ type Registry struct {
 	// specs holds every registered spec; KeyID n lives at index
 	// n-1, so the zero id resolves to nothing.
 	specs []KeySpec
+	// types records each key's value type beside its spec, so a
+	// lookup by name hands out a handle of the registered type only.
+	types []reflect.Type
 	// groups holds each group's members in registration order.
 	groups map[GroupName][]KeyID
 }
@@ -119,12 +123,27 @@ func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	}
 
 	r.specs = append(r.specs, s)
+	r.types = append(r.types, reflect.TypeFor[T]())
 	id := KeyID(len(r.specs))
 	r.byName[s.Name] = id
 	if s.Group != "" {
 		r.groups[s.Group] = append(r.groups[s.Group], id)
 	}
 	return Key[T]{id: id, name: s.Name}, nil
+}
+
+// Lookup returns the typed handle a boundary spelling names, for a
+// reader that knows a key by its spelling alone: a language's
+// rules reading what its frontend stamped, without the handle
+// registration returned. It returns false for a spelling nothing
+// registered, and for one registered under another value type, so
+// a handle that exists reads what was written.
+func Lookup[T FactValue](r *Registry, name KeyName) (Key[T], bool) {
+	id, held := r.byName[name]
+	if !held || r.types[id-1] != reflect.TypeFor[T]() {
+		return Key[T]{}, false
+	}
+	return Key[T]{id: id, name: name}, true
 }
 
 // Resolve returns the id a boundary spelling names, and false for a

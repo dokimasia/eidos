@@ -174,7 +174,7 @@ func (b *Builder) Build() plugin.Plugin {
 	}
 
 	var rules []flatRule
-	flatten(name, b.rules, nil, nil, &rules)
+	flatten(name, b.rules, nil, nil, "", &rules)
 
 	schemas := collectSchemas(name, rules)
 	base := &built{
@@ -216,22 +216,22 @@ func (b *Builder) Build() plugin.Plugin {
 // wrappers carried and refusing the shapes that gate nothing.
 func flatten(
 	name string, rules []Rule, preds []Pred, schema *directive.Schema,
-	out *[]flatRule,
+	gate directive.Name, out *[]flatRule,
 ) {
 	for _, r := range rules {
 		held := preds
 		if len(r.preds) > 0 {
 			held = slices.Concat(preds, r.preds)
 		}
-		sch := schema
-		if r.schema != nil {
-			if sch != nil {
+		sch, on := schema, gate
+		if r.schema != nil || r.gate != "" {
+			if sch != nil || on != "" {
 				panic("eidos: " + name + " gates one rule on two directives")
 			}
-			sch = r.schema
+			sch, on = r.schema, r.gate
 		}
 		if r.leaf == nil {
-			flatten(name, r.children, held, sch, out)
+			flatten(name, r.children, held, sch, on, out)
 			continue
 		}
 		for _, p := range held {
@@ -243,7 +243,7 @@ func flatten(
 					" a gate reads its key when the rule is declared")
 			}
 		}
-		if r.leaf.graph && (sch != nil || len(held) > 0) {
+		if r.leaf.graph && (sch != nil || on != "" || len(held) > 0) {
 			panic("eidos: " + name +
 				" gates a graph rule, which has no subject to gate on")
 		}
@@ -253,6 +253,7 @@ func flatten(
 			phase:   r.leaf.phase,
 			graph:   r.leaf.graph,
 			schema:  sch,
+			gate:    on,
 			preds:   held,
 			invoke:  r.leaf.invoke,
 		})
@@ -267,8 +268,18 @@ type flatRule struct {
 	phase   plugin.Phase
 	graph   bool
 	schema  *directive.Schema
+	gate    directive.Name
 	preds   []Pred
 	invoke  func(inv invocation) error
+}
+
+// gateOf returns the directive a rule is gated on: its own
+// schema's canonical name, or the name a Gated wrapper carried.
+func (fr flatRule) gateOf() directive.Name {
+	if fr.schema != nil {
+		return fr.schema.Canonical()
+	}
+	return fr.gate
 }
 
 // collectSchemas gathers the schemas the wrappers carried, one per
@@ -301,10 +312,7 @@ func collectSchemas(name string, rules []flatRule) []directive.Schema {
 func subscriptionsFor(rules []flatRule) []plugin.Subscription {
 	var subs []plugin.Subscription
 	for _, fr := range rules {
-		var gate directive.Name
-		if fr.schema != nil {
-			gate = fr.schema.Canonical()
-		}
+		gate := fr.gateOf()
 		if len(fr.preds) == 0 {
 			subs = append(subs, plugin.Subscription{
 				Rule: fr.ordinal, Kind: fr.kind, Directive: gate, Phase: fr.phase,

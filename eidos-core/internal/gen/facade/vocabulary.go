@@ -74,6 +74,9 @@ var Surfaces = []Surface{
 	{Rel: "backend/backendtest", Name: "backendtest"},
 	{Rel: "frontend/frontendtest", Name: "frontendtest"},
 	{Rel: "plugin/plugintest", Name: "plugintest"},
+	{Rel: "rules", Name: "rules"},
+	{Rel: "rules/rulestest", Name: "rulestest"},
+	{Rel: "authored", Name: "authored"},
 }
 
 // OwnedDirs are the repository-relative directories the generator

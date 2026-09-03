@@ -29,13 +29,42 @@ const (
 	// ModuleRootKey carries the workspace-relative directory the
 	// package's module is declared in, "." for the tree's root.
 	ModuleRootKey KeyName = "gen.moduleRoot"
+
+	// SampleKey and AlternateKey carry an author's two stated
+	// values of a declaration's type, as text in the source
+	// language: what the sample directive stamps and the value
+	// projection reads before deriving anything.
+	SampleKey    KeyName = "gen.sample"
+	AlternateKey KeyName = "gen.alternate"
+
+	// WitnessKey carries an author's concrete type for one type
+	// parameter, as the identity the witness directive resolved,
+	// with an empty package for a builtin.
+	WitnessKey KeyName = "gen.witness"
 )
 
 // KernelKeys are the typed handles [Kernel] returns: what a reader
-// of the kernel's own facts holds.
+// of the kernel's own facts holds. The zero value names nothing,
+// so a reader handed one reads nothing rather than the wrong key.
 type KernelKeys struct {
 	Module     Key[string]
 	ModuleRoot Key[string]
+	Sample     Key[string]
+	Alternate  Key[string]
+	Witness    Key[symbol.Identity]
+}
+
+// IsZero reports whether the handles name nothing.
+func (k KernelKeys) IsZero() bool { return k.Module.IsZero() }
+
+// sampled lists the kinds an authored value may sit on: every
+// declaration that carries one type.
+func sampled() []symbol.Kind {
+	return []symbol.Kind{
+		symbol.KindField, symbol.KindParam, symbol.KindReturn,
+		symbol.KindVariable, symbol.KindConstant, symbol.KindAlias,
+		symbol.KindStruct, symbol.KindEnum, symbol.KindSum,
+	}
 }
 
 // Kernel claims the kernel namespace and registers the kernel-owned
@@ -62,5 +91,29 @@ func Kernel(r *Registry) (KernelKeys, error) {
 	if err != nil {
 		return k, err
 	}
-	return KernelKeys{Module: module, ModuleRoot: root}, nil
+	sample, err := Register[string](r, KeySpec{
+		Name: SampleKey, Kinds: sampled(),
+		Doc: "carries an author's stated value of a declaration's type, as source text",
+	})
+	if err != nil {
+		return k, err
+	}
+	alternate, err := Register[string](r, KeySpec{
+		Name: AlternateKey, Kinds: sampled(),
+		Doc: "carries an author's second, distinct value of a declaration's type, as source text",
+	})
+	if err != nil {
+		return k, err
+	}
+	witness, err := Register[symbol.Identity](r, KeySpec{
+		Name: WitnessKey, Kinds: []symbol.Kind{symbol.KindTypeParam},
+		Doc: "carries an author's concrete type for one type parameter, as the identity it resolved to",
+	})
+	if err != nil {
+		return k, err
+	}
+	return KernelKeys{
+		Module: module, ModuleRoot: root,
+		Sample: sample, Alternate: alternate, Witness: witness,
+	}, nil
 }

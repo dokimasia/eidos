@@ -9,8 +9,9 @@
 // machines and reparses; it is the join that read sets, exports,
 // manifests, drift and explain key on. [Symbol], [Membered] and
 // [Typed] are the walk interfaces neutral code is written against.
-// [Visibility], [Level], [Variance], [Accessor], [Mutability] and
-// [Variadic] are the normalized enums the kinds carry, and [Lang]
+// [Visibility], [Level], [Variance], [Accessor], [Mutability],
+// [Variadic] and [TypeForm] are the normalized enums the kinds
+// carry, and [Lang]
 // is the typed source-language name.
 //
 // # Dependency position

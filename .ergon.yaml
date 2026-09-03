@@ -98,6 +98,9 @@ checks:
       - path: eidos-core/directive/...
         score: 80
         coverage: 80
+      - path: eidos-core/rules/...
+        score: 80
+        coverage: 80
       # store sizes every index from its tallies before filling any,
       # so a mutant that changes a capacity hint changes no observable
       # behaviour and no test can kill it. Its whole surviving set is

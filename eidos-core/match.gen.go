@@ -72,6 +72,68 @@ func OnMethod[E Effect](h func(*MethodMatch, E) error) Rule {
 	}}
 }
 
+// ParamMatch is the OnParam subject.
+type ParamMatch struct {
+	match
+	Param *node.Param
+}
+
+// OnParam fires the handler once per subject of its kind in
+// scope, or once per gating instance under a Directive wrapper.
+// The effect parameter picks the role: an Emitter generates, a
+// Stamper annotates.
+func OnParam[E Effect](h func(*ParamMatch, E) error) Rule {
+	return Rule{leaf: &leaf{
+		kind:  symbol.KindParam,
+		phase: phaseOf[E](),
+		invoke: func(inv invocation) error {
+			decl, held := inv.value.(*node.Param)
+			if !held {
+				return nil
+			}
+			m, reused := inv.scratch().(*ParamMatch)
+			if !reused {
+				m = &ParamMatch{}
+				inv.keep(m)
+			}
+			m.match = newMatch(inv)
+			m.Param = decl
+			return h(m, effectFor[E](inv.rs, &m.match))
+		},
+	}}
+}
+
+// ReturnMatch is the OnReturn subject.
+type ReturnMatch struct {
+	match
+	Return *node.Return
+}
+
+// OnReturn fires the handler once per subject of its kind in
+// scope, or once per gating instance under a Directive wrapper.
+// The effect parameter picks the role: an Emitter generates, a
+// Stamper annotates.
+func OnReturn[E Effect](h func(*ReturnMatch, E) error) Rule {
+	return Rule{leaf: &leaf{
+		kind:  symbol.KindReturn,
+		phase: phaseOf[E](),
+		invoke: func(inv invocation) error {
+			decl, held := inv.value.(*node.Return)
+			if !held {
+				return nil
+			}
+			m, reused := inv.scratch().(*ReturnMatch)
+			if !reused {
+				m = &ReturnMatch{}
+				inv.keep(m)
+			}
+			m.match = newMatch(inv)
+			m.Return = decl
+			return h(m, effectFor[E](inv.rs, &m.match))
+		},
+	}}
+}
+
 // EnumMatch is the OnEnum subject.
 type EnumMatch struct {
 	match

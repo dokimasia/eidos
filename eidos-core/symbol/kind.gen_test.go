@@ -39,7 +39,6 @@ var kindNamings = []struct {
 	{kind: KindAlias, want: "Alias"},
 	{kind: KindTypeRef, want: "TypeRef"},
 	{kind: KindTypeParam, want: "TypeParam"},
-	{kind: KindConstraint, want: "Constraint"},
 	{kind: KindEmbed, want: "Embed"},
 }
 

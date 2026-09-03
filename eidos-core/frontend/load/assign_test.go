@@ -29,7 +29,6 @@ const (
 	heldName     = "Held"
 	detachedName = "Detached"
 	baseSpelling = "Base"
-	termSpelling = "comparable"
 )
 
 // overloadTree declares one type carrying two overloads of one
@@ -109,6 +108,12 @@ func TestAssign(t *testing.T) {
 				symbol.KindMethod: assigned(
 					coretest.StructName, coretest.MethodName, symbol.KindMethod,
 				),
+				symbol.KindParam: assigned(
+					coretest.FunctionName, coretest.ParamName, symbol.KindParam,
+				),
+				symbol.KindReturn: assigned(
+					coretest.FunctionName, coretest.ReturnName, symbol.KindReturn,
+				),
 			}
 			for _, kind := range coretest.MatchableKinds() {
 				id, stated := want[kind]
@@ -183,38 +188,30 @@ func TestAssign(t *testing.T) {
 				"it still carries the declaration that holds it")
 		})
 
-		t.Run("hosts an embed without naming it", func(t *testing.T) {
-			t.Parallel()
-
-			outer := outerOf(t, loadNested(t))
-			assert.Length(t, outer.Embeds, 1, "the embed survives the assignment")
-			assert.Equal(t, outer.Embeds[0].Host, assigned("", outerName, symbol.KindStruct),
-				"an embed is an edge, so its host is what it carries")
-			assert.True(t, outer.Embeds[0].ID.IsZero(),
-				"and the reference names it rather than an identity of its own")
-		})
-
-		t.Run("indexes nothing for a constraint", func(t *testing.T) {
+		t.Run("names an embed by the embedded type's bare name", func(t *testing.T) {
 			t.Parallel()
 
 			g := loadNested(t)
-			file, held := g.Lookup(symbol.Identity{
-				Lang: frontendtest.ScriptedLang, Package: coretest.StorePath, Name: oneFile,
-				Kind: symbol.KindFile,
-			})
-			assert.True(t, held, "the planted file is indexed")
+			outer := outerOf(t, g)
+			assert.Length(t, outer.Embeds, 1, "the embed survives the assignment")
+			assert.Equal(t, outer.Embeds[0].Host, assigned("", outerName, symbol.KindStruct),
+				"it carries the declaration that holds it")
+			want := assigned(outerName, baseSpelling, symbol.KindEmbed)
+			assert.Equal(t, outer.Embeds[0].ID, want,
+				"and is named by the type it embeds, under its host's owner chain")
+			_, held := g.Lookup(want)
+			assert.True(t, held, "so a directive on the embed has a subject the graph holds")
+		})
 
-			var constraints int
-			for _, decl := range file.(*node.File).Decls {
-				term, is := decl.(*node.Constraint)
-				if !is {
-					continue
-				}
-				constraints++
-				assert.True(t, term.ID.IsZero(),
-					"the kind carries no name of its own, so nothing indexes it")
-			}
-			assert.Equal(t, constraints, 1, "the constraint stays in the file it was declared in")
+		t.Run("strips the decoration and the qualifier off an embed's name", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, oneFileTree(), with(&decorated{frontendtest.NewScripted()}))
+			outer := outerOf(t, g)
+			assert.Equal(t, outer.Embeds[0].ID.Name, baseSpelling,
+				"a pointer to a qualified, instantiated type embeds under the bare name")
+			assert.Equal(t, outer.Embeds[1].ID.Name, baseSpelling+"2",
+				"and a structural reference names its one named child")
 		})
 
 		t.Run("panics on a symbol outside the node model", func(t *testing.T) {
@@ -340,7 +337,6 @@ func (*nested) Parse(_ context.Context, u *plugin.SourceUnit) error {
 		Decls: node.Symbols{
 			outer,
 			&node.Method{Name: detachedName, Receives: &node.TypeRef{Spelling: outerName}},
-			&node.Constraint{Terms: []*node.TypeRef{{Spelling: termSpelling}}},
 		},
 	})
 	return nil
@@ -386,6 +382,35 @@ func (*foreign) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	pkg.Files = append(pkg.Files, &node.File{
 		Path:  u.Files()[0].Path,
 		Decls: node.Symbols{&node.Param{Name: "loose"}},
+	})
+	return nil
+}
+
+// decorated plants a struct embedding a decorated spelling and a
+// structural reference, so the assignment's naming of an embed is
+// held at both shapes a frontend can build.
+type decorated struct {
+	*frontendtest.Scripted
+}
+
+// Parse builds the file with the two embeds.
+func (d *decorated) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+	if err := d.Scripted.Parse(ctx, u); err != nil {
+		return err
+	}
+	outer := &node.Struct{
+		Name: outerName,
+		Embeds: []*node.Embed{
+			{Ref: &node.TypeRef{Spelling: "*pkg." + baseSpelling + "[int]"}},
+			{Ref: &node.TypeRef{
+				Spelling: "*" + baseSpelling + "2", Form: symbol.FormOptional,
+				Elems: []*node.TypeRef{{Spelling: baseSpelling + "2"}},
+			}},
+		},
+	}
+	pkg := u.Graph().Package(coretest.StorePath)
+	pkg.Files = append(pkg.Files, &node.File{
+		Path: u.Files()[0].Path, Decls: node.Symbols{outer},
 	})
 	return nil
 }

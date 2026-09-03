@@ -200,13 +200,6 @@ func TestSymbols(t *testing.T) {
 			}
 
 			{
-				encoded, err := EncodeJSON(&Constraint{})
-				assert.NoError(t, err, "every kind encodes")
-				assert.Contains(t, string(encoded), `"kind":"Constraint"`,
-					"carrying its kind so a decoder can place it")
-			}
-
-			{
 				encoded, err := EncodeJSON(&Embed{})
 				assert.NoError(t, err, "every kind encodes")
 				assert.Contains(t, string(encoded), `"kind":"Embed"`,
@@ -285,7 +278,6 @@ func TestSymbols(t *testing.T) {
 				&Alias{},
 				&TypeRef{},
 				&TypeParam{},
-				&Constraint{},
 				&Embed{},
 			}
 			for _, subject := range subjects {
@@ -628,6 +620,7 @@ func TestSymbols(t *testing.T) {
 
 			{
 				subject := &TypeRef{}
+				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
 				encoded, err := EncodeJSON(subject)
 				assert.NoError(t, err, "a populated declaration encodes")
@@ -639,7 +632,7 @@ func TestSymbols(t *testing.T) {
 					walked++
 					return true
 				})
-				assert.Equal(t, walked, 2,
+				assert.Equal(t, walked, 3,
 					"with every child the original held")
 			}
 
@@ -659,23 +652,6 @@ func TestSymbols(t *testing.T) {
 					return true
 				})
 				assert.Equal(t, walked, 4,
-					"with every child the original held")
-			}
-
-			{
-				subject := &Constraint{}
-				subject.Terms = append(subject.Terms, &TypeRef{})
-				encoded, err := EncodeJSON(subject)
-				assert.NoError(t, err, "a populated declaration encodes")
-				decoded, err := DecodeJSON(encoded)
-				assert.NoError(t, err, "and decodes")
-
-				var walked int
-				Walk(decoded, func(symbol.Symbol) bool {
-					walked++
-					return true
-				})
-				assert.Equal(t, walked, 2,
 					"with every child the original held")
 			}
 
@@ -728,7 +704,6 @@ func TestSymbols(t *testing.T) {
 				{name: "a Alias body it cannot read", data: `{"kind":"Alias","id":"nope"}`},
 				{name: "a TypeRef body it cannot read", data: `{"kind":"TypeRef","id":"nope"}`},
 				{name: "a TypeParam body it cannot read", data: `{"kind":"TypeParam","id":"nope"}`},
-				{name: "a Constraint body it cannot read", data: `{"kind":"Constraint","id":"nope"}`},
 				{name: "a Embed body it cannot read", data: `{"kind":"Embed","id":"nope"}`},
 			}
 			for _, tt := range tests {
@@ -770,7 +745,6 @@ func TestSymbols(t *testing.T) {
 				&Alias{},
 				&TypeRef{},
 				&TypeParam{},
-				&Constraint{},
 				&Embed{},
 			}
 			encoded, err := json.Marshal(subjects)
@@ -852,7 +826,6 @@ func FuzzDecodeJSON(f *testing.F) {
 	f.Add([]byte(`{"kind":"Alias"}`))
 	f.Add([]byte(`{"kind":"TypeRef"}`))
 	f.Add([]byte(`{"kind":"TypeParam"}`))
-	f.Add([]byte(`{"kind":"Constraint"}`))
 	f.Add([]byte(`{"kind":"Embed"}`))
 	for _, seed := range []string{`null`, `{}`, `[]`, `{"kind":"Nonexistent"}`} {
 		f.Add([]byte(seed))

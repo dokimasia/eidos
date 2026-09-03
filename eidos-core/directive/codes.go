@@ -82,4 +82,10 @@ var (
 	UnsealedRegistry = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number: 19, Meaning: "directive validation ran before the registry sealed",
 	})
+	// UnresolvedReference refuses a source reference the resolver
+	// bound to nothing, naming the spelling and the kind it was
+	// read at.
+	UnresolvedReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+		Number: 40, Meaning: "a directive's reference param resolves to nothing",
+	})
 )

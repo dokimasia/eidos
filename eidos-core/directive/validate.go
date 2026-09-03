@@ -22,24 +22,34 @@ const (
 	spellFalse = "false"
 )
 
+// Resolver binds one source reference param: what a spelling
+// names from a subject, at a resolution kind. The workspace
+// derives it from the registered rules and a view minted over the
+// sealed graph for validation; the view's reads record into a set
+// the run discards, because validation runs whole on every run. An
+// error names what was looked for and not found.
+type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (symbol.Identity, error)
+
 // Validate types and checks every instance on one subject,
 // reporting each violation as a positioned Error on sink and
 // returning the instances that passed, in position order, with
 // repeatable instances numbered.
 //
-// keys resolves ResolveMetadataKey params. Validation of one
-// subject is independent of every other, so a caller validates
-// subjects in parallel; the sink is safe for that. It refuses an
-// unsealed registry outright: that is a defect in the composition,
-// not in a carrier.
+// keys resolves ResolveMetadataKey params; resolve binds every
+// other reference kind, and nil carries those spellings unbound.
+// Validation of one subject is independent of every other, so a
+// caller validates subjects in parallel; the sink is safe for
+// that, and the resolver is called from every goroutine. It
+// refuses an unsealed registry outright: that is a defect in the
+// composition, not in a carrier.
 func Validate(
 	subject symbol.Identity, ds []Raw,
-	r *Registry, keys *meta.Registry, sink *diag.Sink,
+	r *Registry, keys *meta.Registry, resolve Resolver, sink *diag.Sink,
 ) []Directive {
 	if len(ds) == 0 {
 		return nil
 	}
-	v := &validator{registry: r, keys: keys, sink: sink}
+	v := &validator{registry: r, keys: keys, resolve: resolve, sink: sink, subject: subject}
 	if !r.Sealed() {
 		v.report(UnsealedRegistry, ds[0].Pos,
 			"directives on %s validate before the registry sealed", subject)
@@ -133,7 +143,9 @@ type checked struct {
 type validator struct {
 	registry *Registry
 	keys     *meta.Registry
+	resolve  Resolver
 	sink     *diag.Sink
+	subject  symbol.Identity
 	at       position.Pos
 }
 
@@ -221,14 +233,18 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 		}
 		spec, declared := findParam(schema, key)
 		reserved := key == ReservedOut || key == ReservedTag
-		if !declared && !reserved {
+		switch {
+		case declared:
+		case reserved:
+			spec = ParamSpec{Key: key, Type: TypeString}
+		case schema.Open != nil:
+			spec = *schema.Open
+			spec.Key = key
+		default:
 			v.report(UnknownKey, raw.Pos,
 				"%s does not accept %s", d.Name, key)
 			ok = false
 			continue
-		}
-		if !declared {
-			spec = ParamSpec{Key: key, Type: TypeString}
 		}
 		value, typedOK := v.typed(d.Name, spec, arg)
 		if !typedOK {
@@ -247,6 +263,9 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	}
 	for key := range d.Params {
 		spec, declared := findParam(schema, key)
+		if !declared && schema.Open != nil && key != ReservedOut && key != ReservedTag {
+			spec, declared = *schema.Open, true
+		}
 		if !declared {
 			continue // a reserved key is admitted under every role
 		}
@@ -353,13 +372,26 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 			name, spec.Key, spellTrue, spellFalse, raw.Text)
 		return Value{}, false
 	case TypeReference:
-		if spec.Resolution == ResolveMetadataKey && !v.metadataResolves(raw.Text) {
-			v.report(UnknownMetadataKey, v.at,
-				"%s param %s names %q, which no metadata key or group returns; keys: %s",
-				name, spec.Key, raw.Text, v.metadataCandidates())
+		if spec.Resolution == ResolveMetadataKey {
+			if !v.metadataResolves(raw.Text) {
+				v.report(UnknownMetadataKey, v.at,
+					"%s param %s names %q, which no metadata key or group returns; keys: %s",
+					name, spec.Key, raw.Text, v.metadataCandidates())
+				return Value{}, false
+			}
+			return Value{Kind: TypeReference, Ref: raw.Text}, true
+		}
+		if v.resolve == nil {
+			return Value{Kind: TypeReference, Ref: raw.Text}, true
+		}
+		target, err := v.resolve(v.subject, raw.Text, spec.Resolution)
+		if err != nil {
+			v.report(UnresolvedReference, v.at,
+				"%s param %s names %q, which does not resolve as %s: %v",
+				name, spec.Key, raw.Text, spec.Resolution, err)
 			return Value{}, false
 		}
-		return Value{Kind: TypeReference, Ref: raw.Text}, true
+		return Value{Kind: TypeReference, Ref: raw.Text, Target: target}, true
 	}
 	v.report(TypeMismatch, v.at, "%s param %s has no type", name, spec.Key)
 	return Value{}, false
