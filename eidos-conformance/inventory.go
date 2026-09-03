@@ -72,6 +72,42 @@ func Inventory() []Feature {
 			},
 		},
 		{
+			ID:  "composite_refs",
+			Doc: "references inside composites reach the named types they mention",
+			Declares: []Decl{
+				{Sub: "dep", Name: "Target", Kind: symbol.KindStruct},
+				{
+					Name: "Holder", Kind: symbol.KindStruct,
+					Check: func(tb assert.TB, c *Ctx) {
+						holder, is := c.Decl.(*node.Struct)
+						assert.True(tb, is, "the holder loads as a struct")
+						assert.Length(tb, holder.Fields, 3, "with its three fields")
+						target := symbol.Identity{
+							Lang: c.Lang, Package: c.Pkg("dep"),
+							Name: "Target", Kind: symbol.KindStruct,
+						}
+						optional := holder.Fields[0].Type
+						assert.Equal(tb, optional.Form, symbol.FormOptional,
+							"a pointer states the optional form")
+						assert.True(tb, optional.Target.IsZero(),
+							"and a structural reference carries no target of its own")
+						assert.Length(tb, optional.Elems, 1, "its child does")
+						assert.Equal(tb, optional.Elems[0].Target, target,
+							"resolved to the sibling's declaration")
+						mapped := holder.Fields[1].Type
+						assert.Equal(tb, mapped.Form, symbol.FormMap, "a map states the map form")
+						assert.Length(tb, mapped.Elems, 2, "key then value")
+						assert.Equal(tb, mapped.Elems[1].Target, target,
+							"and the value type, which no decoration strip could reach, resolves")
+						fn := holder.Fields[2].Type
+						assert.Equal(tb, fn.Form, symbol.FormFunc, "a function type states the func form")
+						assert.Equal(tb, fn.Split, 1, "one parameter, then its results")
+						assert.Equal(tb, fn.Elems[0].Target, target, "the parameter resolves")
+					},
+				},
+			},
+		},
+		{
 			ID:  "builtin_ref",
 			Doc: "a reference to a builtin, which keeps its spelling alone",
 			Declares: []Decl{

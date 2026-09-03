@@ -4,20 +4,20 @@
 package conformance
 
 import (
-	"context"
 	"io/fs"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
 
-	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
-	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
+	"go.dokimi.dev/eidos/core/rules/rulestest"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -28,14 +28,69 @@ type Verdict uint8
 
 const (
 	// Loads means the language spells the feature and the corpus
-	// tree carries the spelling; the expectations must hold.
+	// tree carries the spelling; the expectations must hold. It is
+	// the verdict of a corpus that registers no rules, whose
+	// projections nothing can evaluate.
 	Loads Verdict = iota + 1
 
 	// Refuses means the language cannot spell the feature, stated:
 	// the corpus tree must carry nothing under it, because a
 	// spelling present under a refusal is a contradiction.
 	Refuses
+
+	// Projects means the feature loads and projects whole: every
+	// reference reachable from its declarations folds to a form
+	// other than Opaque or Inline, every callable projects, every
+	// type's member set is complete, and the corpus names no
+	// remainder.
+	Projects
+
+	// ProjectsPartly means at least one reference folds to Opaque
+	// or Inline or one member set carries a gap, and every
+	// remainder key the corpus names for the feature is present on
+	// the declaration carrying it.
+	ProjectsPartly
+
+	// Opaque means the reference the feature declares itself folds
+	// to Opaque or Inline, an alias of an inline body for instance,
+	// and every remainder key the corpus names is present.
+	Opaque
 )
+
+// String returns the verdict's spelling.
+func (v Verdict) String() string {
+	switch v {
+	case Loads:
+		return "loads"
+	case Refuses:
+		return "refuses"
+	case Projects:
+		return "projects"
+	case ProjectsPartly:
+		return "projects partly"
+	case Opaque:
+		return "opaque"
+	default:
+		return strconv.Itoa(int(v))
+	}
+}
+
+// projected reports whether a verdict is one of the three
+// projection levels, which a corpus states only with rules.
+func (v Verdict) projected() bool {
+	return v == Projects || v == ProjectsPartly || v == Opaque
+}
+
+// Remainder names one key a feature's residue stamps on one of its
+// declarations: what a language keeps in metadata where the
+// projection cannot hold it.
+type Remainder struct {
+	// Decl locates the declaration carrying the remainder, the
+	// way a feature's Declares does.
+	Decl Decl
+	// Key is the metadata key the remainder stamps under.
+	Key meta.KeyName
+}
 
 // Coverage maps every inventory feature onto a verdict. Totality
 // is checked at [Run]: a feature without a verdict fails, and a
@@ -64,6 +119,19 @@ type Corpus struct {
 	// Keys registers the classification keys the tree's stamps
 	// write.
 	Keys func(*meta.Registry) error
+
+	// Rules is the language's projection rules, nil for a corpus
+	// that returns none. With rules, every feature's verdict is a
+	// projection level or a refusal, the rules run through the
+	// rules suite over the tree, and each level is evaluated over
+	// the feature's declarations.
+	Rules rules.SourceRules
+
+	// Remainder names, per feature, the keys the language stamps
+	// where the projection cannot hold the feature whole. A level
+	// below Projects holds every named key present; Projects
+	// admits none.
+	Remainder map[string][]Remainder
 
 	// PackageOf derives the package path a feature's declarations
 	// load under, sub naming a feature's sibling package and empty
@@ -114,18 +182,34 @@ func Run(t *testing.T, c Corpus) {
 		})
 	})
 
-	g := corpusGraph(t, c)
+	if c.Rules != nil {
+		t.Run("meets the rules contract", func(t *testing.T) {
+			t.Parallel()
+			rulestest.RunRulesSuite(t, func(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
+				return c.Rules, corpusFixture(tb, c)
+			})
+		})
+	}
+
+	fx := corpusFixture(t, c)
 	for _, f := range Inventory() {
-		switch c.Coverage[f.ID] {
-		case Loads:
+		verdict := c.Coverage[f.ID]
+		switch {
+		case verdict == Loads:
 			t.Run("loads "+f.ID, func(t *testing.T) {
 				t.Parallel()
-				AssertFeature(t, c, g, f)
+				AssertFeature(t, c, fx.Graph, f)
 			})
-		case Refuses:
+		case verdict == Refuses:
 			t.Run("refuses "+f.ID, func(t *testing.T) {
 				t.Parallel()
-				AssertRefusedFeature(t, c, g, f)
+				AssertRefusedFeature(t, c, fx.Graph, f)
+			})
+		case verdict.projected():
+			t.Run(verdict.String()+" "+f.ID, func(t *testing.T) {
+				t.Parallel()
+				AssertFeature(t, c, fx.Graph, f)
+				AssertLevel(t, c, fx, f, verdict)
 			})
 		}
 	}
@@ -133,18 +217,33 @@ func Run(t *testing.T, c Corpus) {
 
 // AssertCoveredInventory forces totality: every inventory feature
 // carries a verdict, every verdict names an inventory feature, and
-// every verdict is one of the declared two.
+// every verdict is one the corpus may state: a refusal always, the
+// load verdict without rules, and a projection level with them.
 func AssertCoveredInventory(tb assert.TB, c Corpus) {
 	tb.Helper()
 
 	known := map[string]bool{}
 	for _, f := range Inventory() {
 		known[f.ID] = true
-		switch c.Coverage[f.ID] {
-		case Loads, Refuses:
+		verdict := c.Coverage[f.ID]
+		switch {
+		case verdict == Refuses:
+		case verdict == Loads && c.Rules == nil:
+		case verdict.projected() && c.Rules != nil:
+		case verdict == Loads:
+			tb.Errorf("%s loads under a corpus with rules: a corpus that projects states "+
+				"the level, projects, projects partly or opaque", f.ID)
+		case verdict.projected():
+			tb.Errorf("%s states a projection level under a corpus without rules, "+
+				"which nothing can evaluate", f.ID)
 		default:
 			tb.Errorf("the inventory holds %s and the coverage says nothing: "+
 				"silence on a capability is the gap this list exists to close", f.ID)
+		}
+	}
+	for id := range c.Remainder {
+		if !known[id] {
+			tb.Errorf("the remainder names %s, which the inventory does not hold", id)
 		}
 	}
 	ids := make([]string, 0, len(c.Coverage))
@@ -225,24 +324,17 @@ func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	}
 }
 
-// corpusGraph loads the whole tree once, full depth, for the
-// feature expectations; the frontend suite drives its own loads.
-func corpusGraph(tb assert.TB, c Corpus) *store.Graph {
+// corpusFixture loads the whole tree once, full depth, into the
+// rules suite's fixture: the sealed graph and the load's stamps
+// under the kernel's and the language's keys. The feature
+// expectations and the levels read it; the frontend suite drives
+// its own loads.
+func corpusFixture(tb assert.TB, c Corpus) *rulestest.Fixture {
 	tb.Helper()
 
-	sink := diag.NewSink()
-	g, _, err := load.Load(context.Background(), load.Config{
-		FS:        c.Sources,
-		Frontends: []plugin.Frontend{c.Frontend},
-		Sink:      sink,
-		PluginSet: []byte("conformance"),
-	})
-	assert.NoError(tb, err, "the corpus loads")
-	for d := range sink.All() {
-		if d.Severity == diag.SeverityError {
-			tb.Errorf("the corpus load reported %v: a tree the language "+
-				"refuses proves nothing about its expectations", d)
-		}
+	keys := c.Keys
+	if keys == nil {
+		keys = func(*meta.Registry) error { return nil }
 	}
-	return g
+	return rulestest.Loaded(tb, c.Frontend, c.Sources, keys)
 }

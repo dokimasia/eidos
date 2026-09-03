@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/eidos/conformance"
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
+	gorules "go.dokimi.dev/eidos/lang/go/rules"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
 )
 
@@ -23,19 +24,21 @@ func TestGolang(t *testing.T) {
 		Frontend: gofrontend.New(nil),
 		Sources:  os.DirFS("testdata/go"),
 		Coverage: conformance.Coverage{
-			"struct_fields":       conformance.Loads,
-			"struct_methods":      conformance.Loads,
+			"struct_fields":       conformance.Projects,
+			"struct_methods":      conformance.Projects,
 			"method_overloads":    conformance.Refuses,
-			"constants":           conformance.Loads,
-			"cross_package_ref":   conformance.Loads,
-			"builtin_ref":         conformance.Loads,
-			"directive_carrier":   conformance.Loads,
-			"test_classification": conformance.Loads,
-			"interfaces":          conformance.Loads,
-			"enum_values":         conformance.Loads,
+			"constants":           conformance.Projects,
+			"cross_package_ref":   conformance.Projects,
+			"composite_refs":      conformance.ProjectsPartly,
+			"builtin_ref":         conformance.Projects,
+			"directive_carrier":   conformance.Projects,
+			"test_classification": conformance.Projects,
+			"interfaces":          conformance.Projects,
+			"enum_values":         conformance.Projects,
 		},
 		Signatures: []string{"f/constants"},
 		Schemas:    frontendtest.ScriptedSchemas(),
 		Keys:       gofrontend.Keys,
+		Rules:      gorules.New(),
 	})
 }

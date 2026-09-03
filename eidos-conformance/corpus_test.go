@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/eidos/conformance"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/rules/rulestest"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -29,6 +30,7 @@ func scriptedCorpus() conformance.Corpus {
 			"method_overloads":    conformance.Loads,
 			"constants":           conformance.Loads,
 			"cross_package_ref":   conformance.Loads,
+			"composite_refs":      conformance.Refuses,
 			"builtin_ref":         conformance.Loads,
 			"directive_carrier":   conformance.Loads,
 			"test_classification": conformance.Loads,
@@ -72,6 +74,31 @@ func TestCoverage(t *testing.T) {
 		stray.Coverage["warp_drives"] = conformance.Loads
 		msg := assert.Rejects(t, "a verdict naming no feature", func(tb assert.TB) {
 			conformance.AssertCoveredInventory(tb, stray)
+		})
+		assert.Contains(t, msg, "warp_drives", "naming the stray")
+	})
+
+	t.Run("holds the verdict set to what the corpus may state", func(t *testing.T) {
+		t.Parallel()
+
+		ruled := scriptedCorpus()
+		ruled.Rules = rulestest.Scripted()
+		msg := assert.Rejects(t, "loads under a corpus with rules", func(tb assert.TB) {
+			conformance.AssertCoveredInventory(tb, ruled)
+		})
+		assert.Contains(t, msg, "states the level", "a corpus that projects states the level")
+
+		leveled := scriptedCorpus()
+		leveled.Coverage["struct_fields"] = conformance.Projects
+		msg = assert.Rejects(t, "a level under a corpus without rules", func(tb assert.TB) {
+			conformance.AssertCoveredInventory(tb, leveled)
+		})
+		assert.Contains(t, msg, "without rules", "which nothing can evaluate")
+
+		strayRemainder := scriptedCorpus()
+		strayRemainder.Remainder = map[string][]conformance.Remainder{"warp_drives": nil}
+		msg = assert.Rejects(t, "a remainder naming no feature", func(tb assert.TB) {
+			conformance.AssertCoveredInventory(tb, strayRemainder)
 		})
 		assert.Contains(t, msg, "warp_drives", "naming the stray")
 	})
