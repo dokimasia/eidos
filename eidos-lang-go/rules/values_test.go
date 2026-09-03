@@ -77,17 +77,19 @@ func TestValues(t *testing.T) {
 			assert.Equal(t, a.Inner.Text, "7", "differing inside")
 			s, a = pairOf(t, f, composite("[]string", symbol.FormList, builtin("string")), "tag")
 			assert.Equal(t, s.Kind, emit.ValueComposite, "a slice is a composite")
-			assert.Length(t, s.Args, 1, "of one element")
-			assert.True(t, s.Args[0].Text != a.Args[0].Text, "differing in the element")
+			assert.Length(t, s.Fields, 1, "of one element")
+			assert.Equal(t, s.Fields[0].Name, "", "positional, because a list names nothing")
+			assert.True(t, s.Fields[0].Value.Text != a.Fields[0].Value.Text, "differing in the element")
 			s, a = pairOf(
 				t,
 				f,
 				composite("map[string]int", symbol.FormMap, builtin("string"), builtin("int")),
 				"k",
 			)
-			assert.Length(t, s.Args, 2, "a map holds one entry, key then value")
-			assert.True(t, s.Args[0].Text != a.Args[0].Text, "differing in the key")
-			assert.Equal(t, s.Args[1].Text, a.Args[1].Text, "with one value")
+			assert.Length(t, s.Fields, 1, "a map holds one keyed entry")
+			assert.NotNil(t, s.Fields[0].Key, "which states its key")
+			assert.True(t, s.Fields[0].Key.Text != a.Fields[0].Key.Text, "differing in the key")
+			assert.Equal(t, s.Fields[0].Value.Text, a.Fields[0].Value.Text, "with one value")
 			anyMap := composite("map[string]any", symbol.FormMap, builtin("string"), builtin("any"))
 			sample, _ := gorules.New().SamplesOf(anyMap, "", f.view)
 			assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral, "a map refuses with its value")

@@ -85,11 +85,8 @@ func (r Rules) derive(
 		if !key.OK() || !otherKey.OK() || !value.OK() {
 			return refused(firstRefusal(key, otherKey, value))
 		}
-		return rules.Of(
-				entries(ref, key.Value, value.Value),
-			), rules.Of(
-				entries(ref, otherKey.Value, value.Value),
-			)
+		return rules.Of(entry(ref, key.Value, value.Value)),
+			rules.Of(entry(ref, otherKey.Value, value.Value))
 	case symbol.FormNamed:
 		if ref.Target.IsZero() {
 			return builtinPair(ref, hint)
@@ -122,8 +119,8 @@ func (r Rules) declaredPair(
 				return refused(firstRefusal(sample, alternate))
 			}
 			t := rules.EmitRef(ref)
-			return rules.Of(emit.Composite(t, emit.ValueField{Name: f.Name, Value: sample.Value})),
-				rules.Of(emit.Composite(t, emit.ValueField{Name: f.Name, Value: alternate.Value}))
+			return rules.Of(emit.Composite(t, emit.NamedField(f.Name, sample.Value))),
+				rules.Of(emit.Composite(t, emit.NamedField(f.Name, alternate.Value)))
 		}
 		// No settable exported field: every value of the type is
 		// one value, and a check needs two.
@@ -352,18 +349,13 @@ func converted(t *emit.TypeRef) func(emit.Value) emit.Value {
 func elements(ref *node.TypeRef) func(emit.Value) emit.Value {
 	t := rules.EmitRef(ref)
 	return func(inner emit.Value) emit.Value {
-		return emit.Value{Kind: emit.ValueComposite, Type: t, Args: []emit.Value{inner}}
+		return emit.Composite(t, emit.Element(inner))
 	}
 }
 
-// entries returns a map composite holding one entry, the key then
-// the value in its positional arguments.
-func entries(ref *node.TypeRef, key, value emit.Value) emit.Value {
-	return emit.Value{
-		Kind: emit.ValueComposite,
-		Type: rules.EmitRef(ref),
-		Args: []emit.Value{key, value},
-	}
+// entry returns a map composite holding one keyed entry.
+func entry(ref *node.TypeRef, key, value emit.Value) emit.Value {
+	return emit.Composite(rules.EmitRef(ref), emit.KeyedEntry(key, value))
 }
 
 // child returns a structural reference's child, or nil.
