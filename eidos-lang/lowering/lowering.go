@@ -39,12 +39,15 @@ func CopyTypeRefs(ts []*emit.TypeRef) []*emit.TypeRef {
 	return out
 }
 
-// CopyTypeRef restates one reference tree without sharing nodes.
+// CopyTypeRef restates one reference tree without sharing nodes:
+// the form's children and the instantiation's arguments both copy,
+// so a structural reference survives a lowering whole.
 func CopyTypeRef(t *emit.TypeRef) *emit.TypeRef {
 	if t == nil {
 		return nil
 	}
 	c := *t
+	c.Elems = CopyTypeRefs(t.Elems)
 	c.Args = CopyTypeRefs(t.Args)
 	return &c
 }

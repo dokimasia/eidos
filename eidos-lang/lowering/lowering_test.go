@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // The copies restate shapes without sharing, and the member check
@@ -30,6 +31,22 @@ func TestLowering(t *testing.T) {
 			"down to the argument tree")
 		assert.Equal(t, out[0].Bounds[0].Args[0].Spelling, "K", "spelled the same")
 		assert.Nil(t, lowering.CopyTypeParams(nil), "emptiness copies to nil")
+	})
+
+	t.Run("CopyTypeRef/copies the form's children as well as the arguments", func(t *testing.T) {
+		t.Parallel()
+
+		in := &emit.TypeRef{
+			Spelling: "map[string]*User", Form: symbol.FormMap,
+			Elems: []*emit.TypeRef{
+				{Spelling: "string"},
+				{Spelling: "*User", Form: symbol.FormOptional, Elems: []*emit.TypeRef{{Spelling: "User"}}},
+			},
+		}
+		out := lowering.CopyTypeRef(in)
+		assert.Equal(t, out, in, "the copy restates the whole tree")
+		assert.False(t, out.Elems[1] == in.Elems[1], "and shares no child with its input")
+		assert.False(t, out.Elems[1].Elems[0] == in.Elems[1].Elems[0], "at any depth")
 	})
 
 	t.Run("CopyTypeRef/copies nothing from nil", func(t *testing.T) {
