@@ -3,7 +3,14 @@
 
 package golang
 
-import "go.dokimi.dev/eidos/sdk/plugin"
+import (
+	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/symbol"
+)
+
+// Lang is the source language every loaded declaration carries,
+// and the language the rules answer for.
+const Lang symbol.Lang = "golang"
 
 // Target names the rendering target a plan resolves to reach the
 // Go backend.

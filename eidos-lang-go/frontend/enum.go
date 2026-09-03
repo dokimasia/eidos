@@ -89,6 +89,7 @@ func promoteEnums(
 		}
 		enum := &node.Enum{
 			Pos: alias.Pos, Doc: alias.Doc, Name: alias.Name,
+			Comment:     alias.Comment,
 			Visibility:  alias.Visibility,
 			Variants:    variants[alias.Name],
 			Methods:     methods[alias.Name],

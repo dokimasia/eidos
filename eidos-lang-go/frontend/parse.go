@@ -56,6 +56,7 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 		}
 	}
 	for _, pkgPath := range st.order {
+		foldMethods(st.batches[pkgPath].files)
 		stampConstValues(u, st.fset, st.batches[pkgPath])
 	}
 	stampModule(u, root)
@@ -137,6 +138,7 @@ func (f *goFrontend) parseFile(
 	l := &lowered{
 		file: st.fset.File(parsed.Package), src: src,
 		intern: st.intern, consumed: map[*ast.CommentGroup]bool{},
+		comments: parsed.Comments,
 	}
 	gb := u.Graph()
 
@@ -154,7 +156,7 @@ func (f *goFrontend) parseFile(
 	fileBinds := newBindings()
 	cgo := false
 	for _, spec := range parsed.Imports {
-		lowerImport(l, file, fileBinds, spec)
+		lowerImport(u, l, file, fileBinds, spec)
 		if imported, unquoteErr := strconv.Unquote(spec.Path.Value); unquoteErr == nil && imported == "C" {
 			cgo = true
 		}
@@ -164,10 +166,10 @@ func (f *goFrontend) parseFile(
 	// The package clause's doc belongs to the package: the text
 	// hoists to the first non-empty doc across the unit's files,
 	// and its carriers attach to the package rather than the file.
-	// Tool directives above the clause have no model home yet and
-	// drop, stated in the package documentation.
+	// Tool directives above the clause are the file's annotations.
 	parts := l.split(u, parsed.Doc)
 	file.Doc = parts.Docs
+	file.Annotations = append(file.Annotations, parts.Annotations...)
 	if len(pkg.Doc) == 0 {
 		pkg.Doc = parts.Docs
 	}
@@ -206,15 +208,16 @@ func (f *goFrontend) parseFile(
 	batch.parsed = append(batch.parsed, parsed)
 	batch.files = append(batch.files, file)
 
-	// The sweep: a carrier in a comment no declaration consumed —
-	// floating between declarations, or beside a parameter, whose
-	// comments the parser attaches to nothing — refuses positioned
-	// rather than vanishing.
+	// The sweep: a comment no declaration consumed, floating between
+	// declarations or above the package clause, gives its tool
+	// directives to the file and refuses its carriers positioned
+	// rather than vanishing; its prose has no home and drops.
 	for _, group := range parsed.Comments {
 		if l.consumed[group] {
 			continue
 		}
 		floating := l.split(u, group)
+		file.Annotations = append(file.Annotations, floating.Annotations...)
 		refuseCarriers(u, floating.Carriers, "a comment no declaration owns")
 	}
 	return nil
@@ -297,19 +300,28 @@ func generatedMarker(parsed *ast.File) (string, bool) {
 }
 
 // lowerImport records one import: the model's record on the file,
-// and the binding Resolve reads. A dot import binds every exported
-// name, carried as a wildcard the resolution does not yet probe; a
-// blank import keeps its underscore as the alias, so a side-effect
-// import round-trips as one. The default local name is the path's
-// last segment, a stated heuristic: without a cross-package read,
-// a package whose clause differs from its path resolves nothing,
-// and the spelling stays visible.
-func lowerImport(l *lowered, file *node.File, b *bindings, spec *ast.ImportSpec) {
+// with its doc and trailing comment, and the binding Resolve
+// reads. A dot import binds every exported name, carried as a
+// wildcard the resolution does not yet probe; a blank import keeps
+// its underscore as the alias, so a side-effect import round-trips
+// as one. The default local name is the path's last segment, a
+// stated heuristic: without a cross-package read, a package whose
+// clause differs from its path resolves nothing, and the spelling
+// stays visible. A carrier on an import refuses positioned, because
+// no rule takes an import as its subject; a tool directive there is
+// the file's.
+func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, b *bindings, spec *ast.ImportSpec) {
 	imported, err := strconv.Unquote(spec.Path.Value)
 	if err != nil {
 		return
 	}
-	record := &node.Import{Path: imported, Pos: l.at(spec.Pos())}
+	parts := l.declParts(u, plugin.CommentParts{}, spec.Doc, spec.Comment)
+	refuseCarriers(u, parts.Carriers, "an import")
+	file.Annotations = append(file.Annotations, parts.Annotations...)
+	record := &node.Import{
+		Path: imported, Pos: l.at(spec.Pos()),
+		Doc: parts.Docs, Comment: commentText(l, u, spec.Comment),
+	}
 	switch {
 	case spec.Name == nil:
 		b.named[path.Base(imported)] = imported
@@ -385,14 +397,16 @@ func (l *lowered) declParts(
 // accepted empty lowers as a function, because there is no type to
 // own it.
 func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, d *ast.FuncDecl) {
-	parts := l.declParts(u, plugin.CommentParts{}, d.Doc, nil)
+	tail := l.trailing(d.End(), token.NoPos)
+	parts := l.declParts(u, plugin.CommentParts{}, d.Doc, tail)
 	if d.Recv == nil || len(d.Recv.List) == 0 {
 		fn := &node.Function{
 			Name: d.Name.Name, Pos: l.at(d.Pos()), Doc: parts.Docs,
+			Comment:     commentText(l, u, tail),
 			Visibility:  visibilityOf(d.Name.Name),
 			TypeParams:  l.typeParams(d.Type.TypeParams),
-			Params:      l.params(d.Type.Params),
-			Returns:     l.returns(d.Type.Results),
+			Params:      l.params(u, d.Type.Params),
+			Returns:     l.returns(u, d.Type.Results),
 			Annotations: parts.Annotations,
 		}
 		file.Decls = append(file.Decls, fn)
@@ -403,12 +417,13 @@ func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, 
 	recv := d.Recv.List[0]
 	m := &node.Method{
 		Name: d.Name.Name, Pos: l.at(d.Pos()), Doc: parts.Docs,
+		Comment:     commentText(l, u, tail),
 		Visibility:  visibilityOf(d.Name.Name),
 		Receives:    &node.TypeRef{Spelling: l.bareName(recv.Type), Pos: l.at(recv.Pos())},
-		Receiver:    l.param(recv),
+		Receiver:    l.param(u, recv, d.Recv.Closing),
 		TypeParams:  l.typeParams(d.Type.TypeParams),
-		Params:      l.params(d.Type.Params),
-		Returns:     l.returns(d.Type.Results),
+		Params:      l.params(u, d.Type.Params),
+		Returns:     l.returns(u, d.Type.Results),
 		Annotations: parts.Annotations,
 	}
 	file.Decls = append(file.Decls, m)
@@ -469,28 +484,30 @@ func (f *goFrontend) lowerType(
 	switch t := s.Type.(type) {
 	case *ast.StructType:
 		if s.Assign.IsValid() {
-			declared = l.aliasOf(s, parts, name, pos, vis, tps)
+			declared = l.aliasOf(u, s, parts, name, pos, vis, tps)
 			break
 		}
 		st := &node.Struct{
 			Name: name, Pos: pos, Doc: parts.Docs, Visibility: vis,
+			Comment:    commentText(l, u, s.Comment),
 			TypeParams: tps, Annotations: parts.Annotations,
 		}
 		f.lowerStructBody(u, l, st, t)
 		declared = st
 	case *ast.InterfaceType:
 		if s.Assign.IsValid() {
-			declared = l.aliasOf(s, parts, name, pos, vis, tps)
+			declared = l.aliasOf(u, s, parts, name, pos, vis, tps)
 			break
 		}
 		it := &node.Interface{
 			Name: name, Pos: pos, Doc: parts.Docs, Visibility: vis,
+			Comment:    commentText(l, u, s.Comment),
 			TypeParams: tps, Annotations: parts.Annotations,
 		}
 		f.lowerInterfaceBody(u, l, it, t)
 		declared = it
 	default:
-		alias := l.aliasOf(s, parts, name, pos, vis, tps)
+		alias := l.aliasOf(u, s, parts, name, pos, vis, tps)
 		alias.Defined = !s.Assign.IsValid()
 		if alias.Defined {
 			l.underlyings = append(l.underlyings, pendingUnderlying{
@@ -506,26 +523,32 @@ func (f *goFrontend) lowerType(
 // aliasOf builds the alias shape a type spec lowers to when its
 // target stays a spelling.
 func (l *lowered) aliasOf(
-	s *ast.TypeSpec, parts plugin.CommentParts, name string, pos position.Pos,
-	vis symbol.Visibility, tps []*node.TypeParam,
+	u *plugin.SourceUnit, s *ast.TypeSpec, parts plugin.CommentParts, name string,
+	pos position.Pos, vis symbol.Visibility, tps []*node.TypeParam,
 ) *node.Alias {
 	return &node.Alias{
 		Name: name, Pos: pos, Doc: parts.Docs, Visibility: vis,
+		Comment:    commentText(l, u, s.Comment),
 		TypeParams: tps, Target: l.typeRef(s.Type), Annotations: parts.Annotations,
 	}
 }
 
 // lowerStructBody lowers fields and embeds, unexported fields
-// staying out at signature depth. A carrier on an embedded field
-// refuses positioned: the model cannot address an embed.
+// staying out at signature depth. An embedded field is a
+// declaration like any field: its doc, tag, trailing comment and
+// annotations lower with it, and its carriers attach to it.
 func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.Struct, t *ast.StructType) {
 	for _, field := range t.Fields.List {
 		parts := l.declParts(u, plugin.CommentParts{}, field.Doc, field.Comment)
 		if len(field.Names) == 0 {
-			st.Embeds = append(st.Embeds, &node.Embed{
-				Ref: l.typeRef(field.Type), Pos: l.at(field.Pos()),
-			})
-			refuseCarriers(u, parts.Carriers, "an embedded field")
+			embed := &node.Embed{
+				Ref: l.typeRef(field.Type), Pos: l.at(field.Pos()), Doc: parts.Docs,
+				Comment:     commentText(l, u, field.Comment),
+				Tag:         tagOf(field.Tag),
+				Annotations: parts.Annotations,
+			}
+			st.Embeds = append(st.Embeds, embed)
+			attachCarriers(u, u.Graph(), embed, parts.Carriers)
 			continue
 		}
 		for _, name := range field.Names {
@@ -560,10 +583,13 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 				refuseCarriers(u, parts.Carriers, "a constraint element")
 				continue
 			}
-			it.Embeds = append(it.Embeds, &node.Embed{
-				Ref: l.typeRef(member.Type), Pos: l.at(member.Pos()),
-			})
-			refuseCarriers(u, parts.Carriers, "an embedded interface")
+			embed := &node.Embed{
+				Ref: l.typeRef(member.Type), Pos: l.at(member.Pos()), Doc: parts.Docs,
+				Comment:     commentText(l, u, member.Comment),
+				Annotations: parts.Annotations,
+			}
+			it.Embeds = append(it.Embeds, embed)
+			attachCarriers(u, u.Graph(), embed, parts.Carriers)
 			continue
 		}
 		sig, is := member.Type.(*ast.FuncType)
@@ -579,10 +605,11 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 		}
 		m := &node.Method{
 			Name: name, Pos: l.at(member.Pos()), Doc: parts.Docs,
+			Comment:     commentText(l, u, member.Comment),
 			Visibility:  visibilityOf(name),
 			Abstract:    true,
-			Params:      l.params(sig.Params),
-			Returns:     l.returns(sig.Results),
+			Params:      l.params(u, sig.Params),
+			Returns:     l.returns(u, sig.Results),
 			Annotations: parts.Annotations,
 		}
 		it.Methods = append(it.Methods, m)
@@ -684,21 +711,22 @@ func (l *lowered) typeParams(fields *ast.FieldList) []*node.TypeParam {
 }
 
 // params lowers a parameter list, one entry per bound name at its
-// own position and one for an unnamed parameter. The parser
-// attaches no comments to parameters, so a carrier beside one is
-// the sweep's to refuse.
-func (l *lowered) params(fields *ast.FieldList) []*node.Param {
+// own position and one for an unnamed parameter. A comment the
+// parser attaches to a parameter lowers as its trailing comment;
+// a carrier there refuses positioned, because no rule takes a
+// parameter as its subject.
+func (l *lowered) params(u *plugin.SourceUnit, fields *ast.FieldList) []*node.Param {
 	if fields == nil {
 		return nil
 	}
 	var out []*node.Param
 	for _, field := range fields.List {
 		if len(field.Names) == 0 {
-			out = append(out, l.param(field))
+			out = append(out, l.param(u, field, fields.Closing))
 			continue
 		}
 		for _, name := range field.Names {
-			p := l.param(field)
+			p := l.param(u, field, fields.Closing)
 			p.Name = name.Name
 			p.Pos = l.at(name.Pos())
 			out = append(out, p)
@@ -708,9 +736,13 @@ func (l *lowered) params(fields *ast.FieldList) []*node.Param {
 }
 
 // param lowers one field into a parameter, variadic when its type
-// is an ellipsis.
-func (l *lowered) param(field *ast.Field) *node.Param {
-	p := &node.Param{Pos: l.at(field.Pos())}
+// is an ellipsis; closing bounds the trailing comment's search to
+// the list the field sits in.
+func (l *lowered) param(u *plugin.SourceUnit, field *ast.Field, closing token.Pos) *node.Param {
+	p := &node.Param{
+		Pos:     l.at(field.Pos()),
+		Comment: l.memberComment(u, field, closing, "a parameter"),
+	}
 	if len(field.Names) == 1 {
 		p.Name = field.Names[0].Name
 	}
@@ -725,15 +757,19 @@ func (l *lowered) param(field *ast.Field) *node.Param {
 
 // returns lowers a result list, blank names kept as written: Go
 // admits a mixed list only fully named, so dropping the
-// underscore would strand the siblings.
-func (l *lowered) returns(fields *ast.FieldList) []*node.Return {
+// underscore would strand the siblings. A comment on a result
+// lowers as its trailing comment, its carriers refused.
+func (l *lowered) returns(u *plugin.SourceUnit, fields *ast.FieldList) []*node.Return {
 	if fields == nil {
 		return nil
 	}
 	var out []*node.Return
 	for _, field := range fields.List {
+		comment := l.memberComment(u, field, fields.Closing, "a result")
 		if len(field.Names) == 0 {
-			out = append(out, &node.Return{Pos: l.at(field.Pos()), Type: l.typeRef(field.Type)})
+			out = append(out, &node.Return{
+				Pos: l.at(field.Pos()), Type: l.typeRef(field.Type), Comment: comment,
+			})
 			continue
 		}
 		for _, name := range field.Names {
@@ -742,10 +778,30 @@ func (l *lowered) returns(fields *ast.FieldList) []*node.Return {
 			// half-named form dropping it would produce.
 			out = append(out, &node.Return{
 				Name: name.Name, Pos: l.at(name.Pos()), Type: l.typeRef(field.Type),
+				Comment: comment,
 			})
 		}
 	}
 	return out
+}
+
+// memberComment lowers a signature member's comments: the doc the
+// parser attached, and the trailing comment on the member's own
+// line inside its list, which the parser leaves free. The prose
+// becomes the trailing comment, and a carrier refuses positioned,
+// naming what carried it. An unparenthesized list bounds nothing
+// and takes no trailing comment, because the line it ends on
+// belongs to the declaration that follows.
+func (l *lowered) memberComment(
+	u *plugin.SourceUnit, field *ast.Field, closing token.Pos, what string,
+) string {
+	tail := field.Comment
+	if tail == nil && closing.IsValid() {
+		tail = l.trailing(field.End(), closing)
+	}
+	parts := l.declParts(u, plugin.CommentParts{}, field.Doc, tail)
+	refuseCarriers(u, parts.Carriers, what)
+	return strings.Join(l.split(u, tail).Docs, " ")
 }
 
 // visibilityOf reads Go's visibility off the name's case.

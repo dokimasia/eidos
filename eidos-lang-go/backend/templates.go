@@ -23,23 +23,26 @@ const FileTemplate = "package {{" + FuncPackage + " .Pkg}}\n" +
 const (
 	// StructTemplate spells a struct and its fields, its type
 	// parameters behind the name: embedded types first, the way Go
-	// promotes members, the embeds then the nominal parents,
-	// because embedding is Go's one idiom for both and the
-	// promotion carries the members without the subtyping. A
-	// stated Implements spells nothing: satisfaction is
-	// structural, and the methods themselves carry the claim.
+	// promotes members, each under its own docblock and directives
+	// with its tag and trailing comment like a field, the embeds
+	// then the nominal parents, because embedding is Go's one idiom
+	// for both and the promotion carries the members without the
+	// subtyping. A stated Implements spells nothing: satisfaction
+	// is structural, and the methods themselves carry the claim.
 	// Fields follow, each under its own docblock, carrying its tag
 	// in backquotes and its trailing comment where the declaration
-	// states them. Member methods follow the type as package-level
+	// states them, and the type's own trailing comment closes the
+	// brace line. Member methods follow the type as package-level
 	// declarations, the receiver the lowering filled, because Go
 	// states a method outside the type it attaches to. The guard
 	// refuses what Go states nowhere before a byte renders.
 	StructTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} struct {\n" +
-		"{{- range .Embeds}}\n\t{{spell .Ref}}\n{{- end}}" +
+		"{{- range .Embeds}}\n{{docs .Doc \"\\t\"}}{{with .Annotations}}{{directives . \"\\t\"}}{{end}}\t{{spell .Ref}}" +
+		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"\\t\"}}{{with .Annotations}}{{directives . \"\\t\"}}{{end}}{{guard .}}\t{{.Name}} {{spell .Type}}" +
 		"{{with .Tag}} `{{.}}`{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
-		"{{- end}}\n}\n" +
+		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{range .Methods.Items}}\n{{nested \"\" .}}\n{{end}}"
 
 	// InterfaceTemplate spells an interface and the methods it
@@ -54,13 +57,13 @@ const (
 		"{{- range .Embeds}}\n\t{{spell .Ref}}\n{{- end}}" +
 		"{{- range .Extends}}\n\t{{spell .}}\n{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"\\t\"}}{{sigguard .}}" +
-		"\t{{.Name}}({{params .Params}}){{results .Returns}}\n" +
-		"{{- end}}\n}\n"
+		"\t{{.Name}}({{params .Params}}){{results .Returns}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// FunctionTemplate spells a function, its type parameters
 	// behind the name, and places its body, under the guard.
 	FunctionTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}func {{.Name}}{{typeparams .TypeParams}}" +
-		"({{params .Params}}){{results .Returns}} {\n{{body .}}}\n"
+		"({{params .Params}}){{results .Returns}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// MethodTemplate spells a method: Go states one at the package
 	// level with a receiver, never inside the type it attaches to.
@@ -70,14 +73,14 @@ const (
 	// nowhere.
 	MethodTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}func ({{receiver .}}) " +
 		"{{.Name}}{{typeparams .TypeParams}}({{params .Params}})" +
-		"{{results .Returns}} {\n{{body .}}}\n"
+		"{{results .Returns}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// AliasTemplate spells a type alias or a defined type, its
 	// type parameters behind the name, under the guard: the equals
 	// sign is the transparent alias's, and a defined type drops it,
 	// which is what makes its constants and methods its own.
 	AliasTemplate = "{{docs .Doc}}{{with .Annotations}}{{directives .}}{{end}}{{guard .}}type {{.Name}}{{typeparams .TypeParams}} " +
-		"{{if not .Defined}}= {{end}}{{spell .Target}}\n"
+		"{{if not .Defined}}= {{end}}{{spell .Target}}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// ConstantTemplate spells a constant, typed where the
 	// declaration states a type, its trailing comment beside the

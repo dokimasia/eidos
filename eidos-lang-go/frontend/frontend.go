@@ -11,11 +11,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/frontend"
 	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/plugin"
-	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Lang is the source language every loaded declaration carries.
-const Lang symbol.Lang = "golang"
+// Lang is the source language every loaded declaration carries:
+// the satellite root's constant, restated where the frontend's
+// callers reach for it.
+const Lang = golang.Lang
 
 // The classification keys live at the satellite root beside the
 // annotator's: one namespace, one registration, two stamping roles.

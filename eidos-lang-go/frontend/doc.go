@@ -35,22 +35,29 @@
 // directive kin lowered as [symbol.Annotations] — the same shape
 // the render side writes back, so what the backend spells the
 // frontend reads. Carriers attach on packages, types, functions,
-// methods, constants, variables, struct fields and interface
-// methods, from leading docs, group docs and trailing comments
-// alike; a carrier on a subject the model cannot address — an
-// embedded field, a constraint element, a comment no declaration
-// owns, which is where the parser leaves parameter comments —
-// refuses positioned under GOLANG-0003 rather than vanishing. The
-// package clause's documentation belongs to the package: its text
-// hoists to the first non-empty doc across the unit and its
-// carriers attach to the package.
+// methods, constants, variables, struct fields, embedded fields
+// and interface methods, from leading docs, group docs and
+// trailing comments alike; a carrier on a subject no rule takes —
+// a parameter, a result, an import, a constraint element, a
+// comment no declaration owns — refuses positioned under
+// GOLANG-0003 rather than vanishing. Every declaration that ends a
+// line keeps its trailing comment, a function or method the one
+// after its closing brace. The package clause's documentation
+// belongs to the package: its text hoists to the first non-empty
+// doc across the unit and its carriers attach to the package. Tool
+// directives above the clause, on an import, or floating between
+// declarations are the file's annotations.
 //
 // # Types, enums and resolution
 //
 // A type expression lowers to a reference carrying its verbatim
-// spelling, arguments split out for an explicit generic
-// instantiation and parentheses unwrapped, which is the model's
-// stated representation. A defined type over a basic underlying
+// spelling and the structure Go's grammar states: a pointer as an
+// optional, a slice as a list, a sized array as an array with its
+// literal length, a map, a channel as a stream, a function type
+// with its parameters then results, and an inline body as inline,
+// each child a reference in turn. Arguments split out for an
+// explicit generic instantiation and parentheses unwrap, which is
+// the model's stated representation. A defined type over a basic underlying
 // whose constants carry its spelling promotes to the Enum the
 // schema names for a Go constant group, methods folded in and
 // value spellings verbatim. Resolve owns Go's probing: decoration
@@ -95,9 +102,8 @@
 // bytes that cannot change the graph must not key it; an import's
 // local name defaults to the path's last segment, the
 // unbound-qualifier probe catching the mismatch for workspace
-// packages. Free-floating documentation and tool directives
-// between declarations have no model home and drop; their
-// carriers refuse.
+// packages. Free-floating documentation between declarations has
+// no model home and drops; its carriers refuse.
 //
 // # Dependency position
 //

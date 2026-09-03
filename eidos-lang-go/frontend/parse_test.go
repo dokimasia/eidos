@@ -110,7 +110,8 @@ func TestParse(t *testing.T) {
 
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
 			"package p\n\ntype B[T any] struct{}\n\nfunc (b *B[T]) M() {}\n"))
-		m := file.Decls[1].(*node.Method)
+		assert.Length(t, file.Decls, 1, "the method folds onto its receiver's struct")
+		m := file.Decls[0].(*node.Struct).Methods[0]
 		assert.Equal(t, m.Receives.Spelling, "B",
 			"pointer and instantiation unwrap: the owner is the name")
 	})
@@ -336,8 +337,9 @@ func TestParse(t *testing.T) {
 		t.Parallel()
 
 		tree := fstest.MapFS{"p/a.go": {Data: []byte(
-			"package p\n\ntype H struct {\n\t//+gen:x\n\tError\n}\n\n" +
-				"func F(\n\t//+gen:y\n\tn int,\n) {\n}\n\ntype Error struct{}\n",
+			"package p\n\nimport \"io\" //+gen:z\n\n" +
+				"func F(\n\t//+gen:y\n\tn int,\n) (\n\t//+gen:w\n\tout int,\n) {\n\treturn n\n}\n\n" +
+				"var _ io.Reader\n",
 		)}}
 		f := frontend.New(nil)
 		sink := diag.NewSink()
@@ -351,8 +353,84 @@ func TestParse(t *testing.T) {
 				refused++
 			}
 		}
-		assert.Equal(t, refused, 2, "an embed and a parameter each refuse, positioned")
+		assert.Equal(t, refused, 3, "an import, a parameter and a result each refuse, positioned")
 		assert.Length(t, u.Graph().Attachments(), 0, "and nothing attaches in silence")
+	})
+
+	t.Run("lowers an embedded field as a declaration of its own", func(t *testing.T) {
+		t.Parallel()
+
+		gb := parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\ntype H struct {\n"+
+				"\t// Base carries the shared fields.\n\t//go:fix inline\n\t//+gen:x\n"+
+				"\t*Base `json:\"base\"` // promoted\n}\n\ntype Base struct{}\n")
+		h := onlyFile(t, gb).Decls[0].(*node.Struct)
+		assert.Length(t, h.Embeds, 1, "the embed lowers")
+		e := h.Embeds[0]
+		assert.Equal(t, e.Doc, []string{"Base carries the shared fields."}, "with its doc")
+		assert.Equal(t, e.Comment, "promoted", "its trailing comment")
+		assert.Equal(t, e.Tag, `json:"base"`, "its tag")
+		assert.Equal(t, e.Annotations, symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
+			"and its tool directive")
+		assert.Equal(t, e.Ref.Form, symbol.FormOptional, "the pointer embed is an optional form")
+		attached := gb.Attachments()
+		assert.Length(t, attached, 1, "and the carrier attaches to the embed")
+		assert.True(t, attached[0].Subject == e, "itself, not its host")
+	})
+
+	t.Run("carries trailing comments on every kind that ends a line", func(t *testing.T) {
+		t.Parallel()
+
+		gb := parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\n"+
+				"import \"io\" // for Reader\n\n"+
+				"type S struct{} // the struct\n\n"+
+				"type I interface {\n\tRead() // the method\n} // the interface\n\n"+
+				"type A = int // the alias\n\n"+
+				"type E int // the enum\n\nconst EOne E = 1\n\n"+
+				"func F(\n\ta int, // the param\n) (\n\tout int, // the result\n) {\n\treturn a\n} // the function\n\n"+
+				"func (S) M() {} // the method\n\nvar _ io.Reader\n")
+		file := onlyFile(t, gb)
+		assert.Equal(t, file.Imports[0].Comment, "for Reader", "an import's comment")
+		byName := map[string]string{}
+		for _, d := range file.Decls {
+			switch x := d.(type) {
+			case *node.Struct:
+				byName["S"] = x.Comment
+				byName["S.M"] = x.Methods[0].Comment
+			case *node.Interface:
+				byName["I"] = x.Comment
+				byName["I.Read"] = x.Methods[0].Comment
+			case *node.Alias:
+				byName[x.Name] = x.Comment
+			case *node.Enum:
+				byName[x.Name] = x.Comment
+			case *node.Function:
+				byName["F"] = x.Comment
+				byName["F.a"] = x.Params[0].Comment
+				byName["F.out"] = x.Returns[0].Comment
+			}
+		}
+		assert.Equal(t, byName, map[string]string{
+			"S": "the struct", "I": "the interface", "I.Read": "the method",
+			"A": "the alias", "E": "the enum",
+			"F": "the function", "F.a": "the param", "F.out": "the result",
+			"S.M": "the method",
+		}, "each declaration keeps the comment it ends its line with")
+	})
+
+	t.Run("gives the file the tool directives no declaration owns", func(t *testing.T) {
+		t.Parallel()
+
+		gb := parsedFile(t, nil, plugin.DepthFull,
+			"//go:build !exotic\n\n//go:generate stringer -type=E\n\n"+
+				"package p\n\n//go:noinline\n\n// Free prose drops.\n\ntype E int\n")
+		file := onlyFile(t, gb)
+		assert.Equal(t, file.Annotations, symbol.Annotations{
+			{Name: "go:generate", Args: []string{"stringer", "-type=E"}},
+			{Name: "go:noinline"},
+		}, "the file carries them in source order; a build constraint is "+
+			"configuration the split reads as no annotation")
 	})
 
 	t.Run("stamps constraint elements as the interface's type set", func(t *testing.T) {
@@ -398,7 +476,7 @@ func TestParse(t *testing.T) {
 
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
 			"package p\n\ntype T struct{}\n\nfunc (p (T)) M() {}\n"))
-		m := file.Decls[1].(*node.Method)
+		m := file.Decls[0].(*node.Struct).Methods[0]
 		assert.Equal(t, m.Receives.Spelling, "T", "punctuation owns nothing")
 	})
 

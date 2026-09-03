@@ -81,6 +81,46 @@ func TestTemplates(t *testing.T) {
 			"fields under their own docblocks, tag and trailing comment beside")
 	})
 
+	t.Run("embeds carry their docs, directives, tag and comment", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "Row", Comment: "one per fetch"}
+		s.Embeds = []*emit.Embed{{
+			Doc: []string{"Base carries the shared fields."}, Ref: ref("Base"),
+			Tag: `json:"-"`, Comment: "promoted",
+			Annotations: symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
+		}}
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"type Row struct {\n"+
+				"\t// Base carries the shared fields.\n"+
+				"\t//go:fix inline\n"+
+				"\tBase `json:\"-\"` // promoted\n"+
+				"} // one per fetch\n",
+			"an embedded field renders like a field, and the type's own comment closes the brace")
+	})
+
+	t.Run("trailing comments close every kind that ends a line", func(t *testing.T) {
+		t.Parallel()
+
+		i := &emit.Interface{Name: "Store", Comment: "read side"}
+		i.Methods.Append(&emit.Method{
+			Name: "Get", Comment: "by key",
+			Params:  []*emit.Param{{Name: "key", Type: ref("string"), Comment: "the row key"}},
+			Returns: []*emit.Return{{Type: ref("string"), Comment: "the row"}},
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"type Store interface {\n"+
+				"\tGet(key string /* the row key */) string /* the row */ // by key\n"+
+				"} // read side\n",
+			"a signature's comments spell as block comments, the method's and the interface's close their lines")
+		assert.Equal(t,
+			execute(t, backend.FunctionTemplate, &emit.Function{Name: "Sort", Comment: "stable"}),
+			"func Sort() {\n\tbody()\n} // stable\n", "a function's comment follows its closing brace")
+		assert.Equal(t,
+			execute(t, backend.AliasTemplate, &emit.Alias{Name: "ID", Target: ref("string"), Comment: "opaque"}),
+			"type ID = string // opaque\n", "an alias's comment closes its line")
+	})
+
 	t.Run("struct methods follow the type", func(t *testing.T) {
 		t.Parallel()
 

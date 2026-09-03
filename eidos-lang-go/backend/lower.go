@@ -111,6 +111,7 @@ func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 	out = append(out, &emit.Alias{
 		Origin:      e.Origin,
 		Doc:         e.Doc,
+		Comment:     e.Comment,
 		Name:        e.Name,
 		Visibility:  e.Visibility,
 		Defined:     true,

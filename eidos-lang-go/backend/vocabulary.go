@@ -144,17 +144,28 @@ func Params(ps []*emit.Param) string {
 	return strings.Join(parts, ", ")
 }
 
-// param writes one parameter: its name where it has one, and its
-// type, which a variadic parameter opens with three dots.
+// param writes one parameter: its name where it has one, its
+// type, which a variadic parameter opens with three dots, and its
+// trailing comment as a block comment, the one form that survives
+// inside a list gofmt keeps on one line.
 func param(p *emit.Param) string {
 	spelling := Spell(p.Type)
 	if p.Variadic != symbol.VariadicNone {
 		spelling = "..." + spelling
 	}
-	if p.Name == "" {
-		return spelling
+	if p.Name != "" {
+		spelling = p.Name + " " + spelling
 	}
-	return p.Name + " " + spelling
+	return spelling + inlineComment(p.Comment)
+}
+
+// inlineComment spells a trailing comment inside a signature as a
+// block comment, and nothing for none.
+func inlineComment(text string) string {
+	if text == "" {
+		return ""
+	}
+	return " /* " + text + " */"
 }
 
 // Results writes a result list: nothing, one bare type, or a
@@ -165,15 +176,15 @@ func Results(rs []*emit.Return) string {
 		return ""
 	}
 	if len(rs) == 1 && rs[0].Name == "" {
-		return " " + Spell(rs[0].Type)
+		return " " + Spell(rs[0].Type) + inlineComment(rs[0].Comment)
 	}
 	parts := make([]string, 0, len(rs))
 	for _, r := range rs {
 		if r.Name == "" {
-			parts = append(parts, Spell(r.Type))
+			parts = append(parts, Spell(r.Type)+inlineComment(r.Comment))
 			continue
 		}
-		parts = append(parts, r.Name+" "+Spell(r.Type))
+		parts = append(parts, r.Name+" "+Spell(r.Type)+inlineComment(r.Comment))
 	}
 	return " (" + strings.Join(parts, ", ") + ")"
 }
