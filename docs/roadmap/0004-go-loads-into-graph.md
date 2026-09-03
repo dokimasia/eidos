@@ -36,7 +36,7 @@ Go.
 - [x] `//+gen:` carriers strip and parse to canonical directives. An
       unclaimed directive is reported, and the workspace opt-out
       silences it.
-- [ ] The kernel-owned `sample` and `witness` directives stamp their
+- [x] The kernel-owned `sample` and `witness` directives stamp their
       `gen.*` keys through the default annotators, and `SamplesOf`
       and `Witnesses` read from those stamps before deriving
       anything (D64).
@@ -49,7 +49,7 @@ Go.
 - [x] Test files parse and carry `go.testFile`. The kit excludes
       nothing except workspace-owned outputs, which it refuses before
       `Parse` when a fixture provides the trailer or manifest proof.
-- [ ] Tier 1 is covered for Go: `CallableOf`, `TypeOf` into canonical
+- [x] Tier 1 is covered for Go: `CallableOf`, `TypeOf` into canonical
       shapes, `Resolve`, `MembersOf` across embeds with per-member
       provenance and refusal reasons, the three Values returns, and
       `TypeName`. Tier 2 where Go satisfies it: enums with a small
@@ -61,7 +61,7 @@ Go.
       landscape table, and the completeness check, built in the kernel
       as part of this milestone, passes with every row on its declared
       check.
-- [ ] The kernel's toolchain-adapter skeleton exists and
+- [x] The kernel's toolchain-adapter skeleton exists and
       `eidos-lang-go/testing` implements it: the shared assertion set
       (`AssertParses`, `AssertTypeChecks`, `AssertTestsPass`,
       `AssertSatisfies`) runs over a `Generated` fixture through the

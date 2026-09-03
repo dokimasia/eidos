@@ -153,14 +153,28 @@ assertion set (`AssertParses`, `AssertTypeChecks`, `AssertTestsPass`,
 small adapter interface that each language's `testing/` implements:
 
 ```go
-type ToolchainAdapter interface {
-    Layout(fixture Fixture) (dir string, err error)  // scratch project the toolchain accepts
+type Adapter interface {
+    Lang() symbol.Lang                               // for the assertions' wording
+    Available() (bool, string)                       // and the reason where it is not
+    Layout(g Generated) (dir string, err error)      // scratch project the toolchain accepts
     Parse(dir string) error                          // syntax only
     TypeCheck(dir string) error
     RunTests(dir string) (TestReport, error)
     Satisfies(dir, typeName, contract string) (bool, error)
 }
+
+type Generated struct {
+    Files   map[string][]byte // rendered output, keyed by output path
+    Sources fs.FS             // the tree the run read, nil where the output stands alone
+    Module  string            // the identity the laid-out project declares
+}
 ```
+
+`Generated` is a value and the adapter lays it out; nothing in the
+kernel writes a file, because where a scratch project sits and what
+it must contain is the language's own question. `Prepare` runs the
+layout and hands back the cleanup, so every assertion removes its
+scratch tree whether it passed or not.
 
 Language harnesses stay thin adapters. The assertion semantics and
 the failure wording are written once, in the kernel, against this
@@ -174,7 +188,25 @@ than the ceiling.
 
 An assertion that depends on a toolchain skips locally with a
 recorded reason, and is **required in CI**, so a regression cannot
-hide behind a missing toolchain.
+hide behind a missing toolchain. `Require` settles that case and
+`RequiredInCI` decides it, off the `CI` variable every runner sets.
+A satellite's own assertions call `Require` too, because the gate
+belongs to whoever runs a toolchain rather than to the suite. The
+assertions themselves never skip: a caller reaching for one has
+already decided the toolchain is there.
+
+Two assertions refuse rather than pass on an absence. A fixture
+carrying no output fails, because a toolchain run over nothing
+passes while proving nothing, and a test run reporting no case at
+all fails for the same reason: generated tests that execute nothing
+are the failure the assertion exists to catch.
+
+Go's harness is the first: it parses with the standard library, so a
+machine with no toolchain still holds generated output to Go's
+grammar, and type-checks, tests and vets by running the go tool.
+`AssertVets` is its language-specific addition, because a template
+that assembles a call site correctly for one type assembles it
+wrongly for the next, and that is exactly what vet catches.
 
 The fixture builders follow the same pattern: a neutral
 symbol-fixture core in `conformance/`, with per-language spelling
