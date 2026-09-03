@@ -62,6 +62,12 @@ func Coverage() render.Coverage {
 			symbol.FactConstParam:       render.Refuses,
 		},
 		Except: map[symbol.Kind]map[symbol.Fact]render.Verdict{
+			// An embed refuses whole, so what it carries refuses with it.
+			symbol.KindEmbed: {
+				symbol.FactComment:     render.Refuses,
+				symbol.FactTag:         render.Refuses,
+				symbol.FactAnnotations: render.Refuses,
+			},
 			symbol.KindEnumVariant: {
 				symbol.FactValue: render.Refuses, // the constructor form
 			},

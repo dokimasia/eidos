@@ -82,6 +82,19 @@ func TestTemplates(t *testing.T) {
 		})
 		got, err := execute(backend.StructTemplate, s)
 		assert.NoError(t, err, "the class renders")
+		i := &emit.Interface{Name: "Store", Comment: "read side"}
+		i.Methods.Append(&emit.Method{
+			Name: "get", Comment: "by key",
+			Params:  []*emit.Param{{Name: "key", Type: &emit.TypeRef{Spelling: "String"}, Comment: "the row key"}},
+			Returns: []*emit.Return{{Type: &emit.TypeRef{Spelling: "String"}, Comment: "the row"}},
+		})
+		trailed, err := execute(backend.InterfaceTemplate, i)
+		assert.NoError(t, err, "the interface renders")
+		assert.Equal(t, trailed,
+			"public interface Store {\n"+
+				"    String /* the row */ get(String key /* the row key */); // by key\n"+
+				"} // read side\n",
+			"a signature's comments spell as block comments, the method's and the interface's close their lines")
 		assert.Equal(t, got,
 			"/**\n * Row is one record.\n */\n"+
 				"public class Row {\n"+

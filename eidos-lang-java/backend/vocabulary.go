@@ -141,9 +141,19 @@ func Params(ps []*emit.Param) string {
 		if p.Variadic != symbol.VariadicNone {
 			spelling += "..."
 		}
-		parts = append(parts, spelling+" "+name)
+		parts = append(parts, spelling+" "+name+inlineComment(p.Comment))
 	}
 	return strings.Join(parts, ", ")
+}
+
+// inlineComment spells a trailing comment inside a signature as a
+// block comment, the one form that survives on the line, and
+// nothing for none.
+func inlineComment(text string) string {
+	if text == "" {
+		return ""
+	}
+	return " /* " + text + " */"
 }
 
 // Results writes the return type: void for none, the type for
@@ -154,7 +164,7 @@ func Results(rs []*emit.Return) (string, error) {
 	case 0:
 		return "void", nil
 	case 1:
-		return Spell(rs[0].Type), nil
+		return Spell(rs[0].Type) + inlineComment(rs[0].Comment), nil
 	default:
 		return "", fmt.Errorf(
 			"java: a callable returns one value, and this one states %d: "+

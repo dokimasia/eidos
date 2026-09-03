@@ -43,9 +43,9 @@ const (
 		"{{if .Override}}    @Override\n{{end}}" +
 		"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
-		"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}\n" +
+		"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
-		"{{- range .Types.Items}}\n{{nested \"    \" .}}\n{{- end}}\n}\n"
+		"{{- range .Types.Items}}\n{{nested \"    \" .}}\n{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// InterfaceTemplate spells an interface: annotation lines
 	// above the declaration, its keywords and type parameters
@@ -60,9 +60,9 @@ const (
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{annotate .Annotations \"    \"}}" +
 		"    {{sigmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 		"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
-		"{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}\n" +
+		"{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
-		"{{- range .Types.Items}}\n{{nested \"    \" .}}\n{{- end}}\n}\n"
+		"{{- range .Types.Items}}\n{{nested \"    \" .}}\n{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 )
 
 // EnumTemplate spells an enum class: annotation lines above the
@@ -84,8 +84,8 @@ const EnumTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 	"{{if .Override}}    @Override\n{{end}}" +
 	"    {{methodmods .}}{{with typeparams .TypeParams}}{{.}} {{end}}" +
 	"{{results .Returns}} {{.Name}}({{params .Params}}){{throws .Throws}}" +
-	"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}\n" +
-	"{{- end}}\n}\n"
+	"{{if .Abstract}};{{else}} {\n{{body .}}    }{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+	"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 // KindTemplates maps each emit kind to the template that spells
 // it. A kind absent from the map is one the Java backend cannot

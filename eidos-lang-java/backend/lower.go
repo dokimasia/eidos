@@ -59,6 +59,7 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	out = append(out, &emit.Interface{
 		Origin:      sum.Origin,
 		Doc:         sum.Doc,
+		Comment:     sum.Comment,
 		Name:        sum.Name,
 		Visibility:  sum.Visibility,
 		Sealed:      true,
@@ -81,6 +82,7 @@ func variantClass(sum *emit.Sum, v *emit.SumVariant) (*emit.Struct, error) {
 	cls := &emit.Struct{
 		Origin:      sum.Origin,
 		Doc:         v.Doc,
+		Comment:     v.Comment,
 		Name:        sum.Name + naming.Pascal(v.Name),
 		Visibility:  sum.Visibility,
 		Final:       true,
