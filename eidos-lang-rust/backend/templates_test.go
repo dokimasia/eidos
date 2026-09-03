@@ -77,6 +77,30 @@ func TestTemplates(t *testing.T) {
 				"a trailing comment behind its comma")
 	})
 
+	t.Run("trailing comments close every kind that ends a line", func(t *testing.T) {
+		t.Parallel()
+
+		i := &emit.Interface{Name: "Store", Comment: "read side"}
+		i.Methods.Append(&emit.Method{
+			Name: "get", Comment: "by key",
+			Params:  []*emit.Param{{Name: "key", Type: ref("String"), Comment: "the row key"}},
+			Returns: []*emit.Return{{Type: ref("String"), Comment: "the row"}},
+		})
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"pub trait Store {\n"+
+				"    fn get(&self, key: String /* the row key */) -> String /* the row */; // by key\n"+
+				"} // read side\n",
+			"a signature's comments spell as block comments, the method's and the trait's close their lines")
+		assert.Equal(t,
+			execute(t, backend.FunctionTemplate, &emit.Function{Name: "sort", Comment: "stable"}),
+			"pub fn sort() {\n    body();\n} // stable\n", "a function's comment follows its closing brace")
+		s := &emit.Sum{Name: "Shape", Comment: "tagged"}
+		s.Variants.Append(&emit.SumVariant{Name: "Empty", Comment: "no payload"})
+		assert.Equal(t, execute(t, backend.SumTemplate, s),
+			"pub enum Shape {\n    Empty, // no payload\n} // tagged\n",
+			"a variant's comment follows its comma and the enum's closes its brace")
+	})
+
 	t.Run("struct methods render in an impl block", func(t *testing.T) {
 		t.Parallel()
 

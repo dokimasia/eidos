@@ -33,11 +33,11 @@ const (
 		"{{structmods .}}struct {{.Name}}{{typeparams .TypeParams}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{fieldmods .}}{{.Name}}: {{spell .Type}},{{with .Comment}} // {{.}}{{end}}\n" +
-		"{{- end}}\n}\n" +
+		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{if .Methods.Len}}\nimpl{{typeparams .TypeParams}} {{.Name}}{{typenames .TypeParams}} {\n" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{implfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
-		"{{results .Returns}} {\n{{body .}}    }\n" +
+		"{{results .Returns}} {\n{{body .}}    }{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n{{end}}"
 
 	// InterfaceTemplate spells a trait, its visibility and type
@@ -53,8 +53,8 @@ const (
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{traitfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
-		"{{results .Returns}}{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}\n" +
-		"{{- end}}\n}\n"
+		"{{results .Returns}}{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// FunctionTemplate spells a free function: attribute lines
 	// above the declaration, its visibility and asynchrony before
@@ -62,7 +62,7 @@ const (
 	// body.
 	FunctionTemplate = "{{docs .Doc}}{{attrs .Annotations}}{{fnmods .}}fn " +
 		"{{.Name}}{{typeparams .TypeParams}}" +
-		"({{params .Params}}){{results .Returns}} {\n{{body .}}}\n"
+		"({{params .Params}}){{results .Returns}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// EnumTemplate spells a payloadless enum: one variant per
 	// line under its own doc lines and attributes, a stated value
@@ -71,7 +71,7 @@ const (
 		"{{enummods .}}enum {{.Name}} {\n" +
 		"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{.Name}}{{with .Value}} = {{.}}{{end}},{{with .Comment}} // {{.}}{{end}}\n" +
-		"{{- end}}\n}\n"
+		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// SumTemplate spells a data enum: attribute lines above the
 	// declaration, its visibility and type parameters behind the
@@ -81,15 +81,15 @@ const (
 	SumTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{summods .}}enum {{.Name}}{{typeparams .TypeParams}} {\n" +
 		"{{- range .Variants.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
-		"    {{.Name}}{{sumpayload .}},\n" +
-		"{{- end}}\n}\n"
+		"    {{.Name}}{{sumpayload .}},{{with .Comment}} // {{.}}{{end}}\n" +
+		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// AliasTemplate spells a type alias, its visibility and type
 	// parameters behind the name; a defined type refuses through
 	// the keywords helper, because a Rust alias is transparent.
 	AliasTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{aliasmods .}}type {{.Name}}{{typeparams .TypeParams}}" +
-		" = {{spell .Target}};\n"
+		" = {{spell .Target}};{{with .Comment}} // {{.}}{{end}}\n"
 
 	// ConstantTemplate spells a constant, its trailing comment
 	// behind the semicolon. Rust states a constant's type always,
