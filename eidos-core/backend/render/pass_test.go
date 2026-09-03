@@ -63,6 +63,9 @@ func language() render.Language {
 func scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 	switch s.Kind {
 	case emit.StmtExpr:
+		if s.Value.Kind == emit.ExprValue {
+			return nil, render.RefuseValue("fixture", "the fixture spells no value")
+		}
 		if head, _, qualified := strings.Cut(s.Value.Name, "."); qualified {
 			set.Add(head)
 		}
@@ -71,6 +74,15 @@ func scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 		return []byte("\treturn\n"), nil
 	default:
 		return nil, errors.New("the fixture spells names and returns only")
+	}
+}
+
+// unspellable returns the statement carrying a value the fixture
+// language has no form for.
+func unspellable() emit.Stmt {
+	return emit.Stmt{
+		Kind:  emit.StmtExpr,
+		Value: emit.ValueExpr(emit.Literal(emit.LiteralInt, "1")),
 	}
 }
 
@@ -1125,6 +1137,28 @@ func TestPass(t *testing.T) {
 						"so no half-opened shape reaches the file")
 			})
 		}
+	})
+
+	t.Run("a value the language cannot spell reports under its own code", func(t *testing.T) {
+		t.Parallel()
+
+		var b emit.Body
+		b.Stmts = []emit.Stmt{unspellable()}
+		files, sink := runPass(t, language(), seeded(t, fn("store.go", "Handle", b)))
+		coretest.AssertCodes(t, sink, render.UnspeltValue)
+		assert.Contains(t, reported(t, sink, render.UnspeltValue), "spells no value",
+			"the refusal carries the language's own reason")
+		assert.Equal(t, string(files[0].Body), "",
+			"and the declaration is skipped, the way any refused spelling is")
+	})
+
+	t.Run("a refusal that is not a value stays a template refusal", func(t *testing.T) {
+		t.Parallel()
+
+		var b emit.Body
+		b.Stmts = []emit.Stmt{refused()}
+		_, sink := runPass(t, language(), seeded(t, fn("store.go", "Handle", b)))
+		coretest.AssertCodes(t, sink, render.RefusedTemplate)
 	})
 
 	t.Run("a reference the tree cannot serve falls back to the slots", func(t *testing.T) {

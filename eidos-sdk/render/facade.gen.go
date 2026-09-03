@@ -101,6 +101,27 @@ var UnformattedFile = core.UnformattedFile
 // skipped and the file renders without it.
 var RefusedTemplate = core.RefusedTemplate
 
+// UnspeltValue reports a scaffold value the target language has no
+// form for: a raw literal written in another language, a
+// conversion where the language has none. The declaration is
+// skipped and the file renders without it, the way any refused
+// spelling is.
+var UnspeltValue = core.UnspeltValue
+
+// ValueError is the error a language's scaffold returns for a
+// value it cannot spell, so the render reports it under
+// [UnspeltValue] rather than as a template refusal.
+//
+// A caller reaches the classification through [errors.As], the way
+// the store's refusals are read, which is what keeps the code
+// load-bearing rather than a string a reader matches on.
+type ValueError = core.ValueError
+
+// RefuseValue returns the error a scaffold refuses a value with.
+func RefuseValue(lang, format string, args ...any) error {
+	return core.RefuseValue(lang, format, args...)
+}
+
 // BodyConflict reports a body holding more than one content form:
 // the standard and named slots still render, and no contested
 // content is guessed at.

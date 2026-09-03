@@ -45,6 +45,48 @@ var RefusedTemplate = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 23, Meaning: "a template refused a declaration at execute time",
 })
 
+// UnspeltValue reports a scaffold value the target language has no
+// form for: a raw literal written in another language, a
+// conversion where the language has none. The declaration is
+// skipped and the file renders without it, the way any refused
+// spelling is.
+var UnspeltValue = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 42, Meaning: "a scaffold value has no spelling in the target language",
+})
+
+// ValueError is the error a language's scaffold returns for a
+// value it cannot spell, so the render reports it under
+// [UnspeltValue] rather than as a template refusal.
+//
+// A caller reaches the classification through [errors.As], the way
+// the store's refusals are read, which is what keeps the code
+// load-bearing rather than a string a reader matches on.
+type ValueError struct {
+	// Lang names the target that refused, so the message reads the
+	// way every other refusal in that language does.
+	Lang string
+	// Msg is one sentence naming the value and the refusal.
+	Msg string
+}
+
+// Error renders the refusal.
+func (e *ValueError) Error() string { return e.Lang + ": " + e.Msg }
+
+// RefuseValue returns the error a scaffold refuses a value with.
+func RefuseValue(lang, format string, args ...any) error {
+	return &ValueError{Lang: lang, Msg: fmt.Sprintf(format, args...)}
+}
+
+// refusalCode classifies a render error: a value the language
+// cannot spell reports under its own code, everything else as the
+// template refusal it arrived as.
+func refusalCode(err error) diag.Code {
+	if _, refused := errors.AsType[*ValueError](err); refused {
+		return UnspeltValue
+	}
+	return RefusedTemplate
+}
+
 // BodyConflict reports a body holding more than one content form:
 // the standard and named slots still render, and no contested
 // content is guessed at.
@@ -927,7 +969,7 @@ func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) {
 	f.guard(d)
 	f.scratch.Reset()
 	if err := t.Execute(&f.scratch, d); err != nil {
-		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
+		f.sink.Errorf(refusalCode(err), f.at, f.origin,
 			"the %s template refused a declaration of %s: %v",
 			d.Kind(), u.Plugin, err)
 		return
@@ -951,7 +993,7 @@ func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) {
 	}
 	f.scratch.Reset()
 	if err := t.Execute(&f.scratch, c); err != nil {
-		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
+		f.sink.Errorf(refusalCode(err), f.at, f.origin,
 			"the %s group template refused a cluster of %s: %v",
 			c.Group, u.Plugin, err)
 		return

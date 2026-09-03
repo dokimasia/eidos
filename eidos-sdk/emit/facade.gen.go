@@ -548,12 +548,24 @@ const (
 	ExprName = core.ExprName
 	// ExprCall applies Fn to Args.
 	ExprCall = core.ExprCall
+	// ExprValue carries a Value: a sample, an alternate or a zero
+	// the projection derived, spelled by the target's own scaffold
+	// and qualified for the file it is written into. It is the one
+	// expression the vocabulary resolves anything for, because a
+	// value names types and callees the writing file may not
+	// import yet.
+	ExprValue = core.ExprValue
 )
 
 // Expr is one scaffolding expression. The zero Expr names nothing,
 // which is what a bare return carries. Fn is the one pointer in
 // the vocabulary, because a struct cannot hold itself.
 type Expr = core.Expr
+
+// ValueExpr returns an expression carrying one derived value.
+func ValueExpr(v Value) Expr {
+	return core.ValueExpr(v)
+}
 
 // Slot is a typed append point on an emit declaration.
 //
@@ -666,13 +678,41 @@ const (
 // pointer in the vocabulary, because a struct cannot hold itself.
 type Value = core.Value
 
-// ValueField is one entry of a composite: named, or positional
-// where Name is empty.
+// ValueField is one entry of a composite, in one of three forms: a
+// named field where Name is set, a keyed entry where Key is, and a
+// positional element where neither is. The three cover a struct's
+// fields, a map's entries and a list's elements, which is every
+// composite the languages in scope spell.
 type ValueField = core.ValueField
 
-// Literal returns a literal value of one kind.
+// Literal returns a literal value of one kind. Raw text takes
+// [Raw] instead, because a backend cannot spell it without knowing
+// the language it was written in.
 func Literal(k LiteralKind, text string) Value {
 	return core.Literal(k, text)
+}
+
+// Raw returns a literal an author wrote as text in one language: a
+// target spells it where the language is its own and refuses it
+// otherwise, because nothing can translate it.
+func Raw(lang symbol.Lang, text string) Value {
+	return core.Raw(lang, text)
+}
+
+// NamedField returns a composite's named field.
+func NamedField(name string, v Value) ValueField {
+	return core.NamedField(name, v)
+}
+
+// KeyedEntry returns a composite's keyed entry: a map's one pair.
+func KeyedEntry(key, v Value) ValueField {
+	return core.KeyedEntry(key, v)
+}
+
+// Element returns a composite's positional element: a list's one
+// item.
+func Element(v Value) ValueField {
+	return core.Element(v)
 }
 
 // Conversion returns a value converted to a type.

@@ -33,8 +33,8 @@ func TestValues(t *testing.T) {
 			assert.NoError(t, meta.Stamp(facts, b.View().Kernel.Sample, `"us-east"`, meta.Claim{Subject: subject}),
 				"the author states one value")
 			sample, alternate := b.SamplesOf(subject, builtin(strSpelling), "name")
-			assert.Equal(t, sample.Value, emit.Literal(emit.LiteralRaw, `"us-east"`),
-				"the authored half arrives as raw text")
+			assert.Equal(t, sample.Value, emit.Raw(coretest.Lang, `"us-east"`),
+				"the authored half arrives as raw text tagged with the language that wrote it")
 			assert.Equal(t, alternate.Value, emit.Literal(emit.LiteralString, "other-name"),
 				"and the other half derives independently")
 		})

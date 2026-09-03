@@ -72,6 +72,13 @@ const (
 	ExprName ExprKind = iota + 1
 	// ExprCall applies Fn to Args.
 	ExprCall
+	// ExprValue carries a Value: a sample, an alternate or a zero
+	// the projection derived, spelled by the target's own scaffold
+	// and qualified for the file it is written into. It is the one
+	// expression the vocabulary resolves anything for, because a
+	// value names types and callees the writing file may not
+	// import yet.
+	ExprValue
 )
 
 // String returns the kind's spelling, and the number for a kind
@@ -83,6 +90,8 @@ func (k ExprKind) String() string {
 		return "name"
 	case ExprCall:
 		return "call"
+	case ExprValue:
+		return "value"
 	default:
 		return strconv.Itoa(int(k))
 	}
@@ -96,4 +105,12 @@ type Expr struct {
 	Name string   `json:"name,omitzero"`
 	Fn   *Expr    `json:"fn,omitzero"`
 	Args []Expr   `json:"args,omitzero"`
+	// Val is the carried value, populated on ExprValue alone. It
+	// is a pointer for the same reason Fn is: the zero expression
+	// carries none, and a value tree is larger than the rest of
+	// the expression put together.
+	Val *Value `json:"val,omitzero"`
 }
+
+// ValueExpr returns an expression carrying one derived value.
+func ValueExpr(v Value) Expr { return Expr{Kind: ExprValue, Val: &v} }

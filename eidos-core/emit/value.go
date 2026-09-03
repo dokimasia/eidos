@@ -104,6 +104,7 @@ type Value struct {
 	Kind    ValueKind       `json:"kind"`
 	Literal LiteralKind     `json:"literal,omitzero"`
 	Text    string          `json:"text,omitzero"`
+	Lang    symbol.Lang     `json:"lang,omitzero"`   // LiteralRaw: the language the text is written in
 	Type    *TypeRef        `json:"type,omitzero"`   // Conversion and Composite: the type spelled
 	Callee  symbol.Identity `json:"callee,omitzero"` // Call: the function spelled and imported
 	Fields  []ValueField    `json:"fields,omitzero"` // Composite
@@ -111,20 +112,43 @@ type Value struct {
 	Inner   *Value          `json:"inner,omitzero"`  // Conversion and Address
 }
 
-// ValueField is one entry of a composite: named, or positional
-// where Name is empty.
+// ValueField is one entry of a composite, in one of three forms: a
+// named field where Name is set, a keyed entry where Key is, and a
+// positional element where neither is. The three cover a struct's
+// fields, a map's entries and a list's elements, which is every
+// composite the languages in scope spell.
 type ValueField struct {
 	Name  string `json:"name,omitzero"`
+	Key   *Value `json:"key,omitzero"`
 	Value Value  `json:"value"`
 }
 
 // IsZero reports whether the value names nothing.
 func (v Value) IsZero() bool { return v.Kind == 0 }
 
-// Literal returns a literal value of one kind.
+// Literal returns a literal value of one kind. Raw text takes
+// [Raw] instead, because a backend cannot spell it without knowing
+// the language it was written in.
 func Literal(k LiteralKind, text string) Value {
 	return Value{Kind: ValueLiteral, Literal: k, Text: text}
 }
+
+// Raw returns a literal an author wrote as text in one language: a
+// target spells it where the language is its own and refuses it
+// otherwise, because nothing can translate it.
+func Raw(lang symbol.Lang, text string) Value {
+	return Value{Kind: ValueLiteral, Literal: LiteralRaw, Text: text, Lang: lang}
+}
+
+// NamedField returns a composite's named field.
+func NamedField(name string, v Value) ValueField { return ValueField{Name: name, Value: v} }
+
+// KeyedEntry returns a composite's keyed entry: a map's one pair.
+func KeyedEntry(key, v Value) ValueField { return ValueField{Key: &key, Value: v} }
+
+// Element returns a composite's positional element: a list's one
+// item.
+func Element(v Value) ValueField { return ValueField{Value: v} }
 
 // Conversion returns a value converted to a type.
 func Conversion(t *TypeRef, inner Value) Value {

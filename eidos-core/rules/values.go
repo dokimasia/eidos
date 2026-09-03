@@ -104,14 +104,16 @@ func (b Bound) samplesOf(subject symbol.Identity, ref *node.TypeRef, hint string
 
 // authored reads the two authored values stamped on a declaration.
 // An authored value is text in the source language, so it arrives
-// as a raw literal.
+// as a raw literal tagged with the language that wrote it, which
+// is what lets a target refuse another language's text.
 func (b Bound) authored(id symbol.Identity) (Sample, Sample) {
 	var sample, alternate Sample
+	lang := b.source.Lang()
 	if text, held := Fact(b.view, id, b.view.Kernel.Sample); held {
-		sample = Of(emit.Literal(emit.LiteralRaw, text))
+		sample = Of(emit.Raw(lang, text))
 	}
 	if text, held := Fact(b.view, id, b.view.Kernel.Alternate); held {
-		alternate = Of(emit.Literal(emit.LiteralRaw, text))
+		alternate = Of(emit.Raw(lang, text))
 	}
 	return sample, alternate
 }
