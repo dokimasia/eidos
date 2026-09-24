@@ -51,6 +51,12 @@ func TestScaledFixture(t *testing.T) {
 		}
 	})
 
+	t.Run("orders every unit the way a flush leaves it", func(t *testing.T) {
+		t.Parallel()
+
+		assertFlushOrder(t, unitsOf(t, backendtest.ScaledFixture(t, fullInventory())))
+	})
+
 	t.Run("builds the same corpus twice", func(t *testing.T) {
 		t.Parallel()
 

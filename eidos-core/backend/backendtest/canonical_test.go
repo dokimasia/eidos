@@ -5,6 +5,7 @@ package backendtest_test
 
 import (
 	"io/fs"
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -63,6 +64,27 @@ func formsIn(tb assert.TB, forms map[emit.Form]bool, decls ...symbol.Symbol) {
 		form, err := body.Form()
 		assert.NoError(tb, err, "every fixture body holds one content form")
 		forms[form] = true
+	}
+}
+
+// assertFlushOrder checks that every unit is in the order a flush
+// leaves: the declarations by origin identity, and the origins
+// sorted and distinct.
+func assertFlushOrder(tb assert.TB, units []plugin.Unit) {
+	tb.Helper()
+
+	for _, u := range units {
+		origins := make([]symbol.Identity, 0, len(u.Decls))
+		for _, d := range u.Decls {
+			id, _ := emit.OriginOf(d)
+			origins = append(origins, id)
+		}
+		assert.True(tb, slices.IsSortedFunc(origins, symbol.Identity.Compare),
+			"the declarations order by origin: "+u.Key)
+		assert.True(tb, slices.IsSortedFunc(u.Origins, symbol.Identity.Compare),
+			"and so do the origins: "+u.Key)
+		assert.Equal(tb, len(slices.Compact(slices.Clone(u.Origins))), len(u.Origins),
+			"each origin once: "+u.Key)
 	}
 }
 
@@ -175,6 +197,12 @@ func TestCanonicalFixture(t *testing.T) {
 			assert.True(t, !keys[u.Key], "routing keys stay distinct: "+u.Key)
 			keys[u.Key] = true
 		}
+	})
+
+	t.Run("orders every unit the way a flush leaves it", func(t *testing.T) {
+		t.Parallel()
+
+		assertFlushOrder(t, unitsOf(t, backendtest.CanonicalFixture(t, fullInventory())))
 	})
 
 	t.Run("builds the same fixture twice", func(t *testing.T) {

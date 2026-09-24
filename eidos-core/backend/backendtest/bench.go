@@ -45,8 +45,9 @@ type Budget struct {
 // holds it to the budget: the fixture builds once outside the
 // loop, every iteration renders it whole over a fresh sink, and
 // the contract checks the ceiling when the loop ends. An
-// iteration reporting any finding fails the benchmark, because a
-// number over a partial render measures the wrong thing.
+// iteration returning no file or reporting an Error fails the
+// benchmark, because a number over a partial render measures the
+// wrong thing. A warning does not fail it.
 //
 // A satellite's setup returns [ScaledFixture] filtered to its
 // rendered coverage, so the corpus shape stays the suite's and
@@ -131,7 +132,8 @@ func BenchSettle(b *testing.B, setup Setup, budget Budget) {
 // filters its coverage: [BenchPackages] packages of [BenchFiles]
 // units, each holding [BenchDecls] declarations cycling the
 // inventory's kinds in kind order, numbered so every name is
-// distinct. Two calls build two equal fixtures.
+// distinct, and ordered the way a flush leaves them. Two calls
+// build two equal fixtures.
 func ScaledFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
 	tb.Helper()
 
@@ -145,25 +147,18 @@ func ScaledFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
 		pkg := scaledPackageID(p)
 		for file := range BenchFiles {
 			decls := make([]symbol.Symbol, 0, BenchDecls)
-			origins := make([]symbol.Identity, 0, BenchDecls)
 			for range BenchDecls {
-				d := scaledDecl(requested[n%len(requested)], n)
+				decls = append(decls, scaledDecl(requested[n%len(requested)], n))
 				n++
-				decls = append(decls, d)
-				if id, held := emit.OriginOf(d); held && !id.IsZero() {
-					origins = append(origins, id)
-				}
 			}
+			origins := flushOrder(decls)
 			u := plugin.Unit{
-				Plugin: emitter,
-				Per:    plugin.PerSource,
-				Word:   canonicalWord,
-				Key:    scaledKey(p, file),
-				Pkg:    pkg,
-				Decls:  decls,
-				// The builder numbers every name upward, so the
-				// origins arrive sorted the way a flush leaves
-				// them.
+				Plugin:  emitter,
+				Per:     plugin.PerSource,
+				Word:    canonicalWord,
+				Key:     scaledKey(p, file),
+				Pkg:     pkg,
+				Decls:   decls,
 				Origins: origins,
 			}
 			if err := e.Add(u); err != nil {

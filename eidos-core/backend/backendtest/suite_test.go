@@ -832,6 +832,44 @@ func TestAssertCoveredFacts(t *testing.T) {
 		backendtest.AssertCoveredFacts(t, setup)
 	})
 
+	t.Run("attributes a variant's refusal to the variant's kind", func(t *testing.T) {
+		t.Parallel()
+
+		// A Sum and its variant each state the refused comment. The
+		// variant's finding names SumVariant, which contains Sum.
+		setup := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+			tb.Helper()
+
+			r, held := memberBuilder(tb, spellsMembers()).
+				Coverage(total(map[symbol.Fact]render.Verdict{symbol.FactComment: render.Refuses})).
+				Build().(plugin.Renderer)
+			assert.True(tb, held, "the covered member backend renders")
+			shape := &emit.Sum{
+				Origin:  coretest.ID(coretest.StorePath, hostSum, symbol.KindSum),
+				Name:    hostSum,
+				Comment: "tagged",
+			}
+			shape.Variants.Append(&emit.SumVariant{
+				Origin:  coretest.ID(coretest.StorePath, sumVariant, symbol.KindSumVariant),
+				Name:    sumVariant,
+				Comment: "round",
+			})
+			e := plugin.NewEmit()
+			assert.NoError(tb, e.Add(unit("hosts", shape)), "the sum unit arrives")
+			return r, &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{"gen"}}
+		}
+		// Go randomises map iteration order per range, and the check
+		// ranges over its expectations. Thirty runs visit the Sum key
+		// before the SumVariant key at least once with high
+		// probability, which is the order a substring match
+		// misattributes under.
+		for range 30 {
+			rec := assert.NewRecorder()
+			backendtest.AssertCoveredFacts(rec, setup)
+			assert.False(t, rec.Failed(), "each refusal counts under the kind it names")
+		}
+	})
+
 	t.Run("rejects a declaration missing a fact", func(t *testing.T) {
 		t.Parallel()
 
@@ -1020,6 +1058,71 @@ func TestAssertRenderedMembers(t *testing.T) {
 		}
 		assert.Equal(t, len(rec.Messages()), 6,
 			"and reports each drop rather than stopping at the first")
+	})
+
+	t.Run("rejects a member only another file spells", func(t *testing.T) {
+		t.Parallel()
+
+		// The struct's method shares its name with a function in a
+		// second file, so the rendered bytes contain the name while
+		// the host's own file drops the method.
+		shadowed := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+			tb.Helper()
+
+			kinds := dropsMembers()
+			kinds[symbol.KindFunction] = "func {{.Name}}() {}\n"
+			r, held := memberBuilder(tb, kinds).Build().(plugin.Renderer)
+			assert.True(tb, held, "the member backend renders")
+			row := &emit.Struct{
+				Origin: coretest.ID(coretest.StorePath, hostStruct, symbol.KindStruct),
+				Name:   hostStruct,
+			}
+			row.Methods.Append(&emit.Method{
+				Origin: coretest.ID(coretest.StorePath, structMethod, symbol.KindMethod),
+				Name:   structMethod,
+			})
+			e := plugin.NewEmit()
+			assert.NoError(tb, e.Add(unit("hosts", row)), "the host unit arrives")
+			assert.NoError(tb, e.Add(unit("funcs", &emit.Function{
+				Origin: coretest.ID(coretest.StorePath, structMethod, symbol.KindFunction),
+				Name:   structMethod,
+			})), "and the unit of the function sharing its method's name")
+			return r, &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{"gen"}}
+		}
+		failure := assert.Rejects(t, "a member only another file spells must fail",
+			func(tb assert.TB) {
+				backendtest.AssertRenderedMembers(tb, shadowed)
+			})
+		assert.Contains(t, failure, structMethod, "the refusal names the member its host dropped")
+	})
+
+	t.Run("rejects a member whose name occurs only inside a longer word", func(t *testing.T) {
+		t.Parallel()
+
+		// The host name Row contains the member name Ro, and no whole
+		// word spells Ro.
+		prefixed := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+			tb.Helper()
+
+			r, held := memberBuilder(tb, dropsMembers()).Build().(plugin.Renderer)
+			assert.True(tb, held, "the member backend renders")
+			row := &emit.Struct{
+				Origin: coretest.ID(coretest.StorePath, hostStruct, symbol.KindStruct),
+				Name:   hostStruct,
+			}
+			row.Fields.Append(&emit.Field{
+				Origin: coretest.ID(coretest.StorePath, "Ro", symbol.KindField),
+				Name:   "Ro",
+			})
+			e := plugin.NewEmit()
+			assert.NoError(tb, e.Add(unit("hosts", row)), "the host unit arrives")
+			return r, &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{"gen"}}
+		}
+		failure := assert.Rejects(t, "a member no whole word spells must fail",
+			func(tb assert.TB) {
+				backendtest.AssertRenderedMembers(tb, prefixed)
+			})
+		assert.Contains(t, failure, "member Ro of", "the refusal names the member")
 	})
 
 	t.Run("passes a member a finding already names", func(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"go.dokimi.dev/assert"
 
@@ -18,13 +19,15 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// RunBackendSuite holds a renderer to the checks a render returns
-// as values: the fixture is populated, two runs produce
-// byte-identical files, every emit kind the fixture carries
-// renders, every body arrives whole, and a file's failure reports
-// positioned and attributed while the render continues. The
-// header and trailer checks are the output contract's and join the
-// suite with it.
+// RunBackendSuite runs the eight checks a render returns as values
+// against a renderer: the fixture is populated, two runs produce
+// byte-identical files, every emit kind in the fixture renders,
+// every body arrives whole, a file's failure reports
+// positioned and attributed while the render continues, the settle
+// preserves the structure, the declared fact coverage matches the
+// refusals, and every member arrives in its host's file. The
+// header and trailer checks are the output contract's, in
+// [AssertStamped].
 func RunBackendSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
@@ -64,12 +67,14 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 
 // AssertRenderedMembers settles one setup's fixture, renders it,
 // and holds every member declaration to appearing in the output:
-// each settled field, method and variant name occurs in the
-// rendered bytes, or a finding names it. A host template that
-// ranges some member lists and forgets one drops those members
-// with no finding — the drop is invisible to the kind and fact
-// checks, because neither visits a member a template never
-// renders, so this check reads the bytes instead.
+// each settled field, method and variant name occurs as a whole
+// word in a file that also contains its host's name, or a finding
+// names it. A host template that ranges some member lists and
+// forgets one drops those members with no finding. The kind and
+// fact checks never visit a member a template never renders, so
+// this check reads the rendered bytes. It reads only the files
+// that contain the host's name, and a declaration elsewhere that
+// shares a member's name does not count for the member.
 func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -84,10 +89,6 @@ func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	files, err := r.Render(f.context(sink))
 	assert.NoError(tb, err, "the settled fixture renders")
 
-	var out bytes.Buffer
-	for _, file := range files {
-		out.Write(file.Body)
-	}
 	var excused strings.Builder
 	for d := range sink.All() {
 		excused.WriteString(d.Msg)
@@ -98,7 +99,7 @@ func AssertRenderedMembers(tb assert.TB, setup Setup) {
 		for _, d := range u.Decls {
 			host, members := memberNames(d)
 			for _, name := range members {
-				if bytes.Contains(out.Bytes(), []byte(name)) ||
+				if renderedBeside(files, host, name) ||
 					strings.Contains(excused.String(), name) {
 					continue
 				}
@@ -107,6 +108,46 @@ func AssertRenderedMembers(tb assert.TB, setup Setup) {
 			}
 		}
 	}
+}
+
+// renderedBeside reports whether one file contains both the host's
+// name and the member's name as whole words.
+func renderedBeside(files []plugin.RenderedFile, host, member string) bool {
+	for _, file := range files {
+		if containsWord(file.Body, host) && containsWord(file.Body, member) {
+			return true
+		}
+	}
+	return false
+}
+
+// containsWord reports whether word occurs in body as a whole
+// identifier: an occurrence counts only where neither neighbouring
+// byte can continue an identifier.
+func containsWord(body []byte, word string) bool {
+	if word == "" {
+		return false
+	}
+	for from := 0; from < len(body); {
+		at := bytes.Index(body[from:], []byte(word))
+		if at < 0 {
+			return false
+		}
+		start, end := from+at, from+at+len(word)
+		if (start == 0 || !identByte(body[start-1])) && (end == len(body) || !identByte(body[end])) {
+			return true
+		}
+		from = start + 1
+	}
+	return false
+}
+
+// identByte reports whether c can continue an identifier in any
+// target: an ASCII letter, a digit, an underscore, or a byte of a
+// multi-byte UTF-8 letter.
+func identByte(c byte) bool {
+	return c == '_' || c >= '0' && c <= '9' || c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' ||
+		c >= utf8.RuneSelf
 }
 
 // memberNames returns a declaration's name and its member names:
@@ -242,8 +283,9 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	for _, msg := range refusals {
 		matched := false
 		for key := range expect {
-			if strings.Contains(msg, key.fact.String()) &&
-				strings.Contains(msg, key.kind.String()) {
+			// The exact tail is what tells a SumVariant's refusal from
+			// a Sum's, and a TypeParamDefault's from a ParamDefault's.
+			if strings.HasSuffix(msg, refusalTail(key.fact, key.kind)) {
 				seen[key]++
 				matched = true
 				break
@@ -257,6 +299,12 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 		assert.Equal(tb, seen[key], want, "a stated "+key.fact.String()+" on a "+
 			key.kind.String()+" reports its refusal once per statement")
 	}
+}
+
+// refusalTail returns the end of the render pass's refused-fact
+// finding: the fact, then the kind it was stated on.
+func refusalTail(fact symbol.Fact, kind symbol.Kind) string {
+	return " no spelling for " + fact.String() + " stated on a " + kind.String()
 }
 
 // RenderSettled settles one setup's fixture and renders it once,

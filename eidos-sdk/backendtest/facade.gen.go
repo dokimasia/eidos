@@ -48,8 +48,9 @@ type Budget = core.Budget
 // holds it to the budget: the fixture builds once outside the
 // loop, every iteration renders it whole over a fresh sink, and
 // the contract checks the ceiling when the loop ends. An
-// iteration reporting any finding fails the benchmark, because a
-// number over a partial render measures the wrong thing.
+// iteration returning no file or reporting an Error fails the
+// benchmark, because a number over a partial render measures the
+// wrong thing. A warning does not fail it.
 //
 // A satellite's setup returns [ScaledFixture] filtered to its
 // rendered coverage, so the corpus shape stays the suite's and
@@ -74,7 +75,8 @@ func BenchSettle(b *testing.B, setup Setup, budget Budget) {
 // filters its coverage: [BenchPackages] packages of [BenchFiles]
 // units, each holding [BenchDecls] declarations cycling the
 // inventory's kinds in kind order, numbered so every name is
-// distinct. Two calls build two equal fixtures.
+// distinct, and ordered the way a flush leaves them. Two calls
+// build two equal fixtures.
 func ScaledFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
 	return core.ScaledFixture(tb, inventory)
 }
@@ -141,25 +143,29 @@ func AssertStamped(tb assert.TB, setup Setup, c *output.Contract) {
 	core.AssertStamped(tb, setup, c)
 }
 
-// RunBackendSuite holds a renderer to the checks a render returns
-// as values: the fixture is populated, two runs produce
-// byte-identical files, every emit kind the fixture carries
-// renders, every body arrives whole, and a file's failure reports
-// positioned and attributed while the render continues. The
-// header and trailer checks are the output contract's and join the
-// suite with it.
+// RunBackendSuite runs the eight checks a render returns as values
+// against a renderer: the fixture is populated, two runs produce
+// byte-identical files, every emit kind in the fixture renders,
+// every body arrives whole, a file's failure reports
+// positioned and attributed while the render continues, the settle
+// preserves the structure, the declared fact coverage matches the
+// refusals, and every member arrives in its host's file. The
+// header and trailer checks are the output contract's, in
+// [AssertStamped].
 func RunBackendSuite(t *testing.T, setup Setup) {
 	core.RunBackendSuite(t, setup)
 }
 
 // AssertRenderedMembers settles one setup's fixture, renders it,
 // and holds every member declaration to appearing in the output:
-// each settled field, method and variant name occurs in the
-// rendered bytes, or a finding names it. A host template that
-// ranges some member lists and forgets one drops those members
-// with no finding — the drop is invisible to the kind and fact
-// checks, because neither visits a member a template never
-// renders, so this check reads the bytes instead.
+// each settled field, method and variant name occurs as a whole
+// word in a file that also contains its host's name, or a finding
+// names it. A host template that ranges some member lists and
+// forgets one drops those members with no finding. The kind and
+// fact checks never visit a member a template never renders, so
+// this check reads the rendered bytes. It reads only the files
+// that contain the host's name, and a declaration elsewhere that
+// shares a member's name does not count for the member.
 func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	core.AssertRenderedMembers(tb, setup)
 }

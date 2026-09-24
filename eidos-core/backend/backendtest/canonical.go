@@ -192,18 +192,9 @@ func canonicalUnit(k symbol.Kind) plugin.Unit {
 }
 
 // unitFor returns one per-source unit under the emitter, keyed by
-// stem, with its origins collected from the declarations.
+// stem, in the order a flush leaves it.
 func unitFor(stem string, decls ...symbol.Symbol) plugin.Unit {
-	origins := make([]symbol.Identity, 0, len(decls))
-	for _, d := range decls {
-		if id, held := emit.OriginOf(d); held && !id.IsZero() {
-			origins = append(origins, id)
-		}
-	}
-	slices.SortFunc(origins, compareIdentity)
-	origins = slices.CompactFunc(origins, func(a, b symbol.Identity) bool {
-		return a == b
-	})
+	origins := flushOrder(decls)
 	return plugin.Unit{
 		Plugin:  emitter,
 		Per:     plugin.PerSource,
@@ -215,18 +206,22 @@ func unitFor(stem string, decls ...symbol.Symbol) plugin.Unit {
 	}
 }
 
-// compareIdentity orders identities by their string form, which
-// is the canonical spelling everything durable sorts by.
-func compareIdentity(a, b symbol.Identity) int {
-	as, bs := a.String(), b.String()
-	switch {
-	case as < bs:
-		return -1
-	case as > bs:
-		return 1
-	default:
-		return 0
+// flushOrder sorts declarations the way a flush leaves them, by
+// origin identity with insertion order kept among equal origins,
+// and returns their distinct origins in that order.
+func flushOrder(decls []symbol.Symbol) []symbol.Identity {
+	slices.SortStableFunc(decls, func(a, b symbol.Symbol) int {
+		oa, _ := emit.OriginOf(a)
+		ob, _ := emit.OriginOf(b)
+		return oa.Compare(ob)
+	})
+	origins := make([]symbol.Identity, 0, len(decls))
+	for _, d := range decls {
+		if id, held := emit.OriginOf(d); held && !id.IsZero() {
+			origins = append(origins, id)
+		}
 	}
+	return slices.Compact(origins)
 }
 
 // packageID is the owning package every canonical unit shares.
@@ -598,9 +593,8 @@ func matchAlias() *emit.Alias {
 	}
 }
 
-// limitConstant returns the constant, untyped the way a target
-// without one spells it anyway, its trailing comment stated so a
-// target that renders one proves it.
+// limitConstant returns the constant, typed int32, its trailing
+// comment stated so a target that renders one proves it.
 func limitConstant() *emit.Constant {
 	return &emit.Constant{
 		Origin:  originOf("limit", symbol.KindConstant),
