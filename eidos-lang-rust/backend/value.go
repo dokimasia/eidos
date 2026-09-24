@@ -4,7 +4,7 @@
 package backend
 
 import (
-	"strconv"
+	"fmt"
 	"strings"
 
 	rust "go.dokimi.dev/eidos/lang/rust"
@@ -34,10 +34,9 @@ type target struct{ set *render.ImportSet }
 func (target) Lang() string { return string(rust.Lang) }
 
 // Literal spells one leaf. A number carries its own text; a string
-// quotes through the standard library, whose escapes Rust reads
-// the same way; a boolean takes exactly the two spellings; the
-// absent value is None. Raw text spells only where the author
-// wrote it in Rust.
+// quotes in Rust's own grammar; a boolean takes exactly the two
+// spellings; the absent value is None. Raw text spells only where
+// the author wrote it in Rust.
 func (t target) Literal(v emit.Value) (string, error) {
 	switch v.Literal {
 	case emit.LiteralInt, emit.LiteralFloat:
@@ -46,7 +45,7 @@ func (t target) Literal(v emit.Value) (string, error) {
 		}
 		return v.Text, nil
 	case emit.LiteralString:
-		return strconv.Quote(v.Text), nil
+		return quoteString(v.Text), nil
 	case emit.LiteralBool:
 		if v.Text != trueSpelling && v.Text != falseSpelling {
 			return "", render.RefuseValue(t.Lang(),
@@ -144,4 +143,38 @@ func (t target) use(id symbol.Identity) {
 		return
 	}
 	t.set.AddNamed(id.Package, id.Name)
+}
+
+// quoteString spells a string literal in Rust's grammar: the
+// backslash, the double quote and the named escapes \n \r \t \0,
+// every other control character as a braced Unicode escape, and
+// everything else as itself.
+func quoteString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case 0:
+			b.WriteString(`\0`)
+		default:
+			if r < ' ' || r == 0x7f {
+				fmt.Fprintf(&b, `\u{%x}`, r)
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }

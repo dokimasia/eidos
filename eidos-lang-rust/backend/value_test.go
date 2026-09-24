@@ -74,6 +74,16 @@ func TestValue(t *testing.T) {
 				"None",
 			},
 			{
+				"a string escapes in Rust's grammar",
+				emit.Literal(emit.LiteralString, "bell\a nul\x00 \\ \"q\" é"),
+				`"bell\` + `u{7} nul\0 \\ \"q\" é"`,
+			},
+			{
+				"control characters take their named escapes",
+				emit.Literal(emit.LiteralString, "\n\r\t\x7f"),
+				`"\n\r\t\` + `u{7f}"`,
+			},
+			{
 				"a conversion constructs the tuple struct a defined type is",
 				emit.Conversion(
 					valueRef("Weight", "units", "Weight"),

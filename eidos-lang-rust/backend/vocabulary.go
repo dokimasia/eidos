@@ -542,19 +542,9 @@ func Params(ps []*emit.Param) string {
 		if name == "" {
 			name = "_"
 		}
-		parts = append(parts, name+": "+Spell(p.Type)+inlineComment(p.Comment))
+		parts = append(parts, name+": "+Spell(p.Type)+textfmt.Inline(p.Comment))
 	}
 	return strings.Join(parts, ", ")
-}
-
-// inlineComment spells a trailing comment inside a signature as a
-// block comment, the one form that survives on the line, and
-// nothing for none.
-func inlineComment(text string) string {
-	if text == "" {
-		return ""
-	}
-	return " /* " + text + " */"
 }
 
 // Results writes a return annotation: nothing for none, the type
@@ -565,11 +555,11 @@ func Results(rs []*emit.Return) string {
 	case 0:
 		return ""
 	case 1:
-		return " -> " + Spell(rs[0].Type) + inlineComment(rs[0].Comment)
+		return " -> " + Spell(rs[0].Type) + textfmt.Inline(rs[0].Comment)
 	default:
 		parts := make([]string, 0, len(rs))
 		for _, r := range rs {
-			parts = append(parts, Spell(r.Type)+inlineComment(r.Comment))
+			parts = append(parts, Spell(r.Type)+textfmt.Inline(r.Comment))
 		}
 		return " -> (" + strings.Join(parts, ", ") + ")"
 	}
