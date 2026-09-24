@@ -4,108 +4,36 @@
 package backend
 
 import (
-	"fmt"
-	"strings"
-
+	java "go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/scaffold"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
-// indent is one level of Java indentation: four spaces, the
-// convention the ecosystem's formatters settle on.
-const indent = "    "
+// grammar is Java's statement syntax, indented four spaces, the
+// convention the ecosystem's formatters settle on. Every statement
+// ends with a semicolon, and a declaring assignment binds with var.
+// Java's failures throw, so the grammar has neither a tuple nor a
+// guard: a delegate's second result arrives thrown, and an
+// assignment binding several names is refused. A guard without
+// actions spells nothing, because the throw propagates the failure,
+// and a guard with actions is refused.
+var grammar = scaffold.Grammar{
+	Lang:    string(java.Lang),
+	Indent:  "    ",
+	End:     ";",
+	Declare: "var ",
+}
 
-// Scaffold spells one statement of the neutral vocabulary as
-// Java, and refuses what Java cannot say. An assignment binding
-// several names has no Java form, because nothing destructures: a
-// delegate's second result arrives thrown, not returned. A guard
-// spells nothing at all, for the same reason from the other side:
-// a thrown failure propagates natively, so the guard is the
-// propagation and the propagation is silence.
+// Scaffold spells one statement of the neutral vocabulary as Java,
+// through [grammar] and a target that records imports into set.
 //
 // A scaffolding name resolves locally by construction, so no name
-// records an import. A carried value does: its references and its
-// callees name packages the writing file may not import yet, and
-// each spelling records into the set. A statement Java has no form for
-// returns an error, and the render skips that declaration rather
-// than the file.
+// records an import. A value in a statement does: its references and its
+// callees name classes the writing file may not import yet, and each
+// spelling records into the set. A statement or a value Java has no
+// form for returns an error, and the render skips that declaration
+// and keeps the file.
 func Scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
-	var b strings.Builder
-	if err := statement(&b, s, 1, target{set: set}); err != nil {
-		return nil, err
-	}
-	return []byte(b.String()), nil
-}
-
-// statement writes one statement at depth levels of indentation.
-func statement(b *strings.Builder, s emit.Stmt, depth int, t target) error {
-	switch s.Kind {
-	case emit.StmtReturn:
-		b.WriteString(strings.Repeat(indent, depth))
-		return returnStmt(b, s, t)
-	case emit.StmtAssign:
-		return assignStmt(b, s, depth, t)
-	case emit.StmtExpr:
-		b.WriteString(strings.Repeat(indent, depth))
-		if err := scaffold.Expr(b, s.Value, t); err != nil {
-			return err
-		}
-		b.WriteString(";\n")
-		return nil
-	case emit.StmtGuard:
-		// A thrown failure propagates on its own, so a bare guard
-		// renders as that propagation, which is nothing at all. A
-		// guard carrying its own actions has no Java spelling —
-		// there is no failure value to test — and dropping the
-		// actions would narrow silently, so it refuses.
-		if len(s.Then) > 0 {
-			return fmt.Errorf(
-				"java: a guard's actions have no spelling where failures throw, "+
-					"and this one states %d statements", len(s.Then),
-			)
-		}
-		return nil
-	default:
-		return fmt.Errorf("java: no spelling for the %s statement", s.Kind)
-	}
-}
-
-// returnStmt writes a return, bare where it carries no value.
-func returnStmt(b *strings.Builder, s emit.Stmt, t target) error {
-	b.WriteString("return")
-	if s.Value.Kind != 0 {
-		b.WriteByte(' ')
-		if err := scaffold.Expr(b, s.Value, t); err != nil {
-			return err
-		}
-	}
-	b.WriteString(";\n")
-	return nil
-}
-
-// assignStmt writes an assignment. A declaration binds with var;
-// several names are refused, because Java destructures nothing.
-func assignStmt(b *strings.Builder, s emit.Stmt, depth int, t target) error {
-	if len(s.Names) == 0 {
-		return fmt.Errorf("java: an assignment binds no name")
-	}
-	if len(s.Names) > 1 {
-		return fmt.Errorf(
-			"java: an assignment binds %d names, and Java destructures none: "+
-				"a delegate's second result arrives thrown, not returned",
-			len(s.Names),
-		)
-	}
-	b.WriteString(strings.Repeat(indent, depth))
-	if s.Declare {
-		b.WriteString("var ")
-	}
-	b.WriteString(s.Names[0])
-	b.WriteString(" = ")
-	if err := scaffold.Expr(b, s.Value, t); err != nil {
-		return err
-	}
-	b.WriteString(";\n")
-	return nil
+	return scaffold.Scaffold(grammar, s, target{set: set})
 }

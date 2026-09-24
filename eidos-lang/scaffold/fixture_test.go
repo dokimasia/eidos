@@ -13,9 +13,8 @@ import (
 )
 
 // scripted is a target spelling a C-family syntax, so the shared
-// walk is exercised without pulling a satellite in. It records
-// what it was asked to import, which is what the walk's contract
-// with a real target rests on.
+// walk runs without a satellite. It records every import the walk
+// requests, which is the walk's contract with a real target.
 type scripted struct {
 	imported []string
 	// refuseRaw refuses a raw literal, the way a target meeting
@@ -44,9 +43,6 @@ func (s *scripted) Literal(v emit.Value) (string, error) {
 }
 
 func (s *scripted) Type(t *emit.TypeRef) (string, error) {
-	if t == nil || t.Spelling == "" {
-		return "", fmt.Errorf("scripted: a value names a type that spells nothing")
-	}
 	if t.Target.Package != "" {
 		s.imported = append(s.imported, t.Target.Package)
 	}
@@ -79,14 +75,10 @@ func (*scripted) Composite(_ *emit.TypeRef, typ string, entries []scaffold.Entry
 	return typ + "{" + strings.Join(parts, ", ") + "}", nil
 }
 
-func (*scripted) Call(callee string, args []string) (string, error) {
-	return callee + "(" + strings.Join(args, ", ") + ")", nil
-}
-
 func (*scripted) Address(inner string) (string, error) { return "&" + inner, nil }
 
 // unspelling is a target refusing every form, so the walk's
-// error path is exercised at each spelling in turn.
+// error path runs at each spelling in turn.
 type unspelling struct{ scripted }
 
 func (unspelling) Conversion(*emit.TypeRef, string, string) (string, error) {

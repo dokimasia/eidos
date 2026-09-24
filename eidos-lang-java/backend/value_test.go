@@ -70,6 +70,26 @@ func TestValue(t *testing.T) {
 				"42",
 			},
 			{
+				"the largest int keeps its text",
+				emit.Literal(emit.LiteralInt, "2147483647"),
+				"2147483647",
+			},
+			{
+				"an integer beyond the int range takes the long suffix",
+				emit.Literal(emit.LiteralInt, "5000000000"),
+				"5000000000L",
+			},
+			{
+				"a negative integer beyond the int range takes it too",
+				emit.Literal(emit.LiteralInt, "-2147483649"),
+				"-2147483649L",
+			},
+			{
+				"a float keeps its text",
+				emit.Literal(emit.LiteralFloat, "1.5"),
+				"1.5",
+			},
+			{
 				"the absent value",
 				emit.Literal(emit.LiteralNil, ""),
 				"null",
@@ -174,6 +194,10 @@ func TestValue(t *testing.T) {
 			{
 				"another language's raw text",
 				emit.Raw("golang", "Row{}"), "written in golang",
+			},
+			{
+				"an integer beyond the long range",
+				emit.Literal(emit.LiteralInt, "9223372036854775808"), "does not fit a Java long",
 			},
 			{
 				"an address, which Java has no operator for",

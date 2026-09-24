@@ -16,60 +16,36 @@ import (
 
 // The spellings Rust's value forms are written with.
 const (
-	// noneSpelling is Rust's absent value, which an Option takes.
-	noneSpelling = "None"
-	// trueSpelling and falseSpelling are the two truth values.
-	trueSpelling  = "true"
-	falseSpelling = "false"
 	// vecMacro opens a vector literal, which is how Rust spells a
 	// list of values.
 	vecMacro = "vec!["
+	// floatPoint completes a float literal written without a
+	// fraction.
+	floatPoint = ".0"
 )
 
+// leaves is Rust's spelling of the literal leaves: a number spells
+// through [number], a string quotes in Rust's own grammar, and the
+// absent value is None, which an Option takes.
+var leaves = scaffold.Leaves{
+	Lang:   rust.Lang,
+	Absent: "None",
+	Quote:  quoteString,
+	Number: number,
+}
+
 // target spells a value tree as Rust, recording into the file's
-// import set whatever its references and callees need.
+// import set the paths its references and callees need.
 type target struct{ set *render.ImportSet }
 
 // Lang names the target for a refusal.
 func (target) Lang() string { return string(rust.Lang) }
 
-// Literal spells one leaf. A number carries its own text; a string
-// quotes in Rust's own grammar; a boolean takes exactly the two
-// spellings; the absent value is None. Raw text spells only where
-// the author wrote it in Rust.
-func (t target) Literal(v emit.Value) (string, error) {
-	switch v.Literal {
-	case emit.LiteralInt, emit.LiteralFloat:
-		if v.Text == "" {
-			return "", render.RefuseValue(t.Lang(), "a %s literal carries no text", v.Literal)
-		}
-		return v.Text, nil
-	case emit.LiteralString:
-		return quoteString(v.Text), nil
-	case emit.LiteralBool:
-		if v.Text != trueSpelling && v.Text != falseSpelling {
-			return "", render.RefuseValue(t.Lang(),
-				"a boolean literal spells %s or %s, not %q", trueSpelling, falseSpelling, v.Text)
-		}
-		return v.Text, nil
-	case emit.LiteralNil:
-		return noneSpelling, nil
-	case emit.LiteralRaw:
-		if v.Lang != rust.Lang {
-			return "", render.RefuseValue(t.Lang(),
-				"%q is written in %s, which Rust cannot spell", v.Text, v.Lang)
-		}
-		return v.Text, nil
-	default:
-		return "", render.RefuseValue(t.Lang(), "no spelling for the %s literal", v.Literal)
-	}
-}
+// Literal spells one leaf through [leaves].
+func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
 
 // Type spells a reference and records the use its module needs.
 func (t target) Type(ref *emit.TypeRef) (string, error) {
-	if ref == nil || ref.Spelling == "" {
-		return "", render.RefuseValue(t.Lang(), "a value names a type that spells nothing")
-	}
 	t.use(ref.Target)
 	return Spell(ref), nil
 }
@@ -77,9 +53,6 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 // Callee spells a function by name and records its use: a used
 // path binds the name, so nothing qualifies at the call.
 func (t target) Callee(id symbol.Identity) (string, error) {
-	if id.Name == "" {
-		return "", render.RefuseValue(t.Lang(), "a call names a function that spells nothing")
-	}
 	t.use(id)
 	return id.Name, nil
 }
@@ -91,16 +64,16 @@ func (target) Conversion(_ *emit.TypeRef, typ, inner string) (string, error) {
 }
 
 // Composite spells a struct literal for a record and a vector
-// literal for a list. A map refuses: Rust states no map literal,
+// literal for a list. A map is refused: Rust states no map literal,
 // and a collection built from an array of pairs is a call the
-// vocabulary does not carry.
+// vocabulary does not express.
 func (t target) Composite(
 	ref *emit.TypeRef, typ string, entries []scaffold.Entry,
 ) (string, error) {
 	for _, e := range entries {
 		if e.Key != "" {
 			return "", render.RefuseValue(t.Lang(),
-				"Rust spells no map literal, and a %s value carries a keyed entry", typ)
+				"Rust spells no map literal, and a %s value has a keyed entry", typ)
 		}
 	}
 	if ref != nil && (ref.Form == symbol.FormList || ref.Form == symbol.FormArray) {
@@ -117,7 +90,7 @@ func (t target) Composite(
 	for _, e := range entries {
 		if e.Name == "" {
 			return "", render.RefuseValue(t.Lang(),
-				"a %s value carries a positional element, and a struct literal names every field", typ)
+				"a %s value has a positional element, and a struct literal names every field", typ)
 		}
 		parts = append(parts, e.Name+": "+e.Value)
 	}
@@ -125,11 +98,6 @@ func (t target) Composite(
 		return typ, nil
 	}
 	return typ + " { " + strings.Join(parts, ", ") + " }", nil
-}
-
-// Call spells an application.
-func (target) Call(callee string, args []string) (string, error) {
-	return callee + "(" + strings.Join(args, ", ") + ")", nil
 }
 
 // Address spells a shared borrow, which is Rust's address of a
@@ -143,6 +111,17 @@ func (t target) use(id symbol.Identity) {
 		return
 	}
 	t.set.AddNamed(id.Package, id.Name)
+}
+
+// number spells a number for Rust. A float written without a
+// fraction or an exponent takes ".0", because Rust reads "0" as an
+// integer literal and refuses it where a float is expected. Every
+// other number keeps the text the derivation wrote.
+func number(v emit.Value) (string, error) {
+	if v.Literal == emit.LiteralFloat && !strings.ContainsAny(v.Text, ".eE") {
+		return v.Text + floatPoint, nil
+	}
+	return v.Text, nil
 }
 
 // quoteString spells a string literal in Rust's grammar: the

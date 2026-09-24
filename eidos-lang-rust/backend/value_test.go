@@ -69,6 +69,21 @@ func TestValue(t *testing.T) {
 				"42",
 			},
 			{
+				"a float without a fraction takes one",
+				emit.Literal(emit.LiteralFloat, "0"),
+				"0.0",
+			},
+			{
+				"a float with a fraction keeps its text",
+				emit.Literal(emit.LiteralFloat, "1.5"),
+				"1.5",
+			},
+			{
+				"a float with an exponent keeps its text",
+				emit.Literal(emit.LiteralFloat, "1e5"),
+				"1e5",
+			},
+			{
 				"the absent value",
 				emit.Literal(emit.LiteralNil, ""),
 				"None",

@@ -4,7 +4,10 @@
 package backend
 
 import (
+	"errors"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	java "go.dokimi.dev/eidos/lang/java"
@@ -16,15 +19,9 @@ import (
 
 // The spellings Java's value forms are written with.
 const (
-	// nullSpelling is Java's absent value, which every reference
-	// type takes.
-	nullSpelling = "null"
-	// trueSpelling and falseSpelling are the two truth values.
-	trueSpelling  = "true"
-	falseSpelling = "false"
 	// listClass and mapClass are the two collections Java states an
 	// immutable factory for, and collectionsPackage is where they
-	// live.
+	// are declared.
 	listClass          = "List"
 	mapClass           = "Map"
 	collectionsPackage = "java/util"
@@ -32,65 +29,42 @@ const (
 	factory = ".of("
 	// memberSep joins a class and its static member.
 	memberSep = "."
+	// longSuffix marks an integer literal as a long.
+	longSuffix = "L"
 )
 
+// leaves is Java's spelling of the literal leaves: a number spells
+// through [number], a string quotes in Java's own grammar, and the
+// absent value is null, which every reference type takes.
+var leaves = scaffold.Leaves{
+	Lang:   java.Lang,
+	Absent: "null",
+	Quote:  quoteString,
+	Number: number,
+}
+
 // target spells a value tree as Java, recording into the file's
-// import set whatever its references and callees need.
+// import set the classes its references and callees need.
 type target struct{ set *render.ImportSet }
 
 // Lang names the target for a refusal.
 func (target) Lang() string { return string(java.Lang) }
 
-// Literal spells one leaf. A number carries its own text; a string
-// quotes in Java's own grammar; a boolean takes exactly the two
-// spellings; the absent value is null. Raw text spells only where
-// the author wrote it in Java.
-func (t target) Literal(v emit.Value) (string, error) {
-	switch v.Literal {
-	case emit.LiteralInt, emit.LiteralFloat:
-		if v.Text == "" {
-			return "", render.RefuseValue(t.Lang(), "a %s literal carries no text", v.Literal)
-		}
-		return v.Text, nil
-	case emit.LiteralString:
-		return quoteString(v.Text), nil
-	case emit.LiteralBool:
-		if v.Text != trueSpelling && v.Text != falseSpelling {
-			return "", render.RefuseValue(t.Lang(),
-				"a boolean literal spells %s or %s, not %q", trueSpelling, falseSpelling, v.Text)
-		}
-		return v.Text, nil
-	case emit.LiteralNil:
-		return nullSpelling, nil
-	case emit.LiteralRaw:
-		if v.Lang != java.Lang {
-			return "", render.RefuseValue(t.Lang(),
-				"%q is written in %s, which Java cannot spell", v.Text, v.Lang)
-		}
-		return v.Text, nil
-	default:
-		return "", render.RefuseValue(t.Lang(), "no spelling for the %s literal", v.Literal)
-	}
-}
+// Literal spells one leaf through [leaves].
+func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
 
 // Type spells a reference and records the import its package
 // needs.
 func (t target) Type(ref *emit.TypeRef) (string, error) {
-	if ref == nil || ref.Spelling == "" {
-		return "", render.RefuseValue(t.Lang(), "a value names a type that spells nothing")
-	}
 	t.use(ref.Target)
 	return Spell(ref), nil
 }
 
 // Callee spells a function as Owner.name, the static method of the
 // class its identity's Owner names, and imports that class. A
-// function whose identity names no Owner refuses, because Java has
-// no free function to call.
+// function whose identity names no Owner is refused, because Java
+// has no free function to call.
 func (t target) Callee(id symbol.Identity) (string, error) {
-	if id.Name == "" {
-		return "", render.RefuseValue(t.Lang(), "a call names a function that spells nothing")
-	}
 	if id.Owner == "" {
 		return "", render.RefuseValue(t.Lang(),
 			"%s is owned by no class, and Java calls no free function", id.Name)
@@ -106,7 +80,7 @@ func (target) Conversion(_ *emit.TypeRef, typ, inner string) (string, error) {
 
 // Composite spells the two collection factories for a list and a
 // map, and a constructor call for a record. A record whose value
-// names its fields refuses: a Java constructor takes every
+// names its fields is refused: a Java constructor takes every
 // component positionally and in order, so a value setting some of
 // them cannot be spelled without inventing the rest.
 func (t target) Composite(
@@ -124,7 +98,7 @@ func (t target) Composite(
 		for _, e := range entries {
 			if e.Key == "" {
 				return "", render.RefuseValue(t.Lang(),
-					"a map value carries an entry with no key")
+					"a map value has an entry with no key")
 			}
 			parts = append(parts, e.Key, e.Value)
 		}
@@ -140,11 +114,6 @@ func (t target) Composite(
 		parts = append(parts, e.Value)
 	}
 	return "new " + typ + "(" + strings.Join(parts, ", ") + ")", nil
-}
-
-// Call spells an application.
-func (target) Call(callee string, args []string) (string, error) {
-	return callee + "(" + strings.Join(args, ", ") + ")", nil
 }
 
 // Address refuses: Java has no address operator, and a reference
@@ -176,12 +145,33 @@ func (t target) use(id symbol.Identity) {
 	t.set.AddNamed(id.Package, class)
 }
 
+// number spells a number for Java. An integer outside the int range
+// takes the long suffix, because Java reads an unsuffixed integer
+// literal as an int and refuses one that does not fit. An integer
+// outside the long range is refused, because no Java integer literal
+// can express it. Every other number keeps the text the derivation
+// wrote.
+func number(v emit.Value) (string, error) {
+	if v.Literal != emit.LiteralInt {
+		return v.Text, nil
+	}
+	n, err := strconv.ParseInt(v.Text, 0, 64)
+	switch {
+	case errors.Is(err, strconv.ErrRange):
+		return "", render.RefuseValue(string(java.Lang), "%s does not fit a Java long", v.Text)
+	case err == nil && (n < math.MinInt32 || n > math.MaxInt32):
+		return v.Text + longSuffix, nil
+	default:
+		return v.Text, nil
+	}
+}
+
 // quoteString spells a string literal in Java's grammar: the
 // backslash, the double quote and the named control escapes \b \t
 // \n \f \r, every other control character as an octal escape, and
-// everything else as itself. No \u escape is written: Java decodes
-// one before it reads the literal, and a decoded line break ends
-// the string.
+// everything else as itself. No \u escape is written, because Java
+// decodes one before it reads the literal, and a decoded line break
+// ends the string.
 func quoteString(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 2)

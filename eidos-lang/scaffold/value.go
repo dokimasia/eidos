@@ -4,15 +4,24 @@
 package scaffold
 
 import (
-	"fmt"
+	"strings"
 
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// trueSpelling and falseSpelling are the two truth values every
+// C-family target spells alike, the only texts a boolean literal
+// may contain.
+const (
+	trueSpelling  = "true"
+	falseSpelling = "false"
+)
+
 // Entry is one settled field of a composite, in the form the
-// value stated it: a named field carries Name, a map's entry
-// carries Key, and a list's element carries neither.
+// value stated it: a named field sets Name, a map's entry sets Key,
+// and a list's element sets neither.
 type Entry struct {
 	Name  string
 	Key   string
@@ -21,56 +30,107 @@ type Entry struct {
 
 // Target is what one language states about spelling a value tree.
 //
-// The walk is shared, because the tree's shape is the same
-// wherever it is written: a conversion holds one value, a
-// composite holds its fields in order, a call holds its arguments.
-// Every spelling below the walk is the target's own, and a form
-// the target has no syntax for refuses through its own method
-// rather than being guessed at.
+// The walk is shared, because the tree's shape is the same wherever
+// it is written: a conversion wraps one value, a composite lists its
+// fields in order, and a call lists its arguments. A call spells as
+// callee(args) in every C-family target, so the walk writes it. Every
+// other spelling is the target's own, and a form the target has no
+// syntax for is refused by the target's method.
 //
-// A method that spells a reference or a callee records whatever
-// import the spelling needs, which is why the target is bound to
-// one file's import set rather than shared across a render.
+// A method that spells a reference or a callee records the import the
+// spelling needs, so a target is bound to one file's import set.
 type Target interface {
 	// Lang names the target, so a refusal reads the way every
 	// other refusal in that language does.
 	Lang() string
-	// Literal spells one leaf: a number, a string's content, a
-	// truth value, the absent value, or raw text in a source
-	// language, which a target refuses unless it is its own. The
-	// whole leaf arrives rather than its parts, because raw text
-	// is spelled by the language that wrote it and nothing else.
+	// Literal spells one leaf: a number, a string's content, a truth
+	// value, the absent value, or raw text in a source language,
+	// which a target refuses unless the language is its own. [Leaves]
+	// is the spelling the C-family targets share.
 	Literal(v emit.Value) (string, error)
-	// Type spells a reference a value names, and records its
-	// import.
+	// Type spells a reference a value names, and records its import.
+	// The walk passes only a reference that spells.
 	Type(t *emit.TypeRef) (string, error)
-	// Callee spells a function a value calls, and records its
-	// import.
+	// Callee spells a function a value calls, and records its import.
+	// The walk passes only an identity with a name.
 	Callee(id symbol.Identity) (string, error)
-	// Conversion spells a value converted to a type: the reference
-	// beside its spelling, because a language whose conversion
-	// depends on the form reads the form off the reference rather
-	// than off the text.
+	// Conversion spells a value converted to a type. The reference is
+	// passed beside its spelling, because a language whose conversion
+	// depends on the form reads the form from the reference.
 	Conversion(ref *emit.TypeRef, typ, inner string) (string, error)
 	// Composite spells a composite of a type from its entries, the
-	// reference beside its spelling for the same reason: a record,
-	// a map and a list are one form here and three syntaxes in
+	// reference beside its spelling for the same reason: a record, a
+	// map and a list are one form in the tree and three syntaxes in
 	// most targets.
 	Composite(ref *emit.TypeRef, typ string, entries []Entry) (string, error)
-	// Call spells an application of a callee to its arguments.
-	Call(callee string, args []string) (string, error)
 	// Address spells the address of a value.
 	Address(inner string) (string, error)
 }
 
-// Value spells one value tree through a target.
+// Leaves is one target's spelling of the literal leaves: the parts in
+// which the C-family targets differ. Its [Leaves.Literal] method is
+// the target's [Target.Literal].
+type Leaves struct {
+	// Lang is the target's language. Its name opens every refusal,
+	// and raw text written in any other language is refused.
+	Lang symbol.Lang
+	// Absent spells the absent value, such as "nil".
+	Absent string
+	// Quote spells a string literal in the target's grammar.
+	Quote func(text string) string
+	// Number spells a number for the target. Nil writes the text the
+	// derivation wrote.
+	Number func(v emit.Value) (string, error)
+}
+
+// Literal spells one leaf. A number spells through [Leaves.Number],
+// a string quotes through [Leaves.Quote], a boolean takes exactly the
+// two spellings, and the absent value is [Leaves.Absent]. Raw text
+// spells only where the author wrote it in the target's language,
+// because nothing translates another language's source. Every
+// refusal is a [render.ValueError].
+func (l Leaves) Literal(v emit.Value) (string, error) {
+	lang := string(l.Lang)
+	switch v.Literal {
+	case emit.LiteralInt, emit.LiteralFloat:
+		if v.Text == "" {
+			return "", render.RefuseValue(lang, "a %s literal carries no text", v.Literal)
+		}
+		if l.Number == nil {
+			return v.Text, nil
+		}
+		return l.Number(v)
+	case emit.LiteralString:
+		return l.Quote(v.Text), nil
+	case emit.LiteralBool:
+		if v.Text != trueSpelling && v.Text != falseSpelling {
+			return "", render.RefuseValue(lang,
+				"a boolean literal spells %s or %s, not %q", trueSpelling, falseSpelling, v.Text)
+		}
+		return v.Text, nil
+	case emit.LiteralNil:
+		return l.Absent, nil
+	case emit.LiteralRaw:
+		if v.Lang != l.Lang {
+			return "", render.RefuseValue(lang, "%q is written in %s, not %s", v.Text, v.Lang, lang)
+		}
+		return v.Text, nil
+	default:
+		return "", render.RefuseValue(lang, "no spelling for the %s literal", v.Literal)
+	}
+}
+
+// Value spells one value tree through a target: it walks the tree
+// and hands each spelling to the target, so a language states its
+// syntax once and never its recursion.
 //
-// It walks the tree and hands each spelling to the target, so a
-// language states its syntax once and never its recursion. A value
-// the vocabulary does not declare, a conversion or an address
-// carrying nothing, and a composite or a conversion naming no
-// type are each refused naming what is missing, because a value
-// written half-formed compiles to something nobody derived.
+// The walk
+// refuses a value the vocabulary does not declare, a conversion or an
+// address wrapping nothing, a composite or a conversion naming no
+// type or a type that spells nothing, and a call naming no callee or
+// a callee without a name. Each refusal names what is missing and is
+// a [render.ValueError], so the render reports it under its value
+// code.
 func Value(t Target, v emit.Value) (string, error) {
 	switch v.Kind {
 	case emit.ValueLiteral:
@@ -80,23 +140,23 @@ func Value(t Target, v emit.Value) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		wrapped, err := wrapped(t, v, "a conversion")
+		inner, err := wrapped(t, v, "a conversion")
 		if err != nil {
 			return "", err
 		}
-		return t.Conversion(v.Type, typ, wrapped)
+		return t.Conversion(v.Type, typ, inner)
 	case emit.ValueComposite:
 		return composite(t, v)
 	case emit.ValueCall:
 		return valueCall(t, v)
 	case emit.ValueAddress:
-		spelled, err := wrapped(t, v, "an address")
+		inner, err := wrapped(t, v, "an address")
 		if err != nil {
 			return "", err
 		}
-		return t.Address(spelled)
+		return t.Address(inner)
 	default:
-		return "", fmt.Errorf("%s: no spelling for the %s value", t.Lang(), v.Kind)
+		return "", render.RefuseValue(t.Lang(), "no spelling for the %s value", v.Kind)
 	}
 }
 
@@ -125,10 +185,15 @@ func composite(t Target, v emit.Value) (string, error) {
 	return t.Composite(v.Type, typ, entries)
 }
 
-// valueCall spells an application of a callee to its arguments.
+// valueCall spells an application of a callee to its arguments:
+// the callee, an open parenthesis, the arguments joined with commas,
+// and a close.
 func valueCall(t Target, v emit.Value) (string, error) {
-	if v.Callee.IsZero() {
-		return "", fmt.Errorf("%s: a call value names no callee", t.Lang())
+	switch {
+	case v.Callee.IsZero():
+		return "", render.RefuseValue(t.Lang(), "a call value names no callee")
+	case v.Callee.Name == "":
+		return "", render.RefuseValue(t.Lang(), "a call names a function that spells nothing")
 	}
 	callee, err := t.Callee(v.Callee)
 	if err != nil {
@@ -142,23 +207,26 @@ func valueCall(t Target, v emit.Value) (string, error) {
 		}
 		args = append(args, spelled)
 	}
-	return t.Call(callee, args)
+	return callee + "(" + strings.Join(args, nameSep) + ")", nil
 }
 
-// namedType spells the type a value names, refusing one that names
-// none: a conversion and a composite both need it, and a language
-// cannot invent it.
+// namedType spells the type a value names. A conversion and a
+// composite both need one, and a language cannot invent it, so a
+// value naming no type, or a type that spells nothing, is refused.
 func namedType(t Target, v emit.Value, what string) (string, error) {
-	if v.Type == nil {
-		return "", fmt.Errorf("%s: %s value names no type", t.Lang(), what)
+	switch {
+	case v.Type == nil:
+		return "", render.RefuseValue(t.Lang(), "%s value names no type", what)
+	case v.Type.Spelling == "":
+		return "", render.RefuseValue(t.Lang(), "a value names a type that spells nothing")
 	}
 	return t.Type(v.Type)
 }
 
-// wrapped spells the one value a conversion or an address holds.
+// wrapped spells the one value a conversion or an address wraps.
 func wrapped(t Target, v emit.Value, what string) (string, error) {
 	if v.Inner == nil {
-		return "", fmt.Errorf("%s: %s value wraps nothing", t.Lang(), what)
+		return "", render.RefuseValue(t.Lang(), "%s value wraps nothing", what)
 	}
 	return Value(t, *v.Inner)
 }
