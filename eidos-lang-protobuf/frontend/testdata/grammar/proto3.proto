@@ -1,0 +1,69 @@
+syntax = "proto3";
+
+package svc.three;
+
+import "dep/t.proto";
+import public "dep/shared.proto";
+import weak "dep/optional.proto";
+
+option go_package = "example.test/three";
+option java_package = "test.example.three";
+
+// Row holds every proto3 field form.
+//+gen:table name=rows
+message Row {
+  option deprecated = true;
+
+  string singular = 1;              // implicit presence
+  optional int64 explicit = 2;      // explicit presence
+  repeated string many = 3;
+  map<string, int64> counted = 4;
+  bytes blob = 5;
+  Nested nested = 6;
+  Colour colour = 7;
+  google.protobuf.Timestamp when = 8;
+  string renamed = 9 [json_name = "renamedField"];
+
+  // Body is the one-of.
+  oneof body {
+    option deprecated = true;
+    string text = 10;
+    bytes raw = 11;
+  }
+
+  message Nested {
+    string v = 1;
+  }
+
+  enum Inner {
+    INNER_UNSET = 0;
+  }
+
+  reserved 20, 22 to 24;
+  reserved "old_name";
+} // Row ends here
+
+// Colour is a closed set.
+enum Colour {
+  option allow_alias = true;
+
+  COLOUR_UNSPECIFIED = 0 [deprecated = true];
+  COLOUR_RED = 1;
+  COLOUR_CRIMSON = 1;
+
+  reserved 9;
+  reserved "OLD_COLOUR";
+}
+
+// Store reads and writes rows.
+service Store {
+  option deprecated = true;
+
+  // Get reads one row.
+  rpc Get(Row) returns (Row) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+  rpc Watch(Row) returns (stream Row);
+  rpc Send(stream Row) returns (Row);
+  rpc Chat(stream Row) returns (stream Row);
+}

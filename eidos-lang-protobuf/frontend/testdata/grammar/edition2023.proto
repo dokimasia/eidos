@@ -1,0 +1,20 @@
+edition = "2023";
+
+package svc.ed23;
+
+option features.field_presence = IMPLICIT;
+option go_package = "example.test/ed23";
+
+message Row {
+  option features.field_presence = EXPLICIT;
+
+  string name = 1;
+  int64 size = 2 [features.field_presence = LEGACY_REQUIRED];
+  repeated string tags = 3 [features.repeated_field_encoding = EXPANDED];
+}
+
+enum Mode {
+  option features.enum_type = CLOSED;
+
+  MODE_UNSET = 0;
+}

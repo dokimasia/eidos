@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package svc.store;
+
+import "dep/target.proto";
+
+option go_package = "example.test/svc/store";
+
+// Row is a stored record.
+//+gen:table name=rows
+message Row {
+  reserved 4, 9 to 11;
+  reserved "old_name";
+
+  string name = 1;
+  repeated string tags = 2;
+  map<string, int64> counts = 3;
+  dep.Target target = 5;
+
+  // Body is what the row carries.
+  oneof body {
+    string text = 6;
+    bytes blob = 7;
+  }
+
+  message Key {
+    string id = 1;
+  }
+}
+
+// Colour is a closed set.
+enum Colour {
+  COLOUR_UNSPECIFIED = 0;
+  COLOUR_RED = 1;
+}
+
+// Store reads and writes rows.
+service Store {
+  // Get reads one row.
+  rpc Get(Row) returns (Row);
+  rpc Watch(Row) returns (stream Row);
+}

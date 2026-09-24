@@ -1,0 +1,63 @@
+syntax = "proto2";
+
+package svc.every;
+
+import "dep/t.proto";
+import public "dep/shared.proto";
+import weak "dep/optional.proto";
+
+option go_package = "example.test/every";
+
+message Row {
+  option deprecated = true;
+
+  required string required_field = 1;
+  optional int64 defaulted = 2 [default = 7];
+  repeated string repeated_field = 3;
+  map<string, int64> map_field = 4;
+
+  oneof body {
+    option deprecated = true;
+    string text = 5;
+    group OneofGroup = 6 { optional string v = 7; }
+  }
+
+  message Nested {
+    optional string v = 1;
+  }
+
+  enum NestedEnum {
+    option allow_alias = true;
+    NESTED_UNSET = 0;
+    reserved 9;
+  }
+
+  optional group Grouped = 8 {
+    optional string v = 9;
+  }
+
+  reserved 10, 12 to 14;
+  reserved "old";
+  extensions 100 to 200;
+
+  extend Row {
+    optional string inner_extension = 300;
+  }
+}
+
+enum Colour {
+  option allow_alias = true;
+  COLOUR_UNSET = 0 [deprecated = true];
+  reserved 5;
+}
+
+service Store {
+  option deprecated = true;
+  rpc Get(Row) returns (Row) {
+    option idempotency_level = NO_SIDE_EFFECTS;
+  }
+}
+
+extend Row {
+  optional string outer_extension = 400;
+}

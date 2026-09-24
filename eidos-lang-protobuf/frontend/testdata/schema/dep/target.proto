@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package dep;
+
+// Target is what svc refers to.
+message Target {
+  int64 id = 1;
+}

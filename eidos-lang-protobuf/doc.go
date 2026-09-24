@@ -1,29 +1,55 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Package protobuf is the module protobuf takes as a source
-// language for eidos workspaces.
+// Package protobuf is the satellite protobuf schemas load through.
 //
-// # Scope
+// [Lang] is the source language of every loaded declaration, [Name]
+// the plugin identity findings and stamps report under, [Extension]
+// the file extension, [Version] the string every unit key folds, and
+// [Syntax] the comment forms. [Keys] registers the metadata keys the
+// frontend stamps.
 //
-// The satellite is read-only by design: a schema language is read
-// and never written, so its shape is a frontend and projection
-// rules with no lowering, backend or sdk — a complete satellite of
-// the read-only shape rather than a partial one.
+// # Shape
 //
-// Protobuf's projection decisions, which the frontend is built
-// against:
+// Read-only: the module ships a frontend and projection rules, and
+// no lowering, backend or sdk.
 //
-//   - A oneof is the tagged Sum shape, never an untagged union.
-//   - A message is a struct, a service an interface, an enum the
-//     Enum kind carrying its declared values.
-//   - A well-known type keeps its qualified spelling; a reference
-//     the workspace does not hold resolves to nothing and degrades
-//     visibly, which is the read side's own rule.
+// # Names
 //
-// The frontend reads bufbuild/protocompile, pinned as a library
-// rather than a machine-supplied toolchain, so one workspace
-// resolves one parser everywhere.
+// The frontend and the rules resolve a spelling through one grammar.
+// [Candidates] returns protoc's probe order as shadowing tiers,
+// [IsScalar] reports the scalar types that name no declaration, and
+// [WellKnown] reports the well-known types a projection maps by name
+// and never resolves against the graph.
 //
-// The module holds this statement of scope and no code.
+// # Residue
+//
+// The frontend stamps what protobuf states and the projection has no
+// kind for.
+//
+//   - [FieldKey] is a field's wire number, [LabelKey] a required
+//     label, [JSONNameKey] a stated json_name, and [MapEntryKey]
+//     marks a field written as a map.
+//   - [ReservedKey] is the reserved ranges and names,
+//     [ExtensionsKey] the extension ranges with their options.
+//   - [OptionsKey] is the options a declaration states, at every
+//     level that states them. [FeaturesKey] is the edition features,
+//     stamped apart because they decide what an absent value means.
+//   - [SyntaxKey] is the syntax or edition, [PackageKey] the proto
+//     package, [ImportKey] the imports with public and weak marked,
+//     [OneofKey] the oneof a sum projected from, [StreamKey] which
+//     side of an rpc streams.
+//
+// # Editions
+//
+// The edition and every features option are stamped as written at
+// each level that states them. The frontend resolves
+// features.field_presence from the field up through its messages to
+// the file and then the edition's default, which is explicit
+// presence, and projects a singular field's presence as its form.
+// Resolving any other feature is the consumer's.
+//
+// # Dependency position
+//
+// lang/protobuf imports the sdk facade and the Go stdlib.
 package protobuf

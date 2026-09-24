@@ -1,0 +1,19 @@
+edition = "2024";
+
+package svc.ed24;
+
+option features.field_presence = EXPLICIT;
+option features.utf8_validation = VERIFY;
+
+message Row {
+  string name = 1;
+  int64 size = 2 [features.field_presence = IMPLICIT];
+
+  oneof body {
+    string text = 3;
+  }
+}
+
+service Store {
+  rpc Get(Row) returns (Row);
+}
