@@ -31,6 +31,19 @@ const (
 	baseSpelling = "Base"
 )
 
+// The names and type spellings the blank and holey fixtures declare
+// their signature slots with.
+const (
+	serveName     = "Serve"
+	blankName     = "_"
+	keyName       = "key"
+	writerType    = "Writer"
+	requestType   = "Request"
+	stringType    = "string"
+	servedDisc    = writerType + "," + requestType
+	secondByPlace = "#1"
+)
+
 // overloadTree declares one type carrying two overloads of one
 // method name, which only their parameter spellings tell apart.
 func overloadTree() fstest.MapFS {
@@ -275,6 +288,73 @@ func TestAssign(t *testing.T) {
 			assert.Contains(t, got, "names nothing", "and says so")
 		})
 	})
+
+	t.Run("signature", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("spells a repeated blank by its position", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, oneFileTree(), with(&blanks{frontendtest.NewScripted()}))
+			coretest.AssertCodes(t, sink)
+			slot := func(name string, kind symbol.Kind) symbol.Identity {
+				id := assigned(serveName, name, kind)
+				id.Disc = servedDisc
+				return id
+			}
+			for _, id := range []symbol.Identity{
+				slot(blankName, symbol.KindParam),
+				slot(secondByPlace, symbol.KindParam),
+				slot(blankName, symbol.KindReturn),
+				slot(secondByPlace, symbol.KindReturn),
+			} {
+				_, held := g.Lookup(id)
+				assert.True(t, held,
+					"the first blank keeps its spelling and the second takes its position: "+
+						id.String())
+			}
+		})
+
+		t.Run("panics on a nil entry, naming the frontend", func(t *testing.T) {
+			t.Parallel()
+
+			key := &node.Param{Name: keyName, Type: &node.TypeRef{Spelling: stringType}}
+			for _, tt := range []struct {
+				name string
+				decl *node.Function
+				kind symbol.Kind
+			}{
+				{
+					name: "a nil parameter",
+					decl: &node.Function{Name: serveName, Params: []*node.Param{nil, key}},
+					kind: symbol.KindParam,
+				},
+				{
+					name: "a nil return",
+					decl: &node.Function{Name: serveName, Returns: []*node.Return{nil}},
+					kind: symbol.KindReturn,
+				},
+				{
+					name: "a nil type parameter",
+					decl: &node.Function{Name: serveName, TypeParams: []*node.TypeParam{nil}},
+					kind: symbol.KindTypeParam,
+				},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					t.Parallel()
+
+					got := assert.Panics(t, func() {
+						_, _, _ = load.Load(context.Background(), mustConfig(oneFileTree(), with(
+							&holey{Scripted: frontendtest.NewScripted(), decl: tt.decl},
+						)))
+					}, "the store cannot index a nil declaration, so the frontend's defect stops the load")
+					assert.Contains(t, got, "nil "+tt.kind.String(), "naming the entry")
+					assert.Contains(t, got, string(frontendtest.ScriptedID),
+						"and the frontend that built it")
+				})
+			}
+		})
+	})
 }
 
 // loadNested drives one load over the edge-shape package.
@@ -382,6 +462,46 @@ func (*foreign) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	pkg.Files = append(pkg.Files, &node.File{
 		Path:  u.Files()[0].Path,
 		Decls: node.Symbols{&node.Param{Name: "loose"}},
+	})
+	return nil
+}
+
+// blanks declares a function whose two parameters and two results
+// are all written as the blank, which Go and Rust admit.
+type blanks struct {
+	*frontendtest.Scripted
+}
+
+// Parse declares the one function.
+func (*blanks) Parse(_ context.Context, u *plugin.SourceUnit) error {
+	pkg := u.Graph().Package(coretest.StorePath)
+	pkg.Files = append(pkg.Files, &node.File{
+		Path: u.Files()[0].Path,
+		Decls: node.Symbols{&node.Function{
+			Name: serveName,
+			Params: []*node.Param{
+				{Name: blankName, Type: &node.TypeRef{Spelling: writerType}},
+				{Name: blankName, Type: &node.TypeRef{Spelling: requestType}},
+			},
+			Returns: []*node.Return{{Name: blankName}, {Name: blankName}},
+		}},
+	})
+	return nil
+}
+
+// holey declares one function with a nil entry in its signature, in
+// the list the case chooses.
+type holey struct {
+	*frontendtest.Scripted
+	decl *node.Function
+}
+
+// Parse declares the one function.
+func (h *holey) Parse(_ context.Context, u *plugin.SourceUnit) error {
+	pkg := u.Graph().Package(coretest.StorePath)
+	pkg.Files = append(pkg.Files, &node.File{
+		Path:  u.Files()[0].Path,
+		Decls: node.Symbols{h.decl},
 	})
 	return nil
 }

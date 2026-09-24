@@ -38,8 +38,9 @@
 //
 // Every unit's key folds, in order: the unit's recorded reads, the
 // partition's recorded reads, the unit's depth, the frontend's
-// declared version, the frontend's options in their canonical
-// encoding, the composition's plugin-set fingerprint, and
+// name, language and declared version, the frontend's options in
+// their canonical encoding, the composition's plugin-set
+// fingerprint, and
 // [go.dokimi.dev/eidos/core/node.ModelFingerprint]. Each part is
 // length-prefixed, so two parts cannot trade bytes and collide.
 // The report records the keys; milestone 0007 consumes them.
@@ -55,7 +56,8 @@
 // first candidate under [AmbiguousReference], and an unresolved
 // spelling stays a spelling. A structural defect in what a
 // frontend built — an emit-side symbol, a named kind without a
-// name — panics naming the frontend, because a malformed graph
+// name, a nil entry in a signature — panics naming the frontend,
+// because a malformed graph
 // discovered at resolution points away from the frontend that
 // built it.
 //

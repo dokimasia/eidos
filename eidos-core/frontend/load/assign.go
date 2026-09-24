@@ -155,7 +155,7 @@ func (a *assigner) claim(
 func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, drop bool) {
 	switch x := s.(type) {
 	case *node.Function:
-		id := a.derive(x, owner, x.Name, symbol.KindFunction, discOf(x.Params))
+		id := a.derive(x, owner, x.Name, symbol.KindFunction, a.disc(x.Params))
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
 		a.signature(childOwner(owner, x.Name), id, dropping, x.TypeParams, x.Params, x.Returns)
@@ -165,7 +165,7 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		if at == "" && x.Receives != nil {
 			at = x.Receives.Spelling
 		}
-		id := a.derive(x, at, x.Name, symbol.KindMethod, discOf(x.Params))
+		id := a.derive(x, at, x.Name, symbol.KindMethod, a.disc(x.Params))
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
 		x.Host = host
@@ -252,25 +252,40 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 // returns under the callable's owner chain. A parameter or a return
 // the language leaves unnamed is named by its position, so two
 // unnamed ones spell apart and no written name collides with the
-// spelling. Each carries the callable's discriminator, so the
-// parameters of two overloads spell apart too.
+// spelling. A slot repeating a name an earlier slot of the same list
+// wrote is named by its position too, because in valid source only
+// a blank such as Go's or Rust's _ repeats. Each carries the
+// callable's discriminator, so the parameters of two overloads
+// spell apart too. [assigner.disc] refuses a nil parameter before
+// this runs.
 func (a *assigner) signature(
 	owner string, host symbol.Identity, drop bool,
 	tps []*node.TypeParam, params []*node.Param, returns []*node.Return,
 ) {
 	a.typeParams(owner, host, drop, tps)
 	for i, p := range params {
-		if p == nil {
-			continue
+		name := p.Name
+		for _, earlier := range params[:i] {
+			if earlier.Name == name {
+				name = ""
+				break
+			}
 		}
-		id := a.derive(p, owner, positional(p.Name, i), symbol.KindParam, host.Disc)
+		id := a.derive(p, owner, positional(name, i), symbol.KindParam, host.Disc)
 		p.ID, _ = a.claim(p, id, p.Pos, drop)
 	}
 	for i, r := range returns {
 		if r == nil {
-			continue
+			panic(a.nilSlot(symbol.KindReturn))
 		}
-		id := a.derive(r, owner, positional(r.Name, i), symbol.KindReturn, host.Disc)
+		name := r.Name
+		for _, earlier := range returns[:i] {
+			if earlier.Name == name {
+				name = ""
+				break
+			}
+		}
+		id := a.derive(r, owner, positional(name, i), symbol.KindReturn, host.Disc)
 		r.ID, _ = a.claim(r, id, r.Pos, drop)
 	}
 }
@@ -280,11 +295,18 @@ func (a *assigner) signature(
 func (a *assigner) typeParams(owner string, host symbol.Identity, drop bool, tps []*node.TypeParam) {
 	for _, tp := range tps {
 		if tp == nil {
-			continue
+			panic(a.nilSlot(symbol.KindTypeParam))
 		}
 		id := a.derive(tp, owner, tp.Name, symbol.KindTypeParam, host.Disc)
 		tp.ID, _ = a.claim(tp, id, tp.Pos, drop)
 	}
+}
+
+// nilSlot spells the panic a nil entry in a signature's lists
+// raises, naming the frontend: a structural defect in what it
+// built, because the store cannot index a nil declaration.
+func (a *assigner) nilSlot(kind symbol.Kind) string {
+	return fmt.Sprintf("load: %s built a nil %s in %s", a.origin, kind, a.pkg)
 }
 
 // positional returns a written name, or the position's spelling
@@ -389,15 +411,19 @@ func childOwner(owner, name string) string {
 	return owner + "." + name
 }
 
-// discOf spells a callable's discriminator: the parameter type
+// disc spells a callable's discriminator: the parameter type
 // spellings as written, comma-joined, so two overloads spell
-// apart and a nullary callable spells empty.
-func discOf(params []*node.Param) string {
+// apart and a nullary callable spells empty. A nil parameter
+// panics with [assigner.nilSlot] before anything reads it.
+func (a *assigner) disc(params []*node.Param) string {
 	if len(params) == 0 {
 		return ""
 	}
 	parts := make([]string, len(params))
 	for i, p := range params {
+		if p == nil {
+			panic(a.nilSlot(symbol.KindParam))
+		}
 		if p.Type != nil {
 			parts[i] = p.Type.Spelling
 		}
