@@ -4,7 +4,7 @@ title: The frontend kit and its conformance suite
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Draft
 created: 2026-09-01
-updated: 2026-09-01
+updated: 2026-09-25
 discussion: none
 supersedes: none
 superseded-by: none
@@ -98,14 +98,21 @@ type Frontend interface {
     // is in the shape from the start.
     Parse(ctx context.Context, u *SourceUnit) error
 
-    // Resolve says what a spelling could mean in one file's
+    // Resolve returns what a spelling could mean in one file's
     // recorded import scope: the candidate identities in the
-    // language's own probe order. Link keeps the first candidate
-    // the graph holds; several present candidates are the
-    // ambiguity finding, and none leaves the reference spelling
-    // only.
-    Resolve(scope ImportScope, spelling string) []symbol.Identity
+    // language's own probe order, grouped into shadowing tiers.
+    // Link reads the first tier that names a declaration the graph
+    // contains and takes that tier's first such candidate as the
+    // target. More than one such candidate in the tier is the
+    // ambiguity finding, and an unresolved reference keeps its
+    // spelling alone.
+    Resolve(scope ImportScope, spelling string) Candidates
 }
+
+// Candidates is what one spelling could mean, in tiers: each tier is
+// the candidate identities one scope offers, in probe order, and an
+// earlier tier shadows every later one.
+type Candidates [][]symbol.Identity
 ```
 
 `SourceRef` names a file without opening it: the workspace-relative
@@ -117,27 +124,32 @@ every declared input's bytes fold into the dependent unit's
 fingerprint.
 
 `ImportScope` is what the resolution phase hands a language's
-`Resolve` for one file: the file's assigned identity, and the
-bindings the frontend recorded at parse time in the language's own
-form — `Bindings any`, stored by the kernel, type-asserted back
-by that language's `Resolve` alone. Go binds package aliases,
-TypeScript binds members with rename and form, proto scopes per
-declaration site, and a kernel that fixed one shape would fix
-Go's; the cost is that a binding-shape mistake reports at Link
-rather than compile, which the suite's linked fixture exercises
-per language. `FileReader` is the partition's recorded door over
+`Resolve` for one reference: the identity of the file it is
+written in, the innermost enclosing declaration that nests types
+as its `Owner`, and the bindings the frontend recorded at parse
+time in the language's own form. The bindings are `Bindings any`,
+stored by the kernel and type-asserted back by that language's
+`Resolve` alone. Go binds package aliases, TypeScript binds members
+with rename and form, and protobuf records the file's package and
+resolves outward from the owner. A kernel that fixed one binding
+form would fix Go's. A binding-form mistake therefore reports at
+Link and not at compile time, which the suite's linked fixture
+exercises per language. `FileReader` is the partition's recorded door over
 the workspace tree, before units exist: not jailed to the
 selection, because a unit's shape can depend on a file the
 selection must not claim — a Go module file, a TypeScript config —
 and hermeticity holds through the fold alone. It is not the
-graph's [store.Reader], and the two never meet. Link is a
-kernel phase after every frontend finished: it visits every
-`TypeRef` in the graph, nested type arguments included, asks the
-owning language's `Resolve` for each node's spelling, keeps the
-first candidate the graph holds — in scope or signature-only —
-reports several present candidates as an ambiguity, and leaves
-builtins and externals as spellings, which is degradation the
-reader can ask about, not failure. A file whose parse recorded no
+graph's [store.Reader], and the two never meet. Link is a kernel
+phase after every frontend finished. It walks each file's
+declarations under their own identities and visits every
+`TypeRef`, nested type arguments included. A bare spelling of a
+type parameter in scope targets that parameter, the innermost
+declaration's first. Every other spelling goes to the owning
+language's `Resolve`, and Link takes the first tier with a
+candidate the graph contains, in scope or signature-only. More than
+one such candidate in that tier reports as an ambiguity. Builtins and
+externals keep their spelling, which is degradation the reader can
+ask about, not failure. A file whose parse recorded no
 scope resolves nothing: there are no bindings to resolve through,
 and the suite's linked check is what catches a frontend that
 forgot to record them. A `Partition` error is fatal

@@ -4,7 +4,7 @@ title: The projection vocabulary and the rules seam
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Accepted
 created: 2026-09-02
-updated: 2026-09-03
+updated: 2026-09-25
 discussion: none
 supersedes: none
 superseded-by: none
@@ -430,11 +430,14 @@ folds into the same form with its children folded; a Named reference
 with a target the view holds classifies by the declaration it names,
 a Sum as `FormSum` and every other kind as `FormReference`; a Named
 reference without a target goes to the language's `Builtin`, which
-returns a leaf or Opaque. A target in another language classifies
-through that language's rules. Well-known types are not forms: a
-small kernel registry holds blessed identities, `timestamp` and
-`duration` and no others, and a language's `Builtin` maps its
-spelling in, so `time.Time` projects as the `timestamp` Reference.
+returns a leaf or Opaque. A Named reference to a type parameter
+folds to Opaque without a read, because the parameter's argument
+decides its shape and a use of the parameter states none. A target
+in another language classifies through that language's rules.
+Well-known types are not forms: a small kernel registry holds
+blessed identities, `timestamp` and `duration` and no others, and a
+language's `Builtin` maps its spelling in, so `time.Time` projects
+as the `timestamp` Reference.
 
 The fold has one rule of its own beyond structure: a List whose
 element folds to an eight-bit unsigned Scalar folds to Bytes, so
@@ -944,8 +947,9 @@ a ceiling moves.
 the contract promises, over a fixture the caller supplies: a loaded
 graph and the rules under test.
 
-- `AssertDeterministic`: every projection returns equal values on
-  two calls with one view.
+- `AssertDeterministic`: two bounds over one view return equal
+  values from every projection. Each bound memoises its own fold,
+  so the second pass derives every value again.
 - `AssertTotal`: `TypeOf` returns a shape for every reference in the
   graph, and `CallableOf` reports false for every non-callable kind,
   without panicking.
@@ -953,11 +957,19 @@ graph and the rules under test.
   refusal other than `RefusedNone`, and a member set with a gap
   names the contributor and a reason.
 - `AssertDistinctSamples`: where both halves are OK, the values
-  differ.
-- `AssertWitnessesWhole`: a witness set is nil or one entry per
-  parameter.
-- `AssertRecorded`: a projection over a subject records at least the
-  subject's identity on the view it was handed.
+  differ, compared field by field at every depth.
+- `AssertWitnesses`: `Derive` returns a witness with a spelling,
+  because a backend writes the instantiation from it, and
+  `Substitute` rewrites every reference to a parameter into the
+  parameter's witness on a copy and leaves the reference it is
+  handed unchanged. A language without the generics capability and
+  a fixture without type parameters have nothing to check. A fixture
+  that declares type parameters and rewrites no reference fails,
+  because the check proves nothing over it.
+- `AssertRecorded`: a sample of a named type reads the declaration
+  through the view the language is handed, so the view's read set
+  contains the target and a change to the declaration re-runs the
+  generator that wrote the sample.
 - `AssertConcurrent`: the projections over one graph from parallel
   goroutines return what the serial run returned, under the race
   detector.

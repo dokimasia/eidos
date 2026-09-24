@@ -4,7 +4,7 @@ title: Metadata keys and the fact store
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Accepted
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-25
 discussion: none
 supersedes: none
 superseded-by: none
@@ -272,8 +272,10 @@ func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool)
 
 // Fact returns what Get does and records the read at
 // (subject, key) into rec. A miss records too: the reader asked,
-// so it runs again when the fact appears. It is the read every
-// plugin makes; Get is the kernel's own untracked path.
+// so it runs again when the fact appears. A subject of a kind the
+// key does not admit reads absent and records nothing, because
+// Stamp refuses every claim on it. It is the read every plugin
+// makes; Get is the kernel's own untracked path.
 func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T, bool)
 
 // Recorder records fact reads. The store's read set implements
@@ -345,7 +347,10 @@ whenever the stamp arrives, so the two never race.
 
 The store's read set gains the third grain. A fact read records
 at (subject, key), never as a bare identity edge: per-subject
-recording would re-run every reader of a bag on any stamp.
+recording would re-run every reader of a bag on any stamp. A read
+on a subject of a kind the key does not admit reads absent and
+records nothing. `Stamp` refuses every claim there, so no stamp
+can make the reader run again.
 
 ```go
 // In package store, which imports meta.
@@ -369,13 +374,17 @@ sequenceDiagram
     participant K as the kernel
 
     PL->>F: Fact(rec, subject, k)
-    Note over F: the winner is already ranked across<br/>value claims, key drops and group drops
-    F->>RS: RecordFact(subject, key)
-    Note over RS: a miss records too, so the reader runs<br/>again when the fact appears
-    alt a value claim won
-        F-->>PL: the value, held
-    else nothing stamped, or a drop won
-        F-->>PL: absent
+    alt k does not admit the subject's kind
+        F-->>PL: absent, nothing recorded
+    else the kind is admitted
+        Note over F: the winner is already ranked across<br/>value claims, key drops and group drops
+        F->>RS: RecordFact(subject, key)
+        Note over RS: a miss records too, so the reader runs<br/>again when the fact appears
+        alt a value claim won
+            F-->>PL: the value, held
+        else nothing stamped, or a drop won
+            F-->>PL: absent
+        end
     end
     K->>F: Get(subject, k)
     F-->>K: the same winner, nothing recorded
