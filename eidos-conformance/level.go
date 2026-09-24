@@ -78,51 +78,57 @@ func AssertLevel(tb assert.TB, c Corpus, fx *rulestest.Fixture, f Feature, verdi
 	}
 }
 
-// measure projects every declaration the feature declares, and
-// every declaration in the feature's own package, through the
-// bound rules.
+// measure projects every declaration the feature declares and
+// every declaration in the feature's own package, nested ones
+// included, each once by identity, through the bound rules.
 func measure(tb assert.TB, c Corpus, g *store.Graph, f Feature, b rules.Bound) projection {
 	tb.Helper()
 
 	var p projection
 	seen := map[*node.TypeRef]bool{}
-	visit := func(sym symbol.Symbol) {
-		node.Walk(sym, func(x symbol.Symbol) bool {
-			switch t := x.(type) {
-			case *node.TypeRef:
-				if t == nil || seen[t] {
-					return false
-				}
-				seen[t] = true
-				p.refs++
-				if unprojected(b.TypeOf(t).Form) {
-					p.opaque++
-				}
-			case *node.Alias:
-				if t != nil && t.Target != nil {
-					p.aliases++
-					if unprojected(b.TypeOf(t.Target).Form) {
-						p.declaredOpaque++
-					}
-				}
+	measured := map[symbol.Identity]bool{}
+	visit := func(decl node.Declaration) {
+		id := decl.Identity()
+		if id.IsZero() || id.Kind == symbol.KindPackage || id.Kind == symbol.KindFile || measured[id] {
+			return
+		}
+		measured[id] = true
+		node.Walk(decl, func(x symbol.Symbol) bool {
+			t, is := x.(*node.TypeRef)
+			if !is {
+				return true
+			}
+			if t == nil || seen[t] {
+				return false
+			}
+			seen[t] = true
+			p.refs++
+			if unprojected(b.TypeOf(t).Form) {
+				p.opaque++
 			}
 			return true
 		})
-		if set, is := b.MembersOf(sym); is {
+		if alias, is := decl.(*node.Alias); is && alias.Target != nil {
+			p.aliases++
+			if unprojected(b.TypeOf(alias.Target).Form) {
+				p.declaredOpaque++
+			}
+		}
+		if set, is := b.MembersOf(decl); is {
 			p.gaps += len(set.Gaps)
 		}
-		if decl, names := sym.(node.Declaration); names {
-			switch sym.Kind() {
-			case symbol.KindFunction, symbol.KindMethod:
-				if _, ok := b.CallableOf(sym); !ok {
-					p.unprojected = append(p.unprojected, decl.Identity())
-				}
+		switch id.Kind {
+		case symbol.KindFunction, symbol.KindMethod:
+			if _, ok := b.CallableOf(decl); !ok {
+				p.unprojected = append(p.unprojected, id)
 			}
 		}
 	}
 	for _, d := range f.Declares {
 		if sym, held := g.Lookup(identityOf(c, f, d)); held {
-			visit(sym)
+			for decl := range node.Declarations(sym) {
+				visit(decl)
+			}
 		}
 	}
 	for pkg := range g.Packages() {
@@ -130,9 +136,7 @@ func measure(tb assert.TB, c Corpus, g *store.Graph, f Feature, b rules.Bound) p
 			continue
 		}
 		for decl := range node.Declarations(pkg) {
-			if decl.Identity().Owner == "" && decl.Kind() != symbol.KindPackage && decl.Kind() != symbol.KindFile {
-				visit(decl)
-			}
+			visit(decl)
 		}
 	}
 	return p

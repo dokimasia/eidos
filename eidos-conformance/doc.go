@@ -27,9 +27,10 @@
 //
 // # Dependency position
 //
-// conformance imports the kernel — core/frontend/frontendtest,
-// core/frontend/load, core/store, core/node and the vocabulary
-// packages — and, as their frontends arrive, the language
-// satellites. Nothing imports it back: it is the module that
-// drives the others.
+// conformance imports the kernel's two read-side kits,
+// core/frontend/frontendtest and core/rules/rulestest, beside
+// core/rules, core/store, core/node, core/directive, core/meta,
+// core/plugin, core/symbol and the assert module. Its tests import
+// the language satellites whose frontends exist. Nothing imports it
+// back: it is the module that drives the others.
 package conformance

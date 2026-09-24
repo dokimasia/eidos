@@ -5,6 +5,7 @@ package conformance
 
 import (
 	"io/fs"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -241,17 +242,12 @@ func AssertCoveredInventory(tb assert.TB, c Corpus) {
 				"silence on a capability is the gap this list exists to close", f.ID)
 		}
 	}
-	for id := range c.Remainder {
+	for _, id := range slices.Sorted(maps.Keys(c.Remainder)) {
 		if !known[id] {
 			tb.Errorf("the remainder names %s, which the inventory does not hold", id)
 		}
 	}
-	ids := make([]string, 0, len(c.Coverage))
-	for id := range c.Coverage {
-		ids = append(ids, id)
-	}
-	slices.Sort(ids)
-	for _, id := range ids {
+	for _, id := range slices.Sorted(maps.Keys(c.Coverage)) {
 		if !known[id] {
 			tb.Errorf("the coverage names %s, which the inventory does not hold", id)
 		}

@@ -81,6 +81,52 @@ func opaqueCorpus(tb assert.TB) (conformance.Corpus, *rulestest.Fixture) {
 	return c, &rulestest.Fixture{Graph: g, Facts: meta.NewFacts(meta.NewRegistry())}
 }
 
+// nestedCorpus returns a scripted corpus whose one feature package
+// declares a struct embedding one builtin and nesting a struct that
+// embeds two more, and the fixture holding it. An embedded builtin
+// resolves to nothing, so each is one member-set gap, while its
+// reference still projects.
+func nestedCorpus(tb assert.TB) (conformance.Corpus, *rulestest.Fixture) {
+	tb.Helper()
+
+	pkg := "f/struct_fields"
+	id := func(owner, name string, kind symbol.Kind) symbol.Identity {
+		return symbol.Identity{
+			Lang: frontendtest.ScriptedLang, Package: pkg, Owner: owner, Name: name, Kind: kind,
+		}
+	}
+	embed := func(owner, spelling string) *node.Embed {
+		return &node.Embed{
+			ID:  id(owner, spelling, symbol.KindEmbed),
+			Ref: &node.TypeRef{Spelling: spelling},
+		}
+	}
+	inner := &node.Struct{
+		ID:     id("Outer", "Inner", symbol.KindStruct),
+		Name:   "Inner",
+		Embeds: []*node.Embed{embed("Outer.Inner", "int"), embed("Outer.Inner", "string")},
+	}
+	outer := &node.Struct{
+		ID:     id("", "Outer", symbol.KindStruct),
+		Name:   "Outer",
+		Embeds: []*node.Embed{embed("Outer", "bool")},
+		Types:  node.Symbols{inner},
+	}
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(&node.Package{
+		ID:   id("", "", symbol.KindPackage),
+		Path: []string{"f", "struct_fields"},
+		Files: []*node.File{{
+			ID:    id("", "a.s", symbol.KindFile),
+			Path:  "a.s",
+			Decls: node.Symbols{outer},
+		}},
+	}), "the nested package is admitted")
+	g.Freeze()
+	c := conformance.Corpus{Frontend: frontendtest.NewScripted(), Rules: rulestest.Scripted()}
+	return c, &rulestest.Fixture{Graph: g, Facts: meta.NewFacts(meta.NewRegistry())}
+}
+
 // The levels are predicates over the projections: a feature sits on
 // the level its language declared, never above and never below.
 func TestLevel(t *testing.T) {
@@ -192,6 +238,22 @@ func TestLevel(t *testing.T) {
 			)
 		})
 		assert.Contains(t, msg, "no alias", "opaque needs an alias whose target folds to Opaque")
+	})
+
+	t.Run("measures nested declarations, each once", func(t *testing.T) {
+		t.Parallel()
+
+		c, fx := nestedCorpus(t)
+		f := conformance.Feature{
+			ID:       "struct_fields",
+			Declares: []conformance.Decl{{Name: "Outer", Kind: symbol.KindStruct}},
+		}
+		msg := assert.Rejects(t, "a nested member gap under the top level", func(tb assert.TB) {
+			conformance.AssertLevel(tb, c, fx, f, conformance.Projects)
+		})
+		assert.Contains(t, msg, "3 member gaps",
+			"Outer's one gap and Inner's two, with Outer measured once though it is "+
+				"both declared and in the feature's package")
 	})
 
 	t.Run("refuses a level without rules and a verdict that is no level", func(t *testing.T) {

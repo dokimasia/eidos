@@ -5,6 +5,7 @@ package conformance_test
 
 import (
 	"os"
+	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -101,6 +102,29 @@ func TestCoverage(t *testing.T) {
 			conformance.AssertCoveredInventory(tb, strayRemainder)
 		})
 		assert.Contains(t, msg, "warp_drives", "naming the stray")
+	})
+
+	t.Run("reports stray remainders in id order", func(t *testing.T) {
+		t.Parallel()
+
+		strays := []string{"zz_a", "zz_b", "zz_c", "zz_d", "zz_e"}
+		scattered := scriptedCorpus()
+		scattered.Remainder = map[string][]conformance.Remainder{}
+		for _, id := range strays {
+			scattered.Remainder[id] = nil
+		}
+		rec := assert.NewRecorder()
+		conformance.AssertCoveredInventory(rec, scattered)
+		reported := make([]string, 0, len(strays))
+		for _, msg := range rec.Messages() {
+			for _, id := range strays {
+				if strings.Contains(msg, id) {
+					reported = append(reported, id)
+				}
+			}
+		}
+		assert.Equal(t, reported, strays,
+			"one finding per stray, in id order whatever order the map ranges in")
 	})
 
 	t.Run("rejects a spelling under a refusal", func(t *testing.T) {
