@@ -13,13 +13,13 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// Lang is the source language every loaded declaration carries:
-// the satellite root's constant, restated where the frontend's
-// callers reach for it.
+// Lang is the source language of every loaded declaration: the
+// satellite root's constant, restated for the frontend's callers.
 const Lang = golang.Lang
 
-// The classification keys live at the satellite root beside the
-// annotator's: one namespace, one registration, two stamping roles.
+// The classification keys are declared at the satellite root beside
+// the annotator's: one namespace, one registration, two stamping
+// roles.
 
 // UnparsedFile reports a syntax error, positioned at it: the
 // source's problem, and the load continues with every declaration
@@ -37,9 +37,8 @@ var BadCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 })
 
 // UnaddressedCarrier reports a directive carrier on a subject the
-// model cannot address — an embedded field, a parameter — so the
-// author learns the directive attached nowhere instead of trusting
-// it silently.
+// model cannot address, such as a parameter, a result or an import,
+// so the author learns that the directive attached nowhere.
 var UnaddressedCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 	Number:  3,
 	Meaning: "a directive carrier sits on a subject the model cannot address",
@@ -78,9 +77,9 @@ func New(opts *Options) plugin.Frontend {
 	}
 	f := &goFrontend{opts: opts}
 	return frontend.New(golang.Name, Lang, golang.Syntax()).
-		Version(golang.Version).
+		Version(golang.FrontendVersion).
 		Match("**/*"+golang.Extension,
-			"!**/testdata/**", "!**/_*"+golang.Extension, "!**/.*"+golang.Extension,
+			"!**/testdata/**", "!**/vendor/**", "!**/_*"+golang.Extension, "!**/.*"+golang.Extension,
 			"!**/_*/**", "!**/.*/**").
 		Units(f.partition).
 		Parse(f.parse).
@@ -90,7 +89,7 @@ func New(opts *Options) plugin.Frontend {
 		Build()
 }
 
-// goFrontend carries the load's configuration into the hooks.
+// goFrontend passes the load's configuration to the hooks.
 type goFrontend struct {
 	opts *Options
 }

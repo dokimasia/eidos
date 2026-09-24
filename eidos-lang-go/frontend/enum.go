@@ -4,27 +4,29 @@
 package frontend
 
 import (
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// promoteEnums rewrites each file's idiomatic value sets into the
-// Enum kind the schema names for them: a defined type over a basic
-// underlying whose constants all carry its spelling collapses into
-// one Enum, the constants its variants in declaration order, the
-// type's methods folded in — dropping them would discard the
-// method set — and the value spellings kept verbatim, iota
-// arithmetic included. A type with no constants, a constant group
-// typed by anything else, and a type outside the file stay exactly
-// as parsed: promotion is per file, because a unit's files parse
-// independently and the graph merges later.
+// promoteEnums rewrites one file's idiomatic value sets into the
+// Enum kind the schema names for them: a defined type over an
+// ordered basic type whose constants all name it as their type
+// collapses into one Enum, the constants its variants in
+// declaration order, the type's methods in the file folded in, and
+// the value spellings kept verbatim, iota arithmetic included. A
+// type with no constants, a constant group typed by anything else,
+// and a type whose constants are declared in another file are kept
+// as parsed: promotion reads one file, and [foldMethods] folds the
+// enumeration's methods from the package's other files afterwards.
 //
 // The rewrite runs after a file lowers, over its own declarations
 // alone, and returns what it replaced two ways: the alias→enum map
-// the deferred underlying stamps read, and the full consumed→
-// standing map the caller re-homes recorded attachments and stamps
-// through, so authored intent follows the declaration that stands.
-// Folded methods keep their own nodes and need no re-homing.
+// the deferred underlying stamps read, and the full
+// consumed→replacement map the caller re-homes recorded attachments
+// and stamps through, so authored intent follows the declaration
+// that replaces the consumed one. Folded methods keep their own
+// nodes and need no re-homing.
 func promoteEnums(
 	file *node.File,
 ) (map[*node.Alias]*node.Enum, map[symbol.Symbol]symbol.Symbol) {
@@ -103,17 +105,9 @@ func promoteEnums(
 	return promoted, moved
 }
 
-// basicUnderlying reports whether a defined type's target is one
-// of the basic spellings an idiomatic value set sits over.
+// basicUnderlying reports whether a defined type's target is an
+// ordered basic type, [golang.Ordered]: an integer, a float or a
+// string, the types an idiomatic value set is declared over.
 func basicUnderlying(alias *node.Alias) bool {
-	if alias.Target == nil || len(alias.Target.Args) > 0 {
-		return false
-	}
-	switch alias.Target.Spelling {
-	case "int", "int8", "int16", "int32", "int64",
-		"uint", "uint8", "uint16", "uint32", "uint64", "uintptr",
-		"byte", "rune", "string", "float32", "float64":
-		return true
-	}
-	return false
+	return alias.Target != nil && len(alias.Target.Args) == 0 && golang.Ordered(alias.Target.Spelling)
 }

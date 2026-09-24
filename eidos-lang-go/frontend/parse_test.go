@@ -5,11 +5,13 @@ package frontend_test
 
 import (
 	"context"
+	"slices"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -26,18 +28,42 @@ func parsedFile(
 ) *plugin.GraphBuilder {
 	tb.Helper()
 
+	gb, _ := parsedFindings(tb, opts, depth, src, at...)
+	return gb
+}
+
+// parsedFindings lowers one Go file as [parsedFile] does and returns
+// the findings the parse reported beside the builder.
+func parsedFindings(
+	tb assert.TB, opts *frontend.Options, depth plugin.Depth, src string, at ...string,
+) (*plugin.GraphBuilder, []diag.Diag) {
+	tb.Helper()
+
 	filePath := "p/a.go"
 	if len(at) > 0 {
 		filePath = at[0]
 	}
 	tree := fstest.MapFS{filePath: {Data: []byte(src)}}
 	f := frontend.New(opts)
+	sink := diag.NewSink()
 	u := plugin.NewSourceUnit(
 		[]plugin.SourceRef{{Path: filePath}}, tree, depth,
-		f.Syntax(), diag.NewSink(), f.Name(),
+		f.Syntax(), sink, f.Name(),
 	)
 	assert.NoError(tb, f.Parse(context.Background(), u), "the file parses")
-	return u.Graph()
+	return u.Graph(), slices.Collect(sink.All())
+}
+
+// stampValues returns the values stamped under one key, in stamp
+// order.
+func stampValues(gb *plugin.GraphBuilder, key meta.KeyName) []any {
+	var out []any
+	for _, s := range gb.StampRecords() {
+		if s.Stamp.Key == key {
+			out = append(out, s.Stamp.Value)
+		}
+	}
+	return out
 }
 
 // onlyFile returns the single parsed file.
@@ -105,7 +131,7 @@ func TestParse(t *testing.T) {
 		assert.Equal(t, fn.Returns[1].Name, "err", "by name")
 	})
 
-	t.Run("owns a method by its receiver's bare name", func(t *testing.T) {
+	t.Run("attaches a method to its receiver's bare name", func(t *testing.T) {
 		t.Parallel()
 
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
@@ -380,19 +406,36 @@ func TestParse(t *testing.T) {
 		assert.Length(t, onlyFile(t, tagged).Decls, 1, "inside the set it declares")
 	})
 
-	t.Run("pairs a two-part filename the way the go tool does", func(t *testing.T) {
+	t.Run("reads a filename's constraint the way the go tool does", func(t *testing.T) {
 		t.Parallel()
 
-		archOnly := parsedFile(t, &frontend.Options{Tags: []string{"amd64"}},
-			plugin.DepthFull, "package p\n\ntype Gone struct{}\n", "p/linux_amd64.go")
-		assert.Length(t, onlyFile(t, archOnly).Decls, 0,
-			"linux_amd64.go implies both suffixes, so the arch alone stays out")
-		assert.Equal(t, archOnly.StampRecords()[0].Stamp.Value.(string), "linux && amd64",
+		const src = "package p\n\ntype Kept struct{}\n"
+		pair := parsedFile(t, &frontend.Options{Tags: []string{"amd64"}},
+			plugin.DepthFull, src, "p/x_linux_amd64.go")
+		assert.Length(t, onlyFile(t, pair).Decls, 0,
+			"x_linux_amd64.go implies both suffixes, so the arch alone keeps it out")
+		assert.Equal(t, pair.StampRecords()[0].Stamp.Value.(string), "linux && amd64",
 			"the pair spells whole")
-
 		both := parsedFile(t, &frontend.Options{Tags: []string{"linux", "amd64"}},
-			plugin.DepthFull, "package p\n\ntype Gone struct{}\n", "p/linux_amd64.go")
+			plugin.DepthFull, src, "p/x_linux_amd64.go")
 		assert.Length(t, onlyFile(t, both).Decls, 1, "both tags admit it")
+
+		leading := parsedFile(t, &frontend.Options{Tags: []string{"amd64"}},
+			plugin.DepthFull, src, "p/linux_amd64.go")
+		assert.Length(t, onlyFile(t, leading).Decls, 1,
+			"the element before the first underscore is ignored, so linux_amd64.go implies amd64 alone")
+
+		dotted := parsedFile(t, &frontend.Options{Tags: []string{"linux"}},
+			plugin.DepthFull, src, "p/x_windows.pb.go")
+		assert.Length(t, onlyFile(t, dotted).Decls, 0,
+			"the name is cut at its first dot, so x_windows.pb.go implies windows")
+
+		test := parsedFile(t, &frontend.Options{Tags: []string{"linux"}},
+			plugin.DepthFull, src, "p/x_windows_test.go")
+		assert.Length(t, onlyFile(t, test).Decls, 0, "a final test element drops before the suffix reads")
+
+		bare := parsedFile(t, nil, plugin.DepthFull, src, "p/windows.go")
+		assert.Length(t, onlyFile(t, bare).Decls, 1, "a name with no underscore implies nothing")
 	})
 
 	t.Run("ignores a go:build spelling inside a block comment", func(t *testing.T) {
@@ -448,7 +491,7 @@ func TestParse(t *testing.T) {
 		assert.True(t, attached[0].Subject == e, "itself, not its host")
 	})
 
-	t.Run("carries trailing comments on every kind that ends a line", func(t *testing.T) {
+	t.Run("keeps trailing comments on every kind that ends a line", func(t *testing.T) {
 		t.Parallel()
 
 		gb := parsedFile(t, nil, plugin.DepthFull,
@@ -489,7 +532,7 @@ func TestParse(t *testing.T) {
 		}, "each declaration keeps the comment it ends its line with")
 	})
 
-	t.Run("gives the file the tool directives no declaration owns", func(t *testing.T) {
+	t.Run("gives the file the tool directives outside every declaration", func(t *testing.T) {
 		t.Parallel()
 
 		gb := parsedFile(t, nil, plugin.DepthFull,
@@ -648,5 +691,91 @@ func TestParse(t *testing.T) {
 		e := file.Decls[0].(*node.Struct)
 		assert.Length(t, e.Fields, 1, "and so does the unexported field")
 		assert.Equal(t, e.Fields[0].Name, "Pub", "the exported one loads")
+	})
+
+	t.Run("consumes the comments of a declaration signature depth leaves out", func(t *testing.T) {
+		t.Parallel()
+
+		gb, found := parsedFindings(t, nil, plugin.DepthSignatures,
+			"package p\n\n// +gen:table name=t\n//go:noinline\nfunc hidden() {}\n\n"+
+				"// +gen:x\ntype inner struct{}\n\nfunc Visible() {}\n")
+		assert.Empty(t, found, "a left-out declaration's carriers refuse nothing")
+		assert.Empty(t, onlyFile(t, gb).Annotations, "and its tool directives leave with it")
+	})
+
+	t.Run("passes over the comments inside function bodies", func(t *testing.T) {
+		t.Parallel()
+
+		gb, found := parsedFindings(t, nil, plugin.DepthFull,
+			"package p\n\nfunc F() int {\n\t// +Inf passes through\n\t//nolint:errcheck\n\treturn 1\n}\n\n"+
+				"var G = func() {\n\t// +gen:inside a literal\n}\n")
+		assert.Empty(t, found, "a body's comments refuse nothing")
+		assert.Empty(t, onlyFile(t, gb).Annotations, "and give the file no tool directive")
+	})
+
+	t.Run("refuses a carrier on a function no code can name", func(t *testing.T) {
+		t.Parallel()
+
+		gb, found := parsedFindings(t, nil, plugin.DepthFull,
+			"package p\n\n// +gen:x\n//go:noinline\nfunc init() {}\n")
+		assert.Length(t, found, 1, "the carrier refuses once")
+		assert.Equal(t, found[0].Code, frontend.UnaddressedCarrier, "as a carrier nothing addresses")
+		assert.Contains(t, found[0].Msg, "no code can name", "naming why")
+		assert.Empty(t, onlyFile(t, gb).Annotations, "and the tool directive leaves with the function")
+	})
+
+	t.Run("gives an import declaration's doc to the file", func(t *testing.T) {
+		t.Parallel()
+
+		gb, found := parsedFindings(t, nil, plugin.DepthFull,
+			"package p\n\n// +gen:table name=t\n//go:generate stringer\nimport \"fmt\"\n\nvar _ = fmt.Sprint\n")
+		assert.Length(t, found, 1, "the carrier on the import refuses")
+		assert.Contains(t, found[0].Msg, "an import", "naming the import")
+		assert.Equal(t, onlyFile(t, gb).Annotations,
+			symbol.Annotations{{Name: "go:generate", Args: []string{"stringer"}}},
+			"and the tool directive is the file's")
+	})
+
+	t.Run("stamps a single-type constraint as a type set", func(t *testing.T) {
+		t.Parallel()
+
+		gb := parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\ntype Int interface{ int }\n\ntype Bytes interface{ []byte }\n\n"+
+				"type Wide interface{ Stringer }\n\ntype Stringer interface{ String() string }\n")
+		decls := onlyFile(t, gb).Decls
+		assert.Length(t, decls[0].(*node.Interface).Embeds, 0, "a basic type is a term, not an embed")
+		assert.Length(t, decls[1].(*node.Interface).Embeds, 0, "and so is a type literal")
+		assert.Length(t, decls[2].(*node.Interface).Embeds, 1,
+			"a named type stays an embed, because only its declaration shows an interface")
+		assert.Equal(t, stampValues(gb, golang.TypeSetKey), []any{[]string{"int"}, []string{"[]byte"}},
+			"each term stamps as written")
+	})
+
+	t.Run("reads an array length in any integer form", func(t *testing.T) {
+		t.Parallel()
+
+		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\ntype T struct {\n\tA [0x20]byte\n\tB [1_024]byte\n\tC [n]byte\n}\n\nconst n = 3\n"))
+		st := file.Decls[0].(*node.Struct)
+		assert.Equal(t, []int{st.Fields[0].Type.Length, st.Fields[1].Type.Length, st.Fields[2].Type.Length},
+			[]int{32, 1024, 0}, "a literal length reads in any base, and an expression reads 0")
+	})
+
+	t.Run("stamps a defined type over a predeclared interface as named", func(t *testing.T) {
+		t.Parallel()
+
+		gb := parsedFile(t, nil, plugin.DepthFull, "package p\n\ntype Cause error\n\ntype Size int\n")
+		assert.Equal(t, stampValues(gb, golang.UnderlyingKey), []any{"named", "basic"},
+			"error is an interface, and int is basic")
+	})
+
+	t.Run("shares a parameter's trailing comment across its names", func(t *testing.T) {
+		t.Parallel()
+
+		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\nfunc F(\n\ta, b int, // operands\n) {}\n"))
+		fn := file.Decls[0].(*node.Function)
+		assert.Equal(t, []string{fn.Params[0].Comment, fn.Params[1].Comment},
+			[]string{"operands", "operands"}, "every name the field binds keeps the comment, as a result's names do")
 	})
 }

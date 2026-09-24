@@ -63,4 +63,30 @@ func TestFold(t *testing.T) {
 		assert.Equal(t, loose, []string{"Weight.String"},
 			"a method on a defined type over a builtin stays at file level, owned by its receiver's name")
 	})
+
+	t.Run("folds an enumeration's methods from the package's other files", func(t *testing.T) {
+		t.Parallel()
+
+		files := parsedUnit(t, map[string]string{
+			"p/a.go": "package p\n\ntype Color int\n\nconst (\n\tRed Color = iota\n\tBlue\n)\n",
+			"p/b.go": "package p\n\nfunc (c Color) String() string { return \"\" }\n",
+		})
+		enum, is := files[0].Decls[0].(*node.Enum)
+		assert.True(t, is, "the value set promotes")
+		assert.Length(t, enum.Methods, 1, "and the method in the other file folds onto it")
+		assert.Empty(t, files[1].Decls, "leaving nothing behind at file level")
+	})
+
+	t.Run("folds onto the first of two structs of one name", func(t *testing.T) {
+		t.Parallel()
+
+		files := parsedUnit(t, map[string]string{
+			"p/a.go": "package p\n\ntype T struct{ A int }\n",
+			"p/b.go": "package p\n\ntype T struct{ B int }\n\nfunc (T) M() {}\n",
+		})
+		first := files[0].Decls[0].(*node.Struct)
+		second := files[1].Decls[0].(*node.Struct)
+		assert.Length(t, first.Methods, 1, "the first declaration takes the method, as the load keeps the first")
+		assert.Empty(t, second.Methods, "and the duplicate takes none")
+	})
 }

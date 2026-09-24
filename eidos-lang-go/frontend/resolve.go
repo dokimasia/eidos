@@ -9,14 +9,15 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // bindings is what a file's parse records for its own Resolve: the
-// local spelling of each import against its path, the dot-imported
-// packages whose exported names flood the file's scope, and every
-// imported path in source order for the fallback probes.
+// qualifier each import binds against its path, the dot-imported
+// packages whose exported names enter the file's scope, and every
+// unaliased import in source order for the fallback probes.
 type bindings struct {
 	named map[string]string
 	dots  []string
@@ -28,36 +29,26 @@ func newBindings() *bindings {
 	return &bindings{named: map[string]string{}}
 }
 
-// builtins are the predeclared identifiers no package owns: a
-// reference to one keeps its spelling, which is degradation a
-// reader can ask about rather than failure.
-var builtins = map[string]bool{
-	"any": true, "bool": true, "byte": true, "comparable": true,
-	"complex64": true, "complex128": true, "error": true,
-	"float32": true, "float64": true, "int": true, "int8": true,
-	"int16": true, "int32": true, "int64": true, "rune": true,
-	"string": true, "uint": true, "uint8": true, "uint16": true,
-	"uint32": true, "uint64": true, "uintptr": true,
-}
-
-// resolve answers what a spelling could mean in one file's
+// resolve returns what a spelling could mean in one file's
 // bindings, candidates in probe order. A qualified spelling probes
-// the import its qualifier binds; a qualifier no binding matches
-// probes every imported path in source order, because a package
-// whose clause differs from its path is still one of the file's
-// imports and the graph decides which. A bare spelling probes the
-// file's own package and then, exported, each dot-imported package
-// in source order. Decoration strips first — pointer, slice,
-// array, variadic, parentheses, a trailing instantiation — because
-// the reference carries its source verbatim and the normalization
-// is Go's own; a shape no single declaration owns answers nothing.
+// the import its qualifier binds. A qualifier no binding matches
+// probes every unaliased import in source order, because a package
+// whose clause differs from its assumed name is still one of the
+// file's imports and the graph decides which; an aliased, a blank
+// and a dot import bind no qualifier but their own. A bare spelling
+// probes the file's own package and then, exported, each
+// dot-imported package in source order. Decoration strips first:
+// pointer, slice, array, variadic, parentheses and a trailing
+// instantiation, because the reference keeps its source verbatim
+// and the normalization is Go's own. A predeclared type and a shape
+// no single declaration declares return no candidate.
 func resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
 	b, _ := scope.Bindings.(*bindings)
 	if b == nil {
 		b = newBindings()
 	}
 	core := normalize(spelling)
-	if core == "" || builtins[core] {
+	if core == "" || golang.Predeclared(core) {
 		return nil
 	}
 	if qualifier, name, qualified := strings.Cut(core, "."); qualified {
@@ -85,13 +76,13 @@ func exported(name string) bool {
 	return unicode.IsUpper(r)
 }
 
-// normalize strips the decoration a type expression wears over the
-// named type: pointers, slices, arrays, variadic dots,
+// normalize strips the decoration around a type expression's named
+// type: pointers, slices, arrays, variadic dots,
 // parentheses, and a trailing instantiation's argument list, so
 // `*List[T]` resolves the way `List[T]` does. What remains either
-// names a declaration or is a composite — map, func, chan, an
-// inline struct or interface — or a constraint term, which no
-// single declaration owns, and answers empty.
+// names a declaration or is a composite (a map, a func, a chan, an
+// inline struct or interface) or a constraint term, which no single
+// declaration declares, and returns empty.
 func normalize(spelling string) string {
 	s := strings.TrimSpace(spelling)
 	for {

@@ -14,6 +14,19 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
+// countingReader is a partition door that counts the reads of each
+// path, the missed ones included.
+type countingReader struct {
+	tree  fstest.MapFS
+	count map[string]int
+}
+
+// Read counts the read and returns the file's bytes.
+func (r *countingReader) Read(path string) ([]byte, error) {
+	r.count[path]++
+	return r.tree.ReadFile(path)
+}
+
 // The partition fixes what everything downstream keys on: the
 // directory grain, the governing module, and the derived import
 // path.
@@ -66,6 +79,26 @@ func TestPartition(t *testing.T) {
 		assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
 		assert.Equal(t, u.Graph().Packages()[0].ID.Package, "example.test/fix/a",
 			"module path plus the directory under it")
+	})
+
+	t.Run("probes each directory of a shared ancestry once", func(t *testing.T) {
+		t.Parallel()
+
+		tree := fstest.MapFS{
+			"go.mod":   {Data: []byte("module example.test/fix\n")},
+			"a/x/x.go": {Data: []byte("package x\n")},
+			"a/y/y.go": {Data: []byte("package y\n")},
+			"a/z/z.go": {Data: []byte("package z\n")},
+		}
+		reads := &countingReader{tree: tree, count: map[string]int{}}
+		f := frontend.New(nil)
+		_, err := f.Partition(context.Background(), []plugin.SourceRef{
+			{Path: "a/x/x.go"}, {Path: "a/y/y.go"}, {Path: "a/z/z.go"},
+		}, reads)
+		assert.NoError(t, err, "the tree partitions")
+		assert.Equal(t, reads.count["go.mod"], 1, "the governing module file reads once")
+		assert.Equal(t, reads.count["a/go.mod"], 1,
+			"and the shared ancestor is probed once, the siblings' walks ending at its cached answer")
 	})
 
 	t.Run("keeps the workspace path without a module", func(t *testing.T) {

@@ -6,6 +6,7 @@ package frontend
 import (
 	"go/ast"
 	"go/token"
+	"sort"
 	"strconv"
 
 	"go.dokimi.dev/eidos/sdk/node"
@@ -13,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// lowered carries what one file's lowering reads everywhere: the
+// lowered is the state one file's lowering reads everywhere: the
 // file's position table, the raw bytes for verbatim spellings, the
 // unit's spelling intern, and the comment groups a declaration
 // consumed, so the sweep can refuse a carrier left floating between
@@ -28,7 +29,8 @@ type lowered struct {
 	// which the parser attaches to nothing.
 	comments []*ast.CommentGroup
 	// underlyings defer the defined types' shape stamps until the
-	// enum promotion has decided who stands for each type.
+	// enum promotion has decided which declaration replaces each
+	// type.
 	underlyings []pendingUnderlying
 }
 
@@ -73,7 +75,7 @@ func (l *lowered) spelling(e ast.Expr) string {
 // name in the spelling with its arguments split out, so the target
 // spells its own brackets. A pointer is Optional, a slice a List, a
 // sized array an Array with its literal length, a map a Map, a
-// channel a Stream whose direction stays in the spelling, a
+// channel a Stream whose direction is kept in the spelling, a
 // function type a Func with its parameters then its results, and
 // an inline struct or interface body Inline. A variadic parameter
 // inside a function type is the list it is.
@@ -158,18 +160,19 @@ func (l *lowered) fieldTypes(fields *ast.FieldList) []*node.TypeRef {
 	return out
 }
 
-// arrayLength reads a literal array length, and 0 for a length
-// the spelling keeps as an expression, an ellipsis included.
+// arrayLength reads a literal array length in any form Go's integer
+// literals take, and 0 for a length the spelling keeps as an
+// expression, an ellipsis included.
 func arrayLength(e ast.Expr) int {
 	lit, is := e.(*ast.BasicLit)
 	if !is || lit.Kind != token.INT {
 		return 0
 	}
-	n, err := strconv.Atoi(lit.Value)
+	n, err := strconv.ParseInt(lit.Value, 0, strconv.IntSize)
 	if err != nil || n < 0 {
 		return 0
 	}
-	return n
+	return int(n)
 }
 
 // trailing returns the comment group opening on the line a
@@ -177,14 +180,17 @@ func arrayLength(e ast.Expr) int {
 // one is given: the trailing comment of a function or method,
 // which go/ast leaves free, or of a parameter inside its list,
 // whose closing parenthesis is the limit. A group another
-// declaration consumed is not a candidate. Nil when none.
+// declaration consumed is not a candidate. Nil when none. The
+// file's comments are in source order, so the search starts at the
+// first group after the end.
 func (l *lowered) trailing(end, limit token.Pos) *ast.CommentGroup {
 	if !end.IsValid() {
 		return nil
 	}
 	line := l.file.Line(end)
-	for _, group := range l.comments {
-		if group.Pos() <= end || l.consumed[group] {
+	first := sort.Search(len(l.comments), func(i int) bool { return l.comments[i].Pos() > end })
+	for _, group := range l.comments[first:] {
+		if l.consumed[group] {
 			continue
 		}
 		if limit.IsValid() && group.Pos() >= limit {

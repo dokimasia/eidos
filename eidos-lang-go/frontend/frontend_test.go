@@ -10,10 +10,13 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/rulestest"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // goTree is the whole-contract fixture: a module root, two
@@ -51,7 +54,7 @@ func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 	}
 }
 
-// The frontend answers the same bar every frontend answers, over
+// The frontend runs the conformance suite every frontend runs, over
 // real Go source.
 func TestNew(t *testing.T) {
 	t.Parallel()
@@ -69,9 +72,35 @@ func TestNew(t *testing.T) {
 		assert.NoError(t, f.Parse(context.Background(), u),
 			"a syntax error is the source's problem, not the load's")
 	})
+
+	t.Run("keys its units under the frontend's own version", func(t *testing.T) {
+		t.Parallel()
+
+		v, versioned := frontend.New(nil).(plugin.Versioned)
+		assert.True(t, versioned, "the frontend states a version")
+		assert.Equal(t, v.Version(), golang.FrontendVersion,
+			"the frontend's, so a graph change bumps what the unit keys fold")
+	})
+
+	t.Run("claims no vendor tree", func(t *testing.T) {
+		t.Parallel()
+
+		fx := rulestest.Loaded(t, frontend.New(nil), fstest.MapFS{
+			"go.mod":                        {Data: []byte("module example.test/fix\n")},
+			"api/user.go":                   {Data: []byte("package api\n\ntype User struct{}\n")},
+			"vendor/example.com/lib/lib.go": {Data: []byte("package lib\n\ntype L struct{}\n")},
+		}, frontend.Keys)
+		pkg := func(path string) bool {
+			_, held := fx.Graph.PackageOf(symbol.Identity{Lang: frontend.Lang, Package: path, Kind: symbol.KindPackage})
+			return held
+		}
+		assert.True(t, pkg("example.test/fix/api"), "the module's package loads")
+		assert.False(t, pkg("example.test/fix/vendor/example.com/lib"),
+			"and a vendored copy of a dependency does not")
+	})
 }
 
-// unitOf partitions a tree and returns the unit holding one file.
+// unitOf partitions a tree and returns the unit with one file.
 func unitOf(
 	tb assert.TB, f plugin.Frontend, tree fstest.MapFS, member string,
 ) *plugin.SourceUnit {

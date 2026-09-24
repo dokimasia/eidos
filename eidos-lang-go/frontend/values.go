@@ -17,8 +17,9 @@ import (
 )
 
 // underlyingKind classifies a defined type's target shape, read
-// off the expression: the vocabulary the underlying-kind stamp
-// carries.
+// off the expression, in the underlying-kind stamp's vocabulary. A
+// predeclared basic type is basic, and every other name, the
+// predeclared interfaces included, is named.
 func underlyingKind(e ast.Expr) string {
 	switch t := e.(type) {
 	case *ast.ParenExpr:
@@ -37,7 +38,7 @@ func underlyingKind(e ast.Expr) string {
 	case *ast.FuncType:
 		return "func"
 	case *ast.Ident:
-		if builtins[t.Name] {
+		if golang.Basic(t.Name) {
 			return "basic"
 		}
 		return "named"
@@ -51,7 +52,7 @@ func underlyingKind(e ast.Expr) string {
 // together, imports stubbed, function bodies skipped, errors
 // swallowed — and stamps the exact value of everything that still
 // evaluated, iota arithmetic and cross-file references included.
-// What crosses a package boundary stays unstamped: absence is
+// What crosses a package boundary is left unstamped: absence is
 // unknown, never a wrong number.
 func stampConstValues(u *plugin.SourceUnit, fset *token.FileSet, b *constBatch) {
 	holdsConstants := false
@@ -97,12 +98,12 @@ func stampConstValues(u *plugin.SourceUnit, fset *token.FileSet, b *constBatch) 
 
 // evaluate runs the checker once over the package's files and
 // returns the exact values of the package-level constants it could
-// settle. The package scope holds them all, so no checker maps are
-// requested, and the files are pruned first: a constant reads
+// settle. The package scope contains them all, so no checker maps
+// are requested, and the files are pruned first: a constant reads
 // types, imports and other constants alone, so functions and
-// variables never reach the checker. A constant reading a
-// variable's layout through unsafe stays absent, the boundary
-// contract's own answer.
+// variables are never checked. A constant reading a variable's
+// layout through unsafe is left absent, as the boundary contract
+// states.
 func evaluate(fset *token.FileSet, name string, parsed []*ast.File) map[string]string {
 	conf := types.Config{
 		Error:            func(error) {},
@@ -170,7 +171,7 @@ func literalValues(parsed []*ast.File) map[string]string {
 }
 
 // literalValue evaluates one literal expression, a numeric sign
-// admitted, and reports whether it was one.
+// admitted, and reports whether the expression is one.
 func literalValue(e ast.Expr) (string, bool) {
 	switch v := e.(type) {
 	case *ast.BasicLit:
@@ -197,7 +198,7 @@ func literalValue(e ast.Expr) (string, bool) {
 	}
 }
 
-// constFile returns a shallow copy of one file holding only what
+// constFile returns a shallow copy of one file with only what
 // constant evaluation can read: imports, type declarations and
 // constant groups.
 func constFile(f *ast.File) *ast.File {
@@ -219,8 +220,8 @@ func constFile(f *ast.File) *ast.File {
 // package's own scope by design.
 type stubImporter struct{}
 
-// Import refuses, so a constant crossing a package boundary stays
-// unevaluated rather than wrong.
+// Import refuses, so a constant crossing a package boundary is left
+// unevaluated, never wrong.
 func (stubImporter) Import(string) (*types.Package, error) {
 	return nil, errors.New("frontend: constant evaluation reads the package's own scope alone")
 }

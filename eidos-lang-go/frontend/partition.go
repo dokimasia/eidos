@@ -47,31 +47,38 @@ func (*goFrontend) partition(
 	return out, nil
 }
 
-// moduleRoot is one resolved go.mod: where it sits, what it names,
-// and the shared-input list every governed ref carries.
+// moduleRoot is one resolved go.mod: its directory, the module it
+// names, and the shared-input list of every governed ref.
 type moduleRoot struct {
 	dir    string
 	module string
 	shared []string
 }
 
-// moduleProbe finds and caches governing modules, one read per
-// go.mod however many directories it governs.
+// moduleProbe finds and caches governing modules: one read per
+// go.mod, and one probe per directory, however many package
+// directories share an ancestry.
 type moduleProbe struct {
 	reader plugin.FileReader
 	roots  map[string]moduleRoot
 }
 
-// governing walks a directory's ancestry for the nearest go.mod. A
-// probe that misses is not recorded — nothing was read — and stays
-// correct across loads: the load that finds a new go.mod reads it,
-// and the read re-keys the unit.
+// governing walks a directory's ancestry for the nearest go.mod and
+// caches the answer for every directory the walk visited, because
+// each of them has the same nearest go.mod, so a sibling's walk ends
+// at the first ancestor a previous walk visited. A probe that misses
+// is not recorded, because it read nothing, and the cache lasts one
+// partition: the load that finds a new go.mod reads it, and the read
+// re-keys the unit.
 func (p *moduleProbe) governing(dir string) moduleRoot {
-	if root, met := p.roots[dir]; met {
-		return root
-	}
+	var visited []string
 	at := dir
 	for {
+		if root, met := p.roots[at]; met {
+			p.remember(visited, root)
+			return root
+		}
+		visited = append(visited, at)
 		candidate := path.Join(at, modFile)
 		if b, err := p.reader.Read(candidate); err == nil {
 			root := moduleRoot{
@@ -79,7 +86,7 @@ func (p *moduleProbe) governing(dir string) moduleRoot {
 				module: modulePath(string(b)),
 				shared: []string{candidate},
 			}
-			p.roots[dir] = root
+			p.remember(visited, root)
 			return root
 		}
 		if at == "." {
@@ -88,8 +95,15 @@ func (p *moduleProbe) governing(dir string) moduleRoot {
 		at = path.Dir(at)
 	}
 	root := moduleRoot{}
-	p.roots[dir] = root
+	p.remember(visited, root)
 	return root
+}
+
+// remember caches one walk's answer for every directory it visited.
+func (p *moduleProbe) remember(dirs []string, root moduleRoot) {
+	for _, dir := range dirs {
+		p.roots[dir] = root
+	}
 }
 
 // importPath derives the path a directory's package loads under.

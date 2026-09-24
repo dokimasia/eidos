@@ -36,7 +36,7 @@ func scopeOf(tb assert.TB, src string) (plugin.Frontend, plugin.ImportScope) {
 }
 
 // Resolution is Go's own probing, so its normalization and its
-// silences are pinned beside its answers.
+// empty results are pinned beside its candidates.
 func TestResolve(t *testing.T) {
 	t.Parallel()
 
@@ -58,10 +58,19 @@ func TestResolve(t *testing.T) {
 		assert.Equal(t, renamed[0].Package, "example.test/fix/other", "at its path")
 
 		fallback := f.Resolve(scope, "ghost.X")
-		assert.Length(t, fallback, 3,
-			"an unbound qualifier probes every import, because a package's clause can differ from its path")
+		assert.Length(t, fallback, 1,
+			"an unbound qualifier probes the unaliased imports alone, because an alias and a blank bind no other name")
 		assert.Equal(t, fallback[0].Package, "example.test/fix/api",
-			"in source order, the graph deciding which is present")
+			"a package's clause can differ from its assumed name, and the graph decides")
+		blank := f.Resolve(scope, "blank.X")
+		assert.Length(t, blank, 1, "a blank import binds no qualifier")
+		assert.Equal(t, blank[0].Package, "example.test/fix/api", "so the spelling falls back like any other")
+
+		versioned, vscope := scopeOf(t,
+			"package p\n\nimport \"gopkg.in/yaml.v3\"\n\nvar _ yaml.Node\n")
+		got = versioned.Resolve(vscope, "yaml.Node")
+		assert.Length(t, got, 1, "a versioned path binds the name it assumes")
+		assert.Equal(t, got[0].Package, "gopkg.in/yaml.v3", "at its path")
 	})
 
 	t.Run("probes dot imports for bare exported spellings", func(t *testing.T) {
@@ -95,7 +104,7 @@ func TestResolve(t *testing.T) {
 		}, "a bare spelling probes its own package, whatever its case")
 	})
 
-	t.Run("answers nothing for what no declaration owns", func(t *testing.T) {
+	t.Run("returns no candidate for what no declaration declares", func(t *testing.T) {
 		t.Parallel()
 
 		f, scope := scopeOf(t, src)

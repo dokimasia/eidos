@@ -18,8 +18,8 @@ import (
 // carrier named "build" and attach a directive nobody wrote.
 const legacyBuild = "build"
 
-// goBuild is the constraint directive, configuration rather than
-// an annotation: the exclusion scan reads it, nothing else does.
+// goBuild is the constraint directive, which is configuration and
+// no annotation: the exclusion scan reads it, and nothing else does.
 const goBuild = "go:build"
 
 // split takes one comment group apart through the unit's own
@@ -71,6 +71,18 @@ func (l *lowered) split(u *plugin.SourceUnit, group *ast.CommentGroup) plugin.Co
 	}
 	flush()
 	return parts
+}
+
+// skip consumes comment groups without reading them: the comments
+// of a declaration the load leaves out, whose carriers and tool
+// directives belong to that declaration and leave with it. A nil
+// group is skipped.
+func (l *lowered) skip(groups ...*ast.CommentGroup) {
+	for _, group := range groups {
+		if group != nil {
+			l.consumed[group] = true
+		}
+	}
 }
 
 // merge folds a group's parts under a spec's own: carriers and
