@@ -56,5 +56,9 @@ func TestMem(t *testing.T) {
 		assert.Length(t, m.Files(), 1,
 			"a caller editing the map it was handed edits nothing here")
 		assert.Equal(t, string(m.Files()["a.go"]), "package a\n", "the file stands")
+
+		m.Files()["a.go"][0] = 'P'
+		assert.Equal(t, string(m.Files()["a.go"]), "package a\n",
+			"and a caller editing a body it was handed edits nothing here either")
 	})
 }

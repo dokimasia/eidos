@@ -3,7 +3,7 @@
 
 package output
 
-import "maps"
+import "bytes"
 
 // Mem stages in memory and commits into a map, for tests and for
 // a dry run that computes everything and writes nowhere. It holds
@@ -48,8 +48,14 @@ func (m *Mem) Discard() error {
 	return nil
 }
 
-// Files returns the committed files, keyed by path: a copy, so a
-// caller reading them cannot edit what the sink holds. Before
-// Commit it returns nothing, because staged means invisible
-// everywhere.
-func (m *Mem) Files() map[string][]byte { return maps.Clone(m.committed) }
+// Files returns the committed files, keyed by path: a copy of the
+// map and of every body, so a caller editing either leaves the
+// sink's files unchanged. Before Commit it returns nothing,
+// because staged means invisible everywhere.
+func (m *Mem) Files() map[string][]byte {
+	out := make(map[string][]byte, len(m.committed))
+	for p, body := range m.committed {
+		out[p] = bytes.Clone(body)
+	}
+	return out
+}
