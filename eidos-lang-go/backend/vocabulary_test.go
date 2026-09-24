@@ -165,10 +165,14 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "an immutable variable refuses, because that is a constant")
 		_, err = backend.Guard(&emit.Constant{
 			Name:        "Max",
+			Value:       "8",
 			Annotations: symbol.Annotations{{Name: "nolint"}},
 		})
 		assert.NoError(t, err,
 			"annotations pass the guard, because they render as directive lines")
+		_, err = backend.Guard(&emit.Constant{Name: "Max"})
+		assert.HasError(t, err,
+			"a constant without a value refuses, because const Max = declares nothing")
 		_, err = backend.Guard(&emit.Alias{
 			Name: "ID", Visibility: symbol.VisibilityProtected,
 		})
@@ -226,5 +230,7 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "a final marker refuses")
 		_, err = backend.SigGuard(&emit.Method{Name: "Get", Async: true})
 		assert.HasError(t, err, "an async signature refuses")
+		_, err = backend.SigGuard(&emit.Method{Name: "Get", Body: emit.Body{Verbatim: "return nil"}})
+		assert.HasError(t, err, "a body refuses, because the signature cannot place it")
 	})
 }

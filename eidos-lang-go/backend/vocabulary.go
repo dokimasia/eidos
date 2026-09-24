@@ -15,8 +15,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The vocabulary names, so a template and its helper cannot drift
-// apart on a spelling.
+// The vocabulary names are constants, so a template and its helper
+// spell one name.
 const (
 	// FuncDocs writes a declaration's documentation.
 	FuncDocs = "docs"
@@ -70,17 +70,17 @@ func Funcs() template.FuncMap {
 
 // Docs writes a declaration's documentation as line comments,
 // each prefixed with the given indentation, so a member's doc
-// sits at its member's depth. Called with no prefix it writes at
+// is at its member's depth. Called with no prefix it writes at
 // the top level.
 func Docs(lines []string, prefix ...string) string {
 	return textfmt.LineDocs(lines, "// ", prefix...)
 }
 
 // Spell writes a type reference. A reference the graph never
-// resolved carries its source spelling, which is what a Go graph
-// rendering back to Go needs; a missing one spells [Anonymous]. A
-// reference carrying arguments holds its bare name in Spelling,
-// and the argument list spells here in Go's brackets.
+// resolved spells its source spelling, which is what a Go graph
+// rendering back to Go needs, and a missing one spells [Anonymous].
+// A reference with arguments has its bare name in Spelling, and the
+// argument list spells here in Go's brackets.
 func Spell(t *emit.TypeRef) string {
 	return spellref.Spell(t, "[", "]", Anonymous)
 }
@@ -88,10 +88,10 @@ func Spell(t *emit.TypeRef) string {
 // TypeParams writes a type parameter list in brackets, or nothing
 // for a declaration stating none. A parameter without a bound
 // spells [Anonymous], one bound spells itself, and several fold
-// into an inline constraint interface, which is Go's intersection;
-// the formatter settles that interface's layout. Variance,
-// defaults and value parameters refuse: Go's parameters state none
-// of the three, and dropping one would misstate the declaration.
+// into an inline constraint interface, which is Go's intersection.
+// The formatter settles that interface's layout. Variance, defaults
+// and value parameters are refused, because Go's parameters state
+// none of the three.
 func TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -146,8 +146,8 @@ func Params(ps []*emit.Param) string {
 
 // param writes one parameter: its name where it has one, its
 // type, which a variadic parameter opens with three dots, and its
-// trailing comment as a block comment, the one form that survives
-// inside a list gofmt keeps on one line.
+// trailing comment as a block comment, the one comment form gofmt
+// keeps inside a one-line list.
 func param(p *emit.Param) string {
 	spelling := Spell(p.Type)
 	if p.Variadic != symbol.VariadicNone {
@@ -181,8 +181,8 @@ func Results(rs []*emit.Return) string {
 }
 
 // Receiver writes a method's receiver. A method declared outside
-// the type it attaches to carries the type alone, which Go
-// accepts: a receiver no body reads needs no name.
+// the type it attaches to spells the type alone, which Go accepts,
+// because a receiver no body reads needs no name.
 func Receiver(m *emit.Method) string {
 	switch {
 	case m.Receiver != nil:
@@ -197,8 +197,8 @@ func Receiver(m *emit.Method) string {
 // Package writes the package clause's name, taken from the
 // identity's own name and falling back to the last element of its
 // path. An identity naming no package spells nothing, and the
-// formatter refuses the file rather than the backend inventing a
-// name for it.
+// formatter then refuses the file. The backend invents no package
+// name.
 func Package(id symbol.Identity) string {
 	switch {
 	case id.Name != "":
@@ -211,12 +211,12 @@ func Package(id symbol.Identity) string {
 }
 
 // Guard writes nothing and refuses what Go states nowhere, so a
-// stated fact never drops in silence: asynchrony, abstractness,
-// an override or default marker, a
-// type-level member, a field's own mutability or initializer, an
-// immutable variable, and every visibility beyond the exported
-// and package scopes the name's case carries. Final holds on a
-// struct or a method, because nothing subclasses.
+// stated fact is never dropped in silence: asynchrony, abstractness,
+// an override or default marker, a type-level member, a field's own
+// mutability or initializer, an immutable variable, a constant
+// without a value, and every visibility beyond the exported and
+// package scopes the name's case spells. A final struct or method
+// passes, because nothing subclasses in Go.
 func Guard(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -258,6 +258,9 @@ func Guard(d symbol.Symbol) (string, error) {
 	case *emit.Alias:
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Constant:
+		if t.Value == "" {
+			return "", refuse("a constant takes a value, and %s states none", t.Name)
+		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Variable:
 		if t.Mutability == symbol.MutabilityImmutable {
@@ -270,12 +273,14 @@ func Guard(d symbol.Symbol) (string, error) {
 }
 
 // SigGuard writes nothing and refuses what an interface method
-// states nowhere. Abstractness holds, because a bodiless
-// signature is the interface's shape; everything else an
-// interface method could state refuses the way [Guard] refuses
-// it.
+// states nowhere. An abstract method passes, because an interface
+// method is a signature without a body. A body is refused, because
+// the signature cannot place it, and everything else an interface
+// method could state is refused the way [Guard] refuses it.
 func SigGuard(m *emit.Method) (string, error) {
 	switch {
+	case !m.Body.IsZero():
+		return "", refuse("an interface method is a signature, and %s states a body", m.Name)
 	case m.Async:
 		return "", refuse("concurrency is caller-side, and %s states async", m.Name)
 	case m.Override:
@@ -292,7 +297,7 @@ func SigGuard(m *emit.Method) (string, error) {
 	return "", cased(m.Visibility, m.Name)
 }
 
-// cased refuses the visibilities the name's case cannot carry:
+// cased refuses the visibilities the name's case cannot express:
 // exported and package scopes spell through the first rune, and
 // the rest have no Go spelling at all.
 func cased(v symbol.Visibility, name string) error {
@@ -313,14 +318,13 @@ func unannotated(name string) error {
 }
 
 // Directives writes a declaration's annotations as Go directive
-// comment lines — //go:embed, //nolint:gosec — one per annotation,
-// its arguments space-joined behind the name, at the member's
-// depth where one is given. Go's directives are comments whose
-// spelling is the contract, so the annotation passes through
-// verbatim and undocumented names stay the generator's own risk. A
-// name outside the tool:name shape and the legacy space forms
-// re-reads as documentation on the frontend side, which is that
-// shape's own nature.
+// comment lines, such as //go:embed or //nolint:gosec, one per
+// annotation, its arguments space-joined behind the name, at the
+// member's depth where one is given. Go's directives are comments
+// whose spelling is the contract, so the annotation passes through
+// verbatim, and the generator is responsible for an undocumented
+// name. A name outside the tool:name shape and the legacy space
+// forms reads back as documentation on the frontend side.
 func Directives(as symbol.Annotations, indent ...string) string {
 	if len(as) == 0 {
 		return ""
