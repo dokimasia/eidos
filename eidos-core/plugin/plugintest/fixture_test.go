@@ -4,6 +4,7 @@
 package plugintest_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -11,8 +12,11 @@ import (
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/plugin/plugintest"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -90,6 +94,30 @@ func TestFixture(t *testing.T) {
 			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
 			assert.Equal(t, visited, []string{"Alpha"},
 				"only the validated carrier matches")
+		})
+
+		t.Run("binds the walks over the fixture's rules and the kernel's keys", func(t *testing.T) {
+			t.Parallel()
+
+			f, _, _ := twoStructs(t)
+			f.Rules = rules.NewRegistry()
+			assert.NoError(t, f.Rules.Register(rules.Absent(coretest.Lang)),
+				"the fixture language registers its rules")
+			var kernel meta.KernelKeys
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					m.Rules()
+					kernel = m.Kernel()
+					return nil
+				})).
+				Build()
+
+			r := f.Generate(t, p)
+			assert.NoError(t, r.Err, "the phase call passes")
+			assert.Equal(t, kernel, f.Kernel, "the handler reads the kernel's keys the fixture registered")
+			assert.Equal(t, kernel.Module.Name(), meta.ModuleKey, "under the kernel's own names")
+			assert.Length(t, slices.Collect(r.Sink.All()), 0,
+				"a registered language binds without the absent-rules warning")
 		})
 
 		t.Run("refuses a plugin without the role", func(t *testing.T) {

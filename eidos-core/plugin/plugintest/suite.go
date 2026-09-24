@@ -14,6 +14,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -95,10 +96,11 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 	})
 }
 
-// AssertPopulatedFixture refuses a fixture whose graph holds no
-// declarations: every other check in the suite passes vacuously
-// over an empty run and proves nothing, which is the emptiness
-// this kit's siblings already refuse.
+// AssertPopulatedFixture refuses a fixture whose files declare
+// nothing: every other check in the suite passes vacuously over an
+// empty run and proves nothing, which is the emptiness this kit's
+// siblings already refuse. Every declaration a file declares is of
+// a kind a trigger matches, so one is enough.
 func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -110,13 +112,14 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	// The check owns this setup's fixture, so sealing it here is
 	// the same seal the first phase call would make.
 	f.Graph.Freeze()
-	for range f.Graph.ByKind(symbol.KindFile) {
-		return
+	for pkg := range f.Graph.Packages() {
+		for _, file := range pkg.Files {
+			if file != nil && len(file.Decls) > 0 {
+				return
+			}
+		}
 	}
-	for range f.Graph.ByKind(symbol.KindStruct) {
-		return
-	}
-	tb.Errorf("the fixture graph holds no files and no structs: an " +
+	tb.Errorf("the fixture graph's files declare nothing: an " +
 		"empty run passes vacuously and proves nothing")
 }
 
@@ -229,10 +232,11 @@ func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 }
 
 // AssertIdempotentAnnotate runs one plugin's annotate phase twice
-// over one fixture and holds both passes clean. A stamp that
-// depends on run state arrives a second value from the same rank
-// source, which the fact store refuses, and the refusal fails this
-// check.
+// over one fixture. It fails unless both passes stamp clean and the
+// second pass leaves every winning value unchanged. A stamp that
+// depends on run state either arrives a second value from the same
+// rank source, which the fact store refuses, or moves a winner,
+// which the comparison refuses.
 func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -240,10 +244,37 @@ func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	first := f.Annotate(tb, p)
 	assert.NoError(tb, first.Err, "the first pass runs whole")
 	assert.False(tb, first.Sink.Failed(), "and stamps clean")
+	settled := winners(f)
 	second := f.Annotate(tb, p)
 	assert.NoError(tb, second.Err, "the second pass runs whole")
 	assert.False(tb, second.Sink.Failed(),
 		"a repeated pass re-stamps identical claims, never new values")
+	assert.Equal(tb, winners(f), settled,
+		"a repeated pass leaves every winning value where the first pass put it")
+}
+
+// winner is one present fact: its subject, its key and its winning
+// value.
+type winner struct {
+	subject symbol.Identity
+	key     meta.KeyName
+	value   any
+}
+
+// winners returns every present fact in the fixture's store, in key
+// registration order and then identity order.
+func winners(f *Fixture) []winner {
+	var out []winner
+	for name := range f.Keys.Keys() {
+		id, _ := f.Keys.Resolve(name)
+		for subject := range f.Facts.ByKey(id) {
+			for view := range f.Facts.Claims(subject, id) {
+				out = append(out, winner{subject: subject, key: name, value: view.Value})
+				break
+			}
+		}
+	}
+	return out
 }
 
 // AssertPositionedDiagnostics runs every phase the plugin holds and
@@ -261,9 +292,11 @@ func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	}
 }
 
-// AssertAttributedEmit runs the generate phase and holds every unit
-// to its plugin's name and its declared families: output nobody can
-// attribute, or under a tag nothing declared, is a routing hole.
+// AssertAttributedEmit runs the generate phase and checks every
+// unit the plugin flushed against the plugin's name and its
+// declared families: output nobody can attribute, or under a tag
+// nothing declared, is a routing hole. The check skips the units
+// the fixture seeded, which are other plugins' output.
 func AssertAttributedEmit(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -274,12 +307,32 @@ func AssertAttributedEmit(tb assert.TB, setup Setup) {
 			declared[o.Tag] = true
 		}
 	}
+	seeded := map[unitRef]bool{}
+	for u := range f.store().Units() {
+		seeded[refOf(u)] = true
+	}
 	for u := range generateOnce(tb, p, f).Units() {
+		if seeded[refOf(u)] {
+			continue
+		}
 		assert.Equal(tb, u.Plugin, p.Name(),
 			"every unit names the plugin that emitted it")
 		assert.True(tb, declared[u.Tag],
 			"every unit arrives under a declared family")
 	}
+}
+
+// unitRef is the key an emit store holds one unit under.
+type unitRef struct {
+	plugin plugin.ID
+	tag    string
+	pkg    symbol.Identity
+	key    string
+}
+
+// refOf returns the key a unit is held under.
+func refOf(u plugin.Unit) unitRef {
+	return unitRef{plugin: u.Plugin, tag: u.Tag, pkg: u.Pkg, key: u.Key}
 }
 
 // AssertTwins holds two spellings of one plugin, usually a facade

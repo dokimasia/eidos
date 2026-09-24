@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -36,6 +37,14 @@ type Fixture struct {
 	Directives map[symbol.Identity][]directive.Directive
 	// Scope filters what phase calls see; nil admits everything.
 	Scope store.Scope
+	// Rules is the registry of language rules a phase call binds
+	// the kernel's walks over. A nil registry binds every language
+	// to the absent rules.
+	Rules *rules.Registry
+	// Kernel is the kernel's key handles. [New] registers them
+	// under Keys, the way a composition registers them before any
+	// plugin's.
+	Kernel meta.KernelKeys
 	// Languages holds a render language per target, what the
 	// template check lints declared trees against; a fixture that
 	// carries none skips the check.
@@ -47,15 +56,19 @@ type Fixture struct {
 	claimed map[string]bool
 }
 
-// New returns a fixture holding nothing, bucket one.
+// New returns an empty fixture at bucket one, with the kernel's
+// keys registered.
 func New(tb assert.TB) *Fixture {
 	tb.Helper()
 
 	keys := meta.NewRegistry()
+	kernel, err := meta.Kernel(keys)
+	assert.NoError(tb, err, "the kernel's keys register")
 	return &Fixture{
 		Graph:   store.New(),
 		Keys:    keys,
 		Facts:   meta.NewFacts(keys),
+		Kernel:  kernel,
 		Bucket:  1,
 		claimed: map[string]bool{},
 	}
@@ -171,6 +184,8 @@ func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 		Reader: mintReader(tb, ix),
 		Facts:  f.Facts,
 		Sink:   sink,
+		Rules:  f.Rules,
+		Kernel: f.Kernel,
 		Plugin: p.Name(),
 		Bucket: f.Bucket,
 	})
@@ -193,6 +208,8 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 		Facts:  f.Facts,
 		Emit:   f.store(),
 		Sink:   sink,
+		Rules:  f.Rules,
+		Kernel: f.Kernel,
 		Plugin: p.Name(),
 		Bucket: f.Bucket,
 	})

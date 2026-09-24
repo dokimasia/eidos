@@ -35,7 +35,8 @@ import (
 // and is not safe for concurrent use.
 type Fixture = core.Fixture
 
-// New returns a fixture holding nothing, bucket one.
+// New returns an empty fixture at bucket one, with the kernel's
+// keys registered.
 func New(tb assert.TB) *Fixture {
 	return core.New(tb)
 }
@@ -74,10 +75,11 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 	core.RunPluginSuite(t, setup)
 }
 
-// AssertPopulatedFixture refuses a fixture whose graph holds no
-// declarations: every other check in the suite passes vacuously
-// over an empty run and proves nothing, which is the emptiness
-// this kit's siblings already refuse.
+// AssertPopulatedFixture refuses a fixture whose files declare
+// nothing: every other check in the suite passes vacuously over an
+// empty run and proves nothing, which is the emptiness this kit's
+// siblings already refuse. Every declaration a file declares is of
+// a kind a trigger matches, so one is enough.
 func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	core.AssertPopulatedFixture(tb, setup)
 }
@@ -116,10 +118,11 @@ func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 }
 
 // AssertIdempotentAnnotate runs one plugin's annotate phase twice
-// over one fixture and holds both passes clean. A stamp that
-// depends on run state arrives a second value from the same rank
-// source, which the fact store refuses, and the refusal fails this
-// check.
+// over one fixture. It fails unless both passes stamp clean and the
+// second pass leaves every winning value unchanged. A stamp that
+// depends on run state either arrives a second value from the same
+// rank source, which the fact store refuses, or moves a winner,
+// which the comparison refuses.
 func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	core.AssertIdempotentAnnotate(tb, setup)
 }
@@ -131,9 +134,11 @@ func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	core.AssertPositionedDiagnostics(tb, setup)
 }
 
-// AssertAttributedEmit runs the generate phase and holds every unit
-// to its plugin's name and its declared families: output nobody can
-// attribute, or under a tag nothing declared, is a routing hole.
+// AssertAttributedEmit runs the generate phase and checks every
+// unit the plugin flushed against the plugin's name and its
+// declared families: output nobody can attribute, or under a tag
+// nothing declared, is a routing hole. The check skips the units
+// the fixture seeded, which are other plugins' output.
 func AssertAttributedEmit(tb assert.TB, setup Setup) {
 	core.AssertAttributedEmit(tb, setup)
 }

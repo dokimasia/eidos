@@ -133,6 +133,67 @@ func TestRunPluginSuite(t *testing.T) {
 	})
 }
 
+func TestAssertPopulatedFixture(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects a fixture whose files declare nothing", func(t *testing.T) {
+		t.Parallel()
+
+		empty := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+			f := plugintest.New(tb)
+			f.Load(tb, coretest.Package(coretest.StorePath))
+			return spare{}, f
+		}
+		failure := assert.Rejects(t, "a fixture of empty files must fail the check",
+			func(tb assert.TB) {
+				plugintest.AssertPopulatedFixture(tb, empty)
+			})
+		assert.Contains(t, failure, "declare nothing", "the check names what the fixture lacks")
+	})
+
+	t.Run("waves through a fixture declaring one function", func(t *testing.T) {
+		t.Parallel()
+
+		plugintest.AssertPopulatedFixture(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+			f := plugintest.New(tb)
+			f.Load(tb, coretest.Package(coretest.StorePath,
+				coretest.Function(coretest.StorePath, coretest.FunctionName)))
+			return spare{}, f
+		})
+	})
+}
+
+func TestAssertIdempotentAnnotate(t *testing.T) {
+	t.Parallel()
+
+	t.Run("rejects a second pass that moves a winning value", func(t *testing.T) {
+		t.Parallel()
+
+		stateful := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+			f, _, _ := twoStructs(tb)
+			key := plugintest.Key[bool](tb, f, "t.flag", "marks a fixture subject")
+			calls := 0
+			p := eidos.NewPlugin("cheat").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+					// Two subjects make one pass, so the stamp arrives on
+					// the second pass alone.
+					calls++
+					if calls > 2 {
+						eidos.Stamp(st, key, true)
+					}
+					return nil
+				})).
+				Build()
+			return p, f
+		}
+		failure := assert.Rejects(t, "a fact the second pass adds must fail the check",
+			func(tb assert.TB) {
+				plugintest.AssertIdempotentAnnotate(tb, stateful)
+			})
+		assert.Contains(t, failure, "winning value", "the check names what moved")
+	})
+}
+
 func TestAssertDeterministicEmit(t *testing.T) {
 	t.Parallel()
 
@@ -338,6 +399,29 @@ func TestAssertAttributedEmit(t *testing.T) {
 			})
 		assert.Contains(t, failure, "names the plugin",
 			"the check names the attribution rule")
+	})
+
+	t.Run("waves through a weaver over another plugin's seeded unit", func(t *testing.T) {
+		t.Parallel()
+
+		plugintest.AssertAttributedEmit(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+			f, alpha, _ := twoStructs(tb)
+			f.Seed(tb, plugin.Unit{
+				Plugin: "earlier", Per: plugin.PerSource, Word: "impl", Key: "a.go",
+				Decls: []symbol.Symbol{&emit.Struct{Origin: alpha.ID, Name: "Gen"}},
+			})
+			p := eidos.NewPlugin("weaver").
+				Handle(eidos.OnEmit(symbol.KindStruct,
+					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+						s, ok := m.Value.(*emit.Struct)
+						if ok {
+							s.Methods.Append(&emit.Method{Origin: m.Origin(), Name: "Audit"})
+						}
+						return nil
+					})).
+				Build()
+			return p, f
+		})
 	})
 }
 

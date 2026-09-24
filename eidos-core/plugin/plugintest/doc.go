@@ -33,7 +33,8 @@
 //
 // core/plugintest imports core/plugin, core/backend/render,
 // core/diag, core/directive, core/emit, core/meta, core/node,
-// core/store, core/symbol, the assert module and the Go stdlib.
+// core/rules, core/store, core/symbol, the assert module and the
+// Go stdlib.
 // It never imports the root package: the harness works directly
 // on the SPI, so a facade-built plugin and a hand-rolled one are
 // held to the same checks.
