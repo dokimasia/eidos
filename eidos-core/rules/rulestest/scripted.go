@@ -87,8 +87,12 @@ func (scripted) Resolve(
 	return nil, fmt.Errorf("rulestest: %q names nothing in %s at %v", name, scope.Subject.Package, kind)
 }
 
-// SamplesOf derives a pair for a builtin and refuses the rest.
-func (scripted) SamplesOf(ref *node.TypeRef, hint string, _ rules.View) (rules.Sample, rules.Sample) {
+// SamplesOf derives a pair for a builtin and refuses the rest: a
+// named type the view does not contain as unresolved, and every
+// other type with no literal, because the scripted language writes
+// no composite. The declaration a named type targets decides the
+// refusal, so the lookup records it on the view.
+func (scripted) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
 	if ref == nil {
 		return rules.Refused(rules.RefusedNoLiteral), rules.Refused(rules.RefusedNoLiteral)
 	}
@@ -106,7 +110,10 @@ func (scripted) SamplesOf(ref *node.TypeRef, hint string, _ rules.View) (rules.S
 	if ref.Target.IsZero() {
 		return rules.Refused(rules.RefusedNoLiteral), rules.Refused(rules.RefusedNoLiteral)
 	}
-	return rules.Refused(rules.RefusedUnresolved), rules.Refused(rules.RefusedUnresolved)
+	if _, held := v.Lookup(ref.Target); !held {
+		return rules.Refused(rules.RefusedUnresolved), rules.Refused(rules.RefusedUnresolved)
+	}
+	return rules.Refused(rules.RefusedNoLiteral), rules.Refused(rules.RefusedNoLiteral)
 }
 
 // ZeroValue spells a builtin's zero and reports false for the rest.

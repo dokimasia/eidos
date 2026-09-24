@@ -9,9 +9,10 @@ import (
 	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/rules"
 )
 
-// Budget is the ceiling a benchmark holds a language to.
+// Budget is the ceiling a benchmark checks a language against.
 type Budget struct {
 	// MaxAllocs is the allocation ceiling per iteration, pinned
 	// from a profiled run with headroom. A zero ceiling refuses.
@@ -21,8 +22,9 @@ type Budget struct {
 // BenchRules drives the four hot projections over the setup's
 // graph, one iteration projecting every callable, every type's
 // members, every reference's shape and every field's samples, and
-// holds the allocations per iteration under the budget. The
-// fixture builds once outside the loop.
+// fails when the allocations per iteration exceed the budget. The
+// fixture builds once outside the loop, and every iteration binds a
+// fresh view.
 func BenchRules(b *testing.B, setup Setup, budget Budget) {
 	b.Helper()
 
@@ -31,18 +33,19 @@ func BenchRules(b *testing.B, setup Setup, budget Budget) {
 	}
 	r, f := setup(b)
 	if f == nil || f.Graph == nil {
-		b.Fatal("the setup carries no graph")
+		b.Fatal("the setup has no graph")
 	}
 	subs := subjects(f.Graph)
-	refs := references(f.Graph)
+	refs := graphReferences(f.Graph)
 	if len(subs) == 0 || len(refs) == 0 {
-		b.Fatal("the corpus holds nothing to project")
+		b.Fatal("the corpus contains nothing to project")
 	}
 
 	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
 	defer c.End()
 	for c.Loop() {
-		bd, _ := bound(b, r, f)
+		view, _, _ := viewOf(b, f)
+		bd := rules.NewBound(r, view, nil)
 		for _, ref := range refs {
 			bd.TypeOf(ref)
 		}

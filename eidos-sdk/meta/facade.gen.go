@@ -95,8 +95,10 @@ func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 
 // Fact returns what [Get] does and records the read at
 // (subject, key) into rec. A miss records too: the reader asked, so
-// it runs again when the fact appears. It is the read every plugin
-// makes; Get is the kernel's own untracked path.
+// it runs again when the fact appears. A subject of a kind the key
+// does not admit reads absent and records nothing, because [Stamp]
+// refuses every claim on it. It is the read every plugin makes; Get
+// is the kernel's own untracked path.
 func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T, bool) {
 	return core.Fact[T](f, rec, id, k)
 }

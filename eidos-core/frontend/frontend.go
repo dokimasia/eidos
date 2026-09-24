@@ -12,21 +12,21 @@ import (
 )
 
 // Classifier inspects a parsed unit and stamps classification
-// facts through the unit's builder — a test-file marker, a foreign
-// generator's output — at plugin authority under the frontend's
-// identity. It runs after the author's parse, on the same unit, so
-// what it inspects is what the parse declared; a returned error is
-// fatal to the load the way a parse error is. There is no
-// exclusion hook beside it: a classifier stamps what it saw and
-// drops nothing, because whether a classified file takes part is
-// the consumer's call.
+// facts through the unit's builder, such as a test-file marker or a
+// foreign generator's output, at plugin authority under the
+// frontend's identity. It runs after the author's parse, on the
+// same unit, so what it inspects is what the parse declared, and a
+// returned error is fatal to the load the way a parse error is.
+// There is no exclusion hook beside it: a classifier stamps what it
+// saw and drops nothing, because whether a classified file takes
+// part is the consumer's call.
 type Classifier func(u *plugin.SourceUnit) error
 
-// Builder accumulates a frontend declaration: the identity and
-// language every declaration carries, the comment syntax the
+// Builder accumulates a frontend declaration: the identity and the
+// language of every declaration it loads, the comment syntax the
 // parse strips through, the file claim, and the functions the
 // pipeline varies in. Everything on it is data except the
-// functions; Build freezes it, and a Builder is not reused
+// functions. Build freezes it, and a Builder is not reused
 // afterwards.
 type Builder struct {
 	name        plugin.ID
@@ -36,7 +36,7 @@ type Builder struct {
 	selection   []string
 	partition   func(context.Context, []plugin.SourceRef, plugin.FileReader) ([][]plugin.SourceRef, error)
 	parse       func(context.Context, *plugin.SourceUnit) error
-	resolve     func(plugin.ImportScope, string) []symbol.Identity
+	resolve     func(plugin.ImportScope, string) plugin.Candidates
 	classifiers []Classifier
 	options     any
 	hasOptions  bool
@@ -61,10 +61,9 @@ func (b *Builder) Version(v string) *Builder {
 // Match appends selection patterns to the file claim: globs
 // matched against the whole workspace-relative path, "**" spanning
 // any number of segments, applied in order with the last match
-// deciding, so a later negation carves an earlier claim. What stays
-// out of the claim is policy —
-// whether test files take part is the consumer's call through
-// scopes, never a selection line.
+// deciding, so a later negation carves an earlier claim. Policy is
+// left out of the claim: whether test files take part is the
+// consumer's call through scopes, never a selection line.
 func (b *Builder) Match(patterns ...string) *Builder {
 	b.selection = append(b.selection, patterns...)
 	return b
@@ -95,12 +94,13 @@ func (b *Builder) Classify(cs ...Classifier) *Builder {
 	return b
 }
 
-// Resolve sets the language's resolution: candidates for one
-// spelling in one file's recorded bindings, in probe order. A
-// language with nothing resolvable states it with a resolve that
-// returns nothing, so the silence is written rather than defaulted.
+// Resolve sets the language's resolution: the candidates for one
+// spelling in one file's recorded bindings, in probe order and in
+// shadowing tiers. A language with nothing resolvable states it
+// with a resolve that returns nothing, so the silence is written
+// and not defaulted.
 func (b *Builder) Resolve(
-	resolve func(plugin.ImportScope, string) []symbol.Identity,
+	resolve func(plugin.ImportScope, string) plugin.Candidates,
 ) *Builder {
 	b.resolve = resolve
 	return b
@@ -118,8 +118,8 @@ func (b *Builder) Options(o any) *Builder {
 }
 
 // Build freezes the declaration and returns the lowered frontend,
-// which implements [plugin.Frontend]. The conformance suite holds
-// it to the same checks a hand-rolled frontend meets, because the
+// which implements [plugin.Frontend]. The conformance suite runs the
+// same checks over it that a hand-rolled frontend meets, because the
 // lowering adds nothing the role does not state.
 //
 // Build panics on a declaration defect: an empty name or language,
@@ -174,14 +174,15 @@ type builtFrontend struct {
 	selection   []string
 	partition   func(context.Context, []plugin.SourceRef, plugin.FileReader) ([][]plugin.SourceRef, error)
 	parse       func(context.Context, *plugin.SourceUnit) error
-	resolve     func(plugin.ImportScope, string) []symbol.Identity
+	resolve     func(plugin.ImportScope, string) plugin.Candidates
 	classifiers []Classifier
 }
 
 // Name returns the frontend's one identity.
 func (f *builtFrontend) Name() plugin.ID { return f.name }
 
-// Lang returns the language every loaded declaration carries.
+// Lang returns the language of every declaration the frontend
+// loads.
 func (f *builtFrontend) Lang() symbol.Lang { return f.lang }
 
 // Syntax returns the language's comment forms.
@@ -203,8 +204,8 @@ func (f *builtFrontend) Partition(
 
 // Parse loads one unit through the declared function, then runs
 // the classifiers over it in declaration order. A classifier's
-// error is fatal the way a parse error is: the load stops rather
-// than sealing a graph whose stamps are half-made.
+// error is fatal the way a parse error is: the load stops and seals
+// no graph whose stamps are half-made.
 func (f *builtFrontend) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 	if err := f.parse(ctx, u); err != nil {
 		return err
@@ -217,10 +218,10 @@ func (f *builtFrontend) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 	return nil
 }
 
-// Resolve answers through the declared function.
+// Resolve returns the candidates the declared function names.
 func (f *builtFrontend) Resolve(
 	scope plugin.ImportScope, spelling string,
-) []symbol.Identity {
+) plugin.Candidates {
 	return f.resolve(scope, spelling)
 }
 

@@ -119,7 +119,7 @@ func TestChecks(t *testing.T) {
 	t.Run("AssertOwnedExcluded", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("rejects a claim that never reaches the stamped copy", func(t *testing.T) {
+		t.Run("rejects a claim that excludes the stamped copy", func(t *testing.T) {
 			t.Parallel()
 
 			msg := assert.Rejects(t, "a selection the check cannot place a copy under", func(tb assert.TB) {
@@ -142,7 +142,7 @@ func TestChecks(t *testing.T) {
 			})
 		})
 
-		t.Run("holds the fold where a language refuses the perturbed byte", func(t *testing.T) {
+		t.Run("folds a key where a language refuses the perturbed byte", func(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.AssertFingerprinted(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
@@ -150,7 +150,7 @@ func TestChecks(t *testing.T) {
 			})
 		})
 
-		t.Run("holds the fold where every unit loads shallow", func(t *testing.T) {
+		t.Run("folds a key where every unit loads signature-only", func(t *testing.T) {
 			t.Parallel()
 
 			shallow := plainFixture()
@@ -216,7 +216,7 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "walks", "the rejection names the step that could not run")
 		})
 
-		t.Run("holds a fixture whose selection claims one file", func(t *testing.T) {
+		t.Run("accepts a fixture whose selection claims one file", func(t *testing.T) {
 			t.Parallel()
 
 			lone := plainFixture()
@@ -228,7 +228,7 @@ func TestChecks(t *testing.T) {
 	t.Run("AssertSignatureDepth", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("holds a fixture whose root covers every unit", func(t *testing.T) {
+		t.Run("accepts a fixture whose root covers every unit", func(t *testing.T) {
 			t.Parallel()
 
 			deep := plainFixture()
@@ -236,7 +236,7 @@ func TestChecks(t *testing.T) {
 			frontendtest.AssertSignatureDepth(t, setupOver(deep))
 		})
 
-		t.Run("rejects a stated root no unit sits under", func(t *testing.T) {
+		t.Run("rejects a stated root that contains no unit", func(t *testing.T) {
 			t.Parallel()
 
 			astray := plainFixture()
@@ -290,7 +290,7 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "carrier line", "the mark does not hide the leak")
 		})
 
-		t.Run("rejects directives on a subject the graph does not hold", func(t *testing.T) {
+		t.Run("rejects directives on a subject the graph does not contain", func(t *testing.T) {
 			t.Parallel()
 
 			msg := assert.Rejects(t, "an attachment to a declaration nothing declares", func(tb assert.TB) {
@@ -301,7 +301,7 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "does not hold", "the rejection names the class")
 		})
 
-		t.Run("holds a fixture that declares schemas and no keys", func(t *testing.T) {
+		t.Run("accepts a fixture that declares schemas and no keys", func(t *testing.T) {
 			t.Parallel()
 
 			keyless := plainFixture()
@@ -329,7 +329,7 @@ func TestChecks(t *testing.T) {
 	t.Run("AssertLinked", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("rejects a Resolve that never answers", func(t *testing.T) {
+		t.Run("rejects a Resolve that returns no candidate", func(t *testing.T) {
 			t.Parallel()
 
 			msg := assert.Rejects(t, "a mute resolver over a two-package fixture", func(tb assert.TB) {
@@ -469,7 +469,7 @@ type insular struct {
 
 // Resolve returns candidates for a spelling without a qualifier
 // alone.
-func (i *insular) Resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
+func (i *insular) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
 	if strings.Contains(spelling, ".") {
 		return nil
 	}
@@ -484,7 +484,7 @@ type blank struct {
 
 // Resolve returns nothing for the empty spelling it erased, and the
 // scripted candidates otherwise.
-func (b *blank) Resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
+func (b *blank) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
 	if spelling == "" {
 		return nil
 	}
@@ -522,10 +522,10 @@ type mute struct {
 	*frontendtest.Scripted
 }
 
-// Resolve answers no candidate for any spelling.
-func (*mute) Resolve(plugin.ImportScope, string) []symbol.Identity { return nil }
+// Resolve returns no candidate for any spelling.
+func (*mute) Resolve(plugin.ImportScope, string) plugin.Candidates { return nil }
 
-// swallower parses every unit's first member alone and says
+// swallower parses every unit's first member alone and reports
 // nothing about the rest, which the no-drop check must expose.
 type swallower struct {
 	*frontendtest.Scripted
@@ -537,7 +537,7 @@ func (s *swallower) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	return s.ParseFile(u, u.Files()[0].Path)
 }
 
-// unpositioned reports a finding carrying no address, which the
+// unpositioned reports a finding with no address, which the
 // positioning check must expose.
 type unpositioned struct {
 	*frontendtest.Scripted
@@ -549,7 +549,7 @@ func (f *unpositioned) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 	return f.Scripted.Parse(ctx, u)
 }
 
-// anonymous declares no name, so its findings carry no origin,
+// anonymous declares no name, so its findings have no origin,
 // which the positioning check must expose.
 type anonymous struct {
 	*frontendtest.Scripted
@@ -590,7 +590,7 @@ func (f *undocumented) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 
 // dangling attaches a directive to a declaration it never puts in a
 // file, under an identity of its own, which the attachment check
-// must expose as a subject the graph does not hold.
+// must expose as a subject the graph does not contain.
 type dangling struct {
 	*frontendtest.Scripted
 }
@@ -663,7 +663,7 @@ func (o optionless) Partition(
 	return o.f.Partition(ctx, files, r)
 }
 
-func (o optionless) Resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
+func (o optionless) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
 	return o.f.Resolve(scope, spelling)
 }
 

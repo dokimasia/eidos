@@ -10,7 +10,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// ScalarClass says which number a Scalar is.
+// ScalarClass names which number a Scalar is.
 type ScalarClass uint8
 
 const (
@@ -55,7 +55,7 @@ type TypeShape struct {
 }
 
 // Opaque returns the shape of a reference the projection cannot
-// hold: representable, not projectable, carrying the spelling.
+// classify: representable, not projectable, with its spelling.
 func Opaque(ref *node.TypeRef) TypeShape {
 	s := TypeShape{Form: symbol.FormOpaque}
 	if ref != nil {
@@ -81,9 +81,8 @@ func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape
 
 // The well-known types: blessed reference identities a language's
 // Builtin maps its own spelling onto, so a Go time.Time and a proto
-// Timestamp project to one shape. The registry holds these two and
-// no others until a second consumer needs an entry; growing it
-// only adds.
+// Timestamp project to one shape. The registry contains these two,
+// and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = wellKnown("timestamp")
@@ -110,10 +109,11 @@ func IsWellKnown(id symbol.Identity) bool {
 }
 
 // typeOf is the kernel's fold: a structural form folds into the
-// same form with its children folded, a named reference with a
-// target the view holds classifies by the declaration it names,
-// and a named reference without one goes to the language's
-// Builtin. It is total and never panics.
+// same form with its children folded, a named reference to a type
+// parameter folds to Opaque, a named reference with a target the
+// view contains classifies by the declaration it names, and a named
+// reference without a target goes to the language's Builtin. It is
+// total and never panics.
 func (b Bound) typeOf(ref *node.TypeRef) TypeShape {
 	if ref == nil {
 		return Opaque(nil)
@@ -151,18 +151,24 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 		}
 		return s
 	}
+	if ref.Target.Kind == symbol.KindTypeParam {
+		// A type parameter's shape is its argument's, which a use of
+		// the parameter does not state, so no read would decide it.
+		return Opaque(ref)
+	}
 	if !ref.Target.IsZero() {
 		if decl, held := b.view.Lookup(ref.Target); held {
 			return b.classify(ref, decl)
 		}
 		// A target outside the view's scope is as unreachable as
-		// one the graph never held, and the read is recorded.
+		// one the graph never contained, and the read is recorded.
 		return Opaque(ref)
 	}
 	return b.source.Builtin(ref, b.view)
 }
 
-// classify returns the shape of a reference to a held declaration.
+// classify returns the shape of a reference to a declaration the
+// view contains.
 func (b Bound) classify(ref *node.TypeRef, decl symbol.Symbol) TypeShape {
 	form := symbol.FormReference
 	if decl.Kind() == symbol.KindSum {

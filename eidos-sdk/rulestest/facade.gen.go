@@ -26,14 +26,15 @@ import (
 	"go.dokimi.dev/eidos/sdk/rules"
 )
 
-// Budget is the ceiling a benchmark holds a language to.
+// Budget is the ceiling a benchmark checks a language against.
 type Budget = core.Budget
 
 // BenchRules drives the four hot projections over the setup's
 // graph, one iteration projecting every callable, every type's
 // members, every reference's shape and every field's samples, and
-// holds the allocations per iteration under the budget. The
-// fixture builds once outside the loop.
+// fails when the allocations per iteration exceed the budget. The
+// fixture builds once outside the loop, and every iteration binds a
+// fresh view.
 func BenchRules(b *testing.B, setup Setup, budget Budget) {
 	core.BenchRules(b, setup, budget)
 }
@@ -66,54 +67,69 @@ type Fixture = core.Fixture
 // check.
 type Setup = core.Setup
 
-// RunRulesSuite holds a language's rules to the projection
-// contract: deterministic answers, a total fold and mapping,
-// refusals and gaps with reasons, distinct samples, whole witness
-// lists, recorded reads, and equal answers under concurrency.
+// RunRulesSuite checks a language's rules against the projection
+// contract: equal values from two bounds over one view, a total fold
+// and mapping, refusals and gaps with reasons, distinct samples,
+// witnesses a backend can spell and substitute, sample reads
+// recorded on the view the language is handed, and the serial
+// values under concurrency.
 func RunRulesSuite(t *testing.T, setup Setup) {
 	core.RunRulesSuite(t, setup)
 }
 
-// AssertDeterministic holds every projection to returning equal
-// values on two calls with one view over one graph.
+// AssertDeterministic checks that two bounds over one view return
+// equal values from every projection. Each bound memoises its own
+// fold, so the second pass derives every value again.
 func AssertDeterministic(tb assert.TB, setup Setup) {
 	core.AssertDeterministic(tb, setup)
 }
 
-// AssertTotal holds the fold to returning a shape for every
-// reference and the mapping to reporting false for every
+// AssertTotal checks that the fold returns a shape for every
+// reference and that the mapping reports false for every
 // non-callable kind, without panicking.
 func AssertTotal(tb assert.TB, setup Setup) {
 	core.AssertTotal(tb, setup)
 }
 
-// AssertRefusesWithReason holds every refused sample to carrying a
-// refusal other than none, and every gap to naming a reason.
+// AssertRefusesWithReason checks that every refused sample has a
+// refusal other than none and that every gap names a reason.
 func AssertRefusesWithReason(tb assert.TB, setup Setup) {
 	core.AssertRefusesWithReason(tb, setup)
 }
 
-// AssertDistinctSamples holds the two halves of every derived pair
-// to differing.
+// AssertDistinctSamples checks that the two halves of every derived
+// pair differ, compared field by field at every depth.
 func AssertDistinctSamples(tb assert.TB, setup Setup) {
 	core.AssertDistinctSamples(tb, setup)
 }
 
-// AssertWitnessesWhole holds every witness list to being nil or one
-// entry per parameter.
-func AssertWitnessesWhole(tb assert.TB, setup Setup) {
-	core.AssertWitnessesWhole(tb, setup)
+// AssertWitnesses checks a language's generics capability over every
+// generic declaration in the fixture. Derive returns a reference
+// with a spelling wherever it reports a witness, because a backend
+// writes the instantiation from the spelling. Substitute rewrites
+// every reference that targets a parameter into the parameter's
+// witness and leaves the reference it is handed unchanged. A
+// language without the capability, and a fixture declaring no type
+// parameter, have nothing to check. A fixture that declares type
+// parameters references one whose witnesses derive, or the check
+// fails as proving nothing.
+func AssertWitnesses(tb assert.TB, setup Setup) {
+	core.AssertWitnesses(tb, setup)
 }
 
-// AssertRecorded holds a member walk over a subject to recording
-// at least one identity on the view it was handed.
+// AssertRecorded checks that a language's samples read through the
+// view they are handed. A sample of a reference that targets a
+// declaration reads the declaration, so the read set the view
+// records into contains the target, and a change to the declaration
+// re-runs every generator that wrote the sample. The check calls the
+// language's own SamplesOf with a fresh view per field, so no read
+// the kernel's walks make counts toward it.
 func AssertRecorded(tb assert.TB, setup Setup) {
 	core.AssertRecorded(tb, setup)
 }
 
-// AssertConcurrent holds the projections from parallel goroutines,
-// each over its own view, to returning what the serial pass
-// returned.
+// AssertConcurrent checks that the projections, run from parallel
+// goroutines each over its own view, return the serial values.
 func AssertConcurrent(tb assert.TB, setup Setup) {
 	core.AssertConcurrent(tb, setup)
 }

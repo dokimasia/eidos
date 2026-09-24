@@ -22,11 +22,12 @@ import (
 // order the writes arrived.
 type Facts struct {
 	registry *Registry
-	// groupOf holds each key's group by id, precomputed from the
-	// registry so a read consults one slice entry rather than
-	// copying a spec. Registration completes before the first
-	// write, which is what makes the snapshot safe.
+	// groupOf and kindsOf are each key's group and kind restriction
+	// by id, precomputed from the registry so a read consults one
+	// slice entry and copies no spec. Registration completes before
+	// the first write, which is what makes the snapshot safe.
 	groupOf []GroupName
+	kindsOf [][]symbol.Kind
 	// bags holds each subject's bag. Writers mostly own disjoint
 	// subjects, which is what keeps two bags from contending on one
 	// lock.
@@ -42,10 +43,12 @@ type Facts struct {
 // snapshots what it needs and never locks the registry.
 func NewFacts(r *Registry) *Facts {
 	groupOf := make([]GroupName, len(r.specs)+1)
+	kindsOf := make([][]symbol.Kind, len(r.specs)+1)
 	for i, spec := range r.specs {
 		groupOf[i+1] = spec.Group
+		kindsOf[i+1] = spec.Kinds
 	}
-	return &Facts{registry: r, groupOf: groupOf, index: newFactIndex()}
+	return &Facts{registry: r, groupOf: groupOf, kindsOf: kindsOf, index: newFactIndex()}
 }
 
 // Stamp records one claim of v under k.
@@ -129,9 +132,15 @@ func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 
 // Fact returns what [Get] does and records the read at
 // (subject, key) into rec. A miss records too: the reader asked, so
-// it runs again when the fact appears. It is the read every plugin
-// makes; Get is the kernel's own untracked path.
+// it runs again when the fact appears. A subject of a kind the key
+// does not admit reads absent and records nothing, because [Stamp]
+// refuses every claim on it. It is the read every plugin makes; Get
+// is the kernel's own untracked path.
 func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T, bool) {
+	if !f.admits(k.ID(), id.Kind) {
+		var zero T
+		return zero, false
+	}
 	rec.RecordFact(id, k.Name())
 	return Get(f, id, k)
 }
@@ -167,6 +176,16 @@ func (f *Facts) group(k KeyID) GroupName {
 		return ""
 	}
 	return f.groupOf[k]
+}
+
+// admits reports whether a key's kind restriction admits a subject's
+// kind, from the snapshot. A key the snapshot does not contain admits
+// every kind, so its read records and [Get] reads it absent.
+func (f *Facts) admits(k KeyID, kind symbol.Kind) bool {
+	if int(k) >= len(f.kindsOf) {
+		return true
+	}
+	return kindAdmitted(f.kindsOf[k], kind)
 }
 
 // bag returns the subject's bag, creating it on first touch: the

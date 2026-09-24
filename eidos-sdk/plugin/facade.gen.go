@@ -81,7 +81,7 @@ func NewEmit() *Emit {
 	return core.NewEmit()
 }
 
-// Depth says how deep one unit loads.
+// Depth is how deep one unit loads.
 //
 // Signature-only loading is the same Parse observing
 // [DepthSignatures] and skipping bodies and unexported members:
@@ -100,9 +100,19 @@ const (
 
 // Frontend loads one language's source into the node graph. The
 // kit lowers to this role and the exotic case implements it
-// directly; either way the conformance suite holds both to the
-// same checks.
+// directly. The conformance suite runs the same checks over both.
 type Frontend = core.Frontend
+
+// Candidates is what one spelling could mean, in tiers: each tier is
+// the candidate identities one scope offers, in probe order, and an
+// earlier tier shadows every later one. A language whose scopes
+// nest, such as protobuf declaring a message inside a message,
+// returns one tier per scope, so an inner declaration takes the name
+// from an outer one without an ambiguity. A language whose
+// candidates compete, such as Go probing its own package and its dot
+// imports, returns them in one tier, so two candidates the graph
+// contains report as an ambiguity.
+type Candidates = core.Candidates
 
 // SourceRef names a file without opening it: the
 // workspace-relative path, and the shared inputs whose bytes fold
@@ -112,22 +122,22 @@ type SourceRef = core.SourceRef
 // FileReader is the partition's recorded door: reads over the
 // workspace tree, before units exist. It is not jailed to the
 // selection, because a unit's shape can depend on a file the
-// selection must not claim — a Go module file, a TypeScript config
-// — and a partition that cannot look would guess; hermeticity holds
-// because every read folds into every resulting unit's fingerprint
-// instead. It is not the graph's
-// [go.dokimi.dev/eidos/sdk/store.Reader], and the two never meet.
+// selection must not claim, such as a Go module file or a
+// TypeScript config. The load is hermetic because every read folds
+// into every resulting unit's fingerprint. It is not the graph's
+// [go.dokimi.dev/eidos/sdk/store.Reader], and neither reads through
+// the other.
 type FileReader = core.FileReader
 
 // ImportScope is what the resolution phase hands a language's
-// Resolve for one file: the file's assigned identity, and the
-// bindings the frontend recorded at parse time through
-// [GraphBuilder.Scope], in the language's own form. The kernel
-// stores the bindings and hands them back to that language's
-// Resolve alone, which type-asserts its own shape: Go binds
-// package aliases, TypeScript binds members with rename and form,
-// proto scopes per declaration site, and a kernel that fixed one
-// shape would fix one language's.
+// Resolve for one reference: the identity of the file it is written
+// in, the declaration that encloses it, and the bindings the
+// frontend recorded at parse time through [GraphBuilder.Scope], in
+// the language's own form. The kernel stores the bindings and hands
+// them back to that language's Resolve alone, which type-asserts
+// its own shape: Go binds package aliases, TypeScript binds members
+// with rename and form, proto scopes per declaration site, and a
+// kernel that fixed one shape would fix one language's.
 type ImportScope = core.ImportScope
 
 // Index is the dispatcher's routing surface over one frozen run:

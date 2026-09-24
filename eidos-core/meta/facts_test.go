@@ -18,11 +18,14 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The fixture vocabulary: one struct subject and the claims plugins
-// make about it.
+// The fixture vocabulary: one struct subject, a function the role key
+// does not admit, and the claims plugins make about them.
 var (
 	subject = symbol.Identity{
 		Lang: "golang", Package: "svc/store", Name: "Store", Kind: symbol.KindStruct,
+	}
+	function = symbol.Identity{
+		Lang: "golang", Package: "svc/store", Name: "Open", Kind: symbol.KindFunction,
 	}
 	carrier = position.Pos{File: "svc/store.go", Line: 7, Col: 1}
 )
@@ -107,10 +110,7 @@ func TestFacts(t *testing.T) {
 
 			_, f, role, _ := fixture(t)
 			onFunction := by("shape", 1)
-			onFunction.Subject = symbol.Identity{
-				Lang: "golang", Package: "svc/store", Name: "Open",
-				Kind: symbol.KindFunction,
-			}
+			onFunction.Subject = function
 			err := meta.Stamp(f, role, "writer", onFunction)
 			assert.HasError(t, err, "the key admits structs alone")
 
@@ -300,6 +300,16 @@ func TestFacts(t *testing.T) {
 			assert.False(t, held, "the fact is absent")
 			assert.Length(t, rec.reads, 1,
 				"and the read still records: the reader runs again when it appears")
+		})
+
+		t.Run("records nothing on a kind the key does not admit", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			rec := &recorder{}
+			_, held := meta.Fact(f, rec, function, role)
+			assert.False(t, held, "the fact is absent, because Stamp refuses the kind")
+			assert.Empty(t, rec.reads, "and no read records, because the fact can never appear")
 		})
 	})
 }

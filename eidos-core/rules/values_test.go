@@ -16,8 +16,11 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Authored values beat derived ones by contract, and every refusal
-// carries its reason, which is what a check generator stands on.
+// ghostName is a declaration the fixture never declares.
+const ghostName = "Ghost"
+
+// Authored values take precedence over derived ones by contract, and
+// every refusal names its reason, which a check generator reads.
 func TestValues(t *testing.T) {
 	t.Parallel()
 
@@ -76,11 +79,14 @@ func TestValues(t *testing.T) {
 			sample, alternate := b.SamplesOf(symbol.Identity{}, builtin(intSpelling), "n")
 			assert.Equal(t, sample.Value.Text, "42", "the language derives the first")
 			assert.Equal(t, alternate.Value.Text, "7", "and the second")
-			refused, _ := b.SamplesOf(symbol.Identity{}, named(svcPath, rowName, symbol.KindStruct), "row")
-			assert.False(t, refused.OK(), "a type the language cannot value refuses")
+			refused, _ := b.SamplesOf(symbol.Identity{}, named(svcPath, ghostName, symbol.KindStruct), "ghost")
+			assert.False(t, refused.OK(), "a type the view does not contain refuses")
 			assert.Equal(t, refused.Refusal, rules.RefusedUnresolved, "with its reason")
 			assert.Equal(t, refused.Refusal.String(), "unresolved", "which spells")
 			assert.Equal(t, rules.Refusal(9).String(), "9", "and an undeclared one numbers")
+			unvalued, _ := b.SamplesOf(symbol.Identity{}, named(svcPath, rowName, symbol.KindStruct), "row")
+			assert.Equal(t, unvalued.Refusal, rules.RefusedNoLiteral,
+				"and a type the language writes no literal for refuses with no literal")
 		})
 
 		t.Run("pairs an authored half with the derived value that differs", func(t *testing.T) {
@@ -149,7 +155,7 @@ func TestValues(t *testing.T) {
 				"the author names one witness")
 			got := b.Witnesses(params)
 			assert.Length(t, got, 2, "the list is whole")
-			assert.Equal(t, got[0].Target, want, "the authored one carries its target")
+			assert.Equal(t, got[0].Target, want, "the authored one targets the named declaration")
 			assert.Equal(t, got[0].Spelling, rowName, "and its bare name")
 			assert.Equal(t, got[1].Spelling, intSpelling, "the derived one is the language's")
 		})
@@ -186,12 +192,12 @@ func TestValues(t *testing.T) {
 				},
 			}
 			got := rules.EmitRef(ref)
-			assert.Equal(t, got.Form, symbol.FormMap, "the form carries")
+			assert.Equal(t, got.Form, symbol.FormMap, "the form is kept")
 			assert.Length(t, got.Elems, 2, "with the children")
 			assert.Equal(t, got.Elems[1].Target, ref.Elems[1].Target, "targets included")
 			assert.Length(t, got.Elems[1].Args, 1, "and the arguments")
 			assert.Equal(t, got.Elems[1].Args[0].Spelling, intSpelling, "spelled as read")
-			assert.True(t, rules.EmitRef(nil) == nil, "nil stays nil")
+			assert.True(t, rules.EmitRef(nil) == nil, "and nil restates as nil")
 		})
 	})
 }

@@ -30,19 +30,22 @@ func newBindings() *bindings {
 }
 
 // resolve returns what a spelling could mean in one file's
-// bindings, candidates in probe order. A qualified spelling probes
-// the import its qualifier binds. A qualifier no binding matches
-// probes every unaliased import in source order, because a package
-// whose clause differs from its assumed name is still one of the
-// file's imports and the graph decides which; an aliased, a blank
-// and a dot import bind no qualifier but their own. A bare spelling
-// probes the file's own package and then, exported, each
-// dot-imported package in source order. Decoration strips first:
-// pointer, slice, array, variadic, parentheses and a trailing
-// instantiation, because the reference keeps its source verbatim
-// and the normalization is Go's own. A predeclared type and a shape
-// no single declaration declares return no candidate.
-func resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
+// bindings: one tier of candidates in probe order, because Go
+// refuses to compile a file in which two of them declare the name,
+// and the resolution step reports that case as an ambiguity. A
+// qualified spelling probes the import its qualifier binds. A
+// qualifier no binding matches probes every unaliased import in
+// source order, because a package whose clause differs from its
+// assumed name is still one of the file's imports and the graph
+// decides which; an aliased, a blank and a dot import bind no
+// qualifier but their own. A bare spelling probes the file's own
+// package and then, exported, each dot-imported package in source
+// order. Decoration strips first: pointer, slice, array, variadic,
+// parentheses and a trailing instantiation, because the reference
+// keeps its source verbatim and the normalization is Go's own. A
+// predeclared type and a shape no single declaration declares return
+// no candidate.
+func resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
 	b, _ := scope.Bindings.(*bindings)
 	if b == nil {
 		b = newBindings()
@@ -53,21 +56,24 @@ func resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
 	}
 	if qualifier, name, qualified := strings.Cut(core, "."); qualified {
 		if imported, bound := b.named[qualifier]; bound {
-			return []symbol.Identity{{Lang: Lang, Package: imported, Name: name}}
+			return plugin.Candidates{{{Lang: Lang, Package: imported, Name: name}}}
 		}
-		out := make([]symbol.Identity, 0, len(b.all))
+		if len(b.all) == 0 {
+			return nil
+		}
+		tier := make([]symbol.Identity, 0, len(b.all))
 		for _, imported := range b.all {
-			out = append(out, symbol.Identity{Lang: Lang, Package: imported, Name: name})
+			tier = append(tier, symbol.Identity{Lang: Lang, Package: imported, Name: name})
 		}
-		return out
+		return plugin.Candidates{tier}
 	}
-	out := []symbol.Identity{{Lang: Lang, Package: scope.File.Package, Name: core}}
+	tier := []symbol.Identity{{Lang: Lang, Package: scope.File.Package, Name: core}}
 	if exported(core) {
 		for _, dotted := range b.dots {
-			out = append(out, symbol.Identity{Lang: Lang, Package: dotted, Name: core})
+			tier = append(tier, symbol.Identity{Lang: Lang, Package: dotted, Name: core})
 		}
 	}
-	return out
+	return plugin.Candidates{tier}
 }
 
 // exported reports Go's own visibility rule for a bare name.

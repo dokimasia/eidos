@@ -21,11 +21,12 @@ import (
 
 // The scripted tree the suite runs over: a struct whose fields the
 // language values, one typed by another struct so a reference
-// resolves, a method, and a constant.
+// resolves, a method, a constant, and a generic type whose field
+// names its type parameter.
 const (
 	apiFile   = "svc/api/user.zz"
 	storeFile = "svc/store/row.zz"
-	apiSource = "package svc/api\ntype User string\nmethod Get int\n"
+	apiSource = "package svc/api\ntype User string\nmethod Get int\ntype Box T\ntypeparam T\n"
 	rowSource = "package svc/store\nimport api svc/api\ntype Row api.User int string\nmethod Put int\nconst rowmax\n"
 )
 

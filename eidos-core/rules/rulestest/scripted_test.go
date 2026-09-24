@@ -4,6 +4,7 @@
 package rulestest_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -18,19 +19,22 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// recordingView mints a view over the scripted tree with a fresh
+// read set, and returns the set so a case can check the reads.
+func recordingView(tb assert.TB) (rules.View, *store.ReadSet) {
+	tb.Helper()
+
+	_, f := setup(tb)
+	reads := store.NewReadSet()
+	reader, err := f.Graph.Reader(reads, nil)
+	assert.NoError(tb, err, "the graph hands out a reader")
+	return rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys}, reads
+}
+
 // The scripted language's rules are the kernel's own proving
 // ground, so each decision it returns is pinned.
 func TestScripted(t *testing.T) {
 	t.Parallel()
-
-	view := func(tb assert.TB) rules.View {
-		tb.Helper()
-		_, f := setup(tb)
-		reads := store.NewReadSet()
-		reader, err := f.Graph.Reader(reads, nil)
-		assert.NoError(tb, err, "the graph hands out a reader")
-		return rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys}
-	}
 
 	t.Run("Members", func(t *testing.T) {
 		t.Parallel()
@@ -81,14 +85,14 @@ func TestScripted(t *testing.T) {
 		t.Run("finds a bare name in the subject's package", func(t *testing.T) {
 			t.Parallel()
 
-			v := view(t)
+			v, _ := recordingView(t)
 			s := rulestest.Scripted()
 			scope := rules.Scope{Subject: symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/store"}}
 			decl, err := s.Resolve(scope, "Row", directive.ResolveCallableInScope, v)
 			assert.NoError(t, err, "the struct resolves")
 			assert.Equal(t, decl.Kind(), symbol.KindStruct, "as itself")
 			_, err = s.Resolve(scope, "Nope", directive.ResolveCallableInScope, v)
-			assert.HasError(t, err, "and a stranger name errors")
+			assert.HasError(t, err, "and a name the package does not declare errors")
 			assert.HasPrefix(t, err.Error(), "rulestest: ", "under the package prefix")
 		})
 	})
@@ -101,15 +105,25 @@ func TestScripted(t *testing.T) {
 
 			s := rulestest.Scripted()
 			sample, alternate := s.SamplesOf(&node.TypeRef{Spelling: "string"}, "name", rules.View{})
-			assert.Equal(t, sample.Value, emit.Literal(emit.LiteralString, "test-name"), "a string carries the hint")
+			assert.Equal(t, sample.Value, emit.Literal(emit.LiteralString, "test-name"),
+				"a string sample contains the hint")
 			assert.Equal(t, alternate.Value, emit.Literal(emit.LiteralString, "other-name"), "twice")
 			sample, _ = s.SamplesOf(&node.TypeRef{Spelling: "bool"}, "", rules.View{})
 			assert.Equal(t, sample.Value, emit.Literal(emit.LiteralBool, "true"), "a bool")
 			sample, _ = s.SamplesOf(nil, "", rules.View{})
 			assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral, "nothing has no value")
-			row := &node.TypeRef{Spelling: "Row", Target: symbol.Identity{Name: "Row"}}
+			row := &node.TypeRef{Spelling: "Row", Target: symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: "svc/store", Name: "Row", Kind: symbol.KindStruct,
+			}}
 			sample, _ = s.SamplesOf(row, "", rules.View{})
-			assert.Equal(t, sample.Refusal, rules.RefusedUnresolved, "and a named type refuses as unresolved")
+			assert.Equal(t, sample.Refusal, rules.RefusedUnresolved,
+				"a named type the view does not contain refuses as unresolved")
+			v, reads := recordingView(t)
+			sample, _ = s.SamplesOf(row, "", v)
+			assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral,
+				"and one the view contains refuses with no literal, because no composite is written")
+			assert.Equal(t, slices.Collect(reads.Identities()), []symbol.Identity{row.Target},
+				"after reading the declaration through the view")
 
 			zero, held := s.ZeroValue(&node.TypeRef{Spelling: "bool"}, rules.View{})
 			assert.True(t, held && zero.Text == "false", "a bool's zero")
@@ -148,8 +162,8 @@ func TestScripted(t *testing.T) {
 			assert.Equal(t, got.Elems[0].Spelling, "string", "the parameter inside a form rewrites")
 			assert.True(t, got != list, "on a copy")
 			assert.Equal(t, s.Substitute(&node.TypeRef{Spelling: "int"}, params, args).Spelling, "int",
-				"a reference naming no parameter stands")
-			assert.True(t, s.Substitute(nil, params, args) == nil, "and nothing stays nothing")
+				"a reference naming no parameter is returned as it is")
+			assert.True(t, s.Substitute(nil, params, args) == nil, "and nil returns nil")
 			same := &node.TypeRef{Spelling: "T"}
 			assert.True(t, s.Substitute(same, params, nil) == same, "a list mismatch rewrites nothing")
 		})

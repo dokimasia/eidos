@@ -28,19 +28,19 @@ import (
 // DuplicateDeclaration reports two declarations spelling one
 // identity: the unit's own source broken mid-edit, or a
 // platform-variant collision the language must resolve. The first
-// stands and the second leaves every index.
+// is kept and the second leaves every index.
 var DuplicateDeclaration = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  37,
-	Meaning: "two declarations spell one identity; the first stands",
+	Meaning: "two declarations spell one identity, and the first is kept",
 })
 
-// AmbiguousReference reports a type reference whose candidates
-// match more than one held declaration. The first match stands as
-// the target, which is degradation a reader can ask about rather
-// than failure.
+// AmbiguousReference reports a type reference whose candidates in
+// one shadowing tier match more than one declaration. The first
+// match is the target: degradation a reader can ask about, not a
+// failure.
 var AmbiguousReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  38,
-	Meaning: "a type reference resolves to more than one held declaration",
+	Meaning: "a type reference resolves to more than one declaration",
 })
 
 // Config is one load's inputs.
@@ -57,7 +57,7 @@ type Config struct {
 	Sink *diag.Sink
 
 	// PluginSet is the composition's fingerprint, folded into every
-	// unit key: a recorded graph carries stamps a changed plugin
+	// unit key: a recorded graph contains stamps a changed plugin
 	// set reinterprets. A composed workspace derives it —
 	// [go.dokimi.dev/eidos/core/workspace.Workspace.Fingerprint] —
 	// and a hand-written literal is a fixture's shortcut, never a
@@ -71,7 +71,7 @@ type Config struct {
 	Signatures []string
 
 	// Brand is the workspace's own output brand. A claimed file
-	// carrying this brand's provenance trailer is the workspace's
+	// with this brand's provenance trailer is the workspace's
 	// own output and does not load: outputs are never inputs, and
 	// the exclusion runs before anything partitions. A file
 	// another brand stamped is ordinary input. A zero brand
@@ -82,7 +82,7 @@ type Config struct {
 
 // Report is what one load records beside the graph.
 type Report struct {
-	// Units holds one entry per parsed unit, in splice order.
+	// Units has one entry per parsed unit, in splice order.
 	Units []UnitReport
 
 	// Excluded lists the claimed files the load refused as the
@@ -117,8 +117,8 @@ type unit struct {
 
 // Load drives every frontend over the tree: select, partition,
 // parse, splice, resolve, seal. It returns the sealed graph and
-// the report; a nil graph means nothing loaded and the error says
-// why.
+// the report. A nil graph means nothing loaded, and the error
+// states why.
 func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 	if cfg.FS == nil {
 		return nil, nil, errors.New("load: no tree to read")
@@ -243,12 +243,13 @@ func claim(frontends []plugin.Frontend, files []string) ([][]string, error) {
 	return out, nil
 }
 
-// disown drops every claimed file carrying a provenance trailer
-// under the load's own brand from the claims, and returns what it
-// dropped, sorted by path. The proof is read from the bytes rather
-// than matched against declared output families: an out= redirect
-// and the orphaned output of a removed plugin match no current
-// declaration. A zero brand proves nothing and drops nothing.
+// disown drops every claimed file with a provenance trailer under
+// the load's own brand from the claims, and returns what it
+// dropped, sorted by path. The proof is read from the bytes and not
+// matched against declared output families, because an out=
+// redirect and the orphaned output of a removed plugin match no
+// current declaration. A zero brand proves nothing and drops
+// nothing.
 func disown(cfg Config, claims [][]string) ([]string, error) {
 	if cfg.Brand == "" {
 		return nil, nil
@@ -319,9 +320,9 @@ func partitionAll(ctx context.Context, cfg Config, claims [][]string) ([]*unit, 
 	return units, nil
 }
 
-// checkPartition holds a frontend to the partition contract: every
-// claimed file a member of exactly one unit, no member outside the
-// claim, no empty unit.
+// checkPartition checks a frontend's partition against the
+// contract: every claimed file a member of exactly one unit, no
+// member outside the claim, no empty unit.
 func checkPartition(name plugin.ID, claimed []string, parts [][]plugin.SourceRef) error {
 	counts := make(map[string]int, len(claimed))
 	for _, path := range claimed {
@@ -367,8 +368,8 @@ func encodeOptions(f plugin.Frontend) ([]byte, error) {
 	return encoded, nil
 }
 
-// depthOf picks a unit's depth: signature-only when any member
-// sits under a declared root.
+// depthOf picks a unit's depth: signature-only when any member is
+// under a declared root.
 func depthOf(files []plugin.SourceRef, roots []string) plugin.Depth {
 	for _, ref := range files {
 		for _, root := range roots {
@@ -432,8 +433,8 @@ func parseAll(ctx context.Context, cfg Config, units []*unit) error {
 }
 
 // recordingReader is the partition's door: reads over the whole
-// tree, each fold into the partition sum, which every resulting
-// unit's key carries.
+// tree, each folded into the partition sum, which every resulting
+// unit's key folds.
 type recordingReader struct {
 	fsys  fs.FS
 	reads hash.Hash
@@ -483,8 +484,11 @@ type stampEntry struct {
 
 // splice merges the unit graphs in unit order. Two units
 // contributing one language-and-path merge into one package, files
-// appended in unit order; the scope and attachment records carry
-// through with their frontends.
+// appended in unit order, and the scope and attachment records pass
+// through with their frontends. A merged package keeps the first
+// name and the first non-empty documentation, because a language
+// whose unit is one file states its package documentation in one
+// file of many.
 func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachEntry, []stampEntry) {
 	type mergeKey struct {
 		lang symbol.Lang
@@ -503,10 +507,10 @@ func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachE
 		gb := u.src.Graph()
 		for _, p := range gb.Packages() {
 			key := mergeKey{lang: lang, path: p.ID.Package}
-			// The canonical identity lands on every unit's node,
-			// merged or standing, so an attachment recorded against
-			// a merged-away package node still resolves to the
-			// identity that stands.
+			// The canonical identity is written on every unit's
+			// node, merged or kept, so an attachment recorded
+			// against a merged-away package node still resolves to
+			// the identity that is kept.
 			p.ID = symbol.Identity{Lang: lang, Package: p.ID.Package, Kind: symbol.KindPackage}
 			held, met := merged[key]
 			if !met {
@@ -517,11 +521,14 @@ func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachE
 			}
 			if p.Name != "" && held.pkg.Name != "" && p.Name != held.pkg.Name {
 				sink.Warnf(DuplicateDeclaration, p.Pos, origin,
-					"package %s is declared %q and %q; the first stands",
+					"package %s is declared %q and %q, and the first name is kept",
 					p.ID.Package, held.pkg.Name, p.Name)
 			}
 			if held.pkg.Name == "" {
 				held.pkg.Name = p.Name
+			}
+			if len(held.pkg.Doc) == 0 {
+				held.pkg.Doc = p.Doc
 			}
 			held.pkg.Files = append(held.pkg.Files, p.Files...)
 		}
@@ -542,8 +549,8 @@ func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachE
 }
 
 // attach records every attachment on its assigned identity. A
-// subject on a dropped duplicate attaches to the identity that
-// stands; a subject the resolution step never identified is a
+// subject on a dropped duplicate attaches to the identity that is
+// kept, and a subject the resolution step never identified is a
 // frontend defect and panics.
 func attach(g *store.Graph, attachments []attachEntry, ix *index) error {
 	byID := map[symbol.Identity][]directive.Raw{}
@@ -596,7 +603,7 @@ func attachStamps(g *store.Graph, stamps []stampEntry, ix *index) error {
 }
 
 // subjectIdentity resolves an attachment subject: its assigned
-// identity, or the standing twin's for a dropped duplicate.
+// identity, or the kept twin's for a dropped duplicate.
 func subjectIdentity(s symbol.Symbol, ix *index) symbol.Identity {
 	if decl, names := s.(node.Declaration); names {
 		if id := decl.Identity(); !id.IsZero() {

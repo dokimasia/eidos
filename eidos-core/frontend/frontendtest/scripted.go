@@ -17,11 +17,11 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// ScriptedLang is the language every scripted declaration carries.
+// ScriptedLang is the language of every scripted declaration.
 const ScriptedLang symbol.Lang = "fake"
 
-// ScriptedID is the name the scripted frontend declares, which is
-// the origin every finding it reports carries.
+// ScriptedID is the name the scripted frontend declares, and the
+// origin of every finding it reports.
 const ScriptedID plugin.ID = "fakefront"
 
 // ScriptedTestKey is the classification key the scripted stamps
@@ -42,29 +42,30 @@ type ScriptedOptions struct {
 }
 
 // Scripted is the language the suite proves itself on and any
-// consumer can drive: small enough to hold in the head, wide
-// enough to reach every phase — packages, bindings, cross-package
-// references, members, directives, classification stamps and a
+// consumer can drive. Its grammar is small, and it exercises every
+// load phase: packages, bindings, cross-package references, type
+// parameters, members, directives, classification stamps and a
 // signature-sensitive declaration. One statement per line:
 //
 //	package PATH          the file's package path
 //	import ALIAS PATH...  bind an alias to one or more packages
 //	type NAME REF...      a struct, fields f0..fn typed by the refs
+//	typeparam NAME        a type parameter on the last type
 //	method NAME REF...    a method on the last type, params by ref
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
 //	// TEXT               a comment, split by the kernel: its
-//	                      documentation reaches the next type, a
-//	                      +marked line carries to it too, and a
-//	                      tool:name line lowers as an annotation;
-//	                      above the package line it is the file's
-//	                      header and reads as nothing
+//	                      documentation and its +marked lines
+//	                      attach to the next type, and a tool:name
+//	                      line lowers as an annotation; above the
+//	                      package line it is the file's header and
+//	                      lowers to nothing
 //	stamp KEY VALUE       a classification stamp on the file
 //	pkgnote NAME ARGS     a directive on the package node itself
 //
-// It partitions by directory, one shared input when the tree
-// carries mod.zz at its root, and the fields are open so a test
-// can rename, re-version, re-claim or re-tag it.
+// It partitions by directory, with one shared input when the tree
+// has mod.zz at its root. The fields are open so a test can rename,
+// re-version, re-claim or re-tag it.
 type Scripted struct {
 	ID   plugin.ID
 	Ver  string
@@ -116,7 +117,7 @@ func ScriptedSchemas() []directive.Schema {
 // Name returns the declared name.
 func (f *Scripted) Name() plugin.ID { return f.ID }
 
-// Lang returns the one language every fake declaration carries.
+// Lang returns the language of every scripted declaration.
 func (*Scripted) Lang() symbol.Lang { return ScriptedLang }
 
 // Version returns the declared version, which every unit key folds.
@@ -128,10 +129,10 @@ func (f *Scripted) Options() any { return f.Opts }
 // Selection returns the file claim.
 func (f *Scripted) Selection() []string { return f.Sel }
 
-// Syntax returns the language's one comment form, the tool
-// directive convention declared: the suite's own language reads
-// its comments through the kernel's split, so a regression there
-// fails here rather than only in a satellite.
+// Syntax returns the language's one comment form with the tool
+// directive convention declared. The scripted language reads its
+// comments through the kernel's split, so a regression in the split
+// fails the kernel's own tests as well as a satellite's.
 func (*Scripted) Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{Line: []string{"//"}, Directives: true}
 }
@@ -182,20 +183,24 @@ func (f *Scripted) ParseFile(u *plugin.SourceUnit, path string) error {
 	return nil
 }
 
-// Resolve probes the file's bindings: "alias.Name" through each
-// package the alias binds, a capitalized bare spelling in the
-// file's own package, and anything else is a builtin.
-func (*Scripted) Resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
+// Resolve probes the file's bindings in one tier: "alias.Name"
+// through each package the alias binds, a capitalized bare spelling
+// in the file's own package, and nothing for any other spelling,
+// which is a builtin.
+func (*Scripted) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
 	bindings, _ := scope.Bindings.(map[string][]string)
 	if alias, name, qualified := strings.Cut(spelling, "."); qualified {
-		var out []symbol.Identity
+		var tier []symbol.Identity
 		for _, pkg := range bindings[alias] {
-			out = append(out, symbol.Identity{Lang: ScriptedLang, Package: pkg, Name: name})
+			tier = append(tier, symbol.Identity{Lang: ScriptedLang, Package: pkg, Name: name})
 		}
-		return out
+		if len(tier) == 0 {
+			return nil
+		}
+		return plugin.Candidates{tier}
 	}
 	if spelling[0] >= 'A' && spelling[0] <= 'Z' {
-		return []symbol.Identity{{Lang: ScriptedLang, Package: scope.File.Package, Name: spelling}}
+		return plugin.Candidates{{{Lang: ScriptedLang, Package: scope.File.Package, Name: spelling}}}
 	}
 	return nil
 }
@@ -227,7 +232,8 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 			pkg.Files = append(pkg.Files, file)
 		case strings.HasPrefix(fields[0], "//") && file == nil:
 			// A comment above the package line is the file's header,
-			// where a generated-file frame sits, and reads as nothing.
+			// which contains a generated file's frame, and lowers to
+			// nothing.
 		case file == nil:
 			u.Errorf(ScriptedBadFile, at, "%s opens with %q, not a package line", filePath, fields[0])
 			return
@@ -250,6 +256,8 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 				})
 			}
 			file.Decls = append(file.Decls, last)
+		case fields[0] == "typeparam" && len(fields) == 2 && last != nil:
+			last.TypeParams = append(last.TypeParams, &node.TypeParam{Name: fields[1], Pos: at})
 		case fields[0] == "method" && len(fields) >= 2 && last != nil:
 			m := &node.Method{Name: fields[1], Pos: at}
 			for _, spelling := range fields[2:] {
@@ -269,19 +277,19 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 			})
 		case fields[0] == "pkgnote" && len(fields) >= 2:
 			// A directive on the package node itself, so the suite
-			// can hold the splice to re-homing records from every
+			// can check that the splice re-homes the records of every
 			// unit of a merged package.
 			raw, err := directive.Parse(strings.Join(fields[1:], " "))
 			if err != nil {
-				u.Errorf(ScriptedBadFile, at, "%s carries a package directive outside the grammar: %v", filePath, err)
+				u.Errorf(ScriptedBadFile, at, "%s has a package directive outside the grammar: %v", filePath, err)
 				continue
 			}
 			raw.Pos = at
 			gb.Attach(gb.Package(pkgPath), raw)
 		case strings.HasPrefix(fields[0], "//"):
-			// The kernel's own split decides what a comment holds,
+			// The kernel's own split decides what a comment contains,
 			// so the reference language exercises it: documentation
-			// and carriers reach the next declaration, and a tool
+			// and carriers attach to the next declaration, and a tool
 			// directive lowers as an annotation.
 			parts := u.Comment(line, at)
 			pending = append(pending, parts.Docs...)
@@ -290,7 +298,7 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 				raw, err := directive.Parse(c.Payload)
 				if err != nil {
 					u.Errorf(ScriptedBadFile, c.Pos,
-						"%s carries a directive outside the grammar: %v", filePath, err)
+						"%s has a directive outside the grammar: %v", filePath, err)
 					continue
 				}
 				raw.Pos = c.Pos
@@ -301,7 +309,7 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 		case strings.HasPrefix(fields[0], "+") && last != nil:
 			raw, err := directive.Parse(strings.TrimPrefix(strings.TrimSpace(line), "+"))
 			if err != nil {
-				u.Errorf(ScriptedBadFile, at, "%s carries a directive outside the grammar: %v", filePath, err)
+				u.Errorf(ScriptedBadFile, at, "%s has a directive outside the grammar: %v", filePath, err)
 				continue
 			}
 			raw.Pos = at

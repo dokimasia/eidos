@@ -19,17 +19,19 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The one-file tree the lowering cases read, and the path no tree
-// holds.
+// The one-file tree the lowering cases read, and the path that no
+// tree contains.
 const (
-	svcPath     = "svc"
-	svcFile     = "svc/a.zz"
-	absentFile  = "svc/gone.zz"
-	depPackage  = "dep"
-	aliasName   = "api"
-	boundName   = "api.B"
-	ownSpelling = "Own"
-	builtinName = "int"
+	svcPath       = "svc"
+	svcFile       = "svc/a.zz"
+	absentFile    = "svc/gone.zz"
+	depPackage    = "dep"
+	aliasName     = "api"
+	boundName     = "api.B"
+	unboundName   = "none.B"
+	ownSpelling   = "Own"
+	builtinName   = "int"
+	typeParamName = "T"
 )
 
 // The spellings at each end of the capital range, which is where a
@@ -39,9 +41,9 @@ const (
 	lastCapital  = "Zeta"
 )
 
-// The lowering's positional facts about the one-file tree: which
-// line each statement sits on, and what the second field of a
-// two-reference type is called.
+// The lowering's positional facts about the one-file tree: the line
+// of each statement, and the name of the second field of a
+// two-reference type.
 const (
 	packageStatementLine = 1
 	typeStatementLine    = 3
@@ -62,7 +64,7 @@ func unitOver(f *frontendtest.Scripted, tree fstest.MapFS, files ...string) (
 	), sink
 }
 
-// The scripted language stands in for five real ones, so its own
+// The scripted language substitutes for five real ones, so its own
 // lowering is pinned: what it declares, binds, stamps and refuses.
 func TestScripted(t *testing.T) {
 	t.Parallel()
@@ -84,10 +86,10 @@ func TestScripted(t *testing.T) {
 				[]plugin.SourceRef{{Path: svcFile}}, reader{tree})
 			assert.NoError(t, err, "the partition groups")
 			assert.Length(t, parts, 1, "one directory, one unit")
-			assert.Equal(t, parts[0][0].Path, svcFile, "holding the directory's file")
+			assert.Equal(t, parts[0][0].Path, svcFile, "containing the directory's file")
 		})
 
-		t.Run("declares the manifest a shared input where the tree holds one", func(t *testing.T) {
+		t.Run("declares the manifest a shared input where the tree contains one", func(t *testing.T) {
 			t.Parallel()
 
 			f := frontendtest.NewScripted()
@@ -99,7 +101,7 @@ func TestScripted(t *testing.T) {
 				[]plugin.SourceRef{{Path: svcFile}}, reader{manifested})
 			assert.NoError(t, err, "the partition groups")
 			assert.Equal(t, parts[0][0].Shared, []string{modFile},
-				"a manifest the tree holds is every member's shared input")
+				"a manifest the tree contains is every member's shared input")
 
 			bare, err := f.Partition(context.Background(),
 				[]plugin.SourceRef{{Path: svcFile}}, reader{tree})
@@ -125,15 +127,33 @@ func TestScripted(t *testing.T) {
 			file := gb.Packages()[0].Files[0]
 			assert.Length(t, file.Decls, 2, "a type and a constant")
 			assert.Equal(t, file.Pos.Line, packageStatementLine,
-				"the file sits on its package line, counted from one")
+				"the file is positioned at its package line, counted from one")
 			declared := file.Decls[0].(*node.Struct)
 			assert.Equal(t, declared.Pos.Line, typeStatementLine,
-				"and every statement on the line it was written on")
+				"and every statement at the line that states it")
 			assert.Equal(t, declared.Fields[1].Name, secondFieldName,
 				"fields are named f0 upward, one per reference in order")
 			assert.Length(t, gb.Scopes(), 1, "the bindings recorded")
 			assert.Length(t, gb.Attachments(), 1, "the directive recorded")
 			assert.Length(t, gb.StampRecords(), 1, "the stamp recorded")
+		})
+
+		t.Run("lowers a type parameter onto the last type", func(t *testing.T) {
+			t.Parallel()
+
+			generic := fstest.MapFS{
+				svcFile: {Data: []byte("package svc\ntype Box T\ntypeparam T\n")},
+			}
+			f := frontendtest.NewScripted()
+			u, sink := unitOver(f, generic, svcFile)
+			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+			coretest.AssertCodes(t, sink)
+
+			declared := u.Graph().Packages()[0].Files[0].Decls[0].(*node.Struct)
+			assert.Length(t, declared.TypeParams, 1, "the type declares one parameter")
+			assert.Equal(t, declared.TypeParams[0].Name, typeParamName, "under the stated name")
+			assert.Equal(t, declared.Fields[0].Type.Spelling, typeParamName,
+				"and a field spells it the way any reference is spelled")
 		})
 
 		t.Run("reads a comment through the kernel's own split", func(t *testing.T) {
@@ -156,7 +176,7 @@ func TestScripted(t *testing.T) {
 			gb := u.Graph()
 			declared := gb.Packages()[0].Files[0].Decls[0].(*node.Struct)
 			assert.Equal(t, declared.Doc, []string{"A records one row."},
-				"the documentation reaches the declaration it opened, "+
+				"the comment above the declaration documents it, "+
 					"and a marker-adjacent directive line is not documentation")
 			assert.Equal(t, declared.Annotations, symbol.Annotations{
 				{Name: "tool:keep", Args: []string{"forever"}},
@@ -172,7 +192,7 @@ func TestScripted(t *testing.T) {
 			f := frontendtest.NewScripted()
 			u, _ := unitOver(f, fstest.MapFS{}, absentFile)
 			err := f.Parse(context.Background(), u)
-			assert.HasError(t, err, "a member the tree does not hold cannot lower")
+			assert.HasError(t, err, "a member missing from the tree cannot lower")
 			assert.Contains(t, err.Error(), absentFile, "naming the path")
 		})
 
@@ -207,10 +227,13 @@ func TestScripted(t *testing.T) {
 				Bindings: map[string][]string{aliasName: {depPackage}},
 			}
 			got := f.Resolve(scope, boundName)
-			assert.Length(t, got, 1, "a bound alias probes its package")
-			assert.Equal(t, got[0].Package, depPackage, "at the bound path")
-			assert.Length(t, f.Resolve(scope, ownSpelling), 1,
-				"a bare capital probes its own package")
+			assert.Length(t, got, 1, "the scripted language probes in one tier")
+			assert.Length(t, got[0], 1, "a bound alias probes its package")
+			assert.Equal(t, got[0][0].Package, depPackage, "at the bound path")
+			own := f.Resolve(scope, ownSpelling)
+			assert.Length(t, own, 1, "a bare capital probes in one tier")
+			assert.Equal(t, own[0][0].Package, svcPath, "the file's own package")
+			assert.Empty(t, f.Resolve(scope, unboundName), "an alias the file never bound probes nothing")
 			assert.Empty(t, f.Resolve(scope, builtinName), "a builtin is nobody's")
 		})
 
@@ -244,7 +267,7 @@ func TestScripted(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
-			assert.NoError(t, frontendtest.ScriptedKeys(r), "the first claim holds")
+			assert.NoError(t, frontendtest.ScriptedKeys(r), "the first claim registers")
 			err := frontendtest.ScriptedKeys(r)
 			assert.HasError(t, err, "a namespace is claimed once")
 			assert.Contains(t, err.Error(), "fake", "naming it")

@@ -4,6 +4,7 @@
 package rules_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -15,9 +16,13 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// paramName is the type parameter the fold cases reference.
+const paramName = "T"
+
 // The fold is the kernel's: every structural form folds with its
-// children, a resolved name classifies by its declaration, and an
-// unresolved one goes to the language.
+// children, a type parameter folds opaque, a resolved name
+// classifies by its declaration, and an unresolved one goes to the
+// language.
 func TestShape(t *testing.T) {
 	t.Parallel()
 
@@ -33,7 +38,7 @@ func TestShape(t *testing.T) {
 				Elems: []*node.TypeRef{named(svcPath, rowName, symbol.KindStruct)},
 			}
 			s := b.TypeOf(optional)
-			assert.Equal(t, s.Form, symbol.FormOptional, "the form carries")
+			assert.Equal(t, s.Form, symbol.FormOptional, "the form is kept")
 			assert.Equal(t, s.Spelling, "*Row", "with the spelling")
 			assert.Length(t, s.Elems, 1, "and its child")
 			assert.Equal(t, s.Elems[0].Form, symbol.FormReference, "folded to a reference")
@@ -83,7 +88,7 @@ func TestShape(t *testing.T) {
 				Spelling: "[]int", Form: symbol.FormList,
 				Elems: []*node.TypeRef{builtin(intSpelling)},
 			}
-			assert.Equal(t, b.TypeOf(ints).Form, symbol.FormList, "any other element stays a list")
+			assert.Equal(t, b.TypeOf(ints).Form, symbol.FormList, "a list of any other element folds to a list")
 		})
 
 		t.Run("classifies a resolved name by its declaration", func(t *testing.T) {
@@ -102,13 +107,24 @@ func TestShape(t *testing.T) {
 				"and a sum is a sum")
 		})
 
+		t.Run("folds a type parameter to opaque without a read", func(t *testing.T) {
+			t.Parallel()
+
+			b, reads, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			s := b.TypeOf(named(svcPath, paramName, symbol.KindTypeParam))
+			assert.Equal(t, s.Form, symbol.FormOpaque,
+				"a use of a parameter states no argument, so no read decides its shape")
+			assert.Equal(t, s.Spelling, paramName, "and the leaf keeps the parameter's spelling")
+			assert.Empty(t, slices.Collect(reads.Identities()), "the target's kind alone decides")
+		})
+
 		t.Run("sends an unresolved name to the language", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			assert.Equal(t, b.TypeOf(builtin(intSpelling)).Form, symbol.FormScalar, "a builtin classifies")
 			assert.Equal(t, b.TypeOf(builtin("Unknown")).Form, symbol.FormOpaque, "an unknown spelling is opaque")
-			assert.Equal(t, b.TypeOf(builtin("Unknown")).Spelling, "Unknown", "carrying its spelling")
+			assert.Equal(t, b.TypeOf(builtin("Unknown")).Spelling, "Unknown", "with its spelling")
 			assert.Equal(t, b.TypeOf(nil).Form, symbol.FormOpaque, "and nil is opaque too")
 		})
 
@@ -148,11 +164,11 @@ func TestShape(t *testing.T) {
 			first := b.TypeOf(ref)
 			second := b.TypeOf(ref)
 			assert.Equal(t, c.asked, 1, "the language is asked once")
-			assert.Equal(t, first.Form, second.Form, "and the memo answers the same")
+			assert.Equal(t, first.Form, second.Form, "and the memo returns the same shape")
 			other := builtin(intSpelling)
 			b.TypeOf(other)
 			assert.Equal(t, c.asked, 2, "a distinct reference folds on its own")
-			assert.True(t, first.Args == nil, "a reference without arguments carries none")
+			assert.True(t, first.Args == nil, "a reference without arguments folds to a shape without any")
 		})
 	})
 

@@ -116,11 +116,11 @@ func AssertLinked(tb assert.TB, setup Setup) {
 	core.AssertLinked(tb, setup)
 }
 
-// ScriptedLang is the language every scripted declaration carries.
+// ScriptedLang is the language of every scripted declaration.
 const ScriptedLang = core.ScriptedLang
 
-// ScriptedID is the name the scripted frontend declares, which is
-// the origin every finding it reports carries.
+// ScriptedID is the name the scripted frontend declares, and the
+// origin of every finding it reports.
 const ScriptedID = core.ScriptedID
 
 // ScriptedTestKey is the classification key the scripted stamps
@@ -136,29 +136,30 @@ var ScriptedBadFile = core.ScriptedBadFile
 type ScriptedOptions = core.ScriptedOptions
 
 // Scripted is the language the suite proves itself on and any
-// consumer can drive: small enough to hold in the head, wide
-// enough to reach every phase — packages, bindings, cross-package
-// references, members, directives, classification stamps and a
+// consumer can drive. Its grammar is small, and it exercises every
+// load phase: packages, bindings, cross-package references, type
+// parameters, members, directives, classification stamps and a
 // signature-sensitive declaration. One statement per line:
 //
 //	package PATH          the file's package path
 //	import ALIAS PATH...  bind an alias to one or more packages
 //	type NAME REF...      a struct, fields f0..fn typed by the refs
+//	typeparam NAME        a type parameter on the last type
 //	method NAME REF...    a method on the last type, params by ref
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
 //	// TEXT               a comment, split by the kernel: its
-//	                      documentation reaches the next type, a
-//	                      +marked line carries to it too, and a
-//	                      tool:name line lowers as an annotation;
-//	                      above the package line it is the file's
-//	                      header and reads as nothing
+//	                      documentation and its +marked lines
+//	                      attach to the next type, and a tool:name
+//	                      line lowers as an annotation; above the
+//	                      package line it is the file's header and
+//	                      lowers to nothing
 //	stamp KEY VALUE       a classification stamp on the file
 //	pkgnote NAME ARGS     a directive on the package node itself
 //
-// It partitions by directory, one shared input when the tree
-// carries mod.zz at its root, and the fields are open so a test
-// can rename, re-version, re-claim or re-tag it.
+// It partitions by directory, with one shared input when the tree
+// has mod.zz at its root. The fields are open so a test can rename,
+// re-version, re-claim or re-tag it.
 type Scripted = core.Scripted
 
 // NewScripted returns the scripted frontend under its usual claim.

@@ -284,7 +284,7 @@ type PromotionRules = core.PromotionRules
 // demands equality, and which member references break it.
 type EqualityRules = core.EqualityRules
 
-// ScalarClass says which number a Scalar is.
+// ScalarClass names which number a Scalar is.
 type ScalarClass = core.ScalarClass
 
 const (
@@ -303,7 +303,7 @@ const (
 type TypeShape = core.TypeShape
 
 // Opaque returns the shape of a reference the projection cannot
-// hold: representable, not projectable, carrying the spelling.
+// classify: representable, not projectable, with its spelling.
 func Opaque(ref *node.TypeRef) TypeShape {
 	return core.Opaque(ref)
 }
@@ -325,9 +325,8 @@ func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape
 
 // The well-known types: blessed reference identities a language's
 // Builtin maps its own spelling onto, so a Go time.Time and a proto
-// Timestamp project to one shape. The registry holds these two and
-// no others until a second consumer needs an entry; growing it
-// only adds.
+// Timestamp project to one shape. The registry contains these two,
+// and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = core.WellKnownTimestamp

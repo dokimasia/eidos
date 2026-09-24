@@ -20,21 +20,21 @@ import (
 )
 
 // Classifier inspects a parsed unit and stamps classification
-// facts through the unit's builder — a test-file marker, a foreign
-// generator's output — at plugin authority under the frontend's
-// identity. It runs after the author's parse, on the same unit, so
-// what it inspects is what the parse declared; a returned error is
-// fatal to the load the way a parse error is. There is no
-// exclusion hook beside it: a classifier stamps what it saw and
-// drops nothing, because whether a classified file takes part is
-// the consumer's call.
+// facts through the unit's builder, such as a test-file marker or a
+// foreign generator's output, at plugin authority under the
+// frontend's identity. It runs after the author's parse, on the
+// same unit, so what it inspects is what the parse declared, and a
+// returned error is fatal to the load the way a parse error is.
+// There is no exclusion hook beside it: a classifier stamps what it
+// saw and drops nothing, because whether a classified file takes
+// part is the consumer's call.
 type Classifier = core.Classifier
 
-// Builder accumulates a frontend declaration: the identity and
-// language every declaration carries, the comment syntax the
+// Builder accumulates a frontend declaration: the identity and the
+// language of every declaration it loads, the comment syntax the
 // parse strips through, the file claim, and the functions the
 // pipeline varies in. Everything on it is data except the
-// functions; Build freezes it, and a Builder is not reused
+// functions. Build freezes it, and a Builder is not reused
 // afterwards.
 type Builder = core.Builder
 
