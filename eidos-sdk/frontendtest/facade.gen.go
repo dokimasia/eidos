@@ -25,8 +25,10 @@ import (
 )
 
 // AssertDeterministicParse loads the fixture twice and compares
-// the graphs byte for byte: reparsing unchanged files yields the
-// same identities, or diff-by-identity later stands on sand.
+// what each load recorded: the graphs byte for byte, the attached
+// directives and classification stamps, and the findings in report
+// order. Reparsing unchanged files yields the same identities, or
+// diff-by-identity later stands on sand.
 func AssertDeterministicParse(tb assert.TB, setup Setup) {
 	core.AssertDeterministicParse(tb, setup)
 }
@@ -40,9 +42,11 @@ func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 
 // AssertClassified holds the claim to account: every selected file
 // either declares into the graph or has a finding naming it, so
-// nothing drops in silence, and the recorded classification stamps
-// apply cleanly under the fixture's keys, the way the workspace
-// run applies them.
+// nothing drops in silence. A fixture declaring classification keys
+// is stamped by the load, and the recorded stamps apply cleanly
+// under those keys, the way the workspace run applies them. A load
+// that stamps under a fixture declaring no keys fails, because
+// nothing could apply its stamps.
 func AssertClassified(tb assert.TB, setup Setup) {
 	core.AssertClassified(tb, setup)
 }
@@ -60,13 +64,24 @@ func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 // AssertFingerprinted holds the unit keys honest: stable across
 // two identical loads, and changed by each folded part — a read, a
 // depth, a declared version, the options, the plugin set. The
-// model fingerprint is a compiled constant no test can vary.
+// model fingerprint is a compiled constant no test can vary. A
+// unit missing from the load a key is compared against fails the
+// comparison rather than differing from nothing.
 func AssertFingerprinted(tb assert.TB, setup Setup) {
 	core.AssertFingerprinted(tb, setup)
 }
 
-// AssertJailedReads proves the one door: a unit's read outside its
-// files and shared inputs refuses, naming the path.
+// AssertJailedReads proves the one door from the frontend's side:
+// every unit reads its members through the unit, so a unit's key
+// moves when its members' bytes move. A frontend reading its
+// members any other way — the operating system's filesystem, a
+// cache it keeps across loads — keys a unit by bytes it never read
+// through the door, and a cache keyed that way serves a stale
+// graph. The check loads a copy of the fixture twice, then a copy
+// whose every selected file gained a line break, and requires every
+// unit of the second load to key differently in the third. The
+// kernel's side of the door, a read outside the unit refusing and
+// naming the path, is the plugin package's own contract.
 func AssertJailedReads(tb assert.TB, setup Setup) {
 	core.AssertJailedReads(tb, setup)
 }
@@ -83,15 +98,18 @@ func AssertSignatureDepth(tb assert.TB, setup Setup) {
 // the fixture's schemas at the suite's stand-in freeze, after the
 // resolution step — the same point the workspace validates at. It
 // also holds the comment pipeline to its exclusion: a carrier line
-// left in a declaration's documentation is a strip the frontend
-// missed. What it does not check is the carrier marker itself,
-// which is each kit's own convention.
+// left in a declaration's documentation, with or without the
+// carrier mark, is a strip the frontend missed. What it does not
+// check is the carrier marker itself, which is each kit's own
+// convention.
 func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 	core.AssertAttachedDirectives(tb, setup)
 }
 
-// AssertLinked holds the resolution step's outcome: every resolved
-// reference targets a declaration the graph holds, a multi-package
+// AssertLinked checks the resolution step's outcome: at least one
+// in-graph spelling resolves, every resolved reference targets a
+// declaration in the graph, every reference left unresolved — a
+// builtin, an external — keeps its spelling, a multi-package
 // fixture resolves across its packages, and the tracked reader
 // joins the same targets afterwards.
 func AssertLinked(tb assert.TB, setup Setup) {
@@ -177,6 +195,11 @@ type Setup = core.Setup
 // and resolved references. It
 // drives the SPI, so a kit-built frontend and a hand-rolled one
 // meet the same checks.
+//
+// One survey load up front finds what the fixture cannot state:
+// classification keys, a unit loading full beside its signature
+// roots, a second package. The suite states each such skip as a
+// skipped subtest of its own.
 func RunFrontendSuite(t *testing.T, setup Setup) {
 	core.RunFrontendSuite(t, setup)
 }

@@ -35,7 +35,19 @@ const (
 	// carrierStatement is the carrier line as a scripted statement,
 	// for a case appending one to a source the fixtures share.
 	carrierStatement = "+" + carrierLine + "\n"
+
+	// localStatement declares a type referencing another in its own
+	// package, for a case that needs an in-package resolution.
+	localStatement = "type Rows Row\n"
 )
+
+// singleFixture declares one package whose one type references
+// another of its own.
+func singleFixture() *frontendtest.Fixture {
+	fx := plainFixture()
+	fx.Sources = fstest.MapFS{apiFile: {Data: []byte(singleSource)}}
+	return fx
+}
 
 // fixture is the scripted language's whole-contract tree: two
 // packages, a cross-package reference, a builtin, members, a

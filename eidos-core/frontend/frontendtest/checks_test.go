@@ -6,7 +6,10 @@ package frontendtest_test
 import (
 	"context"
 	"errors"
+	"path"
+	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"testing/fstest"
 
@@ -14,6 +17,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
@@ -31,6 +35,23 @@ const (
 // are simulated and each check's own failure is asserted.
 func TestChecks(t *testing.T) {
 	t.Parallel()
+
+	t.Run("AssertDeterministicParse", func(t *testing.T) {
+		t.Parallel()
+
+		for _, record := range []string{recordStamp, recordDirective, recordFinding} {
+			t.Run("rejects a "+record+" that changes between loads", func(t *testing.T) {
+				t.Parallel()
+
+				msg := assert.Rejects(t, "a frontend recording something new per load", func(tb assert.TB) {
+					frontendtest.AssertDeterministicParse(tb, over(&restless{
+						Scripted: frontendtest.NewScripted(), record: record,
+					}, fixture()))
+				})
+				assert.Contains(t, msg, "the same", "the rejection names what drifted")
+			})
+		}
+	})
 
 	t.Run("AssertPositionedDiagnostics", func(t *testing.T) {
 		t.Parallel()
@@ -81,6 +102,17 @@ func TestChecks(t *testing.T) {
 				frontendtest.AssertClassified(tb, setupOver(keyless))
 			})
 			assert.Contains(t, msg, "no keys", "the rejection names what the fixture owes")
+		})
+
+		t.Run("rejects keys declared over a load that stamps nothing", func(t *testing.T) {
+			t.Parallel()
+
+			unstamped := plainFixture()
+			unstamped.Keys = frontendtest.ScriptedKeys
+			msg := assert.Rejects(t, "a classifier that never stamps", func(tb assert.TB) {
+				frontendtest.AssertClassified(tb, setupOver(unstamped))
+			})
+			assert.Contains(t, msg, "stamps nothing", "the rejection names the dead classifier")
 		})
 	})
 
@@ -143,10 +175,35 @@ func TestChecks(t *testing.T) {
 			})
 			assert.Contains(t, msg, "copies", "the rejection names the step that could not run")
 		})
+
+		t.Run("rejects a unit missing from a load it is compared with", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a partition that merges its units after two loads", func(tb assert.TB) {
+				frontendtest.AssertFingerprinted(tb, over(&drifter{Scripted: frontendtest.NewScripted()},
+					plainFixture()))
+			})
+			assert.Contains(t, msg, "missing", "a key compared with nothing proves nothing")
+		})
 	})
 
 	t.Run("AssertJailedReads", func(t *testing.T) {
 		t.Parallel()
+
+		t.Run("rejects a frontend declaring what it never read through the unit", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a parse whose bytes come from outside the door", func(tb assert.TB) {
+				frontendtest.AssertJailedReads(tb, over(&unread{frontendtest.NewScripted()}, plainFixture()))
+			})
+			assert.Contains(t, msg, "through the unit", "the rejection names the door")
+		})
+
+		t.Run("accepts a language that refuses the perturbed byte", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.AssertJailedReads(t, over(&strict{frontendtest.NewScripted()}, plainFixture()))
+		})
 
 		t.Run("rejects a fixture tree it cannot walk", func(t *testing.T) {
 			t.Parallel()
@@ -216,10 +273,21 @@ func TestChecks(t *testing.T) {
 
 			msg := assert.Rejects(t, "a frontend that attaches without stripping", func(tb assert.TB) {
 				frontendtest.AssertAttachedDirectives(tb, over(&undocumented{
-					frontendtest.NewScripted(),
+					Scripted: frontendtest.NewScripted(),
 				}, fixture()))
 			})
 			assert.Contains(t, msg, "carrier line", "the rejection names the class")
+		})
+
+		t.Run("rejects a carrier line left with its mark", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a documentation line the strip never saw", func(tb assert.TB) {
+				frontendtest.AssertAttachedDirectives(tb, over(&undocumented{
+					Scripted: frontendtest.NewScripted(), line: carrierStatement[:len(carrierStatement)-1],
+				}, fixture()))
+			})
+			assert.Contains(t, msg, "carrier line", "the mark does not hide the leak")
 		})
 
 		t.Run("rejects directives on a subject the graph does not hold", func(t *testing.T) {
@@ -267,27 +335,178 @@ func TestChecks(t *testing.T) {
 			msg := assert.Rejects(t, "a mute resolver over a two-package fixture", func(tb assert.TB) {
 				frontendtest.AssertLinked(tb, over(&mute{frontendtest.NewScripted()}, fixture()))
 			})
-			assert.Contains(t, msg, "resolving nothing", "the rejection says what never happened")
+			assert.Contains(t, msg, "returns no candidate", "the rejection names what never happened")
 		})
 
-		t.Run("rejects a Resolve that never answers across exactly two packages", func(t *testing.T) {
+		t.Run("rejects a mute Resolve over a single-package fixture", func(t *testing.T) {
 			t.Parallel()
 
-			msg := assert.Rejects(t, "a mute resolver over the least multi-package fixture",
+			msg := assert.Rejects(t, "a mute resolver with no second package to hide behind",
 				func(tb assert.TB) {
-					frontendtest.AssertLinked(tb, over(&mute{frontendtest.NewScripted()}, plainFixture()))
+					frontendtest.AssertLinked(tb, over(&mute{frontendtest.NewScripted()}, singleFixture()))
 				})
-			assert.Contains(t, msg, "resolving nothing", "two packages are already across packages")
+			assert.Contains(t, msg, "returns no candidate",
+				"in-graph spellings resolve in one package too")
+		})
+
+		t.Run("rejects a Resolve that returns nothing across exactly two packages", func(t *testing.T) {
+			t.Parallel()
+
+			local := plainFixture()
+			local.Sources = fstest.MapFS{
+				apiFile:   {Data: []byte(apiSource)},
+				storeFile: {Data: []byte(crossSource + localStatement)},
+			}
+			msg := assert.Rejects(t, "a resolver returning candidates in its own package alone",
+				func(tb assert.TB) {
+					frontendtest.AssertLinked(tb, over(&insular{frontendtest.NewScripted()}, local))
+				})
+			assert.Contains(t, msg, "resolving nothing across packages",
+				"two packages are already across packages")
+		})
+
+		t.Run("rejects an unresolved reference that spells nothing", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a builtin that lost its spelling", func(tb assert.TB) {
+				frontendtest.AssertLinked(tb, over(&blank{frontendtest.NewScripted()}, fixture()))
+			})
+			assert.Contains(t, msg, "spells nothing", "the rejection names the lost spelling")
 		})
 
 		t.Run("asks nothing across packages of a single-package fixture", func(t *testing.T) {
 			t.Parallel()
 
-			single := plainFixture()
-			single.Sources = fstest.MapFS{apiFile: {Data: []byte(singleSource)}}
-			frontendtest.AssertLinked(t, setupOver(single))
+			frontendtest.AssertLinked(t, setupOver(singleFixture()))
 		})
 	})
+}
+
+// The drifts the restless frontend can record.
+const (
+	recordStamp     = "stamp"
+	recordDirective = "directive"
+	recordFinding   = "finding"
+)
+
+// restless records one thing that differs on every load, the stamp
+// value, a directive argument or a finding's wording, as the case
+// chooses, which the determinism check must expose.
+type restless struct {
+	*frontendtest.Scripted
+	record string
+	loads  atomic.Int64
+}
+
+// Parse lowers the unit, then records the load's own count on its
+// first file.
+func (r *restless) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+	if err := r.Scripted.Parse(ctx, u); err != nil {
+		return err
+	}
+	pkgs := u.Graph().Packages()
+	if len(pkgs) == 0 {
+		return nil
+	}
+	n := strconv.FormatInt(r.loads.Add(1), 10)
+	file := pkgs[0].Files[0]
+	at := position.Pos{File: file.Path, Line: 1}
+	switch r.record {
+	case recordStamp:
+		u.Graph().Stamp(file, meta.RawStamp{Key: frontendtest.ScriptedTestKey, Value: n, Pos: at})
+	case recordDirective:
+		raw, err := directive.Parse(carrierLine + n)
+		if err != nil {
+			return err
+		}
+		raw.Pos = at
+		u.Graph().Attach(file, raw)
+	default:
+		u.Warnf(frontendtest.ScriptedBadFile, at, "load %s", n)
+	}
+	return nil
+}
+
+// drifter partitions like the scripted language for two loads and
+// into one unit from the third on, so a key comparison meets a unit
+// the later load lacks.
+type drifter struct {
+	*frontendtest.Scripted
+	loads atomic.Int64
+}
+
+// Partition drifts after the second call.
+func (d *drifter) Partition(
+	ctx context.Context, files []plugin.SourceRef, r plugin.FileReader,
+) ([][]plugin.SourceRef, error) {
+	if d.loads.Add(1) <= 2 {
+		return d.Scripted.Partition(ctx, files, r)
+	}
+	return [][]plugin.SourceRef{files}, nil
+}
+
+// unread declares each member's file without reading it through
+// the unit, the shape of a frontend reading its bytes some other
+// way, which the door check must expose.
+type unread struct {
+	*frontendtest.Scripted
+}
+
+// Parse declares one file node per member, from its path alone.
+func (*unread) Parse(_ context.Context, u *plugin.SourceUnit) error {
+	for _, ref := range u.Files() {
+		pkg := u.Graph().Package(path.Dir(ref.Path))
+		pkg.Files = append(pkg.Files, &node.File{Path: ref.Path})
+	}
+	return nil
+}
+
+// insular resolves a bare spelling in the file's own package and
+// no qualified one, which the cross-package check must expose.
+type insular struct {
+	*frontendtest.Scripted
+}
+
+// Resolve returns candidates for a spelling without a qualifier
+// alone.
+func (i *insular) Resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
+	if strings.Contains(spelling, ".") {
+		return nil
+	}
+	return i.Scripted.Resolve(scope, spelling)
+}
+
+// blank erases the spelling of every builtin reference, which the
+// linked check must expose.
+type blank struct {
+	*frontendtest.Scripted
+}
+
+// Resolve returns nothing for the empty spelling it erased, and the
+// scripted candidates otherwise.
+func (b *blank) Resolve(scope plugin.ImportScope, spelling string) []symbol.Identity {
+	if spelling == "" {
+		return nil
+	}
+	return b.Scripted.Resolve(scope, spelling)
+}
+
+// Parse lowers the unit, then clears the spelling of every builtin
+// reference.
+func (b *blank) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+	if err := b.Scripted.Parse(ctx, u); err != nil {
+		return err
+	}
+	for _, pkg := range u.Graph().Packages() {
+		node.Walk(pkg, func(s symbol.Symbol) bool {
+			if ref, is := s.(*node.TypeRef); is && !strings.Contains(ref.Spelling, ".") &&
+				ref.Spelling != "" && (ref.Spelling[0] < 'A' || ref.Spelling[0] > 'Z') {
+				ref.Spelling = ""
+			}
+			return true
+		})
+	}
+	return nil
 }
 
 // over builds the stated frontend over the stated fixture, for a
@@ -339,11 +558,12 @@ type anonymous struct {
 // Name declares nothing.
 func (*anonymous) Name() plugin.ID { return "" }
 
-// undocumented attaches its carriers and leaves the carrier line in
-// the declaration's documentation, which the attachment check must
-// expose.
+// undocumented attaches its carriers and leaves a carrier line in
+// the declaration's documentation, the bare payload unless the case
+// states the line, which the attachment check must expose.
 type undocumented struct {
 	*frontendtest.Scripted
+	line string
 }
 
 // Parse lowers the unit and then writes the carrier line back into
@@ -352,11 +572,15 @@ func (f *undocumented) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 	if err := f.Scripted.Parse(ctx, u); err != nil {
 		return err
 	}
+	line := f.line
+	if line == "" {
+		line = carrierLine
+	}
 	for _, pkg := range u.Graph().Packages() {
 		for _, file := range pkg.Files {
 			for _, decl := range file.Decls {
 				if s, is := decl.(*node.Struct); is {
-					s.Doc = []string{carrierLine}
+					s.Doc = []string{line}
 				}
 			}
 		}

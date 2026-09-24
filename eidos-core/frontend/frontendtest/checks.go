@@ -6,6 +6,8 @@ package frontendtest
 import (
 	"bytes"
 	"io/fs"
+	"iter"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -34,8 +36,10 @@ const (
 )
 
 // AssertDeterministicParse loads the fixture twice and compares
-// the graphs byte for byte: reparsing unchanged files yields the
-// same identities, or diff-by-identity later stands on sand.
+// what each load recorded: the graphs byte for byte, the attached
+// directives and classification stamps, and the findings in report
+// order. Reparsing unchanged files yields the same identities, or
+// diff-by-identity later stands on sand.
 func AssertDeterministicParse(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -44,6 +48,28 @@ func AssertDeterministicParse(tb assert.TB, setup Setup) {
 	two := drive(tb, f, fx)
 	assert.True(tb, bytes.Equal(encoded(tb, one.graph), encoded(tb, two.graph)),
 		"two parses of one fixture encode identically")
+	assert.Equal(tb, entries(two.graph.Directives()), entries(one.graph.Directives()),
+		"and attach the same directives")
+	assert.Equal(tb, entries(two.graph.Stamps()), entries(one.graph.Stamps()),
+		"and the same classification stamps")
+	assert.Equal(tb, slices.Collect(two.sink.All()), slices.Collect(one.sink.All()),
+		"and report the same findings in the same order")
+}
+
+// entry is one subject and what a load attached to it.
+type entry[V any] struct {
+	subject symbol.Identity
+	values  V
+}
+
+// entries collects an enumeration the store makes in identity
+// order.
+func entries[V any](seq iter.Seq2[symbol.Identity, V]) []entry[V] {
+	var out []entry[V]
+	for id, v := range seq {
+		out = append(out, entry[V]{subject: id, values: v})
+	}
+	return out
 }
 
 // AssertPositionedDiagnostics holds every finding to its address:
@@ -66,9 +92,11 @@ func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 
 // AssertClassified holds the claim to account: every selected file
 // either declares into the graph or has a finding naming it, so
-// nothing drops in silence, and the recorded classification stamps
-// apply cleanly under the fixture's keys, the way the workspace
-// run applies them.
+// nothing drops in silence. A fixture declaring classification keys
+// is stamped by the load, and the recorded stamps apply cleanly
+// under those keys, the way the workspace run applies them. A load
+// that stamps under a fixture declaring no keys fails, because
+// nothing could apply its stamps.
 func AssertClassified(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -99,11 +127,15 @@ func AssertClassified(tb assert.TB, setup Setup) {
 		stamped = true
 		break
 	}
-	if !stamped {
-		return
-	}
-	if fx.Keys == nil {
+	switch {
+	case fx.Keys == nil && stamped:
 		tb.Errorf("the fixture stamps and declares no keys to apply them under")
+		return
+	case fx.Keys == nil:
+		return
+	case !stamped:
+		tb.Errorf("the fixture declares classification keys and the load stamps nothing: " +
+			"a classifier that never stamps")
 		return
 	}
 	registry := meta.NewRegistry()
@@ -190,24 +222,24 @@ func framed(
 // AssertFingerprinted holds the unit keys honest: stable across
 // two identical loads, and changed by each folded part — a read, a
 // depth, a declared version, the options, the plugin set. The
-// model fingerprint is a compiled constant no test can vary.
+// model fingerprint is a compiled constant no test can vary. A
+// unit missing from the load a key is compared against fails the
+// comparison rather than differing from nothing.
 func AssertFingerprinted(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	f, fx := setup(tb)
 	base := drive(tb, f, fx)
 	again := drive(tb, f, fx)
-	baseKeys, againKeys := keysOf(base.report), keysOf(again.report)
-	for file, key := range baseKeys {
-		assert.True(tb, bytes.Equal(key, againKeys[file]),
-			"an untouched unit's key is stable across two loads")
-	}
+	baseKeys := keysOf(base.report)
+	keyed(tb, baseKeys, keysOf(again.report), true,
+		"an untouched unit's key is stable across two loads")
 
 	if full := fullUnit(base.report); full != "" {
 		shallow := drive(tb, f, fx, func(cfg *load.Config) {
 			cfg.Signatures = append(slices.Clone(fx.Signatures), full)
 		})
-		assert.False(tb, bytes.Equal(baseKeys[full], keysOf(shallow.report)[full]),
+		keyed(tb, map[string][]byte{full: baseKeys[full]}, keysOf(shallow.report), false,
 			"the same bytes at two depths key differently")
 	}
 
@@ -216,25 +248,19 @@ func AssertFingerprinted(tb assert.TB, setup Setup) {
 	inner := versioned.Version()
 	vBase := drive(tb, reversion{Frontend: f, version: inner}, fx)
 	vBump := drive(tb, reversion{Frontend: f, version: inner + "+frontendtest"}, fx)
-	for file, key := range keysOf(vBase.report) {
-		assert.False(tb, bytes.Equal(key, keysOf(vBump.report)[file]),
-			"a declared version change re-keys every unit")
-	}
+	keyed(tb, keysOf(vBase.report), keysOf(vBump.report), false,
+		"a declared version change re-keys every unit")
 
 	cBase := drive(tb, reoption{Frontend: f, options: "probe-a"}, fx)
 	cMoved := drive(tb, reoption{Frontend: f, options: "probe-b"}, fx)
-	for file, key := range keysOf(cBase.report) {
-		assert.False(tb, bytes.Equal(key, keysOf(cMoved.report)[file]),
-			"a configuration change re-keys every unit")
-	}
+	keyed(tb, keysOf(cBase.report), keysOf(cMoved.report), false,
+		"a configuration change re-keys every unit")
 
 	reset := drive(tb, f, fx, func(cfg *load.Config) {
 		cfg.PluginSet = []byte("frontendtest-moved")
 	})
-	for file, key := range baseKeys {
-		assert.False(tb, bytes.Equal(key, keysOf(reset.report)[file]),
-			"the composition's fingerprint folds into every key")
-	}
+	keyed(tb, baseKeys, keysOf(reset.report), false,
+		"the composition's fingerprint folds into every key")
 
 	first := selected(tb, f, fx)[0]
 	touched := copyTree(tb, fx.Sources)
@@ -246,34 +272,65 @@ func AssertFingerprinted(tb assert.TB, setup Setup) {
 	})
 	if err == nil {
 		unit := unitHolding(base.report, first)
-		assert.False(tb, bytes.Equal(baseKeys[unit], keysOf(perturbed.report)[unit]),
+		keyed(tb, map[string][]byte{unit: baseKeys[unit]}, keysOf(perturbed.report), false,
 			"a changed read re-keys the unit that read it")
 	}
 	// A language that refuses the appended byte still proved the
 	// read reached its parser; the fold's other parts stand above.
 }
 
-// AssertJailedReads proves the one door: a unit's read outside its
-// files and shared inputs refuses, naming the path.
+// keyed compares each unit's key in one load with the same unit's
+// key in another, in path order: equal where same is set, different
+// otherwise. A unit the second load lacks is a failure of its own,
+// because a key compared with nothing differs from it trivially.
+func keyed(tb assert.TB, before, after map[string][]byte, same bool, why string) {
+	tb.Helper()
+
+	for _, file := range slices.Sorted(maps.Keys(before)) {
+		other, held := after[file]
+		if !held {
+			tb.Errorf("the unit holding %s is missing from the load it is compared with: %s",
+				file, why)
+			continue
+		}
+		assert.Equal(tb, bytes.Equal(before[file], other), same, why)
+	}
+}
+
+// AssertJailedReads proves the one door from the frontend's side:
+// every unit reads its members through the unit, so a unit's key
+// moves when its members' bytes move. A frontend reading its
+// members any other way — the operating system's filesystem, a
+// cache it keeps across loads — keys a unit by bytes it never read
+// through the door, and a cache keyed that way serves a stale
+// graph. The check loads a copy of the fixture twice, then a copy
+// whose every selected file gained a line break, and requires every
+// unit of the second load to key differently in the third. The
+// kernel's side of the door, a read outside the unit refusing and
+// naming the path, is the plugin package's own contract.
 func AssertJailedReads(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	f, fx := setup(tb)
 	files := selected(tb, f, fx)
-	u := plugin.NewSourceUnit(
-		[]plugin.SourceRef{{Path: files[0]}}, fx.Sources, plugin.DepthFull,
-		f.Syntax(), diag.NewSink(), f.Name(),
-	)
-	_, err := u.Read(files[0])
-	assert.NoError(tb, err, "a member reads")
+	tree := copyTree(tb, fx.Sources)
+	// The first load is a warm-up: a frontend caching across loads
+	// fills its cache here, and serves the second and third from it.
+	drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures})
+	warm := drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures})
 
-	outside := "frontendtest/outside-the-unit"
-	if len(files) > 1 {
-		outside = files[1]
+	touched := copyTree(tb, tree)
+	for _, file := range files {
+		touched[file] = &fstest.MapFile{Data: append(slices.Clone(touched[file].Data), '\n')}
 	}
-	_, err = u.Read(outside)
-	assert.HasError(tb, err, "a path outside the unit refuses")
-	assert.Contains(tb, err.Error(), outside, "naming the path")
+	perturbed, err := tryDrive(f, &Fixture{Sources: touched, Signatures: fx.Signatures})
+	if err != nil {
+		// A language refusing the appended bytes read them through a
+		// door: nothing else can read the copy this check made.
+		return
+	}
+	keyed(tb, keysOf(warm.report), keysOf(perturbed.report), false,
+		"every unit whose members changed re-keys, because its parse read them through the unit")
 }
 
 // homeOf returns a package declaration's own path, and nothing for
@@ -321,9 +378,10 @@ func AssertSignatureDepth(tb assert.TB, setup Setup) {
 // the fixture's schemas at the suite's stand-in freeze, after the
 // resolution step — the same point the workspace validates at. It
 // also holds the comment pipeline to its exclusion: a carrier line
-// left in a declaration's documentation is a strip the frontend
-// missed. What it does not check is the carrier marker itself,
-// which is each kit's own convention.
+// left in a declaration's documentation, with or without the
+// carrier mark, is a strip the frontend missed. What it does not
+// check is the carrier marker itself, which is each kit's own
+// convention.
 func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -359,7 +417,7 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 			}
 		}
 		for _, line := range decl.Docs() {
-			raw, err := directive.Parse(line)
+			raw, err := directive.Parse(strings.TrimPrefix(line, plugin.CarrierMark))
 			if err == nil && names[raw.Name] {
 				tb.Errorf("%s keeps a carrier line in its documentation: %q", id, line)
 			}
@@ -369,8 +427,10 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 		"the fixture declares schemas, so its carriers must attach something")
 }
 
-// AssertLinked holds the resolution step's outcome: every resolved
-// reference targets a declaration the graph holds, a multi-package
+// AssertLinked checks the resolution step's outcome: at least one
+// in-graph spelling resolves, every resolved reference targets a
+// declaration in the graph, every reference left unresolved — a
+// builtin, an external — keeps its spelling, a multi-package
 // fixture resolves across its packages, and the tracked reader
 // joins the same targets afterwards.
 func AssertLinked(tb assert.TB, setup Setup) {
@@ -389,7 +449,14 @@ func AssertLinked(tb assert.TB, setup Setup) {
 		packages++
 		node.Walk(pkg, func(s symbol.Symbol) bool {
 			ref, is := s.(*node.TypeRef)
-			if !is || ref.Target.IsZero() {
+			if !is {
+				return true
+			}
+			if ref.Target.IsZero() {
+				if ref.Spelling == "" {
+					tb.Errorf("a reference in %s resolves to nothing and spells nothing: "+
+						"a builtin or an external keeps its spelling", home)
+				}
 				return true
 			}
 			resolved = append(resolved, ref.Target)
@@ -399,6 +466,8 @@ func AssertLinked(tb assert.TB, setup Setup) {
 			return true
 		})
 	}
+	assert.NotEmpty(tb, resolved,
+		"the fixture's in-graph spellings resolve: a Resolve that returns no candidate links nothing")
 	for _, target := range resolved {
 		_, held := got.graph.Lookup(target)
 		assert.True(tb, held, "a resolved reference targets a held declaration")
@@ -408,6 +477,9 @@ func AssertLinked(tb assert.TB, setup Setup) {
 	}
 	assert.NotEmpty(tb, cross,
 		"a multi-package fixture resolving nothing across packages is a Resolve that never answers")
+	if len(cross) == 0 {
+		return
+	}
 
 	reader, err := got.graph.Reader(store.NewReadSet(), nil)
 	assert.NoError(tb, err, "the sealed graph hands out a reader")

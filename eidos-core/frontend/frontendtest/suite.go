@@ -54,8 +54,16 @@ type Setup func(tb assert.TB) (plugin.Frontend, *Fixture)
 // and resolved references. It
 // drives the SPI, so a kit-built frontend and a hand-rolled one
 // meet the same checks.
+//
+// One survey load up front finds what the fixture cannot state:
+// classification keys, a unit loading full beside its signature
+// roots, a second package. The suite states each such skip as a
+// skipped subtest of its own.
 func RunFrontendSuite(t *testing.T, setup Setup) {
 	t.Helper()
+
+	f, fx := setup(t)
+	survey := drive(t, f, fx)
 
 	t.Run("parses deterministically", func(t *testing.T) {
 		t.Parallel()
@@ -69,6 +77,11 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertClassified(t, setup)
 	})
+	if fx.Keys == nil {
+		t.Run("applies classification stamps", func(t *testing.T) {
+			t.Skip("the fixture declares no classification keys")
+		})
+	}
 	t.Run("refuses its own outputs", func(t *testing.T) {
 		t.Parallel()
 		AssertOwnedExcluded(t, setup)
@@ -77,6 +90,11 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertFingerprinted(t, setup)
 	})
+	if fullUnit(survey.report) == "" {
+		t.Run("keys one unit at two depths", func(t *testing.T) {
+			t.Skip("every unit of the fixture loads signature-only")
+		})
+	}
 	t.Run("reads through the jail alone", func(t *testing.T) {
 		t.Parallel()
 		AssertJailedReads(t, setup)
@@ -99,6 +117,20 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertLinked(t, setup)
 	})
+	if packagesOf(survey.graph) < 2 {
+		t.Run("resolves references across packages", func(t *testing.T) {
+			t.Skip("the fixture declares one package")
+		})
+	}
+}
+
+// packagesOf counts the packages a graph declares.
+func packagesOf(g *store.Graph) int {
+	n := 0
+	for range g.ByKind(symbol.KindPackage) {
+		n++
+	}
+	return n
 }
 
 // loaded is one drive of the pipeline over a fixture.
