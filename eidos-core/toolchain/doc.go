@@ -27,7 +27,7 @@
 //
 // # Dependency position
 //
-// core/toolchain imports core/symbol, the assert module and the Go
-// stdlib. It runs no compiler itself, which is what keeps the
-// kernel free of every language's tooling.
+// core/toolchain imports core/symbol and the Go stdlib, the testing
+// package among it. It runs no compiler itself, which is what keeps
+// the kernel free of every language's tooling.
 package toolchain

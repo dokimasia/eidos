@@ -6,6 +6,7 @@ package toolchain
 import (
 	"fmt"
 	"os"
+	"strconv"
 )
 
 // ciEnv is the variable every runner in use sets, and the one thing
@@ -18,7 +19,16 @@ const ciEnv = "CI"
 // It reads the CI variable, which every runner in use sets, so a
 // contributor without a language's compiler still runs the rest of
 // the suite while the same suite in CI covers what they skipped.
-func RequiredInCI() bool { return os.Getenv(ciEnv) != "" }
+// An empty value and a false boolean, such as CI=false, run as
+// local. Any other value runs as CI.
+func RequiredInCI() bool {
+	v := os.Getenv(ciEnv)
+	if v == "" {
+		return false
+	}
+	set, err := strconv.ParseBool(v)
+	return err != nil || set
+}
 
 // Prepare lays a fixture out and returns its directory and the
 // cleanup the caller defers. A fixture carrying no output and a

@@ -83,6 +83,8 @@ func AssertDoesNotSatisfy(tb TB, a Adapter, g Generated, typeName, contract stri
 // It reads the CI variable, which every runner in use sets, so a
 // contributor without a language's compiler still runs the rest of
 // the suite while the same suite in CI covers what they skipped.
+// An empty value and a false boolean, such as CI=false, run as
+// local. Any other value runs as CI.
 func RequiredInCI() bool {
 	return core.RequiredInCI()
 }

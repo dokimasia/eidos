@@ -68,6 +68,15 @@ func TestRequiredInCI(t *testing.T) {
 		assert.True(t, toolchain.RequiredInCI(), "set in CI, so a missing toolchain fails")
 	})
 
+	t.Run("reads a false boolean as local", func(t *testing.T) {
+		for _, off := range []string{"false", "0", "FALSE"} {
+			t.Setenv("CI", off)
+			assert.False(t, toolchain.RequiredInCI(), "CI="+off+" runs as local")
+		}
+		t.Setenv("CI", "woodpecker")
+		assert.True(t, toolchain.RequiredInCI(), "a runner naming itself runs as CI")
+	})
+
 	t.Run("skips a missing toolchain locally, naming the reason", func(t *testing.T) {
 		t.Setenv("CI", "")
 		var r recorder
