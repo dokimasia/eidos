@@ -73,4 +73,33 @@ func TestName(t *testing.T) {
 		assert.NoError(t, err, "a public method spells")
 		assert.Equal(t, got, "Fetch", "exported")
 	})
+
+	t.Run("keeps the blank identifier", func(t *testing.T) {
+		t.Parallel()
+
+		for _, kind := range []symbol.Kind{symbol.KindField, symbol.KindParam, symbol.KindTypeParam} {
+			got, err := spell.Name(symbol.KindStruct, kind, symbol.VisibilityPublic, "_")
+			assert.NoError(t, err, "a blank name spells")
+			assert.Equal(t, got, "_", "as itself, for "+kind.String())
+		}
+	})
+
+	t.Run("refuses a spelling that is no Go identifier", func(t *testing.T) {
+		t.Parallel()
+
+		for _, tc := range []struct {
+			name string
+			kind symbol.Kind
+			v    symbol.Visibility
+		}{
+			{"9lives", symbol.KindStruct, symbol.VisibilityPublic},
+			{"type", symbol.KindConstant, symbol.VisibilityPackage},
+			{"func", symbol.KindParam, symbol.VisibilityUnknown},
+			{"__", symbol.KindField, symbol.VisibilityPublic},
+			{"range", symbol.KindTypeParam, symbol.VisibilityUnknown},
+		} {
+			_, err := spell.Name(symbol.KindStruct, tc.kind, tc.v, tc.name)
+			assert.HasError(t, err, tc.name+" respells to nothing Go can declare")
+		}
+	})
 }

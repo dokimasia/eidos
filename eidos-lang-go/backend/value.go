@@ -84,12 +84,14 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 // Callee spells a function by its identity and records its import:
 // a call carries no source spelling of its own, so the name is
 // qualified by the last segment of its package where it has one.
+// A function in the file's own package spells bare, because a
+// package never qualifies its own names.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	if id.Name == "" {
 		return "", render.RefuseValue(t.Lang(), "a call names a function that spells nothing")
 	}
 	t.use(id)
-	if id.Package == "" {
+	if id.Package == "" || t.set != nil && id.Package == t.set.Home() {
 		return id.Name, nil
 	}
 	return qualifier(id.Package) + qualifierSep + id.Name, nil
@@ -128,7 +130,8 @@ func (target) Call(callee string, args []string) (string, error) {
 func (target) Address(inner string) (string, error) { return "&" + inner, nil }
 
 // use records the import a reference or a callee in another
-// package needs; one in no package, a builtin, records nothing.
+// package needs; one in no package, a builtin, records nothing,
+// and the set drops one in the file's own package.
 func (t target) use(id symbol.Identity) {
 	if id.Package == "" || t.set == nil {
 		return

@@ -57,6 +57,46 @@ func TestLower(t *testing.T) {
 		assert.Equal(t, second.Value, "9", "a stated value spells verbatim")
 	})
 
+	t.Run("an enum's values evaluate the way a constant group counts", func(t *testing.T) {
+		t.Parallel()
+
+		values := func(vs ...string) []string {
+			e := &emit.Enum{Name: "flag"}
+			for i, v := range vs {
+				e.Variants.Append(&emit.EnumVariant{Name: "v" + string(rune('a'+i)), Value: v})
+			}
+			out, err := backend.Lower(e)
+			assert.NoError(t, err, "the enum lowers")
+			var got []string
+			for _, d := range out[1:] {
+				got = append(got, d.(*emit.Constant).Value)
+			}
+			return got
+		}
+		assert.Equal(t, values("1 << iota", "", ""), []string{"1 << 0", "1 << 1", "1 << 2"},
+			"an unstated value repeats the last stated one, iota at each position")
+		assert.Equal(t, values("5", ""), []string{"5", "5"}, "a plain value repeats as it is")
+		assert.Equal(t, values("", "", "9", ""), []string{"0", "1", "9", "9"},
+			"a variant before any stated value takes its ordinal")
+		assert.Equal(t, values(`"iota" + iotaSuffix`), []string{`"iota" + iotaSuffix`},
+			"an iota inside a string or a longer name is kept as written")
+	})
+
+	t.Run("a generic struct's methods restate its parameters on the receiver", func(t *testing.T) {
+		t.Parallel()
+
+		s := &emit.Struct{Name: "box", TypeParams: []*emit.TypeParam{{Name: "K"}, {Name: "V"}}}
+		s.Methods.Append(&emit.Method{Name: "get"}, &emit.Method{Name: "put"})
+		_, err := backend.Lower(s)
+		assert.NoError(t, err, "the struct lowers")
+		for _, m := range s.Methods.Items() {
+			assert.Equal(t, m.Receives.Args, []*emit.TypeRef{{Spelling: "K"}, {Spelling: "V"}},
+				m.Name+" receives box[K, V]")
+		}
+		assert.True(t, s.Methods.Items()[0].Receives.Args[0] != s.Methods.Items()[1].Receives.Args[0],
+			"each method on references of its own, so a respell of one leaves the other")
+	})
+
 	t.Run("an enum carrying members refuses", func(t *testing.T) {
 		t.Parallel()
 

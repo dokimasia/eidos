@@ -137,6 +137,22 @@ func TestValue(t *testing.T) {
 		assert.Empty(t, paths, "and imports nothing, because a builtin names no package")
 	})
 
+	t.Run("spells and imports nothing of the file's own package", func(t *testing.T) {
+		t.Parallel()
+
+		var set render.ImportSet
+		set.SetHome("example.test/svc")
+		out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(
+			emit.Composite(valueRef("Row", "example.test/svc", "Row"),
+				emit.NamedField("ID", emit.Call(valueFn("example.test/svc", "NextID"))),
+				emit.NamedField("When", emit.Call(valueFn("time", "Now")))),
+		)}, &set)
+		assert.NoError(t, err, "the tree spells")
+		assert.Equal(t, string(out), "\treturn Row{ID: NextID(), When: time.Now()}\n",
+			"a callee in the file's own package spells bare")
+		assert.Equal(t, set.Paths(), []string{"time"}, "and only the other package imports")
+	})
+
 	t.Run("refuses a value Go has no form for, under its own code", func(t *testing.T) {
 		t.Parallel()
 

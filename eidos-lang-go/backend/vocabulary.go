@@ -156,16 +156,7 @@ func param(p *emit.Param) string {
 	if p.Name != "" {
 		spelling = p.Name + " " + spelling
 	}
-	return spelling + inlineComment(p.Comment)
-}
-
-// inlineComment spells a trailing comment inside a signature as a
-// block comment, and nothing for none.
-func inlineComment(text string) string {
-	if text == "" {
-		return ""
-	}
-	return " /* " + text + " */"
+	return spelling + textfmt.Inline(p.Comment)
 }
 
 // Results writes a result list: nothing, one bare type, or a
@@ -176,15 +167,15 @@ func Results(rs []*emit.Return) string {
 		return ""
 	}
 	if len(rs) == 1 && rs[0].Name == "" {
-		return " " + Spell(rs[0].Type) + inlineComment(rs[0].Comment)
+		return " " + Spell(rs[0].Type) + textfmt.Inline(rs[0].Comment)
 	}
 	parts := make([]string, 0, len(rs))
 	for _, r := range rs {
 		if r.Name == "" {
-			parts = append(parts, Spell(r.Type)+inlineComment(r.Comment))
+			parts = append(parts, Spell(r.Type)+textfmt.Inline(r.Comment))
 			continue
 		}
-		parts = append(parts, r.Name+" "+Spell(r.Type)+inlineComment(r.Comment))
+		parts = append(parts, r.Name+" "+Spell(r.Type)+textfmt.Inline(r.Comment))
 	}
 	return " (" + strings.Join(parts, ", ") + ")"
 }

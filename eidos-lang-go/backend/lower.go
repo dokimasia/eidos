@@ -5,7 +5,10 @@ package backend
 
 import (
 	"fmt"
+	"go/scanner"
+	"go/token"
 	"strconv"
+	"strings"
 
 	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/lang/naming"
@@ -21,6 +24,10 @@ const underlying = "int"
 // errorType is the return an announced failure lowers into, which
 // is how Go declares one.
 const errorType = "error"
+
+// iotaName spells Go's constant counter, which a constant declared
+// alone evaluates to zero.
+const iotaName = "iota"
 
 // Lower reshapes the constructs Go states in other declarations:
 // an enum becomes a defined type and its constants, and a callable
@@ -41,7 +48,7 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 			return nil, err
 		}
 		lowerMembers(d.Methods.Items())
-		receive(d.Name, d.Origin, d.Methods.Items())
+		receive(d.Name, d.Origin, d.TypeParams, d.Methods.Items())
 	case *emit.Interface:
 		if err := lowering.UniqueMethods("go", d.Name, d.Methods.Items()); err != nil {
 			return nil, err
@@ -64,15 +71,19 @@ func lowerMembers(methods []*emit.Method) {
 // states a method at the package level, so the template spells
 // each one after its type and the receiver has to name that type.
 // The reference carries the struct's origin, so the settle
-// respells receiver and type together. A method stating its own
-// receiver keeps it, which is how a generator asks for a pointer
-// or a named receiver.
-func receive(name string, origin symbol.Identity, methods []*emit.Method) {
+// respells receiver and type together, and a generic struct's type
+// parameters as its arguments, because Go's receiver restates
+// them. A method stating its own receiver keeps it, which is how a
+// generator asks for a pointer or a named receiver.
+func receive(name string, origin symbol.Identity, params []*emit.TypeParam, methods []*emit.Method) {
 	for _, m := range methods {
 		if m.Receiver != nil || m.Receives != nil {
 			continue
 		}
 		m.Receives = &emit.TypeRef{Target: origin, Spelling: name}
+		for _, p := range params {
+			m.Receives.Args = append(m.Receives.Args, &emit.TypeRef{Spelling: p.Name})
+		}
 	}
 }
 
@@ -93,10 +104,13 @@ func thrown(returns []*emit.Return, throws []*emit.TypeRef) []*emit.Return {
 // lowerEnum reshapes an enum into a defined type and one typed
 // constant per variant: the type keeps the enum's name, each
 // constant joins the type's name and its variant's in the neutral
-// camel form, its type references the defined type, and its value
-// is the variant's stated spelling or its ordinal, because a
-// constant declared alone cannot count through iota. Every output
-// carries the enum's origin and none restates the enum.
+// camel form, and its type references the defined type. A constant
+// declared alone cannot count through iota, so each value is
+// spelled the way a Go constant group evaluates it: a variant
+// stating no value repeats the last stated value, a variant before
+// any stated value takes its ordinal, and every iota in a value is
+// the variant's position. Every output carries the enum's origin
+// and none restates the enum.
 //
 // An enum carrying fields or methods refuses: a constant group
 // holds no members, and Go declares no other closed value set.
@@ -118,11 +132,18 @@ func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 		Target:      &emit.TypeRef{Spelling: underlying},
 		Annotations: e.Annotations,
 	})
+	var last string
 	for i, v := range variants {
 		value := v.Value
-		if value == "" {
+		switch {
+		case value != "":
+			last = value
+		case last != "":
+			value = last
+		default:
 			value = strconv.Itoa(i)
 		}
+		value = atPosition(value, i)
 		out = append(out, &emit.Constant{
 			Origin:      e.Origin,
 			Doc:         v.Doc,
@@ -135,4 +156,34 @@ func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 		})
 	}
 	return out, nil
+}
+
+// atPosition spells a constant expression with every iota token
+// replaced by its position. The expression is scanned as Go
+// tokens, so an iota inside a string or a longer identifier is
+// kept as written.
+func atPosition(expr string, position int) string {
+	if !strings.Contains(expr, iotaName) {
+		return expr
+	}
+	fset := token.NewFileSet()
+	file := fset.AddFile("", fset.Base(), len(expr))
+	var s scanner.Scanner
+	s.Init(file, []byte(expr), nil, 0)
+	var b strings.Builder
+	from := 0
+	for {
+		at, tok, lit := s.Scan()
+		if tok == token.EOF {
+			break
+		}
+		if tok == token.IDENT && lit == iotaName {
+			offset := file.Offset(at)
+			b.WriteString(expr[from:offset])
+			b.WriteString(strconv.Itoa(position))
+			from = offset + len(iotaName)
+		}
+	}
+	b.WriteString(expr[from:])
+	return b.String()
 }
