@@ -180,6 +180,13 @@ func TestVocabulary(t *testing.T) {
 			"asynchrony refuses, because Java marks no signature")
 		_, err = backend.MethodMods(&emit.Method{Name: "load", HasDefault: true})
 		assert.HasError(t, err, "default belongs to interface methods")
+		got, err = backend.MethodMods(&emit.Method{Name: "load", Abstract: true})
+		assert.NoError(t, err, "an abstract method without a body spells")
+		assert.Equal(t, got, "public abstract ", "access before abstract")
+		_, err = backend.MethodMods(&emit.Method{
+			Name: "load", Abstract: true, Body: emit.Body{Verbatim: "return 1;"},
+		})
+		assert.HasError(t, err, "an abstract method with a body refuses, because the signature drops it")
 	})
 
 	t.Run("SigMods", func(t *testing.T) {
@@ -201,6 +208,8 @@ func TestVocabulary(t *testing.T) {
 
 		_, err = backend.SigMods(&emit.Method{Name: "load", Override: true})
 		assert.HasError(t, err, "an interface method overrides nothing")
+		_, err = backend.SigMods(&emit.Method{Name: "load", Body: emit.Body{Verbatim: "return 1;"}})
+		assert.HasError(t, err, "a body without a default refuses, because the signature drops it")
 	})
 
 	t.Run("Heritage", func(t *testing.T) {

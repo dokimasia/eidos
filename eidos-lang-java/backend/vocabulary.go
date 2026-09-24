@@ -14,8 +14,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The vocabulary names, so a template and its helper cannot drift
-// apart on a spelling.
+// The vocabulary names are constants, so a template and its helper
+// spell one name.
 const (
 	// FuncDocs writes a declaration's documentation.
 	FuncDocs = "docs"
@@ -73,7 +73,7 @@ func Funcs() template.FuncMap {
 
 // Docs writes a declaration's documentation as a Javadoc block,
 // each line prefixed with the given indentation, so a member's
-// doc sits at its member's depth.
+// doc is at its member's depth.
 func Docs(lines []string, prefix ...string) string {
 	if len(lines) == 0 {
 		return ""
@@ -82,8 +82,8 @@ func Docs(lines []string, prefix ...string) string {
 }
 
 // Spell writes a type reference. The source spelling passes
-// through verbatim; a missing one spells [Anonymous]. A reference
-// carrying arguments holds its bare name in Spelling, and the
+// through verbatim, and a missing one spells [Anonymous]. A
+// reference with arguments has its bare name in Spelling, and the
 // argument list spells here in angle brackets.
 func Spell(t *emit.TypeRef) string {
 	return spellref.Spell(t, "<", ">", Anonymous)
@@ -92,9 +92,8 @@ func Spell(t *emit.TypeRef) string {
 // TypeParams writes a type parameter list in angle brackets, or
 // nothing for a declaration stating none, bounds joined by
 // ampersands behind extends. Variance, defaults and value
-// parameters refuse: Java's variance is a use-site wildcard, its
-// parameters take no default and no value, and dropping any of
-// the three would misstate the declaration.
+// parameters refuse, because Java's variance is a use-site wildcard
+// and its parameters take no default and no value.
 func TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -177,7 +176,7 @@ func PackageClause(id symbol.Identity) string {
 // TypeMods writes a type's keywords in Java's stated order:
 // access, then abstract, final and sealed on a class where stated,
 // sealed alone on an interface. A type-level nesting refuses:
-// every type this backend renders sits at file scope, where javac
+// every type this backend renders is at file scope, where javac
 // rejects static, so the fact has no legal spelling here. A
 // private, protected or internal visibility refuses, because
 // Java's file-level types take public or default access alone.
@@ -255,9 +254,14 @@ func FieldMods(f *emit.Field) (string, error) {
 // MethodMods writes a class method's keywords, in Java's stated
 // order: access, static, abstract, final. An asynchronous method
 // refuses, because Java marks no signature asynchronous, and a
-// default refuses outside an interface.
+// default refuses outside an interface. An abstract method with a
+// body refuses, because an abstract method is a signature.
 func MethodMods(m *emit.Method) (string, error) {
 	switch {
+	case m.Abstract && !m.Body.IsZero():
+		return "", fmt.Errorf(
+			"java: an abstract method is a signature, and %s states a body", m.Name,
+		)
 	case m.Async:
 		return "", fmt.Errorf(
 			"java: a signature carries no asynchrony, and %s states it", m.Name,
@@ -285,12 +289,19 @@ func MethodMods(m *emit.Method) (string, error) {
 }
 
 // SigMods writes an interface method's keywords: nothing for the
-// implicitly public signature, private where stated, static for
-// a type-level method, and default for one carrying a body at
-// instance level. Abstract holds, because an interface signature
-// is abstract by shape; final, override and asynchrony refuse.
+// implicitly public signature, private where stated, static for a
+// type-level method, and default for one with a default body at
+// instance level. An abstract method passes, because an interface
+// signature is abstract by shape. A body without a default refuses,
+// because the template places only a default body, and final,
+// override and asynchrony refuse.
 func SigMods(m *emit.Method) (string, error) {
 	switch {
+	case !m.HasDefault && !m.Body.IsZero():
+		return "", fmt.Errorf(
+			"java: an interface method without a default is a signature, and %s states a body",
+			m.Name,
+		)
 	case m.Final:
 		return "", fmt.Errorf(
 			"java: an interface method admits no final, and %s states it", m.Name,
@@ -328,7 +339,7 @@ func SigMods(m *emit.Method) (string, error) {
 
 // access writes a member's or type's access keyword. A member
 // unstated spells public, because a generated API exists to be
-// called; package scope spells Java's default access. A
+// called, and package scope spells Java's default access. A
 // file-level type takes public or default access alone, and an
 // internal scope has no Java spelling at all.
 func access(v symbol.Visibility, name string, fileLevel bool) (string, error) {
