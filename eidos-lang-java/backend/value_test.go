@@ -30,9 +30,10 @@ func valueRef(spelling, pkg, name string) *emit.TypeRef {
 	}
 }
 
-// valueFn returns a callee identity.
-func valueFn(pkg, name string) symbol.Identity {
-	return symbol.Identity{Lang: java.Lang, Package: pkg, Name: name, Kind: symbol.KindFunction}
+// valueFn returns a callee identity, owned by a class where owner
+// names one.
+func valueFn(pkg, owner, name string) symbol.Identity {
+	return symbol.Identity{Lang: java.Lang, Package: pkg, Owner: owner, Name: name, Kind: symbol.KindMethod}
 }
 
 // spelled runs one value through the scaffold as a bare return and
@@ -104,9 +105,19 @@ func TestValue(t *testing.T) {
 				`Map.of("k", 2)`,
 			},
 			{
-				"a call spells bare, because the import binds the name",
-				emit.Call(valueFn("example/util", "make"), emit.Literal(emit.LiteralInt, "1")),
-				"make(1)",
+				"a call spells the static method of the class its owner names",
+				emit.Call(valueFn("example/util", "Rows", "make"), emit.Literal(emit.LiteralInt, "1")),
+				"Rows.make(1)",
+			},
+			{
+				"a string escapes in Java's grammar",
+				emit.Literal(emit.LiteralString, "tab\tbell\x07 \\ \"q\" é"),
+				`"tab\tbell\007 \\ \"q\" é"`,
+			},
+			{
+				"control characters take their named escapes",
+				emit.Literal(emit.LiteralString, "\b\f\n\r\x7f"),
+				`"\b\f\n\r\177"`,
 			},
 		}
 		for _, tt := range tests {
@@ -133,6 +144,25 @@ func TestValue(t *testing.T) {
 		assert.Empty(t, paths, "and imports nothing, because it names no package")
 	})
 
+	t.Run("imports the class a factory or a callee names", func(t *testing.T) {
+		t.Parallel()
+
+		var set render.ImportSet
+		_, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(
+			emit.Call(valueFn("example/util", "Rows.Inner", "make"),
+				emit.Composite(&emit.TypeRef{Spelling: "List<Long>", Form: symbol.FormList},
+					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
+				emit.Composite(&emit.TypeRef{Spelling: "Map<Long, Long>", Form: symbol.FormMap},
+					emit.KeyedEntry(emit.Literal(emit.LiteralInt, "1"), emit.Literal(emit.LiteralInt, "2")))),
+		)}, &set)
+		assert.NoError(t, err, "the value spells")
+		assert.Equal(t, set.Entries(), []render.Entry{
+			{Path: "example/util", Name: "Rows"},
+			{Path: "java/util", Name: "List"},
+			{Path: "java/util", Name: "Map"},
+		}, "each class imports by name, a nested owner through its file-level class")
+	})
+
 	t.Run("refuses a value Java has no form for, under its own code", func(t *testing.T) {
 		t.Parallel()
 
@@ -155,6 +185,10 @@ func TestValue(t *testing.T) {
 					valueRef("Row", "svc", "Row"),
 					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1")),
 				), "positionally",
+			},
+			{
+				"a function whose identity names no owner",
+				emit.Call(valueFn("example/util", "", "make")), "owned by no class",
 			},
 		}
 		for _, tt := range tests {

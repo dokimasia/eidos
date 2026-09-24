@@ -4,7 +4,7 @@
 package backend
 
 import (
-	"strconv"
+	"fmt"
 	"strings"
 
 	java "go.dokimi.dev/eidos/lang/java"
@@ -22,12 +22,16 @@ const (
 	// trueSpelling and falseSpelling are the two truth values.
 	trueSpelling  = "true"
 	falseSpelling = "false"
-	// listFactory and mapFactory build the two immutable
-	// collections Java states a factory for.
-	listFactory = "List.of("
-	mapFactory  = "Map.of("
-	// collectionsPackage is where those factories live.
+	// listClass and mapClass are the two collections Java states an
+	// immutable factory for, and collectionsPackage is where they
+	// live.
+	listClass          = "List"
+	mapClass           = "Map"
 	collectionsPackage = "java/util"
+	// factory is the static method both collections build through.
+	factory = ".of("
+	// memberSep joins a class and its static member.
+	memberSep = "."
 )
 
 // target spells a value tree as Java, recording into the file's
@@ -38,10 +42,9 @@ type target struct{ set *render.ImportSet }
 func (target) Lang() string { return string(java.Lang) }
 
 // Literal spells one leaf. A number carries its own text; a string
-// quotes through the standard library, whose escapes Java reads
-// the same way; a boolean takes exactly the two spellings; the
-// absent value is null. Raw text spells only where the author
-// wrote it in Java.
+// quotes in Java's own grammar; a boolean takes exactly the two
+// spellings; the absent value is null. Raw text spells only where
+// the author wrote it in Java.
 func (t target) Literal(v emit.Value) (string, error) {
 	switch v.Literal {
 	case emit.LiteralInt, emit.LiteralFloat:
@@ -50,7 +53,7 @@ func (t target) Literal(v emit.Value) (string, error) {
 		}
 		return v.Text, nil
 	case emit.LiteralString:
-		return strconv.Quote(v.Text), nil
+		return quoteString(v.Text), nil
 	case emit.LiteralBool:
 		if v.Text != trueSpelling && v.Text != falseSpelling {
 			return "", render.RefuseValue(t.Lang(),
@@ -80,14 +83,20 @@ func (t target) Type(ref *emit.TypeRef) (string, error) {
 	return Spell(ref), nil
 }
 
-// Callee spells a function by name and records its import: an
-// imported class resolves bare, so nothing qualifies at the call.
+// Callee spells a function as Owner.name, the static method of the
+// class its identity's Owner names, and imports that class. A
+// function whose identity names no Owner refuses, because Java has
+// no free function to call.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	if id.Name == "" {
 		return "", render.RefuseValue(t.Lang(), "a call names a function that spells nothing")
 	}
+	if id.Owner == "" {
+		return "", render.RefuseValue(t.Lang(),
+			"%s is owned by no class, and Java calls no free function", id.Name)
+	}
 	t.use(id)
-	return id.Name, nil
+	return id.Owner + memberSep + id.Name, nil
 }
 
 // Conversion spells a cast, which is Java's one conversion form.
@@ -108,8 +117,8 @@ func (t target) Composite(
 		for _, e := range entries {
 			parts = append(parts, e.Value)
 		}
-		t.useCollections()
-		return listFactory + strings.Join(parts, ", ") + ")", nil
+		t.useCollection(listClass)
+		return listClass + factory + strings.Join(parts, ", ") + ")", nil
 	}
 	if ref != nil && ref.Form == symbol.FormMap {
 		for _, e := range entries {
@@ -119,8 +128,8 @@ func (t target) Composite(
 			}
 			parts = append(parts, e.Key, e.Value)
 		}
-		t.useCollections()
-		return mapFactory + strings.Join(parts, ", ") + ")", nil
+		t.useCollection(mapClass)
+		return mapClass + factory + strings.Join(parts, ", ") + ")", nil
 	}
 	for _, e := range entries {
 		if e.Name != "" {
@@ -144,20 +153,63 @@ func (t target) Address(string) (string, error) {
 	return "", render.RefuseValue(t.Lang(), "Java spells no address of a value")
 }
 
-// useCollections records the import the two collection factories
-// need.
-func (t target) useCollections() {
+// useCollection records the import of the collection class a
+// factory call names.
+func (t target) useCollection(class string) {
 	if t.set == nil {
 		return
 	}
-	t.set.Add(collectionsPackage)
+	t.set.AddNamed(collectionsPackage, class)
 }
 
 // use records the import a reference or a callee in another
-// package needs.
+// package needs: the file-level class, which is the owner chain's
+// first name where the declaration nests or belongs to a class.
 func (t target) use(id symbol.Identity) {
 	if id.Package == "" || id.Name == "" || t.set == nil {
 		return
 	}
-	t.set.AddNamed(id.Package, id.Name)
+	class := id.Name
+	if id.Owner != "" {
+		class, _, _ = strings.Cut(id.Owner, memberSep)
+	}
+	t.set.AddNamed(id.Package, class)
+}
+
+// quoteString spells a string literal in Java's grammar: the
+// backslash, the double quote and the named control escapes \b \t
+// \n \f \r, every other control character as an octal escape, and
+// everything else as itself. No \u escape is written: Java decodes
+// one before it reads the literal, and a decoded line break ends
+// the string.
+func quoteString(s string) string {
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('"')
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '"':
+			b.WriteString(`\"`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\r':
+			b.WriteString(`\r`)
+		default:
+			if r < ' ' || r == 0x7f {
+				fmt.Fprintf(&b, `\%03o`, r)
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
 }

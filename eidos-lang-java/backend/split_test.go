@@ -50,6 +50,23 @@ func TestSplit(t *testing.T) {
 			"provenance narrows to the split unit's own type")
 	})
 
+	t.Run("splits an enum into a file of its own", func(t *testing.T) {
+		t.Parallel()
+
+		row := declOf("Row")
+		phase := &emit.Enum{Name: "Phase"}
+		odd := &emit.Constant{Name: "Limit", Value: "8"}
+		u := plugin.Unit{
+			Plugin: "gen", Per: plugin.PerSource, Word: "gen",
+			Key:   "svc/types.src",
+			Decls: []symbol.Symbol{row, phase, odd},
+		}
+		out := backend.Split(u)
+		assert.Equal(t, len(out), 3, "an enum is a file-level type like a class")
+		assert.Equal(t, out[1].Decls, []symbol.Symbol{phase}, "alone in its unit")
+		assert.Equal(t, out[2].Decls, []symbol.Symbol{odd}, "apart from the remainder")
+	})
+
 	t.Run("keeps everything else together under the original key", func(t *testing.T) {
 		t.Parallel()
 

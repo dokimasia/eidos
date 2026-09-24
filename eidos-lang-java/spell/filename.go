@@ -52,6 +52,8 @@ func typeName(u plugin.Unit) (string, bool) {
 		return d.Name, d.Name != ""
 	case *emit.Interface:
 		return d.Name, d.Name != ""
+	case *emit.Enum:
+		return d.Name, d.Name != ""
 	default:
 		return "", false
 	}

@@ -29,6 +29,8 @@ func TestFilename(t *testing.T) {
 		}
 		assert.Equal(t, spell.Filename(u), "Row.java",
 			"the type's own name, whatever the key and word spell")
+		u.Decls = []symbol.Symbol{&emit.Enum{Name: "Phase"}}
+		assert.Equal(t, spell.Filename(u), "Phase.java", "an enum names its file the same way")
 	})
 
 	tests := []struct {

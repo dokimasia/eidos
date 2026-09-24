@@ -22,7 +22,7 @@ func Split(u plugin.Unit) []plugin.Unit {
 	var rest []symbol.Symbol
 	for _, d := range u.Decls {
 		switch d.(type) {
-		case *emit.Struct, *emit.Interface:
+		case *emit.Struct, *emit.Interface, *emit.Enum:
 		default:
 			rest = append(rest, d)
 			continue
