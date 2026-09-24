@@ -20,7 +20,7 @@ import (
 func TestAdapter(t *testing.T) {
 	t.Parallel()
 
-	t.Run("names the language it answers for", func(t *testing.T) {
+	t.Run("names the language it drives", func(t *testing.T) {
 		t.Parallel()
 
 		assert.Equal(t, adapter().Lang(), golang.Lang, "the Go adapter speaks Go")
@@ -62,7 +62,7 @@ func TestAdapter(t *testing.T) {
 				"because a project without one resolves nothing")
 		})
 
-		t.Run("keeps a go.mod the output carried", func(t *testing.T) {
+		t.Run("keeps a go.mod the output wrote", func(t *testing.T) {
 			t.Parallel()
 
 			g := with("go.mod", "module carried.test/own\n\ngo 1.27.0\n")
@@ -73,7 +73,20 @@ func TestAdapter(t *testing.T) {
 			mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
 			assert.NoError(t, err, "the carried file is on disk")
 			assert.Contains(t, string(mod), "carried.test/own",
-				"the output's own module stands, because the harness states nothing the output already did")
+				"the output's own module is kept, because the harness states nothing the output already did")
+		})
+
+		t.Run("declares a root module beside a nested one", func(t *testing.T) {
+			t.Parallel()
+
+			g := with("api/go.mod", "module nested.test/api\n\ngo 1.27.0\n")
+			dir, err := adapter().Layout(g)
+			assert.NoError(t, err, "the fixture lays out")
+			t.Cleanup(func() { _ = os.RemoveAll(dir) })
+
+			mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+			assert.NoError(t, err, "the root still declares a module")
+			assert.Contains(t, string(mod), "module ", "because a nested go.mod declares only its own subtree")
 		})
 
 		t.Run("refuses a path climbing out of the scratch project", func(t *testing.T) {
@@ -101,9 +114,17 @@ func TestAdapter(t *testing.T) {
 		err = broken.Parse(dir)
 		assert.HasError(t, err, "a syntax error refuses")
 		assert.Contains(t, err.Error(), rowFile, "naming the file, relative to the project")
+
+		empty := adapter()
+		dir, err = empty.Layout(only("row.golang", "package harness\n"))
+		assert.NoError(t, err, "a fixture with no Go file lays out")
+		t.Cleanup(func() { _ = os.RemoveAll(dir) })
+		err = empty.Parse(dir)
+		assert.HasError(t, err, "a parse of no Go file refuses, because it proves nothing")
+		assert.Contains(t, err.Error(), "no Go file", "and the refusal names why")
 	})
 
-	t.Run("Available says which binary it looked for", func(t *testing.T) {
+	t.Run("Available names the binary it looked for", func(t *testing.T) {
 		t.Parallel()
 
 		held, why := adapter().Available()
@@ -142,6 +163,16 @@ func TestAdapter(t *testing.T) {
 			assert.True(t, r.says("cannot use"), "and the compiler's own words follow")
 		})
 
+		t.Run("a type error in a generated test reports as one", func(t *testing.T) {
+			t.Parallel()
+
+			var r recorder
+			toolchain.AssertTypeChecks(&r, adapter(), with(rowTestFile,
+				"package harness\n\nvar _ int = \"text\"\n"))
+			assert.True(t, r.says("does not type-check"),
+				"a test file is compiled too, where most generated checks are")
+		})
+
 		t.Run("a failing generated test reports its count and its output", func(t *testing.T) {
 			t.Parallel()
 
@@ -162,7 +193,7 @@ func TestAdapter(t *testing.T) {
 				"generated tests that run nothing pass while proving nothing")
 		})
 
-		t.Run("satisfaction answers both ways and survives the probe", func(t *testing.T) {
+		t.Run("satisfaction reports both true and false", func(t *testing.T) {
 			t.Parallel()
 
 			var r recorder

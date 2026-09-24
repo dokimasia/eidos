@@ -26,6 +26,9 @@ const (
 	goBinary    = "go"
 	modFile     = "go.mod"
 	allPackages = "./..."
+	// noTest is a test pattern no test name matches, so go test
+	// compiles every test binary and runs none.
+	noTest = "^$"
 	// defaultModule is the module a fixture stating none declares,
 	// so the laid-out project always has an import path.
 	defaultModule = "eidos.test/generated"
@@ -34,8 +37,8 @@ const (
 	// repository's toolchain cannot build is output nobody can.
 	goVersion = "1.27.0"
 	// dirPerm and filePerm are what the scratch project is written
-	// with: a private tree, because it holds nothing anyone else
-	// reads.
+	// with: a private tree, because nothing in it is anyone else's
+	// to read.
 	dirPerm  = 0o700
 	filePerm = 0o600
 	// testSuffix ends a test file's name, whose package the probe
@@ -53,8 +56,8 @@ const (
 	notImplemented = "does not implement"
 )
 
-// adapter drives the Go toolchain over generated output. It holds
-// no state, so one value serves every check.
+// adapter drives the Go toolchain over generated output. It has no
+// state, so one value serves every check.
 type adapter struct{}
 
 // New returns the Go toolchain adapter.
@@ -63,8 +66,8 @@ func New() toolchain.Adapter { return adapter{} }
 // Lang names the language.
 func (adapter) Lang() symbol.Lang { return golang.Lang }
 
-// Available reports whether the go tool is on PATH, and says which
-// binary was looked for where it is not.
+// Available reports whether the go tool is on PATH, and names the
+// binary it looked for where it is not.
 func (adapter) Available() (bool, string) {
 	if _, err := exec.LookPath(goBinary); err != nil {
 		return false, fmt.Sprintf("%s is not on PATH: %v", goBinary, err)
@@ -73,10 +76,11 @@ func (adapter) Available() (bool, string) {
 }
 
 // Layout writes the generated output as a module in a scratch
-// directory: every file at its own path, and a go.mod declaring
-// the fixture's module unless the output carries one already. A
-// path escaping the directory refuses, because a fixture is not a
-// place to write from.
+// directory: every file at its own path, and a go.mod at the root
+// declaring the fixture's module unless the output has one at the
+// root already. A go.mod deeper in the output declares a nested
+// module and leaves the root without one. A path escaping the
+// directory refuses, because a fixture is not a place to write from.
 func (adapter) Layout(g toolchain.Generated) (string, error) {
 	dir, err := os.MkdirTemp("", "eidos-go-*")
 	if err != nil {
@@ -94,7 +98,7 @@ func (adapter) Layout(g toolchain.Generated) (string, error) {
 		if err := os.WriteFile(target, body, filePerm); err != nil {
 			return "", errors.Join(err, os.RemoveAll(dir))
 		}
-		written = written || filepath.Base(path) == modFile
+		written = written || path == modFile
 	}
 	if !written {
 		module := g.Module
@@ -111,10 +115,12 @@ func (adapter) Layout(g toolchain.Generated) (string, error) {
 
 // Parse reads every Go file's syntax through the standard library,
 // which needs no toolchain, and reports the first file that
-// refuses with its own position.
+// refuses with its own position. A project with no Go file refuses,
+// because a parse of nothing proves nothing.
 func (adapter) Parse(dir string) error {
 	fset := token.NewFileSet()
-	return filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+	parsed := 0
+	err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
 		if err != nil || d.IsDir() || filepath.Ext(path) != golang.Extension {
 			return err
 		}
@@ -125,28 +131,39 @@ func (adapter) Parse(dir string) error {
 			}
 			return fmt.Errorf("%s: %w", rel, err)
 		}
+		parsed++
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+	if parsed == 0 {
+		return errors.New("testing: the laid-out project has no Go file to parse")
+	}
+	return nil
 }
 
-// TypeCheck builds every package, which is Go's type check: the
-// compiler is the only complete one, and go/types over a tree
-// without its dependencies resolved would answer a narrower
-// question.
+// TypeCheck compiles every package and every package's tests without
+// running one, which is Go's type check: the compiler is the only
+// complete one, go/types over a tree without its dependencies
+// resolved would answer a narrower question, and a build alone never
+// compiles a _test.go file, where most generated checks are. Vet is
+// off, because a vet finding is no type error, and [AssertVets]
+// asks for it.
 func (adapter) TypeCheck(dir string) error {
-	_, err := run(dir, "build", allPackages)
+	_, err := run(dir, "test", "-vet=off", "-count=1", "-run="+noTest, allPackages)
 	return err
 }
 
 // RunTests runs the project's tests and reads the counts off the
-// tool's own JSON stream, so a report says how many cases ran
-// rather than only whether the command exited zero.
+// tool's own JSON stream, so a report states how many cases ran, not
+// only whether the command exited zero.
 func (adapter) RunTests(dir string) (toolchain.TestReport, error) {
 	out, err := run(dir, "test", "-json", "-count=1", allPackages)
 	report := tally(out)
 	if err != nil && report.Failed == 0 {
 		// The command failed for a reason the stream does not
-		// carry: a build error, a missing package.
+		// report: a build error, a missing package.
 		return report, err
 	}
 	return report, nil
@@ -206,14 +223,14 @@ func probeSource(pkg, typeName, contract string) string {
 }
 
 // probeFile is the file the satisfaction check writes and removes.
-// The name carries the marker the Go convention reserves, so a
-// tool reading the scratch tree knows nobody wrote it by hand.
+// The name has the marker the Go convention reserves, so a tool
+// reading the scratch tree knows nobody wrote it by hand.
 const probeFile = "zz_eidos_probe_gen.go"
 
-// probePackage returns the package clause the probe must carry:
-// the one the root directory's own files declare, because the
-// probe sits beside them. A test file's package is never it,
-// because an external test package declares another name.
+// probePackage returns the package clause the probe must state: the
+// one the root directory's own files declare, because the probe is
+// written beside them. A test file's package is never it, because
+// an external test package declares another name.
 func probePackage(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -250,15 +267,14 @@ func resolve(dir, path string) (string, error) {
 }
 
 // runTimeout bounds one go invocation. A compiler that has not
-// answered in this long is a harness failure rather than a slow
-// machine, and an unbounded run would hang a suite instead of
-// reporting.
+// returned in this long is a harness failure, not a slow machine,
+// and an unbounded run would hang a suite instead of reporting.
 const runTimeout = 5 * time.Minute
 
 // run runs the go tool in dir and returns its combined output,
 // wrapping a failure with that output so a message names what the
-// tool said. The run is bounded, so a toolchain that never returns
-// fails the assertion rather than the suite.
+// tool reported. The run is bounded, so a toolchain that never
+// returns fails the assertion and not the suite.
 func run(dir string, args ...string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
@@ -290,7 +306,7 @@ const (
 
 // tally reads the case counts off the go test JSON stream. Only a
 // line naming a Test is counted, so the per-package results the
-// stream also carries do not double every number.
+// stream also reports do not double every number.
 func tally(stream string) toolchain.TestReport {
 	report := toolchain.TestReport{Output: stream}
 	for line := range strings.Lines(stream) {
