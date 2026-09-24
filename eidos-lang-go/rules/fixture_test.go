@@ -102,12 +102,26 @@ type Pair[K comparable, V any] struct {
 
 type Bound[T Reader] struct{ R T }
 
-// Tagged carries a struct tag.
+// Number, Text and Anything are constraint interfaces, and Sized is
+// generic over the three.
+type Number interface{ ~int | ~float64 }
+
+type Text interface{ ~string }
+
+type Anything interface{}
+
+type Sized[T Number, U Text, V Anything] struct {
+	A T
+	B U
+	C V
+}
+
+// Tagged has a struct tag.
 type Tagged struct {
 	Name string ` + "`json:\"name,omitempty\" db:\"n\"`" + `
 }
 
-// Uncomparable holds a slice.
+// Uncomparable has a slice field.
 type Uncomparable struct{ Items []int }
 
 // The callables.

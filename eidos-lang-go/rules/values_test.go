@@ -41,6 +41,11 @@ func TestValues(t *testing.T) {
 			assert.Equal(t, a, emit.Literal(emit.LiteralInt, "7"), "and its alternate")
 			s, _ = pairOf(t, f, builtin("float64"), "")
 			assert.Equal(t, s.Literal, emit.LiteralFloat, "a float")
+			s, a = pairOf(t, f, builtin("float32"), "")
+			assert.Equal(t, s, emit.Number(emit.LiteralFloat, "1.5", 32), "a float states its width")
+			assert.Equal(t, a.Bits, 32, "and so does its alternate")
+			s, _ = pairOf(t, f, builtin("int64"), "")
+			assert.Equal(t, s, emit.Number(emit.LiteralInt, "42", 64), "an integer states its width")
 			s, a = pairOf(t, f, builtin("bool"), "")
 			assert.Equal(t, s.Text, "true", "a boolean")
 			assert.Equal(t, a.Text, "false", "and its opposite")
@@ -62,9 +67,14 @@ func TestValues(t *testing.T) {
 			assert.True(t, s.Args[0].Text != a.Args[0].Text, "differing in its first argument")
 			s, _ = pairOf(t, f, builtin("time.Duration"), "")
 			assert.Equal(t, s.Kind, emit.ValueConversion, "time.Duration is a conversion")
-			for _, spelling := range []string{"any", "error", "comparable"} {
+			for _, spelling := range []string{"any", "error", "comparable", "complex128", "unsafe.Pointer"} {
 				sample, _ := gorules.New().SamplesOf(builtin(spelling), "", f.view)
 				assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral, spelling+" has no literal")
+			}
+			for _, spelling := range []string{"uuid.UUID", "Row"} {
+				sample, _ := gorules.New().SamplesOf(builtin(spelling), "", f.view)
+				assert.Equal(t, sample.Refusal, rules.RefusedUnresolved,
+					spelling+" names a type the view does not hold")
 			}
 		})
 
@@ -205,6 +215,9 @@ func TestValues(t *testing.T) {
 			"an integer's zero",
 		)
 		assert.Equal(t, zero(builtin("float64")).Literal, emit.LiteralFloat, "a float's")
+		assert.Equal(t, zero(builtin("float32")), emit.Number(emit.LiteralFloat, "0", 32),
+			"a float's at its width")
+		assert.Equal(t, zero(builtin("unsafe.Pointer")).Literal, emit.LiteralNil, "an unsafe pointer's")
 		assert.Equal(t, zero(builtin("bool")).Text, "false", "a boolean's")
 		assert.Equal(t, zero(builtin("string")), emit.Literal(emit.LiteralString, ""), "a string's")
 		assert.Equal(t, zero(builtin("any")).Literal, emit.LiteralNil, "an interface's")
@@ -279,33 +292,112 @@ func TestValues(t *testing.T) {
 	t.Run("LiteralFor", func(t *testing.T) {
 		t.Parallel()
 
-		r := gorules.New()
-		lit := func(text string) (emit.Value, bool) { return r.LiteralFor(nil, nil, text, rules.View{}) }
-		v, ok := lit("nil")
-		assert.True(t, ok && v.Literal == emit.LiteralNil, "nil")
-		v, ok = lit(" true ")
-		assert.True(t, ok && v.Literal == emit.LiteralBool, "a boolean, whitespace trimmed")
-		v, ok = lit("0x1F")
-		assert.True(
-			t,
-			ok && v.Literal == emit.LiteralInt && v.Text == "0x1F",
-			"an integer in any base",
-		)
-		v, ok = lit("2.5")
-		assert.True(t, ok && v.Literal == emit.LiteralFloat, "a float")
-		v, ok = lit(`"hi"`)
-		assert.True(
-			t,
-			ok && v.Literal == emit.LiteralString && v.Text == "hi",
-			"a quoted string, unquoted",
-		)
-		v, ok = lit("`raw`")
-		assert.True(t, ok && v.Text == "raw", "a raw string too")
-		v, ok = lit("'a'")
-		assert.True(t, ok && v.Literal == emit.LiteralInt && v.Text == "97", "a rune as its value")
-		_, ok = lit("Row{}")
-		assert.False(t, ok, "a composite is no literal")
-		_, ok = lit("")
-		assert.False(t, ok, "nor is nothing")
+		t.Run("writes every Go literal as canonical decimal text", func(t *testing.T) {
+			t.Parallel()
+
+			tests := []struct {
+				text string
+				want emit.Value
+			}{
+				{"nil", emit.Literal(emit.LiteralNil, "")},
+				{" true ", emit.Literal(emit.LiteralBool, "true")},
+				{"false", emit.Literal(emit.LiteralBool, "false")},
+				{"42", emit.Literal(emit.LiteralInt, "42")},
+				{"0x1F", emit.Literal(emit.LiteralInt, "31")},
+				{"017", emit.Literal(emit.LiteralInt, "15")},
+				{"0o17", emit.Literal(emit.LiteralInt, "15")},
+				{"0b101", emit.Literal(emit.LiteralInt, "5")},
+				{"1_000", emit.Literal(emit.LiteralInt, "1000")},
+				{"-5", emit.Literal(emit.LiteralInt, "-5")},
+				{"+3", emit.Literal(emit.LiteralInt, "3")},
+				{"18446744073709551615", emit.Literal(emit.LiteralInt, "18446744073709551615")},
+				{"2.5", emit.Literal(emit.LiteralFloat, "2.5")},
+				{"- 2.5", emit.Literal(emit.LiteralFloat, "-2.5")},
+				{"0x1p-2", emit.Literal(emit.LiteralFloat, "0.25")},
+				{"1_000.5", emit.Literal(emit.LiteralFloat, "1000.5")},
+				{"1e21", emit.Literal(emit.LiteralFloat, "1e+21")},
+				{"1e-7", emit.Literal(emit.LiteralFloat, "1e-7")},
+				{"0.000001", emit.Literal(emit.LiteralFloat, "0.000001")},
+				{`"hi"`, emit.Literal(emit.LiteralString, "hi")},
+				{"`raw`", emit.Literal(emit.LiteralString, "raw")},
+				{`"tab\t"`, emit.Literal(emit.LiteralString, "tab\t")},
+				{"'a'", emit.Literal(emit.LiteralInt, "97")},
+			}
+			for _, tt := range tests {
+				got, ok := gorules.New().LiteralFor(nil, nil, tt.text, rules.View{})
+				assert.True(t, ok, tt.text+" is a literal")
+				assert.Equal(t, got, tt.want, tt.text)
+			}
+		})
+
+		t.Run("refuses text that is no single literal", func(t *testing.T) {
+			t.Parallel()
+
+			for _, text := range []string{
+				"", "Row{}", "Inf", "NaN", "1i", `"a" + "b"`, "1 // note", "-'a'", "--1", "x", "1e400",
+			} {
+				_, ok := gorules.New().LiteralFor(nil, nil, text, rules.View{})
+				assert.False(t, ok, text+" is no literal")
+			}
+		})
+
+		t.Run("types the value by the builtin its reference names", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			tests := []struct {
+				ref  *node.TypeRef
+				text string
+				want emit.Value
+			}{
+				{builtin("int8"), "127", emit.Number(emit.LiteralInt, "127", 8)},
+				{builtin("int8"), "-128", emit.Number(emit.LiteralInt, "-128", 8)},
+				{builtin("uint8"), "255", emit.Number(emit.LiteralInt, "255", 8)},
+				{builtin("uint64"), "18446744073709551615", emit.Number(emit.LiteralInt, "18446744073709551615", 64)},
+				{builtin("int"), "2.0", emit.Number(emit.LiteralInt, "2", 0)},
+				{builtin("rune"), "'a'", emit.Number(emit.LiteralInt, "97", 32)},
+				{builtin("float32"), "0.1", emit.Number(emit.LiteralFloat, "0.1", 32)},
+				{builtin("float32"), "3", emit.Number(emit.LiteralFloat, "3", 32)},
+				{builtin("float64"), "0x1p-2", emit.Number(emit.LiteralFloat, "0.25", 64)},
+				{builtin("bool"), "true", emit.Literal(emit.LiteralBool, "true")},
+				{builtin("string"), `"x"`, emit.Literal(emit.LiteralString, "x")},
+				{builtin("any"), "nil", emit.Literal(emit.LiteralNil, "")},
+				{composite("*int", symbol.FormOptional, builtin("int")), "nil", emit.Literal(emit.LiteralNil, "")},
+				{ref(fxPath, "Weight", symbol.KindAlias), "1.5", emit.Number(emit.LiteralFloat, "1.5", 64)},
+				{ref(fxPath, "Plain", symbol.KindAlias), "7", emit.Number(emit.LiteralInt, "7", 0)},
+			}
+			for _, tt := range tests {
+				got, ok := gorules.New().LiteralFor(f.file, tt.ref, tt.text, f.view)
+				assert.True(t, ok, tt.text+" is a "+tt.ref.Spelling)
+				assert.Equal(t, got, tt.want, tt.text+" as "+tt.ref.Spelling)
+			}
+		})
+
+		t.Run("refuses a value outside the builtin", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			tests := []struct {
+				ref  *node.TypeRef
+				text string
+			}{
+				{builtin("int8"), "128"},
+				{builtin("int8"), "-129"},
+				{builtin("uint8"), "-1"},
+				{builtin("uint64"), "18446744073709551616"},
+				{builtin("int"), "2.5"},
+				{builtin("int"), `"2"`},
+				{builtin("int"), "nil"},
+				{builtin("float32"), "1e39"},
+				{builtin("float64"), "true"},
+				{builtin("bool"), "1"},
+				{builtin("string"), "'a'"},
+				{ref(fxPath, "Weight", symbol.KindAlias), `"heavy"`},
+			}
+			for _, tt := range tests {
+				_, ok := gorules.New().LiteralFor(f.file, tt.ref, tt.text, f.view)
+				assert.False(t, ok, tt.text+" is no "+tt.ref.Spelling)
+			}
+		})
 	})
 }

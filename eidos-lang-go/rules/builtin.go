@@ -4,6 +4,7 @@
 package rules
 
 import (
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -11,25 +12,26 @@ import (
 
 // The builtin and standard spellings the rules classify.
 const (
-	spellInt      = "int"
-	spellInt8     = "int8"
-	spellInt16    = "int16"
-	spellInt32    = "int32"
-	spellInt64    = "int64"
-	spellRune     = "rune"
-	spellUint     = "uint"
-	spellUintptr  = "uintptr"
-	spellUint8    = "uint8"
-	spellByte     = "byte"
-	spellUint16   = "uint16"
-	spellUint32   = "uint32"
-	spellUint64   = "uint64"
-	spellFloat32  = "float32"
-	spellFloat64  = "float64"
-	spellString   = "string"
-	spellAny      = "any"
-	spellTime     = "time.Time"
-	spellDuration = "time.Duration"
+	spellInt           = "int"
+	spellInt8          = "int8"
+	spellInt16         = "int16"
+	spellInt32         = "int32"
+	spellInt64         = "int64"
+	spellRune          = "rune"
+	spellUint          = "uint"
+	spellUintptr       = "uintptr"
+	spellUint8         = "uint8"
+	spellByte          = "byte"
+	spellUint16        = "uint16"
+	spellUint32        = "uint32"
+	spellUint64        = "uint64"
+	spellFloat32       = "float32"
+	spellFloat64       = "float64"
+	spellString        = "string"
+	spellAny           = "any"
+	spellTime          = "time.Time"
+	spellDuration      = "time.Duration"
+	spellUnsafePointer = "unsafe.Pointer"
 )
 
 // Builtin classifies a named reference the resolution step left
@@ -82,41 +84,10 @@ func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 	}
 }
 
-// numeric says which builtin spellings are numbers, for the value
-// table and the comparability rule.
-func numeric(spelling string) bool {
-	switch spelling {
-	case spellInt, spellInt8, spellInt16, spellInt32, spellInt64, spellRune,
-		spellUint, spellUintptr, spellUint8, spellByte, spellUint16, spellUint32, spellUint64,
-		spellFloat32, spellFloat64:
-		return true
-	default:
-		return false
-	}
-}
-
-// floating says which numeric spellings are floats.
-func floating(spelling string) bool {
-	return spelling == spellFloat32 || spelling == spellFloat64
-}
-
-// comparableBuiltin says which builtin spellings Go compares with
-// ==: the numbers, string, bool, the complex numbers, and the
-// interfaces any, error and comparable, which compare at run time.
+// comparableBuiltin reports whether Go compares a spelling the
+// resolution step left without a target with ==: every predeclared
+// type does, the interfaces any, error and comparable at run time,
+// and so does unsafe.Pointer.
 func comparableBuiltin(spelling string) bool {
-	if numeric(spelling) {
-		return true
-	}
-	switch spelling {
-	case spellString,
-		boolSpelling,
-		"complex64",
-		"complex128",
-		spellAny,
-		errorSpelling,
-		"comparable":
-		return true
-	default:
-		return false
-	}
+	return golang.Predeclared(spelling) || spelling == spellUnsafePointer
 }

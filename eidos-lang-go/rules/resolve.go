@@ -19,26 +19,31 @@ import (
 // qualifies.
 const qualifierSep = "."
 
+// refusalPrefix opens every refusal the rules return: the language's
+// identity, as every satellite's refusals open.
+const refusalPrefix = string(golang.Lang) + ": "
+
 // typeKinds are the kinds a type spelling names.
 var typeKinds = []symbol.Kind{
 	symbol.KindStruct, symbol.KindInterface, symbol.KindAlias, symbol.KindEnum, symbol.KindSum,
 }
 
-// Resolve says what a directive's spelling names from a subject,
-// the way Go scopes it: a bare name in the subject's package, a
-// qualified name through the file's imports, a value field through
-// the member walk over the subject's type, a host parameter on the
-// subject's own signature, a member on a handle through the type
-// the subject belongs to, and a type in scope the way a bare or
-// qualified type spelling resolves, a builtin standing in for
-// itself with no package and a type in a package the graph does
-// not hold standing in with its import path.
+// Resolve returns the declaration a directive's spelling names from
+// a subject, the way Go scopes it: a bare name in the subject's
+// package, a qualified name through the file's imports, a value
+// field through the member walk over the subject's type, a host
+// parameter on the subject's own signature, a member on a handle
+// through the type the subject belongs to, and a type in scope the
+// way a bare or qualified type spelling resolves. A predeclared type
+// resolves to a stand-in naming itself with no package, and a type
+// in a package the view does not contain to a stand-in naming its
+// import path.
 func (r Rules) Resolve(
 	scope rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
-		return nil, fmt.Errorf("go: nothing to resolve")
+		return nil, refuse("nothing to resolve")
 	}
 	switch kind {
 	case directive.ResolveCallableInScope:
@@ -54,7 +59,7 @@ func (r Rules) Resolve(
 	case directive.ResolveTypeInScope:
 		return r.typeInScope(scope, name, v)
 	default:
-		return nil, fmt.Errorf("go: %s is not a resolution Go performs", kind)
+		return nil, refuse("%s is not a resolution Go performs", kind)
 	}
 }
 
@@ -71,49 +76,47 @@ func (Rules) inScope(
 	if sym := declared(pkg, bare, kinds...); sym != nil {
 		return sym, nil
 	}
-	return nil, fmt.Errorf("go: %s declares no %s named %s", pkg.ID.Package, kindList(kinds), bare)
+	return nil, refuse("%s declares no %s named %s", pkg.ID.Package, kindList(kinds), bare)
 }
 
-// typeInScope resolves a type spelling: a builtin stands in for
-// itself, a bare name resolves in the subject's package, and a
-// qualified name resolves through the file's imports, standing in
-// with the import path where the graph does not hold the package.
+// typeInScope resolves a type spelling: a predeclared type resolves
+// to a stand-in naming itself, a bare name resolves in the subject's
+// package, and a qualified name resolves through the file's imports,
+// to a stand-in naming the import path where the view does not
+// contain the package.
 func (Rules) typeInScope(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
-	if builtinType(name) {
+	if golang.Predeclared(name) {
 		return standIn(symbol.Identity{Lang: golang.Lang, Name: name, Kind: symbol.KindAlias}), nil
 	}
 	qualifier, bare, qualified := strings.Cut(name, qualifierSep)
 	if !qualified {
 		pkg, held := v.PackageOf(scope.Subject)
 		if !held {
-			return nil, fmt.Errorf(
-				"go: the view does not hold the package declaring %s",
-				scope.Subject,
-			)
+			return nil, refuse("the package declaring %s is outside the view", scope.Subject)
 		}
 		if sym := declared(pkg, name, typeKinds...); sym != nil {
 			return sym, nil
 		}
-		return nil, fmt.Errorf("go: %s declares no type named %s", pkg.ID.Package, name)
+		return nil, refuse("%s declares no type named %s", pkg.ID.Package, name)
 	}
 	path, imported := importPath(scope.File, qualifier)
 	if !imported {
-		return nil, fmt.Errorf("go: no import of the subject's file binds %s", qualifier)
+		return nil, refuse("no import of the subject's file binds %s", qualifier)
 	}
 	id := symbol.Identity{Lang: golang.Lang, Package: path, Name: bare, Kind: symbol.KindAlias}
 	pkg, held := v.PackageOf(
 		symbol.Identity{Lang: golang.Lang, Package: path, Kind: symbol.KindPackage},
 	)
 	if !held {
-		// A package outside the workspace, the standard library
-		// or a dependency: the type is named by its path, which a
+		// A package outside the workspace, the standard library or
+		// a dependency: the type is named by its path, which a
 		// backend qualifies and imports.
 		return standIn(id), nil
 	}
 	if sym := declared(pkg, bare, typeKinds...); sym != nil {
 		return sym, nil
 	}
-	return nil, fmt.Errorf("go: %s declares no type named %s", path, bare)
+	return nil, refuse("%s declares no type named %s", path, bare)
 }
 
 // member resolves a name among the effective members of the type
@@ -128,7 +131,7 @@ func (r Rules) member(
 	}
 	set, is := rules.NewBound(r, v, nil).MembersOf(host)
 	if !is {
-		return nil, fmt.Errorf("go: %s has no members to resolve %s in", scope.Subject, name)
+		return nil, refuse("%s has no members to resolve %s in", scope.Subject, name)
 	}
 	for _, m := range set.Members {
 		decl, names := m.Symbol.(node.Declaration)
@@ -140,19 +143,14 @@ func (r Rules) member(
 			return m.Symbol, nil
 		}
 	}
-	return nil, fmt.Errorf(
-		"go: the members of %s hold no %s named %s",
-		host.Identity(),
-		kindList(kinds),
-		name,
-	)
+	return nil, refuse("%s has no %s member named %s", host.Identity(), kindList(kinds), name)
 }
 
 // hostParam resolves a parameter on the subject's own signature.
 func hostParam(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
 	sym, held := v.Lookup(scope.Subject)
 	if !held {
-		return nil, fmt.Errorf("go: the view does not hold %s", scope.Subject)
+		return nil, refuse("%s is outside the view", scope.Subject)
 	}
 	var params []*node.Param
 	switch c := sym.(type) {
@@ -161,14 +159,14 @@ func hostParam(scope rules.Scope, name string, v rules.View) (symbol.Symbol, err
 	case *node.Method:
 		params = c.Params
 	default:
-		return nil, fmt.Errorf("go: %s is no callable, so it has no parameter named %s", scope.Subject, name)
+		return nil, refuse("%s is no callable, so it has no parameter named %s", scope.Subject, name)
 	}
 	for _, p := range params {
 		if p != nil && p.Name == name {
 			return p, nil
 		}
 	}
-	return nil, fmt.Errorf("go: %s declares no parameter named %s", scope.Subject, name)
+	return nil, refuse("%s declares no parameter named %s", scope.Subject, name)
 }
 
 // hostType returns the type a subject belongs to: the subject
@@ -176,14 +174,14 @@ func hostParam(scope rules.Scope, name string, v rules.View) (symbol.Symbol, err
 func hostType(subject symbol.Identity, v rules.View) (node.Declaration, error) {
 	sym, held := v.Lookup(subject)
 	if !held {
-		return nil, fmt.Errorf("go: the view does not hold %s", subject)
+		return nil, refuse("%s is outside the view", subject)
 	}
 	var host symbol.Identity
 	switch m := sym.(type) {
 	case *node.Struct, *node.Interface, *node.Enum, *node.Sum:
 		decl, names := sym.(node.Declaration)
 		if !names {
-			return nil, fmt.Errorf("go: %s carries no identity", subject)
+			return nil, refuse("%s has no identity", subject)
 		}
 		return decl, nil
 	case *node.Field:
@@ -191,19 +189,15 @@ func hostType(subject symbol.Identity, v rules.View) (node.Declaration, error) {
 	case *node.Method:
 		host = m.Host
 	default:
-		return nil, fmt.Errorf("go: %s belongs to no type", subject)
+		return nil, refuse("%s belongs to no type", subject)
 	}
 	owner, held := v.Lookup(host)
 	if !held {
-		return nil, fmt.Errorf(
-			"go: the view does not hold %s, the type %s belongs to",
-			host,
-			subject,
-		)
+		return nil, refuse("%s, the type %s belongs to, is outside the view", host, subject)
 	}
 	decl, names := owner.(node.Declaration)
 	if !names {
-		return nil, fmt.Errorf("go: %s carries no identity", host)
+		return nil, refuse("%s has no identity", host)
 	}
 	return decl, nil
 }
@@ -216,45 +210,33 @@ func packageFor(scope rules.Scope, name string, v rules.View) (*node.Package, st
 	if !qualified {
 		pkg, held := v.PackageOf(scope.Subject)
 		if !held {
-			return nil, "", fmt.Errorf(
-				"go: the view does not hold the package declaring %s",
-				scope.Subject,
-			)
+			return nil, "", refuse("the package declaring %s is outside the view", scope.Subject)
 		}
 		return pkg, name, nil
 	}
 	path, imported := importPath(scope.File, qualifier)
 	if !imported {
-		return nil, "", fmt.Errorf("go: no import of the subject's file binds %s", qualifier)
+		return nil, "", refuse("no import of the subject's file binds %s", qualifier)
 	}
 	pkg, held := v.PackageOf(
 		symbol.Identity{Lang: golang.Lang, Package: path, Kind: symbol.KindPackage},
 	)
 	if !held {
-		return nil, "", fmt.Errorf(
-			"go: the view does not hold %s, which %s imports",
-			path,
-			qualifier,
-		)
+		return nil, "", refuse("%s, which %s imports, is outside the view", path, qualifier)
 	}
 	return pkg, bare, nil
 }
 
 // importPath returns the path an import of the file binds under a
-// qualifier: its alias, or the last segment of its path.
+// qualifier, by the rule [golang.ImportName] states: the alias, or
+// the name the path assumes. A blank or a dot import binds no
+// qualifier.
 func importPath(f *node.File, qualifier string) (string, bool) {
 	if f == nil {
 		return "", false
 	}
 	for _, imp := range f.Imports {
-		if imp == nil {
-			continue
-		}
-		local := imp.Alias
-		if local == "" {
-			local = imp.Path[strings.LastIndex(imp.Path, "/")+1:]
-		}
-		if local == qualifier {
+		if name, binds := golang.ImportName(imp); binds && name == qualifier {
 			return imp.Path, true
 		}
 	}
@@ -262,42 +244,32 @@ func importPath(f *node.File, qualifier string) (string, bool) {
 }
 
 // declared returns a package's top-level declaration of one name
-// and one of the kinds, or nil.
+// and one of the kinds, or nil. It reads each file's top-level
+// declarations and nothing nested inside them.
 func declared(pkg *node.Package, name string, kinds ...symbol.Kind) symbol.Symbol {
-	for decl := range node.Declarations(pkg) {
-		id := decl.Identity()
-		if id.Owner == "" && id.Name == name && slices.Contains(kinds, id.Kind) {
-			return decl
+	for _, f := range pkg.Files {
+		if f == nil {
+			continue
+		}
+		for _, sym := range f.Decls {
+			decl, names := sym.(node.Declaration)
+			if !names {
+				continue
+			}
+			id := decl.Identity()
+			if id.Owner == "" && id.Name == name && slices.Contains(kinds, id.Kind) {
+				return decl
+			}
 		}
 	}
 	return nil
 }
 
-// standIn returns a declaration standing in for a type the graph
-// does not hold: a builtin, or a type in a package outside the
-// workspace, named by the identity alone.
+// standIn returns the stand-in declaration for a type the view does
+// not contain: a predeclared type, or a type in a package outside
+// the workspace, named by the identity alone.
 func standIn(id symbol.Identity) *node.Alias {
 	return &node.Alias{ID: id, Name: id.Name}
-}
-
-// builtinType says whether a spelling is one of Go's predeclared
-// types, which no package owns.
-func builtinType(spelling string) bool {
-	if numeric(spelling) {
-		return true
-	}
-	switch spelling {
-	case spellString,
-		boolSpelling,
-		spellAny,
-		errorSpelling,
-		"comparable",
-		"complex64",
-		"complex128":
-		return true
-	default:
-		return false
-	}
 }
 
 // kindList spells a kind set for a refusal.
@@ -307,4 +279,9 @@ func kindList(kinds []symbol.Kind) string {
 		parts = append(parts, k.String())
 	}
 	return strings.Join(parts, " or ")
+}
+
+// refuse builds a refusal under [refusalPrefix].
+func refuse(format string, args ...any) error {
+	return fmt.Errorf(refusalPrefix+format, args...)
 }

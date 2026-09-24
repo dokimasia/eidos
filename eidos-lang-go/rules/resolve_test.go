@@ -4,6 +4,7 @@
 package rules_test
 
 import (
+	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -55,9 +56,23 @@ func TestResolve(t *testing.T) {
 		assert.HasError(t, err, "a qualifier no import binds refuses")
 		_, err = r.Resolve(f.scope(row), "dep.Ghost", directive.ResolveCallableInScope, f.view)
 		assert.HasError(t, err, "a name the sibling does not declare refuses")
+
+		scope := rules.Scope{Subject: row, File: &node.File{Imports: []*node.Import{
+			{Path: "gopkg.in/yaml.v3"},
+			{Path: depPath, Wildcard: true},
+			{Path: "embed", Alias: golang.BlankAlias},
+		}}}
+		got, err = r.Resolve(scope, "yaml.Node", directive.ResolveTypeInScope, f.view)
+		assert.NoError(t, err, "a versioned path binds the name it assumes")
+		assert.Equal(t, got.(node.Declaration).Identity().Package, "gopkg.in/yaml.v3",
+			"and the type is named by that path")
+		_, err = r.Resolve(scope, "dep.Target", directive.ResolveTypeInScope, f.view)
+		assert.HasError(t, err, "a dot import binds no qualifier")
+		_, err = r.Resolve(scope, "embed.FS", directive.ResolveTypeInScope, f.view)
+		assert.HasError(t, err, "nor does a blank import")
 	})
 
-	t.Run("stands in for a builtin and for a type outside the workspace", func(t *testing.T) {
+	t.Run("returns a stand-in for a builtin and for a type outside the workspace", func(t *testing.T) {
 		t.Parallel()
 
 		f := loaded(t)
@@ -126,11 +141,13 @@ func TestResolve(t *testing.T) {
 		f := loaded(t)
 		_, err := r.Resolve(f.scope(row), "  ", directive.ResolveTypeInScope, f.view)
 		assert.HasError(t, err, "nothing resolves to nothing")
+		assert.True(t, strings.HasPrefix(err.Error(), string(golang.Lang)+": "),
+			"a refusal opens with the language's identity, as every satellite's does")
 		_, err = r.Resolve(f.scope(row), "ID", directive.ResolveMetadataKey, f.view)
 		assert.HasError(t, err, "the metadata kind is validation's, not the language's")
 		ghost := id(fxPath, "Ghost", symbol.KindStruct)
 		_, err = r.Resolve(f.scope(ghost), "ID", directive.ResolveValueField, f.view)
-		assert.HasError(t, err, "a subject the view does not hold refuses")
+		assert.HasError(t, err, "a subject outside the view refuses")
 		_, err = r.Resolve(
 			rules.Scope{Subject: row},
 			"dep.Target",

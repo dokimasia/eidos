@@ -52,7 +52,7 @@ func TestCapabilities(t *testing.T) {
 	})
 
 	t.Run(
-		"derives witnesses for the trivially closed bounds and substitutes arguments",
+		"derives witnesses for the bounds that admit int and substitutes arguments",
 		func(t *testing.T) {
 			t.Parallel()
 
@@ -68,7 +68,16 @@ func TestCapabilities(t *testing.T) {
 			assert.True(t, derived && w.Spelling == "int", "comparable takes int")
 			bound, _ := f.decl(t, id(fxPath, "Bound", symbol.KindStruct)).(*node.Struct)
 			_, derived = r.Derive(bound.TypeParams[0], f.view)
-			assert.False(t, derived, "a bound naming an interface is authored or nothing")
+			assert.False(t, derived, "a bound stating methods is authored or nothing")
+			sized, _ := f.decl(t, id(fxPath, "Sized", symbol.KindStruct)).(*node.Struct)
+			w, derived = r.Derive(sized.TypeParams[0], f.view)
+			assert.True(t, derived && w.Spelling == "int", "a type set naming ~int takes int")
+			_, derived = r.Derive(sized.TypeParams[1], f.view)
+			assert.False(t, derived, "a type set naming no int is authored or nothing")
+			w, derived = r.Derive(sized.TypeParams[2], f.view)
+			assert.True(t, derived && w.Spelling == "int", "an empty interface the graph holds takes int")
+			_, derived = r.Derive(sized.TypeParams[0], rules.View{Decls: f.view.Decls})
+			assert.False(t, derived, "and without the facts no type set is knowable")
 			_, derived = r.Derive(nil, f.view)
 			assert.False(t, derived, "no parameter, no witness")
 			witnesses := f.bound().Witnesses(pair.TypeParams)
@@ -102,7 +111,7 @@ func TestCapabilities(t *testing.T) {
 		},
 	)
 
-	t.Run("lists the settable members promotion reaches", func(t *testing.T) {
+	t.Run("lists the settable members, promoted ones included", func(t *testing.T) {
 		t.Parallel()
 
 		f := loaded(t)
@@ -147,11 +156,27 @@ func TestCapabilities(t *testing.T) {
 		assert.True(t, ok, "an enumeration compares")
 		ok, _ = r.Comparable(ref(fxPath, "Weight", symbol.KindAlias), f.view)
 		assert.True(t, ok, "a defined type compares as its target")
+		boxOf := func(arg *node.TypeRef) *node.TypeRef {
+			box := ref(fxPath, "Box", symbol.KindStruct)
+			if arg != nil {
+				box.Args = []*node.TypeRef{arg}
+			}
+			return box
+		}
+		ok, problems = r.Comparable(boxOf(builtin("int")), f.view)
+		assert.True(t, ok && len(problems) == 0, "an instantiation compares through its argument")
+		ok, problems = r.Comparable(boxOf(composite("[]int", symbol.FormList, builtin("int"))), f.view)
+		assert.False(t, ok, "and does not where its argument does not")
+		assert.Length(t, problems, 1, "naming the argument")
+		ok, _ = r.Comparable(boxOf(nil), f.view)
+		assert.False(t, ok, "an uninstantiated generic type cannot be proven to")
 		for _, ref := range []*node.TypeRef{
 			composite("*Row", symbol.FormOptional, builtin("Row")),
 			composite("chan int", symbol.FormStream, builtin("int")),
 			composite("[2]int", symbol.FormArray, builtin("int")),
-			builtin("any"), builtin("string"), builtin("complex64"),
+			{Spelling: "interface{}", Form: symbol.FormInline},
+			{Spelling: "interface{ Close() error }", Form: symbol.FormInline},
+			builtin("any"), builtin("string"), builtin("complex64"), builtin("unsafe.Pointer"),
 		} {
 			ok, _ := r.Comparable(ref, f.view)
 			assert.True(t, ok, ref.Spelling+" compares")
