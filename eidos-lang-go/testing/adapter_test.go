@@ -14,16 +14,17 @@ import (
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
-// The adapter is what the kernel's assertions drive, so what it
-// lays out and what each answer means is contract. Parsing needs
-// no toolchain; everything below it gates on one.
+// The kernel's assertions drive the adapter, so the project it lays
+// out and the meaning of each result are its contract. The layout
+// and the parse need no toolchain, and the cases that run one skip
+// locally where it is absent.
 func TestAdapter(t *testing.T) {
 	t.Parallel()
 
 	t.Run("names the language it drives", func(t *testing.T) {
 		t.Parallel()
 
-		assert.Equal(t, adapter().Lang(), golang.Lang, "the Go adapter speaks Go")
+		assert.Equal(t, adapter().Lang(), golang.Lang, "the Go adapter names Go")
 	})
 
 	t.Run("Layout", func(t *testing.T) {
@@ -71,7 +72,7 @@ func TestAdapter(t *testing.T) {
 			t.Cleanup(func() { _ = os.RemoveAll(dir) })
 
 			mod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
-			assert.NoError(t, err, "the carried file is on disk")
+			assert.NoError(t, err, "the output's go.mod is on disk")
 			assert.Contains(t, string(mod), "carried.test/own",
 				"the output's own module is kept, because the harness states nothing the output already did")
 		})
@@ -94,7 +95,7 @@ func TestAdapter(t *testing.T) {
 
 			_, err := adapter().Layout(only("../escape.go", "package escape\n"))
 			assert.HasError(t, err, "a fixture is not a place to write from")
-			assert.Contains(t, err.Error(), "climbs out", "and the refusal says so")
+			assert.Contains(t, err.Error(), "climbs out", "and the refusal names the escape")
 		})
 	})
 
@@ -102,24 +103,24 @@ func TestAdapter(t *testing.T) {
 		t.Parallel()
 
 		a := adapter()
-		dir, err := a.Layout(healthy())
+		sound, err := a.Layout(healthy())
 		assert.NoError(t, err, "the fixture lays out")
-		t.Cleanup(func() { _ = os.RemoveAll(dir) })
-		assert.NoError(t, a.Parse(dir), "the healthy output parses")
+		t.Cleanup(func() { _ = os.RemoveAll(sound) })
+		assert.NoError(t, a.Parse(sound), "the healthy output parses")
 
 		broken := adapter()
-		dir, err = broken.Layout(only(rowFile, "package harness\n\nfunc F( {}\n"))
+		unparsable, err := broken.Layout(only(rowFile, "package harness\n\nfunc F( {}\n"))
 		assert.NoError(t, err, "the broken fixture lays out")
-		t.Cleanup(func() { _ = os.RemoveAll(dir) })
-		err = broken.Parse(dir)
+		t.Cleanup(func() { _ = os.RemoveAll(unparsable) })
+		err = broken.Parse(unparsable)
 		assert.HasError(t, err, "a syntax error refuses")
 		assert.Contains(t, err.Error(), rowFile, "naming the file, relative to the project")
 
 		empty := adapter()
-		dir, err = empty.Layout(only("row.golang", "package harness\n"))
+		bare, err := empty.Layout(only("row.golang", "package harness\n"))
 		assert.NoError(t, err, "a fixture with no Go file lays out")
-		t.Cleanup(func() { _ = os.RemoveAll(dir) })
-		err = empty.Parse(dir)
+		t.Cleanup(func() { _ = os.RemoveAll(bare) })
+		err = empty.Parse(bare)
 		assert.HasError(t, err, "a parse of no Go file refuses, because it proves nothing")
 		assert.Contains(t, err.Error(), "no Go file", "and the refusal names why")
 	})
@@ -198,7 +199,7 @@ func TestAdapter(t *testing.T) {
 
 			var r recorder
 			toolchain.AssertSatisfies(&r, adapter(), healthy(), "*Row", "Reader")
-			assert.False(t, r.failed(), "a *Row satisfies the Reader it was generated against")
+			assert.False(t, r.failed(), "a *Row satisfies the Reader the output declares")
 
 			r = recorder{}
 			toolchain.AssertDoesNotSatisfy(&r, adapter(), healthy(), "Row", "Reader")
@@ -210,7 +211,7 @@ func TestAdapter(t *testing.T) {
 
 			r = recorder{}
 			toolchain.AssertSatisfies(&r, adapter(), healthy(), "*Row", "error")
-			assert.True(t, r.says("does not satisfy"), "a promise the output never met reports")
+			assert.True(t, r.says("does not satisfy"), "a contract the output does not satisfy reports")
 		})
 
 		t.Run("satisfaction imports a qualified contract", func(t *testing.T) {
