@@ -153,6 +153,12 @@ func TestVocabulary(t *testing.T) {
 			Annotations: symbol.Annotations{{Name: "log"}},
 		})
 		assert.HasError(t, err, "decorators mark classes and members alone")
+
+		got, err = backend.Mods(&emit.Constant{Name: "MAX", Value: "8"})
+		assert.NoError(t, err, "a constant with a value spells")
+		assert.Equal(t, got, "export ", "as an export")
+		_, err = backend.Mods(&emit.Constant{Name: "MAX"})
+		assert.HasError(t, err, "a constant without a value refuses, because const MAX = declares nothing")
 	})
 
 	t.Run("MemberMods", func(t *testing.T) {
@@ -177,6 +183,13 @@ func TestVocabulary(t *testing.T) {
 
 		_, err = backend.MemberMods(&emit.Method{Name: "load", Final: true})
 		assert.HasError(t, err, "a final method refuses")
+		got, err = backend.MemberMods(&emit.Method{Name: "load", Abstract: true})
+		assert.NoError(t, err, "an abstract method without a body spells")
+		assert.Equal(t, got, "abstract ", "as abstract")
+		_, err = backend.MemberMods(&emit.Method{
+			Name: "load", Abstract: true, Body: emit.Body{Verbatim: "return 1;"},
+		})
+		assert.HasError(t, err, "an abstract method with a body refuses, because the signature drops it")
 		_, err = backend.MemberMods(&emit.Field{
 			Name: "key", Visibility: symbol.VisibilityPackage,
 		})
@@ -207,6 +220,17 @@ func TestVocabulary(t *testing.T) {
 
 		_, err = backend.SigMods(&emit.Method{Name: "load", Async: true})
 		assert.HasError(t, err, "a stated modifier refuses on an interface method")
+		_, err = backend.SigMods(&emit.Method{Name: "load", Body: emit.Body{Verbatim: "return 1;"}})
+		assert.HasError(t, err, "a body refuses, because the signature drops it")
+	})
+
+	t.Run("EnumKey", func(t *testing.T) {
+		t.Parallel()
+
+		assert.Equal(t, backend.EnumKey(&emit.EnumVariant{Name: "Open"}), "Open",
+			"an identifier spells bare")
+		assert.Equal(t, backend.EnumKey(&emit.EnumVariant{Name: "content-type"}), "'content-type'",
+			"any other name quotes, which an enum member admits")
 	})
 
 	t.Run("AccessorKw", func(t *testing.T) {

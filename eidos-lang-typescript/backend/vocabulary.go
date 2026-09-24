@@ -10,12 +10,13 @@ import (
 
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/textfmt"
+	"go.dokimi.dev/eidos/lang/typescript/spell"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The vocabulary names, so a template and its helper cannot drift
-// apart on a spelling.
+// The vocabulary names are constants, so a template and its helper
+// spell one name.
 const (
 	// FuncDocs writes a declaration's documentation.
 	FuncDocs = "docs"
@@ -55,6 +56,9 @@ const (
 	// FuncPropKey writes a field's property key, quoted where the
 	// name is not an identifier.
 	FuncPropKey = "propkey"
+	// FuncEnumKey writes an enum member's key, quoted where the name
+	// is not an identifier.
+	FuncEnumKey = "enumkey"
 )
 
 // Anonymous is what TypeScript writes where a declaration states
@@ -83,16 +87,17 @@ func Funcs() template.FuncMap {
 		FuncIndexSig:   IndexSig,
 		FuncPropKey:    PropKey,
 		FuncMethodKey:  MethodKey,
+		FuncEnumKey:    EnumKey,
 	}
 }
 
-// PropKey writes a field's property key: an identifier bare, and
-// anything else — a wire name like content-type, a digit-led key —
-// in single quotes, so the declared name reaches the type whole
-// instead of rendering invalid TypeScript. A hard-private field
-// must be an identifier, because # admits no quoted form.
+// PropKey writes a field's property key: an identifier bare, and any
+// other name, such as the wire name content-type or a digit-led key,
+// in single quotes, so the type declares the name whole. A
+// hard-private field must be an identifier, because # admits no
+// quoted form.
 func PropKey(f *emit.Field) (string, error) {
-	if identifier(f.Name) {
+	if spell.IsIdentifier(f.Name) {
 		return f.Name, nil
 	}
 	if f.Hard {
@@ -109,7 +114,7 @@ func PropKey(f *emit.Field) (string, error) {
 // interfaces alike. A hard-private name refuses the quoted form
 // the way a property's does.
 func MethodKey(m *emit.Method) (string, error) {
-	if identifier(m.Name) {
+	if spell.IsIdentifier(m.Name) {
 		return m.Name, nil
 	}
 	if m.Hard {
@@ -121,26 +126,19 @@ func MethodKey(m *emit.Method) (string, error) {
 	return quote(m.Name), nil
 }
 
-// identifier reports whether a name spells bare in TypeScript:
-// a letter, underscore or dollar first, those and digits after.
-func identifier(name string) bool {
-	if name == "" {
-		return false
+// EnumKey writes an enum member's key: an identifier bare, and any
+// other name in single quotes, which TypeScript admits on an enum
+// member.
+func EnumKey(v *emit.EnumVariant) string {
+	if spell.IsIdentifier(v.Name) {
+		return v.Name
 	}
-	for i, r := range name {
-		head := r == '_' || r == '$' ||
-			(r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z')
-		if head || (i > 0 && r >= '0' && r <= '9') {
-			continue
-		}
-		return false
-	}
-	return true
+	return quote(v.Name)
 }
 
-// AccessorKw writes a method's accessor keyword and holds the
-// declaration to the accessor's shape: a getter takes nothing and
-// returns one value, a setter takes one value and returns
+// AccessorKw writes a method's accessor keyword and refuses a
+// declaration outside the accessor's shape: a getter takes nothing
+// and returns one value, a setter takes one value and returns
 // nothing, and neither declares type parameters, because
 // TypeScript's accessors admit none.
 func AccessorKw(m *emit.Method) (string, error) {
@@ -194,9 +192,9 @@ func Hard(s symbol.Symbol) (string, error) {
 }
 
 // IndexSig writes an index signature whole: the one key parameter
-// in brackets, the element type behind the colon. Anything an
-// index signature cannot state — more parameters, no result, type
-// parameters, an accessor — refuses.
+// in brackets, the element type behind the colon. It refuses what
+// an index signature cannot state: more parameters, no result, type
+// parameters or an accessor.
 func IndexSig(m *emit.Method) (string, error) {
 	switch {
 	case len(m.Params) != 1 || m.Params[0].Name == "" || m.Params[0].Type == nil:
@@ -221,7 +219,7 @@ func IndexSig(m *emit.Method) (string, error) {
 
 // Docs writes a declaration's documentation as a TSDoc block,
 // each line prefixed with the given indentation, so a member's
-// doc sits at its member's depth.
+// doc is at its member's depth.
 func Docs(lines []string, prefix ...string) string {
 	if len(lines) == 0 {
 		return ""
@@ -230,8 +228,8 @@ func Docs(lines []string, prefix ...string) string {
 }
 
 // Spell writes a type reference. The source spelling passes
-// through verbatim; a missing one spells [Anonymous]. A reference
-// carrying arguments holds its bare name in Spelling, and the
+// through verbatim, and a missing one spells [Anonymous]. A
+// reference with arguments has its bare name in Spelling, and the
 // argument list spells here in angle brackets.
 func Spell(t *emit.TypeRef) string {
 	return spellref.Spell(t, "<", ">", Anonymous)
@@ -241,9 +239,9 @@ func Spell(t *emit.TypeRef) string {
 // nothing for a declaration stating none: the declared variance
 // before the name, bounds folded into an intersection behind
 // extends, and the default behind an equals sign. A value
-// parameter refuses: the model's Const takes a value argument,
-// TypeScript's const modifier narrows inference on a type one,
-// and spelling one as the other would misstate the declaration.
+// parameter refuses, because the model's Const takes a value
+// argument and TypeScript's const modifier applies to a type
+// argument.
 func TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -291,7 +289,8 @@ func variance(v symbol.Variance) string {
 // package-scoped one, abstract before an abstract class, and
 // async before an asynchronous function. A protected, private or
 // internal visibility refuses at module level, a final class
-// refuses because TypeScript seals nothing, and an annotation
+// refuses because TypeScript seals nothing, and a constant without a
+// value refuses, because const X = declares nothing. An annotation
 // list refuses on every declaration decorators cannot mark:
 // TypeScript decorates classes and their members alone.
 func Mods(d symbol.Symbol) (string, error) {
@@ -353,8 +352,11 @@ func Mods(d symbol.Symbol) (string, error) {
 		}
 		return exported(t.Visibility, t.Name)
 	case *emit.Constant:
-		if len(t.Annotations) > 0 {
+		switch {
+		case len(t.Annotations) > 0:
 			return "", undecorated(t.Name)
+		case t.Value == "":
+			return "", fmt.Errorf("typescript: a constant takes a value, and %s states none", t.Name)
 		}
 		return exported(t.Visibility, t.Name)
 	case *emit.Variable:
@@ -388,9 +390,12 @@ func exported(v symbol.Visibility, name string) (string, error) {
 
 // MemberMods writes a class member's leading keywords, in the
 // order TypeScript states them: accessibility, static, abstract,
-// override, async on methods, and readonly on fields. A final or
-// default-carrying method refuses, and so does a package or
-// internal accessibility, which class members do not take.
+// override, async on methods, and readonly on fields. A final method
+// refuses, because TypeScript seals nothing. A method stating a
+// default refuses, because a class method states its body outright,
+// and an abstract method with a body refuses, because an abstract
+// method is a signature. A package or internal accessibility
+// refuses, because class members do not take one.
 func MemberMods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Field:
@@ -415,6 +420,10 @@ func MemberMods(d symbol.Symbol) (string, error) {
 			return "", fmt.Errorf(
 				"typescript: a class method carries its body outright, and %s "+
 					"states a default", t.Name,
+			)
+		case t.Abstract && !t.Body.IsZero():
+			return "", fmt.Errorf(
+				"typescript: an abstract method is a signature, and %s states a body", t.Name,
 			)
 		case len(t.Throws) > 0:
 			return "", unthrown(t.Name)
@@ -463,9 +472,9 @@ func accessibility(v symbol.Visibility, name string) (string, error) {
 }
 
 // PropMods writes an interface property's keywords: readonly
-// where the property is immutable, and nothing else, because an
-// interface member takes no accessibility, no static level and no
-// decorator.
+// where the property is immutable. An interface member takes no
+// accessibility, no static level and no decorator, so each of them
+// refuses.
 func PropMods(f *emit.Field) (string, error) {
 	switch {
 	case f.Hard:
@@ -499,10 +508,14 @@ func PropMods(f *emit.Field) (string, error) {
 }
 
 // SigMods guards an interface method signature, which takes no
-// keywords at all: a stated modifier refuses rather than
-// dropping, and the signature spells bare.
+// keywords and no body. A stated modifier or a body is refused, and
+// the signature spells bare.
 func SigMods(m *emit.Method) (string, error) {
 	switch {
+	case !m.Body.IsZero():
+		return "", fmt.Errorf(
+			"typescript: an interface method is a signature, and %s states a body", m.Name,
+		)
 	case len(m.Annotations) > 0:
 		return "", undecorated(m.Name)
 	case m.Visibility != symbol.VisibilityUnknown &&
@@ -621,9 +634,9 @@ func undecorated(name string) error {
 }
 
 // Params writes a parameter list, the rest marker included and a
-// stated default behind its equals sign, verbatim the way the
-// model carries it. A rest parameter stating a default refuses,
-// because TypeScript initializes no rest.
+// stated default behind its equals sign, verbatim from the model. A
+// rest parameter stating a default refuses, because TypeScript
+// initializes no rest.
 func Params(ps []*emit.Param) (string, error) {
 	parts := make([]string, 0, len(ps))
 	unnamed := 0
@@ -635,7 +648,7 @@ func Params(ps []*emit.Param) (string, error) {
 				name = fmt.Sprintf("_%d", unnamed)
 			}
 			unnamed++
-		} else if !identifier(name) {
+		} else if !spell.IsIdentifier(name) {
 			return "", fmt.Errorf(
 				"typescript: a parameter admits no quoted form, and %q is "+
 					"not an identifier", name,
@@ -699,7 +712,8 @@ func Returns(d symbol.Symbol) string {
 	return annotationSep + promiseOpen + strings.TrimPrefix(annotation, annotationSep) + promiseClose
 }
 
-// The spellings an async callable's annotation joins.
+// annotationSep, promiseOpen and promiseClose are the spellings an
+// async callable's annotation joins.
 const (
 	annotationSep = ": "
 	promiseOpen   = "Promise<"

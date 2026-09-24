@@ -15,20 +15,20 @@ import (
 // ran.
 const FileTemplate = "{{" + render.BuiltinImports + "}}{{" + render.BuiltinDecls + "}}"
 
-// The kind templates, one per emit kind TypeScript declares at
-// module level. A method is absent by design: TypeScript states
-// members inside their type, so methods render through their
-// host's template, and a standalone method is reported as a kind
-// the target cannot spell.
+// The kind templates spell one emit kind each, for every kind
+// TypeScript declares at module level. A method is absent by design:
+// TypeScript states members inside their type, so methods render
+// through their host's template, and a standalone method is reported
+// as a kind the target cannot spell.
 const (
 	// StructTemplate spells a class: decorator lines above the
 	// declaration, its keywords and type parameters behind the
 	// name, then fields with initializers and methods with their
 	// bodies, each member under its own doc block and decorators,
 	// its keywords in TypeScript's stated order. An abstract
-	// method is a signature alone; a constructing method spells
-	// the constructor form, its own name and results dropped
-	// because the language grants a constructor neither.
+	// method is a signature alone. A constructing method spells
+	// the constructor form without its own name and results,
+	// because TypeScript gives a constructor neither.
 	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
 		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
@@ -68,12 +68,12 @@ const (
 	AliasTemplate = "{{docs .Doc}}{{mods .}}type {{.Name}}{{typeparams .TypeParams}}" +
 		" = {{spell .Target}};{{with .Comment}} // {{.}}{{end}}\n"
 
-	// EnumTemplate spells an enum: one member per variant, its
-	// stated value behind an equals sign, each under its own doc
-	// block.
+	// EnumTemplate spells an enum: one member per variant, its key
+	// quoted where the name is not an identifier, its stated value
+	// behind an equals sign, each under its own doc block.
 	EnumTemplate = "{{docs .Doc}}{{mods .}}{{if .Const}}const {{end}}enum {{.Name}} {\n" +
 		"{{- range .Variants.Items}}\n{{docs .Doc \"  \"}}" +
-		"  {{.Name}}{{with .Value}} = {{.}}{{end}},{{with .Comment}} // {{.}}{{end}}\n" +
+		"  {{enumkey .}}{{with .Value}} = {{.}}{{end}},{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// ConstantTemplate spells a constant, typed where the
