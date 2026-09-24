@@ -22,7 +22,7 @@ func TestLang(t *testing.T) {
 
 		assert.Equal(t, golang.Target, "golang", "the target a plan resolves")
 		assert.Equal(t, golang.Name, "golang", "the identity findings report under")
-		assert.Equal(t, golang.Extension, ".go", "the suffix every file carries")
+		assert.Equal(t, golang.Extension, ".go", "the suffix of every file")
 	})
 
 	t.Run("declares the comment forms whole", func(t *testing.T) {
