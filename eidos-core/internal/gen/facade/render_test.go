@@ -4,13 +4,13 @@
 package facade_test
 
 import (
-	"io/fs"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/internal/gen/facade"
 )
 
@@ -31,28 +31,7 @@ const unexportedType = "\ntype row struct{}\n"
 func mini(t *testing.T) string {
 	t.Helper()
 
-	root := t.TempDir()
-	src := filepath.Join("testdata", "mini")
-	err := filepath.WalkDir(src, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		rel, err := filepath.Rel(src, p)
-		if err != nil {
-			return err
-		}
-		content, err := os.ReadFile(p)
-		if err != nil {
-			return err
-		}
-		target := filepath.Join(root, rel)
-		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
-			return err
-		}
-		return os.WriteFile(target, content, 0o644)
-	})
-	assert.NoError(t, err, "the mini kernel copies")
-	return root
+	return coretest.CopyTree(t, filepath.Join("testdata", "mini"))
 }
 
 // poison writes one file into a mini kernel copy.

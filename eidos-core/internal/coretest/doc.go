@@ -9,7 +9,8 @@
 // and the fixtures below are the graph a case is written against:
 // [Package] and [Struct] build the node model a frontend would hand
 // over, [Frozen] and [Reading] put it behind a sealed graph and a
-// tracked reader.
+// tracked reader. [CopyTree] copies a fixture tree for a case that
+// writes into the tree it runs in.
 //
 // Nothing here belongs to a shipped surface. Plugin authors get
 // their own testing package; this one is for the kernel.
@@ -17,7 +18,8 @@
 // # Dependency position
 //
 // core/internal/coretest imports core/store, core/node,
-// core/symbol, core/internal/gosource, the assert module and the
-// Go stdlib. It is imported by test packages alone, so nothing it
-// depends on can cycle back through it.
+// core/symbol, core/diag, core/position, core/internal/gosource,
+// the assert module and the Go stdlib. It is imported by test
+// packages alone, so nothing it depends on can cycle back through
+// it.
 package coretest

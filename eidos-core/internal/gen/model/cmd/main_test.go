@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"go.dokimi.dev/assert"
+
+	"go.dokimi.dev/eidos/core/internal/coretest"
 )
 
 // generateTimeout bounds a wrapper run, so a hung generator fails
@@ -63,9 +65,14 @@ func TestMain(t *testing.T) {
 	t.Run("regenerates from inside the module", func(t *testing.T) {
 		t.Parallel()
 
-		out, err := runFrom(t, bin, ".")
+		// The run writes into a copy of a fixture module, so no test
+		// run writes the committed models the mirror guard compares.
+		root := coretest.CopyTree(t, filepath.Join("testdata", "module"))
+		out, err := runFrom(t, bin, filepath.Join(root, "symbol", "schema"))
 		assert.NoError(t, err, "the wrapper regenerates from inside the module: "+out)
 		assert.Empty(t, out, "and says nothing, because nothing went wrong")
+		_, err = os.Stat(filepath.Join(root, "emit", "kinds.gen.go"))
+		assert.NoError(t, err, "and the models arrive in the copied module")
 	})
 
 	t.Run("reports a module holding no schema", func(t *testing.T) {

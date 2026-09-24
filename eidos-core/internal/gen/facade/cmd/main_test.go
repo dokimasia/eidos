@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"go.dokimi.dev/assert"
+
+	"go.dokimi.dev/eidos/core/internal/coretest"
 )
 
 // generateTimeout bounds a wrapper run, so a hung generator fails
@@ -64,9 +66,14 @@ func TestMain(t *testing.T) {
 	t.Run("regenerates from inside the kernel", func(t *testing.T) {
 		t.Parallel()
 
-		out, err := runFrom(t, bin, ".")
+		// The run writes into a copy of the mini kernel, so no test
+		// run writes the committed facade the mirror guard compares.
+		root := coretest.CopyTree(t, filepath.Join("..", "testdata", "mini"))
+		out, err := runFrom(t, bin, filepath.Join(root, "eidos-core"))
 		assert.NoError(t, err, "the wrapper regenerates from inside the kernel: "+out)
 		assert.Empty(t, out, "and says nothing, because nothing went wrong")
+		_, err = os.Stat(filepath.Join(root, "eidos-sdk", "facade.gen.go"))
+		assert.NoError(t, err, "and the facade arrives beside the copied kernel")
 	})
 
 	t.Run("reports a module that is not the kernel", func(t *testing.T) {
