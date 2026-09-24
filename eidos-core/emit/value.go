@@ -49,7 +49,7 @@ func (k ValueKind) String() string {
 	}
 }
 
-// LiteralKind says what a literal's text is, so a target spells
+// LiteralKind names what a literal's text is, so a target spells
 // it its own way: the string's quotes, the absent value's name.
 // The zero kind names no literal.
 type LiteralKind uint8
@@ -59,11 +59,11 @@ const (
 	LiteralInt LiteralKind = iota + 1
 	// LiteralFloat is a floating-point number in decimal text.
 	LiteralFloat
-	// LiteralString is a string; Text holds the content, unquoted.
+	// LiteralString is a string. Text is the content, unquoted.
 	LiteralString
-	// LiteralBool is a truth value; Text is "true" or "false".
+	// LiteralBool is a truth value. Text is "true" or "false".
 	LiteralBool
-	// LiteralNil is the language's absent value; Text is empty.
+	// LiteralNil is the language's absent value. Text is empty.
 	LiteralNil
 	// LiteralRaw is Text in the source language, which only that
 	// language's backend spells and another language's refuses.
@@ -98,7 +98,7 @@ func (k LiteralKind) String() string {
 // consumer switches on it and reads without an assertion. The
 // zero Value names nothing.
 //
-// A copy of a Value shares what its pointers and slices reach:
+// A copy of a Value shares what its pointers and slices refer to:
 // Type, Inner and each composite field's Key are pointers, and
 // Fields and Args are slices. Inner is a pointer because a struct
 // cannot contain itself.
@@ -106,6 +106,7 @@ type Value struct {
 	Kind    ValueKind       `json:"kind"`
 	Literal LiteralKind     `json:"literal,omitzero"`
 	Text    string          `json:"text,omitzero"`
+	Bits    int             `json:"bits,omitzero"`   // LiteralInt and LiteralFloat: the number type's width, 0 for none
 	Lang    symbol.Lang     `json:"lang,omitzero"`   // LiteralRaw: the language the text is written in
 	Type    *TypeRef        `json:"type,omitzero"`   // Conversion and Composite: the type spelled
 	Callee  symbol.Identity `json:"callee,omitzero"` // Call: the function spelled and imported
@@ -129,10 +130,21 @@ type ValueField struct {
 func (v Value) IsZero() bool { return v.Kind == 0 }
 
 // Literal returns a literal value of one kind. Raw text takes
-// [Raw] instead, because a backend cannot spell it without knowing
-// the language it was written in.
+// [Raw] instead, because only a backend of the text's own language
+// can spell it.
 func Literal(k LiteralKind, text string) Value {
 	return Value{Kind: ValueLiteral, Literal: k, Text: text}
+}
+
+// Number returns a numeric literal written for a number type of a
+// width in bits: 32 for a single-precision float, 64 for a long
+// integer. A width of 0 states none, which is a platform-sized
+// integer or a number whose type the derivation did not know. A
+// target whose literal syntax depends on the width, such as Java's
+// float and long suffixes, reads it, and every other target spells
+// the text alone.
+func Number(k LiteralKind, text string, bits int) Value {
+	return Value{Kind: ValueLiteral, Literal: k, Text: text, Bits: bits}
 }
 
 // Raw returns a literal an author wrote as text in one language: a

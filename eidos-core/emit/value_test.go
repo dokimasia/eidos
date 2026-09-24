@@ -73,6 +73,22 @@ func TestValue(t *testing.T) {
 		})
 	})
 
+	t.Run("Number", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("states the width beside the literal", func(t *testing.T) {
+			t.Parallel()
+
+			n := emit.Number(emit.LiteralFloat, "1.5", 32)
+			assert.Equal(t, n.Kind, emit.ValueLiteral, "a number is a literal")
+			assert.Equal(t, n.Literal, emit.LiteralFloat, "of the kind given")
+			assert.Equal(t, n.Text, "1.5", "with the text given")
+			assert.Equal(t, n.Bits, 32, "and the width given")
+			assert.Equal(t, emit.Number(emit.LiteralInt, "42", 0), emit.Literal(emit.LiteralInt, "42"),
+				"a width of 0 is the plain literal")
+		})
+	})
+
 	t.Run("JSON", func(t *testing.T) {
 		t.Parallel()
 
@@ -82,6 +98,7 @@ func TestValue(t *testing.T) {
 			ref := &emit.TypeRef{Spelling: "Point"}
 			in := emit.Address(emit.Composite(ref,
 				emit.ValueField{Name: "X", Value: emit.Conversion(ref, emit.Literal(emit.LiteralInt, "42"))},
+				emit.ValueField{Name: "Y", Value: emit.Number(emit.LiteralFloat, "2.5", 32)},
 			))
 			b, err := json.Marshal(in)
 			assert.NoError(t, err, "the tree encodes")

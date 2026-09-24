@@ -648,7 +648,7 @@ const (
 	ValueAddress = core.ValueAddress
 )
 
-// LiteralKind says what a literal's text is, so a target spells
+// LiteralKind names what a literal's text is, so a target spells
 // it its own way: the string's quotes, the absent value's name.
 // The zero kind names no literal.
 type LiteralKind = core.LiteralKind
@@ -658,11 +658,11 @@ const (
 	LiteralInt = core.LiteralInt
 	// LiteralFloat is a floating-point number in decimal text.
 	LiteralFloat = core.LiteralFloat
-	// LiteralString is a string; Text holds the content, unquoted.
+	// LiteralString is a string. Text is the content, unquoted.
 	LiteralString = core.LiteralString
-	// LiteralBool is a truth value; Text is "true" or "false".
+	// LiteralBool is a truth value. Text is "true" or "false".
 	LiteralBool = core.LiteralBool
-	// LiteralNil is the language's absent value; Text is empty.
+	// LiteralNil is the language's absent value. Text is empty.
 	LiteralNil = core.LiteralNil
 	// LiteralRaw is Text in the source language, which only that
 	// language's backend spells and another language's refuses.
@@ -676,7 +676,7 @@ const (
 // consumer switches on it and reads without an assertion. The
 // zero Value names nothing.
 //
-// A copy of a Value shares what its pointers and slices reach:
+// A copy of a Value shares what its pointers and slices refer to:
 // Type, Inner and each composite field's Key are pointers, and
 // Fields and Args are slices. Inner is a pointer because a struct
 // cannot contain itself.
@@ -690,10 +690,21 @@ type Value = core.Value
 type ValueField = core.ValueField
 
 // Literal returns a literal value of one kind. Raw text takes
-// [Raw] instead, because a backend cannot spell it without knowing
-// the language it was written in.
+// [Raw] instead, because only a backend of the text's own language
+// can spell it.
 func Literal(k LiteralKind, text string) Value {
 	return core.Literal(k, text)
+}
+
+// Number returns a numeric literal written for a number type of a
+// width in bits: 32 for a single-precision float, 64 for a long
+// integer. A width of 0 states none, which is a platform-sized
+// integer or a number whose type the derivation did not know. A
+// target whose literal syntax depends on the width, such as Java's
+// float and long suffixes, reads it, and every other target spells
+// the text alone.
+func Number(k LiteralKind, text string, bits int) Value {
+	return core.Number(k, text, bits)
 }
 
 // Raw returns a literal an author wrote as text in one language: a
