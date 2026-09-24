@@ -78,6 +78,14 @@ const (
 	Blue
 )
 
+// Mode is an enumeration over a string.
+type Mode string
+
+const (
+	ModeRead  Mode = "read"
+	ModeWrite Mode = "write"
+)
+
 // Weight is a defined type over a builtin.
 type Weight float64
 

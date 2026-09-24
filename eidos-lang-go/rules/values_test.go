@@ -8,6 +8,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -71,10 +72,13 @@ func TestValues(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			s, a := pairOf(t, f, composite("*int", symbol.FormOptional, builtin("int")), "")
+			s, a := pairOf(t, f, composite("*Row", symbol.FormOptional, ref(fxPath, "Row", symbol.KindStruct)), "")
 			assert.Equal(t, s.Kind, emit.ValueAddress, "a pointer takes the address")
-			assert.Equal(t, s.Inner.Text, "42", "of the inner value")
-			assert.Equal(t, a.Inner.Text, "7", "differing inside")
+			assert.Equal(t, s.Inner.Kind, emit.ValueComposite, "of the inner composite")
+			assert.True(t, s.Inner.Fields[0].Value.Text != a.Inner.Fields[0].Value.Text, "differing inside")
+			pointer, _ := gorules.New().SamplesOf(composite("*int", symbol.FormOptional, builtin("int")), "", f.view)
+			assert.Equal(t, pointer.Refusal, rules.RefusedNoLiteral,
+				"a pointer to a builtin refuses, because Go takes no address of a literal")
 			s, a = pairOf(t, f, composite("[]string", symbol.FormList, builtin("string")), "tag")
 			assert.Equal(t, s.Kind, emit.ValueComposite, "a slice is a composite")
 			assert.Length(t, s.Fields, 1, "of one element")
@@ -134,10 +138,12 @@ func TestValues(t *testing.T) {
 			assert.Equal(
 				t,
 				*s.Inner,
-				emit.Literal(emit.LiteralRaw, "0"),
-				"the exact value the frontend stamped",
+				emit.Raw(golang.Lang, "0"),
+				"the exact value the frontend stamped, as Go text",
 			)
 			assert.Equal(t, a.Inner.Text, "1", "and the next")
+			s, _ = pairOf(t, f, ref(fxPath, "Mode", symbol.KindEnum), "")
+			assert.Equal(t, *s.Inner, emit.Raw(golang.Lang, `"read"`), "a string enumeration's too")
 			sample, _ := gorules.New().SamplesOf(ref(fxPath, "Bare", symbol.KindStruct), "", f.view)
 			assert.Equal(
 				t,
@@ -240,9 +246,15 @@ func TestValues(t *testing.T) {
 		)
 		assert.Equal(
 			t,
-			zero(ref(fxPath, "Color", symbol.KindEnum)).Kind,
-			emit.ValueConversion,
-			"an enumeration's",
+			zero(ref(fxPath, "Color", symbol.KindEnum)),
+			emit.Conversion(rules.EmitRef(ref(fxPath, "Color", symbol.KindEnum)), emit.Literal(emit.LiteralInt, "0")),
+			"an enumeration's converts its underlying zero",
+		)
+		assert.Equal(
+			t,
+			*zero(ref(fxPath, "Mode", symbol.KindEnum)).Inner,
+			emit.Literal(emit.LiteralString, ""),
+			"a string enumeration's zero is the empty string",
 		)
 		assert.Equal(
 			t,

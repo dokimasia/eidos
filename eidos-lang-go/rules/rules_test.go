@@ -32,6 +32,30 @@ func TestRules(t *testing.T) {
 		)
 		assert.Equal(t, policy.Shadowing, rules.ShadowPromote, "and promote")
 		assert.Equal(t, policy.Depth, 0, "to the kernel's default depth")
+		assert.True(t, policy.EmbedsAreFields, "and an embedded field is a member")
+	})
+
+	t.Run("records an embedded field beside the members it promotes", func(t *testing.T) {
+		t.Parallel()
+
+		f := loaded(t)
+		derived := f.decl(
+			t,
+			symbol.Identity{Lang: golang.Lang, Package: fxPath, Name: "Derived", Kind: symbol.KindStruct},
+		)
+		set, is := f.bound().MembersOf(derived)
+		assert.True(t, is, "a struct walks")
+		var names []string
+		for _, m := range set.Members {
+			switch d := m.Symbol.(type) {
+			case *node.Field:
+				names = append(names, d.Name)
+			case *node.Embed:
+				names = append(names, d.ID.Name)
+			}
+		}
+		assert.Equal(t, names, []string{"Name", "Base", "Kind"},
+			"Derived's field, its embedded field Base, and the Kind that Base promotes")
 	})
 
 	t.Run("classifies a context parameter and every other as input", func(t *testing.T) {

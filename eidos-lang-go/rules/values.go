@@ -39,6 +39,8 @@ const (
 	alternateSuffix  = "-b"
 	timePackage      = "time"
 	timeUnix         = "Unix"
+	// stringQuote opens the exact value of a string constant.
+	stringQuote = `"`
 )
 
 // SamplesOf derives a type's two distinguishable values: a builtin's
@@ -47,10 +49,12 @@ const (
 // first settable exported field, a slice's and an array's as a
 // one-element composite differing in the element, a map's as a
 // one-entry composite differing in the key, a pointer's as the
-// address of the inner value, time.Time as a call and
+// address of its inner composite, time.Time as a call and
 // time.Duration as a conversion. An interface, a function type, a
-// channel and an inline body refuse with no literal; a named type
-// the view does not hold refuses as unresolved.
+// channel, an inline body and a pointer to anything but a
+// composite refuse with no literal, because Go takes the address
+// of a composite literal alone; a named type the view does not
+// hold refuses as unresolved.
 func (r Rules) SamplesOf(
 	ref *node.TypeRef,
 	hint string,
@@ -75,7 +79,7 @@ func (r Rules) derive(
 	switch ref.Form {
 	case symbol.FormOptional:
 		sample, alternate := r.derive(child(ref, 0), hint, v, depth+1)
-		return lift(sample, emit.Address), lift(alternate, emit.Address)
+		return addressed(sample), addressed(alternate)
 	case symbol.FormList, symbol.FormArray:
 		sample, alternate := r.derive(child(ref, 0), hint, v, depth+1)
 		return lift(sample, elements(ref)), lift(alternate, elements(ref))
@@ -201,23 +205,43 @@ func (r Rules) twoVariantValues(e *node.Enum, v rules.View) (emit.Value, emit.Va
 			texts = append(texts, text)
 		}
 		if len(texts) == 2 {
-			return emit.Literal(
-					emit.LiteralRaw,
-					texts[0],
-				), emit.Literal(
-					emit.LiteralRaw,
-					texts[1],
-				), true
+			return emit.Raw(golang.Lang, texts[0]), emit.Raw(golang.Lang, texts[1]), true
 		}
 	}
 	return emit.Value{}, emit.Value{}, false
+}
+
+// enumZero returns the zero of an enumeration's underlying type,
+// read off the first variant value the frontend stamped: the empty
+// string where that value is a string, zero where it is a number,
+// and false where no variant has a stamped value.
+func (r Rules) enumZero(e *node.Enum, v rules.View) (emit.Value, bool) {
+	key, held := r.constKey(v)
+	if !held {
+		return emit.Value{}, false
+	}
+	for _, variant := range e.Variants {
+		if variant == nil {
+			continue
+		}
+		text, stamped := rules.Fact(v, variant.ID, key)
+		if !stamped {
+			continue
+		}
+		if strings.HasPrefix(text, stringQuote) {
+			return emit.Literal(emit.LiteralString, ""), true
+		}
+		return emit.Literal(emit.LiteralInt, sampleZero), true
+	}
+	return emit.Value{}, false
 }
 
 // ZeroValue returns the zero value of a type as Go spells it: nil
 // for a pointer, a slice, a map, a function, a channel and an
 // interface, an empty composite for a struct and an array, the
 // builtin zeros, a conversion of the underlying zero for a defined
-// type, and false for a spelling the rules cannot place.
+// type and for an enumeration whose variants' values name its
+// underlying type, and false for a spelling the rules cannot place.
 func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	if ref == nil {
 		return emit.Value{}, false
@@ -244,7 +268,11 @@ func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	case *node.Interface, *node.Sum:
 		return emit.Literal(emit.LiteralNil, ""), true
 	case *node.Enum:
-		return emit.Conversion(rules.EmitRef(ref), emit.Literal(emit.LiteralInt, sampleZero)), true
+		inner, placed := r.enumZero(d, v)
+		if !placed {
+			return emit.Value{}, false
+		}
+		return emit.Conversion(rules.EmitRef(ref), inner), true
 	case *node.Alias:
 		if d.Target == nil {
 			return emit.Value{}, false
@@ -329,6 +357,21 @@ func pair(k emit.LiteralKind, sample, alternate string) (rules.Sample, rules.Sam
 // refused returns one refusal twice.
 func refused(why rules.Refusal) (rules.Sample, rules.Sample) {
 	return rules.Refused(why), rules.Refused(why)
+}
+
+// addressed takes the address of a derived composite, and refuses
+// any other value with no literal, because Go takes the address of
+// a composite literal alone: &42 does not compile. A refusal passes
+// through.
+func addressed(s rules.Sample) rules.Sample {
+	switch {
+	case !s.OK():
+		return s
+	case s.Value.Kind != emit.ValueComposite:
+		return rules.Refused(rules.RefusedNoLiteral)
+	default:
+		return rules.Of(emit.Address(s.Value))
+	}
 }
 
 // lift wraps a derived sample, and passes a refusal through.

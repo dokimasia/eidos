@@ -36,11 +36,14 @@ func (Rules) Lang() symbol.Lang { return golang.Lang }
 // Members walks embedded fields under promotion, to the kernel's
 // default depth: Go has no extends and no implements list, and an
 // embedded type's members promote unless a shallower one shadows
-// them, two at one depth cancelling both.
+// them, two at one depth cancelling both. A struct's embedded field
+// is itself a member, named by its type's bare name, so it shadows
+// a deeper member of that name.
 func (Rules) Members() rules.MemberPolicy {
 	return rules.MemberPolicy{
-		Contributes: []rules.Contribution{rules.ContributesEmbeds},
-		Shadowing:   rules.ShadowPromote,
+		Contributes:     []rules.Contribution{rules.ContributesEmbeds},
+		Shadowing:       rules.ShadowPromote,
+		EmbedsAreFields: true,
 	}
 }
 
