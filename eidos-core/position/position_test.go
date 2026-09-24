@@ -30,4 +30,28 @@ func TestPos(t *testing.T) {
 		assert.False(t, (position.Pos{File: "a.go", Line: 1, Col: 1}).IsZero(),
 			"a located Pos is not the absence marker")
 	})
+
+	t.Run("Compare", func(t *testing.T) {
+		t.Parallel()
+
+		at := position.Pos{File: "b.go", Line: 5, Col: 3}
+		cases := []struct {
+			name  string
+			other position.Pos
+			want  int
+		}{
+			{name: "an equal position compares equal", other: at, want: 0},
+			{name: "the file decides first", other: position.Pos{File: "a.go", Line: 9, Col: 9}, want: 1},
+			{name: "then the line", other: position.Pos{File: "b.go", Line: 6, Col: 1}, want: -1},
+			{name: "then the column", other: position.Pos{File: "b.go", Line: 5, Col: 2}, want: 1},
+		}
+		for _, tt := range cases {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, at.Compare(tt.other), tt.want, tt.name)
+				assert.Equal(t, tt.other.Compare(at), -tt.want, "and the order is antisymmetric")
+			})
+		}
+	})
 }

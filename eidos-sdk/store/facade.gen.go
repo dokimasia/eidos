@@ -98,7 +98,8 @@ func NewReadSet() *ReadSet {
 // The codes this package refuses under. A code is declared where it
 // is registered, so the constant and the registry cannot drift.
 var (
-	// FrozenWrite refuses a structural write after the seal.
+	// FrozenWrite refuses a structural write after the seal: a
+	// package added, or a directive or stamp attached.
 	FrozenWrite = core.FrozenWrite
 	// DuplicatePackage refuses a package identity claimed twice.
 	DuplicatePackage = core.DuplicatePackage

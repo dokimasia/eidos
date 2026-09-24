@@ -54,6 +54,48 @@ func TestDiag(t *testing.T) {
 		})
 	})
 
+	t.Run("Compare", func(t *testing.T) {
+		t.Parallel()
+
+		base := diag.Diag{
+			Code:   diag.Code{Prefix: "EID", Number: 7},
+			Pos:    position.Pos{File: "b.go", Line: 5, Col: 1},
+			Msg:    "m",
+			Origin: "freeze",
+		}
+		later := func(edit func(*diag.Diag)) diag.Diag {
+			d := base
+			edit(&d)
+			return d
+		}
+		cases := []struct {
+			name  string
+			other diag.Diag
+		}{
+			{name: "the position decides first", other: later(func(d *diag.Diag) {
+				d.Pos.Line, d.Code.Number, d.Msg = 6, 1, "a"
+			})},
+			{name: "then the code's prefix", other: later(func(d *diag.Diag) {
+				d.Code.Prefix, d.Code.Number = "GOLANG", 1
+			})},
+			{name: "then the code's number", other: later(func(d *diag.Diag) {
+				d.Code.Number, d.Msg = 8, "a"
+			})},
+			{name: "then the message", other: later(func(d *diag.Diag) { d.Msg = "n" })},
+			{name: "then the origin", other: later(func(d *diag.Diag) { d.Origin = "generate" })},
+		}
+		for _, tt := range cases {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, base.Compare(tt.other), -1, tt.name)
+				assert.Equal(t, tt.other.Compare(base), 1, "and the order is antisymmetric")
+			})
+		}
+		twin := base
+		assert.Equal(t, base.Compare(twin), 0, "a finding compares equal to its copy")
+	})
+
 	t.Run("zero value", func(t *testing.T) {
 		t.Parallel()
 

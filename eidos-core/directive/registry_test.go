@@ -76,6 +76,17 @@ func TestRegistry(t *testing.T) {
 			assert.HasError(t, r.Ignore(":"), "and a bare colon is one")
 		})
 
+		t.Run("refuses a bare name two plugins claim", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.Register(wellFormed("mockgen", "stub")), "the first claimant registers")
+			assert.NoError(t, r.Register(wellFormed("fakegen", "stub")), "and so does the second")
+			err := r.Ignore("stub")
+			assert.HasError(t, err, "an ignore of a bare name two plugins claim refuses")
+			assert.Contains(t, err.Error(), "stub", "naming the claimed spelling")
+		})
+
 		t.Run("refuses at the seal when the schema registers second", func(t *testing.T) {
 			t.Parallel()
 
@@ -234,6 +245,59 @@ func TestRegistry(t *testing.T) {
 						},
 					},
 					want: "mode",
+				},
+				{
+					name: "a list param stating no element type",
+					schema: directive.Schema{
+						Plugin: "listgen", Name: "collect", Doc: "collects the named members",
+						Params: []directive.ParamSpec{
+							{Key: "members", Type: directive.TypeList, Doc: "the collected members"},
+						},
+					},
+					want: "members",
+				},
+				{
+					name: "a reference param stating no resolution",
+					schema: directive.Schema{
+						Plugin: "mockgen", Name: "stub", Doc: "names a target",
+						Params: []directive.ParamSpec{
+							{Key: "target", Type: directive.TypeReference, Doc: "the stubbed target"},
+						},
+					},
+					want: "target",
+				},
+				{
+					name: "a list of references stating no resolution",
+					schema: directive.Schema{
+						Plugin: "mockgen", Name: "stub", Doc: "names targets",
+						Params: []directive.ParamSpec{
+							{
+								Key: "targets", Type: directive.TypeList,
+								ListOf: directive.TypeReference, Doc: "the stubbed targets",
+							},
+						},
+					},
+					want: "targets",
+				},
+				{
+					name:   "a name no carrier can spell",
+					schema: wellFormed("mockgen", "st.ub"),
+					want:   "st.ub",
+				},
+				{
+					name:   "a plugin prefix no carrier can spell",
+					schema: wellFormed("gen.sample", "stub"),
+					want:   "gen.sample",
+				},
+				{
+					name: "a param key no carrier can spell",
+					schema: directive.Schema{
+						Plugin: "mockgen", Name: "stub", Doc: "names a dotted key",
+						Params: []directive.ParamSpec{
+							{Key: "max.len", Type: directive.TypeInt, Doc: "the bound"},
+						},
+					},
+					want: "max.len",
 				},
 			}
 			for _, tt := range tests {

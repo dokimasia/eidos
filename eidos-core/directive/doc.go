@@ -23,11 +23,11 @@
 //
 // # The kernel's names
 //
-// Four names belong to the kernel and register through [Kernel]:
-// meta, out, diag and skip. Their semantics stay with their
-// owners; what lives here is the spelling and its validation. The
-// reserved keys [ReservedOut] and [ReservedTag] are admitted on
-// every directive and no plugin schema may claim them.
+// Six names belong to the kernel and register through [Kernel]:
+// meta, out, diag, skip, sample and witness. Their semantics stay
+// with their owners; what lives here is the spelling and its
+// validation. The reserved keys [ReservedOut] and [ReservedTag] are
+// admitted on every directive and no plugin schema may claim them.
 //
 // # Failure semantics
 //

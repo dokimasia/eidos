@@ -71,11 +71,12 @@ var (
 	UnknownMetadataKey = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number: 17, Meaning: "a directive names a metadata key or group nothing registered",
 	})
-	// DanglingSubject refuses a directive attached to a subject
-	// the graph never got. The check lives with whoever holds the
-	// graph; the code lives with its class.
+	// DanglingSubject refuses a directive or a classification
+	// stamp attached to a subject the graph never got. The check
+	// lives with whoever holds the graph; the code lives with its
+	// class.
 	DanglingSubject = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
-		Number: 18, Meaning: "a directive is attached to a subject the graph does not hold",
+		Number: 18, Meaning: "a directive or stamp is attached to a subject the graph does not hold",
 	})
 	// UnsealedRegistry refuses validation against a registry still
 	// registering: a defect in the composition, not in a carrier.

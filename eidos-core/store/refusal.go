@@ -8,10 +8,11 @@ import "go.dokimi.dev/eidos/core/diag"
 // The codes this package refuses under. A code is declared where it
 // is registered, so the constant and the registry cannot drift.
 var (
-	// FrozenWrite refuses a structural write after the seal.
+	// FrozenWrite refuses a structural write after the seal: a
+	// package added, or a directive or stamp attached.
 	FrozenWrite = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number:  1,
-		Meaning: "a declaration was added after Freeze",
+		Meaning: "a package was added or an attachment arrived after Freeze",
 	})
 	// DuplicatePackage refuses a package identity claimed twice.
 	DuplicatePackage = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{

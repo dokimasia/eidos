@@ -158,6 +158,13 @@ func TestGrammar(t *testing.T) {
 				{name: "a bad key spelling inside a list keyed argument", payload: "stub k=[2x=1]"},
 				{name: "an escape cut off by the end", payload: `doc text="a\`},
 				{name: "a broken value inside a list", payload: `stub k=["a\z"]`},
+				{name: "an argument glued to a quoted value", payload: `stub tag="t"btree`},
+				{name: "an argument glued to a list", payload: "stub k=[a]b"},
+				{name: "a name glued to a non-identifier byte", payload: "stüb"},
+				{name: "a name carrying a second prefix", payload: "mockgen:stub:x"},
+				{name: "whitespace after a list opens", payload: "index fields=[ a]"},
+				{name: "whitespace before a list closes", payload: "index fields=[a ]"},
+				{name: "a list containing only whitespace", payload: "index fields=[ ]"},
 			}
 			for _, tt := range tests {
 				t.Run(tt.name, func(t *testing.T) {
@@ -176,6 +183,14 @@ func TestGrammar(t *testing.T) {
 			_, err := directive.Parse("stub tag=")
 			assert.HasError(t, err, "the empty value is refused")
 			assert.Contains(t, err.Error(), "9", "at its byte offset")
+		})
+
+		t.Run("names an unknown escape by its character", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := directive.Parse(`doc text="\é"`)
+			assert.HasError(t, err, "an escape outside the four is refused")
+			assert.Contains(t, err.Error(), `\é`, "naming the escape the author wrote")
 		})
 	})
 
@@ -211,6 +226,11 @@ func TestGrammar(t *testing.T) {
 				name:  "a backslash inside a line is not a continuation",
 				lines: []string{`doc text="a\nb"`},
 				want:  `doc text="a\nb"`,
+			},
+			{
+				name:  "a continued line's leading blanks fold into the one space",
+				lines: []string{`doc text="hello \`, "  \tworld\""},
+				want:  `doc text="hello world"`,
 			},
 		}
 		for _, tt := range tests {

@@ -82,19 +82,15 @@ type Graph struct {
 	// enumeration is deterministic without sorting per call.
 	pkgOrder []*node.Package
 
-	// attached holds raw directive instances per subject as they
-	// arrive; the seal sorts them and builds the directive index
-	// beside the kind index.
-	attached       sync.Map
-	directives     map[symbol.Identity][]directive.Raw
-	directiveOrder []symbol.Identity
-	byDirective    map[directive.Name][]node.Declaration
+	// directives contains the raw directive instances per subject.
+	// The seal sorts them and builds the directive index beside the
+	// kind index.
+	directives  attachSet[directive.Raw]
+	byDirective map[directive.Name][]node.Declaration
 
-	// stamped holds raw classification stamps per subject as they
-	// arrive; the seal sorts them the way it sorts directives.
-	stamped    sync.Map
-	stamps     map[symbol.Identity][]meta.RawStamp
-	stampOrder []symbol.Identity
+	// stamps contains the raw classification stamps per subject. The
+	// seal sorts them the way it sorts directives.
+	stamps attachSet[meta.RawStamp]
 }
 
 // New returns an unfrozen graph holding nothing.
@@ -203,7 +199,7 @@ func (g *Graph) Freeze() {
 	fill.Wait()
 
 	g.freezeDirectives()
-	g.freezeStamps()
+	g.stamps.seal(compareStamp)
 
 	// The collected slices are spent: the indexes hold everything.
 	for _, entry := range loaded {
@@ -265,17 +261,11 @@ func (g *Graph) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 }
 
 // Holds reports whether the graph carries a subject under this
-// identity, untracked: a declaration through the identity index,
-// or a package through the package index, because a package is the
-// container its declarations sit in rather than one of them. A
-// caller checking whether an attachment's subject survived the
-// load asks here, where Lookup alone would call every package's
-// record dangling.
+// identity, untracked. The identity index contains every package
+// beside its declarations, so one lookup checks a package subject
+// and a declaration subject alike.
 func (g *Graph) Holds(id symbol.Identity) bool {
-	if _, held := g.byID[id]; held {
-		return true
-	}
-	_, held := g.byPkg[id]
+	_, held := g.byID[id]
 	return held
 }
 

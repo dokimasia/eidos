@@ -25,7 +25,17 @@ type Registry struct {
 	// ignored holds the spellings the workspace opted out of
 	// reporting: a full name, or a plugin prefix with its colon.
 	ignored map[Name]bool
-	sealed  bool
+	// constraints maps each schema to its Requires and ConflictsWith
+	// as canonical spellings. The seal fills it, so validation
+	// resolves nothing per instance.
+	constraints map[Name]resolved
+	sealed      bool
+}
+
+// resolved is one schema's constraints as canonical spellings.
+type resolved struct {
+	requires  []Name
+	conflicts []Name
 }
 
 // NewRegistry returns a registry holding nothing.
@@ -34,6 +44,7 @@ func NewRegistry() *Registry {
 		byCanonical: map[Name]Schema{},
 		claimants:   map[Name][]Name{},
 		ignored:     map[Name]bool{},
+		constraints: map[Name]resolved{},
 	}
 }
 
@@ -75,13 +86,15 @@ func (r *Registry) Ignored(n Name) bool {
 //
 // It refuses: a registration after the seal, a kernel name claimed
 // by a plugin, an empty Plugin on any name outside the kernel's
-// four, a reserved key among the params, a param key or role
-// declared twice, a positional param carrying Roles, an undeclared
-// role on a param, a role requirement on a schema declaring no
-// roles, a list of lists, an untyped param, and an empty doc
-// anywhere. One plugin claiming one name twice is refused naming
-// both docs; two plugins claiming one bare name both register, and
-// the bare spelling becomes ambiguous.
+// six, a name, plugin prefix or param key the grammar cannot spell,
+// a reserved key among the params, a param key or role declared
+// twice, a positional param carrying Roles, an undeclared role on a
+// param, a role requirement on a schema declaring no roles, a list
+// of lists, a list stating no element type, a reference stating no
+// resolution, an untyped param, and an empty doc anywhere. One
+// plugin claiming one name twice is refused naming both docs; two
+// plugins claiming one bare name both register, and the bare
+// spelling becomes ambiguous.
 func (r *Registry) Register(s Schema) error {
 	if r.sealed {
 		return fmt.Errorf("directive: %s registers after the seal: registration ends there", s.Name)
@@ -114,9 +127,10 @@ func (r *Registry) Seal() []error {
 	}
 	for _, canonical := range r.canonicalOrder() {
 		s := r.byCanonical[canonical]
-		for _, constraint := range [2][]Name{s.Requires, s.ConflictsWith} {
+		var c resolved
+		for i, constraint := range [2][]Name{s.Requires, s.ConflictsWith} {
 			for _, named := range constraint {
-				target, held := r.ResolveName(named)
+				_, target, held := r.lookup(named)
 				if !held {
 					faults = append(faults, fmt.Errorf(
 						"directive: %s constrains %q, which nothing registered or two claim",
@@ -124,13 +138,19 @@ func (r *Registry) Seal() []error {
 					))
 					continue
 				}
-				if target.Canonical() == canonical {
+				if target == canonical {
 					faults = append(faults, fmt.Errorf(
 						"directive: %s constrains itself", canonical,
 					))
 				}
+				if i == 0 {
+					c.requires = append(c.requires, target)
+				} else {
+					c.conflicts = append(c.conflicts, target)
+				}
 			}
 		}
+		r.constraints[canonical] = c
 	}
 	r.sealed = true
 	return faults
@@ -146,14 +166,8 @@ func (r *Registry) Sealed() bool { return r.sealed }
 // with two claimants it returns false, and Candidates names them
 // for the diagnostic.
 func (r *Registry) ResolveName(n Name) (Schema, bool) {
-	if s, held := r.byCanonical[n]; held {
-		return s, true
-	}
-	claimants := r.claimants[n]
-	if len(claimants) != 1 {
-		return Schema{}, false
-	}
-	return r.byCanonical[claimants[0]], true
+	s, _, held := r.lookup(n)
+	return s, held
 }
 
 // Candidates returns every canonical spelling that claims a bare
@@ -162,10 +176,30 @@ func (r *Registry) Candidates(n Name) []Name {
 	return slices.Clone(r.claimants[n])
 }
 
+// lookup returns the schema a spelling addresses together with its
+// canonical spelling, which is the key it is held under, so no
+// caller spells the canonical form again.
+func (r *Registry) lookup(n Name) (Schema, Name, bool) {
+	if s, held := r.byCanonical[n]; held {
+		return s, n, true
+	}
+	claimants := r.claimants[n]
+	if len(claimants) != 1 {
+		return Schema{}, "", false
+	}
+	return r.byCanonical[claimants[0]], claimants[0], true
+}
+
+// constraintsOf returns a schema's constraints as the seal resolved
+// them.
+func (r *Registry) constraintsOf(canonical Name) resolved { return r.constraints[canonical] }
+
 // claimedIgnore refuses an ignore that would silence a registered
-// schema: the name itself, or a prefix covering one.
+// schema: the name itself, a bare name any plugin claims, or a
+// prefix covering one. A bare name two plugins claim is refused as
+// well, so validation reports each of its instances as ambiguous.
 func (r *Registry) claimedIgnore(n Name) error {
-	if _, held := r.ResolveName(n); held {
+	if _, held := r.byCanonical[n]; held || len(r.claimants[n]) > 0 {
 		return fmt.Errorf("directive: ignoring %s would silence its registered schema", n)
 	}
 	if !strings.HasSuffix(string(n), string(prefixSep)) {
@@ -191,6 +225,21 @@ func admissible(s Schema) error {
 	}
 	if s.Plugin != "" && kernel {
 		return fmt.Errorf("directive: %s is a kernel name, which no plugin claims", s.Name)
+	}
+	// A carrier writes the name, the prefix and every key through the
+	// grammar's ident, so a spelling outside it registers a schema no
+	// author can address.
+	if !isIdentifier(string(s.Name)) {
+		return fmt.Errorf("directive: %q is no name a carrier can spell", s.Name)
+	}
+	if s.Plugin != "" && !isIdentifier(s.Plugin) {
+		return fmt.Errorf("directive: %s names plugin %q, which no carrier can spell as a prefix",
+			s.Name, s.Plugin)
+	}
+	for _, spec := range slices.Concat(s.Positional, s.Params) {
+		if !isIdentifier(string(spec.Key)) {
+			return fmt.Errorf("directive: %s param %q is no key a carrier can spell", s.Name, spec.Key)
+		}
 	}
 	if s.Doc == "" {
 		return fmt.Errorf("directive: %s states no semantics: the schema is its documentation", s.Name)
@@ -270,6 +319,13 @@ func admissibleParam(
 			"directive: %s param %q nests a list in a list: a directive that "+
 				"needs structure splits in two", s.Name, spec.Key,
 		)
+	}
+	if spec.Type == TypeList && spec.ListOf == 0 {
+		return fmt.Errorf("directive: %s param %q states no element type for its list", s.Name, spec.Key)
+	}
+	references := spec.Type == TypeReference || spec.Type == TypeList && spec.ListOf == TypeReference
+	if references && spec.Resolution == ResolveNone {
+		return fmt.Errorf("directive: %s param %q references and states no resolution kind", s.Name, spec.Key)
 	}
 	if _, taken := keys[spec.Key]; taken {
 		return fmt.Errorf("directive: %s declares param %q twice", s.Name, spec.Key)

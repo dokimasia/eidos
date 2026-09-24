@@ -3,7 +3,11 @@
 
 package diag
 
-import "go.dokimi.dev/eidos/core/position"
+import (
+	"cmp"
+
+	"go.dokimi.dev/eidos/core/position"
+)
 
 // Origin names whoever reported a finding or wrote a claim: a
 // plugin's declared name, or one of the kernel phases below. The
@@ -58,4 +62,19 @@ type Diag struct {
 	// Related holds secondary positions, such as the colliding twin
 	// or the export a refusal depends on.
 	Related []position.Pos
+}
+
+// Compare orders two findings by position, then code, then message,
+// then origin, returning a negative number, zero or a positive one
+// as d sorts before, with or after o. It is the canonical order a
+// producer reporting from parallel workers merges its findings in,
+// so the report does not depend on which worker finished first.
+func (d Diag) Compare(o Diag) int {
+	return cmp.Or(
+		d.Pos.Compare(o.Pos),
+		cmp.Compare(d.Code.Prefix, o.Code.Prefix),
+		cmp.Compare(d.Code.Number, o.Code.Number),
+		cmp.Compare(d.Msg, o.Msg),
+		cmp.Compare(d.Origin, o.Origin),
+	)
 }

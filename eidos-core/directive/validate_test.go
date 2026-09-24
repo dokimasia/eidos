@@ -456,32 +456,82 @@ func TestValidate(t *testing.T) {
 		})
 	})
 
-	t.Run("a list param stating no element type refuses its elements", func(t *testing.T) {
+	t.Run("reports in one order whatever the maps iterate in", func(t *testing.T) {
 		t.Parallel()
 
-		// Registration refuses a list of lists and an untyped param,
-		// but a list whose ListOf is unset states a type for itself
-		// and none for what it holds, so the elements refuse here.
-		untyped := directive.Schema{
-			Plugin: "listgen", Name: "collect", Doc: "collects the named members",
+		scoped := directive.Schema{
+			Plugin: "scoped", Name: "gate", Doc: "gates two server-side keys",
+			Roles: []string{"client", "server"},
 			Params: []directive.ParamSpec{
-				{Key: "members", Type: directive.TypeList, Doc: "the collected members"},
+				{Key: "alpha", Type: directive.TypeString, Roles: []string{"server"}, Doc: "the first key"},
+				{Key: "beta", Type: directive.TypeString, Roles: []string{"server"}, Doc: "the second key"},
 			},
 		}
-		r := sealed(t, untyped)
+		r := sealed(t, scoped, wellFormed("weaver", "weave"), wellFormed("mockgen", "stub"))
+		raws := []directive.Raw{
+			parse(t, "weaver:weave", 1),
+			parse(t, "mockgen:stub", 2),
+			parse(t, "weaver:weave", 3),
+			parse(t, "mockgen:stub", 4),
+			parse(t, "scoped:gate role=client beta=b alpha=a", 5),
+		}
+		var first []string
+		for range 20 {
+			sink := diag.NewSink()
+			directive.Validate(validationSubject, raws, r, keyed(t), nil, sink)
+			var got []string
+			for d := range sink.All() {
+				got = append(got, d.Msg)
+			}
+			if first == nil {
+				first = got
+			}
+			assert.Equal(t, got, first, "every validation of one subject reports in one order")
+		}
+		assert.Length(t, first, 4, "two duplicate pairs and two keys the role refuses")
+		assert.ContainsInOrder(t, strings.Join(first, "\n"),
+			[]string{"alpha", "beta", "weaver:weave appears twice", "mockgen:stub appears twice"},
+			"typing findings first, keys in key order, then the duplicates in position order")
+	})
 
+	t.Run("a value that fails typing is not also reported as omitted", func(t *testing.T) {
+		t.Parallel()
+
+		required := directive.Schema{
+			Plugin: "sizer", Name: "size", Doc: "sizes a buffer",
+			Positional: []directive.ParamSpec{
+				{Key: "unit", Type: directive.TypeString, Required: true, Doc: "the size unit"},
+			},
+			Params: []directive.ParamSpec{
+				{Key: "depth", Type: directive.TypeInt, Required: true, Doc: "the size"},
+			},
+		}
+		r := sealed(t, required)
 		sink := diag.NewSink()
 		got := directive.Validate(validationSubject,
-			[]directive.Raw{parse(t, "listgen:collect members=[a]", 1)}, r, keyed(t), nil, sink)
-
+			[]directive.Raw{parse(t, "sizer:size [kb] depth=deep", 1)}, r, keyed(t), nil, sink)
 		assert.Empty(t, got, "the instance is refused")
-		assert.True(t, slices.Contains(coretest.Codes(sink), directive.TypeMismatch),
-			"under the type-mismatch code")
-		found := false
-		for d := range sink.All() {
-			found = found || strings.Contains(d.Msg, "members")
-		}
-		assert.True(t, found, "naming the param whose elements state no type")
+		assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.TypeMismatch, directive.BadSpelling},
+			"for the two values it wrote wrong, and for no param it omitted")
+	})
+
+	t.Run("a conflict both schemas declare reports once", func(t *testing.T) {
+		t.Parallel()
+
+		hates := wellFormed("weaver", "weave")
+		hates.ConflictsWith = []directive.Name{"indexer:index"}
+		hated := fullSchema()
+		hated.ConflictsWith = []directive.Name{"weaver:weave"}
+		r := sealed(t, hated, hates)
+
+		sink := diag.NewSink()
+		got := directive.Validate(validationSubject, []directive.Raw{
+			parse(t, "indexer:index btree", 1),
+			parse(t, "weaver:weave", 2),
+		}, r, keyed(t), nil, sink)
+		assert.Empty(t, got, "the pair is refused whole")
+		assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.Conflict},
+			"one contradiction is one Error naming both positions")
 	})
 
 	t.Run("validating nothing returns nothing", func(t *testing.T) {

@@ -4,8 +4,8 @@
 package directive
 
 import (
-	"cmp"
 	"fmt"
+	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -57,10 +57,11 @@ func Validate(
 	}
 
 	ordered := slices.Clone(ds)
-	slices.SortFunc(ordered, func(a, b Raw) int { return comparePos(a.Pos, b.Pos) })
+	slices.SortFunc(ordered, func(a, b Raw) int { return a.Pos.Compare(b.Pos) })
 
 	// Type each instance alone, keeping its schema for the
-	// subject-wide checks below.
+	// subject-wide checks below. A typed instance's Name is its
+	// schema's canonical spelling.
 	typed := make([]checked, 0, len(ordered))
 	for _, raw := range ordered {
 		if instance, schema, ok := v.instance(raw); ok {
@@ -70,14 +71,20 @@ func Validate(
 
 	// The subject-wide checks: repeatability, then the constraints
 	// between directives. A failing instance drops; the survivors
-	// number per schema in position order.
+	// number per schema in position order. Every loop runs in
+	// position order, so the findings arrive in one order.
 	present := map[Name][]int{}
+	var seen []Name
 	for i, c := range typed {
-		canonical := c.schema.Canonical()
+		canonical := c.instance.Name
+		if _, held := present[canonical]; !held {
+			seen = append(seen, canonical)
+		}
 		present[canonical] = append(present[canonical], i)
 	}
 	dropped := make([]bool, len(typed))
-	for canonical, indexes := range present {
+	for _, canonical := range seen {
+		indexes := present[canonical]
 		if len(indexes) > 1 && !typed[indexes[0]].schema.Repeatable {
 			first := typed[indexes[0]].instance.Pos
 			for _, i := range indexes[1:] {
@@ -89,28 +96,30 @@ func Validate(
 			}
 		}
 	}
+	// A conflict is symmetric, so a pair both schemas declare is one
+	// contradiction and reports once.
+	reported := map[[2]int]bool{}
 	for i, c := range typed {
-		for _, required := range c.schema.Requires {
-			target, _ := v.registry.ResolveName(required)
-			if _, held := present[target.Canonical()]; !held {
+		constraints := v.registry.constraintsOf(c.instance.Name)
+		for _, target := range constraints.requires {
+			if _, held := present[target]; !held {
 				v.report(RequirementUnmet, c.instance.Pos,
 					"%s requires %s, which %s does not carry",
-					c.schema.Canonical(), required, subject)
+					c.instance.Name, target, subject)
 				dropped[i] = true
 			}
 		}
-		for _, conflicting := range c.schema.ConflictsWith {
-			target, _ := v.registry.ResolveName(conflicting)
-			others, held := present[target.Canonical()]
-			if !held {
-				continue
-			}
-			for _, other := range others {
-				v.reportRelated(Conflict, c.instance.Pos, typed[other].instance.Pos,
-					"%s conflicts with %s on %s",
-					c.schema.Canonical(), target.Canonical(), subject)
+		for _, target := range constraints.conflicts {
+			for _, other := range present[target] {
 				dropped[i] = true
 				dropped[other] = true
+				pair := [2]int{min(i, other), max(i, other)}
+				if reported[pair] {
+					continue
+				}
+				reported[pair] = true
+				v.reportRelated(Conflict, c.instance.Pos, typed[other].instance.Pos,
+					"%s conflicts with %s on %s", c.instance.Name, target, subject)
 			}
 		}
 	}
@@ -173,23 +182,26 @@ func (v *validator) reportRelated(
 // answer means the violations are reported and the instance drops.
 func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	v.at = raw.Pos
-	schema, held := v.registry.ResolveName(raw.Name)
+	schema, canonical, held := v.registry.lookup(raw.Name)
 	if !held {
+		// An ambiguous spelling reports even where an ignore covers
+		// it: the registry refuses such an ignore, and a claimed name
+		// is never a foreign tool's.
+		if candidates := v.registry.Candidates(raw.Name); len(candidates) > 1 {
+			v.report(AmbiguousName, raw.Pos,
+				"%s has two claimants: write one of %s", raw.Name, nameList(candidates))
+			return Directive{}, Schema{}, false
+		}
 		if v.registry.Ignored(raw.Name) {
 			// The workspace opted out: a foreign tool's carrier drops
 			// without a finding.
 			return Directive{}, Schema{}, false
 		}
-		if candidates := v.registry.Candidates(raw.Name); len(candidates) > 1 {
-			v.report(AmbiguousName, raw.Pos,
-				"%s has two claimants: write one of %s", raw.Name, nameList(candidates))
-		} else {
-			v.report(UnclaimedName, raw.Pos, "%s names no registered schema", raw.Name)
-		}
+		v.report(UnclaimedName, raw.Pos, "%s names no registered schema", raw.Name)
 		return Directive{}, Schema{}, false
 	}
 
-	d := Directive{Name: schema.Canonical(), Params: map[ParamKey]Value{}, Pos: raw.Pos}
+	d := Directive{Name: canonical, Params: map[ParamKey]Value{}, Pos: raw.Pos}
 	ok := true
 	positional := 0
 	seen := map[ParamKey]int{}
@@ -255,13 +267,14 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	}
 
 	// The role gates which params were legal and which are owed,
-	// so its checks run after every argument is read.
+	// so its checks run after every argument is read. Keys check in
+	// key order, so the findings arrive in one order.
 	if schema.RolesRequired && d.Role == "" {
 		v.report(MissingRole, raw.Pos,
 			"%s demands a role, one of %s", d.Name, strings.Join(schema.Roles, ", "))
 		ok = false
 	}
-	for key := range d.Params {
+	for _, key := range slices.Sorted(maps.Keys(d.Params)) {
 		spec, declared := findParam(schema, key)
 		if !declared && schema.Open != nil && key != ReservedOut && key != ReservedTag {
 			spec, declared = *schema.Open, true
@@ -275,15 +288,18 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			ok = false
 		}
 	}
+	// A requirement is met by what the author wrote. A value that
+	// failed typing is reported once, above, under its typing code,
+	// and never again as omitted.
 	for i, spec := range schema.Positional {
-		if spec.Required && i >= len(d.Args) {
+		if spec.Required && i >= positional {
 			v.report(MissingParam, raw.Pos,
 				"%s omits %s, which its schema requires", d.Name, spec.Key)
 			ok = false
 		}
 	}
 	for _, spec := range schema.Params {
-		_, given := d.Params[spec.Key]
+		_, given := seen[spec.Key]
 		if spec.Required && !given && roleAdmits(spec.Roles, d.Role) {
 			v.report(MissingParam, raw.Pos,
 				"%s omits %s, which its schema requires", d.Name, spec.Key)
@@ -451,13 +467,4 @@ func rawSpelling(v RawValue) string {
 		return v.Text
 	}
 	return "a list"
-}
-
-// comparePos orders positions by file, line then column.
-func comparePos(a, b position.Pos) int {
-	return cmp.Or(
-		strings.Compare(a.File, b.File),
-		cmp.Compare(a.Line, b.Line),
-		cmp.Compare(a.Col, b.Col),
-	)
 }

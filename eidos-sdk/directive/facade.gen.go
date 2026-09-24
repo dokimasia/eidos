@@ -59,9 +59,10 @@ var (
 	// UnknownMetadataKey refuses a metadata reference no key or
 	// group returns.
 	UnknownMetadataKey = core.UnknownMetadataKey
-	// DanglingSubject refuses a directive attached to a subject
-	// the graph never got. The check lives with whoever holds the
-	// graph; the code lives with its class.
+	// DanglingSubject refuses a directive or a classification
+	// stamp attached to a subject the graph never got. The check
+	// lives with whoever holds the graph; the code lives with its
+	// class.
 	DanglingSubject = core.DanglingSubject
 	// UnsealedRegistry refuses validation against a registry still
 	// registering: a defect in the composition, not in a carrier.

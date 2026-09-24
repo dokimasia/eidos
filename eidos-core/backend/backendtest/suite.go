@@ -5,7 +5,6 @@ package backendtest
 
 import (
 	"bytes"
-	"cmp"
 	"slices"
 	"strings"
 	"testing"
@@ -473,16 +472,7 @@ func AssertDeterministicRender(tb assert.TB, setup Setup) {
 // sorted orders findings canonically, so two valid runs reporting
 // one set in two completion orders compare equal.
 func sorted(diags []diag.Diag) []diag.Diag {
-	slices.SortFunc(diags, func(a, b diag.Diag) int {
-		return cmp.Or(
-			cmp.Compare(a.Pos.File, b.Pos.File),
-			cmp.Compare(a.Pos.Line, b.Pos.Line),
-			cmp.Compare(a.Pos.Col, b.Pos.Col),
-			cmp.Compare(a.Code.String(), b.Code.String()),
-			cmp.Compare(a.Msg, b.Msg),
-			cmp.Compare(string(a.Origin), string(b.Origin)),
-		)
-	})
+	slices.SortFunc(diags, diag.Diag.Compare)
 	return diags
 }
 

@@ -6,6 +6,7 @@ package directive
 import (
 	"fmt"
 	"strings"
+	"unicode/utf8"
 
 	"go.dokimi.dev/eidos/core/position"
 )
@@ -99,12 +100,16 @@ type RawValue struct {
 // rather than in every frontend.
 func Join(lines []string) string {
 	parts := make([]string, 0, len(lines))
-	for _, line := range lines {
+	for i, line := range lines {
 		trimmed, continued := strings.CutSuffix(line, Continuation)
 		if continued {
 			// Whatever sat before the marker, the join is exactly
 			// one space.
 			trimmed = strings.TrimRight(trimmed, " \t")
+		}
+		if i > 0 {
+			// The next line's leading blanks are dropped too.
+			trimmed = strings.TrimLeft(trimmed, " \t")
 		}
 		parts = append(parts, trimmed)
 	}
@@ -128,7 +133,16 @@ func Parse(payload string) (Raw, error) {
 	}
 	raw := Raw{Name: name}
 
+	// Whitespace separates the name from each argument and each
+	// argument from the next. A token that stops at any other byte
+	// is refused.
 	for {
+		if p.done() {
+			return raw, nil
+		}
+		if !p.blank() {
+			return Raw{}, p.fail("an argument follows whitespace, and %q does not", string(p.peek()))
+		}
 		p.skipSpace()
 		if p.done() {
 			return raw, nil
@@ -159,9 +173,15 @@ func (p *parser) peek() byte {
 	return p.payload[p.at]
 }
 
+// blank reports whether the next byte is a space or a tab.
+func (p *parser) blank() bool {
+	c := p.peek()
+	return c == ' ' || c == '\t'
+}
+
 // skipSpace reads past spaces and tabs.
 func (p *parser) skipSpace() {
-	for !p.done() && (p.peek() == ' ' || p.peek() == '\t') {
+	for !p.done() && p.blank() {
 		p.at++
 	}
 }
@@ -249,12 +269,12 @@ func (p *parser) value() (RawValue, error) {
 	}
 }
 
-// list reads a bracketed, comma-separated value list.
+// list reads a bracketed, comma-separated value list. Whitespace
+// may follow a comma and nothing else, as the pinned grammar reads.
 func (p *parser) list() (RawValue, error) {
 	p.at++ // consume '['
 	out := RawValue{List: []RawValue{}}
 
-	p.skipSpace()
 	if p.peek() == listClose {
 		p.at++
 		return out, nil
@@ -308,8 +328,11 @@ func (p *parser) quoted() (RawValue, error) {
 				out.WriteByte('\t')
 			default:
 				p.at -= 2
+				// The escaped character can take more than one byte,
+				// so the refusal decodes the whole rune.
+				r, _ := utf8.DecodeRuneInString(p.payload[p.at+1:])
 				return RawValue{}, p.fail(
-					`an escape is one of \" \\ \n \t, not \%s`, string(e),
+					`an escape is one of \" \\ \n \t, not \%s`, string(r),
 				)
 			}
 		default:
@@ -339,6 +362,20 @@ func isLetter(c byte) bool {
 // isIdent reports a byte an identifier may continue with.
 func isIdent(c byte) bool {
 	return isLetter(c) || c >= '0' && c <= '9' || c == '-' || c == '_'
+}
+
+// isIdentifier reports whether s is one whole ident of the grammar:
+// a letter, then letters, digits, hyphens and underscores.
+func isIdentifier(s string) bool {
+	if s == "" || !isLetter(s[0]) {
+		return false
+	}
+	for i := 1; i < len(s); i++ {
+		if !isIdent(s[i]) {
+			return false
+		}
+	}
+	return true
 }
 
 // isBare reports a byte a bare value may carry: anything but
