@@ -70,6 +70,28 @@ func TestRecord(t *testing.T) {
 			assert.Equal(t, got[0].Claim.Derived, claim.Derived, "and what produced it")
 		})
 
+		t.Run("hands out copies, so a caller cannot edit the bag", func(t *testing.T) {
+			t.Parallel()
+
+			r, f, _, _ := fixture(t)
+			tags, err := meta.Register[[]string](r, meta.KeySpec{Name: "shape.tags", Doc: "the classified tags"})
+			assert.NoError(t, err, "the list key registers")
+			claim := by("shape", 1)
+			claim.Derived = []meta.Read{{Subject: subject, Key: "shape.comparable"}}
+			assert.NoError(t, meta.Stamp(f, tags, []string{"a", "b"}, claim), "the claim stamps")
+
+			for view := range f.Claims(subject, tags.ID()) {
+				values, _ := view.Value.([]string)
+				values[0] = "edited"
+				view.Claim.Derived[0].Key = "edited"
+			}
+			got, _ := meta.Get(f, subject, tags)
+			assert.Equal(t, got, []string{"a", "b"}, "the value keeps what was stamped")
+			again := slices.Collect(f.Claims(subject, tags.ID()))
+			assert.Equal(t, again[0].Claim.Derived[0].Key, meta.KeyName("shape.comparable"),
+				"and so does the provenance")
+		})
+
 		t.Run("returns nothing for a fact never claimed", func(t *testing.T) {
 			t.Parallel()
 

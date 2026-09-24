@@ -24,7 +24,7 @@ func TestCodes(t *testing.T) {
 			"the code spells its prefix and padded number")
 		meaning, held := diag.Kernel().Meaning(eidos.RefusedStamp)
 		assert.True(t, held, "the code registered at initialization")
-		assert.Equal(t, meaning, "the fact store refused a stamp",
+		assert.Equal(t, meaning, "a stamp was refused",
 			"the meaning anchors the published index")
 	})
 }

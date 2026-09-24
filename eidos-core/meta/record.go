@@ -43,7 +43,11 @@ func (f *Facts) Claims(id symbol.Identity, k KeyID) iter.Seq[ClaimView] {
 	slices.SortFunc(all, func(a, b stored) int { return rank(a.claim, b.claim) })
 	views := make([]ClaimView, 0, len(all))
 	for i, entry := range all {
-		views = append(views, ClaimView{Claim: entry.claim, Value: entry.value, Won: i == 0})
+		// A view contains copies of the value and the provenance. A
+		// caller that edits either leaves the bag unchanged.
+		claim := entry.claim
+		claim.Derived = slices.Clone(claim.Derived)
+		views = append(views, ClaimView{Claim: claim, Value: cloneValue(entry.value), Won: i == 0})
 	}
 	return slices.Values(views)
 }

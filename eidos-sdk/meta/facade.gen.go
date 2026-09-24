@@ -46,21 +46,25 @@ type Claim = core.Claim
 // a fact read at (subject, key) otherwise.
 type Read = core.Read
 
-// RefusedStamp reports a stamp the fact store refused: the write
-// named an unregistered key, a subject kind the key does not admit,
-// a false boolean, a second value from one rank source, or — on the
-// raw path — a value outside the vocabulary. The refusal arrives at
-// the subject's position under the stamping plugin's identity, and
-// the phase continues.
+// RefusedStamp reports a refused stamp. The fact store refuses a
+// write naming an unregistered key, a subject kind the key does not
+// admit, a false boolean, a second value from one rank source, or,
+// on the raw path, a value outside the vocabulary or of another type
+// than the key's. The stamping surface refuses a write to a
+// declaration its subject does not declare. The witness handler
+// refuses a stamp whose type argument did not resolve. The refusal
+// arrives at the subject's position under the stamping plugin's
+// identity, and the phase continues.
 var RefusedStamp = core.RefusedStamp
 
 // Facts is the run's stamped facts: one bag per subject.
 //
-// Facts is safe for concurrent use and serializes writes per bag,
-// so two annotators stamping two subjects do not contend, and
-// readers of one bag share its lock. Rank decides every winner, so
-// a parallel run returns what a serial one does, whatever order the
-// writes arrived.
+// Facts is safe for concurrent use. Writes to one subject serialize
+// on that subject's bag lock, and readers of the bag share it. A
+// write that changes whether a fact is present also takes the fact
+// index's lock, which is one lock for the store. Rank decides every
+// winner, so a parallel run returns what a serial one does, whatever
+// order the writes arrived.
 type Facts = core.Facts
 
 // NewFacts returns an empty fact store reading specs from r.
@@ -186,9 +190,10 @@ type ClaimView = core.ClaimView
 // Registry holds every registered namespace, key and group.
 //
 // A Registry is not safe for concurrent use. Registration happens
-// while the workspace composes, which is single-threaded, and
-// completes before the first fact is written; [Facts] reads it
-// without locking on that contract.
+// while the workspace composes, which is single-threaded.
+// [Registry.Seal] ends registration, and the registry refuses every
+// later one. [Facts] reads a sealed registry without locking, and
+// every fact store built over it sees one set of keys and groups.
 type Registry = core.Registry
 
 // NewRegistry returns a registry holding nothing.
@@ -205,11 +210,18 @@ type Completeness = core.Completeness
 
 // Register records a key and returns its typed handle.
 //
-// It refuses, with an error naming both claimants where two exist: a
-// name without a claimed namespace or without a local part, a name
-// registered twice, and a spec without documentation. It returns an
-// error rather than panicking because composition collects every
-// fault in one pass.
+// It refuses the following, with an error naming both claimants
+// where two exist:
+//   - a registration after [Registry.Seal];
+//   - a name without a claimed namespace or without a local part;
+//   - a name registered twice;
+//   - a spec without documentation;
+//   - a key and a group with one spelling, in either registration
+//     order. A meta drop names a key or a group by its spelling, so
+//     one spelling must name one of them.
+//
+// It returns an error rather than panicking because composition
+// collects every fault in one pass.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	return core.Register[T](r, s)
 }

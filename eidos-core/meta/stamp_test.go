@@ -4,6 +4,7 @@
 package meta_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -149,18 +150,18 @@ func TestStampRaw(t *testing.T) {
 		}
 	})
 
-	t.Run("a typed read of a mistyped raw value reads absence", func(t *testing.T) {
+	t.Run("refuses a value whose type differs from the key's", func(t *testing.T) {
 		t.Parallel()
 
 		f, key := stampFixture(t)
-		assert.NoError(t,
-			f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: "true"}, plugAt(0)),
-			"the registry records no value type, so a string admits under a boolean key")
+		err := f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: "true"}, plugAt(0))
+		assert.HasError(t, err, "a string under a boolean key refuses")
+		assert.Contains(t, err.Error(), "bool", "naming the key's type")
 
-		got, held := meta.Get(f, subjectFile(), key)
-		assert.False(t, held,
-			"the type discipline is the typed handle's: a mistyped raw value reads absent")
-		assert.False(t, got, "with the zero value")
+		_, held := meta.Get(f, subjectFile(), key)
+		assert.False(t, held, "the bag is unchanged")
+		assert.Empty(t, slices.Collect(f.ByKey(key.ID())),
+			"and the index lists no subject")
 	})
 
 	t.Run("ranks like any other claim", func(t *testing.T) {

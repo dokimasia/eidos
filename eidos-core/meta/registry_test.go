@@ -129,6 +129,37 @@ func TestRegistry(t *testing.T) {
 			_, err := meta.Register[string](r, meta.KeySpec{Name: "shape.role"})
 			assert.HasError(t, err, "the parity matrix tabulates the doc, so it exists")
 		})
+
+		t.Run("refuses a group named after a key, in either order", func(t *testing.T) {
+			t.Parallel()
+
+			r := claimed(t)
+			_, err := meta.Register[bool](r, meta.KeySpec{Name: "shape.writer", Doc: "the writer flag"})
+			assert.NoError(t, err, "the key registers")
+			_, err = meta.Register[string](r, meta.KeySpec{
+				Name: "shape.role", Group: "shape.writer", Doc: "the classified role",
+			})
+			assert.HasError(t, err, "a drop of the spelling could not tell the group from the key")
+			assert.Contains(t, err.Error(), "shape.writer", "naming the spelling")
+
+			r = claimed(t)
+			_, err = meta.Register[string](r, meta.KeySpec{
+				Name: "shape.role", Group: "shape.writer", Doc: "the classified role",
+			})
+			assert.NoError(t, err, "the grouped key registers")
+			_, err = meta.Register[bool](r, meta.KeySpec{Name: "shape.writer", Doc: "the writer flag"})
+			assert.HasError(t, err, "and a key named after the group refuses the same way")
+		})
+
+		t.Run("refuses a registration after the seal", func(t *testing.T) {
+			t.Parallel()
+
+			r := claimed(t)
+			r.Seal()
+			_, err := meta.Register[string](r, meta.KeySpec{Name: "shape.role", Doc: "late"})
+			assert.HasError(t, err, "a key registering after the seal refuses")
+			assert.HasError(t, r.ClaimNamespace("late", "latecomer"), "and so does a namespace")
+		})
 	})
 
 	t.Run("Lookup", func(t *testing.T) {

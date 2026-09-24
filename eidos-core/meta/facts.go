@@ -14,11 +14,12 @@ import (
 
 // Facts is the run's stamped facts: one bag per subject.
 //
-// Facts is safe for concurrent use and serializes writes per bag,
-// so two annotators stamping two subjects do not contend, and
-// readers of one bag share its lock. Rank decides every winner, so
-// a parallel run returns what a serial one does, whatever order the
-// writes arrived.
+// Facts is safe for concurrent use. Writes to one subject serialize
+// on that subject's bag lock, and readers of the bag share it. A
+// write that changes whether a fact is present also takes the fact
+// index's lock, which is one lock for the store. Rank decides every
+// winner, so a parallel run returns what a serial one does, whatever
+// order the writes arrived.
 type Facts struct {
 	registry *Registry
 	// groupOf holds each key's group by id, precomputed from the
@@ -60,13 +61,8 @@ func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
 	if err != nil {
 		return err
 	}
-	if flag, isBool := any(v).(bool); isBool && !flag {
-		return fmt.Errorf("meta: %s stamps false on %s: absence is the negative, drop the fact instead",
-			k.Name(), c.Subject)
-	}
-	if !kindAdmitted(spec.Kinds, c.Subject.Kind) {
-		return fmt.Errorf("meta: %s does not admit kind %s, which %s is",
-			k.Name(), c.Subject.Kind, c.Subject)
+	if err := admitClaim(spec, k.Name(), any(v), c); err != nil {
+		return err
 	}
 	return f.write(c.Subject, k.ID(), k.Name(), stored{claim: c, value: cloneValue(any(v))})
 }

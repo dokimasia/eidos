@@ -5,6 +5,7 @@ package meta
 
 import (
 	"fmt"
+	"reflect"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/position"
@@ -36,14 +37,11 @@ type RawStamp struct {
 
 // StampRaw records one raw claim: the classification path, where
 // the write crossed a phase as data and no typed handle exists.
-// The name resolves through the registry, the value must be one
-// term of the vocabulary, and everything else checks as [Stamp]
-// checks it — the kind restriction, the false boolean, the rank.
-//
-// What a raw write cannot check is the value's type against the
-// key's, because the registry records no value type: that
-// discipline is the typed handle's, at compile time, and a typed
-// reader of a mistyped raw value reads absence.
+// The name resolves through the registry. The value must be one
+// term of the vocabulary, of the type the key registered with.
+// Everything else checks as [Stamp] checks it: the kind
+// restriction, the false boolean, the rank. Every subject
+// [Facts.ByKey] lists therefore reads present through [Get].
 func (f *Facts) StampRaw(s RawStamp, c Claim) error {
 	id, registered := f.registry.Resolve(s.Key)
 	if !registered {
@@ -53,22 +51,32 @@ func (f *Facts) StampRaw(s RawStamp, c Claim) error {
 	if err != nil {
 		return err
 	}
-	switch v := s.Value.(type) {
-	case string, int64, []string, symbol.Identity:
-	case bool:
-		if !v {
-			return fmt.Errorf(
-				"meta: %s stamps false on %s: absence is the negative, drop the fact instead",
-				s.Key, c.Subject,
-			)
-		}
+	switch s.Value.(type) {
+	case string, int64, bool, []string, symbol.Identity:
 	default:
 		return fmt.Errorf("meta: %s carries a %T, which the vocabulary does not",
 			s.Key, s.Value)
 	}
-	if !kindAdmitted(spec.Kinds, c.Subject.Kind) {
-		return fmt.Errorf("meta: %s does not admit kind %s, which %s is",
-			s.Key, c.Subject.Kind, c.Subject)
+	if want := f.registry.typeOf(id); reflect.TypeOf(s.Value) != want {
+		return fmt.Errorf("meta: %s is a %s key, and the value is a %T", s.Key, want, s.Value)
+	}
+	if err := admitClaim(spec, s.Key, s.Value, c); err != nil {
+		return err
 	}
 	return f.write(c.Subject, id, s.Key, stored{claim: c, value: cloneValue(s.Value)})
+}
+
+// admitClaim applies the checks the typed and the raw path share.
+// A false boolean refuses, because absence is the negative. The
+// key's kind restriction must admit the subject's kind.
+func admitClaim(spec KeySpec, name KeyName, value any, c Claim) error {
+	if flag, isBool := value.(bool); isBool && !flag {
+		return fmt.Errorf("meta: %s stamps false on %s: absence is the negative, drop the fact instead",
+			name, c.Subject)
+	}
+	if !kindAdmitted(spec.Kinds, c.Subject.Kind) {
+		return fmt.Errorf("meta: %s does not admit kind %s, which %s is",
+			name, c.Subject.Kind, c.Subject)
+	}
+	return nil
 }

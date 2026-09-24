@@ -17,9 +17,10 @@ import (
 // Registry holds every registered namespace, key and group.
 //
 // A Registry is not safe for concurrent use. Registration happens
-// while the workspace composes, which is single-threaded, and
-// completes before the first fact is written; [Facts] reads it
-// without locking on that contract.
+// while the workspace composes, which is single-threaded.
+// [Registry.Seal] ends registration, and the registry refuses every
+// later one. [Facts] reads a sealed registry without locking, and
+// every fact store built over it sees one set of keys and groups.
 type Registry struct {
 	// namespaces maps a claimed namespace to its owner.
 	namespaces map[string]string
@@ -33,6 +34,9 @@ type Registry struct {
 	types []reflect.Type
 	// groups holds each group's members in registration order.
 	groups map[GroupName][]KeyID
+	// sealed is set by [Registry.Seal]. ClaimNamespace and Register
+	// refuse once it is set.
+	sealed bool
 }
 
 // NewRegistry returns a registry holding nothing.
@@ -79,6 +83,9 @@ type Completeness struct {
 // namespace fails at registration rather than reading as a new
 // namespace.
 func (r *Registry) ClaimNamespace(ns, owner string) error {
+	if r.sealed {
+		return fmt.Errorf("meta: namespace %q is claimed after the seal: registration ends there", ns)
+	}
 	if ns == "" {
 		return errors.New("meta: the empty namespace owns nothing")
 	}
@@ -94,12 +101,22 @@ func (r *Registry) ClaimNamespace(ns, owner string) error {
 
 // Register records a key and returns its typed handle.
 //
-// It refuses, with an error naming both claimants where two exist: a
-// name without a claimed namespace or without a local part, a name
-// registered twice, and a spec without documentation. It returns an
-// error rather than panicking because composition collects every
-// fault in one pass.
+// It refuses the following, with an error naming both claimants
+// where two exist:
+//   - a registration after [Registry.Seal];
+//   - a name without a claimed namespace or without a local part;
+//   - a name registered twice;
+//   - a spec without documentation;
+//   - a key and a group with one spelling, in either registration
+//     order. A meta drop names a key or a group by its spelling, so
+//     one spelling must name one of them.
+//
+// It returns an error rather than panicking because composition
+// collects every fault in one pass.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
+	if r.sealed {
+		return Key[T]{}, fmt.Errorf("meta: key %q registers after the seal: registration ends there", s.Name)
+	}
 	local, hasLocal := s.Name.local()
 	if !hasLocal || local == "" || s.Name.Namespace() == "" {
 		return Key[T]{}, fmt.Errorf(
@@ -120,6 +137,13 @@ func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	if held, taken := r.byName[s.Name]; taken {
 		return Key[T]{}, fmt.Errorf("meta: key %q is registered twice: %q and %q",
 			s.Name, r.specs[held-1].Doc, s.Doc)
+	}
+	if _, grouped := r.groups[GroupName(s.Name)]; grouped {
+		return Key[T]{}, fmt.Errorf("meta: key %q spells a registered group", s.Name)
+	}
+	if _, keyed := r.byName[KeyName(s.Group)]; s.Group != "" && keyed {
+		return Key[T]{}, fmt.Errorf("meta: key %q registers into group %q, which spells a registered key",
+			s.Name, s.Group)
 	}
 
 	r.specs = append(r.specs, s)
@@ -177,4 +201,18 @@ func (r *Registry) Keys() iter.Seq[KeyName] {
 			}
 		}
 	}
+}
+
+// Seal ends registration: a namespace or key arriving after it is
+// refused. The workspace seals once every plugin and the
+// composition registered, before any fact store is built.
+func (r *Registry) Seal() { r.sealed = true }
+
+// typeOf returns the value type a key registered with, nil for an
+// id nothing was assigned.
+func (r *Registry) typeOf(id KeyID) reflect.Type {
+	if id == 0 || int(id) > len(r.types) {
+		return nil
+	}
+	return r.types[id-1]
 }
