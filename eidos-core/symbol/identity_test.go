@@ -450,6 +450,18 @@ func BenchmarkIdentity(b *testing.B) {
 		}
 	})
 
+	b.Run("String of a 33-byte spelling", func(b *testing.B) {
+		b.ReportAllocs()
+
+		// Twenty-eight bytes of parts and five separators: one byte
+		// past the 32-byte allocation class.
+		boundary := method
+		boundary.Disc = "ctx,s"
+		for b.Loop() {
+			_ = boundary.String()
+		}
+	})
+
 	b.Run("Parse", func(b *testing.B) {
 		b.ReportAllocs()
 

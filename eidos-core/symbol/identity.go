@@ -45,12 +45,19 @@ func (id Identity) IsZero() bool { return id == Identity{} }
 // Callable kinds ([KindFunction], [KindMethod]) always append the
 // parenthesized discriminator, even when it is empty, so a field
 // and a nullary method with one name spell differently.
+//
+// The buffer is sized once, for the parts and the most separators
+// a spelling writes, so a spelling allocates once.
 func (id Identity) String() string {
+	// separators is the most separator bytes one spelling writes:
+	// the colon, the dot, the hash and a member callable's two
+	// parentheses.
+	const separators = 5
 	// The parts are written into one buffer rather than concatenated
 	// in steps, because an identity is spelled on every ordering the
 	// kernel makes deterministic.
 	var out strings.Builder
-	out.Grow(len(id.Lang) + len(id.Package) + len(id.Owner) + len(id.Name) + len(id.Disc) + 4)
+	out.Grow(len(id.Lang) + len(id.Package) + len(id.Owner) + len(id.Name) + len(id.Disc) + separators)
 	out.WriteString(string(id.Lang))
 	out.WriteByte(':')
 	out.WriteString(id.Package)
