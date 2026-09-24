@@ -4,6 +4,7 @@
 package backend
 
 import (
+	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -13,17 +14,18 @@ import (
 const ImplGroup render.GroupName = "impl"
 
 // ImplTemplate spells an impl block: the methods attached to one
-// type, each taking the receiver by reference at instance level
-// and standing alone at type level, its visibility and asynchrony
-// before fn, its own type parameter list behind the name, its
-// body placed, each under its own doc lines and attributes. A
-// generic receiver's arguments restate as the impl binder, so a
-// method on Box<T> opens impl<T> Box<T>.
+// type, each taking the receiver the method states, by shared
+// reference where it states none, and no receiver at type level. A
+// method's visibility and asynchrony go before fn, its own type
+// parameter list behind the name, its body in braces and its
+// trailing comment behind them, each under its own doc lines and
+// attributes. The receiver's type parameters open the impl binder,
+// so a method on Box<T> opens impl<T> Box<T>.
 const ImplTemplate = "impl{{binder (index .Decls 0).Receives}}" +
 	" {{spell (index .Decls 0).Receives}} {\n" +
 	"{{- range .Decls}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
-	"    {{implfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
-	"{{results .Returns}} {\n{{body .}}    }\n" +
+	"    {{implfn .}}fn {{.Name}}{{fnparams .TypeParams}}({{selfparams .}})" +
+	"{{results .Returns}} {\n{{body .}}    }{{with .Comment}} // {{.}}{{end}}\n" +
 	"{{- end}}\n}\n"
 
 // Groups returns the group templates the cluster selects.
@@ -34,21 +36,24 @@ func Groups() map[render.GroupName]string {
 // Cluster gathers a unit's methods into one impl block per
 // attached type, in first-appearance order, because Rust renders
 // a method only inside an impl grouped by the type it attaches
-// to. A method attaching to no type stays unassigned, and the
-// render reports it as a kind the target cannot spell; everything
-// that is not a method stays a singleton.
+// to. The type is the whole reference, arguments included, so a
+// method on Wrapper<String> and one on Wrapper<i32> open two
+// blocks. A method attaching to no type is left unassigned, and
+// the render reports it as a kind the target cannot spell.
+// Everything that is not a method is left a singleton.
 func Cluster(decls []symbol.Symbol) []render.Clustered {
 	byType := map[string]int{}
 	var out []render.Clustered
 	for _, d := range decls {
-		m, held := d.(*emit.Method)
-		if !held || m.Receives == nil || m.Receives.Spelling == "" {
+		m, is := d.(*emit.Method)
+		if !is || m.Receives == nil || m.Receives.Spelling == "" {
 			continue
 		}
-		i, held := byType[m.Receives.Spelling]
-		if !held {
+		key := spellref.Spell(m.Receives, genericsOpener, genericsCloser, unitSpelling)
+		i, seen := byType[key]
+		if !seen {
 			i = len(out)
-			byType[m.Receives.Spelling] = i
+			byType[key] = i
 			out = append(out, render.Clustered{Group: ImplGroup})
 		}
 		out[i].Decls = append(out[i].Decls, d)

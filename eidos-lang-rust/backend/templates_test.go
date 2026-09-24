@@ -20,6 +20,16 @@ import (
 func execute(t *testing.T, src string, data any) string {
 	t.Helper()
 
+	got, err := run(t, src, data)
+	assert.NoError(t, err, "the template executes")
+	return got
+}
+
+// run runs one template over one declaration and returns the text
+// or the refusal.
+func run(t *testing.T, src string, data any) (string, error) {
+	t.Helper()
+
 	tmpl, err := template.New("kind").
 		Funcs(backend.Funcs()).
 		Funcs(template.FuncMap{
@@ -33,13 +43,13 @@ func execute(t *testing.T, src string, data any) string {
 		Parse(src)
 	assert.NoError(t, err, "the template parses")
 	var b strings.Builder
-	assert.NoError(t, tmpl.Execute(&b, data), "the template executes")
-	return b.String()
+	err = tmpl.Execute(&b, data)
+	return b.String(), err
 }
 
 // Each kind template is pinned byte for byte, and so are the two
 // absences that keep the inventory honest: no standalone method
-// without an impl block, and no static without an initialiser.
+// without an impl block, and no static for a variable.
 func TestTemplates(t *testing.T) {
 	t.Parallel()
 
@@ -47,16 +57,16 @@ func TestTemplates(t *testing.T) {
 		t.Parallel()
 
 		kinds := backend.KindTemplates()
-		_, held := kinds[symbol.KindMethod]
-		assert.False(t, held,
+		_, is := kinds[symbol.KindMethod]
+		assert.False(t, is,
 			"methods group under an impl block per receiver, which one "+
 				"declaration at a time cannot write")
-		_, held = kinds[symbol.KindVariable]
-		assert.False(t, held,
-			"a static requires an initialiser the model does not carry")
+		_, is = kinds[symbol.KindVariable]
+		assert.False(t, is,
+			"a static's initializer is constant, and a variable's is fixed at run time")
 	})
 
-	t.Run("struct carries public fields", func(t *testing.T) {
+	t.Run("struct spells public fields", func(t *testing.T) {
 		t.Parallel()
 
 		s := &emit.Struct{Doc: []string{"Row is one record."}, Name: "Row"}
@@ -81,6 +91,7 @@ func TestTemplates(t *testing.T) {
 		t.Parallel()
 
 		i := &emit.Interface{Name: "Store", Comment: "read side"}
+		i.Types.Append(&emit.Alias{Name: "Item", Comment: "what get yields"})
 		i.Methods.Append(&emit.Method{
 			Name: "get", Comment: "by key",
 			Params:  []*emit.Param{{Name: "key", Type: ref("String"), Comment: "the row key"}},
@@ -88,9 +99,11 @@ func TestTemplates(t *testing.T) {
 		})
 		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
 			"pub trait Store {\n"+
+				"    type Item; // what get yields\n"+
 				"    fn get(&self, key: String /* the row key */) -> String /* the row */; // by key\n"+
 				"} // read side\n",
-			"a signature's comments spell as block comments, the method's and the trait's close their lines")
+			"a signature's comments spell as block comments, and the associated type's, "+
+				"the method's and the trait's close their lines")
 		assert.Equal(t,
 			execute(t, backend.FunctionTemplate, &emit.Function{Name: "sort", Comment: "stable"}),
 			"pub fn sort() {\n    body();\n} // stable\n", "a function's comment follows its closing brace")
@@ -105,20 +118,24 @@ func TestTemplates(t *testing.T) {
 		t.Parallel()
 
 		s := &emit.Struct{Name: "Cache"}
-		s.TypeParams = []*emit.TypeParam{{Name: "T"}}
+		s.TypeParams = []*emit.TypeParam{
+			{Name: "T", Bounds: []*emit.TypeRef{ref("Clone")}, Default: ref("String")},
+		}
 		s.Fields.Append(&emit.Field{Name: "item", Type: ref("T")})
-		s.Methods.Append(&emit.Method{Name: "get", Returns: []*emit.Return{{Type: ref("T")}}})
+		s.Methods.Append(&emit.Method{
+			Name: "get", Comment: "cloned", Returns: []*emit.Return{{Type: ref("T")}},
+		})
 		assert.Equal(t, execute(t, backend.StructTemplate, s),
-			"pub struct Cache<T> {\n"+
+			"pub struct Cache<T: Clone = String> {\n"+
 				"    pub item: T,\n"+
 				"}\n"+
-				"\nimpl<T> Cache<T> {\n"+
+				"\nimpl<T: Clone> Cache<T> {\n"+
 				"    pub fn get(&self) -> T {\n"+
 				"    body();\n"+
-				"    }\n"+
+				"    } // cloned\n"+
 				"}\n",
-			"member methods follow in one impl block, the parameters "+
-				"restated on the impl and its target")
+			"member methods follow in one impl block, the parameters restated "+
+				"on the impl without their defaults and named on its target")
 	})
 
 	t.Run("trait takes the receiver by reference", func(t *testing.T) {
@@ -126,7 +143,9 @@ func TestTemplates(t *testing.T) {
 
 		i := &emit.Interface{Name: "Store"}
 		i.Types.Append(&emit.Alias{
-			Doc: []string{"Item is what the store yields."}, Name: "Item",
+			Doc:         []string{"Item is what the store yields."},
+			Name:        "Item",
+			Annotations: symbol.Annotations{{Name: "doc", Args: []string{"hidden"}}},
 		})
 		i.Methods.Append(
 			&emit.Method{Name: "close"},
@@ -139,12 +158,14 @@ func TestTemplates(t *testing.T) {
 		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
 			"pub trait Store {\n"+
 				"    /// Item is what the store yields.\n"+
+				"    #[doc(hidden)]\n"+
 				"    type Item;\n"+
 				"    fn close(&self);\n"+
 				"    fn load(&self, key: String) -> Row;\n"+
 				"}\n",
-			"the associated type first as a bare name, then self alone "+
-				"where no parameter follows, joined where one does")
+			"the associated type first as a bare name under its doc lines and "+
+				"attributes, then self alone where no parameter follows, joined "+
+				"where one does")
 	})
 
 	t.Run("function, alias and constant", func(t *testing.T) {
@@ -174,7 +195,7 @@ func TestTemplates(t *testing.T) {
 		i := &emit.Interface{
 			Name: "Keyed",
 			TypeParams: []*emit.TypeParam{
-				{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}},
+				{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}, Default: ref("String")},
 			},
 		}
 		i.Methods.Append(&emit.Method{
@@ -183,8 +204,9 @@ func TestTemplates(t *testing.T) {
 			Returns: []*emit.Return{{Type: ref("K")}},
 		})
 		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
-			"pub trait Keyed<K: Codec> {\n    fn pick(&self, key: K) -> K;\n}\n",
-			"the bound behind the colon, members referencing it")
+			"pub trait Keyed<K: Codec = String> {\n    fn pick(&self, key: K) -> K;\n}\n",
+			"the bound behind the colon, a trait's default behind equals, members "+
+				"referencing it")
 
 		f := &emit.Function{
 			Name:       "sort",
@@ -196,10 +218,16 @@ func TestTemplates(t *testing.T) {
 			"pub fn sort<T: Codec>(items: T) -> T {\n    body();\n}\n",
 			"the function's parameter list behind its name")
 
+		f.TypeParams[0].Default = ref("String")
+		_, err := run(t, backend.FunctionTemplate, f)
+		assert.HasError(t, err,
+			"a function's parameter default refuses, because Rust takes one on a "+
+				"type definition alone")
+
 		a := &emit.Alias{
 			Name:       "Match",
 			TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
-			Target:     &emit.TypeRef{Spelling: "Keyed", Args: []*emit.TypeRef{ref("T")}},
+			Target:     generic("Keyed", ref("T")),
 		}
 		assert.Equal(t, execute(t, backend.AliasTemplate, a),
 			"pub type Match<T: Codec> = Keyed<T>;\n",
@@ -341,11 +369,9 @@ func TestTemplates(t *testing.T) {
 
 		withMethods := &emit.Sum{Name: "Shape"}
 		withMethods.Methods.Append(&emit.Method{Name: "area"})
-		tmpl, err := template.New("kind").Funcs(backend.Funcs()).Parse(backend.SumTemplate)
-		assert.NoError(t, err, "the template parses")
-		var b strings.Builder
-		assert.HasError(t, tmpl.Execute(&b, withMethods),
-			"a sum carrying methods refuses: behaviour goes in impl blocks")
+		_, err := run(t, backend.SumTemplate, withMethods)
+		assert.HasError(t, err,
+			"a sum with methods refuses: behaviour goes in impl blocks")
 	})
 
 	t.Run("the file skeleton is uses then declarations", func(t *testing.T) {

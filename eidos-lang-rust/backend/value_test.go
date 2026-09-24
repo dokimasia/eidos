@@ -107,6 +107,26 @@ func TestValue(t *testing.T) {
 				"Weight(1.5)",
 			},
 			{
+				"a generic tuple struct opens its arguments with the turbofish",
+				emit.Conversion(
+					&emit.TypeRef{Spelling: "Wrapper", Args: []*emit.TypeRef{{Spelling: "i32"}}},
+					emit.Literal(emit.LiteralInt, "1"),
+				),
+				"Wrapper::<i32>(1)",
+			},
+			{
+				"a conversion to a numeric primitive casts",
+				emit.Conversion(&emit.TypeRef{Spelling: "u8"}, emit.Literal(emit.LiteralInt, "5")),
+				"5 as u8",
+			},
+			{
+				"a borrowed cast takes parentheses, because & binds tighter than as",
+				emit.Address(emit.Conversion(
+					&emit.TypeRef{Spelling: "f64"}, emit.Literal(emit.LiteralInt, "5"),
+				)),
+				"&(5 as f64)",
+			},
+			{
 				"a struct literal names its fields",
 				emit.Composite(
 					valueRef("Row", "svc", "Row"),
@@ -115,9 +135,19 @@ func TestValue(t *testing.T) {
 				"Row { id: 1 }",
 			},
 			{
-				"a struct with no fields spells its name alone",
+				"a generic struct literal opens its arguments with the turbofish",
+				emit.Composite(
+					&emit.TypeRef{Spelling: "Pair", Args: []*emit.TypeRef{
+						{Spelling: "Vec", Args: []*emit.TypeRef{{Spelling: "i32"}}},
+					}},
+					emit.NamedField("left", emit.Literal(emit.LiteralInt, "1")),
+				),
+				"Pair::<Vec<i32>> { left: 1 }",
+			},
+			{
+				"a struct literal naming no field closes on empty braces",
 				emit.Composite(valueRef("Row", "svc", "Row")),
-				"Row",
+				"Row {}",
 			},
 			{
 				"a list spells the vector macro",
@@ -194,6 +224,18 @@ func TestValue(t *testing.T) {
 					valueRef("Row", "svc", "Row"),
 					emit.Element(emit.Literal(emit.LiteralInt, "1")),
 				), "names every field",
+			},
+			{
+				"a conversion to String, which Rust converts through a trait",
+				emit.Conversion(&emit.TypeRef{Spelling: "String"}, emit.Literal(emit.LiteralString, "a")),
+				"through a trait or a method",
+			},
+			{
+				"a type argument that states no type",
+				emit.Composite(
+					&emit.TypeRef{Spelling: "Pair", Args: []*emit.TypeRef{nil}},
+					emit.NamedField("left", emit.Literal(emit.LiteralInt, "1")),
+				), "states no type",
 			},
 		}
 		for _, tt := range tests {

@@ -13,8 +13,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The suite holds the declaration total and the rendered findings
-// against it; this twin pins the cells that distinguish Rust.
+// The suite checks the declaration total and the rendered findings
+// against it, and this twin pins the cells that distinguish Rust.
 func TestCoverage(t *testing.T) {
 	t.Parallel()
 
@@ -23,8 +23,14 @@ func TestCoverage(t *testing.T) {
 		"a trait widens through supertraits")
 	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactExtends), render.Refuses,
 		"where a struct inherits nothing")
+	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactFinal), render.Holds,
+		"final takes the Holds verdict on a struct, because nothing subclasses")
+	assert.Equal(t, c.Of(symbol.KindMethod, symbol.FactFinal), render.Holds,
+		"and on a method, because nothing overrides an inherent method")
 	assert.Equal(t, c.Of(symbol.KindTypeParam, symbol.FactConstParam), render.Renders,
 		"const parameters are Rust's own")
+	assert.Equal(t, c.Of(symbol.KindTypeParam, symbol.FactTypeParamDefault), render.Renders,
+		"a type definition's parameter default renders")
 	assert.Equal(t, c.Of(symbol.KindParam, symbol.FactVariadic), render.Refuses,
 		"a function takes a fixed arity")
 	assert.Equal(t, c.Of(symbol.KindEnumVariant, symbol.FactValue), render.Renders,

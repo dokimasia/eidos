@@ -22,7 +22,7 @@ func TestLang(t *testing.T) {
 
 		assert.Equal(t, rust.Target, "rust", "the target a plan resolves")
 		assert.Equal(t, rust.Name, "rust", "the identity findings report under")
-		assert.Equal(t, rust.Extension, ".rs", "the suffix every file carries")
+		assert.Equal(t, rust.Extension, ".rs", "the suffix of every file")
 	})
 
 	t.Run("declares the comment forms whole", func(t *testing.T) {
@@ -30,8 +30,7 @@ func TestLang(t *testing.T) {
 
 		s := rust.Syntax()
 		assert.Equal(t, s.Line, []string{"//", "///", "//!"},
-			"all three line forms, the plain one canonical, so the "+
-				"frontend strips doc comments too")
+			"all three line forms, the plain one canonical")
 		assert.True(t, len(s.Blocks) > 0, "and a block form is declared")
 		for _, b := range s.Blocks {
 			assert.True(t, b.Open != "" && b.Close != "",

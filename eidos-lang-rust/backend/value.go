@@ -9,6 +9,7 @@ import (
 
 	rust "go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/scaffold"
+	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -22,6 +23,14 @@ const (
 	// floatPoint completes a float literal written without a
 	// fraction.
 	floatPoint = ".0"
+	// castOp converts a number to another numeric type.
+	castOp = " as "
+	// turbofishOpener opens an argument list in an expression's
+	// path.
+	turbofishOpener = "::<"
+	// emptyBraces closes a struct literal that names no field, which
+	// Rust accepts for every struct that has no field.
+	emptyBraces = " {}"
 )
 
 // leaves is Rust's spelling of the literal leaves: a number spells
@@ -44,10 +53,25 @@ func (target) Lang() string { return string(rust.Lang) }
 // Literal spells one leaf through [leaves].
 func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
 
-// Type spells a reference and records the use its module needs.
+// Type spells a reference in an expression's path and records the
+// use its module needs. Rust opens the argument list there with the
+// turbofish, so a struct literal of Pair<Vec<i32>> spells
+// Pair::<Vec<i32>> { .. }, and the nested arguments, which are in
+// type position, keep their angle brackets. A reference that states
+// no type, itself or in an argument list, refuses.
 func (t target) Type(ref *emit.TypeRef) (string, error) {
+	if !complete(ref) {
+		return "", render.RefuseValue(t.Lang(), unstatedType)
+	}
 	t.use(ref.Target)
-	return Spell(ref), nil
+	if len(ref.Args) == 0 {
+		return ref.Spelling, nil
+	}
+	args := make([]string, 0, len(ref.Args))
+	for _, a := range ref.Args {
+		args = append(args, spellref.Spell(a, genericsOpener, genericsCloser, unitSpelling))
+	}
+	return ref.Spelling + turbofishOpener + strings.Join(args, ", ") + genericsCloser, nil
 }
 
 // Callee spells a function by name and records its use: a used
@@ -57,16 +81,29 @@ func (t target) Callee(id symbol.Identity) (string, error) {
 	return id.Name, nil
 }
 
-// Conversion spells a tuple-struct construction, which is what a
-// defined type over one value is in Rust.
-func (target) Conversion(_ *emit.TypeRef, typ, inner string) (string, error) {
+// Conversion spells a value converted to a type: a cast to a numeric
+// primitive, which is how Rust converts a number to another numeric
+// type, and a tuple-struct construction for a declared type, which
+// is what a defined type over one value is in Rust. A conversion to
+// bool, char, str or String refuses, because Rust converts to those
+// through a trait or a method, which the vocabulary does not express.
+func (t target) Conversion(ref *emit.TypeRef, typ, inner string) (string, error) {
+	if numeric, builtin := builtinTypes[bareName(ref)]; builtin {
+		if !numeric {
+			return "", render.RefuseValue(t.Lang(),
+				"Rust converts to %s through a trait or a method, and a value converts to it", typ)
+		}
+		return inner + castOp + typ, nil
+	}
 	return typ + "(" + inner + ")", nil
 }
 
 // Composite spells a struct literal for a record and a vector
-// literal for a list. A map is refused: Rust states no map literal,
-// and a collection built from an array of pairs is a call the
-// vocabulary does not express.
+// literal for a list. A struct literal that names no field closes on
+// empty braces, which Rust accepts for every struct without fields,
+// a unit struct included. A map is refused: Rust states no map
+// literal, and a collection built from an array of pairs is a call
+// the vocabulary does not express.
 func (t target) Composite(
 	ref *emit.TypeRef, typ string, entries []scaffold.Entry,
 ) (string, error) {
@@ -95,14 +132,20 @@ func (t target) Composite(
 		parts = append(parts, e.Name+": "+e.Value)
 	}
 	if len(parts) == 0 {
-		return typ, nil
+		return typ + emptyBraces, nil
 	}
 	return typ + " { " + strings.Join(parts, ", ") + " }", nil
 }
 
 // Address spells a shared borrow, which is Rust's address of a
-// value of any kind.
-func (target) Address(_ emit.Value, spelled string) (string, error) { return "&" + spelled, nil }
+// value of any kind. A cast borrows in parentheses, because & binds
+// tighter than as.
+func (target) Address(inner emit.Value, spelled string) (string, error) {
+	if inner.Kind == emit.ValueConversion && builtinTypes[bareName(inner.Type)] {
+		return "&(" + spelled + ")", nil
+	}
+	return "&" + spelled, nil
+}
 
 // use records the use a reference or a callee in another module
 // needs.

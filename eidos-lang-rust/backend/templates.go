@@ -18,9 +18,14 @@ const FileTemplate = "{{" + render.BuiltinImports + "}}{{" + render.BuiltinDecls
 // level. A standalone method is absent by design: Rust groups
 // methods under an impl block per receiver, which a template
 // rendering one declaration at a time cannot write, so the kind
-// is reported rather than guessed at. A variable is absent too:
-// the model carries no initialiser, and a Rust static requires
-// one.
+// is reported and not guessed at. A variable is absent too: Rust
+// declares a module-level binding as a static, whose initializer is
+// constant, and a variable is a binding its initializer fixes at run
+// time.
+//
+// A type definition's parameter list takes defaults, an impl block's
+// restates the definition's parameters without them, and a
+// function's, a method's and an associated type's refuses one.
 const (
 	// StructTemplate spells a struct and its fields: attribute
 	// lines above the declaration, its visibility and type
@@ -34,25 +39,26 @@ const (
 		"{{- range .Fields.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
 		"    {{fieldmods .}}{{.Name}}: {{spell .Type}},{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n" +
-		"{{if .Methods.Len}}\nimpl{{typeparams .TypeParams}} {{.Name}}{{typenames .TypeParams}} {\n" +
+		"{{if .Methods.Len}}\nimpl{{implparams .TypeParams}} {{.Name}}{{typenames .TypeParams}} {\n" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
-		"    {{implfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
+		"    {{implfn .}}fn {{.Name}}{{fnparams .TypeParams}}({{selfparams .}})" +
 		"{{results .Returns}} {\n{{body .}}    }{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}\n{{end}}"
 
 	// InterfaceTemplate spells a trait, its visibility and type
-	// parameters behind the name: associated types first, the bare
-	// name each, then method signatures taking the receiver by
-	// reference at instance level and standing alone at type
-	// level, async where stated, each with its own parameter list.
-	// A method carrying a default body places it; the rest close
-	// as signatures.
+	// parameters behind the name: associated types first, each
+	// under its own doc lines and attributes, then method
+	// signatures taking the receiver by reference at instance level
+	// and none at type level, async where stated, each with its own
+	// parameter list. A method with a default body places it; the
+	// rest close as signatures.
 	InterfaceTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{vis .Visibility .Name}}trait {{.Name}}{{typeparams .TypeParams}}{{supertraits .}} {\n" +
-		"{{- range .Types.Items}}\n{{docs .Doc \"    \"}}    {{assoctype .}}\n" +
+		"{{- range .Types.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
+		"    {{assoctype .}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"    \"}}{{attrs .Annotations \"    \"}}" +
-		"    {{traitfn .}}fn {{.Name}}{{typeparams .TypeParams}}({{selfparams .}})" +
+		"    {{traitfn .}}fn {{.Name}}{{fnparams .TypeParams}}({{selfparams .}})" +
 		"{{results .Returns}}{{if .HasDefault}} {\n{{body .}}    }{{else}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
@@ -61,7 +67,7 @@ const (
 	// fn, its type parameters behind the name, and places its
 	// body.
 	FunctionTemplate = "{{docs .Doc}}{{attrs .Annotations}}{{fnmods .}}fn " +
-		"{{.Name}}{{typeparams .TypeParams}}" +
+		"{{.Name}}{{fnparams .TypeParams}}" +
 		"({{params .Params}}){{results .Returns}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// EnumTemplate spells a payloadless enum: one variant per
@@ -85,16 +91,16 @@ const (
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// AliasTemplate spells a type alias, its visibility and type
-	// parameters behind the name; a defined type refuses through
+	// parameters behind the name. A defined type refuses through
 	// the keywords helper, because a Rust alias is transparent.
 	AliasTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{aliasmods .}}type {{.Name}}{{typeparams .TypeParams}}" +
 		" = {{spell .Target}};{{with .Comment}} // {{.}}{{end}}\n"
 
 	// ConstantTemplate spells a constant, its trailing comment
-	// behind the semicolon. Rust states a constant's type always,
-	// so a declaration stating none reaches the unit type and the
-	// compiler's refusal names the file.
+	// behind the semicolon. The type goes through a helper that
+	// refuses a constant without a type or a value, because rustc
+	// requires both.
 	ConstantTemplate = "{{docs .Doc}}{{attrs .Annotations}}" +
 		"{{vis .Visibility .Name}}const {{.Name}}: {{consttype .}} = {{.Value}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n"

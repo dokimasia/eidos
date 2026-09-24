@@ -10,18 +10,24 @@ import (
 
 // Coverage declares Rust's fact coverage, the feature table as
 // data: the render's guard reads it, and the conformance suite
-// holds it total and the rendered findings against it.
+// checks it total and the rendered findings against it.
 //
-// Final holds, because nothing subclasses. A trait widens through
-// supertraits, so an interface's extends renders while a struct's
-// refuses, and implements refuses everywhere until something
-// spells impl blocks for stated contracts. A trait's nested types
-// render as associated types where every other kind's refuse,
-// because Rust nests nothing else. Throws renders through the
-// Result fold the lowering spells. An enum variant's value
-// renders as its discriminant
-// where a field's initializer refuses, because a struct declares
-// no field defaults.
+//   - Final takes the [render.Holds] verdict, because nothing
+//     subclasses a struct and nothing overrides an inherent method.
+//     A trait method's final refuses through its keyword helper,
+//     because every implementation may override a trait method.
+//   - A trait widens through supertraits, so an interface's extends
+//     renders while a struct's refuses. Implements refuses, because
+//     the backend writes no impl block for a stated contract.
+//   - A trait's nested types render as associated types where every
+//     other kind's refuse, because Rust nests nothing else.
+//   - Throws renders through the Result fold the lowering spells.
+//   - An enum variant's value renders as its discriminant where a
+//     field's initializer refuses, because a struct declares no
+//     field defaults.
+//   - A type parameter's default renders on a type definition. On a
+//     function, a method and an associated type it refuses through
+//     the parameter-list helper, because Rust takes none there.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{
@@ -65,7 +71,7 @@ func Coverage() render.Coverage {
 			symbol.FactConstParam:       render.Renders,
 		},
 		Except: map[symbol.Kind]map[symbol.Fact]render.Verdict{
-			// An embed refuses whole, so what it carries refuses with it.
+			// An embed refuses whole, so the facts on it refuse with it.
 			symbol.KindEmbed: {
 				symbol.FactComment:     render.Refuses,
 				symbol.FactTag:         render.Refuses,

@@ -22,7 +22,7 @@ func TestLower(t *testing.T) {
 
 		out, err := backend.Lower(&emit.Function{Name: "fetch"})
 		assert.NoError(t, err, "a plain function is not reshaped")
-		assert.Length(t, out, 0, "a nil list keeps the declaration as it stands")
+		assert.Length(t, out, 0, "a nil list keeps the declaration unchanged")
 	})
 
 	t.Run("an announced failure wraps the result", func(t *testing.T) {
@@ -32,7 +32,7 @@ func TestLower(t *testing.T) {
 		failure := &emit.TypeRef{Spelling: "fetchError"}
 		f := &emit.Function{
 			Name:    "fetch",
-			Returns: []*emit.Return{{Type: valued}},
+			Returns: []*emit.Return{{Type: valued, Comment: "the row"}},
 			Throws:  []*emit.TypeRef{failure},
 		}
 		_, err := backend.Lower(f)
@@ -46,6 +46,8 @@ func TestLower(t *testing.T) {
 			"the value reference moves whole, so the settle keeps "+
 				"following it")
 		assert.True(t, wrapped.Args[1] == failure, "and so does the failure's")
+		assert.Equal(t, f.Returns[0].Comment, "the row",
+			"the result's trailing comment moves to the folded return")
 	})
 
 	t.Run("a bare thrower wraps the unit type", func(t *testing.T) {
@@ -74,7 +76,7 @@ func TestLower(t *testing.T) {
 			},
 		}
 		_, err := backend.Lower(several)
-		assert.HasError(t, err, "a result carries one failure type")
+		assert.HasError(t, err, "a result has one failure type")
 
 		wide := &emit.Function{
 			Name: "fetch",
@@ -86,5 +88,16 @@ func TestLower(t *testing.T) {
 		}
 		_, err = backend.Lower(wide)
 		assert.HasError(t, err, "a result wraps one value")
+
+		untyped := &emit.Function{
+			Name:    "fetch",
+			Returns: []*emit.Return{{Name: "row"}},
+			Throws:  []*emit.TypeRef{{Spelling: "fetchError"}},
+		}
+		_, err = backend.Lower(untyped)
+		assert.HasError(t, err,
+			"a result that states no type refuses, because the unit type in its place "+
+				"changes what the function returns")
+		assert.Contains(t, err.Error(), "rust: ", "under the language's identity")
 	})
 }
