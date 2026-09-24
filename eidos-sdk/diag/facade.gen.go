@@ -49,10 +49,11 @@ func NewRegistry() *Registry {
 	return core.NewRegistry()
 }
 
-// MustRegister records a code and panics if it cannot.
+// MustRegister records a code and panics on every refusal
+// [Registry.Register] returns.
 //
 // It is what a package uses to declare its codes at initialization,
-// where a duplicate is a defect in the source rather than a
+// where a refused code is a defect in the source rather than a
 // condition a run can meet, and where there is no sink to report
 // into yet. Everything a workspace populates from config uses
 // [Registry.Register] and collects the faults instead.

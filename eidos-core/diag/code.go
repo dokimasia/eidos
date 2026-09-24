@@ -73,10 +73,12 @@ func NewRegistry() *Registry {
 
 // Register records a code and returns it.
 //
-// A number claimed twice within one prefix is an error naming both
-// meanings, because the second claimant would otherwise report under
-// the first one's identity. It returns an error rather than
-// panicking so that a caller collecting faults reports every one.
+// It refuses a prefix that is not uppercase letters, a number below
+// 1, and a spec without a meaning. A number claimed twice within one
+// prefix is an error naming both meanings, because the second
+// claimant would otherwise report under the first one's identity.
+// It returns an error rather than panicking so that a caller
+// collecting faults reports every one.
 func (r *Registry) Register(p Prefix, s CodeSpec) (Code, error) {
 	if !p.Valid() {
 		return Code{}, fmt.Errorf(
@@ -84,6 +86,10 @@ func (r *Registry) Register(p Prefix, s CodeSpec) (Code, error) {
 				"a code belongs to whoever owns it, spelled so it splits back",
 			s.Number, p,
 		)
+	}
+	if s.Number < 1 {
+		return Code{}, fmt.Errorf("diag: %s claims number %d: a code's number counts from 1",
+			p, s.Number)
 	}
 	if s.Meaning == "" {
 		return Code{}, fmt.Errorf("diag: %s-%0*d names no meaning: the index anchors to it",
@@ -98,10 +104,11 @@ func (r *Registry) Register(p Prefix, s CodeSpec) (Code, error) {
 	return code, nil
 }
 
-// MustRegister records a code and panics if it cannot.
+// MustRegister records a code and panics on every refusal
+// [Registry.Register] returns.
 //
 // It is what a package uses to declare its codes at initialization,
-// where a duplicate is a defect in the source rather than a
+// where a refused code is a defect in the source rather than a
 // condition a run can meet, and where there is no sink to report
 // into yet. Everything a workspace populates from config uses
 // [Registry.Register] and collects the faults instead.

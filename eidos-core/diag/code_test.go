@@ -4,6 +4,7 @@
 package diag_test
 
 import (
+	"strconv"
 	"sync/atomic"
 	"testing"
 
@@ -122,6 +123,16 @@ func TestCode(t *testing.T) {
 			r := diag.NewRegistry()
 			_, err := r.Register(diag.KernelPrefix, diag.CodeSpec{Number: 1})
 			assert.HasError(t, err, "a spec without a meaning is refused: the index anchors to it")
+		})
+
+		t.Run("refuses a number below one", func(t *testing.T) {
+			t.Parallel()
+
+			r := diag.NewRegistry()
+			for _, n := range []int{0, -5} {
+				_, err := r.Register(diag.KernelPrefix, diag.CodeSpec{Number: n, Meaning: "unnumbered"})
+				assert.HasError(t, err, "a code counts from one, so "+strconv.Itoa(n)+" spells nothing")
+			}
 		})
 
 		t.Run("refuses a prefix that owns nothing", func(t *testing.T) {

@@ -18,9 +18,10 @@
 // [SeverityError] means the run is wrong and any Error fails it.
 // [SeverityWarning] means the output stands but a human should look.
 // [SeverityInfo] carries provenance and progress. Reporting never
-// panics; only [MustRegister] does, and only for a duplicate code,
-// which is a defect at package initialization rather than a
-// condition a run can meet.
+// panics. [MustRegister] panics on every code [Registry.Register]
+// refuses: a prefix that is not uppercase letters, a number below 1,
+// a missing meaning and a duplicate. Each is a defect at package
+// initialization rather than a condition a run can meet.
 //
 // # Dependency position
 //
