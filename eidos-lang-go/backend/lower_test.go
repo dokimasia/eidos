@@ -97,7 +97,7 @@ func TestLower(t *testing.T) {
 			"each method on references of its own, so a respell of one leaves the other")
 	})
 
-	t.Run("an enum carrying members refuses", func(t *testing.T) {
+	t.Run("an enum with members refuses", func(t *testing.T) {
 		t.Parallel()
 
 		e := &emit.Enum{Name: "phase"}
@@ -137,6 +137,26 @@ func TestLower(t *testing.T) {
 		assert.Length(t, m.Throws, 0, "consumed")
 		assert.Equal(t, m.Returns[0].Type.Spelling, "error",
 			"a bare thrower returns the error alone")
+		assert.Equal(t, m.Returns[0].Name, "", "unnamed, as the results it joins are")
+
+		named := &emit.Function{
+			Name:    "count",
+			Returns: []*emit.Return{{Name: "n", Type: &emit.TypeRef{Spelling: "int"}}},
+			Throws:  []*emit.TypeRef{{Spelling: "overflow"}},
+		}
+		_, err = backend.Lower(named)
+		assert.NoError(t, err, "a thrower with named results lowers")
+		assert.Equal(t, named.Returns[1].Name, "err",
+			"its error is named too, because Go refuses a list mixing named and unnamed results")
+
+		taken := &emit.Function{
+			Name:    "count",
+			Returns: []*emit.Return{{Name: "err", Type: &emit.TypeRef{Spelling: "int"}}},
+			Throws:  []*emit.TypeRef{{Spelling: "overflow"}},
+		}
+		_, err = backend.Lower(taken)
+		assert.NoError(t, err, "a thrower whose result is already named err lowers")
+		assert.Equal(t, taken.Returns[1].Name, "err1", "and its error takes the next free name")
 	})
 
 	t.Run("a struct's methods gain the host receiver", func(t *testing.T) {

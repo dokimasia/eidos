@@ -4,6 +4,7 @@
 package backend_test
 
 import (
+	"io"
 	"strings"
 	"testing"
 	"text/template"
@@ -17,8 +18,18 @@ import (
 
 // execute runs one template over one declaration the way the
 // render pass does, with the body builtin stubbed to a marker, so
-// the twin holds the template's own bytes and nothing else's.
+// the output is the template's own bytes and nothing else's.
 func execute(t *testing.T, src string, data any) string {
+	t.Helper()
+
+	var b strings.Builder
+	assert.NoError(t, parsed(t, src).Execute(&b, data), "the template executes")
+	return b.String()
+}
+
+// parsed parses one template against the backend's vocabulary and
+// the builtins stubbed.
+func parsed(t *testing.T, src string) *template.Template {
 	t.Helper()
 
 	tmpl, err := template.New("kind").
@@ -36,9 +47,7 @@ func execute(t *testing.T, src string, data any) string {
 		}).
 		Parse(src)
 	assert.NoError(t, err, "the template parses")
-	var b strings.Builder
-	assert.NoError(t, tmpl.Execute(&b, data), "the template executes")
-	return b.String()
+	return tmpl
 }
 
 // Each kind template is pinned byte for byte over a declaration
@@ -46,7 +55,7 @@ func execute(t *testing.T, src string, data any) string {
 func TestTemplates(t *testing.T) {
 	t.Parallel()
 
-	t.Run("every declared kind carries a template", func(t *testing.T) {
+	t.Run("every declared kind has a template", func(t *testing.T) {
 		t.Parallel()
 
 		kinds := backend.KindTemplates()
@@ -81,7 +90,7 @@ func TestTemplates(t *testing.T) {
 			"fields under their own docblocks, tag and trailing comment beside")
 	})
 
-	t.Run("embeds carry their docs, directives, tag and comment", func(t *testing.T) {
+	t.Run("embeds keep their docs, directives, tag and comment", func(t *testing.T) {
 		t.Parallel()
 
 		s := &emit.Struct{Name: "Row", Comment: "one per fetch"}
@@ -153,6 +162,28 @@ func TestTemplates(t *testing.T) {
 				"\tLoad(key string) (Row, error)\n"+
 				"}\n",
 			"methods under their own docblocks, at member depth")
+	})
+
+	t.Run("interface embeds keep their docs, directives and comment", func(t *testing.T) {
+		t.Parallel()
+
+		i := &emit.Interface{Name: "ReadCloser"}
+		i.Embeds = []*emit.Embed{{
+			Doc: []string{"Reader is the stream side."}, Ref: ref("io.Reader"), Comment: "stream side",
+			Annotations: symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
+		}}
+		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
+			"type ReadCloser interface {\n"+
+				"\t// Reader is the stream side.\n"+
+				"\t//go:fix inline\n"+
+				"\tio.Reader // stream side\n"+
+				"}\n",
+			"an interface's embed renders like a struct's embed")
+
+		tagged := &emit.Interface{Name: "ReadCloser"}
+		tagged.Embeds = []*emit.Embed{{Ref: ref("io.Reader"), Tag: `json:"r"`}}
+		assert.HasError(t, parsed(t, backend.InterfaceTemplate).Execute(io.Discard, tagged),
+			"a tag on an interface's embed refuses, because Go gives a struct field alone one")
 	})
 
 	t.Run("function and method place the body", func(t *testing.T) {

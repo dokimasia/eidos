@@ -153,6 +153,10 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "a static method refuses")
 		_, err = backend.Guard(&emit.Method{Name: "Load", Override: true})
 		assert.HasError(t, err, "an override marker refuses")
+		_, err = backend.Guard(&emit.Method{Name: "Close"})
+		assert.HasError(t, err, "a method naming no receiver type refuses, because func () Close() does not compile")
+		_, err = backend.Guard(&emit.Method{Name: "Close", Receives: ref("Row")})
+		assert.NoError(t, err, "and one attached to a type passes")
 		_, err = backend.Guard(&emit.Field{Name: "Key", Value: "1"})
 		assert.HasError(t, err, "a field initializer refuses")
 		_, err = backend.Guard(&emit.Field{
@@ -185,6 +189,16 @@ func TestVocabulary(t *testing.T) {
 		assert.NoError(t, err,
 			"supertypes pass: extends spells as embedding, and implements "+
 				"holds through structural satisfaction")
+	})
+
+	t.Run("EmbedGuard", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.EmbedGuard(&emit.Embed{Ref: ref("io.Reader"), Comment: "stream side"})
+		assert.NoError(t, err, "an interface's embed with a comment passes")
+		assert.Equal(t, got, "", "and writes nothing")
+		_, err = backend.EmbedGuard(&emit.Embed{Ref: ref("io.Reader"), Tag: `json:"r"`})
+		assert.HasError(t, err, "a tag refuses, because Go gives a struct field alone one")
 	})
 
 	t.Run("Directives", func(t *testing.T) {
@@ -226,8 +240,13 @@ func TestVocabulary(t *testing.T) {
 
 		_, err = backend.SigGuard(&emit.Method{Name: "Get", HasDefault: true})
 		assert.HasError(t, err, "a default body refuses")
-		_, err = backend.SigGuard(&emit.Method{Name: "Get", Final: true})
-		assert.HasError(t, err, "a final marker refuses")
+		got, err = backend.SigGuard(&emit.Method{Name: "Get", Final: true})
+		assert.NoError(t, err, "a final marker passes, because nothing overrides in Go")
+		assert.Equal(t, got, "", "and holds by writing nothing")
+		_, err = backend.SigGuard(&emit.Method{
+			Name: "Map", TypeParams: []*emit.TypeParam{{Name: "T"}},
+		})
+		assert.HasError(t, err, "type parameters refuse, because Go gives an interface method none")
 		_, err = backend.SigGuard(&emit.Method{Name: "Get", Async: true})
 		assert.HasError(t, err, "an async signature refuses")
 		_, err = backend.SigGuard(&emit.Method{Name: "Get", Body: emit.Body{Verbatim: "return nil"}})

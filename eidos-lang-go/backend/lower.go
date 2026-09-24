@@ -4,12 +4,13 @@
 package backend
 
 import (
-	"fmt"
 	"go/scanner"
 	"go/token"
+	"slices"
 	"strconv"
 	"strings"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -22,8 +23,12 @@ import (
 const underlying = "int"
 
 // errorType is the return an announced failure lowers into, which
-// is how Go declares one.
-const errorType = "error"
+// is how Go declares one, and errorName is the name it takes beside
+// named results.
+const (
+	errorType = "error"
+	errorName = "err"
+)
 
 // iotaName spells Go's constant counter, which a constant declared
 // alone evaluates to zero.
@@ -33,8 +38,8 @@ const iotaName = "iota"
 // an enum becomes a defined type and its constants, and a callable
 // announcing failure types gains an error return, in place. Both
 // consume their fact, so a second settle changes nothing, and
-// everything else passes through as it stands, a sum included,
-// whose unspelt kind the render reports.
+// everything else passes through unchanged, a sum included, whose
+// unspelt kind the render reports.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	switch d := s.(type) {
 	case *emit.Enum:
@@ -44,13 +49,13 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	case *emit.Method:
 		d.Returns, d.Throws = thrown(d.Returns, d.Throws), nil
 	case *emit.Struct:
-		if err := lowering.UniqueMethods("go", d.Name, d.Methods.Items()); err != nil {
+		if err := lowering.UniqueMethods(string(golang.Lang), d.Name, d.Methods.Items()); err != nil {
 			return nil, err
 		}
 		lowerMembers(d.Methods.Items())
 		receive(d.Name, d.Origin, d.TypeParams, d.Methods.Items())
 	case *emit.Interface:
-		if err := lowering.UniqueMethods("go", d.Name, d.Methods.Items()); err != nil {
+		if err := lowering.UniqueMethods(string(golang.Lang), d.Name, d.Methods.Items()); err != nil {
 			return nil, err
 		}
 		lowerMembers(d.Methods.Items())
@@ -70,7 +75,7 @@ func lowerMembers(methods []*emit.Method) {
 // receive gives a struct's member methods their receiver: Go
 // states a method at the package level, so the template spells
 // each one after its type and the receiver has to name that type.
-// The reference carries the struct's origin, so the settle
+// The reference names the struct's origin, so the settle
 // respells receiver and type together, and a generic struct's type
 // parameters as its arguments, because Go's receiver restates
 // them. A method stating its own receiver keeps it, which is how a
@@ -89,16 +94,34 @@ func receive(name string, origin symbol.Identity, params []*emit.TypeParam, meth
 
 // thrown appends the error return a callable's announced failure
 // types lower into: one error whatever the count, because Go's
-// failures are values of one interface and the concrete types
-// arrive through errors.As. A callable announcing none keeps its
-// returns untouched.
+// failures are values of one interface, and a caller recovers the
+// concrete types through errors.As. Where the other results are
+// named, the error takes the first free name of err, err1, err2,
+// because Go refuses a list mixing named and unnamed results. A
+// callable announcing none keeps its returns untouched.
 func thrown(returns []*emit.Return, throws []*emit.TypeRef) []*emit.Return {
 	if len(throws) == 0 {
 		return returns
 	}
-	return append(returns, &emit.Return{
-		Type: &emit.TypeRef{Spelling: errorType},
-	})
+	failure := &emit.Return{Type: &emit.TypeRef{Spelling: errorType}}
+	if slices.ContainsFunc(returns, func(r *emit.Return) bool { return r != nil && r.Name != "" }) {
+		failure.Name = freeName(returns, errorName)
+	}
+	return append(returns, failure)
+}
+
+// freeName returns base where no result is named base, and base
+// with the smallest positive number appended that no result is
+// named otherwise.
+func freeName(returns []*emit.Return, base string) string {
+	taken := func(name string) bool {
+		return slices.ContainsFunc(returns, func(r *emit.Return) bool { return r != nil && r.Name == name })
+	}
+	name := base
+	for n := 1; taken(name); n++ {
+		name = base + strconv.Itoa(n)
+	}
+	return name
 }
 
 // lowerEnum reshapes an enum into a defined type and one typed
@@ -109,16 +132,14 @@ func thrown(returns []*emit.Return, throws []*emit.TypeRef) []*emit.Return {
 // spelled the way a Go constant group evaluates it: a variant
 // stating no value repeats the last stated value, a variant before
 // any stated value takes its ordinal, and every iota in a value is
-// the variant's position. Every output carries the enum's origin
-// and none restates the enum.
+// the variant's position. Every output names the enum's origin, and
+// none restates the enum.
 //
-// An enum carrying fields or methods refuses: a constant group
-// holds no members, and Go declares no other closed value set.
+// An enum with fields or methods refuses: a constant group has no
+// members, and Go declares no other closed value set.
 func lowerEnum(e *emit.Enum) ([]symbol.Symbol, error) {
 	if e.Fields.Len() > 0 || e.Methods.Len() > 0 {
-		return nil, fmt.Errorf(
-			"go: a constant group holds no members, and %s states some", e.Name,
-		)
+		return nil, refuse("a constant group has no members, and %s states some", e.Name)
 	}
 	variants := e.Variants.Items()
 	out := make([]symbol.Symbol, 0, 1+len(variants))

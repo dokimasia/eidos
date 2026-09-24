@@ -9,14 +9,16 @@ import (
 )
 
 // Coverage declares Go's fact coverage, the feature table as data:
-// the render's guard reads it, and the conformance suite holds it
+// the render's guard reads it, and the conformance suite checks it
 // total and the rendered findings against it.
 //
-// Visibility renders through the respell, which is where Go's case
-// convention lives. Final and a struct's implements hold: nothing
-// subclasses, and satisfaction is structural. Throws
-// lowers into the appended error return. A field's initializer refuses where a
-// variable's renders, because Go declares no field defaults.
+// Visibility renders through the respell, which applies Go's case
+// convention. Final and a struct's implements take the
+// [render.Holds] verdict: nothing subclasses, and satisfaction is
+// structural. Throws lowers into the
+// appended error return. A field's initializer refuses where a
+// variable's renders, because Go declares no field defaults, and a
+// parameter's annotations refuse, because Go has no syntax for them.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{
@@ -62,6 +64,9 @@ func Coverage() render.Coverage {
 		Except: map[symbol.Kind]map[symbol.Fact]render.Verdict{
 			symbol.KindField: {
 				symbol.FactValue: render.Refuses, // no field defaults
+			},
+			symbol.KindParam: {
+				symbol.FactAnnotations: render.Refuses, // no parameter annotations
 			},
 		},
 	}

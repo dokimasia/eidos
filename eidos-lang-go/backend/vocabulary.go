@@ -9,6 +9,7 @@ import (
 	"strings"
 	"text/template"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -36,6 +37,8 @@ const (
 	FuncGuard = "guard"
 	// FuncSigGuard refuses what an interface method states nowhere.
 	FuncSigGuard = "sigguard"
+	// FuncEmbedGuard refuses what an interface's embed states nowhere.
+	FuncEmbedGuard = "embedguard"
 	// FuncDirectives writes annotations as directive comment lines.
 	FuncDirectives = "directives"
 	// FuncVarType writes a variable's type slot, empty where an
@@ -63,6 +66,7 @@ func Funcs() template.FuncMap {
 		FuncPackage:    Package,
 		FuncGuard:      Guard,
 		FuncSigGuard:   SigGuard,
+		FuncEmbedGuard: EmbedGuard,
 		FuncDirectives: Directives,
 		FuncVarType:    VarType,
 	}
@@ -100,17 +104,11 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 	for _, p := range ps {
 		switch {
 		case p.Variance != symbol.VarianceInvariant:
-			return "", fmt.Errorf(
-				"go: a type parameter states no variance, and %s states one", p.Name,
-			)
+			return "", refuse("a type parameter states no variance, and %s states one", p.Name)
 		case p.Const:
-			return "", fmt.Errorf(
-				"go: a type parameter takes a type, and %s takes a value", p.Name,
-			)
+			return "", refuse("a type parameter takes a type, and %s takes a value", p.Name)
 		case p.Default != nil:
-			return "", fmt.Errorf(
-				"go: a type parameter takes no default, and %s states one", p.Name,
-			)
+			return "", refuse("a type parameter takes no default, and %s states one", p.Name)
 		}
 		parts = append(parts, p.Name+" "+bound(p.Bounds))
 	}
@@ -212,11 +210,12 @@ func Package(id symbol.Identity) string {
 
 // Guard writes nothing and refuses what Go states nowhere, so a
 // stated fact is never dropped in silence: asynchrony, abstractness,
-// an override or default marker, a type-level member, a field's own
-// mutability or initializer, an immutable variable, a constant
-// without a value, and every visibility beyond the exported and
-// package scopes the name's case spells. A final struct or method
-// passes, because nothing subclasses in Go.
+// an override or default marker, a type-level member, a method with
+// no receiver type, a field's own mutability or initializer, an
+// immutable variable, a constant without a value, and every
+// visibility beyond the exported and package scopes the name's case
+// spells. A final struct or method passes, because nothing
+// subclasses in Go.
 func Guard(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -243,6 +242,8 @@ func Guard(d symbol.Symbol) (string, error) {
 			return "", refuse("default bodies belong to interfaces elsewhere, and %s states one", t.Name)
 		case t.Level == symbol.LevelType:
 			return "", refuse("a type-level callable is a function, and %s states a static method", t.Name)
+		case t.Receiver == nil && t.Receives == nil:
+			return "", refuse("a method is declared on a receiver type, and %s names none", t.Name)
 		}
 		return "", cased(t.Visibility, t.Name)
 	case *emit.Field:
@@ -274,19 +275,22 @@ func Guard(d symbol.Symbol) (string, error) {
 
 // SigGuard writes nothing and refuses what an interface method
 // states nowhere. An abstract method passes, because an interface
-// method is a signature without a body. A body is refused, because
-// the signature cannot place it, and everything else an interface
+// method is a signature without a body, and so does a final one,
+// because nothing overrides in Go. A body is refused, because the
+// signature cannot place it, and so are type parameters, because Go
+// gives an interface method none. Everything else an interface
 // method could state is refused the way [Guard] refuses it.
 func SigGuard(m *emit.Method) (string, error) {
 	switch {
 	case !m.Body.IsZero():
 		return "", refuse("an interface method is a signature, and %s states a body", m.Name)
+	case len(m.TypeParams) > 0:
+		return "", refuse("an interface method takes no type parameters, and %s states %d",
+			m.Name, len(m.TypeParams))
 	case m.Async:
 		return "", refuse("concurrency is caller-side, and %s states async", m.Name)
 	case m.Override:
 		return "", refuse("a method overrides nothing, and %s states it", m.Name)
-	case m.Final:
-		return "", refuse("an interface method admits no final, and %s states it", m.Name)
 	case m.HasDefault:
 		return "", refuse("an interface method carries no body, and %s states a default", m.Name)
 	case m.Level == symbol.LevelType:
@@ -295,6 +299,19 @@ func SigGuard(m *emit.Method) (string, error) {
 		return "", unannotated(m.Name)
 	}
 	return "", cased(m.Visibility, m.Name)
+}
+
+// EmbedGuard writes nothing and refuses what an interface's embed
+// states nowhere: a tag, which Go gives a struct field alone.
+func EmbedGuard(e *emit.Embed) (string, error) {
+	if e.Tag != "" {
+		name := ""
+		if e.Ref != nil {
+			name = e.Ref.Spelling
+		}
+		return "", refuse("an interface's embed takes no tag, and %s states %q", name, e.Tag)
+	}
+	return "", nil
 }
 
 // cased refuses the visibilities the name's case cannot express:
@@ -359,7 +376,11 @@ func VarType(v *emit.Variable) (string, error) {
 	}
 }
 
-// refuse builds a guard refusal under the package's error prefix.
+// refusalPrefix opens every refusal the backend returns: the
+// language's identity, as every backend's refusals open.
+const refusalPrefix = string(golang.Lang) + ": "
+
+// refuse builds a refusal under [refusalPrefix].
 func refuse(format string, args ...any) error {
-	return fmt.Errorf("go: "+format, args...)
+	return fmt.Errorf(refusalPrefix+format, args...)
 }

@@ -13,8 +13,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The suite holds the declaration total and the rendered findings
-// against it; this twin pins the cells that distinguish Go.
+// The suite checks the declaration total and the rendered findings
+// against it, and this test pins the cells that distinguish Go.
 func TestCoverage(t *testing.T) {
 	t.Parallel()
 
@@ -33,4 +33,8 @@ func TestCoverage(t *testing.T) {
 		"a field's initializer refuses")
 	assert.Equal(t, c.Of(symbol.KindVariable, symbol.FactValue), render.Renders,
 		"where a variable's renders")
+	assert.Equal(t, c.Of(symbol.KindParam, symbol.FactAnnotations), render.Refuses,
+		"a parameter's annotations refuse, because Go has no syntax for them")
+	assert.Equal(t, c.Of(symbol.KindFunction, symbol.FactAnnotations), render.Renders,
+		"where a declaration's render as directive lines")
 }
