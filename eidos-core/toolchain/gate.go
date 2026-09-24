@@ -31,9 +31,9 @@ func RequiredInCI() bool {
 }
 
 // Prepare lays a fixture out and returns its directory and the
-// cleanup the caller defers. A fixture carrying no output and a
-// layout the language refused are both failures, reported through
-// tb, and the returned directory is empty.
+// cleanup the caller defers. A fixture with no output and a layout
+// the language refused are both failures, reported through tb, and
+// the returned directory is empty.
 func Prepare(tb TB, a Adapter, g Generated) (string, func()) {
 	tb.Helper()
 
@@ -68,10 +68,10 @@ type TB interface {
 // adapter gave, and in CI it fails, so a regression cannot hide
 // behind a missing compiler.
 //
-// [RunToolchainSuite] calls it once for the kernel's three checks.
-// A satellite adding assertions of its own calls it too, because
-// the gate belongs to whoever runs a toolchain rather than to the
-// suite.
+// [RunToolchainSuite] calls it once for the kernel's two checks that
+// run a toolchain. A satellite adding assertions of its own calls it
+// too, because every caller that runs a toolchain passes the gate,
+// whether or not the suite runs it.
 func Require(tb TB, a Adapter) bool {
 	tb.Helper()
 

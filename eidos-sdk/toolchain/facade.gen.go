@@ -90,9 +90,9 @@ func RequiredInCI() bool {
 }
 
 // Prepare lays a fixture out and returns its directory and the
-// cleanup the caller defers. A fixture carrying no output and a
-// layout the language refused are both failures, reported through
-// tb, and the returned directory is empty.
+// cleanup the caller defers. A fixture with no output and a layout
+// the language refused are both failures, reported through tb, and
+// the returned directory is empty.
 func Prepare(tb TB, a Adapter, g Generated) (string, func()) {
 	return core.Prepare(tb, a, g)
 }
@@ -107,29 +107,30 @@ type TB = core.TB
 // adapter gave, and in CI it fails, so a regression cannot hide
 // behind a missing compiler.
 //
-// [RunToolchainSuite] calls it once for the kernel's three checks.
-// A satellite adding assertions of its own calls it too, because
-// the gate belongs to whoever runs a toolchain rather than to the
-// suite.
+// [RunToolchainSuite] calls it once for the kernel's two checks that
+// run a toolchain. A satellite adding assertions of its own calls it
+// too, because every caller that runs a toolchain passes the gate,
+// whether or not the suite runs it.
 func Require(tb TB, a Adapter) bool {
 	return core.Require(tb, a)
 }
 
 // Setup builds the adapter under test and the generated output it
-// runs over, fresh per check, so one check's scratch project never
-// reaches another.
+// runs over, fresh per check, so no check reads another check's
+// scratch project.
 type Setup = core.Setup
 
-// RunToolchainSuite is the floor every satellite's harness runs:
+// RunToolchainSuite is the minimum every satellite's harness runs:
 // the generated output parses, it type-checks, and its own tests
 // pass.
 //
-// The whole suite gates on the toolchain once: absent locally it
-// skips with the reason the adapter gave, and absent in CI it
-// fails, so a regression cannot hide behind a missing compiler. A
-// satellite adds its own assertions beside this call rather than
-// inside it, because the kernel set is the floor rather than the
-// ceiling.
+// Parsing needs no toolchain, so the parse check runs on every
+// machine. The two checks after it gate on the toolchain once:
+// absent locally they skip with the reason the adapter gave, and
+// absent in CI they fail, so a regression cannot hide behind a
+// missing compiler. A satellite adds its own assertions in its own
+// test, beside this call, because the kernel set is the minimum
+// every satellite runs.
 func RunToolchainSuite(t *testing.T, setup Setup) {
 	core.RunToolchainSuite(t, setup)
 }

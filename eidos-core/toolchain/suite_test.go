@@ -12,7 +12,7 @@ import (
 	"go.dokimi.dev/eidos/core/toolchain"
 )
 
-// The suite is the floor a satellite runs, and Require is the gate
+// The suite is the minimum a satellite runs, and Require is the gate
 // every toolchain assertion passes through, so both are contract.
 func TestSuite(t *testing.T) {
 	t.Parallel()
@@ -23,7 +23,7 @@ func TestSuite(t *testing.T) {
 		var mu sync.Mutex
 		runs := 0
 		// The suite's checks run in parallel, so the count settles
-		// after they finish rather than when the call returns.
+		// after they finish, not when the call returns.
 		t.Cleanup(func() {
 			mu.Lock()
 			defer mu.Unlock()
@@ -57,4 +57,24 @@ func TestSuite(t *testing.T) {
 			assert.True(t, r.says("no adapter"), "which the refusal says")
 		})
 	})
+}
+
+// The gate reads a process-wide variable, so the suite without a
+// toolchain runs on its own, apart from the parallel cases above.
+func TestSuiteGate(t *testing.T) {
+	t.Setenv("CI", "")
+
+	var mu sync.Mutex
+	runs := 0
+	t.Run("parses without the toolchain and skips the checks that run one", func(t *testing.T) {
+		toolchain.RunToolchainSuite(t, func(toolchain.TB) (toolchain.Adapter, toolchain.Generated) {
+			mu.Lock()
+			defer mu.Unlock()
+			runs++
+			return scripted{absent: "scriptedc is not on PATH"}, output()
+		})
+	})
+	mu.Lock()
+	defer mu.Unlock()
+	assert.Equal(t, runs, 2, "the parse check and the gate each set up once, and no gated check runs")
 }
