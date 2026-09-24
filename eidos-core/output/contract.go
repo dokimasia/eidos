@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"go.dokimi.dev/eidos/core/plugin"
 )
@@ -34,6 +35,11 @@ const (
 	// hashLen is the hex width of a sha256 digest.
 	hashLen = sha256.Size * 2
 )
+
+// byteOrderMark is U+FEFF. The text policy forbids it anywhere in
+// a body. A stamped file starts with its marker line, and the Go
+// scanner refuses the mark after a file's first character.
+const byteOrderMark = 0xFEFF
 
 // Brand names the tool built on the kernel: the name the marker
 // attributes generation to and the trailer claims ownership
@@ -134,11 +140,13 @@ func (c *Contract) Brand() Brand { return c.brand }
 // derivation is sorted and deduplicated here, so two renderers
 // listing one file's emitters in two orders stamp one frame.
 //
-// It refuses a body that carries a carriage return or does not
-// end in a newline, and a plugin or source that is empty or
-// carries a line break: each would break the frame, and the text
-// policy is LF only. A formatter emitting CRLF is where that
-// violation is fixed.
+// It refuses a body that does not end in a newline, contains a
+// carriage return or a byte order mark, or is not valid UTF-8. It
+// refuses a plugin or source that is empty or contains a line
+// break. The text policy is UTF-8 without a byte order mark, with
+// LF line ends, and each refused input breaks the frame or the
+// policy. A formatter emitting CRLF is where that violation is
+// fixed.
 func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 	if len(f.Body) == 0 || f.Body[len(f.Body)-1] != '\n' {
 		return nil, errors.New("output: the body does not end in a newline")
@@ -146,6 +154,14 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 	if bytes.IndexByte(f.Body, '\r') >= 0 {
 		return nil, errors.New(
 			"output: the body carries a carriage return, and the text policy is LF",
+		)
+	}
+	if !utf8.Valid(f.Body) {
+		return nil, errors.New("output: the body is not valid UTF-8, and the text policy is UTF-8")
+	}
+	if bytes.ContainsRune(f.Body, byteOrderMark) {
+		return nil, errors.New(
+			"output: the body contains a byte order mark, and the text policy writes none",
 		)
 	}
 	plugins := make([]string, 0, len(f.Plugins))

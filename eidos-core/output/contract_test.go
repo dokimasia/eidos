@@ -221,6 +221,21 @@ func TestContract(t *testing.T) {
 					why:  "the text policy is LF, and the formatter is where CRLF is fixed",
 				},
 				{
+					name: "a body that is not UTF-8",
+					file: plugin.RenderedFile{Body: []byte("package svc // \xff\n")},
+					why:  "the text policy is UTF-8",
+				},
+				{
+					name: "a body starting with a byte order mark",
+					file: plugin.RenderedFile{Body: []byte(string(rune(0xFEFF)) + "package svc\n")},
+					why:  "the text policy writes no byte order mark",
+				},
+				{
+					name: "a body containing a byte order mark after its first character",
+					file: plugin.RenderedFile{Body: []byte("package svc\n" + string(rune(0xFEFF)) + "\n")},
+					why:  "and the Go scanner refuses one after the first character",
+				},
+				{
 					name: "a plugin name carrying a line break",
 					file: plugin.RenderedFile{
 						Plugins: []plugin.ID{"stub\ngen"}, Body: []byte("package svc\n"),
