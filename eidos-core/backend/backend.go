@@ -221,6 +221,7 @@ func (b *Builder) Build() plugin.Backend {
 	base := &builtBackend{
 		name: b.name, target: b.target, syntax: b.syntax,
 		version: b.version, pass: pass,
+		seams: b.lower != nil || b.respell != nil,
 	}
 	switch {
 	case b.lower != nil && b.respell != nil:
@@ -242,6 +243,9 @@ type builtBackend struct {
 	syntax  plugin.CommentSyntax
 	version string
 	pass    *render.Pass
+	// seams reports whether the backend declares a lowering or a
+	// respell seam. Render refuses an unsettled store when it does.
+	seams bool
 }
 
 // Name returns the backend's one identity.
@@ -264,21 +268,17 @@ func (b *builtBackend) Syntax() plugin.CommentSyntax { return b.syntax }
 // so the suite reads the same data the render's guard does.
 func (b *builtBackend) Coverage() render.Coverage { return b.pass.Coverage() }
 
-// Render implements [plugin.Renderer] through the composed pass.
+// Render implements [plugin.Renderer] through the composed pass. A
+// backend declaring a seam refuses an unsettled store: the plan
+// never settled, and rendering it would write the wrong bytes
+// without a finding.
 func (b *builtBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-	return b.pass.Render(ctx)
-}
-
-// refuseUnsettled is the guard a hook-declaring backend renders
-// behind: an unsettled store means the plan never settled, and
-// rendering it would write the wrong bytes without a finding.
-func (b *builtBackend) refuseUnsettled(ctx *plugin.RenderContext) error {
-	if ctx != nil && ctx.Emit != nil && !ctx.Emit.Settled() {
-		return errors.New("backend: " + string(b.name) +
+	if b.seams && ctx != nil && ctx.Emit != nil && !ctx.Emit.Settled() {
+		return nil, errors.New("backend: " + string(b.name) +
 			" declares a lowering seam, and the store is unsettled: " +
 			"the plan settles once before the render")
 	}
-	return nil
+	return b.pass.Render(ctx)
 }
 
 // loweringBackend is a built backend declaring the construct
@@ -293,15 +293,6 @@ func (b *loweringBackend) Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	return b.lower(s)
 }
 
-// Render refuses an unsettled store, then renders through the
-// composed pass.
-func (b *loweringBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-	if err := b.refuseUnsettled(ctx); err != nil {
-		return nil, err
-	}
-	return b.builtBackend.Render(ctx)
-}
-
 // respellingBackend is a built backend declaring the name respell
 // seam.
 type respellingBackend struct {
@@ -314,15 +305,6 @@ func (b *respellingBackend) Respell(
 	host, kind symbol.Kind, v symbol.Visibility, name string,
 ) (string, error) {
 	return b.respell(host, kind, v, name)
-}
-
-// Render refuses an unsettled store, then renders through the
-// composed pass.
-func (b *respellingBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-	if err := b.refuseUnsettled(ctx); err != nil {
-		return nil, err
-	}
-	return b.builtBackend.Render(ctx)
 }
 
 // settlingBackend is a built backend declaring both lowering
@@ -343,13 +325,4 @@ func (b *settlingBackend) Respell(
 	host, kind symbol.Kind, v symbol.Visibility, name string,
 ) (string, error) {
 	return b.respell(host, kind, v, name)
-}
-
-// Render refuses an unsettled store, then renders through the
-// composed pass.
-func (b *settlingBackend) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-	if err := b.refuseUnsettled(ctx); err != nil {
-		return nil, err
-	}
-	return b.builtBackend.Render(ctx)
 }
