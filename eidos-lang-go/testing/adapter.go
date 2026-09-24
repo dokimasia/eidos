@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -37,6 +38,19 @@ const (
 	// reads.
 	dirPerm  = 0o700
 	filePerm = 0o600
+	// testSuffix ends a test file's name, whose package the probe
+	// never joins.
+	testSuffix = "_test" + golang.Extension
+	// qualifierSep separates a contract's import path from its name.
+	qualifierSep = "."
+	// typeArgsOpen opens a generic contract's argument list, which
+	// the qualifier search stops before.
+	typeArgsOpen = "["
+	// probeImport is the name the probe imports a contract's package
+	// under: nothing a generated package declares takes it.
+	probeImport = "eidosprobecontract"
+	// notImplemented is the compiler's wording for the false answer.
+	notImplemented = "does not implement"
 )
 
 // adapter drives the Go toolchain over generated output. It holds
@@ -140,10 +154,14 @@ func (adapter) RunTests(dir string) (toolchain.TestReport, error) {
 
 // Satisfies asks the compiler whether one type implements one
 // interface, by writing an assertion into the project and building
-// it. A type that does not implement the interface is a build
-// error, which is the answer rather than a fault, so the check
-// tells a false answer apart from a broken project by building the
-// project alone first.
+// it. The type is probed as named: Row asks about the value's
+// method set, and *Row about the pointer's. A contract qualified by
+// its import path, io.Reader or example.com/x.Store, is imported
+// into the probe, and an unqualified one names an interface of the
+// root package or a builtin. A build failing because the type does
+// not implement the contract is the false answer. Any other build
+// failure returns as an error, and so does a project that does not
+// build without the probe.
 func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
 	if err := a.TypeCheck(dir); err != nil {
 		return false, fmt.Errorf("the project does not build, so nothing can be asked of it: %w", err)
@@ -153,16 +171,38 @@ func (a adapter) Satisfies(dir, typeName, contract string) (bool, error) {
 		return false, err
 	}
 	probe := filepath.Join(dir, probeFile)
-	body := "package " + pkg + "\n\nvar _ " + contract + " = (*" + typeName + ")(nil)\n"
-	if err := os.WriteFile(probe, []byte(body), filePerm); err != nil {
+	if err := os.WriteFile(probe, []byte(probeSource(pkg, typeName, contract)), filePerm); err != nil {
 		return false, err
 	}
 	defer func() { _ = os.Remove(probe) }()
 
-	if _, err := run(dir, "build", allPackages); err != nil {
+	out, buildErr := run(dir, "build", allPackages)
+	switch {
+	case buildErr == nil:
+		return true, nil
+	case strings.Contains(out, notImplemented):
 		return false, nil
+	default:
+		return false, fmt.Errorf("the probe does not build for a reason other than the contract: %w", buildErr)
 	}
-	return true, nil
+}
+
+// probeSource spells the probe file: a value of the named type
+// assigned to the contract, the contract's package imported under
+// [probeImport] where the contract is qualified.
+func probeSource(pkg, typeName, contract string) string {
+	var b strings.Builder
+	b.WriteString("package " + pkg + "\n\n")
+	head := contract
+	if at := strings.Index(contract, typeArgsOpen); at >= 0 {
+		head = contract[:at]
+	}
+	if at := strings.LastIndex(head, qualifierSep); at > 0 {
+		b.WriteString("import " + probeImport + " " + strconv.Quote(contract[:at]) + "\n\n")
+		contract = probeImport + qualifierSep + contract[at+len(qualifierSep):]
+	}
+	b.WriteString("var _ " + contract + " = *new(" + typeName + ")\n")
+	return b.String()
 }
 
 // probeFile is the file the satisfaction check writes and removes.
@@ -172,7 +212,8 @@ const probeFile = "zz_eidos_probe_gen.go"
 
 // probePackage returns the package clause the probe must carry:
 // the one the root directory's own files declare, because the
-// probe sits beside them.
+// probe sits beside them. A test file's package is never it,
+// because an external test package declares another name.
 func probePackage(dir string) (string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
@@ -180,7 +221,8 @@ func probePackage(dir string) (string, error) {
 	}
 	fset := token.NewFileSet()
 	for _, e := range entries {
-		if e.IsDir() || filepath.Ext(e.Name()) != golang.Extension {
+		if e.IsDir() || filepath.Ext(e.Name()) != golang.Extension ||
+			strings.HasSuffix(e.Name(), testSuffix) {
 			continue
 		}
 		f, err := parser.ParseFile(fset, filepath.Join(dir, e.Name()),

@@ -168,16 +168,56 @@ func TestAdapter(t *testing.T) {
 			t.Parallel()
 
 			var r recorder
-			toolchain.AssertSatisfies(&r, adapter(), healthy(), "Row", "Reader")
-			assert.False(t, r.failed(), "a Row satisfies the Reader it was generated against")
+			toolchain.AssertSatisfies(&r, adapter(), healthy(), "*Row", "Reader")
+			assert.False(t, r.failed(), "a *Row satisfies the Reader it was generated against")
 
 			r = recorder{}
-			toolchain.AssertDoesNotSatisfy(&r, adapter(), healthy(), "Row", "error")
+			toolchain.AssertDoesNotSatisfy(&r, adapter(), healthy(), "Row", "Reader")
+			assert.False(t, r.failed(), "and a Row does not, because Read has a pointer receiver")
+
+			r = recorder{}
+			toolchain.AssertDoesNotSatisfy(&r, adapter(), healthy(), "*Row", "error")
 			assert.False(t, r.failed(), "and satisfies no error, which nothing widened it to")
 
 			r = recorder{}
-			toolchain.AssertSatisfies(&r, adapter(), healthy(), "Row", "error")
+			toolchain.AssertSatisfies(&r, adapter(), healthy(), "*Row", "error")
 			assert.True(t, r.says("does not satisfy"), "a promise the output never met reports")
+		})
+
+		t.Run("satisfaction imports a qualified contract", func(t *testing.T) {
+			t.Parallel()
+
+			g := with("stringer.go",
+				"package harness\n\n// String names the row.\nfunc (r Row) String() string { return r.Name }\n")
+			var r recorder
+			toolchain.AssertSatisfies(&r, adapter(), g, "Row", "fmt.Stringer")
+			assert.False(t, r.failed(), "a Row satisfies fmt.Stringer through its imported package")
+
+			r = recorder{}
+			toolchain.AssertDoesNotSatisfy(&r, adapter(), g, "Row", "io.Reader")
+			assert.False(
+				t,
+				r.failed(),
+				"and not io.Reader: the compiler reports the missing method, not a missing import",
+			)
+		})
+
+		t.Run("satisfaction refuses a probe that fails for another reason", func(t *testing.T) {
+			t.Parallel()
+
+			var r recorder
+			toolchain.AssertDoesNotSatisfy(&r, adapter(), healthy(), "Row", "Nowhere")
+			assert.True(t, r.says("for a reason other than the contract"),
+				"an undefined contract is a broken question, not a false answer")
+		})
+
+		t.Run("satisfaction probes from the package, never its external tests", func(t *testing.T) {
+			t.Parallel()
+
+			var r recorder
+			toolchain.AssertSatisfies(&r, adapter(),
+				with("a_test.go", "package harness_test\n"), "*Row", "Reader")
+			assert.False(t, r.failed(), "an external test file sorting first leaves the probe in the package")
 		})
 
 		t.Run("satisfaction refuses a project that does not build", func(t *testing.T) {
