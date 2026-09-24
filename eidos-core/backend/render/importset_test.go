@@ -62,6 +62,19 @@ func TestImportSet(t *testing.T) {
 			"join reads the pair in one pass")
 	})
 
+	t.Run("records nothing under the file's own package", func(t *testing.T) {
+		t.Parallel()
+
+		var s render.ImportSet
+		s.SetHome("svc/store")
+		s.Add("svc/store")
+		s.AddNamed("svc/store", "Row")
+		s.AddType("svc/store", "Store")
+		s.Add("svc/audit")
+		assert.Equal(t, s.Home(), "svc/store", "the set names the file's package")
+		assert.Equal(t, s.Paths(), []string{"svc/audit"}, "and only the other package imports")
+	})
+
 	t.Run("resets for the next file", func(t *testing.T) {
 		t.Parallel()
 

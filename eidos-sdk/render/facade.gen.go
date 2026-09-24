@@ -80,7 +80,8 @@ type Entry = core.Entry
 // file's spellings qualified with, deduplicated. The set is per
 // file by rule, filled as a side effect of spelling, and the
 // language's Imports renderer turns it into the block its own
-// formatter would leave.
+// formatter would leave. An entry under the file's own package
+// records nothing, because a file never imports its own package.
 //
 // An ImportSet is not safe for concurrent use: it belongs to the
 // one file under render.

@@ -778,6 +778,19 @@ func TestPass(t *testing.T) {
 				"spelling fed the file's one import set")
 		})
 
+		t.Run("a use of the file's own package imports nothing", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Kinds[symbol.KindStruct] = "{{use \"example.com/store\"}}{{use \"fmt\"}}type {{.Name}} struct{}\n"
+			u := unitOf("gen", "example.com/store/store.go", "Alpha")
+			u.Pkg = coretest.PackageID("example.com/store")
+			files, sink := runPass(t, l, seeded(t, u))
+			assert.False(t, sink.Failed(), "both uses are valid")
+			assert.Contains(t, string(files[0].Body), "import (fmt)\n",
+				"the file's own package is absent from its imports")
+		})
+
 		t.Run("imports dedupe and sort per file", func(t *testing.T) {
 			t.Parallel()
 

@@ -1192,6 +1192,7 @@ func (f *frame) file(g *group, b *bound) ([]byte, bool) {
 	f.out.Reset()
 	f.fileOut.Reset()
 	f.set.Reset()
+	f.set.SetHome(g.pkg.Package)
 	// The package qualifies the spelled name, because two packages
 	// can spell one filename and the two files remain distinct.
 	f.at = position.Pos{File: path.Join(g.pkg.Package, g.name)}

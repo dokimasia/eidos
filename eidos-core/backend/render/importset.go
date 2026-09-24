@@ -28,7 +28,8 @@ type Entry struct {
 // file's spellings qualified with, deduplicated. The set is per
 // file by rule, filled as a side effect of spelling, and the
 // language's Imports renderer turns it into the block its own
-// formatter would leave.
+// formatter would leave. An entry under the file's own package
+// records nothing, because a file never imports its own package.
 //
 // An ImportSet is not safe for concurrent use: it belongs to the
 // one file under render.
@@ -38,7 +39,18 @@ type ImportSet struct {
 	// recorded, so the pass can withdraw what a skipped declaration
 	// recorded before it failed.
 	journal []Entry
+	// home is the package path of the file under render.
+	home string
 }
+
+// Home returns the package path of the file the set collects for,
+// and empty where none is named.
+func (s *ImportSet) Home() string { return s.home }
+
+// SetHome names the package path of the file the set collects for.
+// The render pass names it for every file; an entry under it
+// records nothing.
+func (s *ImportSet) SetHome(path string) { s.home = path }
 
 // Add records one bare import path; recording a path twice
 // records one.
@@ -113,8 +125,12 @@ func (s *ImportSet) Reset() {
 	s.journal = s.journal[:0]
 }
 
-// add records one entry and journals it when it is new.
+// add records one entry and journals it when it is new. An entry
+// under the file's own package records nothing.
 func (s *ImportSet) add(e Entry) {
+	if s.home != "" && e.Path == s.home {
+		return
+	}
 	if s.entries == nil {
 		s.entries = map[Entry]struct{}{}
 	}
