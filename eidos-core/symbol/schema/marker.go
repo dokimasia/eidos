@@ -7,9 +7,8 @@ package schema
 //
 // The generator maps it to symbol.Symbol on both model sides, so a
 // field declared as Symbol accepts every kind and a field declared
-// as a concrete kind accepts one. Use it where the language
-// genuinely admits anything, as [File.Decls] does, and for the Host
-// back-pointers, whose declaring kind varies.
+// as a concrete kind accepts one. Use it where the language admits
+// any kind, as [File.Decls] does.
 //
 // It is a marker: it declares no methods, and the generator reads
 // it by name rather than by structure.

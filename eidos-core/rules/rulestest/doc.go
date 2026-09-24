@@ -22,9 +22,10 @@
 //
 // # Dependency position
 //
-// core/rules/rulestest imports core/rules, core/frontend/frontendtest,
-// core/store, core/meta, core/node, core/emit, core/directive,
-// core/symbol, the bench module and the assert module; it drives
-// the projections end to end, so it sits beside core/rules at the
-// top and nothing beneath imports it back.
+// core/rules/rulestest imports core/rules, core/diag,
+// core/directive, core/emit, core/frontend/frontendtest,
+// core/frontend/load, core/meta, core/node, core/plugin,
+// core/store, core/symbol, the assert module with its bench
+// package, and the Go stdlib. It drives the projections end to end
+// from a load. No package beneath core/rules imports it.
 package rulestest

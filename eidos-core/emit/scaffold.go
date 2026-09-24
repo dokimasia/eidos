@@ -98,17 +98,17 @@ func (k ExprKind) String() string {
 }
 
 // Expr is one scaffolding expression. The zero Expr names nothing,
-// which is what a bare return carries. Fn is the one pointer in
-// the vocabulary, because a struct cannot hold itself.
+// which is what a bare return carries. A copy of an Expr shares
+// what Fn, Val and Args reach. Fn is a pointer because a struct
+// cannot contain itself.
 type Expr struct {
 	Kind ExprKind `json:"kind"`
 	Name string   `json:"name,omitzero"`
 	Fn   *Expr    `json:"fn,omitzero"`
 	Args []Expr   `json:"args,omitzero"`
-	// Val is the carried value, populated on ExprValue alone. It
-	// is a pointer for the same reason Fn is: the zero expression
-	// carries none, and a value tree is larger than the rest of
-	// the expression put together.
+	// Val is the carried value, populated on ExprValue alone. It is
+	// a pointer because the zero expression carries none, and a
+	// value tree is larger than the rest of the expression.
 	Val *Value `json:"val,omitzero"`
 }
 

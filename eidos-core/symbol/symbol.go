@@ -34,11 +34,12 @@ type Membered interface {
 }
 
 // Typed is any kind whose meaning includes a type reference: Field,
-// Param, Return, Variable, Constant and Alias satisfy it.
+// Param, Return, Variable, Constant and TypeParam satisfy it.
 //
 // The result's Kind is [KindTypeRef]. It is nil when the source
 // declares no type, as for an inferred variable or an untyped
-// constant.
+// constant. A TypeParam returns one only when the parameter is
+// Const, and the reference is the value's type.
 type Typed interface {
 	Symbol
 	TypeRef() Symbol

@@ -98,8 +98,10 @@ func (k LiteralKind) String() string {
 // consumer switches on it and reads without an assertion. The
 // zero Value names nothing.
 //
-// A Value is a plain value: copy it freely. Inner is the one
-// pointer in the vocabulary, because a struct cannot hold itself.
+// A copy of a Value shares what its pointers and slices reach:
+// Type, Inner and each composite field's Key are pointers, and
+// Fields and Args are slices. Inner is a pointer because a struct
+// cannot contain itself.
 type Value struct {
 	Kind    ValueKind       `json:"kind"`
 	Literal LiteralKind     `json:"literal,omitzero"`

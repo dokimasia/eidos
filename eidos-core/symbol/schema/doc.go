@@ -5,8 +5,9 @@
 // declaration kinds.
 //
 // One exported struct defines one kind. The generator parses this
-// package as source and writes the node and emit models, the walk
-// and rewire passes, the JSON codecs and the [symbol.Kind]
+// package as source and writes the node and emit models, the walk,
+// the name respelling, the slot accessors, the JSON codecs, the
+// match constructors, the fact vocabulary and the [symbol.Kind]
 // constants. Nothing imports it at run time, and adding a kind or a
 // field is an edit here plus a regeneration.
 //
@@ -40,8 +41,8 @@
 // Seven fields recur across the kinds and mean the same thing
 // every time, so the per-kind documentation does not repeat them.
 //
-//   - Id: the node-side [symbol.Identity]. It is zero until a
-//     frontend assigns it, and zero claims nothing.
+//   - ID: the node-side [symbol.Identity]. It is zero until the
+//     load's resolution step assigns it, and zero claims nothing.
 //   - Origin: the emit-side identity of the node symbol a generated
 //     value derives from. Origin points one way; no node field
 //     refers to emit.
@@ -57,10 +58,10 @@
 //     declaration's annotations are the frontend's own metadata
 //     instead, where authority and overrides apply.
 //   - Host: the identity of the declaration that owns an owned
-//     kind, set when a frontend creates the child. It is an
-//     identity rather than a pointer, so it can be stored,
-//     compared and carried across runs, and reaching the owner
-//     goes through a tracked read like any other cross-reference.
+//     kind, which the load assigns beside ID. It is an identity
+//     rather than a pointer, so it can be stored, compared and
+//     carried across runs, and reaching the owner goes through a
+//     tracked read like any other cross-reference.
 //
 // # Emptiness
 //

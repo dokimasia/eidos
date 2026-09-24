@@ -9,8 +9,8 @@ package symbol
 // sigil and the arguments verbatim, the argument delimiters left
 // to whichever language writes them: a frontend records what the
 // source stated, a generator states what the target must write,
-// and the Tier-2 annotation rules read either statically. An
-// Annotation is a plain value: copy it freely.
+// and the Tier-2 annotation rules read either statically. A copy of
+// an Annotation shares its Args.
 type Annotation struct {
 	Name string   `json:"name"`
 	Args []string `json:"args,omitzero"`

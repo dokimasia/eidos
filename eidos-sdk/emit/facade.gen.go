@@ -558,8 +558,9 @@ const (
 )
 
 // Expr is one scaffolding expression. The zero Expr names nothing,
-// which is what a bare return carries. Fn is the one pointer in
-// the vocabulary, because a struct cannot hold itself.
+// which is what a bare return carries. A copy of an Expr shares
+// what Fn, Val and Args reach. Fn is a pointer because a struct
+// cannot contain itself.
 type Expr = core.Expr
 
 // ValueExpr returns an expression carrying one derived value.
@@ -674,8 +675,10 @@ const (
 // consumer switches on it and reads without an assertion. The
 // zero Value names nothing.
 //
-// A Value is a plain value: copy it freely. Inner is the one
-// pointer in the vocabulary, because a struct cannot hold itself.
+// A copy of a Value shares what its pointers and slices reach:
+// Type, Inner and each composite field's Key are pointers, and
+// Fields and Args are slices. Inner is a pointer because a struct
+// cannot contain itself.
 type Value = core.Value
 
 // ValueField is one entry of a composite, in one of three forms: a

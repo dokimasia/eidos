@@ -41,7 +41,8 @@ type output struct {
 	Side string
 }
 
-// outputs are every file the generator owns, in path order.
+// outputs are every file the generator owns. [Generate] keys its
+// result by path, so the list's order changes no output.
 //
 // The list is the mirror guard's subject too: a generated file
 // under one of these packages that this list does not name is a

@@ -23,8 +23,8 @@ import (
 // sigil and the arguments verbatim, the argument delimiters left
 // to whichever language writes them: a frontend records what the
 // source stated, a generator states what the target must write,
-// and the Tier-2 annotation rules read either statically. An
-// Annotation is a plain value: copy it freely.
+// and the Tier-2 annotation rules read either statically. A copy of
+// an Annotation shares its Args.
 type Annotation = core.Annotation
 
 // Annotations is a declaration's marker list, in source order on
@@ -382,9 +382,10 @@ type Symbol = core.Symbol
 type Membered = core.Membered
 
 // Typed is any kind whose meaning includes a type reference: Field,
-// Param, Return, Variable, Constant and Alias satisfy it.
+// Param, Return, Variable, Constant and TypeParam satisfy it.
 //
 // The result's Kind is [KindTypeRef]. It is nil when the source
 // declares no type, as for an inferred variable or an untyped
-// constant.
+// constant. A TypeParam returns one only when the parameter is
+// Const, and the reference is the value's type.
 type Typed = core.Typed

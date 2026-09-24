@@ -21,7 +21,8 @@
 //
 // # Dependency position
 //
-// core/authored imports the authoring root, core/directive,
-// core/meta, core/node, core/plugin, core/symbol and core/diag. It
-// is imported by compositions, never by the kernel.
+// core/authored imports the authoring root, core/diag,
+// core/directive, core/meta, core/node, core/plugin, core/position
+// and the Go stdlib. It is imported by compositions, never by the
+// kernel.
 package authored

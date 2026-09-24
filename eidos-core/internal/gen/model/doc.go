@@ -7,7 +7,8 @@
 // [Lower] parses and type-checks one schema directory and returns
 // its [KindSpec] list, refusing a schema that breaks the annotation
 // contract. [Generate] renders that list into the committed models,
-// their traversal, rewiring and codecs, and the Kind constants.
+// their traversal, name respelling, slot accessors and codecs, the
+// match constructors, the fact vocabulary and the Kind constants.
 //
 // The package imports no eidos model code. It reads the schema by
 // parsing it, so the kernel needs no language satellite to build

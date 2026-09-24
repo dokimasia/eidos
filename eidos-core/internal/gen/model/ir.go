@@ -64,8 +64,8 @@ type KindSpec struct {
 // renders; a type from another package keeps its qualifier.
 //
 // Elem names the kind a pointer or slice field references and is
-// empty for everything else, which is what the traversal, the
-// rewiring and the slot accessors switch on. Slice says the field
+// empty for everything else, which is what the traversal, the name
+// respelling and the slot accessors switch on. Slice says the field
 // holds many of them, and IsSymbol says the field is typed by the
 // [MarkerName] marker and so admits any kind.
 type FieldSpec struct {
