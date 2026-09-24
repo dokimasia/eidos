@@ -183,6 +183,10 @@ func TestValue(t *testing.T) {
 				"a call naming a function that spells nothing",
 				emit.Call(symbol.Identity{Lang: golang.Lang, Package: "time"}), "spells nothing",
 			},
+			{
+				"the address of anything but a composite literal",
+				emit.Address(emit.Literal(emit.LiteralInt, "1")), "composite literal alone",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -198,7 +202,7 @@ func TestValue(t *testing.T) {
 		}
 	})
 
-	t.Run("carries a value into a call the scaffold writes", func(t *testing.T) {
+	t.Run("places a value in a call the scaffold writes", func(t *testing.T) {
 		t.Parallel()
 
 		fn := nameOf("want")

@@ -101,8 +101,8 @@ func (t target) Composite(
 }
 
 // Address spells a shared borrow, which is Rust's address of a
-// value.
-func (target) Address(inner string) (string, error) { return "&" + inner, nil }
+// value of any kind.
+func (target) Address(_ emit.Value, spelled string) (string, error) { return "&" + spelled, nil }
 
 // use records the use a reference or a callee in another module
 // needs.

@@ -88,7 +88,7 @@ func (t target) Composite(
 
 // Address refuses: TypeScript has no address operator, and a
 // reference to a value is the value.
-func (t target) Address(string) (string, error) {
+func (t target) Address(emit.Value, string) (string, error) {
 	return "", render.RefuseValue(t.Lang(), "TypeScript spells no address of a value")
 }
 

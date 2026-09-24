@@ -63,8 +63,11 @@ type Target interface {
 	// map and a list are one form in the tree and three syntaxes in
 	// most targets.
 	Composite(ref *emit.TypeRef, typ string, entries []Entry) (string, error)
-	// Address spells the address of a value.
-	Address(inner string) (string, error)
+	// Address spells the address of a value from the value and its
+	// spelling. The value is passed beside the spelling, because a
+	// language that takes the address of some values alone, such as
+	// Go's composite literals, reads the value's kind.
+	Address(inner emit.Value, spelled string) (string, error)
 }
 
 // Leaves is one target's spelling of the literal leaves: the parts in
@@ -154,7 +157,7 @@ func Value(t Target, v emit.Value) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		return t.Address(inner)
+		return t.Address(*v.Inner, inner)
 	default:
 		return "", render.RefuseValue(t.Lang(), "no spelling for the %s value", v.Kind)
 	}

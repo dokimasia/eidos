@@ -102,6 +102,16 @@ func TestValue(t *testing.T) {
 			}
 		})
 
+		t.Run("passes the address the value it takes the address of", func(t *testing.T) {
+			t.Parallel()
+
+			target := &scripted{}
+			_, err := scaffold.Value(target, emit.Address(emit.Composite(ref("svc", "Row"))))
+			assert.NoError(t, err, "the tree spells")
+			assert.Equal(t, target.addressed, []emit.ValueKind{emit.ValueComposite},
+				"the target reads the inner value's kind, not only its spelling")
+		})
+
 		t.Run("records the import every reference and callee needs", func(t *testing.T) {
 			t.Parallel()
 

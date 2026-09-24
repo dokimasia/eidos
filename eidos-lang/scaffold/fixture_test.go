@@ -17,6 +17,9 @@ import (
 // requests, which is the walk's contract with a real target.
 type scripted struct {
 	imported []string
+	// addressed records the kind of every value the walk passed to
+	// Address.
+	addressed []emit.ValueKind
 	// refuseRaw refuses a raw literal, the way a target meeting
 	// another language's text does.
 	refuseRaw bool
@@ -75,7 +78,10 @@ func (*scripted) Composite(_ *emit.TypeRef, typ string, entries []scaffold.Entry
 	return typ + "{" + strings.Join(parts, ", ") + "}", nil
 }
 
-func (*scripted) Address(inner string) (string, error) { return "&" + inner, nil }
+func (s *scripted) Address(inner emit.Value, spelled string) (string, error) {
+	s.addressed = append(s.addressed, inner.Kind)
+	return "&" + spelled, nil
+}
 
 // unspelling is a target refusing every form, so the walk's
 // error path runs at each spelling in turn.
@@ -89,7 +95,7 @@ func (unspelling) Composite(*emit.TypeRef, string, []scaffold.Entry) (string, er
 	return "", fmt.Errorf("scripted: no composite form")
 }
 
-func (unspelling) Address(string) (string, error) {
+func (unspelling) Address(emit.Value, string) (string, error) {
 	return "", fmt.Errorf("scripted: no address form")
 }
 

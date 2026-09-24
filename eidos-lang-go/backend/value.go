@@ -83,9 +83,16 @@ func (target) Composite(_ *emit.TypeRef, typ string, entries []scaffold.Entry) (
 	return typ + "{" + strings.Join(parts, ", ") + "}", nil
 }
 
-// Address spells Go's address operator, which a composite takes
-// directly.
-func (target) Address(inner string) (string, error) { return "&" + inner, nil }
+// Address spells Go's address operator, which Go applies to a
+// composite literal alone: the address of any other value, such as
+// &1, does not compile, so it is refused.
+func (t target) Address(inner emit.Value, spelled string) (string, error) {
+	if inner.Kind != emit.ValueComposite {
+		return "", render.RefuseValue(t.Lang(),
+			"Go takes the address of a composite literal alone, and the value is a %s", inner.Kind)
+	}
+	return "&" + spelled, nil
+}
 
 // use records the import a reference or a callee in another
 // package needs. One in no package, a builtin, records nothing, and

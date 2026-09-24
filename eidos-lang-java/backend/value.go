@@ -29,8 +29,14 @@ const (
 	factory = ".of("
 	// memberSep joins a class and its static member.
 	memberSep = "."
-	// longSuffix marks an integer literal as a long.
-	longSuffix = "L"
+	// longSuffix marks an integer literal as a long, and floatSuffix
+	// marks a decimal literal as a float.
+	longSuffix  = "L"
+	floatSuffix = "f"
+	// floatWidth and longWidth are the widths in bits of Java's
+	// float and long.
+	floatWidth = 32
+	longWidth  = 64
 )
 
 // leaves is Java's spelling of the literal leaves: a number spells
@@ -118,7 +124,7 @@ func (t target) Composite(
 
 // Address refuses: Java has no address operator, and a reference
 // to a value is the value.
-func (t target) Address(string) (string, error) {
+func (t target) Address(emit.Value, string) (string, error) {
 	return "", render.RefuseValue(t.Lang(), "Java spells no address of a value")
 }
 
@@ -145,21 +151,28 @@ func (t target) use(id symbol.Identity) {
 	t.set.AddNamed(id.Package, class)
 }
 
-// number spells a number for Java. An integer outside the int range
-// takes the long suffix, because Java reads an unsuffixed integer
-// literal as an int and refuses one that does not fit. An integer
-// outside the long range is refused, because no Java integer literal
-// can express it. Every other number keeps the text the derivation
-// wrote.
+// number spells a number for Java from its text and its width. A
+// float written for a 32-bit type takes the float suffix, because
+// Java reads an unsuffixed decimal literal as a double and refuses a
+// double where a float is declared. An integer written for a 64-bit
+// type takes the long suffix, and so does one outside the int range,
+// because Java reads an unsuffixed integer literal as an int. An
+// integer outside the long range is refused, because no Java integer
+// literal can express it. Every other number keeps the text the
+// derivation wrote, which Java widens where the declared type is
+// wider.
 func number(v emit.Value) (string, error) {
 	if v.Literal != emit.LiteralInt {
+		if v.Bits == floatWidth {
+			return v.Text + floatSuffix, nil
+		}
 		return v.Text, nil
 	}
 	n, err := strconv.ParseInt(v.Text, 0, 64)
 	switch {
 	case errors.Is(err, strconv.ErrRange):
 		return "", render.RefuseValue(string(java.Lang), "%s does not fit a Java long", v.Text)
-	case err == nil && (n < math.MinInt32 || n > math.MaxInt32):
+	case err == nil && (v.Bits == longWidth || n < math.MinInt32 || n > math.MaxInt32):
 		return v.Text + longSuffix, nil
 	default:
 		return v.Text, nil

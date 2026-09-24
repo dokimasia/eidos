@@ -30,8 +30,8 @@ func valueRef(spelling, pkg, name string) *emit.TypeRef {
 	}
 }
 
-// valueFn returns a callee identity, owned by a class where owner
-// names one.
+// valueFn returns a callee identity whose Owner names its class
+// where owner is set.
 func valueFn(pkg, owner, name string) symbol.Identity {
 	return symbol.Identity{Lang: java.Lang, Package: pkg, Owner: owner, Name: name, Kind: symbol.KindMethod}
 }
@@ -90,6 +90,26 @@ func TestValue(t *testing.T) {
 				"1.5",
 			},
 			{
+				"a float written for a 32-bit type takes the float suffix",
+				emit.Number(emit.LiteralFloat, "1.5", 32),
+				"1.5f",
+			},
+			{
+				"a float written for a 64-bit type keeps its text",
+				emit.Number(emit.LiteralFloat, "1.5", 64),
+				"1.5",
+			},
+			{
+				"an integer written for a 64-bit type takes the long suffix",
+				emit.Number(emit.LiteralInt, "2", 64),
+				"2L",
+			},
+			{
+				"an integer written for a narrower type keeps its text",
+				emit.Number(emit.LiteralInt, "2", 16),
+				"2",
+			},
+			{
 				"the absent value",
 				emit.Literal(emit.LiteralNil, ""),
 				"null",
@@ -110,8 +130,8 @@ func TestValue(t *testing.T) {
 			{
 				"a list spells the collection factory",
 				emit.Composite(&emit.TypeRef{Spelling: "List<Long>", Form: symbol.FormList},
-					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
-				"List.of(2)",
+					emit.Element(emit.Number(emit.LiteralInt, "2", 64))),
+				"List.of(2L)",
 			},
 			{
 				"a map spells its factory, key then value",
@@ -119,10 +139,10 @@ func TestValue(t *testing.T) {
 					&emit.TypeRef{Spelling: "Map<String, Long>", Form: symbol.FormMap},
 					emit.KeyedEntry(
 						emit.Literal(emit.LiteralString, "k"),
-						emit.Literal(emit.LiteralInt, "2"),
+						emit.Number(emit.LiteralInt, "2", 64),
 					),
 				),
-				`Map.of("k", 2)`,
+				`Map.of("k", 2L)`,
 			},
 			{
 				"a call spells the static method of the class its owner names",
