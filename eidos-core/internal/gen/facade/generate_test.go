@@ -6,6 +6,7 @@ package facade_test
 import (
 	"errors"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -46,11 +47,11 @@ func TestGenerate(t *testing.T) {
 				)))
 			}
 			slices.Sort(want)
-			assert.Equal(t, slices.Sorted(maps(set)), want,
+			assert.Equal(t, slices.Sorted(maps.Keys(set)), want,
 				"one facade file per curated package, and nothing else")
 		})
 
-		t.Run("carries the kernel's documentation", func(t *testing.T) {
+		t.Run("copies the kernel's documentation", func(t *testing.T) {
 			t.Parallel()
 
 			set, err := facade.Generate(repoRoot(t))
@@ -78,7 +79,7 @@ func TestGenerate(t *testing.T) {
 			}
 		})
 
-		t.Run("reports a tree holding no kernel", func(t *testing.T) {
+		t.Run("reports a tree without a kernel", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := facade.Generate(t.TempDir())
@@ -145,12 +146,11 @@ func TestGenerate(t *testing.T) {
 	})
 }
 
-// otherModule is a go.mod naming a module the facade generator
-// does not own.
+// otherModule is a go.mod naming a module other than the kernel.
 const otherModule = "module example.test/other\n\ngo 1.27.0\n"
 
-// dirEntries lists what a directory under root holds, empty when
-// the directory was never created.
+// dirEntries lists the entries of a directory under root, and none
+// for a directory that does not exist.
 func dirEntries(t *testing.T, root, rel string) []os.DirEntry {
 	t.Helper()
 
@@ -160,15 +160,4 @@ func dirEntries(t *testing.T, root, rel string) []os.DirEntry {
 	}
 	assert.NoError(t, err, "the directory reads")
 	return entries
-}
-
-// maps yields a set's paths, so a case can sort them.
-func maps(set genfile.Set) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for path := range set {
-			if !yield(path) {
-				return
-			}
-		}
-	}
 }

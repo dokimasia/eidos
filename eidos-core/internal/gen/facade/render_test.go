@@ -14,15 +14,15 @@ import (
 	"go.dokimi.dev/eidos/core/internal/gen/facade"
 )
 
-// poisonRel is where every injected file lands, and emitPath the
+// poisonRel is the path of every injected file, and emitPath is the
 // facade file the injected package renders into.
 const (
 	poisonRel = "emit/poison.go"
 	emitPath  = "eidos-sdk/emit/facade.gen.go"
 )
 
-// unexportedType is the declaration each refusal case reaches for
-// when it needs a name with no facade spelling.
+// unexportedType is the declaration a refusal case appends when it
+// needs a name with no facade spelling.
 const unexportedType = "\ntype row struct{}\n"
 
 // mini copies the testdata mini kernel into a fresh repository
@@ -42,8 +42,8 @@ func poison(t *testing.T, root, rel, content string) {
 	assert.NoError(t, os.WriteFile(target, []byte(content), 0o644), "the poison writes")
 }
 
-// poisoned generates a mini kernel holding one injected file and
-// returns the facade package the injection rendered into.
+// poisoned generates a mini kernel with one injected file and
+// returns the source of the facade file the injection rendered into.
 func poisoned(t *testing.T, content string) string {
 	t.Helper()
 
@@ -54,7 +54,7 @@ func poisoned(t *testing.T, content string) string {
 	return string(set[emitPath])
 }
 
-// refused generates a mini kernel holding one injected file and
+// refused generates a mini kernel with one injected file and
 // returns the refusal it produced.
 func refused(t *testing.T, content string) error {
 	t.Helper()
@@ -66,10 +66,10 @@ func refused(t *testing.T, content string) error {
 	return err
 }
 
-// The renderer owns the re-export forms, so each one is pinned
-// over the mini kernel: the committed fixture holds every form,
-// and each way a surface can defeat re-export is injected and has
-// to refuse at its position.
+// Each re-export form the renderer prints is pinned over the mini
+// kernel. The committed fixture contains every form, and each way a
+// surface can defeat re-export is injected and has to refuse at its
+// position.
 func TestRender(t *testing.T) {
 	t.Parallel()
 
@@ -113,7 +113,7 @@ func TestRender(t *testing.T) {
 			"and its qualifier stays the source's")
 	})
 
-	t.Run("carries every type expression form", func(t *testing.T) {
+	t.Run("prints every type expression form", func(t *testing.T) {
 		t.Parallel()
 
 		emit := poisoned(t, "package emit\n\nimport \"example.test/dep\"\n\n"+
@@ -182,7 +182,7 @@ func TestRender(t *testing.T) {
 			"results grouped under one type keep their names")
 	})
 
-	t.Run("carries a grouped declaration and its trailing comments", func(t *testing.T) {
+	t.Run("re-exports a grouped declaration and its trailing comments", func(t *testing.T) {
 		t.Parallel()
 
 		emit := poisoned(t, "package emit\n\n"+
@@ -204,7 +204,26 @@ func TestRender(t *testing.T) {
 			"beside the spec's own documentation")
 	})
 
-	t.Run("carries an import's name and drops a blank one", func(t *testing.T) {
+	t.Run("respells documentation through the curated table", func(t *testing.T) {
+		t.Parallel()
+
+		emit := poisoned(t, "package emit\n\n"+
+			"// Linked pairs with [go.dokimi.dev/eidos/core/backend/render.Pass], runs\n"+
+			"// inside [go.dokimi.dev/eidos/core/workspace] and belongs to\n"+
+			"// [go.dokimi.dev/eidos/core].\n"+
+			"type Linked struct{} // see go.dokimi.dev/eidos/core/frontend/frontendtest/\n")
+
+		assert.Contains(t, emit, "[go.dokimi.dev/eidos/sdk/render.Pass]",
+			"a nested curated package respells to its flat facade path")
+		assert.Contains(t, emit, "[go.dokimi.dev/eidos/core/workspace]",
+			"an uncurated package keeps its kernel path, because no facade path exists for it")
+		assert.Contains(t, emit, "[go.dokimi.dev/eidos/sdk].",
+			"the kernel root respells to the facade root")
+		assert.Contains(t, emit, "// see go.dokimi.dev/eidos/sdk/frontendtest/",
+			"a trailing comment respells the same way, its closing slash kept")
+	})
+
+	t.Run("keeps an import's name and drops a blank import", func(t *testing.T) {
 		t.Parallel()
 
 		emit := poisoned(t, "package emit\n\nimport (\n"+
@@ -219,7 +238,7 @@ func TestRender(t *testing.T) {
 			"a blank import names nothing a signature can spell, so the facade drops it")
 	})
 
-	t.Run("refuses what re-export cannot carry", func(t *testing.T) {
+	t.Run("refuses what re-export cannot print", func(t *testing.T) {
 		t.Parallel()
 
 		tests := []struct {

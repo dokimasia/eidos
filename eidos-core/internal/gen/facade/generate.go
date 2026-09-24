@@ -28,29 +28,19 @@ func Generate(repoRoot string) (genfile.Set, error) {
 	}
 
 	cur := curated()
-	set := make(genfile.Set, len(surfaces))
-	for _, ps := range surfaces {
-		rendered, err := render(ps, cur)
-		if err != nil {
-			return nil, err
-		}
-		p := path.Join(FacadeDir, ps.FacadeRel(), FileName)
-		formatted, err := genfile.Format(p, rendered)
-		if err != nil {
-			return nil, err
-		}
-		set[p] = formatted
-	}
-	return set, nil
+	return genfile.Render(surfaces, func(ps *PackageSurface) (string, []byte, error) {
+		src, err := render(ps, cur)
+		return path.Join(FacadeDir, ps.FacadeRel(), FileName), src, err
+	})
 }
 
 // Regenerate renders the facade from the kernel module enclosing
 // dir and writes it beside that kernel.
 //
-// It is the whole of what the go:generate wrapper does, so the
-// wrapper holds nothing but the exit status. A directory outside
-// the kernel module is refused rather than generated into, and
-// nothing is written unless every package rendered.
+// The go:generate wrapper calls Regenerate and reports only its
+// exit status. A directory outside the kernel module is refused
+// before anything is written, and nothing is written unless every
+// package rendered.
 func Regenerate(dir string) error {
 	kernelRoot, err := gosource.ModuleRoot(dir)
 	if err != nil {
@@ -60,11 +50,5 @@ func Regenerate(dir string) error {
 	if err != nil {
 		return err
 	}
-
-	repoRoot := filepath.Dir(kernelRoot)
-	set, err := Generate(repoRoot)
-	if err != nil {
-		return err
-	}
-	return genfile.Write(repoRoot, set)
+	return genfile.Regenerate(filepath.Dir(kernelRoot), Generate)
 }
