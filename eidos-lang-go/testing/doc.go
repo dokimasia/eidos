@@ -18,8 +18,8 @@
 //
 // # Dependency position
 //
-// lang/go/testing imports the kernel's toolchain skeleton, the sdk
-// facade and the Go stdlib, os/exec among it. The frontend must
-// never import os/exec; this package is a harness and runs the
-// tool on purpose.
+// lang/go/testing imports the language root, the sdk's toolchain
+// and symbol facades, and the Go stdlib, os/exec among it. The
+// frontend never imports os/exec. This package is a harness and
+// runs the go tool on purpose.
 package testing

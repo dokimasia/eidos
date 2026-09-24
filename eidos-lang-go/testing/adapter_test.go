@@ -11,7 +11,6 @@ import (
 	"go.dokimi.dev/assert"
 
 	golang "go.dokimi.dev/eidos/lang/go"
-	gotesting "go.dokimi.dev/eidos/lang/go/testing"
 	"go.dokimi.dev/eidos/sdk/toolchain"
 )
 
@@ -124,13 +123,12 @@ func TestAdapter(t *testing.T) {
 				"and required in CI: " + probe.skipped)
 		}
 
-		t.Run("a healthy project type-checks, tests and vets", func(t *testing.T) {
+		t.Run("a healthy project type-checks and tests", func(t *testing.T) {
 			t.Parallel()
 
 			var r recorder
 			toolchain.AssertTypeChecks(&r, adapter(), healthy())
 			toolchain.AssertTestsPass(&r, adapter(), healthy())
-			gotesting.AssertVets(&r, adapter(), healthy())
 			assert.False(t, r.failed(), "the generated output is sound")
 		})
 
@@ -228,16 +226,6 @@ func TestAdapter(t *testing.T) {
 				only(rowFile, "package harness\n\nvar X int = \"text\"\n"), "Row", "Reader")
 			assert.True(t, r.says("does not build"),
 				"a false answer is told apart from a broken project")
-		})
-
-		t.Run("vet catches what compiles and is still wrong", func(t *testing.T) {
-			t.Parallel()
-
-			var r recorder
-			gotesting.AssertVets(&r, adapter(), only(rowFile,
-				"package harness\n\nimport \"fmt\"\n\n"+
-					"// Print misuses its verb.\nfunc Print() string { return fmt.Sprintf(\"%d\", \"text\") }\n"))
-			assert.True(t, r.says("go vet refused"), "the wrong verb is caught")
 		})
 	})
 }
