@@ -26,9 +26,10 @@ const (
 	// name, then fields with initializers and methods with their
 	// bodies, each member under its own doc block and decorators,
 	// its keywords in TypeScript's stated order. An abstract
-	// method is a signature alone. A constructing method spells
-	// the constructor form without its own name and results,
-	// because TypeScript gives a constructor neither.
+	// method is a signature alone. An index signature takes static
+	// alone, and a constructing method spells the constructor form
+	// with its accessibility alone and without its own name and
+	// results, because TypeScript gives a constructor neither.
 	StructTemplate = "{{docs .Doc}}{{decorators .Annotations}}" +
 		"{{mods .}}class {{.Name}}{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
@@ -36,24 +37,24 @@ const (
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
-		"{{if .Indexer}}  {{indexsig .}}{{else if .Constructs}}" +
-		"  {{membermods .}}constructor({{params .Params}}) {\n{{body .}}  }{{else}}" +
+		"{{if .Indexer}}  {{indexmods .}}{{indexsig .}}{{else if .Constructs}}" +
+		"  {{ctormods .}}constructor({{params .Params}}) {\n{{body .}}  }{{else}}" +
 		"  {{membermods .}}{{accessor .}}{{hard .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{returns .}}" +
 		"{{if .Abstract}};{{else}} {\n{{body .}}  }{{end}}{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// InterfaceTemplate spells an interface, its type parameters
 	// behind the name: properties, readonly where stated, and
-	// method signatures with their own parameter lists, no bodies
-	// and no other keywords.
+	// method, index and construct signatures with their own
+	// parameter lists, no bodies and no other keywords.
 	InterfaceTemplate = "{{docs .Doc}}{{mods .}}interface {{.Name}}" +
 		"{{typeparams .TypeParams}}{{heritage .}} {\n" +
 		"{{- range .Fields.Items}}\n{{docs .Doc \"  \"}}  {{propmods .}}{{propkey .}}{{if .Optional}}?{{end}}: {{spell .Type}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}" +
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}" +
-		"{{if .Indexer}}  {{indexsig .}}" +
-		"{{else if .Constructs}}  new {{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};" +
+		"{{if .Indexer}}  {{sigmods .}}{{indexsig .}}" +
+		"{{else if .Constructs}}  {{sigmods .}}new {{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};" +
 		"{{else}}  {{sigmods .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}};{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
@@ -86,7 +87,9 @@ const (
 	// VariableTemplate spells a module-level binding: const where
 	// the declaration is immutable, let otherwise, its
 	// initializer behind an equals sign where one is stated, its
-	// trailing comment behind the semicolon.
+	// trailing comment behind the semicolon. An immutable binding
+	// without an initializer refuses through the keyword helper,
+	// because TypeScript initializes a const where it is declared.
 	VariableTemplate = "{{docs .Doc}}{{mods .}}{{binding .}} {{.Name}}" +
 		"{{with .Type}}: {{spell .}}{{end}}{{with .Value}} = {{.}}{{end}};" +
 		"{{with .Comment}} // {{.}}{{end}}\n"

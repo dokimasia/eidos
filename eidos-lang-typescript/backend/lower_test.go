@@ -13,8 +13,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// sumOf is the fixture sum: one variant carrying a named payload
-// entry and one carrying none.
+// sumOf is the fixture sum: one variant with a named payload entry
+// and one with none.
 func sumOf(params ...*emit.TypeParam) *emit.Sum {
 	s := &emit.Sum{
 		Origin: symbol.Identity{
@@ -43,7 +43,7 @@ func TestLower(t *testing.T) {
 
 		out, err := backend.Lower(&emit.Struct{Name: "row"})
 		assert.NoError(t, err, "a struct is not lowered")
-		assert.Length(t, out, 0, "a nil list keeps the declaration as it stands")
+		assert.Length(t, out, 0, "a nil list keeps the declaration unchanged")
 	})
 
 	t.Run("a sum becomes variant interfaces and the union alias", func(t *testing.T) {
@@ -64,16 +64,16 @@ func TestLower(t *testing.T) {
 			"the discriminant, then the payload")
 		lead := circle.Fields.Items()[0]
 		assert.Equal(t, lead.Name, "kind", "the discriminant property")
-		assert.Equal(t, lead.Type.Spelling, `"circle"`,
+		assert.Equal(t, lead.Type.Spelling, `'circle'`,
 			"typed to the variant's literal name, which is data and "+
-				"never respells")
+				"never respells, quoted in TypeScript's grammar")
 		assert.Equal(t, circle.Fields.Items()[1].Name, "radius",
 			"the payload behind it")
 
 		empty, held := out[1].(*emit.Interface)
 		assert.True(t, held, "the second variant lowers to an interface")
 		assert.Equal(t, empty.Fields.Len(), 1,
-			"a payloadless variant carries the discriminant alone")
+			"a payloadless variant has the discriminant alone")
 
 		alias, held := out[2].(*emit.Alias)
 		assert.True(t, held, "the principal lowers to an alias")
@@ -114,7 +114,7 @@ func TestLower(t *testing.T) {
 		withMethods := sumOf()
 		withMethods.Methods.Append(&emit.Method{Name: "area"})
 		_, err := backend.Lower(withMethods)
-		assert.HasError(t, err, "a union carries no members")
+		assert.HasError(t, err, "a union has no members")
 
 		_, err = backend.Lower(&emit.Sum{Name: "shape"})
 		assert.HasError(t, err, "a union joins at least one variant")
@@ -135,6 +135,6 @@ func TestLower(t *testing.T) {
 			&emit.Field{Type: ref("string")},
 		)
 		_, err = backend.Lower(positional)
-		assert.HasError(t, err, "a property carries a name")
+		assert.HasError(t, err, "a property has a name")
 	})
 }

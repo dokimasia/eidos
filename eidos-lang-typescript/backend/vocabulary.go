@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/textfmt"
+	typescript "go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/spell"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -34,6 +35,10 @@ const (
 	FuncMods = "mods"
 	// FuncMemberMods writes a class member's keywords.
 	FuncMemberMods = "membermods"
+	// FuncIndexMods writes a class index signature's keywords.
+	FuncIndexMods = "indexmods"
+	// FuncCtorMods writes a class constructor's keywords.
+	FuncCtorMods = "ctormods"
 	// FuncPropMods writes an interface property's keywords.
 	FuncPropMods = "propmods"
 	// FuncSigMods guards an interface method signature.
@@ -77,6 +82,8 @@ func Funcs() template.FuncMap {
 		FuncReturns:    Returns,
 		FuncMods:       Mods,
 		FuncMemberMods: MemberMods,
+		FuncIndexMods:  IndexMods,
+		FuncCtorMods:   CtorMods,
 		FuncPropMods:   PropMods,
 		FuncSigMods:    SigMods,
 		FuncBinding:    Binding,
@@ -101,10 +108,8 @@ func PropKey(f *emit.Field) (string, error) {
 		return f.Name, nil
 	}
 	if f.Hard {
-		return "", fmt.Errorf(
-			"typescript: a hard-private name admits no quoted form, and "+
-				"%s is not an identifier", f.Name,
-		)
+		return "", refuse("a hard-private name admits no quoted form, and %s is not an identifier",
+			f.Name)
 	}
 	return quote(f.Name), nil
 }
@@ -118,10 +123,8 @@ func MethodKey(m *emit.Method) (string, error) {
 		return m.Name, nil
 	}
 	if m.Hard {
-		return "", fmt.Errorf(
-			"typescript: a hard-private name admits no quoted form, and "+
-				"%s is not an identifier", m.Name,
-		)
+		return "", refuse("a hard-private name admits no quoted form, and %s is not an identifier",
+			m.Name)
 	}
 	return quote(m.Name), nil
 }
@@ -148,21 +151,21 @@ func AccessorKw(m *emit.Method) (string, error) {
 	case symbol.AccessorGet:
 		switch {
 		case len(m.Params) != 0:
-			return "", fmt.Errorf("typescript: a getter takes nothing, and %s takes parameters", m.Name)
+			return "", refuse("a getter takes nothing, and %s takes parameters", m.Name)
 		case len(m.Returns) == 0:
-			return "", fmt.Errorf("typescript: a getter returns its property, and %s returns nothing", m.Name)
+			return "", refuse("a getter returns its property, and %s returns nothing", m.Name)
 		case len(m.TypeParams) != 0:
-			return "", fmt.Errorf("typescript: an accessor admits no type parameters, and %s declares some", m.Name)
+			return "", refuse("an accessor admits no type parameters, and %s declares some", m.Name)
 		}
 		return "get ", nil
 	default:
 		switch {
 		case len(m.Params) != 1:
-			return "", fmt.Errorf("typescript: a setter takes its one value, and %s does not", m.Name)
+			return "", refuse("a setter takes its one value, and %s does not", m.Name)
 		case len(m.Returns) != 0:
-			return "", fmt.Errorf("typescript: a setter returns nothing, and %s returns", m.Name)
+			return "", refuse("a setter returns nothing, and %s returns", m.Name)
 		case len(m.TypeParams) != 0:
-			return "", fmt.Errorf("typescript: an accessor admits no type parameters, and %s declares some", m.Name)
+			return "", refuse("an accessor admits no type parameters, and %s declares some", m.Name)
 		}
 		return "set ", nil
 	}
@@ -183,10 +186,8 @@ func Hard(s symbol.Symbol) (string, error) {
 	case !hard:
 		return "", nil
 	case vis != symbol.VisibilityUnknown:
-		return "", fmt.Errorf(
-			"typescript: a hard-private name carries its privacy in the "+
-				"name, and %s states a visibility beside it", name,
-		)
+		return "", refuse("a hard-private name states its privacy in the name, and %s "+
+			"states a visibility beside it", name)
 	}
 	return "#", nil
 }
@@ -198,20 +199,12 @@ func Hard(s symbol.Symbol) (string, error) {
 func IndexSig(m *emit.Method) (string, error) {
 	switch {
 	case len(m.Params) != 1 || m.Params[0].Name == "" || m.Params[0].Type == nil:
-		return "", fmt.Errorf(
-			"typescript: an index signature takes one named, typed key, "+
-				"and %s does not", m.Name,
-		)
+		return "", refuse("an index signature takes one named, typed key, and %s does not", m.Name)
 	case len(m.Returns) != 1:
-		return "", fmt.Errorf(
-			"typescript: an index signature states one element type, "+
-				"and %s does not", m.Name,
-		)
+		return "", refuse("an index signature states one element type, and %s does not", m.Name)
 	case len(m.TypeParams) != 0 || m.Accessor != symbol.AccessorNone:
-		return "", fmt.Errorf(
-			"typescript: an index signature admits no type parameters "+
-				"and no accessor, and %s states one", m.Name,
-		)
+		return "", refuse("an index signature admits no type parameters and no accessor, "+
+			"and %s states one", m.Name)
 	}
 	return "[" + m.Params[0].Name + ": " + Spell(m.Params[0].Type) + "]: " +
 		Spell(m.Returns[0].Type) + ";", nil
@@ -249,10 +242,7 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 	parts := make([]string, 0, len(ps))
 	for _, p := range ps {
 		if p.Const {
-			return "", fmt.Errorf(
-				"typescript: a type parameter takes a type, and %s takes a value",
-				p.Name,
-			)
+			return "", refuse("a type parameter takes a type, and %s takes a value", p.Name)
 		}
 		part := variance(p.Variance) + p.Name
 		if len(p.Bounds) > 0 {
@@ -297,9 +287,7 @@ func Mods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
 		if t.Final {
-			return "", fmt.Errorf(
-				"typescript: a class admits no final, and %s states it", t.Name,
-			)
+			return "", refuse("a class admits no final, and %s states it", t.Name)
 		}
 		part, err := exported(t.Visibility, t.Name)
 		if err != nil {
@@ -334,10 +322,7 @@ func Mods(d symbol.Symbol) (string, error) {
 		case len(t.Annotations) > 0:
 			return "", undecorated(t.Name)
 		case t.Defined:
-			return "", fmt.Errorf(
-				"typescript: an alias is transparent, and %s states a "+
-					"defined type", t.Name,
-			)
+			return "", refuse("an alias is transparent, and %s states a defined type", t.Name)
 		}
 		return exported(t.Visibility, t.Name)
 	case *emit.Enum:
@@ -345,10 +330,7 @@ func Mods(d symbol.Symbol) (string, error) {
 		case len(t.Annotations) > 0:
 			return "", undecorated(t.Name)
 		case t.Fields.Len() > 0 || t.Methods.Len() > 0:
-			return "", fmt.Errorf(
-				"typescript: an enum carries values alone, and %s states "+
-					"members", t.Name,
-			)
+			return "", refuse("an enum has values alone, and %s states members", t.Name)
 		}
 		return exported(t.Visibility, t.Name)
 	case *emit.Constant:
@@ -356,7 +338,7 @@ func Mods(d symbol.Symbol) (string, error) {
 		case len(t.Annotations) > 0:
 			return "", undecorated(t.Name)
 		case t.Value == "":
-			return "", fmt.Errorf("typescript: a constant takes a value, and %s states none", t.Name)
+			return "", refuse("a constant takes a value, and %s states none", t.Name)
 		}
 		return exported(t.Visibility, t.Name)
 	case *emit.Variable:
@@ -365,9 +347,7 @@ func Mods(d symbol.Symbol) (string, error) {
 		}
 		return exported(t.Visibility, t.Name)
 	default:
-		return "", fmt.Errorf(
-			"typescript: no module-level keywords spell a %s", d.Kind(),
-		)
+		return "", refuse("no module-level keywords spell a %s", d.Kind())
 	}
 }
 
@@ -381,10 +361,8 @@ func exported(v symbol.Visibility, name string) (string, error) {
 	case symbol.VisibilityPackage:
 		return "", nil
 	default:
-		return "", fmt.Errorf(
-			"typescript: a module-level declaration exports or stays "+
-				"module-scoped, and %s states another scope", name,
-		)
+		return "", refuse("a module-level declaration is exported or module-scoped, and %s "+
+			"states another scope", name)
 	}
 }
 
@@ -413,18 +391,12 @@ func MemberMods(d symbol.Symbol) (string, error) {
 	case *emit.Method:
 		switch {
 		case t.Final:
-			return "", fmt.Errorf(
-				"typescript: a method admits no final, and %s states it", t.Name,
-			)
+			return "", refuse("a method admits no final, and %s states it", t.Name)
 		case t.HasDefault:
-			return "", fmt.Errorf(
-				"typescript: a class method carries its body outright, and %s "+
-					"states a default", t.Name,
-			)
+			return "", refuse("a class method states its body outright, and %s states a default",
+				t.Name)
 		case t.Abstract && !t.Body.IsZero():
-			return "", fmt.Errorf(
-				"typescript: an abstract method is a signature, and %s states a body", t.Name,
-			)
+			return "", refuse("an abstract method is a signature, and %s states a body", t.Name)
 		case len(t.Throws) > 0:
 			return "", unthrown(t.Name)
 		}
@@ -446,10 +418,60 @@ func MemberMods(d symbol.Symbol) (string, error) {
 		}
 		return part, nil
 	default:
-		return "", fmt.Errorf(
-			"typescript: no member keywords spell a %s", d.Kind(),
-		)
+		return "", refuse("no member keywords spell a %s", d.Kind())
 	}
+}
+
+// IndexMods writes a class index signature's keywords: static for a
+// type-level signature, and nothing else. An index signature is a
+// declaration without a body, so a body refuses, and so do an
+// accessibility, abstract, override, final, a default, asynchrony,
+// a hard-private name, a throws clause and decorators, because
+// TypeScript spells none of them on an index signature.
+func IndexMods(m *emit.Method) (string, error) {
+	switch {
+	case !m.Body.IsZero():
+		return "", refuse("an index signature is a declaration without a body, and %s states one",
+			m.Name)
+	case m.Visibility != symbol.VisibilityUnknown && m.Visibility != symbol.VisibilityPublic:
+		return "", refuse("an index signature takes no accessibility, and %s states one", m.Name)
+	case m.Abstract || m.Override || m.Final || m.HasDefault || m.Async || m.Hard:
+		return "", refuse("an index signature takes static alone, and %s states another modifier",
+			m.Name)
+	case len(m.Throws) > 0:
+		return "", unthrown(m.Name)
+	case len(m.Annotations) > 0:
+		return "", refuse("decorators mark no index signature, and %s states annotations", m.Name)
+	}
+	if m.Level == symbol.LevelType {
+		return "static ", nil
+	}
+	return "", nil
+}
+
+// CtorMods writes a class constructor's keywords: its accessibility
+// alone. A constructor belongs to instances and takes no type
+// parameters, so static and type parameters refuse, and so do
+// abstract, override, final, a default, asynchrony, an accessor, a
+// hard-private name, a throws clause and decorators, because
+// TypeScript spells none of them on a constructor.
+func CtorMods(m *emit.Method) (string, error) {
+	switch {
+	case m.Level == symbol.LevelType:
+		return "", refuse("a constructor belongs to instances, and %s states type level", m.Name)
+	case len(m.TypeParams) > 0:
+		return "", refuse("a constructor takes no type parameters, and %s states %d",
+			m.Name, len(m.TypeParams))
+	case m.Abstract || m.Override || m.Final || m.HasDefault || m.Async ||
+		m.Hard || m.Accessor != symbol.AccessorNone:
+		return "", refuse("a constructor takes an accessibility alone, and %s states another "+
+			"modifier", m.Name)
+	case len(m.Throws) > 0:
+		return "", unthrown(m.Name)
+	case len(m.Annotations) > 0:
+		return "", refuse("decorators mark no constructor, and %s states annotations", m.Name)
+	}
+	return accessibility(m.Visibility, m.Name)
 }
 
 // accessibility writes a class member's accessibility: nothing
@@ -464,10 +486,8 @@ func accessibility(v symbol.Visibility, name string) (string, error) {
 	case symbol.VisibilityProtected:
 		return "protected ", nil
 	default:
-		return "", fmt.Errorf(
-			"typescript: a class member states public, private or protected, "+
-				"and %s states another scope", name,
-		)
+		return "", refuse("a class member states public, private or protected, and %s "+
+			"states another scope", name)
 	}
 }
 
@@ -478,28 +498,17 @@ func accessibility(v symbol.Visibility, name string) (string, error) {
 func PropMods(f *emit.Field) (string, error) {
 	switch {
 	case f.Hard:
-		return "", fmt.Errorf(
-			"typescript: an interface property has no runtime, and %s "+
-				"states a hard-private name", f.Name,
-		)
+		return "", refuse("an interface property has no runtime, and %s states a hard-private name",
+			f.Name)
 	case len(f.Annotations) > 0:
 		return "", undecorated(f.Name)
 	case f.Visibility != symbol.VisibilityUnknown &&
 		f.Visibility != symbol.VisibilityPublic:
-		return "", fmt.Errorf(
-			"typescript: an interface property is public by shape, and %s "+
-				"states a scope", f.Name,
-		)
+		return "", refuse("an interface property is public by shape, and %s states a scope", f.Name)
 	case f.Level == symbol.LevelType:
-		return "", fmt.Errorf(
-			"typescript: an interface property has no static level, and %s "+
-				"states one", f.Name,
-		)
+		return "", refuse("an interface property has no static level, and %s states one", f.Name)
 	case f.Value != "":
-		return "", fmt.Errorf(
-			"typescript: an interface property carries no initializer, and "+
-				"%s states one", f.Name,
-		)
+		return "", refuse("an interface property takes no initializer, and %s states one", f.Name)
 	}
 	if f.Mutability == symbol.MutabilityImmutable {
 		return "readonly ", nil
@@ -507,34 +516,25 @@ func PropMods(f *emit.Field) (string, error) {
 	return "", nil
 }
 
-// SigMods guards an interface method signature, which takes no
-// keywords and no body. A stated modifier or a body is refused, and
-// the signature spells bare.
+// SigMods guards an interface member signature, which takes no
+// keywords and no body: a method signature, an index signature and
+// a construct signature alike. A stated modifier or a body is
+// refused, and the signature spells bare.
 func SigMods(m *emit.Method) (string, error) {
 	switch {
 	case !m.Body.IsZero():
-		return "", fmt.Errorf(
-			"typescript: an interface method is a signature, and %s states a body", m.Name,
-		)
+		return "", refuse("an interface method is a signature, and %s states a body", m.Name)
 	case len(m.Annotations) > 0:
 		return "", undecorated(m.Name)
 	case m.Visibility != symbol.VisibilityUnknown &&
 		m.Visibility != symbol.VisibilityPublic:
-		return "", fmt.Errorf(
-			"typescript: an interface method is public by shape, and %s "+
-				"states a scope", m.Name,
-		)
+		return "", refuse("an interface method is public by shape, and %s states a scope", m.Name)
 	case m.Accessor != symbol.AccessorNone || m.Hard:
-		return "", fmt.Errorf(
-			"typescript: an interface states properties, not accessors or "+
-				"hard-private names, and %s states one", m.Name,
-		)
+		return "", refuse("an interface states properties, not accessors or hard-private names, "+
+			"and %s states one", m.Name)
 	case m.Level == symbol.LevelType || m.Abstract || m.Final ||
 		m.Override || m.HasDefault || m.Async:
-		return "", fmt.Errorf(
-			"typescript: an interface method is a bare signature, and %s "+
-				"states a modifier", m.Name,
-		)
+		return "", refuse("an interface method is a bare signature, and %s states a modifier", m.Name)
 	case len(m.Throws) > 0:
 		return "", unthrown(m.Name)
 	}
@@ -558,10 +558,7 @@ func Heritage(d symbol.Symbol) (string, error) {
 		case 1:
 			part = " extends " + Spell(t.Extends[0])
 		default:
-			return "", fmt.Errorf(
-				"typescript: a class extends one base, and %s states %d",
-				t.Name, len(t.Extends),
-			)
+			return "", refuse("a class extends one base, and %s states %d", t.Name, len(t.Extends))
 		}
 		if len(t.Implements) > 0 {
 			part += " implements " + joined(t.Implements)
@@ -576,9 +573,7 @@ func Heritage(d symbol.Symbol) (string, error) {
 		}
 		return "", nil
 	default:
-		return "", fmt.Errorf(
-			"typescript: no heritage clause spells a %s", d.Kind(),
-		)
+		return "", refuse("no heritage clause spells a %s", d.Kind())
 	}
 }
 
@@ -594,26 +589,33 @@ func joined(ts []*emit.TypeRef) string {
 // unthrown is the refusal for declared failure types: a
 // TypeScript signature declares none.
 func unthrown(name string) error {
-	return fmt.Errorf(
-		"typescript: a signature declares no failure types, and %s states "+
-			"throws", name,
-	)
+	return refuse("a signature declares no failure types, and %s states throws", name)
 }
 
 // unembedded is the refusal for embeds: nothing promotes members.
 func unembedded(name string) error {
-	return fmt.Errorf(
-		"typescript: nothing promotes members, and %s states embeds", name,
-	)
+	return refuse("nothing promotes members, and %s states embeds", name)
 }
 
+// The keywords a module-level binding opens with.
+const (
+	constBinding = "const"
+	letBinding   = "let"
+)
+
 // Binding writes a module-level binding's keyword: const for an
-// immutable binding, let otherwise.
-func Binding(v *emit.Variable) string {
-	if v.Mutability == symbol.MutabilityImmutable {
-		return "const"
+// immutable binding, let otherwise. An immutable binding without an
+// initializer refuses, because TypeScript requires a const to be
+// initialized where it is declared.
+func Binding(v *emit.Variable) (string, error) {
+	if v.Mutability != symbol.MutabilityImmutable {
+		return letBinding, nil
 	}
-	return "let"
+	if v.Value == "" {
+		return "", refuse("a const binding takes its value where it is declared, and %s "+
+			"states none", v.Name)
+	}
+	return constBinding, nil
 }
 
 // Decorators writes a declaration's decorator lines, one per
@@ -627,10 +629,8 @@ func Decorators(a symbol.Annotations, prefix ...string) string {
 // undecorated is the refusal for an annotation list on a
 // declaration decorators cannot mark.
 func undecorated(name string) error {
-	return fmt.Errorf(
-		"typescript: decorators mark classes and their members, and %s "+
-			"states annotations elsewhere", name,
-	)
+	return refuse("decorators mark classes and their members, and %s states annotations "+
+		"elsewhere", name)
 }
 
 // Params writes a parameter list, the rest marker included and a
@@ -649,32 +649,21 @@ func Params(ps []*emit.Param) (string, error) {
 			}
 			unnamed++
 		} else if !spell.IsIdentifier(name) {
-			return "", fmt.Errorf(
-				"typescript: a parameter admits no quoted form, and %q is "+
-					"not an identifier", name,
-			)
+			return "", refuse("a parameter admits no quoted form, and %q is not an identifier", name)
 		}
 		if p.Variadic != symbol.VariadicNone {
 			switch {
 			case p.Default != "":
-				return "", fmt.Errorf(
-					"typescript: a rest parameter takes no default, and %s "+
-						"states one", name,
-				)
+				return "", refuse("a rest parameter takes no default, and %s states one", name)
 			case p.Optional:
-				return "", fmt.Errorf(
-					"typescript: a rest parameter is optional by shape, and "+
-						"%s states it", name,
-				)
+				return "", refuse("a rest parameter is optional by shape, and %s states it", name)
 			}
 			parts = append(parts, "..."+name+": "+Spell(p.Type)+"[]"+textfmt.Inline(p.Comment))
 			continue
 		}
 		if p.Optional && p.Default != "" {
-			return "", fmt.Errorf(
-				"typescript: a default already makes %s optional, and it "+
-					"states the marker beside it", name,
-			)
+			return "", refuse("a default already makes %s optional, and it states the marker "+
+				"beside it", name)
 		}
 		part := name
 		if p.Optional {
@@ -736,4 +725,13 @@ func Results(rs []*emit.Return) string {
 		}
 		return ": [" + strings.Join(parts, ", ") + "]"
 	}
+}
+
+// refusalPrefix opens every refusal the backend returns: the
+// language's identity, as every backend's refusals open.
+const refusalPrefix = string(typescript.Lang) + ": "
+
+// refuse builds a refusal under [refusalPrefix].
+func refuse(format string, args ...any) error {
+	return fmt.Errorf(refusalPrefix+format, args...)
 }

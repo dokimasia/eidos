@@ -22,7 +22,7 @@ func TestLang(t *testing.T) {
 
 		assert.Equal(t, typescript.Target, "typescript", "the target a plan resolves")
 		assert.Equal(t, typescript.Name, "typescript", "the identity findings report under")
-		assert.Equal(t, typescript.Extension, ".ts", "the suffix every file carries")
+		assert.Equal(t, typescript.Extension, ".ts", "the suffix of every file")
 	})
 
 	t.Run("declares the comment forms whole", func(t *testing.T) {

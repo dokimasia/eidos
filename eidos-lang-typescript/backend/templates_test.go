@@ -20,6 +20,16 @@ import (
 func execute(t *testing.T, src string, data any) string {
 	t.Helper()
 
+	got, err := run(t, src, data)
+	assert.NoError(t, err, "the template executes")
+	return got
+}
+
+// run runs one template over one declaration and returns the text
+// or the refusal.
+func run(t *testing.T, src string, data any) (string, error) {
+	t.Helper()
+
 	tmpl, err := template.New("kind").
 		Funcs(backend.Funcs()).
 		Funcs(template.FuncMap{
@@ -33,8 +43,8 @@ func execute(t *testing.T, src string, data any) string {
 		Parse(src)
 	assert.NoError(t, err, "the template parses")
 	var b strings.Builder
-	assert.NoError(t, tmpl.Execute(&b, data), "the template executes")
-	return b.String()
+	err = tmpl.Execute(&b, data)
+	return b.String(), err
 }
 
 // Each kind template is pinned byte for byte, and the absent
@@ -45,13 +55,13 @@ func TestTemplates(t *testing.T) {
 	t.Run("a method has no module-level spelling", func(t *testing.T) {
 		t.Parallel()
 
-		_, held := backend.KindTemplates()[symbol.KindMethod]
-		assert.False(t, held,
+		_, is := backend.KindTemplates()[symbol.KindMethod]
+		assert.False(t, is,
 			"TypeScript states members inside their type, so a standalone "+
-				"method degrades to a reported kind rather than guessed text")
+				"method is reported as a kind the target cannot spell")
 	})
 
-	t.Run("class carries fields and methods with bodies", func(t *testing.T) {
+	t.Run("class spells fields and methods with bodies", func(t *testing.T) {
 		t.Parallel()
 
 		s := &emit.Struct{Doc: []string{"Row is one record."}, Name: "Row"}
@@ -71,7 +81,7 @@ func TestTemplates(t *testing.T) {
 			"members at member depth, docs indented whole")
 	})
 
-	t.Run("interface carries signatures alone", func(t *testing.T) {
+	t.Run("interface spells signatures alone", func(t *testing.T) {
 		t.Parallel()
 
 		i := &emit.Interface{Name: "Store"}
@@ -84,7 +94,7 @@ func TestTemplates(t *testing.T) {
 		})
 		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
 			"export interface Store {\n  load(key: string): Row;\n}\n",
-			"a signature closes with a semicolon and carries no body")
+			"a signature closes with a semicolon and has no body")
 	})
 
 	t.Run("function, alias, constant and variable", func(t *testing.T) {
@@ -109,7 +119,13 @@ func TestTemplates(t *testing.T) {
 			"a trailing comment behind the semicolon")
 		assert.Equal(t,
 			execute(t, backend.VariableTemplate, &emit.Variable{Name: "count"}),
-			"export let count;\n", "an untyped binding stays untyped")
+			"export let count;\n", "an untyped binding is left untyped")
+		_, err := run(t, backend.VariableTemplate, &emit.Variable{
+			Name: "count", Mutability: symbol.MutabilityImmutable, Type: ref("number"),
+		})
+		assert.HasError(t, err,
+			"a const without an initializer refuses, because const count: number; "+
+				"does not compile")
 	})
 
 	t.Run("trailing comments close every kind that ends a line", func(t *testing.T) {
@@ -344,6 +360,47 @@ func TestTemplates(t *testing.T) {
 				"  new (): Rows;\n"+
 				"}\n",
 			"index and construct signatures spell nameless")
+
+		for _, m := range []*emit.Method{
+			{
+				Name: "index", Indexer: true, Async: true,
+				Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
+				Returns: []*emit.Return{{Type: ref("Row")}},
+			},
+			{Name: "make", Constructs: true, Level: symbol.LevelType},
+		} {
+			guarded := &emit.Interface{Name: "Rows"}
+			guarded.Methods.Append(m)
+			_, err := run(t, backend.InterfaceTemplate, guarded)
+			assert.HasError(t, err,
+				"a modifier on an interface's index or construct signature refuses")
+		}
+	})
+
+	t.Run("a class index signature takes static alone", func(t *testing.T) {
+		t.Parallel()
+
+		index := func() *emit.Method {
+			return &emit.Method{
+				Name: "index", Indexer: true,
+				Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
+				Returns: []*emit.Return{{Type: ref("Row")}},
+			}
+		}
+		s := &emit.Struct{Name: "Cache"}
+		static := index()
+		static.Level = symbol.LevelType
+		s.Methods.Append(static)
+		assert.Equal(t, execute(t, backend.StructTemplate, s),
+			"export class Cache {\n  static [key: string]: Row;\n}\n",
+			"static before the brackets")
+
+		narrowed := &emit.Struct{Name: "Cache"}
+		private := index()
+		private.Visibility = symbol.VisibilityPrivate
+		narrowed.Methods.Append(private)
+		_, err := run(t, backend.StructTemplate, narrowed)
+		assert.HasError(t, err, "an accessibility on an index signature refuses")
 	})
 
 	t.Run("a constructing method spells the constructor form", func(t *testing.T) {
@@ -351,22 +408,35 @@ func TestTemplates(t *testing.T) {
 
 		s := &emit.Struct{Name: "Store"}
 		s.Methods.Append(&emit.Method{
-			Name: "make", Constructs: true,
+			Name: "make", Constructs: true, Visibility: symbol.VisibilityProtected,
 			Params: []*emit.Param{{Name: "db", Type: ref("Db")}},
 		})
 		got := execute(t, backend.StructTemplate, s)
-		assert.Contains(t, got, "constructor(db: Db) {",
-			"the name and results drop, because the language grants neither")
+		assert.Contains(t, got, "protected constructor(db: Db) {",
+			"its accessibility before the keyword, the name and results dropped, because "+
+				"the language grants neither")
+
+		for _, m := range []*emit.Method{
+			{Name: "make", Constructs: true, Level: symbol.LevelType},
+			{Name: "make", Constructs: true, Async: true},
+			{Name: "make", Constructs: true, TypeParams: []*emit.TypeParam{{Name: "T"}}},
+		} {
+			refused := &emit.Struct{Name: "Store"}
+			refused.Methods.Append(m)
+			_, err := run(t, backend.StructTemplate, refused)
+			assert.HasError(t, err,
+				"static, async and type parameters on a constructor refuse")
+		}
 	})
 
-	t.Run("a quoted method key survives its wire spelling", func(t *testing.T) {
+	t.Run("a quoted method key keeps its wire spelling", func(t *testing.T) {
 		t.Parallel()
 
 		s := &emit.Struct{Name: "Client"}
 		s.Methods.Append(&emit.Method{Name: "do-fetch"})
 		got := execute(t, backend.StructTemplate, s)
 		assert.Contains(t, got, `'do-fetch'()`,
-			"TypeScript admits the quoted member, so the wire name stands")
+			"TypeScript admits the quoted member, so the wire name is kept")
 	})
 
 	t.Run("const enum", func(t *testing.T) {
@@ -400,11 +470,8 @@ func TestTemplates(t *testing.T) {
 
 		withMembers := &emit.Enum{Name: "Phase"}
 		withMembers.Methods.Append(&emit.Method{Name: "describe"})
-		tmpl, err := template.New("kind").Funcs(backend.Funcs()).Parse(backend.EnumTemplate)
-		assert.NoError(t, err, "the template parses")
-		var b strings.Builder
-		assert.HasError(t, tmpl.Execute(&b, withMembers),
-			"an enum carrying members refuses")
+		_, err := run(t, backend.EnumTemplate, withMembers)
+		assert.HasError(t, err, "an enum with members refuses")
 	})
 
 	t.Run("the file skeleton is imports then declarations", func(t *testing.T) {

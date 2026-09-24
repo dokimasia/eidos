@@ -179,7 +179,7 @@ func TestVocabulary(t *testing.T) {
 		})
 		assert.NoError(t, err, "an overriding async method spells")
 		assert.Equal(t, got, "override async ",
-			"public stays implicit, override before async")
+			"public is implicit, override before async")
 
 		_, err = backend.MemberMods(&emit.Method{Name: "load", Final: true})
 		assert.HasError(t, err, "a final method refuses")
@@ -194,6 +194,72 @@ func TestVocabulary(t *testing.T) {
 			Name: "key", Visibility: symbol.VisibilityPackage,
 		})
 		assert.HasError(t, err, "a package scope refuses on a class member")
+	})
+
+	t.Run("IndexMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.IndexMods(&emit.Method{Name: "index", Indexer: true})
+		assert.NoError(t, err, "an instance index signature spells")
+		assert.Equal(t, got, "", "with no keyword")
+
+		got, err = backend.IndexMods(&emit.Method{
+			Name: "index", Indexer: true, Level: symbol.LevelType,
+		})
+		assert.NoError(t, err, "a static index signature spells")
+		assert.Equal(t, got, "static ", "with static, the one keyword it takes")
+
+		refused := []*emit.Method{
+			{Name: "index", Visibility: symbol.VisibilityPrivate},
+			{Name: "index", Abstract: true},
+			{Name: "index", Override: true},
+			{Name: "index", Final: true},
+			{Name: "index", HasDefault: true},
+			{Name: "index", Async: true},
+			{Name: "index", Hard: true},
+			{Name: "index", Throws: []*emit.TypeRef{ref("Error")}},
+			{Name: "index", Annotations: symbol.Annotations{{Name: "log"}}},
+			{Name: "index", Body: emit.Body{Verbatim: "return 1;"}},
+		}
+		for _, m := range refused {
+			m.Indexer = true
+			_, err := backend.IndexMods(m)
+			assert.HasError(t, err, "an index signature takes static alone")
+		}
+	})
+
+	t.Run("CtorMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.CtorMods(&emit.Method{Name: "make", Constructs: true})
+		assert.NoError(t, err, "a public constructor spells")
+		assert.Equal(t, got, "", "with public implicit")
+
+		got, err = backend.CtorMods(&emit.Method{
+			Name: "make", Constructs: true, Visibility: symbol.VisibilityPrivate,
+		})
+		assert.NoError(t, err, "a private constructor spells")
+		assert.Equal(t, got, "private ", "with its accessibility alone")
+
+		refused := []*emit.Method{
+			{Name: "make", Level: symbol.LevelType},
+			{Name: "make", TypeParams: []*emit.TypeParam{{Name: "T"}}},
+			{Name: "make", Abstract: true},
+			{Name: "make", Override: true},
+			{Name: "make", Final: true},
+			{Name: "make", HasDefault: true},
+			{Name: "make", Async: true},
+			{Name: "make", Hard: true},
+			{Name: "make", Accessor: symbol.AccessorGet},
+			{Name: "make", Throws: []*emit.TypeRef{ref("Error")}},
+			{Name: "make", Annotations: symbol.Annotations{{Name: "log"}}},
+			{Name: "make", Visibility: symbol.VisibilityPackage},
+		}
+		for _, m := range refused {
+			m.Constructs = true
+			_, err := backend.CtorMods(m)
+			assert.HasError(t, err, "a constructor takes an accessibility alone")
+		}
 	})
 
 	t.Run("PropMods", func(t *testing.T) {
@@ -273,7 +339,7 @@ func TestVocabulary(t *testing.T) {
 
 		got, err := backend.Hard(&emit.Field{Name: "key", Hard: true})
 		assert.NoError(t, err, "a hard-private field spells")
-		assert.Equal(t, got, "#", "the prefix carrying the privacy")
+		assert.Equal(t, got, "#", "the prefix that states the privacy")
 
 		got, err = backend.Hard(&emit.Method{Name: "load"})
 		assert.NoError(t, err, "an ordinary member passes")
@@ -284,7 +350,7 @@ func TestVocabulary(t *testing.T) {
 		})
 		assert.HasError(t, err,
 			"a stated visibility beside the hard name refuses, because "+
-				"the privacy lives in the name")
+				"the privacy is in the name")
 	})
 
 	t.Run("IndexSig", func(t *testing.T) {
@@ -338,11 +404,22 @@ func TestVocabulary(t *testing.T) {
 	t.Run("Binding", func(t *testing.T) {
 		t.Parallel()
 
-		assert.Equal(t, backend.Binding(&emit.Variable{Name: "count"}), "let",
-			"a mutable binding is let")
-		assert.Equal(t, backend.Binding(&emit.Variable{
+		got, err := backend.Binding(&emit.Variable{Name: "count"})
+		assert.NoError(t, err, "a mutable binding spells")
+		assert.Equal(t, got, "let", "as let")
+
+		got, err = backend.Binding(&emit.Variable{
+			Name: "count", Mutability: symbol.MutabilityImmutable, Value: "0",
+		})
+		assert.NoError(t, err, "an immutable binding with a value spells")
+		assert.Equal(t, got, "const", "as const")
+
+		_, err = backend.Binding(&emit.Variable{
 			Name: "count", Mutability: symbol.MutabilityImmutable,
-		}), "const", "an immutable one is const")
+		})
+		assert.HasError(t, err,
+			"an immutable binding without a value refuses, because TypeScript "+
+				"initializes a const where it is declared")
 	})
 
 	t.Run("Decorators", func(t *testing.T) {

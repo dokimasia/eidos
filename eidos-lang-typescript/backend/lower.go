@@ -4,8 +4,6 @@
 package backend
 
 import (
-	"fmt"
-	"strconv"
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/lowering"
@@ -24,9 +22,10 @@ const discriminant = "kind"
 // declarations. A sum becomes one interface per variant and a
 // union alias keeping the sum's name: each interface leads with
 // the discriminant property typed to the variant's literal name,
-// carries the variant's payload behind it, and restates the sum's
-// type parameters; the alias's target joins the interfaces with
-// the union bar, restating the parameters as arguments.
+// takes the variant's payload as its properties behind it, and
+// restates the sum's type parameters. The alias's target joins the
+// interfaces with the union bar, restating the parameters as
+// arguments.
 //
 // The union target is a composite spelling, which the settle
 // leaves as written, so the variant interfaces cannot wait for the
@@ -36,38 +35,29 @@ const discriminant = "kind"
 // interface and the union both, consistent by construction. The
 // alias keeps the sum's name untouched, so a reference to the sum
 // follows the settle the way any reference does. The discriminant
-// literal keeps the variant's declared name, because the property
-// is data and a respell must not move what a wire may carry.
+// literal keeps the variant's declared name, quoted in TypeScript's
+// grammar, because the property is data and a respell must not move
+// what a wire may send.
 //
-// Every output carries the sum's origin and none restates the sum,
-// so a second settle changes nothing. A sum stating methods
-// refuses, because a union carries no members; one stating no
-// variants refuses, because a union joins at least one; a
-// decorated sum or variant refuses, because TypeScript decorates
-// classes alone; and a payload entry without a name refuses,
-// because a property carries one. Everything else passes through
-// unchanged.
+// Every output has the sum's origin and none restates the sum, so a
+// second settle changes nothing. A sum stating methods refuses,
+// because a union has no members. One stating no variants refuses,
+// because a union joins at least one. A decorated sum or variant
+// refuses, because TypeScript decorates classes alone, and a
+// payload entry without a name refuses, because a property has one.
+// Everything else passes through unchanged.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
-	sum, held := s.(*emit.Sum)
-	if !held {
-		return nil, nil // the declaration stands
+	sum, is := s.(*emit.Sum)
+	if !is {
+		return nil, nil // the declaration passes through
 	}
 	switch {
 	case sum.Methods.Len() > 0:
-		return nil, fmt.Errorf(
-			"typescript: a union carries no members, and %s states methods",
-			sum.Name,
-		)
+		return nil, refuse("a union has no members, and %s states methods", sum.Name)
 	case sum.Variants.Len() == 0:
-		return nil, fmt.Errorf(
-			"typescript: a union joins at least one variant, and %s states "+
-				"none", sum.Name,
-		)
+		return nil, refuse("a union joins at least one variant, and %s states none", sum.Name)
 	case len(sum.Annotations) > 0:
-		return nil, fmt.Errorf(
-			"typescript: decorators apply to classes, and the sum %s states "+
-				"some", sum.Name,
-		)
+		return nil, refuse("decorators apply to classes, and the sum %s states some", sum.Name)
 	}
 	variants := sum.Variants.Items()
 	out := make([]symbol.Symbol, 0, 1+len(variants))
@@ -97,10 +87,7 @@ func variantInterface(
 	sum *emit.Sum, v *emit.SumVariant,
 ) (*emit.Interface, string, error) {
 	if len(v.Annotations) > 0 {
-		return nil, "", fmt.Errorf(
-			"typescript: decorators apply to classes, and the variant %s "+
-				"states some", v.Name,
-		)
+		return nil, "", refuse("decorators apply to classes, and the variant %s states some", v.Name)
 	}
 	name, err := spell.Name(symbol.KindInvalid, symbol.KindInterface,
 		sum.Visibility, sum.Name+naming.Pascal(v.Name))
@@ -118,14 +105,12 @@ func variantInterface(
 	iface.Fields.Append(&emit.Field{
 		Origin: v.Origin,
 		Name:   discriminant,
-		Type:   &emit.TypeRef{Spelling: strconv.Quote(v.Name)},
+		Type:   &emit.TypeRef{Spelling: quote(v.Name)},
 	})
 	for _, f := range v.Fields.Items() {
 		if f.Name == "" {
-			return nil, "", fmt.Errorf(
-				"typescript: a property carries a name, and a payload entry "+
-					"in %s states none", v.Name,
-			)
+			return nil, "", refuse("a property has a name, and a payload entry in %s states none",
+				v.Name)
 		}
 		iface.Fields.Append(f)
 	}

@@ -14,10 +14,10 @@ import (
 // New returns the TypeScript rendering backend: the module's
 // declared pieces composed through the kernel's kit, implementing
 // [plugin.Backend] and [plugin.Renderer] both. Rendered files
-// finalise through the shared normalizer: the module ships no
-// printer and hermeticity refuses a machine-supplied one, so the
-// templates' spelling stands, minus trailing whitespace and
-// blank-line runs.
+// finalise through the shared normalizer, which strips trailing
+// whitespace and blank-line runs and keeps the templates' spelling
+// otherwise, because the module ships no printer and hermeticity
+// refuses a machine-supplied one.
 func New() plugin.Backend {
 	return backend.New(typescript.Name, typescript.Target, typescript.Syntax()).
 		Version(typescript.Version).

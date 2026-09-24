@@ -10,12 +10,14 @@ import (
 
 // Coverage declares TypeScript's fact coverage, the feature table
 // as data: the render's guard reads it, and the conformance suite
-// holds it total and the rendered findings against it.
+// checks it total and the rendered findings against it.
 //
 // Decorators apply to classes and their members, so annotations
 // refuse everywhere else, the parameter position included. A
 // parameter's default renders behind its equals sign. Field tags
-// stay a Go idiom and refuse.
+// are a Go idiom and refuse. An index signature and a constructor
+// take a narrower set of modifiers than a method, and their keyword
+// helpers refuse the rest.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{
@@ -59,7 +61,7 @@ func Coverage() render.Coverage {
 			symbol.FactConstParam:       render.Refuses,
 		},
 		Except: map[symbol.Kind]map[symbol.Fact]render.Verdict{
-			// An embed refuses whole, so what it carries refuses with it.
+			// An embed refuses whole, so the facts on it refuse with it.
 			symbol.KindEmbed: {
 				symbol.FactComment:     render.Refuses,
 				symbol.FactTag:         render.Refuses,

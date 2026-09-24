@@ -48,9 +48,9 @@ func inventory() map[symbol.Kind]string {
 }
 
 // BenchmarkNew measures the composed backend over the suite's
-// scaled corpus: the real templates through the pass-through
-// formatter, under the allocation ceiling pinned from measurement
-// with headroom.
+// scaled corpus: the real templates and the shared normalizer,
+// under the allocation ceiling pinned from measurement with
+// headroom.
 func BenchmarkNew(b *testing.B) {
 	backendtest.BenchRender(b, benchSetup,
 		backendtest.Budget{MaxAllocs: 10_900_000})
@@ -64,10 +64,10 @@ func BenchmarkSettle(b *testing.B) {
 		backendtest.Budget{MaxAllocs: 1_900_000})
 }
 
-// The backend is the module's write half: the kernel suite holds
-// it to the render checks over the canonical fixture, and the
-// stamp check joins it to the output contract under this module's
-// own comment forms.
+// The backend is the module's write half: the kernel suite runs the
+// render checks over it on the canonical fixture, and the stamp
+// check joins it to the output contract under this module's own
+// comment forms.
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -99,9 +99,9 @@ func TestNew(t *testing.T) {
 		assert.Contains(t, string(text), "export class Row",
 			"a neutral row takes Pascal")
 		assert.Contains(t, string(text), "  boot(): void {",
-			"and a neutral boot stays camel")
-		assert.Contains(t, string(text), `  kind: "circle";`,
-			"a lowered variant leads with its discriminant")
+			"and a neutral boot keeps camel case")
+		assert.Contains(t, string(text), `  kind: 'circle';`,
+			"a lowered variant leads with its discriminant, quoted in TypeScript's grammar")
 		assert.Contains(t, string(text),
 			"export type Shape = ShapeCircle | ShapeEmpty;",
 			"and the union alias joins the lowered interfaces")

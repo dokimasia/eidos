@@ -1,40 +1,27 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Package typescript makes TypeScript a source and target language
-// for eidos workspaces.
+// Package typescript is the root of the TypeScript satellite: the
+// language's identity and comment forms, which the satellite's
+// packages share.
 //
-// The package registers the typed language identity that the
-// boundary spelling "typescript" resolves to, and the comment
-// syntax the frontend and backend share. The module provides the
-// TypeScript frontend, the projection rules, the lowering from
-// canonical type shapes to TypeScript spellings, the rendering
-// backend, and the TypeScript-only sdk importable from binding
-// files alone.
+// [Lang] is the language of every TypeScript declaration. [Target]
+// and [Name] are the spellings a plan resolves to reach the backend,
+// [Extension] is the suffix of every TypeScript file, and [Version]
+// is the backend's behavior version. [Syntax] returns TypeScript's
+// comment forms, which the output contract writes the generated-file
+// header through.
 //
-// # Projection facts
+// # Packages
 //
-//   - Unions are untagged and project onto the Union shape,
-//     distinct from the tagged Sum shape.
-//   - Async is signature-visible: Promise returns project as
-//     Async, AsyncIterator as an async Stream.
-//   - The error model is Thrown.
-//   - Optionality spells as the ? marker on fields and
-//     parameters; interfaces are property-majority and carry
-//     fields under admit-with-empties.
-//   - Decorators read statically through the annotation rules;
-//     namespaces map into hierarchical package paths.
+// The module covers TypeScript as a target:
 //
-// # Parsing
-//
-// The frontend parses with a pinned tree-sitter grammar — a
-// version-pinned library, never a machine-supplied toolchain — and
-// resolves dependencies signature-only through declaration files
-// (.d.ts), parsed and never executed.
+//   - spell spells filenames and declared names.
+//   - backend renders emit values as TypeScript source.
 //
 // # Dependency position
 //
-// The module imports the kernel's root authoring package and the
-// SPI packages beneath it, the shared helpers of eidos-lang, and
-// the Go stdlib.
+// The root package imports the sdk's plugin and symbol facades. The
+// module's other packages import the kernel's SPI through the sdk
+// facade, the shared helpers of eidos-lang, and the Go stdlib.
 package typescript
