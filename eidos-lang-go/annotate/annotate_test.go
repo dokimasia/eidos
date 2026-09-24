@@ -89,6 +89,25 @@ func fixture(tb assert.TB) *store.Graph {
 			Ref: &node.TypeRef{Spelling: "Stringish", Target: stringer.ID},
 		}},
 	}
+	errno := &node.Alias{
+		ID: id("", "Errno", symbol.KindAlias), Name: "Errno", Defined: true,
+		Target: &node.TypeRef{Spelling: "uintptr"},
+	}
+	errnoMethod := &node.Method{
+		ID: id("Errno", "Error", symbol.KindMethod), Name: "Error",
+		Receives: &node.TypeRef{Spelling: "Errno"},
+		Returns:  []*node.Return{{Type: &node.TypeRef{Spelling: "string"}}},
+	}
+	// A method in another package whose receiver shares a fixture
+	// type's name attaches to nothing here.
+	foreign := &node.Method{
+		ID: symbol.Identity{
+			Lang: "golang", Package: "other", Owner: "Flat", Name: "Error", Kind: symbol.KindMethod,
+		},
+		Name:     "Error",
+		Receives: &node.TypeRef{Spelling: "Flat"},
+		Returns:  []*node.Return{{Type: &node.TypeRef{Spelling: "string"}}},
+	}
 
 	g := store.New()
 	assert.NoError(tb, g.AddPackage(&node.Package{
@@ -99,10 +118,19 @@ func fixture(tb assert.TB) *store.Graph {
 			Path: "fix/a.go",
 			Decls: node.Symbols{
 				stringer, failer, errMethod, wrapper, flat, slippery,
-				leaky, holder, nested,
+				leaky, holder, nested, errno, errnoMethod,
 			},
 		}},
 	}), "the fixture loads")
+	assert.NoError(tb, g.AddPackage(&node.Package{
+		ID:   symbol.Identity{Lang: "golang", Package: "other", Kind: symbol.KindPackage},
+		Path: []string{"other"},
+		Files: []*node.File{{
+			ID:    symbol.Identity{Lang: "golang", Package: "other", Name: "other/b.go", Kind: symbol.KindFile},
+			Path:  "other/b.go",
+			Decls: node.Symbols{foreign},
+		}},
+	}), "the second package loads")
 	g.Freeze()
 	return g
 }
@@ -149,6 +177,8 @@ func TestNew(t *testing.T) {
 		errors := stamped(golang.SatisfiesErrorKey)
 		assert.True(t, errors["Failer"], "a package-level method attaches")
 		assert.False(t, errors["Wrapper"], "String is not Error")
+		assert.True(t, errors["Errno"], "a defined type over a builtin satisfies through its own methods")
+		assert.False(t, errors["Flat"], "a method in another package attaches to nothing here")
 
 		stringers := stamped(golang.SatisfiesStringerKey)
 		assert.True(t, stringers["Stringish"], "the interface satisfies itself")

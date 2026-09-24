@@ -28,7 +28,7 @@ func New() plugin.Annotator {
 			sdk.Stamp(st, h.SatisfiesStringer, true)
 		}
 		if facts.embedsInterface && m.subject().Kind == symbol.KindStruct {
-			// The key speaks for structs alone: an interface
+			// The key applies to structs alone: an interface
 			// embedding an interface is the language's norm, not a
 			// fact, and the key's kind set refuses it.
 			sdk.Stamp(st, h.EmbedsInterface, true)
@@ -53,6 +53,10 @@ func New() plugin.Annotator {
 		})).
 		Handle(sdk.OnEnum(func(m *sdk.EnumMatch, st *sdk.Stamper) error {
 			stampType(enumMatch{m}, st)
+			return nil
+		})).
+		Handle(sdk.OnAlias(func(m *sdk.AliasMatch, st *sdk.Stamper) error {
+			stampType(aliasMatch{m}, st)
 			return nil
 		})).
 		Build()
@@ -91,6 +95,15 @@ func (a enumMatch) reader() *store.Reader    { return a.m.Reader() }
 func (a enumMatch) subject() symbol.Identity { return a.m.Enum.ID }
 func (a enumMatch) methods() []*node.Method  { return a.m.Enum.Methods }
 func (enumMatch) embeds() []*node.Embed      { return nil }
+
+// aliasMatch is a defined type or an alias: the kind has no members,
+// so its methods are the file-level ones its package attaches to it.
+type aliasMatch struct{ m *sdk.AliasMatch }
+
+func (a aliasMatch) reader() *store.Reader    { return a.m.Reader() }
+func (a aliasMatch) subject() symbol.Identity { return a.m.Alias.ID }
+func (aliasMatch) methods() []*node.Method    { return nil }
+func (aliasMatch) embeds() []*node.Embed      { return nil }
 
 // proven is what the graph settles about one type.
 type proven struct {
@@ -134,8 +147,12 @@ func provenComparable(r *store.Reader, id symbol.Identity) bool {
 }
 
 // methodSet assembles a type's visible methods: the folded list,
-// the package-level methods owning it, and — recursively, cycles
-// guarded — the methods of every embed the graph resolves.
+// the file-level methods of the type's own package that attach to
+// it, and, recursively with cycles guarded, the methods of every
+// embed the graph resolves. The file-level methods are read from
+// the type's package alone, because Go declares a method in its
+// receiver's package, so one type costs its package's declarations
+// and never the workspace's methods.
 func methodSet(
 	r *store.Reader, id symbol.Identity,
 	methods []*node.Method, embeds []*node.Embed,
@@ -147,14 +164,13 @@ func methodSet(
 	visiting[id] = true
 
 	out := append([]*node.Method{}, methods...)
-	for decl := range r.ByKind(symbol.KindMethod) {
-		m, is := decl.(*node.Method)
-		if !is {
-			continue
-		}
-		owner := m.Identity()
-		if owner.Package == id.Package && owner.Owner == id.Name {
-			out = append(out, m)
+	if pkg, held := r.PackageOf(id); held {
+		for _, f := range pkg.Files {
+			for _, decl := range f.Decls {
+				if m, is := decl.(*node.Method); is && m.Identity().Owner == id.Name {
+					out = append(out, m)
+				}
+			}
 		}
 	}
 	for _, e := range embeds {
