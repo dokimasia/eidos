@@ -80,6 +80,39 @@ func TestSink(t *testing.T) {
 			}
 		})
 
+		t.Run("refuses paths that cannot coexist on a filesystem", func(t *testing.T) {
+			t.Parallel()
+
+			pairs := []struct {
+				name          string
+				first, second string
+			}{
+				{"a file where a directory is needed", "svc/store.go", "svc/store.go/row.go"},
+				{"a directory where a file is staged", "svc/store.go", "svc"},
+				{"two names differing only in case", "svc/store.go", "svc/Store.go"},
+			}
+			for name, open := range every(t) {
+				for _, tt := range pairs {
+					t.Run(name+"/"+tt.name, func(t *testing.T) {
+						t.Parallel()
+
+						s := open()
+						assert.NoError(t, s.Write(tt.first, []byte("a\n")), "the first path stages")
+						assert.HasError(t, s.Write(tt.second, []byte("b\n")),
+							"the second cannot exist beside it on a filesystem")
+					})
+				}
+				t.Run(name+"/two files in one directory", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					assert.NoError(t, s.Write("svc/store.go", []byte("a\n")), "the first path stages")
+					assert.NoError(t, s.Write("svc/store_test.go", []byte("b\n")),
+						"and a sibling beside it")
+				})
+			}
+		})
+
 		t.Run("refuses everything after the sink finished", func(t *testing.T) {
 			t.Parallel()
 
@@ -129,6 +162,8 @@ func TestSink(t *testing.T) {
 			assert.Equal(t, output.Action(7).String(), "Action(7)",
 				"a diagnostic over an unknown action still names it, "+
 					"rather than reading as one of the three")
+			assert.Equal(t, output.Action(12).String(), "Action(12)",
+				"in every digit its number has")
 		})
 	})
 
