@@ -52,6 +52,6 @@
 // # Dependency position
 //
 // core/plugin imports core/diag, core/directive, core/emit,
-// core/meta, core/node, core/position, core/store, core/symbol
-// and the Go stdlib.
+// core/meta, core/node, core/position, core/rules, core/store,
+// core/symbol and the Go stdlib.
 package plugin

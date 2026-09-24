@@ -40,8 +40,8 @@ func (e *Emitter) File(tags ...Tag) *Out {
 }
 
 // PackageFile returns the accumulator for the subject's package and
-// the family, keyed by the package path the subject's identity
-// names.
+// the family, keyed by the language and the package path the
+// subject's identity names.
 func (e *Emitter) PackageFile(tags ...Tag) *Out {
 	return e.out(plugin.PerPackage, e.m.subject.Package, tags)
 }
@@ -64,7 +64,11 @@ func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 		panic("eidos: " + string(e.rs.plugin) + " addresses family " +
 			strconv.Quote(string(tag)) + " at the wrong cardinality")
 	}
-	acc := e.rs.accFor(accKey{tag: tag, per: per, key: key}, fam, e.m.subject)
+	k := accKey{tag: tag, per: per, key: key}
+	if per == plugin.PerPackage {
+		k.lang = e.m.subject.Lang
+	}
+	acc := e.rs.accFor(k, fam, e.m.subject)
 	instance := 0
 	if e.m.gate != nil {
 		instance = e.m.gate.Instance
@@ -123,11 +127,13 @@ func (o *Out) Append(decls ...symbol.Symbol) {
 }
 
 // accKey addresses one accumulator: a family under one cardinality
-// key.
+// key. A per-package key includes the language, because two
+// languages may spell one package path.
 type accKey struct {
-	tag Tag
-	per plugin.Cardinality
-	key string
+	tag  Tag
+	per  plugin.Cardinality
+	lang symbol.Lang
+	key  string
 }
 
 // accumulator gathers one output entity's contributions until the
@@ -200,6 +206,9 @@ func (rs *runState) flush(into *plugin.Emit) error {
 			return c
 		}
 		if c := cmp.Compare(a.key, b.key); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.lang, b.lang); c != 0 {
 			return c
 		}
 		return cmp.Compare(a.tag, b.tag)

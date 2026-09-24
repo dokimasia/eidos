@@ -89,6 +89,19 @@ func TestEmit(t *testing.T) {
 				"two plugins may contribute to one cardinality key")
 		})
 
+		t.Run("admits one key under two packages", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			native := unit("stubgen", coretest.StorePath)
+			native.Per = plugin.PerPackage
+			foreign := native
+			foreign.Pkg.Lang = "other"
+			assert.NoError(t, e.Add(native), "the first language's package unit arrives")
+			assert.NoError(t, e.Add(foreign),
+				"a second language spelling the one package path is a second namespace")
+		})
+
 		t.Run("refuses a zero cardinality", func(t *testing.T) {
 			t.Parallel()
 
@@ -135,10 +148,13 @@ func TestEmit(t *testing.T) {
 			e := plugin.NewEmit()
 			second := unit("stubgen", "a.go")
 			second.Tag = "test"
+			cached := unit("stubgen", "a.go")
+			cached.Pkg = coretest.PackageID(coretest.CachePath)
 			for _, u := range []plugin.Unit{
 				{Plugin: "stubgen", Per: plugin.PerPlan, Word: "registry"},
 				second,
 				unit("stubgen", "a.go"),
+				cached,
 				unit("audit", "z.go"),
 			} {
 				assert.NoError(t, e.Add(u), "every fixture unit arrives")
@@ -146,14 +162,15 @@ func TestEmit(t *testing.T) {
 
 			var got []string
 			for u := range e.Units() {
-				got = append(got, string(u.Plugin)+"/"+u.Key+"/"+u.Tag)
+				got = append(got, string(u.Plugin)+"/"+u.Key+"/"+u.Pkg.Package+"/"+u.Tag)
 			}
 			assert.Equal(t, got, []string{
-				"audit/z.go/",
-				"stubgen/a.go/",
-				"stubgen/a.go/test",
-				"stubgen//",
-			}, "units order by plugin, then cardinality, then key, then tag")
+				"audit/z.go/svc/store/",
+				"stubgen/a.go/svc/cache/",
+				"stubgen/a.go/svc/store/",
+				"stubgen/a.go/svc/store/test",
+				"stubgen///",
+			}, "units order by plugin, then cardinality, then key, then package, then tag")
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {

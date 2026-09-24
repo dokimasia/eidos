@@ -72,14 +72,14 @@
 //
 // Byte-identity is the contract: the same workspace over the same
 // input produces the same bytes on every machine, warm or cold.
-// Every ordering is defined — units by plugin, cardinality, key and
-// tag; contributions by origin, gating instance and insertion — and
-// output carries no clocks or environment.
+// Every ordering is defined — units by plugin, cardinality, key,
+// package and tag; contributions by origin, gating instance and
+// insertion — and output carries no clocks or environment.
 //
 // # Dependency position
 //
 // The root package imports core/plugin, core/diag,
 // core/directive, core/emit, core/meta, core/node, core/position,
-// core/store, core/symbol and the Go stdlib. Nothing in the
-// module imports the root package back.
+// core/rules, core/store, core/symbol and the Go stdlib. Nothing
+// in the module imports the root package back.
 package eidos

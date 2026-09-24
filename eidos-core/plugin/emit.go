@@ -76,10 +76,12 @@ type Unit struct {
 }
 
 // unitKey addresses one accumulator: what one phase call may flush
-// exactly once.
+// exactly once. The key includes the package, because two
+// languages may spell one package path as two namespaces.
 type unitKey struct {
 	plugin ID
 	tag    string
+	pkg    symbol.Identity
 	key    string
 }
 
@@ -123,8 +125,9 @@ func (e *Emit) Settled() bool { return e.settled }
 
 // Add records one unit and indexes its tree.
 //
-// A second unit under the same (plugin, tag, key) is refused as the
-// defect it is: one phase call flushes each accumulator once. A
+// A second unit under the same (plugin, tag, package, key) is
+// refused as the defect it is: one phase call flushes each
+// accumulator once. A
 // zero cardinality and an empty word are refused the same way,
 // because a unit missing either cannot be routed, and so is a plan
 // unit naming a key, because a plan has one output and its key is
@@ -150,7 +153,7 @@ func (e *Emit) Add(u Unit) error {
 			)
 		}
 	}
-	k := unitKey{plugin: u.Plugin, tag: u.Tag, key: u.Key}
+	k := unitKey{plugin: u.Plugin, tag: u.Tag, pkg: u.Pkg, key: u.Key}
 	if _, taken := e.held[k]; taken {
 		return fmt.Errorf(
 			"plugin: %s flushes (%q, %q) twice: one phase call flushes each accumulator once",
@@ -167,8 +170,8 @@ func (e *Emit) Add(u Unit) error {
 }
 
 // Units enumerates every unit: by plugin, then cardinality, then
-// key, then tag. The order is total, so two runs agree
-// whatever order the units arrived in.
+// key, then package, then tag. The order is total, so two runs
+// agree whatever order the units arrived in.
 func (e *Emit) Units() iter.Seq[Unit] {
 	return func(yield func(Unit) bool) {
 		for _, at := range e.sorted() {
@@ -249,6 +252,9 @@ func (e *Emit) sorted() []int {
 			return c
 		}
 		if c := strings.Compare(ua.Key, ub.Key); c != 0 {
+			return c
+		}
+		if c := ua.Pkg.Compare(ub.Pkg); c != 0 {
 			return c
 		}
 		return strings.Compare(ua.Tag, ub.Tag)

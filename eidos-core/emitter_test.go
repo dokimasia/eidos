@@ -234,4 +234,43 @@ func TestEmitter(t *testing.T) {
 				"and the positioned subject keeps its own file")
 		})
 	})
+
+	t.Run("PackageFile", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keys one accumulator per language and package path", func(t *testing.T) {
+			t.Parallel()
+
+			const otherLang symbol.Lang = "other"
+			native := coretest.Struct(coretest.StorePath, "Native")
+			foreign := coretest.Struct(coretest.StorePath, "Foreign")
+			foreign.ID.Lang = otherLang
+			samePath := coretest.Package(coretest.StorePath, foreign)
+			samePath.ID.Lang = otherLang
+			samePath.Files[0].ID.Lang = otherLang
+			g := coretest.Frozen(t, coretest.Package(coretest.StorePath, native), samePath)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+
+			p := eidos.NewPlugin("perpkg").
+				Output(plugin.Output{Per: plugin.PerPackage, Word: "audit"}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.PackageFile().Append(&emit.Struct{
+						Origin: m.Struct.Identity(), Name: "For" + m.Struct.Name,
+					})
+					return nil
+				})).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+
+			var langs []symbol.Lang
+			for u := range ctx.Emit.Units() {
+				assert.Equal(t, u.Key, coretest.StorePath, "every unit keys the one package path")
+				assert.Length(t, u.Decls, 1, "and holds its own language's subject alone")
+				langs = append(langs, u.Pkg.Lang)
+			}
+			assert.Equal(t, langs, []symbol.Lang{coretest.Lang, otherLang},
+				"two languages spelling one path assemble two units, in package order")
+		})
+	})
 }
