@@ -137,6 +137,88 @@ func TestDecls(t *testing.T) {
 			assert.True(t, i.Methods[0].Abstract,
 				"an interface method carries no body")
 		})
+
+		t.Run("spells its method apart from a struct's method of one name", func(t *testing.T) {
+			t.Parallel()
+
+			pkg := coretest.EveryKind(coretest.StorePath)
+			g := coretest.Frozen(t, pkg)
+			methods := 0
+			for decl := range g.ByKind(symbol.KindMethod) {
+				got, held := g.Lookup(decl.(node.Declaration).Identity())
+				assert.True(t, held && got == decl,
+					"every method is found under its own identity, not under its namesake's")
+				methods++
+			}
+			assert.Equal(t, methods, coretest.KindCount(symbol.KindMethod, pkg),
+				"Row.Scan and Reader.Scan are two identities, as the resolution step spells them")
+			assert.NotEqual(t,
+				coretest.Interface(coretest.StorePath, coretest.InterfaceName).Methods[0].ID,
+				coretest.Populated(coretest.StorePath, coretest.StructName).Methods[0].ID,
+				"the owner chain tells the two hosts' methods apart")
+		})
+	})
+
+	t.Run("Function", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("spells its parameter and result under its own name", func(t *testing.T) {
+			t.Parallel()
+
+			fn := coretest.Function(coretest.StorePath, coretest.FunctionName)
+			assert.Equal(t, fn.Params[0].ID.Owner, coretest.FunctionName,
+				"a parameter's owner is the callable that declares it")
+			assert.Equal(t, fn.Returns[0].ID.Owner, coretest.FunctionName,
+				"and so is a result's")
+		})
+	})
+
+	t.Run("EveryKindID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("names the every-kind package's declaration of each kind", func(t *testing.T) {
+			t.Parallel()
+
+			names := map[symbol.Kind]string{
+				symbol.KindStruct:      coretest.StructName,
+				symbol.KindField:       coretest.FieldName,
+				symbol.KindMethod:      coretest.MethodName,
+				symbol.KindInterface:   coretest.InterfaceName,
+				symbol.KindEnum:        coretest.EnumName,
+				symbol.KindEnumVariant: coretest.EnumVariantName,
+				symbol.KindSum:         coretest.SumName,
+				symbol.KindSumVariant:  coretest.SumVariantName,
+				symbol.KindAlias:       coretest.AliasName,
+				symbol.KindFunction:    coretest.FunctionName,
+				symbol.KindParam:       coretest.ParamName,
+				symbol.KindReturn:      coretest.ReturnName,
+				symbol.KindVariable:    coretest.VariableName,
+				symbol.KindConstant:    coretest.ConstantName,
+			}
+			g := coretest.Frozen(t, coretest.EveryKind(coretest.StorePath))
+			for kind, name := range names {
+				id := coretest.EveryKindID(coretest.StorePath, name, kind)
+				_, held := g.Lookup(id)
+				assert.True(t, held, "the graph declares "+id.String())
+			}
+		})
+	})
+
+	t.Run("MemberID", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("spells the owner chain beside the name", func(t *testing.T) {
+			t.Parallel()
+
+			id := coretest.MemberID(coretest.StorePath, "Outer.Inner", coretest.FieldName,
+				symbol.KindField)
+			assert.Equal(t, id.Owner, "Outer.Inner", "the dotted chain of enclosing names")
+			assert.Equal(t, id.Name, coretest.FieldName, "beside the member's own name")
+			assert.Equal(t, id, symbol.Identity{
+				Lang: coretest.Lang, Package: coretest.StorePath, Owner: "Outer.Inner",
+				Name: coretest.FieldName, Kind: symbol.KindField,
+			}, "under the fixture's language and package")
+		})
 	})
 
 	t.Run("Alias", func(t *testing.T) {

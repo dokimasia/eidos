@@ -45,7 +45,7 @@ func FileID(path string) symbol.Identity {
 // builds one itself: this fixture is always named.
 func Struct(path, name string) *node.Struct {
 	return &node.Struct{
-		ID:   symbol.Identity{Lang: Lang, Package: path, Name: name, Kind: symbol.KindStruct},
+		ID:   ID(path, name, symbol.KindStruct),
 		Name: name,
 	}
 }

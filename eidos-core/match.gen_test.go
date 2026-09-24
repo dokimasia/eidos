@@ -74,7 +74,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Function the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.FunctionName, symbol.KindFunction),
+				coretest.EveryKindID(coretest.StorePath, coretest.FunctionName, symbol.KindFunction),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindFunction,
@@ -161,7 +161,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Method the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.MethodName, symbol.KindMethod),
+				coretest.EveryKindID(coretest.StorePath, coretest.MethodName, symbol.KindMethod),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindMethod,
@@ -248,7 +248,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Param the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.ParamName, symbol.KindParam),
+				coretest.EveryKindID(coretest.StorePath, coretest.ParamName, symbol.KindParam),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindParam,
@@ -335,7 +335,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Return the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.ReturnName, symbol.KindReturn),
+				coretest.EveryKindID(coretest.StorePath, coretest.ReturnName, symbol.KindReturn),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindReturn,
@@ -422,7 +422,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Enum the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.EnumName, symbol.KindEnum),
+				coretest.EveryKindID(coretest.StorePath, coretest.EnumName, symbol.KindEnum),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindEnum,
@@ -509,7 +509,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Sum the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.SumName, symbol.KindSum),
+				coretest.EveryKindID(coretest.StorePath, coretest.SumName, symbol.KindSum),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindSum,
@@ -596,7 +596,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Field the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.FieldName, symbol.KindField),
+				coretest.EveryKindID(coretest.StorePath, coretest.FieldName, symbol.KindField),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindField,
@@ -683,7 +683,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Variable the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.VariableName, symbol.KindVariable),
+				coretest.EveryKindID(coretest.StorePath, coretest.VariableName, symbol.KindVariable),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindVariable,
@@ -770,7 +770,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Constant the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.ConstantName, symbol.KindConstant),
+				coretest.EveryKindID(coretest.StorePath, coretest.ConstantName, symbol.KindConstant),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindConstant,
@@ -857,7 +857,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Struct the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.StructName, symbol.KindStruct),
+				coretest.EveryKindID(coretest.StorePath, coretest.StructName, symbol.KindStruct),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindStruct,
@@ -944,7 +944,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Interface the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.InterfaceName, symbol.KindInterface),
+				coretest.EveryKindID(coretest.StorePath, coretest.InterfaceName, symbol.KindInterface),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindInterface,
@@ -1031,7 +1031,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per Alias the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.AliasName, symbol.KindAlias),
+				coretest.EveryKindID(coretest.StorePath, coretest.AliasName, symbol.KindAlias),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.KindAlias,

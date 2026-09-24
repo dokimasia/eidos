@@ -70,7 +70,7 @@ func TestMatches(t *testing.T) {
 			assert.Length(t, subjects, want,
 				"the rule fires once per {{.Name}} the graph holds")
 			assert.Contains(t, subjects,
-				coretest.ID(coretest.StorePath, coretest.{{.Name}}Name, symbol.Kind{{.Name}}),
+				coretest.EveryKindID(coretest.StorePath, coretest.{{.Name}}Name, symbol.Kind{{.Name}}),
 				"and the match carries the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.Kind{{.Name}},

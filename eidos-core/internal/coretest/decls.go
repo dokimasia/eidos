@@ -40,28 +40,32 @@ func Function(path, name string) *node.Function {
 		ID:         ID(path, name, symbol.KindFunction),
 		Name:       name,
 		Visibility: symbol.VisibilityPublic,
-		Params:     []*node.Param{Param(path, ParamName)},
-		Returns:    []*node.Return{Return(path, ReturnName)},
+		Params:     []*node.Param{Param(path, name, ParamName)},
+		Returns:    []*node.Return{Return(path, name, ReturnName)},
 	}
 }
 
-// Param returns a named parameter carrying an identity, as the
-// resolution step assigns one under its callable.
-func Param(path, name string) *node.Param {
-	return &node.Param{ID: ID(path, name, symbol.KindParam), Name: name}
+// Param returns a named parameter of one callable, carrying the
+// identity the resolution step assigns it under the callable's
+// name. The fixture's parameters spell no type, so every
+// discriminator is empty, the way the step spells it.
+func Param(path, callable, name string) *node.Param {
+	return &node.Param{ID: MemberID(path, callable, name, symbol.KindParam), Name: name}
 }
 
-// Return returns a named result carrying an identity, as the
-// resolution step assigns one under its callable.
-func Return(path, name string) *node.Return {
-	return &node.Return{ID: ID(path, name, symbol.KindReturn), Name: name}
+// Return returns a named result of one callable, carrying the
+// identity the resolution step assigns it under the callable's
+// name.
+func Return(path, callable, name string) *node.Return {
+	return &node.Return{ID: MemberID(path, callable, name, symbol.KindReturn), Name: name}
 }
 
-// Method returns a method attached to host, carrying host's
+// Method returns a method attached to host, carrying the identity
+// the resolution step assigns it under host's name, and host's
 // identity in its back-pointer the way a loaded member does.
 func Method(path, host, name string) *node.Method {
 	return &node.Method{
-		ID:         ID(path, name, symbol.KindMethod),
+		ID:         MemberID(path, host, name, symbol.KindMethod),
 		Name:       name,
 		Visibility: symbol.VisibilityPublic,
 		Level:      symbol.LevelInstance,
@@ -69,11 +73,12 @@ func Method(path, host, name string) *node.Method {
 	}
 }
 
-// Field returns a field on host, carrying host's identity in its
-// back-pointer the way a loaded member does.
+// Field returns a field on host, carrying the identity the
+// resolution step assigns it under host's name, and host's identity
+// in its back-pointer the way a loaded member does.
 func Field(path, host, name string) *node.Field {
 	return &node.Field{
-		ID:         ID(path, name, symbol.KindField),
+		ID:         MemberID(path, host, name, symbol.KindField),
 		Name:       name,
 		Visibility: symbol.VisibilityPublic,
 		Level:      symbol.LevelInstance,
@@ -83,12 +88,13 @@ func Field(path, host, name string) *node.Field {
 }
 
 // Enum returns an enumeration holding one variant per name, each
-// carrying the enum's identity in its back-pointer.
+// under the enum's name and carrying the enum's identity in its
+// back-pointer.
 func Enum(path, name string, variants ...string) *node.Enum {
 	held := make([]*node.EnumVariant, 0, len(variants))
 	for _, variant := range variants {
 		held = append(held, &node.EnumVariant{
-			ID:   ID(path, variant, symbol.KindEnumVariant),
+			ID:   MemberID(path, name, variant, symbol.KindEnumVariant),
 			Name: variant,
 			Host: ID(path, name, symbol.KindEnum),
 		})
@@ -101,13 +107,14 @@ func Enum(path, name string, variants ...string) *node.Enum {
 	}
 }
 
-// Sum returns a sum type holding one variant per name, each
-// carrying the sum's identity in its back-pointer.
+// Sum returns a sum type holding one variant per name, each under
+// the sum's name and carrying the sum's identity in its
+// back-pointer.
 func Sum(path, name string, variants ...string) *node.Sum {
 	held := make([]*node.SumVariant, 0, len(variants))
 	for _, variant := range variants {
 		held = append(held, &node.SumVariant{
-			ID:   ID(path, variant, symbol.KindSumVariant),
+			ID:   MemberID(path, name, variant, symbol.KindSumVariant),
 			Name: variant,
 			Host: ID(path, name, symbol.KindSum),
 		})
@@ -139,7 +146,8 @@ func Constant(path, name string) *node.Constant {
 	}
 }
 
-// Interface returns an interface declaring one method.
+// Interface returns an interface declaring one method, under the
+// interface's name.
 func Interface(path, name string) *node.Interface {
 	m := Method(path, name, MethodName)
 	m.Host = ID(path, name, symbol.KindInterface)
@@ -196,6 +204,26 @@ func EveryKind(path string) *node.Package {
 		Variable(path, VariableName),
 		Constant(path, ConstantName),
 	)
+}
+
+// EveryKindID returns the identity [EveryKind] assigns its
+// declaration of one kind under name: a field or a method under
+// [StructName], a parameter or a return under [FunctionName], a
+// variant under its enum or sum, and anything else at the top
+// level.
+func EveryKindID(path, name string, kind symbol.Kind) symbol.Identity {
+	switch kind {
+	case symbol.KindField, symbol.KindMethod:
+		return MemberID(path, StructName, name, kind)
+	case symbol.KindParam, symbol.KindReturn:
+		return MemberID(path, FunctionName, name, kind)
+	case symbol.KindEnumVariant:
+		return MemberID(path, EnumName, name, kind)
+	case symbol.KindSumVariant:
+		return MemberID(path, SumName, name, kind)
+	default:
+		return ID(path, name, kind)
+	}
 }
 
 // MatchableKinds are the kinds [EveryKind] declares, which is the
@@ -258,12 +286,22 @@ func (foreign) Position() position.Pos      { return position.Pos{} }
 func (foreign) Docs() []string              { return nil }
 func (f foreign) Identity() symbol.Identity { return f.id }
 
-// ID returns the identity the resolution step assigns a declaration
-// of that kind in one package.
+// ID returns the identity the resolution step assigns a top-level
+// declaration of that kind in one package.
 //
-// Every fixture identity is built here, so a case comparing two of
-// them compares the same spelling rules rather than two hand-built
-// literals that agree by luck.
+// Every fixture identity is built here or in [MemberID], so a case
+// comparing two of them compares the same spelling rules rather
+// than two hand-built literals that agree by luck.
 func ID(path, name string, kind symbol.Kind) symbol.Identity {
 	return symbol.Identity{Lang: Lang, Package: path, Name: name, Kind: kind}
+}
+
+// MemberID returns the identity the resolution step assigns a
+// member declaration: owner is the dotted chain of the enclosing
+// declarations' names, so two hosts' members of one name spell
+// apart.
+func MemberID(path, owner, name string, kind symbol.Kind) symbol.Identity {
+	id := ID(path, name, kind)
+	id.Owner = owner
+	return id
 }
