@@ -4,10 +4,12 @@
 // Package genfile formats, writes and guards generated Go sources.
 //
 // A generator renders its output into a [Set], a map from
-// module-relative slash path to bytes. [Format] canonicalizes each
-// file, [Write] puts the set on disk, and [Verify] is the mirror
-// guard: it reports whether the tree matches what the generator
-// would produce right now.
+// module-relative slash path to bytes. Every file opens with the
+// preamble [Header] returns. [Render] formats a generator's rendered
+// files into the set through [Format], and [Write] puts the set on
+// disk. [Regenerate] renders a set and writes it, for a go:generate
+// wrapper. [Verify] is the mirror guard: it reports whether the tree
+// matches what the generator produces from the current sources.
 //
 // # The guard
 //
@@ -15,8 +17,8 @@
 // defect. A file whose bytes differ means somebody edited generated
 // output or changed the source without regenerating. A missing file
 // means the tree is incomplete. A generated file on disk that the
-// set does not name is a stray left behind by a rename or a
-// deletion, which would otherwise compile forever.
+// set does not name is a stray from a rename or a deletion, and it
+// compiles until somebody deletes it.
 //
 // # Dependency position
 //
