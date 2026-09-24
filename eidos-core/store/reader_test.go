@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -135,6 +136,21 @@ func TestReader(t *testing.T) {
 			}
 			assert.Equal(t, seen, 1, "the enumeration stops when the range stops")
 		})
+
+		t.Run("asks the scope once per package", func(t *testing.T) {
+			t.Parallel()
+
+			scope, asked := counting(coretest.StorePath)
+			r, _ := coretest.Reading(t, scope,
+				coretest.Package(coretest.StorePath,
+					coretest.Struct(coretest.StorePath, "Store"), coretest.Struct(coretest.StorePath, "Index")),
+				coretest.Package(coretest.CachePath,
+					coretest.Struct(coretest.CachePath, "Cache"), coretest.Struct(coretest.CachePath, "Entry")))
+
+			assert.Equal(t, coretest.Names(t, slices.Collect(r.ByKind(symbol.KindStruct))),
+				[]string{"Store", "Index"}, "the scope admits one package")
+			assert.Equal(t, *asked, 2, "and is asked once for each of the two packages")
+		})
 	})
 
 	t.Run("ByDirective", func(t *testing.T) {
@@ -163,6 +179,32 @@ func TestReader(t *testing.T) {
 			assert.Equal(t, seen, 1, "the enumeration stops when the range stops")
 			assert.Length(t, slices.Collect(reads.Identities()), 1,
 				"and records what the caller reached, not the set")
+		})
+
+		t.Run("asks the scope once per package", func(t *testing.T) {
+			t.Parallel()
+
+			store1 := coretest.Struct(coretest.StorePath, "Store")
+			store2 := coretest.Struct(coretest.StorePath, "Index")
+			cache1 := coretest.Struct(coretest.CachePath, "Cache")
+			cache2 := coretest.Struct(coretest.CachePath, "Entry")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, store1, store2)),
+				"the store package loads")
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.CachePath, cache1, cache2)),
+				"and the cache package")
+			for i, decl := range []*node.Struct{store1, store2, cache1, cache2} {
+				assert.NoError(t, g.AttachDirectives(decl.ID, []directive.Raw{stubAt(i + 1)}),
+					"each declaration carries the directive")
+			}
+			g.Freeze()
+			scope, asked := counting(coretest.StorePath)
+			r, err := g.Reader(store.NewReadSet(), scope)
+			assert.NoError(t, err, "the sealed graph hands out a reader")
+
+			assert.Length(t, slices.Collect(r.ByDirective("stub")), 2,
+				"the scope admits one package")
+			assert.Equal(t, *asked, 2, "and is asked once for each of the two packages")
 		})
 	})
 
@@ -248,6 +290,16 @@ func TestReader(t *testing.T) {
 // onlyPackage returns a scope admitting one package path.
 func onlyPackage(path string) store.Scope {
 	return func(pkg symbol.Identity) bool { return pkg.Package == path }
+}
+
+// counting returns a scope admitting one package path, and the
+// number of times a reader asked it.
+func counting(path string) (store.Scope, *int) {
+	asked := 0
+	return func(pkg symbol.Identity) bool {
+		asked++
+		return pkg.Package == path
+	}, &asked
 }
 
 // A tracked read costs an untracked one plus the bookkeeping. What

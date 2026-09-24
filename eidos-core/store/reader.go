@@ -14,12 +14,40 @@ import (
 // Scope decides which packages a reader may see.
 //
 // A nil Scope admits everything, which is what a composition with
-// one plan wants and what a fixture uses.
+// one plan wants and what a fixture uses. An enumeration asks a
+// scope once per run of declarations in one package, not once per
+// declaration.
 type Scope func(pkg symbol.Identity) bool
 
 // admits reports whether the scope admits a package, and holds the
 // rule that a nil Scope admits every one.
 func (sc Scope) admits(pkg symbol.Identity) bool { return sc == nil || sc(pkg) }
+
+// verdicts asks a scope once per package run. The graph's indexes
+// group declarations by package, so an enumeration calls the scope
+// once per package it crosses, never once per declaration.
+type verdicts struct {
+	scope    Scope
+	lang     symbol.Lang
+	pkg      string
+	admitted bool
+	asked    bool
+}
+
+// admits reports whether the scope admits the package a
+// declaration belongs to, reusing the previous verdict while the
+// package repeats. A package is its language and its path, the two
+// identity fields ownership derives from.
+func (v *verdicts) admits(id symbol.Identity) bool {
+	if v.scope == nil {
+		return true
+	}
+	if !v.asked || id.Package != v.pkg || id.Lang != v.lang {
+		v.lang, v.pkg, v.asked = id.Lang, id.Package, true
+		v.admitted = v.scope(owningPackage(id))
+	}
+	return v.admitted
+}
 
 // Reader is a tracked, scope-filtered read handle over a frozen
 // graph.
@@ -59,9 +87,10 @@ func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 			r.reads.reserve(len(held))
 		}
 
+		scope := verdicts{scope: r.scope}
 		for _, decl := range held {
 			id := decl.Identity()
-			if !r.scope.admits(owningPackage(id)) {
+			if !scope.admits(id) {
 				continue
 			}
 			r.reads.recordIdentity(id)
@@ -82,9 +111,10 @@ func (r *Reader) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
 		r.reads.recordDirective(n)
 
+		scope := verdicts{scope: r.scope}
 		for _, decl := range r.graph.byDirective[n] {
 			id := decl.Identity()
-			if !r.scope.admits(owningPackage(id)) {
+			if !scope.admits(id) {
 				continue
 			}
 			r.reads.recordIdentity(id)

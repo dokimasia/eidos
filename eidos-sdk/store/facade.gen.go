@@ -56,7 +56,9 @@ func New() *Graph {
 // Scope decides which packages a reader may see.
 //
 // A nil Scope admits everything, which is what a composition with
-// one plan wants and what a fixture uses.
+// one plan wants and what a fixture uses. An enumeration asks a
+// scope once per run of declarations in one package, not once per
+// declaration.
 type Scope = core.Scope
 
 // Reader is a tracked, scope-filtered read handle over a frozen
