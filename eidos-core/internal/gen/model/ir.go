@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"go/ast"
 	"go/token"
+	"go/types"
 	"reflect"
 	"strconv"
 	"strings"
@@ -14,10 +15,10 @@ import (
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
-// Side says which model a field arrives in.
+// Side names the model a field arrives in.
 //
 // The zero value is [SideNode], so a field whose tag lowering
-// refuses never silently reaches the emit model.
+// refuses never appears on the emit model.
 type Side uint8
 
 const (
@@ -59,15 +60,15 @@ type KindSpec struct {
 
 // FieldSpec is one annotated field of a kind.
 //
-// Type is the spelling the generated model carries. A schema kind
-// name stays bare, so a template can qualify it for the side it
-// renders; a type from another package keeps its qualifier.
+// Type is the spelling the generated model uses. A schema kind name
+// is bare, so a template can qualify it for the side it renders. A
+// type from another package keeps its qualifier.
 //
 // Elem names the kind a pointer or slice field references and is
-// empty for everything else, which is what the traversal, the name
-// respelling and the slot accessors switch on. Slice says the field
-// holds many of them, and IsSymbol says the field is typed by the
-// [MarkerName] marker and so admits any kind.
+// empty for every other field. The traversal, the name respelling
+// and the slot accessors switch on it. Slice reports whether the
+// field is a slice, and IsSymbol reports whether the field is typed
+// by the [MarkerName] marker and so admits any kind.
 type FieldSpec struct {
 	Name string
 	// Doc is the schema's documentation for the field, and Comment
@@ -83,18 +84,18 @@ type FieldSpec struct {
 	IsSymbol bool
 	// IsName marks a declared name the respell traversal visits.
 	IsName bool
-	// Fact names the stated fact the field carries, empty for a
-	// field stating none: the generated constant's suffix.
+	// Fact is the suffix of the generated constant for the fact the
+	// field states, empty for a field that states no fact.
 	Fact string
 }
 
 // Lower parses and type-checks the schema in dir and returns its
 // kinds.
 //
-// modRoot roots the importer that resolves the schema's imports; a
-// schema importing nothing lowers with an empty modRoot. Type
-// checking runs first, so an undefined type is reported as such
-// rather than lowered into a plausible-looking spelling.
+// modRoot is the root of the importer that resolves the schema's
+// imports. A schema without imports lowers with an empty modRoot.
+// Type checking runs first, so an undefined type is reported as
+// undefined.
 //
 // Every violation of the annotation contract is an error naming the
 // schema position. The package documentation lists them.
@@ -136,11 +137,10 @@ type declaration struct {
 
 // collect gathers the schema's struct declarations in order.
 //
-// Imports pass through, since a kind's fields are typed from other
-// packages. Everything else the schema might declare is refused: a
-// helper type would generate a kind nobody meant to add, and a
-// constant or a function would not generate at all, so either would
-// be a silent omission.
+// Imports and the two marker types pass through. A constant, a
+// variable, a function, a non-struct type or an unexported struct is
+// refused, because the generator turns every exported struct into a
+// kind and generates nothing from the rest.
 func collect(fset *token.FileSet, files []*ast.File) ([]declaration, error) {
 	var out []declaration
 	for _, file := range files {
@@ -192,10 +192,9 @@ func collect(fset *token.FileSet, files []*ast.File) ([]declaration, error) {
 
 // lowerKind lowers one struct into its kind spec.
 //
-// Fields carrying no eidos tag are skipped rather than refused, so
-// a schema may hold a field the models do not carry. Slot names are
-// unique within a kind, because two slots under one name would give
-// the generated accessors one target and two meanings.
+// A field without an eidos tag is skipped, so a schema may declare
+// a field the models leave out. Slot names are unique within a
+// kind, because the generated accessors address a slot by its name.
 func lowerKind(
 	fset *token.FileSet,
 	d declaration,
@@ -208,6 +207,11 @@ func lowerKind(
 		tag, ok := tagOf(field)
 		if !ok {
 			continue
+		}
+		if len(field.Names) == 0 {
+			return KindSpec{}, at(fset, field.Pos(),
+				"%s embeds %s under an %s tag, and the models declare no embedded field",
+				d.name, types.ExprString(field.Type), TagKey)
 		}
 		for _, name := range field.Names {
 			spec, err := lowerField(fset, name.Name, tag, field.Type, structs)
@@ -236,7 +240,8 @@ func lowerKind(
 	return kind, nil
 }
 
-// identified reports whether the fields carry a node-side identity.
+// identified reports whether the fields include a node-side
+// identity.
 func identified(fields []FieldSpec) bool {
 	for _, f := range fields {
 		if f.Name == "ID" && f.Side.OnNode() {
@@ -255,7 +260,13 @@ func lowerField(
 	structs map[string]*ast.StructType,
 ) (FieldSpec, error) {
 	spec := FieldSpec{Name: name}
-	spec.Type, spec.Elem, spec.Slice, spec.IsSymbol = describe(expr, structs)
+	var spelt bool
+	spec.Type, spec.Elem, spec.Slice, spec.IsSymbol, spelt = describe(expr, structs)
+	if !spelt {
+		return FieldSpec{}, at(fset, expr.Pos(),
+			"%s is typed %s, which the models cannot spell: a field is a name, "+
+				"a qualified name, a pointer or a slice", name, types.ExprString(expr))
+	}
 
 	tokens := strings.Split(tag, TokenSeparator)
 	side, err := parseSide(fset, expr.Pos(), tokens[0])
@@ -283,7 +294,7 @@ func lowerField(
 	return spec, validate(fset, expr.Pos(), spec)
 }
 
-// validate holds the three rules a lowered field has to satisfy.
+// validate checks the rules a lowered field has to satisfy.
 func validate(fset *token.FileSet, pos token.Pos, spec FieldSpec) error {
 	referencesKind := spec.Elem != ""
 
@@ -337,43 +348,48 @@ func exportedIdent(s string) bool {
 // describe renders a field's type as the generated model spells it
 // and reports what lowering needs to know about it.
 //
-// A schema kind name stays bare so a template can qualify it per
-// side; a qualified type keeps its package. elem names the
-// referenced kind for a pointer or a slice of kinds, slice says the
-// field holds many, and marker says the field is typed by the
-// heterogeneous marker.
+// A schema kind name is bare, so a template can qualify it per
+// side. A qualified type keeps its package. elem names the
+// referenced kind for a pointer or a slice of kinds. slice reports
+// whether the field is a slice, and marker reports whether the
+// field is typed by the heterogeneous marker. spelt is false for
+// every form the models do not spell: a sized array, a map, a
+// function, a channel, an instantiation or a literal type.
 func describe(
 	expr ast.Expr,
 	structs map[string]*ast.StructType,
-) (spelling, elem string, slice, marker bool) {
+) (spelling, elem string, slice, marker, spelt bool) {
 	switch typed := expr.(type) {
 	case *ast.Ident:
 		if typed.Name == MarkerName {
-			return typed.Name, "", false, true
+			return typed.Name, "", false, true, true
 		}
 		if _, ok := structs[typed.Name]; ok {
-			return typed.Name, typed.Name, false, false
+			return typed.Name, typed.Name, false, false, true
 		}
-		return typed.Name, "", false, false
+		return typed.Name, "", false, false, true
 	case *ast.StarExpr:
-		inner, innerElem, _, innerMarker := describe(typed.X, structs)
-		return "*" + inner, innerElem, false, innerMarker
+		inner, innerElem, _, innerMarker, innerSpelt := describe(typed.X, structs)
+		return "*" + inner, innerElem, false, innerMarker, innerSpelt
 	case *ast.ArrayType:
-		inner, innerElem, _, innerMarker := describe(typed.Elt, structs)
-		return "[]" + inner, innerElem, true, innerMarker
+		if typed.Len != nil {
+			return "", "", false, false, false
+		}
+		inner, innerElem, _, innerMarker, innerSpelt := describe(typed.Elt, structs)
+		return "[]" + inner, innerElem, true, innerMarker, innerSpelt
 	case *ast.SelectorExpr:
 		pkg, ok := typed.X.(*ast.Ident)
 		if !ok {
-			return "", "", false, false
+			return "", "", false, false, false
 		}
-		return pkg.Name + "." + typed.Sel.Name, "", false, false
+		return pkg.Name + "." + typed.Sel.Name, "", false, false, true
 	default:
-		return "", "", false, false
+		return "", "", false, false, false
 	}
 }
 
-// tagOf reads a field's eidos tag, reporting false when it carries
-// none.
+// tagOf reads a field's eidos tag and reports false for a field
+// without one.
 func tagOf(field *ast.Field) (string, bool) {
 	if field.Tag == nil {
 		return "", false
@@ -401,7 +417,7 @@ func parseSide(fset *token.FileSet, pos token.Pos, tok string) (Side, error) {
 }
 
 // splitSubject strips the subject mark from a kind's documentation
-// and reports whether it was carried.
+// and reports whether the mark was present.
 func splitSubject(lines []string) ([]string, bool) {
 	subject := false
 	out := lines[:0]
@@ -419,8 +435,8 @@ func splitSubject(lines []string) ([]string, bool) {
 // and one leading space stripped.
 //
 // The schema documents every kind and most fields, and the
-// generated models carry that documentation rather than a generic
-// stand-in: the contract is written once, where it is decided.
+// generated models copy that documentation. Each contract is
+// written once, in the schema that decides it.
 func docLines(group *ast.CommentGroup) []string {
 	if group == nil {
 		return nil
@@ -433,7 +449,8 @@ func docLines(group *ast.CommentGroup) []string {
 	return out
 }
 
-// at formats an error carrying its schema position.
+// at formats an error with its schema position after the package
+// prefix.
 func at(fset *token.FileSet, pos token.Pos, format string, args ...any) error {
 	return fmt.Errorf("model: %s: %s", fset.Position(pos), fmt.Sprintf(format, args...))
 }

@@ -13,9 +13,9 @@ import (
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
-// wantKinds is the number of declaration kinds the schema holds.
-// It is asserted rather than derived, so adding a kind is a
-// deliberate edit here as well as in the schema.
+// wantKinds is the number of declaration kinds in the schema. The
+// number is a literal, so adding a kind takes an edit here as well
+// as in the schema.
 const wantKinds = 22
 
 func TestIR(t *testing.T) {
@@ -67,7 +67,7 @@ func TestIR(t *testing.T) {
 				"a field without one states no fact")
 		})
 
-		t.Run("skips a field carrying no tag", func(t *testing.T) {
+		t.Run("skips a field without a tag", func(t *testing.T) {
 			t.Parallel()
 
 			kinds, err := model.Lower("testdata/valid", "")
@@ -137,7 +137,19 @@ func TestIR(t *testing.T) {
 				},
 				{
 					"walk on a shape the schema cannot reference", "testdata/walkbadshape",
-					[]string{"Stream", model.WalkToken},
+					[]string{"Stream", "chan int", "cannot spell"},
+				},
+				{
+					"tagged embedded field", "testdata/embedtagged",
+					[]string{"Thing embeds Base", "no embedded field"},
+				},
+				{
+					"sized array", "testdata/sizedarray",
+					[]string{"Digest", "[32]byte", "cannot spell"},
+				},
+				{
+					"map", "testdata/maptype",
+					[]string{"Meta", "map[string]string", "cannot spell"},
 				},
 				{
 					"name on a field that is not a string", "testdata/namenotstring",
