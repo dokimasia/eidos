@@ -115,6 +115,34 @@ func TestBuilder(t *testing.T) {
 					build: func() { eidos.NewPlugin("t").Build() },
 				},
 				{
+					name:  "the zero rule",
+					build: func() { eidos.NewPlugin("t").Handle(eidos.Rule{}).Build() },
+				},
+				{
+					name: "a directive wrapper around no rules",
+					build: func() {
+						eidos.NewPlugin("stubgen").Handle(eidos.Directive(stubSchema("stub"))).Build()
+					},
+				},
+				{
+					name: "a fact wrapper around no rules",
+					build: func() {
+						eidos.NewPlugin("t").Handle(eidos.Where(eidos.Pred{})).Build()
+					},
+				},
+				{
+					name: "a kernel gate naming no directive",
+					build: func() {
+						eidos.NewPlugin("t").Handle(eidos.Gated("", onEmit())).Build()
+					},
+				},
+				{
+					name: "a kernel gate naming a plugin's directive",
+					build: func() {
+						eidos.NewPlugin("t").Handle(eidos.Gated("stubgen:stub", onEmit())).Build()
+					},
+				},
+				{
 					name: "a duplicate output tag",
 					build: func() {
 						eidos.NewPlugin("t").

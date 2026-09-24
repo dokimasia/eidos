@@ -70,6 +70,17 @@ func TestRule(t *testing.T) {
 			}}, "the record carries the canonical spelling, whatever the author writes")
 		})
 
+		t.Run("a kernel gate records the kernel's name", func(t *testing.T) {
+			t.Parallel()
+
+			got := subscriptionsOf(t, eidos.Gated(directive.KernelSample, onEmit()))
+			assert.Equal(t, got, []plugin.Subscription{{
+				Rule: 0, Kind: symbol.KindStruct,
+				Directive: directive.KernelSample,
+				Phase:     plugin.PhaseEmit,
+			}}, "a kernel directive's canonical spelling is its bare name")
+		})
+
 		t.Run("a fact gate records its key", func(t *testing.T) {
 			t.Parallel()
 

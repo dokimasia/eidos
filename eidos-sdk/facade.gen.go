@@ -259,7 +259,9 @@ func Directive(s directive.Schema, rules ...Rule) Rule {
 // Gated gates rules on a directive registered by someone else: one
 // of the kernel's, whose schema the composition registers before
 // any plugin's, so a plugin carrying it again would be refused as
-// a duplicate. The name is the schema's canonical spelling. A rule
+// a duplicate. The name is the schema's canonical spelling. Build
+// panics on a name [directive.Kernel] does not return, because a
+// plugin gates on its own directive through [Directive]. A rule
 // under it runs once per validated instance like one under
 // [Directive].
 func Gated(name directive.Name, rules ...Rule) Rule {

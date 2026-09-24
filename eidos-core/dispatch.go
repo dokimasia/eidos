@@ -32,12 +32,11 @@ type invocation struct {
 }
 
 // scratch returns the rule's reusable match, nil on its first
-// invocation. A match is valid for the duration of its handler
-// call and reused afterwards, which is what holds an invocation
-// at zero steady-state allocations; retaining one past the call is
-// a defect the conformance suite races. The scratch lives on the
-// phase call, never the shared rule, so concurrent plans cannot
-// meet.
+// invocation. A match is valid for the duration of its handler call
+// and is reused afterwards, so an invocation allocates nothing in
+// steady state. Retaining one past the call is a defect. The
+// scratch is on the phase call, never the shared rule, so
+// concurrent plans cannot meet.
 func (inv invocation) scratch() any { return inv.rs.scratch[inv.fr.ordinal] }
 
 // keep stores the rule's reusable match for the next invocation.
@@ -128,7 +127,7 @@ func (rs *runState) dispatch(fr *flatRule) error {
 		return rs.invoke(fr, invocation{})
 	case fr.phase == plugin.PhaseEmit:
 		return rs.dispatchEmit(fr)
-	case fr.gateOf() != "":
+	case fr.gate != "":
 		return rs.dispatchDirective(fr)
 	case len(fr.preds) > 0:
 		return rs.dispatchFacts(fr)
@@ -146,22 +145,15 @@ func (rs *runState) dispatchEmit(fr *flatRule) error {
 		if !rs.admits(fr, origin) {
 			continue
 		}
-		pos := rs.positionOf(origin)
-		gate := fr.gateOf()
-		if gate == "" {
-			err := rs.invoke(fr, invocation{subject: origin, pos: pos, value: value})
-			if err != nil {
-				return err
-			}
-			continue
+		inv := invocation{subject: origin, pos: rs.positionOf(origin), value: value}
+		var err error
+		if fr.gate == "" {
+			err = rs.invoke(fr, inv)
+		} else {
+			err = rs.invokeGated(fr, inv)
 		}
-		for _, gate := range gateViews(rs.index.DirectivesOf(origin), gate) {
-			err := rs.invoke(fr, invocation{
-				subject: origin, pos: pos, gate: gate, value: value,
-			})
-			if err != nil {
-				return err
-			}
+		if err != nil {
+			return err
 		}
 	}
 	return nil
@@ -172,7 +164,6 @@ func (rs *runState) dispatchEmit(fr *flatRule) error {
 // gating instance in source order.
 func (rs *runState) dispatchDirective(fr *flatRule) error {
 	seen := map[symbol.Identity]struct{}{}
-	canonical := fr.gateOf()
 	for _, spelled := range spellingsOf(fr) {
 		for s := range rs.index.ByDirective(spelled) {
 			decl, names := s.(node.Declaration)
@@ -187,13 +178,9 @@ func (rs *runState) dispatchDirective(fr *flatRule) error {
 			if !rs.admits(fr, id) {
 				continue
 			}
-			for _, gate := range gateViews(rs.index.DirectivesOf(id), canonical) {
-				err := rs.invoke(fr, invocation{
-					subject: id, pos: decl.Position(), gate: gate, value: s,
-				})
-				if err != nil {
-					return err
-				}
+			err := rs.invokeGated(fr, invocation{subject: id, pos: decl.Position(), value: s})
+			if err != nil {
+				return err
 			}
 		}
 	}
@@ -245,7 +232,7 @@ func (rs *runState) dispatchBare(fr *flatRule) error {
 // rule is exempt from skip: its subject opted in explicitly and
 // withdraws by deleting the directive.
 func (rs *runState) admits(fr *flatRule, subject symbol.Identity) bool {
-	if fr.gateOf() == "" && rs.index.Skipped(subject, rs.plugin) {
+	if fr.gate == "" && rs.index.Skipped(subject, rs.plugin) {
 		return false
 	}
 	for _, p := range fr.preds {
@@ -276,26 +263,31 @@ func (rs *runState) positionOf(id symbol.Identity) position.Pos {
 	return s.Position()
 }
 
-// gateViews returns the instances of one schema on a subject, in
-// source order: one invocation each, which is how a repeatable
-// directive runs its handler per instance.
-func gateViews(ds []directive.Directive, canonical directive.Name) []*directive.Directive {
-	var out []*directive.Directive
+// invokeGated runs the handler once per instance of the rule's
+// gating directive on the invocation's subject, in source order,
+// which is how a repeatable directive runs its handler per
+// instance. Each invocation points into the validated table, so a
+// gated invocation allocates nothing of its own.
+func (rs *runState) invokeGated(fr *flatRule, inv invocation) error {
+	ds := rs.index.DirectivesOf(inv.subject)
 	for i := range ds {
-		if ds[i].Name == canonical {
-			out = append(out, &ds[i])
+		if ds[i].Name != fr.gate {
+			continue
+		}
+		inv.gate = &ds[i]
+		if err := rs.invoke(fr, inv); err != nil {
+			return err
 		}
 	}
-	return out
+	return nil
 }
 
 // spellingsOf returns the spellings a rule's gating directive may
 // be indexed under: the canonical one, and the bare one where a
 // schema's differ. A kernel gate has one spelling.
 func spellingsOf(fr *flatRule) []directive.Name {
-	canonical := fr.gateOf()
-	if fr.schema == nil || canonical == fr.schema.Name {
-		return []directive.Name{canonical}
+	if fr.schema == nil || fr.gate == fr.schema.Name {
+		return []directive.Name{fr.gate}
 	}
-	return []directive.Name{canonical, fr.schema.Name}
+	return []directive.Name{fr.gate, fr.schema.Name}
 }

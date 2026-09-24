@@ -617,6 +617,42 @@ func TestDispatch(t *testing.T) {
 				"a repeatable directive runs its handler once per instance, in source order")
 		})
 
+		t.Run("a directive-gated rule skips the subject's other directives", func(t *testing.T) {
+			t.Parallel()
+
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
+				"the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{{Name: "stub"}}),
+				"the gating instance attaches")
+			g.Freeze()
+
+			schema := stubSchema("stub")
+			validated := map[symbol.Identity][]directive.Directive{
+				alpha.ID: {
+					{Name: directive.KernelSample, Instance: 0},
+					{Name: schema.Canonical(), Instance: 0},
+					{Name: directive.KernelDiag, Instance: 0},
+				},
+			}
+			_, facts := boolKey(t)
+
+			var gates []directive.Name
+			p := eidos.NewPlugin("stubgen").
+				Handle(eidos.Directive(schema,
+					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						gates = append(gates, m.Directive().Name)
+						return nil
+					}))).
+				Build()
+
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, validated)),
+				"the phase call passes")
+			assert.Equal(t, gates, []directive.Name{schema.Canonical()},
+				"the handler runs for its own directive's instance alone")
+		})
+
 		t.Run("a fact-gated rule visits the stamped carriers", func(t *testing.T) {
 			t.Parallel()
 
@@ -787,6 +823,31 @@ func benchEmitStore(tb assert.TB, units, perUnit int) *plugin.Emit {
 		}
 	}
 	return e
+}
+
+// gatedWorkspace returns a frozen workspace whose every struct
+// carries one raw instance of the gate directive, and the validated
+// table naming it by its canonical spelling.
+func gatedWorkspace(
+	tb assert.TB, canonical directive.Name, packages, files, decls int,
+) (*store.Graph, map[symbol.Identity][]directive.Directive) {
+	tb.Helper()
+
+	g := store.New()
+	validated := map[symbol.Identity][]directive.Directive{}
+	for _, pkg := range coretest.Workspace(packages, files, decls) {
+		assert.NoError(tb, g.AddPackage(pkg), "the bench package loads")
+		for decl := range node.Declarations(pkg) {
+			if decl.Kind() != symbol.KindStruct {
+				continue
+			}
+			assert.NoError(tb, g.AttachDirectives(decl.Identity(), []directive.Raw{{Name: gateName}}),
+				"the carrier attaches")
+			validated[decl.Identity()] = []directive.Directive{{Name: canonical}}
+		}
+	}
+	g.Freeze()
+	return g, validated
 }
 
 func BenchmarkDispatch(b *testing.B) {
@@ -970,6 +1031,91 @@ func BenchmarkNodeDispatch(b *testing.B) {
 			}
 			if visited != packages*files*decls {
 				b.Fatalf("visited %d subjects", visited)
+			}
+		}
+	})
+
+	b.Run("directive-gated rule over 20k carriers", func(b *testing.B) {
+		b.ReportAllocs()
+		const carriers = 1_000 * 20
+		schema := stubSchema(gateName)
+		gated, validated := gatedWorkspace(b, schema.Canonical(), 1_000, 1, 20)
+		_, facts := boolKey(b)
+		ix, err := plugin.NewIndex(gated, facts, validated, nil)
+		if err != nil {
+			b.Fatalf("NewIndex: unexpected error: %v", err)
+		}
+		ctx := &plugin.GeneratorContext{
+			Index: ix, Facts: facts, Emit: plugin.NewEmit(),
+			Sink: diag.NewSink(), Plugin: "stubgen", Bucket: 1,
+		}
+		var visited int
+		p := eidos.NewPlugin("stubgen").
+			Handle(eidos.Directive(schema,
+				eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					visited++
+					return nil
+				}))).
+			Build()
+		gen, ok := p.(plugin.Generator)
+		if !ok {
+			b.Fatal("the bench plugin must generate")
+		}
+		for b.Loop() {
+			visited = 0
+			if err := gen.Generate(ctx); err != nil {
+				b.Fatalf("Generate: unexpected error: %v", err)
+			}
+			if visited != carriers {
+				b.Fatalf("visited %d carriers", visited)
+			}
+		}
+	})
+
+	b.Run("annotate stamps three facts after three reads per subject", func(b *testing.B) {
+		b.ReportAllocs()
+		reg := meta.NewRegistry()
+		if err := reg.ClaimNamespace("t", "the bench"); err != nil {
+			b.Fatalf("ClaimNamespace: unexpected error: %v", err)
+		}
+		var keys []meta.Key[bool]
+		for _, name := range []meta.KeyName{"t.first", "t.second", "t.third"} {
+			key, err := meta.Register[bool](reg, meta.KeySpec{Name: name, Doc: "marks a bench subject"})
+			if err != nil {
+				b.Fatalf("Register: unexpected error: %v", err)
+			}
+			keys = append(keys, key)
+		}
+		p := eidos.NewPlugin("bench").
+			Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+				for _, key := range keys {
+					eidos.Fact(m, key)
+				}
+				for _, key := range keys {
+					eidos.Stamp(st, key, true)
+				}
+				return nil
+			})).
+			Build()
+		ann, ok := p.(plugin.Annotator)
+		if !ok {
+			b.Fatal("the bench plugin must annotate")
+		}
+		for b.Loop() {
+			facts := meta.NewFacts(reg)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			if err != nil {
+				b.Fatalf("NewIndex: unexpected error: %v", err)
+			}
+			ctx := &plugin.AnnotatorContext{
+				Index: ix, Facts: facts, Sink: diag.NewSink(),
+				Plugin: "bench", Bucket: 1,
+			}
+			if err := ann.Annotate(ctx); err != nil {
+				b.Fatalf("Annotate: unexpected error: %v", err)
+			}
+			if ctx.Sink.Failed() {
+				b.Fatal("no stamp may be refused")
 			}
 		}
 	})
