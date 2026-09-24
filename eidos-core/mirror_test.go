@@ -9,6 +9,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -74,5 +75,97 @@ func TestMirror(t *testing.T) {
 			"the instantiation spelling is carried whole")
 		assert.Length(t, got.Returns[0].Type.Args, 2,
 			"and its arguments copy over as a tree")
+	})
+
+	t.Run("mirrors the whole signature", func(t *testing.T) {
+		t.Parallel()
+
+		m := &node.Method{
+			ID:         methodID("fetch"),
+			Name:       "fetch",
+			Visibility: symbol.VisibilityPackage,
+			Level:      symbol.LevelType,
+			Async:      true,
+			TypeParams: []*node.TypeParam{{
+				Name:     "K",
+				Variance: symbol.VarianceOut,
+				Bounds:   []*node.TypeRef{{Spelling: "comparable"}},
+			}},
+			Params: []*node.Param{{
+				Name:     "keys",
+				Label:    "for",
+				Default:  "nil",
+				Optional: true,
+				Variadic: symbol.VariadicPositional,
+				Type: &node.TypeRef{
+					Spelling: "[]K",
+					Form:     symbol.FormList,
+					Elems:    []*node.TypeRef{{Spelling: "K"}},
+				},
+			}},
+			Returns: []*node.Return{{Name: "found", Type: &node.TypeRef{Spelling: "int"}}},
+			Throws:  []*node.TypeRef{{Spelling: "NotFound"}},
+		}
+		assert.Equal(t, eidos.Mirror("Store", m), &emit.Method{
+			Origin:     m.ID,
+			Name:       "fetch",
+			Visibility: symbol.VisibilityPackage,
+			Level:      symbol.LevelType,
+			Async:      true,
+			Receiver:   &emit.Param{Name: "s", Type: &emit.TypeRef{Spelling: "*Store"}},
+			Receives:   &emit.TypeRef{Spelling: "Store"},
+			TypeParams: []*emit.TypeParam{{
+				Name:     "K",
+				Variance: symbol.VarianceOut,
+				Bounds:   []*emit.TypeRef{{Spelling: "comparable"}},
+			}},
+			Params: []*emit.Param{{
+				Name:     "keys",
+				Label:    "for",
+				Default:  "nil",
+				Optional: true,
+				Variadic: symbol.VariadicPositional,
+				Type: &emit.TypeRef{
+					Spelling: "[]K",
+					Form:     symbol.FormList,
+					Elems:    []*emit.TypeRef{{Spelling: "K"}},
+				},
+			}},
+			Returns: []*emit.Return{{Name: "found", Type: &emit.TypeRef{Spelling: "int"}}},
+			Throws:  []*emit.TypeRef{{Spelling: "NotFound"}},
+		}, "every signature field copies over, and Receives names the host")
+	})
+
+	t.Run("names the receiver against results and type parameters", func(t *testing.T) {
+		t.Parallel()
+
+		m := &node.Method{
+			Name:       "Get",
+			TypeParams: []*node.TypeParam{{Name: "s"}},
+			Returns:    []*node.Return{{Name: "st", Type: &node.TypeRef{Spelling: "int"}}},
+		}
+		assert.Equal(t, eidos.Mirror("Store", m).Receiver.Name, "recv",
+			"a receiver sharing a result's or a type parameter's name does not compile")
+	})
+
+	t.Run("names the receiver by the host's first character", func(t *testing.T) {
+		t.Parallel()
+
+		got := eidos.Mirror("Übung", &node.Method{Name: "Run"})
+		assert.Equal(t, got.Receiver.Name, "ü",
+			"a host spelled outside ASCII yields a whole character, not its first byte")
+	})
+
+	t.Run("numbers the receiver when every short name is taken", func(t *testing.T) {
+		t.Parallel()
+
+		m := &node.Method{
+			Name: "Put",
+			Params: []*node.Param{
+				{Name: "s"}, {Name: "st"}, {Name: "recv"}, {Name: "recv0"},
+			},
+		}
+		assert.Equal(t, eidos.Mirror("Store", m).Receiver.Name, "recv1",
+			"the numbered names run until one is free")
 	})
 }

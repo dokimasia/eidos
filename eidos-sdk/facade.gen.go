@@ -39,11 +39,10 @@ func NewPlugin(name plugin.ID) *Builder {
 }
 
 // RefusedStamp is [meta.RefusedStamp], re-exported where annotator
-// authors read: the fact store refused a stamp, the refusal arrives
-// at the subject's position under the stamping plugin's identity,
-// and the phase continues. The registration lives with the store
-// the code describes, because the classification path reports it
-// too.
+// authors read. It reports a refused stamp at the subject's
+// position under the stamping plugin's identity, and the phase
+// continues. The code is registered in core/meta beside the fact
+// store, because the classification path reports it too.
 var RefusedStamp = core.RefusedStamp
 
 // Tag selects a declared output family; the zero value is the
@@ -221,10 +220,16 @@ func FactOf[T meta.FactValue](m Matcher, id symbol.Identity, k meta.Key[T]) (T, 
 }
 
 // Mirror returns an emit method mirroring a node method's
-// signature, type spellings verbatim, origin set. The receiver is
-// named against the host type's name and the parameter names: a
-// method declaring Put(s Session) must not bind its receiver to s,
-// a duplicate-identifier compile error a formatter cannot catch.
+// signature, type spellings verbatim, origin set. The signature is
+// the name, the visibility, the level, the type parameters, the
+// parameters with their labels, defaults, optional and variadic
+// forms, the results, the async flag and the announced failure
+// types. The receiver is a pointer to host, and Receives names
+// host, so the settle scopes the method under its host as it
+// scopes a parsed method. The receiver's name differs from every
+// parameter, result and type parameter name: a method declaring
+// Put(s Session) must not bind its receiver to s, a
+// duplicate-identifier compile error a formatter cannot catch.
 // Import inference deliberately does not happen here: imports are
 // collected at render as a side effect of spelling types.
 func Mirror(host string, m *node.Method) *emit.Method {
