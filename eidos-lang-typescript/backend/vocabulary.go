@@ -27,6 +27,8 @@ const (
 	FuncParams = "params"
 	// FuncResults writes a return type.
 	FuncResults = "results"
+	// FuncReturns writes a callable's return annotation.
+	FuncReturns = "returns"
 	// FuncMods writes a module-level declaration's keywords.
 	FuncMods = "mods"
 	// FuncMemberMods writes a class member's keywords.
@@ -68,6 +70,7 @@ func Funcs() template.FuncMap {
 		FuncTypeParams: TypeParams,
 		FuncParams:     Params,
 		FuncResults:    Results,
+		FuncReturns:    Returns,
 		FuncMods:       Mods,
 		FuncMemberMods: MemberMods,
 		FuncPropMods:   PropMods,
@@ -651,7 +654,7 @@ func Params(ps []*emit.Param) (string, error) {
 						"%s states it", name,
 				)
 			}
-			parts = append(parts, "..."+name+": "+Spell(p.Type)+"[]"+inlineComment(p.Comment))
+			parts = append(parts, "..."+name+": "+Spell(p.Type)+"[]"+textfmt.Inline(p.Comment))
 			continue
 		}
 		if p.Optional && p.Default != "" {
@@ -668,20 +671,40 @@ func Params(ps []*emit.Param) (string, error) {
 		if p.Default != "" {
 			part += " = " + p.Default
 		}
-		parts = append(parts, part+inlineComment(p.Comment))
+		parts = append(parts, part+textfmt.Inline(p.Comment))
 	}
 	return strings.Join(parts, ", "), nil
 }
 
-// inlineComment spells a trailing comment inside a signature as a
-// block comment, the one form that survives on the line, and
-// nothing for none.
-func inlineComment(text string) string {
-	if text == "" {
-		return ""
+// Returns writes a callable's return annotation: the [Results]
+// spelling, inside Promise for an async callable, because an async
+// function returns a promise of its result, and nothing for a
+// setter, which TypeScript forbids an annotation.
+func Returns(d symbol.Symbol) string {
+	var rs []*emit.Return
+	async := false
+	switch c := d.(type) {
+	case *emit.Function:
+		rs, async = c.Returns, c.Async
+	case *emit.Method:
+		if c.Accessor == symbol.AccessorSet {
+			return ""
+		}
+		rs, async = c.Returns, c.Async
 	}
-	return " /* " + text + " */"
+	annotation := Results(rs)
+	if !async {
+		return annotation
+	}
+	return annotationSep + promiseOpen + strings.TrimPrefix(annotation, annotationSep) + promiseClose
 }
+
+// The spellings an async callable's annotation joins.
+const (
+	annotationSep = ": "
+	promiseOpen   = "Promise<"
+	promiseClose  = ">"
+)
 
 // Results writes a return type annotation: void for none, the
 // type for one, and a tuple for several, because TypeScript
@@ -691,11 +714,11 @@ func Results(rs []*emit.Return) string {
 	case 0:
 		return ": void"
 	case 1:
-		return ": " + Spell(rs[0].Type) + inlineComment(rs[0].Comment)
+		return ": " + Spell(rs[0].Type) + textfmt.Inline(rs[0].Comment)
 	default:
 		parts := make([]string, 0, len(rs))
 		for _, r := range rs {
-			parts = append(parts, Spell(r.Type)+inlineComment(r.Comment))
+			parts = append(parts, Spell(r.Type)+textfmt.Inline(r.Comment))
 		}
 		return ": [" + strings.Join(parts, ", ") + "]"
 	}

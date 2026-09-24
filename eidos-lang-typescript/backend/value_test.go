@@ -17,6 +17,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// lineSeparator is U+2028, which the quoting escapes.
+var lineSeparator = string(rune(0x2028))
+
 // valueRef returns a reference to a declaration in one package.
 func valueRef(spelling, pkg, name string) *emit.TypeRef {
 	return &emit.TypeRef{
@@ -79,9 +82,19 @@ func TestValue(t *testing.T) {
 				"null",
 			},
 			{
-				"a string quotes",
+				"a string quotes single, TypeScript's canon",
 				emit.Literal(emit.LiteralString, "hi"),
-				`"hi"`,
+				`'hi'`,
+			},
+			{
+				"a string escapes in TypeScript's grammar",
+				emit.Literal(emit.LiteralString, "it's\a \\ "+lineSeparator+"\U0001F600"),
+				`'it\'s` + `\` + `u0007 \\ ` + `\` + `u2028` + "\U0001F600'",
+			},
+			{
+				"control characters take their named escapes",
+				emit.Literal(emit.LiteralString, "\b\f\n\r\t\v\x7f"+string(rune(0x2029))),
+				`'\b\f\n\r\t\v` + `\` + `u007f` + `\` + `u2029'`,
 			},
 			{
 				"a conversion asserts, because TypeScript erases its types",
@@ -108,7 +121,7 @@ func TestValue(t *testing.T) {
 						emit.Literal(emit.LiteralInt, "2"),
 					),
 				),
-				`{["k"]: 2}`,
+				`{['k']: 2}`,
 			},
 			{
 				"a list spells an array literal",

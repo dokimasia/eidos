@@ -4,6 +4,7 @@
 package backend
 
 import (
+	"fmt"
 	"strings"
 
 	"go.dokimi.dev/eidos/sdk/render"
@@ -64,10 +65,49 @@ func Imports(set *render.ImportSet) string {
 	return b.String()
 }
 
-// quote spells a specifier in single quotes, escaping the two
-// characters that need it; everything else passes through, the
-// way TypeScript source spells its own strings.
+// The two Unicode line separators a string literal escapes, because
+// an engine before ES2019 ends the literal at either.
+const (
+	lineSeparator      = 0x2028
+	paragraphSeparator = 0x2029
+)
+
+// quote spells a string in single quotes, TypeScript's own canon,
+// in TypeScript's escape grammar: the backslash, the quote and the
+// named escapes \b \f \n \r \t \v, every other control character
+// and the two line separators as a four-digit hex escape, and
+// everything else as itself. A specifier, a quoted member key and
+// a string value all spell through it.
 func quote(s string) string {
-	escaped := strings.ReplaceAll(s, `\`, `\\`)
-	return "'" + strings.ReplaceAll(escaped, "'", `\'`) + "'"
+	var b strings.Builder
+	b.Grow(len(s) + 2)
+	b.WriteByte('\'')
+	for _, r := range s {
+		switch r {
+		case '\\':
+			b.WriteString(`\\`)
+		case '\'':
+			b.WriteString(`\'`)
+		case '\b':
+			b.WriteString(`\b`)
+		case '\f':
+			b.WriteString(`\f`)
+		case '\n':
+			b.WriteString(`\n`)
+		case '\r':
+			b.WriteString(`\r`)
+		case '\t':
+			b.WriteString(`\t`)
+		case '\v':
+			b.WriteString(`\v`)
+		default:
+			if r < ' ' || r == 0x7f || r == lineSeparator || r == paragraphSeparator {
+				fmt.Fprintf(&b, `\u%04x`, r)
+				continue
+			}
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('\'')
+	return b.String()
 }

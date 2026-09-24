@@ -38,7 +38,7 @@ const (
 		"{{- range .Methods.Items}}\n{{docs .Doc \"  \"}}{{decorators .Annotations \"  \"}}" +
 		"{{if .Indexer}}  {{indexsig .}}{{else if .Constructs}}" +
 		"  {{membermods .}}constructor({{params .Params}}) {\n{{body .}}  }{{else}}" +
-		"  {{membermods .}}{{accessor .}}{{hard .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{results .Returns}}" +
+		"  {{membermods .}}{{accessor .}}{{hard .}}{{methodkey .}}{{typeparams .TypeParams}}({{params .Params}}){{returns .}}" +
 		"{{if .Abstract}};{{else}} {\n{{body .}}  }{{end}}{{end}}{{with .Comment}} // {{.}}{{end}}\n" +
 		"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
@@ -61,7 +61,7 @@ const (
 	// where stated, its type parameters behind the name, and
 	// places its body.
 	FunctionTemplate = "{{docs .Doc}}{{mods .}}function {{.Name}}{{typeparams .TypeParams}}" +
-		"({{params .Params}}){{results .Returns}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
+		"({{params .Params}}){{returns .}} {\n{{body .}}}{{with .Comment}} // {{.}}{{end}}\n"
 
 	// AliasTemplate spells a type alias, its type parameters
 	// behind the name.

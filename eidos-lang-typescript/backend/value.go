@@ -4,7 +4,6 @@
 package backend
 
 import (
-	"strconv"
 	"strings"
 
 	"go.dokimi.dev/eidos/lang/scaffold"
@@ -33,10 +32,9 @@ type target struct{ set *render.ImportSet }
 func (target) Lang() string { return string(typescript.Lang) }
 
 // Literal spells one leaf. A number carries its own text; a string
-// quotes through the standard library, whose escapes TypeScript
-// reads the same way; a boolean takes exactly the two spellings;
-// the absent value is null. Raw text spells only where the author
-// wrote it in TypeScript.
+// quotes in TypeScript's own grammar; a boolean takes exactly the
+// two spellings; the absent value is null. Raw text spells only
+// where the author wrote it in TypeScript.
 func (t target) Literal(v emit.Value) (string, error) {
 	switch v.Literal {
 	case emit.LiteralInt, emit.LiteralFloat:
@@ -45,7 +43,7 @@ func (t target) Literal(v emit.Value) (string, error) {
 		}
 		return v.Text, nil
 	case emit.LiteralString:
-		return strconv.Quote(v.Text), nil
+		return quote(v.Text), nil
 	case emit.LiteralBool:
 		if v.Text != trueSpelling && v.Text != falseSpelling {
 			return "", render.RefuseValue(t.Lang(),

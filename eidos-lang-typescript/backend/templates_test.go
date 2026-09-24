@@ -254,7 +254,7 @@ func TestTemplates(t *testing.T) {
 			"@injectable\n"+
 				"export abstract class Row {\n"+
 				"  private static readonly key: string = \"r\";\n"+
-				"  override async load(): Row {\n    body();\n  }\n"+
+				"  override async load(): Promise<Row> {\n    body();\n  }\n"+
 				"  abstract pick(): Row;\n"+
 				"}\n",
 			"decorators above, keywords in stated order, the abstract "+
@@ -274,8 +274,11 @@ func TestTemplates(t *testing.T) {
 			Returns: []*emit.Return{{Type: ref("Row")}},
 		}
 		assert.Equal(t, execute(t, backend.FunctionTemplate, f),
-			"export async function load(): Row {\n    body();\n}\n",
-			"async behind export")
+			"export async function load(): Promise<Row> {\n    body();\n}\n",
+			"async behind export, the result a promise")
+		assert.Equal(t, execute(t, backend.FunctionTemplate, &emit.Function{Name: "flush", Async: true}),
+			"export async function flush(): Promise<void> {\n    body();\n}\n",
+			"an async callable returning nothing promises void")
 
 		v := &emit.Variable{
 			Name: "max", Mutability: symbol.MutabilityImmutable,
@@ -297,6 +300,10 @@ func TestTemplates(t *testing.T) {
 				Returns: []*emit.Return{{Type: ref("number")}},
 			},
 			&emit.Method{
+				Name: "size", Accessor: symbol.AccessorSet,
+				Params: []*emit.Param{{Name: "n", Type: ref("number")}},
+			},
+			&emit.Method{
 				Name:    "index",
 				Indexer: true,
 				Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
@@ -309,10 +316,13 @@ func TestTemplates(t *testing.T) {
 				"  get size(): number {\n"+
 				"    body();\n"+
 				"  }\n"+
+				"  set size(n: number) {\n"+
+				"    body();\n"+
+				"  }\n"+
 				"  [key: string]: Row;\n"+
 				"}\n",
 			"the hard prefix on the name, the accessor keyword before it, "+
-				"the index signature whole")
+				"a setter without an annotation, the index signature whole")
 
 		i := &emit.Interface{Name: "Rows"}
 		i.Methods.Append(
