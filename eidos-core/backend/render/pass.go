@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"path"
 	"runtime"
 	"slices"
 	"strings"
@@ -260,9 +261,12 @@ type Language struct {
 // Pass is one composed language's render procedure. A Pass is safe
 // for concurrent use: everything it holds is fixed at [New], and
 // every render call owns its own frames. Within one call, files
-// render in parallel across workers bounded by GOMAXPROCS, which
-// is why a context's trees must tolerate concurrent reads, as
-// every fs.FS does.
+// render in parallel on up to GOMAXPROCS workers. The language's
+// Scaffold, Imports, Finalise and Cluster, every helper in its
+// Funcs and in a context's Funcs, and every read of a context's
+// trees run on those workers concurrently, so each must be safe
+// for concurrent use. Naming and Split run on the calling
+// goroutine.
 type Pass struct {
 	name     plugin.ID
 	kinds    map[symbol.Kind]*template.Template
@@ -421,6 +425,11 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		return nil, errors.New("render: the pass needs a sink for its findings")
 	}
 
+	origin := ctx.Plugin
+	if origin == "" {
+		origin = p.name
+	}
+
 	byFile := map[fileKey]*group{}
 	var order []*group
 	for u := range ctx.Emit.Units() {
@@ -432,7 +441,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 				// would vanish its declarations without a finding,
 				// which is the narrowing the engine exists to
 				// refuse.
-				ctx.Sink.Errorf(RefusedTemplate, position.Pos{}, p.name,
+				ctx.Sink.Errorf(RefusedTemplate, p.unitPos(u), origin,
 					"%s splits a %s unit of %d declarations into nothing, and they are skipped",
 					p.name, u.Word, len(u.Decls))
 				continue
@@ -456,23 +465,22 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		return cmp.Compare(a.name, b.name)
 	})
 
-	origin := ctx.Plugin
-	if origin == "" {
-		origin = p.name
-	}
 	seed := &frame{pass: p, sink: ctx.Sink, origin: origin, trees: ctx.Trees}
 	merged := seed.mergeVocabulary(ctx)
 
 	// Files are independent after grouping, so workers share the
-	// render: each owns its frame, its buffers and its template
-	// clones, bounded by the parallelism and never the file count,
-	// and the trees are read concurrently, which an fs.FS supports.
-	// The output order is the precomputed one, whatever order the
-	// workers finish in.
+	// render. Each worker has its own frame, buffers and parsed
+	// reference templates. The worker count is bounded by the
+	// parallelism, never by the file count, and the trees are read
+	// concurrently. A worker collects each file's findings apart, and
+	// they replay into the context's sink in file order. The output
+	// order and the report order are therefore the precomputed ones,
+	// whatever order the workers finish in.
 	type rendered struct {
 		body    []byte
 		plugins []plugin.ID
 		sources []string
+		found   []diag.Diag
 		held    bool
 	}
 	results := make([]rendered, len(order))
@@ -483,7 +491,7 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	for range workers {
 		wg.Go(func() {
 			w := &frame{
-				pass: p, sink: ctx.Sink, origin: origin,
+				pass: p, sink: diag.NewSink(), origin: origin,
 				trees: ctx.Trees, merged: merged,
 			}
 			b, err := p.bind(w)
@@ -502,6 +510,10 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 				if held {
 					r.plugins, r.sources = derivation(order[i].units)
 				}
+				if found := slices.Collect(w.sink.All()); len(found) > 0 {
+					r.found = found
+					w.sink = diag.NewSink()
+				}
 				results[i] = r
 			}
 		})
@@ -509,6 +521,11 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	wg.Wait()
 	if err := bindErr.Load(); err != nil {
 		return nil, *err
+	}
+	for i := range results {
+		for _, d := range results[i].found {
+			ctx.Sink.Report(d)
+		}
 	}
 	files := make([]plugin.RenderedFile, 0, len(order))
 	for i, g := range order {
@@ -521,6 +538,16 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		}
 	}
 	return files, nil
+}
+
+// unitPos positions a finding about a unit that has no file yet:
+// the unit's routing key, or the pass's own name for a plan unit,
+// which derives from no source.
+func (p *Pass) unitPos(u plugin.Unit) position.Pos {
+	if u.Key == "" {
+		return position.Pos{File: string(p.name)}
+	}
+	return position.Pos{File: u.Key}
 }
 
 // derivation reads a file's emitters and the keys it derives from
@@ -550,7 +577,7 @@ type fileView struct {
 // frame is one render call's mutable state: the buffer the files
 // share, the sink, and the position and emitter of whatever is
 // under render, which the builtins read. One frame serves one
-// call, which is what keeps a Pass safe for concurrent renders.
+// worker, which is what keeps a Pass safe for concurrent renders.
 type frame struct {
 	pass *Pass
 	sink *diag.Sink
@@ -561,16 +588,28 @@ type frame struct {
 	merged  template.FuncMap
 	out     bytes.Buffer
 	scratch bytes.Buffer // one declaration's render, adopted on success
-	// refCache holds referenced templates parsed once per frame,
-	// stub-bound; execution clones and binds the body's placement.
-	refCache map[string]*template.Template
-	fileOut  bytes.Buffer
-	set      ImportSet
-	at       position.Pos
-	plugin   plugin.ID
+	// refCache contains the referenced templates this frame parsed,
+	// keyed by the emitting plugin and the name, because each
+	// plugin's name resolves in its own tree. Their builtins are
+	// bound to this frame and write into the body under execution.
+	refCache map[refKey]*template.Template
+	// place is the placement of the body a reference template is
+	// executing for, nil between executions.
+	place   *placement
+	fileOut bytes.Buffer
+	set     ImportSet
+	at      position.Pos
+	plugin  plugin.ID
 	// bound holds the frame's own template set once bind ran, which
 	// is what the nested builtin renders through.
 	bound *bound
+}
+
+// refKey addresses one parsed reference template: the emitting
+// plugin whose tree it resolved in, and its name there.
+type refKey struct {
+	plugin plugin.ID
+	name   string
 }
 
 // mergeVocabulary folds the plugins' helpers over the shared
@@ -607,30 +646,58 @@ func (f *frame) mergeVocabulary(ctx *plugin.RenderContext) template.FuncMap {
 		fm := ctx.Funcs[id]
 		for _, name := range slices.Sorted(maps.Keys(fm)) {
 			_, shared := f.pass.shared[name]
-			switch {
-			case reserved(name):
+			switch admit(name, shared, declared[name]) {
+			case claimsBuiltin:
 				f.sink.Errorf(UndeclaredOverride, at, f.origin,
 					"%s claims %q, which is a builtin, and the builtin stands",
 					id, name)
-			case shared && !declared[name]:
+			case shadowsUndeclared:
 				f.sink.Errorf(UndeclaredOverride, at, f.origin,
 					"%s shadows the shared helper %q without declaring the override, and the shared helper stands",
 					id, name)
-			case !shared:
-				if owner, taken := owners[name]; taken {
-					f.sink.Errorf(HelperCollision, at, f.origin,
-						"%s and %s both register the helper %q, and %s's stands",
-						owner, id, name, owner)
-					continue
+			case admitted:
+				if !shared {
+					if owner, taken := owners[name]; taken {
+						f.sink.Errorf(HelperCollision, at, f.origin,
+							"%s and %s both register the helper %q, and %s's stands",
+							owner, id, name, owner)
+						continue
+					}
+					owners[name] = id
 				}
-				owners[name] = id
-				merged[name] = fm[name]
-			default:
 				merged[name] = fm[name]
 			}
 		}
 	}
 	return merged
+}
+
+// admission classifies one plugin helper against the shared
+// vocabulary. The render's merge and the lint read the one rule, so
+// a helper the lint admits is a helper the render binds.
+type admission uint8
+
+const (
+	// admitted enters the merged vocabulary.
+	admitted admission = iota
+	// claimsBuiltin names a builtin, which no vocabulary may claim.
+	claimsBuiltin
+	// shadowsUndeclared replaces a shared helper without declaring
+	// the override.
+	shadowsUndeclared
+)
+
+// admit classifies a helper name: whether the shared vocabulary
+// defines the name, and whether the plugin declared the override.
+func admit(name string, shared, declared bool) admission {
+	switch {
+	case reserved(name):
+		return claimsBuiltin
+	case shared && !declared:
+		return shadowsUndeclared
+	default:
+		return admitted
+	}
 }
 
 // bound is one render call's executable templates: the kind
@@ -720,7 +787,7 @@ func (f *frame) body(d any) (string, error) {
 	case *emit.Method:
 		b = &decl.Body
 	default:
-		return "", fmt.Errorf("a %T carries no body", d)
+		return "", fmt.Errorf("render: a %T carries no body", d)
 	}
 	return f.renderBody(d, b)
 }
@@ -773,13 +840,14 @@ func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
 // plugin's tree. A false answer means nothing resolved, the
 // finding is on the sink, and the caller falls back to the slots;
 // a true answer is the template's own output, the marker rule
-// checked behind it. The parse caches per referenced name the way
-// bind caches the pass's own templates — stub functions at parse,
-// the body's own placement bound on a clone per execution — so a
-// tree read and a parse price each name once per frame rather
-// than once per declaration.
+// checked behind it. Each frame reads and parses a template once
+// per emitting plugin and name. Its builtins are bound to the frame
+// and write into the body under execution, so an execution copies
+// no template. A refusal withdraws the imports the execution
+// recorded, because its output is dropped.
 func (f *frame) reference(d any, b *emit.Body) (string, bool) {
-	parsed, cached := f.refCache[b.Ref.Name]
+	key := refKey{plugin: f.plugin, name: b.Ref.Name}
+	parsed, cached := f.refCache[key]
 	if !cached {
 		tree, held := f.trees[f.plugin]
 		if !held {
@@ -797,36 +865,27 @@ func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 		}
 		parsed, err = template.New(b.Ref.Name).
 			Funcs(f.pass.shared).Funcs(f.merged).
-			Funcs(template.FuncMap{
-				BuiltinSlots: func() (string, error) { return "", nil },
-				BuiltinSlot:  func(string) (string, error) { return "", nil },
-				BuiltinUse:   func(string) (string, error) { return "", nil },
-			}).Parse(string(src))
+			Funcs(referenceBuiltins(f.placeAll, f.placeOne, f.use)).
+			Parse(string(src))
 		if err != nil {
 			f.sink.Errorf(UnresolvedRef, f.at, f.origin,
 				"%s's template %q does not parse: %v", f.plugin, b.Ref.Name, err)
 			return "", false
 		}
 		if f.refCache == nil {
-			f.refCache = map[string]*template.Template{}
+			f.refCache = map[refKey]*template.Template{}
 		}
-		f.refCache[b.Ref.Name] = parsed
+		f.refCache[key] = parsed
 	}
 	pl := &placement{frame: f, body: b, named: make([]bool, len(b.Slots))}
-	t, err := parsed.Clone()
-	if err != nil {
-		f.sink.Errorf(UnresolvedRef, f.at, f.origin,
-			"%s's template %q does not clone: %v", f.plugin, b.Ref.Name, err)
-		return "", false
-	}
-	t.Funcs(template.FuncMap{
-		BuiltinSlots: pl.all,
-		BuiltinSlot:  pl.one,
-		BuiltinUse:   f.use,
-	})
+	f.place = pl
+	mark := f.set.mark()
 	var out strings.Builder
 	data := struct{ Decl, Data any }{Decl: d, Data: b.Ref.Data}
-	if err := t.Execute(&out, data); err != nil {
+	err := parsed.Execute(&out, data)
+	f.place = nil
+	if err != nil {
+		f.set.rollback(mark)
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
 			"%s's template %q refused: %v", f.plugin, b.Ref.Name, err)
 		return "", false
@@ -837,6 +896,35 @@ func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 			f.plugin, b.Ref.Name, n)
 	}
 	return out.String(), true
+}
+
+// referenceBuiltins is the builtin set a body-claiming template
+// resolves against: the slots and slot markers and the use
+// recorder. The render binds it to a frame and the lint binds
+// stubs, so both parse against one set of names.
+func referenceBuiltins(
+	all func() (string, error),
+	one func(string) (string, error),
+	use func(string, ...string) (string, error),
+) template.FuncMap {
+	return template.FuncMap{BuiltinSlots: all, BuiltinSlot: one, BuiltinUse: use}
+}
+
+// placeAll is the slots builtin a parsed reference template calls:
+// it places into the body the frame is executing for.
+func (f *frame) placeAll() (string, error) {
+	if f.place == nil {
+		return "", errors.New("render: the slots marker ran outside a body")
+	}
+	return f.place.all()
+}
+
+// placeOne is the slot builtin a parsed reference template calls.
+func (f *frame) placeOne(name string) (string, error) {
+	if f.place == nil {
+		return "", errors.New("render: the slot marker ran outside a body")
+	}
+	return f.place.one(name)
 }
 
 // placement tracks which of a body's slots the template placed,
@@ -892,7 +980,7 @@ func (pl *placement) one(name string) (string, error) {
 		}
 		return out.String(), nil
 	}
-	return "", fmt.Errorf("the body declares no slot %q", name)
+	return "", fmt.Errorf("render: the body declares no slot %q", name)
 }
 
 // pending counts the statements left in slots no marker placed.
@@ -956,8 +1044,9 @@ func (f *frame) declRun(u plugin.Unit, b *bound) {
 
 // singleton renders one declaration through its kind template,
 // into scratch first: a template that refuses mid-write must leave
-// no fragment in the file, because the finding says the
-// declaration was skipped and the file must agree.
+// no fragment in the file and no import it recorded, because the
+// finding reports the declaration as skipped and the file must
+// match it.
 func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) {
 	t, spelt := b.kinds[d.Kind()]
 	if !spelt {
@@ -968,13 +1057,15 @@ func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) {
 	}
 	f.guard(d)
 	f.scratch.Reset()
+	mark := f.set.mark()
 	if err := t.Execute(&f.scratch, d); err != nil {
+		f.set.rollback(mark)
 		f.sink.Errorf(refusalCode(err), f.at, f.origin,
 			"the %s template refused a declaration of %s: %v",
 			d.Kind(), u.Plugin, err)
 		return
 	}
-	f.out.WriteString(f.scratch.String())
+	f.out.Write(f.scratch.Bytes())
 }
 
 // clustered renders one cluster through the group template its
@@ -992,13 +1083,15 @@ func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) {
 		f.guard(d)
 	}
 	f.scratch.Reset()
+	mark := f.set.mark()
 	if err := t.Execute(&f.scratch, c); err != nil {
+		f.set.rollback(mark)
 		f.sink.Errorf(refusalCode(err), f.at, f.origin,
 			"the %s group template refused a cluster of %s: %v",
 			c.Group, u.Plugin, err)
 		return
 	}
-	f.out.WriteString(f.scratch.String())
+	f.out.Write(f.scratch.Bytes())
 }
 
 // guard reports the stated facts the declared coverage refuses or
@@ -1099,7 +1192,9 @@ func (f *frame) file(g *group, b *bound) ([]byte, bool) {
 	f.out.Reset()
 	f.fileOut.Reset()
 	f.set.Reset()
-	f.at = position.Pos{File: g.name}
+	// The package qualifies the spelled name, because two packages
+	// can spell one filename and the two files remain distinct.
+	f.at = position.Pos{File: path.Join(g.pkg.Package, g.name)}
 	for _, u := range g.units {
 		f.plugin = u.Plugin
 		f.declRun(u, b)

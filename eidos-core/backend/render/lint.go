@@ -39,33 +39,30 @@ func (p *Pass) Lint(tree fs.FS, funcs template.FuncMap, overrides []string) []er
 	}
 	vocabulary := template.FuncMap{}
 	maps.Copy(vocabulary, p.shared)
-	for name, fn := range funcs {
-		switch {
-		case reserved(name):
+	for _, name := range slices.Sorted(maps.Keys(funcs)) {
+		_, shared := p.shared[name]
+		switch admit(name, shared, declared[name]) {
+		case claimsBuiltin:
 			findings = append(findings, fmt.Errorf(
 				"render: the helper %q claims a builtin's name", name,
 			))
-		case !declared[name]:
-			if _, shared := p.shared[name]; shared {
-				findings = append(findings, fmt.Errorf(
-					"render: the helper %q shadows %s's shared vocabulary without declaring the override",
-					name, p.name,
-				))
-				continue
-			}
-			vocabulary[name] = fn
-		default:
-			vocabulary[name] = fn
+		case shadowsUndeclared:
+			findings = append(findings, fmt.Errorf(
+				"render: the helper %q shadows %s's shared vocabulary without declaring the override",
+				name, p.name,
+			))
+		case admitted:
+			vocabulary[name] = funcs[name]
 		}
 	}
-	// The stubs mirror exactly what a plugin tree's execution
-	// binds — slots, slot and use — so a builtin the render would
-	// refuse fails here too, which is this check's whole promise.
-	stubs := template.FuncMap{
-		BuiltinUse:   func(string) (string, error) { return "", nil },
-		BuiltinSlots: func() (string, error) { return "", nil },
-		BuiltinSlot:  func(string) (string, error) { return "", nil },
-	}
+	// The stubs define exactly the names a plugin tree's execution
+	// binds, from the one constructor the render uses, so a builtin
+	// the render refuses fails here too.
+	stubs := referenceBuiltins(
+		func() (string, error) { return "", nil },
+		func(string) (string, error) { return "", nil },
+		func(string, ...string) (string, error) { return "", nil },
+	)
 
 	walk := func(name string) error {
 		src, err := fs.ReadFile(tree, name)

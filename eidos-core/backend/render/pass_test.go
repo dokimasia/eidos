@@ -13,6 +13,7 @@ import (
 	"testing"
 	"testing/fstest"
 	"text/template"
+	"time"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
@@ -618,6 +619,123 @@ func TestPass(t *testing.T) {
 			_, sink := runRef(t, trees("\tbare()\n"), b)
 			assert.False(t, sink.Failed(), "an empty slot set has nothing to drop")
 		})
+
+		t.Run("two plugins' templates of one name resolve in each plugin's tree", func(t *testing.T) {
+			t.Parallel()
+
+			unit := func(p plugin.ID, name string) plugin.Unit {
+				u := unitOf(p, "store.go")
+				f := &emit.Function{
+					Origin: coretest.Struct(coretest.StorePath, name).ID,
+					Name:   name,
+				}
+				f.Body = emit.Body{Ref: &emit.TemplateRef{Name: "method1.tpl"}}
+				u.Decls = append(u.Decls, f)
+				return u
+			}
+			pass, err := render.New("printer", language())
+			assert.NoError(t, err, "the language composes")
+			sink := diag.NewSink()
+			files, err := pass.Render(&plugin.RenderContext{
+				Emit: seeded(t, unit("alpha", "First"), unit("beta", "Second")),
+				Trees: map[plugin.ID]fs.FS{
+					"alpha": fstest.MapFS{"method1.tpl": &fstest.MapFile{Data: []byte("\talpha()\n{{slots}}")}},
+					"beta":  fstest.MapFS{"method1.tpl": &fstest.MapFile{Data: []byte("\tbeta()\n{{slots}}")}},
+				},
+				Sink: sink, Plugin: "printer",
+			})
+			assert.NoError(t, err, "the pass runs whole")
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "both units share one file")
+			assert.Equal(t, string(files[0].Body),
+				"func First() {\n\talpha()\n}\nfunc Second() {\n\tbeta()\n}\n",
+				"each body renders its own emitter's template, whatever the worker rendered first")
+		})
+	})
+
+	t.Run("a declaration skipped mid-render records no imports", func(t *testing.T) {
+		t.Parallel()
+
+		load := fn("store.go", "Load", emit.Body{Stmts: []emit.Stmt{call("pkg.Run"), refused()}})
+		load.Decls = append([]symbol.Symbol{&emit.Struct{
+			Origin: coretest.Struct(coretest.StorePath, "Alpha").ID,
+			Name:   "Alpha",
+		}}, load.Decls...)
+		files, sink := runPass(t, language(), seeded(t, load))
+		coretest.AssertCodes(t, sink, render.RefusedTemplate)
+		assert.Length(t, files, 1, "the file renders without the skipped declaration")
+		assert.Equal(t, string(files[0].Body), "type Alpha struct{}\n",
+			"and without the import the skipped declaration recorded before it failed")
+	})
+
+	t.Run("findings arrive in file order whatever order the workers finish in", func(t *testing.T) {
+		t.Parallel()
+
+		released := make(chan struct{})
+		l := language()
+		l.Finalise = func(src []byte) ([]byte, error) {
+			switch {
+			case strings.Contains(string(src), "Alpha"):
+				// The first file waits for the second to finish, so
+				// with two workers the second file's finding is
+				// reported first. One worker cannot run the second
+				// file concurrently, so the wait ends by timeout and
+				// the order is file order either way.
+				select {
+				case <-released:
+				case <-time.After(2 * time.Second):
+				}
+				return nil, errors.New("alpha is unformattable")
+			default:
+				defer close(released)
+				return nil, errors.New("beta is unformattable")
+			}
+		}
+		_, sink := runPass(t, l, seeded(t,
+			unitOf("gen", "alpha.go", "Alpha"),
+			unitOf("gen", "beta.go", "Beta"),
+		))
+		got := []string{}
+		for d := range sink.All() {
+			got = append(got, d.Pos.File)
+		}
+		assert.Equal(t, got, []string{"alpha_stub.txt", "beta_stub.txt"},
+			"the report order is the file order")
+	})
+
+	t.Run("positions findings at the package-qualified file", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Finalise = func([]byte) ([]byte, error) { return nil, errors.New("unparseable") }
+		u := unitOf("gen", "example.com/left/store.go", "Alpha")
+		u.Pkg = coretest.Struct("example.com/left", "Anchor").ID
+		_, sink := runPass(t, l, seeded(t, u))
+		for d := range sink.All() {
+			assert.Equal(t, d.Pos.File, "example.com/left/store_stub.txt",
+				"the position names the package the file belongs to")
+		}
+		coretest.AssertReports(t, sink, render.UnformattedFile)
+	})
+
+	t.Run("positions a vanishing split at its unit under the context's identity", func(t *testing.T) {
+		t.Parallel()
+
+		l := language()
+		l.Split = func(plugin.Unit) []plugin.Unit { return nil }
+		p, err := render.New("printer", l)
+		assert.NoError(t, err, "the language composes")
+		sink := diag.NewSink()
+		_, err = p.Render(&plugin.RenderContext{
+			Emit: seeded(t, unitOf("gen", "store.go", "Alpha")), Sink: sink, Plugin: "composed",
+		})
+		assert.NoError(t, err, "the pass runs whole")
+		coretest.AssertPositioned(t, sink)
+		for d := range sink.All() {
+			assert.Equal(t, d.Origin, diag.Origin("composed"),
+				"the finding reports under the composition's identity")
+			assert.Equal(t, d.Pos.File, "store.go", "at the unit it could not route")
+		}
 	})
 
 	t.Run("assembles the file through the skeleton", func(t *testing.T) {
@@ -1445,6 +1563,51 @@ func BenchmarkPass(b *testing.B) {
 		sink := diag.NewSink()
 		files, err := p.Render(&plugin.RenderContext{
 			Emit: e, Sink: sink, Plugin: "printer",
+		})
+		if err != nil {
+			b.Fatalf("Render: unexpected error: %v", err)
+		}
+		if len(files) != packages || sink.Failed() {
+			b.Fatal("every file renders clean")
+		}
+	}
+}
+
+// BenchmarkPassReferences measures the body-claiming path at the
+// same scale: 1000 files of 200 functions, each body a reference to
+// one template in the emitting plugin's tree, so every declaration
+// executes a parsed reference template.
+func BenchmarkPassReferences(b *testing.B) {
+	const packages, decls = 1_000, 200
+	e := plugin.NewEmit()
+	for i := range packages {
+		path := "example.com/pkg" + strconv.Itoa(i)
+		u := unitOf("gen", path+"/store.go")
+		u.Pkg = coretest.Struct(path, "Anchor").ID
+		for d := range decls {
+			f := &emit.Function{
+				Origin: coretest.Struct(path, "F"+strconv.Itoa(d)).ID,
+				Name:   "F" + strconv.Itoa(d),
+			}
+			f.Body = refBody()
+			u.Decls = append(u.Decls, f)
+		}
+		if err := e.Add(u); err != nil {
+			b.Fatalf("Add: unexpected error: %v", err)
+		}
+	}
+	p, err := render.New("printer", language())
+	if err != nil {
+		b.Fatalf("New: unexpected error: %v", err)
+	}
+	trees := refTree("\tref()\n{{slots}}")
+
+	c := bench.Start(b).MaxAllocs(3_500_000)
+	defer c.End()
+	for c.Loop() {
+		sink := diag.NewSink()
+		files, err := p.Render(&plugin.RenderContext{
+			Emit: e, Trees: trees, Sink: sink, Plugin: "printer",
 		})
 		if err != nil {
 			b.Fatalf("Render: unexpected error: %v", err)

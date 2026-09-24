@@ -230,9 +230,12 @@ type Language = core.Language
 // Pass is one composed language's render procedure. A Pass is safe
 // for concurrent use: everything it holds is fixed at [New], and
 // every render call owns its own frames. Within one call, files
-// render in parallel across workers bounded by GOMAXPROCS, which
-// is why a context's trees must tolerate concurrent reads, as
-// every fs.FS does.
+// render in parallel on up to GOMAXPROCS workers. The language's
+// Scaffold, Imports, Finalise and Cluster, every helper in its
+// Funcs and in a context's Funcs, and every read of a context's
+// trees run on those workers concurrently, so each must be safe
+// for concurrent use. Naming and Split run on the calling
+// goroutine.
 type Pass = core.Pass
 
 // New composes a language into its pass.

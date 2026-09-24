@@ -34,31 +34,29 @@ type Entry struct {
 // one file under render.
 type ImportSet struct {
 	entries map[Entry]struct{}
+	// journal lists the entries in the order they were first
+	// recorded, so the pass can withdraw what a skipped declaration
+	// recorded before it failed.
+	journal []Entry
 }
 
 // Add records one bare import path; recording a path twice
 // records one.
 func (s *ImportSet) Add(path string) {
-	s.AddNamed(path, "")
+	s.add(Entry{Path: path})
 }
 
 // AddNamed records the name an import of path binds; recording a
 // pair twice records one.
 func (s *ImportSet) AddNamed(path, name string) {
-	if s.entries == nil {
-		s.entries = map[Entry]struct{}{}
-	}
-	s.entries[Entry{Path: path, Name: name}] = struct{}{}
+	s.add(Entry{Path: path, Name: name})
 }
 
 // AddType records a type-only binding: the name an import of path
 // binds for the type checker alone, erased at run time where the
 // language erases one.
 func (s *ImportSet) AddType(path, name string) {
-	if s.entries == nil {
-		s.entries = map[Entry]struct{}{}
-	}
-	s.entries[Entry{Path: path, Name: name, TypeOnly: true}] = struct{}{}
+	s.add(Entry{Path: path, Name: name, TypeOnly: true})
 }
 
 // Paths returns every recorded path, distinct and sorted, so two
@@ -110,4 +108,30 @@ func (s *ImportSet) Len() int {
 
 // Reset drops every entry and keeps the storage, so the pass
 // reuses one set across a call's files.
-func (s *ImportSet) Reset() { clear(s.entries) }
+func (s *ImportSet) Reset() {
+	clear(s.entries)
+	s.journal = s.journal[:0]
+}
+
+// add records one entry and journals it when it is new.
+func (s *ImportSet) add(e Entry) {
+	if s.entries == nil {
+		s.entries = map[Entry]struct{}{}
+	}
+	if _, held := s.entries[e]; held {
+		return
+	}
+	s.entries[e] = struct{}{}
+	s.journal = append(s.journal, e)
+}
+
+// mark returns the journal position a later rollback returns to.
+func (s *ImportSet) mark() int { return len(s.journal) }
+
+// rollback withdraws every entry first recorded after the mark.
+func (s *ImportSet) rollback(mark int) {
+	for _, e := range s.journal[mark:] {
+		delete(s.entries, e)
+	}
+	s.journal = s.journal[:mark]
+}

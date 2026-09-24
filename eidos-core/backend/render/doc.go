@@ -16,11 +16,14 @@
 // # Failure semantics
 //
 // A problem with one file or one declaration attaches to the sink
-// as a positioned Error, at the rendered filename, and the pass
-// continues: a kind the language cannot spell skips that
-// declaration, and a file the formatter refuses is withheld while
-// its siblings render whole. A returned error is a defect in the
-// pass's own inputs. Nothing here panics.
+// as a positioned Error, at the rendered file's name joined to its
+// package path, and the pass continues: a kind the language cannot
+// spell skips that declaration, and a file the formatter refuses is
+// withheld while its siblings render whole. A finding outside every
+// file is positioned at the unit's routing key, or at the pass's own
+// name for a plan unit and for the vocabulary merge. Findings arrive
+// in file order, whatever order the workers finish in. A returned
+// error is a defect in the pass's own inputs. Nothing here panics.
 //
 // # Dependency position
 //
