@@ -80,6 +80,19 @@ func TestImporter(t *testing.T) {
 			assert.NotNil(t, pkg.Scope().Lookup("ToUpper"), "and resolves")
 		})
 
+		t.Run("refuses a path imported while it loads", func(t *testing.T) {
+			t.Parallel()
+
+			imp, err := gosource.NewImporter(token.NewFileSet(), modRoot)
+			assert.NoError(t, err, "the importer builds")
+			_, err = imp.Import("example.test/fixture/cycle/a")
+			assert.HasError(t, err, "an import cycle refuses rather than recursing")
+			assert.Contains(t, err.Error(), "import cycle", "naming the defect")
+
+			_, err = imp.Import("example.test/fixture/lib")
+			assert.NoError(t, err, "and the refusal belongs to that import alone")
+		})
+
 		t.Run("reports a module-local path that does not exist", func(t *testing.T) {
 			t.Parallel()
 

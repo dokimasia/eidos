@@ -93,26 +93,46 @@ func readable(name string, mode Mode) bool {
 //
 // pkgPath names the package under type-checking and appears in type
 // spellings; it need not match the directory.
+//
+// An import cycle through the module's own packages is an error in
+// either mode: Go refuses one, and a load following it would
+// recurse without bound.
 func Load(
 	fset *token.FileSet,
 	dir, pkgPath, modRoot string,
 	mode Mode,
 ) (*types.Package, []*ast.File, error) {
-	files, err := ParseDir(fset, dir, mode)
-	if err != nil {
-		return nil, nil, err
-	}
 	imp, err := NewImporter(fset, modRoot)
 	if err != nil {
 		return nil, nil, err
 	}
-	conf := types.Config{Importer: imp}
+	pkg, files, err := imp.load(dir, pkgPath, mode)
+	if err != nil {
+		return nil, nil, err
+	}
+	if imp.cycle != nil {
+		return nil, nil, imp.cycle
+	}
+	return pkg, files, nil
+}
+
+// load parses and type-checks the package in dir with im resolving
+// its imports, marking pkgPath as loading until the check ends, so
+// a nested import of it refuses as a cycle.
+func (im *Importer) load(dir, pkgPath string, mode Mode) (*types.Package, []*ast.File, error) {
+	files, err := ParseDir(im.fset, dir, mode)
+	if err != nil {
+		return nil, nil, err
+	}
+	im.loading[pkgPath] = true
+	defer delete(im.loading, pkgPath)
+	conf := types.Config{Importer: im}
 	if mode == Complete {
 		// Collect errors instead of stopping at the first, so a
 		// dependency that does not compile still returns its names.
 		conf.Error = func(error) {}
 	}
-	pkg, err := conf.Check(pkgPath, fset, files, nil)
+	pkg, err := conf.Check(pkgPath, im.fset, files, nil)
 	if err != nil && mode == HandWritten {
 		return nil, nil, fmt.Errorf("gosource: type-check %s: %w", dir, err)
 	}

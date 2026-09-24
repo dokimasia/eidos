@@ -157,6 +157,36 @@ func TestLoad(t *testing.T) {
 					"compile still yields its surface")
 		})
 
+		t.Run("resolves one import path to one package across nested loads", func(t *testing.T) {
+			t.Parallel()
+
+			modRoot, err := filepath.Abs("testdata/mod")
+			assert.NoError(t, err, "the module root resolves")
+			pkg, _, err := gosource.Load(
+				token.NewFileSet(), "testdata/mod/caller", "example.test/fixture/caller", modRoot,
+				gosource.HandWritten,
+			)
+			assert.NoError(t, err,
+				"the caller's time.Time passes into the clock package's time.Time, "+
+					"because the nested load resolves time to the same package")
+			assert.NotNil(t, pkg.Scope().Lookup("Now"), "and the caller type-checks whole")
+		})
+
+		t.Run("refuses an import cycle through the module's packages", func(t *testing.T) {
+			t.Parallel()
+
+			modRoot, err := filepath.Abs("testdata/mod")
+			assert.NoError(t, err, "the module root resolves")
+			_, _, err = gosource.Load(
+				token.NewFileSet(), "testdata/mod/cycle/a", "example.test/fixture/cycle/a", modRoot,
+				gosource.HandWritten,
+			)
+			assert.HasError(t, err, "a cycle refuses rather than recursing")
+			assert.Contains(t, err.Error(), "import cycle through example.test/fixture/cycle/a",
+				"naming the path imported while it loads")
+			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
+		})
+
 		t.Run("reports a module root it cannot resolve imports against", func(t *testing.T) {
 			t.Parallel()
 
