@@ -120,7 +120,7 @@ each addition:
 | `Level` on members | `Instance \| Type`, covering statics and companions. Go always returns Instance |
 | `Method.HasDefault` | interface methods with default bodies: Java 8 and later, Kotlin, Rust default impls. Go leaves it false |
 | `Enum.Methods` | Java enums are classes with members. Most languages leave it empty |
-| `Package.Path` | hierarchical segments. Rust `mod` nesting and TypeScript namespaces map into them, and the original spelling stays in language metadata |
+| `Package.Path` | hierarchical segments. Rust `mod` nesting, TypeScript namespaces and a proto package's dotted name map into them, and the original spelling stays in language metadata |
 
 ## Symbol identity
 
@@ -146,9 +146,10 @@ How anything crosses a file or package boundary:
   every frontend has finished, spellings resolve once: each
   `TypeRef` that names a declaration present in the graph, whether
   in scope or in a signature-only dependency, gains a
-  `Target symbol.Identity`. Builtins and genuinely external types
-  keep only their spelling. That is legitimate degradation rather
-  than failure, and a consumer asks before relying on a target.
+  `Target symbol.Identity`, and so does each reference to a type
+  parameter in scope. Builtins and genuinely external types keep
+  only their spelling. That is legitimate degradation rather than
+  failure, and a consumer asks before relying on a target.
 
   Link is a phase rather than an on-demand lookup because
   cross-package resolution needs the whole graph: two packages parse
@@ -157,6 +158,26 @@ How anything crosses a file or package boundary:
   import scope and the language's `Resolve`
   ([03-projection.md](03-projection.md)) knows what a spelling means
   there, but the result is neutral: an identity.
+
+  The scope a spelling resolves in is lexical rather than per file.
+  `ImportScope` names the innermost enclosing declaration that nests
+  types, and Link walks a file's declarations under their own
+  identities. The language's `Resolve` returns its candidates in
+  shadowing tiers, one per scope and innermost first. Link takes the
+  first tier that names a declaration in the graph. A name written
+  inside a message, a class or a namespace resolves against that
+  declaration's own members first. An outer declaration of the same
+  name does not make the name ambiguous. Two matches within one tier
+  are an ambiguity, and Link reports it: that is how Go's own package
+  and its dot imports compete.
+
+  A bare name that spells a type parameter in scope targets the
+  parameter before Link asks any tier. The type parameters of every
+  enclosing declaration are in scope, the innermost first. So a
+  parameter shadows a package-level type of the same name, the way
+  every language with generics scopes it. The fold projects such a
+  reference as opaque: the parameter's argument decides the
+  projection, and a use of the parameter states no argument.
 - **Lookup** is the join, in any phase after Link.
   `Reader.Lookup(Identity) (Symbol, ok)` returns the same way across
   files, packages and signature-only dependencies, and it goes

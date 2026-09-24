@@ -47,8 +47,41 @@ eidos-lang-<lang>/
 **A read-only language ships `frontend/` and `rules/` and stops.**
 `eidos-lang-protobuf` is a complete satellite of the read-only
 shape, and the anatomy says so structurally. It also ships the
-well-known-type canonical mappings, meaning Timestamp, Duration and
-the rest, as policy defaults.
+well-known-type canonical mappings as policy defaults: Timestamp
+and Duration map onto the kernel's registry, every wrapper projects
+as its scalar under the optional form, which is the presence a
+wrapper exists to give, Empty is the empty record, FieldMask the
+list of paths it contains, ListValue a list and Struct a map onto
+values decided at run time. Any, Value and NullValue project as
+opaque, because the projection claims nothing about their content.
+A well-known type never resolves against the graph, spelled with or
+without its leading dot. Its mapping therefore does not depend on
+whether the workspace loads its declaration.
+
+What protobuf states and the projection has no form for is stamped
+as declared residue: a field's wire number, a required label and a
+json_name, a message's reserved and extension ranges, a file's
+imports with public and weak marked, its syntax or edition, its
+package, and the options every declaration level states. Edition
+features are stamped apart from the other options, because editions
+replaced the syntax keyword with them. The frontend resolves one of
+them itself: `features.field_presence`, read from the field up
+through its messages to the file and then the edition default,
+projects a singular field with explicit presence as the optional
+form, the way proto2's and proto3's optional label does. A group
+and an extend block are refused positioned: a group is one
+declaration the model represents as two, and an extend block
+changes a declaration the file does not declare.
+
+The frontend attributes comments the way protoc's source info
+attributes them, so a schema documented for protoc documents the
+same declarations here. Name resolution follows protoc's probe
+order in shadowing tiers, with one divergence: protoc fails a
+compound name at the innermost scope that declares its first
+segment, and the tiers probe past that scope. A schema protoc
+accepts resolves identically. The rules read a literal in protoc's
+grammar and state an enum value as its number converted to the enum
+type, which every target spells.
 
 ## The language landscape
 
