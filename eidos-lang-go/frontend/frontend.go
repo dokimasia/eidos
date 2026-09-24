@@ -45,6 +45,15 @@ var UnaddressedCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 	Meaning: "a directive carrier sits on a subject the model cannot address",
 })
 
+// MixedPackage reports a file inside the build whose package clause
+// names another package than the files before it in its directory.
+// The load keeps the first name and continues. The go tool refuses
+// the directory.
+var MixedPackage = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
+	Number:  4,
+	Meaning: "a directory's Go files declare two package names",
+})
+
 // Options is the frontend's declared configuration: one build
 // constraint set per load. A tag set is in every unit key by the
 // kit's contract, because it changes the graph without changing a

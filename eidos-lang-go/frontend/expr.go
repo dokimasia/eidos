@@ -205,6 +205,16 @@ func (l *lowered) trailing(end, limit token.Pos) *ast.CommentGroup {
 // pointer and instantiation unwrapped, because a method's owner is
 // the type's name, never its decoration.
 func (l *lowered) bareName(e ast.Expr) string {
+	e = undecorated(e)
+	if id, is := e.(*ast.Ident); is {
+		return id.Name
+	}
+	return l.spelling(e)
+}
+
+// undecorated returns the expression under a type's pointer,
+// parentheses and instantiation.
+func undecorated(e ast.Expr) ast.Expr {
 	for {
 		switch t := e.(type) {
 		case *ast.StarExpr:
@@ -215,10 +225,8 @@ func (l *lowered) bareName(e ast.Expr) string {
 			e = t.X
 		case *ast.IndexListExpr:
 			e = t.X
-		case *ast.Ident:
-			return t.Name
 		default:
-			return l.spelling(e)
+			return e
 		}
 	}
 }

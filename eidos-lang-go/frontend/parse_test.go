@@ -189,6 +189,76 @@ func TestParse(t *testing.T) {
 		assert.True(t, findings > 0, "and the error still reports")
 	})
 
+	t.Run("declares nothing for a file without a package clause", func(t *testing.T) {
+		t.Parallel()
+
+		tree := fstest.MapFS{"p/a.go": {Data: []byte("func F() {}\n")}}
+		f := frontend.New(nil)
+		sink := diag.NewSink()
+		u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: "p/a.go"}}, tree,
+			plugin.DepthFull, f.Syntax(), sink, f.Name())
+		assert.NoError(t, f.Parse(context.Background(), u), "the missing clause is the source's error")
+		assert.Empty(t, u.Graph().Packages(), "and the file declares nothing")
+		findings := 0
+		for range sink.All() {
+			findings++
+		}
+		assert.True(t, findings > 0, "the syntax error reports")
+	})
+
+	t.Run("leaves out an embed the parser synthesized past the end of a file", func(t *testing.T) {
+		t.Parallel()
+
+		st := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\ntype S struct {\n\tA\n\t*")).Decls[0].(*node.Struct)
+		assert.Length(t, st.Embeds, 1, "the embed the source spells is kept")
+		assert.Equal(t, st.Embeds[0].Ref.Spelling, "A", "and the synthesized one is left out")
+
+		it := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\ntype I interface {\n\tJ\n\t*")).Decls[0].(*node.Interface)
+		assert.Length(t, it.Embeds, 1, "an interface keeps its spelled embed")
+		assert.Equal(t, it.Embeds[0].Ref.Spelling, "J", "and leaves the synthesized one out")
+	})
+
+	t.Run("names the package from the files inside the build", func(t *testing.T) {
+		t.Parallel()
+
+		tree := fstest.MapFS{
+			"p/a.go": {
+				Data: []byte("//go:build exotic\n\n// Package other is outside.\n//+gen:table name=t\npackage other\n"),
+			},
+			"p/b.go": {Data: []byte("// Package p is inside.\npackage p\n\ntype T struct{}\n")},
+		}
+		f := frontend.New(nil)
+		u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: "p/a.go"}, {Path: "p/b.go"}}, tree,
+			plugin.DepthFull, f.Syntax(), diag.NewSink(), f.Name())
+		assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+		pkg := u.Graph().Packages()[0]
+		assert.Equal(t, pkg.Name, "p", "the file inside the build names the package")
+		assert.Equal(t, pkg.Doc, []string{"Package p is inside."}, "and documents it")
+		assert.Empty(t, u.Graph().Attachments(), "the excluded file's carrier attaches nowhere")
+	})
+
+	t.Run("reports a second package name in one directory", func(t *testing.T) {
+		t.Parallel()
+
+		tree := fstest.MapFS{
+			"p/a.go": {Data: []byte("package p\n")},
+			"p/b.go": {Data: []byte("package q\n")},
+		}
+		f := frontend.New(nil)
+		sink := diag.NewSink()
+		u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: "p/a.go"}, {Path: "p/b.go"}}, tree,
+			plugin.DepthFull, f.Syntax(), sink, f.Name())
+		assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+		assert.Equal(t, u.Graph().Packages()[0].Name, "p", "the first name is kept")
+		var codes []diag.Code
+		for d := range sink.All() {
+			codes = append(codes, d.Code)
+		}
+		assert.Equal(t, codes, []diag.Code{frontend.MixedPackage}, "and the second reports")
+	})
+
 	t.Run("lowers a receiverless method as a function", func(t *testing.T) {
 		t.Parallel()
 

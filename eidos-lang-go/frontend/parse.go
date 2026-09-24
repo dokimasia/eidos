@@ -49,6 +49,7 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 		fset:    token.NewFileSet(),
 		intern:  map[string]string{},
 		batches: map[string]*constBatch{},
+		named:   map[string]bool{},
 	}
 	for _, ref := range u.Files() {
 		if err := f.parseFile(u, root, st, ref.Path); err != nil {
@@ -79,15 +80,16 @@ func stampModule(u *plugin.SourceUnit, root moduleRoot) {
 }
 
 // parseState is one unit's shared parse machinery: the file set
-// every member joins, the spelling intern the lowerings share, and
-// the per-package batches the constant evaluation runs over once
-// each, so a constant referencing a sibling file's type still
-// evaluates.
+// every member joins, the spelling intern the lowerings share, the
+// per-package batches the constant evaluation runs over once each,
+// so a constant referencing a sibling file's type still evaluates,
+// and the packages a file inside the build has named.
 type parseState struct {
 	fset    *token.FileSet
 	intern  map[string]string
 	batches map[string]*constBatch
 	order   []string
+	named   map[string]bool
 }
 
 // constBatch is one package's included files, parsed and lowered.
@@ -132,7 +134,10 @@ func (f *goFrontend) parseFile(
 	if err != nil {
 		reportSyntax(u, filePath, err)
 	}
-	if parsed == nil || parsed.Name == nil {
+	if parsed == nil || parsed.Name == nil || !parsed.Package.IsValid() {
+		// A file without a package clause declares nothing: its
+		// syntax errors are reported, and no position in it anchors
+		// a declaration.
 		return nil
 	}
 	l := &lowered{
@@ -148,7 +153,6 @@ func (f *goFrontend) parseFile(
 		pkgPath += "_test"
 	}
 	pkg := gb.Package(pkgPath)
-	pkg.Name = pkgName
 
 	file := &node.File{Path: filePath, Pos: l.at(parsed.Package)}
 	pkg.Files = append(pkg.Files, file)
@@ -163,17 +167,11 @@ func (f *goFrontend) parseFile(
 	}
 	gb.Scope(file, fileBinds)
 
-	// The package clause's doc belongs to the package: the text
-	// hoists to the first non-empty doc across the unit's files,
-	// and its carriers attach to the package rather than the file.
-	// Tool directives above the clause are the file's annotations.
+	// Tool directives above the package clause are the file's
+	// annotations.
 	parts := l.split(u, parsed.Doc)
 	file.Doc = parts.Docs
 	file.Annotations = append(file.Annotations, parts.Annotations...)
-	if len(pkg.Doc) == 0 {
-		pkg.Doc = parts.Docs
-	}
-	attachCarriers(u, gb, pkg, parts.Carriers)
 
 	if cgo {
 		gb.Stamp(file, meta.RawStamp{Key: golang.CgoKey, Value: true, Pos: file.Pos})
@@ -182,9 +180,23 @@ func (f *goFrontend) parseFile(
 		gb.Stamp(file, meta.RawStamp{Key: golang.GeneratedKey, Value: marker, Pos: file.Pos})
 	}
 	if line, excluded := f.excluded(parsed, filePath); excluded {
+		// A file outside the build speaks for no package: it names
+		// one only where no file inside the build has, and its
+		// package doc and carriers are left out.
+		if pkg.Name == "" {
+			pkg.Name = pkgName
+		}
 		gb.Stamp(file, meta.RawStamp{Key: golang.ConstraintKey, Value: line, Pos: file.Pos})
 		return nil
 	}
+	namePackage(u, st, pkg, pkgPath, pkgName, file.Pos)
+	// The package clause's doc belongs to the package: the text
+	// hoists to the first non-empty doc across the unit's files,
+	// and its carriers attach to the package rather than the file.
+	if len(pkg.Doc) == 0 {
+		pkg.Doc = parts.Docs
+	}
+	attachCarriers(u, gb, pkg, parts.Carriers)
 	for _, decl := range parsed.Decls {
 		f.lowerDecl(u, l, file, decl)
 	}
@@ -221,6 +233,23 @@ func (f *goFrontend) parseFile(
 		refuseCarriers(u, floating.Carriers, "a comment no declaration owns")
 	}
 	return nil
+}
+
+// namePackage gives a package the name a file inside the build
+// declares. The first such file names it, over any name a file
+// outside the build filled in, and a later file declaring another
+// name reports under [MixedPackage], the first name standing.
+func namePackage(
+	u *plugin.SourceUnit, st *parseState, pkg *node.Package, pkgPath, name string, at position.Pos,
+) {
+	switch {
+	case !st.named[pkgPath]:
+		pkg.Name = name
+		st.named[pkgPath] = true
+	case pkg.Name != name:
+		u.Warnf(MixedPackage, at, "package %s is declared %q and %q; the first is kept",
+			pkgPath, pkg.Name, name)
+	}
 }
 
 // reportSyntax reports each recovered syntax error at its own
@@ -536,11 +565,17 @@ func (l *lowered) aliasOf(
 // lowerStructBody lowers fields and embeds, unexported fields
 // staying out at signature depth. An embedded field is a
 // declaration like any field: its doc, tag, trailing comment and
-// annotations lower with it, and its carriers attach to it.
+// annotations lower with it, and its carriers attach to it. An
+// embed whose named type the source spells nothing for, as one the
+// parser synthesized past the end of a broken file, is left out,
+// because the load names an embed by that spelling.
 func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.Struct, t *ast.StructType) {
 	for _, field := range t.Fields.List {
 		parts := l.declParts(u, plugin.CommentParts{}, field.Doc, field.Comment)
 		if len(field.Names) == 0 {
+			if l.spelling(undecorated(field.Type)) == "" {
+				continue
+			}
 			embed := &node.Embed{
 				Ref: l.typeRef(field.Type), Pos: l.at(field.Pos()), Doc: parts.Docs,
 				Comment:     commentText(l, u, field.Comment),
@@ -573,6 +608,7 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 // interfaces. A constraint element — a union or an approximation —
 // is not an embed: its verbatim spellings stamp onto the interface
 // as its type set, the language metadata the model routes them to.
+// An embed whose type spells no name is left out, as a struct's is.
 func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node.Interface, t *ast.InterfaceType) {
 	var terms []string
 	for _, member := range t.Methods.List {
@@ -581,6 +617,9 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 			if constraintElement(member.Type) {
 				terms = append(terms, l.spelling(member.Type))
 				refuseCarriers(u, parts.Carriers, "a constraint element")
+				continue
+			}
+			if l.spelling(undecorated(member.Type)) == "" {
 				continue
 			}
 			embed := &node.Embed{
