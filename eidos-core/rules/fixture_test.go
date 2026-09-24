@@ -108,6 +108,15 @@ func embedOf(path, name string, kind symbol.Kind) *node.Embed {
 	return &node.Embed{Ref: named(path, name, kind)}
 }
 
+// namedEmbed returns an embed of a resolved declaration carrying
+// the identity the load assigns it: the embedded type's bare name
+// under the host.
+func namedEmbed(path, host, name string, kind symbol.Kind) *node.Embed {
+	e := embedOf(path, name, kind)
+	e.ID = symbol.Identity{Lang: coretest.Lang, Package: path, Owner: host, Name: name, Kind: symbol.KindEmbed}
+	return e
+}
+
 // iface returns a bare interface, no members pre-populated.
 func iface(path, name string) *node.Interface {
 	return &node.Interface{ID: coretest.ID(path, name, symbol.KindInterface), Name: name}
@@ -142,6 +151,18 @@ type policy struct {
 
 // Members returns the overriding policy.
 func (p policy) Members() rules.MemberPolicy { return p.members }
+
+// fixedSamples overrides the scripted language's samples with one
+// fixed pair, so a case controls what the language derives.
+type fixedSamples struct {
+	rules.SourceRules
+	sample, alternate rules.Sample
+}
+
+// SamplesOf returns the fixed pair.
+func (f fixedSamples) SamplesOf(*node.TypeRef, string, rules.View) (rules.Sample, rules.Sample) {
+	return f.sample, f.alternate
+}
 
 // nongeneric hides the scripted language's generics capability.
 type nongeneric struct {

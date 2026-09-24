@@ -23,6 +23,8 @@ func names(set rules.MemberSet) []string {
 			out = append(out, d.Name)
 		case *node.Method:
 			out = append(out, d.Name)
+		case *node.Embed:
+			out = append(out, d.ID.Name)
 		}
 	}
 	return out
@@ -202,6 +204,74 @@ func TestMembers(t *testing.T) {
 			set, _ = plain.MembersOf(holder)
 			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapGeneric},
 				"a language without the generics capability reports the contributor")
+		})
+
+		t.Run("binds a generic contributor's own contributors", func(t *testing.T) {
+			t.Parallel()
+
+			inner := coretest.Struct(svcPath, "Inner")
+			inner.TypeParams = []*node.TypeParam{{Name: "U"}}
+			inner.Fields = []*node.Field{field(svcPath, "Inner", "item", builtin("U"))}
+			mid := coretest.Struct(svcPath, "Mid")
+			mid.TypeParams = []*node.TypeParam{{Name: "T"}}
+			innerRef := named(svcPath, "Inner", symbol.KindStruct)
+			innerRef.Args = []*node.TypeRef{builtin("T")}
+			mid.Embeds = []*node.Embed{{Ref: innerRef}}
+			outer := coretest.Struct(svcPath, "Outer")
+			midRef := named(svcPath, "Mid", symbol.KindStruct)
+			midRef.Args = []*node.TypeRef{builtin(intSpelling)}
+			outer.Embeds = []*node.Embed{{Ref: midRef}}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, inner, mid, outer)))
+			set, _ := b.MembersOf(outer)
+			assert.Equal(t, names(set), []string{"item"}, "the member two generic embeds down arrives")
+			assert.Equal(t, set.Members[0].Symbol.(*node.Field).Type.Spelling, intSpelling,
+				"bound to the outer argument through the middle level")
+			assert.Equal(t, innerRef.Args[0].Spelling, "T", "and the graph's own reference is unchanged")
+		})
+
+		t.Run("records an embedded field and selects it over a deeper name", func(t *testing.T) {
+			t.Parallel()
+
+			leaf := coretest.Struct(svcPath, "Leaf")
+			leaf.Fields = []*node.Field{field(svcPath, "Leaf", "Mid", builtin(intSpelling))}
+			mid := coretest.Struct(svcPath, "Mid")
+			mid.Embeds = []*node.Embed{namedEmbed(svcPath, "Mid", "Leaf", symbol.KindStruct)}
+			top := coretest.Struct(svcPath, "Top")
+			top.Embeds = []*node.Embed{namedEmbed(svcPath, "Top", "Mid", symbol.KindStruct)}
+			g := coretest.Frozen(t, coretest.Package(svcPath, leaf, mid, top))
+			v, _, _ := viewOver(t, g)
+			b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
+				Contributes: []rules.Contribution{rules.ContributesEmbeds}, Shadowing: rules.ShadowPromote,
+				EmbedsAreFields: true,
+			}}, v, nil)
+			set, _ := b.MembersOf(top)
+			assert.Equal(t, names(set), []string{"Mid", "Leaf"}, "each embedded field is a member")
+			assert.Equal(t, set.Members[0].Symbol, symbol.Symbol(top.Embeds[0]),
+				"Top's own embedded field Mid is selected over Leaf's field Mid two embeds down")
+			assert.Equal(t, set.Members[0].Depth, 0, "at the depth of the type declaring it")
+			assert.Equal(t, set.Members[1].Depth, 1, "and Mid's embedded field Leaf promotes one level")
+
+			plain, _, _ := boundOver(t, g)
+			set, _ = plain.MembersOf(top)
+			assert.Equal(t, names(set), []string{"Mid"}, "a policy without the flag records no embedded field")
+			assert.Equal(t, set.Members[0].Depth, 2, "so the name selects the field two embeds down")
+		})
+
+		t.Run("records no embedded field for an interface", func(t *testing.T) {
+			t.Parallel()
+
+			reader := iface(svcPath, "Reader")
+			reader.Methods = []*node.Method{method(svcPath, "Reader", "Read")}
+			both := iface(svcPath, "Both")
+			both.Embeds = []*node.Embed{namedEmbed(svcPath, "Both", "Reader", symbol.KindInterface)}
+			g := coretest.Frozen(t, coretest.Package(svcPath, reader, both))
+			v, _, _ := viewOver(t, g)
+			b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
+				Contributes: []rules.Contribution{rules.ContributesEmbeds}, Shadowing: rules.ShadowPromote,
+				EmbedsAreFields: true,
+			}}, v, nil)
+			set, _ := b.MembersOf(both)
+			assert.Equal(t, names(set), []string{"Read"}, "an embedded interface declares no field")
 		})
 
 		t.Run("folds an interface's arrivals as a set", func(t *testing.T) {

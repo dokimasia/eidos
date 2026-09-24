@@ -74,7 +74,8 @@ func (r Refusal) String() string {
 // samplesOf reads the authored values first, on the declaration
 // carrying the type and then on the declaration the type names,
 // and asks the language to derive only what neither stated. Each
-// half reads independently.
+// half reads independently. A derived half paired with an authored
+// one must differ from it, so the pair is two distinct values.
 func (b Bound) samplesOf(subject symbol.Identity, ref *node.TypeRef, hint string) (Sample, Sample) {
 	if b.view.IsZero() {
 		return Refused(RefusedNoView), Refused(RefusedNoView)
@@ -93,13 +94,37 @@ func (b Bound) samplesOf(subject symbol.Identity, ref *node.TypeRef, hint string
 		return sample, alternate
 	}
 	derived, derivedAlternate := b.source.SamplesOf(ref, hint, b.view)
-	if !sample.OK() {
-		sample = derived
-	}
-	if !alternate.OK() {
-		alternate = derivedAlternate
+	switch {
+	case !sample.OK() && !alternate.OK():
+		return derived, derivedAlternate
+	case !sample.OK():
+		sample = differing(alternate, derived, derivedAlternate)
+	default:
+		alternate = differing(sample, derivedAlternate, derived)
 	}
 	return sample, alternate
+}
+
+// differing returns the derived candidate that pairs with an
+// authored half: first, unless it equals the authored value, then
+// second, and [RefusedNoLiteral] where neither differs. A refused
+// first candidate returns as it is, keeping its reason.
+func differing(authored, first, second Sample) Sample {
+	if !first.OK() || !sameLiteral(authored.Value, first.Value) {
+		return first
+	}
+	if second.OK() && !sameLiteral(authored.Value, second.Value) {
+		return second
+	}
+	return Refused(RefusedNoLiteral)
+}
+
+// sameLiteral reports whether two values are literals with one
+// text, whatever their kinds: an authored value is raw text, so
+// its text is what compares. An authored string's raw text keeps
+// its quotes, so it never equals a derived string.
+func sameLiteral(a, b emit.Value) bool {
+	return a.Kind == emit.ValueLiteral && b.Kind == emit.ValueLiteral && a.Text == b.Text
 }
 
 // authored reads the two authored values stamped on a declaration.

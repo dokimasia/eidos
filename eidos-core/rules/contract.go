@@ -242,6 +242,13 @@ type MemberPolicy struct {
 	Shadowing Shadowing
 	// Depth bounds the walk; 0 takes [DefaultDepth].
 	Depth int
+	// EmbedsAreFields records each embed of a struct as a member:
+	// the embedded field, named by its identity's name, at the depth
+	// of the type that declares it. Go selects an embedded field by
+	// that name before any member it promotes. An interface's embeds
+	// record nothing, because an embedded interface declares no
+	// field.
+	EmbedsAreFields bool
 }
 
 // Registry holds one [SourceRules] per language.

@@ -68,6 +68,44 @@ func TestValues(t *testing.T) {
 			assert.Equal(t, rules.Refusal(9).String(), "9", "and an undeclared one numbers")
 		})
 
+		t.Run("pairs an authored half with the derived value that differs", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, facts := boundOver(t, coretest.Frozen(t, hierarchy()))
+			subject := coretest.ID(svcPath, rowName, symbol.KindField)
+			subject.Owner, subject.Name = rowName, "count"
+			assert.NoError(t, meta.Stamp(facts, b.View().Kernel.Sample, "7", meta.Claim{Subject: subject}),
+				"the author states the value the language derives second")
+			sample, alternate := b.SamplesOf(subject, builtin(intSpelling), "count")
+			assert.Equal(t, sample.Value, emit.Raw(coretest.Lang, "7"), "the authored half is kept")
+			assert.Equal(t, alternate.Value, emit.Literal(emit.LiteralInt, "42"),
+				"and the other half takes the derived value that differs from it")
+
+			other := subject
+			other.Name = "name"
+			assert.NoError(t, meta.Stamp(facts, b.View().Kernel.Alternate, "42", meta.Claim{Subject: other}),
+				"an authored alternate")
+			sample, alternate = b.SamplesOf(other, builtin(intSpelling), "name")
+			assert.Equal(t, sample.Value, emit.Literal(emit.LiteralInt, "7"),
+				"pairs with the derived value that differs from it")
+			assert.Equal(t, alternate.Value, emit.Raw(coretest.Lang, "42"), "and is kept")
+		})
+
+		t.Run("refuses where no derived value differs from the authored half", func(t *testing.T) {
+			t.Parallel()
+
+			g := coretest.Frozen(t, hierarchy())
+			v, _, facts := viewOver(t, g)
+			one := rules.Of(emit.Literal(emit.LiteralInt, "1"))
+			b := rules.NewBound(fixedSamples{scripted(), one, one}, v, nil)
+			subject := coretest.ID(svcPath, rowName, symbol.KindField)
+			subject.Owner, subject.Name = rowName, "count"
+			assert.NoError(t, meta.Stamp(facts, v.Kernel.Sample, "1", meta.Claim{Subject: subject}),
+				"the author states the one value the language knows")
+			_, alternate := b.SamplesOf(subject, builtin(intSpelling), "count")
+			assert.Equal(t, alternate.Refusal, rules.RefusedNoLiteral, "no distinguishable value remains")
+		})
+
 		t.Run("refuses on the zero view", func(t *testing.T) {
 			t.Parallel()
 

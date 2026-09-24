@@ -24,9 +24,11 @@ func (s MemberSet) Complete() bool { return len(s.Gaps) == 0 }
 
 // Member is one effective member and where it came from.
 type Member struct {
-	// Symbol is the member: a field or a method. One that arrived
-	// through a contributor carrying type arguments is a copy with
-	// the arguments bound; a declared one is the graph's own node.
+	// Symbol is the member: a field, a method, or, under
+	// [MemberPolicy.EmbedsAreFields], the [node.Embed] declaring an
+	// embedded field. One that arrived through a contributor carrying
+	// type arguments is a copy with the arguments bound; a declared
+	// one is the graph's own node.
 	Symbol symbol.Symbol
 	// Owner is the declaration that declared it.
 	Owner symbol.Identity
@@ -186,7 +188,8 @@ func (b Bound) membersOf(sym symbol.Symbol) (MemberSet, bool) {
 
 // visit records a type's declared members at the current depth and
 // descends into its contributors under the policy that applies to
-// it.
+// it. The members record in list order: fields, embedded fields
+// where the policy records them, then methods.
 func (w *walk) visit(
 	t membered, policy MemberPolicy, source SourceRules,
 	through []symbol.Identity, depth int, viaOptional bool,
@@ -199,6 +202,14 @@ func (w *walk) visit(
 		if f != nil && f.Name != "" {
 			m := Member{Symbol: f, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
 			w.record(f.Name, m, "")
+		}
+	}
+	if policy.EmbedsAreFields && !t.iface {
+		for _, e := range t.embeds {
+			if e != nil && e.ID.Name != "" {
+				m := Member{Symbol: e, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
+				w.record(e.ID.Name, m, "")
+			}
 		}
 	}
 	for _, m := range t.methods {
@@ -294,16 +305,29 @@ func namedUnder(ref *node.TypeRef) *node.TypeRef {
 	return ref
 }
 
-// bind restates a generic contributor's members with the
-// reference's arguments substituted through the language's
-// generics capability, and reports false where a parameter stays
-// unbound or the language returns no capability.
+// bind restates a generic contributor's members and its own
+// contributors with the reference's arguments substituted through
+// the language's generics capability, so a chain of generic
+// contributors binds each level to the arguments of the level
+// above. It reports false where a parameter stays unbound or the
+// language returns no capability.
 func bind(inner membered, ref *node.TypeRef, source SourceRules) (membered, bool) {
 	generics, held := source.(GenericsRules)
 	if !held || len(ref.Args) != len(inner.params) {
 		return membered{}, false
 	}
 	out := inner
+	out.embeds = make([]*node.Embed, 0, len(inner.embeds))
+	for _, e := range inner.embeds {
+		if e == nil {
+			continue
+		}
+		c := *e
+		c.Ref = generics.Substitute(e.Ref, inner.params, ref.Args)
+		out.embeds = append(out.embeds, &c)
+	}
+	out.extends = substituteRefs(generics, inner.extends, inner.params, ref.Args)
+	out.implements = substituteRefs(generics, inner.implements, inner.params, ref.Args)
 	out.fields = make([]*node.Field, 0, len(inner.fields))
 	for _, f := range inner.fields {
 		if f == nil {
@@ -324,6 +348,22 @@ func bind(inner membered, ref *node.TypeRef, source SourceRules) (membered, bool
 		out.methods = append(out.methods, &c)
 	}
 	return out, true
+}
+
+// substituteRefs restates a reference list with arguments bound.
+func substituteRefs(
+	g GenericsRules, refs []*node.TypeRef, params []*node.TypeParam, args []*node.TypeRef,
+) []*node.TypeRef {
+	if len(refs) == 0 {
+		return nil
+	}
+	out := make([]*node.TypeRef, 0, len(refs))
+	for _, r := range refs {
+		if r != nil {
+			out = append(out, g.Substitute(r, params, args))
+		}
+	}
+	return out
 }
 
 // substituteParams restates a parameter list with arguments bound.
