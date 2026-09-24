@@ -16,14 +16,15 @@ import (
 // ref is the fixture type reference.
 func ref(s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s} }
 
-// variantOf is the fixture variant carrying one payload entry.
+// variantOf is the fixture variant with one payload entry.
 func variantOf(f *emit.Field) *emit.SumVariant {
 	v := &emit.SumVariant{Name: "Write"}
 	v.Fields.Append(f)
 	return v
 }
 
-// payload spells one entry's payload and requires it to hold.
+// payload spells one entry's payload and fails the test where the
+// payload is refused.
 func payload(t *testing.T, f *emit.Field) string {
 	t.Helper()
 
@@ -205,6 +206,26 @@ func TestVocabulary(t *testing.T) {
 		assert.HasError(t, err, "a trait item carries the trait's visibility")
 		_, err = backend.TraitFn(&emit.Method{Name: "load", Final: true})
 		assert.HasError(t, err, "final refuses")
+		_, err = backend.TraitFn(&emit.Method{Name: "load", Body: emit.Body{Verbatim: "0"}})
+		assert.HasError(t, err, "a body without a default refuses, because the signature drops it")
+		got, err = backend.TraitFn(&emit.Method{
+			Name: "load", HasDefault: true, Body: emit.Body{Verbatim: "0"},
+		})
+		assert.NoError(t, err, "a default body passes")
+		assert.Equal(t, got, "", "and the template places it")
+	})
+
+	t.Run("ConstType", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.ConstType(&emit.Constant{Name: "MAX", Type: ref("u32"), Value: "8"})
+		assert.NoError(t, err, "a typed constant with a value spells")
+		assert.Equal(t, got, "u32", "its stated type")
+
+		_, err = backend.ConstType(&emit.Constant{Name: "MAX", Value: "8"})
+		assert.HasError(t, err, "a constant without a type refuses, because rustc requires one")
+		_, err = backend.ConstType(&emit.Constant{Name: "MAX", Type: ref("u32")})
+		assert.HasError(t, err, "a constant without a value refuses, because const MAX: u32 = declares nothing")
 	})
 
 	t.Run("ImplFn", func(t *testing.T) {

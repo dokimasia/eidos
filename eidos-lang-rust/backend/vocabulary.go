@@ -14,8 +14,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The vocabulary names, so a template and its helper cannot drift
-// apart on a spelling.
+// The vocabulary names are constants, so a template and its helper
+// spell one name.
 const (
 	// FuncDocs writes a declaration's documentation.
 	FuncDocs = "docs"
@@ -63,7 +63,7 @@ const (
 	// FuncAliasMods writes a type alias's keywords.
 	FuncAliasMods = "aliasmods"
 	// FuncConstType writes a constant's stated type, refusing an
-	// unstated one.
+	// unstated type and a missing value.
 	FuncConstType = "consttype"
 )
 
@@ -95,13 +95,19 @@ func Funcs() template.FuncMap {
 	}
 }
 
-// ConstType writes a constant's stated type, refusing an unstated
-// one: rustc requires the annotation, and the unit type standing
-// in would ship broken output no formatter catches.
+// ConstType writes a constant's stated type. It refuses a constant
+// without a type, because rustc requires the annotation and no
+// formatter catches its absence, and a constant without a value,
+// because const X: T = ; declares nothing.
 func ConstType(c *emit.Constant) (string, error) {
-	if c.Type == nil || c.Type.Spelling == "" {
+	switch {
+	case c.Type == nil || c.Type.Spelling == "":
 		return "", fmt.Errorf(
 			"rust: a constant states its type, and %s states none", c.Name,
+		)
+	case c.Value == "":
+		return "", fmt.Errorf(
+			"rust: a constant takes a value, and %s states none", c.Name,
 		)
 	}
 	return Spell(c.Type), nil
@@ -109,17 +115,17 @@ func ConstType(c *emit.Constant) (string, error) {
 
 // Docs writes a declaration's documentation as outer doc
 // comments, each line prefixed with the given indentation, so a
-// member's doc sits at its member's depth.
+// member's doc is at its member's depth.
 func Docs(lines []string, prefix ...string) string {
 	return textfmt.LineDocs(lines, "/// ", prefix...)
 }
 
 // Spell writes a type reference: the source spelling verbatim. A
-// declaration stating no type has no Rust spelling at all, so the
-// unit type stands in where a template reaches one, and the
-// compiler's refusal names the file. A reference carrying
-// arguments holds its bare name in Spelling, and the argument
-// list spells here in angle brackets.
+// declaration stating no type has no Rust spelling at all, so a
+// template spells the unit type in its place, and the compiler's
+// refusal names the file. A reference with arguments has its bare
+// name in Spelling, and the argument list spells here in angle
+// brackets.
 func Spell(t *emit.TypeRef) string {
 	return spellref.Spell(t, "<", ">", "()")
 }
@@ -128,8 +134,8 @@ func Spell(t *emit.TypeRef) string {
 // nothing for a declaration stating none: bounds joined by plus
 // signs behind a colon, the default behind an equals sign, and a
 // value parameter in the const form with its value's type.
-// Variance refuses: Rust infers it from use, a declaration states
-// none, and dropping it would misstate the declaration.
+// Variance refuses, because Rust infers it from use and a
+// declaration states none.
 func TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -148,8 +154,8 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 }
 
 // TypeNames writes a parameter list's names alone, the form an
-// impl block's target repeats: the bounds stay on the impl's own
-// parameter list, and the target names the type they apply to.
+// impl block's target repeats: the impl's own parameter list states
+// the bounds, and the target names the type they apply to.
 func TypeNames(ps []*emit.TypeParam) string {
 	if len(ps) == 0 {
 		return ""
@@ -188,11 +194,10 @@ func typeParam(p *emit.TypeParam) string {
 
 // Binder writes the impl binder restating a receiver's type
 // arguments, or nothing for a receiver taking none. Each argument
-// restates as the name the receiver references, bare: a bound
-// stays on the methods the way Rust's own practice bounds
-// functions rather than type definitions, and a receiver
-// instantiated at a const argument has no restatable binder,
-// which stays a declared limit.
+// restates as the name the receiver references, bare. The methods
+// state the bounds, the way Rust practice bounds functions and not
+// type definitions. A receiver instantiated at a const argument has
+// no restatable binder, which is a declared limit.
 func Binder(t *emit.TypeRef) string {
 	if t == nil || len(t.Args) == 0 {
 		return ""
@@ -226,8 +231,8 @@ func Vis(v symbol.Visibility, name string) (string, error) {
 }
 
 // StructMods writes a struct's keywords: its visibility alone. An
-// abstract struct refuses, because every Rust struct can be made;
-// a final one holds, because nothing subclasses; supertypes and
+// abstract struct refuses, because every Rust struct can be made. A
+// final struct passes, because nothing subclasses. Supertypes and
 // embeds refuse, because a struct neither inherits nor promotes.
 func StructMods(s *emit.Struct) (string, error) {
 	switch {
@@ -245,8 +250,8 @@ func StructMods(s *emit.Struct) (string, error) {
 }
 
 // EnumMods writes an enum's keywords: its visibility alone. An
-// enum carrying fields or methods refuses, because Rust holds
-// state in variants and behaviour in impl blocks.
+// enum with fields or methods refuses, because Rust puts state in
+// variants and behaviour in impl blocks.
 func EnumMods(e *emit.Enum) (string, error) {
 	if e.Fields.Len() > 0 || e.Methods.Len() > 0 {
 		return "", fmt.Errorf(
@@ -260,10 +265,10 @@ func EnumMods(e *emit.Enum) (string, error) {
 // keyword, its parameter list in angle brackets where the type is
 // generic, which is what a trait declares and an implementation
 // supplies. Only a transparent alias without a target spells that
-// way, so anything else nested in a trait refuses, and so does a
-// stated visibility or definedness: a trait item carries the
-// trait's visibility, and an alias with a target is a default the
-// stable language does not take.
+// way, so anything else nested in a trait refuses. A stated
+// visibility refuses, because a trait item takes the trait's
+// visibility, and so does a target or definedness, because an alias
+// with a target is a default the stable language does not take.
 func AssocType(s symbol.Symbol) (string, error) {
 	a, held := s.(*emit.Alias)
 	if !held {
@@ -298,8 +303,8 @@ func AssocType(s symbol.Symbol) (string, error) {
 }
 
 // SumMods writes a data enum's keywords: its visibility alone. A
-// sum carrying methods refuses, because Rust holds behaviour in
-// impl blocks.
+// sum with methods refuses, because Rust puts behaviour in impl
+// blocks.
 func SumMods(s *emit.Sum) (string, error) {
 	if s.Methods.Len() > 0 {
 		return "", fmt.Errorf(
@@ -314,7 +319,7 @@ func SumMods(s *emit.Sum) (string, error) {
 // variant, named fields in braces for a struct variant, bare
 // types in parentheses for a tuple variant. A payload mixing
 // named and unnamed entries refuses, and so does an entry stating
-// anything an inline spelling cannot carry.
+// anything an inline spelling cannot express.
 func SumPayload(v *emit.SumVariant) (string, error) {
 	fields := v.Fields.Items()
 	if len(fields) == 0 {
@@ -345,8 +350,8 @@ func SumPayload(v *emit.SumVariant) (string, error) {
 }
 
 // inlineEntry refuses the payload facts an inline spelling cannot
-// carry: a payload entry spells as a name and a type alone, on the
-// variant's own line.
+// express: a payload entry spells as a name and a type alone, on
+// the variant's own line.
 func inlineEntry(variant string, f *emit.Field) error {
 	switch {
 	case len(f.Doc) > 0 || f.Comment != "" || len(f.Annotations) > 0:
@@ -425,12 +430,19 @@ func FnMods(f *emit.Function) (string, error) {
 }
 
 // TraitFn writes a trait method's keywords: async where stated,
-// and nothing else. A trait item carries the trait's own
-// visibility, so a stated scope refuses; abstract holds, because
-// a bodiless signature is the trait's shape; final and override
-// refuse, because Rust seals and overrides nothing.
+// and nothing else. A trait item takes the trait's own visibility,
+// so a stated scope refuses. An abstract method passes, because a
+// trait method without a default is a signature, and a body on
+// such a method refuses, because the signature cannot place it.
+// Final and override refuse, because Rust seals and overrides
+// nothing.
 func TraitFn(m *emit.Method) (string, error) {
 	switch {
+	case !m.HasDefault && !m.Body.IsZero():
+		return "", fmt.Errorf(
+			"rust: a trait method without a default is a signature, and %s states a body",
+			m.Name,
+		)
 	case m.Visibility != symbol.VisibilityUnknown &&
 		m.Visibility != symbol.VisibilityPublic:
 		return "", fmt.Errorf(
@@ -453,9 +465,9 @@ func TraitFn(m *emit.Method) (string, error) {
 }
 
 // ImplFn writes an impl method's keywords: its visibility, then
-// async where stated. Abstract and default refuse, because an
-// impl method carries its body outright; final and override
-// refuse the way every Rust method refuses them.
+// async where stated. Abstract and default refuse, because an impl
+// method states its body outright. Final and override refuse the
+// way every Rust method refuses them.
 func ImplFn(m *emit.Method) (string, error) {
 	switch {
 	case m.Abstract:
@@ -501,10 +513,10 @@ func SelfParams(m *emit.Method) string {
 }
 
 // FieldMods writes a field's keywords: its visibility alone. A
-// type-level field refuses, because Rust holds statics outside
-// types; an immutable field refuses, because mutability follows
-// the owning binding; an initializer refuses, because a struct
-// declares no field defaults.
+// type-level field refuses, because Rust declares statics outside
+// types. An immutable field refuses, because mutability follows the
+// owning binding. An initializer refuses, because a struct declares
+// no field defaults.
 func FieldMods(f *emit.Field) (string, error) {
 	switch {
 	case f.Level == symbol.LevelType:
