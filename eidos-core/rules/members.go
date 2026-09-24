@@ -140,10 +140,28 @@ func memberedOf(sym symbol.Symbol) (membered, bool) {
 // of the same name by index so one flat list holds every name's
 // candidates without a slice per name.
 type arrival struct {
-	member  Member
+	member Member
+	// via is the contributor the member arrived by, nil for a
+	// declared member: what a conflict gap names.
+	via *node.TypeRef
+	// sig is the member's signature, spelled the first time a rule
+	// compares one. signed reports whether it is spelled.
 	sig     string
+	signed  bool
 	next    int  // index of the next arrival of this name, or -1
 	dropped bool // folded away by an interface's set semantics
+}
+
+// signature returns the arrival's signature, spelled on first use:
+// a method's, and empty for a field or an embedded field.
+func (a *arrival) signature() string {
+	if !a.signed {
+		if m, is := a.member.Symbol.(*node.Method); is {
+			a.sig = signature(m)
+		}
+		a.signed = true
+	}
+	return a.sig
 }
 
 // chain is where a name's arrivals start and currently end.
@@ -152,6 +170,7 @@ type chain struct{ first, last int }
 // walk carries one member walk's state.
 type walk struct {
 	b        Bound
+	root     symbol.Identity
 	arrivals []arrival
 	names    map[string]chain
 	order    []string
@@ -169,13 +188,14 @@ func (b Bound) membersOf(sym symbol.Symbol) (MemberSet, bool) {
 	declared := len(root.fields) + len(root.methods)
 	w := &walk{
 		b:        b,
+		root:     root.id,
 		arrivals: make([]arrival, 0, declared),
 		names:    make(map[string]chain, declared),
 		order:    make([]string, 0, declared),
 		visiting: map[symbol.Identity]bool{},
 	}
 	policy := b.source.Members()
-	w.visit(root, policy, b.source, nil, 0, false)
+	w.visit(root, policy, b.source, nil, 0, false, nil)
 	set := MemberSet{Members: make([]Member, 0, len(w.order))}
 	for _, name := range w.order {
 		set.Members = w.settle(set.Members, name, policy, root.iface)
@@ -189,10 +209,11 @@ func (b Bound) membersOf(sym symbol.Symbol) (MemberSet, bool) {
 // visit records a type's declared members at the current depth and
 // descends into its contributors under the policy that applies to
 // it. The members record in list order: fields, embedded fields
-// where the policy records them, then methods.
+// where the policy records them, then methods. via is the
+// contributor that reached the type, nil at the root.
 func (w *walk) visit(
 	t membered, policy MemberPolicy, source SourceRules,
-	through []symbol.Identity, depth int, viaOptional bool,
+	through []symbol.Identity, depth int, viaOptional bool, via *node.TypeRef,
 ) {
 	if !t.id.IsZero() {
 		w.visiting[t.id] = true
@@ -201,21 +222,21 @@ func (w *walk) visit(
 	for _, f := range t.fields {
 		if f != nil && f.Name != "" {
 			m := Member{Symbol: f, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
-			w.record(f.Name, m, "")
+			w.record(f.Name, m, via)
 		}
 	}
 	if policy.EmbedsAreFields && !t.iface {
 		for _, e := range t.embeds {
 			if e != nil && e.ID.Name != "" {
 				m := Member{Symbol: e, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
-				w.record(e.ID.Name, m, "")
+				w.record(e.ID.Name, m, via)
 			}
 		}
 	}
 	for _, m := range t.methods {
 		if m != nil && m.Name != "" {
 			mem := Member{Symbol: m, Owner: t.id, Through: through, Depth: depth, ViaOptional: viaOptional}
-			w.record(m.Name, mem, signature(m))
+			w.record(m.Name, mem, via)
 		}
 	}
 	budget := policy.Depth
@@ -292,8 +313,13 @@ func (w *walk) descend(
 		next = w.b.forLang(target.Target.Lang)
 		policy = next.Members()
 	}
-	path := append(append([]symbol.Identity(nil), through...), target.Target)
-	w.visit(inner, policy, next, path, depth+1, viaOptional || ref.Form == symbol.FormOptional)
+	// The path is exactly as long as its capacity, so a caller
+	// appending to one member's Through never writes into the
+	// members that share it.
+	path := make([]symbol.Identity, len(through)+1)
+	copy(path, through)
+	path[len(through)] = target.Target
+	w.visit(inner, policy, next, path, depth+1, viaOptional || ref.Form == symbol.FormOptional, ref)
 }
 
 // namedUnder returns the named reference a structural one wraps in
@@ -403,9 +429,9 @@ func substituteReturns(
 }
 
 // record files one arrival under its name.
-func (w *walk) record(name string, m Member, sig string) {
+func (w *walk) record(name string, m Member, via *node.TypeRef) {
 	at := len(w.arrivals)
-	w.arrivals = append(w.arrivals, arrival{member: m, sig: sig, next: -1})
+	w.arrivals = append(w.arrivals, arrival{member: m, via: via, next: -1})
 	c, met := w.names[name]
 	if met {
 		w.arrivals[c.last].next = at
@@ -429,11 +455,14 @@ func (w *walk) each(name string, fn func(a *arrival) bool) {
 
 // settle applies the shadowing rule to one name's arrivals and
 // appends the members that survive to dst: a declared member always
-// wins, and on an interface one name with one signature arriving
-// twice is one member.
+// takes its name or its signature, and on an interface one name
+// with one signature arriving twice is one member.
 func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool) []Member {
 	if iface {
 		w.dedupe(name)
+	}
+	if policy.Shadowing == ShadowOverride {
+		return w.nearestPerSignature(dst, name)
 	}
 	count, shallowest := 0, -1
 	w.each(name, func(a *arrival) bool {
@@ -449,21 +478,14 @@ func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool
 		return dst
 	}
 	if count == 1 || shallowest == 0 {
-		// The one arrival, or every declared one, wins outright.
+		// The one arrival, or every declared one, takes the name.
 		return w.appendAt(dst, name, shallowest)
 	}
 	switch policy.Shadowing {
 	case ShadowMerge:
 		return w.appendAt(dst, name, -1)
-	case ShadowOverride, ShadowLinearise:
-		w.each(name, func(a *arrival) bool {
-			if a.dropped {
-				return true
-			}
-			dst = append(dst, a.member)
-			return false
-		})
-		return dst
+	case ShadowLinearise:
+		return w.appendFirstAt(dst, name, shallowest)
 	case ShadowPromote:
 		if w.countAt(name, shallowest) != 1 {
 			return dst // two at one depth cancel both
@@ -472,6 +494,52 @@ func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool
 	default:
 		return dst
 	}
+}
+
+// nearestPerSignature appends one member per distinct signature
+// among a name's surviving arrivals: the shallowest arrival, and the
+// first of those in arrival order. Each overload keeps its nearest
+// declaration. A field and an embedded field have no signature, so
+// fields settle by name alone.
+func (w *walk) nearestPerSignature(dst []Member, name string) []Member {
+	var nearest []int
+	for i := w.names[name].first; i >= 0; i = w.arrivals[i].next {
+		a := &w.arrivals[i]
+		if a.dropped {
+			continue
+		}
+		held := false
+		for k, j := range nearest {
+			if w.arrivals[j].signature() != a.signature() {
+				continue
+			}
+			if a.member.Depth < w.arrivals[j].member.Depth {
+				nearest[k] = i
+			}
+			held = true
+			break
+		}
+		if !held {
+			nearest = append(nearest, i)
+		}
+	}
+	for _, i := range nearest {
+		dst = append(dst, w.arrivals[i].member)
+	}
+	return dst
+}
+
+// appendFirstAt appends a name's first surviving arrival at one
+// depth to dst.
+func (w *walk) appendFirstAt(dst []Member, name string, depth int) []Member {
+	w.each(name, func(a *arrival) bool {
+		if a.dropped || a.member.Depth != depth {
+			return true
+		}
+		dst = append(dst, a.member)
+		return false
+	})
+	return dst
 }
 
 // appendAt appends a name's surviving arrivals at one depth to dst,
@@ -500,38 +568,88 @@ func (w *walk) countAt(name string, depth int) int {
 
 // dedupe drops a name's later arrivals with the first's signature,
 // and files a conflict for a later arrival whose signature differs
-// while both are stated.
+// while both are stated. The conflict names the contributor the
+// later arrival came by and the host whose list holds it.
 func (w *walk) dedupe(name string) {
 	head := &w.arrivals[w.names[name].first]
 	for i := head.next; i >= 0; i = w.arrivals[i].next {
 		a := &w.arrivals[i]
-		if a.sig == head.sig && a.sig != "" {
+		if a.signature() == head.signature() && a.signature() != "" {
 			a.dropped = true
 			continue
 		}
-		if a.sig != "" && head.sig != "" {
-			w.gaps = append(w.gaps, Gap{Host: a.member.Owner, Reason: GapConflict})
+		if a.signature() != "" && head.signature() != "" {
+			w.gaps = append(w.gaps, Gap{Host: w.hostOf(a), Contributor: a.via, Reason: GapConflict})
 			a.dropped = true
 		}
 	}
 }
 
-// signature spells a method's parameter and return types, so two
-// arrivals of one name compare.
+// hostOf returns the type whose list holds the contributor an
+// arrival came by: the second-to-last type on its path, or the root
+// for a member one contributor away or declared.
+func (w *walk) hostOf(a *arrival) symbol.Identity {
+	if n := len(a.member.Through); n >= 2 {
+		return a.member.Through[n-2]
+	}
+	return w.root
+}
+
+// signature spells a method's parameter and return types by what
+// they name, each parameter's variadic kind included, so two
+// arrivals of one name compare equal only when they state one
+// signature.
 func signature(m *node.Method) string {
 	var b strings.Builder
 	for _, p := range m.Params {
-		if p != nil && p.Type != nil {
-			b.WriteString(p.Type.Spelling)
+		if p != nil {
+			b.WriteString(strconv.Itoa(int(p.Variadic)))
+			typeKey(&b, p.Type)
 		}
 		b.WriteByte(',')
 	}
 	b.WriteByte(')')
 	for _, r := range m.Returns {
-		if r != nil && r.Type != nil {
-			b.WriteString(r.Type.Spelling)
+		if r != nil {
+			typeKey(&b, r.Type)
 		}
 		b.WriteByte(',')
 	}
 	return b.String()
+}
+
+// typeKey writes what a reference names: a resolved name by its
+// target, an unresolved one by its spelling, and a structural one
+// by its form, its length and split, and its children. Type
+// arguments follow in brackets. Two references spelled alike in two
+// packages key apart by their targets.
+func typeKey(b *strings.Builder, ref *node.TypeRef) {
+	if ref == nil {
+		return
+	}
+	switch {
+	case !ref.Target.IsZero():
+		b.WriteString(ref.Target.String())
+	case ref.Form != symbol.FormNamed:
+		b.WriteString(strconv.Itoa(int(ref.Form)))
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(ref.Length))
+		b.WriteByte(':')
+		b.WriteString(strconv.Itoa(ref.Split))
+	default:
+		b.WriteString(ref.Spelling)
+	}
+	if len(ref.Elems)+len(ref.Args) == 0 {
+		return
+	}
+	b.WriteByte('[')
+	for _, e := range ref.Elems {
+		typeKey(b, e)
+		b.WriteByte(',')
+	}
+	for _, a := range ref.Args {
+		typeKey(b, a)
+		b.WriteByte(',')
+	}
+	b.WriteByte(']')
 }

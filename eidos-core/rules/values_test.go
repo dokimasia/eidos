@@ -39,6 +39,21 @@ func TestValues(t *testing.T) {
 				"and the other half derives independently")
 		})
 
+		t.Run("tags authored text with the declaration's language", func(t *testing.T) {
+			t.Parallel()
+
+			g := coretest.Frozen(t, hierarchy())
+			v, _, facts := viewOver(t, g)
+			b := rules.NewBound(otherLang{scripted()}, v, nil)
+			subject := coretest.ID(svcPath, rowName, symbol.KindField)
+			subject.Owner, subject.Name = rowName, "name"
+			assert.NoError(t, meta.Stamp(facts, v.Kernel.Sample, `"us-east"`, meta.Claim{Subject: subject}),
+				"the author states one value")
+			sample, _ := b.SamplesOf(subject, builtin(strSpelling), "name")
+			assert.Equal(t, sample.Value, emit.Raw(coretest.Lang, `"us-east"`),
+				"the text is the declaration's language, whichever language's rules read it")
+		})
+
 		t.Run("reads the type's own authored values next", func(t *testing.T) {
 			t.Parallel()
 

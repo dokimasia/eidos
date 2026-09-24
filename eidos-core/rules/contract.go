@@ -197,14 +197,16 @@ const (
 	// ShadowPromote takes the shallowest arrival; two at one depth
 	// cancel both: Go.
 	ShadowPromote Shadowing = iota + 1
-	// ShadowOverride takes the nearer declaration over the farther,
-	// the first at one depth over the rest: the JVM languages.
+	// ShadowOverride settles each signature apart, taking the
+	// nearer declaration over the farther and the first at one
+	// depth over the rest, so a declared method hides no inherited
+	// overload: the JVM languages.
 	ShadowOverride
 	// ShadowMerge keeps every arrival, as overloads: TypeScript
 	// interfaces.
 	ShadowMerge
-	// ShadowLinearise takes the first in the declared order:
-	// Python.
+	// ShadowLinearise takes the nearest arrival, the first at one
+	// depth over the rest: Python.
 	ShadowLinearise
 )
 

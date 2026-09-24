@@ -4,6 +4,7 @@
 package rules_test
 
 import (
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -128,6 +129,54 @@ func TestMembers(t *testing.T) {
 						"the first arrival wins")
 				}
 			}
+		})
+
+		t.Run("takes the nearest arrival under override and linearise", func(t *testing.T) {
+			t.Parallel()
+
+			grand := coretest.Struct(svcPath, "Grand")
+			grand.Methods = []*node.Method{method(svcPath, "Grand", "Run")}
+			left := coretest.Struct(svcPath, "Left")
+			left.Extends = []*node.TypeRef{named(svcPath, "Grand", symbol.KindStruct)}
+			right := coretest.Struct(svcPath, "Right")
+			right.Methods = []*node.Method{method(svcPath, "Right", "Run")}
+			both := coretest.Struct(svcPath, "Both")
+			both.Extends = []*node.TypeRef{
+				named(svcPath, "Left", symbol.KindStruct), named(svcPath, "Right", symbol.KindStruct),
+			}
+			g := coretest.Frozen(t, coretest.Package(svcPath, grand, left, right, both))
+			for _, rule := range []rules.Shadowing{rules.ShadowOverride, rules.ShadowLinearise} {
+				v, _, _ := viewOver(t, g)
+				b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
+					Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: rule,
+				}}, v, nil)
+				set, _ := b.MembersOf(both)
+				assert.Equal(t, names(set), []string{"Run"}, rule.String()+" keeps one Run")
+				assert.Equal(t, set.Members[0].Owner, right.ID,
+					rule.String()+" takes Right's, one level up, over Grand's, which the walk reaches first")
+			}
+		})
+
+		t.Run("keeps an inherited overload beside a declared one under override", func(t *testing.T) {
+			t.Parallel()
+
+			base := coretest.Struct(svcPath, baseName)
+			overload := method(svcPath, baseName, "Run")
+			overload.Params[0].Type = builtin(strSpelling)
+			base.Methods = []*node.Method{overload, method(svcPath, baseName, "Stop")}
+			derived := coretest.Struct(svcPath, derivedName)
+			derived.Extends = []*node.TypeRef{named(svcPath, baseName, symbol.KindStruct)}
+			derived.Methods = []*node.Method{method(svcPath, derivedName, "Run"), method(svcPath, derivedName, "Stop")}
+			g := coretest.Frozen(t, coretest.Package(svcPath, base, derived))
+			v, _, _ := viewOver(t, g)
+			b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
+				Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: rules.ShadowOverride,
+			}}, v, nil)
+			set, _ := b.MembersOf(derived)
+			assert.Equal(t, names(set), []string{"Run", "Run", "Stop"},
+				"Run(string) overloads the declared Run(int), and the declared Stop overrides Base's")
+			assert.Equal(t, set.Members[1].Owner, base.ID, "the overload is Base's")
+			assert.Equal(t, set.Members[2].Owner, derived.ID, "and the overriding Stop is Derived's")
 		})
 
 		t.Run("reports every contributor it cannot follow", func(t *testing.T) {
@@ -300,6 +349,127 @@ func TestMembers(t *testing.T) {
 			set, _ = b.MembersOf(clash)
 			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapConflict},
 				"two signatures under one name conflict")
+			assert.Equal(t, set.Gaps[0].Host, clash.ID, "the conflict names the host")
+			assert.Equal(t, set.Gaps[0].Contributor, clash.Embeds[1].Ref,
+				"and the contributor the second signature arrived by")
+		})
+
+		t.Run("compares signatures by target and variadic kind", func(t *testing.T) {
+			t.Parallel()
+
+			// Each pair of interfaces spells one Read(Buf) alike and
+			// differs in what the parameter names or how it collects.
+			reading := func(host, pkg string, variadic symbol.Variadic) *node.Interface {
+				i := iface(svcPath, host)
+				m := coretest.Method(svcPath, host, "Read")
+				m.Params = []*node.Param{{
+					Name: "p", Type: named(pkg, "Buf", symbol.KindStruct), Variadic: variadic,
+				}}
+				i.Methods = []*node.Method{m}
+				return i
+			}
+			local := reading("Local", svcPath, symbol.VariadicNone)
+			foreign := reading("Foreign", depPath, symbol.VariadicNone)
+			spread := reading("Spread", svcPath, symbol.VariadicPositional)
+			byPackage := iface(svcPath, "ByPackage")
+			byPackage.Embeds = []*node.Embed{
+				{Ref: named(svcPath, "Local", symbol.KindInterface)},
+				{Ref: named(svcPath, "Foreign", symbol.KindInterface)},
+			}
+			byVariadic := iface(svcPath, "ByVariadic")
+			byVariadic.Embeds = []*node.Embed{
+				{Ref: named(svcPath, "Local", symbol.KindInterface)},
+				{Ref: named(svcPath, "Spread", symbol.KindInterface)},
+			}
+			b, _, _ := boundOver(t, coretest.Frozen(t,
+				coretest.Package(svcPath, local, foreign, spread, byPackage, byVariadic)))
+			for _, host := range []*node.Interface{byPackage, byVariadic} {
+				set, _ := b.MembersOf(host)
+				assert.Equal(t, reasons(set), []rules.GapReason{rules.GapConflict},
+					host.Name+": one spelling naming two signatures conflicts")
+			}
+		})
+
+		t.Run("compares a structural parameter by its elements", func(t *testing.T) {
+			t.Parallel()
+
+			// Each interface's Read takes a []Buf, spelled alike and
+			// naming the Buf of its own package.
+			listOf := func(host, pkg string) *node.Interface {
+				i := iface(svcPath, host)
+				m := coretest.Method(svcPath, host, "Read")
+				m.Params = []*node.Param{{Name: "p", Type: &node.TypeRef{
+					Spelling: "[]Buf", Form: symbol.FormList,
+					Elems: []*node.TypeRef{named(pkg, "Buf", symbol.KindStruct)},
+				}}}
+				i.Methods = []*node.Method{m}
+				return i
+			}
+			local, twin, foreign := listOf("Local", svcPath), listOf("Twin", svcPath), listOf("Foreign", depPath)
+			same := iface(svcPath, "Same")
+			same.Embeds = []*node.Embed{
+				{Ref: named(svcPath, "Local", symbol.KindInterface)},
+				{Ref: named(svcPath, "Twin", symbol.KindInterface)},
+			}
+			apart := iface(svcPath, "Apart")
+			apart.Embeds = []*node.Embed{
+				{Ref: named(svcPath, "Local", symbol.KindInterface)},
+				{Ref: named(svcPath, "Foreign", symbol.KindInterface)},
+			}
+			b, _, _ := boundOver(t, coretest.Frozen(t,
+				coretest.Package(svcPath, local, twin, foreign, same, apart)))
+			set, _ := b.MembersOf(same)
+			assert.Equal(t, names(set), []string{"Read"}, "one element type twice is one member")
+			assert.True(t, set.Complete(), "and no gap")
+			set, _ = b.MembersOf(apart)
+			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapConflict},
+				"two element types under one spelling conflict")
+		})
+
+		t.Run("names the host that lists a deeper conflicting contributor", func(t *testing.T) {
+			t.Parallel()
+
+			reader := iface(svcPath, "Reader")
+			reader.Methods = []*node.Method{method(svcPath, "Reader", "Read")}
+			other := iface(svcPath, "Other")
+			other.Methods = []*node.Method{coretest.Method(svcPath, "Other", "Read")}
+			mid := iface(svcPath, "Mid")
+			mid.Embeds = []*node.Embed{{Ref: named(svcPath, "Other", symbol.KindInterface)}}
+			deep := iface(svcPath, "Deep")
+			deep.Embeds = []*node.Embed{
+				{Ref: named(svcPath, "Reader", symbol.KindInterface)},
+				{Ref: named(svcPath, "Mid", symbol.KindInterface)},
+			}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, reader, other, mid, deep)))
+			set, _ := b.MembersOf(deep)
+			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapConflict},
+				"Other's Read conflicts with Reader's two contributors down")
+			assert.Equal(t, set.Gaps[0].Host, mid.ID, "the gap names Mid, whose list holds Other")
+			assert.Equal(t, set.Gaps[0].Contributor, mid.Embeds[0].Ref, "and Mid's reference to it")
+		})
+
+		t.Run("gives each member a path of its own", func(t *testing.T) {
+			t.Parallel()
+
+			var decls []symbol.Symbol
+			for i := range 4 {
+				s := coretest.Struct(svcPath, "L"+string(rune('0'+i)))
+				if i > 0 {
+					s.Embeds = []*node.Embed{embedding(svcPath, "L"+string(rune('0'+i-1)))}
+				}
+				decls = append(decls, s)
+			}
+			decls[0].(*node.Struct).Fields = []*node.Field{
+				field(svcPath, "L0", "first", builtin(intSpelling)),
+				field(svcPath, "L0", "second", builtin(intSpelling)),
+			}
+			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, decls...)))
+			set, _ := b.MembersOf(decls[3])
+			assert.Equal(t, names(set), []string{"first", "second"}, "both fields arrive three embeds down")
+			for _, m := range set.Members {
+				assert.Equal(t, cap(m.Through), len(m.Through),
+					"a path shared by one visit's members leaves no room an append could write into")
+			}
 		})
 
 		t.Run("records the optional form on the path", func(t *testing.T) {
@@ -432,4 +602,25 @@ func TestMembers(t *testing.T) {
 			}
 		})
 	})
+}
+
+// A promoted method set is the walk's common case: a struct
+// embedding a type whose methods arrive once each.
+func BenchmarkMembers(b *testing.B) {
+	const methods = 20
+	base := coretest.Struct(svcPath, baseName)
+	for i := range methods {
+		base.Methods = append(base.Methods, method(svcPath, baseName, "M"+strconv.Itoa(i)))
+	}
+	derived := coretest.Struct(svcPath, derivedName)
+	derived.Embeds = []*node.Embed{embedding(svcPath, baseName)}
+	bound, _, _ := boundOver(b, coretest.Frozen(b, coretest.Package(svcPath, base, derived)))
+
+	b.ReportAllocs()
+	for b.Loop() {
+		set, _ := bound.MembersOf(derived)
+		if len(set.Members) != methods {
+			b.Fatalf("MembersOf returned %d members, want %d", len(set.Members), methods)
+		}
+	}
 }

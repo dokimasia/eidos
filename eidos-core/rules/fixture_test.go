@@ -164,6 +164,16 @@ func (f fixedSamples) SamplesOf(*node.TypeRef, string, rules.View) (rules.Sample
 	return f.sample, f.alternate
 }
 
+// otherLang is the scripted rules under the name of a language the
+// fixture declares nothing in, so a case reads the fixture's
+// declarations through rules that are not their own.
+type otherLang struct {
+	rules.SourceRules
+}
+
+// Lang returns the other language.
+func (otherLang) Lang() symbol.Lang { return "other" }
+
 // nongeneric hides the scripted language's generics capability.
 type nongeneric struct {
 	inner rules.SourceRules
