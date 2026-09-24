@@ -18,6 +18,93 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
+// The builtin names every template resolves against: what a kind
+// template, a file skeleton or a body-claiming template calls, and
+// what the template lint checks for. No vocabulary may claim them.
+const (
+	// BuiltinBody places a callable's content; a kind template
+	// calls it with the declaration under render.
+	BuiltinBody = core.BuiltinBody
+	// BuiltinUse records one import path into the file under
+	// render.
+	BuiltinUse = core.BuiltinUse
+	// BuiltinImports renders the file's collected import block; it
+	// is the skeleton's.
+	BuiltinImports = core.BuiltinImports
+	// BuiltinDecls returns the file's rendered declarations; it is
+	// the skeleton's.
+	BuiltinDecls = core.BuiltinDecls
+	// BuiltinSlots places everything pending in the fixed order:
+	// the body-claiming template's catch-all marker.
+	BuiltinSlots = core.BuiltinSlots
+	// BuiltinSlot places one named slot where the template says.
+	BuiltinSlot = core.BuiltinSlot
+	// BuiltinNested renders one nested declaration through its
+	// kind template, every line behind the given indentation: how
+	// a host places its inner declarations at member depth. A
+	// nested kind without a template reports and spells nothing,
+	// which is the unspelt-kind rule one level down.
+	BuiltinNested = core.BuiltinNested
+)
+
+// UnspeltKind reports a declaration whose kind the target language
+// holds no template for: the declaration is skipped and the file
+// renders without it.
+var UnspeltKind = core.UnspeltKind
+
+// UnformattedFile reports a rendered file the language formatter
+// refused: the file is withheld, because the sink never receives
+// an unformatted file, and the pass continues with its siblings.
+var UnformattedFile = core.UnformattedFile
+
+// RefusedTemplate reports a template that exists and still failed
+// at execute time, naming the emitting plugin: the declaration is
+// skipped and the file renders without it.
+var RefusedTemplate = core.RefusedTemplate
+
+// UnspeltValue reports a scaffold value the target language has no
+// form for: a raw literal written in another language, a
+// conversion where the language has none. The declaration is
+// skipped and the file renders without it, the way any refused
+// spelling is.
+var UnspeltValue = core.UnspeltValue
+
+// BodyConflict reports a body holding more than one content form:
+// the standard and named slots still render, and no contested
+// content is guessed at.
+var BodyConflict = core.BodyConflict
+
+// UnresolvedRef reports a template reference nothing returns: no
+// tree declared for the emitting plugin, no template of that name
+// in it, or a template that does not parse. The body falls back to
+// its slots, so the extension points survive the broken claim.
+var UnresolvedRef = core.UnresolvedRef
+
+// UndeclaredOverride reports a plugin helper shadowing a shared
+// vocabulary name without declaring the override: the shared
+// helper stands, because a silent replacement is the drift
+// byte-identity cannot tolerate.
+var UndeclaredOverride = core.UndeclaredOverride
+
+// DroppedSlots reports a body-claiming template that placed no
+// marker for pending slot content: the template owns the layout,
+// so nothing is appended for it, and the Error names the emitting
+// plugin and counts what went unplaced. The contributor cannot be
+// named, because a slot statement carries no attribution.
+var DroppedSlots = core.DroppedSlots
+
+// UnknownGroup reports a cluster naming a group the language
+// declares no template for: the cluster's declarations are
+// skipped and the file renders without them.
+var UnknownGroup = core.UnknownGroup
+
+// HelperCollision reports two plugins registering one template
+// helper name the shared vocabulary does not own: the first
+// registration in composition order stands, because a helper
+// whose meaning follows the schedule renders different bytes from
+// one declaration.
+var HelperCollision = core.HelperCollision
+
 // RefusedFact reports a stated fact the backend declares no idiom
 // for: the declaration renders without it, and the finding is what
 // keeps the narrowing loud. It is a warning, because one neutral
@@ -87,107 +174,6 @@ type Entry = core.Entry
 // one file under render.
 type ImportSet = core.ImportSet
 
-// UnspeltKind reports a declaration whose kind the target language
-// holds no template for: the declaration is skipped and the file
-// renders without it.
-var UnspeltKind = core.UnspeltKind
-
-// UnformattedFile reports a rendered file the language formatter
-// refused: the file is withheld, because the sink never receives
-// an unformatted file, and the pass continues with its siblings.
-var UnformattedFile = core.UnformattedFile
-
-// RefusedTemplate reports a template that exists and still failed
-// at execute time, naming the emitting plugin: the declaration is
-// skipped and the file renders without it.
-var RefusedTemplate = core.RefusedTemplate
-
-// UnspeltValue reports a scaffold value the target language has no
-// form for: a raw literal written in another language, a
-// conversion where the language has none. The declaration is
-// skipped and the file renders without it, the way any refused
-// spelling is.
-var UnspeltValue = core.UnspeltValue
-
-// ValueError is the error a language's scaffold returns for a
-// value it cannot spell, so the render reports it under
-// [UnspeltValue] rather than as a template refusal.
-//
-// A caller reaches the classification through [errors.As], the way
-// the store's refusals are read, which is what keeps the code
-// load-bearing rather than a string a reader matches on.
-type ValueError = core.ValueError
-
-// RefuseValue returns the error a scaffold refuses a value with.
-func RefuseValue(lang, format string, args ...any) error {
-	return core.RefuseValue(lang, format, args...)
-}
-
-// BodyConflict reports a body holding more than one content form:
-// the standard and named slots still render, and no contested
-// content is guessed at.
-var BodyConflict = core.BodyConflict
-
-// UnresolvedRef reports a template reference nothing returns: no
-// tree declared for the emitting plugin, no template of that name
-// in it, or a template that does not parse. The body falls back to
-// its slots, so the extension points survive the broken claim.
-var UnresolvedRef = core.UnresolvedRef
-
-// UndeclaredOverride reports a plugin helper shadowing a shared
-// vocabulary name without declaring the override: the shared
-// helper stands, because a silent replacement is the drift
-// byte-identity cannot tolerate.
-var UndeclaredOverride = core.UndeclaredOverride
-
-// DroppedSlots reports a body-claiming template that placed no
-// marker for pending slot content: the template owns the layout,
-// so nothing is appended for it, and the Error names the emitting
-// plugin and counts what went unplaced. The contributor cannot be
-// named, because a slot statement carries no attribution.
-var DroppedSlots = core.DroppedSlots
-
-// UnknownGroup reports a cluster naming a group the language
-// declares no template for: the cluster's declarations are
-// skipped and the file renders without them.
-var UnknownGroup = core.UnknownGroup
-
-// HelperCollision reports two plugins registering one template
-// helper name the shared vocabulary does not own: the first
-// registration in composition order stands, because a helper
-// whose meaning follows the schedule renders different bytes from
-// one declaration.
-var HelperCollision = core.HelperCollision
-
-// The builtin names every template resolves against: what a kind
-// template, a file skeleton or a body-claiming template calls, and
-// what the template lint checks for. No vocabulary may claim them.
-const (
-	// BuiltinBody places a callable's content; a kind template
-	// calls it with the declaration under render.
-	BuiltinBody = core.BuiltinBody
-	// BuiltinUse records one import path into the file under
-	// render.
-	BuiltinUse = core.BuiltinUse
-	// BuiltinImports renders the file's collected import block; it
-	// is the skeleton's.
-	BuiltinImports = core.BuiltinImports
-	// BuiltinDecls returns the file's rendered declarations; it is
-	// the skeleton's.
-	BuiltinDecls = core.BuiltinDecls
-	// BuiltinSlots places everything pending in the fixed order:
-	// the body-claiming template's catch-all marker.
-	BuiltinSlots = core.BuiltinSlots
-	// BuiltinSlot places one named slot where the template says.
-	BuiltinSlot = core.BuiltinSlot
-	// BuiltinNested renders one nested declaration through its
-	// kind template, every line behind the given indentation: how
-	// a host places its inner declarations at member depth. A
-	// nested kind without a template reports and spells nothing,
-	// which is the unspelt-kind rule one level down.
-	BuiltinNested = core.BuiltinNested
-)
-
 // Naming spells a unit's filename for one target: the join and
 // extension of the family's word, the tag's treatment, and the
 // cardinality key's stem. It is total: every unit the plan admits
@@ -248,4 +234,18 @@ type Pass = core.Pass
 // composition faults, and a composition reads every fault at once.
 func New(name plugin.ID, l Language) (*Pass, error) {
 	return core.New(name, l)
+}
+
+// ValueError is the error a language's scaffold returns for a
+// value it cannot spell, so the render reports it under
+// [UnspeltValue] rather than as a template refusal.
+//
+// A caller reaches the classification through [errors.As], the way
+// the store's refusals are read, which is what keeps the code
+// load-bearing rather than a string a reader matches on.
+type ValueError = core.ValueError
+
+// RefuseValue returns the error a scaffold refuses a value with.
+func RefuseValue(lang, format string, args ...any) error {
+	return core.RefuseValue(lang, format, args...)
 }
