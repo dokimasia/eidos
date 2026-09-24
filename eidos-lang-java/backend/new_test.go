@@ -51,12 +51,12 @@ func inventory() map[symbol.Kind]string {
 
 // BenchmarkNew measures the composed backend over the suite's
 // scaled corpus. The split fans every typed declaration into its
-// own file, so the corpus renders far more files than units; the
-// allocation ceiling carries that fact, pinned from measurement
-// with headroom.
+// own file, so the corpus renders far more files than units, and
+// the allocation ceiling includes that fan-out. The ceiling is
+// pinned from a measured 28.92M allocations with 1.3% headroom.
 func BenchmarkNew(b *testing.B) {
 	backendtest.BenchRender(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 28_700_000})
+		backendtest.Budget{MaxAllocs: 29_300_000})
 }
 
 // BenchmarkSettle measures the settle over the suite's scaled
@@ -67,10 +67,10 @@ func BenchmarkSettle(b *testing.B) {
 		backendtest.Budget{MaxAllocs: 3_400_000})
 }
 
-// The backend is the module's write half: the kernel suite holds
-// it to the render checks over the canonical fixture, and the
-// stamp check joins it to the output contract under this module's
-// own comment forms.
+// The backend is the module's write half: the kernel suite runs the
+// render checks over it on the canonical fixture, and the stamp
+// check joins it to the output contract under this module's own
+// comment forms.
 func TestNew(t *testing.T) {
 	t.Parallel()
 
@@ -102,7 +102,7 @@ func TestNew(t *testing.T) {
 		assert.Contains(t, string(text), "public class Row",
 			"a neutral row takes Pascal")
 		assert.Contains(t, string(text), "public void boot()",
-			"and a neutral boot stays camel")
+			"and a neutral boot keeps camel case")
 		assert.Contains(t, string(text),
 			"public final class ShapeCircle implements Shape",
 			"a lowered variant implements the respelled principal")

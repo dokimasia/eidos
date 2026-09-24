@@ -13,8 +13,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// sumOf is the fixture sum: one variant carrying a named payload
-// entry and one carrying none.
+// sumOf is the fixture sum: one variant with a named payload entry
+// and one with none.
 func sumOf(params ...*emit.TypeParam) *emit.Sum {
 	s := &emit.Sum{
 		Origin: symbol.Identity{
@@ -42,9 +42,35 @@ func TestLower(t *testing.T) {
 	t.Run("a non-sum passes through unchanged", func(t *testing.T) {
 		t.Parallel()
 
-		out, err := backend.Lower(&emit.Struct{Name: "row"})
+		out, err := backend.Lower(&emit.Struct{Name: "row", Visibility: symbol.VisibilityPackage})
 		assert.NoError(t, err, "a struct is not lowered")
-		assert.Length(t, out, 0, "a nil list keeps the declaration as it stands")
+		assert.Length(t, out, 0, "a nil list keeps the declaration unchanged")
+
+		inner := &emit.Struct{Name: "row"}
+		inner.Types.Append(&emit.Struct{
+			Name: "cell", Visibility: symbol.VisibilityPrivate, Level: symbol.LevelType,
+		})
+		out, err = backend.Lower(inner)
+		assert.NoError(t, err,
+			"a private static member type passes, because the kind template spells it")
+		assert.Length(t, out, 0, "and the host passes through unchanged")
+	})
+
+	t.Run("a file-level type refuses what only a member type spells", func(t *testing.T) {
+		t.Parallel()
+
+		refused := []symbol.Symbol{
+			&emit.Struct{Name: "row", Level: symbol.LevelType},
+			&emit.Struct{Name: "row", Visibility: symbol.VisibilityPrivate},
+			&emit.Interface{Name: "store", Visibility: symbol.VisibilityProtected},
+			&emit.Enum{Name: "phase", Visibility: symbol.VisibilityPrivate},
+			&emit.Sum{Name: "shape", Visibility: symbol.VisibilityPrivate},
+		}
+		for _, d := range refused {
+			_, err := backend.Lower(d)
+			assert.HasError(t, err,
+				"javac rejects static, private and protected at file scope")
+		}
 	})
 
 	t.Run("a sum becomes the interface and its final classes", func(t *testing.T) {
@@ -125,13 +151,13 @@ func TestLower(t *testing.T) {
 		withMethods.Methods.Append(&emit.Method{Name: "area"})
 		_, err := backend.Lower(withMethods)
 		assert.HasError(t, err,
-			"a variant class would owe bodies the model does not carry")
+			"a variant class would owe bodies the model does not state")
 
 		positional := sumOf()
 		positional.Variants.Items()[0].Fields.Append(
 			&emit.Field{Type: ref("String")},
 		)
 		_, err = backend.Lower(positional)
-		assert.HasError(t, err, "a field carries a name")
+		assert.HasError(t, err, "a field has a name")
 	})
 }

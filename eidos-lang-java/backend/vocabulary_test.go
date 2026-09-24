@@ -16,8 +16,8 @@ import (
 // ref is the fixture type reference.
 func ref(s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s} }
 
-// The vocabulary is what both kind templates spell through, so
-// each helper's output is pinned byte for byte.
+// The vocabulary is what the kind templates spell through, so each
+// helper's output is pinned byte for byte.
 func TestVocabulary(t *testing.T) {
 	t.Parallel()
 
@@ -127,23 +127,80 @@ func TestVocabulary(t *testing.T) {
 		assert.NoError(t, err, "an abstract class spells")
 		assert.Equal(t, got, "public abstract ", "abstract behind the access")
 
-		_, err = backend.TypeMods(&emit.Struct{
-			Name: "Inner", Level: symbol.LevelType, Final: true, Sealed: true,
+		got, err = backend.TypeMods(&emit.Struct{
+			Name: "Inner", Visibility: symbol.VisibilityPrivate, Level: symbol.LevelType,
+			Abstract: true, Sealed: true,
 		})
-		assert.HasError(t, err, "a type-level nesting refuses at file scope")
-		assert.Contains(t, err.Error(), "static",
-			"naming the keyword javac rejects here")
+		assert.NoError(t, err, "a member class spells a member's keywords")
+		assert.Equal(t, got, "private abstract static sealed ",
+			"access, abstract, static and sealed, in Java's stated order")
+
+		got, err = backend.TypeMods(&emit.Struct{
+			Name: "Inner", Visibility: symbol.VisibilityProtected, Level: symbol.LevelType, Final: true,
+		})
+		assert.NoError(t, err, "a protected static final member class spells")
+		assert.Equal(t, got, "protected static final ", "static before final")
 
 		got, err = backend.TypeMods(&emit.Interface{Name: "Shape", Sealed: true})
 		assert.NoError(t, err, "a sealed interface spells")
 		assert.Equal(t, got, "public sealed ", "sealed behind the access")
 
-		_, err = backend.TypeMods(&emit.Struct{
-			Name: "Row", Visibility: symbol.VisibilityPrivate,
+		got, err = backend.TypeMods(&emit.Enum{Name: "Phase", Visibility: symbol.VisibilityPrivate})
+		assert.NoError(t, err, "a member enum spells")
+		assert.Equal(t, got, "private ", "its access alone")
+
+		_, err = backend.TypeMods(&emit.Struct{Name: "Row", Abstract: true, Final: true})
+		assert.HasError(t, err, "a class both abstract and final refuses, because javac rejects the pair")
+		_, err = backend.TypeMods(&emit.Struct{Name: "Row", Final: true, Sealed: true})
+		assert.HasError(t, err, "a class both final and sealed refuses, because javac rejects the pair")
+		_, err = backend.TypeMods(&emit.Struct{Name: "Row", Visibility: symbol.VisibilityInternal})
+		assert.HasError(t, err, "an internal scope refuses, because no Java keyword spells it")
+		_, err = backend.TypeMods(&emit.Alias{Name: "Id"})
+		assert.HasError(t, err, "an alias has no type keywords")
+	})
+
+	t.Run("MemberType", func(t *testing.T) {
+		t.Parallel()
+
+		for _, s := range []symbol.Symbol{
+			&emit.Struct{Name: "Inner"},
+			&emit.Interface{Name: "Inner", Visibility: symbol.VisibilityPublic},
+			&emit.Enum{Name: "Phase"},
+			&emit.Alias{Name: "Id", Visibility: symbol.VisibilityPrivate},
+		} {
+			got, err := backend.MemberType(s)
+			assert.NoError(t, err, "a public or unstated member type passes, and so does "+
+				"a kind the nested template reports")
+			assert.Equal(t, got, "", "and the helper writes nothing")
+		}
+		for _, s := range []symbol.Symbol{
+			&emit.Struct{Name: "Inner", Visibility: symbol.VisibilityPrivate},
+			&emit.Interface{Name: "Inner", Visibility: symbol.VisibilityProtected},
+			&emit.Enum{Name: "Phase", Visibility: symbol.VisibilityPackage},
+		} {
+			_, err := backend.MemberType(s)
+			assert.HasError(t, err,
+				"a narrower scope refuses, because every member type of an interface is public")
+		}
+	})
+
+	t.Run("ConstantMods", func(t *testing.T) {
+		t.Parallel()
+
+		got, err := backend.ConstantMods(&emit.Field{Name: "MAX", Type: ref("int"), Value: "8"})
+		assert.NoError(t, err, "an interface constant spells")
+		assert.Equal(t, got, "", "with no keyword, because Java reads it as public static final")
+
+		_, err = backend.ConstantMods(&emit.Field{Name: "MAX", Type: ref("int")})
+		assert.HasError(t, err, "a field without an initializer refuses")
+		_, err = backend.ConstantMods(&emit.Field{
+			Name: "MAX", Value: "8", Visibility: symbol.VisibilityPrivate,
 		})
-		assert.HasError(t, err,
-			"a private file-level type refuses, because Java takes public "+
-				"or default access alone")
+		assert.HasError(t, err, "a scope other than public refuses")
+		_, err = backend.ConstantMods(&emit.Field{
+			Name: "MAX", Value: "8", Mutability: symbol.MutabilityMutable,
+		})
+		assert.HasError(t, err, "a mutable field refuses, because an interface field is final")
 	})
 
 	t.Run("FieldMods", func(t *testing.T) {
@@ -197,7 +254,7 @@ func TestVocabulary(t *testing.T) {
 		assert.Equal(t, got, "", "implicitly public")
 
 		got, err = backend.SigMods(&emit.Method{Name: "load", HasDefault: true})
-		assert.NoError(t, err, "a body-carrying method spells")
+		assert.NoError(t, err, "a method with a default body spells")
 		assert.Equal(t, got, "default ", "as default at instance level")
 
 		got, err = backend.SigMods(&emit.Method{
@@ -234,12 +291,19 @@ func TestVocabulary(t *testing.T) {
 
 		got, err = backend.Heritage(&emit.Interface{
 			Name:    "Shape",
+			Sealed:  true,
 			Extends: []*emit.TypeRef{ref("Figure")},
 			Permits: []*emit.TypeRef{ref("Circle"), ref("Square")},
 		})
 		assert.NoError(t, err, "a sealed heritage spells")
 		assert.Equal(t, got, " extends Figure permits Circle, Square",
 			"the enumerated subtypes last, behind permits")
+
+		got, err = backend.Heritage(&emit.Struct{
+			Name: "Shape", Sealed: true, Permits: []*emit.TypeRef{ref("Circle")},
+		})
+		assert.NoError(t, err, "a sealed class heritage spells")
+		assert.Equal(t, got, " permits Circle", "its permits clause alone")
 
 		_, err = backend.Heritage(&emit.Struct{
 			Name:    "Row",
@@ -251,6 +315,16 @@ func TestVocabulary(t *testing.T) {
 			Embeds: []*emit.Embed{{Ref: ref("Base")}},
 		})
 		assert.HasError(t, err, "an embed refuses, because nothing promotes")
+		_, err = backend.Heritage(&emit.Struct{Name: "Shape", Sealed: true})
+		assert.HasError(t, err,
+			"a sealed class without a permits clause refuses, because javac finds no "+
+				"subclass in a file of its own")
+		_, err = backend.Heritage(&emit.Interface{
+			Name: "Shape", Permits: []*emit.TypeRef{ref("Circle")},
+		})
+		assert.HasError(t, err, "a permits clause on a type that is not sealed refuses")
+		_, err = backend.Heritage(&emit.Enum{Name: "Phase"})
+		assert.HasError(t, err, "an enum has no heritage clause here")
 	})
 
 	t.Run("Throws", func(t *testing.T) {

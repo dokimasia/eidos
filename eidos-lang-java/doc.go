@@ -1,40 +1,26 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Package java makes Java a source and target language for eidos
-// workspaces.
+// Package java is the root of the Java satellite: the language's
+// identity and comment forms, which the satellite's packages share.
 //
-// The package registers the typed language identity that the
-// boundary spelling "java" resolves to, and the comment syntax the
-// frontend and backend share. The module provides the Java
-// frontend, the projection rules, the lowering from canonical type
-// shapes to Java spellings, the rendering backend, and the
-// Java-only sdk importable from binding files alone.
+// [Lang] is the language of every Java declaration. [Target] and
+// [Name] are the spellings a plan resolves to reach the backend,
+// [Extension] is the suffix of every Java file, and [Version] is the
+// backend's behavior version. [Syntax] returns Java's comment forms,
+// which the output contract writes the generated-file header
+// through.
 //
-// # Projection facts
+// # Packages
 //
-//   - Annotations read statically through the annotation rules as
-//     structured, queryable, overridable metadata — never
-//     executed.
-//   - Generics are erased; the generics rules report erasure and
-//     supply witnesses and substitution.
-//   - Overloads are legal: member lists are slices, and identity
-//     carries a signature discriminator.
-//   - Checked exceptions are read through the throws rules; enums
-//     are classes and carry members.
-//   - Unannotated references are nullability-unknown: a metadata
-//     fact plus a workspace lowering policy, never a third
-//     Optional state.
+// The module covers Java as a target:
 //
-// # Parsing
-//
-// The frontend parses with the pinned tree-sitter grammar and
-// resolves dependencies signature-only from JVM class files inside
-// JARs — declarative artifacts, parsed and never executed.
+//   - spell spells filenames and declared names.
+//   - backend renders emit values as Java source.
 //
 // # Dependency position
 //
-// The module imports the kernel's root authoring package and the
-// SPI packages beneath it, the shared helpers of eidos-lang, and
-// the Go stdlib.
+// The root package imports the sdk's plugin and symbol facades. The
+// module's other packages import the kernel's SPI through the sdk
+// facade, the shared helpers of eidos-lang, and the Go stdlib.
 package java

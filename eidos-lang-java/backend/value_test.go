@@ -5,6 +5,7 @@ package backend_test
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -34,6 +35,16 @@ func valueRef(spelling, pkg, name string) *emit.TypeRef {
 // where owner is set.
 func valueFn(pkg, owner, name string) symbol.Identity {
 	return symbol.Identity{Lang: java.Lang, Package: pkg, Owner: owner, Name: name, Kind: symbol.KindMethod}
+}
+
+// pairs returns n map entries, each keying an integer to itself.
+func pairs(n int) []emit.ValueField {
+	out := make([]emit.ValueField, 0, n)
+	for i := range n {
+		text := strconv.Itoa(i)
+		out = append(out, emit.KeyedEntry(emit.Literal(emit.LiteralInt, text), emit.Literal(emit.LiteralInt, text)))
+	}
+	return out
 }
 
 // spelled runs one value through the scaffold as a bare return and
@@ -145,6 +156,32 @@ func TestValue(t *testing.T) {
 				`Map.of("k", 2L)`,
 			},
 			{
+				"a map of ten pairs keeps the factory",
+				emit.Composite(&emit.TypeRef{Spelling: "Map<Integer, Integer>", Form: symbol.FormMap},
+					pairs(10)...),
+				"Map.of(0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9)",
+			},
+			{
+				"a map above ten pairs builds from entries, because Map.of takes ten at most",
+				emit.Composite(&emit.TypeRef{Spelling: "Map<Integer, Integer>", Form: symbol.FormMap},
+					pairs(11)...),
+				"Map.ofEntries(Map.entry(0, 0), Map.entry(1, 1), Map.entry(2, 2), " +
+					"Map.entry(3, 3), Map.entry(4, 4), Map.entry(5, 5), Map.entry(6, 6), " +
+					"Map.entry(7, 7), Map.entry(8, 8), Map.entry(9, 9), Map.entry(10, 10))",
+			},
+			{
+				"an array spells an array creation",
+				emit.Composite(&emit.TypeRef{Spelling: "int[]", Form: symbol.FormArray},
+					emit.Element(emit.Literal(emit.LiteralInt, "1")),
+					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
+				"new int[] {1, 2}",
+			},
+			{
+				"an empty array spells an empty initializer",
+				emit.Composite(&emit.TypeRef{Spelling: "String[]", Form: symbol.FormArray}),
+				"new String[] {}",
+			},
+			{
 				"a call spells the static method of the class its owner names",
 				emit.Call(valueFn("example/util", "Rows", "make"), emit.Literal(emit.LiteralInt, "1")),
 				"Rows.make(1)",
@@ -233,6 +270,30 @@ func TestValue(t *testing.T) {
 			{
 				"a function whose identity names no owner",
 				emit.Call(valueFn("example/util", "", "make")), "owned by no class",
+			},
+			{
+				"a keyed entry in a list",
+				emit.Composite(&emit.TypeRef{Spelling: "List<Long>", Form: symbol.FormList},
+					emit.KeyedEntry(emit.Literal(emit.LiteralInt, "1"), emit.Literal(emit.LiteralInt, "2"))),
+				"elements alone",
+			},
+			{
+				"a named entry in an array",
+				emit.Composite(&emit.TypeRef{Spelling: "int[]", Form: symbol.FormArray},
+					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1"))),
+				"elements alone",
+			},
+			{
+				"a map entry without a key",
+				emit.Composite(&emit.TypeRef{Spelling: "Map<Long, Long>", Form: symbol.FormMap},
+					emit.Element(emit.Literal(emit.LiteralInt, "1"))),
+				"no key",
+			},
+			{
+				"a keyed entry in a record",
+				emit.Composite(valueRef("Row", "svc", "Row"),
+					emit.KeyedEntry(emit.Literal(emit.LiteralInt, "1"), emit.Literal(emit.LiteralInt, "2"))),
+				"positionally",
 			},
 		}
 		for _, tt := range tests {

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"text/template"
 
+	java "go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -29,10 +30,15 @@ const (
 	FuncResults = "results"
 	// FuncPackage writes the package clause.
 	FuncPackage = "package"
-	// FuncTypeMods writes a file-level type's keywords.
+	// FuncTypeMods writes a type's keywords.
 	FuncTypeMods = "typemods"
+	// FuncMemberType refuses what an interface's member type states
+	// that Java cannot spell there.
+	FuncMemberType = "membertype"
 	// FuncFieldMods writes a field's keywords.
 	FuncFieldMods = "fieldmods"
+	// FuncConstantMods writes an interface field's keywords.
+	FuncConstantMods = "constantmods"
 	// FuncMethodMods writes a class method's keywords.
 	FuncMethodMods = "methodmods"
 	// FuncSigMods writes an interface method's keywords.
@@ -54,20 +60,22 @@ const Anonymous = "Object"
 // Funcs is the shared template vocabulary the kind templates call.
 func Funcs() template.FuncMap {
 	return template.FuncMap{
-		FuncDocs:        Docs,
-		FuncSpell:       Spell,
-		FuncTypeParams:  TypeParams,
-		FuncParams:      Params,
-		FuncResults:     Results,
-		FuncPackage:     PackageClause,
-		FuncTypeMods:    TypeMods,
-		FuncFieldMods:   FieldMods,
-		FuncMethodMods:  MethodMods,
-		FuncSigMods:     SigMods,
-		FuncAnnotate:    Annotate,
-		FuncHeritage:    Heritage,
-		FuncThrows:      Throws,
-		FuncEnumVariant: EnumVariantName,
+		FuncDocs:         Docs,
+		FuncSpell:        Spell,
+		FuncTypeParams:   TypeParams,
+		FuncParams:       Params,
+		FuncResults:      Results,
+		FuncPackage:      PackageClause,
+		FuncTypeMods:     TypeMods,
+		FuncMemberType:   MemberType,
+		FuncFieldMods:    FieldMods,
+		FuncConstantMods: ConstantMods,
+		FuncMethodMods:   MethodMods,
+		FuncSigMods:      SigMods,
+		FuncAnnotate:     Annotate,
+		FuncHeritage:     Heritage,
+		FuncThrows:       Throws,
+		FuncEnumVariant:  EnumVariantName,
 	}
 }
 
@@ -102,18 +110,12 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 	for _, p := range ps {
 		switch {
 		case p.Variance != symbol.VarianceInvariant:
-			return "", fmt.Errorf(
-				"java: a type parameter states no variance, and %s states one: "+
-					"the wildcard is use-site", p.Name,
-			)
+			return "", refuse("a type parameter states no variance, and %s states one: "+
+				"the wildcard is use-site", p.Name)
 		case p.Const:
-			return "", fmt.Errorf(
-				"java: a type parameter takes a type, and %s takes a value", p.Name,
-			)
+			return "", refuse("a type parameter takes a type, and %s takes a value", p.Name)
 		case p.Default != nil:
-			return "", fmt.Errorf(
-				"java: a type parameter takes no default, and %s states one", p.Name,
-			)
+			return "", refuse("a type parameter takes no default, and %s states one", p.Name)
 		}
 		part := p.Name
 		if len(p.Bounds) > 0 {
@@ -155,15 +157,13 @@ func Results(rs []*emit.Return) (string, error) {
 	case 1:
 		return Spell(rs[0].Type) + textfmt.Inline(rs[0].Comment), nil
 	default:
-		return "", fmt.Errorf(
-			"java: a callable returns one value, and this one states %d: "+
-				"a second result arrives thrown, not returned", len(rs),
-		)
+		return "", refuse("a callable returns one value, and this one states %d: "+
+			"a second result arrives thrown, not returned", len(rs))
 	}
 }
 
-// PackageClause writes the package statement from the owning
-// package's path, dots for slashes, followed by a blank line. An
+// PackageClause writes the package statement from the identity's
+// package path, dots for slashes, followed by a blank line. An
 // identity naming no package spells nothing, which is the default
 // package.
 func PackageClause(id symbol.Identity) string {
@@ -173,17 +173,24 @@ func PackageClause(id symbol.Identity) string {
 	return "package " + strings.ReplaceAll(id.Package, "/", ".") + ";\n\n"
 }
 
-// TypeMods writes a type's keywords in Java's stated order:
-// access, then abstract, final and sealed on a class where stated,
-// sealed alone on an interface. A type-level nesting refuses:
-// every type this backend renders is at file scope, where javac
-// rejects static, so the fact has no legal spelling here. A
-// private, protected or internal visibility refuses, because
-// Java's file-level types take public or default access alone.
+// TypeMods writes a type's keywords in Java's stated order: access,
+// then abstract, static, final and sealed on a class where stated,
+// sealed alone on an interface, and access alone on an enum. The
+// keywords are a member type's, because the kind templates render
+// both file-level and member types: the lowering refuses a file-level
+// type stating what only a member type can spell. A class both
+// abstract and final refuses, and so does one both final and
+// sealed, because javac rejects either pair.
 func TypeMods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
-		part, err := access(t.Visibility, t.Name, true)
+		switch {
+		case t.Abstract && t.Final:
+			return "", refuse("a class is abstract or final, and %s states both", t.Name)
+		case t.Final && t.Sealed:
+			return "", refuse("a sealed class has subclasses, and %s states final too", t.Name)
+		}
+		part, err := access(t.Visibility, t.Name)
 		if err != nil {
 			return "", err
 		}
@@ -191,10 +198,7 @@ func TypeMods(d symbol.Symbol) (string, error) {
 			part += "abstract "
 		}
 		if t.Level == symbol.LevelType {
-			return "", fmt.Errorf(
-				"java: a file-level class takes no static, and %s states "+
-					"a type-level nesting", t.Name,
-			)
+			part += "static "
 		}
 		if t.Final {
 			part += "final "
@@ -204,7 +208,7 @@ func TypeMods(d symbol.Symbol) (string, error) {
 		}
 		return part, nil
 	case *emit.Interface:
-		part, err := access(t.Visibility, t.Name, true)
+		part, err := access(t.Visibility, t.Name)
 		if err != nil {
 			return "", err
 		}
@@ -213,12 +217,34 @@ func TypeMods(d symbol.Symbol) (string, error) {
 		}
 		return part, nil
 	case *emit.Enum:
-		return access(t.Visibility, t.Name, true)
+		return access(t.Visibility, t.Name)
 	default:
-		return "", fmt.Errorf(
-			"java: no file-level keywords spell a %s", d.Kind(),
-		)
+		return "", refuse("no type keywords spell a %s", d.Kind())
 	}
+}
+
+// MemberType writes nothing and refuses what an interface's member
+// type states that Java cannot spell there: a private, protected or
+// package scope, because every member type of an interface is
+// public.
+func MemberType(s symbol.Symbol) (string, error) {
+	var name string
+	var v symbol.Visibility
+	switch t := s.(type) {
+	case *emit.Struct:
+		name, v = t.Name, t.Visibility
+	case *emit.Interface:
+		name, v = t.Name, t.Visibility
+	case *emit.Enum:
+		name, v = t.Name, t.Visibility
+	default:
+		return "", nil
+	}
+	if v != symbol.VisibilityUnknown && v != symbol.VisibilityPublic {
+		return "", refuse("a member type of an interface is public, and %s states "+
+			"another scope", name)
+	}
+	return "", nil
 }
 
 // EnumVariantName writes one enum constant's spelling: the name
@@ -226,10 +252,7 @@ func TypeMods(d symbol.Symbol) (string, error) {
 // the constructor form these templates do not spell.
 func EnumVariantName(v *emit.EnumVariant) (string, error) {
 	if v.Value != "" {
-		return "", fmt.Errorf(
-			"java: an enum constant spells its name alone, and %s states a "+
-				"value", v.Name,
-		)
+		return "", refuse("an enum constant spells its name alone, and %s states a value", v.Name)
 	}
 	return v.Name, nil
 }
@@ -238,7 +261,7 @@ func EnumVariantName(v *emit.EnumVariant) (string, error) {
 // access, static for a type-level field, final for an immutable
 // one.
 func FieldMods(f *emit.Field) (string, error) {
-	part, err := access(f.Visibility, f.Name, false)
+	part, err := access(f.Visibility, f.Name)
 	if err != nil {
 		return "", err
 	}
@@ -251,6 +274,24 @@ func FieldMods(f *emit.Field) (string, error) {
 	return part, nil
 }
 
+// ConstantMods writes an interface field's keywords, which are
+// none: Java reads every interface field as a public, static and
+// final constant. A field without an initializer refuses, because a
+// constant takes its value where it is declared, and so do a scope
+// other than public and a mutable field, because Java spells
+// neither on an interface field.
+func ConstantMods(f *emit.Field) (string, error) {
+	switch {
+	case f.Value == "":
+		return "", refuse("an interface field is a constant, and %s states no initializer", f.Name)
+	case f.Visibility != symbol.VisibilityUnknown && f.Visibility != symbol.VisibilityPublic:
+		return "", refuse("an interface field is public, and %s states another scope", f.Name)
+	case f.Mutability == symbol.MutabilityMutable:
+		return "", refuse("an interface field is final, and %s states a mutable one", f.Name)
+	}
+	return "", nil
+}
+
 // MethodMods writes a class method's keywords, in Java's stated
 // order: access, static, abstract, final. An asynchronous method
 // refuses, because Java marks no signature asynchronous, and a
@@ -259,20 +300,13 @@ func FieldMods(f *emit.Field) (string, error) {
 func MethodMods(m *emit.Method) (string, error) {
 	switch {
 	case m.Abstract && !m.Body.IsZero():
-		return "", fmt.Errorf(
-			"java: an abstract method is a signature, and %s states a body", m.Name,
-		)
+		return "", refuse("an abstract method is a signature, and %s states a body", m.Name)
 	case m.Async:
-		return "", fmt.Errorf(
-			"java: a signature carries no asynchrony, and %s states it", m.Name,
-		)
+		return "", refuse("a signature states no asynchrony, and %s states it", m.Name)
 	case m.HasDefault:
-		return "", fmt.Errorf(
-			"java: default belongs to interface methods, and %s is a class "+
-				"member", m.Name,
-		)
+		return "", refuse("default belongs to interface methods, and %s is a class member", m.Name)
 	}
-	part, err := access(m.Visibility, m.Name, false)
+	part, err := access(m.Visibility, m.Name)
 	if err != nil {
 		return "", err
 	}
@@ -298,23 +332,14 @@ func MethodMods(m *emit.Method) (string, error) {
 func SigMods(m *emit.Method) (string, error) {
 	switch {
 	case !m.HasDefault && !m.Body.IsZero():
-		return "", fmt.Errorf(
-			"java: an interface method without a default is a signature, and %s states a body",
-			m.Name,
-		)
+		return "", refuse("an interface method without a default is a signature, and %s states a body",
+			m.Name)
 	case m.Final:
-		return "", fmt.Errorf(
-			"java: an interface method admits no final, and %s states it", m.Name,
-		)
+		return "", refuse("an interface method admits no final, and %s states it", m.Name)
 	case m.Override:
-		return "", fmt.Errorf(
-			"java: an interface method overrides nothing, and %s states it",
-			m.Name,
-		)
+		return "", refuse("an interface method overrides nothing, and %s states it", m.Name)
 	case m.Async:
-		return "", fmt.Errorf(
-			"java: a signature carries no asynchrony, and %s states it", m.Name,
-		)
+		return "", refuse("a signature states no asynchrony, and %s states it", m.Name)
 	}
 	var part string
 	switch m.Visibility {
@@ -323,10 +348,8 @@ func SigMods(m *emit.Method) (string, error) {
 	case symbol.VisibilityPrivate:
 		part = "private "
 	default:
-		return "", fmt.Errorf(
-			"java: an interface method is public or private, and %s states "+
-				"another scope", m.Name,
-		)
+		return "", refuse("an interface method is public or private, and %s states another scope",
+			m.Name)
 	}
 	switch {
 	case m.Level == symbol.LevelType:
@@ -337,29 +360,23 @@ func SigMods(m *emit.Method) (string, error) {
 	return part, nil
 }
 
-// access writes a member's or type's access keyword. A member
-// unstated spells public, because a generated API exists to be
-// called, and package scope spells Java's default access. A
-// file-level type takes public or default access alone, and an
+// access writes a member's or a member type's access keyword. An
+// unstated scope spells public, because a generated API exists to be
+// called, and package scope spells Java's default access. An
 // internal scope has no Java spelling at all.
-func access(v symbol.Visibility, name string, fileLevel bool) (string, error) {
+func access(v symbol.Visibility, name string) (string, error) {
 	switch v {
 	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
 		return "public ", nil
 	case symbol.VisibilityPackage:
 		return "", nil
 	case symbol.VisibilityPrivate:
-		if !fileLevel {
-			return "private ", nil
-		}
+		return "private ", nil
 	case symbol.VisibilityProtected:
-		if !fileLevel {
-			return "protected ", nil
-		}
+		return "protected ", nil
+	default:
+		return "", refuse("no access keyword spells the scope %s states", name)
 	}
-	return "", fmt.Errorf(
-		"java: no access keyword spells the scope %s states", name,
-	)
 }
 
 // Heritage writes a type's heritage clauses: one superclass
@@ -368,7 +385,9 @@ func access(v symbol.Visibility, name string, fileLevel bool) (string, error) {
 // enumerated subtypes behind permits on either, last the way Java
 // states them. A second superclass refuses, because Java extends
 // one, and an embed refuses on either, because nothing promotes
-// members.
+// members. The permits clause and the sealed keyword go together:
+// javac rejects a sealed type in a file of its own without the
+// clause, and the clause on a type that is not sealed.
 func Heritage(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -381,15 +400,17 @@ func Heritage(d symbol.Symbol) (string, error) {
 		case 1:
 			part = " extends " + Spell(t.Extends[0])
 		default:
-			return "", fmt.Errorf(
-				"java: a class extends one superclass, and %s states %d",
-				t.Name, len(t.Extends),
-			)
+			return "", refuse("a class extends one superclass, and %s states %d",
+				t.Name, len(t.Extends))
 		}
 		if len(t.Implements) > 0 {
 			part += " implements " + joined(t.Implements)
 		}
-		return part + permitted(t.Permits), nil
+		permits, err := permitted(t.Name, t.Sealed, t.Permits)
+		if err != nil {
+			return "", err
+		}
+		return part + permits, nil
 	case *emit.Interface:
 		if len(t.Embeds) > 0 {
 			return "", unembedded(t.Name)
@@ -398,21 +419,30 @@ func Heritage(d symbol.Symbol) (string, error) {
 		if len(t.Extends) > 0 {
 			part = " extends " + joined(t.Extends)
 		}
-		return part + permitted(t.Permits), nil
+		permits, err := permitted(t.Name, t.Sealed, t.Permits)
+		if err != nil {
+			return "", err
+		}
+		return part + permits, nil
 	default:
-		return "", fmt.Errorf(
-			"java: no heritage clause spells a %s", d.Kind(),
-		)
+		return "", refuse("no heritage clause spells a %s", d.Kind())
 	}
 }
 
-// permitted writes the permits clause, or nothing where no
-// subtypes are enumerated.
-func permitted(ts []*emit.TypeRef) string {
-	if len(ts) == 0 {
-		return ""
+// permitted writes the permits clause, or nothing where no subtypes
+// are enumerated. A sealed type without one refuses, and so does the
+// clause on a type that is not sealed.
+func permitted(name string, sealed bool, ts []*emit.TypeRef) (string, error) {
+	switch {
+	case sealed && len(ts) == 0:
+		return "", refuse("a sealed type names its permitted subtypes, and %s names none", name)
+	case !sealed && len(ts) > 0:
+		return "", refuse("a permits clause belongs to a sealed type, and %s is not sealed", name)
+	case len(ts) == 0:
+		return "", nil
+	default:
+		return " permits " + joined(ts), nil
 	}
-	return " permits " + joined(ts)
 }
 
 // Throws writes a callable's throws clause: the declared failure
@@ -436,9 +466,7 @@ func joined(ts []*emit.TypeRef) string {
 
 // unembedded is the refusal for embeds: nothing promotes members.
 func unembedded(name string) error {
-	return fmt.Errorf(
-		"java: nothing promotes members, and %s states embeds", name,
-	)
+	return refuse("nothing promotes members, and %s states embeds", name)
 }
 
 // Annotate writes a declaration's annotation lines, one per
@@ -447,4 +475,13 @@ func unembedded(name string) error {
 // parentheses where any are stated.
 func Annotate(a symbol.Annotations, prefix ...string) string {
 	return textfmt.Marked(a, "@", "", prefix...)
+}
+
+// refusalPrefix opens every refusal the backend returns: the
+// language's identity, as every backend's refusals open.
+const refusalPrefix = string(java.Lang) + ": "
+
+// refuse builds a refusal under [refusalPrefix].
+func refuse(format string, args ...any) error {
+	return fmt.Errorf(refusalPrefix+format, args...)
 }

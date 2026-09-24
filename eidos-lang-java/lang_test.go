@@ -22,7 +22,7 @@ func TestLang(t *testing.T) {
 
 		assert.Equal(t, java.Target, "java", "the target a plan resolves")
 		assert.Equal(t, java.Name, "java", "the identity findings report under")
-		assert.Equal(t, java.Extension, ".java", "the suffix every file carries")
+		assert.Equal(t, java.Extension, ".java", "the suffix of every file")
 	})
 
 	t.Run("declares the comment forms whole", func(t *testing.T) {

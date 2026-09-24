@@ -1,16 +1,16 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Package spell writes Java's spellings of naming facts: a file
-// is named after the lone public type its unit holds, and a
-// typeless unit falls back to the routing-key stem, family word
-// and tag joined as one Pascal name. It is the module's half of
-// the lowering, and the kernel consumes it through the backend
-// kit's naming step.
+// Package spell writes Java's spellings of naming facts. [Filename]
+// names a file after the lone public type its unit declares, and a
+// unit without a type after the routing-key stem, family word and
+// tag joined as one Pascal name. [Name] spells a declared name in
+// Java's convention. The kernel consumes both through the backend
+// kit's naming and respelling steps.
 //
 // # Dependency position
 //
-// lang-java/spell imports core/plugin, the module root for the
-// language identity, the case conversion of eidos-lang, and the
-// Go stdlib.
+// lang/java/spell imports the sdk's emit, plugin and symbol facades,
+// the module root for the language identity, the case conversion of
+// eidos-lang, and the Go stdlib.
 package spell

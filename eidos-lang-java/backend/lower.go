@@ -4,18 +4,20 @@
 package backend
 
 import (
-	"fmt"
-
 	"go.dokimi.dev/eidos/lang/lowering"
 	"go.dokimi.dev/eidos/lang/naming"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Lower reshapes the constructs Java states in other declarations.
+// Lower reshapes the constructs Java states in other declarations,
+// and refuses a file-level type that states what only a member type
+// can spell. The settle lowers file-level declarations alone, so the
+// refusal leaves member types to the kind templates.
+//
 // A sum becomes the sealed principal interface keeping the sum's
 // name and one final class per variant: each class joins the sum's
-// name and its variant's in the neutral camel form, carries the
+// name and its variant's in the neutral camel form, takes the
 // variant's payload as its fields, restates the sum's type
 // parameters, and implements the principal through a reference
 // resolved to the sum's origin, so every name follows the settle
@@ -23,30 +25,29 @@ import (
 // class the same resolved way, because the split files every type
 // apart and Java then demands the enumeration spelled.
 //
-// Every output carries the sum's origin and none restates the sum,
-// so a second settle changes nothing. A sum stating methods
-// refuses, because a variant class would owe bodies the model does
-// not carry; a payload entry without a name refuses, because a
-// field carries one. Everything else passes through unchanged.
+// Every output has the sum's origin and none restates the sum, so a
+// second settle changes nothing. A sum stating methods refuses,
+// because a variant class would owe bodies the model does not
+// state. A payload entry without a name refuses, because a field has
+// one. Everything else passes through unchanged.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
-	sum, held := s.(*emit.Sum)
-	if !held {
-		return nil, nil // the declaration stands
+	if err := fileLevel(s); err != nil {
+		return nil, err
+	}
+	sum, is := s.(*emit.Sum)
+	if !is {
+		return nil, nil // the declaration passes through
 	}
 	if sum.Methods.Len() > 0 {
-		return nil, fmt.Errorf(
-			"java: a variant class would owe method bodies the model does "+
-				"not carry, and %s states methods", sum.Name,
-		)
+		return nil, refuse("a variant class would owe method bodies the model does "+
+			"not state, and %s states methods", sum.Name)
 	}
 	variants := sum.Variants.Items()
 	if len(variants) == 0 {
 		// javac rejects a sealed type with no permits clause, so a
 		// variantless sum has no legal Java spelling.
-		return nil, fmt.Errorf(
-			"java: a sealed interface owes its permits clause, and %s "+
-				"states no variants", sum.Name,
-		)
+		return nil, refuse("a sealed interface owes its permits clause, and %s "+
+			"states no variants", sum.Name)
 	}
 	permits := make([]*emit.TypeRef, 0, len(variants))
 	for _, v := range variants {
@@ -77,6 +78,35 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	return out, nil
 }
 
+// fileLevel refuses what a file-level type states that javac rejects
+// at file scope: a private or protected scope, and the type-level
+// binding a member class spells as static.
+func fileLevel(s symbol.Symbol) error {
+	var name string
+	var v symbol.Visibility
+	switch t := s.(type) {
+	case *emit.Struct:
+		if t.Level == symbol.LevelType {
+			return refuse("a file-level class takes no static, and %s states a type-level binding",
+				t.Name)
+		}
+		name, v = t.Name, t.Visibility
+	case *emit.Interface:
+		name, v = t.Name, t.Visibility
+	case *emit.Enum:
+		name, v = t.Name, t.Visibility
+	case *emit.Sum:
+		name, v = t.Name, t.Visibility
+	default:
+		return nil
+	}
+	if v == symbol.VisibilityPrivate || v == symbol.VisibilityProtected {
+		return refuse("a file-level type takes public or default access, and %s states a "+
+			"narrower scope", name)
+	}
+	return nil
+}
+
 // variantClass builds one variant's final implementing class.
 func variantClass(sum *emit.Sum, v *emit.SumVariant) (*emit.Struct, error) {
 	cls := &emit.Struct{
@@ -92,10 +122,7 @@ func variantClass(sum *emit.Sum, v *emit.SumVariant) (*emit.Struct, error) {
 	}
 	for _, f := range v.Fields.Items() {
 		if f.Name == "" {
-			return nil, fmt.Errorf(
-				"java: a field carries a name, and a payload entry in %s "+
-					"states none", v.Name,
-			)
+			return nil, refuse("a field has a name, and a payload entry in %s states none", v.Name)
 		}
 		cls.Fields.Append(f)
 	}

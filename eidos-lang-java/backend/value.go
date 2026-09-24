@@ -27,6 +27,14 @@ const (
 	collectionsPackage = "java/util"
 	// factory is the static method both collections build through.
 	factory = ".of("
+	// mapOfLimit is the most pairs Map.of takes. A larger map builds
+	// through entriesFactory, one entryFactory call per pair.
+	mapOfLimit     = 10
+	entriesFactory = ".ofEntries("
+	entryFactory   = ".entry("
+	// arrayCreation opens an array creation expression, which is how
+	// Java spells an array of values.
+	arrayCreation = "new "
 	// memberSep joins a class and its static member.
 	memberSep = "."
 	// longSuffix marks an integer literal as a long, and floatSuffix
@@ -84,38 +92,67 @@ func (target) Conversion(_ *emit.TypeRef, typ, inner string) (string, error) {
 	return "(" + typ + ") " + inner, nil
 }
 
-// Composite spells the two collection factories for a list and a
-// map, and a constructor call for a record. A record whose value
+// Composite spells an array creation for an array, the collection
+// factories for a list and a map, and a constructor call for a
+// record. A map above ten pairs builds through Map.ofEntries,
+// because Map.of takes ten pairs at most. A record whose value
 // names its fields is refused: a Java constructor takes every
 // component positionally and in order, so a value setting some of
-// them cannot be spelled without inventing the rest.
+// them cannot be spelled without inventing the rest. An entry a form
+// takes no key or name for is refused, and so is a map entry without
+// a key.
 func (t target) Composite(
 	ref *emit.TypeRef, typ string, entries []scaffold.Entry,
 ) (string, error) {
+	form := symbol.FormNamed
+	if ref != nil {
+		form = ref.Form
+	}
 	parts := make([]string, 0, len(entries)*2)
-	if ref != nil && (ref.Form == symbol.FormList || ref.Form == symbol.FormArray) {
+	switch form {
+	case symbol.FormArray, symbol.FormList:
 		for _, e := range entries {
+			if e.Key != "" || e.Name != "" {
+				return "", render.RefuseValue(t.Lang(),
+					"a %s value has a keyed or named entry, and an array or a list takes "+
+						"elements alone", typ)
+			}
 			parts = append(parts, e.Value)
+		}
+		if form == symbol.FormArray {
+			return arrayCreation + typ + " {" + strings.Join(parts, ", ") + "}", nil
 		}
 		t.useCollection(listClass)
 		return listClass + factory + strings.Join(parts, ", ") + ")", nil
-	}
-	if ref != nil && ref.Form == symbol.FormMap {
+	case symbol.FormMap:
 		for _, e := range entries {
 			if e.Key == "" {
 				return "", render.RefuseValue(t.Lang(),
 					"a map value has an entry with no key")
 			}
-			parts = append(parts, e.Key, e.Value)
 		}
 		t.useCollection(mapClass)
+		if len(entries) > mapOfLimit {
+			for _, e := range entries {
+				parts = append(parts, mapClass+entryFactory+e.Key+", "+e.Value+")")
+			}
+			return mapClass + entriesFactory + strings.Join(parts, ", ") + ")", nil
+		}
+		for _, e := range entries {
+			parts = append(parts, e.Key, e.Value)
+		}
 		return mapClass + factory + strings.Join(parts, ", ") + ")", nil
 	}
 	for _, e := range entries {
-		if e.Name != "" {
+		switch {
+		case e.Name != "":
 			return "", render.RefuseValue(t.Lang(),
 				"a %s value names the field %s, and a Java constructor takes every "+
 					"component positionally", typ, e.Name)
+		case e.Key != "":
+			return "", render.RefuseValue(t.Lang(),
+				"a %s value has a keyed entry, and a Java constructor takes every "+
+					"component positionally", typ)
 		}
 		parts = append(parts, e.Value)
 	}

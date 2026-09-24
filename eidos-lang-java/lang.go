@@ -8,8 +8,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Lang is the source language a declaration of this language
-// carries, and the language the value target answers for.
+// Lang is the source language of every Java declaration, and the
+// language the value target spells for.
 const Lang symbol.Lang = "java"
 
 // Target names the rendering target a plan resolves to reach the
@@ -20,17 +20,18 @@ const Target plugin.Target = "java"
 // reported under and what a composition schedules it by.
 const Name plugin.ID = "java"
 
-// Extension is the suffix every Java file carries.
+// Extension is the suffix of every Java file.
 const Extension = ".java"
 
 // Version is the backend's behavior version, folded into the
-// composition fingerprint: bump it with any change to the rendered output.
-const Version = "0.2.1"
+// composition fingerprint: bump it with any change to the rendered
+// output.
+const Version = "0.3.0"
 
-// Syntax is Java's comment forms, declared once and shared: the
-// frontend strips comments with it, and the output contract
-// writes the generated-file frame through it. The doc-block form
-// carries the star gutter Javadoc continuation lines use.
+// Syntax returns Java's comment forms, declared once and shared: the
+// line form, the block form, and the doc-block form with the star
+// gutter Javadoc continuation lines use. The output contract writes
+// the generated-file header through them.
 func Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{
 		Line: []string{"//"},

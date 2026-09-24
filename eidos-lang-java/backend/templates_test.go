@@ -42,7 +42,7 @@ func execute(src string, data any) (string, error) {
 	return b.String(), nil
 }
 
-// The inventory is two templates by design, and both are pinned
+// The inventory is three templates by design, and each is pinned
 // byte for byte; so is the refusal that keeps the return model
 // honest.
 func TestTemplates(t *testing.T) {
@@ -63,7 +63,7 @@ func TestTemplates(t *testing.T) {
 		assert.True(t, held, "and the enum class")
 	})
 
-	t.Run("class carries fields and methods with bodies", func(t *testing.T) {
+	t.Run("class spells fields and methods with bodies", func(t *testing.T) {
 		t.Parallel()
 
 		s := &emit.Struct{Doc: []string{"Row is one record."}, Name: "Row"}
@@ -109,7 +109,7 @@ func TestTemplates(t *testing.T) {
 				"trailing comment behind its semicolon")
 	})
 
-	t.Run("interface carries signatures alone", func(t *testing.T) {
+	t.Run("interface spells signatures alone", func(t *testing.T) {
 		t.Parallel()
 
 		i := &emit.Interface{Name: "Store"}
@@ -119,6 +119,32 @@ func TestTemplates(t *testing.T) {
 		assert.Equal(t, got,
 			"public interface Store {\n    void close();\n}\n",
 			"implicitly public, no body, void for no result")
+	})
+
+	t.Run("interface fields render as its constants", func(t *testing.T) {
+		t.Parallel()
+
+		i := &emit.Interface{Name: "Store"}
+		i.Fields.Append(&emit.Field{
+			Doc: []string{"MAX bounds a batch."}, Name: "MAX", Type: ref("int"), Value: "8",
+			Comment: "rows",
+		})
+		i.Methods.Append(&emit.Method{Name: "close"})
+		got, err := execute(backend.InterfaceTemplate, i)
+		assert.NoError(t, err, "the interface renders")
+		assert.Equal(t, got,
+			"public interface Store {\n"+
+				"    /**\n     * MAX bounds a batch.\n     */\n"+
+				"    int MAX = 8; // rows\n"+
+				"    void close();\n"+
+				"}\n",
+			"the constants before the signatures, with no keyword, because Java reads "+
+				"an interface field as public static final")
+
+		unset := &emit.Interface{Name: "Store"}
+		unset.Fields.Append(&emit.Field{Name: "max", Type: ref("int")})
+		_, err = execute(backend.InterfaceTemplate, unset)
+		assert.HasError(t, err, "a field without an initializer refuses")
 	})
 
 	t.Run("generics", func(t *testing.T) {
@@ -210,7 +236,7 @@ func TestTemplates(t *testing.T) {
 			"public interface Store extends Keyed {\n"+
 				"    Row load() throws IOException;\n"+
 				"}\n",
-			"a signature carries its throws clause too")
+			"a signature states its throws clause too")
 	})
 
 	t.Run("modifiers", func(t *testing.T) {
@@ -309,7 +335,7 @@ func TestTemplates(t *testing.T) {
 				"    ;\n"+
 				"    public static int steps = 2;\n"+
 				"}\n",
-			"constants first, the members Java's enum class carries "+
+			"constants first, the members Java's enum class declares "+
 				"behind the semicolon")
 
 		valued := &emit.Enum{Name: "Phase"}
@@ -343,6 +369,12 @@ func TestTemplates(t *testing.T) {
 		assert.Equal(t, got,
 			"public interface Store {\n    NESTED Enum\n}\n",
 			"an interface nests the same way")
+
+		narrowed := &emit.Interface{Name: "Store"}
+		narrowed.Types.Append(&emit.Struct{Name: "Inner", Visibility: symbol.VisibilityPrivate})
+		_, err = execute(backend.InterfaceTemplate, narrowed)
+		assert.HasError(t, err,
+			"a private member type of an interface refuses, because every one is public")
 	})
 
 	t.Run("the file skeleton opens with the package clause", func(t *testing.T) {
