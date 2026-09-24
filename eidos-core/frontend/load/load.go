@@ -86,7 +86,7 @@ type Report struct {
 	Units []UnitReport
 
 	// Excluded lists the claimed files the load refused as the
-	// workspace's own outputs, in tree order.
+	// workspace's own outputs, sorted by path.
 	Excluded []string
 }
 
@@ -216,6 +216,7 @@ func treeFiles(fsys fs.FS) ([]string, error) {
 func claim(frontends []plugin.Frontend, files []string) ([][]string, error) {
 	claimed := make(map[string]plugin.ID, len(files))
 	out := make([][]string, len(frontends))
+	var segments []string
 	for i, f := range frontends {
 		selection := f.Selection()
 		for _, pattern := range selection {
@@ -223,8 +224,10 @@ func claim(frontends []plugin.Frontend, files []string) ([][]string, error) {
 				return nil, fmt.Errorf("load: frontend %s: %w", f.Name(), err)
 			}
 		}
+		m := compile(selection)
 		for _, path := range files {
-			if !Match(selection, path) {
+			segments = split(segments, path)
+			if !m.claims(segments) {
 				continue
 			}
 			if by, taken := claimed[path]; taken {
@@ -242,7 +245,7 @@ func claim(frontends []plugin.Frontend, files []string) ([][]string, error) {
 
 // disown drops every claimed file carrying a provenance trailer
 // under the load's own brand from the claims, and returns what it
-// dropped in tree order. The proof is read from the bytes rather
+// dropped, sorted by path. The proof is read from the bytes rather
 // than matched against declared output families: an out= redirect
 // and the orphaned output of a removed plugin match no current
 // declaration. A zero brand proves nothing and drops nothing.
@@ -422,7 +425,7 @@ func parseAll(ctx context.Context, cfg Config, units []*unit) error {
 	// cannot finish.
 	for _, u := range units {
 		if u.src == nil {
-			return ctx.Err()
+			return fmt.Errorf("load: %w", ctx.Err())
 		}
 	}
 	return nil

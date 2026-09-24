@@ -58,10 +58,11 @@ func (b *Builder) Version(v string) *Builder {
 	return b
 }
 
-// Match appends selection patterns to the file claim:
-// gitignore-style globs against workspace-relative paths, applied
-// in order with the last match deciding, so a later negation
-// carves an earlier claim. What stays out of the claim is policy —
+// Match appends selection patterns to the file claim: globs
+// matched against the whole workspace-relative path, "**" spanning
+// any number of segments, applied in order with the last match
+// deciding, so a later negation carves an earlier claim. What stays
+// out of the claim is policy —
 // whether test files take part is the consumer's call through
 // scopes, never a selection line.
 func (b *Builder) Match(patterns ...string) *Builder {

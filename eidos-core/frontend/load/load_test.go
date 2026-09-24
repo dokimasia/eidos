@@ -314,6 +314,20 @@ func TestLoad(t *testing.T) {
 			assert.True(t, held, "and the file's declarations load")
 		})
 
+		t.Run("lists the refused files sorted by path", func(t *testing.T) {
+			t.Parallel()
+
+			// The walk visits a/x.zz before a-b.zz, and a byte sort
+			// puts a-b.zz first, because '-' sorts before '/'.
+			tree := fstest.MapFS{
+				"a/x.zz": {Data: stamped(t, ownBrand, "package a\ntype X string\n")},
+				"a-b.zz": {Data: stamped(t, ownBrand, "package ab\ntype Y string\n")},
+			}
+			_, report, _ := loadTree(t, tree, func(cfg *load.Config) { cfg.Brand = ownBrand })
+			assert.Equal(t, report.Excluded, []string{"a-b.zz", "a/x.zz"},
+				"the report sorts the refusals by path, not by the walk")
+		})
+
 		t.Run("excludes nothing under the zero brand", func(t *testing.T) {
 			t.Parallel()
 
@@ -521,6 +535,7 @@ func TestLoad(t *testing.T) {
 			g, report, err := load.Load(ctx, cfg)
 			assert.ErrorIs(t, err, context.Canceled,
 				"a skipped unit has no source unit to key, so the load cannot finish")
+			assert.HasPrefix(t, err.Error(), "load: ", "under the package prefix")
 			assert.Nil(t, g, "and nothing half-loaded is handed back")
 			assert.Nil(t, report, "nor a report over units that never parsed")
 		})
@@ -740,8 +755,6 @@ func (f failingFS) Open(name string) (fs.File, error) {
 	return f.tree.Open(name)
 }
 
-// versionless hides the fake's version, which the driver must
-// refuse.
 // hiddenOptions declares an options struct with an unexported
 // field, which the canonical encoding cannot see and the load must
 // refuse.
@@ -756,6 +769,8 @@ func (hiddenOptions) Options() any {
 	}{}
 }
 
+// versionless hides the fake's version, which the driver must
+// refuse.
 type versionless struct {
 	f *frontendtest.Scripted
 }

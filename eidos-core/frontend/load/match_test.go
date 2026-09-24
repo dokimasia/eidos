@@ -73,5 +73,18 @@ func TestMatch(t *testing.T) {
 			assert.Contains(t, err.Error(), "claims nothing",
 				"a negation with nothing behind it is not a claim")
 		})
+
+		t.Run("refuses a segment no workspace-relative path contains", func(t *testing.T) {
+			t.Parallel()
+
+			for _, pattern := range []string{
+				"/a/*.zz", "a//one.zz", "a/", "./a/one.zz", "a/../b/*.zz", "!**/./one.zz",
+			} {
+				err := refuse(t, tree(), with(claiming("**/*.zz", pattern)))
+				assert.Contains(t, err.Error(), pattern, "naming the pattern")
+				assert.Contains(t, err.Error(), "empty, . or .. segment",
+					"a segment no path contains would claim nothing without a word")
+			}
+		})
 	})
 }
