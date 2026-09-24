@@ -532,6 +532,23 @@ func TestParse(t *testing.T) {
 		assert.Equal(t, b.Value, "pair()", "and b's, because one call binds both")
 	})
 
+	t.Run("leaves out the functions and fields no code can address", func(t *testing.T) {
+		t.Parallel()
+
+		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
+			"package p\n\nfunc init() {}\n\nfunc init() {}\n\nfunc _() {}\n\nfunc _() {}\n\n"+
+				"type T struct {\n\t_ [4]byte\n\tA, _ int\n\t_ [2]byte\n}\n\n"+
+				"func (T) _() {}\n\nfunc (T) init() {}\n"))
+		assert.Length(t, file.Decls, 1,
+			"two inits and two blank functions spell no declaration, so no identity repeats")
+		st := file.Decls[0].(*node.Struct)
+		assert.Length(t, st.Fields, 1, "the padding fields and the blank name beside A bind nothing")
+		assert.Equal(t, st.Fields[0].Name, "A", "and A is kept")
+		assert.Length(t, st.Methods, 1, "a blank method binds nothing")
+		assert.Equal(t, st.Methods[0].Name, "init",
+			"while a method named init is kept, because a value can call it")
+	})
+
 	t.Run("keeps a blank import's underscore", func(t *testing.T) {
 		t.Parallel()
 

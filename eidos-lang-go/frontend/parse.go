@@ -354,8 +354,8 @@ func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, b *bindings,
 	switch {
 	case spec.Name == nil:
 		b.named[path.Base(imported)] = imported
-	case spec.Name.Name == "_":
-		record.Alias = "_"
+	case spec.Name.Name == blankName:
+		record.Alias = blankName
 	case spec.Name.Name == ".":
 		record.Wildcard = true
 		b.dots = append(b.dots, imported)
@@ -368,10 +368,14 @@ func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, b *bindings,
 }
 
 // lowerDecl lowers one top-level declaration, observing the unit's
-// depth: at signatures, an unexported declaration stays out.
+// depth: at signatures, an unexported declaration stays out. A
+// function no code can address is left out at every depth.
 func (f *goFrontend) lowerDecl(u *plugin.SourceUnit, l *lowered, file *node.File, decl ast.Decl) {
 	switch d := decl.(type) {
 	case *ast.FuncDecl:
+		if unaddressable(d) {
+			return
+		}
 		if u.Depth() == plugin.DepthSignatures && !ast.IsExported(d.Name.Name) {
 			return
 		}
@@ -406,6 +410,21 @@ func (f *goFrontend) lowerDecl(u *plugin.SourceUnit, l *lowered, file *node.File
 		}
 	}
 }
+
+// unaddressable reports a function no Go code can name: a blank
+// function or method, and a package's init, which the language runs
+// and forbids referring to. A package declares any number of
+// either, so lowering them would spell one identity twice.
+func unaddressable(d *ast.FuncDecl) bool {
+	return d.Name.Name == blankName || d.Recv == nil && d.Name.Name == initName
+}
+
+// The names Go reserves a meaning for at declaration: the blank
+// identifier, which binds nothing, and the package initializer.
+const (
+	blankName = "_"
+	initName  = "init"
+)
 
 // declParts joins a spec's own comments with its group's: the
 // nearer doc text stands, and carriers and annotations union
@@ -568,9 +587,16 @@ func (l *lowered) aliasOf(
 // annotations lower with it, and its carriers attach to it. An
 // embed whose named type the source spells nothing for, as one the
 // parser synthesized past the end of a broken file, is left out,
-// because the load names an embed by that spelling.
+// because the load names an embed by that spelling. A blank field
+// is padding no code can address, and a struct may declare any
+// number of them, so it is left out. A field of blank names alone
+// leaves its comments unread, so a carrier on it refuses as
+// floating.
 func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.Struct, t *ast.StructType) {
 	for _, field := range t.Fields.List {
+		if len(field.Names) > 0 && !slices.ContainsFunc(field.Names, named) {
+			continue
+		}
 		parts := l.declParts(u, plugin.CommentParts{}, field.Doc, field.Comment)
 		if len(field.Names) == 0 {
 			if l.spelling(undecorated(field.Type)) == "" {
@@ -587,6 +613,9 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 			continue
 		}
 		for _, name := range field.Names {
+			if !named(name) {
+				continue
+			}
 			if u.Depth() == plugin.DepthSignatures && !ast.IsExported(name.Name) {
 				continue
 			}
@@ -603,6 +632,10 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 		}
 	}
 }
+
+// named reports whether a declared name binds something: every name
+// but the blank identifier.
+func named(name *ast.Ident) bool { return name.Name != blankName }
 
 // lowerInterfaceBody lowers method signatures and embedded
 // interfaces. A constraint element — a union or an approximation —
@@ -636,7 +669,7 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 			continue
 		}
 		name := member.Names[0].Name
-		if name == "_" {
+		if name == blankName {
 			continue // a blank method binds nothing, as blank values do
 		}
 		if u.Depth() == plugin.DepthSignatures && !ast.IsExported(name) {
@@ -692,7 +725,7 @@ func (*goFrontend) lowerValues(
 ) {
 	parts := l.declParts(u, group, s.Doc, s.Comment)
 	for i, name := range s.Names {
-		if name.Name == "_" {
+		if !named(name) {
 			continue
 		}
 		if u.Depth() == plugin.DepthSignatures && !ast.IsExported(name.Name) {

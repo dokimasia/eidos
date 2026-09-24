@@ -102,8 +102,11 @@
 // bytes that cannot change the graph must not key it; an import's
 // local name defaults to the path's last segment, the
 // unbound-qualifier probe catching the mismatch for workspace
-// packages. Free-floating documentation between declarations has
-// no model home and drops; its carriers refuse.
+// packages. It lowers no init function and no blank declaration —
+// a function, method, field or value named _ — because no code can
+// name one and a package may declare any number of each.
+// Free-floating documentation between declarations has no model
+// home and drops; its carriers refuse.
 //
 // # Dependency position
 //
