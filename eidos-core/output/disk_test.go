@@ -5,7 +5,9 @@ package output_test
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
+	"syscall"
 	"testing"
 	"time"
 
@@ -197,6 +199,32 @@ func TestDisk(t *testing.T) {
 			_, statErr := os.Stat(filepath.Join(root, "store.go"))
 			assert.True(t, os.IsNotExist(statErr),
 				"a failed staging writes nothing to the target")
+		})
+
+		t.Run("removes a staging file whose bytes it cannot sync", func(t *testing.T) {
+			t.Parallel()
+
+			// A FIFO at the staging path opens for writing while a
+			// reader has it open. It accepts the written bytes, and
+			// the sync that follows fails on it.
+			root := t.TempDir()
+			stage := filepath.Join(root, "store.go.stage")
+			out, err := exec.CommandContext(t.Context(), "mkfifo", stage).CombinedOutput()
+			assert.NoError(t, err, "the fixture makes a FIFO at the staging path: "+string(out))
+			reader, err := os.OpenFile(stage, os.O_RDONLY|syscall.O_NONBLOCK, 0)
+			assert.NoError(t, err, "a reader opens the FIFO")
+			t.Cleanup(func() { _ = reader.Close() })
+
+			s := disk(t, root)
+			assert.NoError(t, s.Write("store.go", []byte("package svc\n")), "the staging takes")
+			got, err := s.Commit()
+			assert.HasError(t, err, "unsynced bytes never reach the target")
+			assert.Contains(t, err.Error(), "staging", "the error names the step that failed")
+			assert.Empty(t, got, "and no record claims the file")
+			_, statErr := os.Stat(stage)
+			assert.True(t, os.IsNotExist(statErr), "the failed staging file is gone")
+			_, statErr = os.Stat(filepath.Join(root, "store.go"))
+			assert.True(t, os.IsNotExist(statErr), "and the target was never written")
 		})
 	})
 

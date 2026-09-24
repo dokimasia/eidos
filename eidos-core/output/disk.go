@@ -46,10 +46,10 @@ func (d *Disk) Write(path string, body []byte) error { return d.stage(path, body
 
 // Commit writes every staged file, in path order: identical bytes
 // leave the file and its mtime untouched, and anything else is
-// written to a staging file and renamed over the target, so a
-// reader sees the old file or the new one and never half of
-// either. A file that fails is one error and the rest still
-// commit.
+// written to a staging file, synced, and renamed over the target,
+// so a reader sees the old file or the new one and never half of
+// either. A staging file that fails to write or sync is removed. A
+// file that fails is one error and the rest still commit.
 func (d *Disk) Commit() ([]Written, error) {
 	if err := d.finish(); err != nil {
 		return nil, err
@@ -99,7 +99,7 @@ func (d *Disk) commit(at string, body []byte) (Written, error) {
 	// A staging file a killed run left is stale by definition, and
 	// writing truncates it.
 	stage := at + stageSuffix
-	if err := d.root.WriteFile(stage, body, filePerm); err != nil {
+	if err := d.writeStage(stage, body); err != nil {
 		return Written{}, fmt.Errorf("output: staging %q: %w", at, err)
 	}
 	if err := d.root.Rename(stage, at); err != nil {
@@ -107,4 +107,25 @@ func (d *Disk) commit(at string, body []byte) (Written, error) {
 		return Written{}, fmt.Errorf("output: committing %q: %w", at, err)
 	}
 	return Written{Path: at, Action: action, Hash: digest(body)}, nil
+}
+
+// writeStage writes body to the staging file and syncs it, so the
+// rename that follows publishes bytes already on disk. A failed
+// write, sync or close removes the staging file.
+func (d *Disk) writeStage(stage string, body []byte) error {
+	f, err := d.root.OpenFile(stage, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm)
+	if err != nil {
+		return err
+	}
+	_, err = f.Write(body)
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	if err != nil {
+		_ = d.root.Remove(stage)
+	}
+	return err
 }
