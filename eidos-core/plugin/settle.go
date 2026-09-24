@@ -182,13 +182,26 @@ type planned struct {
 // respellAll settles every declared name and rewrites the
 // references that follow them: every visit plans first, collisions
 // resolve per scope, then the plans apply and the references
-// follow.
+// follow. Withheld declarations leave their units last, because
+// every pass before that addresses a plan by the declaration index
+// it was made under.
 func respellAll(e *Emit, r Respeller, by diag.Origin, sink *diag.Sink) {
 	plans := planNames(e, r)
 	table, byOrigin := resolveTop(e, plans, by, sink)
 	resolveMembers(e, plans, by, sink)
 	applyNames(e, plans, by, sink)
 	rewriteRefs(e, plans, table, byOrigin, by, sink)
+	dropWithheld(e)
+}
+
+// dropWithheld removes the declarations applyNames withheld, which
+// it marks nil in place so the reference pass still finds each
+// survivor's plan at its original index.
+func dropWithheld(e *Emit) {
+	for i := range e.units {
+		u := &e.units[i]
+		u.Decls = slices.DeleteFunc(u.Decls, func(d symbol.Symbol) bool { return d == nil })
+	}
 }
 
 // span is one declaration's slice of the plan arena.
@@ -239,9 +252,11 @@ func planNames(e *Emit, r Respeller) *plan {
 		return name, nil
 	}
 	for i := range e.units {
+		// An emit declaration has no source position, so every
+		// visit in a unit is positioned at the unit.
+		at = unitPos(&e.units[i])
 		for j, d := range e.units[i].Decls {
 			lo := len(plans.all)
-			at = d.Position()
 			_ = emit.RespellNames(d, record)
 			plans.spans[[2]int{i, j}] = span{lo: lo, hi: len(plans.all)}
 		}
@@ -396,10 +411,13 @@ func scopeKey(pkg string, d symbol.Symbol) string {
 	return pkg + scopeSep + m.Receives.Spelling
 }
 
-// resolveMembers reverts member collisions: within one host, two
-// members settling to one name keep their emitted spellings under
-// one finding. Plans are short, so the scan compares pairs and
-// allocates only where a collision exists.
+// resolveMembers reverts member collisions: within one host,
+// members whose distinct emitted names settle to one name keep
+// their emitted spellings under one finding. Members sharing one
+// emitted name are overloads, or duplicates the language's own
+// lowering refuses, and the respell did not bring them together.
+// Plans are short, so the scan compares pairs and allocates only
+// where a collision exists.
 func resolveMembers(
 	e *Emit, plans *plan, by diag.Origin, sink *diag.Sink,
 ) {
@@ -408,41 +426,51 @@ func resolveMembers(
 			list := plans.of(i, j)
 			for a := range list {
 				pa := &list[a]
-				if pa.host == nil || pa.err != nil || pa.grouped {
+				if pa.host == nil || pa.err != nil || pa.grouped || !collides(list, a) {
 					continue
 				}
-				var names []string
 				settled := pa.final
-				for b := a + 1; b < len(list); b++ {
+				var names []string
+				for b := a; b < len(list); b++ {
 					pb := &list[b]
 					if pb.host != pa.host || pb.err != nil || pb.grouped ||
 						pb.final != settled {
 						continue
 					}
-					if names == nil {
-						names = append(names, pa.emitted)
-						pa.final, pa.grouped = pa.emitted, true
-					}
 					names = append(names, pb.emitted)
 					pb.final, pb.grouped = pb.emitted, true
 				}
-				if names != nil {
-					slices.Sort(names)
-					sink.Errorf(CollidingNames, pa.at, by,
-						"%s settle to %q in one host, and every one keeps its emitted name",
-						strings.Join(names, " and "), settled)
-				}
+				slices.Sort(names)
+				sink.Errorf(CollidingNames, pa.at, by,
+					"%s settle to %q in one host, and every one keeps its emitted name",
+					strings.Join(names, " and "), settled)
 			}
 		}
 	}
 }
 
+// collides reports whether a later member of list[a]'s host
+// settles to list[a]'s name from a different emitted name.
+func collides(list []planned, a int) bool {
+	pa := &list[a]
+	for b := a + 1; b < len(list); b++ {
+		pb := &list[b]
+		if pb.host == pa.host && pb.err == nil && !pb.grouped &&
+			pb.final == pa.final && pb.emitted != pa.emitted {
+			return true
+		}
+	}
+	return false
+}
+
 // applyNames replays every plan over its declaration, writing the
 // final spellings back. A declaration whose plan holds a hook
 // refusal is withheld whole under a positioned finding, because
-// rendering it half-respelt would misstate it. A verbatim body
-// pins its callable's parameter and result names, under a finding
-// where one would have changed.
+// rendering it half-respelt would misstate it. Its entry in the
+// unit is set to nil, and [dropWithheld] removes it once the
+// references are rewritten. A verbatim body pins its callable's
+// parameter and result names, under a finding where one would have
+// changed.
 func applyNames(
 	e *Emit, plans *plan, by diag.Origin, sink *diag.Sink,
 ) {
@@ -473,11 +501,11 @@ func applyNames(
 	}
 	for i := range e.units {
 		u := &e.units[i]
-		kept := make([]symbol.Symbol, 0, len(u.Decls))
 		for j, d := range u.Decls {
 			list = plans.of(i, j)
 			if refused := firstErr(list); refused != nil {
 				sink.Errorf(RefusedName, unitPos(u), by, "%v", refused.err)
+				u.Decls[j] = nil
 				continue
 			}
 			at, warned = 0, nil
@@ -495,9 +523,7 @@ func applyNames(
 							"would have respelled", pinnedName(host))
 				}
 			}
-			kept = append(kept, d)
 		}
-		u.Decls = kept
 	}
 }
 
@@ -556,16 +582,20 @@ func rewriteRefs(
 	for i := range e.units {
 		u := &e.units[i]
 		pkg := u.Pkg.Package
+		at := unitPos(u)
 		for j, d := range u.Decls {
+			if d == nil {
+				continue
+			}
 			renames := paramNames(plans.of(i, j))
 			for s := range emit.All(d) {
 				switch t := s.(type) {
 				case *emit.TypeRef:
-					rewriteRef(t, pkg, table, byOrigin, d, by, sink)
+					rewriteRef(t, pkg, table, byOrigin, at, by, sink)
 				case *emit.Function:
-					rewriteBody(&t.Body, maps.Clone(renames[t]), pkg, table, d, by, sink)
+					rewriteBody(&t.Body, maps.Clone(renames[t]), pkg, table, at, by, sink)
 				case *emit.Method:
-					rewriteBody(&t.Body, maps.Clone(renames[t]), pkg, table, d, by, sink)
+					rewriteBody(&t.Body, maps.Clone(renames[t]), pkg, table, at, by, sink)
 				}
 			}
 		}
@@ -605,7 +635,7 @@ func paramNames(list []planned) map[symbol.Symbol]map[string]string {
 func rewriteRef(
 	t *emit.TypeRef, pkg string, table map[pkgName]tableEntry,
 	byOrigin map[originName]string,
-	d symbol.Symbol, by diag.Origin, sink *diag.Sink,
+	at position.Pos, by diag.Origin, sink *diag.Sink,
 ) {
 	if !t.Target.IsZero() {
 		if settled, match := byOrigin[originName{id: t.Target, emitted: t.Spelling}]; match {
@@ -618,7 +648,7 @@ func rewriteRef(
 		return
 	}
 	if ent.ambiguous {
-		sink.Errorf(AmbiguousReference, d.Position(), by,
+		sink.Errorf(AmbiguousReference, at, by,
 			"%q matches declarations whose settled names diverge, and the "+
 				"reference stands as written", t.Spelling)
 		return
@@ -634,7 +664,7 @@ func rewriteRef(
 func rewriteBody(
 	b *emit.Body, locals map[string]string, pkg string,
 	table map[pkgName]tableEntry,
-	d symbol.Symbol, by diag.Origin, sink *diag.Sink,
+	at position.Pos, by diag.Origin, sink *diag.Sink,
 ) {
 	if b.Verbatim != "" {
 		return
@@ -642,36 +672,80 @@ func rewriteBody(
 	if locals == nil {
 		locals = map[string]string{}
 	}
-	rewriteStmts(b.Prologue.Items(), locals, pkg, table, d, by, sink)
-	rewriteStmts(b.Stmts, locals, pkg, table, d, by, sink)
+	rewriteStmts(b.Prologue.Items(), locals, pkg, table, at, by, sink)
+	rewriteStmts(b.Stmts, locals, pkg, table, at, by, sink)
 	for _, s := range b.Slots {
 		if s != nil {
-			rewriteStmts(s.Slot.Items(), locals, pkg, table, d, by, sink)
+			rewriteStmts(s.Slot.Items(), locals, pkg, table, at, by, sink)
 		}
 	}
-	rewriteStmts(b.Epilogue.Items(), locals, pkg, table, d, by, sink)
+	rewriteStmts(b.Epilogue.Items(), locals, pkg, table, at, by, sink)
 }
 
 // rewriteStmts follows one statement run, accumulating declared
 // locals in statement order so a later reference resolves against
-// them.
+// them. An assignment that declares nothing targets names already
+// in scope, so its targets resolve the way a reference does, and a
+// guard's block is a scope of its own.
 func rewriteStmts(
 	stmts []emit.Stmt, locals map[string]string, pkg string,
 	table map[pkgName]tableEntry,
-	d symbol.Symbol, by diag.Origin, sink *diag.Sink,
+	at position.Pos, by diag.Origin, sink *diag.Sink,
 ) {
 	for i := range stmts {
 		s := &stmts[i]
-		rewriteExpr(&s.Value, locals, pkg, table, d, by, sink)
-		for _, n := range s.Names {
-			locals[n] = n
+		rewriteExpr(&s.Value, locals, pkg, table, at, by, sink)
+		for k, n := range s.Names {
+			if s.Declare {
+				locals[n] = n
+				continue
+			}
+			s.Names[k] = follow(n, locals, pkg, table, at, by, sink)
 		}
 		if s.Name != "" {
-			if renamed, held := locals[s.Name]; held {
-				s.Name = renamed
-			}
+			s.Name = follow(s.Name, locals, pkg, table, at, by, sink)
 		}
-		rewriteStmts(s.Then, locals, pkg, table, d, by, sink)
+		if len(s.Then) > 0 {
+			rewriteBlock(s.Then, locals, pkg, table, at, by, sink)
+		}
+	}
+}
+
+// shadowed is one enclosing binding a block's declaration hides:
+// the name, and the spelling it resolved to before the block, or
+// none where the block introduced it.
+type shadowed struct {
+	name string
+	prev string
+	had  bool
+}
+
+// rewriteBlock follows a guard's block as a nested scope: the names
+// the block declares resolve inside it, and the enclosing bindings
+// they hid return when it ends. The restore list exists only where
+// the block declares a name.
+func rewriteBlock(
+	stmts []emit.Stmt, locals map[string]string, pkg string,
+	table map[pkgName]tableEntry,
+	at position.Pos, by diag.Origin, sink *diag.Sink,
+) {
+	var hidden []shadowed
+	for i := range stmts {
+		if !stmts[i].Declare {
+			continue
+		}
+		for _, n := range stmts[i].Names {
+			prev, had := locals[n]
+			hidden = append(hidden, shadowed{name: n, prev: prev, had: had})
+		}
+	}
+	rewriteStmts(stmts, locals, pkg, table, at, by, sink)
+	for _, h := range slices.Backward(hidden) {
+		if h.had {
+			locals[h.name] = h.prev
+		} else {
+			delete(locals, h.name)
+		}
 	}
 }
 
@@ -679,32 +753,42 @@ func rewriteStmts(
 func rewriteExpr(
 	x *emit.Expr, locals map[string]string, pkg string,
 	table map[pkgName]tableEntry,
-	d symbol.Symbol, by diag.Origin, sink *diag.Sink,
+	at position.Pos, by diag.Origin, sink *diag.Sink,
 ) {
 	if x == nil {
 		return
 	}
 	switch x.Kind {
 	case emit.ExprName:
-		if renamed, held := locals[x.Name]; held {
-			x.Name = renamed
-			return
-		}
-		ent, held := table[pkgName{pkg: pkg, emitted: x.Name}]
-		if !held {
-			return
-		}
-		if ent.ambiguous {
-			sink.Errorf(AmbiguousReference, d.Position(), by,
-				"%q matches declarations whose settled names diverge, and the "+
-					"reference stands as written", x.Name)
-			return
-		}
-		x.Name = ent.settled
+		x.Name = follow(x.Name, locals, pkg, table, at, by, sink)
 	case emit.ExprCall:
-		rewriteExpr(x.Fn, locals, pkg, table, d, by, sink)
+		rewriteExpr(x.Fn, locals, pkg, table, at, by, sink)
 		for i := range x.Args {
-			rewriteExpr(&x.Args[i], locals, pkg, table, d, by, sink)
+			rewriteExpr(&x.Args[i], locals, pkg, table, at, by, sink)
 		}
 	}
+}
+
+// follow resolves one structured name: the callable's locals
+// first, then the package's table. An ambiguous match reports and
+// returns the name as written.
+func follow(
+	name string, locals map[string]string, pkg string,
+	table map[pkgName]tableEntry,
+	at position.Pos, by diag.Origin, sink *diag.Sink,
+) string {
+	if renamed, held := locals[name]; held {
+		return renamed
+	}
+	ent, held := table[pkgName{pkg: pkg, emitted: name}]
+	if !held {
+		return name
+	}
+	if ent.ambiguous {
+		sink.Errorf(AmbiguousReference, at, by,
+			"%q matches declarations whose settled names diverge, and the "+
+				"reference stands as written", name)
+		return name
+	}
+	return ent.settled
 }

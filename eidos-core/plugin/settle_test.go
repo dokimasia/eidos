@@ -656,6 +656,158 @@ func TestSettle(t *testing.T) {
 			"and so does the epilogue's")
 	})
 
+	t.Run("a reassigned parameter follows its respelling as target and value", func(t *testing.T) {
+		t.Parallel()
+
+		load := &emit.Function{
+			Origin: settleOrigin("load", symbol.KindFunction),
+			Name:   "load",
+			Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+			Body: emit.Body{Stmts: []emit.Stmt{
+				{
+					Kind: emit.StmtAssign, Names: []string{"rowCount"},
+					Value: emit.Expr{
+						Kind: emit.ExprCall,
+						Fn:   &emit.Expr{Kind: emit.ExprName, Name: "clamp"},
+						Args: []emit.Expr{{Kind: emit.ExprName, Name: "rowCount"}},
+					},
+				},
+				{Kind: emit.StmtReturn, Value: emit.Expr{Kind: emit.ExprName, Name: "rowCount"}},
+			}},
+		}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", load))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, prefixing("golang", "p"), sink),
+			"the settle completes")
+
+		coretest.AssertCodes(t, sink)
+		stmts := load.Body.Stmts
+		assert.Equal(t, stmts[0].Names[0], "prowCount",
+			"an assignment that declares nothing targets the respelled parameter")
+		assert.Equal(t, stmts[0].Value.Args[0].Name, "prowCount",
+			"its value reads the respelled parameter")
+		assert.Equal(t, stmts[1].Value.Name, "prowCount",
+			"and a later statement still reads the respelled parameter")
+	})
+
+	t.Run("a name declared inside a guard is out of scope after it", func(t *testing.T) {
+		t.Parallel()
+
+		load := &emit.Function{
+			Origin: settleOrigin("load", symbol.KindFunction),
+			Name:   "load",
+			Body: emit.Body{Stmts: []emit.Stmt{
+				{
+					Kind: emit.StmtGuard, Name: "err",
+					Then: []emit.Stmt{{
+						Kind: emit.StmtAssign, Names: []string{"max"}, Declare: true,
+						Value: emit.Expr{Kind: emit.ExprName, Name: "err"},
+					}},
+				},
+				{Kind: emit.StmtExpr, Value: emit.Expr{Kind: emit.ExprName, Name: "max"}},
+			}},
+		}
+		limit := &emit.Constant{
+			Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1",
+		}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", load, limit))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, prefixing("golang", "p"), sink),
+			"the settle completes")
+
+		coretest.AssertCodes(t, sink)
+		assert.Equal(t, load.Body.Stmts[1].Value.Name, "pmax",
+			"a reference after the guard resolves in the package, not in the guard's block")
+	})
+
+	t.Run("a declaration after a withheld one follows its own renames", func(t *testing.T) {
+		t.Parallel()
+
+		b := &respellingOnly{}
+		b.name = "golang"
+		b.fn = func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			if v == symbol.VisibilityProtected {
+				return "", errors.New("go: no case spells a protected scope")
+			}
+			if kind == symbol.KindParam {
+				return "p" + name, nil
+			}
+			return name, nil
+		}
+		box := &emit.Struct{Origin: settleOrigin("box", symbol.KindStruct), Name: "box"}
+		box.Fields.Append(&emit.Field{
+			Name: "item", Visibility: symbol.VisibilityProtected,
+			Type: &emit.TypeRef{Spelling: "int"},
+		})
+		load := &emit.Function{
+			Origin: settleOrigin("load", symbol.KindFunction),
+			Name:   "load",
+			Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+			Body: emit.Body{Stmts: []emit.Stmt{{
+				Kind: emit.StmtReturn, Value: emit.Expr{Kind: emit.ExprName, Name: "rowCount"},
+			}}},
+		}
+		e := storeOf(t, settleUnit("svc", "svc/a.src", box, load))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
+
+		coretest.AssertCodes(t, sink, plugin.RefusedName)
+		assert.Equal(t, load.Params[0].Name, "prowCount", "the survivor's parameter settles")
+		assert.Equal(t, load.Body.Stmts[0].Value.Name, "prowCount",
+			"and its body reads that parameter, not the withheld neighbour's renames")
+	})
+
+	t.Run("positions collision and ambiguity findings at their unit", func(t *testing.T) {
+		t.Parallel()
+
+		b := &respellingOnly{}
+		b.name = "golang"
+		b.fn = func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+			switch {
+			case kind == symbol.KindStruct:
+				return "S" + name, nil
+			case host != symbol.KindInvalid:
+				return "same", nil
+			default:
+				return "Same", nil
+			}
+		}
+		box := &emit.Struct{Origin: settleOrigin("box", symbol.KindStruct), Name: "box"}
+		box.Fields.Append(
+			&emit.Field{Name: "x", Type: &emit.TypeRef{Spelling: "int"}},
+			&emit.Field{Name: "y", Type: &emit.TypeRef{Spelling: "box"}},
+		)
+		alpha := &emit.Constant{Origin: settleOrigin("alpha", symbol.KindConstant), Name: "alpha", Value: "1"}
+		beta := &emit.Constant{Origin: settleOrigin("beta", symbol.KindConstant), Name: "beta", Value: "2"}
+		boxFn := &emit.Function{Origin: settleOrigin("boxfn", symbol.KindFunction), Name: "box"}
+		other := settleUnit("svc", "svc/b.src", boxFn)
+		other.Plugin = "second"
+		e := storeOf(t, settleUnit("svc", "svc/a.src", box, alpha, beta), other)
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, b, sink), "the settle completes")
+
+		coretest.AssertReports(t, sink, plugin.CollidingNames)
+		coretest.AssertReports(t, sink, plugin.AmbiguousReference)
+		coretest.AssertPositioned(t, sink)
+	})
+
+	t.Run("overloads sharing one emitted name do not collide", func(t *testing.T) {
+		t.Parallel()
+
+		box := &emit.Struct{Origin: settleOrigin("box", symbol.KindStruct), Name: "box"}
+		box.Methods.Append(
+			&emit.Method{Name: "get", Params: []*emit.Param{{Name: "id", Type: &emit.TypeRef{Spelling: "int"}}}},
+			&emit.Method{Name: "get", Params: []*emit.Param{{Name: "key", Type: &emit.TypeRef{Spelling: "string"}}}},
+		)
+		e := storeOf(t, settleUnit("svc", "svc/a.src", box))
+		sink := diag.NewSink()
+		assert.NoError(t, plugin.Settle(e, prefixing("java", "p"), sink), "the settle completes")
+
+		coretest.AssertCodes(t, sink)
+		assert.Equal(t, box.Methods.Items()[0].Name, "pget", "the first overload settles")
+		assert.Equal(t, box.Methods.Items()[1].Name, "pget", "and so does the second, to the same name")
+	})
+
 	t.Run("a call without a callee stands", func(t *testing.T) {
 		t.Parallel()
 
