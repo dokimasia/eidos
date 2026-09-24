@@ -7,14 +7,18 @@ import "strings"
 
 // Pascal converts s to PascalCase.
 //
-// Each word's first rune is upper-cased and the rest lower-cased,
-// except that words whose upper-cased form is a recognised initialism
-// (see [CommonInitialisms]) are upper-cased in full and already-all-upper
-// inputs are preserved. An empty or separator-only input returns "".
+// Each word's first rune is upper-cased and the rest lower-cased. A
+// word whose upper-cased form is a recognised initialism (see
+// [CommonInitialisms]) is upper-cased in full, and any other
+// all-upper ASCII word is kept whole as an acronym run, so
+// Pascal("IOReader") returns "IOReader". An upper-case identifier,
+// an upper-case ASCII letter followed by upper-case letters, digits
+// and underscores, is returned unchanged: "FOO" and "STATUS_ACTIVE"
+// keep their spelling. An empty or separator-only input returns "".
 // An input already in the style returns itself and allocates
 // nothing.
 func (c *Caser) Pascal(s string) string {
-	if c.matchesTitled(s, 0, false) {
+	if isUpperIdentifier(s) || c.matchesTitled(s, false, true) {
 		return s
 	}
 	words := c.Words(s)
@@ -24,20 +28,24 @@ func (c *Caser) Pascal(s string) string {
 	var b strings.Builder
 	b.Grow(len(s))
 	for _, w := range words {
-		c.writeTitleWord(&b, w)
+		c.writeTitleWord(&b, w, true)
 	}
 	return b.String()
 }
 
 // Camel converts s to camelCase.
 //
-// The first word is fully lower-cased; subsequent words are title-cased
-// using the same rules as [Caser.Pascal] (initialism preservation
-// included). The first word's lower-casing is unconditional, so
-// "URLPath" → "urlPath", "HTTPServer" → "httpServer". An input
-// already in the style returns itself and allocates nothing.
+// The first word is fully lower-cased, so "URLPath" becomes "urlPath"
+// and "HTTPServer" becomes "httpServer". Every later word is
+// title-cased by the rules of [Caser.Pascal]: a recognised
+// initialism is upper-cased in full, and an all-upper ASCII word is
+// kept whole in an input that also contains a lower-case letter. In
+// an input without a lower-case letter no word is an acronym run, so
+// "STATUS_ACTIVE" becomes "statusActive". An input already in the
+// style returns itself and allocates nothing.
 func (c *Caser) Camel(s string) string {
-	if c.matchesTitled(s, 0, true) {
+	keepUpper := !isUpperInput(s)
+	if c.matchesTitled(s, true, keepUpper) {
 		return s
 	}
 	words := c.Words(s)
@@ -48,7 +56,7 @@ func (c *Caser) Camel(s string) string {
 	b.Grow(len(s))
 	writeCased(&b, words[0], false)
 	for _, w := range words[1:] {
-		c.writeTitleWord(&b, w)
+		c.writeTitleWord(&b, w, keepUpper)
 	}
 	return b.String()
 }
@@ -64,20 +72,13 @@ func (c *Caser) ScreamingSnake(s string) string { return c.joined(s, '_', true) 
 func (c *Caser) Kebab(s string) string { return c.joined(s, '-', false) }
 
 // joined splits s and writes its words into one Builder, separated by
-// sep and case-mapped by up. It is the shared body of the five
-// separator styles.
+// sep and case-mapped by up. It is the shared body of the three
+// separator styles, and a conversion costs one allocation for the
+// result.
 //
-// It replaces a helper that built a []string of transformed words and
-// handed it to strings.Join: one allocation for the slice, one per
-// word whose case actually changed, and one more for Join's buffer,
-// with every byte copied twice. Writing through a single Builder makes
-// it one allocation for the whole call.
-//
-// Grow(len(s)) is a hint, not a bound. len(s) is not an upper bound on
-// the output for Unicode input — U+0250 is two bytes and upper-cases
-// to a three-byte rune — and Builder regrows on overflow, which is
-// exactly why a Builder is the right target and a fixed buffer sized
-// on that assumption would not be.
+// Grow(len(s)) is a size hint. The output of a Unicode input can be
+// longer than the input: U+0250 is two bytes and upper-cases to a
+// three-byte rune, and the Builder grows to fit.
 func (c *Caser) joined(s string, sep byte, up bool) string {
 	if matchesJoined(s, sep, up) {
 		return s
@@ -100,9 +101,9 @@ func (c *Caser) joined(s string, sep byte, up bool) string {
 // matchesJoined reports whether the joined style's output for s is
 // s itself: every rune already in the mapped case, exactly one
 // separator between words, none leading or trailing. The scan
-// allocates nothing, which is what lets an already-styled input
-// pass through whole; a word carrying invalid UTF-8 never matches,
-// because its output rebuilds.
+// allocates nothing, so an already-styled input passes through
+// whole. A word with invalid UTF-8 never matches, because its output
+// is rebuilt.
 func matchesJoined(s string, sep byte, up bool) bool {
 	o, ok, first := 0, true, true
 	wordSpans(s, func(start, end int, dirty bool) bool {
@@ -139,28 +140,17 @@ func matchesJoined(s string, sep byte, up bool) bool {
 	return ok && !first && o == len(s)
 }
 
-// matchesTitled reports whether a title-family style's output for
-// s is s itself, under [Caser.writeTitleWord]'s own rules per
-// word: a recognised initialism stands in its canonical form, an
-// all-upper ASCII word stands whole, and everything else title
-// cases; the first word lower-cases whole where firstLower says
-// so, which is camel's opening. sep is the byte between words,
-// zero for none. The scan allocates nothing.
-func (c *Caser) matchesTitled(s string, sep byte, firstLower bool) bool {
+// matchesTitled reports whether a title-family style's output for s
+// is s itself, under [Caser.writeTitleWord]'s rules per word: a
+// recognised initialism appears in its canonical form, an all-upper
+// ASCII word is kept whole where keepUpper is set, and every other
+// word title-cases. The first word lower-cases whole where
+// firstLower is set, which is camel's opening. The words follow each
+// other with no separator. The scan allocates nothing.
+func (c *Caser) matchesTitled(s string, firstLower, keepUpper bool) bool {
 	o, ok, first := 0, true, true
 	wordSpans(s, func(start, end int, dirty bool) bool {
-		if dirty {
-			ok = false
-			return false
-		}
-		if !first && sep != 0 {
-			if o >= len(s) || s[o] != sep {
-				ok = false
-				return false
-			}
-			o++
-		}
-		if o != start {
+		if dirty || o != start {
 			ok = false
 			return false
 		}
@@ -176,12 +166,12 @@ func (c *Caser) matchesTitled(s string, sep byte, firstLower bool) bool {
 				j += sz
 			}
 		default:
-			if canon, held := c.lookupInitialism(w); held {
+			if canon, known := c.lookupInitialism(w); known {
 				if canon != w {
 					ok = false
 					return false
 				}
-			} else if !isAllUpperASCII(w) {
+			} else if !keepUpper || !isAllUpperASCII(w) {
 				r, sz := decodeRuneAt(s, start)
 				if upperRune(r) != r {
 					ok = false
@@ -204,12 +194,9 @@ func (c *Caser) matchesTitled(s string, sep byte, firstLower bool) bool {
 }
 
 // writeCased writes w into b, upper-cased when up is set and
-// lower-cased otherwise.
-//
-// Case mapping is per rune. Falling back to a byte loop past 0x7F is
-// not implementable: a byte above that range is part of a multi-byte
-// sequence, and case-mapping it individually would corrupt the
-// encoding — the mapped rune may not even be the same width.
+// lower-cased otherwise. Case mapping is per rune, because a byte
+// past 0x7F is part of a multi-byte sequence and a mapped rune can
+// differ in width.
 func writeCased(b *strings.Builder, w string, up bool) {
 	if up {
 		for _, r := range w {

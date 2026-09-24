@@ -36,18 +36,35 @@ func runStyles(t *testing.T, convert func(*naming.Caser, string) string, cases [
 	}
 }
 
+// inputs returns every string of up to n runes drawn from alphabet,
+// the empty string included.
+func inputs(alphabet []string, n int) []string {
+	out, level := []string{""}, []string{""}
+	for range n {
+		next := make([]string, 0, len(level)*len(alphabet))
+		for _, prefix := range level {
+			for _, r := range alphabet {
+				next = append(next, prefix+r)
+			}
+		}
+		out, level = append(out, next...), next
+	}
+	return out
+}
+
 // The styles are what a satellite spells its names through, so
 // each one's rules are contract: how a word is cased, where a
-// separator goes, and which acronyms survive the round trip.
+// separator goes, and which acronyms keep their case through a round
+// trip.
 func TestCase(t *testing.T) {
 	t.Parallel()
 
-	t.Run("an input already in the style stands whole", func(t *testing.T) {
+	t.Run("returns an input already in the style unchanged", func(t *testing.T) {
 		t.Parallel()
 
-		// The zero-allocation half of the contract holds in
-		// BenchmarkCase and in the settle ceilings that consume it,
-		// because AllocsPerRun refuses to run beside parallel tests.
+		// BenchmarkCase and the settle ceilings that consume it check
+		// the zero-allocation half of the contract, because
+		// AllocsPerRun refuses to run beside parallel tests.
 		styled := []struct {
 			name string
 			fn   func(string) string
@@ -78,19 +95,25 @@ func TestCase(t *testing.T) {
 			{name: "empty input spells nothing", in: "", want: ""},
 			{name: "snake becomes pascal", in: "hello_world", want: "HelloWorld"},
 			{name: "camel becomes pascal", in: "helloWorld", want: "HelloWorld"},
-			{name: "pascal stays pascal", in: "HelloWorld", want: "HelloWorld"},
+			{name: "pascal is unchanged", in: "HelloWorld", want: "HelloWorld"},
 			{name: "a recognised initialism is upper-cased", in: "url_path", want: "URLPath"},
 			{
 				name:  "an unrecognised one is title-cased",
 				caser: naming.New(), in: "url_path", want: "UrlPath",
 			},
-			{name: "an acronym run inside the name survives", in: "HTTPServer", want: "HTTPServer"},
-			{name: "a word after a digit keeps its capital", in: "Base64Encode", want: "Base64Encode"},
-			{name: "a trailing initialism survives", in: "user_id", want: "UserID"},
+			{name: "an acronym run inside the name keeps its case", in: "HTTPServer", want: "HTTPServer"},
 			{
-				name:  "an all-upper word survives without being one",
+				name:  "an acronym run the caser does not know keeps its case",
+				caser: naming.New(), in: "IOReader", want: "IOReader",
+			},
+			{name: "a word after a digit keeps its capital", in: "Base64Encode", want: "Base64Encode"},
+			{name: "a trailing initialism keeps its case", in: "user_id", want: "UserID"},
+			{
+				name:  "an all-upper input keeps its case without being an initialism",
 				caser: naming.New(), in: "FOO", want: "FOO",
 			},
+			{name: "an upper-case identifier keeps its separators", in: "STATUS_ACTIVE", want: "STATUS_ACTIVE"},
+			{name: "an upper-case identifier keeps its digits", in: "SHA256", want: "SHA256"},
 		})
 	})
 
@@ -101,7 +124,19 @@ func TestCase(t *testing.T) {
 			{name: "snake becomes camel", in: "hello_world", want: "helloWorld"},
 			{name: "pascal becomes camel", in: "HelloWorld", want: "helloWorld"},
 			{name: "the first word lower-cases even as an initialism", in: "URL_path", want: "urlPath"},
-			{name: "a trailing initialism survives", in: "user_id", want: "userID"},
+			{name: "a trailing initialism keeps its case", in: "user_id", want: "userID"},
+			{
+				name:  "an acronym run after the first word keeps its case",
+				caser: naming.New(), in: "parseIOReader", want: "parseIOReader",
+			},
+			{
+				name: "an input without a lower-case letter title-cases its later words",
+				in:   "STATUS_ACTIVE", want: "statusActive",
+			},
+			{
+				name: "and the already-styled check agrees with the conversion on it",
+				in:   "1ABC", want: "1Abc",
+			},
 		})
 	})
 
@@ -111,7 +146,7 @@ func TestCase(t *testing.T) {
 			{name: "empty input spells nothing", in: "", want: ""},
 			{name: "pascal becomes snake", in: "HelloWorld", want: "hello_world"},
 			{name: "an acronym run lower-cases whole", in: "HTTPServer", want: "http_server"},
-			{name: "snake stays snake", in: "hello_world", want: "hello_world"},
+			{name: "snake is unchanged", in: "hello_world", want: "hello_world"},
 		})
 	})
 
@@ -120,7 +155,7 @@ func TestCase(t *testing.T) {
 		runStyles(t, (*naming.Caser).ScreamingSnake, []style{
 			{name: "empty input spells nothing", in: "", want: ""},
 			{name: "pascal becomes screaming snake", in: "HelloWorld", want: "HELLO_WORLD"},
-			{name: "an acronym run stays upper", in: "HTTPServer", want: "HTTP_SERVER"},
+			{name: "an acronym run is kept upper-case", in: "HTTPServer", want: "HTTP_SERVER"},
 		})
 	})
 
@@ -160,14 +195,30 @@ func TestCase(t *testing.T) {
 		assert.Equal(t, naming.Words(in), c.Words(in), "Words takes it too")
 	})
 
-	t.Run("a second conversion reaches a fixed point", func(t *testing.T) {
+	t.Run("every style is idempotent over ASCII letters and separators", func(t *testing.T) {
 		t.Parallel()
 
-		// Every style is idempotent over the identifiers a frontend
-		// derives from source. Outside that, a first pass can move a
-		// boundary the second reads differently, but the third never
-		// moves again, so the divergence is bounded at one step.
-		for _, in := range []string{"aA1", "aÉ", "ßa"} {
+		styles := map[string]func(string) string{
+			"Pascal": naming.Pascal, "Camel": naming.Camel, "Snake": naming.Snake,
+			"ScreamingSnake": naming.ScreamingSnake, "Kebab": naming.Kebab,
+		}
+		for _, in := range inputs([]string{"a", "d", "A", "D", "_", "-"}, 5) {
+			for name, convert := range styles {
+				once := convert(in)
+				if again := convert(once); again != once {
+					t.Fatalf("%s(%q) = %q, and converting that again gives %q", name, in, once, again)
+				}
+			}
+		}
+	})
+
+	t.Run("the second conversion is a fixed point", func(t *testing.T) {
+		t.Parallel()
+
+		// A digit or a non-ASCII rune can move a boundary the second
+		// pass reads differently, but the third never moves again, so
+		// the divergence is bounded at one step.
+		for _, in := range []string{"aA1a", "aÉ", "ßa"} {
 			t.Run(in, func(t *testing.T) {
 				t.Parallel()
 				once := naming.Pascal(in)
