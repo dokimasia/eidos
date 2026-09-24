@@ -168,6 +168,19 @@ func ValidateOptions(p Plugin) []error {
 	return core.ValidateOptions(p)
 }
 
+// EncodeOptions returns a plugin's options in their canonical
+// encoding, which is what a unit key and the composition
+// fingerprint fold, and nil for a plugin declaring none. The
+// encoding is encoding/json over the declared struct. It refuses a
+// struct the encoding cannot see whole: an unexported field at any
+// depth, a field its json tag hides, and a value the encoder
+// refuses. A type that marshals itself is taken as it encodes.
+// Every option is inside the encoding, so a changed option always
+// changes the key.
+func EncodeOptions(p Plugin) ([]byte, error) {
+	return core.EncodeOptions(p)
+}
+
 // ID is a plugin's declared name: the one identity everywhere it
 // appears. The diagnostic origin, the emit attribution and the
 // arbitration rank's plugin field all carry this same type, so no

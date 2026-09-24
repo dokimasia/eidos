@@ -4,6 +4,8 @@
 package plugin
 
 import (
+	"encoding"
+	"encoding/json"
 	"fmt"
 	"reflect"
 )
@@ -72,4 +74,82 @@ func ValidateOptions(p Plugin) []error {
 		}
 	}
 	return errs
+}
+
+// EncodeOptions returns a plugin's options in their canonical
+// encoding, which is what a unit key and the composition
+// fingerprint fold, and nil for a plugin declaring none. The
+// encoding is encoding/json over the declared struct. It refuses a
+// struct the encoding cannot see whole: an unexported field at any
+// depth, a field its json tag hides, and a value the encoder
+// refuses. A type that marshals itself is taken as it encodes.
+// Every option is inside the encoding, so a changed option always
+// changes the key.
+func EncodeOptions(p Plugin) ([]byte, error) {
+	op, held := p.(OptionsProvider)
+	if !held {
+		return nil, nil
+	}
+	o := op.Options()
+	if o == nil {
+		return nil, nil
+	}
+	if field, hidden := hiddenField(reflect.TypeOf(o), map[reflect.Type]bool{}); hidden {
+		return nil, fmt.Errorf(
+			"plugin: %s options hide %s from the encoding, and an option the key cannot see "+
+				"reuses stale output", p.Name(), field,
+		)
+	}
+	encoded, err := json.Marshal(o)
+	if err != nil {
+		return nil, fmt.Errorf("plugin: encode %s options: %w", p.Name(), err)
+	}
+	return encoded, nil
+}
+
+// Interfaces a type implements when it spells its own encoding.
+var (
+	jsonMarshaler = reflect.TypeFor[json.Marshaler]()
+	textMarshaler = reflect.TypeFor[encoding.TextMarshaler]()
+)
+
+// hiddenField returns the first field reachable from t that the
+// JSON encoding cannot see, spelled type-qualified, and false where
+// every field is visible. seen stops a recursive type.
+func hiddenField(t reflect.Type, seen map[reflect.Type]bool) (string, bool) {
+	for {
+		if marshals(t) {
+			return "", false
+		}
+		switch t.Kind() {
+		case reflect.Pointer, reflect.Slice, reflect.Array, reflect.Map:
+			t = t.Elem()
+			continue
+		}
+		break
+	}
+	if t.Kind() != reflect.Struct || seen[t] {
+		return "", false
+	}
+	seen[t] = true
+	for f := range t.Fields() {
+		switch {
+		case f.Tag.Get("json") == "-":
+			return t.String() + "." + f.Name, true
+		case !f.IsExported() && (!f.Anonymous || f.Type.Kind() != reflect.Struct):
+			return t.String() + "." + f.Name, true
+		}
+		if name, hidden := hiddenField(f.Type, seen); hidden {
+			return name, true
+		}
+	}
+	return "", false
+}
+
+// marshals reports whether values of t, or pointers to them, spell
+// their own encoding.
+func marshals(t reflect.Type) bool {
+	pt := reflect.PointerTo(t)
+	return t.Implements(jsonMarshaler) || t.Implements(textMarshaler) ||
+		pt.Implements(jsonMarshaler) || pt.Implements(textMarshaler)
 }

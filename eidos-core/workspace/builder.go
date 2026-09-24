@@ -137,13 +137,20 @@ func (b *Builder) Ignore(names ...directive.Name) *Builder {
 // one error joining every fault it found. Each step runs even when
 // an earlier one found faults, except where a fault empties a
 // following check for that one item, so the fault list is complete.
+//
+// The configure step writes the config's values into the options
+// struct each plugin declared, so a plugin instance belongs to one
+// workspace: building one instance into two workspaces leaves both
+// reading the second one's values. The fingerprint is taken at
+// Build, over the values the config left.
 func (b *Builder) Build() (*Workspace, error) {
 	roster, byName, faults := b.assemble()
 	reg, rerr := b.register(roster)
 	faults = append(faults, rerr...)
 	ann, gens, lerr := lower(roster)
 	faults = append(faults, lerr...)
-	faults = append(faults, configure(roster, byName, b.config)...)
+	options, cerr := configure(roster, byName, b.config)
+	faults = append(faults, cerr...)
 	plans, perr := compilePlans(b.plans, gens, reg.targets)
 	faults = append(faults, perr...)
 	if b.sink != nil {
@@ -153,13 +160,14 @@ func (b *Builder) Build() (*Workspace, error) {
 		return nil, errors.Join(faults...)
 	}
 	return &Workspace{
-		keys:       reg.keys,
-		kernel:     reg.kernel,
-		directives: reg.directives,
-		rules:      reg.rules,
-		annotate:   ann,
-		plans:      plans,
-		sink:       b.sink,
-		brand:      b.brand,
+		keys:        reg.keys,
+		kernel:      reg.kernel,
+		directives:  reg.directives,
+		rules:       reg.rules,
+		annotate:    ann,
+		plans:       plans,
+		sink:        b.sink,
+		brand:       b.brand,
+		fingerprint: fingerprintOf(ann, plans, options),
 	}, nil
 }

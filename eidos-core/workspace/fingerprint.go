@@ -6,7 +6,6 @@ package workspace
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"encoding/json"
 	"slices"
 	"strings"
 
@@ -22,23 +21,31 @@ import (
 // is covered by its version under the bump-on-any-change rule, so
 // the fingerprint needs no registry walk. A plan's scope is a
 // function and spells nothing, so a scope change re-keys only
-// through the plan's own name.
-func (w *Workspace) Fingerprint() []byte {
-	entries := make([]string, 0, len(w.annotate)+len(w.plans))
-	for _, a := range w.annotate {
-		entries = append(entries, "annotator\x00"+pluginEntry(a.name, a.run))
+// through the plan's own name. The fingerprint is taken at Build,
+// over the options as the config left them, and every call returns
+// a fresh copy.
+func (w *Workspace) Fingerprint() []byte { return slices.Clone(w.fingerprint) }
+
+// fingerprintOf folds the composition's scheduled plugins and plans
+// with each plugin's options encoding.
+func fingerprintOf(
+	annotate []annEntry, plans []compiledPlan, options map[plugin.ID][]byte,
+) []byte {
+	entries := make([]string, 0, len(annotate)+len(plans))
+	for _, a := range annotate {
+		entries = append(entries, "annotator\x00"+pluginEntry(a.name, a.run, options))
 	}
-	for _, p := range w.plans {
+	for _, p := range plans {
 		var b strings.Builder
 		b.WriteString("plan\x00")
 		b.WriteString(p.name)
 		b.WriteByte(0)
 		for _, g := range p.entries {
-			b.WriteString(pluginEntry(g.name, g.run))
+			b.WriteString(pluginEntry(g.name, g.run, options))
 			b.WriteByte(0)
 		}
 		b.WriteString("backend\x00")
-		b.WriteString(pluginEntry(p.backend.Name(), p.backend))
+		b.WriteString(pluginEntry(p.backend.Name(), p.backend, options))
 		entries = append(entries, b.String())
 	}
 	slices.Sort(entries)
@@ -54,9 +61,9 @@ func (w *Workspace) Fingerprint() []byte {
 }
 
 // pluginEntry spells one scheduled plugin for the fold: its name,
-// its version where it declares one, and its populated options in
-// their canonical encoding.
-func pluginEntry(name plugin.ID, run any) string {
+// its version where it declares one, and its options in the
+// canonical encoding the configure step took.
+func pluginEntry(name plugin.ID, run any, options map[plugin.ID][]byte) string {
 	var b strings.Builder
 	b.WriteString(string(name))
 	b.WriteByte(0)
@@ -64,10 +71,6 @@ func pluginEntry(name plugin.ID, run any) string {
 		b.WriteString(v.Version())
 	}
 	b.WriteByte(0)
-	if o, configured := run.(plugin.OptionsProvider); configured {
-		if encoded, err := json.Marshal(o.Options()); err == nil {
-			b.Write(encoded)
-		}
-	}
+	b.Write(options[name])
 	return b.String()
 }

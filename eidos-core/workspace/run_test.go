@@ -345,6 +345,35 @@ func TestRun(t *testing.T) {
 		coretest.AssertReports(t, report.Sink, directive.DanglingSubject)
 	})
 
+	t.Run("validation findings arrive in position order", func(t *testing.T) {
+		t.Parallel()
+
+		b, _ := flagged()
+		w, err := b.Build()
+		assert.NoError(t, err, "the keyed composition composes")
+		g, _ := alpha(t)
+		const subjects = 64
+		for i := range subjects {
+			ghost := coretest.Struct("example.com/elsewhere", fmt.Sprintf("Ghost%02d", i))
+			// Identity order runs against position order, so a report
+			// in subject or completion order is out of position order.
+			assert.NoError(t,
+				g.AttachDirectives(ghost.Identity(), []directive.Raw{rawMeta("shape.flag", subjects-i)}),
+				"the dangling attachment arrives before the seal")
+		}
+		report, err := w.Run(t.Context(), g)
+		assert.ErrorIs(t, err, workspace.ErrRunFailed, "a dangling subject is an Error")
+		var lines []int
+		for d := range report.Sink.All() {
+			if d.Code == directive.DanglingSubject {
+				lines = append(lines, d.Pos.Line)
+			}
+		}
+		assert.Length(t, lines, subjects, "one finding per subject")
+		assert.True(t, slices.IsSorted(lines),
+			"in position order, whatever order the validations finished in")
+	})
+
 	t.Run("validates a record on the package itself", func(t *testing.T) {
 		t.Parallel()
 

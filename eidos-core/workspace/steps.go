@@ -137,8 +137,9 @@ func sameProvider(seated, p plugin.Plugin) bool {
 
 // register is the second step: the kernel's directive schemas
 // first, because validation of the skip and meta instances reads
-// them, then every plugin's keys, the builder's own registrations,
-// every plugin's schemas, and the seal that resolves constraints.
+// them, then every plugin's keys and the builder's own
+// registrations, the key registry's seal, every plugin's schemas,
+// and the directive seal that resolves constraints.
 // Capability labels and target names collect here too, because
 // both are registries in everything but shape. The kernel's own
 // keys and schemas register first, so an impersonation is a plain
@@ -175,6 +176,7 @@ func (b *Builder) register(roster []plugin.Plugin) (registries, []error) {
 			faults = append(faults, err)
 		}
 	}
+	keys.Seal()
 	for _, p := range roster {
 		if dp, held := p.(plugin.DirectiveProvider); held {
 			for _, s := range dp.Directives() {
@@ -452,12 +454,15 @@ func topo(role string, group []member) ([]member, []error) {
 
 // configure is the fourth step: every plugin's options validate
 // against the tag contract, then the config's values populate the
-// structs over their constructed defaults. A plugin whose schema
-// failed skips population, because its faults are already
-// collected.
+// structs over their constructed defaults, and each populated
+// struct is taken in the canonical encoding the fingerprint folds.
+// A plugin whose schema failed skips population and encoding,
+// because its faults are already collected. An options struct the
+// encoding cannot see whole is a fault, because the fingerprint
+// folds every option.
 func configure(
 	roster []plugin.Plugin, byName map[plugin.ID]plugin.Plugin, cfg Config,
-) []error {
+) (map[plugin.ID][]byte, []error) {
 	var faults []error
 	sound := map[plugin.ID]bool{}
 	for _, p := range roster {
@@ -479,7 +484,19 @@ func configure(
 		}
 		faults = append(faults, populate(p, cfg.Options[name])...)
 	}
-	return faults
+	encodings := make(map[plugin.ID][]byte, len(roster))
+	for _, p := range roster {
+		if !sound[p.Name()] {
+			continue
+		}
+		encoded, err := plugin.EncodeOptions(p)
+		if err != nil {
+			faults = append(faults, fmt.Errorf("workspace: %w", err))
+			continue
+		}
+		encodings[p.Name()] = encoded
+	}
+	return encodings, faults
 }
 
 // populate sets one plugin's declared options from its config
@@ -598,16 +615,22 @@ func compilePlans(
 
 // stampable builds each plan's output contract from the brand and
 // the backend's own comment syntax, and reports what cannot be
-// stamped: an invalid brand, or a backend stating no syntax to
-// frame a generated file through. It runs only where a
-// composition declares output, because a run that writes nothing
-// needs no frame.
+// written: a backend that does not render, an invalid brand, or a
+// backend stating no syntax to frame a generated file through. It
+// runs only where a composition declares output, because a run
+// that writes nothing needs no render and no frame.
 func stampable(plans []compiledPlan, brand output.Brand) []error {
 	var faults []error
 	for i := range plans {
 		pl := &plans[i]
 		if pl.backend == nil {
 			continue // the plan's own fault is already collected
+		}
+		if _, renders := pl.backend.(plugin.Renderer); !renders {
+			faults = append(faults, fmt.Errorf(
+				"workspace: plan %q writes output and its backend %s does not render",
+				pl.name, pl.backend.Name(),
+			))
 		}
 		syn, states := pl.backend.(plugin.SyntaxProvider)
 		if !states {

@@ -13,10 +13,19 @@ import (
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
+
+// framing is a backend stating a comment syntax and rendering
+// nothing: what a writing composition refuses at Build.
+type framing struct{ fakeBackend }
+
+func (framing) Syntax() plugin.CommentSyntax {
+	return plugin.CommentSyntax{Line: []string{"//"}}
+}
 
 // runOrdering composes the annotators over the one-struct fixture
 // and runs, so each role's handler runs exactly once, in schedule
@@ -185,6 +194,23 @@ func TestSteps(t *testing.T) {
 			assert.Contains(t, err.Error(), "states no semantics", "and the fault says so")
 			assert.Contains(t, err.Error(), "gate", "naming the schema")
 		})
+
+		t.Run("seals the key registry before a run stamps", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the composition builds")
+			g, _ := alpha(t)
+			report, err := w.Run(t.Context(), g)
+			assert.NoError(t, err, "and runs")
+
+			assert.HasError(t, report.Facts.Registry().ClaimNamespace("late", "latecomer"),
+				"a namespace claimed during a run refuses")
+			_, err = meta.Register[string](report.Facts.Registry(), meta.KeySpec{
+				Name: "late.role", Doc: "registered after the seal",
+			})
+			assert.HasError(t, err, "and so does a key")
+		})
 	})
 
 	t.Run("capabilities", func(t *testing.T) {
@@ -261,6 +287,29 @@ func TestSteps(t *testing.T) {
 				"and population is skipped, so one broken struct is one fault")
 		})
 
+		t.Run("refuses options with a field the encoding cannot see", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &struct {
+				Depth  int  `opt:"depth"  doc:"how deep the mirror walks"`
+				Strict bool `opt:"strict" doc:"whether the walk refuses a gap" json:"-"`
+			}{}
+			_, err := sectioned("tuned", opts, map[string]any{"depth": 3}).Build()
+			assert.HasError(t, err, "the fingerprint folds every option, so a hidden field refuses")
+			assert.Contains(t, err.Error(), "Strict", "naming the hidden field")
+		})
+
+		t.Run("refuses options the encoding cannot encode", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &struct {
+				Hook func() `opt:"hook" doc:"what runs after the walk"`
+			}{}
+			_, err := valid().Plans(planTo("second", "fixture", tuned("tuned", opts))).Build()
+			assert.HasError(t, err, "an options struct the encoder refuses has no fingerprint")
+			assert.Contains(t, err.Error(), "tuned", "naming the plugin")
+		})
+
 		t.Run("refuses a section for a plugin declaring no options", func(t *testing.T) {
 			t.Parallel()
 
@@ -270,6 +319,28 @@ func TestSteps(t *testing.T) {
 			assert.HasError(t, err, "a section nothing reads is a typo, not a default")
 			assert.Contains(t, err.Error(), "declares no options", "and the fault says so")
 			assert.Contains(t, err.Error(), `"mirror"`, "naming the plugin")
+		})
+	})
+
+	t.Run("stampable", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("refuses writing through a backend that does not render", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := workspace.New().
+				Annotators(stamper("noter", quiet)).
+				Targets("fixture").
+				Plans(workspace.Plan{
+					Name:       "plan",
+					Generators: []plugin.Generator{mirror("mirror")},
+					Backend:    framing{fakeBackend{name: "framer", target: "fixture"}},
+				}).
+				Output(output.NewMem(), "eidos").
+				Build()
+			assert.HasError(t, err, "a writing composition needs every backend to render")
+			assert.Contains(t, err.Error(), "does not render", "and the fault names the cause")
+			assert.Contains(t, err.Error(), "framer", "naming the backend")
 		})
 	})
 

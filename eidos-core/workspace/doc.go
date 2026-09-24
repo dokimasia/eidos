@@ -6,15 +6,17 @@
 //
 // [Builder] collects the composition: annotators, plans, target
 // names, metadata key registrations, ignored directive spellings
-// and config. [Builder.Build] runs six validation steps in one
+// and config. [Builder.Build] runs its validation steps in one
 // pass: the roster, the registries with the kernel's own keys and
-// schemas registered first, the lowering into priority buckets,
-// the options, the plans, and the compiled schedule. Every step runs even when
-// an earlier one found faults, and the answer is either the
-// [Workspace] or one error joining everything found, so the
-// composition's author reads every fault at once. A Build that
-// succeeds has resolved every human-typed name in the composition,
-// so nothing after it fails on a name.
+// schemas registered first and every registry sealed, the lowering
+// into priority buckets, the options and their canonical encoding,
+// the plans and their compiled schedule, and, where the composition
+// declares output, the output contract each plan writes through.
+// Every step runs even when an earlier one found faults, and the
+// answer is either the [Workspace] or one error joining everything
+// found, so the composition's author reads every fault at once. A
+// Build that succeeds has resolved every human-typed name in the
+// composition, so nothing after it fails on a name.
 //
 // # The run
 //
@@ -56,9 +58,9 @@
 //
 // # Dependency position
 //
-// core/workspace imports core/plugin, core/store, core/meta,
-// core/directive, core/output, core/diag, core/symbol and the Go
-// stdlib. It
+// core/workspace imports core/plugin, core/store, core/node,
+// core/meta, core/directive, core/rules, core/output, core/diag,
+// core/symbol and the Go stdlib. It
 // never imports the root authoring package: plugins arrive built,
 // so the composition works on the base contract every authoring layer
 // lowers to.

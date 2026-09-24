@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"runtime"
 	"slices"
 	"sync"
+	"sync/atomic"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -36,8 +38,8 @@ import (
 // role, and the report holds whatever ran before it. Findings
 // never stop the frame: they arrive in the report's sink, and any
 // Error among them returns [ErrRunFailed] beside the report. A
-// pure refusal, a missing or pre-frozen graph, returns a nil
-// report, because nothing ran.
+// missing graph is the one refusal, and it returns a nil report,
+// because nothing ran.
 func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 	if g == nil {
 		return nil, errors.New("workspace: Run needs a loaded graph")
@@ -66,7 +68,8 @@ func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 	if len(errs) == 0 {
 		// A run that reported nothing writes; one that failed keeps
 		// its staging unwritten, because half a tree is worse than
-		// none and the findings say why.
+		// none and the findings say why. A commit refused part-way
+		// still records the files that reached the destination.
 		written, err := w.commit(files)
 		if err != nil {
 			errs = append(errs, err)
@@ -89,10 +92,13 @@ func failure(sink *diag.Sink) error {
 	return nil
 }
 
-// validated runs directive validation over every attached subject,
-// in parallel, because one subject's validation is independent of
-// every other. A subject the graph does not hold reports the
-// dangling code and contributes nothing; the survivors form the
+// validated runs directive validation over every attached subject
+// on up to GOMAXPROCS workers, because one subject's validation is
+// independent of every other. Each worker reports into a sink of
+// its own, and the findings merge into the run's sink in the
+// canonical finding order, so the report is the same whatever order
+// the workers finished in. A subject the graph does not hold reports
+// the dangling code and contributes nothing; the survivors form the
 // table the routing indexes carry, so a rejected instance never
 // gates a rule.
 func (w *Workspace) validated(
@@ -107,21 +113,39 @@ func (w *Workspace) validated(
 		subjects = append(subjects, attached{subject: id, raws: raws})
 	}
 	results := make([][]directive.Directive, len(subjects))
+	locals := make([]*diag.Sink, min(runtime.GOMAXPROCS(0), len(subjects)))
+	var next atomic.Int64
 	var wg sync.WaitGroup
-	for i := range subjects {
+	for k := range locals {
+		local := diag.NewSink()
+		locals[k] = local
 		wg.Go(func() {
-			s := subjects[i]
-			if !g.Holds(s.subject) {
-				sink.Errorf(directive.DanglingSubject, s.raws[0].Pos, diag.PhaseFreeze,
-					"directives on %s name a subject the graph does not hold", s.subject)
-				return
+			for {
+				i := int(next.Add(1)) - 1
+				if i >= len(subjects) {
+					return
+				}
+				s := subjects[i]
+				if !g.Holds(s.subject) {
+					local.Errorf(directive.DanglingSubject, s.raws[0].Pos, diag.PhaseFreeze,
+						"directives on %s name a subject the graph does not hold", s.subject)
+					continue
+				}
+				results[i] = directive.Validate(
+					s.subject, s.raws, w.directives, w.keys, w.resolver(g, facts), local,
+				)
 			}
-			results[i] = directive.Validate(
-				s.subject, s.raws, w.directives, w.keys, w.resolver(g, facts), sink,
-			)
 		})
 	}
 	wg.Wait()
+	var found []diag.Diag
+	for _, local := range locals {
+		found = slices.AppendSeq(found, local.All())
+	}
+	slices.SortStableFunc(found, diag.Diag.Compare)
+	for _, d := range found {
+		sink.Report(d)
+	}
 	table := make(map[symbol.Identity][]directive.Directive, len(subjects))
 	for i, ds := range results {
 		if len(ds) > 0 {

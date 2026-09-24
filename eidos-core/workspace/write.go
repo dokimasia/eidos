@@ -117,7 +117,9 @@ func conventionalPath(pkg symbol.Identity, name string) string {
 // plans interleaved.
 //
 // A failed write discards the staging rather than committing half
-// a tree.
+// a tree. A commit refused part-way returns its error together with
+// the records of the files that reached the destination, so the
+// report lists every file that changed on disk.
 func (w *Workspace) commit(staged [][]staged) ([]output.Written, error) {
 	if w.sink == nil {
 		return nil, nil
@@ -132,7 +134,7 @@ func (w *Workspace) commit(staged [][]staged) ([]output.Written, error) {
 	}
 	written, err := w.sink.Commit()
 	if err != nil {
-		return nil, fmt.Errorf("workspace: commit the output: %w", err)
+		return written, fmt.Errorf("workspace: commit the output: %w", err)
 	}
 	return written, nil
 }

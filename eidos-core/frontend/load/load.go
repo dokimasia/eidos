@@ -6,12 +6,10 @@ package load
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"hash"
 	"io/fs"
-	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -354,48 +352,16 @@ func checkPartition(name plugin.ID, claimed []string, parts [][]plugin.SourceRef
 	return nil
 }
 
-// encodeOptions returns the frontend's options in their canonical
-// encoding, and nothing for a frontend that declares none. A knob
-// that changes the graph without changing a read must key, so an
-// unexported field refuses: the encoding cannot see it, and a knob
-// outside the key poisons every warm reuse of the graph it shaped.
+// encodeOptions returns the frontend's options in the canonical
+// encoding every key folds, and nothing for a frontend that
+// declares none. A knob that changes the graph without changing a
+// read must key, so options the encoding cannot see whole refuse.
 func encodeOptions(f plugin.Frontend) ([]byte, error) {
-	op, has := f.(plugin.OptionsProvider)
-	if !has {
-		return nil, nil
-	}
-	if field, hidden := unexportedField(op.Options()); hidden {
-		return nil, fmt.Errorf(
-			"load: %s options hide %s from the encoding; a knob the key cannot see is a cache defect",
-			f.Name(), field,
-		)
-	}
-	b, err := json.Marshal(op.Options())
+	encoded, err := plugin.EncodeOptions(f)
 	if err != nil {
-		return nil, fmt.Errorf("load: encode %s options: %w", f.Name(), err)
+		return nil, fmt.Errorf("load: %w", err)
 	}
-	return b, nil
-}
-
-// unexportedField returns the first unexported field of the
-// options struct, however the value wraps it.
-func unexportedField(o any) (string, bool) {
-	v := reflect.ValueOf(o)
-	for v.Kind() == reflect.Pointer {
-		if v.IsNil() {
-			return "", false
-		}
-		v = v.Elem()
-	}
-	if v.Kind() != reflect.Struct {
-		return "", false
-	}
-	for i := range v.NumField() {
-		if !v.Type().Field(i).IsExported() {
-			return v.Type().Field(i).Name, true
-		}
-	}
-	return "", false
+	return encoded, nil
 }
 
 // depthOf picks a unit's depth: signature-only when any member

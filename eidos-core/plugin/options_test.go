@@ -5,6 +5,7 @@ package plugin_test
 
 import (
 	"testing"
+	"time"
 
 	"go.dokimi.dev/assert"
 
@@ -135,5 +136,86 @@ func TestValidateOptions(t *testing.T) {
 		assert.Length(t, errs, 1, "the collision is one finding")
 		assert.Contains(t, errs[0].Error(), "First", "naming one claimant")
 		assert.Contains(t, errs[0].Error(), "Second", "and the other")
+	})
+}
+
+// nestedOptions nests a struct that has an unexported field.
+type nestedOptions struct {
+	Inner innerOptions `opt:"inner" doc:"a nested option group"`
+}
+
+// innerOptions hides one field below the top level.
+type innerOptions struct {
+	Depth int
+	quiet bool
+}
+
+// taggedOutOptions hides one field through its json tag.
+type taggedOutOptions struct {
+	Header string `opt:"header" doc:"the banner every file opens with"`
+	Strict bool   `opt:"strict" doc:"whether the walk refuses a gap"   json:"-"`
+}
+
+// hookOptions has a field of a type the encoder refuses.
+type hookOptions struct {
+	Hook func() `opt:"hook" doc:"what runs after the walk"`
+}
+
+// stampedOptions has a field whose type has unexported fields and
+// marshals itself.
+type stampedOptions struct {
+	Since time.Time `opt:"since" doc:"when the walk starts"`
+}
+
+// EncodeOptions is the one encoding a unit key and the composition
+// fingerprint fold, so every option has to be visible to it.
+func TestEncodeOptions(t *testing.T) {
+	t.Parallel()
+
+	t.Run("a plugin without the surface encodes to nothing", func(t *testing.T) {
+		t.Parallel()
+
+		encoded, err := plugin.EncodeOptions(named{name: "bare"})
+		assert.NoError(t, err, "no declaration is no fault")
+		assert.Nil(t, encoded, "and no bytes")
+	})
+
+	t.Run("a visible struct encodes as JSON", func(t *testing.T) {
+		t.Parallel()
+
+		encoded, err := plugin.EncodeOptions(optioned{name: "cfg", cfg: &lawfulOptions{Header: "h", Depth: 2}})
+		assert.NoError(t, err, "every field is visible")
+		assert.Equal(t, string(encoded), `{"Header":"h","Depth":2}`, "in its canonical encoding")
+	})
+
+	t.Run("refuses an unexported field below the top level", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := plugin.EncodeOptions(optioned{name: "cfg", cfg: &nestedOptions{Inner: innerOptions{quiet: true}}})
+		assert.HasError(t, err, "a nested field the encoding drops is refused")
+		assert.Contains(t, err.Error(), "quiet", "naming the hidden field")
+	})
+
+	t.Run("refuses a field its json tag hides", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := plugin.EncodeOptions(optioned{name: "cfg", cfg: &taggedOutOptions{}})
+		assert.HasError(t, err, "a field the tag hides is refused")
+		assert.Contains(t, err.Error(), "Strict", "naming it")
+	})
+
+	t.Run("returns the encoder's refusal", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := plugin.EncodeOptions(optioned{name: "cfg", cfg: &hookOptions{Hook: func() {}}})
+		assert.HasError(t, err, "a function has no encoding")
+		assert.Contains(t, err.Error(), "cfg", "naming the plugin")
+	})
+
+	t.Run("takes a type that spells its own encoding as it encodes", func(t *testing.T) {
+		t.Parallel()
+
+		_, err := plugin.EncodeOptions(optioned{name: "cfg", cfg: &stampedOptions{}})
+		assert.NoError(t, err, "a type that marshals itself encodes its unexported fields itself")
 	})
 }

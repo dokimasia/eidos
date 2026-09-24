@@ -31,6 +31,8 @@ type Workspace struct {
 	// brand is what the output contract stamps under, and what the
 	// load refuses as the workspace's own output.
 	brand output.Brand
+	// fingerprint is the composition's fold, taken at Build.
+	fingerprint []byte
 }
 
 // Brand returns the output brand the composition declared, and the
