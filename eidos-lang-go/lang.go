@@ -26,12 +26,12 @@ const Extension = ".go"
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.
-const Version = "0.3.1"
+const Version = "0.4.0"
 
 // FrontendVersion is the frontend's behavior version, folded into
 // every unit key the frontend builds: bump it with any change to
 // the graph a parse produces.
-const FrontendVersion = "0.4.0"
+const FrontendVersion = "0.5.0"
 
 // Syntax returns Go's comment forms, declared once and shared: the
 // frontend strips comments with them, and the output contract
