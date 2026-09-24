@@ -31,10 +31,12 @@ import (
 // Target names nothing.
 type Target = core.Target
 
-// Backend renders one plan's emit. A plan holds exactly one, and
-// its target must be a registered name; a composition that runs no
-// renderer still validates both, so a plan is whole before
-// anything arrives on disk.
+// Backend is a plan's target role. It names the [Target] the plan
+// renders to. A backend that also implements [Renderer] renders the
+// plan's emit. A plan has exactly one backend, whose target is a
+// registered name. A composition that runs no renderer still
+// validates both, so a plan is whole before anything arrives on
+// disk.
 type Backend = core.Backend
 
 // Cardinality says how many outputs a family produces. The zero
@@ -400,10 +402,8 @@ func Settle(e *Emit, b Backend, sink *diag.Sink) error {
 
 // RuleID is a rule's ordinal in its plugin's declaration order.
 //
-// It is stable exactly as long as the declaration is: reordering
-// rules renumbers them. Anything durable keyed on one is
-// invalidated by a reorder, which the conformance suite's
-// declaration check makes visible.
+// Reordering a plugin's rules renumbers them, so a durable record
+// keyed on a RuleID is valid for one declaration order only.
 type RuleID = core.RuleID
 
 // Phase says when a subscription's rule runs. The zero Phase names

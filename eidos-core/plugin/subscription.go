@@ -13,10 +13,8 @@ import (
 
 // RuleID is a rule's ordinal in its plugin's declaration order.
 //
-// It is stable exactly as long as the declaration is: reordering
-// rules renumbers them. Anything durable keyed on one is
-// invalidated by a reorder, which the conformance suite's
-// declaration check makes visible.
+// Reordering a plugin's rules renumbers them, so a durable record
+// keyed on a RuleID is valid for one declaration order only.
 type RuleID int
 
 // Phase says when a subscription's rule runs. The zero Phase names

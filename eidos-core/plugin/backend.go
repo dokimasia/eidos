@@ -9,10 +9,12 @@ package plugin
 // Target names nothing.
 type Target string
 
-// Backend renders one plan's emit. A plan holds exactly one, and
-// its target must be a registered name; a composition that runs no
-// renderer still validates both, so a plan is whole before
-// anything arrives on disk.
+// Backend is a plan's target role. It names the [Target] the plan
+// renders to. A backend that also implements [Renderer] renders the
+// plan's emit. A plan has exactly one backend, whose target is a
+// registered name. A composition that runs no renderer still
+// validates both, so a plan is whole before anything arrives on
+// disk.
 type Backend interface {
 	Plugin
 	Target() Target

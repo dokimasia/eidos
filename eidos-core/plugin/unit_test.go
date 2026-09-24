@@ -170,6 +170,31 @@ func TestSourceUnit(t *testing.T) {
 			"the same reads fold to the same key")
 	})
 
+	t.Run("frames each read so content bytes cannot fake a second read", func(t *testing.T) {
+		t.Parallel()
+
+		// The packed member's bytes spell the split unit's first
+		// content, then its second read's path and content, joined
+		// by NUL.
+		packed := unitOf(t, fstest.MapFS{
+			"svc/store/row.go": {Data: []byte("p\x00go.mod\x00r")},
+			"go.mod":           {Data: []byte("module svc\n")},
+		})
+		_, err := packed.Read("svc/store/row.go")
+		assert.NoError(t, err, "the packed member reads")
+
+		split := unitOf(t, fstest.MapFS{
+			"svc/store/row.go": {Data: []byte("p")},
+			"go.mod":           {Data: []byte("r")},
+		})
+		for _, path := range []string{"svc/store/row.go", "go.mod"} {
+			_, err := split.Read(path)
+			assert.NoError(t, err, "each split read succeeds")
+		}
+		assert.False(t, bytes.Equal(packed.ReadSum(), split.ReadSum()),
+			"two different read histories fold to two keys")
+	})
+
 	t.Run("seeds the fold with the roster itself", func(t *testing.T) {
 		t.Parallel()
 

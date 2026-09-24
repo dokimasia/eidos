@@ -5,6 +5,7 @@ package plugin
 
 import (
 	"crypto/sha256"
+	"encoding/binary"
 	"fmt"
 	"hash"
 	"io/fs"
@@ -80,7 +81,7 @@ func (u *SourceUnit) Files() []SourceRef { return u.files }
 // Read returns one file's bytes through the unit's one door. A
 // path outside the unit's files and their declared shared inputs
 // refuses, naming the path, and every accepted read folds path
-// and content into the unit's fingerprint.
+// and content into the unit's fingerprint, each behind its length.
 func (u *SourceUnit) Read(path string) ([]byte, error) {
 	if !u.allowed[path] {
 		return nil, fmt.Errorf(
@@ -91,11 +92,16 @@ func (u *SourceUnit) Read(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("plugin: read %s: %w", path, err)
 	}
-	u.reads.Write([]byte(path))
-	u.reads.Write([]byte{0})
-	u.reads.Write(b)
-	u.reads.Write([]byte{0})
+	fold(u.reads, []byte(path))
+	fold(u.reads, b)
 	return b, nil
+}
+
+// fold writes one field into a fingerprint behind its length, so
+// no byte inside a field can pass for the boundary of the next.
+func fold(h hash.Hash, field []byte) {
+	h.Write(binary.AppendUvarint(nil, uint64(len(field))))
+	h.Write(field)
 }
 
 // Depth says how deep this unit loads; Parse observes it on the
