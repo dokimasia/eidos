@@ -20,12 +20,16 @@ import (
 //go:embed templates/*.tmpl
 var templates embed.FS
 
-// templateDir holds the embedded templates.
-const templateDir = "templates"
+// templateDir is the directory of the embedded templates.
+// templateGlob matches every template in it.
+const (
+	templateDir  = "templates"
+	templateGlob = "*.tmpl"
+)
 
-// headerTemplate is the shared preamble every output file opens
-// with. It is defined rather than rendered on its own.
-const headerTemplate = "header.tmpl"
+// generatorName is the name the preamble's generated-code marker
+// gives this generator.
+const generatorName = "model"
 
 // output is one file the generator writes: which template renders
 // it, into which package, and where it arrives.
@@ -41,12 +45,12 @@ type output struct {
 	Side string
 }
 
-// outputs are every file the generator owns. [Generate] keys its
-// result by path, so the list's order changes no output.
+// outputs lists every file the generator writes. [Generate] keys
+// its result by path, so the order of the list changes no output.
 //
-// The list is the mirror guard's subject too: a generated file
-// under one of these packages that this list does not name is a
-// stray, and the guard says so.
+// The mirror guard reads the list too. A generated file under one
+// of these packages that the list does not name is a stray, and the
+// guard reports it.
 var outputs = []output{
 	{Path: "emit/symbols.gen.go", Template: "symbols.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{Path: "emit/symbols.gen_test.go", Template: "symbols.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
@@ -85,30 +89,34 @@ var outputs = []output{
 	{Path: "emit/facts.gen_test.go", Template: "facts.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 }
 
-// OwnedDirs are the directories the generator writes into, the
-// module root included because the match file sits there. The
-// mirror guard scans them for strays; the root scans its own
-// files alone.
+// OwnedDirs are the directories the generator writes into. The
+// module root is one of them, because the match file is there. The
+// mirror guard scans each directory for strays, and in the module
+// root it scans only the files directly under the root.
 var OwnedDirs = []string{".", SymbolPackage, NodePackage, EmitPackage}
 
 // data is what a template renders against.
 type data struct {
+	// Header is the preamble every generated file opens with.
+	Header string
 	// Package is the Go package the file declares.
 	Package string
-	// Kinds are the lowered kinds, for a file that needs the schema
-	// order rather than one model side.
+	// Kinds are the lowered kinds in schema order, independent of
+	// any model side.
 	Kinds []KindSpec
 	// Views are the kinds prepared for this file's model side.
 	Views []view
-	// NeedsSymbol says whether the rendered file reaches the shared
-	// vocabulary, so a template imports it only when it uses it.
+	// NeedsSymbol reports whether the rendered file uses the symbol
+	// package, so a template imports that package only when the
+	// file needs it.
 	NeedsSymbol bool
-	// Identified says whether every kind on this side names itself,
-	// which is what lets the side declare the Declaration interface
-	// and the traversal typed by it.
+	// Identified reports whether every kind on this side has an
+	// identity, which the Declaration interface and the traversal
+	// typed by it require.
 	Identified bool
-	// Originated says whether any kind on this side carries origin
-	// storage, which is why the side gets the OriginOf function.
+	// Originated reports whether any kind on this side has origin
+	// storage. A side with origin storage gets the OriginOf
+	// function.
 	Originated bool
 	// Facts are the declared fact constant suffixes, first
 	// encounter across kinds in schema order.
@@ -133,49 +141,38 @@ func Generate(modRoot string) (genfile.Set, error) {
 	if err != nil {
 		return nil, err
 	}
-
-	set := make(genfile.Set, len(outputs))
-	for _, out := range outputs {
-		rendered, err := render(out, kinds)
-		if err != nil {
-			return nil, err
-		}
-		formatted, err := genfile.Format(out.Path, rendered)
-		if err != nil {
-			return nil, err
-		}
-		set[out.Path] = formatted
+	r, err := newRenderer(kinds)
+	if err != nil {
+		return nil, err
 	}
-	return set, nil
+	return genfile.Render(outputs, func(out output) (string, []byte, error) {
+		src, err := r.render(out)
+		return out.Path, src, err
+	})
 }
 
 // Regenerate renders the models from the schema of the module
 // enclosing dir and writes them into it.
 //
-// It is the whole of what the go:generate wrapper does, so the
-// wrapper holds nothing but the exit status. A directory outside
-// any module is refused, and nothing is written unless every file
-// rendered.
+// The go:generate wrapper calls Regenerate and reports only its
+// exit status. A directory outside any module is refused, and
+// nothing is written unless every file rendered.
 func Regenerate(dir string) error {
 	root, err := gosource.ModuleRoot(dir)
 	if err != nil {
 		return err
 	}
-	set, err := Generate(root)
-	if err != nil {
-		return err
-	}
-	return genfile.Write(root, set)
+	return genfile.Regenerate(root, Generate)
 }
 
 // fingerprintOf hashes the node model's shape: every kind and every
 // node-side field, name and type spelling, in schema order.
 //
-// The hash reads the lowered schema rather than the rendered files,
-// so a documentation edit does not change it; only a change that
-// reshapes the graph the same source produces does. Every unit key
-// folds the result, which is what keeps a recorded graph from being
-// served across a schema change.
+// The hash covers the lowered schema only, so a documentation edit
+// leaves it unchanged. A schema change that alters the graph the
+// same source produces changes the hash. Every unit key folds the
+// result, so a recorded graph is never served across a schema
+// change.
 func fingerprintOf(kinds []KindSpec) string {
 	h := sha256.New()
 	for _, k := range kinds {
@@ -191,8 +188,8 @@ func fingerprintOf(kinds []KindSpec) string {
 	return hex.EncodeToString(h.Sum(nil))
 }
 
-// slotsUseSymbol reports whether any slot holds values typed by the
-// shared vocabulary, which is what decides the slots file's import.
+// slotsUseSymbol reports whether any slot's values are typed by the
+// symbol package, which decides whether the slots file imports it.
 func slotsUseSymbol(views []view) bool {
 	for _, v := range views {
 		for _, slot := range v.Slots {
@@ -204,12 +201,11 @@ func slotsUseSymbol(views []view) bool {
 	return false
 }
 
-// viewsIdentified reports whether every kind carries an identity.
+// viewsIdentified reports whether every kind has an identity.
 //
-// The predicate is "every" rather than "any": the Declaration
-// interface is only worth declaring on a side where no kind fails to
-// satisfy it, because a traversal typed by it would otherwise drop
-// whichever kinds did.
+// The predicate is "every". A traversal typed by the Declaration
+// interface visits only the kinds that satisfy it, so a side
+// declares the interface only when every kind does.
 func viewsIdentified(views []view) bool {
 	for _, v := range views {
 		if v.IDStorage == "" {
@@ -219,11 +215,11 @@ func viewsIdentified(views []view) bool {
 	return len(views) > 0
 }
 
-// viewsOriginated reports whether any kind carries origin storage.
+// viewsOriginated reports whether any kind has origin storage.
 //
-// The predicate is "any" rather than "every", the opposite of
-// [viewsIdentified]: OriginOf is a function returning false for the
-// kinds without the role, so one carrying kind already justifies it.
+// The predicate is "any", the opposite of [viewsIdentified].
+// OriginOf returns false for a kind without origin storage, so one
+// kind with it is enough to declare the function.
 func viewsOriginated(views []view) bool {
 	for _, v := range views {
 		if v.OriginStorage != "" {
@@ -233,9 +229,20 @@ func viewsOriginated(views []view) bool {
 	return false
 }
 
-// render executes one output's template.
-func render(out output, kinds []KindSpec) ([]byte, error) {
-	tmpl, err := template.New(out.Template).Funcs(template.FuncMap{
+// renderer renders the outputs of one [Generate] run from templates
+// parsed once. It computes the facts and the fingerprint once per
+// run and the views once per model side.
+type renderer struct {
+	templates   *template.Template
+	kinds       []KindSpec
+	facts       []string
+	fingerprint string
+	views       map[string][]view
+}
+
+// newRenderer parses every template and prepares the shared data.
+func newRenderer(kinds []KindSpec) (*renderer, error) {
+	tmpl, err := template.New(templateDir).Funcs(template.FuncMap{
 		// firstNamed returns the first kind declaring its own name,
 		// which the generated tests build their shared cases over.
 		"firstNamed": func(views []view) *view {
@@ -246,25 +253,39 @@ func render(out output, kinds []KindSpec) ([]byte, error) {
 			}
 			return nil
 		},
-	}).ParseFS(templates,
-		path.Join(templateDir, headerTemplate),
-		path.Join(templateDir, out.Template))
+	}).ParseFS(templates, path.Join(templateDir, templateGlob))
 	if err != nil {
-		return nil, fmt.Errorf("model: parse template %s: %w", out.Template, err)
+		return nil, fmt.Errorf("model: parse the templates: %w", err)
 	}
+	r := &renderer{
+		templates:   tmpl,
+		kinds:       kinds,
+		facts:       factsOf(kinds),
+		fingerprint: fingerprintOf(kinds),
+		views:       map[string][]view{},
+	}
+	for _, out := range outputs {
+		if _, prepared := r.views[out.Side]; !prepared {
+			r.views[out.Side] = viewsFor(kinds, out.Side)
+		}
+	}
+	return r, nil
+}
 
-	views := viewsFor(kinds, out.Side)
-
+// render executes one output's template.
+func (r *renderer) render(out output) ([]byte, error) {
+	views := r.views[out.Side]
 	var buf bytes.Buffer
-	err = tmpl.ExecuteTemplate(&buf, out.Template, data{
+	err := r.templates.ExecuteTemplate(&buf, out.Template, data{
+		Header:      genfile.Header(generatorName),
 		Package:     out.Package,
-		Kinds:       kinds,
+		Kinds:       r.kinds,
 		Views:       views,
 		NeedsSymbol: slotsUseSymbol(views),
 		Identified:  viewsIdentified(views),
 		Originated:  viewsOriginated(views),
-		Facts:       factsOf(kinds),
-		Fingerprint: fingerprintOf(kinds),
+		Facts:       r.facts,
+		Fingerprint: r.fingerprint,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("model: render %s: %w", out.Path, err)

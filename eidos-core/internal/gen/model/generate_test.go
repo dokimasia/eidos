@@ -5,6 +5,7 @@ package model_test
 
 import (
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -18,8 +19,9 @@ import (
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
-// The module a written schema arrives in, and the marker every
-// such schema declares so a field can hold any kind.
+// schemaGoMod is the go.mod of a written schema's module.
+// schemaMarker opens every written schema with the marker type, which
+// a field uses to admit any kind.
 const (
 	schemaGoMod  = "module example.test/schema\n\ngo 1.27.0\n"
 	schemaMarker = "package schema\n\ntype " + model.MarkerName + " any\n\n"
@@ -36,8 +38,8 @@ func moduleRoot(tb assert.TB) string {
 }
 
 // schemaModule writes one schema into a fresh module root and
-// returns the root, so a case can generate from a schema shape the
-// kernel's own does not hold.
+// returns the root, so a case can generate from a schema form the
+// kernel's own schema does not contain.
 func schemaModule(t *testing.T, schema string) string {
 	t.Helper()
 
@@ -92,11 +94,11 @@ func TestGenerate(t *testing.T) {
 				"symbol/kind.gen.go",
 				"symbol/kind.gen_test.go",
 			}
-			assert.Equal(t, slices.Sorted(maps(set)), want,
+			assert.Equal(t, slices.Sorted(maps.Keys(set)), want,
 				"every owned file renders, and nothing else")
 		})
 
-		t.Run("carries the schema's documentation into the models", func(t *testing.T) {
+		t.Run("copies the schema's documentation into the models", func(t *testing.T) {
 			t.Parallel()
 
 			set, err := model.Generate(moduleRoot(t))
@@ -125,7 +127,7 @@ func TestGenerate(t *testing.T) {
 			}
 		})
 
-		t.Run("reports a module holding no schema", func(t *testing.T) {
+		t.Run("reports a module without a schema", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := model.Generate(t.TempDir())
@@ -196,6 +198,20 @@ func TestGenerate(t *testing.T) {
 	})
 }
 
+// BenchmarkGenerate measures one whole generation over the kernel's
+// own schema: the lowering, every template's execution and every
+// file's formatting, which the go:generate wrapper and each mirror
+// guard run.
+func BenchmarkGenerate(b *testing.B) {
+	root := moduleRoot(b)
+	b.ReportAllocs()
+	for b.Loop() {
+		if _, err := model.Generate(root); err != nil {
+			b.Fatalf("Generate: unexpected error: %v", err)
+		}
+	}
+}
+
 // generatedFiles lists every generated file under root, which is
 // what a refused run has to leave empty.
 func generatedFiles(t *testing.T, root string) []string {
@@ -216,15 +232,4 @@ func generatedFiles(t *testing.T, root string) []string {
 	})
 	assert.NoError(t, err, "the module tree walks")
 	return found
-}
-
-// maps yields a set's paths, so a case can sort them.
-func maps(set genfile.Set) func(func(string) bool) {
-	return func(yield func(string) bool) {
-		for path := range set {
-			if !yield(path) {
-				return
-			}
-		}
-	}
 }
