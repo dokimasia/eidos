@@ -29,12 +29,7 @@ func OnFunction[E Effect](h func(*FunctionMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*FunctionMatch)
-			if !reused {
-				m = &FunctionMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[FunctionMatch](inv)
 			m.Function = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -60,12 +55,7 @@ func OnMethod[E Effect](h func(*MethodMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*MethodMatch)
-			if !reused {
-				m = &MethodMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[MethodMatch](inv)
 			m.Method = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -91,12 +81,7 @@ func OnParam[E Effect](h func(*ParamMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*ParamMatch)
-			if !reused {
-				m = &ParamMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[ParamMatch](inv)
 			m.Param = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -122,12 +107,7 @@ func OnReturn[E Effect](h func(*ReturnMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*ReturnMatch)
-			if !reused {
-				m = &ReturnMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[ReturnMatch](inv)
 			m.Return = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -153,12 +133,7 @@ func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*EnumMatch)
-			if !reused {
-				m = &EnumMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[EnumMatch](inv)
 			m.Enum = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -184,12 +159,7 @@ func OnSum[E Effect](h func(*SumMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*SumMatch)
-			if !reused {
-				m = &SumMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[SumMatch](inv)
 			m.Sum = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -215,12 +185,7 @@ func OnField[E Effect](h func(*FieldMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*FieldMatch)
-			if !reused {
-				m = &FieldMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[FieldMatch](inv)
 			m.Field = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -246,12 +211,7 @@ func OnVariable[E Effect](h func(*VariableMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*VariableMatch)
-			if !reused {
-				m = &VariableMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[VariableMatch](inv)
 			m.Variable = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -277,12 +237,7 @@ func OnConstant[E Effect](h func(*ConstantMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*ConstantMatch)
-			if !reused {
-				m = &ConstantMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[ConstantMatch](inv)
 			m.Constant = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -308,12 +263,7 @@ func OnStruct[E Effect](h func(*StructMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*StructMatch)
-			if !reused {
-				m = &StructMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[StructMatch](inv)
 			m.Struct = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -339,12 +289,7 @@ func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*InterfaceMatch)
-			if !reused {
-				m = &InterfaceMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[InterfaceMatch](inv)
 			m.Interface = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
@@ -370,12 +315,7 @@ func OnAlias[E Effect](h func(*AliasMatch, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*AliasMatch)
-			if !reused {
-				m = &AliasMatch{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[AliasMatch](inv)
 			m.Alias = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},

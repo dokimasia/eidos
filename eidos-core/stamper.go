@@ -33,18 +33,7 @@ func stamperInto(m *match) *Stamper {
 // refuses reports an Error at the subject's position under
 // [RefusedStamp], and the phase continues.
 func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
-	m := st.m
-	err := meta.Stamp(m.rs.facts, k, v, meta.Claim{
-		Subject:   m.subject,
-		Authority: meta.AuthorityPlugin,
-		Bucket:    m.rs.bucket,
-		Plugin:    m.rs.plugin,
-		Seq:       m.seq,
-		Derived:   m.derived(),
-	})
-	if err != nil {
-		m.rs.sink.Errorf(RefusedStamp, m.pos, m.rs.plugin, "%v", err)
-	}
+	stamp(st.m, st.m.subject, k, v)
 }
 
 // StampOn records v under k on a declaration the subject owns: one
@@ -61,8 +50,15 @@ func StampOn[T meta.FactValue](st *Stamper, owned symbol.Identity, k meta.Key[T]
 			m.subject, owned)
 		return
 	}
+	stamp(m, owned, k, v)
+}
+
+// stamp records v under k on target with the invocation's
+// envelope, and reports a refusal under [RefusedStamp] at the
+// subject's position.
+func stamp[T meta.FactValue](m *match, target symbol.Identity, k meta.Key[T], v T) {
 	err := meta.Stamp(m.rs.facts, k, v, meta.Claim{
-		Subject:   owned,
+		Subject:   target,
 		Authority: meta.AuthorityPlugin,
 		Bucket:    m.rs.bucket,
 		Plugin:    m.rs.plugin,

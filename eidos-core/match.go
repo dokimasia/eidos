@@ -34,6 +34,13 @@ type match struct {
 	// view, minted on first use, so a handler that never projects
 	// costs no memo.
 	bound *rules.Bound
+	// derivation is the snapshot derived last returned, current
+	// while the read set has derivedAt edges. The set only grows
+	// within an invocation, so an unchanged size means unchanged
+	// reads. Every claim stamped between two reads shares the one
+	// slice, and nothing writes to it.
+	derivation []meta.Read
+	derivedAt  int
 	// em and st are the invocation's effect handles, held in the
 	// match's own allocation so an invocation costs one heap
 	// object, not two.
@@ -63,6 +70,22 @@ func newMatch(inv invocation) match {
 		}
 	}
 	return m
+}
+
+// bindMatch returns the rule's reusable match of type M, allocated
+// on the rule's first invocation, with its base rebound to this
+// invocation: the one sequence every trigger's invoke runs.
+func bindMatch[M any, P interface {
+	*M
+	Matcher
+}](inv invocation) P {
+	p, reused := inv.scratch().(P)
+	if !reused {
+		p = P(new(M))
+		inv.keep(p)
+	}
+	*p.base() = newMatch(inv)
+	return p
 }
 
 // Reader returns the invocation's tracked read handle, minted on
@@ -187,10 +210,12 @@ func (m *match) readset() *store.ReadSet {
 }
 
 // derived returns the invocation's point reads so far, in the read
-// set's own order: what a claim carries as its derivation.
+// set's own order: what a claim carries as its derivation. It
+// collects and sorts the set only after the set grew, so a handler
+// stamping many facts after its reads sorts them once.
 func (m *match) derived() []meta.Read {
-	if m.reads == nil {
-		return nil
+	if m.reads == nil || m.reads.Len() == m.derivedAt {
+		return m.derivation
 	}
 	var out []meta.Read
 	for id := range m.reads.Identities() {
@@ -199,6 +224,7 @@ func (m *match) derived() []meta.Read {
 	for id, key := range m.reads.Facts() {
 		out = append(out, meta.Read{Subject: id, Key: key})
 	}
+	m.derivation, m.derivedAt = out, m.reads.Len()
 	return out
 }
 

@@ -118,6 +118,54 @@ func TestStamper(t *testing.T) {
 			}
 		})
 
+		t.Run("derives each claim from the reads made before it", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			reg := meta.NewRegistry()
+			assert.NoError(t, reg.ClaimNamespace("t", "the test"), "the namespace is claimed")
+			var keys []meta.Key[bool]
+			for _, name := range []meta.KeyName{"t.first", "t.second", "t.third"} {
+				key, err := meta.Register[bool](reg, meta.KeySpec{Name: name, Doc: "a fixture key"})
+				assert.NoError(t, err, "the key registers")
+				keys = append(keys, key)
+			}
+			facts := meta.NewFacts(reg)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(t, err, "the routing surface builds")
+
+			p := eidos.NewPlugin("classify").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+					if m.Struct.Identity() != alpha.ID {
+						return nil
+					}
+					eidos.FactOf(m, beta.ID, keys[0])
+					eidos.Stamp(st, keys[0], true)
+					eidos.Stamp(st, keys[1], true)
+					eidos.FactOf(m, beta.ID, keys[1])
+					eidos.Stamp(st, keys[2], true)
+					return nil
+				})).
+				Build()
+			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)),
+				"the phase call passes")
+
+			derived := func(k meta.Key[bool]) []meta.Read {
+				for v := range facts.Claims(alpha.ID, k.ID()) {
+					return v.Claim.Derived
+				}
+				return nil
+			}
+			first := []meta.Read{{Subject: beta.ID, Key: keys[0].Name()}}
+			assert.Equal(t, derived(keys[0]), first, "the first claim carries the read before it")
+			assert.Equal(t, derived(keys[1]), first,
+				"a claim with no read since the last carries the same derivation")
+			assert.Equal(t, derived(keys[2]), []meta.Read{
+				{Subject: beta.ID, Key: keys[0].Name()},
+				{Subject: beta.ID, Key: keys[1].Name()},
+			}, "a claim after another read carries that read too")
+		})
+
 		t.Run("assigns the sequence in canonical match order", func(t *testing.T) {
 			t.Parallel()
 

@@ -25,12 +25,7 @@ func On{{.Name}}[E Effect](h func(*{{.Name}}Match, E) error) Rule {
 			if !held {
 				return nil
 			}
-			m, reused := inv.scratch().(*{{.Name}}Match)
-			if !reused {
-				m = &{{.Name}}Match{}
-				inv.keep(m)
-			}
-			m.match = newMatch(inv)
+			m := bindMatch[{{.Name}}Match](inv)
 			m.{{.Name}} = decl
 			return h(m, effectFor[E](inv.rs, &m.match))
 		},
