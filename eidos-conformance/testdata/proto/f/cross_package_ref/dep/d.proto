@@ -1,0 +1,5 @@
+syntax = "proto3";
+
+package f.cross_package_ref.dep;
+
+message Target {}

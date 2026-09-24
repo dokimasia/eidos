@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package f.builtin_ref;
+
+message Plain {
+  int64 f0 = 1;
+}

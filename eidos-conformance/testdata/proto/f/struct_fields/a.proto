@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package f.struct_fields;
+
+message Point {
+  int64 f0 = 1;
+  string f1 = 2;
+}

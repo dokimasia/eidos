@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package f.interfaces;
+
+message Payload {
+  int64 p = 1;
+}
+
+service Reader {
+  rpc Read(Payload) returns (Payload);
+}
