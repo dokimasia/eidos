@@ -85,6 +85,7 @@ func TestCase(t *testing.T) {
 				caser: naming.New(), in: "url_path", want: "UrlPath",
 			},
 			{name: "an acronym run inside the name survives", in: "HTTPServer", want: "HTTPServer"},
+			{name: "a word after a digit keeps its capital", in: "Base64Encode", want: "Base64Encode"},
 			{name: "a trailing initialism survives", in: "user_id", want: "UserID"},
 			{
 				name:  "an all-upper word survives without being one",

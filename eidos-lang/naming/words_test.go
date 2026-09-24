@@ -40,7 +40,9 @@ func TestWords(t *testing.T) {
 			{"tab separates", "hello\tworld", []string{"hello", "world"}},
 			{"slash separates", "hello/world", []string{"hello", "world"}},
 			{"repeated separators collapse", "__hello-_-world__", []string{"hello", "world"}},
-			{"a digit joins the word beside it", "Version2", []string{"Version2"}},
+			{"a digit joins the word before it", "Version2", []string{"Version2"}},
+			{"an upper-case rune after a digit starts a word", "Int64Value", []string{"Int64", "Value"}},
+			{"after an acronym's digit too", "HTTP2Server", []string{"HTTP2", "Server"}},
 			{
 				"every rule at once", "URLPath_v2 helloWorld",
 				[]string{"URL", "Path", "v2", "hello", "World"},

@@ -18,10 +18,11 @@ import (
 //   - Acronym-then-word boundaries: an upper-case run followed by an
 //     upper-case rune that is itself followed by a lower-case rune —
 //     "HTTPServer" → ["HTTP", "Server"], "URLPath" → ["URL", "Path"].
+//   - Digit-to-upper transitions: an upper-case rune after a digit
+//     starts a word — "Int64Value" → ["Int64", "Value"].
 //
-// Digits never trigger a boundary; they belong to the surrounding word.
-// "Version2" stays one word; consumers that want "Version_2" can
-// pre-separate the digit.
+// A digit belongs to the word before it. "Version2" is one word;
+// consumers that want "Version_2" can pre-separate the digit.
 //
 // An empty or separator-only input returns nil.
 //
@@ -146,7 +147,7 @@ func decodeRuneAt(s string, i int) (rune, int) {
 
 // countWordStarts returns a capacity estimate for the words slice: one
 // for the first word, plus one per separator, plus one per ASCII
-// lower-to-upper transition.
+// lower-to-upper or digit-to-upper transition.
 //
 // A cheap over-estimate is fine and an under-estimate merely costs a
 // growth step, so the scan stays on the ASCII fast path and does not
@@ -166,7 +167,7 @@ func countWordStarts(s string) int {
 		switch {
 		case c == '_' || c == '-' || c == '.' || c == ' ' || c == '\t' || c == '/':
 			n++
-		case i > 0 && c >= 'A' && c <= 'Z' && s[i-1] >= 'a' && s[i-1] <= 'z':
+		case i > 0 && c >= 'A' && c <= 'Z' && (s[i-1] >= 'a' && s[i-1] <= 'z' || s[i-1] >= '0' && s[i-1] <= '9'):
 			n++
 		}
 	}
@@ -177,10 +178,11 @@ func countWordStarts(s string) int {
 // before cur. prev is the preceding rune; next is the byte offset just
 // past cur, used for the acronym lookahead.
 //
-// Same two rules the rune-indexed form applied, with the lookahead
-// decoding one rune out of the string rather than indexing a slice.
+// A lower-case rune or a digit before an upper-case one breaks, and
+// so does the last upper-case rune of a run that a lower-case rune
+// follows, the lookahead decoding one rune out of the string.
 func breaksBefore(prev, cur rune, s string, next int) bool {
-	if unicode.IsLower(prev) && unicode.IsUpper(cur) {
+	if (unicode.IsLower(prev) || unicode.IsDigit(prev)) && unicode.IsUpper(cur) {
 		return true
 	}
 	if unicode.IsUpper(prev) && unicode.IsUpper(cur) && next < len(s) {
