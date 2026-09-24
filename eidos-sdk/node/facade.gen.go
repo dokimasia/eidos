@@ -457,33 +457,33 @@ type TypeParam = core.TypeParam
 // This is the node spelling of the kind.
 type Embed = core.Embed
 
-// Symbols is a list of declarations of any kind.
+// Symbols is the type of a field that admits declarations of any
+// kind, such as a file's declaration list.
 //
-// A field admitting anything, as a file's declaration list does,
-// carries this rather than a plain interface slice. Decoding
-// `[]symbol.Symbol` fails outright, because nothing tells the
-// decoder which kind to allocate for an element. Every other field
-// is typed concretely and needs none of this: the struct tags on
-// the models carry it.
+// Decoding a plain `[]symbol.Symbol` fails, because nothing tells
+// the decoder which kind to allocate for an element. Every other
+// field is typed concretely and decodes through the struct tags on
+// the models.
 type Symbols = core.Symbols
 
-// EncodeJSON encodes a declaration so that a decoder can tell what
-// it is holding.
+// EncodeJSON encodes a declaration with its kind, so a decoder can
+// allocate the right kind.
 //
-// The fields come from the declaration's own struct tags; this adds
-// the kind in front of them. A nil declaration encodes as JSON
-// null, which [DecodeJSON] reads back as one. A declaration whose
-// own encoding is not an object refuses, because the kind could
-// not be spliced in front of it.
+// The fields come from the declaration's own struct tags, and
+// EncodeJSON writes the kind in front of them. A nil declaration
+// encodes as JSON null, which [DecodeJSON] reads back as nil. A
+// declaration whose own encoding is not an object is refused,
+// because the kind can only be spliced into an object.
 func EncodeJSON(s symbol.Symbol) ([]byte, error) {
 	return core.EncodeJSON(s)
 }
 
 // DecodeJSON decodes a declaration encoded by [EncodeJSON].
 //
-// It reads the kind, allocates it and lets the struct tags do the
-// rest. JSON null decodes to a nil declaration, and an unknown or
-// absent kind is an error naming what it read.
+// It reads the kind, allocates a declaration of that kind and
+// decodes the fields through its struct tags. JSON null decodes to
+// a nil declaration, and an unknown or absent kind is an error
+// naming what it read.
 func DecodeJSON(data []byte) (symbol.Symbol, error) {
 	return core.DecodeJSON(data)
 }

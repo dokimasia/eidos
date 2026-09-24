@@ -145,8 +145,9 @@ func TestSlot(t *testing.T) {
 
 			var slot emit.Slot[string]
 			slot.Append("held")
-			assert.HasError(t, slot.UnmarshalJSON([]byte(`["a",`)),
-				"malformed input is refused")
+			err := slot.UnmarshalJSON([]byte(`["a",`))
+			assert.HasError(t, err, "malformed input is refused")
+			assert.HasPrefix(t, err.Error(), "emit: ", "under the package prefix")
 			assert.Equal(t, slot.Items(), []string{"held"},
 				"and the slot keeps what it held rather than zeroing")
 		})
@@ -156,8 +157,9 @@ func TestSlot(t *testing.T) {
 
 			var slot emit.Slot[symbol.Symbol]
 			slot.Append(&emit.Alias{Name: "RowID"})
-			assert.HasError(t, slot.UnmarshalJSON([]byte(`[{"kind":`)),
-				"malformed input is refused before the elements are allocated")
+			err := slot.UnmarshalJSON([]byte(`[{"kind":`))
+			assert.HasError(t, err, "malformed input is refused before the elements are allocated")
+			assert.HasPrefix(t, err.Error(), "emit: ", "under the package prefix")
 			assert.Equal(t, slot.Len(), 1,
 				"and the slot keeps what it held rather than zeroing")
 		})

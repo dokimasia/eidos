@@ -7,55 +7,76 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// kindKey names the discriminator an encoded declaration carries
-// when its concrete kind cannot be known from the field's type.
-const kindKey = "kind"
+// kindKey names the discriminator in an encoded declaration whose
+// concrete kind the field's type does not determine. kindPrefix
+// opens every encoding [EncodeJSON] writes, so a decoder reads the
+// kind from the first bytes.
+const (
+	kindKey    = "kind"
+	kindPrefix = `{"` + kindKey + `":"`
+)
+
+// jsonNull is the encoding of a nil declaration and of a nil list.
+const jsonNull = "null"
 
 // newByKind allocates a declaration of a kind.
 //
-// It is indexed by the kind rather than keyed by its name, because
-// the vocabulary already turns a name into a kind: this side only
-// has to know how to make one. Only a decoder that cannot learn the
-// concrete type from context needs it, since a field typed
-// `[]*Field` decodes straight through the struct tags.
+// The table is indexed by the kind, because the vocabulary already
+// parses a name into a kind. Only a decoder that cannot learn the
+// concrete type from context uses it. A field typed `[]*Field`
+// decodes through the struct tags alone.
 var newByKind = [...]func() symbol.Symbol{
 {{- range .Views}}
 	symbol.Kind{{.Name}}: func() symbol.Symbol { return new({{.Name}}) },
 {{- end}}
 }
 
-// Symbols is a list of declarations of any kind.
+// Symbols is the type of a field that admits declarations of any
+// kind, such as a file's declaration list.
 //
-// A field admitting anything, as a file's declaration list does,
-// carries this rather than a plain interface slice. Decoding
-// `[]symbol.Symbol` fails outright, because nothing tells the
-// decoder which kind to allocate for an element. Every other field
-// is typed concretely and needs none of this: the struct tags on
-// the models carry it.
+// Decoding a plain `[]symbol.Symbol` fails, because nothing tells
+// the decoder which kind to allocate for an element. Every other
+// field is typed concretely and decodes through the struct tags on
+// the models.
 type Symbols []symbol.Symbol
 
 // MarshalJSON encodes each element with its kind in front of the
-// fields the element's own tags produce.
+// fields the element's own tags produce, joined into one array. A
+// nil list encodes as JSON null, which [Symbols.UnmarshalJSON]
+// decodes back to nil.
 func (s Symbols) MarshalJSON() ([]byte, error) {
-	encoded := make([]json.RawMessage, 0, len(s))
-	for _, one := range s {
+	if s == nil {
+		return []byte(jsonNull), nil
+	}
+	bodies := make([][]byte, len(s))
+	size := len("[]") + max(len(s)-1, 0)
+	for i, one := range s {
 		body, err := EncodeJSON(one)
 		if err != nil {
 			return nil, err
 		}
-		encoded = append(encoded, body)
+		bodies[i] = body
+		size += len(body)
 	}
-	return json.Marshal(encoded)
+	encoded := make([]byte, 0, size)
+	encoded = append(encoded, '[')
+	for i, body := range bodies {
+		if i > 0 {
+			encoded = append(encoded, ',')
+		}
+		encoded = append(encoded, body...)
+	}
+	return append(encoded, ']'), nil
 }
 
 // UnmarshalJSON decodes each element through its own kind.
 //
-// A JSON null decodes to a nil Symbols, so a value that carried
-// nothing re-encodes as it arrived.
+// A JSON null decodes to a nil Symbols, so a nil list re-encodes as
+// null.
 func (s *Symbols) UnmarshalJSON(data []byte) error {
 	var encoded []json.RawMessage
 	if err := json.Unmarshal(data, &encoded); err != nil {
-		return err
+		return fmt.Errorf("{{.Package}}: decode a declaration list: %w", err)
 	}
 	if encoded == nil {
 		*s = nil
@@ -74,17 +95,17 @@ func (s *Symbols) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-// EncodeJSON encodes a declaration so that a decoder can tell what
-// it is holding.
+// EncodeJSON encodes a declaration with its kind, so a decoder can
+// allocate the right kind.
 //
-// The fields come from the declaration's own struct tags; this adds
-// the kind in front of them. A nil declaration encodes as JSON
-// null, which [DecodeJSON] reads back as one. A declaration whose
-// own encoding is not an object refuses, because the kind could
-// not be spliced in front of it.
+// The fields come from the declaration's own struct tags, and
+// EncodeJSON writes the kind in front of them. A nil declaration
+// encodes as JSON null, which [DecodeJSON] reads back as nil. A
+// declaration whose own encoding is not an object is refused,
+// because the kind can only be spliced into an object.
 func EncodeJSON(s symbol.Symbol) ([]byte, error) {
 	if s == nil {
-		return []byte("null"), nil
+		return []byte(jsonNull), nil
 	}
 	body, err := json.Marshal(s)
 	if err != nil {
@@ -92,9 +113,9 @@ func EncodeJSON(s symbol.Symbol) ([]byte, error) {
 	}
 	if len(body) < 2 || body[0] != '{' || body[len(body)-1] != '}' {
 		// The splice below opens the encoded object to put the kind
-		// in front of its fields, so anything but an object would
-		// splice into invalid JSON. Only a foreign declaration
-		// spelling its own encoding reaches here.
+		// in front of its fields, so it requires an object. Only a
+		// declaration from outside the models, with its own
+		// MarshalJSON, fails this check.
 		return nil, fmt.Errorf(
 			"{{.Package}}: encode %v: the declaration encodes as %s rather than an object",
 			s.Kind(), body,
@@ -104,10 +125,8 @@ func EncodeJSON(s symbol.Symbol) ([]byte, error) {
 	// A kind's name is a Go type name, so it needs no escaping and
 	// no second pass through the encoder.
 	name := s.Kind().String()
-	encoded := make([]byte, 0, len(body)+len(name)+len(kindKey)+8)
-	encoded = append(encoded, '{', '"')
-	encoded = append(encoded, kindKey...)
-	encoded = append(encoded, '"', ':', '"')
+	encoded := make([]byte, 0, len(body)+len(name)+len(kindPrefix)+2)
+	encoded = append(encoded, kindPrefix...)
 	encoded = append(encoded, name...)
 	encoded = append(encoded, '"')
 	if len(body) > 2 {
@@ -119,30 +138,50 @@ func EncodeJSON(s symbol.Symbol) ([]byte, error) {
 
 // DecodeJSON decodes a declaration encoded by [EncodeJSON].
 //
-// It reads the kind, allocates it and lets the struct tags do the
-// rest. JSON null decodes to a nil declaration, and an unknown or
-// absent kind is an error naming what it read.
+// It reads the kind, allocates a declaration of that kind and
+// decodes the fields through its struct tags. JSON null decodes to
+// a nil declaration, and an unknown or absent kind is an error
+// naming what it read.
 func DecodeJSON(data []byte) (symbol.Symbol, error) {
-	if string(bytes.TrimSpace(data)) == "null" {
+	trimmed := bytes.TrimSpace(data)
+	if string(trimmed) == jsonNull {
 		return nil, nil
+	}
+	name, err := kindOf(trimmed)
+	if err != nil {
+		return nil, err
+	}
+	kind, known := symbol.ParseKind(name)
+	if !known || int(kind) >= len(newByKind) || newByKind[kind] == nil {
+		return nil, fmt.Errorf("{{.Package}}: unknown %s %q", kindKey, name)
+	}
+
+	into := newByKind[kind]()
+	if err := json.Unmarshal(data, into); err != nil {
+		return nil, fmt.Errorf("{{.Package}}: decode %s: %w", name, err)
+	}
+	return into, nil
+}
+
+// kindOf returns the kind an encoded declaration names.
+//
+// [EncodeJSON] writes the kind first, so a prefix read returns the
+// kind of every encoding EncodeJSON wrote. Leading whitespace, a
+// later kind key or an escaped kind name takes one probing decode.
+func kindOf(data []byte) (string, error) {
+	if rest, opens := bytes.CutPrefix(data, []byte(kindPrefix)); opens {
+		if end := bytes.IndexByte(rest, '"'); end > 0 && bytes.IndexByte(rest[:end], '\\') < 0 {
+			return string(rest[:end]), nil
+		}
 	}
 	var probe struct {
 		Kind string `json:"kind"`
 	}
 	if err := json.Unmarshal(data, &probe); err != nil {
-		return nil, fmt.Errorf("{{.Package}}: read the %s: %w", kindKey, err)
+		return "", fmt.Errorf("{{.Package}}: read the %s: %w", kindKey, err)
 	}
 	if probe.Kind == "" {
-		return nil, fmt.Errorf("{{.Package}}: no %s in the encoded declaration", kindKey)
+		return "", fmt.Errorf("{{.Package}}: no %s in the encoded declaration", kindKey)
 	}
-	kind, known := symbol.ParseKind(probe.Kind)
-	if !known || int(kind) >= len(newByKind) || newByKind[kind] == nil {
-		return nil, fmt.Errorf("{{.Package}}: unknown %s %q", kindKey, probe.Kind)
-	}
-
-	into := newByKind[kind]()
-	if err := json.Unmarshal(data, into); err != nil {
-		return nil, fmt.Errorf("{{.Package}}: decode %s: %w", probe.Kind, err)
-	}
-	return into, nil
+	return probe.Kind, nil
 }

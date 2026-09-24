@@ -16,23 +16,22 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// errRefused is what [refusing] answers with, so a case can tell an
-// encoder's own fault from anything the codec added.
+// errRefused is the error [refusing] returns, so a case can tell an
+// encoder's own fault from an error the codec added.
 var errRefused = errors.New("emit: the encoder refused")
 
 // refusing is a declaration whose encoder always fails.
 //
-// Every kind in the model encodes, so nothing built from the model
-// reaches the encode path's error return; a declaration from outside
-// it is the only thing that does.
+// Every kind in the model encodes, so only a declaration from
+// outside the model exercises the encode path's error return.
 type refusing struct{}
 
 func (refusing) Kind() symbol.Kind      { return symbol.KindFunction }
 func (refusing) Position() position.Pos { return position.Pos{} }
 func (refusing) Docs() []string         { return nil }
 
-// MarshalJSON refuses, which is what puts an encoder fault in front
-// of [EncodeJSON].
+// MarshalJSON always returns errRefused, which gives [EncodeJSON] an
+// encoder fault to report.
 func (refusing) MarshalJSON() ([]byte, error) { return nil, errRefused }
 
 func TestSymbols(t *testing.T) {
@@ -49,7 +48,7 @@ func TestSymbols(t *testing.T) {
 			assert.Equal(t, string(got), "null", "as JSON null")
 		})
 
-		t.Run("carries the kind on every declaration", func(t *testing.T) {
+		t.Run("writes the kind on every declaration", func(t *testing.T) {
 			t.Parallel()
 
 			{
@@ -210,8 +209,8 @@ func TestSymbols(t *testing.T) {
 		t.Run("a concrete field needs no kind", func(t *testing.T) {
 			t.Parallel()
 
-			// Struct tags carry a concretely typed field on their own,
-			// which is why only Symbols reaches for a discriminator.
+			// The struct tags encode a concretely typed field on their
+			// own, so only Symbols writes a discriminator.
 			encoded, err := json.Marshal(&Function{})
 			assert.NoError(t, err, "a concrete field marshals through its tags")
 			assert.NotContains(t, string(encoded), `"kind"`,
@@ -231,7 +230,7 @@ func TestSymbols(t *testing.T) {
 	t.Run("MarshalJSON", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("carries the kind on every element", func(t *testing.T) {
+		t.Run("writes the kind on every element", func(t *testing.T) {
 			t.Parallel()
 
 			encoded, err := Symbols{&Function{}}.MarshalJSON()
@@ -247,6 +246,22 @@ func TestSymbols(t *testing.T) {
 			assert.ErrorIs(t, err, errRefused,
 				"one element the encoder refuses fails the whole list, "+
 					"rather than encoding a list missing an entry")
+		})
+
+		t.Run("encodes a nil list as null and an empty one as an array", func(t *testing.T) {
+			t.Parallel()
+
+			var none Symbols
+			encoded, err := none.MarshalJSON()
+			assert.NoError(t, err, "a nil list encodes")
+			assert.Equal(t, string(encoded), "null", "as JSON null")
+			var decoded Symbols
+			assert.NoError(t, json.Unmarshal(encoded, &decoded), "which unmarshals")
+			assert.Nil(t, decoded, "back to nil, so the value round-trips")
+
+			encoded, err = Symbols{}.MarshalJSON()
+			assert.NoError(t, err, "an empty list encodes")
+			assert.Equal(t, string(encoded), "[]", "as an empty array")
 		})
 	})
 
@@ -603,6 +618,20 @@ func TestSymbols(t *testing.T) {
 			}
 		})
 
+		t.Run("reads a kind another writer placed later or behind whitespace", func(t *testing.T) {
+			t.Parallel()
+
+			for _, data := range []string{
+				`{"name":"","kind":"Function"}`,
+				" \n" + `{"kind":"Function"}`,
+			} {
+				decoded, err := DecodeJSON([]byte(data))
+				assert.NoError(t, err, "an encoding EncodeJSON did not write still decodes: "+data)
+				assert.Equal(t, decoded.Kind(), symbol.KindFunction,
+					"to the kind it names")
+			}
+		})
+
 		t.Run("refuses an encoding it cannot place", func(t *testing.T) {
 			t.Parallel()
 
@@ -612,6 +641,8 @@ func TestSymbols(t *testing.T) {
 			}{
 				{name: "no kind", data: `{"name":"Store"}`},
 				{name: "unknown kind", data: `{"kind":"Nonexistent"}`},
+				{name: "an escaped kind", data: `{"kind":"No\"pe"}`},
+				{name: "a kind prefix over a broken body", data: `{"kind":"Function",`},
 				{name: "not an object", data: `[]`},
 				{name: "a Function body it cannot read", data: `{"kind":"Function","origin":"nope"}`},
 				{name: "a Method body it cannot read", data: `{"kind":"Method","origin":"nope"}`},
@@ -719,17 +750,26 @@ func TestSymbols(t *testing.T) {
 			assert.HasError(t, json.Unmarshal([]byte(`{}`), &decoded),
 				"and so is an encoding that is not a list")
 		})
+
+		t.Run("names the package in a list it cannot read", func(t *testing.T) {
+			t.Parallel()
+
+			var decoded Symbols
+			err := decoded.UnmarshalJSON([]byte(`{}`))
+			assert.HasError(t, err, "an object is no declaration list")
+			assert.HasPrefix(t, err.Error(), "emit: ", "under the package prefix")
+		})
 	})
 }
 
 // FuzzDecodeJSON drives the decoder with bytes nothing in this
 // repository produced.
 //
-// The encoding is a boundary: a sealed state and a carried
-// declaration both arrive as bytes a previous release, another tool
-// or a corrupted file wrote. Two properties hold whatever those
-// bytes are. Decoding returns an error rather than panicking, and a
-// value that decoded re-encodes to bytes that decode to the same
+// The encoding is a boundary. A sealed state and an encoded
+// declaration arrive as bytes that a previous release, another tool
+// or a corrupted file wrote. The fuzzer checks two properties for
+// any input. Decoding returns an error and never panics. A value
+// that decoded re-encodes to bytes that decode to the same
 // encoding, so one trip through the boundary is a fixed point.
 func FuzzDecodeJSON(f *testing.F) {
 	f.Add([]byte(`{"kind":"Function"}`))
