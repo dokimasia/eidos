@@ -1,9 +1,8 @@
 # Contributing to eidos
 
-eidos is not released yet. The [specification](docs/architecture/README.md)
-is complete and the modules are stubs, so most work right now means
-implementing a mechanism the specification already describes. If you want to
-change one of those mechanisms, change the specification first.
+eidos is not released yet. Most work implements a mechanism the
+[specification](docs/architecture/README.md) describes. If you want to change
+one of those mechanisms, change the specification first.
 
 ## Setup
 
@@ -65,10 +64,10 @@ and rejects anything outside these two lists.
 Types: `feat`, `fix`, `docs`, `refactor`, `test`, `ci`, `chore`, `perf`,
 `build`, `deps`, `revert`.
 
-Scopes: `core`, `lang`, `go`, `java`, `kotlin`, `php`, `protobuf`, `rust`,
-`typescript`, `shape`, `reference`. These are the module names without the
-`eidos-lang-` and `eidos-plugin-` prefixes. Leave the scope off when a change
-touches the whole repository.
+Scopes: `conformance`, `core`, `lang`, `go`, `java`, `kotlin`, `php`,
+`protobuf`, `rust`, `typescript`, `shape`, `reference`, `sdk`. These are the
+module names without their `eidos-`, `eidos-lang-` or `eidos-plugin-` prefix.
+Leave the scope off when a change touches the whole repository.
 
 Keep the subject under 80 bytes and body lines under 100. Say what changed
 and why; the diff shows how.
@@ -79,11 +78,10 @@ Put test files beside what they test, and fixtures in `testdata/` beside the
 test that reads them. `make test` runs each package twice, so a test that
 only passes in one order fails here rather than in CI.
 
-`.ergon.yaml` sets a coverage threshold per module: 85% for the kernel and
-`eidos-lang`, 75% for the satellites. The coverage stage is switched off in
-`checks.disabled` right now, because a module with no statements reports
-0.0% instead of "nothing to measure" and fails the gate. Delete that entry
-once the first module has real code in it.
+Each module with code has a line-coverage floor under
+`checks.coverage.packages` in `.ergon.yaml`. `make check` fails a module
+whose coverage drops below its floor. A module without code has no entry. Its
+0 of 0 statements would fail any floor.
 
 The kernel ships a conformance suite that tests plugins, satellites and
 backends. It has eight checks, from `plugintest` through `warm≡cold`. Write

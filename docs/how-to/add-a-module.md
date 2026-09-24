@@ -20,17 +20,22 @@ Before you start, run `make bootstrap` in a working checkout.
    reads the module list from that file, which is why `.ergon.yaml` leaves
    `modules:` empty.
 
-3. In [`.ergon.yaml`](../../.ergon.yaml), add a coverage layer under
-   `checks.coverage.packages` and the bare module name under
-   `checks.commit_msg.scopes`. Use `line: 85` for the kernel and shared
-   components, and `line: 75` for a satellite.
+3. In [`.ergon.yaml`](../../.ergon.yaml), add the bare module name under
+   `checks.commit_msg.scopes`. Once the module has code, add a coverage
+   entry under `checks.coverage.packages`, with a floor under the module's
+   measured coverage. Leave the entry out while the module has no code,
+   because a module with 0 of 0 statements fails any floor.
 
-4. Add a row to the module table in the [README](../../README.md).
+4. If the module is plugin-side code, such as a language satellite, a plugin
+   or a helper module they share, add its directory to the `plugin-modules`
+   rule in [`.golangci.yml`](../../.golangci.yml). The rule stops its code
+   from importing the kernel, so it imports the SDK facade instead. Leave a
+   host-side module that composes the workspace, such as `eidos-reference`,
+   out of the rule, because the facade does not re-export the workspace.
 
-5. Add a row to the topology table in
-   [01-repos-and-kernel.md](../architecture/01-repos-and-kernel.md). If the
+5. Add a row to the module table in the [README](../../README.md). If the
    module is neither the kernel nor a satellite, say what it is and where it
-   sits in the dependency order.
+   is in the dependency order.
 
 6. Write `doc.go`, following the rules in
    [CONTRIBUTING](../../CONTRIBUTING.md#documentation). Run `make fmt` to add
@@ -55,6 +60,9 @@ ergon check commit-msg /tmp/scope-probe
 Consumers depend on satellites, satellites depend on the kernel, and nothing
 depends the other way. One satellite never imports another. Anything
 cross-language goes through the kernel's canonical-type hub.
+
+Plugin-side code imports `go.dokimi.dev/eidos/sdk` and never
+`go.dokimi.dev/eidos/core`. The kernel arrives as a transitive dependency.
 
 The kernel takes no third-party dependencies. Put code that needs one in a
 satellite or a plugin.
