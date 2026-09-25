@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package lang is the root of the module of helper packages the
-// language satellites build their frontends and backends from. The
-// kernel calls none of them, so the helpers are in their own module
-// below the satellites.
+// language satellites build their frontends, rules and backends
+// from. The kernel calls none of them, so the helpers are in their
+// own module below the satellites.
 //
 // # Packages
 //
@@ -12,6 +12,8 @@
 //     checks method names for the backends' Lower hooks.
 //   - [go.dokimi.dev/eidos/lang/naming] converts identifiers between
 //     case conventions and builds filenames from a unit's parts.
+//   - [go.dokimi.dev/eidos/lang/numeric] types an author's number at
+//     a type's width, for the rules' literal lifting.
 //   - [go.dokimi.dev/eidos/lang/scaffold] spells the statement and
 //     value vocabulary for the C-family targets.
 //   - [go.dokimi.dev/eidos/lang/spellref] spells emit-model type
@@ -22,8 +24,9 @@
 // # Dependency position
 //
 // The root package imports nothing. naming imports the Go stdlib
-// alone. lowering and spellref import sdk/emit, textfmt imports
-// sdk/render and sdk/symbol, and scaffold imports sdk/emit,
-// sdk/render and sdk/symbol, each beside the Go stdlib. No package in
-// the module parses source or binds a grammar.
+// alone. lowering and spellref import sdk/emit, numeric imports
+// sdk/emit and sdk/rules, textfmt imports sdk/render and sdk/symbol,
+// and scaffold imports sdk/emit, sdk/render and sdk/symbol, each
+// beside the Go stdlib. No package in the module parses source or
+// binds a grammar.
 package lang
