@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"go.dokimi.dev/eidos/lang/numeric"
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -70,10 +71,10 @@ func (r Rules) derive(
 	ref *node.TypeRef, hint string, v rules.View, depth int,
 ) (rules.Sample, rules.Sample) {
 	if ref == nil {
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 	if depth > deriveDepth {
-		return refused(rules.RefusedDepth)
+		return rules.RefusedPair(rules.RefusedDepth)
 	}
 	switch ref.Form {
 	case symbol.FormOptional:
@@ -85,7 +86,7 @@ func (r Rules) derive(
 		key, otherKey := r.derive(child(ref, 0), hint, v, depth+1)
 		value, _ := r.derive(child(ref, 1), hint, v, depth+1)
 		if !key.OK() || !otherKey.OK() || !value.OK() {
-			return refused(firstRefusal(key, otherKey, value))
+			return rules.RefusedPair(rules.FirstRefusal(key, otherKey, value))
 		}
 		t := rules.EmitRef(ref)
 		return rules.Of(emit.Composite(t, emit.KeyedEntry(key.Value, value.Value))),
@@ -93,14 +94,14 @@ func (r Rules) derive(
 	case symbol.FormStream:
 		// A streaming side is many of its message, and one value of a
 		// stream is not a value a check can write.
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	case symbol.FormNamed:
 		if ref.Target.IsZero() {
 			return scalarPair(ref.Spelling, hint)
 		}
 		return r.declaredPair(ref, v, depth)
 	default:
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 }
 
@@ -111,7 +112,7 @@ func (r Rules) declaredPair(
 ) (rules.Sample, rules.Sample) {
 	sym, held := v.Lookup(ref.Target)
 	if !held {
-		return refused(rules.RefusedUnresolved)
+		return rules.RefusedPair(rules.RefusedUnresolved)
 	}
 	switch d := sym.(type) {
 	case *node.Struct:
@@ -127,7 +128,7 @@ func (r Rules) declaredPair(
 		}
 		// Every value of a message with nothing settable is one value,
 		// and a check needs two.
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	case *node.Enum:
 		return enumPair(ref, d)
 	case *node.Sum:
@@ -144,9 +145,9 @@ func (r Rules) declaredPair(
 					rules.Of(emit.Composite(t, emit.NamedField(f.Name, alternate.Value)))
 			}
 		}
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	default:
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 }
 
@@ -160,26 +161,26 @@ func (r Rules) declaredPair(
 func scalarPair(spelling, hint string) (rules.Sample, rules.Sample) {
 	if s, held := scalars[spelling]; held {
 		if s.class == rules.ScalarFloat {
-			return numbers(emit.LiteralFloat, sampleFloat, alternateFloat, s.bits)
+			return rules.NumberPair(emit.LiteralFloat, sampleFloat, alternateFloat, s.bits)
 		}
-		return numbers(emit.LiteralInt, sampleInt, alternateInt, s.bits)
+		return rules.NumberPair(emit.LiteralInt, sampleInt, alternateInt, s.bits)
 	}
 	switch spelling {
 	case spellBool:
-		return pair(emit.LiteralBool, sampleTrue, sampleFalse)
+		return rules.Pair(emit.LiteralBool, sampleTrue, sampleFalse)
 	case spellString, spellBytes:
 		if hint == "" {
 			hint = defaultHint
 		}
-		return pair(emit.LiteralString, hint+sampleSuffix, hint+alternateSuffix)
+		return rules.Pair(emit.LiteralString, hint+sampleSuffix, hint+alternateSuffix)
 	}
 	if inner, wraps := wrapped(spelling); wraps {
 		return scalarPair(inner, hint)
 	}
 	if _, known := protobuf.WellKnown(spelling); known {
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
-	return refused(rules.RefusedUnresolved)
+	return rules.RefusedPair(rules.RefusedUnresolved)
 }
 
 // enumPair returns an enum's first two declared values with distinct
@@ -199,7 +200,7 @@ func enumPair(ref *node.TypeRef, e *node.Enum) (rules.Sample, rules.Sample) {
 			return rules.Of(enumValue(t, first)), rules.Of(enumValue(t, n))
 		}
 	}
-	return refused(rules.RefusedNoLiteral)
+	return rules.RefusedPair(rules.RefusedNoLiteral)
 }
 
 // enumNumber returns a variant's declared number, and false for a nil
@@ -384,13 +385,13 @@ func (lit literal) typed(t literalType) (emit.Value, bool) {
 		case lit.kind != literalNumber:
 			return emit.Value{}, false
 		case t.shape.Class == rules.ScalarFloat:
-			return floatValue(lit.number, t.shape.Bits)
+			return numeric.Float(lit.number, t.shape.Bits)
 		case !lit.integer:
 			// An integer type takes an integer literal alone: protoc
 			// refuses 2.0 where an int32 is declared.
 			return emit.Value{}, false
 		default:
-			return intValue(lit.number, t.shape.Class, t.shape.Bits)
+			return numeric.Int(lit.number, t.shape.Class, t.shape.Bits)
 		}
 	case symbol.FormBool:
 		if lit.kind != literalBool {
@@ -424,7 +425,7 @@ func (lit literal) untyped() (emit.Value, bool) {
 		if lit.integer {
 			return emit.Literal(emit.LiteralInt, lit.number.ExactString()), true
 		}
-		return floatValue(lit.number, 0)
+		return numeric.Float(lit.number, 0)
 	default:
 		return emit.Value{}, false
 	}
@@ -433,25 +434,9 @@ func (lit literal) untyped() (emit.Value, bool) {
 // element places one derived value as a repeated field's single
 // element, passing a refusal through.
 func element(ref *node.TypeRef, s rules.Sample) rules.Sample {
-	if !s.OK() {
-		return s
-	}
-	return rules.Of(emit.Composite(rules.EmitRef(ref), emit.Element(s.Value)))
-}
-
-// pair returns two literal samples of one kind.
-func pair(k emit.LiteralKind, sample, alternate string) (rules.Sample, rules.Sample) {
-	return rules.Of(emit.Literal(k, sample)), rules.Of(emit.Literal(k, alternate))
-}
-
-// numbers returns two numeric samples of one kind at one width.
-func numbers(k emit.LiteralKind, sample, alternate string, bits int) (rules.Sample, rules.Sample) {
-	return rules.Of(emit.Number(k, sample, bits)), rules.Of(emit.Number(k, alternate, bits))
-}
-
-// refused returns one refusal twice.
-func refused(why rules.Refusal) (rules.Sample, rules.Sample) {
-	return rules.Refused(why), rules.Refused(why)
+	return rules.Lift(s, func(v emit.Value) emit.Value {
+		return emit.Composite(rules.EmitRef(ref), emit.Element(v))
+	})
 }
 
 // child returns a structural reference's child, or nil.
@@ -460,15 +445,4 @@ func child(ref *node.TypeRef, i int) *node.TypeRef {
 		return ref.Elems[i]
 	}
 	return nil
-}
-
-// firstRefusal returns the first refusal among samples, and no
-// literal where none refused.
-func firstRefusal(samples ...rules.Sample) rules.Refusal {
-	for _, s := range samples {
-		if s.Refusal != rules.RefusedNone {
-			return s.Refusal
-		}
-	}
-	return rules.RefusedNoLiteral
 }

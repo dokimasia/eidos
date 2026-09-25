@@ -10,9 +10,6 @@ import (
 	"strconv"
 	"strings"
 	"unicode/utf8"
-
-	"go.dokimi.dev/eidos/sdk/emit"
-	"go.dokimi.dev/eidos/sdk/rules"
 )
 
 // literalKind names the literal form a text is written in.
@@ -28,12 +25,6 @@ const (
 	literalNumber
 	// literalIdent is an identifier, which names an enum value.
 	literalIdent
-)
-
-// The widths in bits a float's text is written at.
-const (
-	float32Width = 32
-	float64Width = 64
 )
 
 // The spellings protobuf's number grammar reads.
@@ -237,75 +228,4 @@ func isDigit(c byte) bool { return c >= '0' && c <= '9' }
 // isHex reports whether a byte is a hexadecimal digit.
 func isHex(c byte) bool {
 	return isDigit(c) || c >= 'a' && c <= 'f' || c >= 'A' && c <= 'F'
-}
-
-// intValue returns an integral value inside an integer type's range
-// as decimal text at the type's width. A width of 0 bounds as 64
-// bits.
-func intValue(value constant.Value, class rules.ScalarClass, bits int) (emit.Value, bool) {
-	n := constant.ToInt(value)
-	if n.Kind() != constant.Int {
-		return emit.Value{}, false
-	}
-	width := bits
-	if width == 0 {
-		width = float64Width
-	}
-	one := constant.MakeInt64(1)
-	var lo, hi constant.Value
-	if class == rules.ScalarUint {
-		lo = constant.MakeInt64(0)
-		hi = constant.BinaryOp(constant.Shift(one, token.SHL, uint(width)), token.SUB, one)
-	} else {
-		half := constant.Shift(one, token.SHL, uint(width-1))
-		lo = constant.UnaryOp(token.SUB, half, 0)
-		hi = constant.BinaryOp(half, token.SUB, one)
-	}
-	if constant.Compare(n, token.LSS, lo) || constant.Compare(n, token.GTR, hi) {
-		return emit.Value{}, false
-	}
-	return emit.Number(emit.LiteralInt, n.ExactString(), bits), true
-}
-
-// floatValue returns a finite value inside a float type's range as
-// decimal text at the type's precision. A width of 0 reads at 64
-// bits and states no width.
-func floatValue(value constant.Value, bits int) (emit.Value, bool) {
-	x := constant.ToFloat(value)
-	if x.Kind() != constant.Float {
-		return emit.Value{}, false
-	}
-	width := float64Width
-	f, _ := constant.Float64Val(x)
-	if bits == float32Width {
-		width = float32Width
-		narrow, _ := constant.Float32Val(x)
-		f = float64(narrow)
-	}
-	if math.IsInf(f, 0) {
-		return emit.Value{}, false
-	}
-	return emit.Number(emit.LiteralFloat, decimal(f, width), bits), true
-}
-
-// decimal writes a float as the shortest decimal text that reads back
-// to it at a precision: positional notation from 1e-6 up to 1e21,
-// exponent notation outside it with the exponent unpadded, the rule
-// encoding/json writes floats by, cutoffs compared at the same
-// precision.
-func decimal(f float64, bits int) string {
-	format := byte('f')
-	if abs := math.Abs(f); abs != 0 {
-		narrow := float32(abs)
-		if bits == float64Width && (abs < 1e-6 || abs >= 1e21) ||
-			bits == float32Width && (narrow < 1e-6 || narrow >= 1e21) {
-			format = 'e'
-		}
-	}
-	b := strconv.AppendFloat(nil, f, format, -1, bits)
-	if n := len(b); format == 'e' && n >= 4 && b[n-4] == 'e' && b[n-3] == '-' && b[n-2] == '0' {
-		b[n-2] = b[n-1]
-		b = b[:n-1]
-	}
-	return string(b)
 }

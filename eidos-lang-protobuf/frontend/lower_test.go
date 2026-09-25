@@ -182,6 +182,24 @@ message Row { //+gen:table name=rows
 			assert.Equal(t, row.Comment, "", "and a carrier is no comment text")
 		})
 
+		t.Run("reports a carrier the kernel grammar refuses and attaches nothing", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, `syntax = "proto3";
+
+package svc.store;
+
+//+gen:table name=
+message Row {}
+`)
+			codes := codesOf(sink)
+			assert.True(t, slices.Contains(codes, protofrontend.BadCarrier),
+				"the malformed carrier reports under the grammar refusal's code")
+			assert.False(t, slices.Contains(codes, protofrontend.UnaddressedCarrier),
+				"and not as unaddressed, because the message addresses it")
+			assert.Empty(t, gb.Attachments(), "and the message takes no directive")
+		})
+
 		t.Run("reports a carrier on an import, which has no identity", func(t *testing.T) {
 			t.Parallel()
 

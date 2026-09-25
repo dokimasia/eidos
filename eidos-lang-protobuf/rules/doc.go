@@ -41,5 +41,6 @@
 // # Dependency position
 //
 // lang/protobuf/rules imports the sdk facade, lang/naming,
-// lang/protobuf and the Go stdlib, go/constant among it.
+// lang/numeric, lang/protobuf and the Go stdlib, go/constant among
+// it.
 package rules

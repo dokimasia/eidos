@@ -226,20 +226,18 @@ func (l *lowered) commentsOf(n, brace ast.Node, subject symbol.Symbol) commented
 // carrier the grammar refused reports under [BadCarrier], and one
 // with no addressable subject under [UnaddressedCarrier].
 func (l *lowered) carriers(subject symbol.Symbol, carriers []plugin.Carrier) {
+	if subject != nil {
+		l.unit.AttachCarriers(subject, carriers, BadCarrier)
+		return
+	}
 	for _, c := range carriers {
-		raw, err := directive.Parse(c.Payload)
-		if err != nil {
+		if _, err := directive.Parse(c.Payload); err != nil {
 			l.unit.Errorf(BadCarrier, c.Pos, "%q: %v", plugin.CarrierMark+c.Payload, err)
 			continue
 		}
-		if subject == nil {
-			l.unit.Errorf(UnaddressedCarrier, c.Pos,
-				"%q is on a subject the model cannot address; move it above a declaration",
-				plugin.CarrierMark+c.Payload)
-			continue
-		}
-		raw.Pos = c.Pos
-		l.unit.Graph().Attach(subject, raw)
+		l.unit.Errorf(UnaddressedCarrier, c.Pos,
+			"%q is on a subject the model cannot address; move it above a declaration",
+			plugin.CarrierMark+c.Payload)
 	}
 }
 
