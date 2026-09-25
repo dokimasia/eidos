@@ -196,7 +196,7 @@ func (f *goFrontend) parseFile(
 	if len(pkg.Doc) == 0 {
 		pkg.Doc = parts.Docs
 	}
-	attachCarriers(u, gb, pkg, parts.Carriers)
+	u.AttachCarriers(pkg, parts.Carriers, BadCarrier)
 	for _, decl := range parsed.Decls {
 		f.lowerDecl(u, l, file, decl)
 	}
@@ -237,7 +237,7 @@ func (f *goFrontend) parseFile(
 		}
 		floating := l.split(u, group)
 		file.Annotations = append(file.Annotations, floating.Annotations...)
-		refuseCarriers(u, floating.Carriers, "a comment no declaration owns")
+		refuseCarriers(u, floating.Carriers, "a comment no declaration takes")
 	}
 	return nil
 }
@@ -503,7 +503,7 @@ func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, 
 			Annotations: parts.Annotations,
 		}
 		file.Decls = append(file.Decls, fn)
-		attachCarriers(u, u.Graph(), fn, parts.Carriers)
+		u.AttachCarriers(fn, parts.Carriers, BadCarrier)
 		stampIter(u, fn, fn.Returns)
 		return
 	}
@@ -520,7 +520,7 @@ func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, 
 		Annotations: parts.Annotations,
 	}
 	file.Decls = append(file.Decls, m)
-	attachCarriers(u, u.Graph(), m, parts.Carriers)
+	u.AttachCarriers(m, parts.Carriers, BadCarrier)
 	stampIter(u, m, m.Returns)
 	if _, pointer := unparen(recv.Type).(*ast.StarExpr); pointer {
 		u.Graph().Stamp(m, meta.RawStamp{
@@ -610,7 +610,7 @@ func (f *goFrontend) lowerType(
 		declared = alias
 	}
 	file.Decls = append(file.Decls, declared)
-	attachCarriers(u, u.Graph(), declared, parts.Carriers)
+	u.AttachCarriers(declared, parts.Carriers, BadCarrier)
 }
 
 // aliasOf builds the alias shape a type spec lowers to when its
@@ -654,7 +654,7 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 				Annotations: parts.Annotations,
 			}
 			st.Embeds = append(st.Embeds, embed)
-			attachCarriers(u, u.Graph(), embed, parts.Carriers)
+			u.AttachCarriers(embed, parts.Carriers, BadCarrier)
 			continue
 		}
 		for _, name := range field.Names {
@@ -673,7 +673,7 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 				Annotations: parts.Annotations,
 			}
 			st.Fields = append(st.Fields, lowered)
-			attachCarriers(u, u.Graph(), lowered, parts.Carriers)
+			u.AttachCarriers(lowered, parts.Carriers, BadCarrier)
 		}
 	}
 }
@@ -706,7 +706,7 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 				Annotations: parts.Annotations,
 			}
 			it.Embeds = append(it.Embeds, embed)
-			attachCarriers(u, u.Graph(), embed, parts.Carriers)
+			u.AttachCarriers(embed, parts.Carriers, BadCarrier)
 			continue
 		}
 		sig, is := member.Type.(*ast.FuncType)
@@ -730,7 +730,7 @@ func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node
 			Annotations: parts.Annotations,
 		}
 		it.Methods = append(it.Methods, m)
-		attachCarriers(u, u.Graph(), m, parts.Carriers)
+		u.AttachCarriers(m, parts.Carriers, BadCarrier)
 	}
 	if len(terms) > 0 {
 		u.Graph().Stamp(it, meta.RawStamp{Key: golang.TypeSetKey, Value: terms, Pos: it.Pos})
@@ -813,7 +813,7 @@ func (*goFrontend) lowerValues(
 			}
 		}
 		file.Decls = append(file.Decls, declared)
-		attachCarriers(u, u.Graph(), declared, parts.Carriers)
+		u.AttachCarriers(declared, parts.Carriers, BadCarrier)
 	}
 }
 

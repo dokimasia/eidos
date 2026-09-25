@@ -90,7 +90,7 @@ func TestParse(t *testing.T) {
 		d := file.Decls[1].(*node.Alias)
 		assert.False(t, a.Defined, "= declares a transparent alias")
 		assert.True(t, d.Defined, "a defined type is distinct")
-		assert.Equal(t, d.Target.Spelling, "int", "the underlying spelling carries")
+		assert.Equal(t, d.Target.Spelling, "int", "the underlying spelling is kept")
 	})
 
 	t.Run("lowers embeds beside fields", func(t *testing.T) {
@@ -101,7 +101,7 @@ func TestParse(t *testing.T) {
 		h := file.Decls[0].(*node.Struct)
 		assert.Length(t, h.Embeds, 1, "the unnamed field embeds")
 		assert.Equal(t, h.Embeds[0].Ref.Spelling, "Error", "by its type")
-		assert.Length(t, h.Fields, 1, "the named field stays a field")
+		assert.Length(t, h.Fields, 1, "the named field remains a field")
 		assert.Equal(t, h.Fields[0].Tag, `json:"n"`, "its tag stripped of delimiters")
 	})
 
@@ -113,7 +113,7 @@ func TestParse(t *testing.T) {
 		a := file.Decls[0].(*node.Constant)
 		b := file.Decls[1].(*node.Constant)
 		assert.Equal(t, a.Value, "iota * 2", "the expression verbatim")
-		assert.Equal(t, b.Value, "", "an implicit carrier stays empty")
+		assert.Equal(t, b.Value, "", "an implicit row keeps an empty value")
 	})
 
 	t.Run("lowers signatures whole", func(t *testing.T) {
@@ -122,12 +122,12 @@ func TestParse(t *testing.T) {
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
 			"package p\n\nfunc F[T any](a, b int, rest ...string) (n int, err error) { return }\n"))
 		fn := file.Decls[0].(*node.Function)
-		assert.Length(t, fn.TypeParams, 1, "the type parameter carries")
+		assert.Length(t, fn.TypeParams, 1, "the type parameter is kept")
 		assert.Equal(t, fn.TypeParams[0].Bounds[0].Spelling, "any", "with its bound")
 		assert.Length(t, fn.Params, 3, "a shared type spelling still binds per name")
 		assert.Equal(t, fn.Params[2].Variadic, symbol.VariadicPositional, "the tail is variadic")
 		assert.Equal(t, fn.Params[2].Type.Spelling, "string", "over its element type")
-		assert.Length(t, fn.Returns, 2, "named results carry")
+		assert.Length(t, fn.Returns, 2, "named results are kept")
 		assert.Equal(t, fn.Returns[1].Name, "err", "by name")
 	})
 
@@ -291,7 +291,7 @@ func TestParse(t *testing.T) {
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
 			"package p\n\nfunc () M() {}\n"))
 		_, is := file.Decls[0].(*node.Function)
-		assert.True(t, is, "an empty receiver list owns nothing")
+		assert.True(t, is, "an empty receiver list names no owner")
 	})
 
 	t.Run("keeps an alias of an inline shape transparent", func(t *testing.T) {
@@ -325,8 +325,8 @@ func TestParse(t *testing.T) {
 				assert.Equal(t, s.Comment, "", "the carrier is not comment text")
 			}
 		}
-		assert.True(t, subjects["field:A"], "a field carries its directive")
-		assert.True(t, subjects["method:M"], "an interface method carries its directive")
+		assert.True(t, subjects["field:A"], "a field takes its directive")
+		assert.True(t, subjects["method:M"], "an interface method takes its directive")
 		assert.True(t, subjects["const:limit"], "a trailing comment is a carrier position")
 	})
 
@@ -337,7 +337,7 @@ func TestParse(t *testing.T) {
 			"package p\n\n//+gen:group name=g\nconst (\n\t// Own doc.\n\ta = 1\n)\n")
 		file := onlyFile(t, gb)
 		a := file.Decls[0].(*node.Constant)
-		assert.Equal(t, a.Doc, []string{"Own doc."}, "the nearer doc text stands")
+		assert.Equal(t, a.Doc, []string{"Own doc."}, "the nearer doc text is kept")
 		assert.Length(t, gb.Attachments(), 1, "the group's carrier still applies")
 	})
 
@@ -348,7 +348,7 @@ func TestParse(t *testing.T) {
 			"package p\n\n// V is data.\n//go:embed a.txt b.txt\n//nolint:all\nvar V string\n"))
 		v := file.Decls[0].(*node.Variable)
 		assert.Equal(t, v.Doc, []string{"V is data."}, "directives are not documentation")
-		assert.Length(t, v.Annotations, 2, "both directives carry")
+		assert.Length(t, v.Annotations, 2, "both directives lower")
 		assert.Equal(t, v.Annotations[0].Name, "go:embed", "named without the marker")
 		assert.Equal(t, v.Annotations[0].Args, []string{"a.txt", "b.txt"}, "arguments split")
 		assert.Equal(t, v.Annotations[1].Name, "nolint:all", "the nolint kin too")
@@ -370,9 +370,9 @@ func TestParse(t *testing.T) {
 		t.Parallel()
 
 		gb := parsedFile(t, nil, plugin.DepthFull,
-			"// Package p holds fixtures.\n//+gen:module name=fix\npackage p\n")
+			"// Package p contains fixtures.\n//+gen:module name=fix\npackage p\n")
 		pkg := gb.Packages()[0]
-		assert.Equal(t, pkg.Doc, []string{"Package p holds fixtures."},
+		assert.Equal(t, pkg.Doc, []string{"Package p contains fixtures."},
 			"the clause doc belongs to the package")
 		assert.Length(t, gb.Attachments(), 1, "its carrier attaches")
 		assert.True(t, gb.Attachments()[0].Subject == symbol.Symbol(pkg),
@@ -470,17 +470,28 @@ func TestParse(t *testing.T) {
 		assert.Length(t, u.Graph().Attachments(), 0, "and nothing attaches in silence")
 	})
 
+	t.Run("reports a carrier outside the kernel grammar and attaches nothing", func(t *testing.T) {
+		t.Parallel()
+
+		gb, found := parsedFindings(t, nil, plugin.DepthFull,
+			"package p\n\n//+gen:table name=\nfunc F() {}\n")
+		assert.Length(t, found, 1, "the malformed carrier reports once")
+		assert.Equal(t, found[0].Code, frontend.BadCarrier, "under the grammar refusal's code")
+		assert.Equal(t, found[0].Pos.Line, 3, "at the carrier's own line")
+		assert.Empty(t, gb.Attachments(), "and the function it documents takes no directive")
+	})
+
 	t.Run("lowers an embedded field as a declaration of its own", func(t *testing.T) {
 		t.Parallel()
 
 		gb := parsedFile(t, nil, plugin.DepthFull,
 			"package p\n\ntype H struct {\n"+
-				"\t// Base carries the shared fields.\n\t//go:fix inline\n\t//+gen:x\n"+
+				"\t// Base has the shared fields.\n\t//go:fix inline\n\t//+gen:x\n"+
 				"\t*Base `json:\"base\"` // promoted\n}\n\ntype Base struct{}\n")
 		h := onlyFile(t, gb).Decls[0].(*node.Struct)
 		assert.Length(t, h.Embeds, 1, "the embed lowers")
 		e := h.Embeds[0]
-		assert.Equal(t, e.Doc, []string{"Base carries the shared fields."}, "with its doc")
+		assert.Equal(t, e.Doc, []string{"Base has the shared fields."}, "with its doc")
 		assert.Equal(t, e.Comment, "promoted", "its trailing comment")
 		assert.Equal(t, e.Tag, `json:"base"`, "its tag")
 		assert.Equal(t, e.Annotations, symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
@@ -542,7 +553,7 @@ func TestParse(t *testing.T) {
 		assert.Equal(t, file.Annotations, symbol.Annotations{
 			{Name: "go:generate", Args: []string{"stringer", "-type=E"}},
 			{Name: "go:noinline"},
-		}, "the file carries them in source order; a build constraint is "+
+		}, "the file has them in source order, and a build constraint is "+
 			"configuration the split reads as no annotation")
 	})
 
@@ -607,7 +618,7 @@ func TestParse(t *testing.T) {
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
 			"package p\n\ntype T struct{}\n\nfunc (p (T)) M() {}\n"))
 		m := file.Decls[0].(*node.Struct).Methods[0]
-		assert.Equal(t, m.Receives.Spelling, "T", "punctuation owns nothing")
+		assert.Equal(t, m.Receives.Spelling, "T", "punctuation names no owner")
 	})
 
 	t.Run("positions every bound name at itself", func(t *testing.T) {
@@ -617,7 +628,7 @@ func TestParse(t *testing.T) {
 			"package p\n\nfunc F(a, b int) (_ int, err error) { return }\n"))
 		fn := file.Decls[0].(*node.Function)
 		assert.True(t, fn.Params[0].Pos.Col < fn.Params[1].Pos.Col,
-			"each parameter sits at its own name")
+			"each parameter is positioned at its own name")
 		assert.Equal(t, fn.Returns[0].Name, "_",
 			"a blank result keeps its underscore, because a mixed list "+
 				"re-renders only fully named")
@@ -640,7 +651,7 @@ func TestParse(t *testing.T) {
 		assert.Equal(t, keys["golang.iterSeq"], 1, "the one-arity iterator marks")
 		assert.Equal(t, keys["golang.iterSeq2"], 1, "and the two-arity one")
 		assert.Equal(t, keys["golang.emptyInterface"], 1, "the memberless interface marks")
-		assert.Equal(t, keys["golang.underlyingKind"], 1, "the defined type carries its shape")
+		assert.Equal(t, keys["golang.underlyingKind"], 1, "the defined type is stamped with its shape")
 	})
 
 	t.Run("stamps the package's module identity", func(t *testing.T) {
@@ -670,7 +681,7 @@ func TestParse(t *testing.T) {
 		assert.Equal(t, stamped["example.test/fix/a"], map[string]string{
 			string(meta.ModuleKey):     "example.test/fix",
 			string(meta.ModuleRootKey): ".",
-		}, "the package carries the neutral module facts")
+		}, "the package has the neutral module facts")
 		assert.Equal(t, stamped["example.test/fix/a_test"][string(meta.ModuleKey)],
 			"example.test/fix", "and so does the external test package beside it")
 
@@ -687,7 +698,7 @@ func TestParse(t *testing.T) {
 
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthSignatures,
 			"package p\n\ntype E struct {\n\tPub int\n\tsecret int\n}\n\nfunc hidden() {}\n"))
-		assert.Length(t, file.Decls, 1, "the unexported function stays out")
+		assert.Length(t, file.Decls, 1, "the unexported function is left out")
 		e := file.Decls[0].(*node.Struct)
 		assert.Length(t, e.Fields, 1, "and so does the unexported field")
 		assert.Equal(t, e.Fields[0].Name, "Pub", "the exported one loads")
@@ -746,7 +757,7 @@ func TestParse(t *testing.T) {
 		assert.Length(t, decls[0].(*node.Interface).Embeds, 0, "a basic type is a term, not an embed")
 		assert.Length(t, decls[1].(*node.Interface).Embeds, 0, "and so is a type literal")
 		assert.Length(t, decls[2].(*node.Interface).Embeds, 1,
-			"a named type stays an embed, because only its declaration shows an interface")
+			"a named type remains an embed, because only its declaration shows an interface")
 		assert.Equal(t, stampValues(gb, golang.TypeSetKey), []any{[]string{"int"}, []string{"[]byte"}},
 			"each term stamps as written")
 	})

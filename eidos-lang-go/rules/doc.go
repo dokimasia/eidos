@@ -26,8 +26,9 @@
 //
 // # Dependency position
 //
-// lang/go/rules imports the sdk facade, lang/naming, the satellite
-// root for its keys and names, and the Go stdlib, go/constant and
-// go/scanner among it. It never imports the frontend: the rules read
-// the sealed graph and its facts, not source.
+// lang/go/rules imports the sdk facade, lang/naming, lang/numeric,
+// the satellite root for its keys and names, and the Go stdlib,
+// go/constant and go/scanner among it. It never imports the
+// frontend: the rules read the sealed graph and its facts, not
+// source.
 package rules

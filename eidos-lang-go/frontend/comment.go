@@ -7,10 +7,8 @@ import (
 	"go/ast"
 	"strings"
 
-	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/position"
-	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
 // legacyBuild opens the legacy constraint form, which this
@@ -97,28 +95,13 @@ func merge(own, group plugin.CommentParts) plugin.CommentParts {
 	return own
 }
 
-// attachCarriers parses each carrier under the kernel grammar and
-// records it on its subject, a grammar refusal reported at the
-// carrier's own line.
-func attachCarriers(u *plugin.SourceUnit, gb *plugin.GraphBuilder, subject symbol.Symbol, cs []plugin.Carrier) {
-	for _, c := range cs {
-		raw, err := directive.Parse(c.Payload)
-		if err != nil {
-			u.Errorf(BadCarrier, c.Pos, "%q: %v", plugin.CarrierMark+c.Payload, err)
-			continue
-		}
-		raw.Pos = c.Pos
-		gb.Attach(subject, raw)
-	}
-}
-
 // refuseCarriers reports every carrier on a subject the model
 // cannot address, so an authored directive never vanishes into
 // silence.
 func refuseCarriers(u *plugin.SourceUnit, cs []plugin.Carrier, what string) {
 	for _, c := range cs {
 		u.Errorf(UnaddressedCarrier, c.Pos,
-			"%q sits on %s, which the model cannot address; move it to the declaration",
+			"%q is on %s, which the model cannot address; move it to the declaration",
 			plugin.CarrierMark+c.Payload, what)
 	}
 }

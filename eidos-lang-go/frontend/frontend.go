@@ -26,7 +26,7 @@ const Lang = golang.Lang
 // the parser still recovered.
 var UnparsedFile = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 	Number:  1,
-	Meaning: "a Go file carries a syntax error",
+	Meaning: "a Go file has a syntax error",
 })
 
 // BadCarrier reports a +-prefixed doc line the kernel grammar
@@ -41,7 +41,7 @@ var BadCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 // so the author learns that the directive attached nowhere.
 var UnaddressedCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 	Number:  3,
-	Meaning: "a directive carrier sits on a subject the model cannot address",
+	Meaning: "a directive carrier is on a subject the model cannot address",
 })
 
 // MixedPackage reports a file inside the build whose package clause

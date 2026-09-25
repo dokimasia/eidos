@@ -7,12 +7,11 @@ import (
 	"go/constant"
 	"go/scanner"
 	"go/token"
-	"math"
 	"slices"
-	"strconv"
 	"strings"
 
 	golang "go.dokimi.dev/eidos/lang/go"
+	"go.dokimi.dev/eidos/lang/numeric"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
@@ -52,14 +51,9 @@ const (
 	falseSpelling = "false"
 )
 
-// The widths in bits the literal text is written at: a
-// platform-sized number states none, and a float then writes at
-// float64's precision.
-const (
-	platformWidth = 0
-	float32Width  = 32
-	float64Width  = 64
-)
+// platformWidth is the width a platform-sized number states: none,
+// and a float of it writes at float64's precision.
+const platformWidth = 0
 
 // SamplesOf derives a type's two distinguishable values: a builtin's
 // pair from the fixed table, a defined type's as a conversion of
@@ -90,10 +84,10 @@ func (r Rules) derive(
 	depth int,
 ) (rules.Sample, rules.Sample) {
 	if ref == nil {
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 	if depth > deriveDepth {
-		return refused(rules.RefusedDepth)
+		return rules.RefusedPair(rules.RefusedDepth)
 	}
 	switch ref.Form {
 	case symbol.FormOptional:
@@ -101,12 +95,12 @@ func (r Rules) derive(
 		return addressed(sample), addressed(alternate)
 	case symbol.FormList, symbol.FormArray:
 		sample, alternate := r.derive(child(ref, 0), hint, v, depth+1)
-		return lift(sample, elements(ref)), lift(alternate, elements(ref))
+		return rules.Lift(sample, elements(ref)), rules.Lift(alternate, elements(ref))
 	case symbol.FormMap:
 		key, otherKey := r.derive(child(ref, 0), hint, v, depth+1)
 		value, _ := r.derive(child(ref, 1), hint, v, depth+1)
 		if !key.OK() || !otherKey.OK() || !value.OK() {
-			return refused(firstRefusal(key, otherKey, value))
+			return rules.RefusedPair(rules.FirstRefusal(key, otherKey, value))
 		}
 		return rules.Of(entry(ref, key.Value, value.Value)),
 			rules.Of(entry(ref, otherKey.Value, value.Value))
@@ -116,7 +110,7 @@ func (r Rules) derive(
 		}
 		return r.declaredPair(ref, hint, v, depth)
 	default:
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 }
 
@@ -129,7 +123,7 @@ func (r Rules) declaredPair(
 ) (rules.Sample, rules.Sample) {
 	sym, held := v.Lookup(ref.Target)
 	if !held {
-		return refused(rules.RefusedUnresolved)
+		return rules.RefusedPair(rules.RefusedUnresolved)
 	}
 	switch d := sym.(type) {
 	case *node.Struct:
@@ -139,7 +133,7 @@ func (r Rules) declaredPair(
 			}
 			sample, alternate := r.derive(f.Type, f.Name, v, depth+1)
 			if !sample.OK() || !alternate.OK() {
-				return refused(firstRefusal(sample, alternate))
+				return rules.RefusedPair(rules.FirstRefusal(sample, alternate))
 			}
 			t := rules.EmitRef(ref)
 			return rules.Of(emit.Composite(t, emit.NamedField(f.Name, sample.Value))),
@@ -147,17 +141,17 @@ func (r Rules) declaredPair(
 		}
 		// No settable exported field: every value of the type is
 		// one value, and a check needs two.
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	case *node.Alias:
 		if d.Target == nil {
-			return refused(rules.RefusedNoLiteral)
+			return rules.RefusedPair(rules.RefusedNoLiteral)
 		}
 		sample, alternate := r.derive(d.Target, hint, v, depth+1)
 		if !d.Defined {
 			return sample, alternate
 		}
 		t := rules.EmitRef(ref)
-		return lift(sample, converted(t)), lift(alternate, converted(t))
+		return rules.Lift(sample, converted(t)), rules.Lift(alternate, converted(t))
 	case *node.Enum:
 		t := rules.EmitRef(ref)
 		if first, second, exact := r.twoVariantValues(d, v); exact {
@@ -166,7 +160,7 @@ func (r Rules) declaredPair(
 		return rules.Of(emit.Conversion(t, emit.Literal(emit.LiteralInt, sampleSmall))),
 			rules.Of(emit.Conversion(t, emit.Literal(emit.LiteralInt, alternateSmall)))
 	default:
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 }
 
@@ -184,19 +178,19 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string) (rules.Sample, rules.
 		spelling := named(ref)
 		switch {
 		case shape.Class == rules.ScalarFloat:
-			return numbers(emit.LiteralFloat, sampleFloat, alternateFloat, shape.Bits)
+			return rules.NumberPair(emit.LiteralFloat, sampleFloat, alternateFloat, shape.Bits)
 		case spelling == spellByte || spelling == spellUint8 || spelling == spellRune:
-			return numbers(emit.LiteralInt, sampleSmall, alternateSmall, shape.Bits)
+			return rules.NumberPair(emit.LiteralInt, sampleSmall, alternateSmall, shape.Bits)
 		default:
-			return numbers(emit.LiteralInt, sampleInt, alternateInt, shape.Bits)
+			return rules.NumberPair(emit.LiteralInt, sampleInt, alternateInt, shape.Bits)
 		}
 	case symbol.FormBool:
-		return pair(emit.LiteralBool, trueSpelling, falseSpelling)
+		return rules.Pair(emit.LiteralBool, trueSpelling, falseSpelling)
 	case symbol.FormText:
 		if hint == "" {
 			hint = defaultHint
 		}
-		return pair(emit.LiteralString, hint+sampleSuffix, hint+alternateSuffix)
+		return rules.Pair(emit.LiteralString, hint+sampleSuffix, hint+alternateSuffix)
 	case symbol.FormReference:
 		switch shape.Ref {
 		case rules.WellKnownTimestamp:
@@ -216,9 +210,9 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string) (rules.Sample, rules.
 		}
 	}
 	if golang.Predeclared(named(ref)) || named(ref) == spellUnsafePointer {
-		return refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
-	return refused(rules.RefusedUnresolved)
+	return rules.RefusedPair(rules.RefusedUnresolved)
 }
 
 // twoVariantValues returns the exact values of an enumeration's
@@ -451,9 +445,9 @@ func (l literal) typed(shape rules.TypeShape) (emit.Value, bool) {
 	switch shape.Form {
 	case symbol.FormScalar:
 		if shape.Class == rules.ScalarFloat {
-			return floatValue(l.value, shape.Bits)
+			return numeric.Float(l.value, shape.Bits)
 		}
-		return intValue(l.value, shape.Class, shape.Bits)
+		return numeric.Int(l.value, shape.Class, shape.Bits)
 	case symbol.FormBool:
 		if l.value.Kind() != constant.Bool {
 			return emit.Value{}, false
@@ -473,79 +467,10 @@ func (l literal) typed(shape rules.TypeShape) (emit.Value, bool) {
 	case constant.Int:
 		return emit.Literal(emit.LiteralInt, l.value.ExactString()), true
 	case constant.Float:
-		return floatValue(l.value, platformWidth)
+		return numeric.Float(l.value, platformWidth)
 	default:
 		return emit.Value{}, false
 	}
-}
-
-// intValue returns an integral value inside an integer builtin's
-// range as decimal text. The platform width bounds as 64 bits.
-func intValue(value constant.Value, class rules.ScalarClass, bits int) (emit.Value, bool) {
-	n := constant.ToInt(value)
-	if n.Kind() != constant.Int {
-		return emit.Value{}, false
-	}
-	width := bits
-	if width == platformWidth {
-		width = float64Width
-	}
-	one := constant.MakeInt64(1)
-	var lo, hi constant.Value
-	if class == rules.ScalarUint {
-		lo = constant.MakeInt64(0)
-		hi = constant.BinaryOp(constant.Shift(one, token.SHL, uint(width)), token.SUB, one)
-	} else {
-		half := constant.Shift(one, token.SHL, uint(width-1))
-		lo = constant.UnaryOp(token.SUB, half, 0)
-		hi = constant.BinaryOp(half, token.SUB, one)
-	}
-	if constant.Compare(n, token.LSS, lo) || constant.Compare(n, token.GTR, hi) {
-		return emit.Value{}, false
-	}
-	return emit.Number(emit.LiteralInt, n.ExactString(), bits), true
-}
-
-// floatValue returns a finite value inside a float builtin's range
-// as decimal text at the builtin's precision.
-func floatValue(value constant.Value, bits int) (emit.Value, bool) {
-	x := constant.ToFloat(value)
-	if x.Kind() != constant.Float {
-		return emit.Value{}, false
-	}
-	width := float64Width
-	f, _ := constant.Float64Val(x)
-	if bits == float32Width {
-		width = float32Width
-		narrow, _ := constant.Float32Val(x)
-		f = float64(narrow)
-	}
-	if math.IsInf(f, 0) {
-		return emit.Value{}, false
-	}
-	return emit.Number(emit.LiteralFloat, decimal(f, width), bits), true
-}
-
-// decimal writes a float as the shortest decimal text that reads
-// back to it at a precision: positional notation from 1e-6 up to
-// 1e21, exponent notation outside it with the exponent unpadded,
-// the rule encoding/json writes floats by, cutoffs compared at the
-// same precision.
-func decimal(f float64, bits int) string {
-	format := byte('f')
-	if abs := math.Abs(f); abs != 0 {
-		narrow := float32(abs)
-		if bits == float64Width && (abs < 1e-6 || abs >= 1e21) ||
-			bits == float32Width && (narrow < 1e-6 || narrow >= 1e21) {
-			format = 'e'
-		}
-	}
-	b := strconv.AppendFloat(nil, f, format, -1, bits)
-	if n := len(b); format == 'e' && n >= 4 && b[n-4] == 'e' && b[n-3] == '-' && b[n-2] == '0' {
-		b[n-2] = b[n-1]
-		b = b[:n-1]
-	}
-	return string(b)
 }
 
 // literalShape returns the shape a literal is typed against: a
@@ -569,21 +494,6 @@ func (r Rules) literalShape(ref *node.TypeRef, v rules.View, depth int) rules.Ty
 	return rules.TypeShape{}
 }
 
-// pair returns two literal samples of one kind.
-func pair(k emit.LiteralKind, sample, alternate string) (rules.Sample, rules.Sample) {
-	return rules.Of(emit.Literal(k, sample)), rules.Of(emit.Literal(k, alternate))
-}
-
-// numbers returns two numeric samples of one kind at one width.
-func numbers(k emit.LiteralKind, sample, alternate string, bits int) (rules.Sample, rules.Sample) {
-	return rules.Of(emit.Number(k, sample, bits)), rules.Of(emit.Number(k, alternate, bits))
-}
-
-// refused returns one refusal twice.
-func refused(why rules.Refusal) (rules.Sample, rules.Sample) {
-	return rules.Refused(why), rules.Refused(why)
-}
-
 // addressed takes the address of a derived composite, and refuses
 // any other value with no literal, because Go takes the address of
 // a composite literal alone: &42 does not compile. A refusal passes
@@ -597,14 +507,6 @@ func addressed(s rules.Sample) rules.Sample {
 	default:
 		return rules.Of(emit.Address(s.Value))
 	}
-}
-
-// lift wraps a derived sample, and passes a refusal through.
-func lift(s rules.Sample, wrap func(emit.Value) emit.Value) rules.Sample {
-	if !s.OK() {
-		return s
-	}
-	return rules.Of(wrap(s.Value))
 }
 
 // converted returns the wrap converting a value to a type.
@@ -632,15 +534,4 @@ func child(ref *node.TypeRef, i int) *node.TypeRef {
 		return ref.Elems[i]
 	}
 	return nil
-}
-
-// firstRefusal returns the first refusal among samples, and no
-// literal where none refused.
-func firstRefusal(samples ...rules.Sample) rules.Refusal {
-	for _, s := range samples {
-		if s.Refusal != rules.RefusedNone {
-			return s.Refusal
-		}
-	}
-	return rules.RefusedNoLiteral
 }
