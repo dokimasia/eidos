@@ -37,6 +37,20 @@ var unitCode = diag.Code{Prefix: "tst", Number: 5}
 // frontendOrigin is the origin the fixture unit reports under.
 const frontendOrigin = diag.Origin("golang")
 
+// The carriers the attachment cases hand the unit: one the kernel
+// grammar reads, one it refuses, the directive the first names, and
+// the line both are on.
+const (
+	tablePayload  = "gen:table name=rows"
+	brokenPayload = "=rows"
+	tableName     = directive.Name("gen:table")
+	carrierLine   = 7
+)
+
+// carrierAt is the position the attachment cases state for their
+// carriers.
+var carrierAt = position.Pos{File: "svc/store/row.go", Line: carrierLine}
+
 // unitFile is the one member the fixture unit declares, with the
 // module file as its shared input.
 func unitFile() plugin.SourceRef {
@@ -54,7 +68,7 @@ func unitOf(tb assert.TB, tree fstest.MapFS) *plugin.SourceUnit {
 
 // reporting builds the fixture unit together with the sink its
 // findings arrive in, so a case reads back what the frontend
-// reported rather than only that it returned.
+// reported and not only that it returned.
 func reporting(tb assert.TB, tree fstest.MapFS) (*plugin.SourceUnit, *diag.Sink) {
 	tb.Helper()
 
@@ -133,11 +147,11 @@ func TestSourceUnit(t *testing.T) {
 				"signature-only loading and the full one share one code path, "+
 					"and this is what tells them apart")
 			assert.Equal(t, unitOf(t, tree).Depth(), plugin.DepthFull,
-				"a unit loading everything says so too")
+				"and a unit loading everything returns the full depth")
 		})
 	})
 
-	t.Run("reports a declared file the tree does not hold", func(t *testing.T) {
+	t.Run("reports a declared file missing from the tree", func(t *testing.T) {
 		t.Parallel()
 
 		u := plugin.NewSourceUnit(
@@ -146,7 +160,7 @@ func TestSourceUnit(t *testing.T) {
 		)
 		before := u.ReadSum()
 		_, err := u.Read("svc/store/absent.go")
-		assert.HasError(t, err, "the jail admits the path and the tree does not hold it")
+		assert.HasError(t, err, "the jail admits the path, and the tree lacks the file")
 		assert.Contains(t, err.Error(), "svc/store/absent.go", "naming the path")
 		assert.True(t, bytes.Equal(u.ReadSum(), before),
 			"a read that returned nothing folds nothing, so the key names "+
@@ -161,7 +175,7 @@ func TestSourceUnit(t *testing.T) {
 		_, err := u.Read("svc/store/row.go")
 		assert.NoError(t, err, "the read succeeds")
 		assert.False(t, bytes.Equal(before, u.ReadSum()),
-			"a read changes the fold, so the cache knows what was seen")
+			"a read changes the fold, so the cache knows which bytes the parse saw")
 
 		twin := unitOf(t, tree)
 		_, err = twin.Read("svc/store/row.go")
@@ -226,7 +240,7 @@ func TestSourceUnit(t *testing.T) {
 			position.Pos{File: "svc/store/row.go", Line: 3},
 		)
 		assert.Equal(t, parts.Docs, []string{"Row is one record.", "go:embed schema.sql"},
-			"a block comment carries no directives, the way the toolchains read them")
+			"a block comment has no directives, the way the toolchains read them")
 		assert.Length(t, parts.Carriers, 1, "the carrier splits out")
 		assert.Equal(t, parts.Carriers[0].Payload, "gen:table name=rows", "marker stripped")
 		assert.Equal(t, parts.Carriers[0].Pos.Line, 5,
@@ -259,11 +273,11 @@ func TestSourceUnit(t *testing.T) {
 			"// Options:\n// + item one\n// +1 point\n// +gen:table name=rows",
 			position.Pos{File: "svc/store/row.go", Line: 1},
 		)
-		assert.Length(t, parts.Carriers, 1, "a bullet and a bare mark never carry intent")
+		assert.Length(t, parts.Carriers, 1, "a bullet and a bare mark open no carrier")
 		assert.Equal(t, parts.Carriers[0].Payload, "gen:table name=rows", "the real one does")
 		assert.Equal(t, parts.Docs, []string{
 			"Options:", "+ item one", "+1 point",
-		}, "everything else stays documentation")
+		}, "everything else remains documentation")
 	})
 
 	t.Run("folds a continued carrier into one payload", func(t *testing.T) {
@@ -298,7 +312,7 @@ func TestSourceUnit(t *testing.T) {
 			"an undeclared convention keeps prose as prose")
 		assert.Length(t, parts.Annotations, 0, "no annotation is invented")
 		assert.Equal(t, u.DocLines([]string{"go:generate x"}), []string{"go:generate x"},
-			"the doc filter holds to the same declaration")
+			"the doc filter follows the same declaration")
 	})
 
 	t.Run("keeps a bare URL in the documentation", func(t *testing.T) {
@@ -330,6 +344,51 @@ func TestSourceUnit(t *testing.T) {
 		assert.Length(t, parts.Annotations, 0, "nothing lowers as a directive")
 	})
 
+	t.Run("AttachCarriers", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("attaches each carrier to the subject at its own line", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, tree)
+			row := &node.Struct{Name: "Row"}
+			u.AttachCarriers(row, []plugin.Carrier{{Payload: tablePayload, Pos: carrierAt}}, unitCode)
+			coretest.AssertCodes(t, sink)
+			attached := u.Graph().Attachments()
+			assert.Length(t, attached, 1, "the carrier attaches")
+			assert.True(t, attached[0].Subject == symbol.Symbol(row), "to the subject passed in")
+			assert.Equal(t, attached[0].Raw.Name, tableName, "under the name the payload spells")
+			assert.Equal(t, attached[0].Raw.Pos, carrierAt, "positioned at the carrier's own line")
+		})
+
+		t.Run("reports a carrier the grammar refuses under the given code", func(t *testing.T) {
+			t.Parallel()
+
+			u, sink := reporting(t, tree)
+			u.AttachCarriers(&node.Struct{Name: "Row"}, []plugin.Carrier{
+				{Payload: brokenPayload, Pos: carrierAt},
+				{Payload: tablePayload, Pos: carrierAt},
+			}, unitCode)
+			coretest.AssertCodes(t, sink, unitCode)
+			got := reported(sink)
+			assert.Equal(t, got[0].Pos, carrierAt, "at the carrier's own line")
+			assert.Equal(t, got[0].Origin, frontendOrigin, "under the frontend's origin")
+			assert.Contains(t, got[0].Msg, plugin.CarrierMark+brokenPayload,
+				"quoting the carrier as the author wrote it")
+			assert.Length(t, u.Graph().Attachments(), 1,
+				"and the refused carrier attaches nothing while the next one attaches")
+		})
+
+		t.Run("panics on a nil subject with a carrier to attach", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(t, tree)
+			assert.Panics(t, func() {
+				u.AttachCarriers(nil, []plugin.Carrier{{Payload: tablePayload, Pos: carrierAt}}, unitCode)
+			}, "a carrier on no subject is the frontend's defect")
+		})
+	})
+
 	t.Run("Errorf", func(t *testing.T) {
 		t.Parallel()
 
@@ -355,10 +414,10 @@ func TestSourceUnit(t *testing.T) {
 			for _, d := range got {
 				assert.Equal(t, d.Origin, frontendOrigin,
 					"every finding is filed under the frontend that reported it")
-				assert.Equal(t, d.Pos, at, "at the position it was given")
+				assert.Equal(t, d.Pos, at, "at the position passed in")
 			}
 			assert.Equal(t, got[0].Msg, "the declaration names Row twice",
-				"the format arguments reach the message")
+				"the format arguments fill the message")
 		})
 	})
 
@@ -407,7 +466,7 @@ func TestSourceUnit(t *testing.T) {
 		attached := gb.Attachments()
 		assert.Length(t, attached, 1, "the attachment is kept")
 		assert.True(t, attached[0].Subject == symbol.Symbol(row), "on its subject")
-		assert.Equal(t, attached[0].Raw.Name, directive.Name("gen:table"), "carrying the instance")
+		assert.Equal(t, attached[0].Raw.Name, directive.Name("gen:table"), "with the instance")
 
 		gb.Stamp(file, meta.RawStamp{Key: "fake.testFile", Value: true})
 		stamps := gb.StampRecords()
@@ -419,7 +478,7 @@ func TestSourceUnit(t *testing.T) {
 		assert.Panics(t, func() { gb.Stamp(nil, meta.RawStamp{}) }, "a nil stamp subject is a defect")
 	})
 
-	t.Run("rehomes records onto the subject that stands", func(t *testing.T) {
+	t.Run("rehomes records onto the replacement subject", func(t *testing.T) {
 		t.Parallel()
 
 		gb := unitOf(t, tree).Graph()
@@ -434,7 +493,7 @@ func TestSourceUnit(t *testing.T) {
 		assert.True(t, gb.Attachments()[0].Subject == symbol.Symbol(standing),
 			"the attachment follows the replacement")
 		assert.True(t, gb.Attachments()[1].Subject == symbol.Symbol(other),
-			"an unrelated subject stays put")
+			"an unrelated subject keeps its attachment")
 		assert.True(t, gb.StampRecords()[0].Subject == symbol.Symbol(standing),
 			"the stamp follows the same way")
 		assert.Panics(t, func() { gb.Rehome(nil, standing) }, "a nil source is a defect")

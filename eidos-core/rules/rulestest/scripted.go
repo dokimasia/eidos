@@ -26,6 +26,9 @@ const (
 	alternateInt    = "7"
 	samplePrefix    = "test-"
 	alternatePrefix = "other-"
+	trueSpelling    = "true"
+	falseSpelling   = "false"
+	zeroInt         = "0"
 )
 
 // Scripted returns the rules of the scripted language: a member
@@ -94,26 +97,23 @@ func (scripted) Resolve(
 // refusal, so the lookup records it on the view.
 func (scripted) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
 	if ref == nil {
-		return rules.Refused(rules.RefusedNoLiteral), rules.Refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 	switch ref.Spelling {
 	case scriptedInt:
-		return rules.Of(emit.Literal(emit.LiteralInt, sampleInt)),
-			rules.Of(emit.Literal(emit.LiteralInt, alternateInt))
+		return rules.Pair(emit.LiteralInt, sampleInt, alternateInt)
 	case scriptedString:
-		return rules.Of(emit.Literal(emit.LiteralString, samplePrefix+hint)),
-			rules.Of(emit.Literal(emit.LiteralString, alternatePrefix+hint))
+		return rules.Pair(emit.LiteralString, samplePrefix+hint, alternatePrefix+hint)
 	case scriptedBool:
-		return rules.Of(emit.Literal(emit.LiteralBool, "true")),
-			rules.Of(emit.Literal(emit.LiteralBool, "false"))
+		return rules.Pair(emit.LiteralBool, trueSpelling, falseSpelling)
 	}
 	if ref.Target.IsZero() {
-		return rules.Refused(rules.RefusedNoLiteral), rules.Refused(rules.RefusedNoLiteral)
+		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 	if _, held := v.Lookup(ref.Target); !held {
-		return rules.Refused(rules.RefusedUnresolved), rules.Refused(rules.RefusedUnresolved)
+		return rules.RefusedPair(rules.RefusedUnresolved)
 	}
-	return rules.Refused(rules.RefusedNoLiteral), rules.Refused(rules.RefusedNoLiteral)
+	return rules.RefusedPair(rules.RefusedNoLiteral)
 }
 
 // ZeroValue spells a builtin's zero and reports false for the rest.
@@ -123,11 +123,11 @@ func (scripted) ZeroValue(ref *node.TypeRef, _ rules.View) (emit.Value, bool) {
 	}
 	switch ref.Spelling {
 	case scriptedInt:
-		return emit.Literal(emit.LiteralInt, "0"), true
+		return emit.Literal(emit.LiteralInt, zeroInt), true
 	case scriptedString:
 		return emit.Literal(emit.LiteralString, ""), true
 	case scriptedBool:
-		return emit.Literal(emit.LiteralBool, "false"), true
+		return emit.Literal(emit.LiteralBool, falseSpelling), true
 	default:
 		return emit.Value{}, false
 	}

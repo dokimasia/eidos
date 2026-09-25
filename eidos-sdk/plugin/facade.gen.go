@@ -470,12 +470,12 @@ func NewSourceUnit(files []SourceRef, fsys fs.FS, depth Depth, syntax CommentSyn
 }
 
 // CarrierMark opens a directive carrier line inside a comment: the
-// kit's one cross-language convention, so a directive spells the
-// same way whatever language carries it.
+// kit's one cross-language convention, so a directive is spelled the
+// same way in every language's comments.
 const CarrierMark = core.CarrierMark
 
-// Carrier is one directive payload and the line it sits on, marker
-// stripped, ready for the kernel grammar.
+// Carrier is one directive payload and its line, marker stripped,
+// ready for the kernel grammar.
 type Carrier = core.Carrier
 
 // CommentParts is one raw comment taken apart three ways: the
@@ -507,7 +507,7 @@ type ScopeRecord = core.ScopeRecord
 // unit built. The subject is a pointer for the reason
 // [ScopeRecord]'s file is: the splice resolves it to the assigned
 // identity, so an attachment on a declaration another unit already
-// declared attaches to the identity that stands.
+// declared attaches to the identity the splice keeps.
 type Attachment = core.Attachment
 
 // StampRecord is one classification stamp on a declaration this

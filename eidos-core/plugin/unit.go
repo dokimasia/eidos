@@ -104,7 +104,7 @@ func fold(h hash.Hash, field []byte) {
 	h.Write(field)
 }
 
-// Depth says how deep this unit loads; Parse observes it on the
+// Depth returns how deep this unit loads. Parse observes it on the
 // one code path signature-only loading shares with the full one.
 func (u *SourceUnit) Depth() Depth { return u.depth }
 
@@ -112,12 +112,12 @@ func (u *SourceUnit) Depth() Depth { return u.depth }
 func (u *SourceUnit) Graph() *GraphBuilder { return u.graph }
 
 // CarrierMark opens a directive carrier line inside a comment: the
-// kit's one cross-language convention, so a directive spells the
-// same way whatever language carries it.
+// kit's one cross-language convention, so a directive is spelled the
+// same way in every language's comments.
 const CarrierMark = "+"
 
-// Carrier is one directive payload and the line it sits on, marker
-// stripped, ready for the kernel grammar.
+// Carrier is one directive payload and its line, marker stripped,
+// ready for the kernel grammar.
 type Carrier struct {
 	Payload string
 	Pos     position.Pos
@@ -140,8 +140,8 @@ type CommentParts struct {
 // block delimiters and gutters removed, and — when the syntax
 // declares the convention — marker-adjacent directive lines
 // excluded, because a pragma is not documentation and would render
-// double-commented downstream. Carrier lines stay, because Doc
-// states nothing about them; a caller splitting carriers out uses
+// double-commented downstream. Carrier lines remain, because Doc
+// states nothing about them. A caller splitting carriers out uses
 // [SourceUnit.Comment].
 func (u *SourceUnit) Doc(raw string) []string {
 	lines := commentLines(raw, u.syntax)
@@ -163,9 +163,9 @@ func (u *SourceUnit) Doc(raw string) []string {
 // lowered as annotations, the name without its marker, the
 // arguments split on spaces, which is the spelling the render side
 // writes back. A carrier opens only where the mark is followed by
-// a letter, so a markdown bullet stays documentation; a directive
+// a letter, so a markdown bullet remains documentation. A directive
 // needs its marker adjacent, the way the host toolchain reads it,
-// so prose after a spaced marker stays prose.
+// so prose after a spaced marker remains prose.
 func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 	var parts CommentParts
 	lines := commentLines(raw, u.syntax)
@@ -202,13 +202,32 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 	return parts
 }
 
-// DocLines filters lines the author already holds clean: the
-// tool:name directive shape excludes under the syntax's
-// declaration, nothing else changes. Marker adjacency is gone from
-// a clean line, so the legacy space forms — line, extern, export —
-// stay, because those words open ordinary prose too; a caller
-// holding raw comments uses [SourceUnit.Doc], which still knows
-// the marker.
+// AttachCarriers parses each carrier under the kernel grammar and
+// attaches it to subject, positioned at the carrier's own line. A
+// carrier the grammar refuses reports under the code the frontend
+// states for it, at the carrier's line, quoting the carrier as
+// written, and attaches nothing. A nil subject with a carrier to
+// attach is a frontend defect and panics, as [GraphBuilder.Attach]
+// does.
+func (u *SourceUnit) AttachCarriers(subject symbol.Symbol, cs []Carrier, refused diag.Code) {
+	for _, c := range cs {
+		raw, err := directive.Parse(c.Payload)
+		if err != nil {
+			u.Errorf(refused, c.Pos, "%q: %v", CarrierMark+c.Payload, err)
+			continue
+		}
+		raw.Pos = c.Pos
+		u.graph.Attach(subject, raw)
+	}
+}
+
+// DocLines filters lines the author already has clean: the
+// tool:name directive shape is excluded under the syntax's
+// declaration, and nothing else changes. Marker adjacency is gone
+// from a clean line, so the legacy space forms line, extern and
+// export remain, because those words open ordinary prose too. A
+// caller with raw comments uses [SourceUnit.Doc], which still
+// knows the marker.
 func (u *SourceUnit) DocLines(lines []string) []string {
 	if !u.syntax.Directives {
 		return lines
@@ -245,8 +264,8 @@ func (u *SourceUnit) Infof(c diag.Code, at position.Pos, format string, a ...any
 // unit accepted, in read order: the reads' half of the unit key,
 // seeded with the member paths and shared inputs at construction
 // so the roster itself cannot escape it. The driver folds the
-// rest — partition reads, depth, versions, configuration — and the
-// load report carries the finished key.
+// rest, the partition reads, the depth, the versions and the
+// configuration, and the load report records the finished key.
 func (u *SourceUnit) ReadSum() []byte { return u.reads.Sum(nil) }
 
 // commentLine is one comment line with its markers stripped: the
@@ -333,11 +352,11 @@ func trimBlank(lines []string) []string {
 }
 
 // directiveLine reports whether a clean line is a tool directive
-// rather than documentation: the go:build kin, spelled tool:name.
-// The rule is go/ast's own — everything up to and including the
-// character after the colon is lowercase alphanumeric — so a doc
-// line carrying a bare URL stays documentation: the slash after
-// "https:" fails the check.
+// and not documentation: the go:build kin, spelled tool:name. The
+// rule is go/ast's own: everything up to and including the
+// character after the colon is lowercase alphanumeric. A doc line
+// with a bare URL therefore remains documentation, because the
+// slash after "https:" fails the check.
 func directiveLine(line string) bool {
 	head, rest, found := strings.Cut(line, ":")
 	if !found || head == "" || rest == "" {
@@ -382,7 +401,7 @@ type ScopeRecord struct {
 // unit built. The subject is a pointer for the reason
 // [ScopeRecord]'s file is: the splice resolves it to the assigned
 // identity, so an attachment on a declaration another unit already
-// declared attaches to the identity that stands.
+// declared attaches to the identity the splice keeps.
 type Attachment struct {
 	Subject symbol.Symbol
 	Raw     directive.Raw
@@ -398,7 +417,7 @@ type StampRecord struct {
 	Stamp   meta.RawStamp
 }
 
-// newGraphBuilder returns an empty builder; the unit owns it.
+// newGraphBuilder returns an empty builder for one unit.
 func newGraphBuilder() *GraphBuilder {
 	return &GraphBuilder{packages: map[string]*node.Package{}}
 }
@@ -418,8 +437,8 @@ func (gb *GraphBuilder) Package(path string) *node.Package {
 	return p
 }
 
-// Scope records one file's import bindings: what the owning
-// language's Resolve reads at the resolution phase. A nil file is a
+// Scope records one file's import bindings: what the file's
+// language reads in its Resolve at the resolution phase. A nil file is a
 // frontend defect and panics, because nothing could ever join the
 // record to a parsed file.
 func (gb *GraphBuilder) Scope(file *node.File, bindings any) {
@@ -452,8 +471,8 @@ func (gb *GraphBuilder) Stamp(subject symbol.Symbol, s meta.RawStamp) {
 // Rehome moves every recorded attachment and stamp from one
 // subject onto another: what a frontend calls when a rewrite pass
 // replaces a declaration it already attached to, so authored
-// intent follows the declaration that stands instead of dangling
-// on one the graph will never identify. A nil subject on either
+// intent follows the replacement and never dangles on a
+// declaration the graph does not identify. A nil subject on either
 // side is a frontend defect and panics.
 func (gb *GraphBuilder) Rehome(from, to symbol.Symbol) {
 	if from == nil || to == nil {

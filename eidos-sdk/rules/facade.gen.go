@@ -344,25 +344,58 @@ func IsWellKnown(id symbol.Identity) bool {
 // reason none could be derived.
 type Sample = core.Sample
 
-// Of returns a sample carrying a value.
+// Of returns a sample with a value.
 func Of(v emit.Value) Sample {
 	return core.Of(v)
 }
 
-// Refused returns a sample carrying a refusal.
+// Refused returns a sample with a refusal and no value.
 func Refused(why Refusal) Sample {
 	return core.Refused(why)
 }
 
-// Refusal says why a sample carries no value. Only
-// [RefusedNoLiteral] is a fact about the type; the rest describe an
-// input the caller can fix.
+// Pair returns a literal sample and its alternate, both of one
+// kind.
+func Pair(k emit.LiteralKind, sample, alternate string) (Sample, Sample) {
+	return core.Pair(k, sample, alternate)
+}
+
+// NumberPair returns a numeric sample and its alternate, both of one
+// kind and written for a number type of one width in bits, as
+// [emit.Number] states it.
+func NumberPair(k emit.LiteralKind, sample, alternate string, bits int) (Sample, Sample) {
+	return core.NumberPair(k, sample, alternate, bits)
+}
+
+// RefusedPair returns one refusal as both halves, for a type that
+// admits no pair.
+func RefusedPair(why Refusal) (Sample, Sample) {
+	return core.RefusedPair(why)
+}
+
+// FirstRefusal returns the first refusal among samples, and
+// [RefusedNoLiteral] where none states one. A value built from
+// several derived parts refuses with it when a part has no value.
+func FirstRefusal(samples ...Sample) Refusal {
+	return core.FirstRefusal(samples...)
+}
+
+// Lift returns a derived sample with its value wrapped, such as an
+// element placed in a composite. A sample without a value returns
+// unchanged, so the wrapped part keeps its reason.
+func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
+	return core.Lift(s, wrap)
+}
+
+// Refusal names why a sample has no value. Only [RefusedNoLiteral]
+// is a fact about the type; the rest describe an input the caller
+// can fix.
 type Refusal = core.Refusal
 
 const (
-	// RefusedNone means a value was derived.
+	// RefusedNone means the sample has a derived value.
 	RefusedNone = core.RefusedNone
-	// RefusedNoView means the projection was handed a zero view.
+	// RefusedNoView means the projection received a zero view.
 	RefusedNoView = core.RefusedNoView
 	// RefusedNoRules means the composition registers no rules for
 	// the language.
@@ -370,7 +403,8 @@ const (
 	// RefusedNoLiteral means the type admits no distinguishable
 	// value.
 	RefusedNoLiteral = core.RefusedNoLiteral
-	// RefusedUnresolved means a named type the view does not hold.
+	// RefusedUnresolved means a named type the view does not
+	// contain.
 	RefusedUnresolved = core.RefusedUnresolved
 	// RefusedDepth means a self-referential type past the walk's
 	// budget.
@@ -379,7 +413,7 @@ const (
 
 // EmitRef restates a node reference in the emit model, structure,
 // arguments and target included, so a value's Type is what a
-// backend spells and qualifies. A nil reference stays nil.
+// backend spells and qualifies. A nil reference returns nil.
 func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 	return core.EmitRef(ref)
 }

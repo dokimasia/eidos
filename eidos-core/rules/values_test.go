@@ -19,6 +19,13 @@ import (
 // ghostName is a declaration the fixture never declares.
 const ghostName = "Ghost"
 
+// The texts and the width the pair constructors are driven with.
+const (
+	pairSample    = "on"
+	pairAlternate = "off"
+	pairBits      = 32
+)
+
 // Authored values take precedence over derived ones by contract, and
 // every refusal names its reason, which a check generator reads.
 func TestValues(t *testing.T) {
@@ -136,6 +143,85 @@ func TestValues(t *testing.T) {
 			assert.Equal(t, alternate.Refusal, rules.RefusedNoView, "on both halves")
 			assert.False(t, rules.Refused(rules.RefusedDepth).OK(), "a refused sample is not OK")
 			assert.True(t, rules.Of(emit.Literal(emit.LiteralInt, "1")).OK(), "and a valued one is")
+		})
+	})
+
+	t.Run("Pair", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns two literals of one kind", func(t *testing.T) {
+			t.Parallel()
+
+			sample, alternate := rules.Pair(emit.LiteralString, pairSample, pairAlternate)
+			assert.Equal(t, sample, rules.Of(emit.Literal(emit.LiteralString, pairSample)), "the sample")
+			assert.Equal(t, alternate, rules.Of(emit.Literal(emit.LiteralString, pairAlternate)),
+				"and its alternate, of the same kind")
+		})
+	})
+
+	t.Run("NumberPair", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns two numbers of one kind at one width", func(t *testing.T) {
+			t.Parallel()
+
+			sample, alternate := rules.NumberPair(emit.LiteralFloat, pairSample, pairAlternate, pairBits)
+			assert.Equal(t, sample, rules.Of(emit.Number(emit.LiteralFloat, pairSample, pairBits)),
+				"the sample states the width")
+			assert.Equal(t, alternate, rules.Of(emit.Number(emit.LiteralFloat, pairAlternate, pairBits)),
+				"and so does its alternate")
+		})
+	})
+
+	t.Run("RefusedPair", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("refuses both halves with one reason", func(t *testing.T) {
+			t.Parallel()
+
+			sample, alternate := rules.RefusedPair(rules.RefusedDepth)
+			assert.Equal(t, sample.Refusal, rules.RefusedDepth, "the sample refuses")
+			assert.Equal(t, alternate.Refusal, rules.RefusedDepth, "and the alternate with the same reason")
+			assert.False(t, sample.OK() || alternate.OK(), "and neither half has a value")
+		})
+	})
+
+	t.Run("FirstRefusal", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the first reason a part refused with", func(t *testing.T) {
+			t.Parallel()
+
+			valued := rules.Of(emit.Literal(emit.LiteralString, pairSample))
+			assert.Equal(t,
+				rules.FirstRefusal(valued, rules.Refused(rules.RefusedUnresolved), rules.Refused(rules.RefusedDepth)),
+				rules.RefusedUnresolved, "the earliest refusal in argument order")
+			assert.Equal(t, rules.FirstRefusal(valued, rules.Sample{}), rules.RefusedNoLiteral,
+				"and no literal where a part has no value and states no reason")
+			assert.Equal(t, rules.FirstRefusal(), rules.RefusedNoLiteral, "or where there is no part")
+		})
+	})
+
+	t.Run("Lift", func(t *testing.T) {
+		t.Parallel()
+
+		wrap := emit.Address
+
+		t.Run("wraps a derived value", func(t *testing.T) {
+			t.Parallel()
+
+			inner := emit.Literal(emit.LiteralString, pairSample)
+			assert.Equal(t, rules.Lift(rules.Of(inner), wrap), rules.Of(emit.Address(inner)),
+				"the wrapped value replaces the part")
+		})
+
+		t.Run("returns a sample without a value unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			refused := rules.Refused(rules.RefusedUnresolved)
+			assert.Equal(t, rules.Lift(refused, wrap), refused, "a refusal keeps its reason")
+			assert.Equal(t, rules.Lift(rules.Sample{}, wrap), rules.Sample{},
+				"and an empty sample remains empty, wrapping nothing")
 		})
 	})
 
