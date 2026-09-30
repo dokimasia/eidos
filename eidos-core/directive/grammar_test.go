@@ -25,172 +25,185 @@ func quoted(text string) directive.RawValue {
 func TestGrammar(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Plugin", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give directive.Name
+			want string
+		}{
+			{name: "returns the prefix of a prefixed name", give: "mockgen:stub", want: "mockgen"},
+			{name: "returns the empty string for a bare plugin name", give: "stub", want: ""},
+			{name: "returns the empty string for a kernel name", give: directive.KernelSkip, want: ""},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.Plugin(), tt.want, "the prefix is the part before the colon")
+			})
+		}
+	})
+
 	t.Run("Parse", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reads the pinned grammar", func(t *testing.T) {
-			t.Parallel()
+		reads := []struct {
+			name    string
+			payload string
+			want    directive.Raw
+		}{
+			{
+				name:    "reads a bare name alone",
+				payload: "skip",
+				want:    directive.Raw{Name: "skip"},
+			},
+			{
+				name:    "reads a prefixed name",
+				payload: "mockgen:stub",
+				want:    directive.Raw{Name: "mockgen:stub"},
+			},
+			{
+				name:    "reads a positional bare argument",
+				payload: "stub handler",
+				want: directive.Raw{Name: "stub", Args: []directive.RawArg{
+					{Value: scalar("handler"), Col: 5},
+				}},
+			},
+			{
+				name:    "reads a keyed argument",
+				payload: "stub tag=test",
+				want: directive.Raw{Name: "stub", Args: []directive.RawArg{
+					{Key: "tag", Value: scalar("test"), Col: 5},
+				}},
+			},
+			{
+				name:    "reads positional and keyed arguments in source order",
+				payload: "route get path=/x fallback",
+				want: directive.Raw{Name: "route", Args: []directive.RawArg{
+					{Value: scalar("get"), Col: 6},
+					{Key: "path", Value: scalar("/x"), Col: 10},
+					{Value: scalar("fallback"), Col: 18},
+				}},
+			},
+			{
+				name:    "reads a quoted value with its escapes resolved",
+				payload: `doc text="a \"quoted\" line\nnext\ttab"`,
+				want: directive.Raw{Name: "doc", Args: []directive.RawArg{
+					{Key: "text", Value: quoted("a \"quoted\" line\nnext\ttab"), Col: 4},
+				}},
+			},
+			{
+				name:    "reads a quoted empty string as a value",
+				payload: `doc text=""`,
+				want: directive.Raw{Name: "doc", Args: []directive.RawArg{
+					{Key: "text", Value: quoted(""), Col: 4},
+				}},
+			},
+			{
+				name:    "reads a list value",
+				payload: "index fields=[a, b,c]",
+				want: directive.Raw{Name: "index", Args: []directive.RawArg{
+					{Key: "fields", Value: directive.RawValue{List: []directive.RawValue{
+						scalar("a"), scalar("b"), scalar("c"),
+					}}, Col: 6},
+				}},
+			},
+			{
+				name:    "reads an empty list",
+				payload: "index fields=[]",
+				want: directive.Raw{Name: "index", Args: []directive.RawArg{
+					{Key: "fields", Value: directive.RawValue{List: []directive.RawValue{}}, Col: 6},
+				}},
+			},
+			{
+				name:    "reads a nested list",
+				payload: "x k=[[a],b]",
+				want: directive.Raw{Name: "x", Args: []directive.RawArg{
+					{Key: "k", Value: directive.RawValue{List: []directive.RawValue{
+						{List: []directive.RawValue{scalar("a")}},
+						scalar("b"),
+					}}, Col: 2},
+				}},
+			},
+			{
+				name:    "ignores surrounding whitespace",
+				payload: "  stub  tag=test  ",
+				want: directive.Raw{Name: "stub", Args: []directive.RawArg{
+					{Key: "tag", Value: scalar("test"), Col: 8},
+				}},
+			},
+			{
+				name:    "reads a bare value with dots",
+				payload: "meta drop=shape.role",
+				want: directive.Raw{Name: "meta", Args: []directive.RawArg{
+					{Key: "drop", Value: scalar("shape.role"), Col: 5},
+				}},
+			},
+		}
+		for _, tt := range reads {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			tests := []struct {
-				name    string
-				payload string
-				want    directive.Raw
-			}{
-				{
-					name:    "a bare name alone",
-					payload: "skip",
-					want:    directive.Raw{Name: "skip"},
-				},
-				{
-					name:    "a prefixed name",
-					payload: "mockgen:stub",
-					want:    directive.Raw{Name: "mockgen:stub"},
-				},
-				{
-					name:    "a positional bare argument",
-					payload: "stub handler",
-					want: directive.Raw{Name: "stub", Args: []directive.RawArg{
-						{Value: scalar("handler"), Col: 5},
-					}},
-				},
-				{
-					name:    "a keyed argument",
-					payload: "stub tag=test",
-					want: directive.Raw{Name: "stub", Args: []directive.RawArg{
-						{Key: "tag", Value: scalar("test"), Col: 5},
-					}},
-				},
-				{
-					name:    "positional and keyed interleave in source order",
-					payload: "route get path=/x fallback",
-					want: directive.Raw{Name: "route", Args: []directive.RawArg{
-						{Value: scalar("get"), Col: 6},
-						{Key: "path", Value: scalar("/x"), Col: 10},
-						{Value: scalar("fallback"), Col: 18},
-					}},
-				},
-				{
-					name:    "a quoted value keeps spaces and resolves escapes",
-					payload: `doc text="a \"quoted\" line\nnext\ttab"`,
-					want: directive.Raw{Name: "doc", Args: []directive.RawArg{
-						{Key: "text", Value: quoted("a \"quoted\" line\nnext\ttab"), Col: 4},
-					}},
-				},
-				{
-					name:    "a quoted empty string is a value",
-					payload: `doc text=""`,
-					want: directive.Raw{Name: "doc", Args: []directive.RawArg{
-						{Key: "text", Value: quoted(""), Col: 4},
-					}},
-				},
-				{
-					name:    "a list value",
-					payload: "index fields=[a, b,c]",
-					want: directive.Raw{Name: "index", Args: []directive.RawArg{
-						{Key: "fields", Value: directive.RawValue{List: []directive.RawValue{
-							scalar("a"), scalar("b"), scalar("c"),
-						}}, Col: 6},
-					}},
-				},
-				{
-					name:    "an empty list",
-					payload: "index fields=[]",
-					want: directive.Raw{Name: "index", Args: []directive.RawArg{
-						{Key: "fields", Value: directive.RawValue{List: []directive.RawValue{}}, Col: 6},
-					}},
-				},
-				{
-					name:    "a nested list parses; the schema refuses it",
-					payload: "x k=[[a],b]",
-					want: directive.Raw{Name: "x", Args: []directive.RawArg{
-						{Key: "k", Value: directive.RawValue{List: []directive.RawValue{
-							{List: []directive.RawValue{scalar("a")}},
-							scalar("b"),
-						}}, Col: 2},
-					}},
-				},
-				{
-					name:    "surrounding whitespace is tolerated",
-					payload: "  stub  tag=test  ",
-					want: directive.Raw{Name: "stub", Args: []directive.RawArg{
-						{Key: "tag", Value: scalar("test"), Col: 8},
-					}},
-				},
-				{
-					name:    "a bare value carries symbols the grammar admits",
-					payload: "meta drop=shape.role",
-					want: directive.Raw{Name: "meta", Args: []directive.RawArg{
-						{Key: "drop", Value: scalar("shape.role"), Col: 5},
-					}},
-				},
-			}
-			for _, tt := range tests {
-				t.Run(tt.name, func(t *testing.T) {
-					t.Parallel()
+				got, err := directive.Parse(tt.payload)
+				assert.NoError(t, err, "the payload parses")
+				assert.Equal(t, got, tt.want, "the instance is what the payload wrote")
+			})
+		}
 
-					got, err := directive.Parse(tt.payload)
-					assert.NoError(t, err, "a payload inside the grammar parses")
-					assert.Equal(t, got, tt.want, "and reads back exactly what was written")
-				})
-			}
-		})
+		refusals := []struct {
+			name    string
+			payload string
+		}{
+			{name: "returns an error for an empty payload", payload: ""},
+			{name: "returns an error for whitespace alone", payload: "   "},
+			{name: "returns an error for a name starting with a digit", payload: "1stub"},
+			{name: "returns an error for a prefix without a name", payload: "mockgen:"},
+			{name: "returns an error for a name with an empty prefix", payload: ":stub"},
+			{name: "returns an error for an unterminated quote", payload: `doc text="open`},
+			{name: "returns an error for an unknown escape", payload: `doc text="a\z"`},
+			{name: "returns an error for an unterminated list", payload: "index fields=[a, b"},
+			{name: "returns an error for a key without a value", payload: "stub tag="},
+			{name: "returns an error for a key that is not an identifier", payload: "stub 2x=v"},
+			{name: "returns an error for an argument starting with an equals sign", payload: "stub =v"},
+			{name: "returns an error for a stray closing bracket", payload: "stub ]"},
+			{name: "returns an error for a stray comma", payload: "stub a,b"},
+			{name: "returns an error for a bad key spelling inside a list", payload: "stub k=[2x=1]"},
+			{name: "returns an error for an escape cut off by the end", payload: `doc text="a\`},
+			{name: "returns an error for a broken value inside a list", payload: `stub k=["a\z"]`},
+			{name: "returns an error for an argument glued to a quoted value", payload: `stub tag="t"btree`},
+			{name: "returns an error for an argument glued to a list", payload: "stub k=[a]b"},
+			{name: "returns an error for a name with a non-identifier byte", payload: "stüb"},
+			{name: "returns an error for a name with a second prefix", payload: "mockgen:stub:x"},
+			{name: "returns an error for whitespace after a list opens", payload: "index fields=[ a]"},
+			{name: "returns an error for whitespace before a list closes", payload: "index fields=[a ]"},
+			{name: "returns an error for a list of whitespace alone", payload: "index fields=[ ]"},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-		t.Run("refuses a payload outside the grammar", func(t *testing.T) {
-			t.Parallel()
+				_, err := directive.Parse(tt.payload)
+				assert.HasError(t, err, "the payload does not parse")
+				assert.HasPrefix(t, err.Error(), "directive: ", "the error has the package prefix")
+			})
+		}
 
-			tests := []struct {
-				name    string
-				payload string
-			}{
-				{name: "an empty payload", payload: ""},
-				{name: "whitespace alone", payload: "   "},
-				{name: "a name starting with a digit", payload: "1stub"},
-				{name: "a name that is only a prefix", payload: "mockgen:"},
-				{name: "a prefix that is empty", payload: ":stub"},
-				{name: "an unterminated quote", payload: `doc text="open`},
-				{name: "an unknown escape", payload: `doc text="a\z"`},
-				{name: "an unterminated list", payload: "index fields=[a, b"},
-				{name: "a key without a value", payload: "stub tag="},
-				{name: "a key that is not an identifier", payload: "stub 2x=v"},
-				{name: "an equals sign starting an argument", payload: "stub =v"},
-				{name: "a stray closing bracket", payload: "stub ]"},
-				{name: "a stray comma", payload: "stub a,b"},
-				{name: "a bad key spelling inside a list keyed argument", payload: "stub k=[2x=1]"},
-				{name: "an escape cut off by the end", payload: `doc text="a\`},
-				{name: "a broken value inside a list", payload: `stub k=["a\z"]`},
-				{name: "an argument glued to a quoted value", payload: `stub tag="t"btree`},
-				{name: "an argument glued to a list", payload: "stub k=[a]b"},
-				{name: "a name glued to a non-identifier byte", payload: "stüb"},
-				{name: "a name carrying a second prefix", payload: "mockgen:stub:x"},
-				{name: "whitespace after a list opens", payload: "index fields=[ a]"},
-				{name: "whitespace before a list closes", payload: "index fields=[a ]"},
-				{name: "a list containing only whitespace", payload: "index fields=[ ]"},
-			}
-			for _, tt := range tests {
-				t.Run(tt.name, func(t *testing.T) {
-					t.Parallel()
-
-					_, err := directive.Parse(tt.payload)
-					assert.HasError(t, err, "a payload outside the grammar is refused")
-					assert.HasPrefix(t, err.Error(), "directive: ", "under the package prefix")
-				})
-			}
-		})
-
-		t.Run("names the offset where reading stopped", func(t *testing.T) {
+		t.Run("returns an error naming the offset where reading stopped", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := directive.Parse("stub tag=")
-			assert.HasError(t, err, "the empty value is refused")
-			assert.Contains(t, err.Error(), "9", "at its byte offset")
+			assert.HasError(t, err, "the empty value does not parse")
+			assert.Contains(t, err.Error(), "9", "the error names the byte offset")
 		})
 
-		t.Run("names an unknown escape by its character", func(t *testing.T) {
+		t.Run("returns an error naming an unknown escape by its character", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := directive.Parse(`doc text="\é"`)
-			assert.HasError(t, err, "an escape outside the four is refused")
-			assert.Contains(t, err.Error(), `\é`, "naming the escape the author wrote")
+			assert.HasError(t, err, "the escape does not parse")
+			assert.Contains(t, err.Error(), `\é`, "the error names the escape the author wrote")
 		})
 	})
 
@@ -203,32 +216,32 @@ func TestGrammar(t *testing.T) {
 			want  string
 		}{
 			{
-				name:  "a single line joins to itself",
+				name:  "returns a single line unchanged",
 				lines: []string{"stub tag=test"},
 				want:  "stub tag=test",
 			},
 			{
-				name:  "a continuation joins with a single space",
+				name:  "joins a continuation with a single space",
 				lines: []string{`stub \`, "tag=test"},
 				want:  "stub tag=test",
 			},
 			{
-				name:  "three lines chain",
+				name:  "joins three lines in order",
 				lines: []string{`index \`, `fields=[a, \`, "b]"},
 				want:  "index fields=[a, b]",
 			},
 			{
-				name:  "a trailing backslash on the last line strips",
+				name:  "strips a trailing backslash on the last line",
 				lines: []string{`stub \`},
 				want:  "stub",
 			},
 			{
-				name:  "a backslash inside a line is not a continuation",
+				name:  "keeps a backslash inside a line",
 				lines: []string{`doc text="a\nb"`},
 				want:  `doc text="a\nb"`,
 			},
 			{
-				name:  "a continued line's leading blanks fold into the one space",
+				name:  "folds a continued line's leading blanks into the one space",
 				lines: []string{`doc text="hello \`, "  \tworld\""},
 				want:  `doc text="hello world"`,
 			},
@@ -237,8 +250,7 @@ func TestGrammar(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				assert.Equal(t, directive.Join(tt.lines), tt.want,
-					"the continuation rule lives here once, not in every frontend")
+				assert.Equal(t, directive.Join(tt.lines), tt.want, "the joined payload is pinned")
 			})
 		}
 	})
@@ -247,9 +259,9 @@ func TestGrammar(t *testing.T) {
 // FuzzParse drives the parser with bytes nothing in this repository
 // wrote: payloads arrive from consumers' source files.
 //
-// Two properties hold whatever the bytes are: Parse never panics,
-// and a payload that parses re-parses to the same instance after a
-// join round through its own spelling-neutral form.
+// Two properties are true whatever the bytes are: Parse never
+// panics, and every argument of a parsed instance is positioned
+// inside the payload with a key that is an identifier.
 func FuzzParse(f *testing.F) {
 	for _, seed := range []string{
 		"skip",
@@ -265,7 +277,7 @@ func FuzzParse(f *testing.F) {
 		got, err := directive.Parse(payload)
 		if err != nil {
 			assert.HasPrefix(t, err.Error(), "directive: ",
-				"every refusal carries the package prefix")
+				"every error has the package prefix")
 			return
 		}
 		assert.NotEqual(t, string(got.Name), "",
@@ -282,7 +294,7 @@ func FuzzParse(f *testing.F) {
 }
 
 // Parsing runs once per carrier line across every loaded file, so
-// its cost per directive is what bounds a large workspace's load.
+// its cost per directive bounds a large workspace's load.
 func BenchmarkGrammar(b *testing.B) {
 	b.Run("Parse", func(b *testing.B) {
 		b.ReportAllocs()

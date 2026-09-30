@@ -39,6 +39,14 @@ type Target = core.Target
 // disk.
 type Backend = core.Backend
 
+// ContinuedCarrier refuses a carrier that continues onto the next
+// line while its own line has the tool-directive shape. A formatter
+// may move such a line to the end of its doc comment, as gofmt does,
+// which separates the carrier from its continuation and drops the
+// continued arguments without a finding. The set mark never has the
+// shape, so a continued carrier written with it keeps its place.
+var ContinuedCarrier = core.ContinuedCarrier
+
 // Cardinality says how many outputs a family produces. The zero
 // value addresses nothing: every declared family states its
 // cardinality, and [Emit.Add] refuses a unit that does not.
@@ -103,6 +111,17 @@ const (
 // directly. The conformance suite runs the same checks over both.
 type Frontend = core.Frontend
 
+// Importer is the optional frontend role of a language whose import
+// names a file and not the package a reference names, such as
+// protobuf: a file's package is known only once that file parsed, so
+// the parse cannot record which import a reference needs. After the
+// resolution step resolves a reference to a declaration of another
+// file, it asks the importer how the referencing file's imports name
+// the declaring file, and records the result as the reference's
+// package. The load records each declaration's file only for a
+// language whose frontend implements the role.
+type Importer = core.Importer
+
 // Candidates is what one spelling could mean, in tiers: each tier is
 // the candidate identities one scope offers, in probe order, and an
 // earlier tier shadows every later one. A language whose scopes
@@ -143,25 +162,25 @@ type ImportScope = core.ImportScope
 // Index is the dispatcher's routing surface over one frozen run:
 // untracked, scope-filtered enumeration, plus the validated
 // directive table and the skip table derived from it. Enumerating
-// it records nothing, because dispatch is not a plugin's read; a
+// it records nothing, because dispatch is not a plugin's read. A
 // plugin's own reads go through the [store.Reader] it is handed.
 //
-// Index wraps the graph rather than exposing it, and the wrapping
-// is load-bearing twice over. Nothing reachable from a phase
-// context can make a structural write, because the graph's write
-// surface is not here; and nothing reachable can read another plugin's
-// raw directives. What dispatch needs is exactly what is here.
+// Index wraps the graph and does not expose it, for two reasons.
+// Nothing reachable from a phase context can make a structural
+// write, because the graph's write surface is not here. Nothing
+// reachable can read another plugin's raw directives either. What
+// dispatch needs is exactly what is here.
 //
-// An Index is safe for concurrent reads: everything it holds is
-// fixed at [NewIndex], and the graph beneath it is frozen.
+// An Index is safe for concurrent reads: [NewIndex] fixes every
+// field, and the graph beneath it is frozen.
 type Index = core.Index
 
 // NewIndex builds the routing surface for one run.
 //
 // It refuses a missing graph, a missing fact store and an unfrozen
 // graph, because routing over any of those would return partial
-// results. validated holds each subject's typed instances in
-// position order, as validation returned them; the index keeps the
+// results. validated maps each subject to its typed instances in
+// position order, as validation returned them. The index keeps the
 // map, and the caller does not mutate it after handing it over. A
 // nil scope admits everything.
 func NewIndex(g *store.Graph, f *meta.Facts, validated map[symbol.Identity][]directive.Directive, sc store.Scope) (*Index, error) {
@@ -294,14 +313,21 @@ type RenderContext = core.RenderContext
 // through it rather than restating the language's own spelling.
 type SyntaxProvider = core.SyntaxProvider
 
-// TemplateProvider declares a plugin's template trees: the bodies
-// its references name, per target, and the helpers those templates
-// call. Overrides names the shared vocabulary entries the plugin
-// deliberately replaces, which is the replace verb: a shared name
-// shadowed without a declaration is a lint finding, and where two
-// plugins declare an override of one name, the latest schedule
-// position wins, because a plugin that changes how a construct
-// renders necessarily runs after what it changes.
+// TemplateProvider declares a plugin's presentation for each
+// target: the tree its references resolve in, the helpers its
+// templates call, and the shared vocabulary names it replaces.
+//
+// Templates returns the tree that serves a target and reports
+// false where none does. TemplateTargets returns the targets the
+// plugin declares a tree of its own for, sorted, so a composition
+// refuses a plan whose target a plugin with such trees does not
+// serve, at Build and not at render. TemplateFuncs returns the
+// helpers for a target, the replacements included, and Overrides
+// the replaced names for that target, which is the replace verb: a
+// shared name shadowed without a declaration is a lint finding,
+// and where two plugins override one name, the one at the latest
+// schedule position takes effect, because a plugin that changes
+// how a construct renders runs after what it changes.
 type TemplateProvider = core.TemplateProvider
 
 // Annotator stamps facts over the frozen graph.
@@ -348,11 +374,11 @@ var RefusedName = core.RefusedName
 
 // CollidingNames reports two declarations in one scope settling to
 // one name: both keep their emitted names, references to either
-// follow the emitted names, and the finding says what to fix.
+// follow the emitted names, and the finding names what to fix.
 var CollidingNames = core.CollidingNames
 
 // AmbiguousReference reports a bare reference matching declarations
-// whose settled names diverge: the reference stands as written.
+// whose settled names diverge: the reference is left as written.
 var AmbiguousReference = core.AmbiguousReference
 
 // VerbatimParams reports a verbatim body pinning its callable's
@@ -363,15 +389,15 @@ var VerbatimParams = core.VerbatimParams
 
 // Lower rewrites one declaration into the target's own construct
 // shape: the same fact, the target's declarations. Every returned
-// declaration carries the input's origin, and the output states
-// the lowered fact in the target's shape rather than the model's,
-// so a second settle changes nothing. An error is the target
-// refusing the construct.
+// declaration has the input's origin, and the output states the
+// lowered fact in the target's shape and not in the model's, so a
+// second settle changes nothing. An error is the target refusing
+// the construct.
 //
-// A nil list without an error keeps the declaration as it stands,
-// so the common pass-through spends no allocation; a hook that
+// A nil list without an error keeps the declaration unchanged, so
+// the common pass-through spends no allocation. A hook that
 // reshaped the declaration in place returns nil the same way,
-// because the store already holds it.
+// because the store already contains it.
 type Lower = core.Lower
 
 // Lowerer is the provider a backend implements when its target
@@ -380,10 +406,10 @@ type Lower = core.Lower
 type Lowerer = core.Lowerer
 
 // Respell spells one declared name in the target's own convention.
-// Host is the kind of the declaration a member sits in,
-// [symbol.KindInvalid] at file level; a kind without visibility
-// passes the zero value. An error means the target cannot spell
-// the name at that visibility.
+// Host is the kind of the declaration a member is declared in,
+// [symbol.KindInvalid] at file level. A kind without visibility
+// passes the zero value. An error means the target cannot spell the
+// name at that visibility.
 type Respell = core.Respell
 
 // Respeller is the provider a backend implements when its target
@@ -400,14 +426,27 @@ type Respeller = core.Respeller
 // settled store settles to itself, so a second call changes
 // nothing.
 //
+// A declared name takes an override where facts contains one: a
+// value of the target's [Target.NameKey], such as golang.name, on
+// the declaration's origin, written at directive authority or above.
+// The override replaces the respell hook's spelling for the
+// declaration that renders its origin, the one whose emitted name
+// the hook spells as it spells the origin's own name. A declaration
+// another one derives from its origin, such as a mock of an
+// interface, keeps the hook's spelling. A name the hook refuses is
+// withheld, override or not. A plugin's stamp on the key is no
+// override, because the hook spells the target's convention. A nil
+// fact store, a name key the composition did not register and a
+// backend without the hook apply no override.
+//
 // Findings attach to the sink under the backend's name: a refused
 // construct or name withholds its declaration, colliding names
-// keep their emitted spellings, and an ambiguous reference stands
+// keep their emitted spellings, and an ambiguous reference is left
 // as written. A returned error is a defect in the backend's own
 // hooks, a lowering that drops its input's origin, and fails the
-// plan rather than one declaration.
-func Settle(e *Emit, b Backend, sink *diag.Sink) error {
-	return core.Settle(e, b, sink)
+// whole plan, not one declaration.
+func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
+	return core.Settle(e, b, facts, sink)
 }
 
 // RuleID is a rule's ordinal in its plugin's declaration order.
@@ -463,44 +502,54 @@ type SourceUnit = core.SourceUnit
 
 // NewSourceUnit assembles a unit for the load driver and the
 // conformance suite: the member files, the tree reads resolve in,
-// the depth, the language's comment syntax, and the sink findings
-// report to under the frontend's origin.
-func NewSourceUnit(files []SourceRef, fsys fs.FS, depth Depth, syntax CommentSyntax, sink *diag.Sink, origin diag.Origin) *SourceUnit {
-	return core.NewSourceUnit(files, fsys, depth, syntax, sink, origin)
+// the depth, the language's comment syntax, the composition's brand
+// the unit's carriers open with, and the sink findings report to
+// under the frontend's origin. An empty brand is a driver defect
+// and panics, because a unit without a brand cannot tell a carrier
+// from a comment.
+func NewSourceUnit(files []SourceRef, fsys fs.FS, depth Depth, syntax CommentSyntax, brand string, sink *diag.Sink, origin diag.Origin) *SourceUnit {
+	return core.NewSourceUnit(files, fsys, depth, syntax, brand, sink, origin)
 }
 
-// CarrierMark opens a directive carrier line inside a comment: the
-// kit's one cross-language convention, so a directive is spelled the
-// same way in every language's comments.
-const CarrierMark = core.CarrierMark
-
 // Carrier is one directive payload and its line, marker stripped,
-// ready for the kernel grammar.
+// ready for the kernel grammar, and the mark it opened with.
 type Carrier = core.Carrier
 
 // CommentParts is one raw comment taken apart three ways: the
 // documentation lines, the carrier lines, and the tool-directive
-// lines — the go:build kin — as annotations. What a language does
-// with each part is its own: a frontend filters its configuration
-// lines out of the annotations and its legacy forms out of the
-// carriers before attaching anything.
+// lines, such as go:build, as annotations. The frontend decides what
+// each part means for its language: it filters its configuration
+// lines out of the annotations before attaching anything.
 type CommentParts = core.CommentParts
 
+// CutCarrier splits a clean comment line into the carrier mark it
+// opens with under a brand and the payload that follows, the way
+// [SourceUnit.Comment] reads a carrier line. The marks are brand:
+// and +brand:, which set a directive, and -brand:, which negates
+// one. It reports false for a line that opens no carrier. The marks
+// are the kit's one cross-language convention, so a directive is
+// spelled the same way in every language's comments, and two tools
+// built on the kernel and run in one repository read only their own
+// carriers.
+func CutCarrier(line, brand string) (mark, payload string, ok bool) {
+	return core.CutCarrier(line, brand)
+}
+
 // GraphBuilder is the unit's write handle into the node model. A
-// unit declares as many packages as its bytes do; two units
-// contributing one package path merge at the splice, declarations
-// appended in unit order. The splice validates what a unit built
-// and panics on a structural defect — an emit-side symbol, a named
-// kind without a name — because a malformed graph discovered at the
+// unit declares as many packages as its bytes do. Two units that
+// contribute one package path merge at the splice, declarations
+// appended in unit order. The splice validates what a unit built and
+// panics on a structural defect, such as an emit-side symbol or a
+// named kind without a name, because a malformed graph found at the
 // resolution step points away from the frontend that built it.
 type GraphBuilder = core.GraphBuilder
 
 // ScopeRecord pairs one parsed file with its import bindings, in
 // the language's own form. The file is the node the unit built,
 // because canonical identities do not exist until the splice
-// assigns them, and a derivation spelled twice would drift; the
-// kernel derives the identity there and hands the bindings back to
-// that language's Resolve alone.
+// assigns them, and a derivation spelled twice would drift. The
+// kernel derives the identity at the splice and hands the bindings
+// back to that language's Resolve alone.
 type ScopeRecord = core.ScopeRecord
 
 // Attachment is one raw directive instance on a declaration this
@@ -512,7 +561,7 @@ type Attachment = core.Attachment
 
 // StampRecord is one classification stamp on a declaration this
 // unit built: the second raw attachment class, resolved at the
-// splice the way [Attachment] is. The stamp's origin is the
-// kernel's to fill there — a frontend's own value is overwritten,
-// so a stamp cannot speak for another plugin.
+// splice the way [Attachment] is. The splice sets the stamp's
+// origin and overwrites a frontend's own value, so every stamp is
+// attributed to the frontend that recorded it.
 type StampRecord = core.StampRecord

@@ -26,7 +26,7 @@ const Extension = ".ts"
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.
-const Version = "0.3.0"
+const Version = "0.4.0"
 
 // Syntax returns TypeScript's comment forms, declared once and
 // shared: the line form, the block form, and the doc-block form with

@@ -4,7 +4,7 @@
 package render_test
 
 import (
-	"strings"
+	"strconv"
 	"testing"
 	"text/template"
 
@@ -16,125 +16,145 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// The builtins' fixture: the paths a use records and the package a
+// file belongs to.
+const (
+	// fmtPkg, alphaPkg and zetaPkg are paths a use records.
+	fmtPkg   = "fmt"
+	alphaPkg = "alpha"
+	zetaPkg  = "zeta"
+	// examplePkg is the package a file belongs to.
+	examplePkg = "example.com/store"
+	// auditCall is a qualified callee whose head the scaffold records.
+	auditCall = "audit.Log"
+	auditHead = "audit"
+)
+
+// use spells a use builtin over the given arguments, each quoted.
+func use(args ...string) string {
+	words := []string{render.BuiltinUse}
+	for _, a := range args {
+		words = append(words, strconv.Quote(a))
+	}
+	return action(words...)
+}
+
 // The builtins are the names every template resolves against, so
 // what each records and returns, and that no vocabulary claims one,
 // are contract.
 func TestBuiltins(t *testing.T) {
 	t.Parallel()
 
-	t.Run("assembles the file through the skeleton", func(t *testing.T) {
+	t.Run("New", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("the default skeleton is imports then declarations", func(t *testing.T) {
+		t.Run("returns an error for a vocabulary helper named after a builtin", func(t *testing.T) {
 			t.Parallel()
 
 			l := language()
-			l.Kinds[symbol.KindStruct] = "{{use \"fmt\"}}type {{.Name}} struct{}\n"
-			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
-			assert.False(t, sink.Failed(), "a recorded import is valid")
+			l.Funcs = helpers(template.FuncMap{
+				render.BuiltinNested: func(string, symbol.Symbol) (string, error) { return "", nil },
+			})
+			_, err := render.New(passName, l)
+			assert.HasError(t, err, "the builtin names are the pass's own")
+			assert.Contains(t, err.Error(), render.BuiltinNested, "naming the claim")
+		})
+	})
+
+	t.Run("Render", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("renders the import block above the declarations under the default skeleton", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Kinds[symbol.KindStruct] = use(fmtPkg) + structTpl
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
 			assert.ContainsInOrder(t, string(files[0].Body),
-				[]string{"import (fmt)", "type Alpha struct{}"},
-				"the block renders above the declarations")
+				[]string{"import (" + fmtPkg + ")", "type " + alphaName + " struct{}"},
+				"imports, then declarations")
 		})
 
-		t.Run("a file template spells its own clause", func(t *testing.T) {
+		t.Run("renders the skeleton over the file's package", func(t *testing.T) {
 			t.Parallel()
 
 			l := language()
-			l.File = "package {{.Pkg.Package}}\n\n{{imports}}{{decls}}"
-			u := unitOf("gen", "example.com/store/store.go", "Alpha")
-			u.Pkg = coretest.PackageID("example.com/store")
+			l.File = "package {{.Pkg.Package}}\n\n" +
+				action(render.BuiltinImports) + action(render.BuiltinDecls)
+			u := unitOf(emitter, examplePkg+"/"+storeKey, alphaName)
+			u.Pkg = coretest.PackageID(examplePkg)
 			files, sink := runPass(t, l, seeded(t, u))
-			assert.False(t, sink.Failed(), "the skeleton is valid")
-			assert.HasPrefix(t, string(files[0].Body), "package example.com/store\n",
-				"the language spells its clause off the owning package")
+			coretest.AssertCodes(t, sink)
+			assert.HasPrefix(t, string(files[0].Body), "package "+examplePkg+"\n",
+				"the language spells its clause from the file's package")
 		})
 
-		t.Run("the scaffold records what it qualifies", func(t *testing.T) {
+		t.Run("renders the imports the scaffold records", func(t *testing.T) {
 			t.Parallel()
 
-			body := emit.Body{Stmts: []emit.Stmt{call("audit.Log")}}
-			files, sink := runPass(t, language(), seeded(t,
-				fn("store.go", "Handle", body)))
-			assert.False(t, sink.Failed(), "the qualified call is valid")
+			body := emit.Body{Stmts: []emit.Stmt{call(auditCall)}}
+			files, sink := runPass(t, language(), seeded(t, fn(storeKey, handleName, body)))
+			coretest.AssertCodes(t, sink)
 			assert.ContainsInOrder(t, string(files[0].Body),
-				[]string{"import (audit)", "audit.Log()"},
-				"spelling fed the file's one import set")
+				[]string{"import (" + auditHead + ")", auditCall + "()"},
+				"the statement's qualifier is imported")
 		})
 
-		t.Run("a use of the file's own package imports nothing", func(t *testing.T) {
+		t.Run("records no import for a use of the file's own package", func(t *testing.T) {
 			t.Parallel()
 
 			l := language()
-			l.Kinds[symbol.KindStruct] = "{{use \"example.com/store\"}}{{use \"fmt\"}}type {{.Name}} struct{}\n"
-			u := unitOf("gen", "example.com/store/store.go", "Alpha")
-			u.Pkg = coretest.PackageID("example.com/store")
+			l.Kinds[symbol.KindStruct] = use(examplePkg) + use(fmtPkg) + structTpl
+			u := unitOf(emitter, examplePkg+"/"+storeKey, alphaName)
+			u.Pkg = coretest.PackageID(examplePkg)
 			files, sink := runPass(t, l, seeded(t, u))
-			assert.False(t, sink.Failed(), "both uses are valid")
-			assert.Contains(t, string(files[0].Body), "import (fmt)\n",
-				"the file's own package is absent from its imports")
+			coretest.AssertCodes(t, sink)
+			assert.Contains(t, string(files[0].Body), "import ("+fmtPkg+")\n",
+				"the other package alone is imported")
 		})
 
-		t.Run("imports dedupe and sort per file", func(t *testing.T) {
+		t.Run("renders each recorded path once in path order", func(t *testing.T) {
 			t.Parallel()
 
 			l := language()
-			l.Kinds[symbol.KindStruct] = "{{use \"zeta\"}}{{use \"alpha\"}}{{use \"zeta\"}}type {{.Name}} struct{}\n"
-			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
-			assert.False(t, sink.Failed(), "repeated uses are valid")
-			assert.Contains(t, string(files[0].Body), "import (alpha zeta)",
+			l.Kinds[symbol.KindStruct] = use(zetaPkg) + use(alphaPkg) + use(zetaPkg) + structTpl
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Contains(t, string(files[0].Body), "import ("+alphaPkg+" "+zetaPkg+")",
 				"one mention per path, in path order")
 		})
-	})
 
-	t.Run("a vocabulary claiming the nested builtin is a fault", func(t *testing.T) {
-		t.Parallel()
-
-		l := language()
-		l.Funcs = template.FuncMap{
-			"nested": func(string, symbol.Symbol) (string, error) { return "", nil },
-		}
-		_, err := render.New("printer", l)
-		assert.HasError(t, err, "the builtin names stay the pass's")
-		assert.Contains(t, err.Error(), "builtin", "naming the claim")
-	})
-
-	t.Run("records the bindings a use declares", func(t *testing.T) {
-		t.Parallel()
-
-		bound := func() render.Language {
-			l := language()
-			l.Imports = func(set *render.ImportSet) string {
-				var b strings.Builder
-				for _, e := range set.Entries() {
-					b.WriteString("use " + e.Path + " as " + e.Name + "\n")
-				}
-				return b.String()
-			}
-			return l
-		}
-
-		t.Run("a second argument records the name the import binds", func(t *testing.T) {
+		t.Run("records the name a use binds beside its path", func(t *testing.T) {
 			t.Parallel()
 
-			l := bound()
-			l.Kinds[symbol.KindStruct] = "{{use \"svc/store\" \"Store\"}}type {{.Name}} struct{}\n"
-			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
-			assert.False(t, sink.Failed(), "one binding per call is valid")
-			assert.Contains(t, string(files[0].Body), "use svc/store as Store\n",
-				"the binding reaches the block beside its path")
+			l := language()
+			l.Imports = namedImports
+			l.Kinds[symbol.KindStruct] = use(storePkg, storeName) + structTpl
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Contains(t, string(files[0].Body), "use "+storePkg+" as "+storeName+"\n",
+				"the binding is rendered beside its path")
 		})
 
-		t.Run("more than one binding refuses the declaration", func(t *testing.T) {
+		t.Run("reports RefusedTemplate for a use that binds two names", func(t *testing.T) {
 			t.Parallel()
 
-			l := bound()
-			l.Kinds[symbol.KindStruct] = "{{use \"svc/store\" \"Store\" \"Row\"}}type {{.Name}} struct{}\n"
-			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+			l := language()
+			l.Kinds[symbol.KindStruct] = use(storePkg, storeName, rowName) + structTpl
+			_, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
 			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "one binding",
-				"the refusal names the rule: one call records one binding")
-			assert.NotContains(t, string(files[0].Body), "Alpha",
-				"and the declaration is skipped rather than half-qualified")
+				"the finding names the rule")
+		})
+
+		t.Run("skips a declaration whose use binds two names", func(t *testing.T) {
+			t.Parallel()
+
+			l := language()
+			l.Kinds[symbol.KindStruct] = use(storePkg, storeName, rowName) + structTpl
+			files, _ := runPass(t, l, seeded(t, besideAlpha(fn(storeKey, handleName, emit.Body{}))))
+			assert.NotContains(t, string(files[0].Body), alphaName,
+				"the declaration is absent from the file")
 		})
 	})
 }

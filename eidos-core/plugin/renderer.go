@@ -86,16 +86,24 @@ type SyntaxProvider interface {
 	Syntax() CommentSyntax
 }
 
-// TemplateProvider declares a plugin's template trees: the bodies
-// its references name, per target, and the helpers those templates
-// call. Overrides names the shared vocabulary entries the plugin
-// deliberately replaces, which is the replace verb: a shared name
-// shadowed without a declaration is a lint finding, and where two
-// plugins declare an override of one name, the latest schedule
-// position wins, because a plugin that changes how a construct
-// renders necessarily runs after what it changes.
+// TemplateProvider declares a plugin's presentation for each
+// target: the tree its references resolve in, the helpers its
+// templates call, and the shared vocabulary names it replaces.
+//
+// Templates returns the tree that serves a target and reports
+// false where none does. TemplateTargets returns the targets the
+// plugin declares a tree of its own for, sorted, so a composition
+// refuses a plan whose target a plugin with such trees does not
+// serve, at Build and not at render. TemplateFuncs returns the
+// helpers for a target, the replacements included, and Overrides
+// the replaced names for that target, which is the replace verb: a
+// shared name shadowed without a declaration is a lint finding,
+// and where two plugins override one name, the one at the latest
+// schedule position takes effect, because a plugin that changes
+// how a construct renders runs after what it changes.
 type TemplateProvider interface {
 	Templates(t Target) (fs.FS, bool)
+	TemplateTargets() []Target
 	TemplateFuncs(t Target) template.FuncMap
-	Overrides() []string
+	Overrides(t Target) []string
 }

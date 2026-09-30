@@ -18,6 +18,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
+// The standard slot names a body-claiming template passes to the
+// slot builtin, re-exported where the builtins are, for a template
+// author reading this package.
+const (
+	SlotPrologue = core.SlotPrologue
+	SlotEpilogue = core.SlotEpilogue
+)
+
 // The builtin names every template resolves against: what a kind
 // template, a file skeleton or a body-claiming template calls, and
 // what the template lint checks for. No vocabulary may claim them.
@@ -37,20 +45,30 @@ const (
 	// BuiltinSlots places everything pending in the fixed order:
 	// the body-claiming template's catch-all marker.
 	BuiltinSlots = core.BuiltinSlots
-	// BuiltinSlot places one named slot where the template says.
+	// BuiltinSlot places one slot at the template's marker: an
+	// owner slot by its name, or the prologue or the epilogue under
+	// [SlotPrologue] or [SlotEpilogue].
 	BuiltinSlot = core.BuiltinSlot
 	// BuiltinNested renders one nested declaration through its
 	// kind template, every line behind the given indentation: how
 	// a host places its inner declarations at member depth. A
-	// nested kind without a template reports and spells nothing,
-	// which is the unspelt-kind rule one level down.
+	// nested kind without a template reports the way a file-level
+	// declaration of it does, under the refused-kind or the
+	// unspelt-kind code, and spells nothing.
 	BuiltinNested = core.BuiltinNested
 )
 
 // UnspeltKind reports a declaration whose kind the target language
-// holds no template for: the declaration is skipped and the file
-// renders without it.
+// neither spells nor refuses: the declaration is skipped and the file
+// renders without it. The finding names a gap in the backend's own
+// declaration, because a language declares every kind it cannot
+// spell refused.
 var UnspeltKind = core.UnspeltKind
+
+// RefusedKind reports a declaration of a kind the target language
+// declares refused, with the reason the language states: the
+// declaration is skipped and the file renders without it.
+var RefusedKind = core.RefusedKind
 
 // UnformattedFile reports a rendered file the language formatter
 // refused: the file is withheld, because the sink never receives
@@ -69,28 +87,29 @@ var RefusedTemplate = core.RefusedTemplate
 // spelling is.
 var UnspeltValue = core.UnspeltValue
 
-// BodyConflict reports a body holding more than one content form:
-// the standard and named slots still render, and no contested
-// content is guessed at.
+// BodyConflict reports a body that states more than one content
+// form: the standard and named slots still render, and the pass
+// renders none of the contested content.
 var BodyConflict = core.BodyConflict
 
-// UnresolvedRef reports a template reference nothing returns: no
-// tree declared for the emitting plugin, no template of that name
-// in it, or a template that does not parse. The body falls back to
-// its slots, so the extension points survive the broken claim.
+// UnresolvedRef reports a template reference that resolves to
+// nothing: no tree declared for the emitting plugin, no template of
+// that name in it, or a template that does not parse. The body falls
+// back to its slots, so the extension points survive the broken
+// claim.
 var UnresolvedRef = core.UnresolvedRef
 
 // UndeclaredOverride reports a plugin helper shadowing a shared
-// vocabulary name without declaring the override: the shared
-// helper stands, because a silent replacement is the drift
+// vocabulary name without declaring the override: the shared helper
+// keeps the name, because a silent replacement is the drift
 // byte-identity cannot tolerate.
 var UndeclaredOverride = core.UndeclaredOverride
 
 // DroppedSlots reports a body-claiming template that placed no
-// marker for pending slot content: the template owns the layout,
-// so nothing is appended for it, and the Error names the emitting
-// plugin and counts what went unplaced. The contributor cannot be
-// named, because a slot statement carries no attribution.
+// marker for pending slot content: the layout is the template's, so
+// the pass appends nothing for it, and the Error names the emitting
+// plugin and counts what went unplaced. The finding names no
+// contributor, because a slot statement records none.
 var DroppedSlots = core.DroppedSlots
 
 // UnknownGroup reports a cluster naming a group the language
@@ -99,10 +118,10 @@ var DroppedSlots = core.DroppedSlots
 var UnknownGroup = core.UnknownGroup
 
 // HelperCollision reports two plugins registering one template
-// helper name the shared vocabulary does not own: the first
-// registration in composition order stands, because a helper
-// whose meaning follows the schedule renders different bytes from
-// one declaration.
+// helper name outside the shared vocabulary: the first registration
+// in composition order keeps the name, because a helper whose
+// meaning follows the schedule renders different bytes from one
+// declaration.
 var HelperCollision = core.HelperCollision
 
 // RefusedFact reports a stated fact the backend declares no idiom
@@ -153,22 +172,31 @@ type Coverage = core.Coverage
 type Coverer = core.Coverer
 
 // Entry is one collected import: the path a spelling qualified
-// with, and the name it binds where the language's import form
-// binds one. A bare path leaves Name empty, which is the
-// side-effect or whole-namespace form; a bare and a named entry
-// under one path stay two entries. TypeOnly marks a binding a
-// language erases at run time — TypeScript's import type — and a
-// value binding beside a type-only one under one path makes the
-// whole import a value import, which is the renderer's join to
-// make.
+// with, the name the import binds in the file, and, for a language
+// that imports one declaration at a time, the declaration it binds
+// under that name.
+//
+// A bare path leaves Name empty, which is the side-effect or
+// whole-namespace form. A bare and a named entry under one path are
+// two entries. TypeOnly marks a binding a language erases at run
+// time, such as TypeScript's import type. The renderer joins a value
+// binding and a type-only one under one path into one value import.
 type Entry = core.Entry
 
-// ImportSet is one file's collected imports: every entry the
-// file's spellings qualified with, deduplicated. The set is per
-// file by rule, filled as a side effect of spelling, and the
-// language's Imports renderer turns it into the block its own
-// formatter would leave. An entry under the file's own package
-// records nothing, because a file never imports its own package.
+// ImportSet is one file's collected imports: every entry the file's
+// spellings qualified with, deduplicated, and the local name each
+// binds. The set is per file by rule, filled as a side effect of
+// spelling, and the language's Imports renderer turns it into the
+// block its own formatter would leave. An entry under the file's
+// own package records nothing, because a file never imports its
+// own package.
+//
+// A spelling binds through [ImportSet.Bind], [ImportSet.BindItem] or
+// [ImportSet.Claim], which assign local names deterministically: the
+// first claimant of a name keeps it, a later one takes the name with
+// the lowest free numeric suffix, and a name [ImportSet.Reserve]
+// took for a declaration of the file is never bound. The render
+// binds in canonical declaration order, so two runs bind alike.
 //
 // An ImportSet is not safe for concurrent use: it belongs to the
 // one file under render.
@@ -182,20 +210,20 @@ type ImportSet = core.ImportSet
 type Naming = core.Naming
 
 // Split reshapes one unit into the units the target files
-// separately: a language that names a file after the type it
-// holds returns one unit per file-level type, and its Naming
-// reads the lone type's name, so the demanded filename spells
-// while the routing key keeps carrying the source derivation. A
-// nil Split keeps every unit whole. The pass applies it before
-// naming, preserves order, and calls it once per unit, so a pure
-// function keeps the render deterministic.
+// separately: a language that names a file after the type the file
+// declares returns one unit per file-level type, and its Naming
+// reads the lone type's name. The file then takes the name the
+// language demands, and the routing key keeps the source
+// derivation. A nil Split keeps every unit whole. The pass applies
+// it before naming, preserves order, and calls it once per unit, so
+// a pure function keeps the render deterministic.
 type Split = core.Split
 
 // GroupName names a declaration cluster a group template spells.
 type GroupName = core.GroupName
 
 // Clustered is one cluster: the group template that spells it and
-// the declarations it holds, in unit order.
+// the declarations it contains, in unit order.
 type Clustered = core.Clustered
 
 // Cluster assigns one unit's declarations to named groups: a
@@ -205,18 +233,24 @@ type Clustered = core.Clustered
 // cluster renders through the group template its name selects, in
 // place of its members' kind templates, at the position of its
 // first member. A declaration two clusters claim goes to the
-// first, and a member the unit does not hold is ignored. Clusters
-// stay inside one unit, so plugin attribution and canonical order
-// survive. A nil Cluster leaves every declaration a singleton.
+// first, and a member the unit does not contain is ignored. A
+// cluster never spans two units, so plugin attribution and
+// canonical order survive. A nil Cluster leaves every declaration a
+// singleton.
 type Cluster = core.Cluster
 
-// Language is what a target genuinely varies in; the pass owns
+// Language is what varies between targets. The pass implements
 // everything else.
 type Language = core.Language
 
+// Refuser is implemented by a renderer declaring the kinds its
+// language refuses, which is how the conformance suite reads them
+// back.
+type Refuser = core.Refuser
+
 // Pass is one composed language's render procedure. A Pass is safe
-// for concurrent use: everything it holds is fixed at [New], and
-// every render call owns its own frames. Within one call, files
+// for concurrent use: its fields are fixed at [New], and every
+// render call has frames of its own. Within one call, files
 // render in parallel on up to GOMAXPROCS workers. The language's
 // Scaffold, Imports, Finalise and Cluster, every helper in its
 // Funcs and in a context's Funcs, and every read of a context's
@@ -225,13 +259,20 @@ type Language = core.Language
 // goroutine.
 type Pass = core.Pass
 
-// New composes a language into its pass.
+// New composes a language into its pass. It returns an error
+// joining every fault it finds, because a composition reads every
+// fault at once:
 //
-// It refuses, collecting every fault: an empty kind-template set,
-// a template that does not parse, a missing naming and a missing
-// formatter. The kit converts these to panics at its own Build,
-// because there they are declaration defects; here they are
-// composition faults, and a composition reads every fault at once.
+//   - an empty kind-template set;
+//   - a kind both spelt and refused, and a refusal without a reason;
+//   - a kind template, group template or file skeleton that does
+//     not parse;
+//   - a builtin name the shared vocabulary claims;
+//   - a Cluster without group templates;
+//   - a missing naming, scaffold, import renderer or formatter.
+//
+// The kit converts these to panics at its own Build, because there
+// they are declaration defects.
 func New(name plugin.ID, l Language) (*Pass, error) {
 	return core.New(name, l)
 }

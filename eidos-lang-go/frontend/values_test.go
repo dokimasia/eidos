@@ -41,7 +41,7 @@ func TestStampConstValues(t *testing.T) {
 			"package p\n\nconst (\n\ta = 1 << (iota * 2)\n\tb\n\tc\n)\n")
 		values := stampsOf(gb, string(golang.ConstValueKey))
 		assert.Equal(t, values, []any{"1", "4", "16"},
-			"each row's exact value, the implicit carriers included")
+			"each row has its exact value, the implicit rows included")
 	})
 
 	t.Run("stamps promoted variants under their enum", func(t *testing.T) {
@@ -57,10 +57,10 @@ func TestStampConstValues(t *testing.T) {
 		t.Parallel()
 
 		gb := parsedFile(t, nil, plugin.DepthFull,
-			"package p\n\nimport \"example.test/far\"\n\nconst near = 2\n\nconst carried = far.Base + 1\n")
+			"package p\n\nimport \"example.test/far\"\n\nconst near = 2\n\nconst derived = far.Base + 1\n")
 		values := stampsOf(gb, string(golang.ConstValueKey))
 		assert.Equal(t, values, []any{"2"},
-			"what the package cannot evaluate stays absent, never wrong")
+			"what the package cannot evaluate is absent, never wrong")
 	})
 
 	t.Run("evaluates a constant reading a sibling file's type", func(t *testing.T) {
@@ -73,7 +73,7 @@ func TestStampConstValues(t *testing.T) {
 		f := frontend.New(nil)
 		u := plugin.NewSourceUnit(
 			[]plugin.SourceRef{{Path: "p/a.go"}, {Path: "p/b.go"}}, tree,
-			plugin.DepthFull, f.Syntax(), diag.NewSink(), f.Name(),
+			plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name(),
 		)
 		assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
 		values := stampsOf(u.Graph(), string(golang.ConstValueKey))

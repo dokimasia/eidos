@@ -58,21 +58,21 @@ func needy() plugin.Generator {
 }
 
 // Build is the one gate every human-typed name passes: it runs
-// every step, collecting, so the composition's author reads
-// every fault at once instead of an instalment plan.
+// every step and collects, so the composition's author reads every
+// fault at once.
 func TestBuilder(t *testing.T) {
 	t.Parallel()
 
-	t.Run("a valid composition passes every step", func(t *testing.T) {
+	t.Run("Build", func(t *testing.T) {
 		t.Parallel()
 
-		w, err := valid().Build()
-		assert.NoError(t, err, "no fault, no error")
-		assert.NotNil(t, w, "and the workspace is returned")
-	})
+		t.Run("returns the workspace for a valid composition", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("every fault joins the one error", func(t *testing.T) {
-		t.Parallel()
+			w, err := valid().Build()
+			assert.NoError(t, err, "the composition builds")
+			assert.NotNil(t, w, "the workspace is returned")
+		})
 
 		tests := []struct {
 			name    string
@@ -80,54 +80,64 @@ func TestBuilder(t *testing.T) {
 			markers []string
 		}{
 			{
-				name: "two plugins returning one name",
+				name: "returns an error for a composition without a brand",
+				compose: func() *workspace.Builder {
+					return valid().Brand("")
+				},
+				markers: []string{"declares no brand"},
+			},
+			{
+				name: "returns an error naming a brand outside the spelling",
+				compose: func() *workspace.Builder {
+					return valid().Brand("Acme")
+				},
+				markers: []string{`"Acme"`, "not a brand"},
+			},
+			{
+				name: "returns an error naming two plugins with one name",
 				compose: func() *workspace.Builder {
 					return valid().Annotators(stamper("noter", quiet))
 				},
 				markers: []string{"two plugins", `"noter"`},
 			},
 			{
-				name: "a nil annotator",
+				name: "returns an error for a nil annotator",
 				compose: func() *workspace.Builder {
 					return valid().Annotators(nil)
 				},
 				markers: []string{"nil"},
 			},
 			{
-				name: "a plugin named after a kernel phase",
+				name: "returns an error naming a plugin named after a kernel phase",
 				compose: func() *workspace.Builder {
 					return valid().Annotators(stamper("freeze", quiet))
 				},
 				markers: []string{"kernel phase", `"freeze"`},
 			},
 			{
-				name: "a namespace claimed twice",
+				name: "returns an error naming a namespace the composition claims twice",
 				compose: func() *workspace.Builder {
-					claim := func(owner string) func(r *meta.Registry) error {
-						return func(r *meta.Registry) error {
-							return r.ClaimNamespace("shape", owner)
-						}
-					}
-					return valid().Keys(claim("one"), claim("another"))
+					claim := func(r *meta.Registry) error { return r.ClaimNamespace("shape") }
+					return valid().Keys(claim).Keys(claim)
 				},
 				markers: []string{"claimed twice", `"shape"`},
 			},
 			{
-				name: "a nil key registration",
+				name: "returns an error for a nil key registration",
 				compose: func() *workspace.Builder {
 					return valid().Keys(nil)
 				},
 				markers: []string{"key registration", "nil"},
 			},
 			{
-				name: "a schema requiring a ghost",
+				name: "returns an error naming a name a schema requires and nothing registers",
 				compose: func() *workspace.Builder {
 					return valid().Plans(planTo("second", "fixture", needy()))
 				},
 				markers: []string{"ghost"},
 			},
 			{
-				name: "a capability provided twice",
+				name: "returns an error naming a capability provided twice",
 				compose: func() *workspace.Builder {
 					var calls []plugin.ID
 					return valid().Annotators(
@@ -138,7 +148,7 @@ func TestBuilder(t *testing.T) {
 				markers: []string{`"json"`, "provided", "left", "right"},
 			},
 			{
-				name: "a required capability nothing provides",
+				name: "returns an error naming a required capability nothing provides",
 				compose: func() *workspace.Builder {
 					var calls []plugin.ID
 					return valid().Annotators(
@@ -148,7 +158,7 @@ func TestBuilder(t *testing.T) {
 				markers: []string{`"missing"`, "requires", "wanting"},
 			},
 			{
-				name: "a capability cycle",
+				name: "returns an error naming the plugins of a capability cycle",
 				compose: func() *workspace.Builder {
 					var calls []plugin.ID
 					return valid().Annotators(
@@ -159,21 +169,21 @@ func TestBuilder(t *testing.T) {
 				markers: []string{"cycle", "ouro", "boros"},
 			},
 			{
-				name: "an empty target name",
+				name: "returns an error for an empty target name",
 				compose: func() *workspace.Builder {
 					return valid().Targets("")
 				},
 				markers: []string{"target", "empty"},
 			},
 			{
-				name: "a target declared twice",
+				name: "returns an error naming a target declared twice",
 				compose: func() *workspace.Builder {
 					return valid().Targets("fixture")
 				},
 				markers: []string{`"fixture"`, "twice"},
 			},
 			{
-				name: "a malformed options struct",
+				name: "returns an error naming a plugin with a malformed options struct",
 				compose: func() *workspace.Builder {
 					undocumented := &struct {
 						Depth int `opt:"depth"`
@@ -185,16 +195,16 @@ func TestBuilder(t *testing.T) {
 				markers: []string{"tuned", "doc"},
 			},
 			{
-				name: "a config section for another plugin",
+				name: "returns an error naming a config section for a plugin the composition does not contain",
 				compose: func() *workspace.Builder {
 					return valid().Config(workspace.Config{
 						Options: map[string]map[string]any{"ghost": {"depth": 1}},
 					})
 				},
-				markers: []string{`"ghost"`, "not hold"},
+				markers: []string{`"ghost"`, "does not contain"},
 			},
 			{
-				name: "a config key nothing declares",
+				name: "returns an error naming a config key nothing declares",
 				compose: func() *workspace.Builder {
 					return valid().
 						Plans(planTo("second", "fixture", tuned("tuned", &mirrorOptions{}))).
@@ -205,7 +215,7 @@ func TestBuilder(t *testing.T) {
 				markers: []string{`"nope"`, `"tuned"`},
 			},
 			{
-				name: "a config value of the wrong type",
+				name: "returns an error naming a config value of the wrong type",
 				compose: func() *workspace.Builder {
 					return valid().
 						Plans(planTo("second", "fixture", tuned("tuned", &mirrorOptions{}))).
@@ -216,35 +226,35 @@ func TestBuilder(t *testing.T) {
 				markers: []string{`"depth"`, "int", "string"},
 			},
 			{
-				name: "a plan with no name",
+				name: "returns an error for a plan without a name",
 				compose: func() *workspace.Builder {
 					return valid().Plans(planTo("", "fixture", mirror("second")))
 				},
 				markers: []string{"plan", "no name"},
 			},
 			{
-				name: "two plans returning one name",
+				name: "returns an error naming two plans with one name",
 				compose: func() *workspace.Builder {
 					return valid().Plans(planTo("plan", "fixture", mirror("second")))
 				},
 				markers: []string{`"plan"`, "twice"},
 			},
 			{
-				name: "a plan with no generators",
+				name: "returns an error naming a plan without generators",
 				compose: func() *workspace.Builder {
 					return valid().Plans(planTo("second", "fixture"))
 				},
 				markers: []string{`"second"`, "no generator"},
 			},
 			{
-				name: "a plan with a nil generator",
+				name: "returns an error naming a plan with a nil generator",
 				compose: func() *workspace.Builder {
 					return valid().Plans(planTo("second", "fixture", nil))
 				},
 				markers: []string{`"second"`, "nil generator"},
 			},
 			{
-				name: "a plan listing one generator twice",
+				name: "returns an error naming a plan that lists one generator twice",
 				compose: func() *workspace.Builder {
 					m := mirror("second")
 					return valid().Plans(planTo("second", "fixture", m, m))
@@ -252,7 +262,7 @@ func TestBuilder(t *testing.T) {
 				markers: []string{`"second"`, "twice"},
 			},
 			{
-				name: "a plan with no backend",
+				name: "returns an error naming a plan without a backend",
 				compose: func() *workspace.Builder {
 					return valid().Plans(workspace.Plan{
 						Name:       "second",
@@ -262,18 +272,32 @@ func TestBuilder(t *testing.T) {
 				markers: []string{`"second"`, "no backend"},
 			},
 			{
-				name: "an unregistered target",
+				name: "returns an error naming a plan's unregistered target",
 				compose: func() *workspace.Builder {
 					return valid().Plans(planTo("second", "mars", mirror("second")))
 				},
 				markers: []string{`"second"`, `"mars"`},
 			},
 			{
-				name: "an ignore covering a kernel name",
+				name: "returns an error naming an ignore that covers a kernel name",
 				compose: func() *workspace.Builder {
 					return valid().Ignore(directive.KernelSkip)
 				},
 				markers: []string{"skip", "kernel"},
+			},
+			{
+				name: "returns an error naming a language registered twice",
+				compose: func() *workspace.Builder {
+					return valid().Rules(native{}, native{})
+				},
+				markers: []string{string(coretest.Lang)},
+			},
+			{
+				name: "returns an error for nil rules",
+				compose: func() *workspace.Builder {
+					return valid().Rules(nil)
+				},
+				markers: []string{"nil"},
 			},
 		}
 		for _, tt := range tests {
@@ -281,63 +305,52 @@ func TestBuilder(t *testing.T) {
 				t.Parallel()
 
 				_, err := tt.compose().Build()
-				assert.HasError(t, err, "the fault joins the one error")
+				assert.HasError(t, err, "the composition fails")
 				for _, marker := range tt.markers {
-					assert.Contains(t, err.Error(), marker, "the error names it")
+					assert.Contains(t, err.Error(), marker, "the error names the fault")
 				}
 			})
 		}
-	})
 
-	t.Run("five faults across the steps join one error", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns one error joining the faults of every step", func(t *testing.T) {
+			t.Parallel()
 
-		var calls []plugin.ID
-		_, err := workspace.New().
-			Annotators(
-				stamper("twin", quiet),
-				stamper("twin", quiet),
-				ordered("left", 1, caps("json"), nil, &calls),
-				ordered("right", 1, caps("json"), nil, &calls),
-				ordered("ouro", 2, caps("head"), caps("tail"), &calls),
-				ordered("boros", 2, caps("tail"), caps("head"), &calls),
-			).
-			Targets("fixture").
-			Plans(planTo("plan", "mars", mirror("mirror"))).
-			Config(workspace.Config{
-				Options: map[string]map[string]any{"ghost": {"depth": 1}},
-			}).
-			Build()
-		assert.HasError(t, err, "Build collects rather than stopping")
-		for _, marker := range []string{
-			`"twin"`,  // the roster: two plugins, one name
-			`"json"`,  // the registries: a capability provided twice
-			"cycle",   // the lowering: a capability cycle
-			`"ghost"`, // the options: a section for another plugin
-			`"mars"`,  // the plans: an unregistered target
-		} {
-			assert.Contains(t, err.Error(), marker,
-				"all five faults join the one error")
-		}
-	})
-
-	t.Run("refuses two rules for one language and a nil value", func(t *testing.T) {
-		t.Parallel()
-
-		_, err := valid().Rules(native{}, native{}).Build()
-		assert.HasError(t, err, "one language, one rules value")
-		assert.Contains(t, err.Error(), string(coretest.Lang), "naming the language")
-		_, err = valid().Rules(nil).Build()
-		assert.HasError(t, err, "a nil value registers nothing")
-		assert.Contains(t, err.Error(), "nil", "and says so")
+			var calls []plugin.ID
+			_, err := workspace.New().
+				Annotators(
+					stamper("twin", quiet),
+					stamper("twin", quiet),
+					ordered("left", 1, caps("json"), nil, &calls),
+					ordered("right", 1, caps("json"), nil, &calls),
+					ordered("ouro", 2, caps("head"), caps("tail"), &calls),
+					ordered("boros", 2, caps("tail"), caps("head"), &calls),
+				).
+				Targets("fixture").
+				Plans(planTo("plan", "mars", mirror("mirror"))).
+				Config(workspace.Config{
+					Options: map[string]map[string]any{"ghost": {"depth": 1}},
+				}).
+				Build()
+			assert.HasError(t, err, "Build collects and does not stop")
+			for _, marker := range []string{
+				"no brand", // the brand: none declared
+				`"twin"`,   // the roster: two plugins, one name
+				`"json"`,   // the registries: a capability provided twice
+				"cycle",    // the lowering: a capability cycle
+				`"ghost"`,  // the options: a section for another plugin
+				`"mars"`,   // the plans: an unregistered target
+			} {
+				assert.Contains(t, err.Error(), marker, "the error names each step's fault")
+			}
+		})
 	})
 }
 
 // BenchmarkBuild runs the steps over a composition of 105
 // plugins: 64 annotators forming one capability chain inside one
 // priority, and 8 plans of 4 generators each behind their
-// backends. The plugin values build once; the steps are what the
-// loop measures.
+// backends. The plugin values build once, and the loop measures
+// the steps.
 func BenchmarkBuild(b *testing.B) {
 	b.ReportAllocs()
 
@@ -366,6 +379,7 @@ func BenchmarkBuild(b *testing.B) {
 
 	for b.Loop() {
 		w, err := workspace.New().
+			Brand(fixtureBrand).
 			Annotators(anns...).
 			Targets("fixture").
 			Plans(plans...).

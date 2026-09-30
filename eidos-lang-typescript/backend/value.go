@@ -23,8 +23,8 @@ var leaves = scaffold.Leaves{
 	Quote:  quote,
 }
 
-// target spells a value tree as TypeScript, recording into the
-// file's import set the bindings its references and callees need.
+// target spells a value tree as TypeScript, importing through the
+// file's import set what its references and callees name.
 type target struct{ set *render.ImportSet }
 
 // Lang names the target for a refusal.
@@ -33,18 +33,21 @@ func (target) Lang() string { return string(typescript.Lang) }
 // Literal spells one leaf through [leaves].
 func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
 
-// Type spells a reference and records the named binding its module
-// needs.
+// Type spells a reference through the file's [Speller], so a value
+// and a declaration import one declaration under one name.
 func (t target) Type(ref *emit.TypeRef) (string, error) {
-	t.use(ref.Target)
-	return Spell(ref), nil
+	return NewSpeller(t.set).Spell(ref)
 }
 
-// Callee spells a function by name and records its binding: an
-// imported name resolves bare in TypeScript, so nothing qualifies.
+// Callee spells a function by the name its import binds: an imported
+// name is called bare in TypeScript, and the function imports as a
+// value, because a call needs it at run time. A function in no module,
+// and one naming nothing, spells its own name.
 func (t target) Callee(id symbol.Identity) (string, error) {
-	t.use(id)
-	return id.Name, nil
+	if id.Package == "" || id.Name == "" {
+		return id.Name, nil
+	}
+	return t.set.BindItem(id.Package, id.Name, false), nil
 }
 
 // Conversion spells a type assertion. TypeScript erases its types,
@@ -90,13 +93,4 @@ func (t target) Composite(
 // reference to a value is the value.
 func (t target) Address(emit.Value, string) (string, error) {
 	return "", render.RefuseValue(t.Lang(), "TypeScript spells no address of a value")
-}
-
-// use records the binding a reference or a callee in another
-// module needs.
-func (t target) use(id symbol.Identity) {
-	if id.Package == "" || id.Name == "" || t.set == nil {
-		return
-	}
-	t.set.AddNamed(id.Package, id.Name)
 }

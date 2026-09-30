@@ -14,10 +14,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// qualifierSep separates a package qualifier from the name it
-// qualifies.
-const qualifierSep = "."
-
 // leaves is Go's spelling of the literal leaves. A number keeps the
 // text the derivation wrote in Go's own spelling, a string quotes
 // through the standard library, so every escape is Go's, and the
@@ -28,9 +24,9 @@ var leaves = scaffold.Leaves{
 	Quote:  strconv.Quote,
 }
 
-// target spells a value tree as Go, recording into the file's
-// import set the packages its references and callees need. It is
-// bound to one file, because the set is.
+// target spells a value tree as Go, binding in the file's import set
+// the packages its references and callees name. It is bound to one
+// file, because the set is.
 type target struct{ set *render.ImportSet }
 
 // Lang names the target for a refusal.
@@ -39,25 +35,27 @@ func (target) Lang() string { return string(golang.Lang) }
 // Literal spells one leaf through [leaves].
 func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
 
-// Type spells a reference and records the import its package
-// needs. The spelling is the reference's own, which is what a Go
-// graph rendering back to Go states.
+// Type spells a reference through the file's [Speller], so a value
+// and a declaration bind one import under one name.
 func (t target) Type(ref *emit.TypeRef) (string, error) {
-	t.use(ref.Target)
-	return Spell(ref), nil
+	return NewSpeller(t.set).Spell(ref)
 }
 
-// Callee spells a function by its identity and records its import.
-// A call has no source spelling of its own, so the name is qualified
-// by the last segment of its package where it has one. A function in
-// the file's own package spells bare, because a package never
-// qualifies its own names.
+// Callee spells a function by its identity and binds its package's
+// import. A call has no source spelling of its own, so the name is
+// qualified by the name the package's import binds, which is the
+// name its path assumes unless another import or a declaration of
+// the file takes that name. A function in no package, and one in the
+// file's own package, spells bare.
 func (t target) Callee(id symbol.Identity) (string, error) {
-	t.use(id)
-	if id.Package == "" || t.set != nil && id.Package == t.set.Home() {
+	if id.Package == "" {
 		return id.Name, nil
 	}
-	return qualifier(id.Package) + qualifierSep + id.Name, nil
+	local := t.set.Bind(id.Package, golang.AssumedName(id.Package))
+	if local == "" {
+		return id.Name, nil
+	}
+	return local + qualifierSep + id.Name, nil
 }
 
 // Conversion spells Go's conversion, which every named type takes.
@@ -92,20 +90,4 @@ func (t target) Address(inner emit.Value, spelled string) (string, error) {
 			"Go takes the address of a composite literal alone, and the value is a %s", inner.Kind)
 	}
 	return "&" + spelled, nil
-}
-
-// use records the import a reference or a callee in another
-// package needs. One in no package, a builtin, records nothing, and
-// the set drops one in the file's own package.
-func (t target) use(id symbol.Identity) {
-	if id.Package == "" || t.set == nil {
-		return
-	}
-	t.set.Add(id.Package)
-}
-
-// qualifier returns the name an import path binds by default: its
-// last segment.
-func qualifier(path string) string {
-	return path[strings.LastIndex(path, "/")+1:]
 }

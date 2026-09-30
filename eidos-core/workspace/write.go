@@ -4,6 +4,7 @@
 package workspace
 
 import (
+	"errors"
 	"fmt"
 	"io/fs"
 	"path"
@@ -26,11 +27,10 @@ type staged struct {
 // returns the files it produced, stamped through the plan's
 // contract and addressed through its layout.
 //
-// It answers nothing for a composition declaring no output: the
-// render is what a written file costs, and a run that writes
-// nothing does not pay it. A backend that renders but cannot be
-// asked to is a declaration defect the composition already
-// refused, so the assertion here reports rather than panics.
+// It returns nothing for a composition declaring no output: a run
+// that writes nothing renders nothing. A backend that does not
+// render is a declaration defect the composition already refused,
+// so the assertion here returns an error and does not panic.
 func render(pl compiledPlan, into *plugin.Emit, sink *diag.Sink) ([]staged, error) {
 	if pl.contract == nil {
 		return nil, nil
@@ -84,17 +84,17 @@ func renderContext(
 		if funcs := provider.TemplateFuncs(target); len(funcs) > 0 {
 			ctx.Funcs[s.name] = funcs
 		}
-		if over := provider.Overrides(); len(over) > 0 {
+		if over := provider.Overrides(target); len(over) > 0 {
 			ctx.Overrides[s.name] = over
 		}
 	}
 	return ctx
 }
 
-// layout derives one file's path: the plan's own derivation, or
-// the convention — the owning package's path and the file's name
-// joined by a slash, and the name alone for a plan file, which
-// carries no package.
+// layout derives one file's path through the plan's own derivation,
+// or through the convention: the file's package path joined to its
+// name by a slash, and the name alone for a plan file, which has no
+// package.
 func layout(pl compiledPlan, f plugin.RenderedFile) string {
 	if pl.layout != nil {
 		return pl.layout(f.Pkg, f.Name)
@@ -110,29 +110,36 @@ func conventionalPath(pkg symbol.Identity, name string) string {
 	return path.Join(pkg.Package, name)
 }
 
-// commit writes every plan's staged files into the run's sink, in
-// plan order and then in the order each plan rendered them, and
-// commits once. The write is sequential where the render was
-// parallel, so one run writes one tree in one order however the
-// plans interleaved.
+// commit opens the run's own sink, writes every plan's staged files
+// into it, in plan order and then in the order each plan rendered
+// them, and commits once. A composition declaring no output opens
+// nothing. The write is sequential where the render was parallel,
+// so one run writes one tree in one order however the plans
+// interleaved.
 //
-// A failed write discards the staging rather than committing half
-// a tree. A commit refused part-way returns its error together with
-// the records of the files that reached the destination, so the
-// report lists every file that changed on disk.
+// A failed write discards the staging and commits nothing. A commit
+// refused part-way returns its error together with the records of
+// the files it wrote before the refusal, so the report lists every
+// file that changed on disk.
 func (w *Workspace) commit(staged [][]staged) ([]output.Written, error) {
-	if w.sink == nil {
+	if w.open == nil {
 		return nil, nil
+	}
+	sink, err := w.open()
+	if err != nil {
+		return nil, fmt.Errorf("workspace: open the output: %w", err)
+	}
+	if sink == nil {
+		return nil, errors.New("workspace: the output's open function returned (nil, nil)")
 	}
 	for _, files := range staged {
 		for _, f := range files {
-			if err := w.sink.Write(f.path, f.body); err != nil {
-				return nil, fmt.Errorf("workspace: stage %s: %w", f.path,
-					discarding(w.sink, err))
+			if werr := sink.Write(f.path, f.body); werr != nil {
+				return nil, fmt.Errorf("workspace: stage %s: %w", f.path, discarding(sink, werr))
 			}
 		}
 	}
-	written, err := w.sink.Commit()
+	written, err := sink.Commit()
 	if err != nil {
 		return written, fmt.Errorf("workspace: commit the output: %w", err)
 	}

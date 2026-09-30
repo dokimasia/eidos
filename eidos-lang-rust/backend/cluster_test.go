@@ -16,6 +16,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// implBodyStub is what the stubbed body builtin writes inside an impl
+// method.
+const implBodyStub = "        return;\n"
+
 // methodOn returns a method attached to a type by reference, the
 // shape a Rust impl gathers.
 func methodOn(receives *emit.TypeRef, name string, stmts ...emit.Stmt) *emit.Method {
@@ -25,157 +29,158 @@ func methodOn(receives *emit.TypeRef, name string, stmts ...emit.Stmt) *emit.Met
 }
 
 // renderImpl runs the impl template over one cluster, the body
-// builtin stubbed to a return, and returns the text or the refusal.
-func renderImpl(t *testing.T, decls ...symbol.Symbol) (string, error) {
+// builtin stubbed to a return, and returns the text or the refusal
+// beside the file's import set.
+func renderImpl(t *testing.T, decls ...symbol.Symbol) (string, *render.ImportSet, error) {
 	t.Helper()
 
+	set := &render.ImportSet{}
 	tmpl, err := template.New("impl").
-		Funcs(backend.Funcs()).
+		Funcs(backend.Funcs(set)).
 		Funcs(template.FuncMap{
-			"body": func(any) string { return "        return;\n" },
+			render.BuiltinBody: func(any) string { return implBodyStub },
 		}).
-		Parse(backend.ImplTemplate)
+		Parse(backend.Groups()[backend.ImplGroup])
 	assert.NoError(t, err, "the template parses")
 	var b strings.Builder
 	err = tmpl.Execute(&b, render.Clustered{Group: backend.ImplGroup, Decls: decls})
-	return b.String(), err
+	return b.String(), set, err
 }
 
-// Rust renders a method only inside an impl block, so the cluster
-// is what makes the method kind renderable at all.
+// implOf runs the impl template over one cluster and asserts it
+// executes.
+func implOf(t *testing.T, decls ...symbol.Symbol) string {
+	t.Helper()
+
+	got, _, err := renderImpl(t, decls...)
+	assert.NoError(t, err, "the template executes")
+	return got
+}
+
+// Rust renders a method only inside an impl block, so the cluster is
+// what makes the method kind renderable at all.
 func TestCluster(t *testing.T) {
 	t.Parallel()
 
-	t.Run("gathers methods per attached type", func(t *testing.T) {
+	ret := emit.Stmt{Kind: emit.StmtReturn}
+
+	t.Run("Cluster", func(t *testing.T) {
 		t.Parallel()
 
-		track := methodOn(ref("Row"), "track")
-		load := methodOn(ref("Store"), "load")
-		drop := methodOn(ref("Row"), "drop")
-		free := &emit.Function{Name: "boot"}
-		out := backend.Cluster([]symbol.Symbol{track, load, free, drop})
-		assert.Equal(t, out, []render.Clustered{
-			{Group: backend.ImplGroup, Decls: []symbol.Symbol{track, drop}},
-			{Group: backend.ImplGroup, Decls: []symbol.Symbol{load}},
-		}, "one impl per type in first-appearance order, functions untouched")
+		t.Run("gathers methods per attached type in first-appearance order", func(t *testing.T) {
+			t.Parallel()
+
+			track := methodOn(ref(rowName), "track")
+			load := methodOn(ref("Store"), "load")
+			drop := methodOn(ref(rowName), "drop")
+			free := &emit.Function{Name: "boot"}
+			assert.Equal(t, backend.Cluster([]symbol.Symbol{track, load, free, drop}), []render.Clustered{
+				{Group: backend.ImplGroup, Decls: []symbol.Symbol{track, drop}},
+				{Group: backend.ImplGroup, Decls: []symbol.Symbol{load}},
+			}, "functions untouched")
+		})
+
+		t.Run("opens one impl block per instantiation of a type", func(t *testing.T) {
+			t.Parallel()
+
+			named := methodOn(generic("Wrapper", ref("String")), "name")
+			counted := methodOn(generic("Wrapper", ref("i32")), "count")
+			again := methodOn(generic("Wrapper", ref("String")), "again")
+			assert.Equal(t, backend.Cluster([]symbol.Symbol{named, counted, again}), []render.Clustered{
+				{Group: backend.ImplGroup, Decls: []symbol.Symbol{named, again}},
+				{Group: backend.ImplGroup, Decls: []symbol.Symbol{counted}},
+			}, "the whole reference keys the block")
+		})
+
+		t.Run("leaves an unattached method unassigned", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Length(t, backend.Cluster([]symbol.Symbol{&emit.Method{Name: "orphan"}}), 0,
+				"the lowering refuses such a method before any render")
+		})
 	})
 
-	t.Run("keys the impl by the whole reference", func(t *testing.T) {
+	t.Run("Groups", func(t *testing.T) {
 		t.Parallel()
 
-		named := methodOn(generic("Wrapper", ref("String")), "name")
-		counted := methodOn(generic("Wrapper", ref("i32")), "count")
-		again := methodOn(generic("Wrapper", ref("String")), "again")
-		out := backend.Cluster([]symbol.Symbol{named, counted, again})
-		assert.Equal(t, out, []render.Clustered{
-			{Group: backend.ImplGroup, Decls: []symbol.Symbol{named, again}},
-			{Group: backend.ImplGroup, Decls: []symbol.Symbol{counted}},
-		}, "two instantiations of one type open two impl blocks")
-	})
+		t.Run("returns the impl template under the impl group", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("leaves an unattached method alone", func(t *testing.T) {
-		t.Parallel()
+			assert.Equal(t, backend.Groups(), map[render.GroupName]string{backend.ImplGroup: backend.ImplTemplate},
+				"the one group the cluster selects")
+		})
 
-		out := backend.Cluster([]symbol.Symbol{&emit.Method{Name: "orphan"}})
-		assert.Equal(t, len(out), 0,
-			"nothing to group by, so the render reports the kind instead")
-	})
+		t.Run("writes a method under its type's impl block", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("the impl template is pinned byte for byte", func(t *testing.T) {
-		t.Parallel()
+			track := methodOn(ref(rowName), "track", ret)
+			track.Doc = []string{"Track records one access."}
+			track.Comment = "hot path"
+			assert.Equal(t, implOf(t, track),
+				"impl Row {\n"+
+					"    /// Track records one access.\n"+
+					"    pub fn track(&self) {\n"+implBodyStub+"    } // hot path\n"+
+					"}\n",
+				"the receiver first, the trailing comment behind the closing brace")
+		})
 
-		track := methodOn(ref("Row"), "track", emit.Stmt{Kind: emit.StmtReturn})
-		track.Doc = []string{"Track records one access."}
-		track.Comment = "hot path"
-		got, err := renderImpl(t, track)
-		assert.NoError(t, err, "the template executes")
-		assert.Equal(t, got,
-			"impl Row {\n"+
-				"    /// Track records one access.\n"+
-				"    pub fn track(&self) {\n"+
-				"        return;\n"+
-				"    } // hot path\n"+
-				"}\n",
-			"the receiver-first signature under the attached type's block, "+
-				"the trailing comment behind the closing brace")
-	})
+		t.Run("writes an associated function without a receiver", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("an associated function takes no receiver", func(t *testing.T) {
-		t.Parallel()
+			assoc := methodOn(ref(rowName), "make", ret)
+			assoc.Level = symbol.LevelType
+			assoc.Async = true
+			assert.Equal(t, implOf(t, assoc),
+				"impl Row {\n    pub async fn make() {\n"+implBodyStub+"    }\n}\n", "async before fn")
+		})
 
-		assoc := methodOn(ref("Row"), "make", emit.Stmt{Kind: emit.StmtReturn})
-		assoc.Level = symbol.LevelType
-		assoc.Async = true
-		got, err := renderImpl(t, assoc)
-		assert.NoError(t, err, "the template executes")
-		assert.Equal(t, got,
-			"impl Row {\n"+
-				"    pub async fn make() {\n"+
-				"        return;\n"+
-				"    }\n"+
-				"}\n",
-			"no receiver at type level, async before fn")
-	})
+		t.Run("writes a stated receiver as stated", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a stated receiver spells as stated", func(t *testing.T) {
-		t.Parallel()
+			set := methodOn(ref(rowName), "set", ret)
+			set.Receiver = &emit.Param{Name: "self", Type: ref("&mut Self")}
+			assert.Equal(t, implOf(t, set),
+				"impl Row {\n    pub fn set(&mut self) {\n"+implBodyStub+"    }\n}\n", "a mutable borrow")
+		})
 
-		set := methodOn(ref("Row"), "set", emit.Stmt{Kind: emit.StmtReturn})
-		set.Receiver = &emit.Param{Name: "self", Type: ref("&mut Self")}
-		got, err := renderImpl(t, set)
-		assert.NoError(t, err, "the template executes")
-		assert.Equal(t, got,
-			"impl Row {\n"+
-				"    pub fn set(&mut self) {\n"+
-				"        return;\n"+
-				"    }\n"+
-				"}\n",
-			"a mutable borrow, where the default is the shared one")
-	})
+		t.Run("opens the binder with a generic receiver's parameters", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a generic receiver opens the binder", func(t *testing.T) {
-		t.Parallel()
+			fold := methodOn(generic("Box", paramRef("T")), "fold", ret)
+			fold.TypeParams = []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}}
+			fold.Params = []*emit.Param{{Name: "item", Type: ref("U")}}
+			fold.Returns = []*emit.Return{{Type: ref("U")}}
+			assert.Equal(t, implOf(t, fold),
+				"impl<T> Box<T> {\n    pub fn fold<U: Codec>(&self, item: U) -> U {\n"+implBodyStub+"    }\n}\n",
+				"the method's own parameters behind its name")
+		})
 
-		fold := methodOn(generic("Box", ref("T")), "fold", emit.Stmt{Kind: emit.StmtReturn})
-		fold.TypeParams = []*emit.TypeParam{
-			{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}},
-		}
-		fold.Params = []*emit.Param{{Name: "item", Type: ref("U")}}
-		fold.Returns = []*emit.Return{{Type: ref("U")}}
-		got, err := renderImpl(t, fold)
-		assert.NoError(t, err, "the template executes")
-		assert.Equal(t, got,
-			"impl<T> Box<T> {\n"+
-				"    pub fn fold<U: Codec>(&self, item: U) -> U {\n"+
-				"        return;\n"+
-				"    }\n"+
-				"}\n",
-			"the receiver's parameters open the binder, the method's own "+
-				"parameters behind its name")
-	})
+		t.Run("binds nothing for a concrete receiver argument", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a concrete receiver argument binds nothing", func(t *testing.T) {
-		t.Parallel()
+			name := methodOn(generic("Wrapper", ref("String")), "name", ret)
+			assert.Equal(t, implOf(t, name),
+				"impl Wrapper<String> {\n    pub fn name(&self) {\n"+implBodyStub+"    }\n}\n",
+				"String names a type and never a parameter")
+		})
 
-		name := methodOn(generic("Wrapper", ref("String")), "name", emit.Stmt{Kind: emit.StmtReturn})
-		got, err := renderImpl(t, name)
-		assert.NoError(t, err, "the template executes")
-		assert.Equal(t, got,
-			"impl Wrapper<String> {\n"+
-				"    pub fn name(&self) {\n"+
-				"        return;\n"+
-				"    }\n"+
-				"}\n",
-			"String names a type and never a parameter")
-	})
+		t.Run("uses the item a method's parameter type names", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a method's parameter default refuses", func(t *testing.T) {
-		t.Parallel()
+			load := methodOn(ref("Store"), "load", ret)
+			load.Params = []*emit.Param{{Name: "row", Type: imported(storeModule, rowName)}}
+			_, set, err := renderImpl(t, load)
+			assert.NoError(t, err, "the template executes")
+			assert.Equal(t, set.Paths(), []string{storeModule}, "the item's use")
+		})
 
-		fold := methodOn(ref("Row"), "fold", emit.Stmt{Kind: emit.StmtReturn})
-		fold.TypeParams = []*emit.TypeParam{{Name: "U", Default: ref("String")}}
-		_, err := renderImpl(t, fold)
-		assert.HasError(t, err,
-			"Rust takes a type parameter default on a type definition alone")
+		t.Run("returns an error for a method's parameter default", func(t *testing.T) {
+			t.Parallel()
+
+			fold := methodOn(ref(rowName), "fold", ret)
+			fold.TypeParams = []*emit.TypeParam{{Name: "U", Default: ref("String")}}
+			_, _, err := renderImpl(t, fold)
+			assert.HasError(t, err, "Rust takes a default on a type definition alone")
+		})
 	})
 }

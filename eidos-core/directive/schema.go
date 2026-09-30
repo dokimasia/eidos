@@ -17,22 +17,21 @@ const (
 	// TypeInt accepts a base-10 integer, an optional leading minus
 	// included.
 	TypeInt
-	// TypeBool accepts exactly "true" and "false". The wider
-	// boolean vocabularies are how YAML turned a country code into
-	// a boolean, and one spelling stays greppable.
+	// TypeBool accepts exactly "true" and "false", so every boolean
+	// has one searchable spelling and no other text reads as one.
 	TypeBool
-	// TypeList accepts a bracketed list; ListOf types its elements.
+	// TypeList accepts a bracketed list. ListOf types its elements.
 	TypeList
 	// TypeReference accepts a name that resolves against what
 	// Resolution declares.
 	TypeReference
 )
 
-// ResolutionKind says what a reference param's value resolves
-// against. The source kinds are declared and carried; nothing in
-// this package binds them, because the projection machinery that
-// resolves a source name lives elsewhere. The metadata kind binds
-// at validation, against the metadata key registry.
+// ResolutionKind names what a reference param's value resolves
+// against. This package declares the source kinds and binds none
+// of them: the projection machinery that resolves a source name is
+// outside it. The metadata kind binds at validation, against the
+// metadata key registry.
 type ResolutionKind uint8
 
 const (
@@ -102,7 +101,7 @@ const roleKey ParamKey = "role"
 
 // ParamSpec declares one param a schema accepts: its spelling, its
 // type, and the conditions under which an instance must or may
-// carry it.
+// write it.
 //
 // A spec is data, checked whole at registration: an untyped param,
 // an empty doc, a duplicate key, an undeclared role and a list of
@@ -126,7 +125,8 @@ type ParamSpec struct {
 	// list.
 	Resolution ResolutionKind
 	// Counterexample marks a param whose value names an input no
-	// derivation could invent. It is carried, not consumed.
+	// derivation could invent. The kernel records the mark and
+	// reads nothing from it.
 	Counterexample bool
 	// Doc states the param's meaning. Registration refuses an
 	// empty one.
@@ -139,10 +139,10 @@ type ParamSpec struct {
 //
 // A schema is a value with no behaviour. [Registry.Register]
 // checks it whole and refuses what the field comments below
-// forbid; [Validate] holds every instance to it and types the
-// values; nothing reads it after that. Closure is the default: a
-// key the schema does not declare is refused, so what a handler
-// may assume is exactly what the schema says, and only a schema
+// forbid. [Validate] checks every instance against it and types the
+// values, and nothing reads it after that. Closure is the default:
+// a key the schema does not declare is refused, so what a handler
+// may assume is exactly what the schema states, and only a schema
 // stating Open admits keys it does not name.
 type Schema struct {
 	// Plugin names the owner. The kernel's own schemas leave it
@@ -158,12 +158,11 @@ type Schema struct {
 	// Params declares the keyed params. Unknown keys are refused
 	// unless Open types them.
 	Params []ParamSpec
-	// Open types every key the Params do not declare; nil closes
-	// the schema, which is the default. The spec states no Key:
-	// the instance's own spelling is the key, and the value types
-	// as the spec says. The reserved keys keep their meaning under
-	// an open schema: role, out and tag are never read as open
-	// keys.
+	// Open types every key the Params do not declare. Nil closes the
+	// schema, which is the default. The spec states no Key: the
+	// instance's own spelling is the key, and the value types as the
+	// spec declares. The reserved keys keep their meaning under an
+	// open schema: role, out and tag are never read as open keys.
 	Open *ParamSpec
 	// Roles is the closed set of values the role key accepts. A
 	// schema listing none refuses the role key. Declaring roles is
@@ -178,6 +177,11 @@ type Schema struct {
 	// Single-instance is the default: a second instance is a
 	// contradiction, reported naming both positions.
 	Repeatable bool
+	// Negatable admits the negated form, which opts a subject out of
+	// the plugin's bare and fact-gated rules. The zero value refuses
+	// a negated instance with a positioned Error. Registration
+	// refuses a negatable kernel schema.
+	Negatable bool
 	// Requires and ConflictsWith constrain the subject's full
 	// directive list. They resolve to schemas at the registry's
 	// seal, and are met or violated by canonical schema, whatever

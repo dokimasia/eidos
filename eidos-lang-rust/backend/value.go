@@ -9,7 +9,6 @@ import (
 
 	rust "go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/scaffold"
-	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -43,8 +42,8 @@ var leaves = scaffold.Leaves{
 	Number: number,
 }
 
-// target spells a value tree as Rust, recording into the file's
-// import set the paths its references and callees need.
+// target spells a value tree as Rust, using through the file's
+// import set what its references and callees name.
 type target struct{ set *render.ImportSet }
 
 // Lang names the target for a refusal.
@@ -53,32 +52,41 @@ func (target) Lang() string { return string(rust.Lang) }
 // Literal spells one leaf through [leaves].
 func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
 
-// Type spells a reference in an expression's path and records the
-// use its module needs. Rust opens the argument list there with the
-// turbofish, so a struct literal of Pair<Vec<i32>> spells
-// Pair::<Vec<i32>> { .. }, and the nested arguments, which are in
-// type position, keep their angle brackets. A reference that states
-// no type, itself or in an argument list, refuses.
+// Type spells a reference in an expression's path through the file's
+// [Speller], so a value and a declaration use one item under one
+// name. Rust opens the argument list there with the turbofish, so a
+// struct literal of Pair<Vec<i32>> spells Pair::<Vec<i32>> { .. },
+// and the nested arguments, which are in type position, keep their
+// angle brackets. A reference that states no type, itself or in an
+// argument list, refuses.
 func (t target) Type(ref *emit.TypeRef) (string, error) {
 	if !complete(ref) {
 		return "", render.RefuseValue(t.Lang(), unstatedType)
 	}
-	t.use(ref.Target)
-	if len(ref.Args) == 0 {
-		return ref.Spelling, nil
+	s := NewSpeller(t.set)
+	if len(ref.Args) == 0 || ref.Form != symbol.FormNamed {
+		return s.Spell(ref)
 	}
+	head := s.use(ref)
 	args := make([]string, 0, len(ref.Args))
 	for _, a := range ref.Args {
-		args = append(args, spellref.Spell(a, genericsOpener, genericsCloser, unitSpelling))
+		arg, err := s.Spell(a)
+		if err != nil {
+			return "", err
+		}
+		args = append(args, arg)
 	}
-	return ref.Spelling + turbofishOpener + strings.Join(args, ", ") + genericsCloser, nil
+	return head + turbofishOpener + strings.Join(args, ", ") + genericsCloser, nil
 }
 
-// Callee spells a function by name and records its use: a used
-// path binds the name, so nothing qualifies at the call.
+// Callee spells a function by the name its use binds: a used path
+// binds the name, so nothing qualifies at the call. A function in no
+// module, and one naming nothing, spells its own name.
 func (t target) Callee(id symbol.Identity) (string, error) {
-	t.use(id)
-	return id.Name, nil
+	if id.Package == "" || id.Name == "" {
+		return id.Name, nil
+	}
+	return t.set.BindItem(id.Package, id.Name, false), nil
 }
 
 // Conversion spells a value converted to a type: a cast to a numeric
@@ -145,15 +153,6 @@ func (target) Address(inner emit.Value, spelled string) (string, error) {
 		return "&(" + spelled + ")", nil
 	}
 	return "&" + spelled, nil
-}
-
-// use records the use a reference or a callee in another module
-// needs.
-func (t target) use(id symbol.Identity) {
-	if id.Package == "" || id.Name == "" || t.set == nil {
-		return
-	}
-	t.set.AddNamed(id.Package, id.Name)
 }
 
 // number spells a number for Rust. A float written without a

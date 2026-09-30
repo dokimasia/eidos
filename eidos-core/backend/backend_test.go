@@ -7,7 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
-	"slices"
+	"path"
+	"strconv"
 	"strings"
 	"testing"
 	"text/template"
@@ -23,6 +24,49 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// The kit's fixture: the backend's identity, the unit it renders,
+// and the helpers its vocabulary declares.
+const (
+	// kitName and plainName name a fully declared backend and a
+	// hookless one.
+	kitName   plugin.ID = "printer"
+	plainName plugin.ID = "plain"
+	// kitTarget is the target both declare.
+	kitTarget plugin.Target = "stub"
+	// kitEmitter is the plugin the fixture unit comes from.
+	kitEmitter plugin.ID = "gen"
+	// kitWord and kitExt spell the fixture's one filename.
+	kitWord = "stub"
+	kitExt  = ".txt"
+	// rowName and loadName name the fixture unit's struct and function.
+	rowName  = "Row"
+	loadName = "Load"
+	// runtimePkg is the import the fixture scaffold records.
+	runtimePkg = "stub/runtime"
+	// upHelper is the fixture vocabulary's one helper.
+	upHelper = "up"
+	// blockGroup names a group template.
+	blockGroup render.GroupName = "block"
+	// qualifyHelper binds a package through the file's import set,
+	// storePkg is the package it binds, and storeLocal the name.
+	qualifyHelper = "qualify"
+	storePkg      = "svc/store"
+	storeLocal    = "store"
+	// kitVersion is the version the fixture declares, so a built
+	// backend's version is distinguishable from the undeclared empty
+	// one.
+	kitVersion = "3.2.1"
+	// cursorSuffix names the companion declaration the fixture's
+	// lowering produces beside every struct.
+	cursorSuffix = "Cursor"
+	// respellPrefix is what the fixture's name convention puts in
+	// front of every declared name.
+	respellPrefix = "t_"
+	// kitReason is the reason the fixture states for a kind it
+	// refuses.
+	kitReason = "the fixture language declares no such construct"
+)
+
 // kitSyntax returns the comment forms a fixture language declares.
 func kitSyntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{Line: []string{"//"}}
@@ -33,12 +77,12 @@ func kitSyntax() plugin.CommentSyntax {
 const kitFile = "// {{.Name}}\n{{imports}}{{decls}}"
 
 // kitStructs and kitCallables split the kind inventory across two
-// declarations, the way a satellite groups its spellings; the
-// struct spelling calls the shared helper so the vocabulary flow
-// is held too.
+// declarations, the way a satellite groups its spellings. The struct
+// spelling calls the shared helper, so the vocabulary is exercised
+// too.
 func kitStructs() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
-		symbol.KindStruct: "type {{up .Name}} struct{}\n",
+		symbol.KindStruct: "type {{" + upHelper + " .Name}} struct{}\n",
 	}
 }
 
@@ -48,14 +92,24 @@ func kitCallables() map[symbol.Kind]string {
 	}
 }
 
-// kitFuncs returns the fixture's shared template vocabulary.
-func kitFuncs() template.FuncMap {
-	return template.FuncMap{"up": strings.ToUpper}
+// kitFuncs is the fixture's shared template vocabulary, which binds
+// nothing to the file's import set.
+func kitFuncs(*render.ImportSet) template.FuncMap {
+	return template.FuncMap{upHelper: strings.ToUpper}
+}
+
+// kitBinding is a vocabulary part bound to the file's import set: its
+// helper binds a package under the package's last segment and spells a
+// name through the bound name.
+func kitBinding(set *render.ImportSet) template.FuncMap {
+	return template.FuncMap{qualifyHelper: func(pkg, name string) string {
+		return set.Bind(pkg, path.Base(pkg)) + "." + name
+	}}
 }
 
 // kitNaming spells every unit as its word under a fixture
 // extension.
-func kitNaming(u plugin.Unit) string { return u.Word + ".txt" }
+func kitNaming(u plugin.Unit) string { return u.Word + kitExt }
 
 // kitScaffold spells the one statement kind the fixture emits,
 // recording an import the way a real printer records what it
@@ -64,7 +118,7 @@ func kitScaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 	if s.Kind != emit.StmtReturn {
 		return nil, errors.New("the fixture spells returns only")
 	}
-	set.Add("stub/runtime")
+	set.Add(runtimePkg)
 	return []byte("\treturn\n"), nil
 }
 
@@ -85,7 +139,7 @@ func kitLanguage() render.Language {
 	kinds := kitStructs()
 	maps.Copy(kinds, kitCallables())
 	return render.Language{
-		Kinds: kinds, File: kitFile, Funcs: kitFuncs(),
+		Kinds: kinds, File: kitFile, Funcs: kitFuncs,
 		Naming: kitNaming, Scaffold: kitScaffold,
 		Imports: kitImports, Finalise: kitFinalise,
 	}
@@ -98,49 +152,44 @@ func kitBackend(name plugin.ID, target plugin.Target) *backend.Builder {
 		FileTemplate(kitFile).
 		KindTemplates(kitStructs()).
 		KindTemplates(kitCallables()).
-		Funcs(kitFuncs()).
+		Funcs(kitFuncs).
 		Naming(kitNaming).
 		Scaffold(kitScaffold).
 		Imports(kitImports).
 		Finalise(kitFinalise)
 }
 
-// kitUnit returns one flushed plan unit holding a struct and a
-// function whose body scaffolds a return.
+// kitUnit returns one flushed plan unit of a struct and a function
+// whose body scaffolds a return.
 func kitUnit() plugin.Unit {
 	f := &emit.Function{
-		Origin: coretest.Struct(coretest.StorePath, "Load").ID,
-		Name:   "Load",
+		Origin: coretest.Struct(coretest.StorePath, loadName).ID,
+		Name:   loadName,
 	}
 	f.Body = emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}
 	return plugin.Unit{
-		Plugin: "gen", Per: plugin.PerPlan, Word: "stub",
+		Plugin: kitEmitter, Per: plugin.PerPlan, Word: kitWord,
 		Decls: []symbol.Symbol{
 			&emit.Struct{
-				Origin: coretest.Struct(coretest.StorePath, "Row").ID,
-				Name:   "Row",
+				Origin: coretest.Struct(coretest.StorePath, rowName).ID,
+				Name:   rowName,
 			},
 			f,
 		},
 	}
 }
 
-// kitVersion is the version the fixture declares, so a built
-// backend's answer is distinguishable from the undeclared empty
-// one.
-const kitVersion = "3.2.1"
+// kitBody is the file the full fixture declaration renders: the
+// skeleton's comment, the scaffold's import, the struct through the
+// shared helper and the function around its scaffolded body.
+var kitBody = "// " + kitWord + kitExt + "\n" +
+	"import (" + runtimePkg + ")\n" +
+	"type " + strings.ToUpper(rowName) + " struct{}\n" +
+	"func " + loadName + "() {\n\treturn\n}\n"
 
-// cursorSuffix names the companion declaration the fixture's
-// lowering produces beside every struct.
-const cursorSuffix = "Cursor"
-
-// respellPrefix is what the fixture's name convention puts in
-// front of every declared name.
-const respellPrefix = "t_"
-
-// kitLower is the fixture's construct lowering: a struct arrives
-// as itself and a companion carrying the same origin, and every
-// other declaration passes through untouched.
+// kitLower is the fixture's construct lowering: a struct becomes
+// itself and a companion with the same origin, and every other
+// declaration passes through untouched.
 func kitLower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	row, held := s.(*emit.Struct)
 	if !held {
@@ -152,12 +201,12 @@ func kitLower(s symbol.Symbol) ([]symbol.Symbol, error) {
 }
 
 // kitRespell is the fixture's name convention: every declared name
-// takes the prefix, whatever kind carries it.
+// takes the prefix, whatever its kind.
 func kitRespell(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 	return respellPrefix + name, nil
 }
 
-// structNames reads the declared names off a lowering's answer,
+// structNames reads the declared names off a lowering's result,
 // which the fixture hook returns as structs alone.
 func structNames(tb assert.TB, decls []symbol.Symbol) []string {
 	tb.Helper()
@@ -165,7 +214,7 @@ func structNames(tb assert.TB, decls []symbol.Symbol) []string {
 	out := make([]string, 0, len(decls))
 	for _, d := range decls {
 		s, held := d.(*emit.Struct)
-		assert.True(tb, held, "the fixture lowering answers with structs")
+		assert.True(tb, held, "the fixture lowering returns structs")
 		if !held {
 			continue
 		}
@@ -179,19 +228,19 @@ func kitStore(tb assert.TB) *plugin.Emit {
 	tb.Helper()
 
 	e := plugin.NewEmit()
-	assert.NoError(tb, e.Add(kitUnit()), "the fixture unit arrives")
+	assert.NoError(tb, e.Add(kitUnit()), "the fixture unit is added")
 	return e
 }
 
 // kitUnsettled renders the fixture store through b without
-// settling it first, and returns what the render answered.
+// settling it first, and returns the render's error.
 func kitUnsettled(tb assert.TB, b plugin.Backend) error {
 	tb.Helper()
 
 	r, held := b.(plugin.Renderer)
 	assert.True(tb, held, "a kit backend renders")
 	_, err := r.Render(&plugin.RenderContext{
-		Emit: kitStore(tb), Sink: diag.NewSink(), Plugin: "printer",
+		Emit: kitStore(tb), Sink: diag.NewSink(), Plugin: kitName,
 	})
 	return err
 }
@@ -205,12 +254,12 @@ func kitSettled(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
 	assert.True(tb, held, "a kit backend renders")
 	e := kitStore(tb)
 	sink := diag.NewSink()
-	assert.NoError(tb, plugin.Settle(e, b, sink), "the plan settles once")
+	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles once")
 	coretest.AssertCodes(tb, sink)
 	files, err := r.Render(&plugin.RenderContext{
-		Emit: e, Sink: sink, Plugin: "printer",
+		Emit: e, Sink: sink, Plugin: kitName,
 	})
-	assert.NoError(tb, err, "and the settled store renders")
+	assert.NoError(tb, err, "the settled store renders")
 	coretest.AssertCodes(tb, sink)
 	return files
 }
@@ -222,136 +271,143 @@ func kitRender(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
 
 	r, held := b.(plugin.Renderer)
 	assert.True(tb, held, "a kit backend renders")
-	e := plugin.NewEmit()
-	assert.NoError(tb, e.Add(kitUnit()), "the fixture unit arrives")
 	sink := diag.NewSink()
 	files, err := r.Render(&plugin.RenderContext{
-		Emit: e, Sink: sink, Plugin: "printer",
+		Emit: kitStore(tb), Sink: sink, Plugin: kitName,
 	})
-	assert.NoError(tb, err, "the pass runs whole")
-	assert.Equal(tb, len(slices.Collect(sink.All())), 0,
-		"the clean fixture reports nothing")
+	assert.NoError(tb, err, "the pass renders every file")
+	coretest.AssertCodes(tb, sink)
 	return files
 }
 
 // The backend kit is the write side's authoring builder: the
 // declaration is data, Build lowers it to the render pass, and
-// the returned value carries every role the plan validates.
+// the returned value implements every role the plan validates.
 func TestBackend(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Build", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the backend, renderer and syntax roles", func(t *testing.T) {
+		t.Run("returns a backend named as declared", func(t *testing.T) {
 			t.Parallel()
 
-			b := kitBackend("printer", "stub").Build()
-			assert.Equal(t, b.Name(), "printer", "the name is the identity")
-			assert.Equal(t, b.Target(), "stub", "the target is carried as declared")
-			_, renders := b.(plugin.Renderer)
-			assert.True(t, renders, "the kit backend holds the renderer role")
-			carrier, held := b.(interface{ Syntax() plugin.CommentSyntax })
-			assert.True(t, held,
-				"the comment syntax is carried for the output contract")
-			assert.Equal(t, carrier.Syntax(), kitSyntax(), "as declared")
+			assert.Equal(t, kitBackend(kitName, kitTarget).Build().Name(), kitName,
+				"the name is the identity")
 		})
 
-		t.Run("renders byte-identically to the pass it lowers to", func(t *testing.T) {
+		t.Run("returns a backend for the declared target", func(t *testing.T) {
 			t.Parallel()
 
-			first := kitRender(t, kitBackend("printer", "stub").Build())
-			second := kitRender(t, kitBackend("printer", "stub").Build())
-			assert.Equal(t, first, second, "two builds render one output")
+			assert.Equal(t, kitBackend(kitName, kitTarget).Build().Target(), kitTarget,
+				"the target as declared")
+		})
 
-			assert.Equal(t, len(first), 1, "the fixture assembles one file")
-			assert.Equal(t, first[0].Name, "stub.txt", "named by the naming")
-			assert.Equal(t, string(first[0].Body),
-				"// stub.txt\n"+
-					"import (stub/runtime)\n"+
-					"type ROW struct{}\n"+
-					"func Load() {\n\treturn\n}\n",
-				"the declared skeleton, vocabulary, kinds and scaffold all spell")
+		t.Run("returns a backend with the renderer role", func(t *testing.T) {
+			t.Parallel()
 
-			pass, err := render.New("printer", kitLanguage())
+			_, renders := kitBackend(kitName, kitTarget).Build().(plugin.Renderer)
+			assert.True(t, renders, "a kit backend renders")
+		})
+
+		t.Run("returns a backend with the declared comment syntax", func(t *testing.T) {
+			t.Parallel()
+
+			b := kitBackend(kitName, kitTarget).Build()
+			syntax, held := b.(interface{ Syntax() plugin.CommentSyntax })
+			assert.True(t, held, "the output contract reads the comment syntax")
+			assert.Equal(t, syntax.Syntax(), kitSyntax(), "the syntax as declared")
+		})
+
+		t.Run("renders a file through every declared piece", func(t *testing.T) {
+			t.Parallel()
+
+			files := kitRender(t, kitBackend(kitName, kitTarget).Build())
+			assert.Length(t, files, 1, "the fixture assembles one file")
+			assert.Equal(t, files[0].Name, kitWord+kitExt, "named by the naming")
+			assert.Equal(t, string(files[0].Body), kitBody,
+				"the skeleton, vocabulary, kinds and scaffold all spell")
+		})
+
+		t.Run("renders the same bytes for two builds", func(t *testing.T) {
+			t.Parallel()
+
+			first := kitRender(t, kitBackend(kitName, kitTarget).Build())
+			second := kitRender(t, kitBackend(kitName, kitTarget).Build())
+			assert.Equal(t, first, second, "a build is deterministic")
+		})
+
+		t.Run("renders the bytes a hand-built pass over the same language renders", func(t *testing.T) {
+			t.Parallel()
+
+			built := kitRender(t, kitBackend(kitName, kitTarget).Build())
+			pass, err := render.New(kitName, kitLanguage())
 			assert.NoError(t, err, "the same language composes by hand")
-			e := plugin.NewEmit()
-			assert.NoError(t, e.Add(kitUnit()), "the fixture unit arrives")
 			direct, err := pass.Render(&plugin.RenderContext{
-				Emit: e, Sink: diag.NewSink(), Plugin: "printer",
+				Emit: kitStore(t), Sink: diag.NewSink(), Plugin: kitName,
 			})
-			assert.NoError(t, err, "the hand-built pass runs whole")
-			assert.Equal(t, first, direct, "the kit is spelling, not semantics")
+			assert.NoError(t, err, "the hand-built pass renders every file")
+			assert.Equal(t, built, direct, "the kit adds spelling and no semantics")
 		})
 
-		t.Run("panics on a declaration defect", func(t *testing.T) {
+		defects := []struct {
+			name  string
+			build func()
+		}{
+			{
+				name:  "panics for an empty name",
+				build: func() { kitBackend("", kitTarget).Build() },
+			},
+			{
+				name:  "panics for a zero target",
+				build: func() { kitBackend(kitName, "").Build() },
+			},
+			{
+				name: "panics for one kind spelt twice",
+				build: func() {
+					kitBackend(kitName, kitTarget).KindTemplates(kitStructs()).Build()
+				},
+			},
+			{
+				name: "panics for a template that does not parse",
+				build: func() {
+					kitBackend(kitName, kitTarget).
+						KindTemplates(map[symbol.Kind]string{symbol.KindEnum: "{{"}).
+						Build()
+				},
+			},
+			{
+				name: "panics for one group spelt twice",
+				build: func() {
+					kitBackend(kitName, kitTarget).
+						Groups(map[render.GroupName]string{blockGroup: "types\n"}).
+						Groups(map[render.GroupName]string{blockGroup: "again\n"}).
+						Build()
+				},
+			},
+			{
+				name: "panics for a cluster without group templates",
+				build: func() {
+					kitBackend(kitName, kitTarget).
+						Cluster(func([]symbol.Symbol) []render.Clustered {
+							return nil
+						}).
+						Build()
+				},
+			},
+		}
+		for _, tt := range defects {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Panics(t, tt.build, "a wrong declaration panics on the first Build in any test")
+			})
+		}
+
+		t.Run("renders one file per unit the declared split returns", func(t *testing.T) {
 			t.Parallel()
 
-			tests := []struct {
-				name  string
-				build func()
-			}{
-				{
-					name:  "an empty name",
-					build: func() { kitBackend("", "stub").Build() },
-				},
-				{
-					name:  "a zero target",
-					build: func() { kitBackend("printer", "").Build() },
-				},
-				{
-					name: "one kind spelt twice",
-					build: func() {
-						kitBackend("printer", "stub").KindTemplates(kitStructs()).Build()
-					},
-				},
-				{
-					name: "one helper declared twice",
-					build: func() {
-						kitBackend("printer", "stub").Funcs(kitFuncs()).Build()
-					},
-				},
-				{
-					name: "a template that does not parse",
-					build: func() {
-						kitBackend("printer", "stub").
-							KindTemplates(map[symbol.Kind]string{symbol.KindEnum: "{{"}).
-							Build()
-					},
-				},
-				{
-					name: "one group spelt twice",
-					build: func() {
-						kitBackend("printer", "stub").
-							Groups(map[render.GroupName]string{"block": "types\n"}).
-							Groups(map[render.GroupName]string{"block": "again\n"}).
-							Build()
-					},
-				},
-				{
-					name: "a cluster without group templates",
-					build: func() {
-						kitBackend("printer", "stub").
-							Cluster(func([]symbol.Symbol) []render.Clustered {
-								return nil
-							}).
-							Build()
-					},
-				},
-			}
-			for _, tt := range tests {
-				t.Run(tt.name, func(t *testing.T) {
-					t.Parallel()
-					assert.Panics(t, tt.build,
-						"a wrong declaration panics on the first Build in any test")
-				})
-			}
-		})
-
-		t.Run("lowers the split to the pass", func(t *testing.T) {
-			t.Parallel()
-
-			b := kitBackend("printer", "stub").
+			b := kitBackend(kitName, kitTarget).
 				Split(func(u plugin.Unit) []plugin.Unit {
 					out := make([]plugin.Unit, 0, len(u.Decls))
 					for i, d := range u.Decls {
@@ -363,52 +419,176 @@ func TestBackend(t *testing.T) {
 					return out
 				}).
 				Build()
-			files := kitRender(t, b)
-			names := make([]string, 0, len(files))
-			for _, f := range files {
+			names := make([]string, 0, 2)
+			for _, f := range kitRender(t, b) {
 				names = append(names, f.Name)
 			}
-			assert.Equal(t, names, []string{"function.txt", "struct.txt"},
-				"the declared split reshapes units before the naming")
+			assert.Equal(t, names, []string{
+				strings.ToLower(symbol.KindFunction.String()) + kitExt,
+				strings.ToLower(symbol.KindStruct.String()) + kitExt,
+			}, "the split reshapes units before the naming")
 		})
 
-		t.Run("declares the settle seams and refuses an unsettled store", func(t *testing.T) {
-			t.Parallel()
-
-			b := kitBackend("printer", "stub").
+		settling := func() plugin.Backend {
+			return kitBackend(kitName, kitTarget).
 				Lower(func(s symbol.Symbol) ([]symbol.Symbol, error) {
 					return []symbol.Symbol{s}, nil
 				}).
-				Respell(func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				Respell(func(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 					return name, nil
 				}).
 				Build()
-			_, lowers := b.(plugin.Lowerer)
-			assert.True(t, lowers, "the built backend declares the construct seam")
-			_, respells := b.(plugin.Respeller)
-			assert.True(t, respells, "and the name seam")
-			plain := kitBackend("plain", "stub").Build()
-			_, lowers = plain.(plugin.Lowerer)
-			assert.False(t, lowers, "a hookless backend declares neither")
+		}
 
-			r, held := b.(plugin.Renderer)
-			assert.True(t, held, "a kit backend renders")
-			e := plugin.NewEmit()
-			assert.NoError(t, e.Add(kitUnit()), "the fixture unit arrives")
-			_, err := r.Render(&plugin.RenderContext{
-				Emit: e, Sink: diag.NewSink(), Plugin: "printer",
-			})
-			assert.HasError(t, err, "an unsettled store refuses at the first render")
+		t.Run("returns a backend with the construct seam for a lowering and a respell", func(t *testing.T) {
+			t.Parallel()
 
-			assert.NoError(t, plugin.Settle(e, b, diag.NewSink()), "the plan settles once")
-			files, err := r.Render(&plugin.RenderContext{
-				Emit: e, Sink: diag.NewSink(), Plugin: "printer",
-			})
-			assert.NoError(t, err, "and the settled store renders")
-			assert.True(t, len(files) > 0, "whole")
+			_, lowers := settling().(plugin.Lowerer)
+			assert.True(t, lowers, "the construct seam is declared")
 		})
 
-		t.Run("carries the declared coverage to the guard and back", func(t *testing.T) {
+		t.Run("returns a backend with the name seam for a lowering and a respell", func(t *testing.T) {
+			t.Parallel()
+
+			_, respells := settling().(plugin.Respeller)
+			assert.True(t, respells, "the name seam is declared")
+		})
+
+		t.Run("returns a backend without a settle seam for a declaration without hooks", func(t *testing.T) {
+			t.Parallel()
+
+			plain := kitBackend(plainName, kitTarget).Build()
+			_, lowers := plain.(plugin.Lowerer)
+			assert.False(t, lowers, "no construct seam")
+			_, respells := plain.(plugin.Respeller)
+			assert.False(t, respells, "no name seam")
+		})
+
+		t.Run("returns an error rendering an unsettled store for a backend with both seams", func(t *testing.T) {
+			t.Parallel()
+
+			assert.HasError(t, kitUnsettled(t, settling()),
+				"an unsettled store is never rendered")
+		})
+
+		t.Run("renders a settled store for a backend with both seams", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Length(t, kitSettled(t, settling()), 1, "the fixture assembles one file")
+		})
+
+		t.Run("panics naming every kit defect at once", func(t *testing.T) {
+			t.Parallel()
+
+			recovered := assert.Panics(t, func() {
+				kitBackend(kitName, kitTarget).
+					KindTemplates(kitStructs()).
+					Funcs(kitFuncs).
+					Build()
+			}, "collected defects panic together")
+			text := fmt.Sprint(recovered)
+			assert.Contains(t, text, "Struct kind twice", "naming the kind defect")
+			assert.Contains(t, text, "helper twice", "naming the helper defect")
+		})
+
+		t.Run("panics naming every language fault at once", func(t *testing.T) {
+			t.Parallel()
+
+			recovered := assert.Panics(t, func() {
+				backend.New(kitName, kitTarget, kitSyntax()).Build()
+			}, "an empty language is a declaration defect")
+			text := fmt.Sprint(recovered)
+			for _, gap := range []string{
+				"kinds", "filenames", "scaffolding", "import block", "formatter",
+			} {
+				assert.Contains(t, text, gap, "naming the "+gap+" gap")
+			}
+		})
+	})
+
+	t.Run("RefusedKinds", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a backend whose refusals are the declared ones", func(t *testing.T) {
+			t.Parallel()
+
+			r, held := kitBackend(kitName, kitTarget).
+				RefusedKinds(map[symbol.Kind]string{symbol.KindEnum: kitReason}).
+				Build().(render.Refuser)
+			assert.True(t, held, "a kit backend reads its refusals back")
+			assert.Equal(t, r.RefusedKinds(), map[symbol.Kind]string{symbol.KindEnum: kitReason},
+				"as declared")
+		})
+
+		t.Run("merges the refusals of two declarations", func(t *testing.T) {
+			t.Parallel()
+
+			r, held := kitBackend(kitName, kitTarget).
+				RefusedKinds(map[symbol.Kind]string{symbol.KindEnum: kitReason}).
+				RefusedKinds(map[symbol.Kind]string{symbol.KindSum: kitReason}).
+				Build().(render.Refuser)
+			assert.True(t, held, "a kit backend reads its refusals back")
+			assert.Equal(t, r.RefusedKinds(),
+				map[symbol.Kind]string{symbol.KindEnum: kitReason, symbol.KindSum: kitReason},
+				"every declaration's refusals")
+		})
+
+		t.Run("returns no refusal for a declaration without one", func(t *testing.T) {
+			t.Parallel()
+
+			r, held := kitBackend(plainName, kitTarget).Build().(render.Refuser)
+			assert.True(t, held, "an undeclared refusal set still reads")
+			assert.Length(t, r.RefusedKinds(), 0, "the backend refuses nothing")
+		})
+
+		defects := []struct {
+			name  string
+			build func()
+			want  string
+		}{
+			{
+				name: "panics at Build for a kind refused twice",
+				build: func() {
+					kitBackend(kitName, kitTarget).
+						RefusedKinds(map[symbol.Kind]string{symbol.KindEnum: kitReason}).
+						RefusedKinds(map[symbol.Kind]string{symbol.KindEnum: kitReason}).
+						Build()
+				},
+				want: "refuses the " + symbol.KindEnum.String() + " kind twice",
+			},
+			{
+				name: "panics at Build for a kind both spelt and refused",
+				build: func() {
+					kitBackend(kitName, kitTarget).
+						RefusedKinds(map[symbol.Kind]string{symbol.KindStruct: kitReason}).
+						Build()
+				},
+				want: "spells and refuses the " + symbol.KindStruct.String() + " kind",
+			},
+			{
+				name: "panics at Build for a refusal without a reason",
+				build: func() {
+					kitBackend(kitName, kitTarget).
+						RefusedKinds(map[symbol.Kind]string{symbol.KindEnum: ""}).
+						Build()
+				},
+				want: "without a reason",
+			},
+		}
+		for _, tt := range defects {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				recovered := assert.Panics(t, tt.build, "a wrong refusal is a declaration defect")
+				assert.Contains(t, fmt.Sprint(recovered), tt.want, "naming the defect")
+			})
+		}
+	})
+
+	t.Run("Coverage", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a backend whose coverage is the declared one", func(t *testing.T) {
 			t.Parallel()
 
 			declared := render.Coverage{
@@ -416,68 +596,86 @@ func TestBackend(t *testing.T) {
 					symbol.FactAbstract: render.Refuses,
 				},
 			}
-			b := kitBackend("printer", "stub").Coverage(declared).Build()
-			c, held := b.(render.Coverer)
+			c, held := kitBackend(kitName, kitTarget).Coverage(declared).Build().(render.Coverer)
 			assert.True(t, held, "a kit backend reads its coverage back")
 			assert.Equal(t, c.Coverage().Of(symbol.KindStruct, symbol.FactAbstract),
 				render.Refuses, "as declared")
+		})
 
-			plain, held := kitBackend("plain", "stub").Build().(render.Coverer)
+		t.Run("returns an undeclared coverage for a declaration without one", func(t *testing.T) {
+			t.Parallel()
+
+			c, held := kitBackend(plainName, kitTarget).Build().(render.Coverer)
 			assert.True(t, held, "an undeclared coverage still reads")
-			assert.False(t, plain.Coverage().Declared(), "as undeclared")
+			assert.False(t, c.Coverage().Declared(), "as undeclared")
 		})
+	})
 
-		t.Run("panics with every kit defect in one message", func(t *testing.T) {
+	t.Run("Funcs", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("panics at Build for a nil part", func(t *testing.T) {
 			t.Parallel()
 
 			recovered := assert.Panics(t, func() {
-				kitBackend("printer", "stub").
-					KindTemplates(kitStructs()).
-					Funcs(kitFuncs()).
-					Build()
-			}, "collected defects fire together")
-			text := fmt.Sprint(recovered)
-			assert.Contains(t, text, "Struct kind twice", "the kind defect is named")
-			assert.Contains(t, text, "helper twice", "the helper defect is named")
+				kitBackend(kitName, kitTarget).Funcs(nil).Build()
+			}, "a nil part is a declaration defect")
+			assert.Contains(t, fmt.Sprint(recovered), "nil vocabulary", "naming the defect")
 		})
 
-		t.Run("panics with every language fault at once", func(t *testing.T) {
+		t.Run("panics at Build for a helper two parts declare", func(t *testing.T) {
 			t.Parallel()
 
 			recovered := assert.Panics(t, func() {
-				backend.New("printer", "stub", kitSyntax()).Build()
-			}, "an empty language is a declaration defect")
-			text := fmt.Sprint(recovered)
-			for _, gap := range []string{
-				"kinds", "filenames", "scaffolding", "import block", "formatter",
-			} {
-				assert.True(t, strings.Contains(text, gap),
-					"the message names every gap, "+gap+" included")
-			}
+				kitBackend(kitName, kitTarget).Funcs(kitFuncs).Build()
+			}, "one name spells through one helper")
+			assert.Contains(t, fmt.Sprint(recovered), strconv.Quote(upHelper),
+				"naming the helper")
+		})
+
+		t.Run("renders through every part bound to the file's import set", func(t *testing.T) {
+			t.Parallel()
+
+			b := backend.New(kitName, kitTarget, kitSyntax()).
+				FileTemplate(kitFile).
+				KindTemplates(map[symbol.Kind]string{
+					symbol.KindStruct: "type {{" + upHelper + " .Name}} {{" + qualifyHelper + " " +
+						strconv.Quote(storePkg) + " " + strconv.Quote(rowName) + "}}\n",
+				}).
+				KindTemplates(kitCallables()).
+				Funcs(kitFuncs).
+				Funcs(kitBinding).
+				Naming(kitNaming).
+				Scaffold(kitScaffold).
+				Imports(kitImports).
+				Finalise(kitFinalise).
+				Build()
+			files := kitRender(t, b)
+			assert.ContainsInOrder(t, string(files[0].Body), []string{
+				"import (" + runtimePkg + " " + storePkg + ")\n",
+				"type " + strings.ToUpper(rowName) + " " + storeLocal + "." + rowName + "\n",
+			}, "each part's helper renders, and the binding part's import is the file's")
 		})
 	})
 
 	t.Run("Version", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reads the declared version back", func(t *testing.T) {
+		t.Run("returns the declared version", func(t *testing.T) {
 			t.Parallel()
 
-			b, held := kitBackend("printer", "stub").
+			b, held := kitBackend(kitName, kitTarget).
 				Version(kitVersion).Build().(plugin.Versioned)
-			assert.True(t, held,
-				"a kit backend contributes to the run fingerprint")
-			assert.Equal(t, b.Version(), kitVersion,
-				"the version the declaration bumped, as declared")
+			assert.True(t, held, "a kit backend contributes to the run fingerprint")
+			assert.Equal(t, b.Version(), kitVersion, "the version as declared")
 		})
 
-		t.Run("reads empty where none was declared", func(t *testing.T) {
+		t.Run("returns empty for a declaration without a version", func(t *testing.T) {
 			t.Parallel()
 
-			b, held := kitBackend("plain", "stub").Build().(plugin.Versioned)
+			b, held := kitBackend(plainName, kitTarget).Build().(plugin.Versioned)
 			assert.True(t, held, "an undeclared version still reads")
-			assert.Equal(t, b.Version(), "",
-				"empty, so the fingerprint folds in nothing for it")
+			assert.Equal(t, b.Version(), "", "the fingerprint folds in nothing for it")
 		})
 	})
 
@@ -485,20 +683,24 @@ func TestBackend(t *testing.T) {
 		t.Parallel()
 
 		lowering := func() plugin.Backend {
-			return kitBackend("printer", "stub").Lower(kitLower).Build()
+			return kitBackend(kitName, kitTarget).Lower(kitLower).Build()
 		}
 
-		t.Run("declares the construct seam alone", func(t *testing.T) {
+		t.Run("returns a backend with the construct seam", func(t *testing.T) {
 			t.Parallel()
 
-			b := lowering()
-			_, lowers := b.(plugin.Lowerer)
-			assert.True(t, lowers, "a declared lowering carries the construct seam")
-			_, respells := b.(plugin.Respeller)
-			assert.False(t, respells, "and no name seam, because none was declared")
+			_, lowers := lowering().(plugin.Lowerer)
+			assert.True(t, lowers, "a declared lowering implements the construct seam")
 		})
 
-		t.Run("forwards a declaration to the declared hook", func(t *testing.T) {
+		t.Run("returns a backend without the name seam", func(t *testing.T) {
+			t.Parallel()
+
+			_, respells := lowering().(plugin.Respeller)
+			assert.False(t, respells, "no respell was declared")
+		})
+
+		t.Run("returns the declared hook's declarations", func(t *testing.T) {
 			t.Parallel()
 
 			l, held := lowering().(plugin.Lowerer)
@@ -511,25 +713,25 @@ func TestBackend(t *testing.T) {
 			assert.NoError(t, err, "the fixture hook takes a struct")
 			assert.Equal(t, structNames(t, out),
 				[]string{coretest.StructName, coretest.StructName + cursorSuffix},
-				"the hook's own answer arrives, in its own order")
+				"the hook's own declarations, in its own order")
 		})
 
-		t.Run("refuses an unsettled store", func(t *testing.T) {
+		t.Run("returns an error rendering an unsettled store", func(t *testing.T) {
 			t.Parallel()
 
 			err := kitUnsettled(t, lowering())
-			assert.HasError(t, err, "an unsettled store never reaches the pass")
-			assert.Contains(t, err.Error(), "unsettled",
-				"and the refusal names why no bytes were written")
+			assert.HasError(t, err, "an unsettled store is never rendered")
+			assert.Contains(t, err.Error(), "unsettled", "naming why no bytes were written")
 		})
 
-		t.Run("renders the lowered declarations once settled", func(t *testing.T) {
+		t.Run("renders the lowered declarations of a settled store", func(t *testing.T) {
 			t.Parallel()
 
 			files := kitSettled(t, lowering())
 			assert.Length(t, files, 1, "the fixture assembles one file")
+			upper := strings.ToUpper(rowName)
 			assert.ContainsInOrder(t, string(files[0].Body),
-				[]string{"type ROW struct{}", "type ROWCURSOR struct{}"},
+				[]string{"type " + upper + " struct{}", "type " + upper + strings.ToUpper(cursorSuffix) + " struct{}"},
 				"the companion the hook produced renders beside its input")
 		})
 	})
@@ -538,20 +740,24 @@ func TestBackend(t *testing.T) {
 		t.Parallel()
 
 		respelling := func() plugin.Backend {
-			return kitBackend("printer", "stub").Respell(kitRespell).Build()
+			return kitBackend(kitName, kitTarget).Respell(kitRespell).Build()
 		}
 
-		t.Run("declares the name seam alone", func(t *testing.T) {
+		t.Run("returns a backend with the name seam", func(t *testing.T) {
 			t.Parallel()
 
-			b := respelling()
-			_, respells := b.(plugin.Respeller)
-			assert.True(t, respells, "a declared respell carries the name seam")
-			_, lowers := b.(plugin.Lowerer)
-			assert.False(t, lowers, "and no construct seam, because none was declared")
+			_, respells := respelling().(plugin.Respeller)
+			assert.True(t, respells, "a declared respell implements the name seam")
 		})
 
-		t.Run("forwards a name to the declared hook", func(t *testing.T) {
+		t.Run("returns a backend without the construct seam", func(t *testing.T) {
+			t.Parallel()
+
+			_, lowers := respelling().(plugin.Lowerer)
+			assert.False(t, lowers, "no lowering was declared")
+		})
+
+		t.Run("returns the declared hook's name", func(t *testing.T) {
 			t.Parallel()
 
 			r, held := respelling().(plugin.Respeller)
@@ -559,27 +765,26 @@ func TestBackend(t *testing.T) {
 			got, err := r.Respell(symbol.KindInvalid, symbol.KindStruct,
 				symbol.VisibilityPublic, coretest.StructName)
 			assert.NoError(t, err, "the fixture hook spells every name")
-			assert.Equal(t, got, respellPrefix+coretest.StructName,
-				"the hook's own answer arrives unchanged")
+			assert.Equal(t, got, respellPrefix+coretest.StructName, "the hook's own name")
 		})
 
-		t.Run("refuses an unsettled store", func(t *testing.T) {
+		t.Run("returns an error rendering an unsettled store", func(t *testing.T) {
 			t.Parallel()
 
 			err := kitUnsettled(t, respelling())
-			assert.HasError(t, err, "an unsettled store never reaches the pass")
-			assert.Contains(t, err.Error(), "unsettled",
-				"and the refusal names why no bytes were written")
+			assert.HasError(t, err, "an unsettled store is never rendered")
+			assert.Contains(t, err.Error(), "unsettled", "naming why no bytes were written")
 		})
 
-		t.Run("renders the respelt names once settled", func(t *testing.T) {
+		t.Run("renders the respelt names of a settled store", func(t *testing.T) {
 			t.Parallel()
 
 			files := kitSettled(t, respelling())
 			assert.Length(t, files, 1, "the fixture assembles one file")
-			assert.ContainsInOrder(t, string(files[0].Body),
-				[]string{"type T_ROW struct{}", "func t_Load() {"},
-				"every declared name renders through the convention")
+			assert.ContainsInOrder(t, string(files[0].Body), []string{
+				"type " + strings.ToUpper(respellPrefix+rowName) + " struct{}",
+				"func " + respellPrefix + loadName + "() {",
+			}, "every declared name renders through the convention")
 		})
 	})
 }

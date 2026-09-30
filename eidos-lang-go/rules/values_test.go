@@ -4,6 +4,7 @@
 package rules_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -16,6 +17,83 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// The spellings the value cases name: Go builtins, standard-library
+// types, and spellings no package in the view declares.
+const (
+	intSpelling        = "int"
+	int8Spelling       = "int8"
+	int64Spelling      = "int64"
+	uint8Spelling      = "uint8"
+	uint64Spelling     = "uint64"
+	float32Spelling    = "float32"
+	float64Spelling    = "float64"
+	boolSpelling       = "bool"
+	stringSpelling     = "string"
+	byteSpelling       = "byte"
+	runeSpelling       = "rune"
+	anySpelling        = "any"
+	errorSpelling      = "error"
+	comparableSpelling = "comparable"
+	complexSpelling    = "complex128"
+	pointerSpelling    = "unsafe.Pointer"
+	durationSpelling   = "time.Duration"
+	uuidSpelling       = "uuid.UUID"
+	unknownSpelling    = "Unknown"
+)
+
+// The fixture's declarations and fields the value cases derive.
+const (
+	rowType    = "Row"
+	weightType = "Weight"
+	plainType  = "Plain"
+	colorType  = "Color"
+	modeType   = "Mode"
+	bareType   = "Bare"
+	readerType = "Reader"
+	ghostType  = "Ghost"
+	loopType   = "Loop"
+	idField    = "ID"
+	nextField  = "Next"
+)
+
+// The values the builtin table derives, pinned: the numbers, the
+// truth values, the hint a string takes where the caller names none
+// with the suffixes of its two halves, time.Time's seconds, and the
+// widths.
+const (
+	derivedInt       = "42"
+	derivedAltInt    = "7"
+	derivedFloat     = "1.5"
+	derivedAltFloat  = "2.5"
+	derivedSmall     = "1"
+	derivedAltSmall  = "2"
+	zeroText         = "0"
+	trueText         = "true"
+	falseText        = "false"
+	defaultHint      = "sample"
+	sampleSuffix     = "-a"
+	alternateSuffix  = "-b"
+	unixName         = "Unix"
+	sampleSeconds    = "1700000000"
+	alternateSeconds = "1700000001"
+	bits8            = 8
+	bits32           = 32
+	bits64           = 64
+)
+
+// The hints the cases pass, and the values an author states.
+const (
+	nameHint       = "name"
+	tagHint        = "tag"
+	keyHint        = "k"
+	authoredWeight = "0.5"
+	otherWeight    = "0.25"
+	authoredID     = "5"
+	otherID        = "6"
+	authoredRow    = "Row{ID: 1}"
+	otherRow       = "Row{ID: 2}"
+)
+
 // pairOf derives a reference's pair and fails unless both derived.
 func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Value, emit.Value) {
 	tb.Helper()
@@ -26,378 +104,699 @@ func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Valu
 	return sample.Value, alternate.Value
 }
 
+// refusalOf returns the refusal of a reference's sample.
+func refusalOf(f *fixture, ref *node.TypeRef) rules.Refusal {
+	sample, _ := gorules.New().SamplesOf(ref, "", f.view)
+	return sample.Refusal
+}
+
+// A generated check writes every value through these three, so each
+// derivation, each refusal and each authored part is pinned here.
 func TestValues(t *testing.T) {
 	t.Parallel()
 
 	t.Run("SamplesOf", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("derives the builtins from the table", func(t *testing.T) {
+		builtins := []struct {
+			name          string
+			give          string
+			giveHint      string
+			wantSample    emit.Value
+			wantAlternate emit.Value
+		}{
+			{
+				name:          "returns 42 and 7 for int",
+				give:          intSpelling,
+				wantSample:    emit.Literal(emit.LiteralInt, derivedInt),
+				wantAlternate: emit.Literal(emit.LiteralInt, derivedAltInt),
+			},
+			{
+				name:          "returns floats at 64 bits for float64",
+				give:          float64Spelling,
+				wantSample:    emit.Number(emit.LiteralFloat, derivedFloat, bits64),
+				wantAlternate: emit.Number(emit.LiteralFloat, derivedAltFloat, bits64),
+			},
+			{
+				name:          "returns floats at 32 bits for float32",
+				give:          float32Spelling,
+				wantSample:    emit.Number(emit.LiteralFloat, derivedFloat, bits32),
+				wantAlternate: emit.Number(emit.LiteralFloat, derivedAltFloat, bits32),
+			},
+			{
+				name:          "returns integers at 64 bits for int64",
+				give:          int64Spelling,
+				wantSample:    emit.Number(emit.LiteralInt, derivedInt, bits64),
+				wantAlternate: emit.Number(emit.LiteralInt, derivedAltInt, bits64),
+			},
+			{
+				name:          "returns small integers at 8 bits for byte",
+				give:          byteSpelling,
+				wantSample:    emit.Number(emit.LiteralInt, derivedSmall, bits8),
+				wantAlternate: emit.Number(emit.LiteralInt, derivedAltSmall, bits8),
+			},
+			{
+				name:          "returns true and false for bool",
+				give:          boolSpelling,
+				wantSample:    emit.Literal(emit.LiteralBool, trueText),
+				wantAlternate: emit.Literal(emit.LiteralBool, falseText),
+			},
+			{
+				name:          "returns the hint with a suffix per half for string",
+				give:          stringSpelling,
+				giveHint:      nameHint,
+				wantSample:    emit.Literal(emit.LiteralString, nameHint+sampleSuffix),
+				wantAlternate: emit.Literal(emit.LiteralString, nameHint+alternateSuffix),
+			},
+			{
+				name:          "returns the default hint for a string without a hint",
+				give:          stringSpelling,
+				wantSample:    emit.Literal(emit.LiteralString, defaultHint+sampleSuffix),
+				wantAlternate: emit.Literal(emit.LiteralString, defaultHint+alternateSuffix),
+			},
+		}
+		for _, tt := range builtins {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, a := pairOf(t, loaded(t), builtin(tt.give), tt.giveHint)
+				assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{tt.wantSample, tt.wantAlternate},
+					"the builtin table's pair")
+			})
+		}
+
+		t.Run("returns two calls of time.Unix for time.Time", func(t *testing.T) {
 			t.Parallel()
 
-			f := loaded(t)
-			s, a := pairOf(t, f, builtin("int"), "")
-			assert.Equal(t, s, emit.Literal(emit.LiteralInt, "42"), "an integer")
-			assert.Equal(t, a, emit.Literal(emit.LiteralInt, "7"), "and its alternate")
-			s, _ = pairOf(t, f, builtin("float64"), "")
-			assert.Equal(t, s.Literal, emit.LiteralFloat, "a float")
-			s, a = pairOf(t, f, builtin("float32"), "")
-			assert.Equal(t, s, emit.Number(emit.LiteralFloat, "1.5", 32), "a float states its width")
-			assert.Equal(t, a.Bits, 32, "and so does its alternate")
-			s, _ = pairOf(t, f, builtin("int64"), "")
-			assert.Equal(t, s, emit.Number(emit.LiteralInt, "42", 64), "an integer states its width")
-			s, a = pairOf(t, f, builtin("bool"), "")
-			assert.Equal(t, s.Text, "true", "a boolean")
-			assert.Equal(t, a.Text, "false", "and its opposite")
-			s, a = pairOf(t, f, builtin("string"), "name")
-			assert.Equal(
-				t,
-				s,
-				emit.Literal(emit.LiteralString, "name-a"),
-				"a string carries the hint",
-			)
-			assert.Equal(t, a.Text, "name-b", "and differs in its suffix")
-			s, _ = pairOf(t, f, builtin("string"), "")
-			assert.Equal(t, s.Text, "sample-a", "a string without a hint takes the default")
-			s, _ = pairOf(t, f, builtin("byte"), "")
-			assert.Equal(t, s.Text, "1", "a byte stays small")
-			s, a = pairOf(t, f, builtin("time.Time"), "")
-			assert.Equal(t, s.Kind, emit.ValueCall, "time.Time is a call")
-			assert.Equal(t, s.Callee.Package, "time", "into the time package")
-			assert.True(t, s.Args[0].Text != a.Args[0].Text, "differing in its first argument")
-			s, _ = pairOf(t, f, builtin("time.Duration"), "")
-			assert.Equal(t, s.Kind, emit.ValueConversion, "time.Duration is a conversion")
-			for _, spelling := range []string{"any", "error", "comparable", "complex128", "unsafe.Pointer"} {
-				sample, _ := gorules.New().SamplesOf(builtin(spelling), "", f.view)
-				assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral, spelling+" has no literal")
-			}
-			for _, spelling := range []string{"uuid.UUID", "Row"} {
-				sample, _ := gorules.New().SamplesOf(builtin(spelling), "", f.view)
-				assert.Equal(t, sample.Refusal, rules.RefusedUnresolved,
-					spelling+" names a type the view does not hold")
-			}
+			s, a := pairOf(t, loaded(t), builtin(timeSpelling), "")
+			unix := symbol.Identity{Lang: golang.Lang, Package: timePath, Name: unixName, Kind: symbol.KindFunction}
+			zero := emit.Literal(emit.LiteralInt, zeroText)
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Call(unix, emit.Literal(emit.LiteralInt, sampleSeconds), zero),
+				emit.Call(unix, emit.Literal(emit.LiteralInt, alternateSeconds), zero),
+			}, "the standard library is never in the graph, so the call is curated")
 		})
 
-		t.Run("derives composites from their children", func(t *testing.T) {
+		t.Run("returns two conversions for time.Duration", func(t *testing.T) {
 			t.Parallel()
 
-			f := loaded(t)
-			s, a := pairOf(t, f, composite("*Row", symbol.FormOptional, ref(fxPath, "Row", symbol.KindStruct)), "")
-			assert.Equal(t, s.Kind, emit.ValueAddress, "a pointer takes the address")
-			assert.Equal(t, s.Inner.Kind, emit.ValueComposite, "of the inner composite")
-			assert.True(t, s.Inner.Fields[0].Value.Text != a.Inner.Fields[0].Value.Text, "differing inside")
-			pointer, _ := gorules.New().SamplesOf(composite("*int", symbol.FormOptional, builtin("int")), "", f.view)
-			assert.Equal(t, pointer.Refusal, rules.RefusedNoLiteral,
-				"a pointer to a builtin refuses, because Go takes no address of a literal")
-			s, a = pairOf(t, f, composite("[]string", symbol.FormList, builtin("string")), "tag")
-			assert.Equal(t, s.Kind, emit.ValueComposite, "a slice is a composite")
-			assert.Length(t, s.Fields, 1, "of one element")
-			assert.Equal(t, s.Fields[0].Name, "", "positional, because a list names nothing")
-			assert.True(t, s.Fields[0].Value.Text != a.Fields[0].Value.Text, "differing in the element")
-			s, a = pairOf(
-				t,
-				f,
-				composite("map[string]int", symbol.FormMap, builtin("string"), builtin("int")),
-				"k",
-			)
-			assert.Length(t, s.Fields, 1, "a map holds one keyed entry")
-			assert.NotNil(t, s.Fields[0].Key, "which states its key")
-			assert.True(t, s.Fields[0].Key.Text != a.Fields[0].Key.Text, "differing in the key")
-			assert.Equal(t, s.Fields[0].Value.Text, a.Fields[0].Value.Text, "with one value")
-			anyMap := composite("map[string]any", symbol.FormMap, builtin("string"), builtin("any"))
-			sample, _ := gorules.New().SamplesOf(anyMap, "", f.view)
-			assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral, "a map refuses with its value")
-			for _, ref := range []*node.TypeRef{
-				composite("func()", symbol.FormFunc),
-				composite("chan int", symbol.FormStream, builtin("int")),
-				{Spelling: "struct{}", Form: symbol.FormInline},
-			} {
-				refusedSample, _ := gorules.New().SamplesOf(ref, "", f.view)
-				assert.Equal(
-					t,
-					refusedSample.Refusal,
-					rules.RefusedNoLiteral,
-					ref.Spelling+" has no literal",
-				)
-			}
-			sample, _ = gorules.New().SamplesOf(nil, "", f.view)
-			assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral, "no reference, no literal")
+			ref := builtin(durationSpelling)
+			s, a := pairOf(t, loaded(t), ref, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Conversion(rules.EmitRef(ref), emit.Literal(emit.LiteralInt, derivedSmall)),
+				emit.Conversion(rules.EmitRef(ref), emit.Literal(emit.LiteralInt, derivedAltSmall)),
+			}, "a duration converts a small integer")
 		})
 
-		t.Run("derives workspace types from their declarations", func(t *testing.T) {
+		refusals := []struct {
+			name string
+			give *node.TypeRef
+			want rules.Refusal
+		}{
+			{name: "returns RefusedNoLiteral for any", give: builtin(anySpelling), want: rules.RefusedNoLiteral},
+			{name: "returns RefusedNoLiteral for error", give: builtin(errorSpelling), want: rules.RefusedNoLiteral},
+			{
+				name: "returns RefusedNoLiteral for comparable",
+				give: builtin(comparableSpelling), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for complex128",
+				give: builtin(complexSpelling), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for unsafe.Pointer",
+				give: builtin(pointerSpelling), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedUnresolved for a qualified spelling outside the view",
+				give: builtin(uuidSpelling), want: rules.RefusedUnresolved,
+			},
+			{
+				name: "returns RefusedUnresolved for a bare spelling without a target",
+				give: builtin(rowType), want: rules.RefusedUnresolved,
+			},
+			{
+				name: "returns RefusedNoLiteral for a pointer to a builtin",
+				give: composite("*int", symbol.FormOptional, builtin(intSpelling)), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for a map whose value has no literal",
+				give: composite("map[string]any", symbol.FormMap, builtin(stringSpelling), builtin(anySpelling)),
+				want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for a function type",
+				give: composite("func()", symbol.FormFunc), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for a channel",
+				give: composite("chan int", symbol.FormStream, builtin(intSpelling)), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for an inline struct",
+				give: &node.TypeRef{Spelling: "struct{}", Form: symbol.FormInline}, want: rules.RefusedNoLiteral,
+			},
+			{name: "returns RefusedNoLiteral for a nil reference", want: rules.RefusedNoLiteral},
+			{
+				name: "returns RefusedNoLiteral for a struct with nothing settable",
+				give: ref(fxPath, bareType, symbol.KindStruct), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for an interface",
+				give: ref(fxPath, readerType, symbol.KindInterface), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedUnresolved for a type the view does not contain",
+				give: ref(fxPath, ghostType, symbol.KindStruct), want: rules.RefusedUnresolved,
+			},
+			{
+				name: "returns RefusedUnresolved for a pointer to a type the view does not contain",
+				give: composite("*Loop", symbol.FormOptional, ref(fxPath, loopType, symbol.KindStruct)),
+				want: rules.RefusedUnresolved,
+			},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, refusalOf(loaded(t), tt.give), tt.want, "the refusal names its reason")
+			})
+		}
+
+		t.Run("returns the address of a composite for a pointer to a struct", func(t *testing.T) {
 			t.Parallel()
 
-			f := loaded(t)
-			s, a := pairOf(t, f, ref(fxPath, "Row", symbol.KindStruct), "")
-			assert.Equal(t, s.Kind, emit.ValueComposite, "a struct is a composite")
-			assert.Equal(t, s.Fields[0].Name, "ID", "setting its first exported field")
-			assert.True(t, s.Fields[0].Value.Text != a.Fields[0].Value.Text, "differing there")
-			assert.Equal(
-				t,
-				s.Type.Target,
-				id(fxPath, "Row", symbol.KindStruct),
-				"typed by the reference",
-			)
-			s, _ = pairOf(t, f, ref(fxPath, "Weight", symbol.KindAlias), "")
-			assert.Equal(t, s.Kind, emit.ValueConversion, "a defined type converts")
-			assert.Equal(t, s.Inner.Literal, emit.LiteralFloat, "its underlying pair")
-			s, _ = pairOf(t, f, ref(fxPath, "Plain", symbol.KindAlias), "")
-			assert.Equal(t, s.Kind, emit.ValueLiteral, "a transparent alias is its target")
-			s, a = pairOf(t, f, ref(fxPath, "Color", symbol.KindEnum), "")
-			assert.Equal(t, s.Kind, emit.ValueConversion, "an enumeration converts")
-			assert.Equal(
-				t,
-				*s.Inner,
-				emit.Raw(golang.Lang, "0"),
-				"the exact value the frontend stamped, as Go text",
-			)
-			assert.Equal(t, a.Inner.Text, "1", "and the next")
-			s, _ = pairOf(t, f, ref(fxPath, "Mode", symbol.KindEnum), "")
-			assert.Equal(t, *s.Inner, emit.Raw(golang.Lang, `"read"`), "a string enumeration's too")
-			sample, _ := gorules.New().SamplesOf(ref(fxPath, "Bare", symbol.KindStruct), "", f.view)
-			assert.Equal(
-				t,
-				sample.Refusal,
-				rules.RefusedNoLiteral,
-				"a struct with nothing settable has one value",
-			)
-			sample, _ = gorules.New().
-				SamplesOf(ref(fxPath, "Reader", symbol.KindInterface), "", f.view)
-			assert.Equal(t, sample.Refusal, rules.RefusedNoLiteral, "an interface has no literal")
-			sample, _ = gorules.New().SamplesOf(ref(fxPath, "Ghost", symbol.KindStruct), "", f.view)
-			assert.Equal(
-				t,
-				sample.Refusal,
-				rules.RefusedUnresolved,
-				"a type the view does not hold is unresolved",
-			)
+			row := ref(fxPath, rowType, symbol.KindStruct)
+			s, _ := pairOf(t, loaded(t), composite("*Row", symbol.FormOptional, row), "")
+			assert.Equal(t, s, emit.Address(emit.Composite(rules.EmitRef(row),
+				emit.NamedField(idField, emit.Literal(emit.LiteralInt, derivedInt)))),
+				"Go takes the address of a composite literal")
 		})
 
-		t.Run("stops a self-referential derivation at the budget", func(t *testing.T) {
+		t.Run("returns a one-element composite for a slice", func(t *testing.T) {
+			t.Parallel()
+
+			slice := composite("[]string", symbol.FormList, builtin(stringSpelling))
+			s, a := pairOf(t, loaded(t), slice, tagHint)
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(slice),
+					emit.Element(emit.Literal(emit.LiteralString, tagHint+sampleSuffix))),
+				emit.Composite(rules.EmitRef(slice),
+					emit.Element(emit.Literal(emit.LiteralString, tagHint+alternateSuffix))),
+			}, "the halves differ in the element")
+		})
+
+		t.Run("returns a one-entry composite for a map", func(t *testing.T) {
+			t.Parallel()
+
+			m := composite("map[string]int", symbol.FormMap, builtin(stringSpelling), builtin(intSpelling))
+			s, a := pairOf(t, loaded(t), m, keyHint)
+			value := emit.Literal(emit.LiteralInt, derivedInt)
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(m),
+					emit.KeyedEntry(emit.Literal(emit.LiteralString, keyHint+sampleSuffix), value)),
+				emit.Composite(rules.EmitRef(m),
+					emit.KeyedEntry(emit.Literal(emit.LiteralString, keyHint+alternateSuffix), value)),
+			}, "the halves differ in the key, because a map to an empty struct is a set")
+		})
+
+		t.Run("returns a composite setting the first exported field for a struct", func(t *testing.T) {
+			t.Parallel()
+
+			row := ref(fxPath, rowType, symbol.KindStruct)
+			s, _ := pairOf(t, loaded(t), row, "")
+			assert.Equal(t, s, emit.Composite(rules.EmitRef(row),
+				emit.NamedField(idField, emit.Literal(emit.LiteralInt, derivedInt))),
+				"a constructor in another package sets the exported field")
+		})
+
+		t.Run("returns a conversion of the underlying pair for a defined type", func(t *testing.T) {
+			t.Parallel()
+
+			weight := ref(fxPath, weightType, symbol.KindAlias)
+			s, _ := pairOf(t, loaded(t), weight, "")
+			assert.Equal(t, s,
+				emit.Conversion(rules.EmitRef(weight), emit.Number(emit.LiteralFloat, derivedFloat, bits64)),
+				"Weight is a float64")
+		})
+
+		t.Run("returns the target's pair for a transparent alias", func(t *testing.T) {
+			t.Parallel()
+
+			s, _ := pairOf(t, loaded(t), ref(fxPath, plainType, symbol.KindAlias), "")
+			assert.Equal(t, s, emit.Literal(emit.LiteralInt, derivedInt), "Plain is int")
+		})
+
+		t.Run("returns conversions of the stamped values for an enumeration", func(t *testing.T) {
+			t.Parallel()
+
+			color := ref(fxPath, colorType, symbol.KindEnum)
+			s, a := pairOf(t, loaded(t), color, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Conversion(rules.EmitRef(color), emit.Raw(golang.Lang, "0")),
+				emit.Conversion(rules.EmitRef(color), emit.Raw(golang.Lang, "1")),
+			}, "the exact values the frontend stamped, as Go text")
+		})
+
+		t.Run("returns conversions of the stamped strings for a string enumeration", func(t *testing.T) {
+			t.Parallel()
+
+			mode := ref(fxPath, modeType, symbol.KindEnum)
+			s, a := pairOf(t, loaded(t), mode, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Conversion(rules.EmitRef(mode), emit.Raw(golang.Lang, `"read"`)),
+				emit.Conversion(rules.EmitRef(mode), emit.Raw(golang.Lang, `"write"`)),
+			}, "the exact values the frontend stamped, quotes included")
+		})
+
+		t.Run("derives a pointer to a struct whose first field is no pointer", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			next := f.field(t, "Row", "Next")
-			sample, _ := gorules.New().SamplesOf(next.Type, "", f.view)
-			assert.True(t, sample.OK(),
-				"a pointer to the row derives, because the row's first field is not the pointer")
-			loop := &node.TypeRef{
-				Spelling: "*Loop",
-				Form:     symbol.FormOptional,
-				Elems: []*node.TypeRef{
-					{Spelling: "Loop", Target: id(fxPath, "Loop", symbol.KindStruct)},
-				},
+			sample, _ := gorules.New().SamplesOf(f.field(t, rowType, nextField).Type, "", f.view)
+			assert.True(t, sample.OK(), "Row's first field is ID, so the walk ends there")
+		})
+
+		t.Run("returns the values authored on an element's type for a slice", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			stampWeight(t, f)
+			slice := composite("[]Weight", symbol.FormList, ref(fxPath, weightType, symbol.KindAlias))
+			s, a := pairOf(t, f, slice, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(slice),
+					emit.Element(emit.Number(emit.LiteralFloat, authoredWeight, bits64))),
+				emit.Composite(rules.EmitRef(slice),
+					emit.Element(emit.Number(emit.LiteralFloat, otherWeight, bits64))),
+			}, "each element takes the number the author stated on Weight")
+		})
+
+		t.Run("returns the values authored on a key's type for a map", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			stampWeight(t, f)
+			weight := ref(fxPath, weightType, symbol.KindAlias)
+			m := composite("map[Weight]int", symbol.FormMap, weight, builtin(intSpelling))
+			s, a := pairOf(t, f, m, "")
+			value := emit.Literal(emit.LiteralInt, derivedInt)
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(m),
+					emit.KeyedEntry(emit.Number(emit.LiteralFloat, authoredWeight, bits64), value)),
+				emit.Composite(rules.EmitRef(m),
+					emit.KeyedEntry(emit.Number(emit.LiteralFloat, otherWeight, bits64), value)),
+			}, "each key takes the number the author stated on Weight")
+		})
+
+		t.Run("returns the value authored on a map value's type", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			stampWeight(t, f)
+			weight := ref(fxPath, weightType, symbol.KindAlias)
+			m := composite("map[string]Weight", symbol.FormMap, builtin(stringSpelling), weight)
+			s, _ := pairOf(t, f, m, keyHint)
+			assert.Equal(t, s, emit.Composite(rules.EmitRef(m), emit.KeyedEntry(
+				emit.Literal(emit.LiteralString, keyHint+sampleSuffix),
+				emit.Number(emit.LiteralFloat, authoredWeight, bits64),
+			)), "the entry's value takes the number the author stated on Weight")
+		})
+
+		t.Run("returns the values authored on a field for a struct", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			field := f.field(t, rowType, idField).ID
+			stamp(t, f.Facts, field, f.Keys.Sample, authoredID)
+			stamp(t, f.Facts, field, f.Keys.Alternate, otherID)
+			row := ref(fxPath, rowType, symbol.KindStruct)
+			s, a := pairOf(t, f, row, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(row),
+					emit.NamedField(idField, emit.Literal(emit.LiteralInt, authoredID))),
+				emit.Composite(rules.EmitRef(row),
+					emit.NamedField(idField, emit.Literal(emit.LiteralInt, otherID))),
+			}, "the composite sets the values the author stated on ID")
+		})
+
+		t.Run("reads no field of an element whose type states both halves", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			row := ref(fxPath, rowType, symbol.KindStruct)
+			stamp(t, f.Facts, row.Target, f.Keys.Sample, authoredRow)
+			stamp(t, f.Facts, row.Target, f.Keys.Alternate, otherRow)
+			pairOf(t, f, composite("[]Row", symbol.FormList, row), "")
+			var read []symbol.Identity
+			for subject := range f.reads.Facts() {
+				read = append(read, subject)
 			}
-			sample, _ = gorules.New().SamplesOf(loop, "", f.view)
-			assert.Equal(
-				t,
-				sample.Refusal,
-				rules.RefusedUnresolved,
-				"a type outside the fixture is unresolved before any depth",
-			)
+			assert.False(t, slices.Contains(read, f.field(t, rowType, idField).ID),
+				"the authored pair depends on no derivation, so no field of Row is an edge")
+		})
+
+		t.Run("completes an element's unstated half with the derived value", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			weight := ref(fxPath, weightType, symbol.KindAlias)
+			stamp(t, f.Facts, weight.Target, f.Keys.Sample, authoredWeight)
+			slice := composite("[]Weight", symbol.FormList, weight)
+			s, a := pairOf(t, f, slice, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(slice),
+					emit.Element(emit.Number(emit.LiteralFloat, authoredWeight, bits64))),
+				emit.Composite(rules.EmitRef(slice), emit.Element(
+					emit.Conversion(rules.EmitRef(weight), emit.Number(emit.LiteralFloat, derivedAltFloat, bits64)),
+				)),
+			}, "the authored element pairs with Weight's derived alternate")
 		})
 	})
 
 	t.Run("ZeroValue", func(t *testing.T) {
 		t.Parallel()
 
-		f := loaded(t)
-		r := gorules.New()
-		zero := func(ref *node.TypeRef) emit.Value {
-			v, ok := r.ZeroValue(ref, f.view)
-			assert.True(t, ok, "the zero derives for "+ref.Spelling)
-			return v
+		durationRef := builtin(durationSpelling)
+		timeRef := builtin(timeSpelling)
+		array := composite("[3]int", symbol.FormArray, builtin(intSpelling))
+		row := ref(fxPath, rowType, symbol.KindStruct)
+		color := ref(fxPath, colorType, symbol.KindEnum)
+		mode := ref(fxPath, modeType, symbol.KindEnum)
+		weight := ref(fxPath, weightType, symbol.KindAlias)
+		nilValue := emit.Literal(emit.LiteralNil, "")
+		tests := []struct {
+			name string
+			give *node.TypeRef
+			want emit.Value
+		}{
+			{name: "returns 0 for int", give: builtin(intSpelling), want: emit.Literal(emit.LiteralInt, zeroText)},
+			{
+				name: "returns 0 at 64 bits for float64",
+				give: builtin(float64Spelling), want: emit.Number(emit.LiteralFloat, zeroText, bits64),
+			},
+			{
+				name: "returns 0 at 32 bits for float32",
+				give: builtin(float32Spelling), want: emit.Number(emit.LiteralFloat, zeroText, bits32),
+			},
+			{name: "returns nil for unsafe.Pointer", give: builtin(pointerSpelling), want: nilValue},
+			{
+				name: "returns false for bool",
+				give: builtin(boolSpelling), want: emit.Literal(emit.LiteralBool, falseText),
+			},
+			{
+				name: "returns the empty string for string",
+				give: builtin(stringSpelling), want: emit.Literal(emit.LiteralString, ""),
+			},
+			{name: "returns nil for any", give: builtin(anySpelling), want: nilValue},
+			{
+				name: "returns the empty composite for time.Time",
+				give: timeRef, want: emit.Composite(rules.EmitRef(timeRef)),
+			},
+			{
+				name: "returns a conversion of 0 for time.Duration",
+				give: durationRef,
+				want: emit.Conversion(rules.EmitRef(durationRef), emit.Literal(emit.LiteralInt, zeroText)),
+			},
+			{
+				name: "returns nil for a pointer",
+				give: composite("*int", symbol.FormOptional, builtin(intSpelling)), want: nilValue,
+			},
+			{
+				name: "returns the empty composite for an array",
+				give: array, want: emit.Composite(rules.EmitRef(array)),
+			},
+			{name: "returns the empty composite for a struct", give: row, want: emit.Composite(rules.EmitRef(row))},
+			{
+				name: "returns nil for an interface",
+				give: ref(fxPath, readerType, symbol.KindInterface), want: nilValue,
+			},
+			{
+				name: "returns a conversion of 0 for an enumeration",
+				give: color,
+				want: emit.Conversion(rules.EmitRef(color), emit.Literal(emit.LiteralInt, zeroText)),
+			},
+			{
+				name: "returns a conversion of the empty string for a string enumeration",
+				give: mode,
+				want: emit.Conversion(rules.EmitRef(mode), emit.Literal(emit.LiteralString, "")),
+			},
+			{
+				name: "returns a conversion of the underlying zero for a defined type",
+				give: weight,
+				want: emit.Conversion(rules.EmitRef(weight), emit.Number(emit.LiteralFloat, zeroText, bits64)),
+			},
+			{
+				name: "returns the target's zero for a transparent alias",
+				give: ref(fxPath, plainType, symbol.KindAlias), want: emit.Literal(emit.LiteralInt, zeroText),
+			},
 		}
-		assert.Equal(
-			t,
-			zero(builtin("int")),
-			emit.Literal(emit.LiteralInt, "0"),
-			"an integer's zero",
-		)
-		assert.Equal(t, zero(builtin("float64")).Literal, emit.LiteralFloat, "a float's")
-		assert.Equal(t, zero(builtin("float32")), emit.Number(emit.LiteralFloat, "0", 32),
-			"a float's at its width")
-		assert.Equal(t, zero(builtin("unsafe.Pointer")).Literal, emit.LiteralNil, "an unsafe pointer's")
-		assert.Equal(t, zero(builtin("bool")).Text, "false", "a boolean's")
-		assert.Equal(t, zero(builtin("string")), emit.Literal(emit.LiteralString, ""), "a string's")
-		assert.Equal(t, zero(builtin("any")).Literal, emit.LiteralNil, "an interface's")
-		assert.Equal(
-			t,
-			zero(builtin("time.Time")).Kind,
-			emit.ValueComposite,
-			"time.Time's is the empty struct",
-		)
-		assert.Equal(
-			t,
-			zero(builtin("time.Duration")).Kind,
-			emit.ValueConversion,
-			"time.Duration's converts",
-		)
-		assert.Equal(
-			t,
-			zero(composite("*int", symbol.FormOptional, builtin("int"))).Literal,
-			emit.LiteralNil,
-			"a pointer's",
-		)
-		assert.Equal(
-			t,
-			zero(composite("[3]int", symbol.FormArray, builtin("int"))).Kind,
-			emit.ValueComposite,
-			"an array's",
-		)
-		assert.Equal(
-			t,
-			zero(ref(fxPath, "Row", symbol.KindStruct)).Kind,
-			emit.ValueComposite,
-			"a struct's",
-		)
-		assert.Equal(
-			t,
-			zero(ref(fxPath, "Reader", symbol.KindInterface)).Literal,
-			emit.LiteralNil,
-			"an interface's",
-		)
-		assert.Equal(
-			t,
-			zero(ref(fxPath, "Color", symbol.KindEnum)),
-			emit.Conversion(rules.EmitRef(ref(fxPath, "Color", symbol.KindEnum)), emit.Literal(emit.LiteralInt, "0")),
-			"an enumeration's converts its underlying zero",
-		)
-		assert.Equal(
-			t,
-			*zero(ref(fxPath, "Mode", symbol.KindEnum)).Inner,
-			emit.Literal(emit.LiteralString, ""),
-			"a string enumeration's zero is the empty string",
-		)
-		assert.Equal(
-			t,
-			zero(ref(fxPath, "Weight", symbol.KindAlias)).Kind,
-			emit.ValueConversion,
-			"a defined type's",
-		)
-		assert.Equal(
-			t,
-			zero(ref(fxPath, "Plain", symbol.KindAlias)).Kind,
-			emit.ValueLiteral,
-			"a transparent alias's",
-		)
-		_, ok := r.ZeroValue(builtin("Unknown"), f.view)
-		assert.False(t, ok, "a spelling the rules cannot place has no zero")
-		_, ok = r.ZeroValue(ref(fxPath, "Ghost", symbol.KindStruct), f.view)
-		assert.False(t, ok, "nor does a type the view does not hold")
-		_, ok = r.ZeroValue(nil, f.view)
-		assert.False(t, ok, "nor nothing")
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, ok := gorules.New().ZeroValue(tt.give, loaded(t).view)
+				assert.True(t, ok, "the zero derives")
+				assert.Equal(t, got, tt.want, "Go's zero value")
+			})
+		}
+
+		unplaced := []struct {
+			name string
+			give *node.TypeRef
+		}{
+			{name: "reports false for a spelling the rules cannot place", give: builtin(unknownSpelling)},
+			{
+				name: "reports false for a type the view does not contain",
+				give: ref(fxPath, ghostType, symbol.KindStruct),
+			},
+			{name: "reports false for a nil reference"},
+		}
+		for _, tt := range unplaced {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, ok := gorules.New().ZeroValue(tt.give, loaded(t).view)
+				assert.False(t, ok, "no zero to compare a default against")
+			})
+		}
 	})
 
 	t.Run("LiteralFor", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("writes every Go literal as canonical decimal text", func(t *testing.T) {
-			t.Parallel()
+		untyped := []struct {
+			name string
+			give string
+			want emit.Value
+		}{
+			{name: "reads nil", give: "nil", want: emit.Literal(emit.LiteralNil, "")},
+			{
+				name: "reads true behind spaces",
+				give: " " + trueText + " ", want: emit.Literal(emit.LiteralBool, trueText),
+			},
+			{name: "reads false", give: falseText, want: emit.Literal(emit.LiteralBool, falseText)},
+			{name: "reads a decimal integer", give: "42", want: emit.Literal(emit.LiteralInt, "42")},
+			{name: "reads a hexadecimal integer", give: "0x1F", want: emit.Literal(emit.LiteralInt, "31")},
+			{
+				name: "reads an octal integer with a leading zero",
+				give: "017", want: emit.Literal(emit.LiteralInt, "15"),
+			},
+			{name: "reads an octal integer with a prefix", give: "0o17", want: emit.Literal(emit.LiteralInt, "15")},
+			{name: "reads a binary integer", give: "0b101", want: emit.Literal(emit.LiteralInt, "5")},
+			{name: "reads an integer with separators", give: "1_000", want: emit.Literal(emit.LiteralInt, "1000")},
+			{name: "reads a negative integer", give: "-5", want: emit.Literal(emit.LiteralInt, "-5")},
+			{name: "reads a positive sign", give: "+3", want: emit.Literal(emit.LiteralInt, "3")},
+			{
+				name: "reads an integer past int64",
+				give: "18446744073709551615", want: emit.Literal(emit.LiteralInt, "18446744073709551615"),
+			},
+			{name: "reads a decimal float", give: "2.5", want: emit.Literal(emit.LiteralFloat, "2.5")},
+			{name: "reads a float behind a spaced sign", give: "- 2.5", want: emit.Literal(emit.LiteralFloat, "-2.5")},
+			{name: "reads a hexadecimal float", give: "0x1p-2", want: emit.Literal(emit.LiteralFloat, "0.25")},
+			{name: "reads a float with separators", give: "1_000.5", want: emit.Literal(emit.LiteralFloat, "1000.5")},
+			{
+				name: "writes a large float in exponent notation",
+				give: "1e21", want: emit.Literal(emit.LiteralFloat, "1e+21"),
+			},
+			{
+				name: "writes a small float in exponent notation",
+				give: "1e-7", want: emit.Literal(emit.LiteralFloat, "1e-7"),
+			},
+			{
+				name: "writes a float of 1e-6 in positional notation",
+				give: "0.000001", want: emit.Literal(emit.LiteralFloat, "0.000001"),
+			},
+			{name: "reads a quoted string", give: `"hi"`, want: emit.Literal(emit.LiteralString, "hi")},
+			{name: "reads a raw string", give: "`raw`", want: emit.Literal(emit.LiteralString, "raw")},
+			{
+				name: "reads an escape in a quoted string",
+				give: `"tab\t"`, want: emit.Literal(emit.LiteralString, "tab\t"),
+			},
+			{name: "reads a rune as its integer value", give: "'a'", want: emit.Literal(emit.LiteralInt, "97")},
+		}
+		for _, tt := range untyped {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			tests := []struct {
-				text string
-				want emit.Value
-			}{
-				{"nil", emit.Literal(emit.LiteralNil, "")},
-				{" true ", emit.Literal(emit.LiteralBool, "true")},
-				{"false", emit.Literal(emit.LiteralBool, "false")},
-				{"42", emit.Literal(emit.LiteralInt, "42")},
-				{"0x1F", emit.Literal(emit.LiteralInt, "31")},
-				{"017", emit.Literal(emit.LiteralInt, "15")},
-				{"0o17", emit.Literal(emit.LiteralInt, "15")},
-				{"0b101", emit.Literal(emit.LiteralInt, "5")},
-				{"1_000", emit.Literal(emit.LiteralInt, "1000")},
-				{"-5", emit.Literal(emit.LiteralInt, "-5")},
-				{"+3", emit.Literal(emit.LiteralInt, "3")},
-				{"18446744073709551615", emit.Literal(emit.LiteralInt, "18446744073709551615")},
-				{"2.5", emit.Literal(emit.LiteralFloat, "2.5")},
-				{"- 2.5", emit.Literal(emit.LiteralFloat, "-2.5")},
-				{"0x1p-2", emit.Literal(emit.LiteralFloat, "0.25")},
-				{"1_000.5", emit.Literal(emit.LiteralFloat, "1000.5")},
-				{"1e21", emit.Literal(emit.LiteralFloat, "1e+21")},
-				{"1e-7", emit.Literal(emit.LiteralFloat, "1e-7")},
-				{"0.000001", emit.Literal(emit.LiteralFloat, "0.000001")},
-				{`"hi"`, emit.Literal(emit.LiteralString, "hi")},
-				{"`raw`", emit.Literal(emit.LiteralString, "raw")},
-				{`"tab\t"`, emit.Literal(emit.LiteralString, "tab\t")},
-				{"'a'", emit.Literal(emit.LiteralInt, "97")},
-			}
-			for _, tt := range tests {
-				got, ok := gorules.New().LiteralFor(nil, nil, tt.text, rules.View{})
-				assert.True(t, ok, tt.text+" is a literal")
-				assert.Equal(t, got, tt.want, tt.text)
-			}
-		})
+				got, ok := gorules.New().LiteralFor(nil, nil, tt.give, rules.View{})
+				assert.True(t, ok, "the text is one Go literal")
+				assert.Equal(t, got, tt.want, "written as canonical decimal text")
+			})
+		}
 
-		t.Run("refuses text that is no single literal", func(t *testing.T) {
-			t.Parallel()
+		unreadable := []struct {
+			name string
+			give string
+		}{
+			{name: "reports false for empty text", give: ""},
+			{name: "reports false for a composite literal", give: "Row{}"},
+			{name: "reports false for Inf", give: "Inf"},
+			{name: "reports false for NaN", give: "NaN"},
+			{name: "reports false for an imaginary number", give: "1i"},
+			{name: "reports false for a string expression", give: `"a" + "b"`},
+			{name: "reports false for a literal before a comment", give: "1 // note"},
+			{name: "reports false for a negated rune", give: "-'a'"},
+			{name: "reports false for a doubled sign", give: "--1"},
+			{name: "reports false for an identifier", give: "x"},
+			{name: "reports false for a float past float64", give: "1e400"},
+		}
+		for _, tt := range unreadable {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			for _, text := range []string{
-				"", "Row{}", "Inf", "NaN", "1i", `"a" + "b"`, "1 // note", "-'a'", "--1", "x", "1e400",
-			} {
-				_, ok := gorules.New().LiteralFor(nil, nil, text, rules.View{})
-				assert.False(t, ok, text+" is no literal")
-			}
-		})
+				_, ok := gorules.New().LiteralFor(nil, nil, tt.give, rules.View{})
+				assert.False(t, ok, "the text is no single literal")
+			})
+		}
 
-		t.Run("types the value by the builtin its reference names", func(t *testing.T) {
-			t.Parallel()
+		typed := []struct {
+			name     string
+			give     *node.TypeRef
+			giveText string
+			want     emit.Value
+		}{
+			{
+				name: "returns 127 at 8 bits for int8",
+				give: builtin(int8Spelling), giveText: "127", want: emit.Number(emit.LiteralInt, "127", bits8),
+			},
+			{
+				name: "returns -128 at 8 bits for int8",
+				give: builtin(int8Spelling), giveText: "-128", want: emit.Number(emit.LiteralInt, "-128", bits8),
+			},
+			{
+				name: "returns 255 at 8 bits for uint8",
+				give: builtin(uint8Spelling), giveText: "255", want: emit.Number(emit.LiteralInt, "255", bits8),
+			},
+			{
+				name:     "returns the largest uint64 at 64 bits",
+				give:     builtin(uint64Spelling),
+				giveText: "18446744073709551615",
+				want:     emit.Number(emit.LiteralInt, "18446744073709551615", bits64),
+			},
+			{
+				name: "returns an integral float as an int",
+				give: builtin(intSpelling), giveText: "2.0", want: emit.Number(emit.LiteralInt, "2", 0),
+			},
+			{
+				name: "returns a rune at 32 bits",
+				give: builtin(runeSpelling), giveText: "'a'", want: emit.Number(emit.LiteralInt, "97", bits32),
+			},
+			{
+				name: "returns 0.1 at 32 bits for float32",
+				give: builtin(float32Spelling), giveText: "0.1", want: emit.Number(emit.LiteralFloat, "0.1", bits32),
+			},
+			{
+				name: "returns an integer as a float32",
+				give: builtin(float32Spelling), giveText: "3", want: emit.Number(emit.LiteralFloat, "3", bits32),
+			},
+			{
+				name:     "returns a hexadecimal float at 64 bits for float64",
+				give:     builtin(float64Spelling),
+				giveText: "0x1p-2",
+				want:     emit.Number(emit.LiteralFloat, "0.25", bits64),
+			},
+			{
+				name: "returns a truth value for bool",
+				give: builtin(boolSpelling), giveText: trueText, want: emit.Literal(emit.LiteralBool, trueText),
+			},
+			{
+				name: "returns a string for string",
+				give: builtin(stringSpelling), giveText: `"x"`, want: emit.Literal(emit.LiteralString, "x"),
+			},
+			{
+				name: "returns nil for any",
+				give: builtin(anySpelling), giveText: "nil", want: emit.Literal(emit.LiteralNil, ""),
+			},
+			{
+				name:     "returns nil for a pointer",
+				give:     composite("*int", symbol.FormOptional, builtin(intSpelling)),
+				giveText: "nil",
+				want:     emit.Literal(emit.LiteralNil, ""),
+			},
+			{
+				name:     "returns the underlying float for a defined type",
+				give:     ref(fxPath, weightType, symbol.KindAlias),
+				giveText: "1.5",
+				want:     emit.Number(emit.LiteralFloat, "1.5", bits64),
+			},
+			{
+				name:     "returns the target's int for a transparent alias",
+				give:     ref(fxPath, plainType, symbol.KindAlias),
+				giveText: "7",
+				want:     emit.Number(emit.LiteralInt, "7", 0),
+			},
+		}
+		for _, tt := range typed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			f := loaded(t)
-			tests := []struct {
-				ref  *node.TypeRef
-				text string
-				want emit.Value
-			}{
-				{builtin("int8"), "127", emit.Number(emit.LiteralInt, "127", 8)},
-				{builtin("int8"), "-128", emit.Number(emit.LiteralInt, "-128", 8)},
-				{builtin("uint8"), "255", emit.Number(emit.LiteralInt, "255", 8)},
-				{builtin("uint64"), "18446744073709551615", emit.Number(emit.LiteralInt, "18446744073709551615", 64)},
-				{builtin("int"), "2.0", emit.Number(emit.LiteralInt, "2", 0)},
-				{builtin("rune"), "'a'", emit.Number(emit.LiteralInt, "97", 32)},
-				{builtin("float32"), "0.1", emit.Number(emit.LiteralFloat, "0.1", 32)},
-				{builtin("float32"), "3", emit.Number(emit.LiteralFloat, "3", 32)},
-				{builtin("float64"), "0x1p-2", emit.Number(emit.LiteralFloat, "0.25", 64)},
-				{builtin("bool"), "true", emit.Literal(emit.LiteralBool, "true")},
-				{builtin("string"), `"x"`, emit.Literal(emit.LiteralString, "x")},
-				{builtin("any"), "nil", emit.Literal(emit.LiteralNil, "")},
-				{composite("*int", symbol.FormOptional, builtin("int")), "nil", emit.Literal(emit.LiteralNil, "")},
-				{ref(fxPath, "Weight", symbol.KindAlias), "1.5", emit.Number(emit.LiteralFloat, "1.5", 64)},
-				{ref(fxPath, "Plain", symbol.KindAlias), "7", emit.Number(emit.LiteralInt, "7", 0)},
-			}
-			for _, tt := range tests {
-				got, ok := gorules.New().LiteralFor(f.file, tt.ref, tt.text, f.view)
-				assert.True(t, ok, tt.text+" is a "+tt.ref.Spelling)
-				assert.Equal(t, got, tt.want, tt.text+" as "+tt.ref.Spelling)
-			}
-		})
+				f := loaded(t)
+				got, ok := gorules.New().LiteralFor(f.file, tt.give, tt.giveText, f.view)
+				assert.True(t, ok, "the text is a value of the type")
+				assert.Equal(t, got, tt.want, "typed by the builtin the reference names")
+			})
+		}
 
-		t.Run("refuses a value outside the builtin", func(t *testing.T) {
-			t.Parallel()
+		outside := []struct {
+			name     string
+			give     *node.TypeRef
+			giveText string
+		}{
+			{name: "reports false for 128 as int8", give: builtin(int8Spelling), giveText: "128"},
+			{name: "reports false for -129 as int8", give: builtin(int8Spelling), giveText: "-129"},
+			{name: "reports false for -1 as uint8", give: builtin(uint8Spelling), giveText: "-1"},
+			{name: "reports false for 2^64 as uint64", give: builtin(uint64Spelling), giveText: "18446744073709551616"},
+			{name: "reports false for a fraction as int", give: builtin(intSpelling), giveText: "2.5"},
+			{name: "reports false for a string as int", give: builtin(intSpelling), giveText: `"2"`},
+			{name: "reports false for nil as int", give: builtin(intSpelling), giveText: "nil"},
+			{name: "reports false for 1e39 as float32", give: builtin(float32Spelling), giveText: "1e39"},
+			{name: "reports false for a truth value as float64", give: builtin(float64Spelling), giveText: trueText},
+			{name: "reports false for a number as bool", give: builtin(boolSpelling), giveText: "1"},
+			{name: "reports false for a rune as string", give: builtin(stringSpelling), giveText: "'a'"},
+			{
+				name: "reports false for a string as a defined float",
+				give: ref(fxPath, weightType, symbol.KindAlias), giveText: `"heavy"`,
+			},
+		}
+		for _, tt := range outside {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			f := loaded(t)
-			tests := []struct {
-				ref  *node.TypeRef
-				text string
-			}{
-				{builtin("int8"), "128"},
-				{builtin("int8"), "-129"},
-				{builtin("uint8"), "-1"},
-				{builtin("uint64"), "18446744073709551616"},
-				{builtin("int"), "2.5"},
-				{builtin("int"), `"2"`},
-				{builtin("int"), "nil"},
-				{builtin("float32"), "1e39"},
-				{builtin("float64"), "true"},
-				{builtin("bool"), "1"},
-				{builtin("string"), "'a'"},
-				{ref(fxPath, "Weight", symbol.KindAlias), `"heavy"`},
-			}
-			for _, tt := range tests {
-				_, ok := gorules.New().LiteralFor(f.file, tt.ref, tt.text, f.view)
-				assert.False(t, ok, tt.text+" is no "+tt.ref.Spelling)
-			}
-		})
+				f := loaded(t)
+				_, ok := gorules.New().LiteralFor(f.file, tt.give, tt.giveText, f.view)
+				assert.False(t, ok, "the value is outside the builtin")
+			})
+		}
 	})
+}
+
+// stampWeight states a sample and an alternate on the fixture's
+// Weight, a defined float64.
+func stampWeight(tb assert.TB, f *fixture) {
+	tb.Helper()
+
+	weight := id(fxPath, weightType, symbol.KindAlias)
+	stamp(tb, f.Facts, weight, f.Keys.Sample, authoredWeight)
+	stamp(tb, f.Facts, weight, f.Keys.Alternate, otherWeight)
 }

@@ -12,7 +12,7 @@ import (
 // language the value target spells for.
 const Lang symbol.Lang = "rust"
 
-// Target names the rendering target a plan resolves to reach the
+// Target names the rendering target a plan resolves to select the
 // Rust backend.
 const Target plugin.Target = "rust"
 
@@ -26,7 +26,7 @@ const Extension = ".rs"
 // Version is the backend's behavior version, folded into the
 // composition fingerprint: bump it with any change to the rendered
 // output.
-const Version = "0.3.0"
+const Version = "0.5.0"
 
 // Syntax returns Rust's comment forms, declared once and shared: the
 // plain line form, which is canonical, the outer and inner doc line

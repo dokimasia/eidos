@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/lang/textfmt"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -57,44 +58,53 @@ const (
 // type: the root every reference type descends from.
 const Anonymous = "Object"
 
-// Funcs is the shared template vocabulary the kind templates call.
-func Funcs() template.FuncMap {
-	return template.FuncMap{
-		FuncDocs:         Docs,
-		FuncSpell:        Spell,
-		FuncTypeParams:   TypeParams,
-		FuncParams:       Params,
-		FuncResults:      Results,
-		FuncPackage:      PackageClause,
-		FuncTypeMods:     TypeMods,
-		FuncMemberType:   MemberType,
-		FuncFieldMods:    FieldMods,
-		FuncConstantMods: ConstantMods,
-		FuncMethodMods:   MethodMods,
-		FuncSigMods:      SigMods,
-		FuncAnnotate:     Annotate,
-		FuncHeritage:     Heritage,
-		FuncThrows:       Throws,
-		FuncEnumVariant:  EnumVariantName,
-	}
+// The brackets Java writes an argument list in.
+const (
+	argsOpener = "<"
+	argsCloser = ">"
+)
+
+// The separators Java writes a list of types with: a bound list's
+// ampersand, and the comma of every other list.
+const (
+	boundSep = " & "
+	listSep  = ", "
+)
+
+// refusalPrefix opens every refusal the backend returns: the
+// language's identity, as every backend's refusals open.
+const refusalPrefix = string(java.Lang) + ": "
+
+// Speller spells type references for one file. A class a spelling
+// names from another package is imported under its simple name
+// where the file's name is free, and written fully qualified where
+// another import or a declaration of the file takes it, the way
+// javac reads the two. The package is the reference's target's where
+// the target is a Java declaration, and the one the reference records
+// where it has no target. A Speller is not safe for concurrent use,
+// because its set is not.
+type Speller struct {
+	set *render.ImportSet
 }
 
-// Docs writes a declaration's documentation as a Javadoc block,
-// each line prefixed with the given indentation, so a member's
-// doc is at its member's depth.
-func Docs(lines []string, prefix ...string) string {
-	if len(lines) == 0 {
-		return ""
-	}
-	return textfmt.BlockDocs(lines, "/**", " * ", " */", prefix...)
-}
+// NewSpeller returns the speller for the file whose import set is
+// set. The set is not nil.
+func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 
-// Spell writes a type reference. The source spelling passes
-// through verbatim, and a missing one spells [Anonymous]. A
+// Spell writes a type reference and imports the class it names. The
+// source spelling passes through where the reference names no class
+// of another package, and a missing one spells [Anonymous]. A
 // reference with arguments has its bare name in Spelling, and the
-// argument list spells here in angle brackets.
-func Spell(t *emit.TypeRef) string {
-	return spellref.Spell(t, "<", ">", Anonymous)
+// argument list spells here in angle brackets. A structural reference
+// keeps its written spelling, and Spell returns an error where a class
+// inside it is written fully qualified, because Java's composite
+// spelling does not follow from its structure.
+func (s Speller) Spell(t *emit.TypeRef) (string, error) {
+	out, err := spellref.SpellWith(t, argsOpener, argsCloser, Anonymous, s.qualify)
+	if err != nil {
+		return "", refuse("%w", err)
+	}
+	return out, nil
 }
 
 // TypeParams writes a type parameter list in angle brackets, or
@@ -102,7 +112,7 @@ func Spell(t *emit.TypeRef) string {
 // ampersands behind extends. Variance, defaults and value
 // parameters refuse, because Java's variance is a use-site wildcard
 // and its parameters take no default and no value.
-func TypeParams(ps []*emit.TypeParam) (string, error) {
+func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
 	}
@@ -119,47 +129,217 @@ func TypeParams(ps []*emit.TypeParam) (string, error) {
 		}
 		part := p.Name
 		if len(p.Bounds) > 0 {
-			bounds := make([]string, 0, len(p.Bounds))
-			for _, b := range p.Bounds {
-				bounds = append(bounds, Spell(b))
+			bounds, err := s.joined(p.Bounds, boundSep)
+			if err != nil {
+				return "", err
 			}
-			part += " extends " + strings.Join(bounds, " & ")
+			part += " extends " + bounds
 		}
 		parts = append(parts, part)
 	}
-	return "<" + strings.Join(parts, ", ") + ">", nil
+	return argsOpener + strings.Join(parts, ", ") + argsCloser, nil
 }
 
 // Params writes a parameter list, the variadic marker included.
-func Params(ps []*emit.Param) string {
+func (s Speller) Params(ps []*emit.Param) (string, error) {
 	parts := make([]string, 0, len(ps))
 	for i, p := range ps {
 		name := p.Name
 		if name == "" {
 			name = fmt.Sprintf("arg%d", i)
 		}
-		spelling := Spell(p.Type)
+		spelling, err := s.Spell(p.Type)
+		if err != nil {
+			return "", err
+		}
 		if p.Variadic != symbol.VariadicNone {
 			spelling += "..."
 		}
 		parts = append(parts, spelling+" "+name+textfmt.Inline(p.Comment))
 	}
-	return strings.Join(parts, ", ")
+	return strings.Join(parts, ", "), nil
 }
 
 // Results writes the return type: void for none, the type for
 // one, and an error for several, because a Java callable returns
 // one value and a second arrives thrown, not returned.
-func Results(rs []*emit.Return) (string, error) {
+func (s Speller) Results(rs []*emit.Return) (string, error) {
 	switch len(rs) {
 	case 0:
 		return "void", nil
 	case 1:
-		return Spell(rs[0].Type) + textfmt.Inline(rs[0].Comment), nil
+		typ, err := s.Spell(rs[0].Type)
+		if err != nil {
+			return "", err
+		}
+		return typ + textfmt.Inline(rs[0].Comment), nil
 	default:
 		return "", refuse("a callable returns one value, and this one states %d: "+
 			"a second result arrives thrown, not returned", len(rs))
 	}
+}
+
+// Heritage writes a type's heritage clauses: one superclass
+// behind extends and the contracts behind implements on a class,
+// the widened contracts behind extends on an interface, and the
+// enumerated subtypes behind permits on either, last the way Java
+// states them. A second superclass refuses, because Java extends
+// one, and an embed refuses on either, because nothing promotes
+// members. The permits clause and the sealed keyword go together:
+// javac rejects a sealed type in a file of its own without the
+// clause, and the clause on a type that is not sealed.
+func (s Speller) Heritage(d symbol.Symbol) (string, error) {
+	switch t := d.(type) {
+	case *emit.Struct:
+		if len(t.Embeds) > 0 {
+			return "", unembedded(t.Name)
+		}
+		var part string
+		switch len(t.Extends) {
+		case 0:
+		case 1:
+			base, err := s.Spell(t.Extends[0])
+			if err != nil {
+				return "", err
+			}
+			part = " extends " + base
+		default:
+			return "", refuse("a class extends one superclass, and %s states %d",
+				t.Name, len(t.Extends))
+		}
+		if len(t.Implements) > 0 {
+			contracts, err := s.joined(t.Implements, listSep)
+			if err != nil {
+				return "", err
+			}
+			part += " implements " + contracts
+		}
+		permits, err := s.permitted(t.Name, t.Sealed, t.Permits)
+		if err != nil {
+			return "", err
+		}
+		return part + permits, nil
+	case *emit.Interface:
+		if len(t.Embeds) > 0 {
+			return "", unembedded(t.Name)
+		}
+		var part string
+		if len(t.Extends) > 0 {
+			widened, err := s.joined(t.Extends, listSep)
+			if err != nil {
+				return "", err
+			}
+			part = " extends " + widened
+		}
+		permits, err := s.permitted(t.Name, t.Sealed, t.Permits)
+		if err != nil {
+			return "", err
+		}
+		return part + permits, nil
+	default:
+		return "", refuse("no heritage clause spells a %s", d.Kind())
+	}
+}
+
+// Throws writes a callable's throws clause: the declared failure
+// types comma-joined behind the keyword, or nothing where none
+// are stated.
+func (s Speller) Throws(ts []*emit.TypeRef) (string, error) {
+	if len(ts) == 0 {
+		return "", nil
+	}
+	failures, err := s.joined(ts, listSep)
+	if err != nil {
+		return "", err
+	}
+	return " throws " + failures, nil
+}
+
+// qualify returns the spelling of a named reference: as written where
+// the file claims the simple name of the class it names, and fully
+// qualified where the file cannot. The first segment of a qualified
+// spelling is the class the package declares, and the rest names a
+// member class of it.
+func (s Speller) qualify(t *emit.TypeRef) (string, error) {
+	pkg := spellref.PackageOf(t, java.Lang)
+	if pkg == "" {
+		return t.Spelling, nil
+	}
+	class, _, _ := strings.Cut(t.Spelling, memberSep)
+	if s.set.Claim(pkg, class) {
+		return t.Spelling, nil
+	}
+	return javaPackage(pkg) + memberSep + t.Spelling, nil
+}
+
+// permitted writes the permits clause, or nothing where no subtypes
+// are enumerated. A sealed type without one refuses, and so does the
+// clause on a type that is not sealed.
+func (s Speller) permitted(name string, sealed bool, ts []*emit.TypeRef) (string, error) {
+	switch {
+	case sealed && len(ts) == 0:
+		return "", refuse("a sealed type names its permitted subtypes, and %s names none", name)
+	case !sealed && len(ts) > 0:
+		return "", refuse("a permits clause belongs to a sealed type, and %s is not sealed", name)
+	case len(ts) == 0:
+		return "", nil
+	default:
+		subtypes, err := s.joined(ts, listSep)
+		if err != nil {
+			return "", err
+		}
+		return " permits " + subtypes, nil
+	}
+}
+
+// joined writes references through the speller, in order, joined by
+// sep. The parts do not escape the call, so a list of up to two
+// references allocates no slice.
+func (s Speller) joined(ts []*emit.TypeRef, sep string) (string, error) {
+	parts := make([]string, 0, len(ts))
+	for _, t := range ts {
+		part, err := s.Spell(t)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, part)
+	}
+	return strings.Join(parts, sep), nil
+}
+
+// Funcs returns the shared template vocabulary the kind templates
+// call, bound to one file's import set: every class a helper names
+// from another package is imported there.
+func Funcs(set *render.ImportSet) template.FuncMap {
+	s := NewSpeller(set)
+	return template.FuncMap{
+		FuncDocs:         Docs,
+		FuncSpell:        s.Spell,
+		FuncTypeParams:   s.TypeParams,
+		FuncParams:       s.Params,
+		FuncResults:      s.Results,
+		FuncPackage:      PackageClause,
+		FuncTypeMods:     TypeMods,
+		FuncMemberType:   MemberType,
+		FuncFieldMods:    FieldMods,
+		FuncConstantMods: ConstantMods,
+		FuncMethodMods:   MethodMods,
+		FuncSigMods:      SigMods,
+		FuncAnnotate:     Annotate,
+		FuncHeritage:     s.Heritage,
+		FuncThrows:       s.Throws,
+		FuncEnumVariant:  EnumVariantName,
+	}
+}
+
+// Docs writes a declaration's documentation as a Javadoc block,
+// each line prefixed with the given indentation, so a member's
+// doc is at its member's depth.
+func Docs(lines []string, prefix ...string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	return textfmt.BlockDocs(lines, "/**", " * ", " */", prefix...)
 }
 
 // PackageClause writes the package statement from the identity's
@@ -170,7 +350,7 @@ func PackageClause(id symbol.Identity) string {
 	if id.Package == "" {
 		return ""
 	}
-	return "package " + strings.ReplaceAll(id.Package, "/", ".") + ";\n\n"
+	return "package " + javaPackage(id.Package) + ";\n\n"
 }
 
 // TypeMods writes a type's keywords in Java's stated order: access,
@@ -360,6 +540,18 @@ func SigMods(m *emit.Method) (string, error) {
 	return part, nil
 }
 
+// Annotate writes a declaration's annotation lines, one per
+// annotation, each prefixed with the given indentation: the name
+// behind its marker, and the argument spellings verbatim in
+// parentheses where any are stated.
+func Annotate(a symbol.Annotations, prefix ...string) string {
+	return textfmt.Marked(a, "@", "", prefix...)
+}
+
+// javaPackage spells a package path the way Java writes it: dots for
+// slashes.
+func javaPackage(path string) string { return strings.ReplaceAll(path, "/", memberSep) }
+
 // access writes a member's or a member type's access keyword. An
 // unstated scope spells public, because a generated API exists to be
 // called, and package scope spells Java's default access. An
@@ -379,107 +571,10 @@ func access(v symbol.Visibility, name string) (string, error) {
 	}
 }
 
-// Heritage writes a type's heritage clauses: one superclass
-// behind extends and the contracts behind implements on a class,
-// the widened contracts behind extends on an interface, and the
-// enumerated subtypes behind permits on either, last the way Java
-// states them. A second superclass refuses, because Java extends
-// one, and an embed refuses on either, because nothing promotes
-// members. The permits clause and the sealed keyword go together:
-// javac rejects a sealed type in a file of its own without the
-// clause, and the clause on a type that is not sealed.
-func Heritage(d symbol.Symbol) (string, error) {
-	switch t := d.(type) {
-	case *emit.Struct:
-		if len(t.Embeds) > 0 {
-			return "", unembedded(t.Name)
-		}
-		var part string
-		switch len(t.Extends) {
-		case 0:
-		case 1:
-			part = " extends " + Spell(t.Extends[0])
-		default:
-			return "", refuse("a class extends one superclass, and %s states %d",
-				t.Name, len(t.Extends))
-		}
-		if len(t.Implements) > 0 {
-			part += " implements " + joined(t.Implements)
-		}
-		permits, err := permitted(t.Name, t.Sealed, t.Permits)
-		if err != nil {
-			return "", err
-		}
-		return part + permits, nil
-	case *emit.Interface:
-		if len(t.Embeds) > 0 {
-			return "", unembedded(t.Name)
-		}
-		var part string
-		if len(t.Extends) > 0 {
-			part = " extends " + joined(t.Extends)
-		}
-		permits, err := permitted(t.Name, t.Sealed, t.Permits)
-		if err != nil {
-			return "", err
-		}
-		return part + permits, nil
-	default:
-		return "", refuse("no heritage clause spells a %s", d.Kind())
-	}
-}
-
-// permitted writes the permits clause, or nothing where no subtypes
-// are enumerated. A sealed type without one refuses, and so does the
-// clause on a type that is not sealed.
-func permitted(name string, sealed bool, ts []*emit.TypeRef) (string, error) {
-	switch {
-	case sealed && len(ts) == 0:
-		return "", refuse("a sealed type names its permitted subtypes, and %s names none", name)
-	case !sealed && len(ts) > 0:
-		return "", refuse("a permits clause belongs to a sealed type, and %s is not sealed", name)
-	case len(ts) == 0:
-		return "", nil
-	default:
-		return " permits " + joined(ts), nil
-	}
-}
-
-// Throws writes a callable's throws clause: the declared failure
-// types comma-joined behind the keyword, or nothing where none
-// are stated.
-func Throws(ts []*emit.TypeRef) string {
-	if len(ts) == 0 {
-		return ""
-	}
-	return " throws " + joined(ts)
-}
-
-// joined writes references as a comma-joined list.
-func joined(ts []*emit.TypeRef) string {
-	parts := make([]string, 0, len(ts))
-	for _, t := range ts {
-		parts = append(parts, Spell(t))
-	}
-	return strings.Join(parts, ", ")
-}
-
 // unembedded is the refusal for embeds: nothing promotes members.
 func unembedded(name string) error {
 	return refuse("nothing promotes members, and %s states embeds", name)
 }
-
-// Annotate writes a declaration's annotation lines, one per
-// annotation, each prefixed with the given indentation: the name
-// behind its marker, and the argument spellings verbatim in
-// parentheses where any are stated.
-func Annotate(a symbol.Annotations, prefix ...string) string {
-	return textfmt.Marked(a, "@", "", prefix...)
-}
-
-// refusalPrefix opens every refusal the backend returns: the
-// language's identity, as every backend's refusals open.
-const refusalPrefix = string(java.Lang) + ": "
 
 // refuse builds a refusal under [refusalPrefix].
 func refuse(format string, args ...any) error {

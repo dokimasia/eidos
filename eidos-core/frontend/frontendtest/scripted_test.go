@@ -11,6 +11,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
@@ -50,7 +51,20 @@ const (
 	secondFieldName      = "f1"
 )
 
-// unitOver assembles one unit over a tree, the way the driver does.
+// The comment the comment cases lower: documentation, a tool
+// directive, and a carrier under the suite's brand, above one type.
+// negatedComment and shapedComment state one carrier each, under the
+// negated mark and under the bare mark in the tool-directive shape.
+const (
+	commentDoc     = "A records one row."
+	commentSource  = "package svc\n// " + commentDoc + "\n//tool:keep forever\n// " + commentCarrier + "\ntype A int\n"
+	commentCarrier = "+" + string(frontendtest.Brand) + ":table name=t"
+	negatedComment = "package svc\n// -" + string(frontendtest.Brand) + ":table\ntype A int\n"
+	shapedComment  = "package svc\n//" + string(frontendtest.Brand) + ":table\ntype A int\n"
+)
+
+// unitOver assembles one unit over a tree under the suite's brand,
+// the way the driver does.
 func unitOver(f *frontendtest.Scripted, tree fstest.MapFS, files ...string) (
 	*plugin.SourceUnit, *diag.Sink,
 ) {
@@ -60,8 +74,20 @@ func unitOver(f *frontendtest.Scripted, tree fstest.MapFS, files ...string) (
 	}
 	sink := diag.NewSink()
 	return plugin.NewSourceUnit(
-		refs, tree, plugin.DepthFull, f.Syntax(), sink, f.Name(),
+		refs, tree, plugin.DepthFull, f.Syntax(), string(frontendtest.Brand), sink, f.Name(),
 	), sink
+}
+
+// parsed lowers one source as the single member of a unit and
+// returns the unit's builder, failing the test on a finding.
+func parsed(tb assert.TB, source string) *plugin.GraphBuilder {
+	tb.Helper()
+
+	f := frontendtest.NewScripted()
+	u, sink := unitOver(f, fstest.MapFS{svcFile: {Data: []byte(source)}}, svcFile)
+	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+	coretest.AssertCodes(tb, sink)
+	return u.Graph()
 }
 
 // The scripted language substitutes for five real ones, so its own
@@ -75,21 +101,39 @@ func TestScripted(t *testing.T) {
 		)},
 	}
 
+	t.Run("Overloads", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports true under NewScripted", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, frontendtest.NewScripted().Overloads(), "the scripted language overloads its methods")
+		})
+
+		t.Run("reports false for a frontend declared without overloading", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontendtest.NewScripted()
+			f.Overloading = false
+			assert.False(t, f.Overloads(), "the declared field decides")
+		})
+	})
+
 	t.Run("Partition", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("groups by directory", func(t *testing.T) {
+		t.Run("groups the files by directory", func(t *testing.T) {
 			t.Parallel()
 
 			f := frontendtest.NewScripted()
 			parts, err := f.Partition(context.Background(),
 				[]plugin.SourceRef{{Path: svcFile}}, reader{tree})
 			assert.NoError(t, err, "the partition groups")
-			assert.Length(t, parts, 1, "one directory, one unit")
-			assert.Equal(t, parts[0][0].Path, svcFile, "containing the directory's file")
+			assert.Length(t, parts, 1, "one directory is one unit")
+			assert.Equal(t, parts[0][0].Path, svcFile, "the unit contains the directory's file")
 		})
 
-		t.Run("declares the manifest a shared input where the tree contains one", func(t *testing.T) {
+		t.Run("declares the manifest a shared input of every member", func(t *testing.T) {
 			t.Parallel()
 
 			f := frontendtest.NewScripted()
@@ -100,14 +144,17 @@ func TestScripted(t *testing.T) {
 			parts, err := f.Partition(context.Background(),
 				[]plugin.SourceRef{{Path: svcFile}}, reader{manifested})
 			assert.NoError(t, err, "the partition groups")
-			assert.Equal(t, parts[0][0].Shared, []string{modFile},
-				"a manifest the tree contains is every member's shared input")
+			assert.Equal(t, parts[0][0].Shared, []string{modFile}, "the manifest is the shared input")
+		})
 
-			bare, err := f.Partition(context.Background(),
+		t.Run("declares no shared input without a manifest", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontendtest.NewScripted()
+			parts, err := f.Partition(context.Background(),
 				[]plugin.SourceRef{{Path: svcFile}}, reader{tree})
 			assert.NoError(t, err, "the partition groups")
-			assert.Empty(t, bare[0][0].Shared,
-				"a tree without the manifest gives its members no shared input")
+			assert.Empty(t, parts[0][0].Shared, "the member has no shared input")
 		})
 	})
 
@@ -117,74 +164,73 @@ func TestScripted(t *testing.T) {
 		t.Run("lowers every statement into the unit's builder", func(t *testing.T) {
 			t.Parallel()
 
-			f := frontendtest.NewScripted()
-			u, sink := unitOver(f, tree, svcFile)
-			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
-			coretest.AssertCodes(t, sink)
-
-			gb := u.Graph()
-			assert.Length(t, gb.Packages(), 1, "one package declared")
+			gb := parsed(t, string(tree[svcFile].Data))
+			assert.Length(t, gb.Packages(), 1, "one package is declared")
 			file := gb.Packages()[0].Files[0]
-			assert.Length(t, file.Decls, 2, "a type and a constant")
-			assert.Equal(t, file.Pos.Line, packageStatementLine,
-				"the file is positioned at its package line, counted from one")
+			assert.Length(t, file.Decls, 2, "a type and a constant are declared")
+			assert.Equal(t, file.Pos.Line, packageStatementLine, "the file is at its package line")
 			declared := file.Decls[0].(*node.Struct)
-			assert.Equal(t, declared.Pos.Line, typeStatementLine,
-				"and every statement at the line that states it")
+			assert.Equal(t, declared.Pos.Line, typeStatementLine, "the type is at its statement's line")
 			assert.Equal(t, declared.Fields[1].Name, secondFieldName,
-				"fields are named f0 upward, one per reference in order")
-			assert.Length(t, gb.Scopes(), 1, "the bindings recorded")
-			assert.Length(t, gb.Attachments(), 1, "the directive recorded")
-			assert.Length(t, gb.StampRecords(), 1, "the stamp recorded")
+				"the fields are named f0 upward, one per reference")
+			assert.Length(t, gb.Scopes(), 1, "the bindings are recorded")
+			assert.Length(t, gb.Attachments(), 1, "the directive statement is recorded")
+			assert.Length(t, gb.StampRecords(), 1, "the stamp is recorded")
 		})
 
 		t.Run("lowers a type parameter onto the last type", func(t *testing.T) {
 			t.Parallel()
 
-			generic := fstest.MapFS{
-				svcFile: {Data: []byte("package svc\ntype Box T\ntypeparam T\n")},
-			}
-			f := frontendtest.NewScripted()
-			u, sink := unitOver(f, generic, svcFile)
-			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
-			coretest.AssertCodes(t, sink)
-
-			declared := u.Graph().Packages()[0].Files[0].Decls[0].(*node.Struct)
+			gb := parsed(t, "package svc\ntype Box T\ntypeparam T\n")
+			declared := gb.Packages()[0].Files[0].Decls[0].(*node.Struct)
 			assert.Length(t, declared.TypeParams, 1, "the type declares one parameter")
-			assert.Equal(t, declared.TypeParams[0].Name, typeParamName, "under the stated name")
+			assert.Equal(t, declared.TypeParams[0].Name, typeParamName, "the parameter has the stated name")
 			assert.Equal(t, declared.Fields[0].Type.Spelling, typeParamName,
-				"and a field spells it the way any reference is spelled")
+				"a field spells the parameter like any reference")
 		})
 
-		t.Run("reads a comment through the kernel's own split", func(t *testing.T) {
+		t.Run("lowers a comment's documentation onto the next type", func(t *testing.T) {
 			t.Parallel()
 
-			commented := fstest.MapFS{
-				svcFile: {Data: []byte(
-					"package svc\n" +
-						"// A records one row.\n" +
-						"//tool:keep forever\n" +
-						"// +gen:table name=t\n" +
-						"type A int\n",
-				)},
-			}
-			f := frontendtest.NewScripted()
-			u, sink := unitOver(f, commented, svcFile)
-			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
-			coretest.AssertCodes(t, sink)
+			declared := parsed(t, commentSource).Packages()[0].Files[0].Decls[0].(*node.Struct)
+			assert.Equal(t, declared.Doc, []string{commentDoc}, "only the prose line is documentation")
+		})
 
-			gb := u.Graph()
-			declared := gb.Packages()[0].Files[0].Decls[0].(*node.Struct)
-			assert.Equal(t, declared.Doc, []string{"A records one row."},
-				"the comment above the declaration documents it, "+
-					"and a marker-adjacent directive line is not documentation")
+		t.Run("lowers a comment's tool directive as an annotation", func(t *testing.T) {
+			t.Parallel()
+
+			declared := parsed(t, commentSource).Packages()[0].Files[0].Decls[0].(*node.Struct)
 			assert.Equal(t, declared.Annotations, symbol.Annotations{
 				{Name: "tool:keep", Args: []string{"forever"}},
-			}, "a marker-adjacent tool directive lowers as an annotation")
-			assert.Length(t, gb.Attachments(), 1, "and the carrier attaches")
-			assert.Equal(t, string(gb.Attachments()[0].Raw.Name), "gen:table",
-				"under its own name, the mark stripped by the split")
+			}, "the marker-adjacent tool directive is an annotation")
 		})
+
+		t.Run("attaches a comment's carrier under the unit's brand", func(t *testing.T) {
+			t.Parallel()
+
+			gb := parsed(t, commentSource)
+			assert.Length(t, gb.Attachments(), 1, "the carrier attaches")
+			assert.Equal(t, gb.Attachments()[0].Raw.Name, directive.Name("table"),
+				"the name is the payload's, the mark stripped")
+			assert.False(t, gb.Attachments()[0].Raw.Negated, "the instance is set")
+		})
+
+		t.Run("attaches a comment's negated carrier as a negated instance", func(t *testing.T) {
+			t.Parallel()
+
+			gb := parsed(t, negatedComment)
+			assert.Length(t, gb.Attachments(), 1, "the carrier attaches")
+			assert.True(t, gb.Attachments()[0].Raw.Negated, "the instance is negated")
+		})
+
+		t.Run("attaches a comment's carrier in the tool-directive shape as a directive-shaped instance",
+			func(t *testing.T) {
+				t.Parallel()
+
+				gb := parsed(t, shapedComment)
+				assert.Length(t, gb.Attachments(), 1, "the carrier attaches")
+				assert.True(t, gb.Attachments()[0].Raw.DirectiveShaped, "validation reads the shape off the instance")
+			})
 
 		t.Run("returns the read's own error for an absent member", func(t *testing.T) {
 			t.Parallel()
@@ -192,63 +238,87 @@ func TestScripted(t *testing.T) {
 			f := frontendtest.NewScripted()
 			u, _ := unitOver(f, fstest.MapFS{}, absentFile)
 			err := f.Parse(context.Background(), u)
-			assert.HasError(t, err, "a member missing from the tree cannot lower")
-			assert.Contains(t, err.Error(), absentFile, "naming the path")
+			assert.HasError(t, err, "the parse fails")
+			assert.Contains(t, err.Error(), absentFile, "the error names the path")
 		})
 
-		t.Run("reports a directive outside the grammar and parses on", func(t *testing.T) {
+		broken := fstest.MapFS{
+			svcFile: {Data: []byte("package svc\ntype A\n+=x\nconst low\n")},
+		}
+
+		t.Run("reports a directive outside the grammar", func(t *testing.T) {
 			t.Parallel()
 
-			broken := fstest.MapFS{
-				svcFile: {Data: []byte("package svc\ntype A\n+=x\nconst low\n")},
-			}
 			f := frontendtest.NewScripted()
 			u, sink := unitOver(f, broken, svcFile)
-			assert.NoError(t, f.Parse(context.Background(), u), "a bad carrier is not fatal")
+			assert.NoError(t, f.Parse(context.Background(), u), "the bad directive is not fatal")
 			coretest.AssertReports(t, sink, frontendtest.ScriptedBadFile)
 			coretest.AssertPositioned(t, sink)
+			assert.Empty(t, u.Graph().Attachments(), "nothing attaches")
+		})
 
-			gb := u.Graph()
-			assert.Empty(t, gb.Attachments(), "nothing attaches for a payload that will not parse")
-			assert.Length(t, gb.Packages()[0].Files[0].Decls, 2,
-				"and the statements after it still lower")
+		t.Run("lowers the statements after a directive outside the grammar", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontendtest.NewScripted()
+			u, _ := unitOver(f, broken, svcFile)
+			assert.NoError(t, f.Parse(context.Background(), u), "the bad directive is not fatal")
+			assert.Length(t, u.Graph().Packages()[0].Files[0].Decls, 2, "the type and the constant are declared")
 		})
 	})
 
 	t.Run("Resolve", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("probes bindings and leaves builtins", func(t *testing.T) {
+		f := frontendtest.NewScripted()
+		scope := plugin.ImportScope{
+			File:     symbol.Identity{Lang: frontendtest.ScriptedLang, Package: svcPath},
+			Bindings: map[string][]string{aliasName: {depPackage}},
+		}
+
+		t.Run("probes a bound alias in its package", func(t *testing.T) {
 			t.Parallel()
 
-			f := frontendtest.NewScripted()
-			scope := plugin.ImportScope{
-				File:     symbol.Identity{Lang: frontendtest.ScriptedLang, Package: svcPath},
-				Bindings: map[string][]string{aliasName: {depPackage}},
-			}
 			got := f.Resolve(scope, boundName)
-			assert.Length(t, got, 1, "the scripted language probes in one tier")
-			assert.Length(t, got[0], 1, "a bound alias probes its package")
-			assert.Equal(t, got[0][0].Package, depPackage, "at the bound path")
-			own := f.Resolve(scope, ownSpelling)
-			assert.Length(t, own, 1, "a bare capital probes in one tier")
-			assert.Equal(t, own[0][0].Package, svcPath, "the file's own package")
-			assert.Empty(t, f.Resolve(scope, unboundName), "an alias the file never bound probes nothing")
-			assert.Empty(t, f.Resolve(scope, builtinName), "a builtin is nobody's")
+			assert.Length(t, got, 1, "the probe has one tier")
+			assert.Length(t, got[0], 1, "the tier has one candidate")
+			assert.Equal(t, got[0][0].Package, depPackage, "the candidate is in the bound package")
 		})
 
-		t.Run("probes a bare spelling at either end of the capital range", func(t *testing.T) {
+		t.Run("probes a bare capital in the file's own package", func(t *testing.T) {
 			t.Parallel()
 
-			f := frontendtest.NewScripted()
-			scope := plugin.ImportScope{
-				File: symbol.Identity{Lang: frontendtest.ScriptedLang, Package: svcPath},
-			}
-			assert.Length(t, f.Resolve(scope, firstCapital), 1,
-				"a spelling opening at A is its own package's")
-			assert.Length(t, f.Resolve(scope, lastCapital), 1,
-				"and so is one opening at Z")
+			own := f.Resolve(scope, ownSpelling)
+			assert.Length(t, own, 1, "the probe has one tier")
+			assert.Equal(t, own[0][0].Package, svcPath, "the candidate is in the file's package")
 		})
+
+		t.Run("probes nothing for an alias the file never bound", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, f.Resolve(scope, unboundName), "the probe is empty")
+		})
+
+		t.Run("probes nothing for a builtin", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, f.Resolve(scope, builtinName), "the probe is empty")
+		})
+
+		tests := []struct {
+			name     string
+			spelling string
+		}{
+			{name: "probes a bare spelling that opens with the first capital", spelling: firstCapital},
+			{name: "probes a bare spelling that opens with the last capital", spelling: lastCapital},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Length(t, f.Resolve(scope, tt.spelling), 1, "the spelling is the file package's")
+			})
+		}
 	})
 
 	t.Run("ScriptedKeys", func(t *testing.T) {
@@ -260,17 +330,17 @@ func TestScripted(t *testing.T) {
 			r := meta.NewRegistry()
 			assert.NoError(t, frontendtest.ScriptedKeys(r), "the key registers")
 			_, held := r.Resolve(frontendtest.ScriptedTestKey)
-			assert.True(t, held, "under the name the stamps write")
+			assert.True(t, held, "the key has the name the stamps write")
 		})
 
-		t.Run("reports a registry that already claims the namespace", func(t *testing.T) {
+		t.Run("returns an error naming a namespace claimed twice", func(t *testing.T) {
 			t.Parallel()
 
 			r := meta.NewRegistry()
-			assert.NoError(t, frontendtest.ScriptedKeys(r), "the first claim registers")
+			assert.NoError(t, frontendtest.ScriptedKeys(r), "the first registration succeeds")
 			err := frontendtest.ScriptedKeys(r)
-			assert.HasError(t, err, "a namespace is claimed once")
-			assert.Contains(t, err.Error(), "fake", "naming it")
+			assert.HasError(t, err, "the second registration fails")
+			assert.Contains(t, err.Error(), "fake", "the error names the namespace")
 		})
 	})
 }

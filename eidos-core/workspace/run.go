@@ -26,16 +26,17 @@ import (
 // Run takes one loaded graph through the frame: seal, directive
 // validation, the kernel meta drops, annotate buckets, per-plan
 // generation, and — where the composition declares output — the
-// render, the stamp and the commit.
+// render, the stamp and the commit into a sink the run opens for
+// itself.
 //
 // The caller loads packages and attaches raw directives before
 // handing the graph over. Run seals the graph itself, and takes
-// one the load already sealed as it stands: sealing is idempotent,
+// one the load already sealed as it is: sealing is idempotent,
 // and a write after the seal refuses at the store under its own
 // code, which is where that fault belongs.
 //
 // A handler's returned error stops the frame, wrapped with its
-// role, and the report holds whatever ran before it. Findings
+// role, and the report contains whatever ran before it. Findings
 // never stop the frame: they arrive in the report's sink, and any
 // Error among them returns [ErrRunFailed] beside the report. A
 // missing graph is the one refusal, and it returns a nil report,
@@ -66,19 +67,15 @@ func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 		errs = append(errs, err)
 	}
 	if len(errs) == 0 {
-		// A run that reported nothing writes; one that failed keeps
-		// its staging unwritten, because half a tree is worse than
-		// none and the findings say why. A commit refused part-way
-		// still records the files that reached the destination.
+		// A run that reported nothing writes. A failed run opens no
+		// sink, so the previous generation of files remains in place
+		// and the findings state why. A commit refused part-way
+		// still records the files it wrote before the refusal.
 		written, err := w.commit(files)
 		if err != nil {
 			errs = append(errs, err)
 		}
 		report.Written = written
-	} else if w.sink != nil {
-		if err := w.sink.Discard(); err != nil {
-			errs = append(errs, fmt.Errorf("workspace: discard the staging: %w", err))
-		}
 	}
 	return report, errors.Join(errs...)
 }
@@ -97,10 +94,10 @@ func failure(sink *diag.Sink) error {
 // independent of every other. Each worker reports into a sink of
 // its own, and the findings merge into the run's sink in the
 // canonical finding order, so the report is the same whatever order
-// the workers finished in. A subject the graph does not hold reports
-// the dangling code and contributes nothing; the survivors form the
-// table the routing indexes carry, so a rejected instance never
-// gates a rule.
+// the workers finished in. A subject the graph does not contain
+// reports the dangling code and contributes nothing. The survivors
+// form the table the routing indexes read, so a rejected instance
+// never gates a rule.
 func (w *Workspace) validated(
 	g *store.Graph, facts *meta.Facts, sink *diag.Sink,
 ) map[symbol.Identity][]directive.Directive {
@@ -128,7 +125,7 @@ func (w *Workspace) validated(
 				s := subjects[i]
 				if !g.Holds(s.subject) {
 					local.Errorf(directive.DanglingSubject, s.raws[0].Pos, diag.PhaseFreeze,
-						"directives on %s name a subject the graph does not hold", s.subject)
+						"directives on %s name a subject the graph does not contain", s.subject)
 					continue
 				}
 				results[i] = directive.Validate(
@@ -184,9 +181,9 @@ func (w *Workspace) resolver(g *store.Graph, facts *meta.Facts) directive.Resolv
 	}
 }
 
-// fileOf returns the file a declaration sits in, matched by the
-// declaration's position against its package's files, and nil for
-// one the reader does not hold.
+// fileOf returns the file a declaration is declared in, matched by
+// the declaration's position against its package's files, and nil
+// for one the reader does not contain.
 func fileOf(reader *store.Reader, subject symbol.Identity) *node.File {
 	decl, held := reader.Lookup(subject)
 	if !held {
@@ -208,19 +205,18 @@ func fileOf(reader *store.Reader, subject symbol.Identity) *node.File {
 // applyStamps replays the load's classification stamps into the
 // fact store at plugin authority, before any drop or annotator
 // runs. Rank decides every winner, so a directive-authority drop
-// still beats a stamp whichever applied first; the order here
-// exists for the findings, not the outcome. A refusal reports
-// under the fact store's own code at the stamp's position, and the
-// frame continues. A stamp whose subject the graph does not hold
-// dangles the way a directive's does, reported rather than filed:
-// a ghost fact would enumerate under a subject no reader can
-// reach.
+// outranks a stamp whichever applied first. The order here exists
+// for the findings, not the outcome. A refusal reports under the
+// fact store's own code at the stamp's position, and the frame
+// continues. A stamp whose subject the graph does not contain is
+// reported and not filed, the way a dangling directive is: a fact
+// filed there would enumerate under a subject no reader can look up.
 func applyStamps(g *store.Graph, facts *meta.Facts, sink *diag.Sink) {
 	for id, stamps := range g.Stamps() {
 		if !g.Holds(id) {
 			for _, s := range stamps {
 				sink.Errorf(directive.DanglingSubject, s.Pos, s.Origin,
-					"a %s stamp names %s, which the graph does not hold", s.Key, id)
+					"a %s stamp names %s, which the graph does not contain", s.Key, id)
 			}
 			continue
 		}
@@ -243,8 +239,8 @@ func applyStamps(g *store.Graph, facts *meta.Facts, sink *diag.Sink) {
 // any annotator runs: a key drop through the fact store's key
 // tombstone, a group name through the group tombstone, each at
 // directive authority with the instance's position as the claim's.
-// The out and diag instances are carried, not consumed. A refused
-// drop is a defect, because validation resolved the reference.
+// The out and diag instances are not applied here. A refused drop
+// is a defect, because validation resolved the reference.
 func (w *Workspace) applyDrops(
 	table map[symbol.Identity][]directive.Directive, facts *meta.Facts,
 ) error {
@@ -352,7 +348,7 @@ func (w *Workspace) generateAll(
 
 // runPlan runs one plan's roles in bucket order, which is what an
 // emit-triggered rule's visibility is defined against: the store
-// holds earlier buckets' units when a later role runs.
+// contains earlier buckets' units when a later role runs.
 func (w *Workspace) runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
@@ -385,7 +381,7 @@ func (w *Workspace) runPlan(
 			return nil, fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
 		}
 	}
-	if err := plugin.Settle(into, pl.backend, sink); err != nil {
+	if err := plugin.Settle(into, pl.backend, facts, sink); err != nil {
 		return nil, fmt.Errorf("settle: %w", err)
 	}
 	return render(pl, into, sink)

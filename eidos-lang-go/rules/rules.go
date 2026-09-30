@@ -15,22 +15,31 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The spellings the signature rules read.
+// The types the signature rules read: the two predeclared spellings,
+// and the path and name of context.Context.
 const (
-	contextSpelling = "context.Context"
-	errorSpelling   = "error"
-	boolSpelling    = "bool"
-	iterSeqPrefix   = "iter.Seq"
+	errorSpelling  = "error"
+	boolSpelling   = "bool"
+	contextPackage = "context"
+	contextName    = "Context"
 )
 
-// Rules is the Go language's rules value. It holds no state, so
-// one value serves every goroutine.
+// The types a signature's parameters and returns classify by.
+var (
+	boolType    = typeName{name: boolSpelling}
+	contextType = typeName{pkg: contextPackage, name: contextName}
+	iterSeq     = typeName{pkg: golang.IterPackage, name: golang.IterSeq}
+	iterSeq2    = typeName{pkg: golang.IterPackage, name: golang.IterSeq2}
+)
+
+// Rules is the Go language's rules value. It has no state, so one
+// value serves every goroutine.
 type Rules struct{}
 
 // New returns the Go rules.
 func New() rules.SourceRules { return Rules{} }
 
-// Lang returns the language the rules answer for.
+// Lang returns the language the rules apply to.
 func (Rules) Lang() symbol.Lang { return golang.Lang }
 
 // Members walks embedded fields under promotion, to the kernel's
@@ -49,10 +58,11 @@ func (Rules) Members() rules.MemberPolicy {
 
 // ParamRole classifies a context.Context parameter as the context
 // and every other as input. Go states the context first by
-// convention; the spelling decides, so a context anywhere in the
-// list reads as one.
+// convention, and a context anywhere in the list reads as one. The
+// package the reference's import names and the name decide, so an
+// aliased import of context classifies too.
 func (Rules) ParamRole(p *node.Param, _ rules.View) rules.ParamRole {
-	if p != nil && p.Type != nil && named(p.Type) == contextSpelling {
+	if p != nil && p.Type != nil && nameOf(p.Type) == contextType {
 		return rules.ParamContext
 	}
 	return rules.ParamInput
@@ -61,20 +71,23 @@ func (Rules) ParamRole(p *node.Param, _ rules.View) rules.ParamRole {
 // ReturnRoles classifies a callable's returns: a last return of
 // type error is the error under the last-return model, the second
 // of two returns of type bool is the ok flag, an iter.Seq or
-// iter.Seq2 return is a stream, and the rest are values. A
-// callable without an error return reports no error model.
+// iter.Seq2 return is a stream, under any alias of the import, and
+// the rest are values. A callable without an error return reports no
+// error model.
 func (Rules) ReturnRoles(rs []*node.Return, _ rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
 	roles := make([]rules.ReturnRole, len(rs))
 	model := rules.ErrorsNone
 	for i, r := range rs {
-		switch {
-		case r == nil || r.Type == nil:
-		case i == len(rs)-1 && named(r.Type) == errorSpelling:
+		if r == nil || r.Type == nil {
+			continue
+		}
+		switch t := nameOf(r.Type); {
+		case i == len(rs)-1 && t == errorType:
 			roles[i] = rules.ReturnError
 			model = rules.ErrorsLastReturn
-		case len(rs) == 2 && i == 1 && named(r.Type) == boolSpelling:
+		case len(rs) == 2 && i == 1 && t == boolType:
 			roles[i] = rules.ReturnOkBool
-		case strings.HasPrefix(named(r.Type), iterSeqPrefix):
+		case t == iterSeq || t == iterSeq2:
 			roles[i] = rules.ReturnStream
 		}
 	}

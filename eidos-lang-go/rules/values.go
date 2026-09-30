@@ -38,7 +38,6 @@ const (
 	defaultHint      = "sample"
 	sampleSuffix     = "-a"
 	alternateSuffix  = "-b"
-	timePackage      = "time"
 	timeUnix         = "Unix"
 	// stringQuote opens the exact value of a string constant.
 	stringQuote = `"`
@@ -68,6 +67,11 @@ const platformWidth = 0
 // a composite refuse with no literal, because Go takes the address
 // of a composite literal alone. A named type outside the view
 // refuses as unresolved.
+//
+// A slice's and an array's element, a map's key and value, and a
+// struct's field take the values an author stated for them first,
+// read through [rules.View.Authored]. The derivation completes each
+// half no author stated.
 func (r Rules) SamplesOf(
 	ref *node.TypeRef,
 	hint string,
@@ -94,11 +98,11 @@ func (r Rules) derive(
 		sample, alternate := r.derive(child(ref, 0), hint, v, depth+1)
 		return addressed(sample), addressed(alternate)
 	case symbol.FormList, symbol.FormArray:
-		sample, alternate := r.derive(child(ref, 0), hint, v, depth+1)
+		sample, alternate := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
 		return rules.Lift(sample, elements(ref)), rules.Lift(alternate, elements(ref))
 	case symbol.FormMap:
-		key, otherKey := r.derive(child(ref, 0), hint, v, depth+1)
-		value, _ := r.derive(child(ref, 1), hint, v, depth+1)
+		key, otherKey := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
+		value, _ := r.partPair(symbol.Identity{}, child(ref, 1), hint, v, depth+1)
 		if !key.OK() || !otherKey.OK() || !value.OK() {
 			return rules.RefusedPair(rules.FirstRefusal(key, otherKey, value))
 		}
@@ -112,6 +116,26 @@ func (r Rules) derive(
 	default:
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
+}
+
+// partPair returns the pair of one part of a composite: the values
+// an author stated on the declaration that has the part and on its
+// type, and the derivation for each half no author stated. A list
+// element and a map's key and value have no declaration of their
+// own, so subject is zero for them.
+func (r Rules) partPair(
+	subject symbol.Identity,
+	ref *node.TypeRef,
+	hint string,
+	v rules.View,
+	depth int,
+) (rules.Sample, rules.Sample) {
+	sample, alternate := v.Authored(r, subject, ref)
+	if sample.OK() && alternate.OK() {
+		return sample, alternate
+	}
+	derived, derivedAlternate := r.derive(ref, hint, v, depth)
+	return rules.Complete(sample, alternate, derived, derivedAlternate)
 }
 
 // declaredPair derives the pair of a named type in the view.
@@ -131,7 +155,7 @@ func (r Rules) declaredPair(
 			if f == nil || f.Type == nil || !exported(f.Name) {
 				continue
 			}
-			sample, alternate := r.derive(f.Type, f.Name, v, depth+1)
+			sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1)
 			if !sample.OK() || !alternate.OK() {
 				return rules.RefusedPair(rules.FirstRefusal(sample, alternate))
 			}
@@ -209,7 +233,7 @@ func (r Rules) builtinPair(ref *node.TypeRef, hint string) (rules.Sample, rules.
 				rules.Of(emit.Conversion(t, emit.Literal(emit.LiteralInt, alternateSmall)))
 		}
 	}
-	if golang.Predeclared(named(ref)) || named(ref) == spellUnsafePointer {
+	if t := nameOf(ref); t.pkg == "" && golang.Predeclared(t.name) || t == unsafePointerType {
 		return rules.RefusedPair(rules.RefusedNoLiteral)
 	}
 	return rules.RefusedPair(rules.RefusedUnresolved)
@@ -338,8 +362,8 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 			return emit.Conversion(rules.EmitRef(ref), emit.Literal(emit.LiteralInt, sampleZero)), true
 		}
 	}
-	switch named(ref) {
-	case spellAny, errorSpelling, spellUnsafePointer:
+	switch nameOf(ref) {
+	case anyType, errorType, unsafePointerType:
 		return emit.Literal(emit.LiteralNil, ""), true
 	default:
 		return emit.Value{}, false

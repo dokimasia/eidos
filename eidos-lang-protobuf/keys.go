@@ -8,12 +8,16 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// namespace is the metadata namespace every protobuf key registers
+// under.
+const namespace = "protobuf"
+
 // The satellite's classification and fact keys. Each names a proto
 // spelling the projection has no neutral form for: a field's wire
 // number decides compatibility and the neutral model has no field
 // for it, a reserved range is a promise about names a schema never
-// reuses, and a file's options steer another generator. They are the
-// residue, declared and stamped.
+// reuses, and a file's options steer another generator. The
+// satellite declares and stamps each of them.
 const (
 	// FieldKey is a field's wire number, as written. Two schemas
 	// agree on the wire when their numbers agree, so a consumer
@@ -85,8 +89,9 @@ const (
 	ImportKey meta.KeyName = "protobuf.import"
 )
 
-// Keys claims the protobuf metadata namespace and registers every
-// key in it, each typed as text.
+// Keys claims the protobuf metadata namespace for the handle's
+// registrant and registers every key in it through the same handle,
+// each typed as text.
 //
 // A composition passes it to the workspace builder and a corpus
 // fixture passes it to the conformance runner, so both register one
@@ -94,7 +99,7 @@ const (
 // registers nothing after it. Calling it twice on one registry is an
 // error, because a namespace is claimed once.
 func Keys(r *meta.Registry) error {
-	if err := r.ClaimNamespace("protobuf", string(Name)); err != nil {
+	if err := r.ClaimNamespace(namespace); err != nil {
 		return err
 	}
 	file := []symbol.Kind{symbol.KindFile}

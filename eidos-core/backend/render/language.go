@@ -19,20 +19,20 @@ import (
 type Naming func(u plugin.Unit) string
 
 // Split reshapes one unit into the units the target files
-// separately: a language that names a file after the type it
-// holds returns one unit per file-level type, and its Naming
-// reads the lone type's name, so the demanded filename spells
-// while the routing key keeps carrying the source derivation. A
-// nil Split keeps every unit whole. The pass applies it before
-// naming, preserves order, and calls it once per unit, so a pure
-// function keeps the render deterministic.
+// separately: a language that names a file after the type the file
+// declares returns one unit per file-level type, and its Naming
+// reads the lone type's name. The file then takes the name the
+// language demands, and the routing key keeps the source
+// derivation. A nil Split keeps every unit whole. The pass applies
+// it before naming, preserves order, and calls it once per unit, so
+// a pure function keeps the render deterministic.
 type Split func(u plugin.Unit) []plugin.Unit
 
 // GroupName names a declaration cluster a group template spells.
 type GroupName string
 
 // Clustered is one cluster: the group template that spells it and
-// the declarations it holds, in unit order.
+// the declarations it contains, in unit order.
 type Clustered struct {
 	Group GroupName
 	Decls []symbol.Symbol
@@ -45,29 +45,45 @@ type Clustered struct {
 // cluster renders through the group template its name selects, in
 // place of its members' kind templates, at the position of its
 // first member. A declaration two clusters claim goes to the
-// first, and a member the unit does not hold is ignored. Clusters
-// stay inside one unit, so plugin attribution and canonical order
-// survive. A nil Cluster leaves every declaration a singleton.
+// first, and a member the unit does not contain is ignored. A
+// cluster never spans two units, so plugin attribution and
+// canonical order survive. A nil Cluster leaves every declaration a
+// singleton.
 type Cluster func(decls []symbol.Symbol) []Clustered
 
-// Language is what a target genuinely varies in; the pass owns
+// Language is what varies between targets. The pass implements
 // everything else.
 type Language struct {
-	// Kinds holds the template source per emit kind: how the
+	// Kinds maps each emit kind to its template source: how the
 	// language spells each declaration.
 	Kinds map[symbol.Kind]string
+	// Refused maps each emit kind the language declares no spelling
+	// for to the reason, stated as a fact of the language. A
+	// declaration of a refused kind is skipped under [RefusedKind]
+	// with the reason, and a declaration of a kind neither spelt nor
+	// refused is skipped under [UnspeltKind]. A kind is spelt or
+	// refused, never both. The Cluster spells what it gathers
+	// through a group template, so a language refuses no kind its
+	// Cluster gathers.
+	Refused map[symbol.Kind]string
 	// File is the file skeleton, executed once per file over the
-	// file's name and owning package; empty takes the default,
-	// imports then declarations. The clause a language opens its
+	// file's name and its package. Empty takes the default, imports
+	// then declarations. The clause a language opens its
 	// files with is the skeleton's own to spell, because not every
 	// language has one. The header is not the skeleton's: the
 	// output contract prepends it after the formatter ran.
 	File string
-	// Funcs is the language's shared template vocabulary,
-	// registered once into the overrideable bucket: every kind
-	// template, file skeleton and reference template calls it, and
-	// a declared override replaces one name for all of them.
-	Funcs template.FuncMap
+	// Funcs returns the language's shared template vocabulary bound
+	// to one file's import set, so a helper that spells a type
+	// records the import the spelling needs. It is the overrideable
+	// bucket: every kind template, file skeleton and reference
+	// template calls it, and a declared override replaces one name
+	// for all of them. The pass calls it once per worker with the
+	// worker's set, which the pass resets per file, and once at
+	// [New] with a set of its own to read the names for the parse,
+	// so every call returns the same names. A nil Funcs declares no
+	// vocabulary.
+	Funcs func(set *ImportSet) template.FuncMap
 	// Naming spells each unit's filename.
 	Naming Naming
 	// Split reshapes each unit before naming; nil files every unit
@@ -76,8 +92,8 @@ type Language struct {
 	// Cluster assigns a unit's declarations to named groups; nil
 	// leaves every declaration a singleton.
 	Cluster Cluster
-	// Groups holds the template source per group name a Cluster
-	// selects.
+	// Groups maps each group name a Cluster selects to its template
+	// source.
 	Groups map[GroupName]string
 	// Scaffold spells one statement of the neutral vocabulary the
 	// language's way, recording into the file's import set whatever
@@ -95,8 +111,14 @@ type Language struct {
 	// Coverage is the language's declared fact coverage. Declared,
 	// it arms the guard: a stated fact the declaration refuses
 	// reports and the declaration renders without it, and one the
-	// declaration misses reports a defect. Left empty, the guard
-	// stays off, which is what a language predating the coverage
-	// contract renders under.
+	// declaration misses reports a defect. Left empty, the guard is
+	// off.
 	Coverage Coverage
+}
+
+// Refuser is implemented by a renderer declaring the kinds its
+// language refuses, which is how the conformance suite reads them
+// back.
+type Refuser interface {
+	RefusedKinds() map[symbol.Kind]string
 }

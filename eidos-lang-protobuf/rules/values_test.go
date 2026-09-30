@@ -4,14 +4,18 @@
 package rules_test
 
 import (
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
 
+	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	protorules "go.dokimi.dev/eidos/lang/protobuf/rules"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
+	"go.dokimi.dev/eidos/sdk/store"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -39,6 +43,75 @@ const (
 	enumBits = 32
 )
 
+// The spellings the value cases name: the wire's scalars, the
+// well-known types, and a message no schema declares.
+const (
+	int32Spelling     = "int32"
+	int64Spelling     = "int64"
+	uint32Spelling    = "uint32"
+	sfixed32Spelling  = "sfixed32"
+	floatSpelling     = "float"
+	doubleSpelling    = "double"
+	boolSpelling      = "bool"
+	stringSpelling    = "string"
+	bytesSpelling     = "bytes"
+	int32Wrapper      = "google.protobuf.Int32Value"
+	int64Wrapper      = "google.protobuf.Int64Value"
+	boolWrapper       = "google.protobuf.BoolValue"
+	dottedWrapper     = ".google.protobuf.StringValue"
+	timestampSpelling = "google.protobuf.Timestamp"
+	anySpelling       = "google.protobuf.Any"
+	ghostSpelling     = "some.Ghost"
+)
+
+// The fixture's declarations, fields and enum values the cases read.
+const (
+	rowName    = "Row"
+	emptyName  = "Empty"
+	ghostName  = "Ghost"
+	colourName = "Colour"
+	bodyName   = "body"
+	nameField  = "name"
+	textField  = "text"
+	redValue   = "COLOUR_RED"
+	octalValue = "MODE_OCTAL"
+	ghostValue = "MODE_GHOST"
+)
+
+// The values the wire table derives, pinned: the numbers, the truth
+// values, the hint a string takes where the caller names none with
+// the suffixes of its two halves, and the widths.
+const (
+	derivedInt      = "42"
+	derivedAltInt   = "7"
+	derivedFloat    = "1.5"
+	derivedAltFloat = "2.5"
+	zeroText        = "0"
+	trueText        = "true"
+	falseText       = "false"
+	defaultHint     = "sample"
+	sampleSuffix    = "-a"
+	alternateSuffix = "-b"
+	bits32          = 32
+	bits64          = 64
+)
+
+// fixturePlugin is the plugin the cases' authored stamps claim.
+const fixturePlugin = "fixture"
+
+// The hints the cases pass, and the values an author states.
+const (
+	nameHint      = "name"
+	tagHint       = "tag"
+	keyHint       = "k"
+	idHint        = "id"
+	authoredText  = "us-east"
+	otherText     = "eu-west"
+	authoredValue = "COLOUR_UNSPECIFIED"
+	authoredRow   = "Row{name: 1}"
+	otherRow      = "Row{name: 2}"
+)
+
 // pairOf derives a reference's two values and fails unless both
 // derived.
 func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Value, emit.Value) {
@@ -48,6 +121,12 @@ func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Valu
 	assert.True(tb, sample.OK(), "the sample derives: "+sample.Refusal.String())
 	assert.True(tb, alternate.OK(), "the alternate derives: "+alternate.Refusal.String())
 	return sample.Value, alternate.Value
+}
+
+// refusalOf returns the refusal of a reference's sample.
+func refusalOf(f *fixture, ref *node.TypeRef) rules.Refusal {
+	sample, _ := protorules.New().SamplesOf(ref, "", f.view)
+	return sample.Refusal
 }
 
 // enumValue returns an enum number converted to the enum a reference
@@ -65,287 +144,519 @@ func TestValues(t *testing.T) {
 	t.Run("SamplesOf", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("derives the wire's scalars at the wire's width", func(t *testing.T) {
+		scalars := []struct {
+			name          string
+			give          string
+			giveHint      string
+			wantSample    emit.Value
+			wantAlternate emit.Value
+		}{
+			{
+				name:          "returns integers at 64 bits for int64",
+				give:          int64Spelling,
+				wantSample:    emit.Number(emit.LiteralInt, derivedInt, bits64),
+				wantAlternate: emit.Number(emit.LiteralInt, derivedAltInt, bits64),
+			},
+			{
+				name:          "returns integers at 32 bits for sfixed32",
+				give:          sfixed32Spelling,
+				wantSample:    emit.Number(emit.LiteralInt, derivedInt, bits32),
+				wantAlternate: emit.Number(emit.LiteralInt, derivedAltInt, bits32),
+			},
+			{
+				name:          "returns floats at 32 bits for float",
+				give:          floatSpelling,
+				wantSample:    emit.Number(emit.LiteralFloat, derivedFloat, bits32),
+				wantAlternate: emit.Number(emit.LiteralFloat, derivedAltFloat, bits32),
+			},
+			{
+				name:          "returns true and false for bool",
+				give:          boolSpelling,
+				wantSample:    emit.Literal(emit.LiteralBool, trueText),
+				wantAlternate: emit.Literal(emit.LiteralBool, falseText),
+			},
+			{
+				name:          "returns the hint with a suffix per half for string",
+				give:          stringSpelling,
+				giveHint:      nameHint,
+				wantSample:    emit.Literal(emit.LiteralString, nameHint+sampleSuffix),
+				wantAlternate: emit.Literal(emit.LiteralString, nameHint+alternateSuffix),
+			},
+			{
+				name:          "returns the default hint for bytes without a hint",
+				give:          bytesSpelling,
+				wantSample:    emit.Literal(emit.LiteralString, defaultHint+sampleSuffix),
+				wantAlternate: emit.Literal(emit.LiteralString, defaultHint+alternateSuffix),
+			},
+			{
+				name:          "returns the wrapped scalar's pair for a wrapper",
+				give:          int32Wrapper,
+				wantSample:    emit.Number(emit.LiteralInt, derivedInt, bits32),
+				wantAlternate: emit.Number(emit.LiteralInt, derivedAltInt, bits32),
+			},
+			{
+				name:          "returns the wrapped scalar's pair for a wrapper spelled with a leading dot",
+				give:          dottedWrapper,
+				giveHint:      idHint,
+				wantSample:    emit.Literal(emit.LiteralString, idHint+sampleSuffix),
+				wantAlternate: emit.Literal(emit.LiteralString, idHint+alternateSuffix),
+			},
+		}
+		for _, tt := range scalars {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s, a := pairOf(t, loaded(t), builtin(tt.give), tt.giveHint)
+				assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{tt.wantSample, tt.wantAlternate},
+					"the wire table's pair")
+			})
+		}
+
+		refusals := []struct {
+			name string
+			give *node.TypeRef
+			want rules.Refusal
+		}{
+			{
+				name: "returns RefusedNoLiteral for google.protobuf.Timestamp",
+				give: builtin(timestampSpelling), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for google.protobuf.Any",
+				give: builtin(anySpelling), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedUnresolved for a message no schema declares",
+				give: builtin(ghostSpelling), want: rules.RefusedUnresolved,
+			},
+			{
+				name: "returns RefusedNoLiteral for a stream",
+				give: composite("stream Row", symbol.FormStream, ref(svcPkg, rowName, symbol.KindStruct)),
+				want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedUnresolved for a map whose value is unresolved",
+				give: composite("map<string, Ghost>", symbol.FormMap,
+					builtin(stringSpelling), ref(svcPkg, ghostName, symbol.KindStruct)),
+				want: rules.RefusedUnresolved,
+			},
+			{
+				name: "returns RefusedUnresolved for a message the view does not contain",
+				give: ref(svcPkg, ghostName, symbol.KindStruct), want: rules.RefusedUnresolved,
+			},
+			{name: "returns RefusedNoLiteral for a nil reference", want: rules.RefusedNoLiteral},
+			{
+				name: "returns RefusedNoLiteral for a message with nothing it can set",
+				give: ref(svcPkg, emptyName, symbol.KindStruct), want: rules.RefusedNoLiteral,
+			},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, refusalOf(loaded(t), tt.give), tt.want, "the refusal names its reason")
+			})
+		}
+
+		t.Run("returns a one-element composite for a repeated field", func(t *testing.T) {
 			t.Parallel()
 
-			f := loaded(t)
-			s, a := pairOf(t, f, builtin("int64"), "")
-			assert.Equal(t, s, emit.Number(emit.LiteralInt, "42", 64), "an integer at sixty-four bits")
-			assert.Equal(t, a, emit.Number(emit.LiteralInt, "7", 64), "and its alternate")
-			s, _ = pairOf(t, f, builtin("sfixed32"), "")
-			assert.Equal(t, s.Bits, 32, "a fixed spelling at the width its name states")
-			s, _ = pairOf(t, f, builtin("float"), "")
-			assert.Equal(t, s, emit.Number(emit.LiteralFloat, "1.5", 32), "a float at thirty-two bits")
-			s, a = pairOf(t, f, builtin("bool"), "")
-			assert.Equal(t, s.Text, "true", "a boolean")
-			assert.Equal(t, a.Text, "false", "and its opposite")
-			s, a = pairOf(t, f, builtin("string"), "name")
-			assert.Equal(t, s.Text, "name-a", "a string with the hint")
-			assert.Equal(t, a.Text, "name-b", "and differs in its suffix")
-			s, _ = pairOf(t, f, builtin("bytes"), "")
-			assert.Equal(t, s.Text, "sample-a", "bytes take the default hint")
+			list := composite("repeated string", symbol.FormList, builtin(stringSpelling))
+			s, a := pairOf(t, loaded(t), list, tagHint)
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(list),
+					emit.Element(emit.Literal(emit.LiteralString, tagHint+sampleSuffix))),
+				emit.Composite(rules.EmitRef(list),
+					emit.Element(emit.Literal(emit.LiteralString, tagHint+alternateSuffix))),
+			}, "the halves differ in the element")
 		})
 
-		t.Run("derives a wrapper as the scalar it wraps", func(t *testing.T) {
+		t.Run("returns a one-entry composite for a map", func(t *testing.T) {
 			t.Parallel()
 
-			f := loaded(t)
-			s, _ := pairOf(t, f, builtin("google.protobuf.Int32Value"), "")
-			assert.Equal(t, s, emit.Number(emit.LiteralInt, "42", 32),
-				"a wrapper's value is its scalar's, because the wrapper adds presence alone")
-			s, _ = pairOf(t, f, builtin(".google.protobuf.StringValue"), "id")
-			assert.Equal(t, s.Text, "id-a", "spelled with its leading dot too")
-
-			for _, spelling := range []string{"google.protobuf.Timestamp", "google.protobuf.Any"} {
-				refused, _ := protorules.New().SamplesOf(builtin(spelling), "", f.view)
-				assert.Equal(t, refused.Refusal, rules.RefusedNoLiteral,
-					spelling+" has no literal protobuf states, so the value is the target's own")
-			}
-			refused, _ := protorules.New().SamplesOf(builtin("some.Ghost"), "", f.view)
-			assert.Equal(t, refused.Refusal, rules.RefusedUnresolved,
-				"and a message the workspace does not declare is unresolved")
+			m := composite("map<string, int64>", symbol.FormMap, builtin(stringSpelling), builtin(int64Spelling))
+			s, a := pairOf(t, loaded(t), m, keyHint)
+			value := emit.Number(emit.LiteralInt, derivedInt, bits64)
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(m),
+					emit.KeyedEntry(emit.Literal(emit.LiteralString, keyHint+sampleSuffix), value)),
+				emit.Composite(rules.EmitRef(m),
+					emit.KeyedEntry(emit.Literal(emit.LiteralString, keyHint+alternateSuffix), value)),
+			}, "the halves differ in the key")
 		})
 
-		t.Run("derives the composites the labels state", func(t *testing.T) {
+		t.Run("returns the element's pair for an optional field", func(t *testing.T) {
 			t.Parallel()
 
-			f := loaded(t)
-			s, a := pairOf(t, f, composite("repeated string", symbol.FormList, builtin("string")), "tag")
-			assert.Equal(t, s.Kind, emit.ValueComposite, "a repeated field is a composite")
-			assert.Length(t, s.Fields, 1, "of one element")
-			assert.True(t, s.Fields[0].Value.Text != a.Fields[0].Value.Text, "differing in the element")
-
-			s, a = pairOf(t, f,
-				composite("map<string, int64>", symbol.FormMap, builtin("string"), builtin("int64")), "k")
-			assert.Length(t, s.Fields, 1, "a map has one keyed entry")
-			assert.NotNil(t, s.Fields[0].Key, "which states its key")
-			assert.True(t, s.Fields[0].Key.Text != a.Fields[0].Key.Text, "differing in the key")
-
-			s, _ = pairOf(t, f, composite("optional int64", symbol.FormOptional, builtin("int64")), "")
-			assert.Equal(t, s.Literal, emit.LiteralInt,
-				"an optional field's value is its type's, because presence is not a value")
-
-			refused, _ := protorules.New().SamplesOf(
-				composite("stream Row", symbol.FormStream, ref(svcPkg, "Row", symbol.KindStruct)),
-				"", f.view,
-			)
-			assert.Equal(t, refused.Refusal, rules.RefusedNoLiteral,
-				"a stream is many of its message, and one value of it is not a value")
-
-			refused, _ = protorules.New().SamplesOf(
-				composite("map<string, Ghost>", symbol.FormMap,
-					builtin("string"), ref(svcPkg, "Ghost", symbol.KindStruct)),
-				"", f.view,
-			)
-			assert.Equal(t, refused.Refusal, rules.RefusedUnresolved,
-				"a map passes its value's refusal through")
+			s, a := pairOf(t, loaded(t), composite("optional int64", symbol.FormOptional, builtin(int64Spelling)), "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Number(emit.LiteralInt, derivedInt, bits64),
+				emit.Number(emit.LiteralInt, derivedAltInt, bits64),
+			}, "presence is not a value")
 		})
 
-		t.Run("derives a message and an enum from the schema", func(t *testing.T) {
+		t.Run("returns a composite setting the first field for a message", func(t *testing.T) {
 			t.Parallel()
 
-			f := loaded(t)
-			s, a := pairOf(t, f, ref(svcPkg, "Row", symbol.KindStruct), "")
-			assert.Equal(t, s.Kind, emit.ValueComposite, "a message is a composite")
-			assert.Length(t, s.Fields, 1, "setting one field")
-			assert.True(t, s.Fields[0].Value.Text != a.Fields[0].Value.Text, "differing there")
-
-			colour := ref(svcPkg, "Colour", symbol.KindEnum)
-			s, a = pairOf(t, f, colour, "")
-			assert.Equal(t, s, enumValue(colour, "0"),
-				"an enum's value is its number converted to the enum type, which every target spells")
-			assert.Equal(t, a, enumValue(colour, "1"), "and the second value's number")
-
-			refused, _ := protorules.New().SamplesOf(
-				ref(svcPkg, "Ghost", symbol.KindStruct), "", f.view,
-			)
-			assert.Equal(t, refused.Refusal, rules.RefusedUnresolved,
-				"a message the view does not contain is unresolved")
-			refused, _ = protorules.New().SamplesOf(nil, "", f.view)
-			assert.Equal(t, refused.Refusal, rules.RefusedNoLiteral, "and nothing has no value")
+			row := ref(svcPkg, rowName, symbol.KindStruct)
+			s, _ := pairOf(t, loaded(t), row, "")
+			assert.Equal(t, s, emit.Composite(rules.EmitRef(row),
+				emit.NamedField(nameField, emit.Literal(emit.LiteralString, nameField+sampleSuffix))),
+				"the field's name is the string's hint")
 		})
 
-		t.Run("derives an enum pair from two distinct numbers in any base", func(t *testing.T) {
+		t.Run("returns the first two numbers converted for an enum", func(t *testing.T) {
 			t.Parallel()
 
-			f := loadedFrom(t, map[string]string{enumsPath: enumsSource})
+			colour := ref(svcPkg, colourName, symbol.KindEnum)
+			s, a := pairOf(t, loaded(t), colour, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{enumValue(colour, "0"), enumValue(colour, "1")},
+				"every target spells a number converted to the enum type")
+		})
+
+		t.Run("returns two distinct numbers in any base for an enum", func(t *testing.T) {
+			t.Parallel()
+
 			mode := ref(svcPkg, modeName, symbol.KindEnum)
-			s, a := pairOf(t, f, mode, "")
-			assert.Equal(t, s, enumValue(mode, "16"), "the first value's hexadecimal number")
-			assert.Equal(t, a, enumValue(mode, "15"),
-				"then the next distinct number, the alias sharing sixteen passed over and octal read")
+			s, a := pairOf(t, loadedFrom(t, map[string]string{enumsPath: enumsSource}), mode, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{enumValue(mode, "16"), enumValue(mode, "15")},
+				"the alias sharing sixteen is passed over and the octal number is read")
 		})
 
-		t.Run("derives a oneof through the first variant that yields a pair", func(t *testing.T) {
+		t.Run("returns a composite setting the first variant's field for a oneof", func(t *testing.T) {
+			t.Parallel()
+
+			body := &node.TypeRef{Spelling: bodyName, Target: member(svcPkg, rowName, bodyName, symbol.KindSum)}
+			s, _ := pairOf(t, loaded(t), body, "")
+			assert.Equal(t, s, emit.Composite(rules.EmitRef(body),
+				emit.NamedField(textField, emit.Literal(emit.LiteralString, textField+sampleSuffix))),
+				"a oneof's value is one variant's field")
+		})
+
+		t.Run("returns the values authored on an element's type for a repeated field", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			body := &node.TypeRef{Spelling: "body", Target: member(svcPkg, "Row", "body", symbol.KindSum)}
+			colour := ref(svcPkg, colourName, symbol.KindEnum)
+			stamp(t, f, f.Keys.Sample, colour.Target, authoredValue)
+			stamp(t, f, f.Keys.Alternate, colour.Target, redValue)
+			list := composite("repeated Colour", symbol.FormList, colour)
+			s, a := pairOf(t, f, list, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(list), emit.Element(emit.Raw(protobuf.Lang, authoredValue))),
+				emit.Composite(rules.EmitRef(list), emit.Element(emit.Raw(protobuf.Lang, redValue))),
+			}, "each element takes the text the author stated on Colour")
+		})
+
+		t.Run("returns the value authored on a map value's type", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			colour := ref(svcPkg, colourName, symbol.KindEnum)
+			stamp(t, f, f.Keys.Sample, colour.Target, authoredValue)
+			m := composite("map<string, Colour>", symbol.FormMap, builtin(stringSpelling), colour)
+			s, _ := pairOf(t, f, m, keyHint)
+			assert.Equal(t, s, emit.Composite(rules.EmitRef(m), emit.KeyedEntry(
+				emit.Literal(emit.LiteralString, keyHint+sampleSuffix),
+				emit.Raw(protobuf.Lang, authoredValue),
+			)), "the entry's value takes the text the author stated on Colour")
+		})
+
+		t.Run("returns the values authored on a field for a message", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			row := ref(svcPkg, rowName, symbol.KindStruct)
+			name := fieldOf(t, f, row.Target, nameField)
+			stamp(t, f, f.Keys.Sample, name.ID, authoredText)
+			stamp(t, f, f.Keys.Alternate, name.ID, otherText)
+			s, a := pairOf(t, f, row, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(row),
+					emit.NamedField(nameField, emit.Literal(emit.LiteralString, authoredText))),
+				emit.Composite(rules.EmitRef(row),
+					emit.NamedField(nameField, emit.Literal(emit.LiteralString, otherText))),
+			}, "the composite sets the strings the author stated on name")
+		})
+
+		t.Run("returns the values authored on a field for a oneof", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			body := &node.TypeRef{Spelling: bodyName, Target: member(svcPkg, rowName, bodyName, symbol.KindSum)}
+			sum, is := f.decl(t, body.Target).(*node.Sum)
+			assert.True(t, is, "body is a oneof")
+			text := sum.Variants[0].Fields[0]
+			stamp(t, f, f.Keys.Sample, text.ID, authoredText)
+			stamp(t, f, f.Keys.Alternate, text.ID, otherText)
 			s, a := pairOf(t, f, body, "")
-			assert.Equal(t, s.Kind, emit.ValueComposite, "a oneof's value sets one variant's field")
-			assert.Length(t, s.Fields, 1, "one field")
-			assert.True(t, s.Fields[0].Value.Text != a.Fields[0].Value.Text,
-				"and the pair differs there")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(body),
+					emit.NamedField(textField, emit.Literal(emit.LiteralString, authoredText))),
+				emit.Composite(rules.EmitRef(body),
+					emit.NamedField(textField, emit.Literal(emit.LiteralString, otherText))),
+			}, "the composite sets the strings the author stated on text")
 		})
 
-		t.Run("refuses a message with nothing it can set", func(t *testing.T) {
+		t.Run("reads no field of an element whose type states both halves", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			refused, _ := protorules.New().SamplesOf(
-				ref(svcPkg, "Empty", symbol.KindStruct), "", f.view,
-			)
-			assert.Equal(t, refused.Refusal, rules.RefusedNoLiteral,
-				"every value of a message with no field is one value, and a check needs two")
+			row := ref(svcPkg, rowName, symbol.KindStruct)
+			stamp(t, f, f.Keys.Sample, row.Target, authoredRow)
+			stamp(t, f, f.Keys.Alternate, row.Target, otherRow)
+			pairOf(t, f, composite("repeated Row", symbol.FormList, row), "")
+			reads, recorded := f.view.Reads.(*store.ReadSet)
+			assert.True(t, recorded, "the view records into a read set")
+			var read []symbol.Identity
+			for subject := range reads.Facts() {
+				read = append(read, subject)
+			}
+			assert.False(t, slices.Contains(read, fieldOf(t, f, row.Target, nameField).ID),
+				"the authored pair depends on no derivation, so no field of Row is an edge")
+		})
+
+		t.Run("completes an element's unstated half with the derived value", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			colour := ref(svcPkg, colourName, symbol.KindEnum)
+			stamp(t, f, f.Keys.Sample, colour.Target, authoredValue)
+			list := composite("repeated Colour", symbol.FormList, colour)
+			s, a := pairOf(t, f, list, "")
+			assert.Equal(t, [2]emit.Value{s, a}, [2]emit.Value{
+				emit.Composite(rules.EmitRef(list), emit.Element(emit.Raw(protobuf.Lang, authoredValue))),
+				emit.Composite(rules.EmitRef(list), emit.Element(enumValue(colour, "1"))),
+			}, "the authored element pairs with Colour's derived alternate")
 		})
 	})
 
 	t.Run("ZeroValue", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns each form's zero", func(t *testing.T) {
+		list := composite("repeated string", symbol.FormList, builtin(stringSpelling))
+		m := composite("map<string, int64>", symbol.FormMap, builtin(stringSpelling), builtin(int64Spelling))
+		colour := ref(svcPkg, colourName, symbol.KindEnum)
+		nilValue := emit.Literal(emit.LiteralNil, "")
+		tests := []struct {
+			name string
+			give *node.TypeRef
+			want emit.Value
+		}{
+			{
+				name: "returns 0 at 64 bits for int64",
+				give: builtin(int64Spelling), want: emit.Number(emit.LiteralInt, zeroText, bits64),
+			},
+			{
+				name: "returns 0 at 64 bits for double",
+				give: builtin(doubleSpelling), want: emit.Number(emit.LiteralFloat, zeroText, bits64),
+			},
+			{
+				name: "returns false for bool",
+				give: builtin(boolSpelling), want: emit.Literal(emit.LiteralBool, falseText),
+			},
+			{
+				name: "returns the empty string for string",
+				give: builtin(stringSpelling), want: emit.Literal(emit.LiteralString, ""),
+			},
+			{
+				name: "returns the empty string for bytes",
+				give: builtin(bytesSpelling), want: emit.Literal(emit.LiteralString, ""),
+			},
+			{
+				name: "returns the empty composite for a repeated field",
+				give: list, want: emit.Composite(rules.EmitRef(list)),
+			},
+			{name: "returns the empty composite for a map", give: m, want: emit.Composite(rules.EmitRef(m))},
+			{
+				name: "returns nil for an optional field",
+				give: composite("optional int64", symbol.FormOptional, builtin(int64Spelling)), want: nilValue,
+			},
+			{name: "returns nil for a wrapper", give: builtin(boolWrapper), want: nilValue},
+			{name: "returns nil for a message", give: ref(svcPkg, rowName, symbol.KindStruct), want: nilValue},
+			{name: "returns the first declared value for an enum", give: colour, want: enumValue(colour, zeroText)},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, ok := protorules.New().ZeroValue(tt.give, loaded(t).view)
+				assert.True(t, ok, "the zero derives")
+				assert.Equal(t, got, tt.want, "the value an absent field reads as")
+			})
+		}
+
+		t.Run("returns an enum's first declared value whatever its number", func(t *testing.T) {
 			t.Parallel()
 
-			f := loaded(t)
-			r := protorules.New()
-			zero := func(ref *node.TypeRef) emit.Value {
-				v, ok := r.ZeroValue(ref, f.view)
-				assert.True(t, ok, "the zero derives for "+ref.Spelling)
-				return v
-			}
-			assert.Equal(t, zero(builtin("int64")), emit.Number(emit.LiteralInt, "0", 64),
-				"an integer's zero at its width")
-			assert.Equal(t, zero(builtin("double")), emit.Number(emit.LiteralFloat, "0", 64), "a float's")
-			assert.Equal(t, zero(builtin("bool")).Text, "false", "a boolean's")
-			assert.Equal(t, zero(builtin("string")), emit.Literal(emit.LiteralString, ""), "a string's")
-			assert.Equal(t, zero(builtin("bytes")).Literal, emit.LiteralString, "and bytes'")
-
-			assert.Equal(t, zero(composite("repeated string", symbol.FormList, builtin("string"))).Kind,
-				emit.ValueComposite, "a repeated field's zero is the empty list")
-			assert.Equal(t,
-				zero(composite("map<string, int64>", symbol.FormMap, builtin("string"), builtin("int64"))).Kind,
-				emit.ValueComposite, "a map's is the empty map")
-			assert.Equal(t,
-				zero(composite("optional int64", symbol.FormOptional, builtin("int64"))).Literal,
-				emit.LiteralNil,
-				"an absent optional field is absent, not zero, which is what presence means")
-			assert.Equal(t, zero(builtin("google.protobuf.BoolValue")).Literal, emit.LiteralNil,
-				"and so is an absent wrapper, which exists to give its scalar presence")
-			assert.Equal(t, zero(ref(svcPkg, "Row", symbol.KindStruct)).Literal, emit.LiteralNil,
-				"and an absent message: proto3 gives a message field no zero of its own")
-
-			colour := ref(svcPkg, "Colour", symbol.KindEnum)
-			assert.Equal(t, zero(colour), enumValue(colour, "0"),
-				"an enum's zero is its first declared value, converted to the enum type")
-		})
-
-		t.Run("returns an enum's first declared value, whatever its number", func(t *testing.T) {
-			t.Parallel()
-
-			f := loadedFrom(t, map[string]string{enumsPath: enumsSource})
 			mode := ref(svcPkg, modeName, symbol.KindEnum)
-			v, ok := protorules.New().ZeroValue(mode, f.view)
+			got, ok := protorules.New().ZeroValue(mode, loadedFrom(t, map[string]string{enumsPath: enumsSource}).view)
 			assert.True(t, ok, "an enum with values has a zero")
-			assert.Equal(t, v, enumValue(mode, "16"),
-				"protobuf's default for an enum field is the first value declared, not the one valued zero")
+			assert.Equal(t, got, enumValue(mode, "16"),
+				"protobuf's default for an enum field is the first value declared")
 		})
 
-		t.Run("reports false where no zero exists", func(t *testing.T) {
-			t.Parallel()
+		unplaced := []struct {
+			name string
+			give *node.TypeRef
+		}{
+			{name: "reports false for a spelling the rules cannot place", give: builtin(ghostSpelling)},
+			{
+				name: "reports false for a message the view does not contain",
+				give: ref(svcPkg, ghostName, symbol.KindStruct),
+			},
+			{name: "reports false for a stream", give: composite("stream Row", symbol.FormStream)},
+			{name: "reports false for a nil reference"},
+		}
+		for _, tt := range unplaced {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			f := loaded(t)
-			r := protorules.New()
-			_, ok := r.ZeroValue(builtin("some.Ghost"), f.view)
-			assert.False(t, ok, "a spelling the rules cannot place has no zero")
-			_, ok = r.ZeroValue(ref(svcPkg, "Ghost", symbol.KindStruct), f.view)
-			assert.False(t, ok, "nor does a message the view does not contain")
-			_, ok = r.ZeroValue(composite("stream Row", symbol.FormStream), f.view)
-			assert.False(t, ok, "nor a stream")
-			_, ok = r.ZeroValue(nil, f.view)
-			assert.False(t, ok, "nor nothing")
-		})
+				_, ok := protorules.New().ZeroValue(tt.give, loaded(t).view)
+				assert.False(t, ok, "no zero to compare a default against")
+			})
+		}
 	})
 
 	t.Run("LiteralFor", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("types a number by the wire's width", func(t *testing.T) {
+		typed := []struct {
+			name     string
+			give     *node.TypeRef
+			giveText string
+			want     emit.Value
+		}{
+			{
+				name: "returns a hexadecimal integer in decimal at 32 bits for int32",
+				give: builtin(int32Spelling), giveText: "0x1F", want: emit.Number(emit.LiteralInt, "31", bits32),
+			},
+			{
+				name: "reads a leading zero as octal for int32",
+				give: builtin(int32Spelling), giveText: "017", want: emit.Number(emit.LiteralInt, "15", bits32),
+			},
+			{
+				name: "returns an integer as a float at 64 bits for double",
+				give: builtin(doubleSpelling), giveText: "5", want: emit.Number(emit.LiteralFloat, "5", bits64),
+			},
+			{
+				name: "writes an exponent in canonical decimal for float",
+				give: builtin(floatSpelling), giveText: "1e3", want: emit.Number(emit.LiteralFloat, "1000", bits32),
+			},
+			{
+				name: "returns the scalar's value for a wrapper",
+				give: builtin(int64Wrapper), giveText: "7", want: emit.Number(emit.LiteralInt, "7", bits64),
+			},
+			{
+				name: "returns a truth value for bool",
+				give: builtin(boolSpelling), giveText: trueText, want: emit.Literal(emit.LiteralBool, trueText),
+			},
+			{
+				name:     "returns the escaped bytes of a string",
+				give:     builtin(stringSpelling),
+				giveText: `"caf\303\251"`,
+				want:     emit.Literal(emit.LiteralString, "café"),
+			},
+			{
+				name: "returns any bytes for bytes",
+				give: builtin(bytesSpelling), giveText: `"\xff"`, want: emit.Literal(emit.LiteralString, "\xff"),
+			},
+			{
+				name:     "returns the element's value for an optional field",
+				give:     composite("optional int64", symbol.FormOptional, builtin(int64Spelling)),
+				giveText: "1",
+				want:     emit.Number(emit.LiteralInt, "1", bits64),
+			},
+		}
+		for _, tt := range typed {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got, ok := protorules.New().LiteralFor(nil, tt.give, tt.giveText, loaded(t).view)
+				assert.True(t, ok, "the text is a value of the type")
+				assert.Equal(t, got, tt.want, "written back at the wire's width")
+			})
+		}
+
+		outside := []struct {
+			name     string
+			give     *node.TypeRef
+			giveText string
+		}{
+			{name: "reports false for an integer outside int32", give: builtin(int32Spelling), giveText: "2147483648"},
+			{name: "reports false for a negative uint32", give: builtin(uint32Spelling), giveText: "-1"},
+			{name: "reports false for a float literal as int64", give: builtin(int64Spelling), giveText: "2.0"},
+			{name: "reports false for inf as float", give: builtin(floatSpelling), giveText: "inf"},
+			{name: "reports false for a number as bool", give: builtin(boolSpelling), giveText: "1"},
+			{name: "reports false for invalid UTF-8 as string", give: builtin(stringSpelling), giveText: `"\xff"`},
+			{name: "reports false for a number as string", give: builtin(stringSpelling), giveText: "7"},
+			{name: "reports false for a message", give: ref(svcPkg, rowName, symbol.KindStruct), giveText: "1"},
+			{
+				name: "reports false for a repeated field",
+				give: composite("repeated int64", symbol.FormList, builtin(int64Spelling)), giveText: "1",
+			},
+		}
+		for _, tt := range outside {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, ok := protorules.New().LiteralFor(nil, tt.give, tt.giveText, loaded(t).view)
+				assert.False(t, ok, "no value of the type")
+			})
+		}
+
+		t.Run("returns an enum value's number for its name", func(t *testing.T) {
 			t.Parallel()
 
-			r := protorules.New()
-			lit := func(spelling, text string) (emit.Value, bool) {
-				return r.LiteralFor(nil, builtin(spelling), text, rules.View{})
-			}
-			v, ok := lit("int32", "0x1F")
-			assert.True(t, ok, "a hexadecimal integer is an int32")
-			assert.Equal(t, v, emit.Number(emit.LiteralInt, "31", 32), "written back in decimal at its width")
-			v, _ = lit("int32", "017")
-			assert.Equal(t, v.Text, "15", "a leading zero is octal")
-			_, ok = lit("int32", "2147483648")
-			assert.False(t, ok, "and an integer outside the width refuses")
-			_, ok = lit("uint32", "-1")
-			assert.False(t, ok, "as a negative one does for an unsigned type")
-			_, ok = lit("int64", "2.0")
-			assert.False(t, ok, "an integer type takes an integer literal alone, as protoc does")
-			v, ok = lit("double", "5")
-			assert.True(t, ok, "a float type takes an integer")
-			assert.Equal(t, v, emit.Number(emit.LiteralFloat, "5", 64), "as a float at its width")
-			v, _ = lit("float", "1e3")
-			assert.Equal(t, v, emit.Number(emit.LiteralFloat, "1000", 32),
-				"and an exponent in canonical decimal text")
-			_, ok = lit("float", "inf")
-			assert.False(t, ok, "infinity has no literal a target spells")
-			v, ok = lit("google.protobuf.Int64Value", "7")
-			assert.True(t, ok && v.Bits == 64, "a wrapper takes what its scalar takes")
-		})
-
-		t.Run("types a boolean, a string and bytes", func(t *testing.T) {
-			t.Parallel()
-
-			r := protorules.New()
-			lit := func(spelling, text string) (emit.Value, bool) {
-				return r.LiteralFor(nil, builtin(spelling), text, rules.View{})
-			}
-			v, ok := lit("bool", "true")
-			assert.True(t, ok && v.Literal == emit.LiteralBool, "a truth value is a bool")
-			_, ok = lit("bool", "1")
-			assert.False(t, ok, "and a number is not")
-			v, ok = lit("string", `"caf\303\251"`)
-			assert.True(t, ok && v.Text == "café", "a string is its escaped bytes")
-			_, ok = lit("string", `"\xff"`)
-			assert.False(t, ok, "which must be valid UTF-8 for a string")
-			v, ok = lit("bytes", `"\xff"`)
-			assert.True(t, ok && v.Text == "\xff", "and may be any bytes for bytes")
-			_, ok = lit("string", "7")
-			assert.False(t, ok, "a number is no string")
-		})
-
-		t.Run("types an enum value by its name", func(t *testing.T) {
-			t.Parallel()
-
-			f := loadedFrom(t, map[string]string{enumsPath: enumsSource})
-			r := protorules.New()
 			mode := ref(svcPkg, modeName, symbol.KindEnum)
-			v, ok := r.LiteralFor(nil, mode, "MODE_OCTAL", f.view)
+			got, ok := protorules.New().LiteralFor(nil, mode, octalValue,
+				loadedFrom(t, map[string]string{enumsPath: enumsSource}).view)
 			assert.True(t, ok, "a value's name is a value of the enum")
-			assert.Equal(t, v, enumValue(mode, "15"), "converted from its number")
-			_, ok = r.LiteralFor(nil, mode, "MODE_GHOST", f.view)
-			assert.False(t, ok, "a name the enum does not declare refuses")
-			_, ok = r.LiteralFor(nil, mode, "15", f.view)
-			assert.False(t, ok, "and so does a number, which a default names by its value's name")
+			assert.Equal(t, got, enumValue(mode, "15"), "converted from its number")
 		})
 
-		t.Run("refuses a type no literal is a value of", func(t *testing.T) {
-			t.Parallel()
+		enumOutside := []struct {
+			name string
+			give string
+		}{
+			{name: "reports false for a name the enum does not declare", give: ghostValue},
+			{name: "reports false for a number as an enum", give: "15"},
+		}
+		for _, tt := range enumOutside {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			f := loaded(t)
-			r := protorules.New()
-			_, ok := r.LiteralFor(nil, ref(svcPkg, "Row", symbol.KindStruct), "1", f.view)
-			assert.False(t, ok, "a message")
-			_, ok = r.LiteralFor(nil, composite("repeated int64", symbol.FormList, builtin("int64")), "1", f.view)
-			assert.False(t, ok, "and a repeated field")
-			v, ok := r.LiteralFor(nil, composite("optional int64", symbol.FormOptional, builtin("int64")), "1", f.view)
-			assert.True(t, ok && v.Bits == 64, "an optional field types as its element")
-		})
+				mode := ref(svcPkg, modeName, symbol.KindEnum)
+				_, ok := protorules.New().LiteralFor(nil, mode, tt.give,
+					loadedFrom(t, map[string]string{enumsPath: enumsSource}).view)
+				assert.False(t, ok, "a default names an enum value by its name")
+			})
+		}
 	})
+}
+
+// stamp states one authored text on a subject under a kernel key, at
+// plugin authority, the way the sample annotator stamps it.
+func stamp(tb assert.TB, f *fixture, k meta.Key[string], subject symbol.Identity, text string) {
+	tb.Helper()
+
+	err := meta.Stamp(f.Facts, k, text, meta.Claim{
+		Subject: subject, Authority: meta.AuthorityPlugin, Plugin: fixturePlugin,
+	})
+	assert.NoError(tb, err, "the author states a value")
+}
+
+// fieldOf returns a message's field by name.
+func fieldOf(tb assert.TB, f *fixture, message symbol.Identity, name string) *node.Field {
+	tb.Helper()
+
+	s, is := f.decl(tb, message).(*node.Struct)
+	assert.True(tb, is, "the declaration is a message")
+	for _, field := range s.Fields {
+		if field.Name == name {
+			return field
+		}
+	}
+	tb.Fatalf("%s declares no field %s", message.Name, name)
+	return nil
 }

@@ -22,11 +22,11 @@ import (
 // The shapes the matchable vocabulary leaves out, each of which the
 // assignment step settles on a branch of its own: a type nested in a
 // type, a method attached from outside the type it belongs to, a
-// positional field, an embed and a constraint.
+// positional field and an embed.
 const (
 	outerName    = "Outer"
 	innerName    = "Inner"
-	heldName     = "Held"
+	leafName     = "Leaf"
 	detachedName = "Detached"
 	baseSpelling = "Base"
 )
@@ -44,13 +44,43 @@ const (
 	secondByPlace = "#1"
 )
 
-// overloadTree declares one type carrying two overloads of one
-// method name, which only their parameter spellings tell apart.
+// The method the discriminator cases declare, and the discriminator
+// its parameters spell in a language that overloads.
+const (
+	getName = "Get"
+	getDisc = "string,int"
+)
+
+// overloadTree declares one type with two overloads of one method
+// name, which only their parameter spellings tell apart.
 func overloadTree() fstest.MapFS {
 	return fstest.MapFS{
 		apiFile: {Data: []byte(
 			"package svc/api\ntype User string\nmethod Get string int\nmethod Get\n",
 		)},
+	}
+}
+
+// callableTree declares one type with one method of two parameters.
+func callableTree() fstest.MapFS {
+	return fstest.MapFS{
+		apiFile: {Data: []byte("package svc/api\ntype User string\nmethod Get string int\n")},
+	}
+}
+
+// singular returns the scripted frontend declared as a language that
+// cannot overload.
+func singular() *frontendtest.Scripted {
+	f := frontendtest.NewScripted()
+	f.Overloading = false
+	return f
+}
+
+// getMethod spells the identity of User's Get under a discriminator.
+func getMethod(disc string) symbol.Identity {
+	return symbol.Identity{
+		Lang: frontendtest.ScriptedLang, Package: apiPath, Owner: userName, Name: getName,
+		Kind: symbol.KindMethod, Disc: disc,
 	}
 }
 
@@ -67,7 +97,7 @@ func assigned(owner, name string, kind symbol.Kind) symbol.Identity {
 	}
 }
 
-// Identities are the join everything long-lived keys on, so the
+// Identities are the join every persistent record keys on, so the
 // canonical shapes the assignment step spells are pinned here.
 func TestAssign(t *testing.T) {
 	t.Parallel()
@@ -95,7 +125,7 @@ func TestAssign(t *testing.T) {
 					oneFileTree(), with(&pathless{frontendtest.NewScripted()}),
 				))
 			}, "a file nothing can name is the frontend's defect")
-			assert.Contains(t, got, "no path", "and says so")
+			assert.Contains(t, got, "no path", "the panic names the defect")
 		})
 	})
 
@@ -146,23 +176,23 @@ func TestAssign(t *testing.T) {
 			enumVariant := assigned(
 				coretest.EnumName, coretest.EnumVariantName, symbol.KindEnumVariant,
 			)
-			held, found := g.Lookup(enumVariant)
+			variant, found := g.Lookup(enumVariant)
 			assert.True(t, found, "an enum variant is a member of its enum")
-			assert.Equal(t, held.(*node.EnumVariant).Host,
+			assert.Equal(t, variant.(*node.EnumVariant).Host,
 				assigned("", coretest.EnumName, symbol.KindEnum),
-				"hosted by the enum that stands")
+				"hosted by the enum that is kept")
 
 			sumVariant := assigned(
 				coretest.SumName, coretest.SumVariantName, symbol.KindSumVariant,
 			)
-			held, found = g.Lookup(sumVariant)
+			variant, found = g.Lookup(sumVariant)
 			assert.True(t, found, "a sum variant is a member of its sum")
-			assert.Equal(t, held.(*node.SumVariant).Host,
+			assert.Equal(t, variant.(*node.SumVariant).Host,
 				assigned("", coretest.SumName, symbol.KindSum),
-				"hosted by the sum that stands")
+				"hosted by the sum that is kept")
 		})
 
-		t.Run("hosts a member on the identity that stands", func(t *testing.T) {
+		t.Run("hosts a member on the identity that is kept", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := loadTree(t, oneFileTree(), with(&everyKind{frontendtest.NewScripted()}))
@@ -173,7 +203,7 @@ func TestAssign(t *testing.T) {
 			)
 			assert.True(t, found, "the struct's field is indexed")
 			assert.Equal(t, field.(*node.Field).Host, host,
-				"carrying the host the assignment step filled, not the one it was built with")
+				"with the host the assignment step filled, not the one it was built with")
 
 			method, found := g.Lookup(
 				assigned(coretest.StructName, coretest.MethodName, symbol.KindMethod),
@@ -182,13 +212,13 @@ func TestAssign(t *testing.T) {
 			assert.Equal(t, method.(*node.Method).Host, host, "under the same host")
 		})
 
-		t.Run("owns a detached method by the type it receives", func(t *testing.T) {
+		t.Run("gives a detached method the type it receives as its owner", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := loadTree(t, oneFileTree(), with(&nested{frontendtest.NewScripted()}))
 			_, held := g.Lookup(assigned(outerName, detachedName, symbol.KindMethod))
 			assert.True(t, held,
-				"a method declared outside its type is owned by the type it attaches to")
+				"a method declared outside its type takes the type it attaches to as its owner")
 		})
 
 		t.Run("leaves a positional field unnamed and hosted", func(t *testing.T) {
@@ -198,7 +228,7 @@ func TestAssign(t *testing.T) {
 			assert.True(t, outer.Fields[0].ID.IsZero(),
 				"only its type names a positional field, so nothing indexes it")
 			assert.Equal(t, outer.Fields[0].Host, assigned("", outerName, symbol.KindStruct),
-				"it still carries the declaration that holds it")
+				"its host is the declaration that contains it")
 		})
 
 		t.Run("names an embed by the embedded type's bare name", func(t *testing.T) {
@@ -208,12 +238,12 @@ func TestAssign(t *testing.T) {
 			outer := outerOf(t, g)
 			assert.Length(t, outer.Embeds, 1, "the embed survives the assignment")
 			assert.Equal(t, outer.Embeds[0].Host, assigned("", outerName, symbol.KindStruct),
-				"it carries the declaration that holds it")
+				"its host is the declaration that contains it")
 			want := assigned(outerName, baseSpelling, symbol.KindEmbed)
 			assert.Equal(t, outer.Embeds[0].ID, want,
 				"and is named by the type it embeds, under its host's owner chain")
 			_, held := g.Lookup(want)
-			assert.True(t, held, "so a directive on the embed has a subject the graph holds")
+			assert.True(t, held, "so a directive on the embed has a subject the graph contains")
 		})
 
 		t.Run("strips the decoration and the qualifier off an embed's name", func(t *testing.T) {
@@ -235,7 +265,7 @@ func TestAssign(t *testing.T) {
 					oneFileTree(), with(&foreign{frontendtest.NewScripted()}),
 				))
 			}, "a malformed graph is the frontend's defect, found at the assignment")
-			assert.Contains(t, got, "not a node declaration", "and says so")
+			assert.Contains(t, got, "not a node declaration", "the panic names the defect")
 		})
 	})
 
@@ -247,35 +277,16 @@ func TestAssign(t *testing.T) {
 
 			g := loadNested(t)
 			_, held := g.Lookup(assigned(outerName, innerName, symbol.KindStruct))
-			assert.True(t, held, "a nested type is owned by the type that declares it")
+			assert.True(t, held, "a nested type's owner is the type that declares it")
 
-			_, held = g.Lookup(assigned(outerName+"."+innerName, heldName, symbol.KindField))
+			_, held = g.Lookup(assigned(outerName+"."+innerName, leafName, symbol.KindField))
 			assert.True(t, held,
-				"and its own members carry the dotted chain of enclosing type names")
+				"and its own members spell the dotted chain of enclosing type names as their owner")
 		})
 	})
 
 	t.Run("derive", func(t *testing.T) {
 		t.Parallel()
-
-		t.Run("spells overloads apart by their discriminator", func(t *testing.T) {
-			t.Parallel()
-
-			g, _, sink := loadTree(t, overloadTree())
-			wide, held := g.Lookup(symbol.Identity{
-				Lang: frontendtest.ScriptedLang, Package: apiPath, Owner: userName, Name: "Get",
-				Kind: symbol.KindMethod, Disc: "string,int",
-			})
-			assert.True(t, held, "the parameter spellings discriminate")
-			assert.Length(t, wide.(*node.Method).Params, 2, "the wide overload")
-
-			_, held = g.Lookup(symbol.Identity{
-				Lang: frontendtest.ScriptedLang, Package: apiPath, Owner: userName, Name: "Get",
-				Kind: symbol.KindMethod,
-			})
-			assert.True(t, held, "the nullary overload spells an empty discriminator")
-			coretest.AssertCodes(t, sink)
-		})
 
 		t.Run("panics on a named kind that names nothing", func(t *testing.T) {
 			t.Parallel()
@@ -285,8 +296,63 @@ func TestAssign(t *testing.T) {
 					oneFileTree(), with(&nameless{frontendtest.NewScripted()}),
 				))
 			}, "a nameless declaration of a named kind is a structural defect")
-			assert.Contains(t, got, "names nothing", "and says so")
+			assert.Contains(t, got, "names nothing", "the panic names the defect")
 		})
+	})
+
+	t.Run("disc", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("spells the parameter types of a callable in a language that overloads", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, overloadTree())
+			wide, held := g.Lookup(getMethod(getDisc))
+			assert.True(t, held, "the parameter spellings discriminate")
+			assert.Length(t, wide.(*node.Method).Params, 2, "the wide overload")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("spells empty for a nullary callable in a language that overloads", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, overloadTree())
+			nullary, held := g.Lookup(getMethod(""))
+			assert.True(t, held, "a nullary overload has no parameter to spell")
+			assert.Empty(t, nullary.(*node.Method).Params, "the nullary overload")
+		})
+
+		t.Run("spells empty for a callable in a language without overloads", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, callableTree(), with(singular()))
+			method, held := g.Lookup(getMethod(""))
+			assert.True(t, held, "the parameters of a callable that cannot be overloaded tell nothing apart")
+			assert.Length(t, method.(*node.Method).Params, 2, "the method keeps its parameters")
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("reports DuplicateDeclaration for two callables of one name in a language without overloads",
+			func(t *testing.T) {
+				t.Parallel()
+
+				_, _, sink := loadTree(t, overloadTree(), with(singular()))
+				coretest.AssertCodes(t, sink, load.DuplicateDeclaration)
+			})
+
+		t.Run("panics naming the frontend for a nil parameter in a language without overloads",
+			func(t *testing.T) {
+				t.Parallel()
+
+				key := &node.Param{Name: keyName, Type: &node.TypeRef{Spelling: stringType}}
+				got := assert.Panics(t, func() {
+					_, _, _ = load.Load(context.Background(), mustConfig(oneFileTree(), with(&holey{
+						Scripted: singular(),
+						decl:     &node.Function{Name: serveName, Params: []*node.Param{nil, key}},
+					})))
+				}, "the store cannot index a nil declaration in any language")
+				assert.Contains(t, got, string(frontendtest.ScriptedID), "the panic names the frontend")
+			})
 	})
 
 	t.Run("signature", func(t *testing.T) {
@@ -315,45 +381,42 @@ func TestAssign(t *testing.T) {
 			}
 		})
 
-		t.Run("panics on a nil entry, naming the frontend", func(t *testing.T) {
-			t.Parallel()
+		key := &node.Param{Name: keyName, Type: &node.TypeRef{Spelling: stringType}}
+		nils := []struct {
+			name string
+			decl *node.Function
+			kind symbol.Kind
+		}{
+			{
+				name: "panics naming the frontend for a nil parameter",
+				decl: &node.Function{Name: serveName, Params: []*node.Param{nil, key}},
+				kind: symbol.KindParam,
+			},
+			{
+				name: "panics naming the frontend for a nil return",
+				decl: &node.Function{Name: serveName, Returns: []*node.Return{nil}},
+				kind: symbol.KindReturn,
+			},
+			{
+				name: "panics naming the frontend for a nil type parameter",
+				decl: &node.Function{Name: serveName, TypeParams: []*node.TypeParam{nil}},
+				kind: symbol.KindTypeParam,
+			},
+		}
+		for _, tt := range nils {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			key := &node.Param{Name: keyName, Type: &node.TypeRef{Spelling: stringType}}
-			for _, tt := range []struct {
-				name string
-				decl *node.Function
-				kind symbol.Kind
-			}{
-				{
-					name: "a nil parameter",
-					decl: &node.Function{Name: serveName, Params: []*node.Param{nil, key}},
-					kind: symbol.KindParam,
-				},
-				{
-					name: "a nil return",
-					decl: &node.Function{Name: serveName, Returns: []*node.Return{nil}},
-					kind: symbol.KindReturn,
-				},
-				{
-					name: "a nil type parameter",
-					decl: &node.Function{Name: serveName, TypeParams: []*node.TypeParam{nil}},
-					kind: symbol.KindTypeParam,
-				},
-			} {
-				t.Run(tt.name, func(t *testing.T) {
-					t.Parallel()
-
-					got := assert.Panics(t, func() {
-						_, _, _ = load.Load(context.Background(), mustConfig(oneFileTree(), with(
-							&holey{Scripted: frontendtest.NewScripted(), decl: tt.decl},
-						)))
-					}, "the store cannot index a nil declaration, so the frontend's defect stops the load")
-					assert.Contains(t, got, "nil "+tt.kind.String(), "naming the entry")
-					assert.Contains(t, got, string(frontendtest.ScriptedID),
-						"and the frontend that built it")
-				})
-			}
-		})
+				got := assert.Panics(t, func() {
+					_, _, _ = load.Load(context.Background(), mustConfig(oneFileTree(), with(
+						&holey{Scripted: frontendtest.NewScripted(), decl: tt.decl},
+					)))
+				}, "the store cannot index a nil declaration, so the frontend's defect stops the load")
+				assert.Contains(t, got, "nil "+tt.kind.String(), "naming the entry")
+				assert.Contains(t, got, string(frontendtest.ScriptedID),
+					"and the frontend that built it")
+			})
+		}
 	})
 }
 
@@ -369,13 +432,13 @@ func loadNested(tb assert.TB) *store.Graph {
 func outerOf(tb assert.TB, g *store.Graph) *node.Struct {
 	tb.Helper()
 
-	held, found := g.Lookup(assigned("", outerName, symbol.KindStruct))
+	outer, found := g.Lookup(assigned("", outerName, symbol.KindStruct))
 	assert.True(tb, found, "the enclosing struct is indexed")
-	return held.(*node.Struct)
+	return outer.(*node.Struct)
 }
 
 // everyKind plants one declaration of every kind a rule can match,
-// so the assignment step meets the whole vocabulary rather than the
+// so the assignment step meets the whole vocabulary and not only the
 // struct the scripted language writes.
 type everyKind struct {
 	*frontendtest.Scripted
@@ -397,13 +460,12 @@ type nested struct {
 	*frontendtest.Scripted
 }
 
-// Parse builds one enclosing type holding a nested type, a
-// positional field and an embed, beside a detached method and a
-// constraint.
+// Parse builds one enclosing type that declares a nested type, a
+// positional field and an embed, beside a detached method.
 func (*nested) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	inner := &node.Struct{
 		Name:   innerName,
-		Fields: []*node.Field{{Name: heldName}},
+		Fields: []*node.Field{{Name: leafName}},
 	}
 	outer := &node.Struct{
 		Name:   outerName,
@@ -427,7 +489,7 @@ type pathless struct {
 	*frontendtest.Scripted
 }
 
-// Parse declares a package holding a file with no path.
+// Parse declares a package with one file that has no path.
 func (*pathless) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	pkg := u.Graph().Package(coretest.StorePath)
 	pkg.Files = append(pkg.Files, &node.File{})
@@ -508,7 +570,7 @@ func (h *holey) Parse(_ context.Context, u *plugin.SourceUnit) error {
 
 // decorated plants a struct embedding a decorated spelling and a
 // structural reference, so the assignment's naming of an embed is
-// held at both shapes a frontend can build.
+// checked at both shapes a frontend can build.
 type decorated struct {
 	*frontendtest.Scripted
 }

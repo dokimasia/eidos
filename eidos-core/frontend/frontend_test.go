@@ -23,7 +23,7 @@ import (
 )
 
 // The kit fixture's name, claim and tree, so a case names what it
-// declares rather than repeating a literal.
+// declares without repeating a literal.
 const (
 	kitName       = "kitfake"
 	anyScripted   = "**/*.zz"
@@ -50,7 +50,7 @@ func kitFake() plugin.Frontend {
 }
 
 // markTests stamps the test-file key on every parsed file whose
-// path says so.
+// path ends in the test suffix.
 func markTests(u *plugin.SourceUnit) error {
 	gb := u.Graph()
 	for _, pkg := range gb.Packages() {
@@ -66,8 +66,8 @@ func markTests(u *plugin.SourceUnit) error {
 }
 
 // kitTree is the fixture the kit-built frontend loads: two
-// packages, a cross-package reference, a carrier, a test file for
-// the classifier, and a signature root.
+// packages, a cross-package reference, a directive statement, a
+// test file for the classifier, and a signature root.
 func kitTree() fstest.MapFS {
 	return fstest.MapFS{
 		"mod.zz": {Data: []byte("mod v1\n")},
@@ -86,21 +86,23 @@ func kitTree() fstest.MapFS {
 	}
 }
 
-// loadKit drives one load over the kit tree with the frontend the
-// case built, and returns the load's own error.
+// loadKit drives one load over the kit tree under the suite's
+// brand with the frontend the case built, and returns the load's
+// own error.
 func loadKit(f plugin.Frontend) (*store.Graph, error) {
 	g, _, err := load.Load(context.Background(), load.Config{
 		FS:        kitTree(),
 		Frontends: []plugin.Frontend{f},
 		Sink:      diag.NewSink(),
+		Brand:     frontendtest.Brand,
 	})
 	return g, err
 }
 
 // The kit lowers a declaration to the frontend role, so the built
 // frontend meets the same conformance bar a hand-rolled one does,
-// and the lowering's own seams — classifier order, fatality, the
-// declaration defects — are pinned beside it.
+// and the lowering's own seams are pinned beside it: classifier
+// order, fatality and the declaration defects.
 func TestFrontend(t *testing.T) {
 	t.Parallel()
 
@@ -120,7 +122,7 @@ func TestFrontend(t *testing.T) {
 			})
 		})
 
-		t.Run("declares options only when declared", func(t *testing.T) {
+		t.Run("returns no options provider without a declaration", func(t *testing.T) {
 			t.Parallel()
 
 			inner := frontendtest.NewScripted()
@@ -129,62 +131,122 @@ func TestFrontend(t *testing.T) {
 				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
 				Build()
 			_, is := bare.(plugin.OptionsProvider)
-			assert.False(t, is, "no declaration, no provider")
-
-			_, is = kitFake().(plugin.OptionsProvider)
-			assert.True(t, is, "a declared configuration folds into the keys")
+			assert.False(t, is, "the frontend declares no options")
 		})
 
-		t.Run("panics on a declaration defect", func(t *testing.T) {
+		t.Run("returns an options provider for a declaration", func(t *testing.T) {
 			t.Parallel()
 
-			inner := frontendtest.NewScripted()
-			whole := func() *frontend.Builder {
-				return frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
-					Version("1").Match(anyScripted).
-					Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve)
-			}
-			assert.NotPanics(t, func() { whole().Build() }, "the whole declaration builds")
-			assert.Panics(t, func() {
-				frontend.New("", frontendtest.ScriptedLang, inner.Syntax()).Build()
-			}, "an empty name is a defect")
-			assert.Panics(t, func() {
-				frontend.New(kitName, "", inner.Syntax()).
-					Version("1").Match(anyScripted).
-					Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
-			}, "an empty language is a defect")
-			assert.Panics(t, func() {
-				frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
-					Match(anyScripted).
-					Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
-			}, "a missing version is a defect, because every unit key folds it")
-			assert.Panics(t, func() {
-				frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
-					Version("1").
-					Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
-			}, "an empty claim is a defect")
-			assert.Panics(t, func() {
-				frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
-					Version("1").Match(anyScripted).
-					Parse(inner.Parse).Resolve(inner.Resolve).Build()
-			}, "a missing partition is a defect")
-			assert.Panics(t, func() {
-				frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
-					Version("1").Match(anyScripted).
-					Units(inner.Partition).Resolve(inner.Resolve).Build()
-			}, "a missing parse is a defect")
-			assert.Panics(t, func() {
-				frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
-					Version("1").Match(anyScripted).
-					Units(inner.Partition).Parse(inner.Parse).Build()
-			}, "a missing resolve is a defect: silence is written, never defaulted")
+			_, is := kitFake().(plugin.OptionsProvider)
+			assert.True(t, is, "the declared configuration folds into the keys")
+		})
+
+		inner := frontendtest.NewScripted()
+		whole := func() *frontend.Builder {
+			return frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+				Version("1").Match(anyScripted).
+				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve)
+		}
+
+		t.Run("builds a whole declaration", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NotPanics(t, func() { whole().Build() }, "the declaration builds")
+		})
+
+		defects := []struct {
+			name  string
+			build func()
+		}{
+			{
+				name:  "panics on an empty name",
+				build: func() { frontend.New("", frontendtest.ScriptedLang, inner.Syntax()).Build() },
+			},
+			{
+				name: "panics on an empty language",
+				build: func() {
+					frontend.New(kitName, "", inner.Syntax()).
+						Version("1").Match(anyScripted).
+						Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
+				},
+			},
+			{
+				name: "panics on a missing version",
+				build: func() {
+					frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+						Match(anyScripted).
+						Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
+				},
+			},
+			{
+				name: "panics on an empty claim",
+				build: func() {
+					frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+						Version("1").
+						Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
+				},
+			},
+			{
+				name: "panics on a missing partition",
+				build: func() {
+					frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+						Version("1").Match(anyScripted).
+						Parse(inner.Parse).Resolve(inner.Resolve).Build()
+				},
+			},
+			{
+				name: "panics on a missing parse",
+				build: func() {
+					frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+						Version("1").Match(anyScripted).
+						Units(inner.Partition).Resolve(inner.Resolve).Build()
+				},
+			},
+			{
+				name: "panics on a missing resolve",
+				build: func() {
+					frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+						Version("1").Match(anyScripted).
+						Units(inner.Partition).Parse(inner.Parse).Build()
+				},
+			},
+		}
+		for _, tt := range defects {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Panics(t, tt.build, "the declaration defect panics at Build")
+			})
+		}
+	})
+
+	t.Run("Overloads", func(t *testing.T) {
+		t.Parallel()
+
+		inner := frontendtest.NewScripted()
+		declared := func() *frontend.Builder {
+			return frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+				Version("1").Match(anyScripted).
+				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve)
+		}
+
+		t.Run("reports false for a declaration without Overloads", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, declared().Build().Overloads(), "a language that cannot overload is the default")
+		})
+
+		t.Run("reports true for a declaration with Overloads", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, declared().Overloads().Build().Overloads(), "the declaration states it")
 		})
 	})
 
 	t.Run("Parse", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("classifies after the parse, onto the store", func(t *testing.T) {
+		t.Run("records the classifier's stamp in the store", func(t *testing.T) {
 			t.Parallel()
 
 			g, err := loadKit(kitFake())
@@ -194,12 +256,12 @@ func TestFrontend(t *testing.T) {
 				Name: storeTestFile, Kind: symbol.KindFile,
 			}
 			stamps := g.StampsOf(file)
-			assert.Length(t, stamps, 1, "the classifier's stamp reached the store")
-			assert.Equal(t, stamps[0].Key, frontendtest.ScriptedTestKey, "under its key")
-			assert.Equal(t, stamps[0].Value.(string), classified, "with the classifier's value")
+			assert.Length(t, stamps, 1, "the classifier's stamp is in the store")
+			assert.Equal(t, stamps[0].Key, frontendtest.ScriptedTestKey, "the stamp has its key")
+			assert.Equal(t, stamps[0].Value.(string), classified, "the stamp has the classifier's value")
 		})
 
-		t.Run("stops the load at the declared parse's error", func(t *testing.T) {
+		t.Run("returns the declared parse's error", func(t *testing.T) {
 			t.Parallel()
 
 			broken := errors.New("kitfake: the parse refuses")
@@ -213,11 +275,10 @@ func TestFrontend(t *testing.T) {
 				Resolve(inner.Resolve).
 				Build()
 			_, err := loadKit(f)
-			assert.ErrorIs(t, err, broken,
-				"the classifiers never run over a unit the parse gave up on")
+			assert.ErrorIs(t, err, broken, "the classifiers never run over a unit the parse gave up on")
 		})
 
-		t.Run("a classifier's error is fatal like a parse error", func(t *testing.T) {
+		t.Run("returns a classifier's error", func(t *testing.T) {
 			t.Parallel()
 
 			broken := errors.New("kitfake: the classifier refuses")
@@ -231,7 +292,7 @@ func TestFrontend(t *testing.T) {
 				Resolve(inner.Resolve).
 				Build()
 			_, err := loadKit(f)
-			assert.ErrorIs(t, err, broken, "the load stops rather than sealing half-made stamps")
+			assert.ErrorIs(t, err, broken, "the load stops and seals no half-made stamps")
 		})
 	})
 }

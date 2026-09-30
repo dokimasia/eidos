@@ -32,10 +32,10 @@ type Classifier = core.Classifier
 
 // Builder accumulates a frontend declaration: the identity and the
 // language of every declaration it loads, the comment syntax the
-// parse strips through, the file claim, and the functions the
-// pipeline varies in. Everything on it is data except the
-// functions. Build freezes it, and a Builder is not reused
-// afterwards.
+// parse strips through, whether the language overloads, the file
+// claim, and the functions the pipeline varies in. Everything on it
+// is data except the functions. Build freezes it, and a Builder is
+// not reused afterwards.
 type Builder = core.Builder
 
 // New starts a frontend declaration for one language.

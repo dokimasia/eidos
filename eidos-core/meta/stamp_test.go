@@ -13,6 +13,10 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// fakeNamespace is the namespace the stamp fixture's keys register
+// under.
+const fakeNamespace = "fake"
+
 // stampFixture returns a store with one registered bool key and
 // its typed handle, so the raw path is checked against the typed
 // reads that consume it.
@@ -20,7 +24,7 @@ func stampFixture(tb assert.TB) (*meta.Facts, meta.Key[bool]) {
 	tb.Helper()
 
 	r := meta.NewRegistry()
-	assert.NoError(tb, r.ClaimNamespace("fake", "fake"), "the namespace claims")
+	assert.NoError(tb, r.ClaimNamespace(fakeNamespace), "the namespace is claimed")
 	key, err := meta.Register[bool](r, meta.KeySpec{
 		Name:  "fake.testFile",
 		Kinds: []symbol.Kind{symbol.KindFile},
@@ -53,55 +57,105 @@ func termKey[T meta.FactValue](tb assert.TB, r *meta.Registry, name meta.KeyName
 	tb.Helper()
 
 	key, err := meta.Register[T](r, meta.KeySpec{
-		Name: name, Doc: "a fixture key holding one term of the value vocabulary",
+		Name: name, Doc: "a fixture key for one term of the value vocabulary",
 	})
 	assert.NoError(tb, err, "the fixture key registers")
 	return key
 }
 
 // The raw path is the classification stamp's: a pre-claim that
-// crossed a phase as data, held to the same checks as a typed
-// write.
-func TestStampRaw(t *testing.T) {
+// crossed a phase as data, checked the way a typed write is.
+func TestStamp(t *testing.T) {
 	t.Parallel()
 
-	t.Run("resolves the name and typed readers see the value", func(t *testing.T) {
+	t.Run("StampRaw", func(t *testing.T) {
 		t.Parallel()
 
-		f, key := stampFixture(t)
-		raw := meta.RawStamp{Key: "fake.testFile", Value: true}
-		assert.NoError(t, f.StampRaw(raw, plugAt(0)), "the raw write admits")
+		t.Run("records a value the typed handle reads back", func(t *testing.T) {
+			t.Parallel()
 
-		got, held := meta.Get(f, subjectFile(), key)
-		assert.True(t, held && got, "the typed read returns the raw claim's value")
-	})
+			f, key := stampFixture(t)
+			raw := meta.RawStamp{Key: "fake.testFile", Value: true}
+			assert.NoError(t, f.StampRaw(raw, plugAt(0)), "the raw stamp is recorded")
 
-	t.Run("refuses what the typed path refuses", func(t *testing.T) {
-		t.Parallel()
+			got, held := meta.Get(f, subjectFile(), key)
+			assert.True(t, held, "the typed read finds the fact")
+			assert.True(t, got, "the typed read returns the stamped value")
+		})
 
-		f, _ := stampFixture(t)
-		err := f.StampRaw(meta.RawStamp{Key: "fake.ghost", Value: true}, plugAt(0))
-		assert.HasError(t, err, "an unregistered key refuses")
-		assert.Contains(t, err.Error(), "fake.ghost", "naming the key")
+		t.Run("returns an error naming an unregistered key", func(t *testing.T) {
+			t.Parallel()
 
-		err = f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: false}, plugAt(0))
-		assert.HasError(t, err, "a false boolean refuses; absence is the negative")
+			f, _ := stampFixture(t)
+			err := f.StampRaw(meta.RawStamp{Key: "fake.ghost", Value: true}, plugAt(0))
+			assert.HasError(t, err, "the stamp fails")
+			assert.Contains(t, err.Error(), "fake.ghost", "the error names the key")
+		})
 
-		wrongKind := plugAt(0)
-		wrongKind.Subject.Kind = symbol.KindStruct
-		err = f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: true}, wrongKind)
-		assert.HasError(t, err, "the kind restriction holds on the raw path")
+		t.Run("returns an error for a false boolean", func(t *testing.T) {
+			t.Parallel()
 
-		err = f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: 3.14}, plugAt(0))
-		assert.HasError(t, err, "a value outside the vocabulary refuses")
-		assert.Contains(t, err.Error(), "float64", "naming the type")
-	})
+			f, _ := stampFixture(t)
+			err := f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: false}, plugAt(0))
+			assert.HasError(t, err, "the stamp fails, because absence is the negative")
+		})
 
-	t.Run("carries every term of the value vocabulary", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns an error for a subject kind the key does not admit", func(t *testing.T) {
+			t.Parallel()
+
+			f, _ := stampFixture(t)
+			wrongKind := plugAt(0)
+			wrongKind.Subject.Kind = symbol.KindStruct
+			err := f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: true}, wrongKind)
+			assert.HasError(t, err, "the stamp fails")
+		})
+
+		t.Run("returns an error naming the type of a value outside the vocabulary", func(t *testing.T) {
+			t.Parallel()
+
+			f, _ := stampFixture(t)
+			err := f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: 3.14}, plugAt(0))
+			assert.HasError(t, err, "the stamp fails")
+			assert.Contains(t, err.Error(), "float64", "the error names the type")
+		})
+
+		t.Run("returns an error naming the key's type for a value of another type", func(t *testing.T) {
+			t.Parallel()
+
+			f, _ := stampFixture(t)
+			err := f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: "true"}, plugAt(0))
+			assert.HasError(t, err, "the stamp fails")
+			assert.Contains(t, err.Error(), "bool", "the error names the key's type")
+		})
+
+		t.Run("records nothing for a value of another type", func(t *testing.T) {
+			t.Parallel()
+
+			f, key := stampFixture(t)
+			err := f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: "true"}, plugAt(0))
+			assert.HasError(t, err, "the stamp fails")
+
+			_, held := meta.Get(f, subjectFile(), key)
+			assert.False(t, held, "the bag has no fact")
+			assert.Empty(t, slices.Collect(f.ByKey(key.ID())), "the index lists no subject")
+		})
+
+		t.Run("loses to a directive-authority drop applied before it", func(t *testing.T) {
+			t.Parallel()
+
+			f, key := stampFixture(t)
+			drop := meta.Claim{Subject: subjectFile(), Authority: meta.AuthorityDirective}
+			assert.NoError(t, f.DropKey(key.ID(), drop), "the drop is recorded")
+			assert.NoError(t,
+				f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: true}, plugAt(0)),
+				"the later raw stamp is recorded")
+
+			_, held := meta.Get(f, subjectFile(), key)
+			assert.False(t, held, "the drop outranks the stamp")
+		})
 
 		r := meta.NewRegistry()
-		assert.NoError(t, r.ClaimNamespace("fake", "fake"), "the namespace claims")
+		assert.NoError(t, r.ClaimNamespace(fakeNamespace), "the namespace is claimed")
 		text := termKey[string](t, r, "fake.text")
 		number := termKey[int64](t, r, "fake.number")
 		flag := termKey[bool](t, r, "fake.flag")
@@ -116,23 +170,23 @@ func TestStampRaw(t *testing.T) {
 			read  func() (any, bool)
 		}{
 			{
-				name: "a string", key: text.Name(), value: "writer",
+				name: "records a string", key: text.Name(), value: "writer",
 				read: func() (any, bool) { return meta.Get(f, subjectFile(), text) },
 			},
 			{
-				name: "an integer", key: number.Name(), value: int64(7),
+				name: "records an integer", key: number.Name(), value: int64(7),
 				read: func() (any, bool) { return meta.Get(f, subjectFile(), number) },
 			},
 			{
-				name: "a boolean", key: flag.Name(), value: true,
+				name: "records a boolean", key: flag.Name(), value: true,
 				read: func() (any, bool) { return meta.Get(f, subjectFile(), flag) },
 			},
 			{
-				name: "a string list", key: list.Name(), value: []string{"a", "b"},
+				name: "records a string list", key: list.Name(), value: []string{"a", "b"},
 				read: func() (any, bool) { return meta.Get(f, subjectFile(), list) },
 			},
 			{
-				name: "an identity", key: named.Name(), value: subjectFile(),
+				name: "records an identity", key: named.Name(), value: subjectFile(),
 				read: func() (any, bool) { return meta.Get(f, subjectFile(), named) },
 			},
 		}
@@ -142,39 +196,11 @@ func TestStampRaw(t *testing.T) {
 
 				assert.NoError(t,
 					f.StampRaw(meta.RawStamp{Key: tt.key, Value: tt.value}, plugAt(0)),
-					"a term of the vocabulary crosses the phase as data")
+					"the term is recorded")
 				got, held := tt.read()
-				assert.True(t, held, "and the typed handle reads it back")
-				assert.Equal(t, got, tt.value, "carrying the value the frontend recorded")
+				assert.True(t, held, "the typed handle finds the fact")
+				assert.Equal(t, got, tt.value, "the typed handle returns the recorded value")
 			})
 		}
-	})
-
-	t.Run("refuses a value whose type differs from the key's", func(t *testing.T) {
-		t.Parallel()
-
-		f, key := stampFixture(t)
-		err := f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: "true"}, plugAt(0))
-		assert.HasError(t, err, "a string under a boolean key refuses")
-		assert.Contains(t, err.Error(), "bool", "naming the key's type")
-
-		_, held := meta.Get(f, subjectFile(), key)
-		assert.False(t, held, "the bag is unchanged")
-		assert.Empty(t, slices.Collect(f.ByKey(key.ID())),
-			"and the index lists no subject")
-	})
-
-	t.Run("ranks like any other claim", func(t *testing.T) {
-		t.Parallel()
-
-		f, key := stampFixture(t)
-		drop := meta.Claim{Subject: subjectFile(), Authority: meta.AuthorityDirective}
-		assert.NoError(t, f.DropKey(key.ID(), drop), "a directive-authority drop admits")
-		assert.NoError(t,
-			f.StampRaw(meta.RawStamp{Key: "fake.testFile", Value: true}, plugAt(0)),
-			"the later raw stamp admits")
-
-		_, held := meta.Get(f, subjectFile(), key)
-		assert.False(t, held, "the drop outranks the stamp whichever applied first")
 	})
 }

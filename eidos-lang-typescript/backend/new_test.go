@@ -4,7 +4,6 @@
 package backend_test
 
 import (
-	"maps"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -12,39 +11,67 @@ import (
 	typescript "go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/backend"
 	"go.dokimi.dev/eidos/sdk/backendtest"
+	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// The end-to-end fixture: the brand the output contract stamps under,
+// and the unit a rendered declaration comes from.
+const (
+	contractBrand = "typescript"
+	unitModule    = "./svc"
+	unitKey       = "svc/holder.ts"
+	unitWord      = "gen"
+	holderName    = "Holder"
+)
+
 // setup builds the backend over the kernel's canonical fixture,
-// filtered to this module's rendered coverage: the declared kind
-// templates, plus the sum kind the lowering reshapes into variant
-// interfaces and a union alias before any template runs.
+// which emits every file-level kind: the backend spells each, lowers
+// the sum into variant interfaces and a union alias, and refuses the
+// standalone method.
 func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	tb.Helper()
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.CanonicalFixture(tb, inventory())
+	return r, backendtest.CanonicalFixture(tb)
 }
 
 // benchSetup builds the backend over the suite's scaled corpus,
-// filtered the way setup filters the coverage fixture.
+// without the kinds the backend refuses.
 func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	tb.Helper()
 
 	r, held := backend.New().(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.ScaledFixture(tb, inventory())
+	return r, backendtest.ScaledFixture(tb, backend.RefusedKinds())
 }
 
-// inventory is the module's rendered coverage: the declared kind
-// templates plus the kind the lowering consumes.
-func inventory() map[symbol.Kind]string {
-	i := maps.Clone(backend.KindTemplates())
-	i[symbol.KindSum] = ""
-	return i
+// rendered settles one unit of declarations through the backend and
+// renders it, and returns the file beside the run's findings.
+func rendered(tb assert.TB, decls ...symbol.Symbol) (string, *diag.Sink) {
+	tb.Helper()
+
+	b := backend.New()
+	e := plugin.NewEmit()
+	assert.NoError(tb, e.Add(plugin.Unit{
+		Plugin: unitWord, Per: plugin.PerSource, Word: unitWord, Key: unitKey,
+		Pkg:   symbol.Identity{Lang: typescript.Lang, Package: unitModule, Kind: symbol.KindPackage},
+		Decls: decls,
+	}), "the unit is added")
+	sink := diag.NewSink()
+	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles")
+	r, held := b.(plugin.Renderer)
+	assert.True(tb, held, "the built backend renders")
+	files, err := r.Render(&plugin.RenderContext{Emit: e, Sink: sink, Plugin: typescript.Name})
+	assert.NoError(tb, err, "the pass renders every file")
+	if len(files) == 0 {
+		return "", sink
+	}
+	return string(files[0].Body), sink
 }
 
 // BenchmarkNew measures the composed backend over the suite's
@@ -53,7 +80,7 @@ func inventory() map[symbol.Kind]string {
 // headroom.
 func BenchmarkNew(b *testing.B) {
 	backendtest.BenchRender(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 10_900_000})
+		backendtest.Budget{MaxAllocs: 11_200_000})
 }
 
 // BenchmarkSettle measures the settle over the suite's scaled
@@ -71,39 +98,59 @@ func BenchmarkSettle(b *testing.B) {
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	backendtest.RunBackendSuite(t, setup)
-
-	t.Run("declares its identity and target", func(t *testing.T) {
+	t.Run("New", func(t *testing.T) {
 		t.Parallel()
 
-		b := backend.New()
-		assert.Equal(t, b.Name(), typescript.Name, "the plugin identity")
-		assert.Equal(t, b.Target(), typescript.Target, "the rendering target")
-	})
+		backendtest.RunBackendSuite(t, setup)
 
-	t.Run("stamps under the module's contract", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns a backend named after the language", func(t *testing.T) {
+			t.Parallel()
 
-		c, err := output.NewContract("typescript", typescript.Syntax())
-		assert.NoError(t, err, "the module contract composes")
-		backendtest.AssertStamped(t, setup, c)
-	})
+			assert.Equal(t, backend.New().Name(), typescript.Name, "the plugin identity")
+		})
 
-	t.Run("spells its convention through the settle", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns a backend for the language's target", func(t *testing.T) {
+			t.Parallel()
 
-		var text []byte
-		for _, f := range backendtest.RenderSettled(t, setup) {
-			text = append(text, f.Body...)
-		}
-		assert.Contains(t, string(text), "export class Row",
-			"a neutral row takes Pascal")
-		assert.Contains(t, string(text), "  boot(): void {",
-			"and a neutral boot keeps camel case")
-		assert.Contains(t, string(text), `  kind: 'circle';`,
-			"a lowered variant leads with its discriminant, quoted in TypeScript's grammar")
-		assert.Contains(t, string(text),
-			"export type Shape = ShapeCircle | ShapeEmpty;",
-			"and the union alias joins the lowered interfaces")
+			assert.Equal(t, backend.New().Target(), typescript.Target, "the rendering target")
+		})
+
+		t.Run("returns a backend whose files stamp under the module's contract", func(t *testing.T) {
+			t.Parallel()
+
+			c, err := output.NewContract(contractBrand, typescript.Syntax())
+			assert.NoError(t, err, "the module contract composes")
+			backendtest.AssertStamped(t, setup, c)
+		})
+
+		t.Run("returns a backend that spells neutral names through the settle", func(t *testing.T) {
+			t.Parallel()
+
+			var text []byte
+			for _, f := range backendtest.RenderSettled(t, setup) {
+				text = append(text, f.Body...)
+			}
+			assert.Contains(t, string(text), "export class Row", "a neutral row takes Pascal")
+			assert.Contains(t, string(text), "  boot(): void {", "a neutral boot keeps camel case")
+			assert.Contains(t, string(text), `  kind: 'circle';`,
+				"a lowered variant leads with its discriminant, quoted in TypeScript's grammar")
+			assert.Contains(t, string(text), "export type Shape = ShapeCircle | ShapeEmpty;",
+				"the union alias joins the lowered interfaces")
+		})
+
+		t.Run("returns a backend that imports the declaration a field's type names", func(t *testing.T) {
+			t.Parallel()
+
+			origin := symbol.Identity{Lang: typescript.Lang, Package: unitModule, Name: holderName}
+			origin.Kind = symbol.KindStruct
+			holder := &emit.Struct{Origin: origin, Name: holderName}
+			holder.Fields.Append(&emit.Field{Name: "row", Type: imported(storeModule, rowName)})
+			body, sink := rendered(t, holder)
+			for d := range sink.All() {
+				t.Errorf("unexpected finding: %s", d.Msg)
+			}
+			assert.Contains(t, body, "import type { Row } from './store';\n", "the type-only import")
+			assert.Contains(t, body, "  row: Row;\n", "the field through the imported name")
+		})
 	})
 }

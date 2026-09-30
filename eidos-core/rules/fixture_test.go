@@ -27,6 +27,10 @@ const (
 	storeName   = "Store"
 	intSpelling = "int"
 	strSpelling = "string"
+	// nameField and countField are Row's two fields: a string and an
+	// int.
+	nameField  = "name"
+	countField = "count"
 )
 
 // viewOver mints a view over a frozen graph with a fresh read set
@@ -53,10 +57,10 @@ func boundOver(tb assert.TB, g *store.Graph) (rules.Bound, *store.ReadSet, *meta
 	return rules.NewBound(scripted(), v, nil), reads, facts
 }
 
-// native is the scripted rules speaking the fixture's language, so
-// a contributor in the fixture walks under the scripted policy
-// rather than under the absent one a foreign language gets. It
-// keeps the scripted generics capability.
+// native is the scripted rules under the fixture's language, so a
+// contributor in the fixture walks under the scripted policy. A
+// foreign language gets the absent policy. It keeps the scripted
+// generics capability.
 type native struct {
 	rules.SourceRules
 	rules.GenericsRules
@@ -108,9 +112,9 @@ func embedOf(path, name string, kind symbol.Kind) *node.Embed {
 	return &node.Embed{Ref: named(path, name, kind)}
 }
 
-// namedEmbed returns an embed of a resolved declaration carrying
-// the identity the load assigns it: the embedded type's bare name
-// under the host.
+// namedEmbed returns an embed of a resolved declaration with the
+// identity the load assigns it: the embedded type's bare name under
+// the host.
 func namedEmbed(path, host, name string, kind symbol.Kind) *node.Embed {
 	e := embedOf(path, name, kind)
 	e.ID = symbol.Identity{Lang: coretest.Lang, Package: path, Owner: host, Name: name, Kind: symbol.KindEmbed}
@@ -134,12 +138,25 @@ func hierarchy() *node.Package {
 	derived.Fields = []*node.Field{field(svcPath, derivedName, "name", builtin(strSpelling))}
 	row := coretest.Struct(svcPath, rowName)
 	row.Fields = []*node.Field{
-		field(svcPath, rowName, "name", builtin(strSpelling)),
-		field(svcPath, rowName, "count", builtin(intSpelling)),
+		field(svcPath, rowName, nameField, builtin(strSpelling)),
+		field(svcPath, rowName, countField, builtin(intSpelling)),
 	}
 	iface := coretest.Interface(svcPath, storeName)
 	iface.Methods = []*node.Method{method(svcPath, storeName, "Get")}
 	return coretest.Package(svcPath, base, derived, row, iface)
+}
+
+// rowField returns the identity of one of Row's fields.
+func rowField(name string) symbol.Identity {
+	return coretest.MemberID(svcPath, rowName, name, symbol.KindField)
+}
+
+// stamp states one authored text on a subject under a kernel key,
+// the way the sample annotator stamps it.
+func stamp(tb assert.TB, facts *meta.Facts, k meta.Key[string], subject symbol.Identity, text string) {
+	tb.Helper()
+
+	assert.NoError(tb, meta.Stamp(facts, k, text, meta.Claim{Subject: subject}), "the author states a value")
 }
 
 // policy overrides the scripted language's member policy, so a
@@ -174,41 +191,55 @@ type otherLang struct {
 // Lang returns the other language.
 func (otherLang) Lang() symbol.Lang { return "other" }
 
-// nongeneric hides the scripted language's generics capability.
+// nongeneric hides the scripted language's generics capability. It
+// forwards every method of the contract by name, because embedding
+// the rules would promote the capability too.
 type nongeneric struct {
 	inner rules.SourceRules
 }
 
-func (n nongeneric) Lang() symbol.Lang           { return n.inner.Lang() }
+// Lang returns the inner rules' language.
+func (n nongeneric) Lang() symbol.Lang { return n.inner.Lang() }
+
+// Members returns the inner rules' member policy.
 func (n nongeneric) Members() rules.MemberPolicy { return n.inner.Members() }
+
+// ParamRole returns the inner rules' role for a parameter.
 func (n nongeneric) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
 	return n.inner.ParamRole(p, v)
 }
 
+// ReturnRoles returns the inner rules' roles for the returns.
 func (n nongeneric) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
 	return n.inner.ReturnRoles(rs, v)
 }
 
+// Builtin returns the inner rules' shape for a spelling.
 func (n nongeneric) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	return n.inner.Builtin(ref, v)
 }
 
+// Resolve returns the inner rules' resolution of a spelling.
 func (n nongeneric) Resolve(
 	s rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
 	return n.inner.Resolve(s, name, kind, v)
 }
 
+// SamplesOf returns the inner rules' pair for a type.
 func (n nongeneric) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
 	return n.inner.SamplesOf(ref, hint, v)
 }
 
+// ZeroValue returns the inner rules' zero for a type.
 func (n nongeneric) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	return n.inner.ZeroValue(ref, v)
 }
 
+// LiteralFor returns the inner rules' value for a text.
 func (n nongeneric) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
 	return n.inner.LiteralFor(f, ref, text, v)
 }
 
+// TypeName returns the inner rules' join of a word onto a base.
 func (n nongeneric) TypeName(word, base string) string { return n.inner.TypeName(word, base) }

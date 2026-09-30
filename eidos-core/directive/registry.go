@@ -10,19 +10,19 @@ import (
 	"strings"
 )
 
-// Registry holds every schema a workspace recognises.
+// Registry records every schema a workspace recognises.
 //
 // A Registry is not safe for concurrent use. Registration happens
 // while the workspace composes, and sealing ends it: validation
 // refuses an unsealed registry, and registration after the seal is
 // an error.
 type Registry struct {
-	// byCanonical holds every schema under its canonical spelling.
+	// byCanonical maps each canonical spelling to its schema.
 	byCanonical map[Name]Schema
-	// claimants holds, per bare name, the canonical spellings that
+	// claimants maps each bare name to the canonical spellings that
 	// claim it, in registration order.
 	claimants map[Name][]Name
-	// ignored holds the spellings the workspace opted out of
+	// ignored records the spellings the workspace opted out of
 	// reporting: a full name, or a plugin prefix with its colon.
 	ignored map[Name]bool
 	// constraints maps each schema to its Requires and ConflictsWith
@@ -38,7 +38,7 @@ type resolved struct {
 	conflicts []Name
 }
 
-// NewRegistry returns a registry holding nothing.
+// NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{
 		byCanonical: map[Name]Schema{},
@@ -49,8 +49,8 @@ func NewRegistry() *Registry {
 }
 
 // Ignore records a spelling whose unclaimed instances validation
-// drops in silence: a foreign tool's carriers living in the same
-// comments. A full name ignores that directive. A plugin prefix
+// drops in silence: a foreign tool's carriers in the same comments.
+// A full name ignores that directive. A plugin prefix
 // ending in its colon, as in "k8s:", ignores every directive under
 // it. Ignoring a claimed name is refused, at the call when the
 // schema registered first and at the seal otherwise, because
@@ -78,22 +78,28 @@ func (r *Registry) Ignored(n Name) bool {
 	if r.ignored[n] {
 		return true
 	}
-	plugin, _, prefixed := strings.Cut(string(n), string(prefixSep))
-	return prefixed && r.ignored[Name(plugin+string(prefixSep))]
+	plugin := n.Plugin()
+	return plugin != "" && r.ignored[Name(plugin+string(prefixSep))]
 }
 
-// Register records one schema.
+// Register records one schema. It returns an error for:
+//   - a registration after the seal;
+//   - a kernel name claimed by a plugin, and an empty Plugin on any
+//     name outside the kernel's six;
+//   - a negatable kernel schema, because a negated instance opts a
+//     subject out of one plugin's rules and the kernel is no plugin;
+//   - a name, plugin prefix or param key the grammar cannot spell;
+//   - a reserved key among the params, and a param key or role
+//     declared twice;
+//   - a positional param with Roles, an undeclared role on a param,
+//     and a role requirement on a schema that declares no roles;
+//   - a list of lists, a list without an element type, and a
+//     reference without a resolution kind;
+//   - an untyped param, and an empty doc anywhere;
+//   - a canonical spelling registered twice, with an error naming
+//     both docs.
 //
-// It refuses: a registration after the seal, a kernel name claimed
-// by a plugin, an empty Plugin on any name outside the kernel's
-// six, a name, plugin prefix or param key the grammar cannot spell,
-// a reserved key among the params, a param key or role declared
-// twice, a positional param carrying Roles, an undeclared role on a
-// param, a role requirement on a schema declaring no roles, a list
-// of lists, a list stating no element type, a reference stating no
-// resolution, an untyped param, and an empty doc anywhere. One
-// plugin claiming one name twice is refused naming both docs; two
-// plugins claiming one bare name both register, and the bare
+// Two plugins that claim one bare name both register, and the bare
 // spelling becomes ambiguous.
 func (r *Registry) Register(s Schema) error {
 	if r.sealed {
@@ -115,9 +121,8 @@ func (r *Registry) Register(s Schema) error {
 
 // Seal resolves every Requires and ConflictsWith against what
 // registered, refuses an ignore covering a registered name, and
-// closes the registry. Each unknown name is one error, a
-// self-reference another, a silenced schema another; composition
-// collects them all.
+// closes the registry. Each unknown name, self-reference and
+// silenced schema is one error, and composition collects them all.
 func (r *Registry) Seal() []error {
 	var faults []error
 	for _, n := range r.ignoredOrder() {
@@ -161,10 +166,10 @@ func (r *Registry) Sealed() bool { return r.sealed }
 
 // ResolveName returns the schema a spelling addresses.
 //
-// A prefixed spelling addresses its owner's schema. A bare
-// spelling addresses the schema iff exactly one plugin claims it;
-// with two claimants it returns false, and Candidates names them
-// for the diagnostic.
+// A prefixed spelling addresses its plugin's schema. A bare
+// spelling addresses the schema when exactly one plugin claims it.
+// With two claimants it returns false, and [Registry.Candidates]
+// names them for the diagnostic.
 func (r *Registry) ResolveName(n Name) (Schema, bool) {
 	s, _, held := r.lookup(n)
 	return s, held
@@ -177,7 +182,7 @@ func (r *Registry) Candidates(n Name) []Name {
 }
 
 // lookup returns the schema a spelling addresses together with its
-// canonical spelling, which is the key it is held under, so no
+// canonical spelling, which is the key it is stored under, so no
 // caller spells the canonical form again.
 func (r *Registry) lookup(n Name) (Schema, Name, bool) {
 	if s, held := r.byCanonical[n]; held {
@@ -225,6 +230,11 @@ func admissible(s Schema) error {
 	}
 	if s.Plugin != "" && kernel {
 		return fmt.Errorf("directive: %s is a kernel name, which no plugin claims", s.Name)
+	}
+	if s.Plugin == "" && s.Negatable {
+		return fmt.Errorf(
+			"directive: %s is a kernel schema, and only a plugin's schema is negatable", s.Name,
+		)
 	}
 	// A carrier writes the name, the prefix and every key through the
 	// grammar's ident, so a spelling outside it registers a schema no

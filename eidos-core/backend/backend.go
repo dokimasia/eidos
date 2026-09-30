@@ -29,6 +29,11 @@ type Builder struct {
 	syntax  plugin.CommentSyntax
 	version string
 	lang    render.Language
+	// vocab lists the declared vocabulary parts in declaration
+	// order, and helpers records every name they declare, so a name
+	// declared twice is a defect before any render.
+	vocab   []func(set *render.ImportSet) template.FuncMap
+	helpers map[string]bool
 	lower   plugin.Lower
 	respell plugin.Respell
 	defects []string
@@ -41,10 +46,11 @@ func New(
 	return &Builder{
 		name: name, target: target, syntax: syntax,
 		lang: render.Language{
-			Kinds:  map[symbol.Kind]string{},
-			Funcs:  template.FuncMap{},
-			Groups: map[render.GroupName]string{},
+			Kinds:   map[symbol.Kind]string{},
+			Refused: map[symbol.Kind]string{},
+			Groups:  map[render.GroupName]string{},
 		},
+		helpers: map[string]bool{},
 	}
 }
 
@@ -70,8 +76,10 @@ func (b *Builder) FileTemplate(t string) *Builder {
 // KindTemplates declares how the language spells emit kinds, keyed
 // by kind; repeatable, merging, one spelling per kind. Which kinds
 // render standalone and which render inside their hosts is the
-// language's own split, and the conformance suite's every-kind
-// check is what holds a backend to the full inventory.
+// language's own split. A kind the language cannot spell is
+// declared through [Builder.RefusedKinds], and the conformance
+// suite's every-kind check reports a kind a backend neither spells
+// nor refuses.
 func (b *Builder) KindTemplates(ts map[symbol.Kind]string) *Builder {
 	for _, k := range slices.Sorted(maps.Keys(ts)) {
 		if _, taken := b.lang.Kinds[k]; taken {
@@ -79,6 +87,24 @@ func (b *Builder) KindTemplates(ts map[symbol.Kind]string) *Builder {
 			continue
 		}
 		b.lang.Kinds[k] = ts[k]
+	}
+	return b
+}
+
+// RefusedKinds declares the emit kinds the language cannot spell,
+// keyed by kind, each with the reason stated as a fact of the
+// language; repeatable, merging, one refusal per kind. The render
+// skips a declaration of a refused kind and reports the reason
+// under [render.RefusedKind]. A kind the language lowers into other
+// kinds before any template runs is neither spelt nor refused. The
+// built backend implements [render.Refuser].
+func (b *Builder) RefusedKinds(rs map[symbol.Kind]string) *Builder {
+	for _, k := range slices.Sorted(maps.Keys(rs)) {
+		if _, taken := b.lang.Refused[k]; taken {
+			b.defects = append(b.defects, "refuses the "+k.String()+" kind twice")
+			continue
+		}
+		b.lang.Refused[k] = rs[k]
 	}
 	return b
 }
@@ -94,19 +120,28 @@ func (b *Builder) Scaffold(
 	return b
 }
 
-// Funcs registers the language's shared template vocabulary into
-// the overrideable bucket; repeatable, merging, one helper per
-// name. A plugin's declared override replaces one of these names
-// for every template in the pass.
-func (b *Builder) Funcs(fs template.FuncMap) *Builder {
-	for _, name := range slices.Sorted(maps.Keys(fs)) {
-		if _, taken := b.lang.Funcs[name]; taken {
+// Funcs registers part of the language's shared template vocabulary
+// into the overrideable bucket: a function returning the helpers
+// bound to one file's import set, so a helper that spells a type
+// records the import the spelling needs. It is repeatable, the parts
+// merging, one helper per name. The kit calls each part once here,
+// with a set of its own, to read the names it declares. A plugin's
+// declared override replaces one of these names for every template
+// in the pass.
+func (b *Builder) Funcs(part func(set *render.ImportSet) template.FuncMap) *Builder {
+	if part == nil {
+		b.defects = append(b.defects, "declares a nil vocabulary")
+		return b
+	}
+	for _, name := range slices.Sorted(maps.Keys(part(&render.ImportSet{}))) {
+		if b.helpers[name] {
 			b.defects = append(b.defects,
 				"declares the "+strconv.Quote(name)+" helper twice")
 			continue
 		}
-		b.lang.Funcs[name] = fs[name]
+		b.helpers[name] = true
 	}
+	b.vocab = append(b.vocab, part)
 	return b
 }
 
@@ -153,7 +188,7 @@ func (b *Builder) Imports(r func(set *render.ImportSet) string) *Builder {
 }
 
 // Finalise sets the language formatter, run last per file. A
-// failure at render is a positioned finding carrying the file it
+// failure at render is a positioned finding that names the file it
 // could not format, and the pass continues with the remaining
 // files.
 func (b *Builder) Finalise(f func(src []byte) ([]byte, error)) *Builder {
@@ -163,9 +198,9 @@ func (b *Builder) Finalise(f func(src []byte) ([]byte, error)) *Builder {
 
 // Coverage declares the language's fact coverage: one verdict per
 // fact, with per-kind exceptions. It arms the render's guard, and
-// the built backend implements [render.Coverer], which is how the
-// conformance suite holds the declaration total and the rendered
-// findings against it.
+// the built backend implements [render.Coverer], which the
+// conformance suite reads to check the declaration total and the
+// rendered findings.
 func (b *Builder) Coverage(c render.Coverage) *Builder {
 	b.lang.Coverage = c
 	return b
@@ -195,13 +230,19 @@ func (b *Builder) Respell(r plugin.Respell) *Builder {
 // nothing more, so a kit backend and a hand-rolled pass over the
 // same language return the same bytes.
 //
-// Build panics on a declaration defect: an empty name, a zero
-// target, a kind or helper declared twice, and everything the
-// pass refuses to compose — an empty kind-template set, a
-// template that does not parse, a builtin name claimed by the
-// shared vocabulary, a missing naming, scaffold, import renderer
-// or formatter. A wrong declaration is a bug in the backend's own
-// constructor and panics on the first Build in any test.
+// Build panics on a declaration defect, because a wrong declaration
+// is a bug in the backend's own constructor, and the panic comes on
+// the first Build in any test. It checks these groups in order and
+// panics at the first group with a defect, naming every defect of
+// that group:
+//
+//   - an empty name;
+//   - a zero target;
+//   - a kind spelt twice, a kind refused twice, a group spelt twice,
+//     a helper declared twice and a nil vocabulary part;
+//   - every fault [render.New] joins, such as an empty kind-template
+//     set, a kind both spelt and refused, a template that does not
+//     parse and a missing formatter.
 func (b *Builder) Build() plugin.Backend {
 	if b.name == "" {
 		panic("backend: New with an empty name")
@@ -213,6 +254,7 @@ func (b *Builder) Build() plugin.Backend {
 	if len(b.defects) > 0 {
 		panic("backend: " + name + " " + strings.Join(b.defects, ", and "))
 	}
+	b.lang.Funcs = vocabulary(b.vocab)
 	pass, err := render.New(b.name, b.lang)
 	if err != nil {
 		panic("backend: " + name + " declares a language the pass refuses:\n" +
@@ -259,14 +301,18 @@ func (b *builtBackend) Version() string { return b.version }
 // composition.
 func (b *builtBackend) Target() plugin.Target { return b.target }
 
-// Syntax returns the language's comment forms, carried for the
-// output contract: the generated-file header is written through
-// them, after the formatter ran.
+// Syntax returns the language's comment forms for the output
+// contract: the generated-file header is written through them,
+// after the formatter ran.
 func (b *builtBackend) Syntax() plugin.CommentSyntax { return b.syntax }
 
 // Coverage implements [render.Coverer] through the composed pass,
 // so the suite reads the same data the render's guard does.
 func (b *builtBackend) Coverage() render.Coverage { return b.pass.Coverage() }
+
+// RefusedKinds implements [render.Refuser] through the composed
+// pass, so the suite reads the refusals the render reports.
+func (b *builtBackend) RefusedKinds() map[symbol.Kind]string { return b.pass.RefusedKinds() }
 
 // Render implements [plugin.Renderer] through the composed pass. A
 // backend declaring a seam refuses an unsettled store: the plan
@@ -325,4 +371,19 @@ func (b *settlingBackend) Respell(
 	host, kind symbol.Kind, v symbol.Visibility, name string,
 ) (string, error) {
 	return b.respell(host, kind, v, name)
+}
+
+// vocabulary joins the declared parts into the one vocabulary the
+// pass binds per file, nil where none was declared.
+func vocabulary(parts []func(set *render.ImportSet) template.FuncMap) func(*render.ImportSet) template.FuncMap {
+	if len(parts) == 0 {
+		return nil
+	}
+	return func(set *render.ImportSet) template.FuncMap {
+		out := template.FuncMap{}
+		for _, part := range parts {
+			maps.Copy(out, part(set))
+		}
+		return out
+	}
 }

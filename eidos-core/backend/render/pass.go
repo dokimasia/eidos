@@ -28,8 +28,8 @@ import (
 const skeletonName = "file"
 
 // Pass is one composed language's render procedure. A Pass is safe
-// for concurrent use: everything it holds is fixed at [New], and
-// every render call owns its own frames. Within one call, files
+// for concurrent use: its fields are fixed at [New], and every
+// render call has frames of its own. Within one call, files
 // render in parallel on up to GOMAXPROCS workers. The language's
 // Scaffold, Imports, Finalise and Cluster, every helper in its
 // Funcs and in a context's Funcs, and every read of a context's
@@ -37,11 +37,16 @@ const skeletonName = "file"
 // for concurrent use. Naming and Split run on the calling
 // goroutine.
 type Pass struct {
-	name     plugin.ID
-	kinds    map[symbol.Kind]*template.Template
-	groups   map[GroupName]*template.Template
-	file     *template.Template
+	name    plugin.ID
+	kinds   map[symbol.Kind]*template.Template
+	refused map[symbol.Kind]string
+	groups  map[GroupName]*template.Template
+	file    *template.Template
+	// shared is the vocabulary bound to a set of the pass's own: the
+	// names the parse and the override checks read. A render binds
+	// vocab per worker instead.
 	shared   template.FuncMap
+	vocab    func(set *ImportSet) template.FuncMap
 	spell    Naming
 	split    Split
 	cluster  Cluster
@@ -52,26 +57,42 @@ type Pass struct {
 }
 
 // Coverage returns the language's declared fact coverage, so a
-// consumer holding the pass reads the same data the guard does.
+// consumer of the pass reads the same data the guard does.
 func (p *Pass) Coverage() Coverage { return p.coverage }
+
+// RefusedKinds implements [Refuser]: the kinds the language refuses,
+// each with its reason, in a map of the caller's own, so a consumer
+// of the pass reads the refusals the render reports.
+func (p *Pass) RefusedKinds() map[symbol.Kind]string { return maps.Clone(p.refused) }
 
 // defaultFile is the skeleton a language that sets none takes.
 const defaultFile = "{{" + BuiltinImports + "}}{{" + BuiltinDecls + "}}"
 
-// New composes a language into its pass.
+// New composes a language into its pass. It returns an error
+// joining every fault it finds, because a composition reads every
+// fault at once:
 //
-// It refuses, collecting every fault: an empty kind-template set,
-// a template that does not parse, a missing naming and a missing
-// formatter. The kit converts these to panics at its own Build,
-// because there they are declaration defects; here they are
-// composition faults, and a composition reads every fault at once.
+//   - an empty kind-template set;
+//   - a kind both spelt and refused, and a refusal without a reason;
+//   - a kind template, group template or file skeleton that does
+//     not parse;
+//   - a builtin name the shared vocabulary claims;
+//   - a Cluster without group templates;
+//   - a missing naming, scaffold, import renderer or formatter.
+//
+// The kit converts these to panics at its own Build, because there
+// they are declaration defects.
 func New(name plugin.ID, l Language) (*Pass, error) {
 	var faults []error
 	if len(l.Kinds) == 0 {
 		faults = append(faults,
 			errors.New("render: the language spells no kinds"))
 	}
-	for _, name := range slices.Sorted(maps.Keys(l.Funcs)) {
+	shared := template.FuncMap{}
+	if l.Funcs != nil {
+		shared = l.Funcs(&ImportSet{})
+	}
+	for _, name := range slices.Sorted(maps.Keys(shared)) {
 		if reserved(name) {
 			faults = append(faults, fmt.Errorf(
 				"render: the shared vocabulary claims %q, which is a builtin", name,
@@ -80,12 +101,20 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 	}
 	kinds := make(map[symbol.Kind]*template.Template, len(l.Kinds))
 	for _, k := range slices.Sorted(maps.Keys(l.Kinds)) {
-		t, err := template.New(k.String()).Funcs(unbound()).Funcs(l.Funcs).Parse(l.Kinds[k])
+		t, err := template.New(k.String()).Funcs(unbound()).Funcs(shared).Parse(l.Kinds[k])
 		if err != nil {
 			faults = append(faults, fmt.Errorf("render: the %s template: %w", k, err))
 			continue
 		}
 		kinds[k] = t
+	}
+	for _, k := range slices.Sorted(maps.Keys(l.Refused)) {
+		if _, spelt := l.Kinds[k]; spelt {
+			faults = append(faults, fmt.Errorf("render: the language spells and refuses the %s kind", k))
+		}
+		if l.Refused[k] == "" {
+			faults = append(faults, fmt.Errorf("render: the language refuses the %s kind without a reason", k))
+		}
 	}
 	if l.Cluster != nil && len(l.Groups) == 0 {
 		faults = append(faults, errors.New(
@@ -94,7 +123,7 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 	}
 	groups := make(map[GroupName]*template.Template, len(l.Groups))
 	for _, g := range slices.Sorted(maps.Keys(l.Groups)) {
-		t, err := template.New(string(g)).Funcs(unbound()).Funcs(l.Funcs).Parse(l.Groups[g])
+		t, err := template.New(string(g)).Funcs(unbound()).Funcs(shared).Parse(l.Groups[g])
 		if err != nil {
 			faults = append(faults, fmt.Errorf("render: the %s group template: %w", g, err))
 			continue
@@ -115,42 +144,39 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 	}
 	if l.Finalise == nil {
 		faults = append(faults,
-			errors.New("render: the language holds no formatter"))
+			errors.New("render: the language declares no formatter"))
 	}
 	skeleton := l.File
 	if skeleton == "" {
 		skeleton = defaultFile
 	}
-	file, err := template.New(skeletonName).Funcs(unbound()).Funcs(l.Funcs).Parse(skeleton)
+	file, err := template.New(skeletonName).Funcs(unbound()).Funcs(shared).Parse(skeleton)
 	if err != nil {
 		faults = append(faults, fmt.Errorf("render: the file skeleton: %w", err))
 	}
 	if len(faults) > 0 {
 		return nil, errors.Join(faults...)
 	}
-	shared := maps.Clone(l.Funcs)
-	if shared == nil {
-		shared = template.FuncMap{}
-	}
 	return &Pass{
-		name: name, kinds: kinds, groups: groups, file: file, shared: shared,
-		spell: l.Naming, split: l.Split, cluster: l.Cluster,
+		name: name, kinds: kinds, refused: maps.Clone(l.Refused),
+		groups: groups, file: file, shared: shared,
+		vocab: l.Funcs, spell: l.Naming, split: l.Split, cluster: l.Cluster,
 		scaffold: l.Scaffold, imports: l.Imports, final: l.Finalise,
 		coverage: l.Coverage,
 	}, nil
 }
 
-// group is one output file in the making: its name, the package
-// that owns it, and its units in the store's total order.
+// group is one output file before it renders: its name, its
+// package, and its units in the store's total order.
 type group struct {
 	name  string
 	pkg   symbol.Identity
 	units []plugin.Unit
 }
 
-// fileKey addresses one output file: the spelled name under the
-// owning package, because two packages spell the same filename and
-// stay two files, whatever directory layout places them in.
+// fileKey addresses one output file: the spelled name under its
+// package, because two packages can spell one filename and remain
+// two files, whatever directory layout places them in.
 type fileKey struct {
 	pkg  symbol.Identity
 	name string
@@ -295,8 +321,8 @@ func (p *Pass) unitPos(u plugin.Unit) position.Pos {
 
 // derivation reads a file's emitters and the keys it derives from
 // off the units that assembled it, distinct and sorted. A unit
-// carrying no key contributes no source, which is what a plan file
-// is: it derives from the plan rather than from any declaration.
+// without a key contributes no source, which is what a plan file
+// is: it derives from the plan and from no declaration.
 func derivation(units []plugin.Unit) (plugins []plugin.ID, sources []string) {
 	plugins = make([]plugin.ID, 0, len(units))
 	for _, u := range units {
@@ -311,7 +337,7 @@ func derivation(units []plugin.Unit) (plugins []plugin.ID, sources []string) {
 }
 
 // fileView is what the skeleton executes over: the file's spelled
-// name and its owning package identity.
+// name and its package identity.
 type fileView struct {
 	Name string
 	Pkg  symbol.Identity
@@ -324,17 +350,22 @@ type fileView struct {
 type frame struct {
 	pass *Pass
 	sink *diag.Sink
-	// origin is the identity findings carry: the context's plugin,
-	// or the pass's own name where the context carries none.
-	origin  diag.Origin
-	trees   map[plugin.ID]fs.FS
-	merged  template.FuncMap
+	// origin is the identity findings report under: the context's
+	// plugin, or the pass's own name where the context names none.
+	origin diag.Origin
+	trees  map[plugin.ID]fs.FS
+	merged template.FuncMap
+	// vocab is the language's vocabulary bound to this frame's
+	// import set, which bind sets and a reference template parses
+	// with.
+	vocab   template.FuncMap
 	out     bytes.Buffer
 	scratch bytes.Buffer // one declaration's render, adopted on success
 	// refCache contains the referenced templates this frame parsed,
-	// keyed by the emitting plugin and the name, because each
-	// plugin's name resolves in its own tree. Their builtins are
-	// bound to this frame and write into the body under execution.
+	// keyed by the plugin whose tree each resolved in and the name,
+	// because one name resolves in each plugin's tree apart. Their
+	// builtins are bound to this frame and write into the body under
+	// execution.
 	refCache map[refKey]*template.Template
 	// place is the placement of the body a reference template is
 	// executing for, nil between executions.
@@ -343,13 +374,13 @@ type frame struct {
 	set     ImportSet
 	at      position.Pos
 	plugin  plugin.ID
-	// bound holds the frame's own template set once bind ran, which
-	// is what the nested builtin renders through.
+	// bound is the frame's own template set once bind ran, which the
+	// nested builtin renders through.
 	bound *bound
 }
 
-// refKey addresses one parsed reference template: the emitting
-// plugin whose tree it resolved in, and its name there.
+// refKey addresses one parsed reference template: the plugin whose
+// tree it resolved in, and its name there.
 type refKey struct {
 	plugin plugin.ID
 	name   string
@@ -375,9 +406,16 @@ type bound struct {
 }
 
 // bind clones the parsed templates for this call and binds the
-// builtins to its frame: parse happened once at New, and no two
-// calls share an executing tree.
+// language's vocabulary and the builtins to its frame: the
+// vocabulary records into the frame's import set, the plugins'
+// merged helpers override it, and the builtins override both.
+// Parse happened once at New, and no two calls share an executing
+// tree.
 func (p *Pass) bind(f *frame) (*bound, error) {
+	f.vocab = p.shared
+	if p.vocab != nil {
+		f.vocab = p.vocab(&f.set)
+	}
 	builtins := template.FuncMap{
 		BuiltinBody:    f.body,
 		BuiltinUse:     f.use,
@@ -391,7 +429,7 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 		if err != nil {
 			return nil, fmt.Errorf("render: cloning the %s template: %w", k, err)
 		}
-		kinds[k] = c.Funcs(f.merged).Funcs(builtins)
+		kinds[k] = c.Funcs(f.vocab).Funcs(f.merged).Funcs(builtins)
 	}
 	groups := make(map[GroupName]*template.Template, len(p.groups))
 	for g, t := range p.groups {
@@ -399,7 +437,7 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 		if err != nil {
 			return nil, fmt.Errorf("render: cloning the %s group template: %w", g, err)
 		}
-		groups[g] = c.Funcs(f.merged).Funcs(builtins)
+		groups[g] = c.Funcs(f.vocab).Funcs(f.merged).Funcs(builtins)
 	}
 	file, err := p.file.Clone()
 	if err != nil {
@@ -407,15 +445,16 @@ func (p *Pass) bind(f *frame) (*bound, error) {
 	}
 	return &bound{
 		kinds: kinds, groups: groups,
-		file: file.Funcs(f.merged).Funcs(builtins),
+		file: file.Funcs(f.vocab).Funcs(f.merged).Funcs(builtins),
 	}, nil
 }
 
 // use records one import path into the file under render; it is
 // the builtin a kind template qualifies with. A second argument
-// records the name the import binds — an alias, a side-effect
-// blank — for the languages whose import form binds one; more
-// than one refuses, because one call records one binding.
+// records the name the import binds, such as an alias or a
+// side-effect blank, for the languages whose import form binds one.
+// More than one returns an error, because one call records one
+// binding.
 func (f *frame) use(path string, name ...string) (string, error) {
 	switch len(name) {
 	case 0:
@@ -443,22 +482,37 @@ func (f *frame) decls() (string, error) {
 
 // file renders one group into the frame's shared buffer: every
 // unit's declarations in the order the flush fixed, then the
-// formatter. A false answer means the formatter refused and the
-// finding is on the sink. The buffer is reset per file and its
-// bytes are copied out, so a formatter that returns its input, as
-// a pass-through one does, never aliases storage a following file
-// overwrites.
+// formatter. A false result means the file is withheld, and the
+// findings that explain it are on the sink: the skeleton or the
+// formatter refused the file, or every declaration of it was
+// skipped, which leaves no content to stamp. The buffer is reset
+// per file and its bytes are copied out, so a formatter that
+// returns its input, as a pass-through one does, never aliases
+// storage a following file overwrites.
 func (f *frame) file(g *group, b *bound) ([]byte, bool) {
 	f.out.Reset()
 	f.fileOut.Reset()
 	f.set.Reset()
 	f.set.SetHome(g.pkg.Package)
+	// The file's own declarations take their names before anything
+	// renders, so no import binds a name the file declares.
+	declared := 0
+	for _, u := range g.units {
+		declared += len(u.Decls)
+		for _, d := range u.Decls {
+			f.set.Reserve(declaredName(d))
+		}
+	}
 	// The package qualifies the spelled name, because two packages
 	// can spell one filename and the two files remain distinct.
 	f.at = position.Pos{File: path.Join(g.pkg.Package, g.name)}
+	spelt := false
 	for _, u := range g.units {
 		f.plugin = u.Plugin
-		f.declRun(u, b)
+		spelt = f.declRun(u, b) || spelt
+	}
+	if declared > 0 && !spelt {
+		return nil, false
 	}
 	if err := b.file.Execute(&f.fileOut, fileView{Name: g.name, Pkg: g.pkg}); err != nil {
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,

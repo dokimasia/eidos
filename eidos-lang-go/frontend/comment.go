@@ -11,18 +11,12 @@ import (
 	"go.dokimi.dev/eidos/sdk/position"
 )
 
-// legacyBuild opens the legacy constraint form, which this
-// frontend does not read: without the filter it would parse as a
-// carrier named "build" and attach a directive nobody wrote.
-const legacyBuild = "build"
-
 // goBuild is the constraint directive, which is configuration and
 // no annotation: the exclusion scan reads it, and nothing else does.
 const goBuild = "go:build"
 
 // split takes one comment group apart through the unit's own
-// pipeline, then filters what is Go's alone: the legacy +build
-// form out of the carriers, the go:build directive out of the
+// pipeline, then filters the go:build directive out of the
 // annotations. Consecutive line comments feed the pipeline as one
 // text, so a carrier's continuation folds across them the way the
 // author reads it.
@@ -33,13 +27,7 @@ func (l *lowered) split(u *plugin.SourceUnit, group *ast.CommentGroup) plugin.Co
 	}
 	l.consumed[group] = true
 	take := func(one plugin.CommentParts) {
-		for _, carried := range one.Carriers {
-			if carried.Payload == legacyBuild ||
-				strings.HasPrefix(carried.Payload, legacyBuild+" ") {
-				continue
-			}
-			parts.Carriers = append(parts.Carriers, carried)
-		}
+		parts.Carriers = append(parts.Carriers, one.Carriers...)
 		for _, a := range one.Annotations {
 			if a.Name == goBuild {
 				continue
@@ -83,9 +71,9 @@ func (l *lowered) skip(groups ...*ast.CommentGroup) {
 	}
 }
 
-// merge folds a group's parts under a spec's own: carriers and
-// annotations union — a group's directives apply beside a spec's —
-// while the documentation text keeps the nearer comment's.
+// merge folds a group's parts under a spec's own. Carriers and
+// annotations union, because a group's directives apply beside a
+// spec's. The documentation keeps the nearer comment's text.
 func merge(own, group plugin.CommentParts) plugin.CommentParts {
 	if len(own.Docs) == 0 {
 		own.Docs = group.Docs
@@ -96,12 +84,12 @@ func merge(own, group plugin.CommentParts) plugin.CommentParts {
 }
 
 // refuseCarriers reports every carrier on a subject the model
-// cannot address, so an authored directive never vanishes into
-// silence.
+// cannot address, quoting it as the author wrote it, so an authored
+// directive never vanishes into silence.
 func refuseCarriers(u *plugin.SourceUnit, cs []plugin.Carrier, what string) {
 	for _, c := range cs {
 		u.Errorf(UnaddressedCarrier, c.Pos,
-			"%q is on %s, which the model cannot address; move it to the declaration",
-			plugin.CarrierMark+c.Payload, what)
+			"%q is on %s, which the model cannot address. Move it directly above a declaration",
+			c.Mark+c.Payload, what)
 	}
 }

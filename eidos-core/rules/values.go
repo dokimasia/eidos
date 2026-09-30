@@ -11,6 +11,10 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// aliasDepth bounds the alias chain an authored value's shape
+// follows, so an alias cycle in a broken source ends.
+const aliasDepth = 8
+
 // Sample is one value of a type a generated check writes, or the
 // reason none could be derived.
 type Sample struct {
@@ -45,18 +49,6 @@ func NumberPair(k emit.LiteralKind, sample, alternate string, bits int) (Sample,
 // admits no pair.
 func RefusedPair(why Refusal) (Sample, Sample) { return Refused(why), Refused(why) }
 
-// FirstRefusal returns the first refusal among samples, and
-// [RefusedNoLiteral] where none states one. A value built from
-// several derived parts refuses with it when a part has no value.
-func FirstRefusal(samples ...Sample) Refusal {
-	for _, s := range samples {
-		if s.Refusal != RefusedNone {
-			return s.Refusal
-		}
-	}
-	return RefusedNoLiteral
-}
-
 // Lift returns a derived sample with its value wrapped, such as an
 // element placed in a composite. A sample without a value returns
 // unchanged, so the wrapped part keeps its reason.
@@ -67,8 +59,42 @@ func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 	return Of(wrap(s.Value))
 }
 
+// Complete returns a pair from the halves an author stated and the
+// halves a language derived. A stated half is kept. A half no author
+// stated takes the derived value of its own position where that
+// value differs from the stated half, the other derived value where
+// that one differs, and a [RefusedNoLiteral] refusal where neither
+// does. The pair is then two distinct values. With no half stated,
+// the derived pair returns as it is.
+func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Sample) {
+	switch {
+	case sample.OK() && alternate.OK():
+		return sample, alternate
+	case sample.OK():
+		return sample, differing(sample, derivedAlternate, derived)
+	case alternate.OK():
+		return differing(alternate, derived, derivedAlternate), alternate
+	default:
+		return derived, derivedAlternate
+	}
+}
+
+// differing returns the derived candidate that pairs with a stated
+// half: first, unless it has the stated value, then second, and
+// [RefusedNoLiteral] where neither differs. A refused first
+// candidate returns as it is, with its reason.
+func differing(stated, first, second Sample) Sample {
+	if !first.OK() || !sameLiteral(stated.Value, first.Value) {
+		return first
+	}
+	if second.OK() && !sameLiteral(stated.Value, second.Value) {
+		return second
+	}
+	return Refused(RefusedNoLiteral)
+}
+
 // Refusal names why a sample has no value. Only [RefusedNoLiteral]
-// is a fact about the type; the rest describe an input the caller
+// is a fact about the type. The rest describe an input the caller
 // can fix.
 type Refusal uint8
 
@@ -91,6 +117,18 @@ const (
 	RefusedDepth
 )
 
+// FirstRefusal returns the first refusal among samples, and
+// [RefusedNoLiteral] where none states one. A value built from
+// several derived parts refuses with it when a part has no value.
+func FirstRefusal(samples ...Sample) Refusal {
+	for _, s := range samples {
+		if s.Refusal != RefusedNone {
+			return s.Refusal
+		}
+	}
+	return RefusedNoLiteral
+}
+
 // String returns the refusal's spelling.
 func (r Refusal) String() string {
 	switch r {
@@ -111,122 +149,16 @@ func (r Refusal) String() string {
 	}
 }
 
-// samplesOf reads the authored values first, on the declaration
-// that has the type and then on the declaration the type names,
-// and asks the language to derive only what neither stated. Each
-// half reads independently. A derived half paired with an authored
-// one must differ from it, so the pair is two distinct values.
-func (b Bound) samplesOf(subject symbol.Identity, ref *node.TypeRef, hint string) (Sample, Sample) {
-	if b.view.IsZero() {
-		return Refused(RefusedNoView), Refused(RefusedNoView)
-	}
-	sample, alternate := b.authored(subject)
-	if ref != nil && !ref.Target.IsZero() && (!sample.OK() || !alternate.OK()) {
-		typeSample, typeAlternate := b.authored(ref.Target)
-		if !sample.OK() {
-			sample = typeSample
-		}
-		if !alternate.OK() {
-			alternate = typeAlternate
-		}
-	}
-	if sample.OK() && alternate.OK() {
-		return sample, alternate
-	}
-	derived, derivedAlternate := b.source.SamplesOf(ref, hint, b.view)
-	switch {
-	case !sample.OK() && !alternate.OK():
-		return derived, derivedAlternate
-	case !sample.OK():
-		sample = differing(alternate, derived, derivedAlternate)
-	default:
-		alternate = differing(sample, derivedAlternate, derived)
-	}
-	return sample, alternate
-}
-
-// differing returns the derived candidate that pairs with an
-// authored half: first, unless it equals the authored value, then
-// second, and [RefusedNoLiteral] where neither differs. A refused
-// first candidate returns as it is, keeping its reason.
-func differing(authored, first, second Sample) Sample {
-	if !first.OK() || !sameLiteral(authored.Value, first.Value) {
-		return first
-	}
-	if second.OK() && !sameLiteral(authored.Value, second.Value) {
-		return second
-	}
-	return Refused(RefusedNoLiteral)
-}
-
-// sameLiteral reports whether two values are literals with one
-// text, whatever their kinds: an authored value is raw text, so
-// its text is what compares. An authored string's raw text keeps
-// its quotes, so it never equals a derived string.
+// sameLiteral reports whether two values are literals of one kind
+// with one text. Only a literal has a literal kind, so a literal
+// kind shared with a literal makes b one too.
 func sameLiteral(a, b emit.Value) bool {
-	return a.Kind == emit.ValueLiteral && b.Kind == emit.ValueLiteral && a.Text == b.Text
-}
-
-// authored reads the two authored values stamped on a declaration.
-// An authored value is text in the declaration's language. It
-// arrives as a raw literal tagged with that language, whichever
-// language's rules the walk is bound to, so a target can refuse
-// another language's text.
-func (b Bound) authored(id symbol.Identity) (Sample, Sample) {
-	var sample, alternate Sample
-	if text, held := Fact(b.view, id, b.view.Kernel.Sample); held {
-		sample = Of(emit.Raw(id.Lang, text))
-	}
-	if text, held := Fact(b.view, id, b.view.Kernel.Alternate); held {
-		alternate = Of(emit.Raw(id.Lang, text))
-	}
-	return sample, alternate
-}
-
-// witnesses reads the authored witness per parameter first and
-// asks the language's generics capability to derive the rest; the
-// list is whole or nil, because an entry point instantiates every
-// parameter at once.
-func (b Bound) witnesses(params []*node.TypeParam) []*node.TypeRef {
-	if len(params) == 0 || b.view.IsZero() {
-		return nil
-	}
-	generics, held := b.source.(GenericsRules)
-	out := make([]*node.TypeRef, 0, len(params))
-	for _, p := range params {
-		if p == nil {
-			return nil
-		}
-		if id, authored := Fact(b.view, p.ID, b.view.Kernel.Witness); authored {
-			out = append(out, witnessRef(id))
-			continue
-		}
-		if !held {
-			return nil
-		}
-		ref, derived := generics.Derive(p, b.view)
-		if !derived || ref == nil {
-			return nil
-		}
-		out = append(out, ref)
-	}
-	return out
-}
-
-// witnessRef lifts an authored witness identity into a reference:
-// the bare name as its spelling, the identity as its target where
-// the witness names a declaration, and a builtin's spelling alone.
-func witnessRef(id symbol.Identity) *node.TypeRef {
-	ref := &node.TypeRef{Spelling: id.Name}
-	if id.Package != "" {
-		ref.Target = id
-	}
-	return ref
+	return a.Kind == emit.ValueLiteral && a.Literal == b.Literal && a.Text == b.Text
 }
 
 // EmitRef restates a node reference in the emit model, structure,
-// arguments and target included, so a value's Type is what a
-// backend spells and qualifies. A nil reference returns nil.
+// arguments, target and package included, so a value's Type is what
+// a backend spells and imports. A nil reference returns nil.
 func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 	if ref == nil {
 		return nil
@@ -234,6 +166,7 @@ func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 	out := &emit.TypeRef{
 		Spelling: ref.Spelling,
 		Target:   ref.Target,
+		Package:  ref.Package,
 		Form:     ref.Form,
 		Split:    ref.Split,
 		Length:   ref.Length,
@@ -252,4 +185,91 @@ func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 		}
 	}
 	return out
+}
+
+// samplesOf returns the halves an author stated, read through
+// [View.Authored], and asks the language to derive only where a half
+// is missing.
+func (b Bound) samplesOf(subject symbol.Identity, ref *node.TypeRef, hint string) (Sample, Sample) {
+	if b.view.IsZero() {
+		return RefusedPair(RefusedNoView)
+	}
+	sample, alternate := b.view.Authored(b.source, subject, ref)
+	if sample.OK() && alternate.OK() {
+		return sample, alternate
+	}
+	derived, derivedAlternate := b.source.SamplesOf(ref, hint, b.view)
+	return Complete(sample, alternate, derived, derivedAlternate)
+}
+
+// valueShape returns the shape an authored value of a type lifts by.
+// It is the fold's shape, with a reference to an alias followed to
+// the type the alias names. A defined type therefore takes the
+// literals of the type it is defined over, and an alias without a
+// target folds to Opaque. A chain longer than aliasDepth returns the
+// shape it stopped at.
+func (b Bound) valueShape(ref *node.TypeRef) TypeShape {
+	shape := b.typeOf(ref)
+	for range aliasDepth {
+		if shape.Form != symbol.FormReference {
+			return shape
+		}
+		decl, held := b.view.Lookup(shape.Ref)
+		alias, is := decl.(*node.Alias)
+		if !held || !is {
+			return shape
+		}
+		shape = b.typeOf(alias.Target)
+	}
+	return shape
+}
+
+// witnesses reads the authored witness of each parameter first and
+// asks the language's generics capability to derive the rest. The
+// list is whole or nil, because an entry point instantiates every
+// parameter at once.
+func (b Bound) witnesses(params []*node.TypeParam) []*node.TypeRef {
+	if len(params) == 0 || b.view.IsZero() {
+		return nil
+	}
+	generics, held := b.source.(GenericsRules)
+	out := make([]*node.TypeRef, 0, len(params))
+	for _, p := range params {
+		if p == nil {
+			return nil
+		}
+		if id, authored := Fact(b.view, p.ID, b.view.Kernel.Witness); authored {
+			out = append(out, b.witnessRef(id))
+			continue
+		}
+		if !held {
+			return nil
+		}
+		ref, derived := generics.Derive(p, b.view)
+		if !derived || ref == nil {
+			return nil
+		}
+		out = append(out, ref)
+	}
+	return out
+}
+
+// witnessRef lifts an authored witness identity into a reference
+// spelled by its bare name. A witness the graph declares is the
+// reference's target. One the graph does not declare, a type outside
+// the workspace, keeps its package beside the name and no target, so
+// a backend imports it and the language's builtin table classifies
+// it by both. A builtin has neither. The lookup records a read, so a
+// declaration arriving later changes what the witness is.
+func (b Bound) witnessRef(id symbol.Identity) *node.TypeRef {
+	ref := &node.TypeRef{Spelling: id.Name}
+	if id.Package == "" {
+		return ref
+	}
+	if _, declared := b.view.Lookup(id); declared {
+		ref.Target = id
+		return ref
+	}
+	ref.Package = id.Package
+	return ref
 }

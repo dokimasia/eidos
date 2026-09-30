@@ -134,7 +134,7 @@ message Row {
 			assert.Empty(t, row.Fields[1].Doc, "nor documents the field after it, as protoc drops it")
 		})
 
-		t.Run("strips a block comment's delimiters and gutter", func(t *testing.T) {
+		t.Run("strips a block comment to its text", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto3";
@@ -153,16 +153,16 @@ message Row {}
 				"one line per documentation line, the star at each line's start removed")
 		})
 
-		t.Run("attaches a carrier in a trailing comment and above the package", func(t *testing.T) {
+		t.Run("attaches each carrier to the declaration protoc attributes its comment to", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto3";
 
-//+gen:table name=pkg
+//+fixture:gen:table name=pkg
 package svc.store;
 
-message Row { //+gen:table name=rows
-  string name = 1; //+gen:table name=col
+message Row { //+fixture:gen:table name=rows
+  string name = 1; //+fixture:gen:table name=col
 }
 `)
 			assert.False(t, sink.Failed(), "every carrier has a subject")
@@ -174,45 +174,76 @@ message Row { //+gen:table name=rows
 			}
 			assert.Length(t, subjects, 3, "three carriers attach")
 			assert.True(t, slices.Contains(subjects, symbol.Symbol(gb.Packages()[0])),
-				"a carrier above the package statement to the package")
+				"the carrier above the package statement attaches to the package")
 			assert.True(t, slices.Contains(subjects, symbol.Symbol(row)),
-				"one after a message's opening brace to the message")
+				"the carrier after a message's opening brace attaches to the message")
 			assert.True(t, slices.Contains(subjects, symbol.Symbol(row.Fields[0])),
-				"and one after a field to the field")
-			assert.Equal(t, row.Comment, "", "and a carrier is no comment text")
+				"the carrier after a field attaches to the field")
+			assert.Equal(t, row.Comment, "", "a carrier is no comment text")
 		})
 
-		t.Run("reports a carrier the kernel grammar refuses and attaches nothing", func(t *testing.T) {
+		t.Run("attaches a negated carrier as a negated instance", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto3";
 
 package svc.store;
 
-//+gen:table name=
+//-fixture:gen:table
+message Row {}
+`)
+			assert.False(t, sink.Failed(), "the carrier has a subject")
+			assert.Length(t, gb.Attachments(), 1, "the carrier attaches")
+			assert.True(t, gb.Attachments()[0].Raw.Negated, "the instance is negated")
+		})
+
+		t.Run("reports BadCarrier for a carrier outside the kernel grammar", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, `syntax = "proto3";
+
+package svc.store;
+
+//+fixture:gen:table name=
 message Row {}
 `)
 			codes := codesOf(sink)
 			assert.True(t, slices.Contains(codes, protofrontend.BadCarrier),
 				"the malformed carrier reports under the grammar refusal's code")
 			assert.False(t, slices.Contains(codes, protofrontend.UnaddressedCarrier),
-				"and not as unaddressed, because the message addresses it")
-			assert.Empty(t, gb.Attachments(), "and the message takes no directive")
+				"the carrier is not unaddressed, because the message addresses it")
+			assert.Empty(t, gb.Attachments(), "the message takes no directive")
 		})
 
-		t.Run("reports a carrier on an import, which has no identity", func(t *testing.T) {
+		t.Run("reports UnaddressedCarrier for a carrier on an import", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto3";
 
 package svc.store;
 
-//+gen:table name=imp
+//+fixture:gen:table name=imp
 import "dep/t.proto";
 `)
 			assert.True(t, slices.Contains(codesOf(sink), protofrontend.UnaddressedCarrier),
-				"the carrier reports, never dropped without a finding")
-			assert.Empty(t, gb.Attachments(), "and attaches nothing")
+				"an import has no identity, so the carrier reports")
+			assert.Contains(t, messageOf(sink, protofrontend.UnaddressedCarrier), `"+fixture:gen:table name=imp"`,
+				"the finding quotes the carrier as the author wrote it")
+			assert.Empty(t, gb.Attachments(), "the carrier attaches nothing")
+		})
+
+		t.Run("reports BadCarrier for a malformed carrier on an import", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := parsed(t, `syntax = "proto3";
+
+package svc.store;
+
+//+fixture:gen:table name=
+import "dep/t.proto";
+`)
+			assert.Contains(t, messageOf(sink, protofrontend.BadCarrier), `"+fixture:gen:table name="`,
+				"the finding quotes the carrier as the author wrote it")
 		})
 
 		t.Run("spells an enum number in every form proto admits", func(t *testing.T) {

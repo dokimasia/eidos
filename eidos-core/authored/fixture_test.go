@@ -24,18 +24,19 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The fixture's names.
+// The fixture's names and the brand its composition declares.
 const (
-	pkgPath     = coretest.StorePath
-	boxName     = "Box"
-	alphaName   = "Alpha"
-	itemName    = "Item"
-	loadName    = "Load"
-	paramT      = "T"
-	fixtureFile = "box.go"
+	pkgPath      = coretest.StorePath
+	boxName      = "Box"
+	alphaName    = "Alpha"
+	itemName     = "Item"
+	loadName     = "Load"
+	paramT       = "T"
+	fixtureFile  = "box.go"
+	fixtureBrand = "fixture"
 )
 
-// fixture is the graph the cases run over: a generic Box[T] holding
+// fixture is the graph the cases run over: a generic Box[T] with
 // one field, a plain Alpha a witness can name, and a Load function
 // with one parameter and one return.
 type fixture struct {
@@ -84,6 +85,7 @@ func composed(tb assert.TB) *workspace.Workspace {
 		Build().(plugin.Generator)
 	assert.True(tb, held, "an emitter handler makes a generator")
 	w, err := workspace.New().
+		Brand(fixtureBrand).
 		Annotators(authored.Sample(), authored.Witness()).
 		Rules(fixtureRules{}).
 		Targets("fixture").
@@ -112,30 +114,39 @@ func attach(tb assert.TB, g *store.Graph, subject symbol.Identity, line int, nam
 // fakeBackend is a backend by name and target alone.
 type fakeBackend struct{}
 
-func (fakeBackend) Name() plugin.ID       { return "printer" }
+// Name returns the backend's fixed name.
+func (fakeBackend) Name() plugin.ID { return "printer" }
+
+// Target returns the fixture target.
 func (fakeBackend) Target() plugin.Target { return "fixture" }
 
-// fixtureRules is the scripted rules speaking the fixture's
+// fixtureRules is the scripted rules registered under the fixture's
 // language, resolving a type name as a struct in the fixture
 // package.
 type fixtureRules struct{}
 
+// Lang returns the fixture's language.
 func (fixtureRules) Lang() symbol.Lang { return coretest.Lang }
 
+// Members returns the scripted rules' member policy.
 func (fixtureRules) Members() rules.MemberPolicy { return rulestest.Scripted().Members() }
 
+// ParamRole returns the scripted rules' role for a parameter.
 func (fixtureRules) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
 	return rulestest.Scripted().ParamRole(p, v)
 }
 
+// ReturnRoles returns the scripted rules' roles for the returns.
 func (fixtureRules) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
 	return rulestest.Scripted().ReturnRoles(rs, v)
 }
 
+// Builtin returns the scripted rules' shape for a builtin.
 func (fixtureRules) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
 	return rulestest.Scripted().Builtin(ref, v)
 }
 
+// Resolve returns the fixture package's struct named name.
 func (fixtureRules) Resolve(
 	_ rules.Scope, name string, _ directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
@@ -145,18 +156,22 @@ func (fixtureRules) Resolve(
 	return nil, fmt.Errorf("nothing in %s is named %s", pkgPath, name)
 }
 
+// SamplesOf returns the scripted rules' samples.
 func (fixtureRules) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
 	return rulestest.Scripted().SamplesOf(ref, hint, v)
 }
 
+// ZeroValue returns the scripted rules' zero value.
 func (fixtureRules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	return rulestest.Scripted().ZeroValue(ref, v)
 }
 
+// LiteralFor returns the scripted rules' literal for text.
 func (fixtureRules) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
 	return rulestest.Scripted().LiteralFor(f, ref, text, v)
 }
 
+// TypeName returns the scripted rules' type name.
 func (fixtureRules) TypeName(word, base string) string {
 	return rulestest.Scripted().TypeName(word, base)
 }

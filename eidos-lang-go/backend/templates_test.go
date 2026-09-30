@@ -13,36 +13,55 @@ import (
 
 	"go.dokimi.dev/eidos/lang/go/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// execute runs one template over one declaration the way the
-// render pass does, with the body builtin stubbed to a marker, so
-// the output is the template's own bytes and nothing else's.
-func execute(t *testing.T, src string, data any) string {
+// The builtin stubs' output: the marker each stubbed builtin writes,
+// so a template's own bytes are distinguishable from the pass's.
+const (
+	bodyStub    = "\tbody()\n"
+	importsStub = "IMPORTS\n"
+	declsStub   = "DECLS\n"
+	nestedStub  = "NESTED "
+)
+
+// execute runs one template over one declaration the way the render
+// pass does, the builtins stubbed to markers, and returns the output
+// beside the file's import set.
+func execute(t *testing.T, src string, data any) (string, *render.ImportSet) {
 	t.Helper()
 
+	set := &render.ImportSet{}
 	var b strings.Builder
-	assert.NoError(t, parsed(t, src).Execute(&b, data), "the template executes")
-	return b.String()
+	assert.NoError(t, parsed(t, src, set).Execute(&b, data), "the template executes")
+	return b.String(), set
 }
 
-// parsed parses one template against the backend's vocabulary and
-// the builtins stubbed.
-func parsed(t *testing.T, src string) *template.Template {
+// executed returns what [execute] writes.
+func executed(t *testing.T, src string, data any) string {
+	t.Helper()
+
+	out, _ := execute(t, src, data)
+	return out
+}
+
+// parsed parses one template against the backend's vocabulary bound to
+// set, the builtins stubbed.
+func parsed(t *testing.T, src string, set *render.ImportSet) *template.Template {
 	t.Helper()
 
 	tmpl, err := template.New("kind").
-		Funcs(backend.Funcs()).
+		Funcs(backend.Funcs(set)).
 		Funcs(template.FuncMap{
-			"body":    func(any) string { return "\tbody()\n" },
-			"use":     func(string) string { return "" },
-			"imports": func() string { return "IMPORTS\n" },
-			"decls":   func() string { return "DECLS\n" },
-			"slots":   func() string { return "" },
-			"slot":    func(string) string { return "" },
-			"nested": func(indent string, s symbol.Symbol) string {
-				return indent + "NESTED " + s.Kind().String()
+			render.BuiltinBody:    func(any) string { return bodyStub },
+			render.BuiltinUse:     func(string) string { return "" },
+			render.BuiltinImports: func() string { return importsStub },
+			render.BuiltinDecls:   func() string { return declsStub },
+			render.BuiltinSlots:   func() string { return "" },
+			render.BuiltinSlot:    func(string) string { return "" },
+			render.BuiltinNested: func(indent string, s symbol.Symbol) string {
+				return indent + nestedStub + s.Kind().String()
 			},
 		}).
 		Parse(src)
@@ -55,283 +74,349 @@ func parsed(t *testing.T, src string) *template.Template {
 func TestTemplates(t *testing.T) {
 	t.Parallel()
 
-	t.Run("every declared kind has a template", func(t *testing.T) {
+	kind := func(k symbol.Kind) string { return backend.KindTemplates()[k] }
+
+	t.Run("KindTemplates", func(t *testing.T) {
 		t.Parallel()
 
-		kinds := backend.KindTemplates()
-		for _, k := range []symbol.Kind{
-			symbol.KindStruct, symbol.KindInterface, symbol.KindFunction,
-			symbol.KindMethod, symbol.KindAlias, symbol.KindConstant,
-			symbol.KindVariable,
-		} {
-			_, held := kinds[k]
-			assert.True(t, held, "the inventory spells "+k.String())
-		}
-	})
+		t.Run("returns a template for every kind Go declares standalone", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("struct", func(t *testing.T) {
-		t.Parallel()
+			kinds := backend.KindTemplates()
+			for _, k := range []symbol.Kind{
+				symbol.KindStruct, symbol.KindInterface, symbol.KindFunction,
+				symbol.KindMethod, symbol.KindAlias, symbol.KindConstant,
+				symbol.KindVariable,
+			} {
+				_, held := kinds[k]
+				assert.True(t, held, "the inventory spells "+k.String())
+			}
+		})
 
-		s := &emit.Struct{Doc: []string{"Row is one record."}, Name: "Row"}
-		s.Fields.Append(
-			&emit.Field{Doc: []string{"Key addresses the row."}, Name: "Key", Type: ref("string")},
-			&emit.Field{
-				Name: "N", Type: ref("int"),
-				Tag: `json:"n"`, Comment: "counted",
-			},
-		)
-		assert.Equal(t, execute(t, backend.StructTemplate, s),
-			"// Row is one record.\n"+
+		t.Run("writes a struct's fields under their docblocks", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Doc: []string{"Row is one record."}, Name: rowName}
+			s.Fields.Append(
+				&emit.Field{Doc: []string{"Key addresses the row."}, Name: "Key", Type: ref("string")},
+				&emit.Field{Name: "N", Type: ref("int"), Tag: `json:"n"`, Comment: "counted"},
+			)
+			assert.Equal(t, executed(t, kind(symbol.KindStruct), s),
+				"// Row is one record.\n"+
+					"type Row struct {\n"+
+					"\t// Key addresses the row.\n"+
+					"\tKey string\n"+
+					"\tN int `json:\"n\"` // counted\n"+
+					"}\n",
+				"a field's tag and trailing comment beside it")
+		})
+
+		t.Run("binds the import of a field's type", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: rowName}
+			s.Fields.Append(&emit.Field{Name: "When", Type: imported(timePkg, timePkg, "Duration")})
+			out, set := execute(t, kind(symbol.KindStruct), s)
+			assert.Contains(t, out, "\tWhen time.Duration\n", "the qualified type")
+			assert.Equal(t, set.Paths(), []string{timePkg}, "and its import")
+		})
+
+		t.Run("writes a struct's embeds like fields", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: rowName, Comment: "one per fetch"}
+			s.Embeds = []*emit.Embed{{
+				Doc: []string{"Base declares the shared fields."}, Ref: ref("Base"),
+				Tag: `json:"-"`, Comment: "promoted",
+				Annotations: symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
+			}}
+			assert.Equal(t, executed(t, kind(symbol.KindStruct), s),
 				"type Row struct {\n"+
-				"\t// Key addresses the row.\n"+
-				"\tKey string\n"+
-				"\tN int `json:\"n\"` // counted\n"+
-				"}\n",
-			"fields under their own docblocks, tag and trailing comment beside")
-	})
-
-	t.Run("embeds keep their docs, directives, tag and comment", func(t *testing.T) {
-		t.Parallel()
-
-		s := &emit.Struct{Name: "Row", Comment: "one per fetch"}
-		s.Embeds = []*emit.Embed{{
-			Doc: []string{"Base carries the shared fields."}, Ref: ref("Base"),
-			Tag: `json:"-"`, Comment: "promoted",
-			Annotations: symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
-		}}
-		assert.Equal(t, execute(t, backend.StructTemplate, s),
-			"type Row struct {\n"+
-				"\t// Base carries the shared fields.\n"+
-				"\t//go:fix inline\n"+
-				"\tBase `json:\"-\"` // promoted\n"+
-				"} // one per fetch\n",
-			"an embedded field renders like a field, and the type's own comment closes the brace")
-	})
-
-	t.Run("trailing comments close every kind that ends a line", func(t *testing.T) {
-		t.Parallel()
-
-		i := &emit.Interface{Name: "Store", Comment: "read side"}
-		i.Methods.Append(&emit.Method{
-			Name: "Get", Comment: "by key",
-			Params:  []*emit.Param{{Name: "key", Type: ref("string"), Comment: "the row key"}},
-			Returns: []*emit.Return{{Type: ref("string"), Comment: "the row"}},
+					"\t// Base declares the shared fields.\n"+
+					"\t//go:fix inline\n"+
+					"\tBase `json:\"-\"` // promoted\n"+
+					"} // one per fetch\n",
+				"the embed's docs, directives, tag and comment, then the type's comment")
 		})
-		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
-			"type Store interface {\n"+
-				"\tGet(key string /* the row key */) string /* the row */ // by key\n"+
-				"} // read side\n",
-			"a signature's comments spell as block comments, the method's and the interface's close their lines")
-		assert.Equal(t,
-			execute(t, backend.FunctionTemplate, &emit.Function{Name: "Sort", Comment: "stable"}),
-			"func Sort() {\n\tbody()\n} // stable\n", "a function's comment follows its closing brace")
-		assert.Equal(t,
-			execute(t, backend.AliasTemplate, &emit.Alias{Name: "ID", Target: ref("string"), Comment: "opaque"}),
-			"type ID = string // opaque\n", "an alias's comment closes its line")
-	})
 
-	t.Run("struct methods follow the type", func(t *testing.T) {
-		t.Parallel()
+		t.Run("writes an interface method's comments as block comments", func(t *testing.T) {
+			t.Parallel()
 
-		s := &emit.Struct{Name: "Row"}
-		s.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
-		s.Methods.Append(&emit.Method{Name: "Load"})
-		assert.Equal(t, execute(t, backend.StructTemplate, s),
-			"type Row struct {\n"+
-				"\tKey string\n"+
-				"}\n"+
-				"\nNESTED Method\n",
-			"a member method renders after its type through the kind template, "+
-				"because Go states methods at the package level")
-	})
-
-	t.Run("interface", func(t *testing.T) {
-		t.Parallel()
-
-		i := &emit.Interface{Doc: []string{"Store loads rows."}, Name: "Store"}
-		i.Methods.Append(&emit.Method{
-			Doc:     []string{"Load fetches one row."},
-			Name:    "Load",
-			Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
-			Returns: []*emit.Return{{Type: ref("Row")}, {Type: ref("error")}},
-		})
-		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
-			"// Store loads rows.\n"+
+			i := &emit.Interface{Name: "Store", Comment: "read side"}
+			i.Methods.Append(&emit.Method{
+				Name: "Get", Comment: "by key",
+				Params:  []*emit.Param{{Name: "key", Type: ref("string"), Comment: "the row key"}},
+				Returns: []*emit.Return{{Type: ref("string"), Comment: "the row"}},
+			})
+			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
 				"type Store interface {\n"+
-				"\t// Load fetches one row.\n"+
-				"\tLoad(key string) (Row, error)\n"+
-				"}\n",
-			"methods under their own docblocks, at member depth")
-	})
-
-	t.Run("interface embeds keep their docs, directives and comment", func(t *testing.T) {
-		t.Parallel()
-
-		i := &emit.Interface{Name: "ReadCloser"}
-		i.Embeds = []*emit.Embed{{
-			Doc: []string{"Reader is the stream side."}, Ref: ref("io.Reader"), Comment: "stream side",
-			Annotations: symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
-		}}
-		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
-			"type ReadCloser interface {\n"+
-				"\t// Reader is the stream side.\n"+
-				"\t//go:fix inline\n"+
-				"\tio.Reader // stream side\n"+
-				"}\n",
-			"an interface's embed renders like a struct's embed")
-
-		tagged := &emit.Interface{Name: "ReadCloser"}
-		tagged.Embeds = []*emit.Embed{{Ref: ref("io.Reader"), Tag: `json:"r"`}}
-		assert.HasError(t, parsed(t, backend.InterfaceTemplate).Execute(io.Discard, tagged),
-			"a tag on an interface's embed refuses, because Go gives a struct field alone one")
-	})
-
-	t.Run("function and method place the body", func(t *testing.T) {
-		t.Parallel()
-
-		f := &emit.Function{Name: "Load", Returns: []*emit.Return{{Type: ref("error")}}}
-		assert.Equal(t, execute(t, backend.FunctionTemplate, f),
-			"func Load() error {\n\tbody()\n}\n", "the function's shape")
-
-		m := &emit.Method{
-			Name:     "Close",
-			Receiver: &emit.Param{Name: "s", Type: ref("*Store")},
-		}
-		assert.Equal(t, execute(t, backend.MethodTemplate, m),
-			"func (s *Store) Close() {\n\tbody()\n}\n", "the method's shape")
-	})
-
-	t.Run("alias, constant and variable", func(t *testing.T) {
-		t.Parallel()
-
-		assert.Equal(t,
-			execute(t, backend.AliasTemplate, &emit.Alias{Name: "ID", Target: ref("string")}),
-			"type ID = string\n", "the alias shape")
-		assert.Equal(t,
-			execute(t, backend.AliasTemplate,
-				&emit.Alias{Name: "phase", Defined: true, Target: ref("int")}),
-			"type phase int\n", "a defined type drops the equals sign")
-		assert.Equal(t,
-			execute(t, backend.ConstantTemplate,
-				&emit.Constant{Name: "Max", Type: ref("int"), Value: "10"}),
-			"const Max int = 10\n", "a typed constant")
-		assert.Equal(t,
-			execute(t, backend.ConstantTemplate, &emit.Constant{Name: "Max", Value: "10"}),
-			"const Max = 10\n", "an untyped one")
-		assert.Equal(t,
-			execute(t, backend.ConstantTemplate,
-				&emit.Constant{Name: "Max", Value: "10", Comment: "inclusive"}),
-			"const Max = 10 // inclusive\n", "the trailing comment beside the value")
-		assert.Equal(t,
-			execute(t, backend.VariableTemplate,
-				&emit.Variable{Name: "count", Type: ref("int")}),
-			"var count int\n", "the variable shape")
-		assert.Equal(t,
-			execute(t, backend.VariableTemplate,
-				&emit.Variable{Name: "count", Type: ref("int"), Value: "0"}),
-			"var count int = 0\n", "the initializer behind the equals sign")
-	})
-
-	t.Run("supertypes", func(t *testing.T) {
-		t.Parallel()
-
-		s := &emit.Struct{
-			Name:   "Row",
-			Embeds: []*emit.Embed{{Ref: ref("Base")}, {Ref: ref("sync.Mutex")}},
-		}
-		s.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
-		assert.Equal(t, execute(t, backend.StructTemplate, s),
-			"type Row struct {\n\tBase\n\tsync.Mutex\n\tKey string\n}\n",
-			"embedded types before the fields, the way Go promotes")
-
-		n := &emit.Struct{
-			Name:       "Child",
-			Extends:    []*emit.TypeRef{ref("Base")},
-			Implements: []*emit.TypeRef{ref("Keyed")},
-		}
-		n.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
-		assert.Equal(t, execute(t, backend.StructTemplate, n),
-			"type Child struct {\n\tBase\n\tKey string\n}\n",
-			"a nominal parent spells as embedding, promotion without "+
-				"subtyping, and implements spells nothing at all")
-
-		i := &emit.Interface{
-			Name:    "Store",
-			Extends: []*emit.TypeRef{ref("Closer")},
-		}
-		i.Embeds = []*emit.Embed{{Ref: ref("Reader")}}
-		i.Methods.Append(&emit.Method{
-			Name:    "Get",
-			Returns: []*emit.Return{{Type: ref("string")}},
+					"\tGet(key string /* the row key */) string /* the row */ // by key\n"+
+					"} // read side\n",
+				"the method's and the interface's comments close their lines")
 		})
-		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
-			"type Store interface {\n\tReader\n\tCloser\n\tGet() string\n}\n",
-			"embeds then the widened contracts, both as embedded lines")
-	})
 
-	t.Run("generics", func(t *testing.T) {
-		t.Parallel()
+		t.Run("writes a function's trailing comment after its closing brace", func(t *testing.T) {
+			t.Parallel()
 
-		s := &emit.Struct{Name: "Box", TypeParams: []*emit.TypeParam{{Name: "T"}}}
-		s.Fields.Append(&emit.Field{Name: "Item", Type: ref("T")})
-		assert.Equal(t, execute(t, backend.StructTemplate, s),
-			"type Box[T any] struct {\n\tItem T\n}\n",
-			"the struct's parameter list behind its name")
-
-		i := &emit.Interface{
-			Name:       "Keyed",
-			TypeParams: []*emit.TypeParam{{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}}},
-		}
-		i.Methods.Append(&emit.Method{
-			Name:    "Pick",
-			Params:  []*emit.Param{{Name: "key", Type: ref("K")}},
-			Returns: []*emit.Return{{Type: ref("K")}},
+			assert.Equal(t, executed(t, kind(symbol.KindFunction), &emit.Function{Name: "Sort", Comment: "stable"}),
+				"func Sort() {\n"+bodyStub+"} // stable\n", "on the brace's line")
 		})
-		assert.Equal(t, execute(t, backend.InterfaceTemplate, i),
-			"type Keyed[K Codec] interface {\n\tPick(key K) K\n}\n",
-			"the bound behind the parameter, members referencing it")
 
-		f := &emit.Function{
-			Name:       "Sort",
-			TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
-			Params:     []*emit.Param{{Name: "items", Type: ref("T")}},
-			Returns:    []*emit.Return{{Type: ref("T")}},
-		}
-		assert.Equal(t, execute(t, backend.FunctionTemplate, f),
-			"func Sort[T Codec](items T) T {\n\tbody()\n}\n",
-			"the function's parameter list behind its name")
+		t.Run("writes an alias's trailing comment on its line", func(t *testing.T) {
+			t.Parallel()
 
-		m := &emit.Method{
-			Name:       "Fold",
-			Receives:   &emit.TypeRef{Spelling: "Box", Args: []*emit.TypeRef{ref("T")}},
-			TypeParams: []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}},
-			Params:     []*emit.Param{{Name: "item", Type: ref("U")}},
-			Returns:    []*emit.Return{{Type: ref("U")}},
-		}
-		assert.Equal(t, execute(t, backend.MethodTemplate, m),
-			"func (Box[T]) Fold[U Codec](item U) U {\n\tbody()\n}\n",
-			"the receiver restates the host's argument, and the method "+
-				"declares its own, which Go spells since 1.27")
+			assert.Equal(t,
+				executed(t, kind(symbol.KindAlias), &emit.Alias{Name: "ID", Target: ref("string"), Comment: "opaque"}),
+				"type ID = string // opaque\n", "behind the target")
+		})
 
-		a := &emit.Alias{
-			Name:       "Match",
-			TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
-			Target:     &emit.TypeRef{Spelling: "Keyed", Args: []*emit.TypeRef{ref("T")}},
-		}
-		assert.Equal(t, execute(t, backend.AliasTemplate, a),
-			"type Match[T Codec] = Keyed[T]\n",
-			"the alias parameterizes and its target restates the argument")
+		t.Run("writes a struct's methods after the type", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: rowName}
+			s.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
+			s.Methods.Append(&emit.Method{Name: "Load"})
+			assert.Equal(t, executed(t, kind(symbol.KindStruct), s),
+				"type Row struct {\n"+
+					"\tKey string\n"+
+					"}\n"+
+					"\n"+nestedStub+symbol.KindMethod.String()+"\n",
+				"Go states methods at the package level")
+		})
+
+		t.Run("writes an interface's methods under their docblocks", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Doc: []string{"Store loads rows."}, Name: "Store"}
+			i.Methods.Append(&emit.Method{
+				Doc:     []string{"Load fetches one row."},
+				Name:    "Load",
+				Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
+				Returns: []*emit.Return{{Type: ref(rowName)}, {Type: ref("error")}},
+			})
+			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
+				"// Store loads rows.\n"+
+					"type Store interface {\n"+
+					"\t// Load fetches one row.\n"+
+					"\tLoad(key string) (Row, error)\n"+
+					"}\n",
+				"at member depth")
+		})
+
+		t.Run("writes an interface's embeds like a struct's", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Name: "ReadCloser"}
+			i.Embeds = []*emit.Embed{{
+				Doc:         []string{"Reader is the stream side."},
+				Ref:         imported("io", "io", "Reader"),
+				Comment:     "stream side",
+				Annotations: symbol.Annotations{{Name: "go:fix", Args: []string{"inline"}}},
+			}}
+			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
+				"type ReadCloser interface {\n"+
+					"\t// Reader is the stream side.\n"+
+					"\t//go:fix inline\n"+
+					"\tio.Reader // stream side\n"+
+					"}\n",
+				"the embed's docs, directives and comment")
+		})
+
+		t.Run("returns an error for a tag on an interface's embed", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Name: "ReadCloser"}
+			i.Embeds = []*emit.Embed{{Ref: ref("io.Reader"), Tag: `json:"r"`}}
+			assert.HasError(t, parsed(t, kind(symbol.KindInterface), &render.ImportSet{}).Execute(io.Discard, i),
+				"Go gives a struct field alone a tag")
+		})
+
+		t.Run("writes a function around its body", func(t *testing.T) {
+			t.Parallel()
+
+			f := &emit.Function{Name: "Load", Returns: []*emit.Return{{Type: ref("error")}}}
+			assert.Equal(t, executed(t, kind(symbol.KindFunction), f),
+				"func Load() error {\n"+bodyStub+"}\n", "the function's shape")
+		})
+
+		t.Run("writes a method around its body", func(t *testing.T) {
+			t.Parallel()
+
+			m := &emit.Method{Name: "Close", Receiver: &emit.Param{Name: "s", Type: ref("*Store")}}
+			assert.Equal(t, executed(t, kind(symbol.KindMethod), m),
+				"func (s *Store) Close() {\n"+bodyStub+"}\n", "the method's shape")
+		})
+
+		t.Run("writes a transparent alias with an equals sign", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, executed(t, kind(symbol.KindAlias), &emit.Alias{Name: "ID", Target: ref("string")}),
+				"type ID = string\n", "the alias shape")
+		})
+
+		t.Run("writes a defined type without an equals sign", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t,
+				executed(t, kind(symbol.KindAlias), &emit.Alias{Name: "phase", Defined: true, Target: ref("int")}),
+				"type phase int\n", "the defined type's shape")
+		})
+
+		t.Run("writes a constant's type where it states one", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t,
+				executed(t, kind(symbol.KindConstant), &emit.Constant{Name: "Max", Type: ref("int"), Value: "10"}),
+				"const Max int = 10\n", "a typed constant")
+			assert.Equal(t,
+				executed(t, kind(symbol.KindConstant), &emit.Constant{Name: "Max", Value: "10"}),
+				"const Max = 10\n", "an untyped one")
+		})
+
+		t.Run("writes a constant's trailing comment beside its value", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t,
+				executed(t, kind(symbol.KindConstant), &emit.Constant{Name: "Max", Value: "10", Comment: "inclusive"}),
+				"const Max = 10 // inclusive\n", "on the value's line")
+		})
+
+		t.Run("writes a variable's initializer behind an equals sign", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t,
+				executed(t, kind(symbol.KindVariable), &emit.Variable{Name: "count", Type: ref("int")}),
+				"var count int\n", "a variable without an initializer")
+			assert.Equal(t,
+				executed(t, kind(symbol.KindVariable), &emit.Variable{Name: "count", Type: ref("int"), Value: "0"}),
+				"var count int = 0\n", "and one with")
+		})
+
+		t.Run("writes a struct's embeds before its fields", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{
+				Name:   rowName,
+				Embeds: []*emit.Embed{{Ref: ref("Base")}, {Ref: imported("sync", "sync", "Mutex")}},
+			}
+			s.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
+			assert.Equal(t, executed(t, kind(symbol.KindStruct), s),
+				"type Row struct {\n\tBase\n\tsync.Mutex\n\tKey string\n}\n",
+				"the way Go promotes")
+		})
+
+		t.Run("writes a nominal parent as an embed", func(t *testing.T) {
+			t.Parallel()
+
+			n := &emit.Struct{
+				Name:       "Child",
+				Extends:    []*emit.TypeRef{ref("Base")},
+				Implements: []*emit.TypeRef{ref("Keyed")},
+			}
+			n.Fields.Append(&emit.Field{Name: "Key", Type: ref("string")})
+			assert.Equal(t, executed(t, kind(symbol.KindStruct), n),
+				"type Child struct {\n\tBase\n\tKey string\n}\n",
+				"promotion without subtyping, and satisfaction is structural")
+		})
+
+		t.Run("writes an interface's embeds before its widened contracts", func(t *testing.T) {
+			t.Parallel()
+
+			i := &emit.Interface{Name: "Store", Extends: []*emit.TypeRef{ref("Closer")}}
+			i.Embeds = []*emit.Embed{{Ref: ref("Reader")}}
+			i.Methods.Append(&emit.Method{Name: "Get", Returns: []*emit.Return{{Type: ref("string")}}})
+			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
+				"type Store interface {\n\tReader\n\tCloser\n\tGet() string\n}\n",
+				"both as embedded lines")
+		})
+
+		t.Run("writes a generic declaration's parameters behind its name", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Name: "Box", TypeParams: []*emit.TypeParam{{Name: "T"}}}
+			s.Fields.Append(&emit.Field{Name: "Item", Type: ref("T")})
+			assert.Equal(t, executed(t, kind(symbol.KindStruct), s),
+				"type Box[T any] struct {\n\tItem T\n}\n", "a struct's list")
+
+			i := &emit.Interface{
+				Name:       "Keyed",
+				TypeParams: []*emit.TypeParam{{Name: "K", Bounds: []*emit.TypeRef{ref("Codec")}}},
+			}
+			i.Methods.Append(&emit.Method{
+				Name:    "Pick",
+				Params:  []*emit.Param{{Name: "key", Type: ref("K")}},
+				Returns: []*emit.Return{{Type: ref("K")}},
+			})
+			assert.Equal(t, executed(t, kind(symbol.KindInterface), i),
+				"type Keyed[K Codec] interface {\n\tPick(key K) K\n}\n", "an interface's list")
+
+			f := &emit.Function{
+				Name:       "Sort",
+				TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
+				Params:     []*emit.Param{{Name: "items", Type: ref("T")}},
+				Returns:    []*emit.Return{{Type: ref("T")}},
+			}
+			assert.Equal(t, executed(t, kind(symbol.KindFunction), f),
+				"func Sort[T Codec](items T) T {\n"+bodyStub+"}\n", "a function's list")
+
+			a := &emit.Alias{
+				Name:       "Match",
+				TypeParams: []*emit.TypeParam{{Name: "T", Bounds: []*emit.TypeRef{ref("Codec")}}},
+				Target:     &emit.TypeRef{Spelling: "Keyed", Args: []*emit.TypeRef{ref("T")}},
+			}
+			assert.Equal(t, executed(t, kind(symbol.KindAlias), a),
+				"type Match[T Codec] = Keyed[T]\n", "an alias's list")
+		})
+
+		t.Run("writes a method's own parameters behind its name", func(t *testing.T) {
+			t.Parallel()
+
+			m := &emit.Method{
+				Name:       "Fold",
+				Receives:   &emit.TypeRef{Spelling: "Box", Args: []*emit.TypeRef{ref("T")}},
+				TypeParams: []*emit.TypeParam{{Name: "U", Bounds: []*emit.TypeRef{ref("Codec")}}},
+				Params:     []*emit.Param{{Name: "item", Type: ref("U")}},
+				Returns:    []*emit.Return{{Type: ref("U")}},
+			}
+			assert.Equal(t, executed(t, kind(symbol.KindMethod), m),
+				"func (Box[T]) Fold[U Codec](item U) U {\n"+bodyStub+"}\n",
+				"the receiver restates the host's argument, which Go spells since 1.27")
+		})
 	})
 
-	t.Run("the file skeleton", func(t *testing.T) {
+	t.Run("FileTemplate", func(t *testing.T) {
 		t.Parallel()
 
-		got := execute(t, backend.FileTemplate, struct {
-			Name string
-			Pkg  symbol.Identity
-		}{Name: "store_stub.go", Pkg: symbol.Identity{Package: "svc/api"}})
-		assert.Equal(t, got, "package api\n\nIMPORTS\n\nDECLS\n",
-			"package clause, import block, a blank line, then the "+
-				"declarations, which is the shape gofmt leaves")
+		t.Run("writes the package clause then the imports then the declarations", func(t *testing.T) {
+			t.Parallel()
+
+			got := executed(t, backend.FileTemplate, struct {
+				Name string
+				Pkg  symbol.Identity
+			}{Name: "store_stub.go", Pkg: symbol.Identity{Package: "svc/api"}})
+			assert.Equal(t, got, "package api\n\n"+importsStub+"\n"+declsStub,
+				"the shape gofmt leaves")
+		})
+	})
+
+	t.Run("RefusedKinds", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the sum kind alone", func(t *testing.T) {
+			t.Parallel()
+
+			refused := backend.RefusedKinds()
+			assert.Length(t, refused, 1, "one kind Go cannot spell")
+			assert.NotEqual(t, refused[symbol.KindSum], "", "the sum, with its reason")
+		})
+
+		t.Run("returns no kind the templates spell", func(t *testing.T) {
+			t.Parallel()
+
+			for k := range backend.RefusedKinds() {
+				_, spelt := backend.KindTemplates()[k]
+				assert.False(t, spelt, "a kind is spelt or refused: "+k.String())
+			}
+		})
 	})
 }

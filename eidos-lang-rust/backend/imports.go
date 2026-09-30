@@ -11,7 +11,8 @@ import (
 // Imports renders the file's collected entries as use statements
 // through [textfmt.ImportLines]: double colons for slashes, in the
 // set's path order, a blank line after the block. A named entry uses
-// path::Name, and a bare entry uses the module itself.
+// path::Name, a renamed item path::Item as Name, and a bare entry
+// uses the module itself.
 func Imports(set *render.ImportSet) string {
-	return textfmt.ImportLines(set, "use", "::")
+	return textfmt.ImportLines(set.Entries(), "use", "::")
 }

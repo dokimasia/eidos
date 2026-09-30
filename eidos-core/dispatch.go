@@ -62,15 +62,15 @@ type runState struct {
 	rules  *rules.Registry
 	kernel meta.KernelKeys
 	warned map[symbol.Lang]bool
-	// scratch holds one reusable match per rule, keyed by ordinal.
+	// scratch is one reusable match per rule, indexed by ordinal.
 	scratch []any
 	// handles is the pool the emitter's accessors are served from,
 	// reset per invocation: every call mints a distinct entry, so
 	// two live handles in one invocation never alias, and a handler
-	// touching a few families allocates no Out at all. It lives
-	// here rather than on the emitter so the match copy an
-	// invocation makes stays small; invocations run sequentially,
-	// which is what makes one pool per phase call sound.
+	// touching a few families allocates no Out at all. The pool is
+	// on the phase call, not on the emitter, so the match copy an
+	// invocation makes remains small. Invocations run sequentially,
+	// which makes one pool per phase call sound.
 	handles [4]Out
 	minted  int
 }
@@ -187,9 +187,9 @@ func (rs *runState) dispatchDirective(fr *flatRule) error {
 	return nil
 }
 
-// dispatchFacts visits the stamped carriers of the rule's first
-// gate key, resolving each to its declaration and holding it to the
-// trigger's kind and the remaining predicates.
+// dispatchFacts visits the subjects stamped with the rule's first
+// gate key, resolving each to its declaration and checking it
+// against the trigger's kind and the remaining predicates.
 func (rs *runState) dispatchFacts(fr *flatRule) error {
 	for id := range rs.index.ByFactKey(fr.preds[0].id) {
 		s, held := rs.index.Lookup(id)
@@ -208,7 +208,7 @@ func (rs *runState) dispatchFacts(fr *flatRule) error {
 }
 
 // dispatchBare visits every declaration of the rule's kind in
-// scope: the one honest full-price path.
+// scope: the one path whose cost grows with the whole graph.
 func (rs *runState) dispatchBare(fr *flatRule) error {
 	for s := range rs.index.ByKind(fr.kind) {
 		decl, names := s.(node.Declaration)
@@ -227,10 +227,11 @@ func (rs *runState) dispatchBare(fr *flatRule) error {
 	return nil
 }
 
-// admits evaluates skip and the predicates for one subject,
-// untracked, because gate evaluation is routing. A directive-gated
-// rule is exempt from skip: its subject opted in explicitly and
-// withdraws by deleting the directive.
+// admits evaluates skip, a negated directive's opt-out and the
+// predicates for one subject, untracked, because gate evaluation is
+// routing. A directive-gated rule is exempt from both opt-outs: its
+// subject opted in explicitly and withdraws by deleting the
+// directive.
 func (rs *runState) admits(fr *flatRule, subject symbol.Identity) bool {
 	if fr.gate == "" && rs.index.Skipped(subject, rs.plugin) {
 		return false
@@ -254,7 +255,7 @@ func (rs *runState) invoke(fr *flatRule, inv invocation) error {
 }
 
 // positionOf resolves a subject's position for reporting, zero when
-// the scope does not hold it.
+// the scope does not contain it.
 func (rs *runState) positionOf(id symbol.Identity) position.Pos {
 	s, held := rs.index.Lookup(id)
 	if !held {
@@ -266,12 +267,13 @@ func (rs *runState) positionOf(id symbol.Identity) position.Pos {
 // invokeGated runs the handler once per instance of the rule's
 // gating directive on the invocation's subject, in source order,
 // which is how a repeatable directive runs its handler per
-// instance. Each invocation points into the validated table, so a
-// gated invocation allocates nothing of its own.
+// instance. A negated instance gates nothing. Each invocation
+// points into the validated table, so a gated invocation allocates
+// nothing of its own.
 func (rs *runState) invokeGated(fr *flatRule, inv invocation) error {
 	ds := rs.index.DirectivesOf(inv.subject)
 	for i := range ds {
-		if ds[i].Name != fr.gate {
+		if ds[i].Name != fr.gate || ds[i].Negated {
 			continue
 		}
 		inv.gate = &ds[i]

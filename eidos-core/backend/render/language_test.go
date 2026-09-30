@@ -4,7 +4,6 @@
 package render_test
 
 import (
-	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -17,231 +16,274 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// The hooks' fixture: a struct no unit contains, the groups a
+// cluster names, and the member lines every group template spells.
+const (
+	// outsideName names a struct a cluster claims and no unit
+	// contains.
+	outsideName = "Outside"
+	// firstGroup and secondGroup name two declared groups, and
+	// ghostGroup a group no template spells.
+	firstGroup  render.GroupName = "first"
+	secondGroup render.GroupName = "second"
+	ghostGroup  render.GroupName = "ghost"
+	// memberLines spells a cluster's members one name per line.
+	memberLines = "{{range .Decls}}\t{{.Name}}\n{{end}}"
+)
+
+// grouped returns the fixture language clustering through c, with
+// the block, first and second group templates declared.
+func grouped(c render.Cluster) render.Language {
+	l := language()
+	l.Cluster = c
+	l.Groups = map[render.GroupName]string{
+		blockGroup:  "types (\n" + memberLines + ")\n",
+		firstGroup:  string(firstGroup) + "(\n" + memberLines + ")\n",
+		secondGroup: string(secondGroup) + "(\n" + memberLines + ")\n",
+	}
+	return l
+}
+
+// structsOnly clusters a unit's structs under the block group and
+// leaves every other declaration a singleton.
+func structsOnly(decls []symbol.Symbol) []render.Clustered {
+	c := render.Clustered{Group: blockGroup}
+	for _, d := range decls {
+		if _, isStruct := d.(*emit.Struct); isStruct {
+			c.Decls = append(c.Decls, d)
+		}
+	}
+	if len(c.Decls) == 0 {
+		return nil
+	}
+	return []render.Clustered{c}
+}
+
+// vanishing is a split that returns no unit for any input.
+func vanishing(plugin.Unit) []plugin.Unit { return nil }
+
+// vanished renders one populated unit through a language whose split
+// vanishes it, under the composition's identity.
+func vanished(tb assert.TB) ([]plugin.RenderedFile, *diag.Sink) {
+	tb.Helper()
+
+	l := language()
+	l.Split = vanishing
+	p, err := render.New(passName, l)
+	assert.NoError(tb, err, "the language composes")
+	sink := diag.NewSink()
+	files, err := p.Render(&plugin.RenderContext{
+		Emit: seeded(tb, unitOf(emitter, storeKey, alphaName)), Sink: sink, Plugin: composedPlugin,
+	})
+	assert.NoError(tb, err, "the pass runs whole")
+	return files, sink
+}
+
 // A language's Naming, Split and Cluster are the hooks it routes and
 // groups its output through, so how the pass applies each is
 // contract.
 func TestLanguage(t *testing.T) {
 	t.Parallel()
 
-	t.Run("groups units into files through the naming", func(t *testing.T) {
+	t.Run("Naming", func(t *testing.T) {
 		t.Parallel()
 
-		files, sink := runPass(t, language(), seeded(t,
-			unitOf("gen", "store.go", "Alpha"),
-			unitOf("gen", "user.go", "Beta"),
-		))
-		assert.False(t, sink.Failed(), "nothing to report")
-		assert.Length(t, files, 2, "one file per name")
-		assert.Equal(t, files[0].Name, "store_stub.txt",
-			"files come back in name order")
-		assert.Equal(t, files[1].Name, "user_stub.txt", "both spelled by the target")
-	})
-
-	t.Run("units sharing a name assemble one file", func(t *testing.T) {
-		t.Parallel()
-
-		files, _ := runPass(t, language(), seeded(t,
-			unitOf("weaver", "store.go", "Omega"),
-			unitOf("gen", "store.go", "Alpha"),
-		))
-		assert.Length(t, files, 1, "two plugins, one file")
-		body := string(files[0].Body)
-		assert.ContainsInOrder(t, body, []string{"Alpha", "Omega"},
-			"contributions arrive in unit order, which is total")
-	})
-
-	t.Run("splits units before naming", func(t *testing.T) {
-		t.Parallel()
-
-		l := language()
-		l.Split = func(u plugin.Unit) []plugin.Unit {
-			out := make([]plugin.Unit, 0, len(u.Decls))
-			for _, d := range u.Decls {
-				su := u
-				su.Decls = []symbol.Symbol{d}
-				su.Key = strings.ToLower(d.(*emit.Struct).Name) + ".go"
-				out = append(out, su)
-			}
-			return out
-		}
-		files, sink := runPass(t, l, seeded(t,
-			unitOf("gen", "store.go", "Alpha", "Beta"),
-		))
-		assert.False(t, sink.Failed(), "a split render reports nothing")
-		names := make([]string, 0, len(files))
-		for _, f := range files {
-			names = append(names, f.Name)
-		}
-		assert.Equal(t, names, []string{"alpha_stub.txt", "beta_stub.txt"},
-			"one file per split unit, named from the rewritten key")
-	})
-
-	t.Run("reports a split that vanishes a populated unit", func(t *testing.T) {
-		t.Parallel()
-
-		l := language()
-		l.Split = func(plugin.Unit) []plugin.Unit { return nil }
-		files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
-		assert.Length(t, files, 0, "nothing routed, nothing rendered")
-		assert.Contains(t, reported(t, sink, render.RefusedTemplate), "into nothing",
-			"the vanishing reports instead of narrowing silently")
-	})
-
-	t.Run("positions a vanishing split at its unit under the context's identity", func(t *testing.T) {
-		t.Parallel()
-
-		l := language()
-		l.Split = func(plugin.Unit) []plugin.Unit { return nil }
-		p, err := render.New("printer", l)
-		assert.NoError(t, err, "the language composes")
-		sink := diag.NewSink()
-		_, err = p.Render(&plugin.RenderContext{
-			Emit: seeded(t, unitOf("gen", "store.go", "Alpha")), Sink: sink, Plugin: "composed",
-		})
-		assert.NoError(t, err, "the pass runs whole")
-		coretest.AssertPositioned(t, sink)
-		for d := range sink.All() {
-			assert.Equal(t, d.Origin, diag.Origin("composed"),
-				"the finding reports under the composition's identity")
-			assert.Equal(t, d.Pos.File, "store.go", "at the unit it could not route")
-		}
-	})
-
-	t.Run("clusters declarations under a group template", func(t *testing.T) {
-		t.Parallel()
-
-		l := language()
-		l.Cluster = func(decls []symbol.Symbol) []render.Clustered {
-			c := render.Clustered{Group: "block"}
-			for _, d := range decls {
-				if _, held := d.(*emit.Struct); held {
-					c.Decls = append(c.Decls, d)
-				}
-			}
-			if len(c.Decls) == 0 {
-				return nil
-			}
-			return []render.Clustered{c}
-		}
-		l.Groups = map[render.GroupName]string{
-			"block": "types (\n{{range .Decls}}\t{{.Name}}\n{{end}})\n",
-		}
-
-		u := unitOf("gen", "store.go", "Alpha")
-		load := &emit.Function{
-			Origin: coretest.Struct(coretest.StorePath, "Load").ID,
-			Name:   "Load",
-		}
-		load.Body = emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}
-		beta := &emit.Struct{
-			Origin: coretest.Struct(coretest.StorePath, "Beta").ID,
-			Name:   "Beta",
-		}
-		u.Decls = append(u.Decls, load, beta)
-
-		files, sink := runPass(t, l, seeded(t, u))
-		assert.False(t, sink.Failed(), "a clustered render reports nothing")
-		assert.Equal(t, len(files), 1, "one file")
-		assert.Equal(t, string(files[0].Body),
-			"types (\n\tAlpha\n\tBeta\n)\nfunc Load() {\n\treturn\n}\n",
-			"the cluster renders at its first member's position, "+
-				"the singleton through its kind template")
-	})
-
-	t.Run("a cluster naming no declared group is reported", func(t *testing.T) {
-		t.Parallel()
-
-		l := language()
-		l.Cluster = func(decls []symbol.Symbol) []render.Clustered {
-			return []render.Clustered{{Group: "ghost", Decls: decls}}
-		}
-		l.Groups = map[render.GroupName]string{
-			"block": "types (\n{{range .Decls}}\t{{.Name}}\n{{end}})\n",
-		}
-		files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
-		var codes []diag.Code
-		for d := range sink.All() {
-			codes = append(codes, d.Code)
-		}
-		assert.Equal(t, codes, []diag.Code{render.UnknownGroup},
-			"the unknown group is one finding")
-		assert.Equal(t, len(files), 1, "the file still renders")
-		assert.Equal(t, string(files[0].Body), "",
-			"without the skipped cluster's declarations")
-	})
-
-	t.Run("a cluster without group templates refuses to compose", func(t *testing.T) {
-		t.Parallel()
-
-		l := language()
-		l.Cluster = func(decls []symbol.Symbol) []render.Clustered { return nil }
-		_, err := render.New("printer", l)
-		assert.HasError(t, err, "clustering needs group templates")
-		assert.Contains(t, err.Error(), "group templates", "naming the gap")
-	})
-
-	t.Run("clusters claim a declaration once", func(t *testing.T) {
-		t.Parallel()
-
-		grouped := func(c render.Cluster) render.Language {
-			l := language()
-			l.Cluster = c
-			l.Groups = map[render.GroupName]string{
-				"first":  "first(\n{{range .Decls}}\t{{.Name}}\n{{end}})\n",
-				"second": "second(\n{{range .Decls}}\t{{.Name}}\n{{end}})\n",
-			}
-			return l
-		}
-
-		t.Run("a member the unit does not hold is ignored", func(t *testing.T) {
+		t.Run("assembles one file per spelled name", func(t *testing.T) {
 			t.Parallel()
 
-			stranger := &emit.Struct{
-				Origin: coretest.Struct(coretest.StorePath, "Stranger").ID,
-				Name:   "Stranger",
+			files, sink := runPass(t, language(), seeded(t,
+				unitOf(emitter, storeKey, alphaName),
+				unitOf(emitter, userKey, betaName),
+			))
+			coretest.AssertCodes(t, sink)
+			names := make([]string, 0, len(files))
+			for _, f := range files {
+				names = append(names, f.Name)
 			}
-			l := grouped(func([]symbol.Symbol) []render.Clustered {
-				return []render.Clustered{{
-					Group: "first", Decls: []symbol.Symbol{stranger},
-				}}
-			})
-			files, sink := runPass(t, l, seeded(t,
-				unitOf("gen", "store.go", "Alpha", "Beta")))
-			assert.False(t, sink.Failed(), "an outside claim is ignored, not reported")
-			assert.Equal(t, string(files[0].Body),
-				"type Alpha struct{}\ntype Beta struct{}\n",
-				"every declaration renders as the singleton it stayed")
+			assert.Equal(t, names, []string{storeFile, userFile}, "one file per name, in name order")
 		})
 
-		t.Run("a declaration two clusters claim goes to the first", func(t *testing.T) {
+		t.Run("assembles the units that spell one name into one file", func(t *testing.T) {
+			t.Parallel()
+
+			files, _ := runPass(t, language(), seeded(t,
+				unitOf(weaverPlugin, storeKey, omegaName),
+				unitOf(emitter, storeKey, alphaName),
+			))
+			assert.Length(t, files, 1, "two plugins, one file")
+			assert.ContainsInOrder(t, string(files[0].Body), []string{alphaName, omegaName},
+				"contributions arrive in unit order, which is total")
+		})
+	})
+
+	t.Run("Split", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reshapes a unit before the naming spells its file", func(t *testing.T) {
+			t.Parallel()
+
+			keys := map[string]string{alphaName: alphaKey, betaName: betaKey}
+			l := language()
+			l.Split = func(u plugin.Unit) []plugin.Unit {
+				out := make([]plugin.Unit, 0, len(u.Decls))
+				for _, d := range u.Decls {
+					su := u
+					su.Decls = []symbol.Symbol{d}
+					su.Key = keys[d.(*emit.Struct).Name]
+					out = append(out, su)
+				}
+				return out
+			}
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
+			coretest.AssertCodes(t, sink)
+			names := make([]string, 0, len(files))
+			for _, f := range files {
+				names = append(names, f.Name)
+			}
+			assert.Equal(t, names, []string{alphaFile, betaFile},
+				"one file per split unit, named from the rewritten key")
+		})
+
+		t.Run("reports RefusedTemplate for a split that returns nothing for a populated unit", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := vanished(t)
+			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "into nothing",
+				"the vanishing reports instead of narrowing silently")
+		})
+
+		t.Run("renders no file for a unit its split vanishes", func(t *testing.T) {
+			t.Parallel()
+
+			files, _ := vanished(t)
+			assert.Length(t, files, 0, "nothing routed, nothing rendered")
+		})
+
+		t.Run("positions the finding of a vanishing split at its unit's routing key", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := vanished(t)
+			coretest.AssertReports(t, sink, render.RefusedTemplate)
+			for d := range sink.All() {
+				assert.Equal(t, d.Pos.File, storeKey, "the unit it could not route")
+			}
+		})
+
+		t.Run("reports the finding of a vanishing split under the context's plugin", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := vanished(t)
+			coretest.AssertReports(t, sink, render.RefusedTemplate)
+			for d := range sink.All() {
+				assert.Equal(t, d.Origin, composedPlugin, "the composition's identity")
+			}
+		})
+	})
+
+	t.Run("Cluster", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("renders a cluster at the position of its first member", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(emitter, storeKey, alphaName)
+			u.Decls = append(u.Decls,
+				fn(storeKey, handleName, emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}).Decls[0],
+				unitOf(emitter, storeKey, betaName).Decls[0],
+			)
+			files, sink := runPass(t, grouped(structsOnly), seeded(t, u))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body),
+				"types (\n\t"+alphaName+"\n\t"+betaName+"\n)\n"+
+					"func "+handleName+"() {\n\treturn\n}\n",
+				"the cluster at its first member's position, the singleton through its kind template")
+		})
+
+		t.Run("renders a file whose every declaration a cluster gathers", func(t *testing.T) {
+			t.Parallel()
+
+			files, sink := runPass(t, grouped(structsOnly), seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, files, 1, "a rendered cluster is content to stamp")
+			assert.Equal(t, string(files[0].Body), "types (\n\t"+alphaName+"\n\t"+betaName+"\n)\n",
+				"the cluster alone")
+		})
+
+		t.Run("reports UnknownGroup for a cluster naming a group without a template", func(t *testing.T) {
+			t.Parallel()
+
+			l := grouped(func(decls []symbol.Symbol) []render.Clustered {
+				return []render.Clustered{{Group: ghostGroup, Decls: decls}}
+			})
+			_, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
+			coretest.AssertCodes(t, sink, render.UnknownGroup)
+		})
+
+		t.Run("renders the file without the declarations of a cluster naming an unknown group", func(t *testing.T) {
+			t.Parallel()
+
+			l := grouped(func(decls []symbol.Symbol) []render.Clustered {
+				return []render.Clustered{{Group: ghostGroup, Decls: decls[1:]}}
+			})
+			files, _ := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
+			assert.Length(t, files, 1, "the file still renders")
+			assert.Equal(t, string(files[0].Body), "type "+alphaName+" struct{}\n",
+				"without the skipped cluster's declarations")
+		})
+
+		t.Run("ignores a member the unit does not contain", func(t *testing.T) {
+			t.Parallel()
+
+			outside := unitOf(emitter, storeKey, outsideName).Decls[0]
+			l := grouped(func([]symbol.Symbol) []render.Clustered {
+				return []render.Clustered{{Group: firstGroup, Decls: []symbol.Symbol{outside}}}
+			})
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, string(files[0].Body),
+				"type "+alphaName+" struct{}\ntype "+betaName+" struct{}\n",
+				"every declaration renders as the singleton it remained")
+		})
+
+		t.Run("renders a declaration two clusters claim in the first", func(t *testing.T) {
 			t.Parallel()
 
 			l := grouped(func(decls []symbol.Symbol) []render.Clustered {
 				return []render.Clustered{
-					{Group: "first", Decls: decls[:1]},
-					{Group: "second", Decls: decls[:1]},
+					{Group: firstGroup, Decls: decls[:1]},
+					{Group: secondGroup, Decls: decls[:1]},
 				}
 			})
-			files, sink := runPass(t, l, seeded(t,
-				unitOf("gen", "store.go", "Alpha", "Beta")))
-			assert.False(t, sink.Failed(), "the second claim is dropped silently")
+			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
+			coretest.AssertCodes(t, sink)
 			assert.Equal(t, string(files[0].Body),
-				"first(\n\tAlpha\n)\ntype Beta struct{}\n",
+				string(firstGroup)+"(\n\t"+alphaName+"\n)\ntype "+betaName+" struct{}\n",
 				"the first cluster renders it, and the second renders nothing")
 		})
 
-		t.Run("a group template refusing its cluster reports", func(t *testing.T) {
+		t.Run("reports RefusedTemplate for a cluster its group template fails on", func(t *testing.T) {
 			t.Parallel()
 
 			l := grouped(func(decls []symbol.Symbol) []render.Clustered {
-				return []render.Clustered{{Group: "first", Decls: decls}}
+				return []render.Clustered{{Group: firstGroup, Decls: decls}}
 			})
-			l.Groups["first"] = "{{.Missing}}"
-			files, sink := runPass(t, l, seeded(t, unitOf("gen", "store.go", "Alpha")))
+			l.Groups[firstGroup] = failing
+			_, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName)))
 			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "group template",
-				"the finding names the template that refused")
-			assert.Equal(t, string(files[0].Body), "",
-				"and the cluster's declarations render nowhere")
+				"the finding names the template that failed")
+		})
+
+		t.Run("renders none of the declarations of a cluster its group template fails on", func(t *testing.T) {
+			t.Parallel()
+
+			l := grouped(func(decls []symbol.Symbol) []render.Clustered {
+				return []render.Clustered{{Group: firstGroup, Decls: decls[:1]}}
+			})
+			l.Groups[firstGroup] = failing
+			files, _ := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
+			assert.Length(t, files, 1, "the file still renders")
+			assert.Equal(t, string(files[0].Body), "type "+betaName+" struct{}\n",
+				"the cluster's declarations render nowhere")
 		})
 	})
 }

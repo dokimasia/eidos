@@ -27,8 +27,8 @@ const (
 
 // String returns the form's spelling. The lint check and render
 // findings name forms, so a consumer matching on the spelling
-// matches on API. A form nothing declares returns its number
-// rather than a name.
+// matches on API. A form nothing declares returns its number, not
+// a name.
 func (f Form) String() string {
 	switch f {
 	case FormDefault:
@@ -44,13 +44,22 @@ func (f Form) String() string {
 	}
 }
 
+// The standard slots' names: what a body-claiming template places
+// the prologue and the epilogue by, through the render's slot
+// builtin. They name the standard pair on every body, so no owner
+// declares a slot under either.
+const (
+	SlotPrologue = "prologue"
+	SlotEpilogue = "epilogue"
+)
+
 // Body is a callable's emit-side content: the standard slots every
-// body carries, the named slots its owner declared, and the
-// content between them. The zero Body is the kind template's
-// default, nothing but the standard slots, rendered automatically.
+// body has, the named slots its owner declared, and the content
+// between them. The zero Body is the kind template's default,
+// nothing but the standard slots, rendered automatically.
 //
 // A Body is not safe for concurrent use, for the same reason a
-// [Slot] is not: plans run in parallel, and each owns its own emit
+// [Slot] is not: plans run in parallel, and each has its own emit
 // declarations.
 type Body struct {
 	// Prologue and Epilogue exist on every body by construction:
@@ -58,11 +67,11 @@ type Body struct {
 	// whether the owner anticipated it or not.
 	Prologue Slot[Stmt] `json:"prologue,omitzero"`
 	Epilogue Slot[Stmt] `json:"epilogue,omitzero"`
-	// Slots holds the owner's declared extension points, in
+	// Slots lists the owner's declared extension points, in
 	// declaration order, rendered between the standard pair. The
 	// elements are pointers because [Body.Declare] returns handles
 	// into the list, and a following declaration must not move
-	// what an earlier caller already holds.
+	// what an earlier caller already has.
 	Slots []*NamedSlot `json:"slots,omitzero"`
 
 	// The content, exactly one form set; all three zero is the
@@ -87,7 +96,16 @@ type NamedSlot struct {
 // on first use; declaring a name twice returns the existing slot.
 // Declaring is the owner's act: a contributor looks a slot up
 // through [Body.Slot] instead.
+//
+// Declare panics on [SlotPrologue] and [SlotEpilogue]: a template
+// places the standard pair under those names, so an owner slot
+// under either is one no template could place by name, and the
+// declaration is a defect in the generator that makes it.
 func (b *Body) Declare(name string) *Slot[Stmt] {
+	if name == SlotPrologue || name == SlotEpilogue {
+		panic("emit: " + strconv.Quote(name) + " names a standard slot every body has, " +
+			"and an owner declares its slots under names of its own")
+	}
 	for _, s := range b.Slots {
 		if s.Name == name {
 			return &s.Slot
@@ -110,7 +128,7 @@ func (b *Body) Slot(name string) (*Slot[Stmt], bool) {
 	return nil, false
 }
 
-// Form returns which content form the body holds, and an error
+// Form returns which content form the body has, and an error
 // naming the forms where more than one is set: a body built with
 // two contents is a defect, and the render and the lint check both
 // ask this one question. The question is asked once per callable,
@@ -141,13 +159,13 @@ func (b *Body) Form() (Form, error) {
 		names = append(names, FormVerbatim.String())
 	}
 	return FormDefault, fmt.Errorf(
-		"emit: the body holds %s at once, and content is one form",
+		"emit: the body has %s at once, and content is one form",
 		strings.Join(names, " and "),
 	)
 }
 
-// IsZero reports whether the body holds nothing at all, which is
-// what lets an encoder omit an untouched one.
+// IsZero reports whether the body is empty in every field, which
+// is what lets an encoder omit an untouched one.
 func (b Body) IsZero() bool {
 	return b.Prologue.IsZero() && b.Epilogue.IsZero() && len(b.Slots) == 0 &&
 		len(b.Stmts) == 0 && b.Ref == nil && b.Verbatim == ""

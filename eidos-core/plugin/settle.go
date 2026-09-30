@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -32,13 +33,13 @@ var RefusedName = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 
 // CollidingNames reports two declarations in one scope settling to
 // one name: both keep their emitted names, references to either
-// follow the emitted names, and the finding says what to fix.
+// follow the emitted names, and the finding names what to fix.
 var CollidingNames = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 31, Meaning: "two declarations settle to one name in one scope",
 })
 
 // AmbiguousReference reports a bare reference matching declarations
-// whose settled names diverge: the reference stands as written.
+// whose settled names diverge: the reference is left as written.
 var AmbiguousReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 32, Meaning: "a bare reference matches declarations whose settled names diverge",
 })
@@ -53,15 +54,15 @@ var VerbatimParams = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 
 // Lower rewrites one declaration into the target's own construct
 // shape: the same fact, the target's declarations. Every returned
-// declaration carries the input's origin, and the output states
-// the lowered fact in the target's shape rather than the model's,
-// so a second settle changes nothing. An error is the target
-// refusing the construct.
+// declaration has the input's origin, and the output states the
+// lowered fact in the target's shape and not in the model's, so a
+// second settle changes nothing. An error is the target refusing
+// the construct.
 //
-// A nil list without an error keeps the declaration as it stands,
-// so the common pass-through spends no allocation; a hook that
+// A nil list without an error keeps the declaration unchanged, so
+// the common pass-through spends no allocation. A hook that
 // reshaped the declaration in place returns nil the same way,
-// because the store already holds it.
+// because the store already contains it.
 type Lower func(symbol.Symbol) ([]symbol.Symbol, error)
 
 // Lowerer is the provider a backend implements when its target
@@ -72,10 +73,10 @@ type Lowerer interface {
 }
 
 // Respell spells one declared name in the target's own convention.
-// Host is the kind of the declaration a member sits in,
-// [symbol.KindInvalid] at file level; a kind without visibility
-// passes the zero value. An error means the target cannot spell
-// the name at that visibility.
+// Host is the kind of the declaration a member is declared in,
+// [symbol.KindInvalid] at file level. A kind without visibility
+// passes the zero value. An error means the target cannot spell the
+// name at that visibility.
 type Respell func(host, kind symbol.Kind, v symbol.Visibility, name string) (string, error)
 
 // Respeller is the provider a backend implements when its target
@@ -94,13 +95,26 @@ type Respeller interface {
 // settled store settles to itself, so a second call changes
 // nothing.
 //
+// A declared name takes an override where facts contains one: a
+// value of the target's [Target.NameKey], such as golang.name, on
+// the declaration's origin, written at directive authority or above.
+// The override replaces the respell hook's spelling for the
+// declaration that renders its origin, the one whose emitted name
+// the hook spells as it spells the origin's own name. A declaration
+// another one derives from its origin, such as a mock of an
+// interface, keeps the hook's spelling. A name the hook refuses is
+// withheld, override or not. A plugin's stamp on the key is no
+// override, because the hook spells the target's convention. A nil
+// fact store, a name key the composition did not register and a
+// backend without the hook apply no override.
+//
 // Findings attach to the sink under the backend's name: a refused
 // construct or name withholds its declaration, colliding names
-// keep their emitted spellings, and an ambiguous reference stands
+// keep their emitted spellings, and an ambiguous reference is left
 // as written. A returned error is a defect in the backend's own
 // hooks, a lowering that drops its input's origin, and fails the
-// plan rather than one declaration.
-func Settle(e *Emit, b Backend, sink *diag.Sink) error {
+// whole plan, not one declaration.
+func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 	if e == nil || e.settled {
 		return nil
 	}
@@ -112,27 +126,78 @@ func Settle(e *Emit, b Backend, sink *diag.Sink) error {
 
 	if l, held := b.(Lowerer); held {
 		if err := lowerAll(e, l, by, sink); err != nil {
-			// The flag stays down: a store abandoned mid-lowering is
+			// The flag remains down: a store abandoned mid-lowering is
 			// not settled, and Settled must not say it is.
 			return err
 		}
 	}
 	if r, held := b.(Respeller); held {
-		respellAll(e, r, by, sink)
+		respellAll(e, r, overridesFor(facts, b.Target()), by, sink)
 	}
 	e.reindex()
 	e.settled = true
 	return nil
 }
 
-// unitPos positions a settle finding: an emit declaration carries
-// no source position, so the unit's routing key names the output
-// the declaration was bound for.
+// overrides is one target's name overrides, keyed by origin: the
+// name written on each origin at directive authority or above. The
+// nil map reads none.
+type overrides map[symbol.Identity]string
+
+// overridesFor reads a target's name overrides once per settle,
+// through the fact store's index of the subjects the target's name
+// key reads present on, so the settle's cost is one pass over the
+// overrides and a map lookup per declared name. A nil store and a
+// name key the composition did not register read none.
+func overridesFor(facts *meta.Facts, t Target) overrides {
+	if facts == nil {
+		return nil
+	}
+	key, registered := meta.Lookup[string](facts.Registry(), t.NameKey())
+	if !registered {
+		return nil
+	}
+	var over overrides
+	for id := range facts.ByKey(key.ID()) {
+		name, written := overrideOn(facts, id, key.ID())
+		if !written {
+			continue
+		}
+		if over == nil {
+			over = overrides{}
+		}
+		over[id] = name
+	}
+	return over
+}
+
+// overrideOn returns the override written on one subject: the value
+// of the claim that ranks first, which [meta.Facts.Claims] returns
+// first. It reports false for the zero identity, which no
+// declaration renders, for a claim below directive authority and for
+// an empty value.
+func overrideOn(facts *meta.Facts, id symbol.Identity, k meta.KeyID) (string, bool) {
+	if id.IsZero() {
+		return "", false
+	}
+	for c := range facts.Claims(id, k) {
+		name, _ := c.Value.(string)
+		if name == "" || c.Claim.Authority < meta.AuthorityDirective {
+			return "", false
+		}
+		return name, true
+	}
+	return "", false
+}
+
+// unitPos positions a settle finding: an emit declaration has no
+// source position, so the unit's routing key names the output the
+// declaration was bound for.
 func unitPos(u *Unit) position.Pos { return position.Pos{File: u.Key} }
 
 // lowerAll rewrites every declaration through the lowering hook. A
-// refusal withholds the declaration under a positioned finding; an
-// output carrying another origin is a defect and returns.
+// refusal withholds the declaration under a positioned finding, and
+// an output with another origin is a defect and returns.
 func lowerAll(e *Emit, l Lowerer, by diag.Origin, sink *diag.Sink) error {
 	for i := range e.units {
 		u := &e.units[i]
@@ -152,8 +217,8 @@ func lowerAll(e *Emit, l Lowerer, by diag.Origin, sink *diag.Sink) error {
 				produced, _ := emit.OriginOf(o)
 				if produced != origin {
 					return fmt.Errorf(
-						"plugin: %s lowers a declaration of origin %s into one carrying %s: "+
-							"every output carries the input's origin",
+						"plugin: %s lowers a declaration of origin %s into one of origin %s: "+
+							"every output has the input's origin",
 						by, origin, produced,
 					)
 				}
@@ -166,8 +231,8 @@ func lowerAll(e *Emit, l Lowerer, by diag.Origin, sink *diag.Sink) error {
 }
 
 // planned is one name's visit: what the walk met, what the hook
-// answered, and what the apply pass writes. grouped marks a
-// member a collision group already anchored.
+// returned, and what the apply pass writes. grouped marks a member
+// a collision group already anchored.
 type planned struct {
 	host    symbol.Symbol
 	kind    symbol.Kind
@@ -185,8 +250,8 @@ type planned struct {
 // follow. Withheld declarations leave their units last, because
 // every pass before that addresses a plan by the declaration index
 // it was made under.
-func respellAll(e *Emit, r Respeller, by diag.Origin, sink *diag.Sink) {
-	plans := planNames(e, r)
+func respellAll(e *Emit, r Respeller, over overrides, by diag.Origin, sink *diag.Sink) {
+	plans := planNames(e, r, over)
 	table, byOrigin := resolveTop(e, plans, by, sink)
 	resolveMembers(e, plans, by, sink)
 	applyNames(e, plans, by, sink)
@@ -207,25 +272,27 @@ func dropWithheld(e *Emit) {
 // span is one declaration's slice of the plan arena.
 type span struct{ lo, hi int }
 
-// plan holds one settle's visits: one arena every pass points
+// plan contains one settle's visits: one arena every pass points
 // into, with a span per declaration, so the store's plan costs one
-// growing slice rather than one per declaration.
+// growing slice and not one per declaration.
 type plan struct {
 	spans map[[2]int]span
 	all   []planned
 }
 
 // of returns one declaration's visits. The arena never grows after
-// planning, so a pointer into the returned slice stays valid.
+// planning, so a pointer into the returned slice remains valid.
 func (p *plan) of(i, j int) []planned {
 	s := p.spans[[2]int{i, j}]
 	return p.all[s.lo:s.hi]
 }
 
 // planNames runs the recording walk over every declaration: each
-// visit calls the hook once and stores its answer by value, and
-// nothing writes yet. Visit order is what the apply walk replays.
-func planNames(e *Emit, r Respeller) *plan {
+// visit calls the hook, takes the override of the declaration that
+// renders its origin in place of the hook's spelling, and stores the
+// result by value, and nothing writes yet. Visit order is what the
+// apply walk replays.
+func planNames(e *Emit, r Respeller, over overrides) *plan {
 	total := 0
 	for i := range e.units {
 		total += len(e.units[i].Decls)
@@ -236,14 +303,17 @@ func planNames(e *Emit, r Respeller) *plan {
 	}
 	var at position.Pos
 	// One recording callback serves every walk: the per-visit
-	// state lives beside it, so planning allocates the arena's
+	// state is beside it, so planning allocates the arena's
 	// growth and nothing else. The walk never errors: a hook fault
 	// is kept in its entry and judged per declaration.
 	record := func(
-		host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string,
+		host, carrier symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string,
 	) (string, error) {
 		p := planned{host: host, kind: kind, at: at, emitted: name}
 		p.settled, p.err = r.Respell(hostKind(host), kind, v, name)
+		if override, renders := overrideOf(r, over, host, carrier, kind, v, p.settled); renders {
+			p.settled = override
+		}
 		p.final = p.settled
 		if p.err != nil {
 			p.final = name
@@ -262,6 +332,30 @@ func planNames(e *Emit, r Respeller) *plan {
 		}
 	}
 	return plans
+}
+
+// overrideOf returns the override of a carrier that renders its
+// origin: an override is written on the origin, and the carrier
+// renders it where the hook spells the origin's own name as it
+// spelled the carrier's, settled. A carrier without an origin, an
+// origin without an override, a name the hook refuses and a name the
+// hook spells apart from the origin's report false.
+func overrideOf(
+	r Respeller, over overrides, host, carrier symbol.Symbol,
+	kind symbol.Kind, v symbol.Visibility, settled string,
+) (string, bool) {
+	// A carrier without an origin reads the zero identity, which
+	// takes no override.
+	origin, _ := emit.OriginOf(carrier)
+	override, written := over[origin]
+	if !written {
+		return "", false
+	}
+	own, err := r.Respell(hostKind(host), kind, v, origin.Name)
+	if err != nil || own != settled {
+		return "", false
+	}
+	return override, true
 }
 
 // hostKind reads a host's kind for the hook, with the invalid kind
@@ -303,7 +397,7 @@ type originName struct {
 // survivors form the table references follow. A declaration's
 // scope is its package; a receiver-attached method's is its
 // receiver, because two types declare one method name legally
-// everywhere. byOrigin carries the same decisions keyed by origin
+// everywhere. byOrigin records the same decisions keyed by origin
 // identity, for resolved references. The clean path allocates
 // per name and never per group: group storage exists only where a
 // second occupant arrives.
@@ -323,7 +417,7 @@ func resolveTop(
 					continue
 				}
 				at := scopeName{scope: key, settled: p.settled}
-				held, taken := first[at]
+				occupant, taken := first[at]
 				if !taken {
 					first[at] = p
 					continue
@@ -332,7 +426,7 @@ func resolveTop(
 					groups = map[scopeName][]*planned{}
 				}
 				if len(groups[at]) == 0 {
-					groups[at] = append(groups[at], held)
+					groups[at] = append(groups[at], occupant)
 				}
 				groups[at] = append(groups[at], p)
 			}
@@ -363,8 +457,8 @@ func resolveTop(
 	for i := range e.units {
 		pkg := e.units[i].Pkg.Package
 		for j, d := range e.units[i].Decls {
-			origin, carries := emit.OriginOf(d)
-			carries = carries && !origin.IsZero()
+			origin, known := emit.OriginOf(d)
+			known = known && !origin.IsZero()
 			list := plans.of(i, j)
 			for k := range list {
 				p := &list[k]
@@ -373,19 +467,19 @@ func resolveTop(
 				}
 				// A method's name never spells a bare reference:
 				// a type or a callable does, a member of one does
-				// not, so the table carries everything else.
+				// not, so the table records everything else.
 				if p.kind != symbol.KindMethod {
 					at := pkgName{pkg: pkg, emitted: p.emitted}
-					if held, taken := table[at]; taken {
-						if held.settled != p.final {
-							held.ambiguous = true
-							table[at] = held
+					if entry, taken := table[at]; taken {
+						if entry.settled != p.final {
+							entry.ambiguous = true
+							table[at] = entry
 						}
 					} else {
 						table[at] = tableEntry{settled: p.final}
 					}
 				}
-				if carries {
+				if known {
 					byOrigin[originName{id: origin, emitted: p.emitted}] = p.final
 				}
 			}
@@ -395,8 +489,8 @@ func resolveTop(
 }
 
 // scopeSep separates a package from a receiver inside one
-// collision-scope key: a byte no spelling carries, so a joined
-// key never collides with a plain one.
+// collision-scope key: a byte no spelling contains, so a joined key
+// never collides with a plain one.
 const scopeSep = "\x00"
 
 // scopeKey names the collision scope one file-level declaration
@@ -464,7 +558,7 @@ func collides(list []planned, a int) bool {
 }
 
 // applyNames replays every plan over its declaration, writing the
-// final spellings back. A declaration whose plan holds a hook
+// final spellings back. A declaration whose plan contains a hook
 // refusal is withheld whole under a positioned finding, because
 // rendering it half-respelt would misstate it. Its entry in the
 // unit is set to nil, and [dropWithheld] removes it once the
@@ -481,7 +575,7 @@ func applyNames(
 	// positionally; the warning set exists only where a verbatim
 	// pin met a rename.
 	apply := func(
-		host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string,
+		host, _ symbol.Symbol, kind symbol.Kind, _ symbol.Visibility, name string,
 	) (string, error) {
 		if at >= len(list) {
 			return name, nil
@@ -550,7 +644,7 @@ func firstErr(list []planned) *planned {
 	return nil
 }
 
-// pinnedByVerbatim reports whether a name sits in the signature a
+// pinnedByVerbatim reports whether a name is in the signature a
 // verbatim body reads: the parameters and results of a callable
 // whose body is literal text.
 func pinnedByVerbatim(host symbol.Symbol, kind symbol.Kind) bool {
@@ -572,7 +666,7 @@ func pinnedByVerbatim(host symbol.Symbol, kind symbol.Kind) bool {
 // spelling is the referent's emitted bare name, a bare reference
 // follows its own package's table, and structured body names
 // follow locals first, then the package. Composite spellings,
-// verbatim bodies and template text stand as written.
+// verbatim bodies and template text are left as written.
 func rewriteRefs(
 	e *Emit, plans *plan,
 	table map[pkgName]tableEntry,
@@ -630,8 +724,8 @@ func paramNames(list []planned) map[symbol.Symbol]map[string]string {
 
 // rewriteRef follows one type reference: resolved by origin where
 // the spelling is the referent's emitted bare name, bare by the
-// package's table otherwise. An ambiguous match reports and
-// stands.
+// package's table otherwise. An ambiguous match reports and is left
+// as written.
 func rewriteRef(
 	t *emit.TypeRef, pkg string, table map[pkgName]tableEntry,
 	byOrigin map[originName]string,
@@ -650,7 +744,7 @@ func rewriteRef(
 	if ent.ambiguous {
 		sink.Errorf(AmbiguousReference, at, by,
 			"%q matches declarations whose settled names diverge, and the "+
-				"reference stands as written", t.Spelling)
+				"reference is left as written", t.Spelling)
 		return
 	}
 	t.Spelling = ent.settled
@@ -659,7 +753,7 @@ func rewriteRef(
 // rewriteBody follows a body's structured names: statement and
 // expression names resolve against the callable's locals first,
 // its parameters, results and declaring assignments in statement
-// order, then the package's table. A verbatim body stands as
+// order, then the package's table. A verbatim body is left as
 // written.
 func rewriteBody(
 	b *emit.Body, locals map[string]string, pkg string,
@@ -787,7 +881,7 @@ func follow(
 	if ent.ambiguous {
 		sink.Errorf(AmbiguousReference, at, by,
 			"%q matches declarations whose settled names diverge, and the "+
-				"reference stands as written", name)
+				"reference is left as written", name)
 		return name
 	}
 	return ent.settled

@@ -5,7 +5,7 @@ package directive
 
 import "go.dokimi.dev/eidos/core/diag"
 
-// The codes validation refuses under, one per failure class so a
+// The codes validation reports under, one per class of finding so a
 // consumer scripts against the class it cares about. Each is
 // declared where it is registered, so nothing drifts.
 var (
@@ -19,7 +19,7 @@ var (
 	})
 	// UnknownKey refuses a key outside the schema's closure.
 	UnknownKey = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
-		Number: 6, Meaning: "a directive carries a key its schema does not accept",
+		Number: 6, Meaning: "a directive writes a key its schema does not accept",
 	})
 	// DuplicateKey refuses a key written twice in one instance.
 	DuplicateKey = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
@@ -36,7 +36,7 @@ var (
 	// ExtraPositional refuses an argument past the declared
 	// positionals.
 	ExtraPositional = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
-		Number: 10, Meaning: "a directive carries more positional arguments than its schema declares",
+		Number: 10, Meaning: "a directive writes more positional arguments than its schema declares",
 	})
 	// MissingParam refuses an omitted required param.
 	MissingParam = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
@@ -57,9 +57,9 @@ var (
 		Number: 14, Meaning: "a single-instance directive appears twice on one subject",
 	})
 	// RequirementUnmet refuses an instance whose schema requires a
-	// directive the subject does not carry.
+	// directive the subject does not have.
 	RequirementUnmet = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
-		Number: 15, Meaning: "a directive requires another the subject does not carry",
+		Number: 15, Meaning: "a directive requires another directive the subject does not have",
 	})
 	// Conflict refuses a pair of directives a schema declares
 	// incompatible.
@@ -72,11 +72,11 @@ var (
 		Number: 17, Meaning: "a directive names a metadata key or group nothing registered",
 	})
 	// DanglingSubject refuses a directive or a classification
-	// stamp attached to a subject the graph never got. The check
-	// lives with whoever holds the graph; the code lives with its
-	// class.
+	// stamp attached to a subject the graph never got. The code that
+	// has the graph runs the check, and the code is declared here
+	// with its class.
 	DanglingSubject = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
-		Number: 18, Meaning: "a directive or stamp is attached to a subject the graph does not hold",
+		Number: 18, Meaning: "a directive or stamp is attached to a subject the graph does not contain",
 	})
 	// UnsealedRegistry refuses validation against a registry still
 	// registering: a defect in the composition, not in a carrier.
@@ -88,5 +88,16 @@ var (
 	// read at.
 	UnresolvedReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 		Number: 40, Meaning: "a directive's reference param resolves to nothing",
+	})
+	// NegationRefused refuses a negated instance of a schema that
+	// does not declare itself negatable.
+	NegationRefused = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+		Number: 43, Meaning: "a directive is negated, and its schema does not accept the negated form",
+	})
+	// MixedCarriers warns where one subject's instances of a
+	// repeatable directive mix carriers in the tool-directive shape
+	// with other carriers, which a formatter may reorder.
+	MixedCarriers = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+		Number: 45, Meaning: "a repeatable directive mixes carriers a formatter may move with carriers it keeps",
 	})
 )

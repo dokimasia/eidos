@@ -26,9 +26,9 @@ type Feature struct {
 	// graph, under the feature's package.
 	Declares []Decl
 
-	// Check optionally holds the whole feature to a graph-wide
-	// expectation — a classification stamp, an attachment — with a
-	// nil declaration in the context.
+	// Check optionally checks the whole feature against a
+	// graph-wide expectation, such as a classification stamp or an
+	// attachment, with a nil declaration in the context.
 	Check func(tb assert.TB, c *Ctx)
 }
 
@@ -50,11 +50,13 @@ type Decl struct {
 	// Kind is the declaration's kind.
 	Kind symbol.Kind
 
-	// Disc is a callable's discriminator: the parameter type
-	// spellings, comma-joined, empty elsewhere.
+	// Disc is a callable's discriminator in a language that
+	// overloads: the parameter type spellings, comma-joined, empty
+	// elsewhere. The runner expects the empty discriminator for a
+	// language whose frontend reports that it cannot overload.
 	Disc string
 
-	// Check optionally holds the loaded declaration's shape.
+	// Check optionally checks the loaded declaration's shape.
 	Check func(tb assert.TB, c *Ctx)
 }
 

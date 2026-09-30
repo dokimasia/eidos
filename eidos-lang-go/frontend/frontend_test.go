@@ -30,7 +30,7 @@ func goTree() fstest.MapFS {
 		)},
 		"store/row.go": {Data: []byte(
 			"package store\n\nimport \"example.test/fix/api\"\n\n" +
-				"// Row is one record.\n//+gen:table name=rows\n" +
+				"// Row is one record.\n//+fixture:gen:table name=rows\n" +
 				"type Row struct {\n\towner api.User\n\tcount int\n}\n\n" +
 				"func (r *Row) Get(n int) int { return r.count + n }\n",
 		)},
@@ -44,13 +44,28 @@ func goTree() fstest.MapFS {
 	}
 }
 
+// The signature root, its package and its one unexported
+// declaration, which a signature-only load drops.
+const (
+	depRoot    = "dep"
+	depPackage = "example.test/fix/dep"
+	hiddenName = "hidden"
+)
+
+// unparsedCode pins the code a syntax error reports under: the
+// satellite's prefix, golang.CodePrefix, and the first number.
+const unparsedCode = "GOLANG-0001"
+
 // setup is the suite's entry over the whole-contract fixture.
 func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 	return frontend.New(nil), &frontendtest.Fixture{
 		Sources:    goTree(),
-		Signatures: []string{"dep"},
-		Schemas:    frontendtest.ScriptedSchemas(),
-		Keys:       frontend.Keys,
+		Signatures: []string{depRoot},
+		Dropped: []symbol.Identity{
+			{Lang: frontend.Lang, Package: depPackage, Name: hiddenName, Kind: symbol.KindConstant},
+		},
+		Schemas: frontendtest.ScriptedSchemas(),
+		Keys:    frontend.Keys,
 	}
 }
 
@@ -59,48 +74,69 @@ func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 func TestNew(t *testing.T) {
 	t.Parallel()
 
-	t.Run("passes the conformance suite", func(t *testing.T) {
-		t.Parallel()
-		frontendtest.RunFrontendSuite(t, setup)
-	})
-
-	t.Run("reports a file the parser refused, and continues", func(t *testing.T) {
+	t.Run("New", func(t *testing.T) {
 		t.Parallel()
 
-		f := frontend.New(nil)
-		u := unitOf(t, f, goTree(), "bad/oops.go")
-		assert.NoError(t, f.Parse(context.Background(), u),
-			"a syntax error is the source's problem, not the load's")
-	})
+		t.Run("passes the conformance suite", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("keys its units under the frontend's own version", func(t *testing.T) {
-		t.Parallel()
+			frontendtest.RunFrontendSuite(t, setup)
+		})
 
-		v, versioned := frontend.New(nil).(plugin.Versioned)
-		assert.True(t, versioned, "the frontend states a version")
-		assert.Equal(t, v.Version(), golang.FrontendVersion,
-			"the frontend's, so a graph change bumps what the unit keys fold")
-	})
+		t.Run("parses past a file with a syntax error", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("claims no vendor tree", func(t *testing.T) {
-		t.Parallel()
+			f := frontend.New(nil)
+			u := unitOf(t, f, goTree(), "bad/oops.go")
+			assert.NoError(t, f.Parse(context.Background(), u),
+				"a syntax error is the source's problem, not the load's")
+		})
 
-		fx := rulestest.Loaded(t, frontend.New(nil), fstest.MapFS{
-			"go.mod":                        {Data: []byte("module example.test/fix\n")},
-			"api/user.go":                   {Data: []byte("package api\n\ntype User struct{}\n")},
-			"vendor/example.com/lib/lib.go": {Data: []byte("package lib\n\ntype L struct{}\n")},
-		}, frontend.Keys)
-		pkg := func(path string) bool {
-			_, held := fx.Graph.PackageOf(symbol.Identity{Lang: frontend.Lang, Package: path, Kind: symbol.KindPackage})
-			return held
-		}
-		assert.True(t, pkg("example.test/fix/api"), "the module's package loads")
-		assert.False(t, pkg("example.test/fix/vendor/example.com/lib"),
-			"and a vendored copy of a dependency does not")
+		t.Run("returns a frontend that reports a syntax error as GOLANG-0001", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedFindings(t, nil, plugin.DepthFull, "package bad\n\nfunc ({ nope\n")
+			assert.NotEmpty(t, found, "the syntax error reports")
+			assert.Equal(t, found[0].Code.String(), unparsedCode, "under the satellite's prefix and the first number")
+		})
+
+		t.Run("returns a frontend whose language cannot overload", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, frontend.New(nil).Overloads(), "Go declares each function and method once by name")
+		})
+
+		t.Run("returns the frontend's own version", func(t *testing.T) {
+			t.Parallel()
+
+			v, versioned := frontend.New(nil).(plugin.Versioned)
+			assert.True(t, versioned, "the frontend states a version")
+			assert.Equal(t, v.Version(), golang.FrontendVersion,
+				"the version is the frontend's, so a graph change bumps what the unit keys fold")
+		})
+
+		t.Run("claims no vendor tree", func(t *testing.T) {
+			t.Parallel()
+
+			fx := rulestest.Loaded(t, frontend.New(nil), fstest.MapFS{
+				"go.mod":                        {Data: []byte("module example.test/fix\n")},
+				"api/user.go":                   {Data: []byte("package api\n\ntype User struct{}\n")},
+				"vendor/example.com/lib/lib.go": {Data: []byte("package lib\n\ntype L struct{}\n")},
+			}, frontend.Keys)
+			pkg := func(path string) bool {
+				id := symbol.Identity{Lang: frontend.Lang, Package: path, Kind: symbol.KindPackage}
+				_, held := fx.Graph.PackageOf(id)
+				return held
+			}
+			assert.True(t, pkg("example.test/fix/api"), "the module's package loads")
+			assert.False(t, pkg("example.test/fix/vendor/example.com/lib"),
+				"a vendored copy of a dependency does not load")
+		})
 	})
 }
 
-// unitOf partitions a tree and returns the unit with one file.
+// unitOf partitions a tree and returns the unit with one file,
+// reading carriers under the suite's brand.
 func unitOf(
 	tb assert.TB, f plugin.Frontend, tree fstest.MapFS, member string,
 ) *plugin.SourceUnit {
@@ -118,11 +154,11 @@ func unitOf(
 		for _, ref := range part {
 			if ref.Path == member {
 				return plugin.NewSourceUnit(part, tree, plugin.DepthFull,
-					f.Syntax(), diag.NewSink(), f.Name())
+					f.Syntax(), brand, diag.NewSink(), f.Name())
 			}
 		}
 	}
-	tb.Fatalf("no unit holds %s", member)
+	tb.Fatalf("no unit contains %s", member)
 	return nil
 }
 

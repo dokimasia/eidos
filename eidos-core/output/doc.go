@@ -9,10 +9,9 @@
 // the marker an ecosystem recognises as generated code, one
 // derivation line per emitting plugin and per source the file
 // derives from, the body unchanged, and the trailer that closes
-// it. [Contract.Verify] reads a stamped file back and holds it
-// whole; [Read] parses any brand's frame and checks nothing,
-// which is what tells another tool's file from a hand-written
-// one.
+// it. [Contract.Verify] reads a stamped file back and checks it
+// whole. [Read] parses any brand's frame and checks nothing, which
+// is what tells another tool's file from a hand-written one.
 //
 // # The frame
 //
@@ -31,10 +30,10 @@
 // while agreeing on nothing else. Because the trailer is the
 // final line, bytes appended after it fail verification.
 //
-// The frame carries no version, no date and no command line:
-// two runs over one workspace produce identical bytes whatever
-// phrasing started them, and a record that grows a key still
-// reads, because a reader skips the keys it does not know.
+// The frame records no version, no date and no command line: two
+// runs over one workspace produce identical bytes whatever phrasing
+// started them. A record that grows a key still reads, because a
+// reader skips the keys it does not know.
 //
 // # The sinks
 //
@@ -48,22 +47,28 @@
 // its mtime untouched, because build systems key on mtimes.
 // Anything else is written to a staging file and renamed over the
 // target, so a reader sees the old file or the new one and never
-// half of either. The disk sink resolves every path inside a root
-// opened once, so a symlink pointing out of the tree does not
-// escape it: the jail is the operating system's, and the path
-// check at staging is only the first refusal.
+// half of either.
+//
+// The disk sink writes as one brand. It overwrites an existing file
+// only when the file is that brand's intact output, which is the
+// check [Contract.Verify] makes. It refuses a hand-written file,
+// another brand's output and an output edited since stamping, and
+// leaves each as it is. It resolves every path inside a root opened
+// once, so a symlink pointing out of the tree does not escape it:
+// the jail is the operating system's, and the path check at staging
+// is only the first refusal.
 //
 // # Failure semantics
 //
 // Everything here returns errors and nothing panics. [Stamp]
-// refuses what would break the frame: a body carrying a carriage
-// return or not ending in a newline, and an empty or multi-line
+// refuses what would break the frame: a body with a carriage
+// return or without a final newline, and an empty or multi-line
 // plugin or source name. The text policy is LF, and a formatter
 // emitting CRLF is where that violation is fixed.
 //
 // A sink refuses a path that is invalid, climbs out of the root,
 // ends in the reserved staging suffix, or was staged before, and
-// answers [ErrFinished] to every call after Commit or Discard. A
+// returns [ErrFinished] for every call after Commit or Discard. A
 // commit keeps going past a file that fails and joins the errors,
 // so one unwritable path does not withhold the rest.
 //

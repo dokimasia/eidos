@@ -97,7 +97,7 @@ func (l Leaves) Literal(v emit.Value) (string, error) {
 	switch v.Literal {
 	case emit.LiteralInt, emit.LiteralFloat:
 		if v.Text == "" {
-			return "", render.RefuseValue(lang, "a %s literal carries no text", v.Literal)
+			return "", render.RefuseValue(lang, "a %s literal has no text", v.Literal)
 		}
 		if l.Number == nil {
 			return v.Text, nil
@@ -127,13 +127,12 @@ func (l Leaves) Literal(v emit.Value) (string, error) {
 // and hands each spelling to the target, so a language states its
 // syntax once and never its recursion.
 //
-// The walk
-// refuses a value the vocabulary does not declare, a conversion or an
-// address wrapping nothing, a composite or a conversion naming no
-// type or a type that spells nothing, and a call naming no callee or
-// a callee without a name. Each refusal names what is missing and is
-// a [render.ValueError], so the render reports it under its value
-// code.
+// The walk refuses a value the vocabulary does not declare, a
+// conversion or an address wrapping nothing, a composite or a
+// conversion naming no type or a type that spells nothing, and a call
+// naming no callee or a callee without a name. Each refusal names
+// what is missing and is a [render.ValueError], so the render reports
+// it under its value code.
 func Value(t Target, v emit.Value) (string, error) {
 	switch v.Kind {
 	case emit.ValueLiteral:

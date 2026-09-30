@@ -24,14 +24,14 @@ const Lang = golang.Lang
 // UnparsedFile reports a syntax error, positioned at it: the
 // source's problem, and the load continues with every declaration
 // the parser still recovered.
-var UnparsedFile = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
+var UnparsedFile = diag.MustRegister(golang.CodePrefix, diag.CodeSpec{
 	Number:  1,
 	Meaning: "a Go file has a syntax error",
 })
 
 // BadCarrier reports a +-prefixed doc line the kernel grammar
 // refused: the carrier attaches nothing and the load continues.
-var BadCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
+var BadCarrier = diag.MustRegister(golang.CodePrefix, diag.CodeSpec{
 	Number:  2,
 	Meaning: "a directive carrier is outside the kernel grammar",
 })
@@ -39,7 +39,7 @@ var BadCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 // UnaddressedCarrier reports a directive carrier on a subject the
 // model cannot address, such as a parameter, a result or an import,
 // so the author learns that the directive attached nowhere.
-var UnaddressedCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
+var UnaddressedCarrier = diag.MustRegister(golang.CodePrefix, diag.CodeSpec{
 	Number:  3,
 	Meaning: "a directive carrier is on a subject the model cannot address",
 })
@@ -48,7 +48,7 @@ var UnaddressedCarrier = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
 // names another package than the files before it in its directory.
 // The load keeps the first name and continues. The go tool refuses
 // the directory.
-var MixedPackage = diag.MustRegister(diag.Prefix("GOLANG"), diag.CodeSpec{
+var MixedPackage = diag.MustRegister(golang.CodePrefix, diag.CodeSpec{
 	Number:  4,
 	Meaning: "a directory's Go files declare two package names",
 })
@@ -65,8 +65,8 @@ type Options struct {
 }
 
 // Keys registers every golang key: the satellite root's one
-// registration, re-exported here where the corpus and the suite
-// fixtures reach for it.
+// registration, re-exported here, where the corpus and the suite
+// fixtures use it.
 var Keys = golang.Keys
 
 // New builds the Go frontend through the kit. A nil options value

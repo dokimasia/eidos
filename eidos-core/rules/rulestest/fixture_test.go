@@ -49,6 +49,7 @@ func setup(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
 		Sink:      sink,
 		PluginSet: []byte("rulestest"),
+		Brand:     frontendtest.Brand,
 	})
 	assert.NoError(tb, err, "the scripted tree loads")
 	registry := meta.NewRegistry()
@@ -65,15 +66,41 @@ func TestLoaded(t *testing.T) {
 	t.Run("Loaded", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("loads a tree into a fixture with the kernel's keys and the load's stamps", func(t *testing.T) {
+		t.Run("returns a sealed graph of the tree", func(t *testing.T) {
 			t.Parallel()
 
 			f := rulestest.Loaded(t, frontendtest.NewScripted(), scriptedTree(), frontendtest.ScriptedKeys)
-			assert.NotNil(t, f.Graph, "the graph loaded")
-			assert.True(t, f.Graph.Frozen(), "and sealed")
-			assert.False(t, f.Keys.IsZero(), "the kernel's keys registered")
-			assert.NotNil(t, f.Facts, "over a fact store")
-			assert.NotNil(t, f.Facts.Registry(), "whose registry the language's keys joined")
+			assert.NotNil(t, f.Graph, "the graph is loaded")
+			assert.True(t, f.Graph.Frozen(), "the graph is sealed")
+		})
+
+		t.Run("registers the kernel's keys", func(t *testing.T) {
+			t.Parallel()
+
+			f := rulestest.Loaded(t, frontendtest.NewScripted(), scriptedTree(), frontendtest.ScriptedKeys)
+			assert.False(t, f.Keys.IsZero(), "the kernel's keys are registered")
+		})
+
+		t.Run("registers the language's keys", func(t *testing.T) {
+			t.Parallel()
+
+			f := rulestest.Loaded(t, frontendtest.NewScripted(), scriptedTree(), frontendtest.ScriptedKeys)
+			_, held := f.Facts.Registry().Resolve(frontendtest.ScriptedTestKey)
+			assert.True(t, held, "the language's key is registered")
+		})
+
+		t.Run("reads a carrier written under the suite's brand", func(t *testing.T) {
+			t.Parallel()
+
+			tree := scriptedTree()
+			tree[apiFile].Data = []byte("package svc/api\n// +" + string(frontendtest.Brand) +
+				":table name=users\ntype User string\n")
+			f := rulestest.Loaded(t, frontendtest.NewScripted(), tree, frontendtest.ScriptedKeys)
+			attached := 0
+			for _, raws := range f.Graph.Directives() {
+				attached += len(raws)
+			}
+			assert.Equal(t, attached, 1, "the carrier attaches")
 		})
 	})
 }

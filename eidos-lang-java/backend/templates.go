@@ -17,12 +17,12 @@ const FileTemplate = "{{" + FuncPackage + " .Pkg}}{{" + render.BuiltinImports + 
 
 // The kind templates. Java states everything inside a type, so a
 // class, an interface and an enum are the only file-level
-// declarations, and every other kind is reported as one the target
-// cannot spell. Members render as public, because a generated API
-// exists to be called. Each template renders a file-level type and a
-// member type alike, so the keywords it writes are a member type's,
-// and the lowering refuses a file-level type stating what only a
-// member type can spell.
+// declarations, and the backend refuses every other file-level kind.
+// Members render as public, because a generated API exists to be
+// called. Each template renders a file-level type and a member type
+// alike, so the keywords it writes are a member type's, and the
+// lowering refuses a file-level type stating what only a member type
+// can spell.
 const (
 	// StructTemplate spells a class: annotation lines above the
 	// declaration, its keywords and type parameters behind the
@@ -94,13 +94,26 @@ const EnumTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 	"{{- end}}\n}{{with .Comment}} // {{.}}{{end}}\n"
 
 // KindTemplates maps each emit kind to the template that spells
-// it. A kind absent from the map is one the Java backend cannot
-// spell at file level: the render reports it and skips that
-// declaration, which is what the feature matrix records.
+// it. A file-level kind absent from the map is one the lowering
+// reshapes, as it does a sum, or one [RefusedKinds] refuses.
 func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,
 		symbol.KindInterface: InterfaceTemplate,
 		symbol.KindEnum:      EnumTemplate,
+	}
+}
+
+// RefusedKinds maps each emit kind Java declares no spelling for at
+// file level to the reason, which the render reports beside every
+// declaration of the kind it skips. Each is a member of a type in
+// Java, so a generator states it inside a class.
+func RefusedKinds() map[symbol.Kind]string {
+	return map[symbol.Kind]string{
+		symbol.KindFunction: "Java declares every function as a method inside a class",
+		symbol.KindMethod:   "Java declares a method inside the type it belongs to",
+		symbol.KindAlias:    "Java has no type alias",
+		symbol.KindConstant: "Java declares a constant as a static final field inside a class",
+		symbol.KindVariable: "Java declares a variable as a field inside a class",
 	}
 }

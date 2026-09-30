@@ -17,7 +17,7 @@ import (
 )
 
 // The frame's fixed spellings. The marker is what a toolchain
-// recognises as generated code; the keys are the grammar a reader
+// recognises as generated code. The keys are the grammar a reader
 // parses the derivation and the trailer with.
 const (
 	// markerPrefix and markerSuffix bracket the brand on the first
@@ -29,12 +29,22 @@ const (
 	keySource = "source"
 	// keyProvenance labels the trailer.
 	keyProvenance = "provenance"
-	// hashPrefix names the digest, so the trailer stays readable
+	// hashPrefix names the digest, so the trailer remains readable
 	// when a second digest is admitted beside it.
 	hashPrefix = "sha256:"
 	// hashLen is the hex width of a sha256 digest.
 	hashLen = sha256.Size * 2
+	// trailerKey opens a trailer's record: the provenance key and the
+	// digest's name.
+	trailerKey = ":" + keyProvenance + " " + hashPrefix
 )
+
+// TailSize is how many final bytes of a stamped file contain its
+// trailer's key. The key, the digest, the comment's closer and the
+// final line break end the file, 84 bytes and the closer, so 128
+// bytes contain the key for every closer up to 44 bytes, its
+// leading space included.
+const TailSize = 128
 
 // byteOrderMark is U+FEFF. The text policy forbids it anywhere in
 // a body. A stamped file starts with its marker line, and the Go
@@ -42,21 +52,23 @@ const (
 const byteOrderMark = 0xFEFF
 
 // Brand names the tool built on the kernel: the name the marker
-// attributes generation to and the trailer claims ownership
-// under. Lowercase letters, digits and hyphens, nothing else, so
-// the brand is safe in a comment line, a frame key and a
-// directory name without escaping.
+// attributes generation to, the trailer claims ownership under,
+// and a directive carrier opens with. A lowercase letter, then
+// lowercase letters, digits and hyphens, nothing else, so the brand
+// is safe in a comment line, a frame key, a directory name and a
+// carrier mark without escaping.
 //
 // There is no default. Two tools built on the kernel and run in
 // one repository must never prove ownership of each other's
-// files, so every consumer states its own name.
+// files or read each other's carriers, so every consumer states its
+// own name.
 type Brand string
 
-// Valid reports whether b is spelled the way the frame requires:
-// one character at least, every one a lowercase letter, a digit
-// or a hyphen.
+// Valid reports whether b is spelled the way the frame and the
+// carrier mark require: a lowercase letter first, then lowercase
+// letters, digits and hyphens.
 func (b Brand) Valid() bool {
-	if b == "" {
+	if b == "" || b[0] < 'a' || b[0] > 'z' {
 		return false
 	}
 	for i := range len(b) {
@@ -72,7 +84,7 @@ func brandByte(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= '0' && c <= '9' || c == '-'
 }
 
-// Provenance is the record a stamped file carries in its own
+// Provenance is the record a stamped file contains in its own
 // bytes: who generated it, from what, and the digest of the body
 // the trailer attests.
 type Provenance struct {
@@ -105,15 +117,16 @@ type Contract struct {
 
 // NewContract composes the stamp for one target.
 //
-// It refuses a brand outside [Brand.Valid] and a syntax carrying
-// neither a line form nor a block form, because a language
-// without comments cannot carry the frame. The line form is
+// It refuses a brand outside [Brand.Valid] and a syntax with
+// neither a line form nor a block form, because a language without
+// comments has no place for the frame. The line form is
 // preferred where a language has both: one line comment per frame
 // line reads in every editor and diffs one line per change.
 func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error) {
 	if !b.Valid() {
 		return nil, fmt.Errorf(
-			"output: %q is not a brand: lowercase letters, digits and hyphens", string(b),
+			"output: %q is not a brand: a lowercase letter, then lowercase letters, digits and hyphens",
+			string(b),
 		)
 	}
 	c := &Contract{brand: b}
@@ -125,7 +138,7 @@ func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error) {
 		c.closer = " " + s.Blocks[0].Close
 	default:
 		return nil, errors.New(
-			"output: the comment syntax carries neither a line form nor a block form",
+			"output: the comment syntax has neither a line form nor a block form",
 		)
 	}
 	return c, nil
@@ -153,7 +166,7 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 	}
 	if bytes.IndexByte(f.Body, '\r') >= 0 {
 		return nil, errors.New(
-			"output: the body carries a carriage return, and the text policy is LF",
+			"output: the body contains a carriage return, and the text policy is LF",
 		)
 	}
 	if !utf8.Valid(f.Body) {
@@ -192,24 +205,30 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 	return out.Bytes(), nil
 }
 
-// Verify reads a stamped file back and holds it whole: the frame
-// parses, the trailer carries this contract's brand, the trailer
+// Verify reads a stamped file back and checks it whole: the frame
+// parses, the trailer names this contract's brand, the trailer
 // is the file's final line, and its digest matches the body.
 //
 // It returns the record it verified. Anything appended after the
 // trailer, another brand's file, or a body edited since stamping
 // returns an error naming what broke.
-func (c *Contract) Verify(stamped []byte) (Provenance, error) {
+func (c *Contract) Verify(stamped []byte) (Provenance, error) { return verify(stamped, c.brand) }
+
+// verify reads a stamped file back and checks it against one brand:
+// the frame parses, the trailer names the brand, and the trailer's
+// digest matches the body. It is the ownership proof the contract
+// and the disk sink share.
+func verify(stamped []byte, brand Brand) (Provenance, error) {
 	f, held := parse(stamped)
 	if !held {
 		return Provenance{}, errors.New(
-			"output: the bytes carry no frame, so nothing here was generated",
+			"output: the bytes have no frame, so nothing here was generated",
 		)
 	}
-	if f.record.Brand != c.brand {
+	if f.record.Brand != brand {
 		return Provenance{}, fmt.Errorf(
-			"output: the file is branded %q and this contract stamps %q",
-			string(f.record.Brand), string(c.brand),
+			"output: the file is branded %q, not %q",
+			string(f.record.Brand), string(brand),
 		)
 	}
 	if got := digest(f.body); got != f.record.Hash {
@@ -238,7 +257,15 @@ func Read(stamped []byte) (Provenance, bool) {
 	return f.record, true
 }
 
-// frame is one parsed stamped file: the record it carries and the
+// HasTrailerKey reports whether bytes from a file's end contain the
+// key a trailer opens its record with. A file whose last [TailSize]
+// bytes contain no key has no frame [Read] parses, so a caller that
+// probes the tail reads the whole file only when this reports true.
+func HasTrailerKey(tail []byte) bool {
+	return bytes.Contains(tail, []byte(trailerKey))
+}
+
+// frame is one parsed stamped file: the record it contains and the
 // body its trailer attests.
 type frame struct {
 	record Provenance
@@ -249,7 +276,7 @@ type frame struct {
 // or the comment form. The trailer names both: the digest key
 // locates it, the brand reads backwards from that key, and
 // whatever precedes the brand is the comment opener every other
-// frame line carries. Writing one space after the opener is what
+// frame line opens with. Writing one space after the opener is what
 // makes the brand readable back out.
 func parse(stamped []byte) (frame, bool) {
 	if len(stamped) == 0 || stamped[len(stamped)-1] != '\n' {
@@ -262,8 +289,7 @@ func parse(stamped []byte) (frame, bool) {
 	}
 	trailer := string(head[cut+1:])
 
-	mark := ":" + keyProvenance + " "
-	at := strings.Index(trailer, mark+hashPrefix)
+	at := strings.Index(trailer, trailerKey)
 	if at < 0 {
 		return frame{}, false
 	}
@@ -275,11 +301,12 @@ func parse(stamped []byte) (frame, bool) {
 	if !brand.Valid() {
 		return frame{}, false
 	}
-	hashEnd := at + len(mark+hashPrefix) + hashLen
+	digestAt := at + len(trailerKey)
+	hashEnd := digestAt + hashLen
 	if hashEnd > len(trailer) {
 		return frame{}, false
 	}
-	if _, err := hex.DecodeString(trailer[at+len(mark+hashPrefix) : hashEnd]); err != nil {
+	if _, err := hex.DecodeString(trailer[digestAt:hashEnd]); err != nil {
 		return frame{}, false
 	}
 	c := &Contract{
@@ -287,7 +314,7 @@ func parse(stamped []byte) (frame, bool) {
 		opener: trailer[:start],
 		closer: trailer[hashEnd:],
 	}
-	return c.head(stamped[:cut+1], trailer[at+len(mark):hashEnd])
+	return c.head(stamped[:cut+1], trailer[digestAt-len(hashPrefix):hashEnd])
 }
 
 // head reads the frame above the body: the marker, the derivation
@@ -368,7 +395,7 @@ func frameWidth(c *Contract, entries int) int {
 }
 
 // derivation sorts and deduplicates one set of derivation values,
-// refusing what no line can carry.
+// refusing a value no line can contain.
 func derivation(values []string, key string) ([]string, error) {
 	slices.Sort(values)
 	values = slices.Compact(values)
@@ -378,7 +405,7 @@ func derivation(values []string, key string) ([]string, error) {
 		}
 		if strings.ContainsAny(v, "\r\n") {
 			return nil, fmt.Errorf(
-				"output: the %s %q carries a line break, and a derivation line is one line",
+				"output: the %s %q contains a line break, and a derivation line is one line",
 				key, v,
 			)
 		}

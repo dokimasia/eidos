@@ -10,13 +10,13 @@ import (
 )
 
 // Split reshapes one unit into one unit per file-level type,
-// because Java names a file after the public type it holds: the
-// filename spelling reads the lone type's name off each split
-// unit, and the routing key stays untouched, so the file's source
-// derivation survives the reshaping. Declarations of any other
-// kind stay together under the original key, where the render
-// reports them as kinds the target cannot spell. Each split
-// unit's provenance narrows to its own type's origin.
+// because Java names a file after the public type it declares: the
+// filename spelling reads the lone type's name off each split unit,
+// and the routing key is untouched, so the file's source derivation
+// survives the reshaping. Declarations of any other kind remain
+// together under the original key, where the render reports each
+// under the kind the backend refuses. Each split unit's provenance
+// narrows to its own type's origin.
 func Split(u plugin.Unit) []plugin.Unit {
 	out := make([]plugin.Unit, 0, len(u.Decls))
 	var rest []symbol.Symbol
@@ -40,8 +40,8 @@ func Split(u plugin.Unit) []plugin.Unit {
 	return out
 }
 
-// originsOf returns the one origin a declaration carries, and
-// nothing for a declaration carrying none.
+// originsOf returns a declaration's origin as a list of one, and
+// nothing for a declaration without an origin.
 func originsOf(d symbol.Symbol) []symbol.Identity {
 	if id, held := emit.OriginOf(d); held && !id.IsZero() {
 		return []symbol.Identity{id}

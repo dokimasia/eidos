@@ -13,6 +13,7 @@ import (
 	typescript "go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/spell"
 	"go.dokimi.dev/eidos/sdk/emit"
+	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -71,15 +72,325 @@ const (
 // through unchecked.
 const Anonymous = "unknown"
 
-// Funcs is the shared template vocabulary the kind templates call.
-func Funcs() template.FuncMap {
+// The brackets TypeScript writes an argument list in, and the
+// separator of a qualified name.
+const (
+	argsOpener   = "<"
+	argsCloser   = ">"
+	qualifierSep = "."
+)
+
+// The keywords a module-level binding opens with.
+const (
+	constBinding = "const"
+	letBinding   = "let"
+)
+
+// annotationSep, promiseOpen and promiseClose are the spellings an
+// async callable's annotation joins.
+const (
+	annotationSep = ": "
+	promiseOpen   = "Promise<"
+	promiseClose  = ">"
+)
+
+// refusalPrefix opens every refusal the backend returns: the
+// language's identity, as every backend's refusals open.
+const refusalPrefix = string(typescript.Lang) + ": "
+
+// Speller spells type references for one file. A declaration a
+// spelling names from another module is imported through the file's
+// import set, under its own name or a numbered one where another
+// import or a declaration of the file takes that name, and the
+// spelling names it through the bound name. The module is the
+// reference's target's where the target is a TypeScript declaration,
+// and the one the reference records where it has no target. A
+// Speller is not safe for concurrent use, because its set is not.
+type Speller struct {
+	set *render.ImportSet
+}
+
+// NewSpeller returns the speller for the file whose import set is
+// set. The set is not nil.
+func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
+
+// Spell writes a type reference in a type position, and imports what
+// it names for the type checker alone. The source spelling passes
+// through where the reference names nothing another module declares,
+// and a missing one spells [Anonymous]. A reference with arguments
+// has its bare name in Spelling, and the argument list spells here in
+// angle brackets. A structural reference keeps its written spelling,
+// and Spell returns an error where a type inside it imports under
+// another name, because TypeScript's composite spelling does not
+// follow from its structure.
+func (s Speller) Spell(t *emit.TypeRef) (string, error) {
+	return s.spell(t, true)
+}
+
+// IndexSig writes an index signature whole: the one key parameter
+// in brackets, the element type behind the colon. It refuses what
+// an index signature cannot state: more parameters, no result, type
+// parameters or an accessor.
+func (s Speller) IndexSig(m *emit.Method) (string, error) {
+	switch {
+	case len(m.Params) != 1 || m.Params[0].Name == "" || m.Params[0].Type == nil:
+		return "", refuse("an index signature takes one named, typed key, and %s does not", m.Name)
+	case len(m.Returns) != 1:
+		return "", refuse("an index signature states one element type, and %s does not", m.Name)
+	case len(m.TypeParams) != 0 || m.Accessor != symbol.AccessorNone:
+		return "", refuse("an index signature admits no type parameters and no accessor, "+
+			"and %s states one", m.Name)
+	}
+	key, err := s.Spell(m.Params[0].Type)
+	if err != nil {
+		return "", err
+	}
+	elem, err := s.Spell(m.Returns[0].Type)
+	if err != nil {
+		return "", err
+	}
+	return "[" + m.Params[0].Name + ": " + key + "]: " + elem + ";", nil
+}
+
+// TypeParams writes a type parameter list in angle brackets, or
+// nothing for a declaration stating none: the declared variance
+// before the name, bounds folded into an intersection behind
+// extends, and the default behind an equals sign. A value
+// parameter refuses, because the model's Const takes a value
+// argument and TypeScript's const modifier applies to a type
+// argument.
+func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
+	if len(ps) == 0 {
+		return "", nil
+	}
+	parts := make([]string, 0, len(ps))
+	for _, p := range ps {
+		if p.Const {
+			return "", refuse("a type parameter takes a type, and %s takes a value", p.Name)
+		}
+		part := variance(p.Variance) + p.Name
+		if len(p.Bounds) > 0 {
+			bounds, err := s.all(p.Bounds, s.Spell)
+			if err != nil {
+				return "", err
+			}
+			part += " extends " + strings.Join(bounds, " & ")
+		}
+		if p.Default != nil {
+			def, err := s.Spell(p.Default)
+			if err != nil {
+				return "", err
+			}
+			part += " = " + def
+		}
+		parts = append(parts, part)
+	}
+	return argsOpener + strings.Join(parts, ", ") + argsCloser, nil
+}
+
+// Heritage writes a type's heritage clauses: one base behind
+// extends and the contracts behind implements on a class, the
+// widened contracts behind extends on an interface. A class's base
+// is a value at run time, so it imports as a value, and every
+// contract imports for the type checker alone. A second class base
+// refuses, because TypeScript extends one, and an embed refuses on
+// either, because nothing promotes members.
+func (s Speller) Heritage(d symbol.Symbol) (string, error) {
+	switch t := d.(type) {
+	case *emit.Struct:
+		if len(t.Embeds) > 0 {
+			return "", unembedded(t.Name)
+		}
+		var part string
+		switch len(t.Extends) {
+		case 0:
+		case 1:
+			base, err := s.spellValue(t.Extends[0])
+			if err != nil {
+				return "", err
+			}
+			part = " extends " + base
+		default:
+			return "", refuse("a class extends one base, and %s states %d", t.Name, len(t.Extends))
+		}
+		if len(t.Implements) > 0 {
+			contracts, err := s.all(t.Implements, s.Spell)
+			if err != nil {
+				return "", err
+			}
+			part += " implements " + strings.Join(contracts, ", ")
+		}
+		return part, nil
+	case *emit.Interface:
+		if len(t.Embeds) > 0 {
+			return "", unembedded(t.Name)
+		}
+		if len(t.Extends) == 0 {
+			return "", nil
+		}
+		widened, err := s.all(t.Extends, s.Spell)
+		if err != nil {
+			return "", err
+		}
+		return " extends " + strings.Join(widened, ", "), nil
+	default:
+		return "", refuse("no heritage clause spells a %s", d.Kind())
+	}
+}
+
+// Params writes a parameter list, the rest marker included and a
+// stated default behind its equals sign, verbatim from the model. A
+// rest parameter stating a default refuses, because TypeScript
+// initializes no rest.
+func (s Speller) Params(ps []*emit.Param) (string, error) {
+	parts := make([]string, 0, len(ps))
+	unnamed := 0
+	for _, p := range ps {
+		name := p.Name
+		if name == "" {
+			name = "_"
+			if unnamed > 0 {
+				name = fmt.Sprintf("_%d", unnamed)
+			}
+			unnamed++
+		} else if !spell.IsIdentifier(name) {
+			return "", refuse("a parameter admits no quoted form, and %q is not an identifier", name)
+		}
+		typ, err := s.Spell(p.Type)
+		if err != nil {
+			return "", err
+		}
+		if p.Variadic != symbol.VariadicNone {
+			switch {
+			case p.Default != "":
+				return "", refuse("a rest parameter takes no default, and %s states one", name)
+			case p.Optional:
+				return "", refuse("a rest parameter is optional by shape, and %s states it", name)
+			}
+			parts = append(parts, "..."+name+": "+typ+"[]"+textfmt.Inline(p.Comment))
+			continue
+		}
+		if p.Optional && p.Default != "" {
+			return "", refuse("a default already makes %s optional, and it states the marker "+
+				"beside it", name)
+		}
+		part := name
+		if p.Optional {
+			part += "?"
+		}
+		part += ": " + typ
+		if p.Default != "" {
+			part += " = " + p.Default
+		}
+		parts = append(parts, part+textfmt.Inline(p.Comment))
+	}
+	return strings.Join(parts, ", "), nil
+}
+
+// Returns writes a callable's return annotation: the [Results]
+// spelling, inside Promise for an async callable, because an async
+// function returns a promise of its result, and nothing for a
+// setter, which TypeScript forbids an annotation.
+func (s Speller) Returns(d symbol.Symbol) (string, error) {
+	var rs []*emit.Return
+	async := false
+	switch c := d.(type) {
+	case *emit.Function:
+		rs, async = c.Returns, c.Async
+	case *emit.Method:
+		if c.Accessor == symbol.AccessorSet {
+			return "", nil
+		}
+		rs, async = c.Returns, c.Async
+	}
+	annotation, err := s.Results(rs)
+	if err != nil || !async {
+		return annotation, err
+	}
+	return annotationSep + promiseOpen + strings.TrimPrefix(annotation, annotationSep) + promiseClose, nil
+}
+
+// Results writes a return type annotation: void for none, the
+// type for one, and a tuple for several, because TypeScript
+// returns one value however many the delegate hands back.
+func (s Speller) Results(rs []*emit.Return) (string, error) {
+	parts := make([]string, 0, len(rs))
+	for _, r := range rs {
+		typ, err := s.Spell(r.Type)
+		if err != nil {
+			return "", err
+		}
+		parts = append(parts, typ+textfmt.Inline(r.Comment))
+	}
+	switch len(parts) {
+	case 0:
+		return ": void", nil
+	case 1:
+		return ": " + parts[0], nil
+	default:
+		return ": [" + strings.Join(parts, ", ") + "]", nil
+	}
+}
+
+// spellValue writes a reference in a value position, where the
+// declaration must exist at run time, such as a class's base.
+func (s Speller) spellValue(t *emit.TypeRef) (string, error) {
+	return s.spell(t, false)
+}
+
+// spell writes a reference, importing what it names for the type
+// checker alone where typeOnly is set.
+func (s Speller) spell(t *emit.TypeRef, typeOnly bool) (string, error) {
+	out, err := spellref.SpellWith(t, argsOpener, argsCloser, Anonymous, s.qualify(typeOnly))
+	if err != nil {
+		return "", refuse("%w", err)
+	}
+	return out, nil
+}
+
+// qualify returns the spelling of a named reference through its
+// import: the first segment of a qualified spelling is the
+// declaration the module exports, and the rest names a member of it.
+func (s Speller) qualify(typeOnly bool) spellref.Qualify {
+	return func(t *emit.TypeRef) (string, error) {
+		module := spellref.PackageOf(t, typescript.Lang)
+		if module == "" {
+			return t.Spelling, nil
+		}
+		head, rest, qualified := strings.Cut(t.Spelling, qualifierSep)
+		local := s.set.BindItem(module, head, typeOnly)
+		if !qualified {
+			return local, nil
+		}
+		return local + qualifierSep + rest, nil
+	}
+}
+
+// all writes each reference through spell, in order.
+func (Speller) all(ts []*emit.TypeRef, spell func(*emit.TypeRef) (string, error)) ([]string, error) {
+	out := make([]string, 0, len(ts))
+	for _, t := range ts {
+		part, err := spell(t)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, part)
+	}
+	return out, nil
+}
+
+// Funcs returns the shared template vocabulary the kind templates
+// call, bound to one file's import set: every declaration a helper
+// names from another module is imported there.
+func Funcs(set *render.ImportSet) template.FuncMap {
+	s := NewSpeller(set)
 	return template.FuncMap{
 		FuncDocs:       Docs,
-		FuncSpell:      Spell,
-		FuncTypeParams: TypeParams,
-		FuncParams:     Params,
-		FuncResults:    Results,
-		FuncReturns:    Returns,
+		FuncSpell:      s.Spell,
+		FuncTypeParams: s.TypeParams,
+		FuncParams:     s.Params,
+		FuncResults:    s.Results,
+		FuncReturns:    s.Returns,
 		FuncMods:       Mods,
 		FuncMemberMods: MemberMods,
 		FuncIndexMods:  IndexMods,
@@ -88,14 +399,24 @@ func Funcs() template.FuncMap {
 		FuncSigMods:    SigMods,
 		FuncBinding:    Binding,
 		FuncDecorators: Decorators,
-		FuncHeritage:   Heritage,
+		FuncHeritage:   s.Heritage,
 		FuncAccessor:   AccessorKw,
 		FuncHard:       Hard,
-		FuncIndexSig:   IndexSig,
+		FuncIndexSig:   s.IndexSig,
 		FuncPropKey:    PropKey,
 		FuncMethodKey:  MethodKey,
 		FuncEnumKey:    EnumKey,
 	}
+}
+
+// Docs writes a declaration's documentation as a TSDoc block,
+// each line prefixed with the given indentation, so a member's
+// doc is at its member's depth.
+func Docs(lines []string, prefix ...string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	return textfmt.BlockDocs(lines, "/**", " * ", " */", prefix...)
 }
 
 // PropKey writes a field's property key: an identifier bare, and any
@@ -192,88 +513,6 @@ func Hard(s symbol.Symbol) (string, error) {
 	return "#", nil
 }
 
-// IndexSig writes an index signature whole: the one key parameter
-// in brackets, the element type behind the colon. It refuses what
-// an index signature cannot state: more parameters, no result, type
-// parameters or an accessor.
-func IndexSig(m *emit.Method) (string, error) {
-	switch {
-	case len(m.Params) != 1 || m.Params[0].Name == "" || m.Params[0].Type == nil:
-		return "", refuse("an index signature takes one named, typed key, and %s does not", m.Name)
-	case len(m.Returns) != 1:
-		return "", refuse("an index signature states one element type, and %s does not", m.Name)
-	case len(m.TypeParams) != 0 || m.Accessor != symbol.AccessorNone:
-		return "", refuse("an index signature admits no type parameters and no accessor, "+
-			"and %s states one", m.Name)
-	}
-	return "[" + m.Params[0].Name + ": " + Spell(m.Params[0].Type) + "]: " +
-		Spell(m.Returns[0].Type) + ";", nil
-}
-
-// Docs writes a declaration's documentation as a TSDoc block,
-// each line prefixed with the given indentation, so a member's
-// doc is at its member's depth.
-func Docs(lines []string, prefix ...string) string {
-	if len(lines) == 0 {
-		return ""
-	}
-	return textfmt.BlockDocs(lines, "/**", " * ", " */", prefix...)
-}
-
-// Spell writes a type reference. The source spelling passes
-// through verbatim, and a missing one spells [Anonymous]. A
-// reference with arguments has its bare name in Spelling, and the
-// argument list spells here in angle brackets.
-func Spell(t *emit.TypeRef) string {
-	return spellref.Spell(t, "<", ">", Anonymous)
-}
-
-// TypeParams writes a type parameter list in angle brackets, or
-// nothing for a declaration stating none: the declared variance
-// before the name, bounds folded into an intersection behind
-// extends, and the default behind an equals sign. A value
-// parameter refuses, because the model's Const takes a value
-// argument and TypeScript's const modifier applies to a type
-// argument.
-func TypeParams(ps []*emit.TypeParam) (string, error) {
-	if len(ps) == 0 {
-		return "", nil
-	}
-	parts := make([]string, 0, len(ps))
-	for _, p := range ps {
-		if p.Const {
-			return "", refuse("a type parameter takes a type, and %s takes a value", p.Name)
-		}
-		part := variance(p.Variance) + p.Name
-		if len(p.Bounds) > 0 {
-			bounds := make([]string, 0, len(p.Bounds))
-			for _, b := range p.Bounds {
-				bounds = append(bounds, Spell(b))
-			}
-			part += " extends " + strings.Join(bounds, " & ")
-		}
-		if p.Default != nil {
-			part += " = " + Spell(p.Default)
-		}
-		parts = append(parts, part)
-	}
-	return "<" + strings.Join(parts, ", ") + ">", nil
-}
-
-// variance writes the declaration-site keyword TypeScript places
-// before a parameter's name: in for contravariant, out for
-// covariant, nothing for invariant.
-func variance(v symbol.Variance) string {
-	switch v {
-	case symbol.VarianceIn:
-		return "in "
-	case symbol.VarianceOut:
-		return "out "
-	default:
-		return ""
-	}
-}
-
 // Mods writes a module-level declaration's leading keywords:
 // export for a public or unstated visibility, nothing for a
 // package-scoped one, abstract before an abstract class, and
@@ -348,21 +587,6 @@ func Mods(d symbol.Symbol) (string, error) {
 		return exported(t.Visibility, t.Name)
 	default:
 		return "", refuse("no module-level keywords spell a %s", d.Kind())
-	}
-}
-
-// exported writes the module-level visibility: export for public
-// or unstated, nothing for package scope, which is the module
-// itself. The other scopes have no module-level spelling.
-func exported(v symbol.Visibility, name string) (string, error) {
-	switch v {
-	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
-		return "export ", nil
-	case symbol.VisibilityPackage:
-		return "", nil
-	default:
-		return "", refuse("a module-level declaration is exported or module-scoped, and %s "+
-			"states another scope", name)
 	}
 }
 
@@ -474,23 +698,6 @@ func CtorMods(m *emit.Method) (string, error) {
 	return accessibility(m.Visibility, m.Name)
 }
 
-// accessibility writes a class member's accessibility: nothing
-// for public or unstated, the keyword for private and protected.
-// Package and internal scopes have no member spelling.
-func accessibility(v symbol.Visibility, name string) (string, error) {
-	switch v {
-	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
-		return "", nil
-	case symbol.VisibilityPrivate:
-		return "private ", nil
-	case symbol.VisibilityProtected:
-		return "protected ", nil
-	default:
-		return "", refuse("a class member states public, private or protected, and %s "+
-			"states another scope", name)
-	}
-}
-
 // PropMods writes an interface property's keywords: readonly
 // where the property is immutable. An interface member takes no
 // accessibility, no static level and no decorator, so each of them
@@ -541,68 +748,6 @@ func SigMods(m *emit.Method) (string, error) {
 	return "", nil
 }
 
-// Heritage writes a type's heritage clauses: one base behind
-// extends and the contracts behind implements on a class, the
-// widened contracts behind extends on an interface. A second
-// class base refuses, because TypeScript extends one, and an
-// embed refuses on either, because nothing promotes members.
-func Heritage(d symbol.Symbol) (string, error) {
-	switch t := d.(type) {
-	case *emit.Struct:
-		if len(t.Embeds) > 0 {
-			return "", unembedded(t.Name)
-		}
-		var part string
-		switch len(t.Extends) {
-		case 0:
-		case 1:
-			part = " extends " + Spell(t.Extends[0])
-		default:
-			return "", refuse("a class extends one base, and %s states %d", t.Name, len(t.Extends))
-		}
-		if len(t.Implements) > 0 {
-			part += " implements " + joined(t.Implements)
-		}
-		return part, nil
-	case *emit.Interface:
-		if len(t.Embeds) > 0 {
-			return "", unembedded(t.Name)
-		}
-		if len(t.Extends) > 0 {
-			return " extends " + joined(t.Extends), nil
-		}
-		return "", nil
-	default:
-		return "", refuse("no heritage clause spells a %s", d.Kind())
-	}
-}
-
-// joined writes references as a comma-joined list.
-func joined(ts []*emit.TypeRef) string {
-	parts := make([]string, 0, len(ts))
-	for _, t := range ts {
-		parts = append(parts, Spell(t))
-	}
-	return strings.Join(parts, ", ")
-}
-
-// unthrown is the refusal for declared failure types: a
-// TypeScript signature declares none.
-func unthrown(name string) error {
-	return refuse("a signature declares no failure types, and %s states throws", name)
-}
-
-// unembedded is the refusal for embeds: nothing promotes members.
-func unembedded(name string) error {
-	return refuse("nothing promotes members, and %s states embeds", name)
-}
-
-// The keywords a module-level binding opens with.
-const (
-	constBinding = "const"
-	letBinding   = "let"
-)
-
 // Binding writes a module-level binding's keyword: const for an
 // immutable binding, let otherwise. An immutable binding without an
 // initializer refuses, because TypeScript requires a const to be
@@ -626,110 +771,69 @@ func Decorators(a symbol.Annotations, prefix ...string) string {
 	return textfmt.Marked(a, "@", "", prefix...)
 }
 
+// variance writes the declaration-site keyword TypeScript places
+// before a parameter's name: in for contravariant, out for
+// covariant, nothing for invariant.
+func variance(v symbol.Variance) string {
+	switch v {
+	case symbol.VarianceIn:
+		return "in "
+	case symbol.VarianceOut:
+		return "out "
+	default:
+		return ""
+	}
+}
+
+// exported writes the module-level visibility: export for public
+// or unstated, nothing for package scope, which is the module
+// itself. The other scopes have no module-level spelling.
+func exported(v symbol.Visibility, name string) (string, error) {
+	switch v {
+	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
+		return "export ", nil
+	case symbol.VisibilityPackage:
+		return "", nil
+	default:
+		return "", refuse("a module-level declaration is exported or module-scoped, and %s "+
+			"states another scope", name)
+	}
+}
+
+// accessibility writes a class member's accessibility: nothing
+// for public or unstated, the keyword for private and protected.
+// Package and internal scopes have no member spelling.
+func accessibility(v symbol.Visibility, name string) (string, error) {
+	switch v {
+	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
+		return "", nil
+	case symbol.VisibilityPrivate:
+		return "private ", nil
+	case symbol.VisibilityProtected:
+		return "protected ", nil
+	default:
+		return "", refuse("a class member states public, private or protected, and %s "+
+			"states another scope", name)
+	}
+}
+
+// unthrown is the refusal for declared failure types: a
+// TypeScript signature declares none.
+func unthrown(name string) error {
+	return refuse("a signature declares no failure types, and %s states throws", name)
+}
+
+// unembedded is the refusal for embeds: nothing promotes members.
+func unembedded(name string) error {
+	return refuse("nothing promotes members, and %s states embeds", name)
+}
+
 // undecorated is the refusal for an annotation list on a
 // declaration decorators cannot mark.
 func undecorated(name string) error {
 	return refuse("decorators mark classes and their members, and %s states annotations "+
 		"elsewhere", name)
 }
-
-// Params writes a parameter list, the rest marker included and a
-// stated default behind its equals sign, verbatim from the model. A
-// rest parameter stating a default refuses, because TypeScript
-// initializes no rest.
-func Params(ps []*emit.Param) (string, error) {
-	parts := make([]string, 0, len(ps))
-	unnamed := 0
-	for _, p := range ps {
-		name := p.Name
-		if name == "" {
-			name = "_"
-			if unnamed > 0 {
-				name = fmt.Sprintf("_%d", unnamed)
-			}
-			unnamed++
-		} else if !spell.IsIdentifier(name) {
-			return "", refuse("a parameter admits no quoted form, and %q is not an identifier", name)
-		}
-		if p.Variadic != symbol.VariadicNone {
-			switch {
-			case p.Default != "":
-				return "", refuse("a rest parameter takes no default, and %s states one", name)
-			case p.Optional:
-				return "", refuse("a rest parameter is optional by shape, and %s states it", name)
-			}
-			parts = append(parts, "..."+name+": "+Spell(p.Type)+"[]"+textfmt.Inline(p.Comment))
-			continue
-		}
-		if p.Optional && p.Default != "" {
-			return "", refuse("a default already makes %s optional, and it states the marker "+
-				"beside it", name)
-		}
-		part := name
-		if p.Optional {
-			part += "?"
-		}
-		part += ": " + Spell(p.Type)
-		if p.Default != "" {
-			part += " = " + p.Default
-		}
-		parts = append(parts, part+textfmt.Inline(p.Comment))
-	}
-	return strings.Join(parts, ", "), nil
-}
-
-// Returns writes a callable's return annotation: the [Results]
-// spelling, inside Promise for an async callable, because an async
-// function returns a promise of its result, and nothing for a
-// setter, which TypeScript forbids an annotation.
-func Returns(d symbol.Symbol) string {
-	var rs []*emit.Return
-	async := false
-	switch c := d.(type) {
-	case *emit.Function:
-		rs, async = c.Returns, c.Async
-	case *emit.Method:
-		if c.Accessor == symbol.AccessorSet {
-			return ""
-		}
-		rs, async = c.Returns, c.Async
-	}
-	annotation := Results(rs)
-	if !async {
-		return annotation
-	}
-	return annotationSep + promiseOpen + strings.TrimPrefix(annotation, annotationSep) + promiseClose
-}
-
-// annotationSep, promiseOpen and promiseClose are the spellings an
-// async callable's annotation joins.
-const (
-	annotationSep = ": "
-	promiseOpen   = "Promise<"
-	promiseClose  = ">"
-)
-
-// Results writes a return type annotation: void for none, the
-// type for one, and a tuple for several, because TypeScript
-// returns one value however many the delegate hands back.
-func Results(rs []*emit.Return) string {
-	switch len(rs) {
-	case 0:
-		return ": void"
-	case 1:
-		return ": " + Spell(rs[0].Type) + textfmt.Inline(rs[0].Comment)
-	default:
-		parts := make([]string, 0, len(rs))
-		for _, r := range rs {
-			parts = append(parts, Spell(r.Type)+textfmt.Inline(r.Comment))
-		}
-		return ": [" + strings.Join(parts, ", ") + "]"
-	}
-}
-
-// refusalPrefix opens every refusal the backend returns: the
-// language's identity, as every backend's refusals open.
-const refusalPrefix = string(typescript.Lang) + ": "
 
 // refuse builds a refusal under [refusalPrefix].
 func refuse(format string, args ...any) error {

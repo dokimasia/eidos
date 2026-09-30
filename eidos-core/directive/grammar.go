@@ -16,12 +16,23 @@ import (
 //
 // A Name compares by its bytes, so the store's directive index and
 // the registry's lookups key on it directly. The zero Name spells
-// nothing; [Parse] never returns one, because the grammar requires
+// nothing. [Parse] never returns one, because the grammar requires
 // a name before the first argument.
 type Name string
 
-// The grammar's punctuation. The spellings live here once, so the
-// parser and its refusals agree on every byte.
+// Plugin returns the plugin prefix of a prefixed spelling, and the
+// empty string for a bare one: a kernel name, or a plugin's name
+// written without its prefix.
+func (n Name) Plugin() string {
+	plugin, _, prefixed := strings.Cut(string(n), string(prefixSep))
+	if !prefixed {
+		return ""
+	}
+	return plugin
+}
+
+// The grammar's punctuation. The spellings are defined here once,
+// so the parser and its refusals agree on every byte.
 const (
 	prefixSep = ':'
 	keySep    = '='
@@ -45,21 +56,32 @@ const Continuation = `\`
 // failure audiences: a parse error is the author's typo, found
 // where the carrier is read, and a type error is a schema
 // violation, found at validation with the registry in hand. A
-// carrier therefore produces Raw without holding a registry, and
-// [Validate] turns Raw into the typed [Directive] handlers receive.
+// carrier therefore produces Raw without a registry, and [Validate]
+// turns Raw into the typed [Directive] handlers receive.
 //
 // Raw is a plain value: copy it freely. The store sorts a
-// subject's instances by Pos at its seal, so the field is
-// load-bearing for determinism, not decoration.
+// subject's instances by Pos at its seal, so the determinism of
+// every later pass depends on the field.
 type Raw struct {
 	// Name is the spelling as written, bare or prefixed.
 	Name Name
-	// Args holds every argument in source order, positional and
+	// Args contains every argument in source order, positional and
 	// keyed alike, so a diagnostic about one argument can point at
 	// it.
 	Args []RawArg
 	// Pos is the carrier line, filled by the carrier's owner.
 	Pos position.Pos
+	// Negated is set by the carrier's owner for an instance written
+	// in the negated form. The grammar reads a negated payload the
+	// same way as any other.
+	Negated bool
+	// DirectiveShaped is set by the carrier's owner for an instance
+	// whose carrier line has the host toolchain's tool-directive
+	// shape. A formatter may move such a line to the end of its doc
+	// comment, as gofmt does, so validation warns where one subject's
+	// instances of a repeatable directive mix the shape with other
+	// carriers.
+	DirectiveShaped bool
 }
 
 // RawArg is one argument as written, keyed or positional, in the
@@ -72,8 +94,8 @@ type RawArg struct {
 	// Value is the spelling, quoting resolved.
 	Value RawValue
 	// Col is the argument's byte offset within the payload, the
-	// same unit parse errors carry; the carrier's owner converts
-	// to a file position. On a joined continuation the offset
+	// unit parse errors report. The carrier's owner converts it to
+	// a file position. On a joined continuation the offset
 	// addresses the joined payload, so a diagnostic there points
 	// at the instance's first line.
 	Col int
@@ -81,30 +103,31 @@ type RawArg struct {
 
 // RawValue is one value as written: a scalar spelling, or a list.
 // Exactly one form is populated: List is nil for a scalar, and
-// Text is empty for a list. A nested list parses — the grammar
-// admits it — and validation refuses it against every schema.
+// Text is empty for a list. A nested list parses, and validation
+// refuses it against every schema.
 type RawValue struct {
-	// Text is the scalar spelling with escapes resolved; empty for
-	// a list.
+	// Text is the scalar spelling with escapes resolved, and empty
+	// for a list.
 	Text string
-	// Quoted says the spelling was quoted, which is what lets an
-	// empty string be a value.
+	// Quoted reports whether the spelling was quoted, so the empty
+	// string can be a value.
 	Quoted bool
-	// List holds the elements of a list value, nil for a scalar.
+	// List contains the elements of a list value, and is nil for a
+	// scalar.
 	List []RawValue
 }
 
 // Join folds continued carrier lines into one payload: a line
 // ending in a backslash joins the next, marker already stripped,
-// with a single space. The rule is grammar, so it lives here once
-// rather than in every frontend.
+// with a single space. The rule is grammar, so it is defined here
+// once and in no frontend.
 func Join(lines []string) string {
 	parts := make([]string, 0, len(lines))
 	for i, line := range lines {
 		trimmed, continued := strings.CutSuffix(line, Continuation)
 		if continued {
-			// Whatever sat before the marker, the join is exactly
-			// one space.
+			// The join is exactly one space, whatever blanks precede
+			// the marker.
 			trimmed = strings.TrimRight(trimmed, " \t")
 		}
 		if i > 0 {
@@ -120,9 +143,9 @@ func Join(lines []string) string {
 // is the text after the carrier marker, one logical line with
 // continuations already joined.
 //
-// A payload outside the grammar returns an error carrying the byte
-// offset where reading stopped; the caller owns the file position
-// and converts. Parse never panics, whatever the bytes.
+// A payload outside the grammar returns an error with the byte
+// offset where reading stopped. The caller converts the offset to a
+// file position. Parse never panics, whatever the bytes.
 func Parse(payload string) (Raw, error) {
 	p := &parser{payload: payload}
 	p.skipSpace()
@@ -165,7 +188,8 @@ type parser struct {
 // done reports whether the payload is fully read.
 func (p *parser) done() bool { return p.at >= len(p.payload) }
 
-// peek returns the next byte without reading it; zero at the end.
+// peek returns the next byte without reading it, and zero at the
+// end.
 func (p *parser) peek() byte {
 	if p.done() {
 		return 0
@@ -354,12 +378,12 @@ func (p *parser) bare() (RawValue, error) {
 	return RawValue{Text: p.payload[start:p.at]}, nil
 }
 
-// isLetter reports an ASCII letter.
+// isLetter reports whether c is an ASCII letter.
 func isLetter(c byte) bool {
 	return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
 }
 
-// isIdent reports a byte an identifier may continue with.
+// isIdent reports whether c may continue an identifier.
 func isIdent(c byte) bool {
 	return isLetter(c) || c >= '0' && c <= '9' || c == '-' || c == '_'
 }
@@ -378,7 +402,7 @@ func isIdentifier(s string) bool {
 	return true
 }
 
-// isBare reports a byte a bare value may carry: anything but
+// isBare reports whether a bare value may contain c: anything but
 // whitespace and the grammar's punctuation.
 func isBare(c byte) bool {
 	switch c {

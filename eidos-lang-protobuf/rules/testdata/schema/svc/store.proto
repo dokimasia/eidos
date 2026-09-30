@@ -7,7 +7,7 @@ import "dep/target.proto";
 option go_package = "example.test/svc/store";
 
 // Row is a stored record.
-//+gen:table name=rows
+//+fixture:gen:table name=rows
 message Row {
   reserved 4, 9 to 11;
   reserved "old_name";
@@ -17,7 +17,7 @@ message Row {
   map<string, int64> counts = 3;
   dep.Target target = 5;
 
-  // Body is what the row carries.
+  // Body is what the row stores.
   oneof body {
     string text = 6;
     bytes blob = 7;
@@ -28,7 +28,7 @@ message Row {
   }
 }
 
-// Empty carries nothing a check could set.
+// Empty declares nothing a check could set.
 message Empty {}
 
 // Colour is a closed set.

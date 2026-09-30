@@ -43,6 +43,16 @@ type Frontend interface {
 	// with it.
 	Syntax() CommentSyntax
 
+	// Overloads reports whether the language declares two callables
+	// of one name in one scope, told apart by their parameters, as
+	// Java and TypeScript do. The load spells such a language's
+	// callable discriminator from its parameter type spellings, which
+	// the frontend normalizes at parse, so one signature spells one
+	// discriminator. A language that cannot overload, such as Go or
+	// protobuf, reports false, and the load gives every callable it
+	// declares the empty discriminator.
+	Overloads() bool
+
 	// Selection is the file claim: gitignore-style globs against
 	// workspace-relative paths, negations included, because a
 	// testdata tree is not source by the language's own
@@ -89,6 +99,24 @@ type Frontend interface {
 	// keeps its spelling alone: degradation a reader can ask about,
 	// not a failure.
 	Resolve(scope ImportScope, spelling string) Candidates
+}
+
+// Importer is the optional frontend role of a language whose import
+// names a file and not the package a reference names, such as
+// protobuf: a file's package is known only once that file parsed, so
+// the parse cannot record which import a reference needs. After the
+// resolution step resolves a reference to a declaration of another
+// file, it asks the importer how the referencing file's imports name
+// the declaring file, and records the result as the reference's
+// package. The load records each declaration's file only for a
+// language whose frontend implements the role.
+type Importer interface {
+	// ImportOf returns how the imports of the file the scope belongs
+	// to name the file at the workspace-relative path file: the
+	// import path a backend of the language writes. The scope's
+	// bindings are the frontend's own record, as for Resolve. It is
+	// called once per reference, after every unit parsed.
+	ImportOf(scope ImportScope, file string) string
 }
 
 // Candidates is what one spelling could mean, in tiers: each tier is

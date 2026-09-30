@@ -19,6 +19,15 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// The carrier marks' fixed spellings. Under the brand acme a carrier
+// opens with acme:, +acme: or -acme:. The first two set a directive,
+// and the minus sign negates it.
+const (
+	carrierSet     = "+"
+	carrierNegated = "-"
+	carrierClose   = ":"
+)
+
 // SourceUnit is one frontend compilation unit under parse: the only
 // surface a Parse call touches. Bytes enter through Read alone,
 // jailed to the unit's files and their declared shared inputs,
@@ -30,20 +39,28 @@ type SourceUnit struct {
 	fsys    fs.FS
 	depth   Depth
 	syntax  CommentSyntax
-	sink    *diag.Sink
-	origin  diag.Origin
-	graph   *GraphBuilder
-	reads   hash.Hash
+	// marks are what open a carrier line under the load's brand.
+	marks  carrierMarks
+	sink   *diag.Sink
+	origin diag.Origin
+	graph  *GraphBuilder
+	reads  hash.Hash
 }
 
 // NewSourceUnit assembles a unit for the load driver and the
 // conformance suite: the member files, the tree reads resolve in,
-// the depth, the language's comment syntax, and the sink findings
-// report to under the frontend's origin.
+// the depth, the language's comment syntax, the composition's brand
+// the unit's carriers open with, and the sink findings report to
+// under the frontend's origin. An empty brand is a driver defect
+// and panics, because a unit without a brand cannot tell a carrier
+// from a comment.
 func NewSourceUnit(
 	files []SourceRef, fsys fs.FS, depth Depth,
-	syntax CommentSyntax, sink *diag.Sink, origin diag.Origin,
+	syntax CommentSyntax, brand string, sink *diag.Sink, origin diag.Origin,
 ) *SourceUnit {
+	if brand == "" {
+		panic("plugin: a unit without a brand cannot tell a carrier from a comment")
+	}
 	allowed := make(map[string]bool, len(files)*2)
 	reads := sha256.New()
 	for _, f := range files {
@@ -68,6 +85,7 @@ func NewSourceUnit(
 		fsys:    fsys,
 		depth:   depth,
 		syntax:  syntax,
+		marks:   marksOf(brand),
 		sink:    sink,
 		origin:  origin,
 		graph:   newGraphBuilder(),
@@ -111,24 +129,30 @@ func (u *SourceUnit) Depth() Depth { return u.depth }
 // Graph returns the unit's write handle into the node model.
 func (u *SourceUnit) Graph() *GraphBuilder { return u.graph }
 
-// CarrierMark opens a directive carrier line inside a comment: the
-// kit's one cross-language convention, so a directive is spelled the
-// same way in every language's comments.
-const CarrierMark = "+"
-
 // Carrier is one directive payload and its line, marker stripped,
-// ready for the kernel grammar.
+// ready for the kernel grammar, and the mark it opened with.
 type Carrier struct {
+	// Mark is the mark as the author wrote it: brand:, +brand: or
+	// -brand:. A refusal quotes the carrier as Mark and Payload.
+	Mark    string
 	Payload string
 	Pos     position.Pos
+	// DirectiveShaped reports that the carrier line has the
+	// tool-directive shape: the syntax declares the convention, the
+	// marker is adjacent, and the text reads tool:name, as brand:
+	// does under a lowercase brand. A formatter may move such a line
+	// to the end of its doc comment, as gofmt does.
+	DirectiveShaped bool
 }
+
+// Negated reports whether the carrier opened with the negated mark.
+func (c Carrier) Negated() bool { return strings.HasPrefix(c.Mark, carrierNegated) }
 
 // CommentParts is one raw comment taken apart three ways: the
 // documentation lines, the carrier lines, and the tool-directive
-// lines — the go:build kin — as annotations. What a language does
-// with each part is its own: a frontend filters its configuration
-// lines out of the annotations and its legacy forms out of the
-// carriers before attaching anything.
+// lines, such as go:build, as annotations. The frontend decides what
+// each part means for its language: it filters its configuration
+// lines out of the annotations before attaching anything.
 type CommentParts struct {
 	Docs        []string
 	Carriers    []Carrier
@@ -136,13 +160,12 @@ type CommentParts struct {
 }
 
 // Doc strips one raw comment's markers through the language's
-// syntax and returns the clean lines: line prefixes dropped,
-// block delimiters and gutters removed, and — when the syntax
-// declares the convention — marker-adjacent directive lines
-// excluded, because a pragma is not documentation and would render
-// double-commented downstream. Carrier lines remain, because Doc
-// states nothing about them. A caller splitting carriers out uses
-// [SourceUnit.Comment].
+// syntax and returns the clean lines: line prefixes dropped, and
+// block delimiters and gutters removed. Where the syntax declares
+// the directive convention, Doc also excludes marker-adjacent
+// directive lines, because a pragma is not documentation and would
+// render double-commented downstream. Carrier lines remain. A
+// caller that splits carriers out uses [SourceUnit.Comment].
 func (u *SourceUnit) Doc(raw string) []string {
 	lines := commentLines(raw, u.syntax)
 	out := make([]string, 0, len(lines))
@@ -158,14 +181,23 @@ func (u *SourceUnit) Doc(raw string) []string {
 
 // Comment takes one raw comment apart through the language's
 // syntax, each part positioned at its own line from the given
-// base: documentation, carriers with their continuations folded,
-// and — when the syntax declares the convention — tool directives
-// lowered as annotations, the name without its marker, the
-// arguments split on spaces, which is the spelling the render side
-// writes back. A carrier opens only where the mark is followed by
-// a letter, so a markdown bullet remains documentation. A directive
-// needs its marker adjacent, the way the host toolchain reads it,
-// so prose after a spaced marker remains prose.
+// base: documentation, and carriers with their continuations
+// folded. Where the syntax declares the directive convention, tool
+// directives lower as annotations: the name without its marker, and
+// the arguments split on spaces, which is the spelling the render
+// side writes back. A carrier opens with one of the brand's three marks,
+// brand:, +brand: or -brand:, followed by a letter, so another
+// tool's +name: marker and a markdown bullet remain documentation.
+// A carrier line under the brand is a carrier even where it has the
+// tool-directive shape. A directive needs its marker adjacent, the
+// way the host toolchain reads it, so prose after a spaced marker
+// remains prose.
+//
+// A continued carrier whose own line has the tool-directive shape
+// reports an Error under [ContinuedCarrier] that quotes the carrier
+// with the set mark, and returns no carrier: a formatter may move
+// such a line away from its continuation, as gofmt does. The lines
+// after it read as they are written.
 func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 	var parts CommentParts
 	lines := commentLines(raw, u.syntax)
@@ -173,10 +205,18 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 		line := lines[i]
 		lineAt := at
 		lineAt.Line += i
+		mark, payload, carried := u.marks.cut(line.text)
 		switch {
-		case carrierLine(line.text):
-			payload := strings.TrimPrefix(line.text, CarrierMark)
+		case carried:
+			shaped := u.directiveShaped(line)
 			if strings.HasSuffix(payload, directive.Continuation) {
+				if shaped {
+					u.Errorf(ContinuedCarrier, lineAt,
+						"%q continues onto the next line, and a formatter may move a carrier in this "+
+							"form away from its continuation: write it as %q",
+						mark+payload, u.marks.set()+payload)
+					continue
+				}
 				span := []string{payload}
 				for strings.HasSuffix(span[len(span)-1], directive.Continuation) &&
 					i+1 < len(lines) {
@@ -185,7 +225,8 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 				}
 				payload = directive.Join(span)
 			}
-			parts.Carriers = append(parts.Carriers, Carrier{Payload: payload, Pos: lineAt})
+			parts.Carriers = append(parts.Carriers,
+				Carrier{Mark: mark, Payload: payload, Pos: lineAt, DirectiveShaped: shaped})
 		case u.syntax.Directives && line.adjacent &&
 			(directiveLine(line.text) || legacyDirective(line.text)):
 			name, rest, _ := strings.Cut(line.text, " ")
@@ -203,7 +244,9 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 }
 
 // AttachCarriers parses each carrier under the kernel grammar and
-// attaches it to subject, positioned at the carrier's own line. A
+// attaches it to subject, positioned at the carrier's own line,
+// negated where the carrier opened with the negated mark, and
+// directive-shaped where its line has the tool-directive shape. A
 // carrier the grammar refuses reports under the code the frontend
 // states for it, at the carrier's line, quoting the carrier as
 // written, and attaches nothing. A nil subject with a carrier to
@@ -213,10 +256,12 @@ func (u *SourceUnit) AttachCarriers(subject symbol.Symbol, cs []Carrier, refused
 	for _, c := range cs {
 		raw, err := directive.Parse(c.Payload)
 		if err != nil {
-			u.Errorf(refused, c.Pos, "%q: %v", CarrierMark+c.Payload, err)
+			u.Errorf(refused, c.Pos, "%q: %v", c.Mark+c.Payload, err)
 			continue
 		}
 		raw.Pos = c.Pos
+		raw.Negated = c.Negated()
+		raw.DirectiveShaped = c.DirectiveShaped
 		u.graph.Attach(subject, raw)
 	}
 }
@@ -268,11 +313,18 @@ func (u *SourceUnit) Infof(c diag.Code, at position.Pos, format string, a ...any
 // configuration, and the load report records the finished key.
 func (u *SourceUnit) ReadSum() []byte { return u.reads.Sum(nil) }
 
+// directiveShaped reports whether a comment line has the
+// tool-directive shape: the syntax declares the convention, the
+// marker is adjacent, and the text reads tool:name.
+func (u *SourceUnit) directiveShaped(line commentLine) bool {
+	return u.syntax.Directives && line.adjacent && directiveLine(line.text)
+}
+
 // commentLine is one comment line with its markers stripped: the
-// clean text, and whether a line marker sat immediately against
-// it, which the directive rule requires and a block form never
-// grants — the host toolchains read directives off line comments
-// alone.
+// clean text, and whether a line marker immediately precedes it.
+// The directive rule requires that adjacency, and a block form
+// never has it, because the host toolchains read directives off
+// line comments alone.
 type commentLine struct {
 	text     string
 	adjacent bool
@@ -317,21 +369,60 @@ func commentLines(raw string, syntax CommentSyntax) []commentLine {
 	return out
 }
 
-// carrierLine reports whether a clean line opens a directive
-// carrier: the mark, then a letter, so a markdown bullet or a bare
-// mark never reads as authored intent.
-func carrierLine(line string) bool {
-	rest, marked := strings.CutPrefix(line, CarrierMark)
-	if !marked || rest == "" {
-		return false
+// carrierMarks are the three marks a carrier opens with under one
+// brand, negated first, then the explicit set form, then the bare
+// set form, which is the order a line is tried in.
+type carrierMarks [3]string
+
+// marksOf composes a brand's three marks once, so reading a comment
+// line composes no string.
+func marksOf(brand string) carrierMarks {
+	return carrierMarks{
+		carrierNegated + brand + carrierClose,
+		carrierSet + brand + carrierClose,
+		brand + carrierClose,
 	}
-	c := rest[0]
-	return ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z')
 }
 
-// legacyDirective reports the three space-form directives the go
-// toolchain grandfathered — line, extern and export — which only a
-// marker-adjacent raw line can claim.
+// cut splits a clean comment line into its carrier mark and
+// payload. It reports false for a line that opens with no mark, and
+// for a mark followed by anything but a letter, so a bare mark never
+// reads as authored intent.
+func (m carrierMarks) cut(line string) (mark, payload string, ok bool) {
+	for _, candidate := range m {
+		rest, marked := strings.CutPrefix(line, candidate)
+		if !marked || rest == "" {
+			continue
+		}
+		c := rest[0]
+		if ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') {
+			return candidate, rest, true
+		}
+	}
+	return "", "", false
+}
+
+// set returns the set mark, +brand:, whose plus sign keeps a
+// carrier line out of the tool-directive shape.
+func (m carrierMarks) set() string { return m[1] }
+
+// CutCarrier splits a clean comment line into the carrier mark it
+// opens with under a brand and the payload that follows, the way
+// [SourceUnit.Comment] reads a carrier line. The marks are brand:
+// and +brand:, which set a directive, and -brand:, which negates
+// one. It reports false for a line that opens no carrier. The marks
+// are the kit's one cross-language convention, so a directive is
+// spelled the same way in every language's comments, and two tools
+// built on the kernel and run in one repository read only their own
+// carriers.
+func CutCarrier(line, brand string) (mark, payload string, ok bool) {
+	return marksOf(brand).cut(line)
+}
+
+// legacyDirective reports whether a line opens with one of the
+// three space-form directives the go toolchain accepts for
+// compatibility: line, extern and export. Only a marker-adjacent
+// raw line can be one.
 func legacyDirective(line string) bool {
 	return strings.HasPrefix(line, "line ") ||
 		strings.HasPrefix(line, "extern ") ||
@@ -352,7 +443,7 @@ func trimBlank(lines []string) []string {
 }
 
 // directiveLine reports whether a clean line is a tool directive
-// and not documentation: the go:build kin, spelled tool:name. The
+// and not documentation: a tool:name line such as go:build. The
 // rule is go/ast's own: everything up to and including the
 // character after the colon is lowercase alphanumeric. A doc line
 // with a bare URL therefore remains documentation, because the
@@ -372,11 +463,11 @@ func directiveLine(line string) bool {
 }
 
 // GraphBuilder is the unit's write handle into the node model. A
-// unit declares as many packages as its bytes do; two units
-// contributing one package path merge at the splice, declarations
-// appended in unit order. The splice validates what a unit built
-// and panics on a structural defect — an emit-side symbol, a named
-// kind without a name — because a malformed graph discovered at the
+// unit declares as many packages as its bytes do. Two units that
+// contribute one package path merge at the splice, declarations
+// appended in unit order. The splice validates what a unit built and
+// panics on a structural defect, such as an emit-side symbol or a
+// named kind without a name, because a malformed graph found at the
 // resolution step points away from the frontend that built it.
 type GraphBuilder struct {
 	packages    map[string]*node.Package
@@ -389,9 +480,9 @@ type GraphBuilder struct {
 // ScopeRecord pairs one parsed file with its import bindings, in
 // the language's own form. The file is the node the unit built,
 // because canonical identities do not exist until the splice
-// assigns them, and a derivation spelled twice would drift; the
-// kernel derives the identity there and hands the bindings back to
-// that language's Resolve alone.
+// assigns them, and a derivation spelled twice would drift. The
+// kernel derives the identity at the splice and hands the bindings
+// back to that language's Resolve alone.
 type ScopeRecord struct {
 	File     *node.File
 	Bindings any
@@ -409,9 +500,9 @@ type Attachment struct {
 
 // StampRecord is one classification stamp on a declaration this
 // unit built: the second raw attachment class, resolved at the
-// splice the way [Attachment] is. The stamp's origin is the
-// kernel's to fill there — a frontend's own value is overwritten,
-// so a stamp cannot speak for another plugin.
+// splice the way [Attachment] is. The splice sets the stamp's
+// origin and overwrites a frontend's own value, so every stamp is
+// attributed to the frontend that recorded it.
 type StampRecord struct {
 	Subject symbol.Symbol
 	Stamp   meta.RawStamp

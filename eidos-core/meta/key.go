@@ -10,46 +10,46 @@ import (
 )
 
 // KeyName is a key's boundary spelling: dotted segments with the
-// owning namespace first, as in "shape.role". It appears at the
-// boundary — a directive parameter, an attribution argument — and
-// resolves against the registry. Code holds the typed [Key].
+// namespace first, as in "shape.role". It appears at the boundary,
+// in a directive parameter or an attribution argument, and resolves
+// against the registry. Code uses the typed [Key].
 type KeyName string
 
-// namespaceSep separates a key name's segments; the namespace is
+// namespaceSep separates a key name's segments. The namespace is
 // everything before the first one.
 const namespaceSep = "."
 
-// Namespace returns the segment before the first dot, which names
-// the module that owns the key.
+// Namespace returns the segment before the first dot: the namespace
+// a registrant claims before it registers the key.
 func (n KeyName) Namespace() string {
 	ns, _, _ := strings.Cut(string(n), namespaceSep)
 	return ns
 }
 
 // local returns the part after the namespace, and false when the
-// name carries none.
+// name has no separator.
 func (n KeyName) local() (string, bool) {
 	_, rest, found := strings.Cut(string(n), namespaceSep)
 	return rest, found
 }
 
-// KeyID is the dense form gate tuples and indexes hold. It is
-// assigned at registration and belongs to one composition: nothing
-// durable stores it, because codecs and the sealed state carry
-// names. The zero KeyID names no key.
+// KeyID is the dense form gate tuples and indexes store. Registration
+// assigns it, and it is valid in one composition only. Nothing
+// durable stores it: codecs and the sealed state record names. The
+// zero KeyID names no key.
 type KeyID uint32
 
-// FactValue is the closed value vocabulary; nothing else registers.
-// A fact that needs structure becomes flat keys under a fact group,
-// and a fact that names a declaration carries an identity rather
-// than a string.
+// FactValue is the closed value vocabulary, and [Register] accepts
+// no other value type. A fact that needs structure becomes flat keys
+// under a fact group, and a fact that names a declaration stores an
+// identity, not a string.
 type FactValue interface {
 	string | int64 | bool | []string | symbol.Identity
 }
 
 // Key is the typed handle registration returns. Reads, writes and
-// gate predicates all go through it, so the value type is checked
-// where the code compiles rather than where the run fails.
+// gate predicates all go through it, so the compiler checks the
+// value type.
 //
 // The zero Key names nothing: every handle comes from [Register].
 type Key[T FactValue] struct {
@@ -67,6 +67,6 @@ func (k Key[T]) ID() KeyID { return k.id }
 func (k Key[T]) IsZero() bool { return k.id == 0 }
 
 // GroupName names a fact group: a bundle a writer declares, such as
-// every key its classification stamps. The name is public API and
-// the membership is the writer's to grow.
+// every key its classification stamps. The name is public API, and
+// the writer may add members.
 type GroupName string

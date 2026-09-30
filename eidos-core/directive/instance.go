@@ -13,13 +13,13 @@ import (
 // Kind selects the populated field: [TypeString] fills Str,
 // [TypeInt] fills Int, [TypeBool] fills Bool, [TypeList] fills
 // List with each element typed as the spec's element type, and
-// [TypeReference] fills Ref. Every other field holds its zero
-// value, so a consumer switches on Kind and reads one field
-// without an assertion.
+// [TypeReference] fills Ref. Every other field is its zero value,
+// so a consumer switches on Kind and reads one field without an
+// assertion.
 //
 // Value is a plain value: copy it freely. A List is the one field
-// sharing storage; validation builds each instance fresh, so no
-// two instances alias.
+// sharing storage. Validation builds each instance fresh, so no two
+// instances alias.
 type Value struct {
 	Kind ParamType
 	Str  string
@@ -31,8 +31,7 @@ type Value struct {
 	Ref string
 	// Target is the identity a source reference resolved to. It is
 	// zero for a metadata reference, and for a source reference
-	// validated without a resolver, which carries the spelling
-	// alone.
+	// validated without a resolver, which keeps the spelling alone.
 	Target symbol.Identity
 }
 
@@ -40,17 +39,17 @@ type Value struct {
 // through its match, with every value already typed and every
 // check already passed.
 //
-// A Directive that exists is valid — [Validate] refuses the rest —
-// so a handler reads params without re-checking presence beyond
-// what the schema declares optional.
+// Every Directive is valid, because [Validate] returns only the
+// instances that pass. A handler reads params without re-checking
+// presence beyond what the schema declares optional.
 type Directive struct {
 	// Name is the schema's canonical spelling, whatever the author
 	// wrote: prefixed for a plugin's, bare for the kernel's.
 	Name Name
-	// Args holds the positional values, typed per the schema's
+	// Args contains the positional values, typed per the schema's
 	// positional specs, in source order.
 	Args []Value
-	// Params holds the keyed values, typed per the schema, the
+	// Params contains the keyed values, typed per the schema, the
 	// reserved routing keys included.
 	Params map[ParamKey]Value
 	// Role is the validated role, empty where none was written.
@@ -60,12 +59,16 @@ type Directive struct {
 	// Instance is the source order among a repeatable directive's
 	// instances on one subject, starting at zero.
 	Instance int
+	// Negated reports an instance written in the negated form. It
+	// gates no rule, and dispatch excludes its subject from the bare
+	// and fact-gated rules of the plugin that registered the schema.
+	Negated bool
 }
 
-// Param returns a keyed value and whether the instance carries it,
-// the reserved routing keys included. A required param always
-// returns true — validation refused the instance otherwise — so
-// the boolean matters only for optional and reserved keys.
+// Param returns a keyed value and whether the instance has it, the
+// reserved routing keys included. A required param always returns
+// true, because validation refuses an instance without it, so the
+// boolean matters only for optional and reserved keys.
 func (d *Directive) Param(k ParamKey) (Value, bool) {
 	v, held := d.Params[k]
 	return v, held

@@ -12,8 +12,8 @@ import (
 )
 
 // Authority orders who a write speaks for. A human override at the
-// source declaration beats any inference, whatever order the
-// plugins ran in. Manual is reserved for consumer tooling; nothing
+// source declaration outranks any inference, whatever order the
+// plugins ran in. Manual is reserved for consumer tooling. Nothing
 // in a normal run writes at it.
 //
 // The zero value is [AuthorityPlugin]: a claim that returned no
@@ -49,9 +49,10 @@ type Claim struct {
 	// Pos locates the authoring carrier: a directive's position, or
 	// zero for a plugin's inference.
 	Pos position.Pos
-	// Derived is what produced the value: the reads the writer
-	// made. It is the same edge attribution walks and invalidation
-	// follows, so neither can drift from the other.
+	// Derived lists the point reads the writer made before the
+	// claim: each declaration read by identity, and each fact read
+	// at a subject and a key, in the read set's order. A
+	// set-membership read, by kind or by directive, is not in it.
 	Derived []Read
 }
 
@@ -65,23 +66,24 @@ type Read struct {
 // rank orders two claims under the four-step rank, best first.
 //
 // Arrival order appears nowhere: two schedulings of the same claims
-// pick the same winner, which is what lets a parallel run report
-// what a serial one does. Two claims from one rank source compare
-// equal, and the store refuses those unless they carry one value.
+// rank the same claim first, which is what lets a parallel run
+// report what a serial one does. Two claims from one rank source
+// compare equal, and the store refuses those unless they state one
+// value.
 func rank(c, other Claim) int {
 	return cmp.Or(
-		// Higher authority wins, so the comparison flips.
+		// Higher authority ranks first, so the comparison flips.
 		cmp.Compare(other.Authority, c.Authority),
-		// The earlier bucket wins.
+		// The earlier bucket ranks first.
 		cmp.Compare(c.Bucket, other.Bucket),
-		// The alphabetically first plugin wins.
+		// The alphabetically first plugin ranks first.
 		cmp.Compare(c.Plugin, other.Plugin),
-		// The first claim wins, in canonical match order.
+		// The first claim ranks first, in canonical match order.
 		cmp.Compare(c.Seq, other.Seq),
 	)
 }
 
-// outranks reports whether c beats other under the rank.
+// outranks reports whether c ranks before other.
 func (c Claim) outranks(other Claim) bool { return rank(c, other) < 0 }
 
 // sameRankSource reports whether two claims come from one source at

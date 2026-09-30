@@ -23,8 +23,9 @@ func New() plugin.Backend {
 		Version(java.Version).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
+		RefusedKinds(RefusedKinds()).
 		Coverage(Coverage()).
-		Funcs(Funcs()).
+		Funcs(Funcs).
 		Naming(spell.Filename).
 		Respell(spell.Name).
 		Lower(Lower).

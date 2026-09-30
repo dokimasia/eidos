@@ -25,7 +25,7 @@ const (
 // Resolver binds one source reference param: what a spelling
 // names from a subject, at a resolution kind. The workspace
 // derives it from the registered rules and a view minted over the
-// sealed graph for validation; the view's reads record into a set
+// sealed graph for validation. The view's reads record into a set
 // the run discards, because validation runs whole on every run. An
 // error names what was looked for and not found.
 type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (symbol.Identity, error)
@@ -35,13 +35,26 @@ type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (s
 // returning the instances that passed, in position order, with
 // repeatable instances numbered.
 //
-// keys resolves ResolveMetadataKey params; resolve binds every
-// other reference kind, and nil carries those spellings unbound.
-// Validation of one subject is independent of every other, so a
-// caller validates subjects in parallel; the sink is safe for
-// that, and the resolver is called from every goroutine. It
-// refuses an unsealed registry outright: that is a defect in the
-// composition, not in a carrier.
+// A negated instance types like any other. It is refused where its
+// schema is not [Schema.Negatable], and it takes part in no
+// requirement and no conflict, because it withdraws the subject
+// from a plugin and states nothing the constraints read. A subject
+// that sets and negates one directive states two opposite intents,
+// and every instance of that directive on it is refused.
+//
+// A repeatable directive whose instances on the subject mix carriers
+// in the tool-directive shape with other carriers reports a Warning
+// under [MixedCarriers] and keeps every instance, because a
+// formatter that moves the shaped lines, as gofmt does, reorders the
+// instances and their numbering.
+//
+// keys resolves ResolveMetadataKey params. resolve binds every
+// other reference kind, and a nil resolver leaves those spellings
+// unbound. Validation of one subject is independent of every other,
+// so a caller validates subjects in parallel: the sink is safe for
+// concurrent use, and the resolver is called from every goroutine.
+// Validate refuses an unsealed registry outright, because that is a
+// defect in the composition, not in a carrier.
 func Validate(
 	subject symbol.Identity, ds []Raw,
 	r *Registry, keys *meta.Registry, resolve Resolver, sink *diag.Sink,
@@ -65,30 +78,55 @@ func Validate(
 	typed := make([]checked, 0, len(ordered))
 	for _, raw := range ordered {
 		if instance, schema, ok := v.instance(raw); ok {
-			typed = append(typed, checked{instance: instance, schema: schema})
+			typed = append(typed, checked{instance: instance, schema: schema, shaped: raw.DirectiveShaped})
 		}
 	}
 
-	// The subject-wide checks: repeatability, then the constraints
-	// between directives. A failing instance drops; the survivors
-	// number per schema in position order. Every loop runs in
-	// position order, so the findings arrive in one order.
+	// The subject-wide checks: polarity and repeatability, then the
+	// constraints between directives. A failing instance drops, and
+	// the survivors number per schema in position order. Every loop
+	// runs in position order, so the findings arrive in one order.
+	// present indexes the instances that set a directive, and negated
+	// the instances that negate one.
 	present := map[Name][]int{}
+	negated := map[Name][]int{}
 	var seen []Name
 	for i, c := range typed {
 		canonical := c.instance.Name
-		if _, held := present[canonical]; !held {
+		if len(present[canonical]) == 0 && len(negated[canonical]) == 0 {
 			seen = append(seen, canonical)
+		}
+		if c.instance.Negated {
+			negated[canonical] = append(negated[canonical], i)
+			continue
 		}
 		present[canonical] = append(present[canonical], i)
 	}
 	dropped := make([]bool, len(typed))
 	for _, canonical := range seen {
-		indexes := present[canonical]
-		if len(indexes) > 1 && !typed[indexes[0]].schema.Repeatable {
+		sets, negations := present[canonical], negated[canonical]
+		if len(sets) > 0 && len(negations) > 0 {
+			first := typed[sets[0]].instance.Pos
+			for _, i := range negations {
+				v.reportRelated(diag.SeverityError, Conflict, typed[i].instance.Pos, first,
+					"%s is set and negated on %s", canonical, subject)
+			}
+			for _, i := range slices.Concat(sets, negations) {
+				dropped[i] = true
+			}
+			continue
+		}
+		for _, indexes := range [][]int{sets, negations} {
+			if len(indexes) < 2 {
+				continue
+			}
+			if typed[indexes[0]].schema.Repeatable {
+				v.mixedCarriers(typed, indexes, canonical)
+				continue
+			}
 			first := typed[indexes[0]].instance.Pos
 			for _, i := range indexes[1:] {
-				v.reportRelated(DuplicateInstance, typed[i].instance.Pos, first,
+				v.reportRelated(diag.SeverityError, DuplicateInstance, typed[i].instance.Pos, first,
 					"%s appears twice on %s: the schema admits one instance", canonical, subject)
 			}
 			for _, i := range indexes {
@@ -100,11 +138,14 @@ func Validate(
 	// contradiction and reports once.
 	reported := map[[2]int]bool{}
 	for i, c := range typed {
+		if c.instance.Negated {
+			continue
+		}
 		constraints := v.registry.constraintsOf(c.instance.Name)
 		for _, target := range constraints.requires {
 			if _, held := present[target]; !held {
 				v.report(RequirementUnmet, c.instance.Pos,
-					"%s requires %s, which %s does not carry",
+					"%s requires %s, which %s does not have",
 					c.instance.Name, target, subject)
 				dropped[i] = true
 			}
@@ -118,7 +159,7 @@ func Validate(
 					continue
 				}
 				reported[pair] = true
-				v.reportRelated(Conflict, c.instance.Pos, typed[other].instance.Pos,
+				v.reportRelated(diag.SeverityError, Conflict, c.instance.Pos, typed[other].instance.Pos,
 					"%s conflicts with %s on %s", c.instance.Name, target, subject)
 			}
 		}
@@ -140,15 +181,17 @@ func Validate(
 	return out
 }
 
-// checked pairs a typed instance with the schema that typed it.
+// checked pairs a typed instance with the schema that typed it, and
+// with whether its carrier line has the tool-directive shape.
 type checked struct {
 	instance Directive
 	schema   Schema
+	shaped   bool
 }
 
-// validator carries the registries and the sink through one
-// subject's validation. at is the instance under validation, so a
-// value-level refusal reports where its carrier sits.
+// validator keeps the registries and the sink for one subject's
+// validation. at is the instance under validation, so a
+// value-level refusal reports at its carrier's line.
 type validator struct {
 	registry *Registry
 	keys     *meta.Registry
@@ -163,14 +206,14 @@ func (v *validator) report(code diag.Code, at position.Pos, format string, args 
 	v.sink.Errorf(code, at, diag.PhaseFreeze, format, args...)
 }
 
-// reportRelated attaches one positioned Error carrying the other
-// position the finding is about.
+// reportRelated attaches one positioned finding at the severity,
+// with the other position the finding is about.
 func (v *validator) reportRelated(
-	code diag.Code, at, other position.Pos, format string, args ...any,
+	severity diag.Severity, code diag.Code, at, other position.Pos, format string, args ...any,
 ) {
 	v.sink.Report(diag.Diag{
 		Code:     code,
-		Severity: diag.SeverityError,
+		Severity: severity,
 		Pos:      at,
 		Msg:      fmt.Sprintf(format, args...),
 		Origin:   diag.PhaseFreeze,
@@ -178,8 +221,25 @@ func (v *validator) reportRelated(
 	})
 }
 
-// instance types one raw instance against its schema. A false
-// answer means the violations are reported and the instance drops.
+// mixedCarriers warns where the instances of one repeatable
+// directive mix carriers in the tool-directive shape with other
+// carriers. It reports once, at the first instance whose shape
+// differs from the first instance's, and drops nothing.
+func (v *validator) mixedCarriers(typed []checked, indexes []int, canonical Name) {
+	first := typed[indexes[0]]
+	for _, i := range indexes[1:] {
+		if typed[i].shaped == first.shaped {
+			continue
+		}
+		v.reportRelated(diag.SeverityWarning, MixedCarriers, typed[i].instance.Pos, first.instance.Pos,
+			"%s on %s mixes carriers in the tool-directive form with other carriers, "+
+				"which a formatter may reorder: write every instance in one form", canonical, v.subject)
+		return
+	}
+}
+
+// instance types one raw instance against its schema. It reports
+// false when it reported a violation, and the instance drops.
 func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 	v.at = raw.Pos
 	schema, canonical, held := v.registry.lookup(raw.Name)
@@ -200,8 +260,13 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 		v.report(UnclaimedName, raw.Pos, "%s names no registered schema", raw.Name)
 		return Directive{}, Schema{}, false
 	}
+	if raw.Negated && !schema.Negatable {
+		v.report(NegationRefused, raw.Pos,
+			"%s does not accept the negated form: its schema declares no negation", canonical)
+		return Directive{}, Schema{}, false
+	}
 
-	d := Directive{Name: canonical, Params: map[ParamKey]Value{}, Pos: raw.Pos}
+	d := Directive{Name: canonical, Params: map[ParamKey]Value{}, Pos: raw.Pos, Negated: raw.Negated}
 	ok := true
 	positional := 0
 	seen := map[ParamKey]int{}
@@ -209,7 +274,7 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 		if arg.Key == "" {
 			if positional >= len(schema.Positional) {
 				v.report(ExtraPositional, raw.Pos,
-					"%s takes %d positional arguments; %q at offset %d is one too many",
+					"%s takes %d positional arguments, and %q at offset %d is one too many",
 					d.Name, len(schema.Positional), rawSpelling(arg.Value), arg.Col)
 				ok = false
 				continue
@@ -391,7 +456,7 @@ func (v *validator) typedValue(name Name, spec ParamSpec, t ParamType, raw RawVa
 		if spec.Resolution == ResolveMetadataKey {
 			if !v.metadataResolves(raw.Text) {
 				v.report(UnknownMetadataKey, v.at,
-					"%s param %s names %q, which no metadata key or group returns; keys: %s",
+					"%s param %s names %q, which no metadata key or group returns. Keys: %s",
 					name, spec.Key, raw.Text, v.metadataCandidates())
 				return Value{}, false
 			}

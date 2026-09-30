@@ -24,91 +24,122 @@ func keysOf(report *load.Report) map[string][]byte {
 	return out
 }
 
+// keyed loads the standard tree, mutated per case, and returns its
+// unit keys.
+func keyed(tb assert.TB, mutate ...func(*load.Config)) map[string][]byte {
+	tb.Helper()
+
+	_, report, _ := loadTree(tb, stdTree(), mutate...)
+	return keysOf(report)
+}
+
 // Every part of the stated fold is exercised: an untouched unit's
 // key is stable, and each folded part changes it alone.
 func TestKeys(t *testing.T) {
 	t.Parallel()
 
-	base := func(tb assert.TB, mutate ...func(*load.Config)) map[string][]byte {
-		tb.Helper()
-		_, report, _ := loadTree(tb, stdTree(), mutate...)
-		return keysOf(report)
-	}
-
-	t.Run("the same load folds the same keys", func(t *testing.T) {
+	t.Run("unitKey", func(t *testing.T) {
 		t.Parallel()
 
-		one, two := base(t), base(t)
-		assert.Equal(t, len(one), 3, "three units load")
-		for file, key := range one {
-			assert.True(t, bytes.Equal(key, two[file]), "an untouched unit's key is stable")
+		t.Run("returns the same key for the same load", func(t *testing.T) {
+			t.Parallel()
+
+			one, two := keyed(t), keyed(t)
+			assert.Equal(t, len(one), 3, "three units load")
+			for file, key := range one {
+				assert.True(t, bytes.Equal(key, two[file]), "the key is stable")
+			}
+		})
+
+		changedRead := func(tb assert.TB) map[string][]byte {
+			tb.Helper()
+
+			tree := stdTree()
+			tree[apiFile] = &fstest.MapFile{Data: []byte("package svc/api\ntype User int\n")}
+			_, report, _ := loadTree(tb, tree)
+			return keysOf(report)
 		}
-	})
 
-	t.Run("a changed read changes that unit's key alone", func(t *testing.T) {
-		t.Parallel()
+		t.Run("changes the key of a unit whose read changed", func(t *testing.T) {
+			t.Parallel()
 
-		before := base(t)
-		tree := stdTree()
-		tree["svc/api/user.zz"] = &fstest.MapFile{Data: []byte("package svc/api\ntype User int\n")}
-		_, report, _ := loadTree(t, tree)
-		after := keysOf(report)
+			assert.False(t, bytes.Equal(keyed(t)[apiFile], changedRead(t)[apiFile]), "the unit's key changes")
+		})
 
-		assert.False(t, bytes.Equal(before["svc/api/user.zz"], after["svc/api/user.zz"]),
-			"the touched unit re-keys")
-		assert.True(t, bytes.Equal(before["svc/store/row.zz"], after["svc/store/row.zz"]),
-			"an untouched unit does not")
-	})
+		t.Run("keeps the key of a unit whose reads did not change", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a changed shared input re-keys every unit that read it", func(t *testing.T) {
-		t.Parallel()
+			assert.True(t, bytes.Equal(keyed(t)[storeFile], changedRead(t)[storeFile]), "the unit's key is stable")
+		})
 
-		before := base(t)
-		tree := stdTree()
-		tree["mod.zz"] = &fstest.MapFile{Data: []byte("mod v2\n")}
-		_, report, _ := loadTree(t, tree)
-		after := keysOf(report)
-		for file := range before {
-			assert.False(t, bytes.Equal(before[file], after[file]),
-				"the partition read folds into every unit")
+		t.Run("changes the key of every unit that read a changed shared input", func(t *testing.T) {
+			t.Parallel()
+
+			before := keyed(t)
+			tree := stdTree()
+			tree[modFile] = &fstest.MapFile{Data: []byte("mod v2\n")}
+			_, report, _ := loadTree(t, tree)
+			after := keysOf(report)
+			for file := range before {
+				assert.False(t, bytes.Equal(before[file], after[file]), "the partition read folds into every unit")
+			}
+		})
+
+		folds := []struct {
+			name   string
+			file   string
+			mutate func(*load.Config)
+		}{
+			{
+				name:   "changes the key for another depth",
+				file:   depFile,
+				mutate: func(cfg *load.Config) { cfg.Signatures = nil },
+			},
+			{
+				name: "changes the key for another frontend version",
+				file: apiFile,
+				mutate: func(cfg *load.Config) {
+					f := frontendtest.NewScripted()
+					f.Ver = "2"
+					cfg.Frontends = []plugin.Frontend{f}
+				},
+			},
+			{
+				name: "changes the key for other options",
+				file: apiFile,
+				mutate: func(cfg *load.Config) {
+					f := frontendtest.NewScripted()
+					f.Opts.Tag = "moved"
+					cfg.Frontends = []plugin.Frontend{f}
+				},
+			},
+			{
+				name:   "changes the key for another plugin set",
+				file:   apiFile,
+				mutate: func(cfg *load.Config) { cfg.PluginSet = []byte("set-2") },
+			},
+			{
+				name: "changes the key for another frontend name",
+				file: apiFile,
+				mutate: func(cfg *load.Config) {
+					f := frontendtest.NewScripted()
+					f.ID = "fake2"
+					cfg.Frontends = []plugin.Frontend{f}
+				},
+			},
+			{
+				name:   "changes the key for another brand",
+				file:   apiFile,
+				mutate: func(cfg *load.Config) { cfg.Brand = foreignBrand },
+			},
 		}
-	})
+		for _, tt := range folds {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-	t.Run("depth, version, options and the plugin set each fold", func(t *testing.T) {
-		t.Parallel()
-
-		before := base(t)
-
-		shallow := base(t, func(cfg *load.Config) { cfg.Signatures = nil })
-		assert.False(t, bytes.Equal(before["svc/dep/dep.zz"], shallow["svc/dep/dep.zz"]),
-			"the same bytes at two depths key differently")
-
-		bumped := base(t, func(cfg *load.Config) {
-			f := frontendtest.NewScripted()
-			f.Ver = "2"
-			cfg.Frontends = []plugin.Frontend{f}
-		})
-		assert.False(t, bytes.Equal(before["svc/api/user.zz"], bumped["svc/api/user.zz"]),
-			"a declared version change re-keys")
-
-		retagged := base(t, func(cfg *load.Config) {
-			f := frontendtest.NewScripted()
-			f.Opts.Tag = "moved"
-			cfg.Frontends = []plugin.Frontend{f}
-		})
-		assert.False(t, bytes.Equal(before["svc/api/user.zz"], retagged["svc/api/user.zz"]),
-			"a knob that changes no read still keys")
-
-		reset := base(t, func(cfg *load.Config) { cfg.PluginSet = []byte("set-2") })
-		assert.False(t, bytes.Equal(before["svc/api/user.zz"], reset["svc/api/user.zz"]),
-			"the composition's fingerprint folds")
-
-		renamed := base(t, func(cfg *load.Config) {
-			f := frontendtest.NewScripted()
-			f.ID = "fake2"
-			cfg.Frontends = []plugin.Frontend{f}
-		})
-		assert.False(t, bytes.Equal(before["svc/api/user.zz"], renamed["svc/api/user.zz"]),
-			"the frontend's own identity folds, because it shapes every identity")
+				assert.False(t, bytes.Equal(keyed(t)[tt.file], keyed(t, tt.mutate)[tt.file]),
+					"the folded part changes the key")
+			})
+		}
 	})
 }

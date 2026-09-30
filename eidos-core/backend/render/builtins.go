@@ -7,7 +7,16 @@ import (
 	"errors"
 	"text/template"
 
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// The standard slot names a body-claiming template passes to the
+// slot builtin, re-exported where the builtins are, for a template
+// author reading this package.
+const (
+	SlotPrologue = emit.SlotPrologue
+	SlotEpilogue = emit.SlotEpilogue
 )
 
 // The builtin names every template resolves against: what a kind
@@ -29,13 +38,16 @@ const (
 	// BuiltinSlots places everything pending in the fixed order:
 	// the body-claiming template's catch-all marker.
 	BuiltinSlots = "slots"
-	// BuiltinSlot places one named slot where the template says.
+	// BuiltinSlot places one slot at the template's marker: an
+	// owner slot by its name, or the prologue or the epilogue under
+	// [SlotPrologue] or [SlotEpilogue].
 	BuiltinSlot = "slot"
 	// BuiltinNested renders one nested declaration through its
 	// kind template, every line behind the given indentation: how
 	// a host places its inner declarations at member depth. A
-	// nested kind without a template reports and spells nothing,
-	// which is the unspelt-kind rule one level down.
+	// nested kind without a template reports the way a file-level
+	// declaration of it does, under the refused-kind or the
+	// unspelt-kind code, and spells nothing.
 	BuiltinNested = "nested"
 )
 

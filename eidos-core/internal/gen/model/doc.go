@@ -5,10 +5,13 @@
 // the symbol schema.
 //
 // [Lower] parses and type-checks one schema directory and returns
-// its [KindSpec] list, refusing a schema that breaks the annotation
-// contract. [Generate] renders that list into the committed models,
-// their traversal, name respelling, slot accessors and codecs, the
-// match constructors, the fact vocabulary and the Kind constants.
+// its [Schema]: the [KindSpec] list, and the [EnumSpec] list of the
+// symbol package the schema imports. It refuses a schema that
+// breaks the annotation contract. [Generate] renders the kinds into
+// the committed models, their traversal, name respelling, slot
+// accessors and codecs, the match constructors, the fact vocabulary
+// and the Kind constants, and folds the kinds, the facts and the
+// enums into the model fingerprint.
 //
 // The package imports no eidos model code. It reads the schema by
 // parsing it, so the kernel needs no language satellite to build

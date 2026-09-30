@@ -24,7 +24,7 @@ func (f *frame) body(d any) (string, error) {
 	case *emit.Method:
 		b = &decl.Body
 	default:
-		return "", fmt.Errorf("render: a %T carries no body", d)
+		return "", fmt.Errorf("render: a %T has no body", d)
 	}
 	return f.renderBody(d, b)
 }
@@ -41,7 +41,7 @@ func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
 	form, err := b.Form()
 	if err != nil {
 		f.sink.Errorf(BodyConflict, f.at, f.origin,
-			"%s emitted a body holding two forms: %v", f.plugin, err)
+			"%s emitted a body with two forms: %v", f.plugin, err)
 	}
 	if form == emit.FormTemplate {
 		if out, resolved := f.reference(d, b); resolved {
@@ -73,40 +73,45 @@ func (f *frame) renderBody(d any, b *emit.Body) (string, error) {
 	return out.String(), nil
 }
 
-// reference executes a body-claiming template from the emitting
-// plugin's tree. A false answer means nothing resolved, the
-// finding is on the sink, and the caller falls back to the slots;
-// a true answer is the template's own output, the marker rule
-// checked behind it. Each frame reads and parses a template once
-// per emitting plugin and name. Its builtins are bound to the frame
-// and write into the body under execution, so an execution copies
-// no template. A refusal withdraws the imports the execution
-// recorded, because its output is dropped.
+// reference executes a body-claiming template from its owner's
+// tree: the plugin the reference names, else the plugin whose unit
+// contains the body. A false result means nothing resolved, the
+// finding is on the sink, and the caller falls back to the slots.
+// A true result comes with the template's own output, the marker
+// rule checked behind it. Each frame reads and parses a template
+// once per owner and name. Its builtins are bound to the frame and
+// write into the body under execution, so an execution copies no
+// template. A refusal withdraws the imports the execution recorded,
+// because its output is dropped.
 func (f *frame) reference(d any, b *emit.Body) (string, bool) {
-	key := refKey{plugin: f.plugin, name: b.Ref.Name}
+	owner := b.Ref.Owner
+	if owner == "" {
+		owner = f.plugin
+	}
+	key := refKey{plugin: owner, name: b.Ref.Name}
 	parsed, cached := f.refCache[key]
 	if !cached {
-		tree, held := f.trees[f.plugin]
+		tree, held := f.trees[owner]
 		if !held {
 			f.sink.Errorf(UnresolvedRef, f.at, f.origin,
 				"%s references %q, and no tree is declared for it",
-				f.plugin, b.Ref.Name)
+				owner, b.Ref.Name)
 			return "", false
 		}
 		src, err := fs.ReadFile(tree, b.Ref.Name)
 		if err != nil {
 			f.sink.Errorf(UnresolvedRef, f.at, f.origin,
-				"%s references %q, which its tree does not hold",
-				f.plugin, b.Ref.Name)
+				"%s references %q, which its tree does not contain",
+				owner, b.Ref.Name)
 			return "", false
 		}
 		parsed, err = template.New(b.Ref.Name).
-			Funcs(f.pass.shared).Funcs(f.merged).
+			Funcs(f.vocab).Funcs(f.merged).
 			Funcs(referenceBuiltins(f.placeAll, f.placeOne, f.use)).
 			Parse(string(src))
 		if err != nil {
 			f.sink.Errorf(UnresolvedRef, f.at, f.origin,
-				"%s's template %q does not parse: %v", f.plugin, b.Ref.Name, err)
+				"%s's template %q does not parse: %v", owner, b.Ref.Name, err)
 			return "", false
 		}
 		if f.refCache == nil {
@@ -124,13 +129,13 @@ func (f *frame) reference(d any, b *emit.Body) (string, bool) {
 	if err != nil {
 		f.set.rollback(mark)
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
-			"%s's template %q refused: %v", f.plugin, b.Ref.Name, err)
+			"%s's template %q refused: %v", owner, b.Ref.Name, err)
 		return "", false
 	}
 	if n := pl.pending(); n > 0 {
 		f.sink.Errorf(DroppedSlots, f.at, f.origin,
 			"%s's template %q places no marker for %d pending statements",
-			f.plugin, b.Ref.Name, n)
+			owner, b.Ref.Name, n)
 	}
 	return out.String(), true
 }
@@ -190,10 +195,25 @@ func (pl *placement) all() (string, error) {
 	return out.String(), nil
 }
 
-// one places a single named slot where the template says. It is
-// the slot builtin; a name the owner never declared is the
-// template's own error.
+// one places a single slot where the template calls it: the
+// prologue or the epilogue under its standard name, else the owner
+// slot of that name. It is the slot builtin, and a name the owner
+// never declared is the template's own error.
 func (pl *placement) one(name string) (string, error) {
+	var std *emit.Slot[emit.Stmt]
+	switch name {
+	case emit.SlotPrologue:
+		pl.std[0], std = true, &pl.body.Prologue
+	case emit.SlotEpilogue:
+		pl.std[1], std = true, &pl.body.Epilogue
+	}
+	if std != nil {
+		var out strings.Builder
+		if err := pl.frame.stmts(&out, std.Items()); err != nil {
+			return "", err
+		}
+		return out.String(), nil
+	}
 	for i, named := range pl.body.Slots {
 		if named.Name != name {
 			continue

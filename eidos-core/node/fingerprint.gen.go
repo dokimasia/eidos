@@ -6,11 +6,12 @@
 package node
 
 // ModelFingerprint identifies the node model's shape: a sha256 over
-// every kind and node-side field the schema declares, hex-spelled.
+// every kind and node-side field the schema declares, its facts, and
+// the names and values of the symbol package's enums, hex-spelled.
 //
 // Every unit key folds it, because a schema change reshapes the
-// graph the same source produces: a graph recorded under one shape
-// must not be served under another. The hash reads the lowered
-// schema rather than the rendered files, so a documentation edit
-// does not change it.
-const ModelFingerprint = "c6d29e17647f39a8bfa0773c2138e0f0295515e4ed9f84d05639fb52dbe19611"
+// graph the same source produces, and an encoded graph writes enum
+// values as integers: a graph recorded under one shape must not be
+// served under another. The hash reads the lowered schema and not
+// the rendered files, so a documentation edit does not change it.
+const ModelFingerprint = "8d6380f9efe7491549f94a76690628920b29ffb0fa54dc43cd2a385a50792210"

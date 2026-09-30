@@ -30,16 +30,14 @@ import (
 
 // The corpus shape, the benchmarking document's densities at the
 // canonical scale: two hundred symbols per package, of which ten
-// per hundred carry the mark the annotator stamps, and three of
+// per hundred have the mark the annotator stamps, and three of
 // those ten reference a symbol in the next package, so the settle
 // follows resolved references across packages. The names encode
-// the roles, which is what keeps the corpus deterministic without
-// a seed; raw directives join the corpus when a frontend exists to
-// state them.
+// the roles, which keeps the corpus deterministic without a seed.
+// The corpus has no raw directives.
 const (
 	// e2ePackages is the benchmark's package count, the medium
-	// size whose symbol total matches the first system's measured
-	// envelope.
+	// size: 200,000 symbols.
 	e2ePackages = 1_000
 	// e2eRefs, e2eMarked and e2eUnmarked split one package's
 	// symbols by role: marked and cross-referencing, marked, and
@@ -48,6 +46,10 @@ const (
 	e2eMarked     = 14
 	e2eUnmarked   = 180
 	e2ePathPrefix = "example.com/e2e/pkg"
+
+	// e2eBrand is the brand the pipeline's composition declares and
+	// its files are stamped under.
+	e2eBrand output.Brand = "e2e"
 )
 
 // e2ePath is one corpus package's path.
@@ -87,7 +89,7 @@ func e2eWorkspace(tb assert.TB, n int) *workspace.Workspace {
 	var mark meta.Key[bool]
 	stamper, held := eidos.NewPlugin("marker").
 		Keys(func(r *meta.Registry) error {
-			if err := r.ClaimNamespace("e2e", "marker"); err != nil {
+			if err := r.ClaimNamespace("e2e"); err != nil {
 				return err
 			}
 			k, err := meta.Register[bool](r, meta.KeySpec{
@@ -131,6 +133,7 @@ func e2eWorkspace(tb assert.TB, n int) *workspace.Workspace {
 	assert.True(tb, held, "the generator half composes")
 
 	w, err := workspace.New().
+		Brand(e2eBrand).
 		Annotators(stamper).
 		Targets("fixture").
 		Plans(workspace.Plan{
@@ -148,7 +151,7 @@ func packageIndex(tb assert.TB, path string) int {
 	tb.Helper()
 
 	p, err := strconv.Atoi(strings.TrimPrefix(path, e2ePathPrefix))
-	assert.NoError(tb, err, "a corpus path carries its index")
+	assert.NoError(tb, err, "a corpus path ends in its index")
 	return p
 }
 
@@ -167,13 +170,15 @@ func e2eBackend() plugin.Backend {
 			symbol.KindStruct: "type {{.Name}} {\n" +
 				"{{- range .Fields.Items}}\n\t{{.Name}} {{spell .Type}}\n{{- end}}\n}\n",
 		}).
-		Funcs(template.FuncMap{
-			"spell": func(t *emit.TypeRef) string {
-				if t == nil {
-					return ""
-				}
-				return t.Spelling
-			},
+		Funcs(func(*render.ImportSet) template.FuncMap {
+			return template.FuncMap{
+				"spell": func(t *emit.TypeRef) string {
+					if t == nil {
+						return ""
+					}
+					return t.Spelling
+				},
+			}
 		}).
 		Coverage(render.Coverage{Facts: facts}).
 		Respell(func(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
@@ -188,10 +193,11 @@ func e2eBackend() plugin.Backend {
 		Build()
 }
 
-// e2ePipeline runs the corpus through every stage the kernel owns:
-// annotate, generate and settle inside the run, then render, stamp
-// and the sink's commit. The renderer arrives composed, the way a
-// host holds it. It returns the committed files.
+// e2ePipeline runs the corpus through every stage the kernel
+// implements: annotate, generate and settle inside the run, then
+// render, stamp and the sink's commit. The renderer arrives
+// composed, the way a host receives it. It returns the committed
+// files.
 func e2ePipeline(
 	tb assert.TB, w *workspace.Workspace, g *store.Graph, r plugin.Renderer,
 ) []output.Written {
@@ -207,14 +213,14 @@ func e2ePipeline(
 	assert.NoError(tb, err, "the render completes")
 	assert.False(tb, report.Sink.Failed(), "and reports no findings that fail")
 
-	c, err := output.NewContract("e2e", plugin.CommentSyntax{Line: []string{"//"}})
+	c, err := output.NewContract(e2eBrand, plugin.CommentSyntax{Line: []string{"//"}})
 	assert.NoError(tb, err, "the contract composes")
 	sink := output.NewMem()
 	for _, f := range files {
 		body, stampErr := c.Stamp(f)
 		assert.NoError(tb, stampErr, "every rendered file stamps")
-		// Routing a file under its owning package is the layout's
-		// half of the address; the fixture routes by package path.
+		// Routing a file under its package is the layout's half of
+		// the address, and the fixture routes by package path.
 		assert.NoError(tb, sink.Write(f.Pkg.Package+"/"+f.Name, body),
 			"and stages")
 	}
@@ -253,7 +259,7 @@ func peakRSS() uint64 {
 // the corpus, composition and renderer built outside the
 // measurement, under an allocation ceiling pinned from measurement
 // with headroom. The peak resident set reports as a metric beside
-// the numbers, so the envelope carries memory as well as work.
+// the numbers, so the envelope reports memory as well as work.
 func BenchmarkPipeline(b *testing.B) {
 	c := bench.Start(b).MaxAllocs(520_000)
 	defer c.End()
@@ -282,28 +288,33 @@ func BenchmarkPipeline(b *testing.B) {
 }
 
 // A second run costs a first run's work and writes a first run's
-// bytes: nothing a run leaves behind feeds the next one, which is
-// the pathology the first system had, whose warm runs re-ingested
-// their own outputs. The corpus is a share of the benchmark's, so
-// the gate stays quick.
-func TestPipelineWarmEqualsCold(t *testing.T) {
+// bytes: nothing a run leaves behind feeds the next one. The corpus
+// is a share of the benchmark's, so the gate runs quickly.
+func TestPipeline(t *testing.T) {
 	t.Parallel()
 
-	const n = 50
-	run := func() map[string]string {
-		w := e2eWorkspace(t, n)
-		g := e2eGraph(t, n)
-		r, held := e2eBackend().(plugin.Renderer)
-		assert.True(t, held, "the fixture backend renders")
-		out := map[string]string{}
-		for _, f := range e2ePipeline(t, w, g, r) {
-			out[f.Path] = f.Hash
-		}
-		return out
-	}
-	cold := run()
-	warm := run()
-	assert.Length(t, warm, n, "one file per package commits")
-	assert.Equal(t, warm, cold,
-		"a warm run writes a cold run's bytes, hash for hash")
+	t.Run("Run", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes the same bytes on a warm run as on a cold run", func(t *testing.T) {
+			t.Parallel()
+
+			const n = 50
+			run := func() map[string]string {
+				w := e2eWorkspace(t, n)
+				g := e2eGraph(t, n)
+				r, held := e2eBackend().(plugin.Renderer)
+				assert.True(t, held, "the fixture backend renders")
+				out := map[string]string{}
+				for _, f := range e2ePipeline(t, w, g, r) {
+					out[f.Path] = f.Hash
+				}
+				return out
+			}
+			cold := run()
+			warm := run()
+			assert.Length(t, warm, n, "one file per package commits")
+			assert.Equal(t, warm, cold, "the warm run's hashes are the cold run's")
+		})
+	})
 }

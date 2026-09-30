@@ -9,7 +9,11 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -50,6 +54,40 @@ func (e *Emitter) PackageFile(tags ...Tag) *Out {
 // plan has one output per family, so its key is empty.
 func (e *Emitter) PlanFile(tags ...Tag) *Out {
 	return e.out(plugin.PerPlan, "", tags)
+}
+
+// JoinName joins a family word onto a base name, the way a
+// generated identifier derives from the declaration it serves: the
+// base, then the word with its first letter raised, so the boundary
+// between them survives. The result is in the neutral convention
+// every emitted name takes, and the plan's backend spells it in the
+// target's case when the plan settles: store and stub join as
+// storeStub, which a Go plan spells StoreStub for a public
+// declaration. An empty word returns the base, and an empty base
+// returns the word.
+func (*Emitter) JoinName(word, base string) string {
+	if word == "" {
+		return base
+	}
+	if base == "" {
+		return word
+	}
+	first, size := utf8.DecodeRuneInString(word)
+	var joined strings.Builder
+	joined.Grow(len(base) + utf8.UTFMax + len(word) - size)
+	joined.WriteString(base)
+	joined.WriteRune(unicode.ToUpper(first))
+	joined.WriteString(word[size:])
+	return joined.String()
+}
+
+// Ref returns a reference to one of this plugin's templates, for a
+// body to claim: the render resolves the name in this plugin's tree
+// for the plan's target, wherever the body is placed, a slot of
+// another plugin's declaration included. Data is the payload the
+// template executes over.
+func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
+	return &emit.TemplateRef{Name: name, Data: data, Owner: e.rs.plugin}
 }
 
 // out resolves the family and returns the subject-bound handle.
@@ -95,9 +133,9 @@ func oneTag(tags []Tag) Tag {
 	}
 }
 
-// Out is one accumulator seen from one match. The handle carries
+// Out is one accumulator seen from one match. The handle records
 // the match's subject and gating instance, so an append is
-// attributed without shared mutable state: two matches hold two
+// attributed without shared mutable state: two matches have two
 // handles onto one accumulator.
 type Out struct {
 	acc      *accumulator

@@ -14,71 +14,82 @@ import (
 
 // The scaffolding vocabulary is deliberately small and its
 // spellings are API: faults and lint findings name statement and
-// expression kinds, and the codec carries every form whole.
+// expression kinds, and the codec encodes every form whole.
 func TestScaffold(t *testing.T) {
 	t.Parallel()
 
-	t.Run("String", func(t *testing.T) {
+	t.Run("StmtKind.String", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("statement kinds spell their names", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name string
+			give emit.StmtKind
+			want string
+		}{
+			{name: "returns return for a return", give: emit.StmtReturn, want: "return"},
+			{name: "returns assign for an assignment", give: emit.StmtAssign, want: "assign"},
+			{name: "returns expr for an expression statement", give: emit.StmtExpr, want: "expr"},
+			{name: "returns guard for a guard", give: emit.StmtGuard, want: "guard"},
+			{name: "returns the number of a kind nothing declares", give: emit.StmtKind(9), want: "9"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			tests := []struct {
-				kind emit.StmtKind
-				want string
-			}{
-				{kind: emit.StmtReturn, want: "return"},
-				{kind: emit.StmtAssign, want: "assign"},
-				{kind: emit.StmtExpr, want: "expr"},
-				{kind: emit.StmtGuard, want: "guard"},
-				{kind: emit.StmtKind(9), want: "9"},
-			}
-			for _, tt := range tests {
-				t.Run(tt.want, func(t *testing.T) {
-					t.Parallel()
-					assert.Equal(t, tt.kind.String(), tt.want,
-						"the spelling is what a finding carries")
-				})
-			}
-		})
-
-		t.Run("expression kinds spell their names", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, emit.ExprName.String(), "name", "the local spelling")
-			assert.Equal(t, emit.ExprCall.String(), "call", "the application")
-			assert.Equal(t, emit.ExprKind(9).String(), "9",
-				"a kind nothing declares returns its number")
-		})
-
-		t.Run("forms spell their names", func(t *testing.T) {
-			t.Parallel()
-
-			tests := []struct {
-				form emit.Form
-				want string
-			}{
-				{form: emit.FormDefault, want: "default"},
-				{form: emit.FormStmts, want: "scaffolding"},
-				{form: emit.FormTemplate, want: "template"},
-				{form: emit.FormVerbatim, want: "verbatim"},
-				{form: emit.Form(9), want: "9"},
-			}
-			for _, tt := range tests {
-				t.Run(tt.want, func(t *testing.T) {
-					t.Parallel()
-					assert.Equal(t, tt.form.String(), tt.want,
-						"the spelling is what the lint check names")
-				})
-			}
-		})
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling a finding names")
+			})
+		}
 	})
 
-	t.Run("codec", func(t *testing.T) {
+	t.Run("ExprKind.String", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("a bare return carries no value", func(t *testing.T) {
+		tests := []struct {
+			name string
+			give emit.ExprKind
+			want string
+		}{
+			{name: "returns name for a name", give: emit.ExprName, want: "name"},
+			{name: "returns call for an application", give: emit.ExprCall, want: "call"},
+			{name: "returns value for a value", give: emit.ExprValue, want: "value"},
+			{name: "returns the number of a kind nothing declares", give: emit.ExprKind(9), want: "9"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling a finding names")
+			})
+		}
+	})
+
+	t.Run("Form.String", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give emit.Form
+			want string
+		}{
+			{name: "returns default for the default form", give: emit.FormDefault, want: "default"},
+			{name: "returns scaffolding for statements", give: emit.FormStmts, want: "scaffolding"},
+			{name: "returns template for a template reference", give: emit.FormTemplate, want: "template"},
+			{name: "returns verbatim for verbatim text", give: emit.FormVerbatim, want: "verbatim"},
+			{name: "returns the number of a form nothing declares", give: emit.Form(9), want: "9"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling the lint check names")
+			})
+		}
+	})
+
+	t.Run("json.Marshal", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("omits the value of a bare return", func(t *testing.T) {
 			t.Parallel()
 
 			encoded, err := json.Marshal(emit.Stmt{Kind: emit.StmtReturn})
@@ -86,8 +97,12 @@ func TestScaffold(t *testing.T) {
 			assert.NotContains(t, string(encoded), "value",
 				"the zero expression is absence, not an empty object")
 		})
+	})
 
-		t.Run("a guard round-trips its consequence", func(t *testing.T) {
+	t.Run("json.Unmarshal", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a guard with the actions it encoded", func(t *testing.T) {
 			t.Parallel()
 
 			guard := emit.Stmt{
@@ -98,10 +113,10 @@ func TestScaffold(t *testing.T) {
 					Value: emit.Expr{Kind: emit.ExprName, Name: "err"},
 				}},
 			}
-			first, err := json.Marshal(guard)
+			encoded, err := json.Marshal(guard)
 			assert.NoError(t, err, "the guard encodes")
 			var decoded emit.Stmt
-			assert.NoError(t, json.Unmarshal(first, &decoded), "and decodes")
+			assert.NoError(t, json.Unmarshal(encoded, &decoded), "the guard decodes")
 			assert.Equal(t, decoded, guard, "the round trip returns the value")
 		})
 	})

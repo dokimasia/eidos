@@ -16,12 +16,43 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The emitter owns the accumulator bookkeeping: family misuse is a
-// defect that panics, and an empty append changes nothing.
+// refPlugin is the plugin whose handler asks the reference fixture
+// for a reference.
+const refPlugin plugin.ID = "referrer"
+
+// The reference fixture's template name and the payload it passes.
+const (
+	refTemplate = "method1.tpl"
+	refPayload  = "payload"
+)
+
+// referenced returns the reference a graph handler of refPlugin asks
+// its emitter for.
+func referenced(t *testing.T) *emit.TemplateRef {
+	t.Helper()
+
+	g, _, _ := fixtureGraph(t)
+	_, facts := boolKey(t)
+	var got *emit.TemplateRef
+	p := eidos.NewPlugin(refPlugin).
+		Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+			got = e.Ref(refTemplate, refPayload)
+			return nil
+		})).
+		Build()
+	assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
+	assert.NotNil(t, got, "the handler ran")
+	return got
+}
+
+// The emitter is the handler's write surface: family misuse is a
+// defect that panics, every family has its own handle, an empty
+// append changes nothing, and the spellings a target decides arrive
+// through it.
 func TestEmitter(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Out", func(t *testing.T) {
+	t.Run("PlanFile", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("panics on more than one tag", func(t *testing.T) {
@@ -59,7 +90,7 @@ func TestEmitter(t *testing.T) {
 			}, "a per-source family is not a plan file")
 		})
 
-		t.Run("two live handles in one invocation stay distinct", func(t *testing.T) {
+		t.Run("returns a distinct handle per family in one invocation", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := fixtureGraph(t)
@@ -88,12 +119,11 @@ func TestEmitter(t *testing.T) {
 				byTag[u.Tag] = u
 			}
 			assert.Length(t, byTag, 2, "each family assembled its own unit")
-			assert.Length(t, byTag[""].Decls, 2,
-				"the plan handle took only its own appends")
-			assert.Length(t, byTag["aux"].Decls, 2, "and the aux handle its own")
+			assert.Length(t, byTag[""].Decls, 2, "the plan handle took only its own appends")
+			assert.Length(t, byTag["aux"].Decls, 2, "the aux handle took only its own appends")
 		})
 
-		t.Run("handles past the pool still arrive apart", func(t *testing.T) {
+		t.Run("returns distinct handles past the handle pool", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := fixtureGraph(t)
@@ -133,8 +163,12 @@ func TestEmitter(t *testing.T) {
 			}
 			assert.Equal(t, units, len(tags), "one unit per family")
 		})
+	})
 
-		t.Run("an empty append records nothing", func(t *testing.T) {
+	t.Run("Append", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("records nothing for no declarations", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, _ := fixtureGraph(t)
@@ -160,9 +194,8 @@ func TestEmitter(t *testing.T) {
 				}
 			}
 			assert.True(t, found, "the touched accumulator still flushes")
-			assert.Length(t, got.Decls, 0, "holding nothing")
-			assert.Length(t, got.Origins, 0,
-				"an empty append fabricates no provenance")
+			assert.Length(t, got.Decls, 0, "the unit has no declaration")
+			assert.Length(t, got.Origins, 0, "an empty append fabricates no provenance")
 		})
 	})
 
@@ -191,14 +224,12 @@ func TestEmitter(t *testing.T) {
 			for u := range ctx.Emit.Units() {
 				byKey[u.Key] = u
 			}
-			assert.Length(t, byKey, 2,
-				"two subjects in two files assemble two units")
-			assert.Equal(t, byKey[alpha.Pos.File].Per, plugin.PerSource,
-				"each is keyed per source")
+			assert.Length(t, byKey, 2, "two subjects in two files assemble two units")
+			assert.Equal(t, byKey[alpha.Pos.File].Per, plugin.PerSource, "each is keyed per source")
 			assert.Length(t, byKey[alpha.Pos.File].Decls, 1,
 				"the first file's unit took only its own subject")
 			assert.Length(t, byKey[beta.Pos.File].Decls, 1,
-				"and the second file's only its own")
+				"the second file's unit took only its own subject")
 		})
 
 		t.Run("keys the empty string for a subject with no position", func(t *testing.T) {
@@ -228,10 +259,8 @@ func TestEmitter(t *testing.T) {
 				keys[u.Key] = len(u.Decls)
 			}
 			assert.Equal(t, keys[""], 1,
-				"a subject carrying no position keys the empty string "+
-					"rather than joining another file's unit")
-			assert.Equal(t, keys[placed.Pos.File], 1,
-				"and the positioned subject keeps its own file")
+				"a subject with no position keys the empty string and joins no other file's unit")
+			assert.Equal(t, keys[placed.Pos.File], 1, "the positioned subject keeps its own file")
 		})
 	})
 
@@ -266,11 +295,59 @@ func TestEmitter(t *testing.T) {
 			var langs []symbol.Lang
 			for u := range ctx.Emit.Units() {
 				assert.Equal(t, u.Key, coretest.StorePath, "every unit keys the one package path")
-				assert.Length(t, u.Decls, 1, "and holds its own language's subject alone")
+				assert.Length(t, u.Decls, 1, "each unit has its own language's subject alone")
 				langs = append(langs, u.Pkg.Lang)
 			}
 			assert.Equal(t, langs, []symbol.Lang{coretest.Lang, otherLang},
 				"two languages spelling one path assemble two units, in package order")
+		})
+	})
+
+	t.Run("JoinName", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			word string
+			base string
+			want string
+		}{
+			{name: "joins the word after the base", word: "stub", base: "store", want: "storeStub"},
+			{name: "keeps the case of the base", word: "stub", base: "Store", want: "StoreStub"},
+			{name: "raises a first letter of several bytes", word: "éclair", base: "store", want: "storeÉclair"},
+			{name: "returns the base for an empty word", word: "", base: "store", want: "store"},
+			{name: "returns the word for an empty base", word: "stub", base: "", want: "stub"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, (&eidos.Emitter{}).JoinName(tt.word, tt.base), tt.want,
+					"the join is the neutral spelling")
+			})
+		}
+	})
+
+	t.Run("Ref", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a reference whose owner is the plugin the phase call runs as", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, referenced(t).Owner, contextPlugin,
+				"the owner is the identity the call attributes its units to")
+		})
+
+		t.Run("returns a reference to the named template", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, referenced(t).Name, refTemplate, "the name is the one given")
+		})
+
+		t.Run("returns a reference with the given payload", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, referenced(t).Data, any(refPayload), "the payload is the one given")
 		})
 	})
 }

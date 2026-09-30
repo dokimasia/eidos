@@ -1004,32 +1004,45 @@ func (x *Alias) Identity() symbol.Identity { return x.ID }
 
 // TypeRef is a type as a declaration mentions it.
 //
-// Spelling holds the source text verbatim. Target holds the
-// canonical identity the spelling resolves to, and it stays zero
-// until the resolution step runs, and permanently for builtins and
-// types outside the workspace. That is legitimate degradation, so a
-// consumer asks before relying on a target.
+// Spelling is the source text verbatim. Target is the canonical
+// identity the spelling resolves to. It is zero until the
+// resolution step runs, and permanently for builtins and types
+// outside the workspace. That is legitimate degradation, so a
+// consumer checks the target before relying on it.
 //
-// Target is an identity rather than a pointer. A key can be stored,
-// compared and carried across runs; a pointer cannot, and following
+// Target is an identity and not a pointer. A key can be stored,
+// compared and kept across runs. A pointer cannot, and following
 // one would make the walk cyclic.
 //
-// Args holds the type arguments of an instantiation, so
-// Map[string, User] carries two. A reference carrying Args holds
-// the bare name in Spelling, and a target writes the argument
-// list in its own brackets, so the one instantiation spells
-// Map[K, V] in Go and Map<K, V> in Java.
+// Package is what the reference's import names. It is empty for a
+// builtin, for a structural form, whose named children record their
+// own, and for a declaration the file uses without an import. Go
+// records an import path, TypeScript a module specifier, and Java
+// and Rust a slash-separated package or module path, which a backend
+// writes with the language's own separator. Each is the form a
+// declaration identity of the language uses for its package, so a
+// backend reads a target's package and a reference's alike. A proto
+// import names a file and not a package, so protobuf records the
+// path of the imported file that declares the type. A backend
+// imports a type the workspace never loaded through Package,
+// because such a reference has no target.
 //
-// Form and Elems carry the structure the frontend parsed, in the
+// Args lists the type arguments of an instantiation, so
+// Map[string, User] has two. A reference with Args has the bare
+// name in Spelling, and a target writes the argument list in its
+// own brackets, so the one instantiation spells Map[K, V] in Go and
+// Map<K, V> in Java.
+//
+// Form and Elems record the structure the frontend parsed, in the
 // form's fixed child order: one child for Optional, List, Array,
 // Stream and Borrow; the key then the value for Map; the
 // parameters then the returns for Func, the returns from Split;
 // the members for Tuple and Union; the bound for Wildcard, with
-// Variance; none for Inline and Named. The spelling stays verbatim
-// beside them, so a backend spells what it read, and the
-// resolution step reaches the named types inside a composite
-// through the children. A structural reference carries no target
-// of its own; its Named children do. Length holds a fixed array
+// Variance; none for Inline and Named. The spelling is kept
+// verbatim beside them, so a backend spells what it read, and the
+// resolution step visits the named types inside a composite
+// through the children. A structural reference has no target of
+// its own, and its Named children do. Length is a fixed array
 // length written as a literal, and 0 where the length is an
 // expression the spelling keeps.
 //
@@ -1039,6 +1052,7 @@ type TypeRef struct {
 	Pos      position.Pos    `json:"pos,omitzero"`
 	Spelling string          `json:"spelling,omitzero"` // source text, verbatim
 	Target   symbol.Identity `json:"target,omitzero"`   // zero until resolution, and for builtins, externals and structural forms
+	Package  string          `json:"package,omitzero"`  // what the import names; "" for a builtin, a structural form and a name needing no import
 	Form     symbol.TypeForm `json:"form,omitzero"`     // the structure; FormNamed by default
 	Elems    []*TypeRef      `json:"elems,omitzero"`    // the form's children, in the form's fixed order
 	Split    int             `json:"split,omitzero"`    // FormFunc: the index in Elems where the returns begin
@@ -1063,21 +1077,21 @@ func (x *TypeRef) Identity() symbol.Identity { return x.ID }
 
 // TypeParam is one parameter of a generic declaration.
 //
-// Variance is Invariant for Go and Rust, and carries the declared
-// variance for Kotlin, C# and Java wildcards. Bounds holds the
-// constraint as type references: a Go constraint interface, a Java
-// or Kotlin upper bound, a Rust trait bound. What a bound cannot
-// express in references, such as a Go constraint's full type set,
-// stays in language metadata.
+// Variance is Invariant for Go and Rust, and the declared variance
+// for Kotlin, C# and Java wildcards. Bounds lists the constraint as
+// type references: a Go constraint interface, a Java or Kotlin
+// upper bound, a Rust trait bound. What a bound cannot express in
+// references, such as a Go constraint's full type set, is language
+// metadata.
 //
 // Default is the type argument used when a caller supplies none,
 // which TypeScript writes as "<T = string>". It is nil where the
 // language has no such form.
 //
-// Const marks a parameter whose argument is a value rather than a
-// type, which Rust writes as "<const N: usize>". Type then carries
-// the value's type and DefaultValue its default spelling; both stay
-// empty for an ordinary type parameter.
+// Const marks a parameter whose argument is a value and not a type,
+// which Rust writes as "<const N: usize>". Type is then the value's
+// type and DefaultValue its default spelling. Both are empty for an
+// ordinary type parameter.
 //
 // This is the node spelling of the kind.
 type TypeParam struct {
@@ -1120,11 +1134,10 @@ func (x *TypeParam) TypeRef() symbol.Symbol {
 // use.
 //
 // Embedding differs from nominal supertyping because the members
-// arrive promoted rather than inherited, and resolving what a type
-// effectively holds across embeds is a language rule rather than a
-// model one.
+// arrive promoted and not inherited. Which members a type has
+// across its embeds is a language rule and not a model one.
 //
-// An embed is a declaration in its own right: it carries the
+// An embed is a declaration in its own right: it has the
 // documentation, trailing comment, tag and annotations an embedded
 // field takes like any field, and its identity, named by the
 // embedded type's bare name, is what a directive attaches to.

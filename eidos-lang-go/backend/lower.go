@@ -37,9 +37,9 @@ const iotaName = "iota"
 // Lower reshapes the constructs Go states in other declarations:
 // an enum becomes a defined type and its constants, and a callable
 // announcing failure types gains an error return, in place. Both
-// consume their fact, so a second settle changes nothing, and
-// everything else passes through unchanged, a sum included, whose
-// unspelt kind the render reports.
+// consume their fact, so a second settle changes nothing.
+// Everything else passes through unchanged, a sum included, which
+// the backend declares refused.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	switch d := s.(type) {
 	case *emit.Enum:

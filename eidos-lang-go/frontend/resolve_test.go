@@ -16,118 +16,101 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// scopeOf parses one file and returns its recorded import scope.
+// The file the resolution cases parse, the package it declares, and
+// the paths its imports name.
+const (
+	resolveFile    = "p/a.go"
+	resolvePackage = "p"
+	apiPath        = "example.test/fix/api"
+	floodPath      = "example.test/fix/flood"
+)
+
+// resolveSource imports one package unaliased, one under an alias,
+// one blank and one dot import.
+const resolveSource = "package p\n\nimport (\n\t\"example.test/fix/api\"\n\tren \"example.test/fix/other\"\n" +
+	"\t_ \"example.test/fix/blank\"\n\t. \"example.test/fix/flood\"\n)\n\nvar _ = api.User{}\n"
+
+// scopeOf parses one file and returns the frontend with the file's
+// recorded import scope.
 func scopeOf(tb assert.TB, src string) (plugin.Frontend, plugin.ImportScope) {
 	tb.Helper()
 
-	tree := fstest.MapFS{"p/a.go": {Data: []byte(src)}}
+	tree := fstest.MapFS{resolveFile: {Data: []byte(src)}}
 	f := frontend.New(nil)
 	u := plugin.NewSourceUnit(
-		[]plugin.SourceRef{{Path: "p/a.go"}}, tree, plugin.DepthFull,
-		f.Syntax(), diag.NewSink(), f.Name(),
+		[]plugin.SourceRef{{Path: resolveFile}}, tree, plugin.DepthFull,
+		f.Syntax(), brand, diag.NewSink(), f.Name(),
 	)
 	assert.NoError(tb, f.Parse(context.Background(), u), "the file parses")
 	scopes := u.Graph().Scopes()
 	assert.Length(tb, scopes, 1, "one file, one scope")
 	return f, plugin.ImportScope{
-		File:     symbol.Identity{Lang: frontend.Lang, Package: "p", Name: "p/a.go", Kind: symbol.KindFile},
+		File: symbol.Identity{
+			Lang: frontend.Lang, Package: resolvePackage, Name: resolveFile, Kind: symbol.KindFile,
+		},
 		Bindings: scopes[0].Bindings,
 	}
 }
 
-// tier returns the one tier Go resolves a spelling in.
-func tier(tb assert.TB, c plugin.Candidates) []symbol.Identity {
-	tb.Helper()
-
-	assert.Length(tb, c, 1, "Go resolves every spelling in one tier")
-	return c[0]
+// at returns a candidate identity: a package and a name in Go, with
+// no kind.
+func at(pkg, name string) symbol.Identity {
+	return symbol.Identity{Lang: frontend.Lang, Package: pkg, Name: name}
 }
 
-// Resolution is Go's own probing, so its normalization and its
-// empty results are pinned beside its candidates.
 func TestResolve(t *testing.T) {
 	t.Parallel()
 
-	src := "package p\n\nimport (\n\t\"example.test/fix/api\"\n\tren \"example.test/fix/other\"\n\t_ \"example.test/fix/blank\"\n)\n\n" +
-		"var _ = api.User{}\nvar _ = ren.Thing{}\n"
-
-	t.Run("probes qualified spellings through the bindings", func(t *testing.T) {
+	t.Run("Resolve", func(t *testing.T) {
 		t.Parallel()
 
-		f, scope := scopeOf(t, src)
-		got := tier(t, f.Resolve(scope, "api.User"))
-		assert.Length(t, got, 1, "the default local name binds")
-		assert.Equal(t, got[0], symbol.Identity{
-			Lang: frontend.Lang, Package: "example.test/fix/api", Name: "User",
-		}, "at the imported path")
+		tests := []struct {
+			name string
+			give string
+			want plugin.Candidates
+		}{
+			{
+				name: "returns the import a qualifier binds as one tier",
+				give: "api.User", want: plugin.Candidates{{at(apiPath, "User")}},
+			},
+			{
+				name: "returns the unaliased imports for an unbound qualifier",
+				give: "ghost.X", want: plugin.Candidates{{at(apiPath, "X")}},
+			},
+			{
+				name: "returns the own package then the dot import for an exported bare name",
+				give: "Thing", want: plugin.Candidates{{at(resolvePackage, "Thing"), at(floodPath, "Thing")}},
+			},
+			{
+				name: "returns the own package alone for an unexported bare name",
+				give: "thing", want: plugin.Candidates{{at(resolvePackage, "thing")}},
+			},
+			{name: "returns no tier for a predeclared type", give: "int"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-		renamed := tier(t, f.Resolve(scope, "ren.Thing"))
-		assert.Length(t, renamed, 1, "a renamed import binds its alias")
-		assert.Equal(t, renamed[0].Package, "example.test/fix/other", "at its path")
+				f, scope := scopeOf(t, resolveSource)
+				assert.Equal(t, f.Resolve(scope, tt.give), tt.want, "the candidates in probe order")
+			})
+		}
 
-		fallback := tier(t, f.Resolve(scope, "ghost.X"))
-		assert.Length(t, fallback, 1,
-			"an unbound qualifier probes the unaliased imports alone, because an alias and a blank bind no other name")
-		assert.Equal(t, fallback[0].Package, "example.test/fix/api",
-			"a package's clause can differ from its assumed name, and the graph decides")
-		blank := tier(t, f.Resolve(scope, "blank.X"))
-		assert.Length(t, blank, 1, "a blank import binds no qualifier")
-		assert.Equal(t, blank[0].Package, "example.test/fix/api", "so the spelling falls back like any other")
+		t.Run("returns the own package for a file without a recorded scope", func(t *testing.T) {
+			t.Parallel()
 
-		versioned, vscope := scopeOf(t,
-			"package p\n\nimport \"gopkg.in/yaml.v3\"\n\nvar _ yaml.Node\n")
-		got = tier(t, versioned.Resolve(vscope, "yaml.Node"))
-		assert.Length(t, got, 1, "a versioned path binds the name it assumes")
-		assert.Equal(t, got[0].Package, "gopkg.in/yaml.v3", "at its path")
-	})
+			f, scope := scopeOf(t, resolveSource)
+			scope.Bindings = nil
+			assert.Equal(t, f.Resolve(scope, "Thing"), plugin.Candidates{{at(resolvePackage, "Thing")}},
+				"the own package alone")
+		})
 
-	t.Run("probes nothing for an unbound qualifier in a file without imports", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns no tier for a qualifier in a file without a recorded scope", func(t *testing.T) {
+			t.Parallel()
 
-		f, scope := scopeOf(t, "package p\n\ntype Row struct{}\n")
-		assert.Empty(t, f.Resolve(scope, "ghost.X"), "no import can declare the name")
-	})
-
-	t.Run("probes dot imports for bare exported spellings", func(t *testing.T) {
-		t.Parallel()
-
-		dotted := "package p\n\nimport . \"example.test/fix/flood\"\n\nvar _ = Thing{}\n"
-		f, scope := scopeOf(t, dotted)
-		got := tier(t, f.Resolve(scope, "Thing"))
-		assert.Length(t, got, 2, "the own package first, then the dot import")
-		assert.Equal(t, got[0].Package, "p", "home before flood")
-		assert.Equal(t, got[1].Package, "example.test/fix/flood", "the flooded scope probes")
-		assert.Length(t, tier(t, f.Resolve(scope, "thing")), 1,
-			"a dot import floods exported names alone")
-	})
-
-	t.Run("strips decoration before probing", func(t *testing.T) {
-		t.Parallel()
-
-		f, scope := scopeOf(t, src)
-		assert.Equal(t, tier(t, f.Resolve(scope, "*[]api.User"))[0].Name, "User",
-			"pointers and slices unwrap")
-		assert.Equal(t, tier(t, f.Resolve(scope, "[4]api.User"))[0].Name, "User",
-			"array lengths unwrap")
-		assert.Equal(t, tier(t, f.Resolve(scope, "*List[api.User]"))[0], symbol.Identity{
-			Lang: frontend.Lang, Package: "p", Name: "List",
-		}, "a decorated instantiation resolves the way a bare one does")
-		assert.Equal(t, tier(t, f.Resolve(scope, "(row)"))[0].Name, "row",
-			"parentheses are punctuation")
-		assert.Equal(t, tier(t, f.Resolve(scope, "row"))[0], symbol.Identity{
-			Lang: frontend.Lang, Package: "p", Name: "row",
-		}, "a bare spelling probes its own package, whatever its case")
-	})
-
-	t.Run("returns no candidate for what no declaration declares", func(t *testing.T) {
-		t.Parallel()
-
-		f, scope := scopeOf(t, src)
-		assert.Empty(t, f.Resolve(scope, "int"), "a builtin is nobody's")
-		assert.Empty(t, f.Resolve(scope, "map[string]int"), "a map is a shape")
-		assert.Empty(t, f.Resolve(scope, "func(int) error"), "a func type is a shape")
-		assert.Empty(t, f.Resolve(scope, "chan int"), "a channel is a shape")
-		assert.Empty(t, f.Resolve(scope, "~int"), "an approximation is a term, not a name")
-		assert.Empty(t, f.Resolve(scope, "A|B"), "a union never fabricates an identity")
+			f, scope := scopeOf(t, resolveSource)
+			scope.Bindings = nil
+			assert.Empty(t, f.Resolve(scope, "api.User"), "no import binds the qualifier")
+		})
 	})
 }

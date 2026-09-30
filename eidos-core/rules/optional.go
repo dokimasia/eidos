@@ -13,20 +13,20 @@ import (
 // The optional capabilities. A language declares one by satisfying
 // the interface on its [SourceRules] value, and a consumer finds it
 // by asserting on [Bound.Source]. A consumer that asserts and is
-// refused reports once and generates nothing for that language,
-// which beats a projection built on a default nobody chose.
+// refused reports once and generates nothing for that language, so
+// no projection rests on a default nobody chose.
 
 // EnumRules projects an enumeration.
 type EnumRules interface {
 	EnumOf(e *node.Enum, v View) EnumInfo
 }
 
-// EnumForm says where a variant's textual form comes from.
+// EnumForm names where a variant's textual form comes from.
 type EnumForm uint8
 
 const (
 	// EnumIdentifier derives the text from the variant's name: the
-	// only form where the declared value carries no text.
+	// only form where the declared value has no text.
 	EnumIdentifier EnumForm = iota
 	// EnumValue takes the text from the declared value, which for a
 	// textual enumeration is the textual form.
@@ -113,7 +113,7 @@ type ThrowsRules interface {
 	Throws(c Callable) []*node.TypeRef
 }
 
-// OwnershipRules says how a parameter is passed.
+// OwnershipRules returns how a parameter is passed.
 type OwnershipRules interface {
 	Ownership(p ParamView) Ownership
 }
@@ -145,9 +145,12 @@ func (o Ownership) String() string {
 }
 
 // PromotionRules returns the members a constructor in another
-// package can set, promotion included, in declaration order.
+// package can set, promotion included, in declaration order, with a
+// gap for every contributor the member walk could not read. A
+// generator building a constructor over a set with gaps reports it
+// incomplete and does not write a partial builder.
 type PromotionRules interface {
-	Settable(s *node.Struct, v View) []Member
+	Settable(s *node.Struct, v View) MemberSet
 }
 
 // EqualityRules reports whether a type works where the language

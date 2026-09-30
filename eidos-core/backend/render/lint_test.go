@@ -14,19 +14,35 @@ import (
 	"go.dokimi.dev/eidos/core/backend/render"
 )
 
+// The lint's fixture: the helpers a template calls and the templates
+// a finding names.
+const (
+	// shoutHelper is the language's shared helper.
+	shoutHelper = "shout"
+	// mineHelper is a helper of the plugin's own.
+	mineHelper = "mine"
+	// mysteryHelper is a name no vocabulary declares.
+	mysteryHelper = "mystery"
+	// ghostOverride is an override of a name nothing shares.
+	ghostOverride = "ghost"
+	// brokenTpl and bareTpl name the templates a finding reports.
+	brokenTpl = "broken.tpl"
+	bareTpl   = "bare.tpl"
+)
+
 // tree returns a one-template tree.
 func tree(name, src string) fstest.MapFS {
 	return fstest.MapFS{name: &fstest.MapFile{Data: []byte(src)}}
 }
 
 // unreadable is a tree that lists its templates and refuses to open
-// one of them, which is what a file the walk names and the read
-// cannot serve looks like.
+// one of them: a file the walk names and the read cannot serve.
 type unreadable struct {
 	files fstest.MapFS
 	deny  string
 }
 
+// Open opens every file except the denied one.
 func (u unreadable) Open(name string) (fs.File, error) {
 	if name == u.deny {
 		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
@@ -34,6 +50,7 @@ func (u unreadable) Open(name string) (fs.File, error) {
 	return u.files.Open(name)
 }
 
+// ReadDir lists the files, the denied one included.
 func (u unreadable) ReadDir(name string) ([]fs.DirEntry, error) {
 	return u.files.ReadDir(name)
 }
@@ -42,14 +59,18 @@ func (u unreadable) ReadDir(name string) ([]fs.DirEntry, error) {
 // fails before it names a single template.
 type sealed struct{}
 
+// Open refuses every name.
 func (sealed) Open(name string) (fs.File, error) {
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
 }
 
-// The lint is the static half of the marker rule: every declared
-// template parses against the merged vocabulary before any run
-// exists, and a body-claiming template carries its marker or
-// fails here rather than in a diff.
+// identity is the helper body every fixture helper shares.
+func identity(s string) string { return s }
+
+// The lint is the static half of the marker rule: every template of a
+// plugin's tree parses against the merged vocabulary before any run,
+// and a template that places no marker is reported before a render
+// strands a contribution.
 func TestLint(t *testing.T) {
 	t.Parallel()
 
@@ -57,175 +78,173 @@ func TestLint(t *testing.T) {
 		t.Helper()
 
 		l := language()
-		l.Funcs = template.FuncMap{"shout": func(s string) string { return s }}
-		p, err := render.New("printer", l)
+		l.Funcs = helpers(template.FuncMap{shoutHelper: identity})
+		p, err := render.New(passName, l)
 		assert.NoError(t, err, "the language composes")
 		return p
 	}
+	slots := action(render.BuiltinSlots)
 
-	t.Run("a valid tree passes whole", func(t *testing.T) {
+	t.Run("Lint", func(t *testing.T) {
 		t.Parallel()
 
-		findings := linter(t).Lint(
-			tree("method1.tpl", "\t{{shout .Data.x}}()\n{{slots}}"), nil, nil,
-		)
-		assert.Empty(t, findings, "marker placed, vocabulary known")
-	})
+		t.Run("returns nothing for a tree that places its marker", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a named marker alone suffices", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(
+				tree(refName, "\t"+action(shoutHelper, ".Data."+markKey)+"()\n"+slots), nil, nil,
+			)
+			assert.Empty(t, findings, "the marker is placed and every helper resolves")
+		})
 
-		findings := linter(t).Lint(
-			tree("method1.tpl", `{{slot "checks"}}`), nil, nil,
-		)
-		assert.Empty(t, findings, "named placement is placement")
-	})
+		t.Run("returns nothing for a tree whose one marker names a slot", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a template that does not parse is a finding", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(
+				tree(refName, action(render.BuiltinSlot, `"checks"`)), nil, nil,
+			)
+			assert.Empty(t, findings, "a named placement is a placement")
+		})
 
-		findings := linter(t).Lint(tree("broken.tpl", "{{if}}"), nil, nil)
-		assert.Length(t, findings, 1, "one finding per template")
-		assert.Contains(t, findings[0].Error(), "broken.tpl", "naming the file")
-	})
+		t.Run("returns a finding for a template that does not parse", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a call outside the vocabulary is a finding", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(tree(brokenTpl, "{{if}}"), nil, nil)
+			assert.Length(t, findings, 1, "one finding per template")
+			assert.Contains(t, findings[0].Error(), brokenTpl, "naming the file")
+		})
 
-		findings := linter(t).Lint(
-			tree("method1.tpl", "{{mystery .}}{{slots}}"), nil, nil,
-		)
-		assert.Length(t, findings, 1, "the unknown name reports")
-		assert.Contains(t, findings[0].Error(), "mystery", "naming the function")
-	})
+		t.Run("returns a finding for a call outside the vocabulary", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("the plugin's own helpers are vocabulary", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(
+				tree(refName, action(mysteryHelper, ".")+slots), nil, nil,
+			)
+			assert.Length(t, findings, 1, "the unknown name is one finding")
+			assert.Contains(t, findings[0].Error(), mysteryHelper, "naming the function")
+		})
 
-		findings := linter(t).Lint(
-			tree("method1.tpl", "{{mine .}}{{slots}}"),
-			template.FuncMap{"mine": func(any) string { return "" }}, nil,
-		)
-		assert.Empty(t, findings, "declared helpers resolve")
-	})
+		t.Run("resolves the plugin's own helpers", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a dropped marker is a finding", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(
+				tree(refName, action(mineHelper, ".")+slots),
+				template.FuncMap{mineHelper: func(any) string { return "" }}, nil,
+			)
+			assert.Empty(t, findings, "a declared helper resolves")
+		})
 
-		findings := linter(t).Lint(tree("bare.tpl", "\treturn nil\n"), nil, nil)
-		assert.Length(t, findings, 1, "the marker rule is static here")
-		assert.Contains(t, findings[0].Error(), "bare.tpl", "naming the template")
-		assert.Contains(t, findings[0].Error(), render.BuiltinSlots,
-			"and the marker it lacks")
-	})
+		t.Run("returns a finding for a template that places no marker", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("an undeclared shadow is a finding", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(tree(bareTpl, "\treturn nil\n"), nil, nil)
+			assert.Length(t, findings, 1, "the marker rule is checked statically")
+			assert.Contains(t, findings[0].Error(), bareTpl, "naming the template")
+			assert.Contains(t, findings[0].Error(), render.BuiltinSlots,
+				"naming the marker it lacks")
+		})
 
-		findings := linter(t).Lint(
-			tree("method1.tpl", "{{slots}}"),
-			template.FuncMap{"shout": func(s string) string { return s }}, nil,
-		)
-		assert.Length(t, findings, 1, "the shared name needs the declaration")
-		assert.Contains(t, findings[0].Error(), "shout", "naming the helper")
-	})
+		t.Run("returns a finding for a helper that shadows the shared vocabulary undeclared", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("an override of nothing shared is a finding", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(
+				tree(refName, slots), template.FuncMap{shoutHelper: identity}, nil,
+			)
+			assert.Length(t, findings, 1, "the shared name needs the declaration")
+			assert.Contains(t, findings[0].Error(), shoutHelper, "naming the helper")
+		})
 
-		findings := linter(t).Lint(
-			tree("method1.tpl", "{{slots}}"), nil, []string{"ghost"},
-		)
-		assert.Length(t, findings, 1, "an override replaces something or lies")
-		assert.Contains(t, findings[0].Error(), "ghost", "naming the claim")
-	})
+		t.Run("returns a finding for an override that replaces nothing shared", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a declared shadow is vocabulary", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(tree(refName, slots), nil, []string{ghostOverride})
+			assert.Length(t, findings, 1, "an override replaces a shared name")
+			assert.Contains(t, findings[0].Error(), ghostOverride, "naming the claim")
+		})
 
-		findings := linter(t).Lint(
-			tree("method1.tpl", "{{shout .Data.x}}{{slots}}"),
-			template.FuncMap{"shout": func(s string) string { return s }},
-			[]string{"shout"},
-		)
-		assert.Empty(t, findings,
-			"a declared override replaces the shared name it claims, "+
-				"and the template calling it resolves")
-	})
+		t.Run("resolves a declared override", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a helper claiming a builtin's name is a finding", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(
+				tree(refName, action(shoutHelper, ".Data."+markKey)+slots),
+				template.FuncMap{shoutHelper: identity},
+				[]string{shoutHelper},
+			)
+			assert.Empty(t, findings, "the override replaces the shared name it declares")
+		})
 
-		findings := linter(t).Lint(
-			tree("method1.tpl", "{{slots}}"),
-			template.FuncMap{render.BuiltinBody: func(any) string { return "" }},
-			nil,
-		)
-		assert.Length(t, findings, 1, "the builtins' names are the pass's own")
-		assert.Contains(t, findings[0].Error(), render.BuiltinBody,
-			"naming the claim")
-	})
+		t.Run("returns a finding for a helper named after a builtin", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a template the tree will not open is a finding", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(
+				tree(refName, slots),
+				template.FuncMap{render.BuiltinBody: func(any) string { return "" }},
+				nil,
+			)
+			assert.Length(t, findings, 1, "the builtin names are the pass's own")
+			assert.Contains(t, findings[0].Error(), render.BuiltinBody, "naming the claim")
+		})
 
-		findings := linter(t).Lint(unreadable{
-			files: tree("method1.tpl", "{{slots}}"), deny: "method1.tpl",
-		}, nil, nil)
-		assert.Length(t, findings, 1, "a template the lint cannot read is unchecked")
-		assert.Contains(t, findings[0].Error(), "reading method1.tpl",
-			"naming the file and the step that refused")
-	})
+		t.Run("returns a finding for a template the tree cannot open", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a tree that will not list is one finding", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(unreadable{
+				files: tree(refName, slots), deny: refName,
+			}, nil, nil)
+			assert.Length(t, findings, 1, "a template the lint cannot read is unchecked")
+			assert.Contains(t, findings[0].Error(), "reading "+refName,
+				"naming the file and the step that failed")
+		})
 
-		findings := linter(t).Lint(sealed{}, nil, nil)
-		assert.Length(t, findings, 1, "a tree nothing can walk is one fault")
-		assert.Contains(t, findings[0].Error(), "walking the tree",
-			"naming the step that refused")
-	})
+		t.Run("returns one finding for a tree that cannot be walked", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("the marker counts wherever the parse tree holds it", func(t *testing.T) {
-		t.Parallel()
+			findings := linter(t).Lint(sealed{}, nil, nil)
+			assert.Length(t, findings, 1, "a tree the walk cannot list is one fault")
+			assert.Contains(t, findings[0].Error(), "walking the tree",
+				"naming the step that failed")
+		})
 
-		placements := []struct{ name, src string }{
-			{name: "inside an if", src: "{{if .Decl}}{{slots}}{{end}}"},
-			{name: "inside a range", src: "{{range .Decl}}{{slots}}{{end}}"},
-			{name: "inside a with", src: "{{with .Decl}}{{slots}}{{end}}"},
-			{name: "inside a nested pipeline", src: `{{printf "%s" (slots)}}`},
+		tests := []struct {
+			name string
+			give string
+		}{
+			{name: "counts a marker inside an if", give: "{{if .Decl}}" + slots + "{{end}}"},
+			{name: "counts a marker inside a range", give: "{{range .Decl}}" + slots + "{{end}}"},
+			{name: "counts a marker inside a with", give: "{{with .Decl}}" + slots + "{{end}}"},
+			{
+				name: "counts a marker inside a nested pipeline",
+				give: action("printf", `"%s"`, "("+render.BuiltinSlots+")"),
+			},
 		}
-		for _, tt := range placements {
+		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				findings := linter(t).Lint(tree("method1.tpl", tt.src), nil, nil)
-				assert.Empty(t, findings,
-					"the parse tree is walked, so a marker anywhere in it counts")
+				findings := linter(t).Lint(tree(refName, tt.give), nil, nil)
+				assert.Empty(t, findings, "the parse tree is walked")
 			})
 		}
-	})
 
-	t.Run("a branch holding no marker is a finding", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns a finding for a branch that places no marker", func(t *testing.T) {
+			t.Parallel()
 
-		findings := linter(t).Lint(
-			tree("bare.tpl", "{{if .Decl}}\treturn nil\n{{end}}"), nil, nil,
-		)
-		assert.Length(t, findings, 1,
-			"a branch is not a placement, and neither is the else it never declared")
-		assert.Contains(t, findings[0].Error(), render.BuiltinSlots,
-			"naming the marker it lacks")
-	})
+			findings := linter(t).Lint(
+				tree(bareTpl, "{{if .Decl}}\treturn nil\n{{end}}"), nil, nil,
+			)
+			assert.Length(t, findings, 1, "neither the branch nor its absent else places one")
+			assert.Contains(t, findings[0].Error(), render.BuiltinSlots,
+				"naming the marker it lacks")
+		})
 
-	t.Run("a marker in a comment does not count", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns a finding for a template whose one marker is in a comment", func(t *testing.T) {
+			t.Parallel()
 
-		findings := linter(t).Lint(
-			tree("bare.tpl", "{{/* {{slots}} */}}\treturn nil\n"), nil, nil,
-		)
-		assert.Length(t, findings, 1,
-			"the parse tree is walked rather than the text")
-		assert.Contains(t, findings[0].Error(), "bare.tpl", "naming the template")
+			findings := linter(t).Lint(
+				tree(bareTpl, "{{/* "+slots+" */}}\treturn nil\n"), nil, nil,
+			)
+			assert.Length(t, findings, 1, "the parse tree is walked, not the text")
+			assert.Contains(t, findings[0].Error(), bareTpl, "naming the template")
+		})
 	})
 }

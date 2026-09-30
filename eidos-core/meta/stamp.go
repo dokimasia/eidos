@@ -15,15 +15,15 @@ import (
 // RawStamp is one classification stamp as a frontend recorded it:
 // a pre-claim that crossed a phase as data, the way a raw
 // directive does. The name resolves through the registry when the
-// stamp applies, because the typed handle is a composition
-// constant no record can carry.
+// stamp applies, because a typed handle is valid in one composition
+// only and a record outlives it.
 type RawStamp struct {
 	// Key is the boundary spelling of the key the stamp writes.
 	Key KeyName
 
 	// Value is one term of the vocabulary: string, int64, bool,
-	// []string or [symbol.Identity]. Anything else refuses at the
-	// apply.
+	// []string or [symbol.Identity]. A value of any other type
+	// returns an error when the stamp applies.
 	Value any
 
 	// Pos locates the source the classification read.
@@ -54,7 +54,7 @@ func (f *Facts) StampRaw(s RawStamp, c Claim) error {
 	switch s.Value.(type) {
 	case string, int64, bool, []string, symbol.Identity:
 	default:
-		return fmt.Errorf("meta: %s carries a %T, which the vocabulary does not",
+		return fmt.Errorf("meta: %s is stamped with a %T, which is outside the value vocabulary",
 			s.Key, s.Value)
 	}
 	if want := f.registry.typeOf(id); reflect.TypeOf(s.Value) != want {

@@ -14,8 +14,8 @@ import (
 )
 
 // The schema names a Go constant group an enum, so the promotion
-// is pinned: what collapses, what carries, and what stays exactly
-// as parsed.
+// is pinned: what collapses, what moves onto the enum, and what is
+// kept exactly as parsed.
 func TestPromoteEnums(t *testing.T) {
 	t.Parallel()
 
@@ -34,8 +34,8 @@ func TestPromoteEnums(t *testing.T) {
 		assert.Equal(t, enum.Variants[0].Value, "iota", "values verbatim")
 		assert.Equal(t, enum.Variants[0].Comment, "leads",
 			"the trailing comment follows its constant into the variant")
-		assert.Equal(t, enum.Variants[1].Value, "", "implicit carriers stay empty")
-		assert.Length(t, enum.Methods, 1, "the method set carries")
+		assert.Equal(t, enum.Variants[1].Value, "", "an implicit row's value is empty")
+		assert.Length(t, enum.Methods, 1, "the method set moves onto the enum")
 		assert.Equal(t, enum.Methods[0].Name, "String", "by name")
 	})
 
@@ -49,8 +49,8 @@ func TestPromoteEnums(t *testing.T) {
 				continue
 			}
 			_, onEnum := s.Subject.(*node.Enum)
-			assert.True(t, onEnum, "the shape belongs to whoever stands for the type")
-			assert.Equal(t, s.Stamp.Value.(string), "basic", "and stays the underlying's")
+			assert.True(t, onEnum, "the shape is on the enum that replaces the type")
+			assert.Equal(t, s.Stamp.Value.(string), "basic", "the shape is the underlying's")
 			return
 		}
 		t.Fatalf("the underlying stamp survives the promotion")
@@ -60,8 +60,8 @@ func TestPromoteEnums(t *testing.T) {
 		t.Parallel()
 
 		gb := parsedFile(t, nil, plugin.DepthFull,
-			"package p\n\n// Color is a palette.\n// +gen:stringer\ntype Color int\n\n"+
-				"const (\n\t// Red leads.\n\t// +gen:mark\n\tRed Color = iota\n\tGreen\n)\n")
+			"package p\n\n// Color is a palette.\n// +fixture:gen:stringer\ntype Color int\n\n"+
+				"const (\n\t// Red leads.\n\t// +fixture:gen:mark\n\tRed Color = iota\n\tGreen\n)\n")
 		attached := gb.Attachments()
 		assert.Length(t, attached, 2, "both carriers survive the promotion")
 		var onEnum, onVariant bool
@@ -73,7 +73,7 @@ func TestPromoteEnums(t *testing.T) {
 				onVariant = subject.Name == "Red"
 			}
 		}
-		assert.True(t, onEnum, "the type's carrier follows the enum that stands")
+		assert.True(t, onEnum, "the type's carrier follows the enum that replaces it")
 		assert.True(t, onVariant, "the constant's carrier follows its variant")
 	})
 
@@ -86,9 +86,9 @@ func TestPromoteEnums(t *testing.T) {
 		for _, d := range file.Decls {
 			kinds[d.Kind()]++
 		}
-		assert.Equal(t, kinds[symbol.KindAlias], 1, "a type with no constants stays a defined type")
+		assert.Equal(t, kinds[symbol.KindAlias], 1, "a type without constants is a defined type")
 		assert.Equal(t, kinds[symbol.KindStruct], 1, "a struct is never a value set")
-		assert.Equal(t, kinds[symbol.KindConstant], 1, "an untyped constant stays a constant")
+		assert.Equal(t, kinds[symbol.KindConstant], 1, "an untyped constant is a constant")
 		assert.Equal(t, kinds[symbol.KindEnum], 0, "nothing promotes without the pairing")
 	})
 
@@ -97,7 +97,7 @@ func TestPromoteEnums(t *testing.T) {
 
 		file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
 			"package p\n\nconst Max Elsewhere = 3\n"))
-		_, stays := file.Decls[0].(*node.Constant)
-		assert.True(t, stays, "promotion is per file, and the type is not here")
+		_, kept := file.Decls[0].(*node.Constant)
+		assert.True(t, kept, "promotion is per file, and the type is not here")
 	})
 }

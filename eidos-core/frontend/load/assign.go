@@ -15,22 +15,26 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// index is what the resolution step reads: every assigned identity
-// a type reference can target, under its bare spelling — kind and
-// discriminator zeroed, because a resolver cannot know what kind a
-// spelling declares — and the standing identity for every dropped
-// duplicate.
+// index is what the resolution step reads. It maps:
+//
+//   - every assigned identity a type reference can target, under its
+//     bare spelling, with kind and discriminator zeroed, because a
+//     resolver cannot know what kind a spelling declares
+//   - every dropped duplicate, to the identity of the declaration
+//     that is kept
+//   - every indexed identity a [plugin.Importer] language declares,
+//     to the workspace path of the file that declares it
 //
 // Only the kinds a type position can name are indexed: the type
-// declarations and their variants. A language resolving a value
-// position — TypeScript's typeof — widens the set when its
-// frontend arrives, and the load bench prices the widening.
+// declarations and their variants. A value position, such as
+// TypeScript's typeof, therefore resolves nothing.
 type index struct {
 	byBare  map[symbol.Identity][]symbol.Identity
 	dropped map[symbol.Symbol]symbol.Identity
+	files   map[symbol.Identity]string
 }
 
-// lookup returns the held identities a candidate names.
+// lookup returns the indexed identities a candidate names.
 func (ix *index) lookup(c symbol.Identity) []symbol.Identity {
 	return ix.byBare[bareOf(c)]
 }
@@ -59,29 +63,34 @@ func bareOf(id symbol.Identity) symbol.Identity {
 //     chain of enclosing type names; a top-level method's owner is
 //     the spelling of the type it attaches to
 //   - a callable's discriminator is its parameter type spellings,
-//     comma-joined, so overloads spell apart
+//     comma-joined, where the frontend reports that its language
+//     overloads, so overloads spell apart, and empty where it does
+//     not
 //
 // Members get their Host filled beside the identity. A second
 // declaration spelling one identity reports under
-// [DuplicateDeclaration] and its subtree leaves every index, one
-// finding for the subtree's root alone; the survivor's identity
-// still stands for anything attached to the duplicate. Reparsing
-// an unchanged file yields the same identities, which is what
-// diff-by-identity later stands on.
+// [DuplicateDeclaration], one finding for the subtree's root alone,
+// and its subtree leaves every index. Anything attached to the
+// duplicate attaches to the identity of the declaration that is
+// kept. Reparsing an unchanged file yields the same identities,
+// which diff-by-identity depends on.
 func assign(packages []*spliced, sink *diag.Sink) *index {
 	ix := &index{
 		byBare:  map[symbol.Identity][]symbol.Identity{},
 		dropped: map[symbol.Symbol]symbol.Identity{},
+		files:   map[symbol.Identity]string{},
 	}
 	seen := map[symbol.Identity]symbol.Symbol{}
 	for _, sp := range packages {
 		a := &assigner{
-			lang:   sp.lang,
-			pkg:    sp.pkg.ID.Package,
-			origin: sp.origin,
-			seen:   seen,
-			ix:     ix,
-			sink:   sink,
+			lang:      sp.lang,
+			pkg:       sp.pkg.ID.Package,
+			origin:    sp.origin,
+			importer:  sp.importer,
+			overloads: sp.overloads,
+			seen:      seen,
+			ix:        ix,
+			sink:      sink,
 		}
 		for _, f := range sp.pkg.Files {
 			a.file(f)
@@ -93,14 +102,21 @@ func assign(packages []*spliced, sink *diag.Sink) *index {
 	return ix
 }
 
-// assigner carries one package's assignment state.
+// assigner is one package's assignment state. Where importer is set,
+// the language's frontend is a [plugin.Importer], and every indexed
+// identity records path, the file under assignment. Where overloads
+// is set, the language's frontend reports that it overloads, and a
+// callable's discriminator spells its parameters.
 type assigner struct {
-	lang   symbol.Lang
-	pkg    string
-	origin diag.Origin
-	seen   map[symbol.Identity]symbol.Symbol
-	ix     *index
-	sink   *diag.Sink
+	lang      symbol.Lang
+	pkg       string
+	origin    diag.Origin
+	importer  bool
+	overloads bool
+	path      string
+	seen      map[symbol.Identity]symbol.Symbol
+	ix        *index
+	sink      *diag.Sink
 }
 
 // file assigns a file's identity and descends into its
@@ -109,6 +125,7 @@ func (a *assigner) file(f *node.File) {
 	if f.Path == "" {
 		panic(fmt.Sprintf("load: %s built a file with no path in %s", a.origin, a.pkg))
 	}
+	a.path = f.Path
 	id := symbol.Identity{Lang: a.lang, Package: a.pkg, Name: f.Path, Kind: symbol.KindFile}
 	assigned, dropping := a.claim(f, id, f.Pos, false)
 	f.ID = assigned
@@ -117,12 +134,12 @@ func (a *assigner) file(f *node.File) {
 	}
 }
 
-// claim settles one identity: recorded and returned, or — for a
-// duplicate or a declaration inside a dropped subtree — zero, with
-// the standing identity remembered for attachments. The boolean
-// says whether the subtree continues dropping. Only a kind a type
-// position can name enters the resolution index; everything enters
-// the duplicate check.
+// claim settles one identity. It records and returns the identity,
+// or returns zero for a duplicate or a declaration inside a dropped
+// subtree and remembers the kept identity for attachments. The
+// boolean reports whether the subtree continues dropping. Only a
+// kind a type position can name enters the resolution index, and
+// every kind enters the duplicate check.
 func (a *assigner) claim(
 	s symbol.Symbol, id symbol.Identity, at position.Pos, drop bool,
 ) (symbol.Identity, bool) {
@@ -132,7 +149,7 @@ func (a *assigner) claim(
 	}
 	if first, held := a.seen[id]; held {
 		a.sink.Warnf(DuplicateDeclaration, at, a.origin,
-			"%s is declared twice; the first, at %s:%d, stands",
+			"%s is declared twice, and the first, at %s:%d, is kept",
 			id, first.Position().File, first.Position().Line)
 		a.ix.dropped[s] = id
 		return symbol.Identity{}, true
@@ -143,6 +160,9 @@ func (a *assigner) claim(
 		symbol.KindSum, symbol.KindAlias,
 		symbol.KindEnumVariant, symbol.KindSumVariant:
 		a.ix.add(id)
+		if a.importer {
+			a.ix.files[id] = a.path
+		}
 	}
 	return id, false
 }
@@ -150,8 +170,8 @@ func (a *assigner) claim(
 // decl assigns one declaration and its members.
 //
 // The owner is the dotted chain of enclosing type names, and host
-// the enclosing declaration's identity — the one that stands, so a
-// dropped duplicate's members still point at the survivor.
+// the identity of the enclosing declaration that is kept, so the
+// members of a dropped duplicate point at the kept declaration.
 func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, drop bool) {
 	switch x := s.(type) {
 	case *node.Function:
@@ -254,7 +274,7 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 // unnamed ones spell apart and no written name collides with the
 // spelling. A slot repeating a name an earlier slot of the same list
 // wrote is named by its position too, because in valid source only
-// a blank such as Go's or Rust's _ repeats. Each carries the
+// a blank such as Go's or Rust's _ repeats. Each takes the
 // callable's discriminator, so the parameters of two overloads
 // spell apart too. [assigner.disc] refuses a nil parameter before
 // this runs.
@@ -291,7 +311,7 @@ func (a *assigner) signature(
 }
 
 // typeParams assigns a declaration's type parameters under its
-// owner chain, carrying the host's discriminator.
+// owner chain, each with the host's discriminator.
 func (a *assigner) typeParams(owner string, host symbol.Identity, drop bool, tps []*node.TypeParam) {
 	for _, tp := range tps {
 		if tp == nil {
@@ -411,19 +431,21 @@ func childOwner(owner, name string) string {
 	return owner + "." + name
 }
 
-// disc spells a callable's discriminator: the parameter type
-// spellings as written, comma-joined, so two overloads spell
-// apart and a nullary callable spells empty. A nil parameter
-// panics with [assigner.nilSlot] before anything reads it.
+// disc spells a callable's discriminator. In a language that
+// overloads it is the parameter type spellings as written,
+// comma-joined, so two overloads spell apart and a nullary callable
+// spells empty. In a language that cannot overload it is empty. A nil
+// parameter panics with [assigner.nilSlot] in either language, before
+// anything reads it.
 func (a *assigner) disc(params []*node.Param) string {
-	if len(params) == 0 {
+	if slices.Contains(params, nil) {
+		panic(a.nilSlot(symbol.KindParam))
+	}
+	if !a.overloads {
 		return ""
 	}
 	parts := make([]string, len(params))
 	for i, p := range params {
-		if p == nil {
-			panic(a.nilSlot(symbol.KindParam))
-		}
 		if p.Type != nil {
 			parts[i] = p.Type.Spelling
 		}

@@ -12,10 +12,11 @@ import (
 
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The fixture trees' paths, so a case names the file it perturbs
-// rather than repeating a literal.
+// The fixture trees' paths and sources, so a case names the file it
+// perturbs without repeating a literal.
 const (
 	modFile      = "mod.zz"
 	apiFile      = "svc/api/user.zz"
@@ -36,10 +37,26 @@ const (
 	// for a case appending one to a source the fixtures share.
 	carrierStatement = "+" + carrierLine + "\n"
 
+	// setCarrier and negatedCarrier are the carrier line as a comment
+	// writes it under the suite's brand, set and negated.
+	setCarrier     = "+" + string(frontendtest.Brand) + ":" + carrierLine
+	negatedCarrier = "-" + string(frontendtest.Brand) + ":" + carrierLine
+
 	// localStatement declares a type referencing another in its own
 	// package, for a case that needs an in-package resolution.
 	localStatement = "type Rows Row\n"
+
+	// depType and hiddenConst are what the signature root declares: a
+	// type the signature-only load keeps, and a constant it drops.
+	depType     = "Dep"
+	hiddenConst = "hidden"
 )
+
+// depIdentity returns the identity of a declaration in the
+// signature root's package.
+func depIdentity(name string, kind symbol.Kind) symbol.Identity {
+	return symbol.Identity{Lang: frontendtest.ScriptedLang, Package: depRoot, Name: name, Kind: kind}
+}
 
 // singleFixture declares one package whose one type references
 // another of its own.
@@ -71,6 +88,7 @@ func fixture() *frontendtest.Fixture {
 			badFile: {Data: []byte("type Lost string\n")},
 		},
 		Signatures: []string{depRoot},
+		Dropped:    []symbol.Identity{depIdentity(hiddenConst, symbol.KindConstant)},
 		Schemas:    frontendtest.ScriptedSchemas(),
 		Keys:       frontendtest.ScriptedKeys,
 	}
@@ -118,16 +136,16 @@ func (f failingFS) Open(name string) (fs.File, error) {
 	return f.tree.Open(name)
 }
 
-// The suite is the read side's conformance bar, so it must hold the
-// scripted language, and it must state each check it leaves out
-// rather than passing it against a fixture that says nothing.
+// The suite is the read side's conformance bar, so the scripted
+// language passes it, and the suite skips each check a fixture
+// states nothing for, as a named skip, instead of passing it.
 func TestSuite(t *testing.T) {
 	t.Parallel()
 
 	t.Run("RunFrontendSuite", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("holds the scripted language to every check", func(t *testing.T) {
+		t.Run("passes the scripted language through every check", func(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.RunFrontendSuite(t, setup)
@@ -138,7 +156,7 @@ func TestSuite(t *testing.T) {
 
 			// A fixture with no signature root loads nothing shallow
 			// and one with no schema attaches nothing, so a suite that
-			// ran either check here would fail rather than skip.
+			// ran either check here would fail.
 			frontendtest.RunFrontendSuite(t, setupOver(plainFixture()))
 		})
 	})

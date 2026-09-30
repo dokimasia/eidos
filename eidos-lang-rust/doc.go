@@ -5,7 +5,7 @@
 // identity and comment forms, which the satellite's packages share.
 //
 // [Lang] is the language of every Rust declaration. [Target] and
-// [Name] are the spellings a plan resolves to reach the backend,
+// [Name] are the spellings a plan resolves to select the backend,
 // [Extension] is the suffix of every Rust file, and [Version] is the
 // backend's behavior version. [Syntax] returns Rust's comment forms,
 // which the output contract writes the generated-file header
@@ -17,6 +17,7 @@
 //
 //   - spell spells filenames and declared names.
 //   - backend renders emit values as Rust source.
+//   - testing runs cargo and rustfmt over generated output.
 //
 // # Dependency position
 //

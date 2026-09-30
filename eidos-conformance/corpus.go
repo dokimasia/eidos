@@ -23,20 +23,21 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Verdict says what one language does with an inventory feature:
-// the read-side kin of the render coverage's verdicts.
+// Verdict states what one language does with an inventory feature:
+// the read-side counterpart of the render coverage's verdicts.
 type Verdict uint8
 
 const (
 	// Loads means the language spells the feature and the corpus
-	// tree carries the spelling; the expectations must hold. It is
-	// the verdict of a corpus that registers no rules, whose
+	// tree contains the spelling, and the expectations must pass.
+	// It is the verdict of a corpus that registers no rules, whose
 	// projections nothing can evaluate.
 	Loads Verdict = iota + 1
 
-	// Refuses means the language cannot spell the feature, stated:
-	// the corpus tree must carry nothing under it, because a
-	// spelling present under a refusal is a contradiction.
+	// Refuses means the language states that it cannot spell the
+	// feature. The corpus tree must contain nothing under it,
+	// because a spelling present under a refusal is a
+	// contradiction.
 	Refuses
 
 	// Projects means the feature loads and projects whole: every
@@ -47,9 +48,9 @@ const (
 	Projects
 
 	// ProjectsPartly means at least one reference folds to Opaque
-	// or Inline or one member set carries a gap, and every
-	// remainder key the corpus names for the feature is present on
-	// the declaration carrying it.
+	// or Inline or one member set has a gap, and every remainder
+	// key the corpus names for the feature is present on the
+	// declaration the remainder names.
 	ProjectsPartly
 
 	// Opaque means the reference the feature declares itself folds
@@ -84,10 +85,10 @@ func (v Verdict) projected() bool {
 
 // Remainder names one key a feature's residue stamps on one of its
 // declarations: what a language keeps in metadata where the
-// projection cannot hold it.
+// projection cannot represent it.
 type Remainder struct {
-	// Decl locates the declaration carrying the remainder, the
-	// way a feature's Declares does.
+	// Decl locates the declaration with the remainder, the way a
+	// feature's Declares does.
 	Decl Decl
 	// Key is the metadata key the remainder stamps under.
 	Key meta.KeyName
@@ -114,6 +115,13 @@ type Corpus struct {
 	// signature-only, empty when the tree states none.
 	Signatures []string
 
+	// Dropped lists the identities a signature-only load of the
+	// Signatures roots leaves out, which the frontend suite's depth
+	// check requires in the full graph and absent from the shallow
+	// one. A language whose signature depth keeps every declaration
+	// lists none.
+	Dropped []symbol.Identity
+
 	// Schemas are the directive schemas the tree's carriers write.
 	Schemas []directive.Schema
 
@@ -129,16 +137,16 @@ type Corpus struct {
 	Rules rules.SourceRules
 
 	// Remainder names, per feature, the keys the language stamps
-	// where the projection cannot hold the feature whole. A level
-	// below Projects holds every named key present; Projects
-	// admits none.
+	// where the projection cannot represent the feature whole. A
+	// level below Projects requires every named key present, and
+	// Projects admits none.
 	Remainder map[string][]Remainder
 
 	// PackageOf derives the package path a feature's declarations
 	// load under, sub naming a feature's sibling package and empty
-	// naming its own; nil derives the corpus convention, f/<id> and
-	// f/<id>/<sub>. A language whose canonical paths differ — a
-	// dotted namespace, a module prefix — states its own, and the
+	// naming its own. Nil derives the corpus convention, f/<id> and
+	// f/<id>/<sub>. A language whose canonical paths differ, such as
+	// a dotted namespace or a module prefix, states its own, and the
 	// join is its own too, because a slash is not every language's
 	// separator.
 	PackageOf func(featureID, sub string) string
@@ -160,7 +168,7 @@ func (c Corpus) pkg(featureID, sub string) string {
 	return featureRoot + featureID + "/" + sub
 }
 
-// Run holds one language's corpus to the shared inventory:
+// Run checks one language's corpus against the shared inventory:
 // coverage totality, the frontend conformance suite over the whole
 // tree, every covered feature's expectations against one load, and
 // every refused feature's absence.
@@ -177,6 +185,7 @@ func Run(t *testing.T, c Corpus) {
 			return c.Frontend, &frontendtest.Fixture{
 				Sources:    c.Sources,
 				Signatures: c.Signatures,
+				Dropped:    c.Dropped,
 				Schemas:    c.Schemas,
 				Keys:       c.Keys,
 			}
@@ -217,9 +226,10 @@ func Run(t *testing.T, c Corpus) {
 }
 
 // AssertCoveredInventory forces totality: every inventory feature
-// carries a verdict, every verdict names an inventory feature, and
-// every verdict is one the corpus may state: a refusal always, the
-// load verdict without rules, and a projection level with them.
+// has a verdict, every verdict names an inventory feature, and every
+// verdict is one the corpus may state. A refusal is always one, the
+// load verdict is one without rules, and a projection level is one
+// with them.
 func AssertCoveredInventory(tb assert.TB, c Corpus) {
 	tb.Helper()
 
@@ -238,24 +248,24 @@ func AssertCoveredInventory(tb assert.TB, c Corpus) {
 			tb.Errorf("%s states a projection level under a corpus without rules, "+
 				"which nothing can evaluate", f.ID)
 		default:
-			tb.Errorf("the inventory holds %s and the coverage says nothing: "+
+			tb.Errorf("the inventory lists %s and the coverage states no verdict for it: "+
 				"silence on a capability is the gap this list exists to close", f.ID)
 		}
 	}
 	for _, id := range slices.Sorted(maps.Keys(c.Remainder)) {
 		if !known[id] {
-			tb.Errorf("the remainder names %s, which the inventory does not hold", id)
+			tb.Errorf("the remainder names %s, which the inventory does not list", id)
 		}
 	}
 	for _, id := range slices.Sorted(maps.Keys(c.Coverage)) {
 		if !known[id] {
-			tb.Errorf("the coverage names %s, which the inventory does not hold", id)
+			tb.Errorf("the coverage names %s, which the inventory does not list", id)
 		}
 	}
 }
 
-// AssertFeature holds one covered feature to its expectations over
-// the corpus graph.
+// AssertFeature checks one covered feature against its expectations
+// over the corpus graph.
 func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	tb.Helper()
 
@@ -267,13 +277,10 @@ func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 		}
 	}
 	for _, d := range f.Declares {
-		id := symbol.Identity{
-			Lang: lang, Package: ctx(nil).Pkg(d.Sub),
-			Owner: d.Owner, Name: d.Name, Kind: d.Kind, Disc: d.Disc,
-		}
+		id := identityOf(c, f, d)
 		decl, held := g.Lookup(id)
 		if !held {
-			tb.Errorf("%s expects %s, which the load does not hold", f.ID, id)
+			tb.Errorf("%s expects %s, which the load does not contain", f.ID, id)
 			continue
 		}
 		if d.Check != nil {
@@ -285,13 +292,13 @@ func AssertFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	}
 }
 
-// AssertRefusedFeature holds one refusal honest two ways: the tree
-// carries nothing under the feature's directory, and the load
-// carries no package the feature would occupy. The second is what
-// catches a spelling filed somewhere else — a shared file, a
-// rehomed tree the directory check never walks — because a
-// refusal's proof is what the graph holds, not where the bytes
-// sat.
+// AssertRefusedFeature checks one refusal two ways: the tree
+// contains nothing under the feature's directory, and the load
+// contains no package the feature would occupy. The second check
+// catches a spelling filed somewhere else, such as a shared file or
+// a rehomed tree the directory check never walks, because a
+// refusal's proof is what the graph contains, not where the bytes
+// were.
 func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	tb.Helper()
 
@@ -314,8 +321,8 @@ func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 	}
 	for pkg := range g.Packages() {
 		if occupied[pkg.ID.Package] {
-			tb.Errorf("%s is refused and the load holds %s anyway: a refusal "+
-				"covers nothing, wherever the spelling sat", f.ID, pkg.ID.Package)
+			tb.Errorf("%s is refused and the load contains %s anyway: a refusal "+
+				"covers nothing, wherever the spelling is", f.ID, pkg.ID.Package)
 		}
 	}
 }
@@ -323,7 +330,7 @@ func AssertRefusedFeature(tb assert.TB, c Corpus, g *store.Graph, f Feature) {
 // corpusFixture loads the whole tree once, full depth, into the
 // rules suite's fixture: the sealed graph and the load's stamps
 // under the kernel's and the language's keys. The feature
-// expectations and the levels read it; the frontend suite drives
+// expectations and the levels read it, and the frontend suite drives
 // its own loads.
 func corpusFixture(tb assert.TB, c Corpus) *rulestest.Fixture {
 	tb.Helper()

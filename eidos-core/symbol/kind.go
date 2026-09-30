@@ -11,7 +11,8 @@ package symbol
 // [KindInvalid], which no declaration returns.
 //
 // One constant exists per schema struct, generated from the schema
-// into kind.gen.go. The values belong to a build: nothing durable
-// stores them, because the codecs encode kind names and the sealed
-// state carries its own format version.
+// into kind.gen.go. The codecs spell a declaration's discriminator
+// as its kind name and an identity's kind as its value. The model
+// fingerprint folds the kinds in schema order, which fixes the
+// values, so every unit key changes when a value does.
 type Kind uint8

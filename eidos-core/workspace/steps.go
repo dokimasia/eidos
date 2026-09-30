@@ -10,6 +10,7 @@ import (
 	"maps"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -23,8 +24,9 @@ import (
 )
 
 // annEntry is one scheduled annotator. The bucket number is the
-// role's position in the annotate schedule, and the same number
-// every claim it stamps carries as the arbitration rank's bucket.
+// role's position in the annotate schedule, and every claim the
+// annotator stamps records the same number as its arbitration
+// rank's bucket.
 type annEntry struct {
 	bucket int
 	name   plugin.ID
@@ -32,7 +34,7 @@ type annEntry struct {
 }
 
 // genEntry is one scheduled generator, numbered across the whole
-// generator role so one plugin serving two plans holds one bucket.
+// generator role so one plugin serving two plans has one bucket.
 type genEntry struct {
 	bucket int
 	name   plugin.ID
@@ -53,7 +55,7 @@ type compiledPlan struct {
 	contract *output.Contract
 }
 
-// kernelPhases holds the origins the kernel reports under. A
+// kernelPhases lists the origins the kernel reports under. A
 // plugin returning one of them would file its findings under the
 // kernel's identity, so the roster refuses the name.
 var kernelPhases = map[plugin.ID]bool{
@@ -70,7 +72,7 @@ var kernelPhases = map[plugin.ID]bool{
 // assemble is the first step: the plugin universe, deduplicated by
 // name, one name one plugin. The roster's order is the declaration
 // order, annotators first, then each plan's generators and backend,
-// and it is the registration order every later step leans on for
+// and it is the registration order every later step depends on for
 // determinism.
 func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []error) {
 	var roster []plugin.Plugin
@@ -86,7 +88,7 @@ func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []er
 		if held, seated := byName[name]; seated {
 			if !sameProvider(held, p) {
 				faults = append(faults, fmt.Errorf(
-					"workspace: two plugins carry the name %q", name,
+					"workspace: two plugins return the name %q", name,
 				))
 			}
 			return
@@ -112,7 +114,7 @@ func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []er
 	for _, pl := range b.plans {
 		for _, g := range pl.Generators {
 			if g == nil {
-				continue // the plan step bills it, naming the plan
+				continue // the plan step reports it, naming the plan
 			}
 			admit(g)
 		}
@@ -124,10 +126,10 @@ func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []er
 }
 
 // sameProvider reports whether a plugin arriving under a name
-// already seated is that same provider listed again: the same
+// already admitted is that same provider listed again: the same
 // pointer, or an equal value of a comparable type. Composition
 // reads a plugin through its name and never hashes the value, so a
-// provider whose type is no map key still composes; two of them
+// provider whose type is not comparable still composes. Two of them
 // under one name are two plugins, because nothing tells one copy
 // from another.
 func sameProvider(seated, p plugin.Plugin) bool {
@@ -141,10 +143,17 @@ func sameProvider(seated, p plugin.Plugin) bool {
 // registrations, the key registry's seal, every plugin's schemas,
 // and the directive seal that resolves constraints.
 // Capability labels and target names collect here too, because
-// both are registries in everything but shape. The kernel's own
-// keys and schemas register first, so an impersonation is a plain
-// duplicate by the time it arrives. The ignores register last, so
-// one covering a registered name is refused naming it.
+// both are registries in everything but shape.
+//
+// Every registration binds to its registrant. A plugin registers its
+// keys through a handle bound to its name, so it claims namespaces
+// for itself and registers only into its own. The builder's
+// registrations bind to the composition. A plugin's schema names the
+// plugin that provides it, and a schema naming another plugin is
+// refused. The kernel's own keys and schemas register first, so an
+// impersonation is a plain duplicate by the time it arrives. The
+// ignores register last, so one covering a registered name is
+// refused naming it.
 func (b *Builder) register(roster []plugin.Plugin) (registries, []error) {
 	var faults []error
 	keys := meta.NewRegistry()
@@ -160,7 +169,7 @@ func (b *Builder) register(roster []plugin.Plugin) (registries, []error) {
 	}
 	for _, p := range roster {
 		if kp, held := p.(plugin.KeyProvider); held {
-			if err := kp.Keys(keys); err != nil {
+			if err := kp.Keys(keys.For(string(p.Name()))); err != nil {
 				faults = append(faults, err)
 			}
 		}
@@ -180,6 +189,14 @@ func (b *Builder) register(roster []plugin.Plugin) (registries, []error) {
 	for _, p := range roster {
 		if dp, held := p.(plugin.DirectiveProvider); held {
 			for _, s := range dp.Directives() {
+				if s.Plugin != string(p.Name()) {
+					faults = append(faults, fmt.Errorf(
+						"workspace: plugin %s declares directive %s under plugin %q, "+
+							"and a plugin declares schemas under its own name",
+						p.Name(), s.Canonical(), s.Plugin,
+					))
+					continue
+				}
 				if err := dirs.Register(s); err != nil {
 					faults = append(faults, err)
 				}
@@ -233,7 +250,7 @@ type registries struct {
 
 // capabilities collects the labels: one provider per label, and a
 // provider for every requirement. Both refusals name the plugins,
-// because the label itself cannot say who is wrong.
+// because the label alone does not identify the plugin at fault.
 func capabilities(roster []plugin.Plugin) []error {
 	var faults []error
 	providers := map[plugin.Capability][]plugin.ID{}
@@ -264,7 +281,7 @@ func capabilities(roster []plugin.Plugin) []error {
 				spelled[i] = string(n)
 			}
 			faults = append(faults, fmt.Errorf(
-				"workspace: capability %q is provided by %s, and a label holds one provider",
+				"workspace: capability %q is provided by %s, and a label has one provider",
 				c, strings.Join(spelled, " and "),
 			))
 		}
@@ -339,7 +356,7 @@ func lower(roster []plugin.Plugin) ([]annEntry, []genEntry, []error) {
 	for i, m := range annotators {
 		run, held := m.p.(plugin.Annotator)
 		if !held {
-			continue // membersOf admitted it, so the role holds
+			continue // membersOf admitted it, so the plugin implements the role
 		}
 		ann = append(ann, annEntry{bucket: i + 1, name: m.name, run: run})
 	}
@@ -351,7 +368,7 @@ func lower(roster []plugin.Plugin) ([]annEntry, []genEntry, []error) {
 	for i, m := range generators {
 		run, held := m.p.(plugin.Generator)
 		if !held {
-			continue // membersOf admitted it, so the role holds
+			continue // membersOf admitted it, so the plugin implements the role
 		}
 		gen = append(gen, genEntry{bucket: i + 1, name: m.name, run: run})
 	}
@@ -385,9 +402,9 @@ func order(role string, ms []member) ([]member, []error) {
 
 // topo orders one priority group by its capability edges, provider
 // before requirer, smallest ready name first. A cycle is one fault
-// naming the members still standing, and those members append in
-// name order so the schedule stays total for the steps after this
-// one, which run even on a faulted composition.
+// naming the members left in the cycle, and those members append in
+// name order, so the schedule remains total for the steps after
+// this one, which run even on a faulted composition.
 func topo(role string, group []member) ([]member, []error) {
 	if len(group) < 2 {
 		return group, nil
@@ -431,14 +448,14 @@ func topo(role string, group []member) ([]member, []error) {
 	if len(out) == len(group) {
 		return out, nil
 	}
-	var standing []string
+	var cycled []string
 	for i, d := range indegree {
 		if d > 0 {
-			standing = append(standing, string(group[i].name))
+			cycled = append(cycled, string(group[i].name))
 		}
 	}
-	slices.Sort(standing)
-	for _, name := range standing {
+	slices.Sort(cycled)
+	for _, name := range cycled {
 		for _, m := range group {
 			if string(m.name) == name {
 				out = append(out, m)
@@ -448,7 +465,7 @@ func topo(role string, group []member) ([]member, []error) {
 	}
 	return out, []error{fmt.Errorf(
 		"workspace: capabilities cycle among %s in the %s role",
-		strings.Join(standing, " and "), role,
+		strings.Join(cycled, " and "), role,
 	)}
 }
 
@@ -474,7 +491,7 @@ func configure(
 		p, held := byName[plugin.ID(name)]
 		if !held {
 			faults = append(faults, fmt.Errorf(
-				"workspace: the config names plugin %q, which the composition does not hold",
+				"workspace: the config names plugin %q, which the composition does not contain",
 				name,
 			))
 			continue
@@ -505,7 +522,7 @@ func populate(p plugin.Plugin, section map[string]any) []error {
 	op, held := p.(plugin.OptionsProvider)
 	if !held || op.Options() == nil {
 		return []error{fmt.Errorf(
-			"workspace: plugin %q declares no options, and the config carries a section for it",
+			"workspace: plugin %q declares no options, and the config has a section for it",
 			p.Name(),
 		)}
 	}
@@ -526,13 +543,13 @@ func populate(p plugin.Plugin, section map[string]any) []error {
 		}
 		v := section[key]
 		if v == nil || !reflect.TypeOf(v).AssignableTo(f.Type) {
-			carried := "nothing"
+			given := "nothing"
 			if v != nil {
-				carried = reflect.TypeOf(v).String()
+				given = reflect.TypeOf(v).String()
 			}
 			faults = append(faults, fmt.Errorf(
-				"workspace: option %q of plugin %q wants %s, the config carries %s",
-				key, p.Name(), f.Type, carried,
+				"workspace: option %q of plugin %q takes %s, and the config has %s",
+				key, p.Name(), f.Type, given,
 			))
 			continue
 		}
@@ -543,6 +560,7 @@ func populate(p plugin.Plugin, section map[string]any) []error {
 
 // compilePlans is the fifth and sixth step: every plan named once,
 // at least one generator, exactly one backend against a registered
+// target, every generator that declares templates serving that
 // target, and the roles fixed in bucket order, which is the
 // schedule the run executes as data.
 func compilePlans(
@@ -572,7 +590,7 @@ func compilePlans(
 		for _, g := range pl.Generators {
 			if g == nil {
 				faults = append(faults, fmt.Errorf(
-					"workspace: plan %q holds a nil generator", pl.Name,
+					"workspace: plan %q lists a nil generator", pl.Name,
 				))
 				continue
 			}
@@ -588,7 +606,7 @@ func compilePlans(
 		}
 		if len(roles) == 0 {
 			faults = append(faults, fmt.Errorf(
-				"workspace: plan %q holds no generator", pl.Name,
+				"workspace: plan %q lists no generator", pl.Name,
 			))
 		}
 		slices.SortFunc(roles, func(a, b genEntry) int {
@@ -597,7 +615,7 @@ func compilePlans(
 		switch {
 		case pl.Backend == nil:
 			faults = append(faults, fmt.Errorf(
-				"workspace: plan %q holds no backend", pl.Name,
+				"workspace: plan %q declares no backend", pl.Name,
 			))
 		case !targets[pl.Backend.Target()]:
 			faults = append(faults, fmt.Errorf(
@@ -605,12 +623,49 @@ func compilePlans(
 				pl.Name, pl.Backend.Target(),
 			))
 		}
+		faults = append(faults, unserved(pl)...)
 		out = append(out, compiledPlan{
 			name: pl.Name, scope: pl.Scope, entries: roles,
 			backend: pl.Backend, layout: pl.Layout,
 		})
 	}
 	return out, faults
+}
+
+// unserved refuses each generator of a plan that declares template
+// trees of its own and none that serves the plan's target: every
+// reference it emits would resolve to nothing at render, so the
+// composition refuses it at Build, naming the plugin and the
+// targets it declares. A generator with a tree for every target,
+// or with no tree at all, serves any target.
+func unserved(pl Plan) []error {
+	if pl.Backend == nil {
+		return nil // the plan's own fault is already collected
+	}
+	target := pl.Backend.Target()
+	var faults []error
+	for _, g := range pl.Generators {
+		tp, presents := g.(plugin.TemplateProvider)
+		if !presents {
+			continue
+		}
+		if _, served := tp.Templates(target); served {
+			continue
+		}
+		declared := tp.TemplateTargets()
+		if len(declared) == 0 {
+			continue
+		}
+		spelled := make([]string, len(declared))
+		for i, t := range declared {
+			spelled[i] = strconv.Quote(string(t))
+		}
+		faults = append(faults, fmt.Errorf(
+			"workspace: plan %q targets %q, and %s declares templates for %s alone",
+			pl.Name, target, g.Name(), strings.Join(spelled, " and "),
+		))
+	}
+	return faults
 }
 
 // stampable builds each plan's output contract from the brand and

@@ -10,17 +10,23 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
+// pluginSet is the plugin-set fingerprint every fixture load folds:
+// a fixed value in place of the one a composed workspace computes.
+const pluginSet = "rulestest"
+
 // Loaded loads a source tree through one frontend into a fixture:
-// the sealed graph, and a fact store holding the load's
-// classification stamps under the kernel's keys and every key the
-// registrations add. A load that reports an Error fails the test,
-// because a tree the language refuses proves nothing about its
-// rules.
+// the sealed graph, and a fact store with the load's classification
+// stamps under the kernel's keys and every key the registrations
+// add. The load runs under [frontendtest.Brand], so a fixture tree
+// writes its carriers the way the frontend suite reads them. A load
+// that reports an Error fails the test, because a tree the language
+// refuses proves nothing about its rules.
 func Loaded(
 	tb assert.TB, f plugin.Frontend, sources fs.FS, keys ...func(*meta.Registry) error,
 ) *Fixture {
@@ -31,7 +37,8 @@ func Loaded(
 		FS:        sources,
 		Frontends: []plugin.Frontend{f},
 		Sink:      sink,
-		PluginSet: []byte("rulestest"),
+		PluginSet: []byte(pluginSet),
+		Brand:     frontendtest.Brand,
 	})
 	assert.NoError(tb, err, "the fixture tree loads")
 	for d := range sink.All() {

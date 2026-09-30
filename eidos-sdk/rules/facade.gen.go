@@ -23,9 +23,9 @@ import (
 )
 
 // Bound is the kernel's walks and one language's decisions over
-// one invocation's view: what a handler reaches through its match.
-// It memoises [Bound.TypeOf] per reference for the invocation and
-// nothing else, and dies with the invocation.
+// one invocation's view. A handler obtains one from its match. It
+// memoises [Bound.TypeOf] per reference and nothing else, for the
+// life of the invocation.
 //
 // A Bound is not safe for concurrent use, because the view it
 // records into is not.
@@ -33,7 +33,8 @@ type Bound = core.Bound
 
 // NewBound binds a language's rules to a view. forLang returns
 // another language's rules for a contributor or a target declared
-// in it; nil gives every other language [Absent].
+// in it. A nil forLang gives every other language [Absent], and nil
+// rules bind [Absent] for the zero language.
 func NewBound(source SourceRules, view View, forLang func(symbol.Lang) SourceRules) Bound {
 	return core.NewBound(source, view, forLang)
 }
@@ -62,14 +63,14 @@ var AbsentRules = core.AbsentRules
 // SourceRules is what every language returns. Implementing it is
 // what makes a language a language on the read side.
 //
-// A value is safe for concurrent use: the run calls it from
-// parallel plans and from parallel validations, so it holds no
-// state of its own, and every method that reads takes the [View]
-// it reads through.
+// A value is safe for concurrent use, because the run calls it from
+// parallel plans and from parallel validations. It keeps no state of
+// its own, and every method that reads takes the [View] it reads
+// through.
 type SourceRules = core.SourceRules
 
-// Scope is where a spelling is read: the subject that carried it,
-// and the file whose imports qualify it.
+// Scope is where a spelling is read: the subject the spelling is
+// written on, and the file whose imports qualify it.
 type Scope = core.Scope
 
 // ParamRole classifies a callable's parameter.
@@ -79,8 +80,8 @@ const (
 	// ParamInput is an ordinary input, the default.
 	ParamInput = core.ParamInput
 	// ParamContext is a context-like parameter: a cancellation, a
-	// deadline, a trace, which a generated call threads through
-	// rather than samples.
+	// deadline, a trace, which a generated call passes through and
+	// does not sample.
 	ParamContext = core.ParamContext
 )
 
@@ -92,23 +93,22 @@ const (
 	ReturnValue = core.ReturnValue
 	// ReturnOkBool is a presence flag beside a value.
 	ReturnOkBool = core.ReturnOkBool
-	// ReturnStream is a stream of values rather than one.
+	// ReturnStream is a stream of values.
 	ReturnStream = core.ReturnStream
-	// ReturnError carries the failure where the error model is
+	// ReturnError is the failure, where the error model is
 	// LastReturn or ResultType.
 	ReturnError = core.ReturnError
 )
 
-// ErrorModel says how a callable reports failure.
+// ErrorModel names how a callable reports failure.
 type ErrorModel = core.ErrorModel
 
 const (
 	// ErrorsNone states no failure channel.
 	ErrorsNone = core.ErrorsNone
-	// ErrorsLastReturn carries the failure as the last return: Go.
+	// ErrorsLastReturn reports the failure in the last return: Go.
 	ErrorsLastReturn = core.ErrorsLastReturn
-	// ErrorsResultType carries the failure inside a result type:
-	// Rust.
+	// ErrorsResultType wraps the failure in a result type: Rust.
 	ErrorsResultType = core.ErrorsResultType
 	// ErrorsThrown throws a declared exception: Java's checked
 	// throws, Swift's typed throws.
@@ -117,7 +117,7 @@ const (
 	ErrorsRaised = core.ErrorsRaised
 )
 
-// Contribution names one member list the walk draws on.
+// Contribution names one member list the walk reads.
 type Contribution = core.Contribution
 
 const (
@@ -129,12 +129,12 @@ const (
 	ContributesImplements = core.ContributesImplements
 )
 
-// Shadowing is the language's rule for one name reached twice.
+// Shadowing is the language's rule for one name that arrives twice.
 type Shadowing = core.Shadowing
 
 const (
-	// ShadowPromote takes the shallowest arrival; two at one depth
-	// cancel both: Go.
+	// ShadowPromote takes the shallowest arrival. Two arrivals at one
+	// depth cancel each other: Go.
 	ShadowPromote = core.ShadowPromote
 	// ShadowOverride settles each signature apart, taking the
 	// nearer declaration over the farther and the first at one
@@ -157,14 +157,14 @@ const DefaultDepth = core.DefaultDepth
 // MemberPolicy is what a language states about its member walk.
 type MemberPolicy = core.MemberPolicy
 
-// Registry holds one [SourceRules] per language.
+// Registry maps each language to its [SourceRules].
 //
 // A Registry is not safe for concurrent use while it registers,
-// which the composition does single-threaded; it is read-only
+// which the composition does on one goroutine. It is read-only
 // afterwards and safe to read from every plan.
 type Registry = core.Registry
 
-// NewRegistry returns a registry holding nothing.
+// NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return core.NewRegistry()
 }
@@ -174,7 +174,7 @@ func NewRegistry() *Registry {
 // parameter an input and every return a value under no error
 // model, Opaque for every builtin, a failing Resolve, and values
 // that refuse with [RefusedNoRules]. The refusal is a value, so a
-// generator's OK gate holds without a nil check.
+// generator's OK gate works without a nil check.
 func Absent(lang symbol.Lang) SourceRules {
 	return core.Absent(lang)
 }
@@ -219,12 +219,12 @@ type Gap = core.Gap
 // EnumRules projects an enumeration.
 type EnumRules = core.EnumRules
 
-// EnumForm says where a variant's textual form comes from.
+// EnumForm names where a variant's textual form comes from.
 type EnumForm = core.EnumForm
 
 const (
 	// EnumIdentifier derives the text from the variant's name: the
-	// only form where the declared value carries no text.
+	// only form where the declared value has no text.
 	EnumIdentifier = core.EnumIdentifier
 	// EnumValue takes the text from the declared value, which for a
 	// textual enumeration is the textual form.
@@ -261,7 +261,7 @@ type ConstructRules = core.ConstructRules
 // ThrowsRules returns the failure types a callable declares.
 type ThrowsRules = core.ThrowsRules
 
-// OwnershipRules says how a parameter is passed.
+// OwnershipRules returns how a parameter is passed.
 type OwnershipRules = core.OwnershipRules
 
 // Ownership is how a parameter is passed.
@@ -277,7 +277,10 @@ const (
 )
 
 // PromotionRules returns the members a constructor in another
-// package can set, promotion included, in declaration order.
+// package can set, promotion included, in declaration order, with a
+// gap for every contributor the member walk could not read. A
+// generator building a constructor over a set with gaps reports it
+// incomplete and does not write a partial builder.
 type PromotionRules = core.PromotionRules
 
 // EqualityRules reports whether a type works where the language
@@ -373,13 +376,6 @@ func RefusedPair(why Refusal) (Sample, Sample) {
 	return core.RefusedPair(why)
 }
 
-// FirstRefusal returns the first refusal among samples, and
-// [RefusedNoLiteral] where none states one. A value built from
-// several derived parts refuses with it when a part has no value.
-func FirstRefusal(samples ...Sample) Refusal {
-	return core.FirstRefusal(samples...)
-}
-
 // Lift returns a derived sample with its value wrapped, such as an
 // element placed in a composite. A sample without a value returns
 // unchanged, so the wrapped part keeps its reason.
@@ -387,8 +383,19 @@ func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 	return core.Lift(s, wrap)
 }
 
+// Complete returns a pair from the halves an author stated and the
+// halves a language derived. A stated half is kept. A half no author
+// stated takes the derived value of its own position where that
+// value differs from the stated half, the other derived value where
+// that one differs, and a [RefusedNoLiteral] refusal where neither
+// does. The pair is then two distinct values. With no half stated,
+// the derived pair returns as it is.
+func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Sample) {
+	return core.Complete(sample, alternate, derived, derivedAlternate)
+}
+
 // Refusal names why a sample has no value. Only [RefusedNoLiteral]
-// is a fact about the type; the rest describe an input the caller
+// is a fact about the type. The rest describe an input the caller
 // can fix.
 type Refusal = core.Refusal
 
@@ -411,9 +418,16 @@ const (
 	RefusedDepth = core.RefusedDepth
 )
 
+// FirstRefusal returns the first refusal among samples, and
+// [RefusedNoLiteral] where none states one. A value built from
+// several derived parts refuses with it when a part has no value.
+func FirstRefusal(samples ...Sample) Refusal {
+	return core.FirstRefusal(samples...)
+}
+
 // EmitRef restates a node reference in the emit model, structure,
-// arguments and target included, so a value's Type is what a
-// backend spells and qualifies. A nil reference returns nil.
+// arguments, target and package included, so a value's Type is what
+// a backend spells and imports. A nil reference returns nil.
 func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 	return core.EmitRef(ref)
 }
@@ -422,12 +436,12 @@ func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 // tracked declaration reader, the run's arbitrated facts and the
 // read set both record into, and the kernel's own keys for the
 // authored values the walks read first. The workspace mints one
-// per invocation. The zero View reads nothing, and a projection
-// handed one refuses rather than reading an untracked graph.
+// per invocation. The zero View reads nothing. A projection handed
+// one refuses, because a read of an untracked graph records no edge.
 type View = core.View
 
-// Fact returns a subject's winning value for a key, recorded. A
-// view without facts, or a zero key, reads nothing.
+// Fact returns the value arbitration selects for a subject and a
+// key, recorded. A view without facts, or a zero key, reads nothing.
 func Fact[T meta.FactValue](v View, id symbol.Identity, k meta.Key[T]) (T, bool) {
 	return core.Fact[T](v, id, k)
 }

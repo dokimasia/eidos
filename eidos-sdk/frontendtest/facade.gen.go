@@ -27,20 +27,20 @@ import (
 // AssertDeterministicParse loads the fixture twice and compares
 // what each load recorded: the graphs byte for byte, the attached
 // directives and classification stamps, and the findings in report
-// order. Reparsing unchanged files yields the same identities, or
-// diff-by-identity later stands on sand.
+// order. Reparsing unchanged files yields the same identities,
+// which every later comparison by identity depends on.
 func AssertDeterministicParse(tb assert.TB, setup Setup) {
 	core.AssertDeterministicParse(tb, setup)
 }
 
-// AssertPositionedDiagnostics holds every finding to its address:
-// a finding without a position or an origin is a defect in the
+// AssertPositionedDiagnostics checks every finding's address: a
+// finding without a position or an origin is a defect in the
 // frontend that reported it.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
 	core.AssertPositionedDiagnostics(tb, setup)
 }
 
-// AssertClassified holds the claim to account: every selected file
+// AssertClassified checks the claim: every selected file
 // either declares into the graph or has a finding naming it, so
 // nothing drops in silence. A fixture declaring classification keys
 // is stamped by the load, and the recorded stamps apply cleanly
@@ -51,9 +51,9 @@ func AssertClassified(tb assert.TB, setup Setup) {
 	core.AssertClassified(tb, setup)
 }
 
-// AssertOwnedExcluded holds the one exclusion the kernel owns: a
+// AssertOwnedExcluded checks the one exclusion the kernel makes: a
 // selected file framed under the load's own brand is the
-// workspace's output and never reaches a unit, while the same file
+// workspace's output and never enters a unit, while the same file
 // framed under another brand is ordinary input and loads. The
 // check stamps the copies itself through the language's own
 // comment syntax, so a fixture states nothing.
@@ -61,12 +61,12 @@ func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 	core.AssertOwnedExcluded(tb, setup)
 }
 
-// AssertFingerprinted holds the unit keys honest: stable across
-// two identical loads, and changed by each folded part — a read, a
-// depth, a declared version, the options, the plugin set. The
-// model fingerprint is a compiled constant no test can vary. A
-// unit missing from the load a key is compared against fails the
-// comparison rather than differing from nothing.
+// AssertFingerprinted checks that the unit keys are honest: stable
+// across two identical loads, and changed by each folded part — a
+// read, a depth, a declared version, the options, the plugin set,
+// the brand. The model fingerprint is a compiled constant no test
+// can vary. A unit missing from the load a key is compared against
+// fails the comparison, and never differs from nothing.
 func AssertFingerprinted(tb assert.TB, setup Setup) {
 	core.AssertFingerprinted(tb, setup)
 }
@@ -87,21 +87,23 @@ func AssertJailedReads(tb assert.TB, setup Setup) {
 }
 
 // AssertSignatureDepth loads the fixture once full and once under
-// its signature roots: the shallow graph's identities are a subset
+// its signature roots. The shallow graph's identities are a subset
 // of the full graph's, under the same spellings, and the report
-// says which units loaded shallow.
+// states which units loaded shallow. Every identity the fixture
+// lists in [Fixture.Dropped] is in the full graph and absent from
+// the shallow one, so a frontend that ignores depth fails a fixture
+// that lists one.
 func AssertSignatureDepth(tb assert.TB, setup Setup) {
 	core.AssertSignatureDepth(tb, setup)
 }
 
 // AssertAttachedDirectives validates every attached instance under
-// the fixture's schemas at the suite's stand-in freeze, after the
-// resolution step — the same point the workspace validates at. It
-// also holds the comment pipeline to its exclusion: a carrier line
-// left in a declaration's documentation, with or without the
-// carrier mark, is a strip the frontend missed. What it does not
-// check is the carrier marker itself, which is each kit's own
-// convention.
+// the fixture's schemas at the freeze the suite runs in the
+// workspace's place, after the resolution step, which is the point
+// the workspace validates at. It also checks the comment pipeline's
+// exclusion: a carrier line left in a declaration's documentation,
+// under any of the brand's marks or without one, is a strip the
+// frontend missed.
 func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 	core.AssertAttachedDirectives(tb, setup)
 }
@@ -149,20 +151,22 @@ type ScriptedOptions = core.ScriptedOptions
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
 //	// TEXT               a comment, split by the kernel: its
-//	                      documentation and its +marked lines
-//	                      attach to the next type, and a tool:name
-//	                      line lowers as an annotation; above the
-//	                      package line it is the file's header and
-//	                      lowers to nothing
+//	                      documentation and its carrier lines under
+//	                      the load's brand attach to the next type,
+//	                      and a tool:name line lowers as an
+//	                      annotation. Above the package line it is
+//	                      the file's header and lowers to nothing
 //	stamp KEY VALUE       a classification stamp on the file
 //	pkgnote NAME ARGS     a directive on the package node itself
 //
 // It partitions by directory, with one shared input when the tree
 // has mod.zz at its root. The fields are open so a test can rename,
-// re-version, re-claim or re-tag it.
+// re-version, re-claim or re-tag it, or declare it a language that
+// cannot overload.
 type Scripted = core.Scripted
 
-// NewScripted returns the scripted frontend under its usual claim.
+// NewScripted returns the scripted frontend under its usual claim,
+// as a language that overloads.
 func NewScripted() *Scripted {
 	return core.NewScripted()
 }
@@ -179,6 +183,12 @@ func ScriptedSchemas() []directive.Schema {
 	return core.ScriptedSchemas()
 }
 
+// Brand is the brand every suite load runs under. A fixture writes
+// its carriers under Brand's marks, fixture:, +fixture: and
+// -fixture:, and the ownership check stamps the workspace's own
+// copies under it.
+const Brand = core.Brand
+
 // Fixture is what a frontend brings to the suite: the tree the
 // selection claims from, and what the checks that need more can
 // read. A field left empty skips the checks that need it, and the
@@ -189,7 +199,7 @@ type Fixture = core.Fixture
 // check.
 type Setup = core.Setup
 
-// RunFrontendSuite holds a frontend to the read side's contract:
+// RunFrontendSuite checks a frontend against the read side's contract:
 // deterministic parses, positioned findings, no silently dropped
 // file, the workspace's own outputs refused, honest unit keys, the
 // jailed read, signature depth, validated directive attachments

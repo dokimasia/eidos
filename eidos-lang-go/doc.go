@@ -5,19 +5,31 @@
 // identity and comment forms, the golang.* fact keys, and the Go
 // names the satellite's packages share.
 //
-// [Lang] is the language of every loaded Go declaration.
-// [Target] and [Name] are the spellings a plan resolves to reach the
-// backend, and [Version] is the backend's behavior version. [Syntax]
-// returns Go's comment forms: the frontend strips comments with
-// them, and the output contract writes the generated-file header
-// through them. [Keys] registers the fact keys the frontend and the
-// annotator stamp.
+// [Lang] is the language of every loaded Go declaration, and
+// [CodePrefix] opens every diagnostic code the satellite registers.
+// [Target] and [Name] are the spellings a plan resolves to select
+// the backend, and [Version] is the backend's behavior version.
+// [Syntax] returns Go's comment forms: the frontend strips comments
+// with them, and the output contract writes the generated-file
+// header through them. [Keys] registers the fact keys the frontend
+// and the annotator stamp.
 //
 // [Predeclared] reports Go's predeclared type names, and [Basic] and
 // [Ordered] the basic types among them, read off the universe scope
 // of go/types. [ImportName] and [AssumedName] return the qualifier an
-// import binds, so the frontend and the rules resolve a qualified
-// spelling by one rule.
+// import binds.
+//
+// [Scope] is what one file's imports bind, and [NewScope] derives it
+// from the file's import records. The load's resolution step, the
+// rules and the frontend's reference lowering all resolve a spelling
+// through it, so Go probes one way everywhere: [Scope.Candidates]
+// returns what a spelling may name in probe order, and
+// [Scope.Import] returns the path a qualifier binds.
+//
+// [PointerReceiver] states a pointer receiver on an emit method that
+// receives a type, named apart from the method's signature: what a
+// generator writing Go stubs calls after the kernel's Mirror, which
+// leaves the receiver to the target.
 //
 // # Packages
 //
@@ -56,11 +68,11 @@
 //
 // # Dependency position
 //
-// The root package imports the sdk's meta, node, plugin and symbol
-// facades and the Go stdlib, go/types among it. The module's other
-// packages import the kernel's SPI through the sdk facade, the
-// shared helpers of eidos-lang, and the Go stdlib. None imports
-// eidos-lang's grammar packages: the frontend parses with the
-// standard library, and the backend renders through the kernel's
-// own pass.
+// The root package imports the sdk's diag, emit, meta, node, plugin
+// and symbol facades and the Go stdlib, go/types among it. The
+// module's other packages import the kernel's SPI through the sdk
+// facade, the shared helpers of eidos-lang, and the Go stdlib. None
+// imports eidos-lang's grammar packages: the frontend parses with
+// the standard library, and the backend renders through the
+// kernel's own pass.
 package golang

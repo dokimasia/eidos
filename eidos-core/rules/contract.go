@@ -17,12 +17,12 @@ import (
 // SourceRules is what every language returns. Implementing it is
 // what makes a language a language on the read side.
 //
-// A value is safe for concurrent use: the run calls it from
-// parallel plans and from parallel validations, so it holds no
-// state of its own, and every method that reads takes the [View]
-// it reads through.
+// A value is safe for concurrent use, because the run calls it from
+// parallel plans and from parallel validations. It keeps no state of
+// its own, and every method that reads takes the [View] it reads
+// through.
 type SourceRules interface {
-	// Lang names the language the rules return for.
+	// Lang names the language the rules apply to.
 	Lang() symbol.Lang
 
 	// Members states how this language's member walk proceeds.
@@ -42,14 +42,17 @@ type SourceRules interface {
 	// classify.
 	Builtin(ref *node.TypeRef, v View) TypeShape
 
-	// Resolve says what a human's spelling names in a scope, at a
-	// declared resolution kind. It returns the declaration or an
-	// error naming what it looked for.
+	// Resolve returns the declaration a human's spelling names in a
+	// scope, at a declared resolution kind, or an error naming what
+	// it looked for.
 	Resolve(scope Scope, name string, kind directive.ResolutionKind, v View) (symbol.Symbol, error)
 
 	// SamplesOf returns two distinct values of a type, or two
-	// refusals carrying the reason. Authored values are read by
-	// the kernel before this is asked.
+	// refusals with the reason. The kernel reads the values an
+	// author stated for the type before it asks. A composite's walk
+	// reads the authored values of each element through
+	// [View.Authored] before it derives the element, and pairs a
+	// stated half with a derived one through [Complete].
 	SamplesOf(ref *node.TypeRef, hint string, v View) (sample, alternate Sample)
 
 	// ZeroValue returns the type's zero value, and reports false
@@ -66,8 +69,8 @@ type SourceRules interface {
 	TypeName(word, base string) string
 }
 
-// Scope is where a spelling is read: the subject that carried it,
-// and the file whose imports qualify it.
+// Scope is where a spelling is read: the subject the spelling is
+// written on, and the file whose imports qualify it.
 type Scope struct {
 	Subject symbol.Identity
 	File    *node.File
@@ -80,8 +83,8 @@ const (
 	// ParamInput is an ordinary input, the default.
 	ParamInput ParamRole = iota
 	// ParamContext is a context-like parameter: a cancellation, a
-	// deadline, a trace, which a generated call threads through
-	// rather than samples.
+	// deadline, a trace, which a generated call passes through and
+	// does not sample.
 	ParamContext
 )
 
@@ -105,9 +108,9 @@ const (
 	ReturnValue ReturnRole = iota
 	// ReturnOkBool is a presence flag beside a value.
 	ReturnOkBool
-	// ReturnStream is a stream of values rather than one.
+	// ReturnStream is a stream of values.
 	ReturnStream
-	// ReturnError carries the failure where the error model is
+	// ReturnError is the failure, where the error model is
 	// LastReturn or ResultType.
 	ReturnError
 )
@@ -128,16 +131,15 @@ func (r ReturnRole) String() string {
 	}
 }
 
-// ErrorModel says how a callable reports failure.
+// ErrorModel names how a callable reports failure.
 type ErrorModel uint8
 
 const (
 	// ErrorsNone states no failure channel.
 	ErrorsNone ErrorModel = iota
-	// ErrorsLastReturn carries the failure as the last return: Go.
+	// ErrorsLastReturn reports the failure in the last return: Go.
 	ErrorsLastReturn
-	// ErrorsResultType carries the failure inside a result type:
-	// Rust.
+	// ErrorsResultType wraps the failure in a result type: Rust.
 	ErrorsResultType
 	// ErrorsThrown throws a declared exception: Java's checked
 	// throws, Swift's typed throws.
@@ -164,7 +166,7 @@ func (m ErrorModel) String() string {
 	}
 }
 
-// Contribution names one member list the walk draws on.
+// Contribution names one member list the walk reads.
 type Contribution uint8
 
 const (
@@ -190,12 +192,12 @@ func (c Contribution) String() string {
 	}
 }
 
-// Shadowing is the language's rule for one name reached twice.
+// Shadowing is the language's rule for one name that arrives twice.
 type Shadowing uint8
 
 const (
-	// ShadowPromote takes the shallowest arrival; two at one depth
-	// cancel both: Go.
+	// ShadowPromote takes the shallowest arrival. Two arrivals at one
+	// depth cancel each other: Go.
 	ShadowPromote Shadowing = iota + 1
 	// ShadowOverride settles each signature apart, taking the
 	// nearer declaration over the farther and the first at one
@@ -234,15 +236,14 @@ const DefaultDepth = 8
 // MemberPolicy is what a language states about its member walk.
 type MemberPolicy struct {
 	// Contributes lists the member lists a type's effective set
-	// draws on, in walk order: Embeds for Go, Extends then
-	// Implements for the JVM languages, Extends for TypeScript. A
-	// policy listing none contributes nothing beyond the declared
-	// members.
+	// reads, in walk order: Embeds for Go, Extends then Implements
+	// for the JVM languages, Extends for TypeScript. A policy
+	// listing none contributes nothing beyond the declared members.
 	Contributes []Contribution
-	// Shadowing says how two members of one name settle. The zero
+	// Shadowing states how two members of one name settle. The zero
 	// value settles nothing and keeps the declared members alone.
 	Shadowing Shadowing
-	// Depth bounds the walk; 0 takes [DefaultDepth].
+	// Depth bounds the walk. 0 takes [DefaultDepth].
 	Depth int
 	// EmbedsAreFields records each embed of a struct as a member:
 	// the embedded field, named by its identity's name, at the depth
@@ -253,16 +254,16 @@ type MemberPolicy struct {
 	EmbedsAreFields bool
 }
 
-// Registry holds one [SourceRules] per language.
+// Registry maps each language to its [SourceRules].
 //
 // A Registry is not safe for concurrent use while it registers,
-// which the composition does single-threaded; it is read-only
+// which the composition does on one goroutine. It is read-only
 // afterwards and safe to read from every plan.
 type Registry struct {
 	byLang map[symbol.Lang]SourceRules
 }
 
-// NewRegistry returns a registry holding nothing.
+// NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return &Registry{byLang: map[symbol.Lang]SourceRules{}}
 }
@@ -294,8 +295,8 @@ func (r *Registry) For(lang symbol.Lang) (SourceRules, bool) {
 	return Absent(lang), false
 }
 
-// Languages returns every registered language, in registration
-// order of nothing in particular: sorted, so a listing is stable.
+// Languages returns every registered language, sorted by spelling,
+// so a listing is stable.
 func (r *Registry) Languages() []symbol.Lang {
 	out := make([]symbol.Lang, 0, len(r.byLang))
 	for lang := range r.byLang {
@@ -310,7 +311,7 @@ func (r *Registry) Languages() []symbol.Lang {
 // parameter an input and every return a value under no error
 // model, Opaque for every builtin, a failing Resolve, and values
 // that refuse with [RefusedNoRules]. The refusal is a value, so a
-// generator's OK gate holds without a nil check.
+// generator's OK gate works without a nil check.
 func Absent(lang symbol.Lang) SourceRules { return absent{lang: lang} }
 
 // IsAbsent reports whether a value is the one [Absent] returns.
@@ -324,34 +325,48 @@ type absent struct {
 	lang symbol.Lang
 }
 
-func (a absent) Lang() symbol.Lang   { return a.lang }
+// Lang returns the language the value was minted for.
+func (a absent) Lang() symbol.Lang { return a.lang }
+
+// Members returns the zero policy, which contributes nothing.
 func (absent) Members() MemberPolicy { return MemberPolicy{} }
+
+// ParamRole classifies every parameter as an input.
 func (absent) ParamRole(*node.Param, View) ParamRole {
 	return ParamInput
 }
 
+// ReturnRoles classifies every return as a value under no error
+// model.
 func (absent) ReturnRoles(rs []*node.Return, _ View) ([]ReturnRole, ErrorModel) {
 	return make([]ReturnRole, len(rs)), ErrorsNone
 }
 
+// Builtin returns Opaque for every spelling.
 func (absent) Builtin(ref *node.TypeRef, _ View) TypeShape {
 	return Opaque(ref)
 }
 
+// Resolve returns an error naming the language without rules and
+// the spelling it was asked for.
 func (a absent) Resolve(_ Scope, name string, kind directive.ResolutionKind, _ View) (symbol.Symbol, error) {
 	return nil, fmt.Errorf("rules: no rules registered for %s resolve %q at %v", a.lang, name, kind)
 }
 
+// SamplesOf refuses both halves with [RefusedNoRules].
 func (absent) SamplesOf(*node.TypeRef, string, View) (Sample, Sample) {
 	return Refused(RefusedNoRules), Refused(RefusedNoRules)
 }
 
+// ZeroValue reports false for every type.
 func (absent) ZeroValue(*node.TypeRef, View) (emit.Value, bool) {
 	return emit.Value{}, false
 }
 
+// LiteralFor reports false for every text.
 func (absent) LiteralFor(*node.File, *node.TypeRef, string, View) (emit.Value, bool) {
 	return emit.Value{}, false
 }
 
+// TypeName joins the word onto the base unchanged.
 func (absent) TypeName(word, base string) string { return base + word }

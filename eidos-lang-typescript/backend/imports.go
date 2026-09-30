@@ -10,15 +10,22 @@ import (
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
+// renameKeyword introduces the name an imported declaration binds
+// under.
+const renameKeyword = " as "
+
 // Imports renders the file's collected entries: package specifiers
 // first, relative ones after, each group sorted, which is the
 // order the ecosystem's formatters leave. The names bound under a
-// path render as one named import — import type when every
-// binding is type-only, because one value binding makes the whole
-// import a value import — and a path binding no names renders as
-// a side-effect import, which a named import already implies, so
-// a path carrying both forms renders the named one alone.
-// Specifiers quote single, TypeScript's own canon.
+// path render as one named import, a renamed declaration as its
+// exported name behind the name it binds under, and each specifier
+// once. The import is import type when every binding is type-only,
+// because one value binding makes the whole import a value import. A
+// path binding no names renders as a side-effect import. A value
+// import runs the module too, so it replaces the side-effect import
+// of its path. TypeScript erases import type, so the side-effect
+// import renders before it. Specifiers quote single, TypeScript's own
+// canon.
 func Imports(set *render.ImportSet) string {
 	entries := set.Entries()
 	if len(entries) == 0 {
@@ -29,23 +36,39 @@ func Imports(set *render.ImportSet) string {
 	for i := 0; i < len(entries); {
 		path := entries[i].Path
 		var names []string
-		typeOnly := true
+		seen := map[string]bool{}
+		bare, typeOnly := false, true
 		for ; i < len(entries) && entries[i].Path == path; i++ {
-			if n := entries[i].Name; n != "" {
-				names = append(names, n)
-				typeOnly = typeOnly && entries[i].TypeOnly
+			e := entries[i]
+			if e.Name == "" {
+				bare = true
+				continue
 			}
+			typeOnly = typeOnly && e.TypeOnly
+			spec := e.Name
+			if e.Item != "" {
+				spec = e.Item + renameKeyword + e.Name
+			}
+			if seen[spec] {
+				continue
+			}
+			seen[spec] = true
+			names = append(names, spec)
 		}
 
+		// A path without names is type-only by the loop's start, so a
+		// bare path renders its side-effect import here too.
 		var line strings.Builder
-		line.WriteString("import ")
+		if bare && typeOnly {
+			line.WriteString("import " + quote(path) + ";\n")
+		}
 		if len(names) > 0 {
+			line.WriteString("import ")
 			if typeOnly {
 				line.WriteString("type ")
 			}
-			line.WriteString("{ " + strings.Join(names, ", ") + " } from ")
+			line.WriteString("{ " + strings.Join(names, ", ") + " } from " + quote(path) + ";\n")
 		}
-		line.WriteString(quote(path) + ";\n")
 
 		if strings.HasPrefix(path, ".") {
 			relative = append(relative, line.String())

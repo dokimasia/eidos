@@ -5,6 +5,7 @@ package rules
 
 import (
 	"fmt"
+	"go/token"
 	"slices"
 	"strings"
 
@@ -29,15 +30,17 @@ var typeKinds = []symbol.Kind{
 }
 
 // Resolve returns the declaration a directive's spelling names from
-// a subject, the way Go scopes it: a bare name in the subject's
-// package, a qualified name through the file's imports, a value
-// field through the member walk over the subject's type, a host
-// parameter on the subject's own signature, a member on a handle
-// through the type the subject belongs to, and a type in scope the
-// way a bare or qualified type spelling resolves. A predeclared type
-// resolves to a stand-in naming itself with no package, and a type
-// in a package the view does not contain to a stand-in naming its
-// import path.
+// a subject, the way Go scopes it. A callable, a package variable and
+// a type in scope resolve through the probe of the subject's file,
+// [golang.Scope.Candidates]: the first candidate the view declares at
+// one of the kinds is the declaration. A value field resolves through
+// the member walk over the subject's type, a host parameter on the
+// subject's own signature, and a member on a handle through the type
+// the subject belongs to. A predeclared type resolves to a stand-in
+// naming itself with no package, and a type whose qualifier binds a
+// package the view does not contain to a stand-in naming the import
+// path. A spelling that is not a Go name, bare or qualified, refuses:
+// []Row names no declaration, and probing Row would name another type.
 func (r Rules) Resolve(
 	scope rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
@@ -47,9 +50,9 @@ func (r Rules) Resolve(
 	}
 	switch kind {
 	case directive.ResolveCallableInScope:
-		return r.inScope(scope, name, v, symbol.KindFunction)
+		return inScope(scope, name, v, symbol.KindFunction)
 	case directive.ResolvePackageVar:
-		return r.inScope(scope, name, v, symbol.KindVariable, symbol.KindConstant)
+		return inScope(scope, name, v, symbol.KindVariable, symbol.KindConstant)
 	case directive.ResolveValueField:
 		return r.member(scope, name, v, symbol.KindField)
 	case directive.ResolveHostParam:
@@ -57,66 +60,65 @@ func (r Rules) Resolve(
 	case directive.ResolveMemberOnHandle:
 		return r.member(scope, name, v, symbol.KindField, symbol.KindMethod)
 	case directive.ResolveTypeInScope:
-		return r.typeInScope(scope, name, v)
+		return typeInScope(scope, name, v)
 	default:
 		return nil, refuse("%s is not a resolution Go performs", kind)
 	}
 }
 
-// inScope resolves a bare or qualified name to a top-level
-// declaration of one of the kinds, in the subject's package or the
-// package an import qualifies.
-func (Rules) inScope(
-	scope rules.Scope, name string, v rules.View, kinds ...symbol.Kind,
-) (symbol.Symbol, error) {
-	pkg, bare, err := packageFor(scope, name, v)
-	if err != nil {
-		return nil, err
+// inScope resolves a Go name to the first top-level declaration of
+// one of the kinds that the probe of the subject's file finds in the
+// view.
+func inScope(scope rules.Scope, name string, v rules.View, kinds ...symbol.Kind) (symbol.Symbol, error) {
+	if !goName(name) {
+		return nil, refuse("%s is not a Go name, so it names no declaration", name)
 	}
-	if sym := declared(pkg, bare, kinds...); sym != nil {
-		return sym, nil
-	}
-	return nil, refuse("%s declares no %s named %s", pkg.ID.Package, kindList(kinds), bare)
+	return firstDeclared(scope, scopeOf(scope.File), name, v, kinds...)
 }
 
-// typeInScope resolves a type spelling: a predeclared type resolves
-// to a stand-in naming itself, a bare name resolves in the subject's
-// package, and a qualified name resolves through the file's imports,
-// to a stand-in naming the import path where the view does not
-// contain the package.
-func (Rules) typeInScope(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
+// typeInScope resolves a type spelling: a predeclared type to a
+// stand-in naming itself, a qualified name whose import binds a
+// package outside the view to a stand-in naming the import path, and
+// any other Go name to the first type the probe of the subject's file
+// finds in the view.
+func typeInScope(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
 	if golang.Predeclared(name) {
 		return standIn(symbol.Identity{Lang: golang.Lang, Name: name, Kind: symbol.KindAlias}), nil
 	}
-	qualifier, bare, qualified := strings.Cut(name, qualifierSep)
-	if !qualified {
-		pkg, held := v.PackageOf(scope.Subject)
-		if !held {
-			return nil, refuse("the package declaring %s is outside the view", scope.Subject)
+	if !goName(name) {
+		return nil, refuse("%s is not a Go name, so it names no type", name)
+	}
+	s := scopeOf(scope.File)
+	if qualifier, bare, qualified := strings.Cut(name, qualifierSep); qualified {
+		if path, bound := s.Import(qualifier); bound && !inView(path, v) {
+			// A package outside the workspace, the standard library
+			// or a dependency: the type is named by its path, which a
+			// backend qualifies and imports.
+			return standIn(symbol.Identity{
+				Lang: golang.Lang, Package: path, Name: bare, Kind: symbol.KindAlias,
+			}), nil
 		}
-		if sym := declared(pkg, name, typeKinds...); sym != nil {
+	}
+	return firstDeclared(scope, s, name, v, typeKinds...)
+}
+
+// firstDeclared returns the first candidate of a name, in the
+// scope's probe order, that the view declares at the top level of
+// its package at one of the kinds. A candidate whose package the view
+// does not contain is skipped.
+func firstDeclared(
+	scope rules.Scope, s golang.Scope, name string, v rules.View, kinds ...symbol.Kind,
+) (symbol.Symbol, error) {
+	for _, c := range s.Candidates(scope.Subject.Package, name) {
+		pkg, held := v.PackageOf(packageIdentity(c.Package))
+		if !held {
+			continue
+		}
+		if sym := declared(pkg, c.Name, kinds...); sym != nil {
 			return sym, nil
 		}
-		return nil, refuse("%s declares no type named %s", pkg.ID.Package, name)
 	}
-	path, imported := importPath(scope.File, qualifier)
-	if !imported {
-		return nil, refuse("no import of the subject's file binds %s", qualifier)
-	}
-	id := symbol.Identity{Lang: golang.Lang, Package: path, Name: bare, Kind: symbol.KindAlias}
-	pkg, held := v.PackageOf(
-		symbol.Identity{Lang: golang.Lang, Package: path, Kind: symbol.KindPackage},
-	)
-	if !held {
-		// A package outside the workspace, the standard library or
-		// a dependency: the type is named by its path, which a
-		// backend qualifies and imports.
-		return standIn(id), nil
-	}
-	if sym := declared(pkg, bare, typeKinds...); sym != nil {
-		return sym, nil
-	}
-	return nil, refuse("%s declares no type named %s", path, bare)
+	return nil, refuse("no %s named %s is in scope of %s", kindList(kinds), name, scope.Subject)
 }
 
 // member resolves a name among the effective members of the type
@@ -202,45 +204,37 @@ func hostType(subject symbol.Identity, v rules.View) (node.Declaration, error) {
 	return decl, nil
 }
 
-// packageFor returns the package a bare or qualified name resolves
-// in, and the bare name: the subject's own package, or the one the
-// qualifier's import names.
-func packageFor(scope rules.Scope, name string, v rules.View) (*node.Package, string, error) {
-	qualifier, bare, qualified := strings.Cut(name, qualifierSep)
-	if !qualified {
-		pkg, held := v.PackageOf(scope.Subject)
-		if !held {
-			return nil, "", refuse("the package declaring %s is outside the view", scope.Subject)
-		}
-		return pkg, name, nil
+// scopeOf returns the scope a file's imports bind, and the zero
+// scope, which binds nothing, for a subject without a file.
+func scopeOf(f *node.File) golang.Scope {
+	if f == nil {
+		return golang.Scope{}
 	}
-	path, imported := importPath(scope.File, qualifier)
-	if !imported {
-		return nil, "", refuse("no import of the subject's file binds %s", qualifier)
-	}
-	pkg, held := v.PackageOf(
-		symbol.Identity{Lang: golang.Lang, Package: path, Kind: symbol.KindPackage},
-	)
-	if !held {
-		return nil, "", refuse("%s, which %s imports, is outside the view", path, qualifier)
-	}
-	return pkg, bare, nil
+	return golang.NewScope(f.Imports)
 }
 
-// importPath returns the path an import of the file binds under a
-// qualifier, by the rule [golang.ImportName] states: the alias, or
-// the name the path assumes. A blank or a dot import binds no
-// qualifier.
-func importPath(f *node.File, qualifier string) (string, bool) {
-	if f == nil {
-		return "", false
+// goName reports whether a spelling is a Go name, bare or qualified:
+// an identifier, or two joined by the qualifier's dot. A decorated, an
+// instantiated and a composite spelling are not.
+func goName(spelling string) bool {
+	qualifier, name, qualified := strings.Cut(spelling, qualifierSep)
+	if !qualified {
+		return token.IsIdentifier(spelling)
 	}
-	for _, imp := range f.Imports {
-		if name, binds := golang.ImportName(imp); binds && name == qualifier {
-			return imp.Path, true
-		}
-	}
-	return "", false
+	return token.IsIdentifier(qualifier) && token.IsIdentifier(name)
+}
+
+// inView reports whether the view contains the package at an import
+// path.
+func inView(path string, v rules.View) bool {
+	_, held := v.PackageOf(packageIdentity(path))
+	return held
+}
+
+// packageIdentity returns the identity of the Go package at an import
+// path.
+func packageIdentity(path string) symbol.Identity {
+	return symbol.Identity{Lang: golang.Lang, Package: path, Kind: symbol.KindPackage}
 }
 
 // declared returns a package's top-level declaration of one name

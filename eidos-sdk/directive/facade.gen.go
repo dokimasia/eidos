@@ -21,7 +21,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The codes validation refuses under, one per failure class so a
+// The codes validation reports under, one per class of finding so a
 // consumer scripts against the class it cares about. Each is
 // declared where it is registered, so nothing drifts.
 var (
@@ -51,7 +51,7 @@ var (
 	// single-instance schema.
 	DuplicateInstance = core.DuplicateInstance
 	// RequirementUnmet refuses an instance whose schema requires a
-	// directive the subject does not carry.
+	// directive the subject does not have.
 	RequirementUnmet = core.RequirementUnmet
 	// Conflict refuses a pair of directives a schema declares
 	// incompatible.
@@ -60,9 +60,9 @@ var (
 	// group returns.
 	UnknownMetadataKey = core.UnknownMetadataKey
 	// DanglingSubject refuses a directive or a classification
-	// stamp attached to a subject the graph never got. The check
-	// lives with whoever holds the graph; the code lives with its
-	// class.
+	// stamp attached to a subject the graph never got. The code that
+	// has the graph runs the check, and the code is declared here
+	// with its class.
 	DanglingSubject = core.DanglingSubject
 	// UnsealedRegistry refuses validation against a registry still
 	// registering: a defect in the composition, not in a carrier.
@@ -71,6 +71,13 @@ var (
 	// bound to nothing, naming the spelling and the kind it was
 	// read at.
 	UnresolvedReference = core.UnresolvedReference
+	// NegationRefused refuses a negated instance of a schema that
+	// does not declare itself negatable.
+	NegationRefused = core.NegationRefused
+	// MixedCarriers warns where one subject's instances of a
+	// repeatable directive mix carriers in the tool-directive shape
+	// with other carriers, which a formatter may reorder.
+	MixedCarriers = core.MixedCarriers
 )
 
 // Name is a directive's spelling: bare while one plugin claims it,
@@ -78,7 +85,7 @@ var (
 //
 // A Name compares by its bytes, so the store's directive index and
 // the registry's lookups key on it directly. The zero Name spells
-// nothing; [Parse] never returns one, because the grammar requires
+// nothing. [Parse] never returns one, because the grammar requires
 // a name before the first argument.
 type Name = core.Name
 
@@ -94,12 +101,12 @@ const Continuation = core.Continuation
 // failure audiences: a parse error is the author's typo, found
 // where the carrier is read, and a type error is a schema
 // violation, found at validation with the registry in hand. A
-// carrier therefore produces Raw without holding a registry, and
-// [Validate] turns Raw into the typed [Directive] handlers receive.
+// carrier therefore produces Raw without a registry, and [Validate]
+// turns Raw into the typed [Directive] handlers receive.
 //
 // Raw is a plain value: copy it freely. The store sorts a
-// subject's instances by Pos at its seal, so the field is
-// load-bearing for determinism, not decoration.
+// subject's instances by Pos at its seal, so the determinism of
+// every later pass depends on the field.
 type Raw = core.Raw
 
 // RawArg is one argument as written, keyed or positional, in the
@@ -110,14 +117,14 @@ type RawArg = core.RawArg
 
 // RawValue is one value as written: a scalar spelling, or a list.
 // Exactly one form is populated: List is nil for a scalar, and
-// Text is empty for a list. A nested list parses — the grammar
-// admits it — and validation refuses it against every schema.
+// Text is empty for a list. A nested list parses, and validation
+// refuses it against every schema.
 type RawValue = core.RawValue
 
 // Join folds continued carrier lines into one payload: a line
 // ending in a backslash joins the next, marker already stripped,
-// with a single space. The rule is grammar, so it lives here once
-// rather than in every frontend.
+// with a single space. The rule is grammar, so it is defined here
+// once and in no frontend.
 func Join(lines []string) string {
 	return core.Join(lines)
 }
@@ -126,9 +133,9 @@ func Join(lines []string) string {
 // is the text after the carrier marker, one logical line with
 // continuations already joined.
 //
-// A payload outside the grammar returns an error carrying the byte
-// offset where reading stopped; the caller owns the file position
-// and converts. Parse never panics, whatever the bytes.
+// A payload outside the grammar returns an error with the byte
+// offset where reading stopped. The caller converts the offset to a
+// file position. Parse never panics, whatever the bytes.
 func Parse(payload string) (Raw, error) {
 	return core.Parse(payload)
 }
@@ -138,22 +145,22 @@ func Parse(payload string) (Raw, error) {
 // Kind selects the populated field: [TypeString] fills Str,
 // [TypeInt] fills Int, [TypeBool] fills Bool, [TypeList] fills
 // List with each element typed as the spec's element type, and
-// [TypeReference] fills Ref. Every other field holds its zero
-// value, so a consumer switches on Kind and reads one field
-// without an assertion.
+// [TypeReference] fills Ref. Every other field is its zero value,
+// so a consumer switches on Kind and reads one field without an
+// assertion.
 //
 // Value is a plain value: copy it freely. A List is the one field
-// sharing storage; validation builds each instance fresh, so no
-// two instances alias.
+// sharing storage. Validation builds each instance fresh, so no two
+// instances alias.
 type Value = core.Value
 
 // Directive is one validated instance: what a handler receives
 // through its match, with every value already typed and every
 // check already passed.
 //
-// A Directive that exists is valid — [Validate] refuses the rest —
-// so a handler reads params without re-checking presence beyond
-// what the schema declares optional.
+// Every Directive is valid, because [Validate] returns only the
+// instances that pass. A handler reads params without re-checking
+// presence beyond what the schema declares optional.
 type Directive = core.Directive
 
 // The six names that belong to the kernel. The registry refuses
@@ -209,7 +216,7 @@ func Kernel() []Schema {
 	return core.Kernel()
 }
 
-// Registry holds every schema a workspace recognises.
+// Registry records every schema a workspace recognises.
 //
 // A Registry is not safe for concurrent use. Registration happens
 // while the workspace composes, and sealing ends it: validation
@@ -217,7 +224,7 @@ func Kernel() []Schema {
 // an error.
 type Registry = core.Registry
 
-// NewRegistry returns a registry holding nothing.
+// NewRegistry returns an empty registry.
 func NewRegistry() *Registry {
 	return core.NewRegistry()
 }
@@ -234,22 +241,21 @@ const (
 	// TypeInt accepts a base-10 integer, an optional leading minus
 	// included.
 	TypeInt = core.TypeInt
-	// TypeBool accepts exactly "true" and "false". The wider
-	// boolean vocabularies are how YAML turned a country code into
-	// a boolean, and one spelling stays greppable.
+	// TypeBool accepts exactly "true" and "false", so every boolean
+	// has one searchable spelling and no other text reads as one.
 	TypeBool = core.TypeBool
-	// TypeList accepts a bracketed list; ListOf types its elements.
+	// TypeList accepts a bracketed list. ListOf types its elements.
 	TypeList = core.TypeList
 	// TypeReference accepts a name that resolves against what
 	// Resolution declares.
 	TypeReference = core.TypeReference
 )
 
-// ResolutionKind says what a reference param's value resolves
-// against. The source kinds are declared and carried; nothing in
-// this package binds them, because the projection machinery that
-// resolves a source name lives elsewhere. The metadata kind binds
-// at validation, against the metadata key registry.
+// ResolutionKind names what a reference param's value resolves
+// against. This package declares the source kinds and binds none
+// of them: the projection machinery that resolves a source name is
+// outside it. The metadata kind binds at validation, against the
+// metadata key registry.
 type ResolutionKind = core.ResolutionKind
 
 const (
@@ -291,7 +297,7 @@ const (
 
 // ParamSpec declares one param a schema accepts: its spelling, its
 // type, and the conditions under which an instance must or may
-// carry it.
+// write it.
 //
 // A spec is data, checked whole at registration: an untyped param,
 // an empty doc, a duplicate key, an undeclared role and a list of
@@ -305,17 +311,17 @@ type ParamSpec = core.ParamSpec
 //
 // A schema is a value with no behaviour. [Registry.Register]
 // checks it whole and refuses what the field comments below
-// forbid; [Validate] holds every instance to it and types the
-// values; nothing reads it after that. Closure is the default: a
-// key the schema does not declare is refused, so what a handler
-// may assume is exactly what the schema says, and only a schema
+// forbid. [Validate] checks every instance against it and types the
+// values, and nothing reads it after that. Closure is the default:
+// a key the schema does not declare is refused, so what a handler
+// may assume is exactly what the schema states, and only a schema
 // stating Open admits keys it does not name.
 type Schema = core.Schema
 
 // Resolver binds one source reference param: what a spelling
 // names from a subject, at a resolution kind. The workspace
 // derives it from the registered rules and a view minted over the
-// sealed graph for validation; the view's reads record into a set
+// sealed graph for validation. The view's reads record into a set
 // the run discards, because validation runs whole on every run. An
 // error names what was looked for and not found.
 type Resolver = core.Resolver
@@ -325,13 +331,26 @@ type Resolver = core.Resolver
 // returning the instances that passed, in position order, with
 // repeatable instances numbered.
 //
-// keys resolves ResolveMetadataKey params; resolve binds every
-// other reference kind, and nil carries those spellings unbound.
-// Validation of one subject is independent of every other, so a
-// caller validates subjects in parallel; the sink is safe for
-// that, and the resolver is called from every goroutine. It
-// refuses an unsealed registry outright: that is a defect in the
-// composition, not in a carrier.
+// A negated instance types like any other. It is refused where its
+// schema is not [Schema.Negatable], and it takes part in no
+// requirement and no conflict, because it withdraws the subject
+// from a plugin and states nothing the constraints read. A subject
+// that sets and negates one directive states two opposite intents,
+// and every instance of that directive on it is refused.
+//
+// A repeatable directive whose instances on the subject mix carriers
+// in the tool-directive shape with other carriers reports a Warning
+// under [MixedCarriers] and keeps every instance, because a
+// formatter that moves the shaped lines, as gofmt does, reorders the
+// instances and their numbering.
+//
+// keys resolves ResolveMetadataKey params. resolve binds every
+// other reference kind, and a nil resolver leaves those spellings
+// unbound. Validation of one subject is independent of every other,
+// so a caller validates subjects in parallel: the sink is safe for
+// concurrent use, and the resolver is called from every goroutine.
+// Validate refuses an unsealed registry outright, because that is a
+// defect in the composition, not in a carrier.
 func Validate(subject symbol.Identity, ds []Raw, r *Registry, keys *meta.Registry, resolve Resolver, sink *diag.Sink) []Directive {
 	return core.Validate(subject, ds, r, keys, resolve, sink)
 }

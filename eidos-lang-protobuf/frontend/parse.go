@@ -115,8 +115,11 @@ type lowered struct {
 	// features decide a field's presence.
 	edition bool
 	// imports are the file's imports in source order, which the
-	// import stamp spells.
+	// import stamp spells, and paths the paths alone, which the
+	// resolution step's [protoFrontend.ImportOf] matches a declaring
+	// file against.
 	imports []string
+	paths   []string
 	// consumed records every comment a declaration took, so the
 	// sweep reads only the comments no declaration took.
 	consumed map[ast.Item]bool
@@ -179,7 +182,7 @@ func (l *lowered) file() {
 		}
 	}
 
-	gb.Scope(file, &bindings{pkg: l.pkg})
+	gb.Scope(file, &bindings{pkg: l.pkg, imports: l.paths})
 	if l.pkg != "" {
 		gb.Stamp(file, meta.RawStamp{Key: protobuf.PackageKey, Value: l.pkg, Pos: file.Pos})
 	}
@@ -200,6 +203,7 @@ func (l *lowered) file() {
 // reports as unaddressed, and its annotations are the file's.
 func (l *lowered) importOf(d *ast.ImportNode, file *node.File) *node.Import {
 	path := d.Name.AsString()
+	l.paths = append(l.paths, path)
 	switch {
 	case d.Public != nil:
 		l.imports = append(l.imports, importPublic+" "+path)
@@ -232,8 +236,8 @@ func (l *lowered) sweep(file *node.File) {
 		file.Annotations = append(file.Annotations, parts.Annotations...)
 		for _, carrier := range parts.Carriers {
 			l.unit.Errorf(UnaddressedCarrier, carrier.Pos,
-				"%q is in a comment protoc attributes to no declaration; move it above the declaration",
-				plugin.CarrierMark+carrier.Payload)
+				"%q is in a comment protoc attributes to no declaration. Move it directly above a declaration",
+				carrier.Mark+carrier.Payload)
 		}
 	}
 }
@@ -374,7 +378,7 @@ func (l *lowered) field(f *ast.FieldNode, presence string) *node.Field {
 // required presence, and a field without presence are the type
 // itself.
 func (l *lowered) fieldType(f *ast.FieldNode, label, presence string) (*node.TypeRef, bool) {
-	inner := &node.TypeRef{Spelling: identOf(f.FldType), Pos: l.at(f.FldType)}
+	inner := namedRef(identOf(f.FldType), l.at(f.FldType))
 	switch {
 	case label == labelRepeated:
 		return &node.TypeRef{
@@ -398,11 +402,23 @@ func (l *lowered) fieldType(f *ast.FieldNode, label, presence string) (*node.Typ
 	}
 }
 
+// namedRef lowers one named reference as the schema wrote it, and a
+// well-known type with the import path of the file that declares it,
+// because the workspace does not load that file and no resolution
+// names the import.
+func namedRef(spelling string, at position.Pos) *node.TypeRef {
+	ref := &node.TypeRef{Spelling: spelling, Pos: at}
+	if file, known := protobuf.WellKnownImport(spelling); known {
+		ref.Package = file
+	}
+	return ref
+}
+
 // mapField lowers a map field into the Map form over its key and its
 // value, with the spelling the schema wrote, and marks it as a map.
 func (l *lowered) mapField(f *ast.MapFieldNode) *node.Field {
 	key := &node.TypeRef{Spelling: f.MapType.KeyType.Val, Pos: l.at(f.MapType.KeyType)}
-	value := &node.TypeRef{Spelling: identOf(f.MapType.ValueType), Pos: l.at(f.MapType.ValueType)}
+	value := namedRef(identOf(f.MapType.ValueType), l.at(f.MapType.ValueType))
 	typ := &node.TypeRef{
 		Spelling: l.text(f.MapType),
 		Pos:      l.at(f.MapType),
@@ -579,7 +595,7 @@ func (l *lowered) rpc(r *ast.RPCNode) *node.Method {
 // rpcType lowers one side of an rpc: the message it names, under the
 // stream form where that side streams.
 func (l *lowered) rpcType(t *ast.RPCTypeNode) *node.TypeRef {
-	inner := &node.TypeRef{Spelling: identOf(t.MessageType), Pos: l.at(t.MessageType)}
+	inner := namedRef(identOf(t.MessageType), l.at(t.MessageType))
 	if t.Stream == nil {
 		return inner
 	}

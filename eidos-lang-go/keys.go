@@ -8,6 +8,10 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// namespace is the metadata namespace every golang key registers
+// under.
+const namespace = "golang"
+
 // The satellite's classification and fact keys, declared at the
 // root because one namespace claim serves both roles: the frontend
 // stamps what a parse can see, the annotator what the sealed graph
@@ -17,23 +21,23 @@ const (
 	TestFileKey meta.KeyName = "golang.testFile"
 
 	// ConstraintKey classifies a file whose build constraint falls
-	// outside the load's tag set; the value is the constraint as
+	// outside the load's tag set. The value is the constraint as
 	// written or filename-implied.
 	ConstraintKey meta.KeyName = "golang.constraint"
 
-	// GeneratedKey classifies a file carrying the Go convention's
-	// generated marker; the value is the marker line as written.
+	// GeneratedKey classifies a file with the Go convention's
+	// generated marker. The value is the marker line as written.
 	GeneratedKey meta.KeyName = "golang.generated"
 
 	// CgoKey classifies a file importing "C", whose preamble the
-	// model cannot yet hold.
+	// model does not represent.
 	CgoKey meta.KeyName = "golang.cgo"
 
-	// TypeSetKey carries an interface's constraint elements —
-	// unions and approximations — as their verbatim spellings.
+	// TypeSetKey records an interface's constraint elements, unions
+	// and approximations, as their verbatim spellings.
 	TypeSetKey meta.KeyName = "golang.typeSet"
 
-	// ConstraintInterfaceKey marks an interface carrying type-set
+	// ConstraintInterfaceKey marks an interface with type-set
 	// elements: usable as a bound, never as a value's type.
 	ConstraintInterfaceKey meta.KeyName = "golang.constraintInterface"
 
@@ -44,7 +48,7 @@ const (
 	// receiver.
 	ReceiverPointerKey meta.KeyName = "golang.receiverIsPointer"
 
-	// UnderlyingKey carries a defined type's underlying shape:
+	// UnderlyingKey records a defined type's underlying shape:
 	// basic, named, pointer, slice, array, map, chan or func.
 	UnderlyingKey meta.KeyName = "golang.underlyingKind"
 
@@ -53,18 +57,18 @@ const (
 	IterSeqKey  meta.KeyName = "golang.iterSeq"
 	IterSeq2Key meta.KeyName = "golang.iterSeq2"
 
-	// ConstValueKey carries a constant's exact evaluated value
-	// where the package's own scope suffices to evaluate it — an
-	// iota row's ordinal arithmetic included.
+	// ConstValueKey records a constant's exact evaluated value
+	// where the package's own scope suffices to evaluate it, an iota
+	// row's ordinal arithmetic included.
 	ConstValueKey meta.KeyName = "golang.constValue"
 
 	// SatisfiesErrorKey and SatisfiesStringerKey mark a type whose
-	// workspace-visible method set carries the interface's one
-	// method; EmbedsInterfaceKey marks a struct embedding a type
-	// the graph holds as an interface; ComparableKey marks a type
-	// every field of which is provably comparable. Each stamps only
-	// what the sealed graph proves: an absent fact is unknown,
-	// never a negative.
+	// workspace-visible method set has the interface's one method.
+	// EmbedsInterfaceKey marks a struct embedding a type the graph
+	// declares as an interface. ComparableKey marks a type every
+	// field of which is provably comparable. Each stamps only what
+	// the sealed graph proves: an absent fact is unknown, never a
+	// negative.
 	SatisfiesErrorKey    meta.KeyName = "golang.satisfiesError"
 	SatisfiesStringerKey meta.KeyName = "golang.satisfiesStringer"
 	EmbedsInterfaceKey   meta.KeyName = "golang.embedsInterface"
@@ -88,11 +92,12 @@ func Keys(r *meta.Registry) error {
 	return err
 }
 
-// Register registers every golang key and returns the annotator's
-// handles.
+// Register claims the golang namespace for the handle's registrant,
+// registers every golang key through the same handle, and returns
+// the annotator's handles.
 func Register(r *meta.Registry) (Handles, error) {
 	var h Handles
-	if err := r.ClaimNamespace("golang", string(Name)); err != nil {
+	if err := r.ClaimNamespace(namespace); err != nil {
 		return h, err
 	}
 	file := []symbol.Kind{symbol.KindFile}
@@ -107,23 +112,23 @@ func Register(r *meta.Registry) (Handles, error) {
 		},
 		{
 			Name: ConstraintKey, Kinds: file,
-			Doc: "carries the build constraint that kept a file's declarations out",
+			Doc: "records the build constraint that kept a file's declarations out",
 		},
 		{
 			Name: GeneratedKey, Kinds: file,
-			Doc: "carries the generated-file marker a foreign generator wrote",
+			Doc: "records the generated-file marker a foreign generator wrote",
 		},
 		{
 			Name: CgoKey, Kinds: file,
-			Doc: "marks a file importing C, whose preamble the model cannot hold",
+			Doc: "marks a file importing C, whose preamble the model does not represent",
 		},
 		{
 			Name: TypeSetKey, Kinds: []symbol.Kind{symbol.KindInterface},
-			Doc: "carries an interface's constraint elements as written",
+			Doc: "records an interface's constraint elements as written",
 		},
 		{
 			Name: ConstraintInterfaceKey, Kinds: []symbol.Kind{symbol.KindInterface},
-			Doc: "marks an interface carrying type-set elements",
+			Doc: "marks an interface with type-set elements",
 		},
 		{
 			Name: EmptyInterfaceKey, Kinds: []symbol.Kind{symbol.KindInterface},
@@ -135,7 +140,7 @@ func Register(r *meta.Registry) (Handles, error) {
 		},
 		{
 			Name: UnderlyingKey, Kinds: []symbol.Kind{symbol.KindAlias, symbol.KindEnum},
-			Doc: "carries a defined type's underlying shape",
+			Doc: "records a defined type's underlying shape",
 		},
 		{
 			Name: IterSeqKey, Kinds: []symbol.Kind{symbol.KindFunction, symbol.KindMethod},
@@ -147,7 +152,7 @@ func Register(r *meta.Registry) (Handles, error) {
 		},
 		{
 			Name: ConstValueKey, Kinds: []symbol.Kind{symbol.KindConstant, symbol.KindEnumVariant},
-			Doc: "carries a constant's exact value where the package evaluates it",
+			Doc: "records a constant's exact value where the package evaluates it",
 		},
 		{
 			Name: SatisfiesErrorKey, Kinds: types,
@@ -159,7 +164,7 @@ func Register(r *meta.Registry) (Handles, error) {
 		},
 		{
 			Name: EmbedsInterfaceKey, Kinds: []symbol.Kind{symbol.KindStruct},
-			Doc: "marks a struct embedding a type the graph holds as an interface",
+			Doc: "marks a struct embedding a type the graph declares as an interface",
 		},
 		{
 			Name: ComparableKey, Kinds: types,
@@ -184,9 +189,9 @@ func Register(r *meta.Registry) (Handles, error) {
 	return h, nil
 }
 
-// registerKey registers one key under the type its consumers read;
-// the returned handle is zero for everything but the boolean keys
-// the annotator holds.
+// registerKey registers one key under the type its consumers read.
+// The returned handle is zero for everything but the boolean keys
+// the annotator stamps.
 func registerKey(r *meta.Registry, spec meta.KeySpec) (meta.Key[bool], error) {
 	switch spec.Name {
 	case ConstraintKey, GeneratedKey, UnderlyingKey, ConstValueKey:

@@ -100,9 +100,8 @@ const (
 )
 
 // KindTemplates maps each emit kind to the template that spells
-// it. A kind absent from the map is one Go's backend cannot
-// spell: the render reports it and skips that declaration, which
-// is what the feature matrix records.
+// it. A file-level kind absent from the map is one the lowering
+// reshapes, as it does an enum, or one [RefusedKinds] refuses.
 func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,
@@ -112,5 +111,14 @@ func KindTemplates() map[symbol.Kind]string {
 		symbol.KindAlias:     AliasTemplate,
 		symbol.KindConstant:  ConstantTemplate,
 		symbol.KindVariable:  VariableTemplate,
+	}
+}
+
+// RefusedKinds maps each emit kind Go declares no spelling for to
+// the reason, which the render reports beside every declaration of
+// the kind it skips.
+func RefusedKinds() map[symbol.Kind]string {
+	return map[symbol.Kind]string{
+		symbol.KindSum: "Go has no sum type, and an interface leaves its implementations open",
 	}
 }

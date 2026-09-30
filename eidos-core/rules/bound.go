@@ -10,9 +10,9 @@ import (
 )
 
 // Bound is the kernel's walks and one language's decisions over
-// one invocation's view: what a handler reaches through its match.
-// It memoises [Bound.TypeOf] per reference for the invocation and
-// nothing else, and dies with the invocation.
+// one invocation's view. A handler obtains one from its match. It
+// memoises [Bound.TypeOf] per reference and nothing else, for the
+// life of the invocation.
 //
 // A Bound is not safe for concurrent use, because the view it
 // records into is not.
@@ -25,7 +25,8 @@ type Bound struct {
 
 // NewBound binds a language's rules to a view. forLang returns
 // another language's rules for a contributor or a target declared
-// in it; nil gives every other language [Absent].
+// in it. A nil forLang gives every other language [Absent], and nil
+// rules bind [Absent] for the zero language.
 func NewBound(source SourceRules, view View, forLang func(symbol.Lang) SourceRules) Bound {
 	if source == nil {
 		source = Absent("")
@@ -58,10 +59,12 @@ func (b Bound) TypeOf(ref *node.TypeRef) TypeShape { return b.typeOf(ref) }
 // for a symbol that is not a type.
 func (b Bound) MembersOf(sym symbol.Symbol) (MemberSet, bool) { return b.membersOf(sym) }
 
-// SamplesOf returns two distinct values of a type: the authored
-// ones on the declaration carrying the type and on the type's own
-// declaration first, then the language's derivation. subject is
-// the carrying declaration, zero for none.
+// SamplesOf returns two distinct values of a type. The values an
+// author stated on the declaration that has the type, and on the
+// type's own declaration, come first through [View.Authored]. The
+// language derives each half no author stated, and [Complete] pairs
+// the two. subject is the declaration that has the type, zero for
+// none.
 func (b Bound) SamplesOf(subject symbol.Identity, ref *node.TypeRef, hint string) (Sample, Sample) {
 	return b.samplesOf(subject, ref, hint)
 }

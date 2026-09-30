@@ -30,9 +30,9 @@ import (
 // [Fixture.Annotate] or [Fixture.Generate].
 //
 // The graph freezes on the first phase call, so every load and
-// attach comes before it; a later structural write fails the test
-// through the store's own refusal. A Fixture belongs to one test
-// and is not safe for concurrent use.
+// attach comes before it. A later structural write fails the test
+// through the store's error. A Fixture belongs to one test and is
+// not safe for concurrent use.
 type Fixture = core.Fixture
 
 // New returns an empty fixture at bucket one, with the kernel's
@@ -47,8 +47,8 @@ func Key[T meta.FactValue](tb assert.TB, f *Fixture, name meta.KeyName, doc stri
 	return core.Key[T](tb, f, name, doc)
 }
 
-// Stamp records one fact at plugin authority, subject bound: the
-// shortest spelling of "an earlier annotator concluded this".
+// Stamp records one subject-bound fact at plugin authority, as an
+// earlier annotator's stamp records it.
 func Stamp[T meta.FactValue](tb assert.TB, f *Fixture, k meta.Key[T], subject symbol.Identity, v T) {
 	core.Stamp[T](tb, f, k, subject, v)
 }
@@ -65,12 +65,12 @@ type Result = core.Result
 // fresh pair every call.
 type Setup = core.Setup
 
-// RunPluginSuite holds a plugin to the conformance checks a fixture
-// can check without a workspace: declaration stability, byte-equal
-// emit across isolated runs, annotator idempotence, positioned
-// diagnostics, attribution, declared tags, the options schema, the
-// template lint, and no panics. Checks for roles or surfaces the
-// plugin does not hold are skipped.
+// RunPluginSuite runs the conformance checks a fixture needs no
+// workspace for: declaration stability, byte-equal emit across
+// isolated runs, annotator idempotence, positioned diagnostics,
+// attribution, declared tags, the options schema, the template
+// lint, and no panics. It skips the checks for a role or a surface
+// the plugin does not implement.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	core.RunPluginSuite(t, setup)
 }
@@ -84,35 +84,35 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	core.AssertPopulatedFixture(tb, setup)
 }
 
-// AssertStableDeclaration holds two builds of one plugin to the
-// same declaration: the name, the gate records, the outputs and
-// the owned schemas. A declaration that varies between builds
-// breaks every consumer that keys on it.
+// AssertStableDeclaration fails unless two builds of one plugin
+// declare the same name, gate records, outputs and schemas. A
+// declaration that varies between builds breaks every consumer
+// that keys on it.
 func AssertStableDeclaration(tb assert.TB, setup Setup) {
 	core.AssertStableDeclaration(tb, setup)
 }
 
-// AssertTemplates holds every declared template tree to the static
-// template rules, through the same lint the render pass runs, per
-// language the fixture carries: a plugin failing at CI fails in
-// its own tests first. A setup declaring no tree for any fixture
-// language fails the check, because a lint over nothing proves
-// nothing; [RunPluginSuite] runs it only for a plugin declaring
-// one.
+// AssertTemplates lints every declared template tree through the
+// lint the render pass runs, once per language the fixture has,
+// with the helpers and overrides the plugin declares for that
+// language: a plugin that would fail at CI fails in its own tests
+// first. A setup that declares no tree for any fixture language
+// fails the check, because a lint over nothing proves nothing, and
+// [RunPluginSuite] runs it only for a plugin that declares one.
 func AssertTemplates(tb assert.TB, setup Setup) {
 	core.AssertTemplates(tb, setup)
 }
 
-// AssertOptionsSchema holds the plugin's options struct to the tag
-// contract, through the same check the composition runs, so a
-// plugin failing at Build fails in its own tests first.
+// AssertOptionsSchema checks the plugin's options struct against
+// the tag contract, through the check the composition runs, so a
+// plugin that would fail at Build fails in its own tests first.
 func AssertOptionsSchema(tb assert.TB, setup Setup) {
 	core.AssertOptionsSchema(tb, setup)
 }
 
 // AssertDeterministicEmit runs one plugin over two isolated
-// fixtures and holds the emitted bytes equal: the byte-identity
-// contract, checked before any renderer exists.
+// fixtures and fails unless both runs emit the same bytes: the
+// byte-identity contract, checked before any renderer exists.
 func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 	core.AssertDeterministicEmit(tb, setup)
 }
@@ -120,9 +120,9 @@ func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 // AssertIdempotentAnnotate runs one plugin's annotate phase twice
 // over one fixture. It fails unless both passes stamp clean and the
 // second pass leaves every winning value unchanged. A stamp that
-// depends on run state either arrives a second value from the same
-// rank source, which the fact store refuses, or moves a winner,
-// which the comparison refuses.
+// depends on run state either claims a second value from the same
+// rank source, which the fact store refuses, or moves a winning
+// value, which the comparison refuses.
 func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	core.AssertIdempotentAnnotate(tb, setup)
 }
@@ -143,19 +143,19 @@ func AssertAttributedEmit(tb assert.TB, setup Setup) {
 	core.AssertAttributedEmit(tb, setup)
 }
 
-// AssertTwins holds two spellings of one plugin, usually a facade
-// build and a hand-rolled SPI twin, to byte-equal emit: the
-// lowering guarantee, checked from the outside. Each setup returns
-// its own spelling over an equivalent fixture.
+// AssertTwins fails unless two spellings of one plugin, usually a
+// facade build and a hand-rolled SPI twin, emit the same bytes: the
+// lowering guarantee, checked from outside the facade. Each setup
+// returns its own spelling over an equivalent fixture.
 func AssertTwins(tb assert.TB, facade, twin Setup) {
 	core.AssertTwins(tb, facade, twin)
 }
 
-// AssertNoStructuralWrites runs every phase the plugin holds and
-// holds the graph's bytes still: annotators and generators read
-// declarations through shared pointers, so mutating one in place
-// is the structural write the sealed store cannot refuse, and this
-// check is what catches it.
+// AssertNoStructuralWrites runs every phase the plugin implements
+// and fails unless the graph's bytes are unchanged afterwards:
+// annotators and generators read declarations through shared
+// pointers, so mutating one in place is the structural write the
+// sealed store cannot refuse, and this check catches it.
 func AssertNoStructuralWrites(tb assert.TB, setup Setup) {
 	core.AssertNoStructuralWrites(tb, setup)
 }

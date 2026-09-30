@@ -28,12 +28,14 @@ func parsedUnit(tb assert.TB, sources map[string]string) []*node.File {
 		refs = append(refs, plugin.SourceRef{Path: path})
 	}
 	f := frontend.New(nil)
-	u := plugin.NewSourceUnit(refs, tree, plugin.DepthFull, f.Syntax(), diag.NewSink(), f.Name())
+	u := plugin.NewSourceUnit(refs, tree, plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
 	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
 	assert.Length(tb, u.Graph().Packages(), 1, "one package declared")
 	return u.Graph().Packages()[0].Files
 }
 
+// A package's methods fold onto their receiver's declaration across
+// its files, so what folds and what is kept at file level is pinned.
 func TestFold(t *testing.T) {
 	t.Parallel()
 

@@ -4,6 +4,7 @@
 package protobuf
 
 import (
+	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -12,6 +13,10 @@ import (
 // declaration this satellite loads, and the key a composition
 // registers the projection rules under.
 const Lang symbol.Lang = "protobuf"
+
+// CodePrefix opens every diagnostic code the satellite registers:
+// PROTO-0001 is the first.
+const CodePrefix diag.Prefix = "PROTO"
 
 // Name is the satellite's one identity: the origin its findings
 // report under, the plugin its classification stamps are
@@ -30,7 +35,7 @@ const Extension = ".proto"
 // bump it when a load would put something different in the graph,
 // which invalidates every unit loaded under the old value and keeps
 // a warm run equal to a cold one.
-const Version = "0.1.0"
+const Version = "0.3.0"
 
 // Syntax returns protobuf's comment forms, which the frontend
 // strips documentation with and the render side would spell

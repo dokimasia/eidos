@@ -9,20 +9,41 @@ import (
 	"iter"
 	"reflect"
 	"slices"
+	"strconv"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Registry holds every registered namespace, key and group.
+// compositionName is how a message names the composition, the
+// registrant without a plugin name.
+const compositionName = "the composition"
+
+// Registry is a handle on the registered namespaces, keys and
+// groups, bound to one registrant: a plugin's name, or no name for
+// the composition that builds the workspace.
+//
+// Every handle [Registry.For] derives shares one set of
+// registrations. A namespace belongs to the registrant whose handle
+// claimed it, and a key registers only into a namespace its own
+// registrant claimed, so no plugin registers keys under another
+// plugin's namespace or the kernel's.
 //
 // A Registry is not safe for concurrent use. Registration happens
 // while the workspace composes, which is single-threaded.
-// [Registry.Seal] ends registration, and the registry refuses every
+// [Registry.Seal] ends registration, and every handle refuses a
 // later one. [Facts] reads a sealed registry without locking, and
 // every fact store built over it sees one set of keys and groups.
 type Registry struct {
-	// namespaces maps a claimed namespace to its owner.
+	*registrations
+	// registrant is who this handle claims namespaces and registers
+	// keys for. The empty name is the composition.
+	registrant string
+}
+
+// registrations is the state every handle of one registry shares.
+type registrations struct {
+	// namespaces maps a claimed namespace to its registrant.
 	namespaces map[string]string
 	// byName resolves a boundary spelling to its dense id.
 	byName map[KeyName]KeyID
@@ -39,13 +60,22 @@ type Registry struct {
 	sealed bool
 }
 
-// NewRegistry returns a registry holding nothing.
+// NewRegistry returns an empty registry and the composition's handle
+// on it.
 func NewRegistry() *Registry {
-	return &Registry{
+	return &Registry{registrations: &registrations{
 		namespaces: map[string]string{},
 		byName:     map[KeyName]KeyID{},
 		groups:     map[GroupName][]KeyID{},
-	}
+	}}
+}
+
+// For returns a handle on the same registrations bound to one
+// registrant: the name its claims record, and the name its
+// registrations must match. The empty name returns the composition's
+// handle.
+func (r *Registry) For(registrant string) *Registry {
+	return &Registry{registrations: r.registrations, registrant: registrant}
 }
 
 // KeySpec is what a registration declares.
@@ -58,8 +88,8 @@ type KeySpec struct {
 	Kinds []symbol.Kind
 	// Group optionally registers the key into a fact group.
 	Group GroupName
-	// Contract optionally promises coverage. The declaration is
-	// held; nothing here checks it.
+	// Contract optionally promises coverage. The registry keeps the
+	// declaration and checks nothing.
 	Contract *Completeness
 	// Doc states the key's semantics. Registration refuses an empty
 	// one.
@@ -76,26 +106,24 @@ type Completeness struct {
 	Severity diag.Severity
 }
 
-// ClaimNamespace records who owns a namespace.
+// ClaimNamespace claims a namespace for the handle's registrant.
 //
-// A namespace claimed twice is an error naming both owners. Every
-// key registers into a claimed namespace, so a typo in a key's
-// namespace fails at registration rather than reading as a new
+// A namespace claimed twice is an error naming both registrants.
+// Every key registers into a claimed namespace, so a typo in a key's
+// namespace fails at registration and never reads as a new
 // namespace.
-func (r *Registry) ClaimNamespace(ns, owner string) error {
+func (r *Registry) ClaimNamespace(ns string) error {
 	if r.sealed {
 		return fmt.Errorf("meta: namespace %q is claimed after the seal: registration ends there", ns)
 	}
 	if ns == "" {
-		return errors.New("meta: the empty namespace owns nothing")
-	}
-	if owner == "" {
-		return fmt.Errorf("meta: namespace %q names no owner: a collision could not be reported", ns)
+		return errors.New("meta: the empty namespace names nothing to claim")
 	}
 	if held, taken := r.namespaces[ns]; taken {
-		return fmt.Errorf("meta: namespace %q is claimed twice: by %q and by %q", ns, held, owner)
+		return fmt.Errorf("meta: namespace %q is claimed twice: by %s and by %s",
+			ns, registrantName(held), registrantName(r.registrant))
 	}
-	r.namespaces[ns] = owner
+	r.namespaces[ns] = r.registrant
 	return nil
 }
 
@@ -105,6 +133,7 @@ func (r *Registry) ClaimNamespace(ns, owner string) error {
 // where two exist:
 //   - a registration after [Registry.Seal];
 //   - a name without a claimed namespace or without a local part;
+//   - a name in a namespace another registrant claimed;
 //   - a name registered twice;
 //   - a spec without documentation;
 //   - a key and a group with one spelling, in either registration
@@ -123,10 +152,17 @@ func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 			"meta: key %q spells no namespace and local part: both are non-empty", s.Name,
 		)
 	}
-	if _, claimed := r.namespaces[s.Name.Namespace()]; !claimed {
+	registrant, claimed := r.namespaces[s.Name.Namespace()]
+	if !claimed {
 		return Key[T]{}, fmt.Errorf(
 			"meta: key %q registers into namespace %q, which nothing claimed",
 			s.Name, s.Name.Namespace(),
+		)
+	}
+	if registrant != r.registrant {
+		return Key[T]{}, fmt.Errorf(
+			"meta: %s registers key %q into namespace %q, which %s claimed",
+			registrantName(r.registrant), s.Name, s.Name.Namespace(), registrantName(registrant),
 		)
 	}
 	if s.Doc == "" {
@@ -215,4 +251,13 @@ func (r *Registry) typeOf(id KeyID) reflect.Type {
 		return nil
 	}
 	return r.types[id-1]
+}
+
+// registrantName spells a registrant for a message: its quoted name,
+// or the composition for the empty one.
+func registrantName(registrant string) string {
+	if registrant == "" {
+		return compositionName
+	}
+	return strconv.Quote(registrant)
 }

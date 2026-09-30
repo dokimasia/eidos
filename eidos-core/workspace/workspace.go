@@ -14,10 +14,15 @@ import (
 	"go.dokimi.dev/eidos/core/rules"
 )
 
+// ErrRunFailed classifies a run that reported errors. The findings
+// themselves are in the report's sink.
+var ErrRunFailed = errors.New("workspace: the run reported errors")
+
 // Workspace is the validated, immutable composition: the sealed
 // registries and the compiled schedules, and nothing else, because
-// everything mutable belongs to one run. Concurrent runs are safe;
-// each creates its own sink, fact store, indexes and emit stores.
+// everything mutable belongs to one run. Concurrent runs are safe.
+// Each creates its own fact store, indexes and emit stores, and a
+// run that commits opens its own sink.
 type Workspace struct {
 	keys       *meta.Registry
 	kernel     meta.KernelKeys
@@ -25,30 +30,26 @@ type Workspace struct {
 	rules      *rules.Registry
 	annotate   []annEntry
 	plans      []compiledPlan
-	// sink stages and commits what the plans render, nil for a
+	// open returns a fresh sink for a run that commits, nil for a
 	// composition that stops after the settle.
-	sink output.Sink
-	// brand is what the output contract stamps under, and what the
-	// load refuses as the workspace's own output.
+	open func() (output.Sink, error)
+	// brand is what the output contract stamps under, what a load
+	// reads carriers under, and what the load refuses as the
+	// workspace's own output.
 	brand output.Brand
 	// fingerprint is the composition's fold, taken at Build.
 	fingerprint []byte
 }
 
-// Brand returns the output brand the composition declared, and the
-// zero brand for one declaring no output. It is what a load is
-// driven under, so the workspace never reads its own outputs as
-// source.
+// Brand returns the composition's brand: what a load runs under, so
+// the load reads the composition's carriers and never reads the
+// workspace's own outputs as source.
 func (w *Workspace) Brand() output.Brand { return w.brand }
 
 // Kernel returns the kernel's registered keys, the handles a
 // reader of a run's report uses for the kernel's own facts: the
 // module identity, an authored sample, a witness.
 func (w *Workspace) Kernel() meta.KernelKeys { return w.kernel }
-
-// ErrRunFailed classifies a run that reported errors; the findings
-// themselves are in the report's sink.
-var ErrRunFailed = errors.New("workspace: the run reported errors")
 
 // Report is what a run leaves behind, for callers and their tests:
 // the findings, the arbitrated facts, and each plan's emit store.
@@ -59,7 +60,7 @@ type Report struct {
 	// order the sink reports: empty for a composition declaring no
 	// output, and for a run whose findings kept it from writing.
 	Written []output.Written
-	// Emits holds each plan's store, keyed by plan name. It is
-	// empty where the frame stopped before the plans ran.
+	// Emits is each plan's store, keyed by plan name. It is empty
+	// where the frame stopped before the plans ran.
 	Emits map[string]*plugin.Emit
 }

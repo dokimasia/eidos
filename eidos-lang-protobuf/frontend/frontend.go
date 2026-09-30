@@ -26,7 +26,7 @@ const Lang = protobuf.Lang
 // one message must not erase a schema. The first ten errors of a
 // file report one finding each, and one more finding counts the
 // rest.
-var UnparsedFile = diag.MustRegister(diag.Prefix("PROTO"), diag.CodeSpec{
+var UnparsedFile = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 	Number:  1,
 	Meaning: "a proto file has a syntax error",
 })
@@ -39,7 +39,7 @@ var UnparsedFile = diag.MustRegister(diag.Prefix("PROTO"), diag.CodeSpec{
 // contributes nothing and the rest of the file loads. The finding
 // names the extended message, whether or not this workspace
 // declares it.
-var RefusedExtension = diag.MustRegister(diag.Prefix("PROTO"), diag.CodeSpec{
+var RefusedExtension = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 	Number:  2,
 	Meaning: "a proto file extends a message it does not declare",
 })
@@ -52,7 +52,7 @@ var RefusedExtension = diag.MustRegister(diag.Prefix("PROTO"), diag.CodeSpec{
 // contributes nothing and neither is invented. A group inside a
 // message and one inside a oneof each report, naming the
 // declaration that contains it.
-var RefusedGroup = diag.MustRegister(diag.Prefix("PROTO"), diag.CodeSpec{
+var RefusedGroup = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 	Number:  5,
 	Meaning: "a proto file declares a group, which is one declaration the model represents as two",
 })
@@ -63,7 +63,7 @@ var RefusedGroup = diag.MustRegister(diag.Prefix("PROTO"), diag.CodeSpec{
 // Severity is Error. The carrier attaches nothing, and the
 // declaration below it still loads. The finding states the grammar's
 // reason and the line as written.
-var BadCarrier = diag.MustRegister(diag.Prefix("PROTO"), diag.CodeSpec{
+var BadCarrier = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 	Number:  3,
 	Meaning: "a directive carrier is outside the kernel grammar",
 })
@@ -77,7 +77,7 @@ var BadCarrier = diag.MustRegister(diag.Prefix("PROTO"), diag.CodeSpec{
 // attributes to no declaration, such as one a blank line separates
 // from the declaration below it, and for a carrier on an import,
 // which has no identity.
-var UnaddressedCarrier = diag.MustRegister(diag.Prefix("PROTO"), diag.CodeSpec{
+var UnaddressedCarrier = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 	Number:  4,
 	Meaning: "a directive carrier is on a subject the model cannot address",
 })
@@ -103,6 +103,10 @@ func New() plugin.Frontend { return protoFrontend{} }
 // parallel, and each unit's state is on the unit.
 type protoFrontend struct{}
 
+// A proto import names a file, so the resolution step asks the
+// frontend which import names a declaring file.
+var _ plugin.Importer = protoFrontend{}
+
 // Name returns [protobuf.Name], the origin of this frontend's
 // findings and classification stamps.
 func (protoFrontend) Name() plugin.ID { return protobuf.Name }
@@ -116,6 +120,10 @@ func (protoFrontend) Lang() symbol.Lang { return protobuf.Lang }
 // They are C's: a line comment, a block comment with its gutter,
 // and the directive convention.
 func (protoFrontend) Syntax() plugin.CommentSyntax { return protobuf.Syntax() }
+
+// Overloads reports false: a service declares each RPC once by name,
+// so every method this frontend loads takes the empty discriminator.
+func (protoFrontend) Overloads() bool { return false }
 
 // Version returns [protobuf.Version], which every unit key folds.
 // Bumping it invalidates every unit this frontend loaded before, so

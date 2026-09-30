@@ -42,6 +42,29 @@ const (
 	genSource     = "package svc/gen\ntype T string\ntype Box T\ntypeparam T\nmethod Put T\ntype Plain T\n"
 )
 
+// The import trees: one file declaring both ends of a reference, and
+// one package declaring them in two files.
+const (
+	localPath  = "svc/local"
+	localFile  = "svc/local/a.zz"
+	splitPath  = "svc/split"
+	splitFile  = "svc/split/a.zz"
+	targetFile = "svc/split/b.zz"
+)
+
+// The composition that splits the dual tree between two frontends of
+// one language: the importer claims the holder, and a frontend
+// without the role claims the two declaring packages.
+const (
+	holdSelection = "svc/hold/*.zz"
+	dualSelection = "a/**/*.zz"
+	plainID       = plugin.ID("plain")
+)
+
+// importMark leads every import the importing frontend names, so a
+// case tells the value ImportOf returns from the path it receives.
+const importMark = "import:"
+
 // dualTree returns two packages declaring Thing and a holder whose
 // one field spells it through an alias bound to both paths.
 func dualTree(bound ...string) fstest.MapFS {
@@ -58,17 +81,35 @@ func dualTree(bound ...string) fstest.MapFS {
 	}
 }
 
-// holderTarget returns the target the holder's one field resolved
-// to.
-func holderTarget(tb assert.TB, g *store.Graph) symbol.Identity {
+// localTree returns one file declaring a holder and the type its one
+// field spells.
+func localTree() fstest.MapFS {
+	return fstest.MapFS{
+		localFile: {Data: []byte("package " + localPath + "\ntype " + holderName + " " + thingName +
+			"\ntype " + thingName + " string\n")},
+	}
+}
+
+// splitTree returns one package declaring a holder in one file and
+// the type its one field spells in another.
+func splitTree() fstest.MapFS {
+	return fstest.MapFS{
+		splitFile:  {Data: []byte("package " + splitPath + "\ntype " + holderName + " " + thingName + "\n")},
+		targetFile: {Data: []byte("package " + splitPath + "\ntype " + thingName + " string\n")},
+	}
+}
+
+// holderRef returns the reference the one field of a package's
+// holder spells.
+func holderRef(tb assert.TB, g *store.Graph, path string) *node.TypeRef {
 	tb.Helper()
 
-	holder, held := g.Lookup(symbol.Identity{
-		Lang: frontendtest.ScriptedLang, Package: holdPath, Name: holderName,
+	holder, found := g.Lookup(symbol.Identity{
+		Lang: frontendtest.ScriptedLang, Package: path, Name: holderName,
 		Kind: symbol.KindStruct,
 	})
-	assert.True(tb, held, "the holder is indexed")
-	return holder.(*node.Struct).Fields[0].Type.Target
+	assert.True(tb, found, "the holder is indexed")
+	return holder.(*node.Struct).Fields[0].Type
 }
 
 // thingIn returns the identity of the Thing one package declares.
@@ -95,19 +136,23 @@ func TestLink(t *testing.T) {
 	t.Run("link", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("resolves through the file's bindings and leaves builtins", func(t *testing.T) {
+		t.Run("resolves a bound spelling to the declaring identity", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := loadTree(t, stdTree())
 			row, _ := g.Lookup(rowID())
-			fields := row.(*node.Struct).Fields
-
-			assert.Equal(t, fields[0].Type.Target, symbol.Identity{
+			assert.Equal(t, row.(*node.Struct).Fields[0].Type.Target, symbol.Identity{
 				Lang: frontendtest.ScriptedLang, Package: apiPath, Name: userName,
 				Kind: symbol.KindStruct,
-			}, "a bound spelling resolves to the declaring identity")
-			assert.True(t, fields[1].Type.Target.IsZero(),
-				"a builtin keeps its spelling alone")
+			}, "the target is the declaration the binding names")
+		})
+
+		t.Run("leaves a builtin unresolved", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, stdTree())
+			row, _ := g.Lookup(rowID())
+			assert.True(t, row.(*node.Struct).Fields[1].Type.Target.IsZero(), "a builtin keeps its spelling alone")
 		})
 
 		t.Run("resolves nothing in a file with no recorded scope", func(t *testing.T) {
@@ -116,12 +161,12 @@ func TestLink(t *testing.T) {
 			g, _, sink := loadTree(t, oneFileTree(), with(&everyKind{frontendtest.NewScripted()}))
 			coretest.AssertCodes(t, sink)
 
-			held, found := g.Lookup(assigned("", coretest.AliasName, symbol.KindAlias))
-			assert.True(t, found, "the alias is indexed")
-			assert.True(t, held.(*node.Alias).Target.Target.IsZero(),
+			found, indexed := g.Lookup(assigned("", coretest.AliasName, symbol.KindAlias))
+			assert.True(t, indexed, "the alias is indexed")
+			assert.True(t, found.(*node.Alias).Target.Target.IsZero(),
 				"the file records no bindings, so the reference resolves to nothing")
-			assert.Equal(t, held.(*node.Alias).Target.Spelling, coretest.StructName,
-				"and the reference keeps what the frontend wrote")
+			assert.Equal(t, found.(*node.Alias).Target.Spelling, coretest.StructName,
+				"the reference keeps what the frontend wrote")
 		})
 
 		t.Run("targets a type parameter before a package type of its spelling", func(t *testing.T) {
@@ -135,7 +180,7 @@ func TestLink(t *testing.T) {
 			assert.Equal(t, box.(*node.Struct).Fields[0].Type.Target, param,
 				"a field of the generic type names its parameter")
 			assert.Equal(t, box.(*node.Struct).Methods[0].Params[0].Type.Target, param,
-				"and so does a member nested in the type")
+				"a member nested in the type names it too")
 
 			plain, _ := g.Lookup(genDecl("", plainName, symbol.KindStruct))
 			assert.Equal(t, plain.(*node.Struct).Fields[0].Type.Target,
@@ -166,17 +211,23 @@ func TestLink(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 		})
 
-		t.Run("reports an ambiguous reference and keeps the first candidate", func(t *testing.T) {
+		t.Run("reports AmbiguousReference for two candidates in one tier", func(t *testing.T) {
 			t.Parallel()
 
-			g, _, sink := loadTree(t, dualTree(leftPath, rightPath))
+			_, _, sink := loadTree(t, dualTree(leftPath, rightPath))
 			coretest.AssertReports(t, sink, load.AmbiguousReference)
-			assert.Equal(t, holderTarget(t, g), thingIn(leftPath),
-				"the first candidate in probe order is the target")
 
 			found, _ := findingOf(sink, load.AmbiguousReference)
-			assert.Contains(t, found.Msg, leftPath, "naming the target")
-			assert.Contains(t, found.Msg, rightPath, "and the other candidate")
+			assert.Contains(t, found.Msg, leftPath, "the finding names the target")
+			assert.Contains(t, found.Msg, rightPath, "the finding names the other candidate")
+		})
+
+		t.Run("targets the first candidate of an ambiguous tier", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, dualTree(leftPath, rightPath))
+			assert.Equal(t, holderRef(t, g, holdPath).Target, thingIn(leftPath),
+				"the first candidate in probe order is the target")
 		})
 
 		t.Run("lets an earlier tier shadow a later one without an ambiguity", func(t *testing.T) {
@@ -184,7 +235,7 @@ func TestLink(t *testing.T) {
 
 			g, _, sink := loadTree(t, dualTree(leftPath, rightPath), with(&tiered{frontendtest.NewScripted()}))
 			coretest.AssertCodes(t, sink)
-			assert.Equal(t, holderTarget(t, g), thingIn(leftPath),
+			assert.Equal(t, holderRef(t, g, holdPath).Target, thingIn(leftPath),
 				"the first tier with a candidate in the graph decides")
 		})
 
@@ -193,10 +244,74 @@ func TestLink(t *testing.T) {
 
 			g, _, sink := loadTree(t, dualTree(missingPath, rightPath), with(&tiered{frontendtest.NewScripted()}))
 			coretest.AssertCodes(t, sink)
-			assert.Equal(t, holderTarget(t, g), thingIn(rightPath),
+			assert.Equal(t, holderRef(t, g, holdPath).Target, thingIn(rightPath),
 				"a later tier decides where every earlier one names nothing the graph contains")
 		})
+
+		t.Run("sets the package from ImportOf for a declaration of another package", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, stdTree(), with(&importing{frontendtest.NewScripted()}))
+			coretest.AssertCodes(t, sink)
+			row, _ := g.Lookup(rowID())
+			assert.Equal(t, row.(*node.Struct).Fields[0].Type.Package, importMark+apiFile,
+				"the import the frontend names for the declaring file")
+		})
+
+		t.Run("sets the package from ImportOf for a declaration of another file of the package", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, splitTree(), with(&importing{frontendtest.NewScripted()}))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, holderRef(t, g, splitPath).Package, importMark+targetFile,
+				"an import names a file, so one package's two files import each other")
+		})
+
+		t.Run("leaves the package empty for a declaration of the reference's own file", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, localTree(), with(&importing{frontendtest.NewScripted()}))
+			coretest.AssertCodes(t, sink)
+			ref := holderRef(t, g, localPath)
+			assert.Equal(t, ref.Target, thingIn(localPath), "the reference resolves")
+			assert.Empty(t, ref.Package, "a file needs no import of itself")
+		})
+
+		t.Run("leaves the package empty for a frontend without the importer role", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, stdTree())
+			row, _ := g.Lookup(rowID())
+			assert.Empty(t, row.(*node.Struct).Fields[0].Type.Package,
+				"the load records no declaring file for the language")
+		})
+
+		t.Run("leaves the package empty for a declaration a plain frontend loaded", func(t *testing.T) {
+			t.Parallel()
+
+			own := &importing{frontendtest.NewScripted()}
+			own.Sel = []string{holdSelection}
+			plain := frontendtest.NewScripted()
+			plain.ID = plainID
+			plain.Sel = []string{dualSelection}
+			g, _, sink := loadTree(t, dualTree(leftPath), with(own, plain))
+			coretest.AssertCodes(t, sink)
+			ref := holderRef(t, g, holdPath)
+			assert.Equal(t, ref.Target, thingIn(leftPath), "the reference resolves across the two frontends")
+			assert.Empty(t, ref.Package, "the load records no declaring file for the other frontend's declarations")
+		})
 	})
+}
+
+// importing is the scripted language in the importer role. Its
+// import of a file is the file's path behind importMark.
+type importing struct {
+	*frontendtest.Scripted
+}
+
+// ImportOf returns the file's path behind importMark.
+func (*importing) ImportOf(_ plugin.ImportScope, file string) string {
+	return importMark + file
 }
 
 // tiered offers every candidate the scripted language probes in a

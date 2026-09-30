@@ -29,7 +29,9 @@ const (
 // throw refuses too, because a result wraps one value and the tuple
 // fold would hide references inside a composite spelling. So does
 // one whose result states no type, because the unit type in its
-// place changes what the callable returns.
+// place changes what the callable returns. A file-level method
+// attaching to no type refuses, because Rust renders a method inside
+// the impl block of the type it attaches to.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	switch d := s.(type) {
 	case *emit.Function:
@@ -39,6 +41,10 @@ func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 		}
 		d.Returns, d.Throws = returns, nil
 	case *emit.Method:
+		if d.Receives == nil || d.Receives.Spelling == "" {
+			return nil, refuse("a method renders inside the impl block of its type, and %s attaches to none",
+				d.Name)
+		}
 		returns, err := wrapped(d.Name, d.Returns, d.Throws)
 		if err != nil {
 			return nil, err

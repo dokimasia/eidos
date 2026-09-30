@@ -17,198 +17,184 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// The value fixture: the modules the values name and a function of
+// one of them.
+const (
+	unitsModule = "./units"
+	timeModule  = "./time"
+	unixName    = "unix"
+	weightName  = "Weight"
+)
+
 // lineSeparator is U+2028, which the quoting escapes.
 var lineSeparator = string(rune(0x2028))
 
-// valueRef returns a reference to a declaration in one package.
-func valueRef(spelling, pkg, name string) *emit.TypeRef {
+// valueRef returns a resolved reference to a declaration of one
+// module.
+func valueRef(spelling, module, name string) *emit.TypeRef {
 	return &emit.TypeRef{
 		Spelling: spelling,
-		Target: symbol.Identity{
-			Lang:    typescript.Lang,
-			Package: pkg,
-			Name:    name,
-			Kind:    symbol.KindStruct,
-		},
+		Target:   symbol.Identity{Lang: typescript.Lang, Package: module, Name: name, Kind: symbol.KindStruct},
 	}
 }
 
 // valueFn returns a callee identity.
-func valueFn(pkg, name string) symbol.Identity {
-	return symbol.Identity{
-		Lang:    typescript.Lang,
-		Package: pkg,
-		Name:    name,
-		Kind:    symbol.KindFunction,
-	}
+func valueFn(module, name string) symbol.Identity {
+	return symbol.Identity{Lang: typescript.Lang, Package: module, Name: name, Kind: symbol.KindFunction}
 }
 
-// spelled runs one value through the scaffold as a bare return and
-// hands back the text it wrote and the imports it recorded.
-func spelled(tb assert.TB, v emit.Value) (string, []string, error) {
+// returned runs one value through the scaffold as a return and
+// returns the value's text beside the file's import set.
+func returned(tb assert.TB, v emit.Value) (string, *render.ImportSet, error) {
 	tb.Helper()
 
-	var set render.ImportSet
-	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, &set)
-	if err != nil {
-		return "", nil, err
-	}
+	set := &render.ImportSet{}
+	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, set)
 	text := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(string(out)), ";"))
-	return strings.TrimPrefix(text, "return "), set.Paths(), nil
+	return strings.TrimPrefix(text, "return "), set, err
 }
 
 // Every value spelling is pinned, for the reason the statement
-// spellings are: the text is spliced into generated bodies and a
+// spellings are: the text is spliced into generated bodies, and a
 // drift rewrites files.
 func TestValue(t *testing.T) {
 	t.Parallel()
 
-	t.Run("spells the forms TypeScript states", func(t *testing.T) {
-		t.Parallel()
-
-		tests := []struct {
-			name  string
-			value emit.Value
-			want  string
-		}{
-			{
-				"an integer",
-				emit.Literal(emit.LiteralInt, "42"),
-				"42",
-			},
-			{
-				"the absent value",
-				emit.Literal(emit.LiteralNil, ""),
-				"null",
-			},
-			{
-				"a string quotes single, TypeScript's canon",
-				emit.Literal(emit.LiteralString, "hi"),
-				`'hi'`,
-			},
-			{
-				"a string escapes in TypeScript's grammar",
-				emit.Literal(emit.LiteralString, "it's\a \\ "+lineSeparator+"\U0001F600"),
-				`'it\'s` + `\` + `u0007 \\ ` + `\` + `u2028` + "\U0001F600'",
-			},
-			{
-				"control characters take their named escapes",
-				emit.Literal(emit.LiteralString, "\b\f\n\r\t\v\x7f"+string(rune(0x2029))),
-				`'\b\f\n\r\t\v` + `\` + `u007f` + `\` + `u2029'`,
-			},
-			{
-				"a conversion asserts, because TypeScript erases its types",
-				emit.Conversion(
-					valueRef("Weight", "units", "Weight"),
-					emit.Literal(emit.LiteralInt, "1"),
-				),
-				"1 as Weight",
-			},
-			{
-				"a record spells an object literal",
-				emit.Composite(
-					valueRef("Row", "svc", "Row"),
-					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1")),
-				),
-				"{id: 1}",
-			},
-			{
-				"a map computes its key",
-				emit.Composite(
-					&emit.TypeRef{Spelling: "Record<string, number>", Form: symbol.FormMap},
-					emit.KeyedEntry(
-						emit.Literal(emit.LiteralString, "k"),
-						emit.Literal(emit.LiteralInt, "2"),
-					),
-				),
-				`{['k']: 2}`,
-			},
-			{
-				"a list spells an array literal",
-				emit.Composite(&emit.TypeRef{Spelling: "number[]", Form: symbol.FormList},
-					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
-				"[2]",
-			},
-			{
-				"a call spells bare, because an import binds the name",
-				emit.Call(valueFn("./time", "unix"), emit.Literal(emit.LiteralInt, "1")),
-				"unix(1)",
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-				got, _, err := spelled(t, tt.value)
-				assert.NoError(t, err, "the value spells")
-				assert.Equal(t, got, tt.want, tt.name)
-			})
-		}
-	})
-
-	t.Run("records the import every reference and callee needs", func(t *testing.T) {
-		t.Parallel()
-
-		_, paths, err := spelled(t, emit.Conversion(
-			valueRef("Weight", "example/units", "Weight"), emit.Literal(emit.LiteralInt, "1"),
-		))
-		assert.NoError(t, err, "the value spells")
-		assert.Equal(t, paths, []string{"example/units"}, "the reference's package is imported")
-
-		_, paths, err = spelled(t, emit.Literal(emit.LiteralInt, "1"))
-		assert.NoError(t, err, "a literal spells")
-		assert.Empty(t, paths, "and imports nothing, because it names no package")
-	})
-
-	t.Run("refuses a value TypeScript has no form for, under its own code", func(t *testing.T) {
+	t.Run("Scaffold", func(t *testing.T) {
 		t.Parallel()
 
 		tests := []struct {
 			name    string
-			value   emit.Value
-			mention string
+			give    emit.Value
+			want    string
+			wantErr bool
 		}{
+			{name: "writes an integer as its digits", give: emit.Literal(emit.LiteralInt, "42"), want: "42"},
+			{name: "writes the absent value as null", give: emit.Literal(emit.LiteralNil, ""), want: "null"},
+			{name: "writes a string in single quotes", give: emit.Literal(emit.LiteralString, "hi"), want: `'hi'`},
 			{
-				"another language's raw text",
-				emit.Raw("golang", "Row{}"), "written in golang",
+				name: "writes a string escaped in TypeScript's grammar",
+				give: emit.Literal(emit.LiteralString, "it's\a \\ "+lineSeparator+"\U0001F600"),
+				want: `'it\'s` + `\` + `u0007 \\ ` + `\` + `u2028` + "\U0001F600'",
 			},
 			{
-				"an address, which TypeScript has no operator for",
-				emit.Address(emit.Literal(emit.LiteralInt, "1")), "no address",
+				name: "writes control characters under their named escapes",
+				give: emit.Literal(emit.LiteralString, "\b\f\n\r\t\v\x7f"+string(rune(0x2029))),
+				want: `'\b\f\n\r\t\v` + `\` + `u007f` + `\` + `u2029'`,
 			},
 			{
-				"a positional element in an object literal",
-				emit.Composite(
-					valueRef("Row", "svc", "Row"),
-					emit.Element(emit.Literal(emit.LiteralInt, "1")),
-				), "names every entry",
+				name: "writes a conversion as an assertion",
+				give: emit.Conversion(valueRef(weightName, unitsModule, weightName),
+					emit.Literal(emit.LiteralInt, "1")),
+				want: "1 as Weight",
 			},
 			{
-				"a named entry in an array literal",
-				emit.Composite(&emit.TypeRef{Spelling: "number[]", Form: symbol.FormList},
-					emit.NamedField("f", emit.Literal(emit.LiteralInt, "1"))), "takes none",
+				name: "writes a record as an object literal",
+				give: emit.Composite(valueRef(rowName, storeModule, rowName),
+					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1"))),
+				want: "{id: 1}",
+			},
+			{
+				name: "writes a map with a computed key",
+				give: emit.Composite(&emit.TypeRef{Spelling: "Record<string, number>", Form: symbol.FormMap},
+					emit.KeyedEntry(emit.Literal(emit.LiteralString, "k"), emit.Literal(emit.LiteralInt, "2"))),
+				want: `{['k']: 2}`,
+			},
+			{
+				name: "writes a list as an array literal",
+				give: emit.Composite(&emit.TypeRef{Spelling: "number[]", Form: symbol.FormList},
+					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
+				want: "[2]",
+			},
+			{
+				name: "writes a call under the name its import binds",
+				give: emit.Call(valueFn(timeModule, unixName), emit.Literal(emit.LiteralInt, "1")),
+				want: "unix(1)",
+			},
+			{
+				name: "writes a call of a function in no module bare",
+				give: emit.Call(symbol.Identity{Lang: typescript.Lang, Name: unixName}),
+				want: "unix()",
+			},
+			{
+				name:    "returns a value error for another language's raw text",
+				give:    emit.Raw("golang", "Row{}"),
+				want:    "written in golang",
+				wantErr: true,
+			},
+			{
+				name:    "returns a value error for an address",
+				give:    emit.Address(emit.Literal(emit.LiteralInt, "1")),
+				want:    "no address",
+				wantErr: true,
+			},
+			{
+				name: "returns a value error for a positional element in an object literal",
+				give: emit.Composite(valueRef(rowName, storeModule, rowName),
+					emit.Element(emit.Literal(emit.LiteralInt, "1"))),
+				want:    "names every entry",
+				wantErr: true,
+			},
+			{
+				name: "returns a value error for a named entry in an array literal",
+				give: emit.Composite(&emit.TypeRef{Spelling: "number[]", Form: symbol.FormList},
+					emit.NamedField("f", emit.Literal(emit.LiteralInt, "1"))),
+				want:    "takes none",
+				wantErr: true,
 			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				_, _, err := spelled(t, tt.value)
-				assert.HasError(t, err, tt.name)
-				assert.Contains(
-					t,
-					err.Error(),
-					tt.mention,
-					"the refusal names what it cannot spell",
-				)
+
+				got, _, err := returned(t, tt.give)
+				if !tt.wantErr {
+					assert.NoError(t, err, "the value spells")
+					assert.Equal(t, got, tt.want, "the TypeScript spelling")
+					return
+				}
 				var refused *render.ValueError
-				assert.True(t, errors.As(err, &refused),
-					"a value refusal classifies as one, so the render reports its own code")
-				assert.Equal(
-					t,
-					refused.Lang,
-					string(typescript.Lang),
-					"naming the target that refused",
-				)
+				assert.True(t, errors.As(err, &refused), "the render reports the value's own code")
+				assert.Contains(t, err.Error(), tt.want, "naming what TypeScript cannot spell")
+				assert.Equal(t, refused.Lang, string(typescript.Lang), "naming the target")
 			})
 		}
+
+		t.Run("imports what a conversion's type names for the type checker alone", func(t *testing.T) {
+			t.Parallel()
+
+			_, set, err := returned(t, emit.Conversion(
+				valueRef(weightName, unitsModule, weightName), emit.Literal(emit.LiteralInt, "1")))
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: unitsModule, Name: weightName, TypeOnly: true}},
+				"a type-only import")
+		})
+
+		t.Run("imports a callee as a value", func(t *testing.T) {
+			t.Parallel()
+
+			_, set, err := returned(t, emit.Call(valueFn(timeModule, unixName)))
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: timeModule, Name: unixName}},
+				"a call needs the function at run time")
+		})
+
+		t.Run("renames a callee another import binds", func(t *testing.T) {
+			t.Parallel()
+
+			got, _, err := returned(t, emit.Conversion(
+				valueRef(weightName, unitsModule, weightName),
+				emit.Call(valueFn(timeModule, weightName))))
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, got, weightName+"2() as "+weightName, "the type binds the name first")
+		})
+
+		t.Run("imports nothing for a literal", func(t *testing.T) {
+			t.Parallel()
+
+			_, set, err := returned(t, emit.Literal(emit.LiteralInt, "1"))
+			assert.NoError(t, err, "a literal spells")
+			assert.Equal(t, set.Len(), 0, "a literal names no module")
+		})
 	})
 }

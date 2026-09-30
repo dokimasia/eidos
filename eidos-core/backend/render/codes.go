@@ -6,10 +6,19 @@ package render
 import "go.dokimi.dev/eidos/core/diag"
 
 // UnspeltKind reports a declaration whose kind the target language
-// holds no template for: the declaration is skipped and the file
-// renders without it.
+// neither spells nor refuses: the declaration is skipped and the file
+// renders without it. The finding names a gap in the backend's own
+// declaration, because a language declares every kind it cannot
+// spell refused.
 var UnspeltKind = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 21, Meaning: "a declaration's kind has no template in the target language",
+})
+
+// RefusedKind reports a declaration of a kind the target language
+// declares refused, with the reason the language states: the
+// declaration is skipped and the file renders without it.
+var RefusedKind = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number: 46, Meaning: "the target language refuses a declaration's kind",
 })
 
 // UnformattedFile reports a rendered file the language formatter
@@ -35,34 +44,35 @@ var UnspeltValue = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 42, Meaning: "a scaffold value has no spelling in the target language",
 })
 
-// BodyConflict reports a body holding more than one content form:
-// the standard and named slots still render, and no contested
-// content is guessed at.
+// BodyConflict reports a body that states more than one content
+// form: the standard and named slots still render, and the pass
+// renders none of the contested content.
 var BodyConflict = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
-	Number: 24, Meaning: "a body holds more than one content form",
+	Number: 24, Meaning: "a body states more than one content form",
 })
 
-// UnresolvedRef reports a template reference nothing returns: no
-// tree declared for the emitting plugin, no template of that name
-// in it, or a template that does not parse. The body falls back to
-// its slots, so the extension points survive the broken claim.
+// UnresolvedRef reports a template reference that resolves to
+// nothing: no tree declared for the emitting plugin, no template of
+// that name in it, or a template that does not parse. The body falls
+// back to its slots, so the extension points survive the broken
+// claim.
 var UnresolvedRef = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 25, Meaning: "a template reference resolves to nothing in its emitting plugin's tree",
 })
 
 // UndeclaredOverride reports a plugin helper shadowing a shared
-// vocabulary name without declaring the override: the shared
-// helper stands, because a silent replacement is the drift
+// vocabulary name without declaring the override: the shared helper
+// keeps the name, because a silent replacement is the drift
 // byte-identity cannot tolerate.
 var UndeclaredOverride = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 27, Meaning: "a plugin shadows a shared template helper without declaring the override",
 })
 
 // DroppedSlots reports a body-claiming template that placed no
-// marker for pending slot content: the template owns the layout,
-// so nothing is appended for it, and the Error names the emitting
-// plugin and counts what went unplaced. The contributor cannot be
-// named, because a slot statement carries no attribution.
+// marker for pending slot content: the layout is the template's, so
+// the pass appends nothing for it, and the Error names the emitting
+// plugin and counts what went unplaced. The finding names no
+// contributor, because a slot statement records none.
 var DroppedSlots = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 26, Meaning: "a body-claiming template places no marker for pending contributions",
 })
@@ -75,10 +85,10 @@ var UnknownGroup = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 })
 
 // HelperCollision reports two plugins registering one template
-// helper name the shared vocabulary does not own: the first
-// registration in composition order stands, because a helper
-// whose meaning follows the schedule renders different bytes from
-// one declaration.
+// helper name outside the shared vocabulary: the first registration
+// in composition order keeps the name, because a helper whose
+// meaning follows the schedule renders different bytes from one
+// declaration.
 var HelperCollision = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number: 36, Meaning: "two plugins register one template helper name",
 })

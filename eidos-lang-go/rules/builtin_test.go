@@ -9,76 +9,174 @@ import (
 	"go.dokimi.dev/assert"
 
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/rules"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// The imports the classification cases name: the standard library's
+// time package, and a workspace package whose last element is time
+// too.
+const (
+	timePath    = "time"
+	foreignTime = "example.test/time"
+	foreignPkg  = "example.test/p"
+)
+
+// Builtin classifies what the resolution step left without a target,
+// so every spelling it maps and every type it reads through an
+// import's package are pinned.
 func TestBuiltin(t *testing.T) {
 	t.Parallel()
 
-	t.Run("classifies every builtin spelling", func(t *testing.T) {
+	t.Run("Builtin", func(t *testing.T) {
 		t.Parallel()
 
-		r := gorules.New()
-		cases := []struct {
-			spelling string
-			form     symbol.TypeForm
-			class    rules.ScalarClass
-			bits     int
+		tests := []struct {
+			name  string
+			give  string
+			form  symbol.TypeForm
+			class rules.ScalarClass
+			bits  int
 		}{
-			{"int", symbol.FormScalar, rules.ScalarInt, 0},
-			{"int8", symbol.FormScalar, rules.ScalarInt, 8},
-			{"int16", symbol.FormScalar, rules.ScalarInt, 16},
-			{"int32", symbol.FormScalar, rules.ScalarInt, 32},
-			{"rune", symbol.FormScalar, rules.ScalarInt, 32},
-			{"int64", symbol.FormScalar, rules.ScalarInt, 64},
-			{"uint", symbol.FormScalar, rules.ScalarUint, 0},
-			{"uintptr", symbol.FormScalar, rules.ScalarUint, 0},
-			{"uint8", symbol.FormScalar, rules.ScalarUint, 8},
-			{"byte", symbol.FormScalar, rules.ScalarUint, 8},
-			{"uint16", symbol.FormScalar, rules.ScalarUint, 16},
-			{"uint32", symbol.FormScalar, rules.ScalarUint, 32},
-			{"uint64", symbol.FormScalar, rules.ScalarUint, 64},
-			{"float32", symbol.FormScalar, rules.ScalarFloat, 32},
-			{"float64", symbol.FormScalar, rules.ScalarFloat, 64},
-			{"bool", symbol.FormBool, 0, 0},
-			{"string", symbol.FormText, 0, 0},
-			{"any", symbol.FormOpaque, 0, 0},
-			{"error", symbol.FormOpaque, 0, 0},
-			{"comparable", symbol.FormOpaque, 0, 0},
-			{"complex128", symbol.FormOpaque, 0, 0},
+			{
+				name: "classifies int as a signed scalar of the platform width",
+				give: "int", form: symbol.FormScalar, class: rules.ScalarInt,
+			},
+			{
+				name: "classifies int8 as a signed scalar of 8 bits",
+				give: "int8", form: symbol.FormScalar, class: rules.ScalarInt, bits: 8,
+			},
+			{
+				name: "classifies int16 as a signed scalar of 16 bits",
+				give: "int16", form: symbol.FormScalar, class: rules.ScalarInt, bits: 16,
+			},
+			{
+				name: "classifies int32 as a signed scalar of 32 bits",
+				give: "int32", form: symbol.FormScalar, class: rules.ScalarInt, bits: 32,
+			},
+			{
+				name: "classifies rune as a signed scalar of 32 bits",
+				give: "rune", form: symbol.FormScalar, class: rules.ScalarInt, bits: 32,
+			},
+			{
+				name: "classifies int64 as a signed scalar of 64 bits",
+				give: "int64", form: symbol.FormScalar, class: rules.ScalarInt, bits: 64,
+			},
+			{
+				name: "classifies uint as an unsigned scalar of the platform width",
+				give: "uint", form: symbol.FormScalar, class: rules.ScalarUint,
+			},
+			{
+				name: "classifies uintptr as an unsigned scalar of the platform width",
+				give: "uintptr", form: symbol.FormScalar, class: rules.ScalarUint,
+			},
+			{
+				name: "classifies uint8 as an unsigned scalar of 8 bits",
+				give: "uint8", form: symbol.FormScalar, class: rules.ScalarUint, bits: 8,
+			},
+			{
+				name: "classifies byte as an unsigned scalar of 8 bits",
+				give: "byte", form: symbol.FormScalar, class: rules.ScalarUint, bits: 8,
+			},
+			{
+				name: "classifies uint16 as an unsigned scalar of 16 bits",
+				give: "uint16", form: symbol.FormScalar, class: rules.ScalarUint, bits: 16,
+			},
+			{
+				name: "classifies uint32 as an unsigned scalar of 32 bits",
+				give: "uint32", form: symbol.FormScalar, class: rules.ScalarUint, bits: 32,
+			},
+			{
+				name: "classifies uint64 as an unsigned scalar of 64 bits",
+				give: "uint64", form: symbol.FormScalar, class: rules.ScalarUint, bits: 64,
+			},
+			{
+				name: "classifies float32 as a float of 32 bits",
+				give: "float32", form: symbol.FormScalar, class: rules.ScalarFloat, bits: 32,
+			},
+			{
+				name: "classifies float64 as a float of 64 bits",
+				give: "float64", form: symbol.FormScalar, class: rules.ScalarFloat, bits: 64,
+			},
+			{name: "classifies bool as a boolean leaf", give: "bool", form: symbol.FormBool},
+			{name: "classifies string as a text leaf", give: "string", form: symbol.FormText},
+			{name: "classifies any as opaque", give: "any", form: symbol.FormOpaque},
+			{name: "classifies error as opaque", give: "error", form: symbol.FormOpaque},
+			{name: "classifies comparable as opaque", give: "comparable", form: symbol.FormOpaque},
+			{name: "classifies complex128 as opaque", give: "complex128", form: symbol.FormOpaque},
 		}
-		for _, tc := range cases {
-			s := r.Builtin(builtin(tc.spelling), rules.View{})
-			assert.Equal(t, s.Form, tc.form, tc.spelling+" folds to its form")
-			assert.Equal(t, s.Class, tc.class, tc.spelling+" with its class")
-			assert.Equal(t, s.Bits, tc.bits, tc.spelling+" and its width")
-			assert.Equal(t, s.Spelling, tc.spelling, "keeping the spelling")
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				s := gorules.New().Builtin(builtin(tt.give), rules.View{})
+				assert.Equal(t, s.Form, tt.form, "the form")
+				assert.Equal(t, s.Class, tt.class, "the class")
+				assert.Equal(t, s.Bits, tt.bits, "the width")
+				assert.Equal(t, s.Spelling, tt.give, "the spelling as written")
+			})
 		}
-		assert.Equal(t, r.Builtin(nil, rules.View{}).Form, symbol.FormOpaque, "nothing is opaque")
-	})
 
-	t.Run("maps the two standard types onto the well-known registry", func(t *testing.T) {
-		t.Parallel()
+		t.Run("classifies a missing reference as opaque", func(t *testing.T) {
+			t.Parallel()
 
-		r := gorules.New()
-		when := r.Builtin(builtin("time.Time"), rules.View{})
-		assert.Equal(t, when.Form, symbol.FormReference, "time.Time is a reference")
-		assert.Equal(t, when.Ref, rules.WellKnownTimestamp, "to the timestamp")
-		dur := r.Builtin(builtin("time.Duration"), rules.View{})
-		assert.Equal(t, dur.Ref, rules.WellKnownDuration, "and time.Duration to the duration")
-	})
+			assert.Equal(t, gorules.New().Builtin(nil, rules.View{}).Form, symbol.FormOpaque, "nothing is opaque")
+		})
 
-	t.Run("folds a byte slice to bytes through the kernel", func(t *testing.T) {
-		t.Parallel()
+		t.Run("maps time.Time onto the well-known timestamp", func(t *testing.T) {
+			t.Parallel()
 
-		f := loaded(t)
-		s := f.bound().TypeOf(composite("[]byte", symbol.FormList, builtin("byte")))
-		assert.Equal(
-			t,
-			s.Form,
-			symbol.FormBytes,
-			"the one rule beyond structure applies to Go's spelling",
-		)
+			when := gorules.New().Builtin(builtin("time.Time"), rules.View{})
+			assert.Equal(t, when.Form, symbol.FormReference, "time.Time is a reference")
+			assert.Equal(t, when.Ref, rules.WellKnownTimestamp, "to the timestamp")
+		})
+
+		t.Run("maps time.Duration onto the well-known duration", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, gorules.New().Builtin(builtin("time.Duration"), rules.View{}).Ref,
+				rules.WellKnownDuration, "the duration")
+		})
+
+		t.Run("maps a Time through an aliased import onto the well-known timestamp", func(t *testing.T) {
+			t.Parallel()
+
+			aliased := &node.TypeRef{Spelling: "tm.Time", Package: timePath}
+			assert.Equal(t, gorules.New().Builtin(aliased, rules.View{}).Ref, rules.WellKnownTimestamp,
+				"the package the import names decides, not the qualifier")
+		})
+
+		t.Run("maps a witness's bare Duration of the time package onto the well-known duration", func(t *testing.T) {
+			t.Parallel()
+
+			witness := &node.TypeRef{Spelling: "Duration", Package: timePath}
+			assert.Equal(t, gorules.New().Builtin(witness, rules.View{}).Ref, rules.WellKnownDuration,
+				"a witness spells its bare name beside the package")
+		})
+
+		t.Run("classifies a Time another package named time declares as opaque", func(t *testing.T) {
+			t.Parallel()
+
+			foreign := &node.TypeRef{Spelling: "time.Time", Package: foreignTime}
+			assert.Equal(t, gorules.New().Builtin(foreign, rules.View{}).Form, symbol.FormOpaque,
+				"the qualifier matches, and the import path does not")
+		})
+
+		t.Run("classifies a qualified predeclared name as opaque", func(t *testing.T) {
+			t.Parallel()
+
+			qualified := &node.TypeRef{Spelling: "p.int", Package: foreignPkg}
+			assert.Equal(t, gorules.New().Builtin(qualified, rules.View{}).Form, symbol.FormOpaque,
+				"a package's own type named int is no builtin")
+		})
+
+		t.Run("folds a byte slice to bytes through the kernel", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			s := f.bound().TypeOf(composite("[]byte", symbol.FormList, builtin("byte")))
+			assert.Equal(t, s.Form, symbol.FormBytes, "the one rule beyond structure applies to Go's spelling")
+		})
 	})
 }

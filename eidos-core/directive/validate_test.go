@@ -25,13 +25,13 @@ var validationSubject = symbol.Identity{
 	Lang: "golang", Package: "svc/store", Name: "Store", Kind: symbol.KindStruct,
 }
 
-// keyed returns a metadata registry holding shape.role in the
-// group shape.writer, for drop resolution.
+// keyed returns a metadata registry with shape.role in the group
+// shape.writer, for drop resolution.
 func keyed(tb assert.TB) *meta.Registry {
 	tb.Helper()
 
 	r := meta.NewRegistry()
-	assert.NoError(tb, r.ClaimNamespace("shape", "eidos-plugin-shape"), "the namespace claims")
+	assert.NoError(tb, r.ClaimNamespace("shape"), "the namespace is claimed")
 	_, err := meta.Register[string](r, meta.KeySpec{
 		Name: "shape.role", Group: "shape.writer", Doc: "the classified role",
 	})
@@ -66,8 +66,16 @@ func fullSchema() directive.Schema {
 	}
 }
 
+// negatable returns a well-formed schema that admits the negated
+// form.
+func negatable(plugin string, name directive.Name) directive.Schema {
+	s := wellFormed(plugin, name)
+	s.Negatable = true
+	return s
+}
+
 // parse returns the parsed payload, failing the test on a payload
-// the grammar refuses.
+// outside the grammar.
 func parse(tb assert.TB, payload string, line int) directive.Raw {
 	tb.Helper()
 
@@ -75,6 +83,37 @@ func parse(tb assert.TB, payload string, line int) directive.Raw {
 	assert.NoError(tb, err, "the fixture payload parses")
 	raw.Pos = position.Pos{File: "svc/store.go", Line: line, Col: 1}
 	return raw
+}
+
+// negated returns the parsed payload in the negated form.
+func negated(tb assert.TB, payload string, line int) directive.Raw {
+	tb.Helper()
+
+	raw := parse(tb, payload, line)
+	raw.Negated = true
+	return raw
+}
+
+// shaped returns the parsed payload marked as written on a carrier
+// line in the tool-directive shape.
+func shaped(tb assert.TB, payload string, line int) directive.Raw {
+	tb.Helper()
+
+	raw := parse(tb, payload, line)
+	raw.DirectiveShaped = true
+	return raw
+}
+
+// mixedIndexes validates two instances of the repeatable index
+// schema, the first in another shape and the second in the
+// tool-directive shape.
+func mixedIndexes(tb assert.TB) ([]directive.Directive, *diag.Sink) {
+	tb.Helper()
+
+	return validateRaws(tb, []directive.Raw{
+		parse(tb, "indexer:index hash", 1),
+		shaped(tb, "indexer:index btree", 2),
+	}, fullSchema())
 }
 
 // validate runs Validate over payloads with the full fixture,
@@ -91,83 +130,156 @@ func validate(tb assert.TB, payloads ...string) ([]directive.Directive, *diag.Si
 	return directive.Validate(validationSubject, raws, r, keyed(tb), nil, sink), sink
 }
 
+// validateRaws runs Validate over raws against a registry of the
+// kernel schemas and the given ones.
+func validateRaws(
+	tb assert.TB, raws []directive.Raw, schemas ...directive.Schema,
+) ([]directive.Directive, *diag.Sink) {
+	tb.Helper()
+
+	sink := diag.NewSink()
+	got := directive.Validate(validationSubject, raws, sealed(tb, schemas...), keyed(tb), nil, sink)
+	return got, sink
+}
+
+// relatedCount returns how many related positions the findings name.
+func relatedCount(sink *diag.Sink) int {
+	n := 0
+	for d := range sink.All() {
+		n += len(d.Related)
+	}
+	return n
+}
+
+// Validate is the one gate between a carrier and a handler, so every
+// check it runs and every finding it reports is pinned.
 func TestValidate(t *testing.T) {
 	t.Parallel()
 
-	t.Run("types a full instance", func(t *testing.T) {
+	t.Run("Validate", func(t *testing.T) {
 		t.Parallel()
 
-		got, sink := validate(t,
-			`indexer:index btree fields=[a, b] depth=3 unique=true role=server shard=id out=x.go`)
-		assert.False(t, sink.Failed(), "a well-formed instance passes")
-		assert.Length(t, got, 1, "and types")
+		t.Run("reports MixedCarriers for a repeatable directive in two carrier shapes", func(t *testing.T) {
+			t.Parallel()
 
-		d := got[0]
-		assert.Equal(t, d.Name, directive.Name("indexer:index"),
-			"the name is the schema's canonical spelling")
-		assert.Equal(t, d.Args, []directive.Value{
-			{Kind: directive.TypeString, Str: "btree"},
-		}, "positionals type per the declared order")
-		fields, held := d.Param("fields")
-		assert.True(t, held, "a declared list param returns")
-		assert.Equal(t, fields, directive.Value{
-			Kind: directive.TypeList,
-			List: []directive.Value{
-				{Kind: directive.TypeReference, Ref: "a"},
-				{Kind: directive.TypeReference, Ref: "b"},
-			},
-		}, "with each element typed as the declared reference")
-		depth, _ := d.Param("depth")
-		assert.Equal(t, depth, directive.Value{Kind: directive.TypeInt, Int: 3}, "ints parse")
-		unique, _ := d.Param("unique")
-		assert.Equal(t, unique, directive.Value{Kind: directive.TypeBool, Bool: true}, "bools parse")
-		assert.Equal(t, d.Role, "server", "the role is validated and carried")
-		shard, _ := d.Param("shard")
-		assert.Equal(t, shard.Str, "id", "a role-scoped param admits under its role")
-		out, held := d.Param(directive.ReservedOut)
-		assert.True(t, held, "a reserved key arrives in the params")
-		assert.Equal(t, out, directive.Value{Kind: directive.TypeString, Str: "x.go"},
-			"typed as a string")
-		assert.Equal(t, d.Instance, 0, "the first instance is numbered zero")
-	})
+			_, sink := mixedIndexes(t)
+			coretest.AssertCodes(t, sink, directive.MixedCarriers)
+		})
 
-	t.Run("drops an ignored name without a finding", func(t *testing.T) {
-		t.Parallel()
+		t.Run("reports MixedCarriers once for a repeatable directive in two carrier shapes", func(t *testing.T) {
+			t.Parallel()
 
-		r := directive.NewRegistry()
-		for _, s := range directive.Kernel() {
-			assert.NoError(t, r.Register(s), "the kernel schemas register first")
-		}
-		assert.NoError(t, r.Register(fullSchema()), "the fixture schema registers")
-		assert.NoError(t, r.Ignore("k8s:"), "the workspace opts out of a foreign tool's prefix")
-		assert.Empty(t, r.Seal(), "the registry seals")
+			_, sink := validateRaws(t, []directive.Raw{
+				parse(t, "indexer:index hash", 1),
+				shaped(t, "indexer:index btree", 2),
+				shaped(t, "indexer:index gin", 3),
+			}, fullSchema())
+			coretest.AssertCodes(t, sink, directive.MixedCarriers)
+		})
 
-		sink := diag.NewSink()
-		got := directive.Validate(validationSubject, []directive.Raw{
-			parse(t, "k8s:deepcopy-gen package", 1),
-			parse(t, "indexer:index btree", 2),
-		}, r, keyed(t), nil, sink)
-		assert.False(t, sink.Failed(), "the opted-out carrier reports nothing")
-		coretest.AssertCodes(t, sink)
-		assert.Length(t, got, 1, "and drops, while the claimed instance types")
-		assert.Equal(t, got[0].Name, directive.Name("indexer:index"), "under its schema")
-	})
+		t.Run("reports MixedCarriers as a Warning", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("numbers repeatable instances in position order", func(t *testing.T) {
-		t.Parallel()
+			_, sink := mixedIndexes(t)
+			assert.Equal(t, onlyDiag(t, sink).Severity, diag.SeverityWarning, "a formatter's reordering fails nothing")
+		})
 
-		got, sink := validate(t,
-			"indexer:index hash",
-			"indexer:index btree")
-		assert.False(t, sink.Failed(), "two instances of a repeatable schema pass")
-		assert.Length(t, got, 2, "both type")
-		assert.Equal(t, got[0].Instance, 0, "the first by position is zero")
-		assert.Equal(t, got[0].Args[0].Str, "hash", "and is the earlier line")
-		assert.Equal(t, got[1].Instance, 1, "the second is one")
-	})
+		t.Run("relates MixedCarriers to the first instance", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("refuses what the checks refuse", func(t *testing.T) {
-		t.Parallel()
+			_, sink := mixedIndexes(t)
+			assert.Equal(t, onlyDiag(t, sink).Related, []position.Pos{{File: "svc/store.go", Line: 1, Col: 1}},
+				"the finding names the instance of the other shape")
+		})
+
+		t.Run("keeps every instance of a repeatable directive in two carrier shapes", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := mixedIndexes(t)
+			assert.Length(t, got, 2, "the warning drops nothing")
+		})
+
+		t.Run("reports nothing for a repeatable directive in the tool-directive shape alone", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := validateRaws(t, []directive.Raw{
+				shaped(t, "indexer:index hash", 1),
+				shaped(t, "indexer:index btree", 2),
+			}, fullSchema())
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("returns a full instance typed per its schema", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validate(t,
+				`indexer:index btree fields=[a, b] depth=3 unique=true role=server shard=id out=x.go`)
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "one instance is returned")
+
+			d := got[0]
+			assert.Equal(t, d.Name, directive.Name("indexer:index"),
+				"the name is the schema's canonical spelling")
+			assert.Equal(t, d.Args, []directive.Value{
+				{Kind: directive.TypeString, Str: "btree"},
+			}, "the positionals type in the declared order")
+			fields, held := d.Param("fields")
+			assert.True(t, held, "the list param is present")
+			assert.Equal(t, fields, directive.Value{
+				Kind: directive.TypeList,
+				List: []directive.Value{
+					{Kind: directive.TypeReference, Ref: "a"},
+					{Kind: directive.TypeReference, Ref: "b"},
+				},
+			}, "each element types as the declared reference")
+			depth, _ := d.Param("depth")
+			assert.Equal(t, depth, directive.Value{Kind: directive.TypeInt, Int: 3}, "the int parses")
+			unique, _ := d.Param("unique")
+			assert.Equal(t, unique, directive.Value{Kind: directive.TypeBool, Bool: true}, "the bool parses")
+			assert.Equal(t, d.Role, "server", "the role is validated")
+			shard, _ := d.Param("shard")
+			assert.Equal(t, shard.Str, "id", "the role-scoped param is admitted under its role")
+			out, held := d.Param(directive.ReservedOut)
+			assert.True(t, held, "the reserved key is in the params")
+			assert.Equal(t, out, directive.Value{Kind: directive.TypeString, Str: "x.go"},
+				"the reserved key types as a string")
+			assert.Equal(t, d.Instance, 0, "the first instance is numbered zero")
+			assert.False(t, d.Negated, "the instance is set, not negated")
+		})
+
+		t.Run("drops an ignored name without a finding", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			for _, s := range directive.Kernel() {
+				assert.NoError(t, r.Register(s), "the kernel schemas register first")
+			}
+			assert.NoError(t, r.Register(fullSchema()), "the fixture schema registers")
+			assert.NoError(t, r.Ignore("k8s:"), "the workspace opts out of a foreign tool's prefix")
+			assert.Empty(t, r.Seal(), "the registry seals")
+
+			sink := diag.NewSink()
+			got := directive.Validate(validationSubject, []directive.Raw{
+				parse(t, "k8s:deepcopy-gen package", 1),
+				parse(t, "indexer:index btree", 2),
+			}, r, keyed(t), nil, sink)
+			coretest.AssertCodes(t, sink)
+			assert.Length(t, got, 1, "only the claimed instance is returned")
+			assert.Equal(t, got[0].Name, directive.Name("indexer:index"), "the instance is the claimed one")
+		})
+
+		t.Run("numbers repeatable instances in position order", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validate(t,
+				"indexer:index hash",
+				"indexer:index btree")
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 2, "both instances are returned")
+			assert.Equal(t, got[0].Instance, 0, "the first by position is zero")
+			assert.Equal(t, got[0].Args[0].Str, "hash", "the first by position is the earlier line")
+			assert.Equal(t, got[1].Instance, 1, "the second by position is one")
+		})
 
 		tests := []struct {
 			name     string
@@ -176,121 +288,121 @@ func TestValidate(t *testing.T) {
 			naming   string
 		}{
 			{
-				name:     "an unclaimed name",
+				name:     "reports UnclaimedName naming an unclaimed name",
 				payloads: []string{"nonexistent"},
 				want:     directive.UnclaimedName,
 				naming:   "nonexistent",
 			},
 			{
-				name:     "an ambiguous bare name naming its candidates",
+				name:     "reports AmbiguousName naming the candidates of an ambiguous bare name",
 				payloads: []string{"index btree"},
 				want:     directive.AmbiguousName,
 				naming:   "indexer:index",
 			},
 			{
-				name:     "an unknown key",
+				name:     "reports UnknownKey naming an unknown key",
 				payloads: []string{"indexer:index btree nonkey=v"},
 				want:     directive.UnknownKey,
 				naming:   "nonkey",
 			},
 			{
-				name:     "a key written twice",
+				name:     "reports DuplicateKey naming a key written twice",
 				payloads: []string{"indexer:index btree depth=1 depth=2"},
 				want:     directive.DuplicateKey,
 				naming:   "depth",
 			},
 			{
-				name:     "a scalar where the schema says list",
+				name:     "reports TypeMismatch for a scalar where the schema declares a list",
 				payloads: []string{"indexer:index btree fields=a"},
 				want:     directive.TypeMismatch,
 				naming:   "fields",
 			},
 			{
-				name:     "a nested list",
+				name:     "reports TypeMismatch for a nested list",
 				payloads: []string{"indexer:index btree fields=[[a]]"},
 				want:     directive.TypeMismatch,
 				naming:   "fields",
 			},
 			{
-				name:     "an int outside its spelling",
+				name:     "reports BadSpelling for an int outside its spelling",
 				payloads: []string{"indexer:index btree depth=deep"},
 				want:     directive.BadSpelling,
 				naming:   "depth",
 			},
 			{
-				name:     "a bool outside its spelling",
+				name:     "reports BadSpelling for a bool outside its spelling",
 				payloads: []string{"indexer:index btree unique=yes"},
 				want:     directive.BadSpelling,
 				naming:   "unique",
 			},
 			{
-				name:     "an argument past the declared positionals",
+				name:     "reports ExtraPositional for an argument past the declared positionals",
 				payloads: []string{"indexer:index btree extra"},
 				want:     directive.ExtraPositional,
 				naming:   "extra",
 			},
 			{
-				name:     "a list where a positional takes a scalar",
+				name:     "reports TypeMismatch for a list where a positional takes a scalar",
 				payloads: []string{"indexer:index [a, b]"},
 				want:     directive.TypeMismatch,
 				naming:   "kind",
 			},
 			{
-				name:     "an extra positional written as a list",
+				name:     "reports ExtraPositional for an extra positional written as a list",
 				payloads: []string{"indexer:index btree [a, b]"},
 				want:     directive.ExtraPositional,
 				naming:   "a list",
 			},
 			{
-				name:     "an omitted required param",
+				name:     "reports MissingParam for an omitted required param",
 				payloads: []string{"indexer:index depth=1"},
 				want:     directive.MissingParam,
 				naming:   "kind",
 			},
 			{
-				name:     "an unknown role naming the declared set",
+				name:     "reports UnknownRole naming the declared roles",
 				payloads: []string{"indexer:index btree role=admin"},
 				want:     directive.UnknownRole,
 				naming:   "server",
 			},
 			{
-				name:     "a role-scoped param outside its role",
+				name:     "reports UnknownKey for a role-scoped param outside its role",
 				payloads: []string{"indexer:index btree role=client shard=id"},
 				want:     directive.UnknownKey,
 				naming:   "shard",
 			},
 			{
-				name:     "a role-scoped param on a bare instance",
+				name:     "reports UnknownKey for a role-scoped param on an instance without a role",
 				payloads: []string{"indexer:index btree shard=id"},
 				want:     directive.UnknownKey,
 				naming:   "shard",
 			},
 			{
-				name:     "a false boolean spelling still types",
+				name:     "reports ExtraPositional after typing a false boolean",
 				payloads: []string{"indexer:index btree unique=false extra"},
 				want:     directive.ExtraPositional,
 				naming:   "extra",
 			},
 			{
-				name:     "a role on a schema declaring none",
+				name:     "reports UnknownKey for a role on a schema that declares none",
 				payloads: []string{"stubgen:index role=client"},
 				want:     directive.UnknownKey,
 				naming:   "role",
 			},
 			{
-				name:     "a role written as a list",
+				name:     "reports TypeMismatch for a role written as a list",
 				payloads: []string{"indexer:index btree role=[client]"},
 				want:     directive.TypeMismatch,
 				naming:   "role",
 			},
 			{
-				name:     "a list where the schema says scalar",
+				name:     "reports TypeMismatch for a list where the schema declares a scalar",
 				payloads: []string{"indexer:index btree depth=[1]"},
 				want:     directive.TypeMismatch,
 				naming:   "depth",
 			},
 			{
-				name:     "a metadata reference no key or group returns",
+				name:     "reports UnknownMetadataKey naming the registered keys",
 				payloads: []string{"meta drop=shape.nonexistent"},
 				want:     directive.UnknownMetadataKey,
 				naming:   "shape.role",
@@ -301,289 +413,276 @@ func TestValidate(t *testing.T) {
 				t.Parallel()
 
 				got, sink := validate(t, tt.payloads...)
-				assert.Empty(t, got, "a failing instance is not returned")
-				assert.True(t, sink.Failed(), "and the run fails")
-				assert.True(t, slices.Contains(coretest.Codes(sink), tt.want),
-					"under the check's own code")
+				assert.Empty(t, got, "the failing instance is not returned")
+				assert.True(t, slices.Contains(coretest.Codes(sink), tt.want), "the check's own code is reported")
 				found := false
 				for d := range sink.All() {
 					found = found || strings.Contains(d.Msg, tt.naming)
 				}
-				assert.True(t, found, "naming what the author needs to fix")
+				assert.True(t, found, "a finding names what the author needs to fix")
 			})
 		}
-	})
 
-	t.Run("role requirements", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("a schema demanding a role refuses a bare instance", func(t *testing.T) {
+		t.Run("reports MissingRole for an instance without a role on a schema that demands one", func(t *testing.T) {
 			t.Parallel()
 
 			strict := fullSchema()
 			strict.Plugin = "strictgen"
 			strict.RolesRequired = true
-			r := sealed(t, strict)
-			sink := diag.NewSink()
-			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "strictgen:index btree", 1)}, r, keyed(t), nil, sink)
-
-			assert.Empty(t, got, "the bare instance is refused")
-			assert.True(t, slices.Contains(coretest.Codes(sink), directive.MissingRole),
-				"under the omitted-role code")
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "strictgen:index btree", 1)}, strict)
+			assert.Empty(t, got, "the instance is not returned")
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.MissingRole), "MissingRole is reported")
 		})
 
-		t.Run("a required param scoped to a role binds under that role alone", func(t *testing.T) {
+		scoped := directive.Schema{
+			Plugin: "scopegen", Name: "expose", Doc: "exposes a half",
+			Roles: []string{"client", "server"},
+			Params: []directive.ParamSpec{
+				{
+					Key: "shard", Type: directive.TypeString, Required: true,
+					Roles: []string{"server"}, Doc: "the server shard",
+				},
+			},
+		}
+
+		t.Run("types an instance without a role-scoped required param under another role", func(t *testing.T) {
 			t.Parallel()
 
-			scoped := directive.Schema{
-				Plugin: "scopegen", Name: "expose", Doc: "exposes a half",
-				Roles: []string{"client", "server"},
-				Params: []directive.ParamSpec{
-					{
-						Key: "shard", Type: directive.TypeString, Required: true,
-						Roles: []string{"server"}, Doc: "the server shard",
-					},
-				},
-			}
-			r := sealed(t, scoped)
-
-			sink := diag.NewSink()
-			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "scopegen:expose role=client", 1)}, r, keyed(t), nil, sink)
-			assert.Length(t, got, 1, "the client instance passes without the server param")
-			assert.False(t, sink.Failed(), "nothing required it there")
-
-			sink = diag.NewSink()
-			got = directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "scopegen:expose role=server", 1)}, r, keyed(t), nil, sink)
-			assert.Empty(t, got, "the server instance without it is refused")
-			assert.True(t, slices.Contains(coretest.Codes(sink), directive.MissingParam),
-				"under the omitted-param code")
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "scopegen:expose role=client", 1)}, scoped)
+			assert.Length(t, got, 1, "the client instance is returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
 		})
-	})
 
-	t.Run("repeatability", func(t *testing.T) {
-		t.Parallel()
+		t.Run("reports MissingParam for a role-scoped required param omitted under its role", func(t *testing.T) {
+			t.Parallel()
 
-		t.Run("a second instance of a single-instance schema names both positions", func(t *testing.T) {
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "scopegen:expose role=server", 1)}, scoped)
+			assert.Empty(t, got, "the server instance is not returned")
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.MissingParam), "MissingParam is reported")
+		})
+
+		t.Run("reports DuplicateInstance for a single-instance schema written twice", func(t *testing.T) {
 			t.Parallel()
 
 			got, sink := validate(t,
 				"stubgen:index mode=a",
 				"stubgen:index mode=b")
-			assert.Empty(t, got, "the contradiction is refused whole")
+			assert.Empty(t, got, "neither instance is returned")
 			assert.True(t, slices.Contains(coretest.Codes(sink), directive.DuplicateInstance),
-				"under the duplicate-instance code")
-			var related int
-			for d := range sink.All() {
-				related += len(d.Related)
-			}
-			assert.True(t, related > 0, "the report carries the other position")
+				"DuplicateInstance is reported")
+			assert.True(t, relatedCount(sink) > 0, "the finding names the other position")
 		})
-	})
 
-	t.Run("cross-directive constraints", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("a requirement is met by canonical schema whatever the spelling", func(t *testing.T) {
+		t.Run("returns both instances when a requirement is met", func(t *testing.T) {
 			t.Parallel()
 
 			needs := wellFormed("weaver", "weave")
 			needs.Requires = []directive.Name{"indexer:index"}
-			r := sealed(t, fullSchema(), needs)
-
-			sink := diag.NewSink()
-			got := directive.Validate(validationSubject, []directive.Raw{
+			got, sink := validateRaws(t, []directive.Raw{
 				parse(t, "weaver:weave", 1),
 				parse(t, "indexer:index btree", 2),
-			}, r, keyed(t), nil, sink)
-			assert.Length(t, got, 2, "the requirement is met")
-			assert.False(t, sink.Failed(), "and nothing reports")
+			}, fullSchema(), needs)
+			assert.Length(t, got, 2, "both instances are returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
 		})
 
-		t.Run("an unmet requirement reports the requiring position", func(t *testing.T) {
+		t.Run("reports RequirementUnmet at the requiring position", func(t *testing.T) {
 			t.Parallel()
 
 			needs := wellFormed("weaver", "weave")
 			needs.Requires = []directive.Name{"indexer:index"}
-			r := sealed(t, fullSchema(), needs)
-
-			sink := diag.NewSink()
-			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "weaver:weave", 1)}, r, keyed(t), nil, sink)
-			assert.Empty(t, got, "the unmet requirement refuses the instance")
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "weaver:weave", 1)}, fullSchema(), needs)
+			assert.Empty(t, got, "the requiring instance is not returned")
 			assert.True(t, slices.Contains(coretest.Codes(sink), directive.RequirementUnmet),
-				"under the requirement code")
+				"RequirementUnmet is reported")
 		})
 
-		t.Run("a conflict is symmetric and names both positions", func(t *testing.T) {
+		t.Run("reports Conflict naming both positions for a conflicting pair", func(t *testing.T) {
 			t.Parallel()
 
 			hates := wellFormed("weaver", "weave")
 			hates.ConflictsWith = []directive.Name{"indexer:index"}
-			r := sealed(t, fullSchema(), hates)
-
-			sink := diag.NewSink()
-			got := directive.Validate(validationSubject, []directive.Raw{
+			got, sink := validateRaws(t, []directive.Raw{
 				parse(t, "indexer:index btree", 1),
 				parse(t, "weaver:weave", 2),
-			}, r, keyed(t), nil, sink)
-			assert.Empty(t, got, "the pair is refused whole")
-			assert.True(t, slices.Contains(coretest.Codes(sink), directive.Conflict),
-				"under the conflict code")
-			var related int
-			for d := range sink.All() {
-				related += len(d.Related)
-			}
-			assert.True(t, related > 0, "the report carries the other position")
+			}, fullSchema(), hates)
+			assert.Empty(t, got, "neither instance is returned")
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.Conflict), "Conflict is reported")
+			assert.True(t, relatedCount(sink) > 0, "the finding names the other position")
 		})
-	})
 
-	t.Run("meta drop resolution", func(t *testing.T) {
-		t.Parallel()
+		t.Run("reports one Conflict for a pair both schemas declare", func(t *testing.T) {
+			t.Parallel()
 
-		t.Run("a key and a group both resolve", func(t *testing.T) {
+			hates := wellFormed("weaver", "weave")
+			hates.ConflictsWith = []directive.Name{"indexer:index"}
+			hated := fullSchema()
+			hated.ConflictsWith = []directive.Name{"weaver:weave"}
+			got, sink := validateRaws(t, []directive.Raw{
+				parse(t, "indexer:index btree", 1),
+				parse(t, "weaver:weave", 2),
+			}, hated, hates)
+			assert.Empty(t, got, "neither instance is returned")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.Conflict}, "one Conflict is reported")
+		})
+
+		t.Run("reports nothing for a conflict with a directive the subject does not have", func(t *testing.T) {
+			t.Parallel()
+
+			hates := wellFormed("weaver", "weave")
+			hates.ConflictsWith = []directive.Name{"indexer:index"}
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "weaver:weave", 1)}, fullSchema(), hates)
+			assert.Length(t, got, 1, "the instance is returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
+		})
+
+		t.Run("resolves a meta drop naming a key", func(t *testing.T) {
 			t.Parallel()
 
 			got, sink := validate(t, "meta drop=shape.role")
-			assert.Length(t, got, 1, "a registered key resolves")
-			assert.False(t, sink.Failed(), "without a report")
-
-			got, sink = validate(t, "meta drop=shape.writer")
-			assert.Length(t, got, 1, "and so does a registered group")
-			assert.False(t, sink.Failed(), "without a report")
+			assert.Length(t, got, 1, "the instance is returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
 		})
-	})
 
-	t.Run("reports in one order whatever the maps iterate in", func(t *testing.T) {
-		t.Parallel()
+		t.Run("resolves a meta drop naming a group", func(t *testing.T) {
+			t.Parallel()
 
-		scoped := directive.Schema{
-			Plugin: "scoped", Name: "gate", Doc: "gates two server-side keys",
-			Roles: []string{"client", "server"},
-			Params: []directive.ParamSpec{
-				{Key: "alpha", Type: directive.TypeString, Roles: []string{"server"}, Doc: "the first key"},
-				{Key: "beta", Type: directive.TypeString, Roles: []string{"server"}, Doc: "the second key"},
-			},
-		}
-		r := sealed(t, scoped, wellFormed("weaver", "weave"), wellFormed("mockgen", "stub"))
-		raws := []directive.Raw{
-			parse(t, "weaver:weave", 1),
-			parse(t, "mockgen:stub", 2),
-			parse(t, "weaver:weave", 3),
-			parse(t, "mockgen:stub", 4),
-			parse(t, "scoped:gate role=client beta=b alpha=a", 5),
-		}
-		var first []string
-		for range 20 {
+			got, sink := validate(t, "meta drop=shape.writer")
+			assert.Length(t, got, 1, "the instance is returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
+		})
+
+		t.Run("reports in one order whatever order the maps iterate in", func(t *testing.T) {
+			t.Parallel()
+
+			gate := directive.Schema{
+				Plugin: "scoped", Name: "gate", Doc: "gates two server-side keys",
+				Roles: []string{"client", "server"},
+				Params: []directive.ParamSpec{
+					{Key: "alpha", Type: directive.TypeString, Roles: []string{"server"}, Doc: "the first key"},
+					{Key: "beta", Type: directive.TypeString, Roles: []string{"server"}, Doc: "the second key"},
+				},
+			}
+			r := sealed(t, gate, wellFormed("weaver", "weave"), wellFormed("mockgen", "stub"))
+			raws := []directive.Raw{
+				parse(t, "weaver:weave", 1),
+				parse(t, "mockgen:stub", 2),
+				parse(t, "weaver:weave", 3),
+				parse(t, "mockgen:stub", 4),
+				parse(t, "scoped:gate role=client beta=b alpha=a", 5),
+			}
+			var first []string
+			for range 20 {
+				sink := diag.NewSink()
+				directive.Validate(validationSubject, raws, r, keyed(t), nil, sink)
+				var got []string
+				for d := range sink.All() {
+					got = append(got, d.Msg)
+				}
+				if first == nil {
+					first = got
+				}
+				assert.Equal(t, got, first, "every validation of one subject reports in one order")
+			}
+			assert.Length(t, first, 4, "two duplicate pairs and two keys the role rejects are reported")
+			assert.ContainsInOrder(t, strings.Join(first, "\n"),
+				[]string{"alpha", "beta", "weaver:weave appears twice", "mockgen:stub appears twice"},
+				"typing findings come first in key order, then the duplicates in position order")
+		})
+
+		t.Run("reports no MissingParam for a value that fails typing", func(t *testing.T) {
+			t.Parallel()
+
+			required := directive.Schema{
+				Plugin: "sizer", Name: "size", Doc: "sizes a buffer",
+				Positional: []directive.ParamSpec{
+					{Key: "unit", Type: directive.TypeString, Required: true, Doc: "the size unit"},
+				},
+				Params: []directive.ParamSpec{
+					{Key: "depth", Type: directive.TypeInt, Required: true, Doc: "the size"},
+				},
+			}
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "sizer:size [kb] depth=deep", 1)}, required)
+			assert.Empty(t, got, "the instance is not returned")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.TypeMismatch, directive.BadSpelling},
+				"only the two typing failures are reported")
+		})
+
+		t.Run("returns nil for no instances", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validateRaws(t, nil)
+			assert.Nil(t, got, "nothing is returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
+		})
+
+		t.Run("reports UnsealedRegistry for an unsealed registry", func(t *testing.T) {
+			t.Parallel()
+
+			r := directive.NewRegistry()
+			assert.NoError(t, r.Register(wellFormed("mockgen", "stub")), "the schema registers")
 			sink := diag.NewSink()
-			directive.Validate(validationSubject, raws, r, keyed(t), nil, sink)
-			var got []string
+			got := directive.Validate(validationSubject,
+				[]directive.Raw{parse(t, "mockgen:stub", 1)}, r, keyed(t), nil, sink)
+			assert.Empty(t, got, "nothing is returned")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.UnsealedRegistry},
+				"UnsealedRegistry is reported")
+		})
+
+		t.Run("reports every finding as a positioned Error from the freeze phase", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := validate(t, "nonexistent")
 			for d := range sink.All() {
-				got = append(got, d.Msg)
+				assert.Equal(t, d.Severity, diag.SeverityError, "the finding is an Error")
+				assert.False(t, d.Pos.IsZero(), "the finding is positioned")
+				assert.Equal(t, d.Origin, diag.PhaseFreeze, "the finding is from the freeze phase")
 			}
-			if first == nil {
-				first = got
-			}
-			assert.Equal(t, got, first, "every validation of one subject reports in one order")
-		}
-		assert.Length(t, first, 4, "two duplicate pairs and two keys the role refuses")
-		assert.ContainsInOrder(t, strings.Join(first, "\n"),
-			[]string{"alpha", "beta", "weaver:weave appears twice", "mockgen:stub appears twice"},
-			"typing findings first, keys in key order, then the duplicates in position order")
-	})
+		})
 
-	t.Run("a value that fails typing is not also reported as omitted", func(t *testing.T) {
-		t.Parallel()
-
-		required := directive.Schema{
-			Plugin: "sizer", Name: "size", Doc: "sizes a buffer",
-			Positional: []directive.ParamSpec{
-				{Key: "unit", Type: directive.TypeString, Required: true, Doc: "the size unit"},
+		weaveAgainstIndex := wellFormed("weaver", "weave")
+		weaveAgainstIndex.ConflictsWith = []directive.Name{"indexer:index"}
+		related := []struct {
+			name    string
+			raws    func(tb assert.TB) []directive.Raw
+			schemas []directive.Schema
+			want    diag.Code
+		}{
+			{
+				name: "reports DuplicateInstance as an Error",
+				raws: func(tb assert.TB) []directive.Raw {
+					return []directive.Raw{parse(tb, "mockgen:stub", 1), parse(tb, "mockgen:stub", 2)}
+				},
+				schemas: []directive.Schema{wellFormed("mockgen", "stub")},
+				want:    directive.DuplicateInstance,
 			},
-			Params: []directive.ParamSpec{
-				{Key: "depth", Type: directive.TypeInt, Required: true, Doc: "the size"},
+			{
+				name: "reports a declared Conflict as an Error",
+				raws: func(tb assert.TB) []directive.Raw {
+					return []directive.Raw{parse(tb, "indexer:index btree", 1), parse(tb, "weaver:weave", 2)}
+				},
+				schemas: []directive.Schema{fullSchema(), weaveAgainstIndex},
+				want:    directive.Conflict,
+			},
+			{
+				name: "reports the Conflict of a negated directive the subject also sets as an Error",
+				raws: func(tb assert.TB) []directive.Raw {
+					return []directive.Raw{parse(tb, "mockgen:stub", 1), negated(tb, "mockgen:stub", 2)}
+				},
+				schemas: []directive.Schema{negatable("mockgen", "stub")},
+				want:    directive.Conflict,
 			},
 		}
-		r := sealed(t, required)
-		sink := diag.NewSink()
-		got := directive.Validate(validationSubject,
-			[]directive.Raw{parse(t, "sizer:size [kb] depth=deep", 1)}, r, keyed(t), nil, sink)
-		assert.Empty(t, got, "the instance is refused")
-		assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.TypeMismatch, directive.BadSpelling},
-			"for the two values it wrote wrong, and for no param it omitted")
-	})
+		for _, tt := range related {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-	t.Run("a conflict both schemas declare reports once", func(t *testing.T) {
-		t.Parallel()
-
-		hates := wellFormed("weaver", "weave")
-		hates.ConflictsWith = []directive.Name{"indexer:index"}
-		hated := fullSchema()
-		hated.ConflictsWith = []directive.Name{"weaver:weave"}
-		r := sealed(t, hated, hates)
-
-		sink := diag.NewSink()
-		got := directive.Validate(validationSubject, []directive.Raw{
-			parse(t, "indexer:index btree", 1),
-			parse(t, "weaver:weave", 2),
-		}, r, keyed(t), nil, sink)
-		assert.Empty(t, got, "the pair is refused whole")
-		assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.Conflict},
-			"one contradiction is one Error naming both positions")
-	})
-
-	t.Run("validating nothing returns nothing", func(t *testing.T) {
-		t.Parallel()
-
-		r := sealed(t)
-		sink := diag.NewSink()
-		got := directive.Validate(validationSubject, nil, r, keyed(t), nil, sink)
-		assert.Nil(t, got, "no instances, no answer")
-		assert.False(t, sink.Failed(), "and no report")
-	})
-
-	t.Run("a conflict declared against an absent schema stays quiet", func(t *testing.T) {
-		t.Parallel()
-
-		hates := wellFormed("weaver", "weave")
-		hates.ConflictsWith = []directive.Name{"indexer:index"}
-		r := sealed(t, fullSchema(), hates)
-
-		sink := diag.NewSink()
-		got := directive.Validate(validationSubject,
-			[]directive.Raw{parse(t, "weaver:weave", 1)}, r, keyed(t), nil, sink)
-		assert.Length(t, got, 1, "a conflict needs both sides present")
-		assert.False(t, sink.Failed(), "so nothing reports")
-	})
-
-	t.Run("an unsealed registry refuses validation", func(t *testing.T) {
-		t.Parallel()
-
-		r := directive.NewRegistry()
-		assert.NoError(t, r.Register(wellFormed("mockgen", "stub")), "the schema registers")
-		sink := diag.NewSink()
-		got := directive.Validate(validationSubject,
-			[]directive.Raw{parse(t, "mockgen:stub", 1)}, r, keyed(t), nil, sink)
-
-		assert.Empty(t, got, "nothing validates against a moving registry")
-		assert.True(t, sink.Failed(), "and the defect reports rather than passing silently")
-	})
-
-	t.Run("every failure is a positioned error from the freeze phase", func(t *testing.T) {
-		t.Parallel()
-
-		_, sink := validate(t, "nonexistent")
-		for d := range sink.All() {
-			assert.Equal(t, d.Severity, diag.SeverityError, "validation reports Errors")
-			assert.False(t, d.Pos.IsZero(), "every report is positioned")
-			assert.Equal(t, d.Origin, diag.PhaseFreeze, "from the freeze phase")
+				_, sink := validateRaws(t, tt.raws(t), tt.schemas...)
+				got := onlyDiag(t, sink)
+				assert.Equal(t, got.Code, tt.want, "the finding is under its code")
+				assert.Equal(t, got.Severity, diag.SeverityError, "the finding fails the run")
+			})
 		}
-	})
-
-	t.Run("open schemas", func(t *testing.T) {
-		t.Parallel()
 
 		bind := directive.Schema{
 			Plugin: "witnessy", Name: "bind",
@@ -591,69 +690,56 @@ func TestValidate(t *testing.T) {
 			Roles: []string{"client", "server"},
 			Doc:   "binds keys the instance names",
 		}
+		serverBind := bind
+		serverBind.Open = &directive.ParamSpec{
+			Type: directive.TypeInt, Roles: []string{"server"}, Doc: "a server bound",
+		}
 
-		t.Run("types every undeclared key by the open spec", func(t *testing.T) {
+		t.Run("types undeclared keys by the open spec", func(t *testing.T) {
 			t.Parallel()
 
-			r := sealed(t, bind)
-			sink := diag.NewSink()
-			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "witnessy:bind T=1 U=2 out=x", 1)}, r, keyed(t), nil, sink)
-			assert.Length(t, got, 1, "the instance passes")
-			assert.False(t, sink.Failed(), "without a finding")
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "witnessy:bind T=1 U=2 out=x", 1)}, bind)
+			assert.Length(t, got, 1, "the instance is returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
 			v, held := got[0].Param("T")
-			assert.True(t, held && v.Kind == directive.TypeInt && v.Int == 1, "T types as the spec says")
+			assert.True(t, held && v.Kind == directive.TypeInt && v.Int == 1, "T types as the spec declares")
 			v, held = got[0].Param("U")
-			assert.True(t, held && v.Int == 2, "and so does U")
+			assert.True(t, held && v.Int == 2, "U types as the spec declares")
 			v, held = got[0].Param(directive.ReservedOut)
-			assert.True(t, held && v.Kind == directive.TypeString, "a reserved key keeps its meaning")
+			assert.True(t, held && v.Kind == directive.TypeString, "the reserved key keeps its meaning")
 		})
 
-		t.Run("holds an open value to the spec's type", func(t *testing.T) {
+		t.Run("reports BadSpelling for an open value outside the spec's type", func(t *testing.T) {
 			t.Parallel()
 
-			r := sealed(t, bind)
-			sink := diag.NewSink()
-			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "witnessy:bind T=one", 1)}, r, keyed(t), nil, sink)
-			assert.Empty(t, got, "the instance drops")
-			assert.True(t, slices.Contains(coretest.Codes(sink), directive.BadSpelling),
-				"under the value's own refusal")
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "witnessy:bind T=one", 1)}, bind)
+			assert.Empty(t, got, "the instance is not returned")
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.BadSpelling), "BadSpelling is reported")
 		})
 
-		t.Run("scopes open keys by the spec's roles", func(t *testing.T) {
+		t.Run("reports UnknownKey for an open key outside the spec's roles", func(t *testing.T) {
 			t.Parallel()
 
-			scoped := bind
-			scoped.Open = &directive.ParamSpec{
-				Type: directive.TypeInt, Roles: []string{"server"}, Doc: "a server bound",
-			}
-			r := sealed(t, scoped)
-			sink := diag.NewSink()
-			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "witnessy:bind role=client T=1", 1)}, r, keyed(t), nil, sink)
-			assert.Empty(t, got, "a client instance may not bind")
-			assert.True(t, slices.Contains(coretest.Codes(sink), directive.UnknownKey),
-				"the key is unknown under that role")
-			got = directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "witnessy:bind role=server T=1", 2)}, r, keyed(t), nil, diag.NewSink())
-			assert.Length(t, got, 1, "a server instance binds")
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "witnessy:bind role=client T=1", 1)}, serverBind)
+			assert.Empty(t, got, "the client instance is not returned")
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.UnknownKey), "UnknownKey is reported")
 		})
 
-		t.Run("a closed schema still refuses what it does not declare", func(t *testing.T) {
+		t.Run("types an open key under the spec's role", func(t *testing.T) {
 			t.Parallel()
 
-			r := sealed(t, wellFormed("closed", "keep"))
-			sink := diag.NewSink()
-			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "closed:keep T=1", 1)}, r, keyed(t), nil, sink)
-			assert.Empty(t, got, "closure is the default")
-			assert.True(t, slices.Contains(coretest.Codes(sink), directive.UnknownKey), "under the key's refusal")
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "witnessy:bind role=server T=1", 1)}, serverBind)
+			assert.Length(t, got, 1, "the server instance is returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
 		})
-	})
 
-	t.Run("reference resolution", func(t *testing.T) {
-		t.Parallel()
+		t.Run("reports UnknownKey for an undeclared key on a closed schema", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validateRaws(t, []directive.Raw{parse(t, "closed:keep T=1", 1)}, wellFormed("closed", "keep"))
+			assert.Empty(t, got, "the instance is not returned")
+			assert.True(t, slices.Contains(coretest.Codes(sink), directive.UnknownKey), "UnknownKey is reported")
+		})
 
 		field := func(name string) symbol.Identity {
 			return symbol.Identity{Lang: "golang", Package: "svc/store", Name: name, Kind: symbol.KindField}
@@ -668,45 +754,43 @@ func TestValidate(t *testing.T) {
 				askedSubject, askedKind = subject, kind
 				return field(name), nil
 			}
-			r := sealed(t, fullSchema())
 			sink := diag.NewSink()
 			got := directive.Validate(validationSubject,
 				[]directive.Raw{parse(t, "indexer:index btree fields=[id, name]", 1)},
-				r, keyed(t), resolve, sink)
-			assert.Length(t, got, 1, "the instance passes")
+				sealed(t, fullSchema()), keyed(t), resolve, sink)
+			assert.Length(t, got, 1, "the instance is returned")
 			assert.Equal(t, askedSubject, validationSubject, "the resolver is asked from the subject")
-			assert.Equal(t, askedKind, directive.ResolveValueField, "at the param's declared kind")
+			assert.Equal(t, askedKind, directive.ResolveValueField, "the resolver is asked at the declared kind")
 			fields, _ := got[0].Param("fields")
 			assert.Length(t, fields.List, 2, "each element binds")
-			assert.Equal(t, fields.List[0].Target, field("id"), "to what the resolver returned")
-			assert.Equal(t, fields.List[0].Ref, "id", "the spelling stays beside it")
+			assert.Equal(t, fields.List[0].Target, field("id"), "the target is what the resolver returned")
+			assert.Equal(t, fields.List[0].Ref, "id", "the spelling is kept beside the target")
 		})
 
-		t.Run("refuses a reference the resolver binds to nothing", func(t *testing.T) {
+		t.Run("reports UnresolvedReference with the resolver's reason", func(t *testing.T) {
 			t.Parallel()
 
 			resolve := func(_ symbol.Identity, name string, _ directive.ResolutionKind) (symbol.Identity, error) {
 				return symbol.Identity{}, errors.New("no field named " + name)
 			}
-			r := sealed(t, fullSchema())
 			sink := diag.NewSink()
 			got := directive.Validate(validationSubject,
 				[]directive.Raw{parse(t, "indexer:index btree fields=[ghost]", 1)},
-				r, keyed(t), resolve, sink)
-			assert.Empty(t, got, "the instance drops")
+				sealed(t, fullSchema()), keyed(t), resolve, sink)
+			assert.Empty(t, got, "the instance is not returned")
 			f := onlyDiag(t, sink)
-			assert.Equal(t, f.Code, directive.UnresolvedReference, "under the reference's own code")
-			assert.Contains(t, f.Msg, "a field on the subject's type", "naming the kind it was read at")
-			assert.Contains(t, f.Msg, "no field named ghost", "and the resolver's reason")
+			assert.Equal(t, f.Code, directive.UnresolvedReference, "UnresolvedReference is reported")
+			assert.Contains(t, f.Msg, "a field on the subject's type", "the finding names the kind")
+			assert.Contains(t, f.Msg, "no field named ghost", "the finding names the resolver's reason")
 		})
 
-		t.Run("carries a source reference unbound without a resolver", func(t *testing.T) {
+		t.Run("leaves a source reference unbound without a resolver", func(t *testing.T) {
 			t.Parallel()
 
 			got, sink := validate(t, "indexer:index btree fields=[id]")
-			assert.False(t, sink.Failed(), "nothing refuses")
+			assert.False(t, sink.Failed(), "nothing is reported")
 			fields, _ := got[0].Param("fields")
-			assert.True(t, fields.List[0].Target.IsZero(), "the spelling alone is carried")
+			assert.True(t, fields.List[0].Target.IsZero(), "the target is zero")
 		})
 
 		t.Run("never asks the resolver for a metadata key", func(t *testing.T) {
@@ -715,18 +799,134 @@ func TestValidate(t *testing.T) {
 			resolve := func(symbol.Identity, string, directive.ResolutionKind) (symbol.Identity, error) {
 				return symbol.Identity{}, errors.New("asked")
 			}
-			r := sealed(t, fullSchema())
 			sink := diag.NewSink()
 			got := directive.Validate(validationSubject,
-				[]directive.Raw{parse(t, "meta drop=shape.role", 1)}, r, keyed(t), resolve, sink)
-			assert.Length(t, got, 1, "the metadata registry resolves it")
-			assert.False(t, sink.Failed(), "and the resolver was never asked")
+				[]directive.Raw{parse(t, "meta drop=shape.role", 1)},
+				sealed(t, fullSchema()), keyed(t), resolve, sink)
+			assert.Length(t, got, 1, "the metadata registry resolves the key")
+			assert.False(t, sink.Failed(), "the resolver was never asked")
+		})
+
+		t.Run("returns a negated instance of a negatable schema", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validateRaws(t, []directive.Raw{negated(t, "mockgen:stub mode=fast", 1)},
+				negatable("mockgen", "stub"))
+			assert.False(t, sink.Failed(), "nothing is reported")
+			assert.Length(t, got, 1, "the instance is returned")
+			assert.True(t, got[0].Negated, "the instance is negated")
+			mode, _ := got[0].Param("mode")
+			assert.Equal(t, mode.Str, "fast", "the negated instance types its params")
+		})
+
+		t.Run("reports NegationRefused for a negated instance of a schema that is not negatable", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validateRaws(t, []directive.Raw{negated(t, "mockgen:stub", 1)},
+				wellFormed("mockgen", "stub"))
+			assert.Empty(t, got, "the instance is not returned")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.NegationRefused},
+				"NegationRefused is reported")
+		})
+
+		t.Run("reports NegationRefused for a negated kernel directive", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validateRaws(t, []directive.Raw{negated(t, string(directive.KernelSkip), 1)})
+			assert.Empty(t, got, "the instance is not returned")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.NegationRefused},
+				"NegationRefused is reported")
+		})
+
+		t.Run("returns nothing for a negated directive the subject also sets", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := validateRaws(t, []directive.Raw{
+				parse(t, "mockgen:stub", 1),
+				negated(t, "mockgen:stub", 2),
+			}, negatable("mockgen", "stub"))
+			assert.Empty(t, got, "neither instance is returned")
+		})
+
+		t.Run("reports Conflict at the negation for a negated directive the subject also sets", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := validateRaws(t, []directive.Raw{
+				parse(t, "mockgen:stub", 1),
+				negated(t, "mockgen:stub", 2),
+			}, negatable("mockgen", "stub"))
+			f := onlyDiag(t, sink)
+			assert.Equal(t, f.Code, directive.Conflict, "Conflict is reported")
+			assert.Equal(t, f.Pos.Line, 2, "the finding is at the negation")
+			assert.Equal(t, f.Related[0].Line, 1, "the finding names the set instance")
+		})
+
+		t.Run("reports DuplicateInstance for a single-instance schema negated twice", func(t *testing.T) {
+			t.Parallel()
+
+			got, sink := validateRaws(t, []directive.Raw{
+				negated(t, "mockgen:stub", 1),
+				negated(t, "mockgen:stub", 2),
+			}, negatable("mockgen", "stub"))
+			assert.Empty(t, got, "neither instance is returned")
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.DuplicateInstance},
+				"DuplicateInstance is reported")
+		})
+
+		t.Run("skips the requirements a negated instance's schema declares", func(t *testing.T) {
+			t.Parallel()
+
+			needs := negatable("weaver", "weave")
+			needs.Requires = []directive.Name{"indexer:index"}
+			got, sink := validateRaws(t, []directive.Raw{negated(t, "weaver:weave", 1)}, fullSchema(), needs)
+			assert.Length(t, got, 1, "the negated instance is returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
+		})
+
+		t.Run("meets no requirement with a negated instance", func(t *testing.T) {
+			t.Parallel()
+
+			needs := wellFormed("weaver", "weave")
+			needs.Requires = []directive.Name{"mockgen:stub"}
+			got, sink := validateRaws(t, []directive.Raw{
+				parse(t, "weaver:weave", 1),
+				negated(t, "mockgen:stub", 2),
+			}, negatable("mockgen", "stub"), needs)
+			assert.Equal(t, coretest.Codes(sink), []diag.Code{directive.RequirementUnmet},
+				"RequirementUnmet is reported")
+			assert.Length(t, got, 1, "only the negated instance is returned")
+		})
+
+		t.Run("skips the conflicts a negated instance's schema declares", func(t *testing.T) {
+			t.Parallel()
+
+			hates := negatable("weaver", "weave")
+			hates.ConflictsWith = []directive.Name{"indexer:index"}
+			got, sink := validateRaws(t, []directive.Raw{
+				parse(t, "indexer:index btree", 1),
+				negated(t, "weaver:weave", 2),
+			}, fullSchema(), hates)
+			assert.Length(t, got, 2, "both instances are returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
+		})
+
+		t.Run("skips a conflict another schema declares against a negated instance", func(t *testing.T) {
+			t.Parallel()
+
+			hated := fullSchema()
+			hated.ConflictsWith = []directive.Name{"weaver:weave"}
+			got, sink := validateRaws(t, []directive.Raw{
+				parse(t, "indexer:index btree", 1),
+				negated(t, "weaver:weave", 2),
+			}, hated, negatable("weaver", "weave"))
+			assert.Length(t, got, 2, "both instances are returned")
+			assert.False(t, sink.Failed(), "nothing is reported")
 		})
 	})
 }
 
 // Validation runs once per subject at the seal, so its cost per
-// subject bounds the freeze-adjacent pass over a large workspace.
+// subject bounds the pass over a large workspace.
 func BenchmarkValidate(b *testing.B) {
 	b.ReportAllocs()
 
@@ -746,14 +946,14 @@ func BenchmarkValidate(b *testing.B) {
 	}
 }
 
-// onlyDiag returns the one finding a sink holds.
+// onlyDiag returns the one finding a sink contains.
 func onlyDiag(tb assert.TB, sink *diag.Sink) diag.Diag {
 	tb.Helper()
 
-	held := slices.Collect(sink.All())
-	assert.Length(tb, held, 1, "exactly one finding arrived")
-	if len(held) != 1 {
+	found := slices.Collect(sink.All())
+	assert.Length(tb, found, 1, "exactly one finding is reported")
+	if len(found) != 1 {
 		return diag.Diag{}
 	}
-	return held[0]
+	return found[0]
 }

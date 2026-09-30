@@ -14,10 +14,13 @@
 // # Dependency position
 //
 // sdk imports core, sdk/directive, sdk/emit, sdk/meta, sdk/node,
-// sdk/plugin and sdk/symbol.
+// sdk/plugin, sdk/symbol and the Go stdlib.
 package sdk
 
 import (
+	"io/fs"
+	"text/template"
+
 	core "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/sdk/directive"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -28,9 +31,9 @@ import (
 )
 
 // Builder accumulates a plugin's declaration. Everything on it is
-// data; only the handlers inside rules and the key registrations
-// are functions. Build freezes it, and a Builder is not reused
-// afterwards.
+// data; only the handlers inside rules, the key registrations and
+// the template helpers are functions. Build freezes it, and a
+// Builder is not reused afterwards.
 type Builder = core.Builder
 
 // NewPlugin starts a plugin declaration.
@@ -60,9 +63,9 @@ type Tag = core.Tag
 // per call; more is a defect and panics.
 type Emitter = core.Emitter
 
-// Out is one accumulator seen from one match. The handle carries
+// Out is one accumulator seen from one match. The handle records
 // the match's subject and gating instance, so an append is
-// attributed without shared mutable state: two matches hold two
+// attributed without shared mutable state: two matches have two
 // handles onto one accumulator.
 type Out = core.Out
 
@@ -203,10 +206,9 @@ func OnAlias[E Effect](h func(*AliasMatch, E) error) Rule {
 type Matcher = core.Matcher
 
 // Fact returns the subject's winning value for k, recording the
-// read at (subject, key) into the invocation's read set; a miss
-// records too. On an emit match the subject is the origin; on a
-// graph match there is no subject, so Fact returns false and
-// records nothing.
+// read at (subject, key) into the invocation's read set, a miss
+// included. On an emit match the subject is the origin. A graph
+// match has no subject, so Fact returns false and records nothing.
 func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 	return core.Fact[T](m, k)
 }
@@ -224,16 +226,48 @@ func FactOf[T meta.FactValue](m Matcher, id symbol.Identity, k meta.Key[T]) (T, 
 // the name, the visibility, the level, the type parameters, the
 // parameters with their labels, defaults, optional and variadic
 // forms, the results, the async flag and the announced failure
-// types. The receiver is a pointer to host, and Receives names
-// host, so the settle scopes the method under its host as it
-// scopes a parsed method. The receiver's name differs from every
-// parameter, result and type parameter name: a method declaring
-// Put(s Session) must not bind its receiver to s, a
-// duplicate-identifier compile error a formatter cannot catch.
-// Import inference deliberately does not happen here: imports are
-// collected at render as a side effect of spelling types.
+// types. Receives names host, so the settle scopes the method under
+// its host as it scopes a parsed method.
+//
+// The receiver is left unset, because its spelling is the target's:
+// a Go stub states a pointer receiver through the Go satellite's
+// helper, and Rust spells self. Imports are collected at render as a
+// side effect of spelling types, so Mirror infers none.
 func Mirror(host string, m *node.Method) *emit.Method {
 	return core.Mirror(host, m)
+}
+
+// TargetOption is one presentation declaration for one target, the
+// argument [Builder.For] takes: a template tree, helpers, or
+// overrides. [Templates], [Funcs] and [Overrides] construct one.
+// The zero value declares nothing, and Build panics on it.
+type TargetOption = core.TargetOption
+
+// Templates declares a target's template tree: the tree the
+// target's plans resolve this plugin's template references in, in
+// place of the plugin-level tree. A nil tree panics at Build.
+func Templates(tree fs.FS) TargetOption {
+	return core.Templates(tree)
+}
+
+// Funcs declares helpers for a target's plans, layered over the
+// plugin-level helpers: a name declared at both levels takes this
+// function in that target's plans. A nil map, and a function
+// text/template refuses, panic at Build.
+func Funcs(fm template.FuncMap) TargetOption {
+	return core.Funcs(fm)
+}
+
+// Overrides declares replacements for names in the target's shared
+// vocabulary, which is the replace verb: in every plan of that
+// target, each function replaces the shared helper of its name in
+// every template the plan renders, the backend's kind templates
+// included. A name the shared vocabulary lacks fails the template
+// lint, and where two plugins override one name, the one later in
+// the schedule takes effect. A nil map, and a function
+// text/template refuses, panic at Build.
+func Overrides(fm template.FuncMap) TargetOption {
+	return core.Overrides(fm)
 }
 
 // Effect is the set of handler effect surfaces. The handler's

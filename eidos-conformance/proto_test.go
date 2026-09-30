@@ -62,8 +62,8 @@ func TestProtobuf(t *testing.T) {
 			"test_classification": conformance.Refuses,
 		},
 		// A schema states no bodies, so a signature-only root loads
-		// the same declarations as a full one. The suite runs the
-		// check to prove it.
+		// the same declarations as a full one, and the corpus lists
+		// no dropped identity.
 		Signatures: []string{"f/cross_package_ref/dep"},
 		Schemas:    frontendtest.ScriptedSchemas(),
 		Keys:       protobuf.Keys,

@@ -63,7 +63,7 @@ func BenchmarkParse(b *testing.B) {
 	for b.Loop() {
 		for _, unit := range units {
 			u := plugin.NewSourceUnit(unit, tree, plugin.DepthFull,
-				f.Syntax(), diag.NewSink(), f.Name())
+				f.Syntax(), brand, diag.NewSink(), f.Name())
 			if err := f.Parse(context.Background(), u); err != nil {
 				b.Fatalf("the corpus parses: %v", err)
 			}

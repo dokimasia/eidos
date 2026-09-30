@@ -18,6 +18,25 @@ import (
 // as in the schema.
 const wantKinds = 22
 
+// validSchema is the fixture schema every contract case departs
+// from.
+const validSchema = "testdata/valid"
+
+// fieldsOf returns the fixture schema's first kind's fields by name.
+func fieldsOf(t *testing.T) map[string]model.FieldSpec {
+	t.Helper()
+
+	schema, err := model.Lower(validSchema, "")
+	assert.NoError(t, err, "the fixture schema lowers")
+	fields := map[string]model.FieldSpec{}
+	for _, field := range schema.Kinds[0].Fields {
+		fields[field.Name] = field
+	}
+	return fields
+}
+
+// Lowering is where the annotation contract is enforced, so what it
+// returns for a valid schema and what it refuses are contract.
 func TestIR(t *testing.T) {
 	t.Parallel()
 
@@ -27,69 +46,78 @@ func TestIR(t *testing.T) {
 		t.Run("returns kinds in declaration order", func(t *testing.T) {
 			t.Parallel()
 
-			kinds, err := model.Lower("testdata/valid", "")
+			schema, err := model.Lower(validSchema, "")
 			assert.NoError(t, err, "the fixture schema lowers")
 			var got []string
-			for _, kind := range kinds {
+			for _, kind := range schema.Kinds {
 				got = append(got, kind.Name)
 			}
 			assert.Equal(t, got, []string{"Thing", "Part"},
 				"kinds come back in declaration order")
 		})
 
-		t.Run("lowers a tag into the field spec", func(t *testing.T) {
+		t.Run("returns an untagged side on both models", func(t *testing.T) {
 			t.Parallel()
 
-			kinds, err := model.Lower("testdata/valid", "")
-			assert.NoError(t, err, "the fixture schema lowers")
-			fields := map[string]model.FieldSpec{}
-			for _, field := range kinds[0].Fields {
-				fields[field.Name] = field
-			}
+			name := fieldsOf(t)["Name"]
+			assert.Equal(t, name.Side, model.SideBoth, "an untagged side arrives on both models")
+			assert.False(t, name.Walk, "and is not walked untagged")
+		})
 
-			assert.Equal(t, fields["Name"].Side, model.SideBoth,
-				"an untagged side arrives on both models")
-			assert.False(t, fields["Name"].Walk, "and is not walked untagged")
-			assert.Equal(t, fields["Pos"].Side, model.SideNode,
-				"a node-tagged field arrives on the node side")
-			assert.False(t, fields["Pos"].Side.OnEmit(), "and not on emit")
-			parts := fields["Parts"]
+		t.Run("returns a node-tagged field on the node model alone", func(t *testing.T) {
+			t.Parallel()
+
+			pos := fieldsOf(t)["Pos"]
+			assert.Equal(t, pos.Side, model.SideNode, "a node-tagged field arrives on the node side")
+			assert.False(t, pos.Side.OnEmit(), "and not on emit")
+		})
+
+		t.Run("returns a walked slot's accessor and element", func(t *testing.T) {
+			t.Parallel()
+
+			parts := fieldsOf(t)["Parts"]
 			assert.True(t, parts.Walk, "a walk tag marks the field traversed")
 			assert.Equal(t, parts.Slot, "parts", "a slot tag names its accessor")
 			assert.Equal(t, parts.Elem, "Part", "the element kind is read from the type")
 			assert.True(t, parts.Slice, "so is the slice shape")
 			assert.Equal(t, parts.Type, "[]*Part", "and the declared spelling")
-			assert.True(t, fields["Decls"].IsSymbol, "the marker type is recognized")
-			assert.True(t, fields["Decls"].Walk, "and walked")
-			assert.Equal(t, fields["Async"].Fact, "Async",
-				"a fact tag names the constant suffix")
-			assert.Equal(t, fields["Name"].Fact, "",
-				"a field without one states no fact")
 		})
 
-		t.Run("skips a field without a tag", func(t *testing.T) {
+		t.Run("returns a marker-typed field as walked", func(t *testing.T) {
 			t.Parallel()
 
-			kinds, err := model.Lower("testdata/valid", "")
-			assert.NoError(t, err, "the fixture schema lowers")
-			for _, field := range kinds[0].Fields {
-				assert.NotEqual(t, field.Name, "Untagged",
-					"a field with no eidos tag is not a model field")
-			}
+			decls := fieldsOf(t)["Decls"]
+			assert.True(t, decls.IsSymbol, "the marker type is recognized")
+			assert.True(t, decls.Walk, "and walked")
 		})
 
-		t.Run("lowers the kernel's own schema", func(t *testing.T) {
+		t.Run("returns a fact tag as its constant suffix", func(t *testing.T) {
+			t.Parallel()
+
+			fields := fieldsOf(t)
+			assert.Equal(t, fields["Async"].Fact, "Async", "a fact tag names the constant suffix")
+			assert.Equal(t, fields["Name"].Fact, "", "a field without one states no fact")
+		})
+
+		t.Run("returns no field for a field without a tag", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := fieldsOf(t)["Untagged"]
+			assert.False(t, found, "a field with no eidos tag is not a model field")
+		})
+
+		t.Run("returns the kernel's own kinds", func(t *testing.T) {
 			t.Parallel()
 
 			root, err := gosource.ModuleRoot(".")
 			assert.NoError(t, err, "the module root resolves")
-			kinds, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
+			schema, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
 			assert.NoError(t, err, "the kernel's own schema lowers")
-			assert.Length(t, kinds, wantKinds,
+			assert.Length(t, schema.Kinds, wantKinds,
 				"adding a kind is a deliberate edit here as well as in the schema")
 
 			byName := map[string]model.KindSpec{}
-			for _, kind := range kinds {
+			for _, kind := range schema.Kinds {
 				byName[kind.Name] = kind
 			}
 			for _, name := range []string{"Package", "Struct", "Method", "Import", "Export"} {
@@ -103,94 +131,184 @@ func TestIR(t *testing.T) {
 					methods = field
 				}
 			}
-			assert.Equal(t, methods.Slot, "methods", "Struct.Methods carries its slot")
+			assert.Equal(t, methods.Slot, "methods", "Struct.Methods names its slot")
 			assert.Equal(t, methods.Elem, "Method", "and its element kind")
 			assert.NotEmpty(t, byName["Struct"].Doc,
-				"the schema's docblock is carried with the kind")
+				"the schema's docblock arrives with the kind")
 		})
 
-		t.Run("reports a schema directory it cannot read", func(t *testing.T) {
+		t.Run("returns the kernel's hand-written enums", func(t *testing.T) {
+			t.Parallel()
+
+			root, err := gosource.ModuleRoot(".")
+			assert.NoError(t, err, "the module root resolves")
+			schema, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
+			assert.NoError(t, err, "the kernel's own schema lowers")
+			var types []string
+			for _, e := range schema.Enums {
+				types = append(types, e.Type)
+			}
+			assert.Equal(t, types, []string{
+				"Accessor", "Level", "Mutability", "TypeForm", "Variadic", "Variance", "Visibility",
+			}, "every hand-written enum of the symbol package, sorted by type name")
+		})
+
+		t.Run("returns the enums of the symbol package the schema imports", func(t *testing.T) {
+			t.Parallel()
+
+			root := symbolModule{schema: enumSchema, symbol: toneSource}.write(t)
+			schema, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
+			assert.NoError(t, err, "the schema lowers")
+			assert.Equal(t, schema.Enums, []model.EnumSpec{{
+				Type: "Tone",
+				Values: []model.EnumValue{
+					{Name: "ToneHigh", Value: "1"},
+					{Name: "ToneLow", Value: "0"},
+				},
+			}}, "each constant's name and computed value, sorted by name")
+		})
+
+		t.Run("returns no enum for a string-typed constant", func(t *testing.T) {
+			t.Parallel()
+
+			root := symbolModule{schema: enumSchema, symbol: wideSource}.write(t)
+			schema, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
+			assert.NoError(t, err, "the schema lowers")
+			assert.Length(t, schema.Enums, 1, "the Tone enum alone: a string is no enum")
+		})
+
+		t.Run("returns no enum for a constant of another package's type", func(t *testing.T) {
+			t.Parallel()
+
+			root := symbolModule{schema: enumSchema, symbol: foreignSource}.write(t)
+			schema, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
+			assert.NoError(t, err, "the schema lowers")
+			assert.Length(t, schema.Enums, 1, "the Tone enum alone: time declares Duration")
+		})
+
+		t.Run("returns no enum a generated file declares", func(t *testing.T) {
+			t.Parallel()
+
+			root := symbolModule{schema: enumSchema, symbol: toneSource, generated: modeOneSource}.write(t)
+			schema, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
+			assert.NoError(t, err, "the schema lowers")
+			assert.Length(t, schema.Enums, 1, "the Tone enum alone: the generator writes Mode's kind")
+		})
+
+		t.Run("returns no enum for a schema that imports no symbol package", func(t *testing.T) {
+			t.Parallel()
+
+			root := schemaModule(t, reachSchema)
+			schema, err := model.Lower(filepath.Join(root, model.SchemaDir), root)
+			assert.NoError(t, err, "the schema lowers")
+			assert.Length(t, schema.Enums, 0, "no symbol package, no enum")
+		})
+
+		t.Run("returns no enum without a module root", func(t *testing.T) {
+			t.Parallel()
+
+			schema, err := model.Lower(validSchema, "")
+			assert.NoError(t, err, "the fixture schema lowers")
+			assert.Length(t, schema.Enums, 0, "no module, no symbol package")
+		})
+
+		t.Run("returns an error for a schema directory it cannot read", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := model.Lower("testdata/nonexistent", "")
-			assert.HasError(t, err, "a schema directory it cannot read is reported")
+			assert.HasError(t, err, "a schema directory it cannot read lowers nothing")
 		})
 
-		t.Run("refuses a schema that breaks the contract", func(t *testing.T) {
-			t.Parallel()
+		contract := []struct {
+			name  string
+			dir   string
+			wants []string
+		}{
+			{
+				name: "returns an error for an unknown tag token",
+				dir:  "testdata/badtoken", wants: []string{"walkk"},
+			},
+			{
+				name: "returns an error for an unknown side",
+				dir:  "testdata/badside", wants: []string{"sideways", "unknown side"},
+			},
+			{
+				name: "returns an error for a duplicate slot name",
+				dir:  "testdata/dupslot", wants: []string{"parts"},
+			},
+			{
+				name: "returns an error for a slot on a field that is not a slice",
+				dir:  "testdata/slotnotslice", wants: []string{model.SlotPrefix},
+			},
+			{
+				name: "returns an error for a walk on a field that is not a kind",
+				dir:  "testdata/walkbadtype", wants: []string{model.WalkToken},
+			},
+			{
+				name:  "returns an error for a walk on a shape the schema cannot reference",
+				dir:   "testdata/walkbadshape",
+				wants: []string{"Stream", "chan int", "cannot spell"},
+			},
+			{
+				name:  "returns an error for a tagged embedded field",
+				dir:   "testdata/embedtagged",
+				wants: []string{"Thing embeds Base", "no embedded field"},
+			},
+			{
+				name:  "returns an error for a sized array",
+				dir:   "testdata/sizedarray",
+				wants: []string{"Digest", "[32]byte", "cannot spell"},
+			},
+			{
+				name:  "returns an error for a map",
+				dir:   "testdata/maptype",
+				wants: []string{"Meta", "map[string]string", "cannot spell"},
+			},
+			{
+				name: "returns an error for a name on a field that is not a string",
+				dir:  "testdata/namenotstring", wants: []string{"Count", "not a string"},
+			},
+			{
+				name: "returns an error for a fact on a node-only field",
+				dir:  "testdata/factnode", wants: []string{"emit-visible"},
+			},
+			{
+				name: "returns an error for a fact that does not open with a capital",
+				dir:  "testdata/factbadname", wants: []string{"suffix"},
+			},
+			{
+				name: "returns an error for a fact with a character an identifier cannot contain",
+				dir:  "testdata/factbadchar", wants: []string{"As-ync", "suffix"},
+			},
+			{
+				name: "returns an error for a declaration that is not a struct",
+				dir:  "testdata/nonstruct", wants: []string{"Alias"},
+			},
+			{
+				name: "returns an error for a declaration that is not exported",
+				dir:  "testdata/unexported", wants: []string{"thing", "not exported"},
+			},
+			{
+				name: "returns an error for a declaration that is not a type",
+				dir:  "testdata/notatype", wants: []string{"types and imports"},
+			},
+			{
+				name: "returns an error for a subject without a node identity",
+				dir:  "testdata/nosubjectid", wants: []string{"Thing", "cannot be dispatched"},
+			},
+		}
+		for _, tt := range contract {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			tests := []struct {
-				name  string
-				dir   string
-				wants []string
-			}{
-				{"unknown tag token", "testdata/badtoken", []string{"walkk"}},
-				{"unknown side", "testdata/badside", []string{"sideways", "unknown side"}},
-				{"duplicate slot name", "testdata/dupslot", []string{"parts"}},
-				{
-					"slot on a field that is not a slice", "testdata/slotnotslice",
-					[]string{model.SlotPrefix},
-				},
-				{
-					"walk on a field that is not a kind", "testdata/walkbadtype",
-					[]string{model.WalkToken},
-				},
-				{
-					"walk on a shape the schema cannot reference", "testdata/walkbadshape",
-					[]string{"Stream", "chan int", "cannot spell"},
-				},
-				{
-					"tagged embedded field", "testdata/embedtagged",
-					[]string{"Thing embeds Base", "no embedded field"},
-				},
-				{
-					"sized array", "testdata/sizedarray",
-					[]string{"Digest", "[32]byte", "cannot spell"},
-				},
-				{
-					"map", "testdata/maptype",
-					[]string{"Meta", "map[string]string", "cannot spell"},
-				},
-				{
-					"name on a field that is not a string", "testdata/namenotstring",
-					[]string{"Count", "not a string"},
-				},
-				{"fact on a node-only field", "testdata/factnode", []string{"emit-visible"}},
-				{
-					"fact that does not open with a capital", "testdata/factbadname",
-					[]string{"suffix"},
-				},
-				{
-					"fact holding a character an identifier cannot", "testdata/factbadchar",
-					[]string{"As-ync", "suffix"},
-				},
-				{"declaration that is not a struct", "testdata/nonstruct", []string{"Alias"}},
-				{
-					"declaration that is not exported", "testdata/unexported",
-					[]string{"thing", "not exported"},
-				},
-				{
-					"declaration that is not a type", "testdata/notatype",
-					[]string{"types and imports"},
-				},
-				{
-					"subject carrying no node identity", "testdata/nosubjectid",
-					[]string{"Thing", "cannot be dispatched"},
-				},
-			}
-			for _, tt := range tests {
-				t.Run(tt.name, func(t *testing.T) {
-					t.Parallel()
-
-					_, err := model.Lower(tt.dir, "")
-					assert.HasError(t, err, "a schema breaking the contract is refused")
-					for _, want := range tt.wants {
-						assert.Contains(t, err.Error(), want, "naming what broke it")
-					}
-					assert.Contains(t, err.Error(), ".go:", "at a schema position")
-					assert.HasPrefix(t, err.Error(), "model: ", "under the package prefix")
-				})
-			}
-		})
+				_, err := model.Lower(tt.dir, "")
+				assert.HasError(t, err, "a schema breaking the contract lowers nothing")
+				for _, want := range tt.wants {
+					assert.Contains(t, err.Error(), want, "naming what broke it")
+				}
+				assert.Contains(t, err.Error(), ".go:", "at a schema position")
+				assert.HasPrefix(t, err.Error(), "model: ", "under the package prefix")
+			})
+		}
 	})
 }

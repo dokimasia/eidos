@@ -8,10 +8,13 @@ import (
 	"go/ast"
 	"go/token"
 	"go/types"
+	"maps"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 
+	"go.dokimi.dev/eidos/core/internal/genfile"
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
@@ -89,41 +92,121 @@ type FieldSpec struct {
 	Fact string
 }
 
+// EnumSpec is one enum of the symbol package: a named integer type
+// and the constants of it that the package declares by hand.
+type EnumSpec struct {
+	// Type is the enum's type name, "Visibility".
+	Type string
+	// Values are the enum's constants, sorted by name.
+	Values []EnumValue
+}
+
+// EnumValue is one enum constant: its name, and its value exactly as
+// the type checker computes it.
+type EnumValue struct {
+	Name  string
+	Value string
+}
+
+// Schema is one lowered schema: its declaration kinds, and the enums
+// of the symbol package it imports, which the model fingerprint
+// folds beside the kinds.
+type Schema struct {
+	// Kinds are the declaration kinds, in schema declaration order.
+	Kinds []KindSpec
+	// Enums are the symbol package's enums, sorted by type name, and
+	// empty for a schema that imports no symbol package.
+	Enums []EnumSpec
+}
+
 // Lower parses and type-checks the schema in dir and returns its
-// kinds.
+// kinds, with the enums of the symbol package it imports.
 //
 // modRoot is the root of the importer that resolves the schema's
-// imports. A schema without imports lowers with an empty modRoot.
-// Type checking runs first, so an undefined type is reported as
-// undefined.
+// imports. A schema without imports lowers with an empty modRoot,
+// and returns no enums. Type checking runs first, so an undefined
+// type is reported as undefined.
 //
 // Every violation of the annotation contract is an error naming the
 // schema position. The package documentation lists them.
-func Lower(dir, modRoot string) ([]KindSpec, error) {
+func Lower(dir, modRoot string) (Schema, error) {
 	fset := token.NewFileSet()
-	_, files, err := gosource.Load(fset, dir, SchemaPackage, modRoot, gosource.HandWritten)
+	pkg, files, err := gosource.Load(fset, dir, SchemaPackage, modRoot, gosource.HandWritten)
 	if err != nil {
-		return nil, fmt.Errorf("model: load schema: %w", err)
+		return Schema{}, fmt.Errorf("model: load schema: %w", err)
 	}
 
 	declared, err := collect(fset, files)
 	if err != nil {
-		return nil, err
+		return Schema{}, err
 	}
 	structs := make(map[string]*ast.StructType, len(declared))
 	for _, d := range declared {
 		structs[d.name] = d.typ
 	}
 
-	kinds := make([]KindSpec, 0, len(declared))
-	for _, d := range declared {
-		kind, err := lowerKind(fset, d, structs)
-		if err != nil {
-			return nil, err
+	kinds := make([]KindSpec, len(declared))
+	for i, d := range declared {
+		if kinds[i], err = lowerKind(fset, d, structs); err != nil {
+			return Schema{}, err
 		}
-		kinds = append(kinds, kind)
 	}
-	return kinds, nil
+	enums, err := enumsOf(fset, pkg, modRoot)
+	if err != nil {
+		return Schema{}, err
+	}
+	return Schema{Kinds: kinds, Enums: enums}, nil
+}
+
+// enumsOf returns the enums of the symbol package the schema
+// imports: every constant of a named integer type the package
+// declares, grouped by type. The symbol package is [SymbolPackage]
+// under modRoot's module path, and a schema that imports none has
+// no enums.
+//
+// A constant a generated file declares is left out. The generator
+// writes those files from the schema's own kinds and facts, which
+// the fingerprint folds directly, so one run reads the same enums
+// whether or not an earlier run left the files behind.
+func enumsOf(fset *token.FileSet, schema *types.Package, modRoot string) ([]EnumSpec, error) {
+	if modRoot == "" {
+		return nil, nil
+	}
+	modPath, err := gosource.ModulePath(modRoot)
+	if err != nil {
+		return nil, fmt.Errorf("model: %w", err)
+	}
+	var symbols *types.Package
+	for _, imported := range schema.Imports() {
+		if imported.Path() == modPath+"/"+SymbolPackage {
+			symbols = imported
+		}
+	}
+	if symbols == nil {
+		return nil, nil
+	}
+	byType := map[string][]EnumValue{}
+	for _, name := range symbols.Scope().Names() {
+		c, isConst := symbols.Scope().Lookup(name).(*types.Const)
+		if !isConst || strings.HasSuffix(fset.Position(c.Pos()).Filename, genfile.GeneratedSuffix) {
+			continue
+		}
+		named, isNamed := c.Type().(*types.Named)
+		if !isNamed || named.Obj().Pkg() != symbols {
+			continue
+		}
+		basic, isBasic := named.Underlying().(*types.Basic)
+		if !isBasic || basic.Info()&types.IsInteger == 0 {
+			continue
+		}
+		enum := named.Obj().Name()
+		byType[enum] = append(byType[enum], EnumValue{Name: name, Value: c.Val().ExactString()})
+	}
+	out := make([]EnumSpec, 0, len(byType))
+	for _, enum := range slices.Sorted(maps.Keys(byType)) {
+		out = append(out, EnumSpec{Type: enum, Values: byType[enum]})
+	}
+	return out, nil
 }
 
 // declaration is one schema struct, kept in declaration order.
@@ -234,7 +317,7 @@ func lowerKind(
 	}
 	if kind.Subject && !identified(kind.Fields) {
 		return KindSpec{}, at(fset, d.pos,
-			"%s is marked a subject and carries no node identity: "+
+			"%s is marked a subject and has no node identity: "+
 				"a subject that cannot be addressed cannot be dispatched", d.name)
 	}
 	return kind, nil
@@ -287,7 +370,7 @@ func lowerField(
 			spec.Fact = strings.TrimPrefix(tok, FactPrefix)
 		default:
 			return FieldSpec{}, at(fset, expr.Pos(),
-				"%s carries unknown tag token %q: the vocabulary is %s, %s, %s, %s and a side",
+				"%s states unknown tag token %q: the vocabulary is %s, %s, %s, %s and a side",
 				name, tok, WalkToken, NameToken, SlotPrefix, FactPrefix)
 		}
 	}

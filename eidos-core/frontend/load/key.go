@@ -8,21 +8,24 @@ import (
 	"encoding/binary"
 
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/output"
 )
 
 // unitKey folds one unit's key, by value, in the stated order: the
 // unit's roster-seeded reads, the partition's recorded reads, the
 // depth, the frontend's name, language and declared version, the
 // frontend's options in their canonical encoding, the
-// composition's plugin-set fingerprint, and the node model's
-// fingerprint. The order is part of the contract, because a key
-// derived two ways diverges. The name and language fold because
-// both shape every identity the unit produces; the comment syntax
-// stays covered by the version's bump-on-any-graph-change rule.
+// composition's plugin-set fingerprint, the composition's brand,
+// and the node model's fingerprint. The order is part of the
+// contract, because a key derived two ways diverges. The name and
+// language fold because both shape every identity the unit
+// produces. The brand folds because its marks decide which comment
+// lines are carriers. The comment syntax remains covered by the
+// version's bump-on-any-graph-change rule.
 //
 // Each part is length-prefixed, so two parts cannot trade bytes
 // and collide.
-func unitKey(u *unit, pluginSet []byte) []byte {
+func unitKey(u *unit, pluginSet []byte, brand output.Brand) []byte {
 	h := sha256.New()
 	part := func(b []byte) {
 		var n [8]byte
@@ -38,6 +41,7 @@ func unitKey(u *unit, pluginSet []byte) []byte {
 	part([]byte(u.version))
 	part(u.config)
 	part(pluginSet)
+	part([]byte(brand))
 	part([]byte(node.ModelFingerprint))
 	return h.Sum(nil)
 }

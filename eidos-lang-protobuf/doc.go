@@ -4,10 +4,11 @@
 // Package protobuf is the satellite protobuf schemas load through.
 //
 // [Lang] is the source language of every loaded declaration, [Name]
-// the plugin identity findings and stamps report under, [Extension]
-// the file extension, [Version] the string every unit key folds, and
-// [Syntax] the comment forms. [Keys] registers the metadata keys the
-// frontend stamps.
+// the plugin identity findings and stamps report under, [CodePrefix]
+// the prefix of every diagnostic code the satellite registers,
+// [Extension] the file extension, [Version] the string every unit key
+// folds, and [Syntax] the comment forms. [Keys] registers the
+// metadata keys the frontend stamps.
 //
 // # Shape
 //

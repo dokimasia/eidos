@@ -19,8 +19,8 @@ import (
 )
 
 // Authority orders who a write speaks for. A human override at the
-// source declaration beats any inference, whatever order the
-// plugins ran in. Manual is reserved for consumer tooling; nothing
+// source declaration outranks any inference, whatever order the
+// plugins ran in. Manual is reserved for consumer tooling. Nothing
 // in a normal run writes at it.
 //
 // The zero value is [AuthorityPlugin]: a claim that returned no
@@ -109,96 +109,107 @@ func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T,
 type Recorder = core.Recorder
 
 // KernelNamespace is the namespace the kernel's own keys register
-// under, and KernelOwner is who a collision with it names. No
-// plugin claims the namespace: the workspace registers it before
-// any plugin's registration runs, so an impersonation is a plain
-// duplicate by the time it arrives.
+// under, and KernelOwner is the registrant that claims it. The
+// workspace registers the kernel's keys before any plugin's
+// registration runs, and a key registers only into a namespace its
+// own registrant claimed, so no plugin registers a key under the
+// kernel's namespace.
 const (
 	KernelNamespace = core.KernelNamespace
 	KernelOwner     = core.KernelOwner
 )
 
-// The kernel-owned keys every frontend spells the same way. Module
+// The kernel's keys, which every frontend spells the same way. Module
 // identity is a neutral fact because scope matching and layout read
-// it and know no language. The raw toolchain spelling stays in the
+// it and know no language. The raw toolchain spelling remains in the
 // frontend's own namespace.
 const (
-	// ModuleKey carries a package's toolchain-module identity: a Go
-	// module path, a Maven artifact, a crate name. Absent on a
-	// package outside every module, which is what a bare
-	// directory tree loads as.
+	// ModuleKey is a package's toolchain-module identity: a Go
+	// module path, a Maven artifact, a crate name. A package
+	// outside every module has none, which is what a bare directory
+	// tree loads as.
 	ModuleKey = core.ModuleKey
-	// ModuleRootKey carries the workspace-relative directory the
+	// ModuleRootKey is the workspace-relative directory the
 	// package's module is declared in, "." for the tree's root.
 	ModuleRootKey = core.ModuleRootKey
-	// SampleKey and AlternateKey carry an author's two stated
-	// values of a declaration's type, as text in the source
-	// language: what the sample directive stamps and the value
-	// projection reads before deriving anything.
+	// SampleKey and AlternateKey are an author's two stated values
+	// of a declaration's type, as text in the source language: what
+	// the sample directive stamps and the value projection reads
+	// before deriving anything.
 	SampleKey    = core.SampleKey
 	AlternateKey = core.AlternateKey
-	// WitnessKey carries an author's concrete type for one type
+	// WitnessKey is an author's concrete type for one type
 	// parameter, as the identity the witness directive resolved,
 	// with an empty package for a builtin.
 	WitnessKey = core.WitnessKey
 )
 
 // KernelKeys are the typed handles [Kernel] returns: what a reader
-// of the kernel's own facts holds. The zero value names nothing,
-// so a reader handed one reads nothing rather than the wrong key.
+// of the kernel's own facts keeps. The zero value names nothing, so
+// a reader handed one reads nothing, never the wrong key.
 type KernelKeys = core.KernelKeys
 
-// Kernel claims the kernel namespace and registers the kernel-owned
-// keys. It refuses, with the registry's own errors, a namespace
-// already claimed and a key already registered, which is what a
-// composition registering it twice reads.
+// Kernel claims the kernel namespace as [KernelOwner] and registers
+// the kernel's keys through that registrant's handle, whichever
+// handle it is given. It refuses, with the registry's own errors, a
+// namespace already claimed and a key already registered, which is
+// what a composition registering it twice reads.
 func Kernel(r *Registry) (KernelKeys, error) {
 	return core.Kernel(r)
 }
 
 // KeyName is a key's boundary spelling: dotted segments with the
-// owning namespace first, as in "shape.role". It appears at the
-// boundary — a directive parameter, an attribution argument — and
-// resolves against the registry. Code holds the typed [Key].
+// namespace first, as in "shape.role". It appears at the boundary,
+// in a directive parameter or an attribution argument, and resolves
+// against the registry. Code uses the typed [Key].
 type KeyName = core.KeyName
 
-// KeyID is the dense form gate tuples and indexes hold. It is
-// assigned at registration and belongs to one composition: nothing
-// durable stores it, because codecs and the sealed state carry
-// names. The zero KeyID names no key.
+// KeyID is the dense form gate tuples and indexes store. Registration
+// assigns it, and it is valid in one composition only. Nothing
+// durable stores it: codecs and the sealed state record names. The
+// zero KeyID names no key.
 type KeyID = core.KeyID
 
-// FactValue is the closed value vocabulary; nothing else registers.
-// A fact that needs structure becomes flat keys under a fact group,
-// and a fact that names a declaration carries an identity rather
-// than a string.
+// FactValue is the closed value vocabulary, and [Register] accepts
+// no other value type. A fact that needs structure becomes flat keys
+// under a fact group, and a fact that names a declaration stores an
+// identity, not a string.
 type FactValue = core.FactValue
 
 // Key is the typed handle registration returns. Reads, writes and
-// gate predicates all go through it, so the value type is checked
-// where the code compiles rather than where the run fails.
+// gate predicates all go through it, so the compiler checks the
+// value type.
 //
 // The zero Key names nothing: every handle comes from [Register].
 type Key[T FactValue] = core.Key[T]
 
 // GroupName names a fact group: a bundle a writer declares, such as
-// every key its classification stamps. The name is public API and
-// the membership is the writer's to grow.
+// every key its classification stamps. The name is public API, and
+// the writer may add members.
 type GroupName = core.GroupName
 
 // ClaimView is one claim as the record shows it.
 type ClaimView = core.ClaimView
 
-// Registry holds every registered namespace, key and group.
+// Registry is a handle on the registered namespaces, keys and
+// groups, bound to one registrant: a plugin's name, or no name for
+// the composition that builds the workspace.
+//
+// Every handle [Registry.For] derives shares one set of
+// registrations. A namespace belongs to the registrant whose handle
+// claimed it, and a key registers only into a namespace its own
+// registrant claimed, so no plugin registers keys under another
+// plugin's namespace or the kernel's.
 //
 // A Registry is not safe for concurrent use. Registration happens
 // while the workspace composes, which is single-threaded.
-// [Registry.Seal] ends registration, and the registry refuses every
+// [Registry.Seal] ends registration, and every handle refuses a
 // later one. [Facts] reads a sealed registry without locking, and
 // every fact store built over it sees one set of keys and groups.
 type Registry = core.Registry
 
-// NewRegistry returns a registry holding nothing.
+// NewRegistry returns an empty registry and the composition's handle
+// on it.
 func NewRegistry() *Registry {
 	return core.NewRegistry()
 }
@@ -216,6 +227,7 @@ type Completeness = core.Completeness
 // where two exist:
 //   - a registration after [Registry.Seal];
 //   - a name without a claimed namespace or without a local part;
+//   - a name in a namespace another registrant claimed;
 //   - a name registered twice;
 //   - a spec without documentation;
 //   - a key and a group with one spelling, in either registration
@@ -241,6 +253,6 @@ func Lookup[T FactValue](r *Registry, name KeyName) (Key[T], bool) {
 // RawStamp is one classification stamp as a frontend recorded it:
 // a pre-claim that crossed a phase as data, the way a raw
 // directive does. The name resolves through the registry when the
-// stamp applies, because the typed handle is a composition
-// constant no record can carry.
+// stamp applies, because a typed handle is valid in one composition
+// only and a record outlives it.
 type RawStamp = core.RawStamp

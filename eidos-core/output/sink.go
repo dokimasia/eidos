@@ -60,8 +60,8 @@ type Written struct {
 	Action Action
 	// Hash is "sha256:" and the hex digest of the file's bytes as
 	// written, frame included. The trailer's own digest covers the
-	// body alone; this one covers what reached the destination,
-	// which is the value a record of the run keeps.
+	// body alone. This one covers what was written to the
+	// destination, which is the value a record of the run keeps.
 	Hash string
 }
 
@@ -83,19 +83,20 @@ type Sink interface {
 	Write(path string, body []byte) error
 	// Commit makes the staged files real, one atomic rename per
 	// file, write-if-changed: identical bytes leave the file and
-	// its mtime untouched. It returns one record per file it
+	// its mtime untouched. A sink over a destination that has files
+	// of its own, such as [Disk], refuses to overwrite a file its
+	// brand did not write. Commit returns one record per file it
 	// committed, sorted by path, and keeps going past a file that
 	// fails, joining the errors.
 	Commit() ([]Written, error)
 	// Discard drops the staged files without touching the
-	// destination. A discarded sink held nothing and leaves
-	// nothing.
+	// destination.
 	Discard() error
 }
 
-// staging is the bookkeeping every sink shares: the bytes held
-// back, and the one-staging rule. The destination is the sink's
-// own business.
+// staging is the bookkeeping every sink shares: the staged bytes,
+// and the one-staging rule. Each sink decides how it writes to its
+// destination.
 type staging struct {
 	files map[string][]byte
 	// folded maps the lower case of each staged path to the path.
@@ -171,9 +172,9 @@ func (s *staging) finish() error {
 }
 
 // stageable reports what refuses path, nil where a sink may take
-// it. The string check is the first refusal and the cheap one; a
-// sink writing to a filesystem holds the jail again where symlinks
-// live.
+// it. The string check is the first refusal and the cheap one. A
+// sink writing to a filesystem enforces the jail again at the
+// commit, where symlinks resolve.
 func stageable(p string) error {
 	switch {
 	case !fs.ValidPath(p) || p == ".":

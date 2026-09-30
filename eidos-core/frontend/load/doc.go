@@ -14,25 +14,40 @@
 // identities, keeps the first of two declarations spelling one,
 // and resolves type references through each language's own
 // bindings: a named reference gains its target, and a structural
-// one carries none of its own, because its children resolve in
-// its place. The store then seals, and the report carries every
-// unit's key. Parse is the one parallel phase; everything before
-// and after it is sequential and ordered, which is where
-// determinism lives.
+// one has none of its own, because its children resolve in its
+// place. For a language whose frontend is a [plugin.Importer], a
+// reference resolved to another file's declaration also gains the
+// package the frontend names that file's import by, because such a
+// language's import names a file and its parse cannot know which
+// file declares a name. The store then seals, and the report
+// records every unit's key. Parse is the one parallel phase.
+// Everything before and after it is sequential and ordered, which
+// is what makes the load deterministic.
 //
 // Directive validation is not this package's: the graph's consumer
 // validates between the seal and its first handler, which is where
 // the workspace run does it today.
 //
+// # The brand
+//
+// A load runs under the composition's [Config.Brand], and refuses a
+// brand outside [output.Brand.Valid]. Every unit reads its carriers
+// under the brand's three marks: brand: and +brand: set a
+// directive, and -brand: negates one. Another tool's marks are
+// comment text.
+//
 // # Outputs are never inputs
 //
-// A claimed file carrying a provenance trailer under the load's
-// own [Config.Brand] is the workspace's own output, and it does not
-// load: the exclusion runs on the bytes, after selection and
-// before anything partitions, and the report lists what it
-// refused. A file another brand stamped is ordinary input: parsed,
-// classified by the language as generated, and gated by consumers
-// like any other fact. The proof is the trailer alone.
+// A claimed file with a provenance trailer under the load's own
+// brand is the workspace's own output, and it does not load: the
+// exclusion runs on the bytes, after selection and before anything
+// partitions, and the report lists what it refused. A file another
+// brand stamped is ordinary input: parsed, classified by the
+// language as generated, and gated by consumers like any other
+// fact. The proof is the trailer alone. It reads each claimed
+// file's last [output.TailSize] bytes through [io.Seeker], and the
+// whole file only where they contain the trailer's key. A file that
+// cannot seek is read whole.
 //
 // # Keys
 //
@@ -40,10 +55,10 @@
 // partition's recorded reads, the unit's depth, the frontend's
 // name, language and declared version, the frontend's options in
 // their canonical encoding, the composition's plugin-set
-// fingerprint, and
+// fingerprint, the brand, and
 // [go.dokimi.dev/eidos/core/node.ModelFingerprint]. Each part is
 // length-prefixed, so two parts cannot trade bytes and collide.
-// The report records the keys; milestone 0007 consumes them.
+// The report records the keys.
 //
 // # Failure semantics
 //
@@ -54,18 +69,17 @@
 // continues: a duplicate identity keeps the first declaration
 // under [DuplicateDeclaration], an ambiguous reference keeps the
 // first candidate under [AmbiguousReference], and an unresolved
-// spelling stays a spelling. A structural defect in what a
+// spelling remains a spelling. A structural defect in what a
 // frontend built — an emit-side symbol, a named kind without a
 // name, a nil entry in a signature — panics naming the frontend,
-// because a malformed graph
-// discovered at resolution points away from the frontend that
-// built it.
+// because a malformed graph discovered at resolution points away
+// from the frontend that built it.
 //
 // # Dependency position
 //
 // core/frontend/load imports core/plugin, core/store, core/node,
 // core/directive, core/meta, core/output, core/diag, core/symbol,
-// core/position and the Go stdlib; it drives frontends and writes
+// core/position and the Go stdlib. It drives frontends and writes
 // the store, so the read side's pieces meet here and nothing
 // beneath imports it back.
 package load

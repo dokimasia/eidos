@@ -16,15 +16,16 @@ import (
 // pieces composed through the kernel's kit, implementing
 // [plugin.Backend] and [plugin.Renderer] both. Rendered files
 // finalise through go/format, so a file that does not parse is
-// withheld and reported rather than written, and the bytes that
+// withheld and reported instead of written, and the bytes that
 // remain are the bytes gofmt leaves.
 func New() plugin.Backend {
 	return backend.New(golang.Name, golang.Target, golang.Syntax()).
 		Version(golang.Version).
 		FileTemplate(FileTemplate).
 		KindTemplates(KindTemplates()).
+		RefusedKinds(RefusedKinds()).
 		Coverage(Coverage()).
-		Funcs(Funcs()).
+		Funcs(Funcs).
 		Naming(spell.Filename).
 		Respell(spell.Name).
 		Lower(Lower).

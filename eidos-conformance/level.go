@@ -18,7 +18,7 @@ import (
 // declarations.
 type projection struct {
 	// refs counts the references reachable from the declarations,
-	// and opaque how many folded to a form no projection holds.
+	// and opaque how many folded to a form no projection resolves.
 	refs, opaque int
 	// gaps counts the member-set gaps across the feature's types.
 	gaps int
@@ -29,7 +29,7 @@ type projection struct {
 	unprojected []symbol.Identity
 }
 
-// AssertLevel holds one feature to the projection level its
+// AssertLevel checks one feature against the projection level its
 // language declared, evaluated through the rules over the corpus
 // fixture. A feature that projects worse than declared fails, and
 // so does one that projects better: a capability nobody declared
@@ -51,7 +51,7 @@ func AssertLevel(tb assert.TB, c Corpus, fx *rulestest.Fixture, f Feature, verdi
 	for _, r := range remainder {
 		id := identityOf(c, f, r.Decl)
 		if !stamped(fx.Graph, id, r.Key) {
-			tb.Errorf("%s names %s as a remainder on %s, which carries no such stamp", f.ID, r.Key, id)
+			tb.Errorf("%s names %s as a remainder on %s, which has no such stamp", f.ID, r.Key, id)
 		}
 	}
 	whole := p.opaque == 0 && p.gaps == 0 && len(p.unprojected) == 0
@@ -142,19 +142,24 @@ func measure(tb assert.TB, c Corpus, g *store.Graph, f Feature, b rules.Bound) p
 	return p
 }
 
-// unprojected reports a shape no projection holds: Opaque, and
+// unprojected reports a form no projection resolves: Opaque, and
 // Inline, an inline body the language has no structure for.
 func unprojected(form symbol.TypeForm) bool {
 	return form == symbol.FormOpaque || form == symbol.FormInline
 }
 
 // identityOf derives a declared declaration's identity through the
-// corpus convention.
+// corpus convention, under the empty discriminator where the
+// language's frontend reports that it cannot overload.
 func identityOf(c Corpus, f Feature, d Decl) symbol.Identity {
-	return symbol.Identity{
+	id := symbol.Identity{
 		Lang: c.Frontend.Lang(), Package: c.pkg(f.ID, d.Sub),
-		Owner: d.Owner, Name: d.Name, Kind: d.Kind, Disc: d.Disc,
+		Owner: d.Owner, Name: d.Name, Kind: d.Kind,
 	}
+	if c.Frontend.Overloads() {
+		id.Disc = d.Disc
+	}
+	return id
 }
 
 // stamped reports whether the load stamped a key on a subject.

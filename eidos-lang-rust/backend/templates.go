@@ -17,11 +17,11 @@ const FileTemplate = "{{" + render.BuiltinImports + "}}{{" + render.BuiltinDecls
 // The kind templates, one per emit kind Rust declares at module
 // level. A standalone method is absent by design: Rust groups
 // methods under an impl block per receiver, which a template
-// rendering one declaration at a time cannot write, so the kind
-// is reported and not guessed at. A variable is absent too: Rust
-// declares a module-level binding as a static, whose initializer is
-// constant, and a variable is a binding its initializer fixes at run
-// time.
+// rendering one declaration at a time cannot write, so the cluster
+// writes it through the impl group. A variable is absent too, and
+// the backend refuses it: Rust declares a module-level binding as a
+// static, whose initializer is constant, and a variable is a binding
+// its initializer fixes at run time.
 //
 // A type definition's parameter list takes defaults, an impl block's
 // restates the definition's parameters without them, and a
@@ -107,9 +107,9 @@ const (
 )
 
 // KindTemplates maps each emit kind to the template that spells
-// it. A kind absent from the map is one the Rust backend cannot
-// spell at module level: the render reports it and skips that
-// declaration, which is what the feature matrix records.
+// it. A file-level kind absent from the map is one the cluster
+// spells through a group template, as it does a method, or one
+// [RefusedKinds] refuses.
 func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,
@@ -119,5 +119,14 @@ func KindTemplates() map[symbol.Kind]string {
 		symbol.KindSum:       SumTemplate,
 		symbol.KindAlias:     AliasTemplate,
 		symbol.KindConstant:  ConstantTemplate,
+	}
+}
+
+// RefusedKinds maps each emit kind Rust declares no spelling for at
+// module level to the reason, which the render reports beside every
+// declaration of the kind it skips.
+func RefusedKinds() map[symbol.Kind]string {
+	return map[symbol.Kind]string{
+		symbol.KindVariable: "Rust declares a module-level binding as a static, whose initializer is constant",
 	}
 }

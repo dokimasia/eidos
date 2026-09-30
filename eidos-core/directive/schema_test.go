@@ -11,44 +11,46 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 )
 
-// A schema is a value with no behaviour, so what its twin covers is
-// the vocabulary's contracts: the zero values, the distinctness of
-// the closed sets, and the one method the value carries.
+// A schema is a value with no behaviour, so its twin covers the
+// vocabulary's contracts: the zero values, the distinctness of the
+// closed sets, and the two methods.
 func TestSchema(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Canonical", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("a plugin's schema spells prefixed", func(t *testing.T) {
+		t.Run("returns the prefixed spelling of a plugin's schema", func(t *testing.T) {
 			t.Parallel()
 
 			s := directive.Schema{Plugin: "mockgen", Name: "stub"}
-			assert.Equal(t, s.Canonical(), directive.Name("mockgen:stub"),
-				"the canonical spelling carries the owner")
+			assert.Equal(t, s.Canonical(), directive.Name("mockgen:stub"), "the spelling has the prefix")
 		})
 
-		t.Run("a kernel schema spells bare", func(t *testing.T) {
+		t.Run("returns the bare spelling of a kernel schema", func(t *testing.T) {
 			t.Parallel()
 
 			s := directive.Schema{Name: directive.KernelMeta}
-			assert.Equal(t, s.Canonical(), directive.KernelMeta,
-				"the kernel owns its bare names")
+			assert.Equal(t, s.Canonical(), directive.KernelMeta, "the spelling is bare")
 		})
 	})
 
 	t.Run("ParamType", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("the zero value types nothing", func(t *testing.T) {
+		t.Run("types nothing at the zero value", func(t *testing.T) {
 			t.Parallel()
 
 			var got directive.ParamType
-			assert.NotEqual(t, got, directive.TypeString,
-				"an undeclared type cannot read as a declared one")
+			for _, declared := range []directive.ParamType{
+				directive.TypeString, directive.TypeInt, directive.TypeBool,
+				directive.TypeList, directive.TypeReference,
+			} {
+				assert.NotEqual(t, got, declared, "the zero value is no declared type")
+			}
 		})
 
-		t.Run("the vocabulary stays distinct", func(t *testing.T) {
+		t.Run("declares five distinct values", func(t *testing.T) {
 			t.Parallel()
 
 			seen := map[directive.ParamType]struct{}{}
@@ -58,22 +60,21 @@ func TestSchema(t *testing.T) {
 			} {
 				seen[pt] = struct{}{}
 			}
-			assert.Length(t, seen, 5, "five types, five values")
+			assert.Length(t, seen, 5, "each type has its own value")
 		})
 	})
 
 	t.Run("ResolutionKind", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("the zero value marks a non-reference param", func(t *testing.T) {
+		t.Run("resolves nothing at the zero value", func(t *testing.T) {
 			t.Parallel()
 
 			var got directive.ResolutionKind
-			assert.Equal(t, got, directive.ResolveNone,
-				"a param that declares no resolution resolves nothing")
+			assert.Equal(t, got, directive.ResolveNone, "the zero value is ResolveNone")
 		})
 
-		t.Run("the kinds stay distinct", func(t *testing.T) {
+		t.Run("declares eight distinct values", func(t *testing.T) {
 			t.Parallel()
 
 			seen := map[directive.ResolutionKind]struct{}{}
@@ -81,38 +82,72 @@ func TestSchema(t *testing.T) {
 				directive.ResolveNone, directive.ResolveCallableInScope,
 				directive.ResolvePackageVar, directive.ResolveValueField,
 				directive.ResolveHostParam, directive.ResolveMemberOnHandle,
-				directive.ResolveMetadataKey,
+				directive.ResolveMetadataKey, directive.ResolveTypeInScope,
 			} {
 				seen[rk] = struct{}{}
 			}
-			assert.Length(t, seen, 7, "seven kinds, seven values")
+			assert.Length(t, seen, 8, "each kind has its own value")
 		})
 	})
 
-	t.Run("reserved keys", func(t *testing.T) {
+	t.Run("String", func(t *testing.T) {
 		t.Parallel()
 
-		assert.NotEqual(t, directive.ReservedOut, directive.ReservedTag,
-			"the two routing overrides stay two keys")
+		tests := []struct {
+			name string
+			give directive.ResolutionKind
+			want string
+		}{
+			{name: "returns the spelling of ResolveNone", give: directive.ResolveNone, want: "no resolution"},
+			{
+				name: "returns the spelling of ResolveCallableInScope",
+				give: directive.ResolveCallableInScope, want: "a callable in scope",
+			},
+			{
+				name: "returns the spelling of ResolvePackageVar",
+				give: directive.ResolvePackageVar, want: "a package variable",
+			},
+			{
+				name: "returns the spelling of ResolveValueField",
+				give: directive.ResolveValueField, want: "a field on the subject's type",
+			},
+			{
+				name: "returns the spelling of ResolveHostParam",
+				give: directive.ResolveHostParam, want: "a parameter of the host callable",
+			},
+			{
+				name: "returns the spelling of ResolveMemberOnHandle",
+				give: directive.ResolveMemberOnHandle, want: "a member on a handle",
+			},
+			{
+				name: "returns the spelling of ResolveMetadataKey",
+				give: directive.ResolveMetadataKey, want: "a metadata key or group",
+			},
+			{
+				name: "returns the spelling of ResolveTypeInScope",
+				give: directive.ResolveTypeInScope, want: "a type in scope",
+			},
+			{
+				name: "returns the number of an undeclared kind",
+				give: directive.ResolutionKind(99), want: "resolution kind 99",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
+			})
+		}
 	})
 
-	t.Run("ResolutionKind spelling", func(t *testing.T) {
+	t.Run("ParamKey", func(t *testing.T) {
 		t.Parallel()
 
-		want := map[directive.ResolutionKind]string{
-			directive.ResolveNone:            "no resolution",
-			directive.ResolveCallableInScope: "a callable in scope",
-			directive.ResolvePackageVar:      "a package variable",
-			directive.ResolveValueField:      "a field on the subject's type",
-			directive.ResolveHostParam:       "a parameter of the host callable",
-			directive.ResolveMemberOnHandle:  "a member on a handle",
-			directive.ResolveMetadataKey:     "a metadata key or group",
-			directive.ResolveTypeInScope:     "a type in scope",
-		}
-		for kind, spelling := range want {
-			assert.Equal(t, kind.String(), spelling, "each kind spells for a refusal")
-		}
-		assert.Equal(t, directive.ResolutionKind(99).String(), "resolution kind 99",
-			"an unknown value spells its number")
+		t.Run("reserves two distinct routing keys", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NotEqual(t, directive.ReservedOut, directive.ReservedTag, "the keys differ")
+		})
 	})
 }

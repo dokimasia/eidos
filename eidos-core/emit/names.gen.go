@@ -9,37 +9,39 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// RespellNames applies f to every declared name s carries, its
+// RespellNames applies f to every declared name s contains, its
 // own and its members', parameters', type parameters' and
 // variants', depth first in schema field order, writing each
-// result back. Host is the declaration a name's carrier sits in,
-// nil at the top level, so a caller can group members by their
-// host and read the host's kind for the respell hook; a carrier
-// without visibility passes the zero value. An empty name is
-// skipped, because there is nothing to respell, and the first
+// result back. Carrier is the declaration the name belongs to, so a
+// caller can read its origin. Host is the declaration the carrier
+// is declared in, nil at the top level, so a caller can group
+// members by their host and read the host's kind for the respell
+// hook. A
+// carrier without visibility passes the zero value. An empty name
+// is skipped, because there is nothing to respell, and the first
 // error stops the traversal and returns.
 //
-// A reference is not a name: a type reference's spelling stays
-// untouched, and so does a package's, whose spelling belongs to
-// the routing key.
+// A reference is not a name: a type reference's spelling is left
+// untouched, and so is a package's, whose spelling belongs to the
+// routing key.
 func RespellNames(
 	s symbol.Symbol,
-	f func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error),
+	f func(host, carrier symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error),
 ) error {
 	return respellNames(nil, s, f)
 }
 
-// respellNames carries the enclosing declaration through the
+// respellNames passes the enclosing declaration through the
 // descent.
 func respellNames(
 	host symbol.Symbol,
 	s symbol.Symbol,
-	f func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error),
+	f func(host, carrier symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error),
 ) error {
 	switch x := s.(type) {
 	case *Function:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindFunction, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindFunction, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -62,7 +64,7 @@ func respellNames(
 		}
 	case *Method:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindMethod, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindMethod, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -90,7 +92,7 @@ func respellNames(
 		}
 	case *Param:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindParam, 0, x.Name)
+			settled, err := f(host, x, symbol.KindParam, 0, x.Name)
 			if err != nil {
 				return err
 			}
@@ -98,7 +100,7 @@ func respellNames(
 		}
 	case *Return:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindReturn, 0, x.Name)
+			settled, err := f(host, x, symbol.KindReturn, 0, x.Name)
 			if err != nil {
 				return err
 			}
@@ -106,7 +108,7 @@ func respellNames(
 		}
 	case *Enum:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindEnum, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindEnum, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -129,7 +131,7 @@ func respellNames(
 		}
 	case *EnumVariant:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindEnumVariant, 0, x.Name)
+			settled, err := f(host, x, symbol.KindEnumVariant, 0, x.Name)
 			if err != nil {
 				return err
 			}
@@ -137,7 +139,7 @@ func respellNames(
 		}
 	case *Sum:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindSum, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindSum, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -160,7 +162,7 @@ func respellNames(
 		}
 	case *SumVariant:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindSumVariant, 0, x.Name)
+			settled, err := f(host, x, symbol.KindSumVariant, 0, x.Name)
 			if err != nil {
 				return err
 			}
@@ -173,7 +175,7 @@ func respellNames(
 		}
 	case *Field:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindField, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindField, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -181,7 +183,7 @@ func respellNames(
 		}
 	case *Variable:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindVariable, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindVariable, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -189,7 +191,7 @@ func respellNames(
 		}
 	case *Constant:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindConstant, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindConstant, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -197,7 +199,7 @@ func respellNames(
 		}
 	case *Struct:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindStruct, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindStruct, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -225,7 +227,7 @@ func respellNames(
 		}
 	case *Interface:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindInterface, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindInterface, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -253,7 +255,7 @@ func respellNames(
 		}
 	case *Alias:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindAlias, x.Visibility, x.Name)
+			settled, err := f(host, x, symbol.KindAlias, x.Visibility, x.Name)
 			if err != nil {
 				return err
 			}
@@ -266,7 +268,7 @@ func respellNames(
 		}
 	case *TypeParam:
 		if x.Name != "" {
-			settled, err := f(host, symbol.KindTypeParam, 0, x.Name)
+			settled, err := f(host, x, symbol.KindTypeParam, 0, x.Name)
 			if err != nil {
 				return err
 			}

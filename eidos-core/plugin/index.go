@@ -17,24 +17,24 @@ import (
 // Index is the dispatcher's routing surface over one frozen run:
 // untracked, scope-filtered enumeration, plus the validated
 // directive table and the skip table derived from it. Enumerating
-// it records nothing, because dispatch is not a plugin's read; a
+// it records nothing, because dispatch is not a plugin's read. A
 // plugin's own reads go through the [store.Reader] it is handed.
 //
-// Index wraps the graph rather than exposing it, and the wrapping
-// is load-bearing twice over. Nothing reachable from a phase
-// context can make a structural write, because the graph's write
-// surface is not here; and nothing reachable can read another plugin's
-// raw directives. What dispatch needs is exactly what is here.
+// Index wraps the graph and does not expose it, for two reasons.
+// Nothing reachable from a phase context can make a structural
+// write, because the graph's write surface is not here. Nothing
+// reachable can read another plugin's raw directives either. What
+// dispatch needs is exactly what is here.
 //
-// An Index is safe for concurrent reads: everything it holds is
-// fixed at [NewIndex], and the graph beneath it is frozen.
+// An Index is safe for concurrent reads: [NewIndex] fixes every
+// field, and the graph beneath it is frozen.
 type Index struct {
 	graph     *store.Graph
 	facts     *meta.Facts
 	validated map[symbol.Identity][]directive.Directive
 	skips     map[symbol.Identity]skipEntry
 	scope     store.Scope
-	// admitted holds the packages the scope admits, keyed by the
+	// admitted is the set of packages the scope admits, keyed by the
 	// two identity fields ownership derives from. The scope runs
 	// once per package here, at construction, so no enumeration
 	// evaluates it per declaration. It is nil for a nil scope,
@@ -61,8 +61,8 @@ type skipEntry struct {
 //
 // It refuses a missing graph, a missing fact store and an unfrozen
 // graph, because routing over any of those would return partial
-// results. validated holds each subject's typed instances in
-// position order, as validation returned them; the index keeps the
+// results. validated maps each subject to its typed instances in
+// position order, as validation returned them. The index keeps the
 // map, and the caller does not mutate it after handing it over. A
 // nil scope admits everything.
 func NewIndex(
@@ -93,8 +93,8 @@ func NewIndex(
 	}, nil
 }
 
-// admittedOf evaluates the scope once per held package, and returns
-// nil for a nil scope.
+// admittedOf evaluates the scope once per package in the graph, and
+// returns nil for a nil scope.
 func admittedOf(g *store.Graph, sc store.Scope) map[pkgKey]struct{} {
 	if sc == nil {
 		return nil
@@ -114,27 +114,37 @@ func admittedOf(g *store.Graph, sc store.Scope) map[pkgKey]struct{} {
 }
 
 // skipsOf derives the skip table once, so a match costs one probe of
-// a map holding only the subjects that carry skip.
+// a map of only the subjects that opt out of something. The table
+// combines the kernel skip directive with every negated instance: a
+// negated instance opts its subject out of the plugin that
+// registered its schema, as skip plugin=<that plugin> does.
 func skipsOf(
 	validated map[symbol.Identity][]directive.Directive,
 ) map[symbol.Identity]skipEntry {
 	skips := map[symbol.Identity]skipEntry{}
 	for id, ds := range validated {
 		for _, d := range ds {
-			if d.Name != directive.KernelSkip {
+			var plugin ID
+			switch {
+			case d.Negated:
+				plugin = ID(d.Name.Plugin())
+			case d.Name == directive.KernelSkip:
+				v, narrowed := d.Param(directive.SkipPlugin)
+				if !narrowed {
+					entry := skips[id]
+					entry.all = true
+					skips[id] = entry
+					continue
+				}
+				plugin = ID(v.Str)
+			default:
 				continue
 			}
 			entry := skips[id]
-			v, narrowed := d.Param(directive.SkipPlugin)
-			if !narrowed {
-				entry.all = true
-				skips[id] = entry
-				continue
-			}
 			if entry.plugins == nil {
 				entry.plugins = map[ID]struct{}{}
 			}
-			entry.plugins[ID(v.Str)] = struct{}{}
+			entry.plugins[plugin] = struct{}{}
 			skips[id] = entry
 		}
 	}
@@ -147,18 +157,18 @@ func (ix *Index) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	return ix.filtered(ix.graph.ByKind(k))
 }
 
-// ByDirective enumerates the declarations carrying a spelling under
-// the scope, in identity order, untracked. The store's index is
-// keyed by the name as written, so the dispatcher queries each
-// spelling a schema recognises.
+// ByDirective enumerates the declarations with a directive of one
+// spelling under the scope, in identity order, untracked. The
+// store's index is keyed by the name as written, so the dispatcher
+// queries each spelling a schema recognises.
 func (ix *Index) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 	return ix.filtered(ix.graph.ByDirective(n))
 }
 
-// ByFactKey enumerates the subjects a key presently reads present
-// on, under the scope, in identity order, untracked. The fact
-// store maintains the index at stamp time, which is what lets a
-// fact-gated rule visit its matches rather than the graph.
+// ByFactKey enumerates the subjects on which a key reads present,
+// under the scope, in identity order, untracked. The fact store
+// maintains the index at stamp time, so a fact-gated rule visits its
+// matches, not the whole graph.
 func (ix *Index) ByFactKey(id meta.KeyID) iter.Seq[symbol.Identity] {
 	if ix.admitted == nil {
 		return ix.facts.ByKey(id)
@@ -186,19 +196,20 @@ func (ix *Index) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 }
 
 // DirectivesOf returns a subject's validated instances, in position
-// order, and nil for a subject carrying none. This is the gate's
-// read, not a plugin's: a handler is handed only the one instance
-// that caused its call. The returned slice is the table's own
-// storage; do not mutate it.
+// order, and nil for a subject with none. This is the gate's read,
+// not a plugin's: a handler is handed only the one instance that
+// caused its call. The returned slice is the table's own storage.
+// Do not mutate it.
 func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive {
 	return ix.validated[id]
 }
 
-// Skipped reports whether the kernel skip directive excludes a
-// subject from a plugin's bare and fact-gated rules: every plugin
-// under a bare skip, the named one under skip plugin=<name>. The
-// table is computed once at [NewIndex], so a match costs one probe
-// of a map holding only the subjects that carry skip.
+// Skipped reports whether a subject is excluded from a plugin's bare
+// and fact-gated rules: every plugin under a bare skip, the named
+// one under skip plugin=<name>, and the plugin that registered a
+// negated directive's schema. The table is computed once at
+// [NewIndex], so a match costs one probe of a map of only the
+// subjects that opt out of something.
 func (ix *Index) Skipped(id symbol.Identity, p ID) bool {
 	if len(ix.skips) == 0 {
 		return false
@@ -214,8 +225,8 @@ func (ix *Index) Skipped(id symbol.Identity, p ID) bool {
 	return named
 }
 
-// PackageOf returns the package holding a declaration, under the
-// scope, untracked: how a flush resolves a unit's namespace once
+// PackageOf returns the package that contains a declaration, under
+// the scope, untracked: how a flush resolves a unit's namespace once
 // per accumulator.
 func (ix *Index) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	if !ix.admits(id) {
@@ -242,7 +253,7 @@ func (ix *Index) admits(id symbol.Identity) bool {
 	return held
 }
 
-// filtered narrows an enumeration of held declarations to the
+// filtered narrows an enumeration of the graph's declarations to the
 // scope. A nil scope returns the enumeration untouched, so the
 // common case costs nothing. Under a scope, the verdict is cached
 // per package run: the graph's indexes group declarations by

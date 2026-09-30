@@ -36,7 +36,7 @@ func TestNames(t *testing.T) {
 			assert.True(t, count >= 22, "the universe scope declares the 22 type names of Go 1.27")
 		})
 
-		t.Run("refuses the rest", func(t *testing.T) {
+		t.Run("reports false for any other name", func(t *testing.T) {
 			t.Parallel()
 
 			for _, name := range []string{"nil", "true", "len", "iota", "unsafe.Pointer", "Row", ""} {
@@ -48,12 +48,17 @@ func TestNames(t *testing.T) {
 	t.Run("Basic", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reports the booleans, numbers and strings alone", func(t *testing.T) {
+		t.Run("reports true for a basic type name", func(t *testing.T) {
 			t.Parallel()
 
 			for _, name := range []string{"bool", "int", "uint8", "byte", "rune", "uintptr", "float32", "complex128", "string"} {
 				assert.True(t, golang.Basic(name), name+" is basic")
 			}
+		})
+
+		t.Run("reports false for any other name", func(t *testing.T) {
+			t.Parallel()
+
 			for _, name := range []string{"any", "error", "comparable", "unsafe.Pointer", "Row", ""} {
 				assert.False(t, golang.Basic(name), name+" is not basic")
 			}
@@ -63,65 +68,115 @@ func TestNames(t *testing.T) {
 	t.Run("Ordered", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reports the integers, floats and strings alone", func(t *testing.T) {
+		t.Run("reports true for an ordered type name", func(t *testing.T) {
 			t.Parallel()
 
 			for _, name := range []string{"int", "int64", "uint", "byte", "rune", "uintptr", "float64", "string"} {
 				assert.True(t, golang.Ordered(name), name+" is ordered")
 			}
+		})
+
+		t.Run("reports false for any other name", func(t *testing.T) {
+			t.Parallel()
+
 			for _, name := range []string{"bool", "complex64", "any", "error", "Row"} {
 				assert.False(t, golang.Ordered(name), name+" is not ordered")
 			}
 		})
 	})
 
+	t.Run("Unqualified", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the name behind the qualifier", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, golang.Unqualified("time.Duration"), "Duration", "the qualifier is dropped")
+		})
+
+		t.Run("returns an unqualified spelling unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, golang.Unqualified("Row"), "Row", "a bare name is its own name")
+		})
+	})
+
 	t.Run("AssumedName", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("binds the name goimports assumes", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name string
+			give string
+			want string
+		}{
+			{name: "returns a one-element path unchanged", give: "context", want: "context"},
+			{name: "returns a path's last element", give: "net/http", want: "http"},
+			{name: "returns the last element before a dotted version suffix", give: "gopkg.in/yaml.v3", want: "yaml"},
+			{
+				name: "returns the element before a major version element",
+				give: "github.com/golang-jwt/jwt/v5", want: "jwt",
+			},
+			{
+				name: "returns the last element without its go- prefix",
+				give: "github.com/mattn/go-sqlite3", want: "sqlite3",
+			},
+			{
+				name: "returns the last element of a path with a go- prefix before it",
+				give: "example.com/go-kit/log", want: "log",
+			},
+			{name: "returns a lone major version element unchanged", give: "v2", want: "v2"},
+			{name: "returns a last element named vendor unchanged", give: "example.com/vendor", want: "vendor"},
+			{
+				name: "returns a last element of letters outside ASCII unchanged",
+				give: "example.com/ünïcode",
+				want: "ünïcode",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			tests := []struct{ path, want string }{
-				{"context", "context"},
-				{"net/http", "http"},
-				{"gopkg.in/yaml.v3", "yaml"},
-				{"github.com/golang-jwt/jwt/v5", "jwt"},
-				{"github.com/mattn/go-sqlite3", "sqlite3"},
-				{"example.com/go-kit/log", "log"},
-				{"v2", "v2"},
-				{"example.com/vendor", "vendor"},
-				{"example.com/ünïcode", "ünïcode"},
-			}
-			for _, tt := range tests {
-				assert.Equal(t, golang.AssumedName(tt.path), tt.want, tt.path)
-			}
-		})
+				assert.Equal(t, golang.AssumedName(tt.give), tt.want, "the name goimports assumes")
+			})
+		}
 	})
 
 	t.Run("ImportName", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the alias, else the assumed name", func(t *testing.T) {
+		t.Run("returns the assumed name of an unaliased import", func(t *testing.T) {
 			t.Parallel()
 
 			name, binds := golang.ImportName(&node.Import{Path: "gopkg.in/yaml.v3"})
-			assert.True(t, binds && name == "yaml", "an unaliased import binds its assumed name")
-			name, binds = golang.ImportName(&node.Import{Path: "context", Alias: "ctx"})
-			assert.True(t, binds && name == "ctx", "an aliased import binds its alias")
+			assert.True(t, binds && name == "yaml", "the name the path assumes")
 		})
 
-		t.Run("binds nothing for a blank, a dot or no import", func(t *testing.T) {
+		t.Run("returns the alias of an aliased import", func(t *testing.T) {
 			t.Parallel()
 
-			for _, imp := range []*node.Import{
-				{Path: "embed", Alias: golang.BlankAlias},
-				{Path: "example.com/dsl", Wildcard: true},
-				{Path: "example.com/dsl", Alias: golang.DotAlias},
-				nil,
-			} {
-				_, binds := golang.ImportName(imp)
-				assert.False(t, binds, "the import binds no qualifier")
-			}
+			name, binds := golang.ImportName(&node.Import{Path: "context", Alias: "ctx"})
+			assert.True(t, binds && name == "ctx", "the alias the import states")
 		})
+
+		tests := []struct {
+			name string
+			give *node.Import
+		}{
+			{name: "reports false for a blank import", give: &node.Import{Path: "embed", Alias: golang.BlankAlias}},
+			{name: "reports false for a wildcard import", give: &node.Import{Path: "example.com/dsl", Wildcard: true}},
+			{
+				name: "reports false for a dot import",
+				give: &node.Import{Path: "example.com/dsl", Alias: golang.DotAlias},
+			},
+			{name: "reports false for a missing import", give: nil},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, binds := golang.ImportName(tt.give)
+				assert.False(t, binds, "the import binds no qualifier")
+			})
+		}
 	})
 }

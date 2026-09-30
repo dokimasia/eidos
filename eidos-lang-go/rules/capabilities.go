@@ -182,8 +182,8 @@ func (r Rules) substituteAll(
 		return nil
 	}
 	out := make([]*node.TypeRef, 0, len(refs))
-	for _, held := range refs {
-		out = append(out, r.Substitute(held, params, args))
+	for _, ref := range refs {
+		out = append(out, r.Substitute(ref, params, args))
 	}
 	return out
 }
@@ -195,17 +195,18 @@ func (Rules) Reified() bool { return false }
 
 // Settable returns the fields a constructor in another package can
 // set: the exported fields, promotion through embedding included,
-// in the member walk's order.
-func (r Rules) Settable(s *node.Struct, v rules.View) []rules.Member {
+// in the member walk's order, with the walk's gaps. A struct the
+// walk does not recognize returns an empty set.
+func (r Rules) Settable(s *node.Struct, v rules.View) rules.MemberSet {
 	set, is := rules.NewBound(r, v, nil).MembersOf(s)
 	if !is {
-		return nil
+		return rules.MemberSet{}
 	}
-	var out []rules.Member
+	out := rules.MemberSet{Gaps: set.Gaps}
 	for _, m := range set.Members {
 		f, isField := m.Symbol.(*node.Field)
 		if isField && exported(f.Name) {
-			out = append(out, m)
+			out.Members = append(out.Members, m)
 		}
 	}
 	return out
@@ -256,7 +257,7 @@ func (r Rules) comparable(
 		return false
 	}
 	if ref.Target.IsZero() {
-		if comparableBuiltin(named(ref)) {
+		if comparableBuiltin(ref) {
 			return true
 		}
 		*problems = append(*problems, ref)

@@ -17,143 +17,251 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// yamlPath is a versioned import path outside the fixture's view.
+const yamlPath = "gopkg.in/yaml.v3"
+
+// refusalPrefix pins the opening of every refusal the Go rules
+// return: the language's identity.
+const refusalPrefix = string(golang.Lang) + ": "
+
 func TestResolve(t *testing.T) {
 	t.Parallel()
 
 	r := gorules.New()
 	row := id(fxPath, "Row", symbol.KindStruct)
+	target := id(depPath, "Target", symbol.KindStruct)
+	load := id(fxPath, "Load", symbol.KindFunction)
 
-	t.Run(
-		"resolves a bare callable and a package variable in the subject's package",
-		func(t *testing.T) {
+	t.Run("Resolve", func(t *testing.T) {
+		t.Parallel()
+
+		// A case resolves from Row in the fixture file, or in a file
+		// importing imports alone where it states them.
+		scope := func(f *fixture, imports []*node.Import) rules.Scope {
+			if imports == nil {
+				return f.scope(row)
+			}
+			return rules.Scope{Subject: row, File: &node.File{Imports: imports}}
+		}
+
+		resolves := []struct {
+			name    string
+			imports []*node.Import
+			give    string
+			kind    directive.ResolutionKind
+			want    symbol.Identity
+		}{
+			{
+				name: "returns the function a bare name declares in the subject's package",
+				give: "Find", kind: directive.ResolveCallableInScope,
+				want: id(fxPath, "Find", symbol.KindFunction),
+			},
+			{
+				name: "returns the variable a bare name declares in the subject's package",
+				give: "Registry", kind: directive.ResolvePackageVar,
+				want: id(fxPath, "Registry", symbol.KindVariable),
+			},
+			{
+				name: "returns the constant a bare name declares in the subject's package",
+				give: "Limit", kind: directive.ResolvePackageVar,
+				want: id(fxPath, "Limit", symbol.KindConstant),
+			},
+			{
+				name: "returns the type a bare name declares in the subject's package",
+				give: "Row", kind: directive.ResolveTypeInScope, want: row,
+			},
+			{
+				name: "returns the type the package a qualifier binds declares",
+				give: "dep.Target", kind: directive.ResolveTypeInScope, want: target,
+			},
+			{
+				name: "returns the type an unaliased import declares for an unbound qualifier",
+				give: "ghost.Target", kind: directive.ResolveTypeInScope, want: target,
+			},
+			{
+				name:    "returns the type a dot import declares for a bare name",
+				imports: []*node.Import{{Path: depPath, Wildcard: true}},
+				give:    "Target", kind: directive.ResolveTypeInScope, want: target,
+			},
+			{
+				name: "returns a stand-in naming itself for a predeclared type",
+				give: "int", kind: directive.ResolveTypeInScope,
+				want: symbol.Identity{Lang: golang.Lang, Name: "int", Kind: symbol.KindAlias},
+			},
+			{
+				name: "returns a stand-in named by its path for a standard library type",
+				give: "time.Duration", kind: directive.ResolveTypeInScope,
+				want: symbol.Identity{Lang: golang.Lang, Package: "time", Name: "Duration", Kind: symbol.KindAlias},
+			},
+			{
+				name:    "returns a stand-in named by its path for a versioned import outside the view",
+				imports: []*node.Import{{Path: yamlPath}},
+				give:    "yaml.Node", kind: directive.ResolveTypeInScope,
+				want: symbol.Identity{Lang: golang.Lang, Package: yamlPath, Name: "Node", Kind: symbol.KindAlias},
+			},
+		}
+		for _, tt := range resolves {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				got, err := r.Resolve(scope(f, tt.imports), tt.give, tt.kind, f.view)
+				assert.NoError(t, err, "the spelling resolves")
+				assert.Equal(t, got.(node.Declaration).Identity(), tt.want, "to the declaration it names")
+			})
+		}
+
+		refuses := []struct {
+			name    string
+			imports []*node.Import
+			subject symbol.Identity
+			give    string
+			kind    directive.ResolutionKind
+		}{
+			{
+				name: "returns an error for a callable nothing declares",
+				give: "Ghost", kind: directive.ResolveCallableInScope,
+			},
+			{
+				name: "returns an error for a name the qualified package does not declare",
+				give: "dep.Ghost", kind: directive.ResolveCallableInScope,
+			},
+			{
+				name: "returns an error for an unbound qualifier no unaliased import resolves",
+				give: "ghost.Ghost", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name:    "returns an error for the assumed name of a dot import",
+				imports: []*node.Import{{Path: depPath, Wildcard: true}},
+				give:    "dep.Target", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name:    "returns an error for the assumed name of a blank import",
+				imports: []*node.Import{{Path: depPath, Alias: golang.BlankAlias}},
+				give:    "dep.Target", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for a type spelling under a slice",
+				give: "[]Row", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for a qualified type spelling under a slice",
+				give: "[]dep.Target", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for an instantiated type spelling",
+				give: "dep.Target[int]", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for a callable spelling under a pointer",
+				give: "*Find", kind: directive.ResolveCallableInScope,
+			},
+			{
+				name: "returns an error for a method named as a field",
+				give: "Rename", kind: directive.ResolveValueField,
+			},
+			{
+				name:    "returns an error for a field of a subject that belongs to no type",
+				subject: id(fxPath, "Find", symbol.KindFunction),
+				give:    "ID", kind: directive.ResolveValueField,
+			},
+			{
+				name:    "returns an error for a field of a subject outside the view",
+				subject: id(fxPath, "Ghost", symbol.KindStruct),
+				give:    "ID", kind: directive.ResolveValueField,
+			},
+			{
+				name:    "returns an error for a parameter the callable does not declare",
+				subject: load,
+				give:    "ghost", kind: directive.ResolveHostParam,
+			},
+			{
+				name: "returns an error for a parameter of a subject that is no callable",
+				give: "id", kind: directive.ResolveHostParam,
+			},
+			{
+				name: "returns an error for a blank spelling",
+				give: "  ", kind: directive.ResolveTypeInScope,
+			},
+			{
+				name: "returns an error for the metadata resolution kind",
+				give: "ID", kind: directive.ResolveMetadataKey,
+			},
+		}
+		for _, tt := range refuses {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loaded(t)
+				s := scope(f, tt.imports)
+				if !tt.subject.IsZero() {
+					s.Subject = tt.subject
+				}
+				_, err := r.Resolve(s, tt.give, tt.kind, f.view)
+				assert.HasError(t, err, "the spelling names nothing at the kind")
+			})
+		}
+
+		t.Run("returns an error naming the spelling nothing declares", func(t *testing.T) {
 			t.Parallel()
 
 			f := loaded(t)
-			got, err := r.Resolve(f.scope(row), "Find", directive.ResolveCallableInScope, f.view)
-			assert.NoError(t, err, "Find is declared beside Row")
-			assert.Equal(t, got.(node.Declaration).Identity().Name, "Find", "and is what arrives")
-			got, err = r.Resolve(f.scope(row), "Registry", directive.ResolvePackageVar, f.view)
-			assert.NoError(t, err, "Registry is a package variable")
-			assert.Equal(t, got.Kind(), symbol.KindVariable, "of the variable kind")
-			got, err = r.Resolve(f.scope(row), "Limit", directive.ResolvePackageVar, f.view)
-			assert.NoError(t, err, "a constant is a package-level binding too")
-			assert.Equal(t, got.Kind(), symbol.KindConstant, "of the constant kind")
-			_, err = r.Resolve(f.scope(row), "Ghost", directive.ResolveCallableInScope, f.view)
-			assert.HasError(t, err, "a name nothing declares refuses")
-			assert.Contains(t, err.Error(), "Ghost", "naming the spelling")
-		},
-	)
+			_, err := r.Resolve(f.scope(row), "Ghost", directive.ResolveCallableInScope, f.view)
+			assert.Contains(t, err.Error(), "Ghost", "the refusal names the spelling")
+		})
 
-	t.Run("resolves a qualified name through the file's imports", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns an error that opens with the language's identity", func(t *testing.T) {
+			t.Parallel()
 
-		f := loaded(t)
-		got, err := r.Resolve(f.scope(row), "dep.Target", directive.ResolveTypeInScope, f.view)
-		assert.NoError(t, err, "the import binds dep")
-		assert.Equal(t, got.(node.Declaration).Identity(), id(depPath, "Target", symbol.KindStruct),
-			"to the sibling's declaration")
-		_, err = r.Resolve(f.scope(row), "ghost.Target", directive.ResolveTypeInScope, f.view)
-		assert.HasError(t, err, "a qualifier no import binds refuses")
-		_, err = r.Resolve(f.scope(row), "dep.Ghost", directive.ResolveCallableInScope, f.view)
-		assert.HasError(t, err, "a name the sibling does not declare refuses")
+			f := loaded(t)
+			_, err := r.Resolve(f.scope(row), "Ghost", directive.ResolveCallableInScope, f.view)
+			assert.True(t, strings.HasPrefix(err.Error(), refusalPrefix), "every satellite's refusals open alike")
+		})
 
-		scope := rules.Scope{Subject: row, File: &node.File{Imports: []*node.Import{
-			{Path: "gopkg.in/yaml.v3"},
-			{Path: depPath, Wildcard: true},
-			{Path: "embed", Alias: golang.BlankAlias},
-		}}}
-		got, err = r.Resolve(scope, "yaml.Node", directive.ResolveTypeInScope, f.view)
-		assert.NoError(t, err, "a versioned path binds the name it assumes")
-		assert.Equal(t, got.(node.Declaration).Identity().Package, "gopkg.in/yaml.v3",
-			"and the type is named by that path")
-		_, err = r.Resolve(scope, "dep.Target", directive.ResolveTypeInScope, f.view)
-		assert.HasError(t, err, "a dot import binds no qualifier")
-		_, err = r.Resolve(scope, "embed.FS", directive.ResolveTypeInScope, f.view)
-		assert.HasError(t, err, "nor does a blank import")
-	})
+		t.Run("returns an error for a qualified name from a subject without a file", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("returns a stand-in for a builtin and for a type outside the workspace", func(t *testing.T) {
-		t.Parallel()
+			f := loaded(t)
+			_, err := r.Resolve(rules.Scope{Subject: row}, "dep.Target", directive.ResolveTypeInScope, f.view)
+			assert.HasError(t, err, "no import binds the qualifier")
+		})
 
-		f := loaded(t)
-		got, err := r.Resolve(f.scope(row), "int", directive.ResolveTypeInScope, f.view)
-		assert.NoError(t, err, "a builtin names itself")
-		assert.Equal(t, got.(node.Declaration).Identity(),
-			symbol.Identity{Lang: golang.Lang, Name: "int", Kind: symbol.KindAlias},
-			"with no package, which is how a witness spells a builtin")
-		got, err = r.Resolve(f.scope(row), "time.Duration", directive.ResolveTypeInScope, f.view)
-		assert.NoError(t, err, "the standard library is never in the graph")
-		assert.Equal(t, got.(node.Declaration).Identity().Package, "time",
-			"so the type is named by the path a backend imports")
-	})
+		t.Run("returns the field a name declares on the subject's type", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("resolves a value field and a member through the subject's type", func(t *testing.T) {
-		t.Parallel()
+			f := loaded(t)
+			got, err := r.Resolve(f.scope(row), "ID", directive.ResolveValueField, f.view)
+			assert.NoError(t, err, "ID is a field of Row")
+			assert.Equal(t, got.(node.Declaration).Identity(), f.field(t, "Row", "ID").ID, "Row's own field")
+		})
 
-		f := loaded(t)
-		got, err := r.Resolve(f.scope(row), "ID", directive.ResolveValueField, f.view)
-		assert.NoError(t, err, "ID is a field of Row")
-		assert.Equal(t, got.Kind(), symbol.KindField, "and arrives as one")
-		field := f.field(t, "Row", "ID")
-		got, err = r.Resolve(f.scope(field.ID), "Rename", directive.ResolveMemberOnHandle, f.view)
-		assert.NoError(t, err, "a member subject resolves on its host's type")
-		assert.Equal(t, got.Kind(), symbol.KindMethod, "a method is a member")
-		derived := id(fxPath, "Derived", symbol.KindStruct)
-		got, err = r.Resolve(f.scope(derived), "Kind", directive.ResolveValueField, f.view)
-		assert.NoError(t, err, "a promoted field resolves through the member walk")
-		assert.Equal(
-			t,
-			got.(node.Declaration).Identity().Owner,
-			"Base",
-			"on the type that declares it",
-		)
-		_, err = r.Resolve(f.scope(row), "Rename", directive.ResolveValueField, f.view)
-		assert.HasError(t, err, "a method is no field")
-		_, err = r.Resolve(
-			f.scope(id(fxPath, "Find", symbol.KindFunction)),
-			"ID",
-			directive.ResolveValueField,
-			f.view,
-		)
-		assert.HasError(t, err, "a function belongs to no type")
-	})
+		t.Run("returns a promoted field on the type that declares it", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("resolves a host parameter on the subject's own signature", func(t *testing.T) {
-		t.Parallel()
+			f := loaded(t)
+			derived := id(fxPath, "Derived", symbol.KindStruct)
+			got, err := r.Resolve(f.scope(derived), "Kind", directive.ResolveValueField, f.view)
+			assert.NoError(t, err, "the member walk promotes Kind")
+			assert.Equal(t, got.(node.Declaration).Identity(), f.field(t, "Base", "Kind").ID, "Base's field")
+		})
 
-		f := loaded(t)
-		load := symbol.Identity{
-			Lang: golang.Lang, Package: fxPath, Name: "Load", Kind: symbol.KindFunction,
-			Disc: "context.Context,int",
-		}
-		got, err := r.Resolve(f.scope(load), "id", directive.ResolveHostParam, f.view)
-		assert.NoError(t, err, "id is a parameter of Load")
-		assert.Equal(t, got.Kind(), symbol.KindParam, "and arrives as one")
-		_, err = r.Resolve(f.scope(load), "ghost", directive.ResolveHostParam, f.view)
-		assert.HasError(t, err, "a parameter Load does not declare refuses")
-		_, err = r.Resolve(f.scope(row), "id", directive.ResolveHostParam, f.view)
-		assert.HasError(t, err, "a struct has no parameters")
-	})
+		t.Run("returns the method the type of a member subject declares", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("refuses what it cannot read", func(t *testing.T) {
-		t.Parallel()
+			f := loaded(t)
+			field := f.field(t, "Row", "ID")
+			got, err := r.Resolve(f.scope(field.ID), "Rename", directive.ResolveMemberOnHandle, f.view)
+			assert.NoError(t, err, "Rename is a method of Row")
+			assert.Equal(t, got.Kind(), symbol.KindMethod, "a method is a member")
+		})
 
-		f := loaded(t)
-		_, err := r.Resolve(f.scope(row), "  ", directive.ResolveTypeInScope, f.view)
-		assert.HasError(t, err, "nothing resolves to nothing")
-		assert.True(t, strings.HasPrefix(err.Error(), string(golang.Lang)+": "),
-			"a refusal opens with the language's identity, as every satellite's does")
-		_, err = r.Resolve(f.scope(row), "ID", directive.ResolveMetadataKey, f.view)
-		assert.HasError(t, err, "the metadata kind is validation's, not the language's")
-		ghost := id(fxPath, "Ghost", symbol.KindStruct)
-		_, err = r.Resolve(f.scope(ghost), "ID", directive.ResolveValueField, f.view)
-		assert.HasError(t, err, "a subject outside the view refuses")
-		_, err = r.Resolve(
-			rules.Scope{Subject: row},
-			"dep.Target",
-			directive.ResolveTypeInScope,
-			f.view,
-		)
-		assert.HasError(t, err, "a qualified name without a file has no imports to read")
+		t.Run("returns the parameter the subject's signature declares", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			got, err := r.Resolve(f.scope(load), "id", directive.ResolveHostParam, f.view)
+			assert.NoError(t, err, "id is a parameter of Load")
+			assert.Equal(t, got.(*node.Param).Name, "id", "the parameter named id")
+		})
 	})
 }

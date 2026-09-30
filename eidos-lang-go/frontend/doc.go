@@ -68,17 +68,15 @@
 // for a Go constant group. Its value spellings are kept verbatim,
 // and its methods fold in from every file of the package, as a
 // struct's do.
-// Resolve implements Go's probing: decoration strips (pointer,
-// slice, array, variadic, parentheses, a trailing instantiation),
-// then a qualified spelling probes the import its qualifier binds,
-// an unbound qualifier probes every unaliased import in source
-// order, because a package's clause can differ from the name its
-// path assumes, and a bare spelling probes the file's own package
-// and then, exported, each dot-imported package. A predeclared type,
-// a constraint term and the shapes no single declaration declares
-// (maps, funcs, channels, inline bodies) return no candidate, and
-// their named element types remain spellings per the model's
-// composite contract. An interface's constraint elements are not
+// Resolve returns, as one tier, the candidates of the file's
+// [golang.Scope], which the parse derives from the file's import
+// records. The rules resolve a directive's spelling through the same
+// scope, and a qualified reference's package is the import path its
+// qualifier binds there. A predeclared type, a constraint term and
+// the shapes no single declaration declares (maps, funcs, channels,
+// inline bodies) return no candidate, and their named element types
+// remain spellings per the model's composite contract. An
+// interface's constraint elements are not
 // embeds: a union, an approximation, a predeclared basic type or a
 // type literal stamps its verbatim spelling under golang.typeSet.
 //

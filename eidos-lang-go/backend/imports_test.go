@@ -4,57 +4,117 @@
 package backend_test
 
 import (
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/backend"
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
+// The import fixture: a standard library package imported for its
+// side effects, and a module path imported under an alias.
+const (
+	sqlPkg    = "database/sql"
+	sdkPkg    = "go.dokimi.dev/eidos/sdk"
+	sdkAlias  = "eidos"
+	assertPkg = "go.dokimi.dev/assert"
+)
+
+// line spells one import line of the block, tab-indented.
+func line(name, path string) string {
+	if name == "" {
+		return "\t" + strconv.Quote(path) + "\n"
+	}
+	return "\t" + name + " " + strconv.Quote(path) + "\n"
+}
+
+// block spells an import block around its lines.
+func block(lines ...string) string {
+	out := "import (\n"
+	for _, l := range lines {
+		out += l
+	}
+	return out + ")\n"
+}
+
 // The import block is pinned byte for byte: it is the one part of
-// the file the formatter reorders rather than reformats, so the
-// renderer has to hand it over already in gofmt's shape.
+// the file the formatter reorders and does not reformat, so the
+// renderer hands it over already in gofmt's shape.
 func TestImports(t *testing.T) {
 	t.Parallel()
 
-	t.Run("groups the standard library apart and spells bindings", func(t *testing.T) {
+	t.Run("Imports", func(t *testing.T) {
 		t.Parallel()
 
-		var set render.ImportSet
-		set.Add("context")
-		set.AddNamed("database/sql", "_")
-		set.AddNamed("go.dokimi.dev/eidos/sdk", "eidos")
-		set.Add("go.dokimi.dev/assert")
-		assert.Equal(t, backend.Imports(&set),
-			"import (\n"+
-				"\t\"context\"\n"+
-				"\t_ \"database/sql\"\n"+
-				"\n"+
-				"\t\"go.dokimi.dev/assert\"\n"+
-				"\teidos \"go.dokimi.dev/eidos/sdk\"\n"+
-				")\n",
-			"standard library first, a blank line, then module paths, "+
-				"aliases and blank imports spelt before their path")
-	})
+		t.Run("writes the standard library group before the module group", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("renders one sorted parenthesised block", func(t *testing.T) {
-		t.Parallel()
+			var set render.ImportSet
+			set.Add(assertPkg)
+			set.Add(contextPkg)
+			assert.Equal(t, backend.Imports(&set),
+				block(line("", contextPkg), "\n", line("", assertPkg)),
+				"a blank line between the groups")
+		})
 
-		var set render.ImportSet
-		set.Add("svc/store")
-		set.Add("context")
-		set.Add("svc/store")
-		assert.Equal(t, backend.Imports(&set),
-			"import (\n\t\"context\"\n\t\"svc/store\"\n)\n",
-			"sorted, deduplicated, quoted, tab-indented")
-	})
+		t.Run("writes the name of a blank import before its path", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("a file importing nothing renders no block", func(t *testing.T) {
-		t.Parallel()
+			var set render.ImportSet
+			set.AddNamed(sqlPkg, golang.BlankAlias)
+			assert.Equal(t, backend.Imports(&set), block(line(golang.BlankAlias, sqlPkg)),
+				"the side-effect import")
+		})
 
-		var set render.ImportSet
-		assert.Equal(t, backend.Imports(&set), "",
-			"an empty import block is not what gofmt leaves either")
+		t.Run("writes a name that differs from the path's last element before the path", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.AddNamed(sdkPkg, sdkAlias)
+			set.Bind(yamlPkg, yamlName)
+			assert.Equal(t, backend.Imports(&set),
+				block(line(sdkAlias, sdkPkg), line(yamlName, yamlPkg)),
+				"the alias the spelling qualified through")
+		})
+
+		t.Run("writes no name that equals the path's last element", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.Bind(storePkg, storeName)
+			assert.Equal(t, backend.Imports(&set), block(line("", storePkg)),
+				"the import binds that name without one")
+		})
+
+		t.Run("writes a line two entries share once", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.Add(storePkg)
+			set.Bind(storePkg, storeName)
+			assert.Equal(t, backend.Imports(&set), block(line("", storePkg)),
+				"Go refuses one package imported twice under one name")
+		})
+
+		t.Run("writes each path once in sorted order", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.Add(storePkg)
+			set.Add(legacyPkg)
+			set.Add(storePkg)
+			assert.Equal(t, backend.Imports(&set),
+				block(line("", legacyPkg), line("", storePkg)), "sorted, quoted and tab-indented")
+		})
+
+		t.Run("returns nothing for an empty set", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			assert.Equal(t, backend.Imports(&set), "", "gofmt leaves no empty block either")
+		})
 	})
 }

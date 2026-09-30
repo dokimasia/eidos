@@ -57,8 +57,8 @@ var leaves = scaffold.Leaves{
 	Number: number,
 }
 
-// target spells a value tree as Java, recording into the file's
-// import set the classes its references and callees need.
+// target spells a value tree as Java, importing through the file's
+// import set the classes its references and callees name.
 type target struct{ set *render.ImportSet }
 
 // Lang names the target for a refusal.
@@ -67,24 +67,29 @@ func (target) Lang() string { return string(java.Lang) }
 // Literal spells one leaf through [leaves].
 func (target) Literal(v emit.Value) (string, error) { return leaves.Literal(v) }
 
-// Type spells a reference and records the import its package
-// needs.
+// Type spells a reference through the file's [Speller], so a value
+// and a declaration import one class under one name.
 func (t target) Type(ref *emit.TypeRef) (string, error) {
-	t.use(ref.Target)
-	return Spell(ref), nil
+	return NewSpeller(t.set).Spell(ref)
 }
 
 // Callee spells a function as Owner.name, the static method of the
-// class its identity's Owner names, and imports that class. A
-// function whose identity names no Owner is refused, because Java
-// has no free function to call.
+// class its identity's Owner names, and imports that class: the
+// owner chain's first name. The call is written fully qualified where
+// another import or a declaration of the file takes the class's
+// simple name. A function whose identity names no Owner is refused,
+// because Java has no free function to call.
 func (t target) Callee(id symbol.Identity) (string, error) {
 	if id.Owner == "" {
 		return "", render.RefuseValue(t.Lang(),
-			"%s is owned by no class, and Java calls no free function", id.Name)
+			"%s belongs to no class, and Java calls no free function", id.Name)
 	}
-	t.use(id)
-	return id.Owner + memberSep + id.Name, nil
+	call := id.Owner + memberSep + id.Name
+	class, _, _ := strings.Cut(id.Owner, memberSep)
+	if id.Package == "" || t.set.Claim(id.Package, class) {
+		return call, nil
+	}
+	return javaPackage(id.Package) + memberSep + call, nil
 }
 
 // Conversion spells a cast, which is Java's one conversion form.
@@ -122,8 +127,7 @@ func (t target) Composite(
 		if form == symbol.FormArray {
 			return arrayCreation + typ + " {" + strings.Join(parts, ", ") + "}", nil
 		}
-		t.useCollection(listClass)
-		return listClass + factory + strings.Join(parts, ", ") + ")", nil
+		return t.collection(listClass) + factory + strings.Join(parts, ", ") + ")", nil
 	case symbol.FormMap:
 		for _, e := range entries {
 			if e.Key == "" {
@@ -131,17 +135,17 @@ func (t target) Composite(
 					"a map value has an entry with no key")
 			}
 		}
-		t.useCollection(mapClass)
+		class := t.collection(mapClass)
 		if len(entries) > mapOfLimit {
 			for _, e := range entries {
-				parts = append(parts, mapClass+entryFactory+e.Key+", "+e.Value+")")
+				parts = append(parts, class+entryFactory+e.Key+", "+e.Value+")")
 			}
-			return mapClass + entriesFactory + strings.Join(parts, ", ") + ")", nil
+			return class + entriesFactory + strings.Join(parts, ", ") + ")", nil
 		}
 		for _, e := range entries {
 			parts = append(parts, e.Key, e.Value)
 		}
-		return mapClass + factory + strings.Join(parts, ", ") + ")", nil
+		return class + factory + strings.Join(parts, ", ") + ")", nil
 	}
 	for _, e := range entries {
 		switch {
@@ -165,27 +169,15 @@ func (t target) Address(emit.Value, string) (string, error) {
 	return "", render.RefuseValue(t.Lang(), "Java spells no address of a value")
 }
 
-// useCollection records the import of the collection class a
-// factory call names.
-func (t target) useCollection(class string) {
-	if t.set == nil {
-		return
+// collection returns the name a factory call spells a collection
+// class by, and imports the class: its simple name where the file's
+// name is free, and the qualified name where another import or a
+// declaration of the file takes it.
+func (t target) collection(class string) string {
+	if t.set.Claim(collectionsPackage, class) {
+		return class
 	}
-	t.set.AddNamed(collectionsPackage, class)
-}
-
-// use records the import a reference or a callee in another
-// package needs: the file-level class, which is the owner chain's
-// first name where the declaration nests or belongs to a class.
-func (t target) use(id symbol.Identity) {
-	if id.Package == "" || id.Name == "" || t.set == nil {
-		return
-	}
-	class := id.Name
-	if id.Owner != "" {
-		class, _, _ = strings.Cut(id.Owner, memberSep)
-	}
-	t.set.AddNamed(id.Package, class)
+	return javaPackage(collectionsPackage) + memberSep + class
 }
 
 // number spells a number for Java from its text and its width. A

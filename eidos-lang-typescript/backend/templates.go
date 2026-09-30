@@ -18,8 +18,8 @@ const FileTemplate = "{{" + render.BuiltinImports + "}}{{" + render.BuiltinDecls
 // The kind templates spell one emit kind each, for every kind
 // TypeScript declares at module level. A method is absent by design:
 // TypeScript states members inside their type, so methods render
-// through their host's template, and a standalone method is reported
-// as a kind the target cannot spell.
+// through their host's template, and the backend refuses a
+// standalone method.
 const (
 	// StructTemplate spells a class: decorator lines above the
 	// declaration, its keywords and type parameters behind the
@@ -96,9 +96,8 @@ const (
 )
 
 // KindTemplates maps each emit kind to the template that spells
-// it. A kind absent from the map is one the TypeScript backend
-// cannot spell at module level: the render reports it and skips
-// that declaration, which is what the feature matrix records.
+// it. A file-level kind absent from the map is one the lowering
+// reshapes, as it does a sum, or one [RefusedKinds] refuses.
 func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,
@@ -108,5 +107,14 @@ func KindTemplates() map[symbol.Kind]string {
 		symbol.KindAlias:     AliasTemplate,
 		symbol.KindConstant:  ConstantTemplate,
 		symbol.KindVariable:  VariableTemplate,
+	}
+}
+
+// RefusedKinds maps each emit kind TypeScript declares no spelling
+// for at module level to the reason, which the render reports beside
+// every declaration of the kind it skips.
+func RefusedKinds() map[symbol.Kind]string {
+	return map[symbol.Kind]string{
+		symbol.KindMethod: "TypeScript declares a method inside the class or interface it belongs to",
 	}
 }

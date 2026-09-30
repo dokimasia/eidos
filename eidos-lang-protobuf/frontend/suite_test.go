@@ -39,7 +39,7 @@ func TestFrontendSuite(t *testing.T) {
 			Sources: os.DirFS("testdata/schema"),
 			// A schema states no bodies and no unexported names, so
 			// a signature-only root loads what a full one does, and
-			// the check proves it.
+			// the fixture lists no dropped identity.
 			Signatures: []string{"dep"},
 			Schemas:    []directive.Schema{tableSchema()},
 			Keys:       protobuf.Keys,

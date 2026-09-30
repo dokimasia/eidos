@@ -18,300 +18,281 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// valueRef returns a reference to a declaration in one package.
+// The value fixture: the packages the values name, and the class a
+// static callee belongs to.
+const (
+	unitsPkg     = "example/units"
+	utilPkg      = "example/util"
+	utilPkgDots  = "example.util"
+	collections  = "java/util"
+	rowsClass    = "Rows"
+	makeName     = "make"
+	weightName   = "Weight"
+	listClass    = "List"
+	listFactory  = "List<Long>"
+	mapFactory   = "Map<Long, Long>"
+	pairsMap     = "Map<Integer, Integer>"
+	qualifiedOut = "java.util.List"
+)
+
+// valueRef returns a resolved reference to a class of one package.
 func valueRef(spelling, pkg, name string) *emit.TypeRef {
 	return &emit.TypeRef{
 		Spelling: spelling,
-		Target: symbol.Identity{
-			Lang:    java.Lang,
-			Package: pkg,
-			Name:    name,
-			Kind:    symbol.KindStruct,
-		},
+		Target:   symbol.Identity{Lang: java.Lang, Package: pkg, Name: name, Kind: symbol.KindStruct},
 	}
 }
 
-// valueFn returns a callee identity whose Owner names its class
-// where owner is set.
+// valueFn returns a callee identity whose Owner names its class where
+// owner is set.
 func valueFn(pkg, owner, name string) symbol.Identity {
 	return symbol.Identity{Lang: java.Lang, Package: pkg, Owner: owner, Name: name, Kind: symbol.KindMethod}
 }
+
+// formed returns a structural reference of one form, spelled s.
+func formed(s string, form symbol.TypeForm) *emit.TypeRef {
+	return &emit.TypeRef{Spelling: s, Form: form}
+}
+
+// integer returns an integer literal.
+func integer(text string) emit.Value { return emit.Literal(emit.LiteralInt, text) }
 
 // pairs returns n map entries, each keying an integer to itself.
 func pairs(n int) []emit.ValueField {
 	out := make([]emit.ValueField, 0, n)
 	for i := range n {
 		text := strconv.Itoa(i)
-		out = append(out, emit.KeyedEntry(emit.Literal(emit.LiteralInt, text), emit.Literal(emit.LiteralInt, text)))
+		out = append(out, emit.KeyedEntry(integer(text), integer(text)))
 	}
 	return out
 }
 
-// spelled runs one value through the scaffold as a bare return and
-// hands back the text it wrote and the imports it recorded.
-func spelled(tb assert.TB, v emit.Value) (string, []string, error) {
+// returned runs one value through the scaffold as a return and
+// returns the value's text beside the file's import set.
+func returned(tb assert.TB, set *render.ImportSet, v emit.Value) (string, error) {
 	tb.Helper()
 
-	var set render.ImportSet
-	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, &set)
-	if err != nil {
-		return "", nil, err
-	}
+	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, set)
 	text := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(string(out)), ";"))
-	return strings.TrimPrefix(text, "return "), set.Paths(), nil
+	return strings.TrimPrefix(text, "return "), err
 }
 
 // Every value spelling is pinned, for the reason the statement
-// spellings are: the text is spliced into generated bodies and a
+// spellings are: the text is spliced into generated bodies, and a
 // drift rewrites files.
 func TestValue(t *testing.T) {
 	t.Parallel()
 
-	t.Run("spells the forms Java states", func(t *testing.T) {
-		t.Parallel()
-
-		tests := []struct {
-			name  string
-			value emit.Value
-			want  string
-		}{
-			{
-				"an integer",
-				emit.Literal(emit.LiteralInt, "42"),
-				"42",
-			},
-			{
-				"the largest int keeps its text",
-				emit.Literal(emit.LiteralInt, "2147483647"),
-				"2147483647",
-			},
-			{
-				"an integer beyond the int range takes the long suffix",
-				emit.Literal(emit.LiteralInt, "5000000000"),
-				"5000000000L",
-			},
-			{
-				"a negative integer beyond the int range takes it too",
-				emit.Literal(emit.LiteralInt, "-2147483649"),
-				"-2147483649L",
-			},
-			{
-				"a float keeps its text",
-				emit.Literal(emit.LiteralFloat, "1.5"),
-				"1.5",
-			},
-			{
-				"a float written for a 32-bit type takes the float suffix",
-				emit.Number(emit.LiteralFloat, "1.5", 32),
-				"1.5f",
-			},
-			{
-				"a float written for a 64-bit type keeps its text",
-				emit.Number(emit.LiteralFloat, "1.5", 64),
-				"1.5",
-			},
-			{
-				"an integer written for a 64-bit type takes the long suffix",
-				emit.Number(emit.LiteralInt, "2", 64),
-				"2L",
-			},
-			{
-				"an integer written for a narrower type keeps its text",
-				emit.Number(emit.LiteralInt, "2", 16),
-				"2",
-			},
-			{
-				"the absent value",
-				emit.Literal(emit.LiteralNil, ""),
-				"null",
-			},
-			{
-				"a conversion casts",
-				emit.Conversion(
-					valueRef("Weight", "units", "Weight"),
-					emit.Literal(emit.LiteralInt, "1"),
-				),
-				"(Weight) 1",
-			},
-			{
-				"a record with no components constructs",
-				emit.Composite(valueRef("Row", "svc", "Row")),
-				"new Row()",
-			},
-			{
-				"a list spells the collection factory",
-				emit.Composite(&emit.TypeRef{Spelling: "List<Long>", Form: symbol.FormList},
-					emit.Element(emit.Number(emit.LiteralInt, "2", 64))),
-				"List.of(2L)",
-			},
-			{
-				"a map spells its factory, key then value",
-				emit.Composite(
-					&emit.TypeRef{Spelling: "Map<String, Long>", Form: symbol.FormMap},
-					emit.KeyedEntry(
-						emit.Literal(emit.LiteralString, "k"),
-						emit.Number(emit.LiteralInt, "2", 64),
-					),
-				),
-				`Map.of("k", 2L)`,
-			},
-			{
-				"a map of ten pairs keeps the factory",
-				emit.Composite(&emit.TypeRef{Spelling: "Map<Integer, Integer>", Form: symbol.FormMap},
-					pairs(10)...),
-				"Map.of(0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9)",
-			},
-			{
-				"a map above ten pairs builds from entries, because Map.of takes ten at most",
-				emit.Composite(&emit.TypeRef{Spelling: "Map<Integer, Integer>", Form: symbol.FormMap},
-					pairs(11)...),
-				"Map.ofEntries(Map.entry(0, 0), Map.entry(1, 1), Map.entry(2, 2), " +
-					"Map.entry(3, 3), Map.entry(4, 4), Map.entry(5, 5), Map.entry(6, 6), " +
-					"Map.entry(7, 7), Map.entry(8, 8), Map.entry(9, 9), Map.entry(10, 10))",
-			},
-			{
-				"an array spells an array creation",
-				emit.Composite(&emit.TypeRef{Spelling: "int[]", Form: symbol.FormArray},
-					emit.Element(emit.Literal(emit.LiteralInt, "1")),
-					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
-				"new int[] {1, 2}",
-			},
-			{
-				"an empty array spells an empty initializer",
-				emit.Composite(&emit.TypeRef{Spelling: "String[]", Form: symbol.FormArray}),
-				"new String[] {}",
-			},
-			{
-				"a call spells the static method of the class its owner names",
-				emit.Call(valueFn("example/util", "Rows", "make"), emit.Literal(emit.LiteralInt, "1")),
-				"Rows.make(1)",
-			},
-			{
-				"a string escapes in Java's grammar",
-				emit.Literal(emit.LiteralString, "tab\tbell\x07 \\ \"q\" é"),
-				`"tab\tbell\007 \\ \"q\" é"`,
-			},
-			{
-				"control characters take their named escapes",
-				emit.Literal(emit.LiteralString, "\b\f\n\r\x7f"),
-				`"\b\f\n\r\177"`,
-			},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-				got, _, err := spelled(t, tt.value)
-				assert.NoError(t, err, "the value spells")
-				assert.Equal(t, got, tt.want, tt.name)
-			})
-		}
-	})
-
-	t.Run("records the import every reference and callee needs", func(t *testing.T) {
-		t.Parallel()
-
-		_, paths, err := spelled(t, emit.Conversion(
-			valueRef("Weight", "example/units", "Weight"), emit.Literal(emit.LiteralInt, "1"),
-		))
-		assert.NoError(t, err, "the value spells")
-		assert.Equal(t, paths, []string{"example/units"}, "the reference's package is imported")
-
-		_, paths, err = spelled(t, emit.Literal(emit.LiteralInt, "1"))
-		assert.NoError(t, err, "a literal spells")
-		assert.Empty(t, paths, "and imports nothing, because it names no package")
-	})
-
-	t.Run("imports the class a factory or a callee names", func(t *testing.T) {
-		t.Parallel()
-
-		var set render.ImportSet
-		_, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(
-			emit.Call(valueFn("example/util", "Rows.Inner", "make"),
-				emit.Composite(&emit.TypeRef{Spelling: "List<Long>", Form: symbol.FormList},
-					emit.Element(emit.Literal(emit.LiteralInt, "2"))),
-				emit.Composite(&emit.TypeRef{Spelling: "Map<Long, Long>", Form: symbol.FormMap},
-					emit.KeyedEntry(emit.Literal(emit.LiteralInt, "1"), emit.Literal(emit.LiteralInt, "2")))),
-		)}, &set)
-		assert.NoError(t, err, "the value spells")
-		assert.Equal(t, set.Entries(), []render.Entry{
-			{Path: "example/util", Name: "Rows"},
-			{Path: "java/util", Name: "List"},
-			{Path: "java/util", Name: "Map"},
-		}, "each class imports by name, a nested owner through its file-level class")
-	})
-
-	t.Run("refuses a value Java has no form for, under its own code", func(t *testing.T) {
+	t.Run("Scaffold", func(t *testing.T) {
 		t.Parallel()
 
 		tests := []struct {
 			name    string
-			value   emit.Value
-			mention string
+			give    emit.Value
+			want    string
+			wantErr bool
 		}{
+			{name: "writes an integer as its digits", give: integer("42"), want: "42"},
+			{name: "writes the largest int without a suffix", give: integer("2147483647"), want: "2147483647"},
 			{
-				"another language's raw text",
-				emit.Raw("golang", "Row{}"), "written in golang",
+				name: "writes an integer beyond the int range with the long suffix",
+				give: integer("5000000000"), want: "5000000000L",
 			},
 			{
-				"an integer beyond the long range",
-				emit.Literal(emit.LiteralInt, "9223372036854775808"), "does not fit a Java long",
+				name: "writes a negative integer beyond the int range with the long suffix",
+				give: integer("-2147483649"), want: "-2147483649L",
+			},
+			{name: "writes a float as its digits", give: emit.Literal(emit.LiteralFloat, "1.5"), want: "1.5"},
+			{
+				name: "writes a float for a 32-bit type with the float suffix",
+				give: emit.Number(emit.LiteralFloat, "1.5", 32), want: "1.5f",
 			},
 			{
-				"an address, which Java has no operator for",
-				emit.Address(emit.Literal(emit.LiteralInt, "1")), "no address",
+				name: "writes a float for a 64-bit type without a suffix",
+				give: emit.Number(emit.LiteralFloat, "1.5", 64), want: "1.5",
 			},
 			{
-				"a record whose value names its fields",
-				emit.Composite(
-					valueRef("Row", "svc", "Row"),
-					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1")),
-				), "positionally",
+				name: "writes an integer for a 64-bit type with the long suffix",
+				give: emit.Number(emit.LiteralInt, "2", 64), want: "2L",
 			},
 			{
-				"a function whose identity names no owner",
-				emit.Call(valueFn("example/util", "", "make")), "owned by no class",
+				name: "writes an integer for a narrower type without a suffix",
+				give: emit.Number(emit.LiteralInt, "2", 16), want: "2",
+			},
+			{name: "writes the absent value as null", give: emit.Literal(emit.LiteralNil, ""), want: "null"},
+			{
+				name: "writes a conversion as a cast",
+				give: emit.Conversion(valueRef(weightName, unitsPkg, weightName), integer("1")),
+				want: "(Weight) 1",
 			},
 			{
-				"a keyed entry in a list",
-				emit.Composite(&emit.TypeRef{Spelling: "List<Long>", Form: symbol.FormList},
-					emit.KeyedEntry(emit.Literal(emit.LiteralInt, "1"), emit.Literal(emit.LiteralInt, "2"))),
-				"elements alone",
+				name: "writes a record without components as a constructor call",
+				give: emit.Composite(valueRef(rowName, storePkg, rowName)),
+				want: "new Row()",
 			},
 			{
-				"a named entry in an array",
-				emit.Composite(&emit.TypeRef{Spelling: "int[]", Form: symbol.FormArray},
-					emit.NamedField("id", emit.Literal(emit.LiteralInt, "1"))),
-				"elements alone",
+				name: "writes a list through the collection factory",
+				give: emit.Composite(formed(listFactory, symbol.FormList),
+					emit.Element(emit.Number(emit.LiteralInt, "2", 64))),
+				want: "List.of(2L)",
 			},
 			{
-				"a map entry without a key",
-				emit.Composite(&emit.TypeRef{Spelling: "Map<Long, Long>", Form: symbol.FormMap},
-					emit.Element(emit.Literal(emit.LiteralInt, "1"))),
-				"no key",
+				name: "writes a map through its factory",
+				give: emit.Composite(formed("Map<String, Long>", symbol.FormMap),
+					emit.KeyedEntry(emit.Literal(emit.LiteralString, "k"), emit.Number(emit.LiteralInt, "2", 64))),
+				want: `Map.of("k", 2L)`,
 			},
 			{
-				"a keyed entry in a record",
-				emit.Composite(valueRef("Row", "svc", "Row"),
-					emit.KeyedEntry(emit.Literal(emit.LiteralInt, "1"), emit.Literal(emit.LiteralInt, "2"))),
-				"positionally",
+				name: "writes a map of ten pairs through the factory",
+				give: emit.Composite(formed(pairsMap, symbol.FormMap), pairs(10)...),
+				want: "Map.of(0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5, 6, 6, 7, 7, 8, 8, 9, 9)",
+			},
+			{
+				name: "writes a map above ten pairs from entries",
+				give: emit.Composite(formed(pairsMap, symbol.FormMap), pairs(11)...),
+				want: "Map.ofEntries(Map.entry(0, 0), Map.entry(1, 1), Map.entry(2, 2), " +
+					"Map.entry(3, 3), Map.entry(4, 4), Map.entry(5, 5), Map.entry(6, 6), " +
+					"Map.entry(7, 7), Map.entry(8, 8), Map.entry(9, 9), Map.entry(10, 10))",
+			},
+			{
+				name: "writes an array as an array creation",
+				give: emit.Composite(formed("int[]", symbol.FormArray),
+					emit.Element(integer("1")), emit.Element(integer("2"))),
+				want: "new int[] {1, 2}",
+			},
+			{
+				name: "writes an empty array with an empty initializer",
+				give: emit.Composite(formed("String[]", symbol.FormArray)),
+				want: "new String[] {}",
+			},
+			{
+				name: "writes a call of the static method of its owner's class",
+				give: emit.Call(valueFn(utilPkg, rowsClass, makeName), integer("1")),
+				want: "Rows.make(1)",
+			},
+			{
+				name: "writes a string escaped in Java's grammar",
+				give: emit.Literal(emit.LiteralString, "tab\tbell\x07 \\ \"q\" é"),
+				want: `"tab\tbell\007 \\ \"q\" é"`,
+			},
+			{
+				name: "writes control characters under their named escapes",
+				give: emit.Literal(emit.LiteralString, "\b\f\n\r\x7f"),
+				want: `"\b\f\n\r\177"`,
+			},
+			{
+				name: "returns a value error for another language's raw text",
+				give: emit.Raw("golang", "Row{}"), want: "written in golang", wantErr: true,
+			},
+			{
+				name: "returns a value error for an integer beyond the long range",
+				give: integer("9223372036854775808"), want: "does not fit a Java long", wantErr: true,
+			},
+			{
+				name: "returns a value error for an address",
+				give: emit.Address(integer("1")), want: "no address", wantErr: true,
+			},
+			{
+				name: "returns a value error for a record whose value names its fields",
+				give: emit.Composite(valueRef(rowName, storePkg, rowName), emit.NamedField("id", integer("1"))),
+				want: "positionally", wantErr: true,
+			},
+			{
+				name: "returns a value error for a function of no class",
+				give: emit.Call(valueFn(utilPkg, "", makeName)), want: "belongs to no class", wantErr: true,
+			},
+			{
+				name: "returns a value error for a keyed entry in a list",
+				give: emit.Composite(formed(listFactory, symbol.FormList),
+					emit.KeyedEntry(integer("1"), integer("2"))),
+				want: "elements alone", wantErr: true,
+			},
+			{
+				name: "returns a value error for a named entry in an array",
+				give: emit.Composite(formed("int[]", symbol.FormArray), emit.NamedField("id", integer("1"))),
+				want: "elements alone", wantErr: true,
+			},
+			{
+				name: "returns a value error for a map entry without a key",
+				give: emit.Composite(formed(mapFactory, symbol.FormMap), emit.Element(integer("1"))),
+				want: "no key", wantErr: true,
+			},
+			{
+				name: "returns a value error for a keyed entry in a record",
+				give: emit.Composite(valueRef(rowName, storePkg, rowName),
+					emit.KeyedEntry(integer("1"), integer("2"))),
+				want: "positionally", wantErr: true,
 			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
-				_, _, err := spelled(t, tt.value)
-				assert.HasError(t, err, tt.name)
-				assert.Contains(
-					t,
-					err.Error(),
-					tt.mention,
-					"the refusal names what it cannot spell",
-				)
+
+				got, err := returned(t, &render.ImportSet{}, tt.give)
+				if !tt.wantErr {
+					assert.NoError(t, err, "the value spells")
+					assert.Equal(t, got, tt.want, "the Java spelling")
+					return
+				}
 				var refused *render.ValueError
-				assert.True(t, errors.As(err, &refused),
-					"a value refusal classifies as one, so the render reports its own code")
-				assert.Equal(t, refused.Lang, string(java.Lang), "naming the target that refused")
+				assert.True(t, errors.As(err, &refused), "the render reports the value's own code")
+				assert.Contains(t, err.Error(), tt.want, "naming what Java cannot spell")
+				assert.Equal(t, refused.Lang, string(java.Lang), "naming the target")
 			})
 		}
+
+		t.Run("imports the class a reference names", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := returned(t, &set, emit.Conversion(valueRef(weightName, unitsPkg, weightName), integer("1")))
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, set.Paths(), []string{unitsPkg}, "the reference's package")
+		})
+
+		t.Run("imports nothing for a literal", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := returned(t, &set, integer("1"))
+			assert.NoError(t, err, "a literal spells")
+			assert.Equal(t, set.Len(), 0, "a literal names no package")
+		})
+
+		t.Run("imports the classes of a callee's owner and a factory", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			_, err := returned(t, &set, emit.Call(valueFn(utilPkg, rowsClass+".Inner", makeName),
+				emit.Composite(formed(listFactory, symbol.FormList), emit.Element(integer("2"))),
+				emit.Composite(formed(mapFactory, symbol.FormMap), emit.KeyedEntry(integer("1"), integer("2")))))
+			assert.NoError(t, err, "the value spells")
+			assert.Equal(t, set.Entries(), []render.Entry{
+				{Path: utilPkg, Name: rowsClass},
+				{Path: collections, Name: listClass},
+				{Path: collections, Name: "Map"},
+			}, "a nested owner through its file-level class")
+		})
+
+		t.Run("writes the qualified call of a class whose simple name the file reserves", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.Reserve(rowsClass)
+			got, err := returned(t, &set, emit.Call(valueFn(utilPkg, rowsClass, makeName)))
+			assert.NoError(t, err, "the call spells")
+			assert.Equal(t, got, utilPkgDots+"."+rowsClass+"."+makeName+"()", "the way javac reads a clash")
+		})
+
+		t.Run("writes the qualified factory of a collection whose simple name the file reserves", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.Reserve(listClass)
+			got, err := returned(t, &set, emit.Composite(formed(listFactory, symbol.FormList),
+				emit.Element(integer("2"))))
+			assert.NoError(t, err, "the list spells")
+			assert.Equal(t, got, qualifiedOut+".of(2)", "the collection written qualified")
+		})
 	})
 }

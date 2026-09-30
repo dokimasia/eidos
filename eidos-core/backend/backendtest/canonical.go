@@ -21,9 +21,9 @@ import (
 // resolves in.
 const emitter plugin.ID = "gen"
 
-// fixtureLang is the source language every canonical identity
-// carries. The fixture is language-neutral, so the spelling names
-// no satellite.
+// fixtureLang is the source language of every canonical identity.
+// The fixture is language-neutral, so the spelling names no
+// satellite.
 const fixtureLang symbol.Lang = "fixture"
 
 // fixturePackage is the package path every canonical unit shares,
@@ -31,29 +31,29 @@ const fixtureLang symbol.Lang = "fixture"
 // one.
 const fixturePackage = "svc"
 
-// keyExt is the extension the canonical routing keys carry, so a
-// target's naming proves it trims the source extension rather
-// than the target's.
+// keyExt is the extension of every canonical routing key, so a
+// target's naming proves it trims the source extension and not the
+// target's.
 const keyExt = ".src"
 
-// canonicalWord is the family word every canonical unit carries.
+// canonicalWord is the family word of every canonical unit.
 const canonicalWord = "gen"
 
 // refTemplate is the template the reference-form body names,
 // resolved in the emitter's tree.
 const refTemplate = "save.tpl"
 
-// verbatimBody is the literal text the verbatim-form body
-// carries: one indented call, parseable where a formatter reads
-// the file.
+// verbatimBody is the literal text of the verbatim-form body: one
+// indented call, parseable where a formatter reads the file.
 const verbatimBody = "\ttrace()\n"
 
 // boundName is the one bound every generic canonical declaration
 // constrains by, so each target proves one bound spelling.
 const boundName = "Codec"
 
-// canonicalKinds fixes which kinds the fixture holds a
-// declaration for, in build order.
+// canonicalKinds lists the kinds the fixture emits a declaration
+// of, in build order: every kind an emit declaration takes at file
+// level.
 var canonicalKinds = []symbol.Kind{
 	symbol.KindEnum,
 	symbol.KindSum,
@@ -66,54 +66,38 @@ var canonicalKinds = []symbol.Kind{
 	symbol.KindVariable,
 }
 
-// CanonicalFixture returns the kernel's shared emit fixture,
-// filtered to a backend's declared kind inventory: one unit per
-// kind the inventory holds, the four body content forms on the
+// CanonicalFixture returns the kernel's shared emit fixture: one
+// unit per canonical kind, the four body content forms on the
 // functions and again on the struct's member methods, and the
 // template tree the reference form resolves in.
 //
-// The inventory is the map a backend already declares its kind
-// templates in; only its keys are read. Filtering is what keeps
-// [AssertSpeltKinds] honest per backend: the fixture emits
-// exactly what the backend claims to spell, so a kind outside the
-// claim never renders and a kind inside it must. The fixture
-// holds a declaration for every kind a backend spells today; an
-// inventory naming any other kind fails the test, so a backend
-// growing a new spelling extends this fixture before it can claim
-// coverage.
+// The fixture emits every kind an emit declaration takes at file
+// level, whatever the backend under test spells. Each kind renders,
+// lowers into kinds that render, or reports under
+// [render.RefusedKind] with the reason the backend declares, and
+// [AssertSpeltKinds] fails on any other outcome. A backend that
+// refuses the file-level callables still meets every content form
+// through its struct template's members. Two calls build two
+// isolated fixtures, the way [Setup] requires.
 //
-// Member coverage does not depend on file-level callables: a
-// backend whose inventory carries no function or method kind
-// still reaches every content form through its struct template's
-// members. Two calls build two isolated fixtures, the way [Setup]
-// requires.
-//
-// The parameterizable kinds carry a generic sibling beside the
-// plain declaration: a parameter list, one named bound, a
-// reference restating a parameter as an argument, and a method
-// declaring parameters of its own, so a backend's generic
-// spellings render under the same suite. The siblings stay inside
-// what every target spells; variance, defaults and value
-// parameters stay in each satellite's own template tests.
+// Each parameterizable kind has a generic sibling beside the plain
+// declaration: a parameter list, one named bound, a reference
+// restating a parameter as an argument, and a method declaring
+// parameters of its own, so a backend's generic spellings render
+// under the same suite. The siblings use nothing beyond what every
+// target spells; variance, defaults and value parameters remain in
+// each satellite's own template tests.
 //
 // Every declared name spells in the neutral lower camel form, so
 // a backend declaring a respell convention proves it as bytes:
 // one fixture renders row as Row into Go, fetch as fetch into
 // TypeScript and Java, and as fetch into Rust's snake case.
-func CanonicalFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
+func CanonicalFixture(tb assert.TB) *Fixture {
 	tb.Helper()
-
-	if _, valid := requestedKinds(tb, inventory); !valid {
-		return nil
-	}
 
 	e := plugin.NewEmit()
 	for _, k := range canonicalKinds {
-		if _, held := inventory[k]; !held {
-			continue
-		}
-		u := canonicalUnit(k)
-		if err := e.Add(u); err != nil {
+		if err := e.Add(canonicalUnit(k)); err != nil {
 			tb.Errorf("the canonical %s unit arrives: %v", k, err)
 			return nil
 		}
@@ -125,38 +109,9 @@ func CanonicalFixture(tb assert.TB, inventory map[symbol.Kind]string) *Fixture {
 	}
 }
 
-// requestedKinds validates an inventory and returns its kinds in
-// kind order; false means the calling test already failed. The
-// fixtures hold a declaration for every kind a backend spells
-// today, so an inventory naming any other kind is refused, and a
-// backend growing a new spelling extends the fixtures before it
-// can claim coverage.
-func requestedKinds(
-	tb assert.TB, inventory map[symbol.Kind]string,
-) ([]symbol.Kind, bool) {
-	tb.Helper()
-
-	if len(inventory) == 0 {
-		tb.Errorf("the fixture takes an inventory naming at least one kind")
-		return nil, false
-	}
-	requested := make([]symbol.Kind, 0, len(inventory))
-	for k := range inventory {
-		requested = append(requested, k)
-	}
-	slices.Sort(requested)
-	for _, k := range requested {
-		if !slices.Contains(canonicalKinds, k) {
-			tb.Errorf("the fixture holds no %s declaration", k)
-			return nil, false
-		}
-	}
-	return requested, true
-}
-
 // canonicalTree returns the emitter's template tree: the
 // reference-form template, placing the slots marker so pending
-// contributions splice rather than drop.
+// contributions splice and none drops.
 func canonicalTree() fs.FS {
 	return fstest.MapFS{
 		refTemplate: &fstest.MapFile{
@@ -224,7 +179,7 @@ func flushOrder(decls []symbol.Symbol) []symbol.Identity {
 	return slices.Compact(origins)
 }
 
-// packageID is the owning package every canonical unit shares.
+// packageID is the package identity every canonical unit shares.
 func packageID() symbol.Identity {
 	return symbol.Identity{
 		Lang:    fixtureLang,
@@ -251,10 +206,17 @@ func memberOf(owner, name string, k symbol.Kind) symbol.Identity {
 	return id
 }
 
-// typeRef returns a reference spelled as written, unresolved the
-// way builtins stay.
+// typeRef returns a reference spelled as written and unresolved,
+// the way a builtin's reference is.
 func typeRef(spelling string) *emit.TypeRef {
 	return &emit.TypeRef{Spelling: spelling}
+}
+
+// paramOf returns a reference to a host's type parameter, targeted
+// at the parameter the way Link targets one, which is what a backend
+// binding a receiver's parameters reads.
+func paramOf(host, name string) *emit.TypeRef {
+	return &emit.TypeRef{Spelling: name, Target: memberOf(host, name, symbol.KindTypeParam)}
 }
 
 // callExpr returns the call of one local name.
@@ -269,17 +231,18 @@ func callExpr(name string, args ...string) emit.Expr {
 	return e
 }
 
-// formCallable pairs a content form's carrier name with its body.
+// formCallable pairs a body in one content form with the name of
+// the callable that states it.
 type formCallable struct {
 	Name string
 	Body emit.Body
 }
 
 // formCallables returns the four content forms under their
-// carrier names, fresh per call so no two fixtures share slot
-// storage: a body holding nothing, scaffolding every target
-// spells, a reference into the emitter's tree with pending
-// prologue content, and verbatim text.
+// callables' names, fresh per call so no two fixtures share slot
+// storage: an empty body, scaffolding every target spells, a
+// reference into the emitter's tree with pending prologue content,
+// and verbatim text.
 func formCallables() []formCallable {
 	ref := emit.Body{Ref: &emit.TemplateRef{Name: refTemplate}}
 	ref.Prologue.Append(emit.Stmt{Kind: emit.StmtExpr, Value: callExpr("audit")})
@@ -293,7 +256,7 @@ func formCallables() []formCallable {
 
 // scaffoldStmts returns the statements every target spells: a
 // single-name declaring assignment, a call reading it, and a bare
-// return. The multi-name and guard divergences stay in each
+// return. The multi-name and guard divergences remain in each
 // satellite's own scaffold tests.
 func scaffoldStmts() []emit.Stmt {
 	return []emit.Stmt{
@@ -310,11 +273,11 @@ func scaffoldStmts() []emit.Stmt {
 
 // rowStruct returns the struct: one documented field, and the
 // four content forms as member methods, which is how a backend
-// whose members render inside the host reaches every form.
+// rendering members inside the host meets every form.
 func rowStruct() *emit.Struct {
 	s := &emit.Struct{
 		Origin:  originOf("row", symbol.KindStruct),
-		Doc:     []string{"Row holds one canonical record."},
+		Doc:     []string{"Row is one canonical record."},
 		Comment: "one per fetch",
 		Name:    "row",
 	}
@@ -339,7 +302,7 @@ func rowStruct() *emit.Struct {
 // phaseEnum returns the enum: two payloadless variants and no
 // stated values, which is the shape every target spells, a target
 // lowering it into a constant group included. Values and members
-// stay in each satellite's own tests, because their spellings
+// remain in each satellite's own tests, because their spellings
 // diverge.
 func phaseEnum() *emit.Enum {
 	e := &emit.Enum{
@@ -362,11 +325,11 @@ func phaseEnum() *emit.Enum {
 	return e
 }
 
-// shapeSum returns the sum: one variant carrying a named payload
-// field and one carrying none, which is the shape every target
-// claiming the kind spells, a target lowering it into variant
-// types included. Positional payloads and variant methods stay in
-// each satellite's own tests, because their spellings diverge.
+// shapeSum returns the sum: one variant with a named payload field
+// and one without a payload, which is the shape every target
+// spelling the kind spells, a target lowering it into variant types
+// included. Positional payloads and variant methods remain in each
+// satellite's own tests, because their spellings diverge.
 func shapeSum() *emit.Sum {
 	s := &emit.Sum{
 		Origin:  originOf("shape", symbol.KindSum),
@@ -395,18 +358,18 @@ func shapeSum() *emit.Sum {
 // packSum returns the generic sum: one type parameter, a variant
 // whose payload references it, and a payloadless variant beside
 // it, so a target restating the parameter over its variants
-// proves the restatement. The parameter stays unbounded the way
-// the generic struct's does.
+// proves the restatement. The parameter is unbounded, as the
+// generic struct's is.
 func packSum() *emit.Sum {
 	s := &emit.Sum{
 		Origin:     originOf("pack", symbol.KindSum),
-		Doc:        []string{"pack carries one optional item."},
+		Doc:        []string{"pack wraps one optional item."},
 		Name:       "pack",
 		TypeParams: []*emit.TypeParam{{Name: "T"}},
 	}
 	some := &emit.SumVariant{
 		Origin: memberOf("pack", "some", symbol.KindSumVariant),
-		Doc:    []string{"some holds the item."},
+		Doc:    []string{"some contains the item."},
 		Name:   "some",
 	}
 	some.Fields.Append(&emit.Field{
@@ -425,8 +388,8 @@ func packSum() *emit.Sum {
 // field referencing it, and a member method declaring a bounded
 // parameter of its own, which is how a target rendering members
 // inside the host spells a method's own list. The host's
-// parameter stays unbounded, so a target restating it over an
-// impl block restates the name alone.
+// parameter is unbounded, so a target restating it over an impl
+// block restates the name alone.
 func boxStruct() *emit.Struct {
 	s := &emit.Struct{
 		Origin:     originOf("box", symbol.KindStruct),
@@ -542,10 +505,10 @@ func trackMethod() *emit.Method {
 }
 
 // foldMethod returns the generic file-level method: the receiver
-// restates the generic host's parameter as an argument, and the
-// method declares a bounded parameter of its own, which Go spells
-// behind the name and Rust inside the impl block the receiver
-// opens.
+// restates the generic host's parameter as an argument targeted at
+// the parameter, and the method declares a bounded parameter of its
+// own, which Go spells behind the name and Rust inside the impl
+// block the receiver opens.
 func foldMethod() *emit.Method {
 	return &emit.Method{
 		Origin: memberOf("box", "fold", symbol.KindMethod),
@@ -553,7 +516,7 @@ func foldMethod() *emit.Method {
 		Name:   "fold",
 		Receives: &emit.TypeRef{
 			Spelling: "box",
-			Args:     []*emit.TypeRef{typeRef("T")},
+			Args:     []*emit.TypeRef{paramOf("box", "T")},
 		},
 		TypeParams: []*emit.TypeParam{
 			{Name: "U", Bounds: []*emit.TypeRef{typeRef(boundName)}},

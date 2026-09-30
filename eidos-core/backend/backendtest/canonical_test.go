@@ -16,21 +16,22 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// fullInventory is the widest inventory any backend declares
-// today: the union the canonical fixture must hold a declaration
-// for. Values are what a backend's own map carries and the
-// fixture must not read.
-func fullInventory() map[symbol.Kind]string {
-	return map[symbol.Kind]string{
-		symbol.KindEnum:      "unread",
-		symbol.KindSum:       "unread",
-		symbol.KindStruct:    "unread",
-		symbol.KindInterface: "unread",
-		symbol.KindFunction:  "unread",
-		symbol.KindMethod:    "unread",
-		symbol.KindAlias:     "unread",
-		symbol.KindConstant:  "unread",
-		symbol.KindVariable:  "unread",
+// referencePattern matches the templates of the emitter's tree.
+const referencePattern = "*.tpl"
+
+// fileLevelKinds pins the kinds an emit declaration takes at file
+// level, which the canonical fixture emits one unit of each.
+func fileLevelKinds() []symbol.Kind {
+	return []symbol.Kind{
+		symbol.KindFunction,
+		symbol.KindMethod,
+		symbol.KindEnum,
+		symbol.KindSum,
+		symbol.KindVariable,
+		symbol.KindConstant,
+		symbol.KindStruct,
+		symbol.KindInterface,
+		symbol.KindAlias,
 	}
 }
 
@@ -38,7 +39,7 @@ func fullInventory() map[symbol.Kind]string {
 func unitsOf(tb assert.TB, f *backendtest.Fixture) []plugin.Unit {
 	tb.Helper()
 
-	assert.True(tb, f != nil && f.Emit != nil, "the fixture carries a store")
+	assert.True(tb, f != nil && f.Emit != nil, "the fixture contains a store")
 	var units []plugin.Unit
 	for u := range f.Emit.Units() {
 		units = append(units, u)
@@ -62,7 +63,7 @@ func formsIn(tb assert.TB, forms map[emit.Form]bool, decls ...symbol.Symbol) {
 			continue
 		}
 		form, err := body.Form()
-		assert.NoError(tb, err, "every fixture body holds one content form")
+		assert.NoError(tb, err, "every fixture body states one content form")
 		forms[form] = true
 	}
 }
@@ -88,7 +89,7 @@ func assertFlushOrder(tb assert.TB, units []plugin.Unit) {
 	}
 }
 
-// everyForm is what a covering fixture must reach.
+// everyForm is the set of content forms a covering fixture states.
 func everyForm() map[emit.Form]bool {
 	return map[emit.Form]bool{
 		emit.FormDefault:  true,
@@ -98,143 +99,118 @@ func everyForm() map[emit.Form]bool {
 	}
 }
 
-func TestCanonicalFixture(t *testing.T) {
+// The canonical fixture is what every satellite's suite renders, so
+// the kinds it emits, the forms it covers and the order it keeps are
+// contract.
+func TestCanonical(t *testing.T) {
 	t.Parallel()
 
-	t.Run("emits one unit per requested kind", func(t *testing.T) {
+	t.Run("CanonicalFixture", func(t *testing.T) {
 		t.Parallel()
 
-		f := backendtest.CanonicalFixture(t, fullInventory())
-		units := unitsOf(t, f)
-		assert.Equal(t, len(units), len(fullInventory()),
-			"one unit per kind in the inventory")
+		t.Run("emits one unit per file-level kind", func(t *testing.T) {
+			t.Parallel()
 
-		seen := map[symbol.Kind]bool{}
-		for _, u := range units {
-			assert.True(t, len(u.Decls) > 0, "every unit carries declarations")
-			seen[u.Decls[0].Kind()] = true
-		}
-		for k := range fullInventory() {
-			assert.True(t, seen[k], "the inventory kind arrives: "+k.String())
-		}
-	})
-
-	t.Run("keeps every top-level declaration inside the inventory", func(t *testing.T) {
-		t.Parallel()
-
-		narrow := map[symbol.Kind]string{
-			symbol.KindStruct:    "unread",
-			symbol.KindInterface: "unread",
-		}
-		f := backendtest.CanonicalFixture(t, narrow)
-		for _, u := range unitsOf(t, f) {
-			for _, d := range u.Decls {
-				assert.True(t, narrow[d.Kind()] != "",
-					"no unit smuggles a kind the backend never declared: "+
-						d.Kind().String())
-			}
-		}
-	})
-
-	t.Run("covers the four body forms on its functions", func(t *testing.T) {
-		t.Parallel()
-
-		f := backendtest.CanonicalFixture(t, fullInventory())
-		forms := map[emit.Form]bool{}
-		for _, u := range unitsOf(t, f) {
-			formsIn(t, forms, u.Decls...)
-		}
-		assert.Equal(t, forms, everyForm(),
-			"a callable inventory reaches every content form at file level")
-	})
-
-	t.Run("covers the four body forms through the struct's members", func(t *testing.T) {
-		t.Parallel()
-
-		narrow := map[symbol.Kind]string{symbol.KindStruct: "unread"}
-		f := backendtest.CanonicalFixture(t, narrow)
-		forms := map[emit.Form]bool{}
-		for _, u := range unitsOf(t, f) {
-			for _, d := range u.Decls {
-				s, held := d.(*emit.Struct)
-				if !held {
-					continue
-				}
-				for _, m := range s.Methods.Items() {
-					formsIn(t, forms, m)
+			var kinds []symbol.Kind
+			for _, u := range unitsOf(t, backendtest.CanonicalFixture(t)) {
+				assert.True(t, len(u.Decls) > 0, "every unit has declarations: "+u.Key)
+				if len(u.Decls) > 0 {
+					kinds = append(kinds, u.Decls[0].Kind())
 				}
 			}
-		}
-		assert.Equal(t, forms, everyForm(),
-			"a memberful inventory reaches every content form through its host")
-	})
+			slices.Sort(kinds)
+			want := fileLevelKinds()
+			slices.Sort(want)
+			assert.Equal(t, kinds, want, "each file-level kind, once")
+		})
 
-	t.Run("carries the tree the reference form resolves in", func(t *testing.T) {
-		t.Parallel()
+		t.Run("emits declarations of one kind per unit", func(t *testing.T) {
+			t.Parallel()
 
-		f := backendtest.CanonicalFixture(t, fullInventory())
-		assert.Equal(t, len(f.Schedule), 1, "one emitting plugin")
-		tree, held := f.Trees[f.Schedule[0]]
-		assert.True(t, held, "the emitter declares its template tree")
-		if !held {
-			return
-		}
-		names, err := fs.Glob(tree, "*.tpl")
-		assert.NoError(t, err, "the tree lists")
-		assert.True(t, len(names) > 0, "the tree holds the reference template")
-	})
+			for _, u := range unitsOf(t, backendtest.CanonicalFixture(t)) {
+				for _, d := range u.Decls {
+					assert.Equal(t, d.Kind(), u.Decls[0].Kind(),
+						"a unit's generic sibling shares its kind: "+u.Key)
+				}
+			}
+		})
 
-	t.Run("routes every unit with the full key", func(t *testing.T) {
-		t.Parallel()
+		t.Run("covers the four body forms on its functions", func(t *testing.T) {
+			t.Parallel()
 
-		f := backendtest.CanonicalFixture(t, fullInventory())
-		keys := map[string]bool{}
-		for _, u := range unitsOf(t, f) {
-			assert.True(t, u.Word != "", "every unit carries its family word")
-			assert.True(t, u.Key != "", "every unit carries its routing key")
-			assert.True(t, !u.Pkg.IsZero(), "every unit carries its package")
-			assert.True(t, len(u.Origins) > 0, "every unit carries provenance")
-			assert.True(t, !keys[u.Key], "routing keys stay distinct: "+u.Key)
-			keys[u.Key] = true
-		}
-	})
+			forms := map[emit.Form]bool{}
+			for _, u := range unitsOf(t, backendtest.CanonicalFixture(t)) {
+				for _, d := range u.Decls {
+					if d.Kind() == symbol.KindFunction {
+						formsIn(t, forms, d)
+					}
+				}
+			}
+			assert.Equal(t, forms, everyForm(),
+				"the file-level functions state every content form")
+		})
 
-	t.Run("orders every unit the way a flush leaves it", func(t *testing.T) {
-		t.Parallel()
+		t.Run("covers the four body forms through the struct's members", func(t *testing.T) {
+			t.Parallel()
 
-		assertFlushOrder(t, unitsOf(t, backendtest.CanonicalFixture(t, fullInventory())))
-	})
+			forms := map[emit.Form]bool{}
+			for _, u := range unitsOf(t, backendtest.CanonicalFixture(t)) {
+				for _, d := range u.Decls {
+					s, isStruct := d.(*emit.Struct)
+					if !isStruct {
+						continue
+					}
+					for _, m := range s.Methods.Items() {
+						formsIn(t, forms, m)
+					}
+				}
+			}
+			assert.Equal(t, forms, everyForm(),
+				"a backend refusing file-level callables still meets every content form")
+		})
 
-	t.Run("builds the same fixture twice", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns the tree the reference form resolves in", func(t *testing.T) {
+			t.Parallel()
 
-		first := unitsOf(t, backendtest.CanonicalFixture(t, fullInventory()))
-		second := unitsOf(t, backendtest.CanonicalFixture(t, fullInventory()))
-		assert.Equal(t, first, second,
-			"two builds hold the same units in the same order")
-	})
+			f := backendtest.CanonicalFixture(t)
+			assert.Length(t, f.Schedule, 1, "one emitting plugin")
+			tree, declared := f.Trees[f.Schedule[0]]
+			assert.True(t, declared, "the emitter declares its template tree")
+			if !declared {
+				return
+			}
+			names, err := fs.Glob(tree, referencePattern)
+			assert.NoError(t, err, "the tree lists")
+			assert.NotEmpty(t, names, "the tree contains the reference template")
+		})
 
-	t.Run("rejects an empty inventory", func(t *testing.T) {
-		t.Parallel()
+		t.Run("routes every unit with the full key", func(t *testing.T) {
+			t.Parallel()
 
-		failure := assert.Rejects(t, "an inventory holding nothing must fail",
-			func(tb assert.TB) {
-				backendtest.CanonicalFixture(tb, nil)
-			})
-		assert.Contains(t, failure, "inventory",
-			"the refusal names what was empty")
-	})
+			keys := map[string]bool{}
+			for _, u := range unitsOf(t, backendtest.CanonicalFixture(t)) {
+				assert.True(t, u.Word != "", "every unit has its family word")
+				assert.True(t, u.Key != "", "every unit has its routing key")
+				assert.True(t, !u.Pkg.IsZero(), "every unit has its package")
+				assert.True(t, len(u.Origins) > 0, "every unit has provenance")
+				assert.True(t, !keys[u.Key], "routing keys are distinct: "+u.Key)
+				keys[u.Key] = true
+			}
+		})
 
-	t.Run("rejects a kind it holds no declaration for", func(t *testing.T) {
-		t.Parallel()
+		t.Run("orders every unit the way a flush leaves it", func(t *testing.T) {
+			t.Parallel()
 
-		failure := assert.Rejects(t, "an uncovered kind must fail",
-			func(tb assert.TB) {
-				backendtest.CanonicalFixture(tb, map[symbol.Kind]string{
-					symbol.KindEnumVariant: "unread",
-				})
-			})
-		assert.Contains(t, failure, symbol.KindEnumVariant.String(),
-			"the refusal names the kind the fixture does not hold")
+			assertFlushOrder(t, unitsOf(t, backendtest.CanonicalFixture(t)))
+		})
+
+		t.Run("builds the same fixture twice", func(t *testing.T) {
+			t.Parallel()
+
+			first := unitsOf(t, backendtest.CanonicalFixture(t))
+			second := unitsOf(t, backendtest.CanonicalFixture(t))
+			assert.Equal(t, first, second,
+				"two builds contain the same units in the same order")
+		})
 	})
 }

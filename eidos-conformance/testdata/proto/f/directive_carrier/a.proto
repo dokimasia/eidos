@@ -3,5 +3,5 @@ syntax = "proto3";
 package f.directive_carrier;
 
 // Table maps a scripted table.
-//+gen:table name=t
+//+fixture:gen:table name=t
 message Table {}

@@ -157,15 +157,15 @@ func (f *goFrontend) parseFile(
 	file := &node.File{Path: filePath, Pos: l.at(parsed.Package)}
 	pkg.Files = append(pkg.Files, file)
 
-	fileBinds := newBindings()
 	cgo := false
 	for _, spec := range parsed.Imports {
-		lowerImport(u, l, file, fileBinds, spec)
+		lowerImport(u, l, file, spec)
 		if imported, unquoteErr := strconv.Unquote(spec.Path.Value); unquoteErr == nil && imported == "C" {
 			cgo = true
 		}
 	}
-	gb.Scope(file, fileBinds)
+	l.scope = golang.NewScope(file.Imports)
+	gb.Scope(file, l.scope)
 
 	// Tool directives above the package clause are the file's
 	// annotations.
@@ -360,17 +360,14 @@ func generatedMarker(parsed *ast.File) (string, bool) {
 	return "", false
 }
 
-// lowerImport records one import: the model's record on the file,
-// with its doc and trailing comment, and the binding Resolve
-// reads. A dot import binds every exported name, recorded as a
-// wildcard, and a blank import keeps its underscore as the alias,
-// so a side-effect import round-trips as one; neither binds a
-// qualifier. An unaliased import binds the name its path assumes,
-// [golang.AssumedName], and joins the fallback probe, which settles
-// a package whose clause declares another name. A carrier on an
-// import refuses positioned, because no rule takes an import as its
-// subject, and a tool directive there is the file's.
-func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, b *bindings, spec *ast.ImportSpec) {
+// lowerImport records one import on the file, with its doc and its
+// trailing comment. A dot import records as a wildcard. Every other
+// alias records as written, so a blank import keeps its underscore
+// and a side-effect import round-trips as one. The file's
+// [golang.Scope] derives from these records. A carrier on an import
+// refuses positioned, because no rule takes an import as its subject,
+// and a tool directive there is the file's.
+func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, spec *ast.ImportSpec) {
 	imported, err := strconv.Unquote(spec.Path.Value)
 	if err != nil {
 		return
@@ -384,16 +381,10 @@ func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, b *bindings,
 	}
 	switch {
 	case spec.Name == nil:
-		b.named[golang.AssumedName(imported)] = imported
-		b.all = append(b.all, imported)
-	case spec.Name.Name == golang.BlankAlias:
-		record.Alias = golang.BlankAlias
 	case spec.Name.Name == golang.DotAlias:
 		record.Wildcard = true
-		b.dots = append(b.dots, imported)
 	default:
 		record.Alias = spec.Name.Name
-		b.named[spec.Name.Name] = imported
 	}
 	file.Imports = append(file.Imports, record)
 }
@@ -530,20 +521,21 @@ func (*goFrontend) lowerFunc(u *plugin.SourceUnit, l *lowered, file *node.File, 
 }
 
 // stampIter marks a callable whose first result is one of the
-// iterator shapes, read off the spelling: iter.Seq and iter.Seq2
-// are their own announcement. An instantiation lowers to the bare
-// name with its arguments split out, so the bare spelling is the
-// whole comparison.
+// iterator shapes, read off the package the reference imports and
+// the name it qualifies: iter.Seq and iter.Seq2 are their own
+// announcement, under any alias of the import. An instantiation
+// lowers to the bare name with its arguments split out, so the bare
+// name is the whole comparison.
 func stampIter(u *plugin.SourceUnit, callable symbol.Symbol, returns []*node.Return) {
-	if len(returns) == 0 || returns[0].Type == nil {
+	if len(returns) == 0 || returns[0].Type == nil || returns[0].Type.Package != golang.IterPackage {
 		return
 	}
-	switch returns[0].Type.Spelling {
-	case "iter.Seq2":
+	switch golang.Unqualified(returns[0].Type.Spelling) {
+	case golang.IterSeq2:
 		u.Graph().Stamp(callable, meta.RawStamp{
 			Key: golang.IterSeq2Key, Value: true, Pos: callable.Position(),
 		})
-	case "iter.Seq":
+	case golang.IterSeq:
 		u.Graph().Stamp(callable, meta.RawStamp{
 			Key: golang.IterSeqKey, Value: true, Pos: callable.Position(),
 		})

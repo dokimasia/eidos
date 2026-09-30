@@ -4,6 +4,7 @@
 package rules_test
 
 import (
+	"strings"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
@@ -62,6 +63,13 @@ type Base struct{ Kind string }
 type Derived struct {
 	Base
 	Name string
+}
+
+// Stamped embeds a type outside the workspace, which the member walk
+// cannot read.
+type Stamped struct {
+	time.Time
+	Label string
 }
 
 // Reader is an interface.
@@ -193,7 +201,7 @@ func (f *fixture) decl(tb assert.TB, want symbol.Identity) symbol.Symbol {
 	tb.Helper()
 
 	sym, held := f.Graph.Lookup(want)
-	assert.True(tb, held, "the fixture holds "+want.String())
+	assert.True(tb, held, "the fixture declares "+want.String())
 	return sym
 }
 
@@ -203,9 +211,9 @@ func (f *fixture) field(tb assert.TB, host, name string) *node.Field {
 
 	s, is := f.decl(tb, id(fxPath, host, symbol.KindStruct)).(*node.Struct)
 	assert.True(tb, is, host+" is a struct")
-	for _, held := range s.Fields {
-		if held.Name == name {
-			return held
+	for _, candidate := range s.Fields {
+		if candidate.Name == name {
+			return candidate
 		}
 	}
 	tb.Fatalf("%s declares no field %s", host, name)
@@ -227,8 +235,17 @@ func ref(path, name string, kind symbol.Kind) *node.TypeRef {
 	return &node.TypeRef{Spelling: name, Target: id(path, name, kind)}
 }
 
-// builtin returns an unresolved named reference.
-func builtin(spelling string) *node.TypeRef { return &node.TypeRef{Spelling: spelling} }
+// builtin returns an unresolved named reference: a predeclared
+// spelling bare, and a qualified one importing the package its
+// qualifier names, which is the import path of every standard
+// library package the cases name.
+func builtin(spelling string) *node.TypeRef {
+	ref := &node.TypeRef{Spelling: spelling}
+	if qualifier, _, qualified := strings.Cut(spelling, "."); qualified {
+		ref.Package = qualifier
+	}
+	return ref
+}
 
 // composite returns a structural reference over children.
 func composite(spelling string, form symbol.TypeForm, children ...*node.TypeRef) *node.TypeRef {

@@ -9,6 +9,7 @@ import (
 	"path"
 	"strings"
 	"testing/fstest"
+	"text/template"
 
 	"go.dokimi.dev/assert"
 
@@ -18,6 +19,54 @@ import (
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// The fixture's names: the pass, the plugin that emits, the routing
+// key it emits under, the file the naming spells for that key, and
+// the declarations the cases render.
+const (
+	// passName is the identity every fixture pass composes under.
+	passName plugin.ID = "printer"
+	// emitter is the plugin a fixture unit comes from.
+	emitter plugin.ID = "gen"
+	// storeKey is the routing key a fixture unit emits under.
+	storeKey = "store.go"
+	// storeFile is the filename [stubNaming] spells for storeKey.
+	storeFile = "store_stub.txt"
+	// alphaName and betaName name the fixture's structs.
+	alphaName = "Alpha"
+	betaName  = "Beta"
+	// handleName names the fixture's callables.
+	handleName = "Handle"
+	// blockGroup names the group template a fixture cluster selects.
+	blockGroup render.GroupName = "block"
+	// missingField is a field no fixture value has, so failing, the
+	// template that reads it, fails at execute time.
+	missingField = "Missing"
+	failing      = "{{." + missingField + "}}"
+	// refusalReason is the reason a fixture language states for a
+	// kind it refuses.
+	refusalReason = "the fixture language declares no such construct"
+)
+
+// The binding fixture: a helper that qualifies a name through the
+// file's import set, the packages it qualifies with, and the name the
+// first package binds.
+const (
+	// qualifyHelper, itemHelper and claimHelper are the vocabulary
+	// helpers [qualifying] declares.
+	qualifyHelper = "qualify"
+	itemHelper    = "item"
+	claimHelper   = "claim"
+	// storePkg and legacyPkg are two packages whose last segment is
+	// storeLocal, so the second to bind takes a suffix.
+	storePkg  = "svc/store"
+	legacyPkg = "legacy/store"
+	// storeLocal is the name storePkg binds when no other binding
+	// takes it.
+	storeLocal = "store"
+	// rowName is the declaration a qualified spelling names.
+	rowName = "Row"
 )
 
 // stubNaming spells every unit as word, key stem and a fixture
@@ -30,25 +79,98 @@ func stubNaming(u plugin.Unit) string {
 	return stem + "_" + u.Word + ".txt"
 }
 
+// The fixture language's spellings: a struct, and a function that
+// places its body.
+const (
+	structTpl   = "type {{.Name}} struct{}\n"
+	functionTpl = "func {{.Name}}() {\n{{body .}}}\n"
+)
+
 // language returns the smallest valid language: a struct
 // spelling, a callable spelling that places its body, a scaffold
 // printer for names and returns, and a pass-through formatter.
 func language() render.Language {
 	return render.Language{
 		Kinds: map[symbol.Kind]string{
-			symbol.KindStruct:   "type {{.Name}} struct{}\n",
-			symbol.KindFunction: "func {{.Name}}() {\n{{body .}}}\n",
+			symbol.KindStruct:   structTpl,
+			symbol.KindFunction: functionTpl,
 		},
 		Naming:   stubNaming,
 		Scaffold: scaffold,
-		Imports: func(set *render.ImportSet) string {
-			if set.Len() == 0 {
-				return ""
-			}
-			return "import (" + strings.Join(set.Paths(), " ") + ")\n"
-		},
+		Imports:  pathImports,
 		Finalise: func(src []byte) ([]byte, error) { return src, nil },
 	}
+}
+
+// pathImports renders the set's paths on one line, and nothing for an
+// empty set.
+func pathImports(set *render.ImportSet) string {
+	if set.Len() == 0 {
+		return ""
+	}
+	return "import (" + strings.Join(set.Paths(), " ") + ")\n"
+}
+
+// action spells one template action over the given words, so a
+// fixture template names a builtin or a helper through its constant.
+func action(words ...string) string {
+	return "{{" + strings.Join(words, " ") + "}}"
+}
+
+// helpers returns a vocabulary that binds nothing to the file's
+// import set: every file calls the same functions.
+func helpers(fm template.FuncMap) func(*render.ImportSet) template.FuncMap {
+	return func(*render.ImportSet) template.FuncMap { return fm }
+}
+
+// qualifying is a vocabulary bound to the file's import set, the way a
+// backend's speller is:
+//
+//   - qualify binds a package under the package's last segment and
+//     spells a name through the bound name, or bare where the package
+//     is the file's own.
+//   - item imports one declaration and spells the name it binds.
+//   - claim claims one declaration's simple name and spells the name,
+//     or the path and the name where another binding takes it.
+func qualifying(set *render.ImportSet) template.FuncMap {
+	return template.FuncMap{
+		qualifyHelper: func(pkg, name string) string {
+			local := set.Bind(pkg, path.Base(pkg))
+			if local == "" {
+				return name
+			}
+			return local + "." + name
+		},
+		itemHelper: func(pkg, name string) string {
+			return set.BindItem(pkg, name, false)
+		},
+		claimHelper: func(pkg, name string) string {
+			if set.Claim(pkg, name) {
+				return name
+			}
+			return pkg + "." + name
+		},
+	}
+}
+
+// binding returns the fixture language with the [qualifying]
+// vocabulary and an import block that writes every entry on a line
+// of its own, the bound name beside the path.
+func binding() render.Language {
+	l := language()
+	l.Funcs = qualifying
+	l.Imports = namedImports
+	return l
+}
+
+// namedImports renders every entry on a line of its own, the bound
+// name beside the path, so a case reads which name each import binds.
+func namedImports(set *render.ImportSet) string {
+	var b strings.Builder
+	for _, e := range set.Entries() {
+		b.WriteString("use " + e.Path + " as " + e.Name + "\n")
+	}
+	return b.String()
 }
 
 // scaffold spells the two statement kinds the fixtures use: a bare
@@ -72,8 +194,8 @@ func scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 	}
 }
 
-// unspellable returns the statement carrying a value the fixture
-// language has no form for.
+// unspellable returns a statement whose value the fixture language
+// has no form for.
 func unspellable() emit.Stmt {
 	return emit.Stmt{
 		Kind:  emit.StmtExpr,
@@ -86,9 +208,10 @@ func call(n string) emit.Stmt {
 	return emit.Stmt{Kind: emit.StmtExpr, Value: emit.Expr{Kind: emit.ExprName, Name: n}}
 }
 
-// fn returns a per-source unit holding one function carrying body.
+// fn returns a per-source unit containing one function whose body is
+// body.
 func fn(key, name string, body emit.Body) plugin.Unit {
-	u := unitOf("gen", key)
+	u := unitOf(emitter, key)
 	f := &emit.Function{
 		Origin: coretest.Struct(coretest.StorePath, name).ID,
 		Name:   name,
@@ -98,7 +221,15 @@ func fn(key, name string, body emit.Body) plugin.Unit {
 	return u
 }
 
-// unitOf returns one flushed unit carrying structs.
+// besideAlpha returns u with the struct alphaName before its
+// declarations, so a case that skips a declaration of u still has a
+// file to read.
+func besideAlpha(u plugin.Unit) plugin.Unit {
+	u.Decls = append([]symbol.Symbol{unitOf(emitter, u.Key, alphaName).Decls[0]}, u.Decls...)
+	return u
+}
+
+// unitOf returns one flushed unit of structs with the given names.
 func unitOf(p plugin.ID, key string, names ...string) plugin.Unit {
 	decls := make([]symbol.Symbol, 0, len(names))
 	for _, n := range names {
@@ -113,13 +244,13 @@ func unitOf(p plugin.ID, key string, names ...string) plugin.Unit {
 	}
 }
 
-// seeded returns an emit store holding the given units.
+// seeded returns an emit store containing the given units.
 func seeded(tb assert.TB, units ...plugin.Unit) *plugin.Emit {
 	tb.Helper()
 
 	e := plugin.NewEmit()
 	for _, u := range units {
-		assert.NoError(tb, e.Add(u), "the fixture unit arrives")
+		assert.NoError(tb, e.Add(u), "the fixture unit is added")
 	}
 	return e
 }
@@ -130,43 +261,43 @@ func runPass(
 ) ([]plugin.RenderedFile, *diag.Sink) {
 	tb.Helper()
 
-	p, err := render.New("printer", l)
+	p, err := render.New(passName, l)
 	assert.NoError(tb, err, "the language composes")
 	sink := diag.NewSink()
 	files, err := p.Render(&plugin.RenderContext{
-		Emit: e, Sink: sink, Plugin: "printer",
+		Emit: e, Sink: sink, Plugin: passName,
 	})
-	assert.NoError(tb, err, "the pass runs whole")
+	assert.NoError(tb, err, "the pass renders every file")
 	return files, sink
 }
 
 // refName is the template every reference-form fixture body names.
 const refName = "method1.tpl"
 
-// refTree returns the emitting plugin's tree holding src under
+// refTree returns the emitting plugin's tree containing src under
 // [refName].
 func refTree(src string) map[plugin.ID]fs.FS {
 	return map[plugin.ID]fs.FS{
-		"gen": fstest.MapFS{refName: &fstest.MapFile{Data: []byte(src)}},
+		emitter: fstest.MapFS{refName: &fstest.MapFile{Data: []byte(src)}},
 	}
 }
 
-// refBody returns a body claiming [refName] and nothing else, so a
-// case adds only the slots it is about.
+// refBody returns a body referencing [refName] and nothing else, so
+// a case adds only the slots it tests.
 func refBody() emit.Body {
 	return emit.Body{Ref: &emit.TemplateRef{Name: refName}}
 }
 
 // refused returns a statement the fixture's scaffold cannot spell:
-// the real printer failure an error path needs.
+// the printer failure an error path needs.
 func refused() emit.Stmt {
 	return emit.Stmt{Kind: emit.StmtGuard, Name: "err"}
 }
 
-// method returns a per-source unit holding one method carrying
-// body, the second callable kind the body builtin takes.
+// method returns a per-source unit containing one method whose body
+// is body, the second callable kind the body builtin takes.
 func method(key, name string, body emit.Body) plugin.Unit {
-	u := unitOf("gen", key)
+	u := unitOf(emitter, key)
 	m := &emit.Method{
 		Origin: coretest.Method(coretest.StorePath, coretest.StructName, name).ID,
 		Name:   name,
@@ -176,23 +307,23 @@ func method(key, name string, body emit.Body) plugin.Unit {
 	return u
 }
 
-// renderRef renders one function whose body is b, with trees as the
-// emitting plugin's template trees, and returns the file's bytes
-// beside the run's findings. An empty answer means the file was
-// withheld.
+// renderRef renders one function whose body is b through the
+// language l, with trees as the emitting plugin's template trees, and
+// returns the file's bytes beside the run's findings. An empty result
+// means the file was withheld.
 func renderRef(
-	tb assert.TB, trees map[plugin.ID]fs.FS, b emit.Body,
+	tb assert.TB, l render.Language, trees map[plugin.ID]fs.FS, b emit.Body,
 ) (string, *diag.Sink) {
 	tb.Helper()
 
-	p, err := render.New("printer", language())
+	p, err := render.New(passName, l)
 	assert.NoError(tb, err, "the language composes")
 	sink := diag.NewSink()
 	files, err := p.Render(&plugin.RenderContext{
-		Emit:  seeded(tb, fn("store.go", "Handle", b)),
-		Trees: trees, Sink: sink, Plugin: "printer",
+		Emit:  seeded(tb, fn(storeKey, handleName, b)),
+		Trees: trees, Sink: sink, Plugin: passName,
 	})
-	assert.NoError(tb, err, "the pass runs whole")
+	assert.NoError(tb, err, "the pass renders every file")
 	if len(files) == 0 {
 		return "", sink
 	}

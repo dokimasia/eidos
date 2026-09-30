@@ -39,7 +39,7 @@ func Groups() map[render.GroupName]string {
 // to. The type is the whole reference, arguments included, so a
 // method on Wrapper<String> and one on Wrapper<i32> open two
 // blocks. A method attaching to no type is left unassigned, and
-// the render reports it as a kind the target cannot spell.
+// the lowering refuses such a method before any render.
 // Everything that is not a method is left a singleton.
 func Cluster(decls []symbol.Symbol) []render.Clustered {
 	byType := map[string]int{}

@@ -28,7 +28,9 @@ import (
 // target, and several such candidates in the tier report under
 // [AmbiguousReference]. A reference no tier resolves keeps its
 // spelling alone: degradation a reader can ask about, not a
-// failure.
+// failure. For a language whose frontend is a [plugin.Importer], a
+// target declared in another file sets the reference's package to
+// the import the frontend names for that file.
 //
 // A file without a recorded scope resolves nothing: there are no
 // bindings to resolve through, and its references keep their
@@ -154,7 +156,9 @@ func withParams(
 
 // resolve settles one reference: the first tier with a candidate
 // the graph contains decides, that candidate is the target, and
-// several such candidates in the tier report as an ambiguity.
+// several such candidates in the tier report as an ambiguity. A
+// target an importer's language declares in another file records the
+// import naming that file as the reference's package.
 func resolve(
 	ref *node.TypeRef, f plugin.Frontend, scope plugin.ImportScope,
 	ix *index, sink *diag.Sink,
@@ -172,6 +176,11 @@ func resolve(
 			continue
 		}
 		ref.Target = hits[0]
+		if imp, imports := f.(plugin.Importer); imports {
+			if file := ix.files[ref.Target]; file != "" && file != scope.File.Name {
+				ref.Package = imp.ImportOf(scope, file)
+			}
+		}
 		if len(hits) > 1 {
 			names := make([]string, len(hits))
 			for i, h := range hits {

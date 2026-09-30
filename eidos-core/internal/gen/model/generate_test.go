@@ -27,6 +27,67 @@ const (
 	schemaMarker = "package schema\n\ntype " + model.MarkerName + " any\n\n"
 )
 
+// The fingerprint's pins: the file that declares it, and the
+// declaration its value follows.
+const (
+	fingerprintFile = "node/fingerprint.gen.go"
+	fingerprintDecl = "ModelFingerprint = \""
+)
+
+// The enum fixture: a schema that imports the module's symbol
+// package, the symbol sources a case varies, and the file names they
+// arrive under.
+const (
+	// enumSchema imports the symbol package through a field typed by
+	// its anchor, which every symbol source declares.
+	enumSchema = "package schema\n\nimport \"example.test/schema/symbol\"\n\n" +
+		"type " + model.MarkerName + " any\n\n" +
+		"// Thing has an anchor.\ntype Thing struct {\n" +
+		"\tAnchor symbol.Anchor `eidos:\"both\"`\n}\n"
+	// factSchema is enumSchema with an emit field stating a fact.
+	factSchema = "package schema\n\nimport \"example.test/schema/symbol\"\n\n" +
+		"type " + model.MarkerName + " any\n\n" +
+		"// Thing has an anchor.\ntype Thing struct {\n" +
+		"\tAnchor symbol.Anchor `eidos:\"both\"`\n" +
+		"\tAsync  bool          `eidos:\"emit,fact=Async\"`\n}\n"
+	// symbolHead opens every symbol source with the anchor type,
+	// which declares no constant and so no enum.
+	symbolHead = "package symbol\n\n// Anchor is what the schema imports the package for.\ntype Anchor uint8\n\n"
+	// toneSource declares a two-constant enum.
+	toneSource = symbolHead + "// Tone is a pitch.\ntype Tone uint8\n\n" +
+		"const (\n\tToneLow Tone = iota\n\tToneHigh\n)\n"
+	// toneMidSource inserts a constant into toneSource's list.
+	toneMidSource = symbolHead + "// Tone is a pitch.\ntype Tone uint8\n\n" +
+		"const (\n\tToneLow Tone = iota\n\tToneMid\n\tToneHigh\n)\n"
+	// toneDocSource is toneSource with other documentation.
+	toneDocSource = symbolHead + "// Tone names a pitch.\ntype Tone uint8\n\n" +
+		"const (\n\tToneLow Tone = iota\n\tToneHigh\n)\n"
+	// toneFiveSource is toneSource with the high constant at five.
+	toneFiveSource = symbolHead + "// Tone is a pitch.\ntype Tone uint8\n\n" +
+		"const (\n\tToneLow Tone = 0\n\tToneHigh Tone = 5\n)\n"
+	// pitchSource is toneSource with the type renamed.
+	pitchSource = symbolHead + "// Pitch is a pitch.\ntype Pitch uint8\n\n" +
+		"const (\n\tToneLow Pitch = iota\n\tToneHigh\n)\n"
+	// wideSource and narrowSource declare a string-typed constant,
+	// which is no enum, at two values.
+	wideSource   = toneSource + "\n// Width is a span.\ntype Width string\n\nconst WidthOne Width = \"wide\"\n"
+	narrowSource = toneSource + "\n// Width is a span.\ntype Width string\n\nconst WidthOne Width = \"narrow\"\n"
+	// foreignSource is toneSource with an integer constant of a type
+	// another package declares.
+	foreignSource = "package symbol\n\nimport \"time\"\n\n" +
+		"// Anchor is what the schema imports the package for.\ntype Anchor uint8\n\n" +
+		"// Tone is a pitch.\ntype Tone uint8\n\nconst (\n\tToneLow Tone = iota\n\tToneHigh\n)\n\n" +
+		"// Tick is a period.\nconst Tick time.Duration = 5\n"
+	// modeOneSource and modeTwoSource are a generated file's enum at
+	// two values.
+	modeOneSource = "package symbol\n\n// Mode is generated.\ntype Mode uint8\n\nconst ModeOne Mode = 1\n"
+	modeTwoSource = "package symbol\n\n// Mode is generated.\ntype Mode uint8\n\nconst ModeOne Mode = 2\n"
+	// symbolFile and generatedSymbolFile are the names the symbol
+	// sources arrive under.
+	symbolFile          = "symbol.go"
+	generatedSymbolFile = "mode" + genfile.GeneratedSuffix
+)
+
 // moduleRoot returns the kernel's module root, which every case
 // here generates against.
 func moduleRoot(tb assert.TB) string {
@@ -55,13 +116,67 @@ func schemaModule(t *testing.T, schema string) string {
 	return root
 }
 
+// symbolModule is one module a fingerprint case generates from: the
+// schema, the symbol package's hand-written source, and a generated
+// symbol file, empty for none.
+type symbolModule struct {
+	schema    string
+	symbol    string
+	generated string
+}
+
+// write writes the module into a fresh root and returns the root.
+func (m symbolModule) write(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	symbols := filepath.Join(root, model.SymbolPackage)
+	schema := filepath.Join(root, filepath.FromSlash(model.SchemaDir))
+	assert.NoError(t, os.MkdirAll(schema, 0o750), "the schema directory is created")
+	files := map[string]string{
+		filepath.Join(root, "go.mod"):      schemaGoMod,
+		filepath.Join(symbols, symbolFile): m.symbol,
+		filepath.Join(schema, "schema.go"): m.schema,
+	}
+	if m.generated != "" {
+		files[filepath.Join(symbols, generatedSymbolFile)] = m.generated
+	}
+	for path, content := range files {
+		assert.NoError(t, os.WriteFile(path, []byte(content), 0o600), "the module file writes: "+path)
+	}
+	return root
+}
+
+// fingerprintIn returns the value of the fingerprint a generated set
+// declares.
+func fingerprintIn(tb assert.TB, set genfile.Set) string {
+	tb.Helper()
+
+	_, rest, found := strings.Cut(string(set[fingerprintFile]), fingerprintDecl)
+	assert.True(tb, found, "the fingerprint file declares the constant")
+	value, _, _ := strings.Cut(rest, "\"")
+	return value
+}
+
+// fingerprintFor generates a module and returns its fingerprint.
+func fingerprintFor(t *testing.T, m symbolModule) string {
+	t.Helper()
+
+	set, err := model.Generate(m.write(t))
+	assert.NoError(t, err, "the module generates")
+	return fingerprintIn(t, set)
+}
+
+// The generator's output set, its bytes across runs, its fingerprint
+// and its refusals are what every mirror guard and unit key reads,
+// so each is contract.
 func TestGenerate(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Generate", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("renders every owned file", func(t *testing.T) {
+		t.Run("renders one file per output", func(t *testing.T) {
 			t.Parallel()
 
 			set, err := model.Generate(moduleRoot(t))
@@ -81,7 +196,7 @@ func TestGenerate(t *testing.T) {
 				"emit/walk.gen_test.go",
 				"match.gen.go",
 				"match.gen_test.go",
-				"node/fingerprint.gen.go",
+				fingerprintFile,
 				"node/fingerprint.gen_test.go",
 				"node/kinds.gen.go",
 				"node/kinds.gen_test.go",
@@ -95,22 +210,7 @@ func TestGenerate(t *testing.T) {
 				"symbol/kind.gen_test.go",
 			}
 			assert.Equal(t, slices.Sorted(maps.Keys(set)), want,
-				"every owned file renders, and nothing else")
-		})
-
-		t.Run("copies the schema's documentation into the models", func(t *testing.T) {
-			t.Parallel()
-
-			set, err := model.Generate(moduleRoot(t))
-			assert.NoError(t, err, "the schema generates")
-			kinds := string(set["node/kinds.gen.go"])
-			for _, want := range []string{
-				"// Struct is a type values can be made of",
-				"// This is the node spelling of the kind.",
-			} {
-				assert.Contains(t, kinds, want,
-					"the schema's documentation is carried into the models")
-			}
+				"every output renders, and nothing else")
 		})
 
 		t.Run("produces the same bytes twice", func(t *testing.T) {
@@ -127,13 +227,6 @@ func TestGenerate(t *testing.T) {
 			}
 		})
 
-		t.Run("reports a module without a schema", func(t *testing.T) {
-			t.Parallel()
-
-			_, err := model.Generate(t.TempDir())
-			assert.HasError(t, err, "a module holding no schema is reported")
-		})
-
 		t.Run("matches the committed tree", func(t *testing.T) {
 			t.Parallel()
 
@@ -144,17 +237,83 @@ func TestGenerate(t *testing.T) {
 				"the committed tree matches the schema; run `make generate` and commit")
 		})
 
-		t.Run("reports a schema declaring no kind", func(t *testing.T) {
+		fingerprints := []struct {
+			name          string
+			before, after symbolModule
+			changed       bool
+		}{
+			{
+				name:    "changes the fingerprint when a constant enters an enum mid-list",
+				before:  symbolModule{schema: enumSchema, symbol: toneSource},
+				after:   symbolModule{schema: enumSchema, symbol: toneMidSource},
+				changed: true,
+			},
+			{
+				name:    "changes the fingerprint when an enum constant's value changes",
+				before:  symbolModule{schema: enumSchema, symbol: toneSource},
+				after:   symbolModule{schema: enumSchema, symbol: toneFiveSource},
+				changed: true,
+			},
+			{
+				name:    "changes the fingerprint when an enum's type is renamed",
+				before:  symbolModule{schema: enumSchema, symbol: toneSource},
+				after:   symbolModule{schema: enumSchema, symbol: pitchSource},
+				changed: true,
+			},
+			{
+				name:    "changes the fingerprint when the schema states a fact",
+				before:  symbolModule{schema: enumSchema, symbol: toneSource},
+				after:   symbolModule{schema: factSchema, symbol: toneSource},
+				changed: true,
+			},
+			{
+				name:   "keeps the fingerprint across an enum's documentation edit",
+				before: symbolModule{schema: enumSchema, symbol: toneSource},
+				after:  symbolModule{schema: enumSchema, symbol: toneDocSource},
+			},
+			{
+				name:   "keeps the fingerprint across a string constant's value",
+				before: symbolModule{schema: enumSchema, symbol: wideSource},
+				after:  symbolModule{schema: enumSchema, symbol: narrowSource},
+			},
+			{
+				name: "keeps the fingerprint across a generated symbol file's constants",
+				before: symbolModule{
+					schema: enumSchema, symbol: toneSource, generated: modeOneSource,
+				},
+				after: symbolModule{
+					schema: enumSchema, symbol: toneSource, generated: modeTwoSource,
+				},
+			},
+		}
+		for _, tt := range fingerprints {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				before, after := fingerprintFor(t, tt.before), fingerprintFor(t, tt.after)
+				assert.Equal(t, before != after, tt.changed,
+					"a recorded graph is served exactly while its encoding keeps its meaning")
+			})
+		}
+
+		t.Run("returns an error for a module without a schema", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := model.Generate(t.TempDir())
+			assert.HasError(t, err, "a module without a schema generates nothing")
+		})
+
+		t.Run("returns an error for a schema declaring no kind", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := model.Generate(schemaModule(t, ""))
-			assert.HasError(t, err, "a schema declaring nothing but the marker is reported")
+			assert.HasError(t, err, "a schema declaring nothing but the marker generates nothing")
 			assert.Contains(t, err.Error(), "symbols.gen_test.go",
 				"naming the file that could not render against it")
 			assert.HasPrefix(t, err.Error(), "model: ", "under the package prefix")
 		})
 
-		t.Run("reports a fact stated on a shape rendering does not model", func(t *testing.T) {
+		t.Run("returns an error for a fact stated on a shape the rendering does not model", func(t *testing.T) {
 			t.Parallel()
 
 			root := schemaModule(t, "// Thing counts.\ntype Thing struct {\n"+
@@ -182,7 +341,18 @@ func TestGenerate(t *testing.T) {
 			set, err := model.Generate(root)
 			assert.NoError(t, err, "the same schema generates in memory")
 			assert.NoError(t, genfile.Verify(root, set, model.OwnedDirs),
-				"and what landed on disk is what the generator produces")
+				"and the bytes on disk are what the generator produces")
+		})
+
+		t.Run("writes models that a second run reproduces", func(t *testing.T) {
+			t.Parallel()
+
+			root := symbolModule{schema: enumSchema, symbol: toneSource}.write(t)
+			assert.NoError(t, model.Regenerate(root), "the first run writes the models")
+			set, err := model.Generate(root)
+			assert.NoError(t, err, "a second run over the written models generates")
+			assert.NoError(t, genfile.Verify(root, set, model.OwnedDirs),
+				"the Kind and Fact constants the first run wrote leave the fingerprint as it was")
 		})
 
 		t.Run("writes nothing when one file refuses", func(t *testing.T) {
@@ -193,7 +363,7 @@ func TestGenerate(t *testing.T) {
 			assert.HasError(t, model.Regenerate(root),
 				"a file that cannot render refuses the run")
 			assert.Empty(t, generatedFiles(t, root),
-				"and no file landed: a refused render leaves no half-generated tree")
+				"and no file was written: a refused render leaves no half-generated tree")
 		})
 	})
 }

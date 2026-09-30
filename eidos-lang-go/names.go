@@ -23,6 +23,14 @@ const (
 	DotAlias = "."
 )
 
+// The standard library's iterator shapes: the path of the package that
+// declares them, and the two sequence types a callable returns.
+const (
+	IterPackage = "iter"
+	IterSeq     = "Seq"
+	IterSeq2    = "Seq2"
+)
+
 // The spellings the assumed import name strips.
 const (
 	// majorPrefix opens a major-version path element, such as v5.
@@ -95,6 +103,14 @@ func AssumedName(importPath string) string {
 		name = name[:cut]
 	}
 	return name
+}
+
+// Unqualified returns the name a type spelling qualifies: the text
+// after the qualifier, and the whole spelling where none is written.
+// A reference keeps an instantiation's arguments apart from its
+// spelling, so a reference's spelling returns a bare name.
+func Unqualified(spelling string) string {
+	return spelling[strings.LastIndexByte(spelling, '.')+1:]
 }
 
 // ImportName returns the qualifier an import binds in its file: the

@@ -29,14 +29,29 @@ var scalars = map[string]bool{
 	"bool": true, "string": true, "bytes": true,
 }
 
-// wellKnown are the well-known types a projection maps by name, by
-// their names inside [WellKnownPackage].
-var wellKnown = map[string]bool{
-	"Timestamp": true, "Duration": true, "Empty": true, "FieldMask": true,
-	"Any": true, "Struct": true, "Value": true, "ListValue": true, "NullValue": true,
-	"DoubleValue": true, "FloatValue": true, "Int64Value": true, "UInt64Value": true,
-	"Int32Value": true, "UInt32Value": true, "BoolValue": true, "StringValue": true,
-	"BytesValue": true,
+// wellKnown maps the well-known types a projection maps by name, by
+// their names inside [WellKnownPackage], to the import path of the
+// file that declares each, the path protoc and every protobuf
+// toolchain resolve it under.
+var wellKnown = map[string]string{
+	"Any":         "google/protobuf/any.proto",
+	"Duration":    "google/protobuf/duration.proto",
+	"Empty":       "google/protobuf/empty.proto",
+	"FieldMask":   "google/protobuf/field_mask.proto",
+	"Struct":      "google/protobuf/struct.proto",
+	"Value":       "google/protobuf/struct.proto",
+	"ListValue":   "google/protobuf/struct.proto",
+	"NullValue":   "google/protobuf/struct.proto",
+	"Timestamp":   "google/protobuf/timestamp.proto",
+	"DoubleValue": "google/protobuf/wrappers.proto",
+	"FloatValue":  "google/protobuf/wrappers.proto",
+	"Int64Value":  "google/protobuf/wrappers.proto",
+	"UInt64Value": "google/protobuf/wrappers.proto",
+	"Int32Value":  "google/protobuf/wrappers.proto",
+	"UInt32Value": "google/protobuf/wrappers.proto",
+	"BoolValue":   "google/protobuf/wrappers.proto",
+	"StringValue": "google/protobuf/wrappers.proto",
+	"BytesValue":  "google/protobuf/wrappers.proto",
 }
 
 // IsScalar reports whether a spelling names one of protobuf's scalar
@@ -49,12 +64,34 @@ func IsScalar(spelling string) bool { return scalars[spelling] }
 // or not the workspace loads its declaration, so no reference to one
 // resolves against the graph.
 func WellKnown(spelling string) (string, bool) {
-	name := strings.TrimPrefix(strings.TrimSpace(spelling), NameSep)
+	name, _, known := wellKnownOf(spelling)
+	return name, known
+}
+
+// WellKnownImport returns the import path of the file that declares
+// the well-known type a spelling names, such as
+// google/protobuf/timestamp.proto, and reports whether the spelling
+// names one. The frontend records it as the reference's package,
+// because no reference to a well-known type resolves against the
+// graph.
+func WellKnownImport(spelling string) (string, bool) {
+	_, file, known := wellKnownOf(spelling)
+	return file, known
+}
+
+// wellKnownOf returns the fully-qualified name and the declaring
+// file of the well-known type a spelling names.
+func wellKnownOf(spelling string) (name, file string, known bool) {
+	name = strings.TrimPrefix(strings.TrimSpace(spelling), NameSep)
 	local, inPackage := strings.CutPrefix(name, WellKnownPackage+NameSep)
-	if !inPackage || !wellKnown[local] {
-		return "", false
+	if !inPackage {
+		return "", "", false
 	}
-	return name, true
+	file, known = wellKnown[local]
+	if !known {
+		return "", "", false
+	}
+	return name, file, true
 }
 
 // Candidates returns what a type spelling could mean from inside a

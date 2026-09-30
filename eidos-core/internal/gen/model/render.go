@@ -7,7 +7,7 @@ import "strings"
 
 // The packages the generator writes into.
 const (
-	// SymbolPackage holds the Kind constants.
+	// SymbolPackage is the package of the Kind and Fact constants.
 	SymbolPackage = "symbol"
 
 	// RootPackage is the authoring surface the match constructors
@@ -20,8 +20,8 @@ const (
 	EmitPackage = "emit"
 )
 
-// The qualifiers a generated model file reaches other packages
-// through.
+// The qualifiers a generated model file names other packages'
+// declarations through.
 const (
 	symbolQualifier   = SymbolPackage + "."
 	positionQualifier = "position."
@@ -33,18 +33,16 @@ const (
 	receiverName = "x"
 	// accessorSuffix names a slot's exported accessor.
 	accessorSuffix = "Slot"
-	// shadowSuffix names the struct a codec encodes through.
-	shadowSuffix = "JSON"
 	// slotType is the storage a slot-tagged field declares.
 	slotType = "Slot"
 	// itemsMethod, lenMethod and appendMethod are the slot's own
-	// surface, which generated code reaches through.
+	// surface, which generated code calls.
 	itemsMethod  = "Items"
 	lenMethod    = "Len"
 	appendMethod = "Append"
 	// symbolsType is the named slice a marker-typed field declares.
-	// It carries the codec that reads a child's kind before it
-	// allocates one, which a plain interface slice cannot.
+	// Its codec reads a child's kind before it allocates one, which a
+	// plain interface slice cannot.
 	symbolsType = "Symbols"
 	// sliceMarker and pointerMarker open a Go type spelling.
 	sliceMarker   = "[]"
@@ -55,26 +53,26 @@ const (
 	addressOf   = "&"
 )
 
-// Field names the models treat by convention rather than by tag.
-// Lowering carries them through and rendering recognizes them.
+// Field names the models treat by convention and not by tag.
+// Lowering passes them through and rendering recognizes them.
 const (
-	// docField holds a declaration's documentation.
+	// docField is a declaration's documentation.
 	docField = "Doc"
-	// posField holds a node symbol's source position.
+	// posField is a node symbol's source position.
 	posField = "Pos"
-	// idField holds a node declaration's canonical identity, which is
+	// idField is a node declaration's canonical identity, which is
 	// what makes the kind satisfy the Declaration interface.
 	idField = "ID"
-	// originField holds an emit value's node identity, which is what
+	// originField is an emit value's node identity, which is what
 	// the generated OriginOf returns.
 	originField = "Origin"
-	// typeField holds a declaration's own type reference, which is
-	// what makes a kind satisfy the Typed interface.
+	// typeField is a declaration's own type reference, which is what
+	// makes a kind satisfy the Typed interface.
 	typeField = "Type"
 	// typeRefKind is the kind such a field references.
 	typeRefKind = "TypeRef"
-	// visField holds a declaration's normalized visibility, which
-	// the respell traversal hands the hook.
+	// visField is a declaration's normalized visibility, which the
+	// respell traversal hands the hook.
 	visField = "Visibility"
 )
 
@@ -92,32 +90,30 @@ var memberMethods = []struct {
 // view is one kind prepared for a template.
 //
 // Every spelling a template needs is computed here, so the
-// templates range over data and decide nothing. The lowering stays
+// templates range over data and decide nothing. The lowering is
 // free of layout concerns, and a template never asks which side it
 // is on.
 type view struct {
 	Name string
-	// Shadow is the unexported struct the codec encodes through.
-	Shadow string
 	// Doc is the schema's documentation for the kind.
 	Doc []string
 	// Fields are the struct's fields, in declaration order.
 	Fields []fieldView
 	// PosExpr and DocExpr satisfy the Symbol interface, and HasPos
-	// and HasDoc say whether the kind carries the field they read.
+	// and HasDoc report whether the kind has the field they read.
 	PosExpr string
 	DocExpr string
 	HasPos  bool
 	HasDoc  bool
 	// Members satisfy the Membered interface. The slice is empty for
-	// a kind that carries no member list, and an entry with an
-	// empty Items returns nil.
+	// a kind without a member list, and an entry with an empty Items
+	// returns nil.
 	Members []memberView
 	// TypeRefStorage is the field returning the Typed interface,
 	// empty when the kind is not typed.
 	TypeRefStorage string
 	// IDStorage is the field returning the identity accessor, empty
-	// on the emit side, which carries an origin instead.
+	// on the emit side, which has an origin instead.
 	IDStorage string
 	// Subject marks a kind the dispatch surface triggers on, which
 	// is what the match template ranges over.
@@ -133,14 +129,14 @@ type view struct {
 	// one child in every traversed field.
 	Children []string
 	// WalkVisits is how many declarations a walk over that subject
-	// reaches, the subject included.
+	// visits, the subject included.
 	WalkVisits int
-	// NameStorage is the field holding the kind's own declared
-	// name, empty when the kind declares none, and VisStorage the
-	// field holding its visibility, empty when it carries none.
+	// NameStorage is the field of the kind's own declared name, empty
+	// when the kind declares none, and VisStorage the field of its
+	// visibility, empty when it has none.
 	NameStorage string
 	VisStorage  string
-	// NameWalked are the traversed fields that reach a declared
+	// NameWalked are the traversed fields that lead to a declared
 	// name: the respell traversal's descent set.
 	NameWalked []fieldView
 	// NameChildren are the statements a test uses to give the
@@ -148,23 +144,22 @@ type view struct {
 	// how many names the respell traversal then visits.
 	NameChildren []string
 	NameVisits   int
-	// Facts are the stated facts the kind carries directly, in
-	// schema field order, and FactWalked the traversed fields that
-	// reach a fact-carrying kind: the facts traversal's descent
-	// set.
+	// Facts are the stated facts of the kind's own fields, in schema
+	// field order, and FactWalked the traversed fields that lead to a
+	// kind stating facts: the facts traversal's descent set.
 	Facts      []factView
 	FactWalked []fieldView
 	// FactChildren build one child stating one fact per descent
-	// field that reaches a fact-carrying kind, and say what the
+	// field that leads to a kind stating facts, with what the
 	// traversal yields for each; empty where no descent field does.
 	FactChildren []factChildView
 	// Malformed is an encoding naming this kind whose first field
-	// holds the wrong JSON type, so a decoder places the kind and
-	// then fails on its body.
+	// has the wrong JSON type, so a decoder places the kind and then
+	// fails on its body.
 	Malformed string
 }
 
-// IsMembered reports whether the kind carries any member list.
+// IsMembered reports whether the kind has any member list.
 func (v view) IsMembered() bool { return len(v.Members) > 0 }
 
 // memberView is one Membered method and the expressions that satisfy
@@ -192,8 +187,8 @@ type factView struct {
 // factChildView is the statements a test uses to give a subject
 // one child stating one fact, with what the traversal then yields.
 type factChildView struct {
-	// Field is the descent field the child sits in, which names the
-	// generated case.
+	// Field is the descent field that contains the child, which names
+	// the generated case.
 	Field string
 	Stmts []string
 	Kind  string
@@ -202,11 +197,11 @@ type factChildView struct {
 
 // multiReturnFact is the one fact whose statedness is not the
 // field's own shape: a callable returns several values when the
-// list holds more than one, so the threshold is two rather than
+// list has more than one entry, so the threshold is two and not
 // presence.
 const multiReturnFact = "MultiReturn"
 
-// fieldView is one field as one model side carries it.
+// fieldView is one field as one model side declares it.
 type fieldView struct {
 	// Doc and Comment are the schema's documentation for the field.
 	Doc     []string
@@ -233,13 +228,10 @@ type fieldView struct {
 	Child    string
 	// JSONName is the field's key in encoded form.
 	JSONName string
-	// JSONType is the type the codec's shadow struct declares. A
-	// field typed by the marker becomes raw bytes, because its
-	// concrete kind is only known from the encoded discriminator.
+	// JSONType is the type the field's value decodes into: the
+	// declared type, with a slice of the marker spelled as the
+	// kind-discriminated [symbolsType] slice.
 	JSONType string
-	// Raw says the codec dispatches this field through the
-	// kind-discriminated encoder rather than encoding it directly.
-	Raw bool
 }
 
 // viewsFor prepares every kind for one model side.
@@ -258,8 +250,8 @@ func viewsFor(kinds []KindSpec, side string) []view {
 }
 
 // fillFacts prepares the facts traversal's views on the emit side:
-// each kind's own stated facts, the descent fields that reach a
-// fact-carrying kind, and one stated child for the generated twin.
+// each kind's own stated facts, the descent fields that lead to a
+// kind stating facts, and one stated child for the generated twin.
 // It runs after viewOf so a child's setter can name any kind's
 // first fact.
 func fillFacts(kinds []KindSpec, side string, views []view) {
@@ -301,8 +293,8 @@ func fillFacts(kinds []KindSpec, side string, views []view) {
 
 // factReach computes which kinds the facts traversal descends
 // into: every kind that states a fact or walks to one. A
-// marker-typed walk field reaches by construction, because any
-// kind may sit in it.
+// marker-typed walk field leads to one by construction, because it
+// admits any kind.
 func factReach(kinds []KindSpec) map[string]bool {
 	reach := map[string]bool{}
 	for _, k := range kinds {
@@ -338,7 +330,7 @@ func factReach(kinds []KindSpec) map[string]bool {
 // non-empty; the several-returns fact alone asks for more than
 // one, because a single result is every language's ordinary case.
 // A shape outside the set renders text gofmt refuses, so a
-// mis-tagged field fails the generation rather than walking wrong.
+// mis-tagged field fails the generation and never walks wrong.
 func factStated(field FieldSpec, f fieldView) string {
 	switch {
 	case field.Fact == multiReturnFact:
@@ -393,13 +385,13 @@ func factSetter(field FieldSpec, f fieldView, receiver, enclosing string) string
 
 // factChildrenOf writes, for every descent field whose element
 // states a fact directly, the statements giving a subject one child
-// stating it, and says what the traversal yields for that child. A
+// stating it, and records what the traversal yields for that child. A
 // descent field that is itself fact-tagged is passed over, because
 // filling it would state the subject's own fact beside the child's.
 //
-// Every such field gets an entry rather than only the first: each is
-// its own recursion in the generated traversal, and a field no case
-// fills is a descent nothing holds.
+// Every such field gets an entry, not only the first: each is its
+// own recursion in the generated traversal, and a field no case
+// fills is a descent no test covers.
 func factChildrenOf(k KindSpec, first map[string]factView, side string) []factChildView {
 	var out []factChildView
 	for _, f := range k.Fields {
@@ -455,10 +447,10 @@ func factsOf(kinds []KindSpec) []string {
 }
 
 // nameReach computes which kinds the respell traversal descends
-// into: reach holds every kind that carries a declared name or
-// walks to one, and named maps a kind to its own name field. A
-// marker-typed walk field reaches by construction, because any
-// kind may sit in it.
+// into. Its first result contains every kind that declares a name
+// or walks to one, and named maps a kind to its own name field. A
+// marker-typed walk field leads to one by construction, because it
+// admits any kind.
 func nameReach(
 	kinds []KindSpec, side string,
 ) (reach map[string]bool, named map[string]string) {
@@ -506,7 +498,6 @@ func nameReach(
 func viewOf(kind KindSpec, side string, reach map[string]bool, named map[string]string) view {
 	v := view{
 		Name:    kind.Name,
-		Shadow:  unexport(kind.Name) + shadowSuffix,
 		Doc:     kind.Doc,
 		Subject: kind.Subject,
 		PosExpr: positionQualifier + "Pos{}",
@@ -597,8 +588,8 @@ func nameChildrenOf(v view, named map[string]string) (stmts []string, visits int
 }
 
 // malformedOf writes an encoding that names the kind and then
-// breaks: the first field carries a JSON type it cannot hold. A
-// decoder therefore reaches the kind's own reader before it fails,
+// breaks: the first field has a JSON type it cannot decode. A
+// decoder therefore enters the kind's own reader before it fails,
 // which is the path a bad payload takes.
 func malformedOf(v view) string {
 	if len(v.Fields) == 0 {
@@ -613,7 +604,7 @@ func malformedOf(v view) string {
 }
 
 // childrenOf writes the statements that give a subject one child in
-// every traversed field, and counts what a walk then reaches.
+// every traversed field, and counts what a walk then visits.
 //
 // A child is empty, so it contributes exactly one visit. A field
 // typed by the marker takes a value of the enclosing kind, which is
@@ -639,9 +630,9 @@ func childrenOf(v view) (stmts []string, visits int) {
 }
 
 // childOf writes the expression constructing one value a field
-// holds: the kind it references, or the enclosing kind for a
-// marker-typed field, which admits any kind and so is always
-// satisfied by the value that carries it.
+// admits: the kind it references, or the enclosing kind for a
+// marker-typed field, which admits any kind and so always admits a
+// value of the kind that declares it.
 func childOf(f fieldView, enclosing string) string {
 	elem := f.Elem
 	if elem == "" {
@@ -651,7 +642,7 @@ func childOf(f fieldView, enclosing string) string {
 }
 
 // membersOf returns the Membered methods a kind implements. It
-// returns nothing when the kind carries no member list at all, so a
+// returns nothing when the kind has no member list at all, so a
 // kind that is not membered grows no methods.
 func membersOf(byName map[string]fieldView) []memberView {
 	var members []memberView
@@ -686,7 +677,6 @@ func fieldOf(field FieldSpec, side string) fieldView {
 		Pointer: strings.HasPrefix(field.Type, "*"),
 	}
 	f.JSONName = unexport(field.Name)
-	f.Raw = field.IsSymbol
 	switch {
 	case field.IsSymbol && field.Slice:
 		f.JSONType = symbolsType
@@ -713,7 +703,8 @@ func fieldOf(field FieldSpec, side string) fieldView {
 func (f fieldView) selector() string { return receiverName + "." + f.Storage }
 
 // unexport lowers a name's leading run of capitals, so an acronym
-// stays one word: ID becomes id, and TypeParams becomes typeParams.
+// remains one word: ID becomes id, and TypeParams becomes
+// typeParams.
 func unexport(name string) string {
 	caps := 0
 	for caps < len(name) && name[caps] >= 'A' && name[caps] <= 'Z' {
@@ -734,7 +725,7 @@ func unexport(name string) string {
 
 // qualify renders a schema type spelling as a model package spells
 // it: the marker becomes the shared Symbol interface, and a kind
-// name stays bare because the model declares it in the same
+// name remains bare because the model declares it in the same
 // package.
 func qualify(spelling string) string {
 	prefix, bare := "", spelling

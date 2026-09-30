@@ -13,11 +13,15 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/workspace"
 )
+
+// fixtureBrand is the brand every fixture composition declares.
+const fixtureBrand output.Brand = "fixture"
 
 // fakeBackend is the smallest backend: a name and the target its
 // plan resolves at composition. Nothing invokes it, which is the
@@ -27,7 +31,10 @@ type fakeBackend struct {
 	target plugin.Target
 }
 
-func (b fakeBackend) Name() plugin.ID       { return b.name }
+// Name returns the backend's declared name.
+func (b fakeBackend) Name() plugin.ID { return b.name }
+
+// Target returns the target the backend renders.
 func (b fakeBackend) Target() plugin.Target { return b.target }
 
 // quiet is an annotator handler stamping nothing.
@@ -55,15 +62,19 @@ func generator(name plugin.ID, h func(*eidos.StructMatch, *eidos.Emitter) error)
 	return p
 }
 
+// mirrored appends one struct named after the subject: the handler
+// every mirroring generator runs.
+func mirrored(m *eidos.StructMatch, e *eidos.Emitter) error {
+	e.PackageFile().Append(&emit.Struct{
+		Origin: m.Struct.Identity(),
+		Name:   "For" + m.Struct.Name,
+	})
+	return nil
+}
+
 // mirror returns a generator emitting one struct per subject.
 func mirror(name plugin.ID) plugin.Generator {
-	return generator(name, func(m *eidos.StructMatch, e *eidos.Emitter) error {
-		e.PackageFile().Append(&emit.Struct{
-			Origin: m.Struct.Identity(),
-			Name:   "For" + m.Struct.Name,
-		})
-		return nil
-	})
+	return generator(name, mirrored)
 }
 
 // caps spells a capability list inline.
@@ -98,8 +109,7 @@ func stamperAt(
 	return p
 }
 
-// planTo returns a plan carrying gens toward a backend naming
-// target.
+// planTo returns a plan running gens toward a backend naming target.
 func planTo(name string, target plugin.Target, gens ...plugin.Generator) workspace.Plan {
 	return workspace.Plan{
 		Name:       name,
@@ -108,17 +118,18 @@ func planTo(name string, target plugin.Target, gens ...plugin.Generator) workspa
 	}
 }
 
-// valid returns the smallest whole composition: one annotator, one
-// plan with one generator, one registered target.
+// valid returns the smallest whole composition: the fixture brand,
+// one annotator, one plan with one generator, one registered target.
 func valid() *workspace.Builder {
 	return workspace.New().
+		Brand(fixtureBrand).
 		Annotators(stamper("noter", quiet)).
 		Targets("fixture").
 		Plans(planTo("plan", "fixture", mirror("mirror")))
 }
 
-// alpha returns an unfrozen one-package graph holding one
-// positioned struct.
+// alpha returns an unfrozen one-package graph with one positioned
+// struct.
 func alpha(tb assert.TB) (*store.Graph, *node.Struct) {
 	tb.Helper()
 
@@ -145,39 +156,66 @@ func units(e *plugin.Emit) []plugin.Unit {
 func TestWorkspace(t *testing.T) {
 	t.Parallel()
 
-	t.Run("the report carries the run's three surfaces", func(t *testing.T) {
+	t.Run("Brand", func(t *testing.T) {
 		t.Parallel()
 
-		w, err := valid().Build()
-		assert.NoError(t, err, "the fixture composition is valid")
-		g, _ := alpha(t)
-		report, err := w.Run(t.Context(), g)
-		assert.NoError(t, err, "the fixture run is clean")
-		assert.NotNil(t, report.Sink, "the findings")
-		assert.NotNil(t, report.Facts, "the arbitrated facts")
-		assert.Length(t, report.Emits, 1, "one store per plan")
-		assert.Length(t, units(report.Emits["plan"]), 1, "the mirrored unit arrived")
+		t.Run("returns the composition's brand", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			assert.Equal(t, w.Brand(), fixtureBrand, "the brand is the declared one")
+		})
 	})
 
-	t.Run("concurrent runs share nothing", func(t *testing.T) {
+	t.Run("Kernel", func(t *testing.T) {
 		t.Parallel()
 
-		w, err := valid().Build()
-		assert.NoError(t, err, "the fixture composition is valid")
-		reports := make([]*workspace.Report, 2)
-		errs := make([]error, 2)
-		var wg sync.WaitGroup
-		for i := range reports {
+		t.Run("returns the kernel's registered keys", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			assert.False(t, w.Kernel().IsZero(), "the handles name the kernel's keys")
+		})
+	})
+
+	t.Run("Run", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a report with the findings, the facts and one store per plan", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
 			g, _ := alpha(t)
-			wg.Go(func() {
-				reports[i], errs[i] = w.Run(t.Context(), g)
-			})
-		}
-		wg.Wait()
-		for i := range reports {
-			assert.NoError(t, errs[i], "each run is clean")
-			assert.Length(t, units(reports[i].Emits["plan"]), 1,
-				"each run returns its own store")
-		}
+			report, err := w.Run(t.Context(), g)
+			assert.NoError(t, err, "the fixture run is clean")
+			assert.NotNil(t, report.Sink, "the report has the findings")
+			assert.NotNil(t, report.Facts, "the report has the arbitrated facts")
+			assert.Length(t, report.Emits, 1, "the report has one store per plan")
+			assert.Length(t, units(report.Emits["plan"]), 1, "the store has the mirrored unit")
+		})
+
+		t.Run("returns a store of its own to each concurrent run", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			reports := make([]*workspace.Report, 2)
+			errs := make([]error, 2)
+			var wg sync.WaitGroup
+			for i := range reports {
+				g, _ := alpha(t)
+				wg.Go(func() {
+					reports[i], errs[i] = w.Run(t.Context(), g)
+				})
+			}
+			wg.Wait()
+			for i := range reports {
+				assert.NoError(t, errs[i], "each run is clean")
+				assert.Length(t, units(reports[i].Emits["plan"]), 1, "each run has its own unit")
+			}
+		})
 	})
 }

@@ -18,18 +18,27 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
+// TailSize is how many final bytes of a stamped file contain its
+// trailer's key. The key, the digest, the comment's closer and the
+// final line break end the file, 84 bytes and the closer, so 128
+// bytes contain the key for every closer up to 44 bytes, its
+// leading space included.
+const TailSize = core.TailSize
+
 // Brand names the tool built on the kernel: the name the marker
-// attributes generation to and the trailer claims ownership
-// under. Lowercase letters, digits and hyphens, nothing else, so
-// the brand is safe in a comment line, a frame key and a
-// directory name without escaping.
+// attributes generation to, the trailer claims ownership under,
+// and a directive carrier opens with. A lowercase letter, then
+// lowercase letters, digits and hyphens, nothing else, so the brand
+// is safe in a comment line, a frame key, a directory name and a
+// carrier mark without escaping.
 //
 // There is no default. Two tools built on the kernel and run in
 // one repository must never prove ownership of each other's
-// files, so every consumer states its own name.
+// files or read each other's carriers, so every consumer states its
+// own name.
 type Brand = core.Brand
 
-// Provenance is the record a stamped file carries in its own
+// Provenance is the record a stamped file contains in its own
 // bytes: who generated it, from what, and the digest of the body
 // the trailer attests.
 type Provenance = core.Provenance
@@ -46,9 +55,9 @@ type Contract = core.Contract
 
 // NewContract composes the stamp for one target.
 //
-// It refuses a brand outside [Brand.Valid] and a syntax carrying
-// neither a line form nor a block form, because a language
-// without comments cannot carry the frame. The line form is
+// It refuses a brand outside [Brand.Valid] and a syntax with
+// neither a line form nor a block form, because a language without
+// comments has no place for the frame. The line form is
 // preferred where a language has both: one line comment per frame
 // line reads in every editor and diffs one line per change.
 func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error) {
@@ -68,18 +77,35 @@ func Read(stamped []byte) (Provenance, bool) {
 	return core.Read(stamped)
 }
 
+// HasTrailerKey reports whether bytes from a file's end contain the
+// key a trailer opens its record with. A file whose last [TailSize]
+// bytes contain no key has no frame [Read] parses, so a caller that
+// probes the tail reads the whole file only when this reports true.
+func HasTrailerKey(tail []byte) bool {
+	return core.HasTrailerKey(tail)
+}
+
 // Disk stages for a directory tree and commits into it. The root
 // is opened once and every staged path resolves inside it, so a
 // symlink pointing out of the tree does not escape it either: the
 // jail is the operating system's.
+//
+// A commit overwrites an existing file only when the file is this
+// sink's brand's intact output: its trailer names the brand and its
+// digest matches its body, which [Contract.Verify] checks the same
+// way. A hand-written file, another brand's output and an output
+// edited since it was stamped are refused, naming the path, and
+// remain as they are.
 type Disk = core.Disk
 
-// NewDisk opens a sink over an existing directory. It refuses a
-// root it cannot open, because a sink over nothing writes nowhere.
+// NewDisk opens a sink over an existing directory that writes as
+// one brand. It refuses a brand outside [Brand.Valid], because the
+// sink proves its ownership of a file through the brand, and a root
+// it cannot open, because a sink over nothing writes nowhere.
 //
-// Commit and Discard close the root; the sink serves one staging.
-func NewDisk(root string) (*Disk, error) {
-	return core.NewDisk(root)
+// Commit and Discard close the root. The sink serves one staging.
+func NewDisk(root string, brand Brand) (*Disk, error) {
+	return core.NewDisk(root, brand)
 }
 
 // Mem stages in memory and commits into a map, for tests and for

@@ -1,47 +1,57 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-// Package meta carries typed facts between plugins.
+// Package meta records the typed facts plugins exchange.
 //
 // Metadata is the only channel between plugins: a fact that has to
-// move between plugins goes on the graph, never through an import. [Key] is the
-// typed handle a registration returns, [Registry] refuses a key or
-// a namespace claimed twice naming both claimants, and [Facts]
-// holds the run's stamped facts, one bag per subject.
+// move between plugins goes on the graph, never through an import.
+// [Key] is the typed handle a registration returns, [Registry]
+// records the registered namespaces and keys, and [Facts] stores the
+// run's stamped facts, one bag per subject.
+//
+// # Registration
+//
+// A [Registry] handle is bound to one registrant: a plugin's name,
+// or no name for the composition. [Registry.For] returns the handle
+// for a registrant, and every handle shares one set of
+// registrations. A namespace belongs to the registrant whose handle
+// claimed it, and a key registers only into a namespace its own
+// registrant claimed. A namespace claimed twice and a key registered
+// twice are errors that name both claimants. [Kernel] claims
+// [KernelNamespace] as [KernelOwner], so no plugin registers a key
+// under it.
 //
 // # Arbitration
 //
-// Every write carries a [Claim] and rank decides the winner, never
-// arrival order: higher [Authority] first, then the earlier
+// Every write comes with a [Claim], and rank decides the winner,
+// never arrival order: higher [Authority] first, then the earlier
 // capability bucket, then the plugin name alphabetically, then the
-// first claim in canonical match order. A later claim carrying a
-// different value does nothing — that is precedence rather than
-// conflict — and every claim is kept, so [Facts.Claims] shows a
-// losing write instead of losing it.
+// first claim in canonical match order. A claim that loses on rank
+// changes nothing, whenever it arrives. [Facts.Claims] lists every
+// claim, the losing ones included.
 //
 // A drop is a claim of absence at directive authority: it outranks
 // a plugin stamp whenever the stamp arrives, and loses to a manual
 // write. [Facts.DropGroup] covers every member of a fact group,
-// stamps that arrive after it included.
+// including the stamps that arrive after it.
 //
 // # Reading
 //
 // [Get] returns the winning value untracked, which is the kernel's
 // own path. [Fact] records the read at (subject, key) into a
-// [Recorder] — a miss records too — and is the read every plugin
-// makes. [Facts.ByKey] enumerates the subjects a key presently
-// reads present on, in identity order, maintained at stamp time.
+// [Recorder], a miss included, and is the read every plugin makes.
+// [Facts.ByKey] enumerates the subjects on which a key reads
+// present, in identity order, maintained at stamp time.
 //
 // # Failure semantics
 //
-// A write is refused with an error for a key nothing registered, a
-// subject kind the key does not admit, and a false boolean: absence
-// is the negative, so false is never stamped. Nothing here panics.
+// A write returns an error for a key nothing registered, a subject
+// kind the key does not admit, and a false boolean: absence is the
+// negative, so false is never stamped. Nothing here panics.
 //
 // # Dependency position
 //
 // core/meta imports core/symbol, core/position, core/diag and the
 // Go stdlib. It never imports core/store: the store's read set
-// implements [Recorder], so the two meet there, on the store's
-// side.
+// implements [Recorder].
 package meta

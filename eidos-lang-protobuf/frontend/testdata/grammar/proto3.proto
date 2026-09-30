@@ -9,8 +9,8 @@ import weak "dep/optional.proto";
 option go_package = "example.test/three";
 option java_package = "test.example.three";
 
-// Row holds every proto3 field form.
-//+gen:table name=rows
+// Row declares every proto3 field form.
+//+fixture:gen:table name=rows
 message Row {
   option deprecated = true;
 

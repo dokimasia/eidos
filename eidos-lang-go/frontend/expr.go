@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/position"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -16,14 +17,16 @@ import (
 
 // lowered is the state one file's lowering reads everywhere: the
 // file's position table, the raw bytes for verbatim spellings, the
-// unit's spelling intern, and the comment groups a declaration
-// consumed, so the sweep can refuse a carrier left floating between
-// declarations.
+// unit's spelling intern, the comment groups a declaration consumed,
+// so the sweep can refuse a carrier left floating between
+// declarations, and the file's import scope, so a qualified
+// reference names the package its qualifier binds.
 type lowered struct {
 	file     *token.File
 	src      []byte
 	intern   map[string]string
 	consumed map[*ast.CommentGroup]bool
+	scope    golang.Scope
 	// comments is the file's whole comment list, for the trailing
 	// comment a declaration's closing brace shares a line with,
 	// which the parser attaches to nothing.
@@ -78,7 +81,8 @@ func (l *lowered) spelling(e ast.Expr) string {
 // channel a Stream whose direction is kept in the spelling, a
 // function type a Func with its parameters then its results, and
 // an inline struct or interface body Inline. A variadic parameter
-// inside a function type is the list it is.
+// inside a function type is the list it is. A qualified name
+// records the import path its qualifier binds, [lowered.packageOf].
 func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 	if e == nil {
 		return nil
@@ -91,6 +95,7 @@ func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 	case *ast.IndexExpr:
 		return &node.TypeRef{
 			Spelling: l.spelling(t.X),
+			Package:  l.packageOf(t.X),
 			Pos:      l.at(e.Pos()),
 			Args:     []*node.TypeRef{l.typeRef(t.Index)},
 		}
@@ -99,7 +104,11 @@ func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 		for _, index := range t.Indices {
 			args = append(args, l.typeRef(index))
 		}
-		return &node.TypeRef{Spelling: l.spelling(t.X), Pos: l.at(e.Pos()), Args: args}
+		return &node.TypeRef{
+			Spelling: l.spelling(t.X), Package: l.packageOf(t.X), Pos: l.at(e.Pos()), Args: args,
+		}
+	case *ast.SelectorExpr:
+		return &node.TypeRef{Spelling: l.spelling(e), Package: l.packageOf(t), Pos: l.at(e.Pos())}
 	case *ast.StarExpr:
 		return l.structural(e, symbol.FormOptional, t.X)
 	case *ast.ArrayType:
@@ -122,6 +131,25 @@ func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 	default:
 		return &node.TypeRef{Spelling: l.spelling(e), Pos: l.at(e.Pos())}
 	}
+}
+
+// packageOf returns the import path a qualified type name's qualifier
+// binds in the file's scope, [golang.Scope.Import]. It returns empty
+// for an unqualified name, which the file's own package or a dot
+// import declares, and for a qualifier no import binds, which a
+// package whose clause declares a name other than its assumed one
+// leaves.
+func (l *lowered) packageOf(e ast.Expr) string {
+	sel, qualified := e.(*ast.SelectorExpr)
+	if !qualified {
+		return ""
+	}
+	qualifier, is := sel.X.(*ast.Ident)
+	if !is {
+		return ""
+	}
+	path, _ := l.scope.Import(qualifier.Name)
+	return path
 }
 
 // structural lowers a composite whose children are the given

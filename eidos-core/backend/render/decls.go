@@ -15,8 +15,8 @@ import (
 // Cluster gathers renders through the group templates, each
 // cluster at the position of its first member, and the rest
 // renders through the kind templates, in the order the flush
-// fixed.
-func (f *frame) declRun(u plugin.Unit, b *bound) {
+// fixed. It reports whether any declaration rendered.
+func (f *frame) declRun(u plugin.Unit, b *bound) bool {
 	memberOf := map[int]int{}
 	var clusters []Clustered
 	if f.pass.cluster != nil {
@@ -39,32 +39,32 @@ func (f *frame) declRun(u plugin.Unit, b *bound) {
 		}
 	}
 	rendered := make(map[int]bool, len(clusters))
+	spelt := false
 	for i, d := range u.Decls {
 		ci, member := memberOf[i]
 		if !member {
-			f.singleton(u, d, b)
+			spelt = f.singleton(u, d, b) || spelt
 			continue
 		}
 		if rendered[ci] {
 			continue
 		}
 		rendered[ci] = true
-		f.clustered(u, clusters[ci], b)
+		spelt = f.clustered(u, clusters[ci], b) || spelt
 	}
+	return spelt
 }
 
 // singleton renders one declaration through its kind template,
 // into scratch first: a template that refuses mid-write must leave
 // no fragment in the file and no import it recorded, because the
 // finding reports the declaration as skipped and the file must
-// match it.
-func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) {
-	t, spelt := b.kinds[d.Kind()]
-	if !spelt {
-		f.sink.Errorf(UnspeltKind, f.at, f.origin,
-			"%s holds no template for %s, and the declaration is skipped",
-			f.pass.name, d.Kind())
-		return
+// match it. It reports whether the declaration rendered.
+func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) bool {
+	t, templated := b.kinds[d.Kind()]
+	if !templated {
+		f.unspelt(d.Kind(), "the declaration")
+		return false
 	}
 	f.guard(d)
 	f.scratch.Reset()
@@ -74,21 +74,37 @@ func (f *frame) singleton(u plugin.Unit, d symbol.Symbol, b *bound) {
 		f.sink.Errorf(refusalCode(err), f.at, f.origin,
 			"the %s template refused a declaration of %s: %v",
 			d.Kind(), u.Plugin, err)
-		return
+		return false
 	}
 	f.out.Write(f.scratch.Bytes())
+	return true
+}
+
+// unspelt reports a declaration whose kind has no template, which
+// the pass skips: under [RefusedKind] with the reason where the
+// language declares the kind refused, and under [UnspeltKind] where
+// the language declares nothing for it. The guard never reads a
+// skipped file-level declaration, so none of its facts reports.
+func (f *frame) unspelt(k symbol.Kind, what string) {
+	if reason, refused := f.pass.refused[k]; refused {
+		f.sink.Errorf(RefusedKind, f.at, f.origin,
+			"%s refuses the %s kind, and %s is skipped: %s", f.pass.name, k, what, reason)
+		return
+	}
+	f.sink.Errorf(UnspeltKind, f.at, f.origin,
+		"%s declares no template for %s, and %s is skipped", f.pass.name, k, what)
 }
 
 // clustered renders one cluster through the group template its
 // name selects, into the same scratch singleton uses and for the
-// same reason.
-func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) {
+// same reason. It reports whether the cluster rendered.
+func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) bool {
 	t, held := b.groups[c.Group]
 	if !held {
 		f.sink.Errorf(UnknownGroup, f.at, f.origin,
 			"%s clusters %d declarations under %q, which has no group template, and they are skipped",
 			f.pass.name, len(c.Decls), c.Group)
-		return
+		return false
 	}
 	for _, d := range c.Decls {
 		f.guard(d)
@@ -100,20 +116,20 @@ func (f *frame) clustered(u plugin.Unit, c Clustered, b *bound) {
 		f.sink.Errorf(refusalCode(err), f.at, f.origin,
 			"the %s group template refused a cluster of %s: %v",
 			c.Group, u.Plugin, err)
-		return
+		return false
 	}
 	f.out.Write(f.scratch.Bytes())
+	return true
 }
 
 // guard reports the stated facts the declared coverage refuses or
 // misses, before a declaration's template runs: a refused fact is
 // a warning that keeps the narrowing loud, and an undeclared one
 // is an error naming a defect in the backend's own declaration.
-// The template still runs, so what the output holds stays the
-// template's own answer: most declarations render without the
-// refused fact, and a vocabulary helper refusing the combination
-// outright reports beside the warning. An undeclared coverage
-// leaves the guard off.
+// The template still runs, so the output is what the template
+// writes: most declarations render without the refused fact, and a
+// vocabulary helper refusing the combination outright reports
+// beside the warning. An undeclared coverage leaves the guard off.
 func (f *frame) guard(d symbol.Symbol) {
 	if !f.pass.coverage.Declared() {
 		return
@@ -136,8 +152,8 @@ func (f *frame) guard(d symbol.Symbol) {
 // nested renders one nested declaration through its kind template,
 // every line behind the given indentation, so a host places its
 // inner declarations at member depth; it is the nested builtin. A
-// kind without a template reports and spells nothing, the way an
-// unspelt file-level declaration does; a template refusing the
+// kind without a template reports the way a file-level declaration
+// of it does, and the member spells nothing. A template refusing the
 // declaration propagates, so a host never renders around a
 // half-spelt member. The block returns without its trailing line
 // break, because the host's template supplies the separators its
@@ -145,9 +161,7 @@ func (f *frame) guard(d symbol.Symbol) {
 func (f *frame) nested(indent string, s symbol.Symbol) (string, error) {
 	t, spelt := f.bound.kinds[s.Kind()]
 	if !spelt {
-		f.sink.Errorf(UnspeltKind, f.at, f.origin,
-			"%s holds no template for %s, and the nested declaration is skipped",
-			f.pass.name, s.Kind())
+		f.unspelt(s.Kind(), "the nested declaration")
 		return "", nil
 	}
 	var out strings.Builder
@@ -157,9 +171,35 @@ func (f *frame) nested(indent string, s symbol.Symbol) (string, error) {
 	return indented(out.String(), indent), nil
 }
 
+// declaredName returns the name a file-level declaration binds in
+// the file's scope, and empty for a kind that binds none there: a
+// method is scoped by its receiver, and a member by its host.
+func declaredName(d symbol.Symbol) string {
+	switch t := d.(type) {
+	case *emit.Struct:
+		return t.Name
+	case *emit.Interface:
+		return t.Name
+	case *emit.Enum:
+		return t.Name
+	case *emit.Sum:
+		return t.Name
+	case *emit.Function:
+		return t.Name
+	case *emit.Alias:
+		return t.Name
+	case *emit.Constant:
+		return t.Name
+	case *emit.Variable:
+		return t.Name
+	default:
+		return ""
+	}
+}
+
 // indented prefixes every non-empty line and drops the trailing
-// line break, keeping blank lines bare, so an indented block
-// carries no trailing spaces.
+// line break, keeping blank lines bare, so an indented block has
+// no trailing spaces.
 func indented(text, indent string) string {
 	text = strings.TrimSuffix(text, "\n")
 	if text == "" {

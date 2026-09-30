@@ -11,41 +11,42 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 )
 
-// The instance is what a handler holds, so its twin covers the
-// reading surface: the one accessor and the zero value's honesty.
+// The instance is what a handler reads, so its twin covers the
+// reading surface: the one accessor and the zero value.
 func TestInstance(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Param", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns a carried key", func(t *testing.T) {
+		t.Run("returns the typed value of a key the instance has", func(t *testing.T) {
 			t.Parallel()
 
 			d := directive.Directive{Params: map[directive.ParamKey]directive.Value{
 				"depth": {Kind: directive.TypeInt, Int: 3},
 			}}
 			got, held := d.Param("depth")
-			assert.True(t, held, "a carried key returns")
-			assert.Equal(t, got, directive.Value{Kind: directive.TypeInt, Int: 3},
-				"with its typed value")
+			assert.True(t, held, "the key is present")
+			assert.Equal(t, got, directive.Value{Kind: directive.TypeInt, Int: 3}, "the value is typed")
 		})
 
-		t.Run("returns false for a key the instance omits", func(t *testing.T) {
+		t.Run("reports false for a key the instance omits", func(t *testing.T) {
 			t.Parallel()
 
 			d := directive.Directive{}
 			_, held := d.Param("depth")
-			assert.False(t, held,
-				"an omitted optional reads absent, never as a zero value")
+			assert.False(t, held, "the key is absent")
 		})
 	})
 
-	t.Run("zero value", func(t *testing.T) {
+	t.Run("Value", func(t *testing.T) {
 		t.Parallel()
 
-		var v directive.Value
-		assert.NotEqual(t, v.Kind, directive.TypeString,
-			"an unpopulated value types nothing, so no field reads as populated")
+		t.Run("types nothing at the zero value", func(t *testing.T) {
+			t.Parallel()
+
+			var v directive.Value
+			assert.Equal(t, v.Kind, directive.ParamType(0), "the kind is the zero type")
+		})
 	})
 }

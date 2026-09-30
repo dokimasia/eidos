@@ -18,13 +18,20 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// The plugins the skip cases name, and the fixture namespace.
+const (
+	skippedPlugin plugin.ID = "stubgen"
+	otherPlugin   plugin.ID = "audit"
+	flagNamespace           = "t"
+)
+
 // storeOnly is the scope admitting the store package alone.
 func storeOnly(pkg symbol.Identity) bool {
 	return pkg.Package == coretest.StorePath
 }
 
-// twoPackages returns a frozen graph holding one struct per fixture
-// package, with the store struct carrying one raw stub directive.
+// twoPackages returns a frozen graph with one struct per fixture
+// package and one raw stub directive on each struct.
 func twoPackages(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 	tb.Helper()
 
@@ -58,7 +65,7 @@ func index(
 
 // everything is the scope that admits every package, which is not
 // the same as no scope: a case about the scoped code path states
-// one rather than passing nil.
+// one and does not pass nil.
 func everything(symbol.Identity) bool { return true }
 
 // names collects the yielded declarations' names.
@@ -68,7 +75,7 @@ func names(tb assert.TB, seq func(func(symbol.Symbol) bool)) []string {
 	var out []string
 	for s := range seq {
 		decl, ok := s.(node.Declaration)
-		assert.True(tb, ok, "the index yields held declarations")
+		assert.True(tb, ok, "the index yields declarations")
 		out = append(out, decl.Identity().Name)
 	}
 	return out
@@ -80,7 +87,7 @@ func flagged(tb assert.TB, subjects ...symbol.Identity) (*meta.Facts, meta.Key[b
 	tb.Helper()
 
 	reg := meta.NewRegistry()
-	assert.NoError(tb, reg.ClaimNamespace("t", "the test"), "the namespace is claimed")
+	assert.NoError(tb, reg.ClaimNamespace(flagNamespace), "the namespace is claimed")
 	key, err := meta.Register[bool](reg, meta.KeySpec{
 		Name: "t.flag", Doc: "marks a fixture subject",
 	})
@@ -103,38 +110,36 @@ func subjects(seq func(func(symbol.Identity) bool)) []string {
 }
 
 // The index is the dispatcher's routing surface: untracked and
-// scope-filtered, holding the validated directive table and the skip
-// table, and minting the tracked readers handlers hold. Its filters
-// are the visibility rule, so every one is contract.
+// scope-filtered, with the validated directive table and the skip
+// table, and the source of the tracked readers handlers read
+// through. Its filters are the visibility rule, so every one is
+// contract.
 func TestIndex(t *testing.T) {
 	t.Parallel()
 
 	t.Run("NewIndex", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("refuses an unfrozen graph", func(t *testing.T) {
+		t.Run("returns an error for an unfrozen graph", func(t *testing.T) {
 			t.Parallel()
 
-			_, err := plugin.NewIndex(
-				store.New(), meta.NewFacts(meta.NewRegistry()), nil, nil,
-			)
-			assert.HasError(t, err,
-				"routing over a moving graph would return partial results")
+			_, err := plugin.NewIndex(store.New(), meta.NewFacts(meta.NewRegistry()), nil, nil)
+			assert.HasError(t, err, "the index does not build")
 		})
 
-		t.Run("refuses a missing graph", func(t *testing.T) {
+		t.Run("returns an error for a missing graph", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := plugin.NewIndex(nil, meta.NewFacts(meta.NewRegistry()), nil, nil)
-			assert.HasError(t, err, "there is nothing to route over")
+			assert.HasError(t, err, "the index does not build")
 		})
 
-		t.Run("refuses a missing fact store", func(t *testing.T) {
+		t.Run("returns an error for a missing fact store", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := twoPackages(t)
 			_, err := plugin.NewIndex(g, nil, nil, nil)
-			assert.HasError(t, err, "fact gates would have nothing to evaluate against")
+			assert.HasError(t, err, "the index does not build")
 		})
 	})
 
@@ -146,17 +151,15 @@ func TestIndex(t *testing.T) {
 
 			g, _, _ := twoPackages(t)
 			got := names(t, index(t, g, nil, nil).ByKind(symbol.KindStruct))
-			assert.Equal(t, got, []string{"Cache", "Store"},
-				"a nil scope admits everything, in the graph's own order")
+			assert.Equal(t, got, []string{"Cache", "Store"}, "the declarations are in the graph's order")
 		})
 
-		t.Run("filters by scope", func(t *testing.T) {
+		t.Run("returns only the declarations the scope admits", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := twoPackages(t)
 			got := names(t, index(t, g, nil, storeOnly).ByKind(symbol.KindStruct))
-			assert.Equal(t, got, []string{"Store"},
-				"a declaration outside scope is not returned")
+			assert.Equal(t, got, []string{"Store"}, "the declaration outside the scope is not returned")
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
@@ -168,7 +171,7 @@ func TestIndex(t *testing.T) {
 				got++
 				break
 			}
-			assert.Equal(t, got, 1, "the iteration stops when the range stops")
+			assert.Equal(t, got, 1, "the iteration yields once")
 		})
 
 		t.Run("stops when the range stops under a scope", func(t *testing.T) {
@@ -180,39 +183,34 @@ func TestIndex(t *testing.T) {
 				got++
 				break
 			}
-			assert.Equal(t, got, 1,
-				"the scope filter passes the range's refusal through rather than "+
-					"draining the enumeration behind it")
+			assert.Equal(t, got, 1, "the iteration yields once")
 		})
 	})
 
 	t.Run("ByDirective", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the carriers under scope", func(t *testing.T) {
+		t.Run("returns only the subjects the scope admits", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := twoPackages(t)
-			ix := index(t, g, nil, storeOnly)
-			got := names(t, ix.ByDirective(directive.Name("stub")))
-			assert.Equal(t, got, []string{"Store"},
-				"a carrier outside scope is not returned")
+			got := names(t, index(t, g, nil, storeOnly).ByDirective(directive.Name("stub")))
+			assert.Equal(t, got, []string{"Store"}, "the subject outside the scope is not returned")
 		})
 	})
 
 	t.Run("ByFactKey", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the stamped subjects under scope", func(t *testing.T) {
+		t.Run("returns only the stamped subjects the scope admits", func(t *testing.T) {
 			t.Parallel()
 
 			g, inStore, inCache := twoPackages(t)
 			facts, key := flagged(t, inStore.ID, inCache.ID)
 			ix, err := plugin.NewIndex(g, facts, nil, storeOnly)
 			assert.NoError(t, err, "the routing surface builds")
-
 			assert.Equal(t, subjects(ix.ByFactKey(key.ID())), []string{"Store"},
-				"a stamped subject outside scope is not returned")
+				"the subject outside the scope is not returned")
 		})
 
 		t.Run("returns every stamped subject without a scope", func(t *testing.T) {
@@ -222,9 +220,8 @@ func TestIndex(t *testing.T) {
 			facts, key := flagged(t, inStore.ID, inCache.ID)
 			ix, err := plugin.NewIndex(g, facts, nil, nil)
 			assert.NoError(t, err, "the routing surface builds")
-
 			assert.Equal(t, subjects(ix.ByFactKey(key.ID())), []string{"Cache", "Store"},
-				"a nil scope hands the fact store's own enumeration back, in identity order")
+				"the subjects are in identity order")
 		})
 
 		t.Run("stops when the range stops under a scope", func(t *testing.T) {
@@ -234,66 +231,61 @@ func TestIndex(t *testing.T) {
 			facts, key := flagged(t, inStore.ID, inCache.ID)
 			ix, err := plugin.NewIndex(g, facts, nil, everything)
 			assert.NoError(t, err, "the routing surface builds")
-
 			var got int
 			for range ix.ByFactKey(key.ID()) {
 				got++
 				break
 			}
-			assert.Equal(t, got, 1,
-				"a fact-gated rule that stops looking stops the enumeration with it")
+			assert.Equal(t, got, 1, "the iteration yields once")
 		})
 	})
 
 	t.Run("PackageOf", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the package holding a declaration", func(t *testing.T) {
+		t.Run("returns the package that contains a declaration", func(t *testing.T) {
 			t.Parallel()
 
 			g, inStore, _ := twoPackages(t)
 			pkg, held := index(t, g, nil, nil).PackageOf(inStore.ID)
-			assert.True(t, held, "a held identity resolves to its namespace")
-			assert.Equal(t, pkg.ID, coretest.PackageID(coretest.StorePath),
-				"which is what a flush addresses its unit by")
+			assert.True(t, held, "the declaration has a package")
+			assert.Equal(t, pkg.ID, coretest.PackageID(coretest.StorePath), "the package is the store's")
 		})
 
-		t.Run("returns false outside scope", func(t *testing.T) {
+		t.Run("reports false for a declaration outside the scope", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, inCache := twoPackages(t)
 			_, held := index(t, g, nil, storeOnly).PackageOf(inCache.ID)
-			assert.False(t, held,
-				"a declaration outside scope has no namespace to flush under")
+			assert.False(t, held, "no package is returned")
 		})
 	})
 
 	t.Run("Lookup", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns a held declaration", func(t *testing.T) {
+		t.Run("returns a declaration the graph contains", func(t *testing.T) {
 			t.Parallel()
 
 			g, inStore, _ := twoPackages(t)
 			got, held := index(t, g, nil, nil).Lookup(inStore.ID)
-			assert.True(t, held, "a held identity resolves")
-			assert.True(t, got == symbol.Symbol(inStore), "to the very declaration")
+			assert.True(t, held, "the identity resolves")
+			assert.True(t, got == symbol.Symbol(inStore), "the declaration is the graph's")
 		})
 
-		t.Run("returns false outside scope", func(t *testing.T) {
+		t.Run("reports false for a declaration outside the scope", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, inCache := twoPackages(t)
 			_, held := index(t, g, nil, storeOnly).Lookup(inCache.ID)
-			assert.False(t, held,
-				"a declaration outside scope is neither returned nor reachable")
+			assert.False(t, held, "no declaration is returned")
 		})
 	})
 
 	t.Run("DirectivesOf", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the validated instances as handed", func(t *testing.T) {
+		t.Run("returns the validated instances in position order", func(t *testing.T) {
 			t.Parallel()
 
 			g, inStore, _ := twoPackages(t)
@@ -301,10 +293,8 @@ func TestIndex(t *testing.T) {
 				{Name: "stub", Instance: 0},
 				{Name: "stub", Instance: 1},
 			}
-			ix := index(t, g,
-				map[symbol.Identity][]directive.Directive{inStore.ID: want}, nil)
-			assert.Equal(t, ix.DirectivesOf(inStore.ID), want,
-				"the gate reads the table validation returned, position order intact")
+			ix := index(t, g, map[symbol.Identity][]directive.Directive{inStore.ID: want}, nil)
+			assert.Equal(t, ix.DirectivesOf(inStore.ID), want, "the instances are the validated table's")
 		})
 	})
 
@@ -312,73 +302,105 @@ func TestIndex(t *testing.T) {
 		t.Parallel()
 
 		g, inStore, inCache := twoPackages(t)
+		negatedAt := coretest.Struct(coretest.StorePath, "Negated").ID
+		setAt := coretest.Struct(coretest.StorePath, "Set").ID
+		clean := coretest.Struct(coretest.StorePath, "Clean").ID
 		validated := map[symbol.Identity][]directive.Directive{
 			inStore.ID: {{Name: directive.KernelSkip}},
 			inCache.ID: {{
 				Name: directive.KernelSkip,
 				Params: map[directive.ParamKey]directive.Value{
-					directive.SkipPlugin: {
-						Kind: directive.TypeString, Str: "stubgen",
-					},
+					directive.SkipPlugin: {Kind: directive.TypeString, Str: string(skippedPlugin)},
 				},
 			}},
+			negatedAt: {{Name: directive.Name(string(skippedPlugin) + ":stub"), Negated: true}},
+			setAt:     {{Name: directive.Name(string(skippedPlugin) + ":stub")}},
 		}
 		ix := index(t, g, validated, nil)
 
-		t.Run("excludes every plugin under a bare skip", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name    string
+			subject symbol.Identity
+			plugin  plugin.ID
+			want    bool
+		}{
+			{
+				name:    "reports true for every plugin under a bare skip",
+				subject: inStore.ID, plugin: otherPlugin, want: true,
+			},
+			{
+				name:    "reports true for the plugin a narrowed skip names",
+				subject: inCache.ID, plugin: skippedPlugin, want: true,
+			},
+			{
+				name:    "reports false for another plugin under a narrowed skip",
+				subject: inCache.ID, plugin: otherPlugin,
+			},
+			{
+				name:    "reports true for the plugin that registered a negated directive's schema",
+				subject: negatedAt, plugin: skippedPlugin, want: true,
+			},
+			{
+				name:    "reports false for another plugin under a negated directive",
+				subject: negatedAt, plugin: otherPlugin,
+			},
+			{
+				name:    "reports false for the plugin of a set directive",
+				subject: setAt, plugin: skippedPlugin,
+			},
+			{
+				name:    "reports false for a subject without a skip",
+				subject: clean, plugin: skippedPlugin,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			assert.True(t, ix.Skipped(inStore.ID, "stubgen"),
-				"a bare skip excludes every plugin")
-			assert.True(t, ix.Skipped(inStore.ID, "audit"),
-				"whatever the plugin's name")
-		})
+				assert.Equal(t, ix.Skipped(tt.subject, tt.plugin), tt.want, "the exclusion is pinned")
+			})
+		}
 
-		t.Run("excludes one plugin under a narrowed skip", func(t *testing.T) {
-			t.Parallel()
-
-			assert.True(t, ix.Skipped(inCache.ID, "stubgen"),
-				"the named plugin is excluded")
-			assert.False(t, ix.Skipped(inCache.ID, "audit"),
-				"every other plugin still matches")
-		})
-
-		t.Run("excludes nothing without skip", func(t *testing.T) {
-			t.Parallel()
-
-			other := coretest.Struct(coretest.StorePath, "Other")
-			assert.False(t, ix.Skipped(other.ID, "stubgen"),
-				"a subject carrying no skip matches as ever")
-		})
-
-		t.Run("excludes nothing where the run carries no skip at all", func(t *testing.T) {
+		t.Run("reports false for a run without a skip", func(t *testing.T) {
 			t.Parallel()
 
 			bare, inStore, _ := twoPackages(t)
-			assert.False(t, index(t, bare, nil, nil).Skipped(inStore.ID, "stubgen"),
-				"a run nothing skipped costs no probe and excludes nobody")
+			assert.False(t, index(t, bare, nil, nil).Skipped(inStore.ID, skippedPlugin), "nothing is excluded")
 		})
 	})
 
 	t.Run("Reader", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("mints a tracked handle under the index's scope", func(t *testing.T) {
+		t.Run("returns a reader that finds a declaration inside the scope", func(t *testing.T) {
 			t.Parallel()
 
-			g, inStore, inCache := twoPackages(t)
-			ix := index(t, g, nil, storeOnly)
-
-			var reads store.ReadSet
-			r, err := ix.Reader(&reads)
-			assert.NoError(t, err, "the handle mints over a frozen graph")
-
+			g, inStore, _ := twoPackages(t)
+			r, err := index(t, g, nil, storeOnly).Reader(store.NewReadSet())
+			assert.NoError(t, err, "the reader mints over a frozen graph")
 			_, held := r.Lookup(inStore.ID)
-			assert.True(t, held, "the reader returns inside the scope")
-			_, held = r.Lookup(inCache.ID)
-			assert.False(t, held, "and refuses outside it")
-			assert.True(t, reads.Len() > 0,
-				"a read through the handle records an edge")
+			assert.True(t, held, "the declaration is found")
+		})
+
+		t.Run("returns a reader that finds nothing outside the scope", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, inCache := twoPackages(t)
+			r, err := index(t, g, nil, storeOnly).Reader(store.NewReadSet())
+			assert.NoError(t, err, "the reader mints over a frozen graph")
+			_, held := r.Lookup(inCache.ID)
+			assert.False(t, held, "the declaration is not found")
+		})
+
+		t.Run("returns a reader that records its reads", func(t *testing.T) {
+			t.Parallel()
+
+			g, inStore, _ := twoPackages(t)
+			reads := store.NewReadSet()
+			r, err := index(t, g, nil, storeOnly).Reader(reads)
+			assert.NoError(t, err, "the reader mints over a frozen graph")
+			r.Lookup(inStore.ID)
+			assert.True(t, reads.Len() > 0, "the read set records an edge")
 		})
 	})
 }
@@ -434,7 +456,7 @@ func BenchmarkIndex(b *testing.B) {
 	b.Run("ByFactKey/scoped", func(b *testing.B) {
 		b.ReportAllocs()
 		reg := meta.NewRegistry()
-		if err := reg.ClaimNamespace("t", "the bench"); err != nil {
+		if err := reg.ClaimNamespace(flagNamespace); err != nil {
 			b.Fatalf("ClaimNamespace: unexpected error: %v", err)
 		}
 		key, err := meta.Register[bool](reg, meta.KeySpec{
@@ -484,10 +506,10 @@ func BenchmarkIndex(b *testing.B) {
 		hit := coretest.Struct(one, "Decl0_0").ID
 		miss := coretest.Struct(one, "Decl0_1").ID
 		for b.Loop() {
-			if !ix.Skipped(hit, "stubgen") {
+			if !ix.Skipped(hit, skippedPlugin) {
 				b.Fatal("the skipped subject must return true")
 			}
-			if ix.Skipped(miss, "stubgen") {
+			if ix.Skipped(miss, skippedPlugin) {
 				b.Fatal("the clean subject must return false")
 			}
 		}

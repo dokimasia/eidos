@@ -13,14 +13,12 @@ import (
 	"go.dokimi.dev/eidos/core/backend"
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
-	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
-	"go.dokimi.dev/eidos/core/workspace"
 )
 
 // printer is a kit backend spelling one kind and framing its files
@@ -54,74 +52,46 @@ func totalCoverage() map[symbol.Fact]render.Verdict {
 	return out
 }
 
-// The two halves compose: source loads into a sealed graph, and a
-// run over that very graph writes stamped files into its sink.
+// The two halves compose: source loads into a sealed graph under
+// the composition's brand, and a run over that very graph writes
+// stamped files into its sink.
 func TestCompose(t *testing.T) {
 	t.Parallel()
 
-	w, err := workspace.New().
-		Annotators(stamper("noter", quiet)).
-		Targets("fixture").
-		Plans(workspace.Plan{
-			Name:       "plan",
-			Generators: []plugin.Generator{mirror("mirror")},
-			Backend:    printer(t, "fixture"),
-		}).
-		Output(output.NewMem(), "eidos").
-		Build()
-	assert.NoError(t, err, "the writing composition composes")
-	assert.Equal(t, w.Brand(), output.Brand("eidos"), "the composition states its brand")
+	t.Run("Run", func(t *testing.T) {
+		t.Parallel()
 
-	tree := fstest.MapFS{
-		"svc/store/row.zz": {Data: []byte("package svc/store\ntype Row int string\n")},
-	}
-	sink := diag.NewSink()
-	g, report, err := load.Load(t.Context(), load.Config{
-		FS:        tree,
-		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
-		Sink:      sink,
-		PluginSet: w.Fingerprint(),
-		Brand:     w.Brand(),
+		t.Run("writes the file a loaded graph's plan renders", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			w := writing(t, o.open)
+			tree := fstest.MapFS{
+				"svc/store/row.zz": {Data: []byte("package svc/store\ntype Row int string\n")},
+			}
+			g, report, err := load.Load(t.Context(), load.Config{
+				FS:        tree,
+				Frontends: []plugin.Frontend{frontendtest.NewScripted()},
+				Sink:      diag.NewSink(),
+				PluginSet: w.Fingerprint(),
+				Brand:     w.Brand(),
+			})
+			assert.NoError(t, err, "the source loads")
+			assert.Length(t, report.Units, 1, "one unit is parsed")
+			assert.True(t, g.Frozen(), "the load seals what it built")
+
+			run, err := w.Run(t.Context(), g)
+			assert.NoError(t, err, "the run takes the load's own graph")
+			assert.Length(t, run.Written, 1, "the run writes the rendered file")
+			written := run.Written[0]
+			assert.Equal(t, written.Path, "svc/store/gen.txt",
+				"the path is the package path and the target's filename")
+			assert.Equal(t, written.Action, output.ActionCreated, "the file is new")
+
+			stamped := o.opened()[0].Files()[written.Path]
+			p, framed := output.Read(stamped)
+			assert.True(t, framed, "the file has a frame")
+			assert.Equal(t, p.Brand, w.Brand(), "the frame claims the composition's brand")
+		})
 	})
-	assert.NoError(t, err, "the source loads")
-	assert.Length(t, report.Units, 1, "one unit parsed")
-	assert.True(t, g.Frozen(), "and the load sealed what it built")
-
-	run, err := w.Run(t.Context(), g)
-	assert.NoError(t, err, "the run takes the load's own graph")
-	assert.Length(t, run.Written, 1, "and writes the file its plan rendered")
-
-	written := run.Written[0]
-	assert.Equal(t, written.Path, "svc/store/gen.txt",
-		"addressed by the owning package and the target's own filename")
-	assert.Equal(t, written.Action, output.ActionCreated, "as a new file")
-}
-
-// The composition writes nothing where a run reports, because half
-// a tree is worse than none.
-func TestComposeWithholds(t *testing.T) {
-	t.Parallel()
-
-	mem := output.NewMem()
-	w, err := workspace.New().
-		Annotators(stamper("noter", quiet)).
-		Targets("fixture").
-		Plans(workspace.Plan{
-			Name:       "plan",
-			Generators: []plugin.Generator{mirror("mirror")},
-			Backend:    printer(t, "fixture"),
-		}).
-		Output(mem, "eidos").
-		Build()
-	assert.NoError(t, err, "the writing composition composes")
-
-	g, alphaStruct := alpha(t)
-	assert.NoError(t, g.AttachDirectives(alphaStruct.Identity(),
-		[]directive.Raw{{Name: "nobody:claims"}}),
-		"an unclaimed directive attaches before the seal")
-
-	run, err := w.Run(t.Context(), g)
-	assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run reports")
-	assert.Length(t, run.Written, 0, "and writes nothing")
-	assert.Length(t, mem.Files(), 0, "the staging is discarded whole")
 }

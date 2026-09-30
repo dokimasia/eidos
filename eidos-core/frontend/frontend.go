@@ -24,14 +24,15 @@ type Classifier func(u *plugin.SourceUnit) error
 
 // Builder accumulates a frontend declaration: the identity and the
 // language of every declaration it loads, the comment syntax the
-// parse strips through, the file claim, and the functions the
-// pipeline varies in. Everything on it is data except the
-// functions. Build freezes it, and a Builder is not reused
-// afterwards.
+// parse strips through, whether the language overloads, the file
+// claim, and the functions the pipeline varies in. Everything on it
+// is data except the functions. Build freezes it, and a Builder is
+// not reused afterwards.
 type Builder struct {
 	name        plugin.ID
 	lang        symbol.Lang
 	syntax      plugin.CommentSyntax
+	overloads   bool
 	version     string
 	selection   []string
 	partition   func(context.Context, []plugin.SourceRef, plugin.FileReader) ([][]plugin.SourceRef, error)
@@ -55,6 +56,17 @@ func New(
 // reports why.
 func (b *Builder) Version(v string) *Builder {
 	b.version = v
+	return b
+}
+
+// Overloads declares that the language overloads: two callables of
+// one name in one scope, told apart by their parameters. The load
+// then spells each callable's discriminator from its parameter type
+// spellings, which the parse normalizes. A declaration without it is
+// a language that cannot overload, and every callable it loads takes
+// the empty discriminator.
+func (b *Builder) Overloads() *Builder {
+	b.overloads = true
 	return b
 }
 
@@ -154,7 +166,7 @@ func (b *Builder) Build() plugin.Frontend {
 		panic("frontend: " + name + " " + strings.Join(defects, ", and "))
 	}
 	base := &builtFrontend{
-		name: b.name, lang: b.lang, syntax: b.syntax, version: b.version,
+		name: b.name, lang: b.lang, syntax: b.syntax, overloads: b.overloads, version: b.version,
 		selection: b.selection, partition: b.partition, parse: b.parse,
 		resolve: b.resolve, classifiers: b.classifiers,
 	}
@@ -170,6 +182,7 @@ type builtFrontend struct {
 	name        plugin.ID
 	lang        symbol.Lang
 	syntax      plugin.CommentSyntax
+	overloads   bool
 	version     string
 	selection   []string
 	partition   func(context.Context, []plugin.SourceRef, plugin.FileReader) ([][]plugin.SourceRef, error)
@@ -187,6 +200,10 @@ func (f *builtFrontend) Lang() symbol.Lang { return f.lang }
 
 // Syntax returns the language's comment forms.
 func (f *builtFrontend) Syntax() plugin.CommentSyntax { return f.syntax }
+
+// Overloads reports whether the declaration stated that the language
+// overloads.
+func (f *builtFrontend) Overloads() bool { return f.overloads }
 
 // Version implements [plugin.Versioned]: the declared version.
 func (f *builtFrontend) Version() string { return f.version }

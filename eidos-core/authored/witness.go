@@ -15,6 +15,10 @@ import (
 	"go.dokimi.dev/eidos/core/position"
 )
 
+// noTypeParams is what a refusal lists for a declaration without
+// type parameters.
+const noTypeParams = "none"
+
 // Witness returns the annotator behind the witness directive. It
 // runs once per validated instance on every generic kind, a
 // struct, an interface, a function, a method, an alias and a sum,
@@ -52,13 +56,13 @@ func Witness() plugin.Annotator {
 // the carrier: a refusal positioned at the directive's own line.
 type reporter interface {
 	carrier
-	ErrorfAt(at position.Pos, c diag.Code, format string, a ...any)
+	ErrorfAt(c diag.Code, at position.Pos, format string, a ...any)
 }
 
 // stampWitness stamps one instance's keys onto the declaration's
 // type parameters, in key order so the findings arrive
-// deterministically. A key is a type parameter's name; the reserved
-// routing keys are never read as one.
+// deterministically. A key is a type parameter's name, and the
+// reserved routing keys are never read as one.
 func stampWitness(m reporter, st *eidos.Stamper, params []*node.TypeParam) error {
 	d := m.Directive()
 	keys := make([]string, 0, len(d.Params))
@@ -72,15 +76,15 @@ func stampWitness(m reporter, st *eidos.Stamper, params []*node.TypeParam) error
 	for _, key := range keys {
 		tp := paramNamed(params, key)
 		if tp == nil {
-			m.ErrorfAt(d.Pos, UnknownWitnessParam,
-				"witness names %s, which the declaration does not declare; its type parameters are %s",
+			m.ErrorfAt(UnknownWitnessParam, d.Pos,
+				"witness names %s, which the declaration does not declare. Its type parameters are %s",
 				key, spellParams(params))
 			continue
 		}
 		v, _ := d.Param(directive.ParamKey(key))
 		if v.Target.IsZero() {
-			m.ErrorfAt(d.Pos, eidos.RefusedStamp,
-				"witness %s carries no resolved type: validation ran without a resolver", key)
+			m.ErrorfAt(eidos.RefusedStamp, d.Pos,
+				"witness %s has no resolved type: validation ran without a resolver", key)
 			continue
 		}
 		eidos.StampOn(st, tp.ID, m.Kernel().Witness, v.Target)
@@ -99,7 +103,7 @@ func paramNamed(params []*node.TypeParam, name string) *node.TypeParam {
 }
 
 // spellParams lists the type parameters' names for a refusal, and
-// "none" for a declaration without any.
+// [noTypeParams] for a declaration without any.
 func spellParams(params []*node.TypeParam) string {
 	names := make([]string, 0, len(params))
 	for _, tp := range params {
@@ -108,7 +112,7 @@ func spellParams(params []*node.TypeParam) string {
 		}
 	}
 	if len(names) == 0 {
-		return "none"
+		return noTypeParams
 	}
 	return strings.Join(names, ", ")
 }

@@ -184,7 +184,7 @@ func Expr(b *bytes.Buffer, e emit.Expr, t Target) error {
 // value writes the value an expression contains through the target.
 func value(b *bytes.Buffer, e emit.Expr, t Target) error {
 	if e.Val == nil {
-		return fmt.Errorf("scaffold: a value expression carries no value")
+		return fmt.Errorf("scaffold: a value expression has no value")
 	}
 	if t == nil {
 		return fmt.Errorf("scaffold: a value expression needs a target to spell it")

@@ -17,10 +17,21 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// Brand is the brand every suite load runs under. A fixture writes
+// its carriers under Brand's marks, fixture:, +fixture: and
+// -fixture:, and the ownership check stamps the workspace's own
+// copies under it.
+const Brand output.Brand = "fixture"
+
+// pluginSet is the plugin-set fingerprint every suite load folds: a
+// fixed value in place of the one a composed workspace computes.
+const pluginSet = "frontendtest"
 
 // Fixture is what a frontend brings to the suite: the tree the
 // selection claims from, and what the checks that need more can
@@ -34,12 +45,20 @@ type Fixture struct {
 	// for the depth check.
 	Signatures []string
 
+	// Dropped lists the identities a signature-only load of the
+	// Signatures roots leaves out, for the depth check: each is in
+	// the full graph and absent from the shallow one. A language
+	// whose signature depth keeps every declaration lists none.
+	Dropped []symbol.Identity
+
 	// Schemas are the directive schemas the fixture's carriers
-	// write, for validation at the suite's stand-in freeze.
+	// write, for validation at the freeze the suite runs in the
+	// workspace's place.
 	Schemas []directive.Schema
 
 	// Keys registers the classification keys the fixture's stamps
-	// write, for the stand-in apply.
+	// write, for the stamp application the suite runs in the
+	// workspace's place.
 	Keys func(*meta.Registry) error
 }
 
@@ -47,7 +66,7 @@ type Fixture struct {
 // check.
 type Setup func(tb assert.TB) (plugin.Frontend, *Fixture)
 
-// RunFrontendSuite holds a frontend to the read side's contract:
+// RunFrontendSuite checks a frontend against the read side's contract:
 // deterministic parses, positioned findings, no silently dropped
 // file, the workspace's own outputs refused, honest unit keys, the
 // jailed read, signature depth, validated directive attachments
@@ -152,8 +171,9 @@ func drive(
 	return got
 }
 
-// tryDrive loads the fixture and returns the load's own error, for
-// the checks that perturb inputs a language may refuse.
+// tryDrive loads the fixture under [Brand] and returns the load's
+// own error, for the checks that perturb inputs a language may
+// refuse.
 func tryDrive(
 	f plugin.Frontend, fx *Fixture, mutate ...func(*load.Config),
 ) (*loaded, error) {
@@ -162,8 +182,9 @@ func tryDrive(
 		FS:         fx.Sources,
 		Frontends:  []plugin.Frontend{f},
 		Sink:       sink,
-		PluginSet:  []byte("frontendtest"),
+		PluginSet:  []byte(pluginSet),
 		Signatures: fx.Signatures,
+		Brand:      Brand,
 	}
 	for _, m := range mutate {
 		m(&cfg)

@@ -93,7 +93,7 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "silently dropped", "the rejection names the class")
 		})
 
-		t.Run("rejects a fixture that stamps and declares no keys", func(t *testing.T) {
+		t.Run("rejects a stamping fixture without keys", func(t *testing.T) {
 			t.Parallel()
 
 			keyless := fixture()
@@ -127,14 +127,14 @@ func TestChecks(t *testing.T) {
 					frontendtest.NewScripted(),
 				}, fixture()))
 			})
-			assert.Contains(t, msg, "claim reaches it", "the rejection names the placement")
+			assert.Contains(t, msg, "inside the claim", "the rejection names the placement")
 		})
 	})
 
 	t.Run("AssertFingerprinted", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("folds a key for a frontend that declares no options", func(t *testing.T) {
+		t.Run("passes a frontend that declares no options", func(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.AssertFingerprinted(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
@@ -142,7 +142,7 @@ func TestChecks(t *testing.T) {
 			})
 		})
 
-		t.Run("folds a key where a language refuses the perturbed byte", func(t *testing.T) {
+		t.Run("passes a language that refuses the perturbed byte", func(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.AssertFingerprinted(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
@@ -150,7 +150,7 @@ func TestChecks(t *testing.T) {
 			})
 		})
 
-		t.Run("folds a key where every unit loads signature-only", func(t *testing.T) {
+		t.Run("passes a fixture that loads every unit signature-only", func(t *testing.T) {
 			t.Parallel()
 
 			shallow := plainFixture()
@@ -199,7 +199,7 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "through the unit", "the rejection names the door")
 		})
 
-		t.Run("accepts a language that refuses the perturbed byte", func(t *testing.T) {
+		t.Run("passes a language that refuses the perturbed byte", func(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.AssertJailedReads(t, over(&strict{frontendtest.NewScripted()}, plainFixture()))
@@ -216,7 +216,7 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "walks", "the rejection names the step that could not run")
 		})
 
-		t.Run("accepts a fixture whose selection claims one file", func(t *testing.T) {
+		t.Run("passes a fixture whose selection claims one file", func(t *testing.T) {
 			t.Parallel()
 
 			lone := plainFixture()
@@ -228,7 +228,7 @@ func TestChecks(t *testing.T) {
 	t.Run("AssertSignatureDepth", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("accepts a fixture whose root covers every unit", func(t *testing.T) {
+		t.Run("passes a fixture whose root covers every unit", func(t *testing.T) {
 			t.Parallel()
 
 			deep := plainFixture()
@@ -247,12 +247,40 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "at least one unit shallow",
 				"the rejection names what the stated root owes")
 		})
+
+		t.Run("passes a fixture that lists what the signature-only load drops", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.AssertSignatureDepth(t, setup)
+		})
+
+		t.Run("rejects a listed identity the signature-only load keeps", func(t *testing.T) {
+			t.Parallel()
+
+			kept := fixture()
+			kept.Dropped = []symbol.Identity{depIdentity(depType, symbol.KindStruct)}
+			msg := assert.Rejects(t, "a depth that drops nothing the fixture lists", func(tb assert.TB) {
+				frontendtest.AssertSignatureDepth(tb, setupOver(kept))
+			})
+			assert.Contains(t, msg, "drops a listed identity", "the rejection names the identity kept")
+		})
+
+		t.Run("rejects a listed identity the full load does not declare", func(t *testing.T) {
+			t.Parallel()
+
+			absent := fixture()
+			absent.Dropped = []symbol.Identity{depIdentity(ghostName, symbol.KindConstant)}
+			msg := assert.Rejects(t, "a listing of a declaration no load makes", func(tb assert.TB) {
+				frontendtest.AssertSignatureDepth(tb, setupOver(absent))
+			})
+			assert.Contains(t, msg, "loads at full depth", "the rejection names the missing identity")
+		})
 	})
 
 	t.Run("AssertAttachedDirectives", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("rejects an instance the schema refuses", func(t *testing.T) {
+		t.Run("rejects an instance that fails validation", func(t *testing.T) {
 			t.Parallel()
 
 			mistyped := fixture()
@@ -279,16 +307,25 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "carrier line", "the rejection names the class")
 		})
 
-		t.Run("rejects a carrier line left with its mark", func(t *testing.T) {
-			t.Parallel()
+		marks := []struct {
+			name string
+			line string
+		}{
+			{name: "rejects a carrier line left with its set mark", line: setCarrier},
+			{name: "rejects a carrier line left with its negated mark", line: negatedCarrier},
+		}
+		for _, tt := range marks {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			msg := assert.Rejects(t, "a documentation line the strip never saw", func(tb assert.TB) {
-				frontendtest.AssertAttachedDirectives(tb, over(&undocumented{
-					Scripted: frontendtest.NewScripted(), line: carrierStatement[:len(carrierStatement)-1],
-				}, fixture()))
+				msg := assert.Rejects(t, "a documentation line the strip never saw", func(tb assert.TB) {
+					frontendtest.AssertAttachedDirectives(tb, over(&undocumented{
+						Scripted: frontendtest.NewScripted(), line: tt.line,
+					}, fixture()))
+				})
+				assert.Contains(t, msg, "carrier line", "the mark does not hide the leak")
 			})
-			assert.Contains(t, msg, "carrier line", "the mark does not hide the leak")
-		})
+		}
 
 		t.Run("rejects directives on a subject the graph does not contain", func(t *testing.T) {
 			t.Parallel()
@@ -298,10 +335,10 @@ func TestChecks(t *testing.T) {
 					frontendtest.NewScripted(),
 				}, fixture()))
 			})
-			assert.Contains(t, msg, "does not hold", "the rejection names the class")
+			assert.Contains(t, msg, "does not contain", "the rejection names the class")
 		})
 
-		t.Run("accepts a fixture that declares schemas and no keys", func(t *testing.T) {
+		t.Run("passes a fixture that declares schemas without keys", func(t *testing.T) {
 			t.Parallel()
 
 			keyless := plainFixture()
@@ -374,7 +411,7 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "spells nothing", "the rejection names the lost spelling")
 		})
 
-		t.Run("asks nothing across packages of a single-package fixture", func(t *testing.T) {
+		t.Run("passes a single-package fixture without a cross-package reference", func(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.AssertLinked(t, setupOver(singleFixture()))
@@ -648,21 +685,38 @@ type optionless struct {
 	f *frontendtest.Scripted
 }
 
-func (o optionless) Name() plugin.ID              { return o.f.Name() }
-func (o optionless) Lang() symbol.Lang            { return o.f.Lang() }
+// Name returns the wrapped frontend's name.
+func (o optionless) Name() plugin.ID { return o.f.Name() }
+
+// Lang returns the wrapped frontend's language.
+func (o optionless) Lang() symbol.Lang { return o.f.Lang() }
+
+// Syntax returns the wrapped frontend's comment syntax.
 func (o optionless) Syntax() plugin.CommentSyntax { return o.f.Syntax() }
-func (o optionless) Version() string              { return o.f.Version() }
-func (o optionless) Selection() []string          { return o.f.Selection() }
+
+// Overloads reports whether the wrapped frontend's language
+// overloads.
+func (o optionless) Overloads() bool { return o.f.Overloads() }
+
+// Version returns the wrapped frontend's version.
+func (o optionless) Version() string { return o.f.Version() }
+
+// Selection returns the wrapped frontend's claim.
+func (o optionless) Selection() []string { return o.f.Selection() }
+
+// Parse lowers the unit through the wrapped frontend.
 func (o optionless) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 	return o.f.Parse(ctx, u)
 }
 
+// Partition groups the files through the wrapped frontend.
 func (o optionless) Partition(
 	ctx context.Context, files []plugin.SourceRef, r plugin.FileReader,
 ) ([][]plugin.SourceRef, error) {
 	return o.f.Partition(ctx, files, r)
 }
 
+// Resolve probes a spelling through the wrapped frontend.
 func (o optionless) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
 	return o.f.Resolve(scope, spelling)
 }

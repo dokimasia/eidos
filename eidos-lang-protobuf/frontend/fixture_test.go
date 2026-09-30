@@ -14,15 +14,18 @@ import (
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/frontendtest"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The fixture's one file and the package it declares.
+// The fixture's one file, the package it declares, and the brand
+// its carriers are read under.
 const (
 	fixturePath = "svc/store.proto"
 	fixturePkg  = "svc.store"
+	brand       = string(frontendtest.Brand)
 )
 
 // parsed lowers one proto source and returns the unit's builder
@@ -39,7 +42,7 @@ func parsed(tb assert.TB, src string, at ...string) (*plugin.GraphBuilder, *diag
 	sink := diag.NewSink()
 	u := plugin.NewSourceUnit(
 		[]plugin.SourceRef{{Path: filePath}}, tree, plugin.DepthFull,
-		f.Syntax(), sink, f.Name(),
+		f.Syntax(), brand, sink, f.Name(),
 	)
 	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
 	return u.Graph(), sink
@@ -101,6 +104,17 @@ func codesOf(sink *diag.Sink) []diag.Code {
 		out = append(out, d.Code)
 	}
 	return out
+}
+
+// messageOf returns the message of the first finding a sink
+// collected under one code, and the empty string where none was.
+func messageOf(sink *diag.Sink, code diag.Code) string {
+	for d := range sink.All() {
+		if d.Code == code {
+			return d.Msg
+		}
+	}
+	return ""
 }
 
 // scopeOf returns a resolution scope in one namespace, optionally

@@ -8,6 +8,7 @@ import (
 	"maps"
 	"slices"
 	"strconv"
+	"text/template"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
@@ -16,9 +17,9 @@ import (
 )
 
 // Builder accumulates a plugin's declaration. Everything on it is
-// data; only the handlers inside rules and the key registrations
-// are functions. Build freezes it, and a Builder is not reused
-// afterwards.
+// data; only the handlers inside rules, the key registrations and
+// the template helpers are functions. Build freezes it, and a
+// Builder is not reused afterwards.
 type Builder struct {
 	name     plugin.ID
 	version  string
@@ -28,14 +29,16 @@ type Builder struct {
 	requires []plugin.Capability
 	options  any
 	keys     []func(r *meta.Registry) error
-	trees    []targetTree
+	defaults []TargetOption
+	layers   []targetLayer
 	rules    []Rule
 }
 
-// targetTree is one declared template tree, keyed by target.
-type targetTree struct {
+// targetLayer is one [Builder.For] declaration: the target and its
+// options, in declaration order.
+type targetLayer struct {
 	target plugin.Target
-	tree   fs.FS
+	opts   []TargetOption
 }
 
 // NewPlugin starts a plugin declaration.
@@ -93,12 +96,38 @@ func (b *Builder) Keys(register func(r *meta.Registry) error) *Builder {
 	return b
 }
 
-// Templates declares the plugin's template tree for one target;
-// repeatable, one tree per target. The built value returns it
-// through [plugin.TemplateProvider]: the tree a render pass
-// resolves this plugin's template references in.
-func (b *Builder) Templates(t plugin.Target, tree fs.FS) *Builder {
-	b.trees = append(b.trees, targetTree{target: t, tree: tree})
+// Templates declares the plugin-level template tree: the tree a
+// plan resolves this plugin's template references in, for every
+// target without a tree of its own under [Builder.For]. The built
+// value returns it through [plugin.TemplateProvider]. A nil tree,
+// and a second plugin-level tree, panic at Build.
+func (b *Builder) Templates(tree fs.FS) *Builder {
+	b.defaults = append(b.defaults, Templates(tree))
+	return b
+}
+
+// Funcs declares plugin-level helpers: the functions this plugin's
+// templates call in every target's plans, beside the backend's
+// shared vocabulary. Repeatable; a name declared twice, a nil map
+// and a function text/template refuses panic at Build. A helper
+// that works on a type takes the spelling the shared vocabulary
+// returns in the template, because the vocabulary records the
+// file's imports as it spells.
+func (b *Builder) Funcs(fm template.FuncMap) *Builder {
+	b.defaults = append(b.defaults, Funcs(fm))
+	return b
+}
+
+// For declares one target's presentation, layered over the
+// plugin-level declarations: [Templates] replaces the plugin-level
+// tree, [Funcs] adds or replaces helpers, and [Overrides] replaces
+// names in the target's shared vocabulary. A plugin that declares
+// trees through For alone serves those targets alone, and a
+// composition refuses a plan of any other target at Build. The zero
+// target, a target declared twice and a For without options panic
+// at Build.
+func (b *Builder) For(t plugin.Target, opts ...TargetOption) *Builder {
+	b.layers = append(b.layers, targetLayer{target: t, opts: slices.Clone(opts)})
 	return b
 }
 
@@ -119,14 +148,18 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 // Build panics on a declaration defect: an empty name, no rules, a
 // wrapper around no rules, a duplicate output tag, an empty output
 // word, a zero cardinality, an empty capability label, a nil key
-// registration, a nil, zero-target or duplicate template tree, a
-// directive name carried by two wrappers, a [Gated] name that is
-// not a kernel directive, a rule gating on two directives, a gate
-// wrapped around a graph rule, a zero predicate, and a gate on a
-// key the declaration never registered. A wrong declaration is a bug in
-// the plugin's own constructor and panics on the first Build in any
-// test, before a run exists; composition faults stay collected
-// errors where the workspace composes.
+// registration, a presentation defect, a directive name in two
+// wrappers, a [Gated] name that is not a kernel directive, a rule
+// gating on two directives, a gate wrapped around a graph rule, a
+// zero predicate, and a gate on a key the declaration never
+// registered. A presentation defect is a nil tree or helper map,
+// two trees or one helper name twice at one level, a helper
+// text/template refuses, the zero option, and a [Builder.For]
+// naming the zero target, naming a target twice or declaring no
+// option. A wrong declaration is a bug in the plugin's own
+// constructor and panics on the first Build in any test, before a
+// run exists; composition faults remain collected errors where the
+// workspace composes.
 func (b *Builder) Build() plugin.Plugin {
 	if b.name == "" {
 		panic("eidos: NewPlugin with an empty name")
@@ -159,20 +192,7 @@ func (b *Builder) Build() plugin.Plugin {
 			panic("eidos: " + name + " declares a nil key registration")
 		}
 	}
-	trees := make(map[plugin.Target]fs.FS, len(b.trees))
-	for _, tt := range b.trees {
-		if tt.target == "" {
-			panic("eidos: " + name + " declares a template tree for the zero target")
-		}
-		if tt.tree == nil {
-			panic("eidos: " + name + " declares a nil template tree")
-		}
-		if _, taken := trees[tt.target]; taken {
-			panic("eidos: " + name + " declares the " +
-				strconv.Quote(string(tt.target)) + " template tree twice")
-		}
-		trees[tt.target] = tt.tree
-	}
+	pres := resolvePresentation(name, b.defaults, b.layers)
 
 	var rules []flatRule
 	flatten(name, b.rules, nil, nil, "", &rules)
@@ -188,7 +208,7 @@ func (b *Builder) Build() plugin.Plugin {
 		requires: slices.Clone(b.requires),
 		options:  b.options,
 		keys:     slices.Clone(b.keys),
-		trees:    trees,
+		pres:     pres,
 		schemas:  schemas,
 		rules:    rules,
 		subs:     subscriptionsFor(rules),

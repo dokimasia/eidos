@@ -47,38 +47,30 @@ func scaledTree() fstest.MapFS {
 	return tree
 }
 
+// benchBrand is the brand the canonical corpus loads under.
+const benchBrand output.Brand = "bench"
+
 // BenchmarkLoad drives the whole pipeline at the canonical scale:
-// select, partition, parse, splice, assign, resolve, seal, key.
-// The fake language's parse is part of the measurement, so the
+// select, drop the workspace's own output, partition, parse, splice,
+// assign, resolve, seal, key. The fake language's parse is part of the measurement, so the
 // number is a ceiling on driver overhead, not a frontend budget.
-// The branded case adds the ownership proof, one read per claimed
-// file, which is the exclusion's whole cost.
+// No file of the corpus is stamped, so the ownership proof reads
+// each claimed file's tail alone.
 func BenchmarkLoad(b *testing.B) {
 	tree := scaledTree()
 	fronts := []plugin.Frontend{frontendtest.NewScripted()}
 
-	for _, tc := range []struct {
-		name  string
-		brand output.Brand
-	}{
-		{name: "unbranded"},
-		{name: "branded", brand: "bench"},
-	} {
-		b.Run(tc.name, func(b *testing.B) {
-			b.ReportAllocs()
-			b.ResetTimer()
-			for range b.N {
-				g, report, err := load.Load(context.Background(), load.Config{
-					FS:        tree,
-					Frontends: fronts,
-					Sink:      diag.NewSink(),
-					PluginSet: []byte("bench"),
-					Brand:     tc.brand,
-				})
-				if err != nil || !g.Frozen() || len(report.Units) != benchPackages {
-					b.Fatalf("the corpus loads: %v", err)
-				}
-			}
+	b.ReportAllocs()
+	for b.Loop() {
+		g, report, err := load.Load(context.Background(), load.Config{
+			FS:        tree,
+			Frontends: fronts,
+			Sink:      diag.NewSink(),
+			PluginSet: []byte("bench"),
+			Brand:     benchBrand,
 		})
+		if err != nil || !g.Frozen() || len(report.Units) != benchPackages {
+			b.Fatalf("the corpus loads: %v", err)
+		}
 	}
 }

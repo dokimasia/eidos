@@ -6,7 +6,7 @@
 // packages share.
 //
 // [Lang] is the language of every TypeScript declaration. [Target]
-// and [Name] are the spellings a plan resolves to reach the backend,
+// and [Name] are the spellings a plan resolves to select the backend,
 // [Extension] is the suffix of every TypeScript file, and [Version]
 // is the backend's behavior version. [Syntax] returns TypeScript's
 // comment forms, which the output contract writes the generated-file
@@ -18,6 +18,7 @@
 //
 //   - spell spells filenames and declared names.
 //   - backend renders emit values as TypeScript source.
+//   - testing runs tsc and node over generated output.
 //
 // # Dependency position
 //

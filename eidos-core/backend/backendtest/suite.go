@@ -21,13 +21,13 @@ import (
 
 // RunBackendSuite runs the eight checks a render returns as values
 // against a renderer: the fixture is populated, two runs produce
-// byte-identical files, every emit kind in the fixture renders,
-// every body arrives whole, a file's failure reports
-// positioned and attributed while the render continues, the settle
-// preserves the structure, the declared fact coverage matches the
-// refusals, and every member arrives in its host's file. The
-// header and trailer checks are the output contract's, in
-// [AssertStamped].
+// byte-identical files, every emit kind in the fixture renders or
+// reports its declared refusal, every body arrives whole, a file's
+// failure reports positioned and attributed while the render
+// continues, the settle preserves the structure, the declared fact
+// coverage matches the refusals, and every member arrives in its
+// host's file. The header and trailer checks are the output
+// contract's, in [AssertStamped].
 func RunBackendSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
@@ -39,7 +39,7 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertDeterministicRender(t, setup)
 	})
-	t.Run("every kind renders", func(t *testing.T) {
+	t.Run("every kind renders or is refused", func(t *testing.T) {
 		t.Parallel()
 		AssertSpeltKinds(t, setup)
 	})
@@ -55,7 +55,7 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 		t.Parallel()
 		AssertSettledShape(t, setup)
 	})
-	t.Run("stated facts stay covered", func(t *testing.T) {
+	t.Run("stated facts are covered", func(t *testing.T) {
 		t.Parallel()
 		AssertCoveredFacts(t, setup)
 	})
@@ -66,22 +66,23 @@ func RunBackendSuite(t *testing.T, setup Setup) {
 }
 
 // AssertRenderedMembers settles one setup's fixture, renders it,
-// and holds every member declaration to appearing in the output:
-// each settled field, method and variant name occurs as a whole
-// word in a file that also contains its host's name, or a finding
-// names it. A host template that ranges some member lists and
-// forgets one drops those members with no finding. The kind and
-// fact checks never visit a member a template never renders, so
-// this check reads the rendered bytes. It reads only the files
-// that contain the host's name, and a declaration elsewhere that
-// shares a member's name does not count for the member.
+// and fails on a member declaration missing from the output: each
+// settled field, method and variant name occurs as a whole word in
+// a file that also contains its host's name, or a finding names
+// it. A host template that ranges some member lists and forgets one
+// drops those members with no finding. The kind and fact checks
+// never visit a member a template never renders, so this check
+// reads the rendered bytes. It reads only the files that contain
+// the host's name, and a declaration elsewhere that shares a
+// member's name does not count for the member. A host of a kind the
+// backend refuses renders nothing, so the check skips its members.
 func AssertRenderedMembers(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	r, f := setup(tb)
 	sink := diag.NewSink()
 	if b, held := r.(plugin.Backend); held {
-		if err := plugin.Settle(f.Emit, b, sink); err != nil {
+		if err := plugin.Settle(f.Emit, b, nil, sink); err != nil {
 			tb.Errorf("the settle completes: %v", err)
 			return
 		}
@@ -95,8 +96,12 @@ func AssertRenderedMembers(tb assert.TB, setup Setup) {
 		excused.WriteString("\n")
 	}
 
+	refused := refusedKinds(r)
 	for u := range f.Emit.Units() {
 		for _, d := range u.Decls {
+			if _, skipped := refused[d.Kind()]; skipped {
+				continue
+			}
 			host, members := memberNames(d)
 			for _, name := range members {
 				if renderedBeside(files, host, name) ||
@@ -151,7 +156,7 @@ func identByte(c byte) bool {
 }
 
 // memberNames returns a declaration's name and its member names:
-// what the presence check hunts for in the rendered bytes.
+// what the presence check searches the rendered bytes for.
 func memberNames(s symbol.Symbol) (string, []string) {
 	var names []string
 	member := func(n string) {
@@ -191,20 +196,31 @@ func memberNames(s symbol.Symbol) (string, []string) {
 	}
 }
 
-// AssertCoveredFacts holds a backend's declared fact coverage to
-// the render: the declaration is total over the fact set, its
-// exceptions stay on facts their kind can state, the settled
+// refusedKinds returns the kinds a renderer declares refused, and
+// nil for a renderer that declares none.
+func refusedKinds(r plugin.Renderer) map[symbol.Kind]string {
+	if rf, declares := r.(render.Refuser); declares {
+		return rf.RefusedKinds()
+	}
+	return nil
+}
+
+// AssertCoveredFacts checks a backend's declared fact coverage
+// against the render: the declaration is total over the fact set,
+// its exceptions name facts their kind can state, the settled
 // fixture's run reports exactly the refusals the declaration
 // states, and no stated fact meets an undeclared verdict. A
-// renderer declaring no coverage fails: without a declaration the
-// guard is disarmed and every narrowing goes silent, which is the
-// defect class the contract exists to refuse.
+// declaration of a kind the backend refuses renders nothing, so the
+// check expects no fact of it to report. A renderer declaring no
+// coverage fails: without a declaration the guard is disarmed and
+// every narrowing goes silent, which is the defect class the
+// contract exists to refuse.
 func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	r, f := setup(tb)
 	if f == nil || f.Emit == nil {
-		tb.Errorf("the setup carries no fixture")
+		tb.Errorf("the setup returns no fixture")
 		return
 	}
 	c, covered := r.(render.Coverer)
@@ -233,7 +249,7 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 
 	if b, held := r.(plugin.Backend); held {
 		sink := diag.NewSink()
-		if err := plugin.Settle(f.Emit, b, sink); err != nil {
+		if err := plugin.Settle(f.Emit, b, nil, sink); err != nil {
 			tb.Errorf("the settle completes: %v", err)
 			return
 		}
@@ -248,8 +264,12 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	}
 	expect := map[statedOn]int{}
 	total := 0
+	refused := refusedKinds(r)
 	for u := range f.Emit.Units() {
 		for _, d := range u.Decls {
+			if _, skipped := refused[d.Kind()]; skipped {
+				continue
+			}
 			emit.Facts(d, func(_ symbol.Symbol, kind symbol.Kind, fact symbol.Fact) {
 				if coverage.Of(kind, fact) == render.Refuses {
 					expect[statedOn{kind: kind, fact: fact}]++
@@ -275,10 +295,9 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	}
 	assert.Equal(tb, len(refusals), total,
 		"the run reports exactly the refusals the declaration states")
-	// Per key rather than per total: matching counts with one
-	// refusal missing and one undeclared cancel out, and the
-	// undeclared half is exactly the silent narrowing the coverage
-	// exists to catch.
+	// Per key and not per total: matching counts with one refusal
+	// missing and one undeclared cancel out, and the undeclared half
+	// is exactly the silent narrowing the coverage exists to catch.
 	seen := map[statedOn]int{}
 	for _, msg := range refusals {
 		matched := false
@@ -308,24 +327,27 @@ func refusalTail(fact symbol.Fact, kind symbol.Kind) string {
 }
 
 // RenderSettled settles one setup's fixture and renders it once,
-// requiring a clean run, so a satellite's own convention pins read
-// the rendered bytes without repeating the plumbing.
+// and fails on an Error other than a declared kind refusal, so a
+// satellite's own convention pins read the rendered bytes without
+// repeating the plumbing. The canonical fixture emits every kind,
+// so a backend that refuses one reports it over the fixture and
+// still renders clean.
 func RenderSettled(tb assert.TB, setup Setup) []plugin.RenderedFile {
 	tb.Helper()
 
 	files, diags := runRender(tb, setup)
 	for _, d := range diags {
-		if d.Severity == diag.SeverityError {
+		if d.Severity == diag.SeverityError && d.Code != render.RefusedKind {
 			tb.Errorf("the settled fixture renders clean: %s", d.Msg)
 		}
 	}
 	return files
 }
 
-// AssertSettledShape settles one setup's fixture and holds the
-// settle to the changes its seams may declare: the unit count,
-// keys and origins survive whatever runs, and a backend declaring
-// no construct lowering keeps every declaration equal to a fresh
+// AssertSettledShape settles one setup's fixture and fails on a
+// change its seams may not declare: the unit count, keys and
+// origins survive whatever runs, and a backend declaring no
+// construct lowering keeps every declaration equal to a fresh
 // build once every declared name normalizes. A settle reporting an
 // Error over the suite's fixture fails the check, because the
 // canonical declarations spell in every convention.
@@ -334,7 +356,7 @@ func AssertSettledShape(tb assert.TB, setup Setup) {
 
 	r, f := setup(tb)
 	if f == nil || f.Emit == nil {
-		tb.Errorf("the setup carries no fixture")
+		tb.Errorf("the setup returns no fixture")
 		return
 	}
 	b, held := r.(plugin.Backend)
@@ -342,7 +364,7 @@ func AssertSettledShape(tb assert.TB, setup Setup) {
 		return // a hand-rolled renderer declares no seams
 	}
 	sink := diag.NewSink()
-	if err := plugin.Settle(f.Emit, b, sink); err != nil {
+	if err := plugin.Settle(f.Emit, b, nil, sink); err != nil {
 		tb.Errorf("the settle completes: %v", err)
 		return
 	}
@@ -364,7 +386,7 @@ func AssertSettledShape(tb assert.TB, setup Setup) {
 	}
 
 	if _, lowers := r.(plugin.Lowerer); lowers {
-		return // a lowering may reshape declarations; origins held above
+		return // a lowering may reshape declarations; the loop checked the origins
 	}
 	normalizeStore(settled)
 	normalizeStore(emitted)
@@ -387,7 +409,7 @@ func normalizeStore(units []plugin.Unit) {
 		}
 		for _, d := range u.Decls {
 			_ = emit.RespellNames(d, func(
-				host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string,
+				_, _ symbol.Symbol, _ symbol.Kind, _ symbol.Visibility, name string,
 			) (string, error) {
 				table[name] = true
 				return normalName, nil
@@ -463,16 +485,16 @@ func normalizeExpr(x *emit.Expr, table map[string]bool) {
 }
 
 // runRender is one check's render call: a fresh setup, a fresh sink
-// and the fatality rule held, because a renderer returns an error
-// for a defect in the pass's own inputs, never for a problem with
-// one file.
+// and the fatality rule checked, because a renderer returns an
+// error for a defect in the pass's own inputs, never for a problem
+// with one file.
 func runRender(tb assert.TB, setup Setup) ([]plugin.RenderedFile, []diag.Diag) {
 	tb.Helper()
 
 	r, f := setup(tb)
 	sink := diag.NewSink()
 	if b, held := r.(plugin.Backend); held {
-		if err := plugin.Settle(f.Emit, b, sink); err != nil {
+		if err := plugin.Settle(f.Emit, b, nil, sink); err != nil {
 			tb.Errorf("the settle completes: %v", err)
 			return nil, nil
 		}
@@ -483,14 +505,14 @@ func runRender(tb assert.TB, setup Setup) ([]plugin.RenderedFile, []diag.Diag) {
 	return files, slices.Collect(sink.All())
 }
 
-// AssertPopulatedFixture refuses an empty store: a suite over a
-// store holding no units passes every check vacuously and proves
+// AssertPopulatedFixture fails on an empty store: a suite over a
+// store without units passes every check vacuously and proves
 // nothing about the backend.
 func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	_, f := setup(tb)
-	assert.True(tb, f.Emit != nil, "the fixture carries a store")
+	assert.True(tb, f.Emit != nil, "the fixture contains a store")
 	if f.Emit == nil {
 		return
 	}
@@ -501,11 +523,11 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 	assert.True(tb, units > 0, "the fixture emits at least one unit")
 }
 
-// AssertDeterministicRender renders two isolated setups and holds
-// the files byte-equal: the same names, the same packages, the
-// same bytes, which is the byte-identity contract as values. The
-// findings must match as a set too; only their order is the run's,
-// because the pass reports in completion order.
+// AssertDeterministicRender renders two isolated setups and fails
+// unless the files are byte-equal: the same names, the same
+// packages, the same bytes, which is the byte-identity contract as
+// values. The findings must match as a set too; only their order is
+// the run's, because the pass reports in completion order.
 func AssertDeterministicRender(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -524,23 +546,25 @@ func sorted(diags []diag.Diag) []diag.Diag {
 	return diags
 }
 
-// AssertSpeltKinds renders once and refuses a kind the language
-// cannot spell: whatever inventory the fixture emits, the backend
-// holds a spelling for it. The fixture owns the coverage, so a
-// backend claims the full kind set by emitting the full kind set.
+// AssertSpeltKinds renders once and fails on a declaration of a
+// kind the language neither spells nor refuses. The canonical
+// fixture emits every kind an emit declaration takes at file level,
+// so over it each kind renders, reports under [render.RefusedKind]
+// with the reason the backend declares, or fails this check under
+// [render.UnspeltKind].
 func AssertSpeltKinds(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	_, diags := runRender(tb, setup)
 	for _, d := range diags {
 		assert.True(tb, d.Code != render.UnspeltKind,
-			"every kind the fixture emits has a spelling: "+d.Msg)
+			"every kind the fixture emits has a spelling or a declared refusal: "+d.Msg)
 	}
 }
 
-// AssertPlacedContent renders once and holds every body to arriving
-// whole: no conflicting forms, no reference resolving to nothing,
-// no pending slot content dropped by its template.
+// AssertPlacedContent renders once and fails on a body that does
+// not arrive whole: conflicting forms, a reference resolving to
+// nothing, or pending slot content its template dropped.
 func AssertPlacedContent(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -554,10 +578,10 @@ func AssertPlacedContent(tb assert.TB, setup Setup) {
 	}
 }
 
-// AssertContinuedRender renders once and holds the failure
-// semantics: the call returns no error, every finding carries a
-// position and the suite's origin, and a file reported unformatted
-// is withheld from the values.
+// AssertContinuedRender renders once and fails on a breach of the
+// failure semantics: the call returns no error, every finding
+// states a position and the suite's origin, and a file reported
+// unformatted is withheld from the values.
 func AssertContinuedRender(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -568,13 +592,13 @@ func AssertContinuedRender(tb assert.TB, setup Setup) {
 	}
 	for _, d := range diags {
 		assert.True(tb, !d.Pos.IsZero(),
-			"every finding carries a position: "+d.Msg)
+			"every finding states a position: "+d.Msg)
 		assert.Equal(tb, d.Origin, origin,
-			"every finding carries the context's plugin as origin")
+			"every finding names the context's plugin as its origin")
 		if d.Code == render.UnformattedFile {
 			_, returned := names[d.Pos.File]
 			assert.False(tb, returned,
-				"a file the formatter refused stays withheld: "+d.Pos.File)
+				"a file the formatter refused remains withheld: "+d.Pos.File)
 		}
 	}
 }

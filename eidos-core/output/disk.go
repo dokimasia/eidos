@@ -24,32 +24,49 @@ const (
 // is opened once and every staged path resolves inside it, so a
 // symlink pointing out of the tree does not escape it either: the
 // jail is the operating system's.
+//
+// A commit overwrites an existing file only when the file is this
+// sink's brand's intact output: its trailer names the brand and its
+// digest matches its body, which [Contract.Verify] checks the same
+// way. A hand-written file, another brand's output and an output
+// edited since it was stamped are refused, naming the path, and
+// remain as they are.
 type Disk struct {
 	staging
-	root *os.Root
+	root  *os.Root
+	brand Brand
 }
 
-// NewDisk opens a sink over an existing directory. It refuses a
-// root it cannot open, because a sink over nothing writes nowhere.
+// NewDisk opens a sink over an existing directory that writes as
+// one brand. It refuses a brand outside [Brand.Valid], because the
+// sink proves its ownership of a file through the brand, and a root
+// it cannot open, because a sink over nothing writes nowhere.
 //
-// Commit and Discard close the root; the sink serves one staging.
-func NewDisk(root string) (*Disk, error) {
+// Commit and Discard close the root. The sink serves one staging.
+func NewDisk(root string, brand Brand) (*Disk, error) {
+	if !brand.Valid() {
+		return nil, fmt.Errorf(
+			"output: %q is not a brand: a lowercase letter, then lowercase letters, digits and hyphens",
+			string(brand),
+		)
+	}
 	r, err := os.OpenRoot(root)
 	if err != nil {
 		return nil, fmt.Errorf("output: opening the sink root: %w", err)
 	}
-	return &Disk{root: r}, nil
+	return &Disk{root: r, brand: brand}, nil
 }
 
 // Write stages one file. Nothing reaches the tree until Commit.
 func (d *Disk) Write(path string, body []byte) error { return d.stage(path, body) }
 
 // Commit writes every staged file, in path order: identical bytes
-// leave the file and its mtime untouched, and anything else is
-// written to a staging file, synced, and renamed over the target,
-// so a reader sees the old file or the new one and never half of
-// either. A staging file that fails to write or sync is removed. A
-// file that fails is one error and the rest still commit.
+// leave the file and its mtime untouched, a file the brand cannot
+// prove it wrote is refused, and anything else is written to a
+// staging file, synced, and renamed over the target, so a reader
+// sees the old file or the new one and never half of either. A
+// staging file that fails to write or sync is removed. A file that
+// fails is one error and the rest still commit.
 func (d *Disk) Commit() ([]Written, error) {
 	if err := d.finish(); err != nil {
 		return nil, err
@@ -86,6 +103,9 @@ func (d *Disk) commit(at string, body []byte) (Written, error) {
 	case err == nil && bytes.Equal(existing, body):
 		return Written{Path: at, Action: ActionUnchanged, Hash: digest(body)}, nil
 	case err == nil:
+		if _, refused := verify(existing, d.brand); refused != nil {
+			return Written{}, fmt.Errorf("output: refusing to overwrite %q: %w", at, refused)
+		}
 		action = ActionUpdated
 	case !errors.Is(err, fs.ErrNotExist):
 		return Written{}, fmt.Errorf("output: reading %q before writing it: %w", at, err)

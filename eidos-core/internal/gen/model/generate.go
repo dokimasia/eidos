@@ -137,11 +137,11 @@ type data struct {
 // Nothing is returned unless every file rendered and formatted, so
 // a template fault cannot leave a half-generated tree.
 func Generate(modRoot string) (genfile.Set, error) {
-	kinds, err := Lower(path.Join(modRoot, SchemaDir), modRoot)
+	schema, err := Lower(path.Join(modRoot, SchemaDir), modRoot)
 	if err != nil {
 		return nil, err
 	}
-	r, err := newRenderer(kinds)
+	r, err := newRenderer(schema)
 	if err != nil {
 		return nil, err
 	}
@@ -166,16 +166,20 @@ func Regenerate(dir string) error {
 }
 
 // fingerprintOf hashes the node model's shape: every kind and every
-// node-side field, name and type spelling, in schema order.
+// node-side field, name and type spelling, in schema order, then the
+// facts in schema order, then every enum of the symbol package with
+// its constants' names and values.
 //
 // The hash covers the lowered schema only, so a documentation edit
 // leaves it unchanged. A schema change that alters the graph the
-// same source produces changes the hash. Every unit key folds the
-// result, so a recorded graph is never served across a schema
-// change.
-func fingerprintOf(kinds []KindSpec) string {
+// same source produces changes the hash, and so does a change to an
+// enum's values, which an encoded graph writes as integers. The
+// kinds and facts in schema order fix the values of the generated
+// Kind and Fact constants. Every unit key folds the result, so a
+// recorded graph is never served across either change.
+func fingerprintOf(schema Schema) string {
 	h := sha256.New()
-	for _, k := range kinds {
+	for _, k := range schema.Kinds {
 		fmt.Fprintf(h, "kind %s\n", k.Name)
 		for _, f := range k.Fields {
 			if f.Side == SideEmit {
@@ -183,6 +187,15 @@ func fingerprintOf(kinds []KindSpec) string {
 			}
 			fmt.Fprintf(h, "field %s %s elem=%s slice=%t symbol=%t\n",
 				f.Name, f.Type, f.Elem, f.Slice, f.IsSymbol)
+		}
+	}
+	for _, fact := range factsOf(schema.Kinds) {
+		fmt.Fprintf(h, "fact %s\n", fact)
+	}
+	for _, e := range schema.Enums {
+		fmt.Fprintf(h, "enum %s\n", e.Type)
+		for _, v := range e.Values {
+			fmt.Fprintf(h, "value %s %s\n", v.Name, v.Value)
 		}
 	}
 	return hex.EncodeToString(h.Sum(nil))
@@ -241,7 +254,7 @@ type renderer struct {
 }
 
 // newRenderer parses every template and prepares the shared data.
-func newRenderer(kinds []KindSpec) (*renderer, error) {
+func newRenderer(schema Schema) (*renderer, error) {
 	tmpl, err := template.New(templateDir).Funcs(template.FuncMap{
 		// firstNamed returns the first kind declaring its own name,
 		// which the generated tests build their shared cases over.
@@ -259,14 +272,14 @@ func newRenderer(kinds []KindSpec) (*renderer, error) {
 	}
 	r := &renderer{
 		templates:   tmpl,
-		kinds:       kinds,
-		facts:       factsOf(kinds),
-		fingerprint: fingerprintOf(kinds),
+		kinds:       schema.Kinds,
+		facts:       factsOf(schema.Kinds),
+		fingerprint: fingerprintOf(schema),
 		views:       map[string][]view{},
 	}
 	for _, out := range outputs {
 		if _, prepared := r.views[out.Side]; !prepared {
-			r.views[out.Side] = viewsFor(kinds, out.Side)
+			r.views[out.Side] = viewsFor(schema.Kinds, out.Side)
 		}
 	}
 	return r, nil

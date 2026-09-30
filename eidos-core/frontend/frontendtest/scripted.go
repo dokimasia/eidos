@@ -55,40 +55,46 @@ type ScriptedOptions struct {
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
 //	// TEXT               a comment, split by the kernel: its
-//	                      documentation and its +marked lines
-//	                      attach to the next type, and a tool:name
-//	                      line lowers as an annotation; above the
-//	                      package line it is the file's header and
-//	                      lowers to nothing
+//	                      documentation and its carrier lines under
+//	                      the load's brand attach to the next type,
+//	                      and a tool:name line lowers as an
+//	                      annotation. Above the package line it is
+//	                      the file's header and lowers to nothing
 //	stamp KEY VALUE       a classification stamp on the file
 //	pkgnote NAME ARGS     a directive on the package node itself
 //
 // It partitions by directory, with one shared input when the tree
 // has mod.zz at its root. The fields are open so a test can rename,
-// re-version, re-claim or re-tag it.
+// re-version, re-claim or re-tag it, or declare it a language that
+// cannot overload.
 type Scripted struct {
 	ID   plugin.ID
 	Ver  string
 	Sel  []string
 	Opts *ScriptedOptions
+	// Overloading is what Overloads reports. A method's parameters
+	// are single-token spellings, which need no normalizing.
+	Overloading bool
 }
 
-// NewScripted returns the scripted frontend under its usual claim.
+// NewScripted returns the scripted frontend under its usual claim,
+// as a language that overloads.
 func NewScripted() *Scripted {
 	return &Scripted{
 		ID:  ScriptedID,
 		Ver: "1",
 		// The manifest is a shared input, never source: the claim
 		// carves it out and the partition reads it instead.
-		Sel:  []string{"**/*.zz", "!mod.zz", "!**/skip/**"},
-		Opts: &ScriptedOptions{Tag: "steady"},
+		Sel:         []string{"**/*.zz", "!mod.zz", "!**/skip/**"},
+		Opts:        &ScriptedOptions{Tag: "steady"},
+		Overloading: true,
 	}
 }
 
 // ScriptedKeys registers the classification key the scripted stamps write,
 // in the shape a suite fixture declares its keys.
 func ScriptedKeys(r *meta.Registry) error {
-	if err := r.ClaimNamespace("fake", "fake"); err != nil {
+	if err := r.ClaimNamespace(ScriptedTestKey.Namespace()); err != nil {
 		return err
 	}
 	_, err := meta.Register[string](r, meta.KeySpec{
@@ -137,6 +143,9 @@ func (*Scripted) Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{Line: []string{"//"}, Directives: true}
 }
 
+// Overloads reports the declared [Scripted.Overloading].
+func (f *Scripted) Overloads() bool { return f.Overloading }
+
 // Partition groups by directory, in path order, and declares the
 // tree's mod.zz a shared input of every unit when it exists.
 func (*Scripted) Partition(
@@ -173,7 +182,7 @@ func (f *Scripted) Parse(_ context.Context, u *plugin.SourceUnit) error {
 }
 
 // ParseFile reads and lowers one member, so a test can drive a
-// unit partially — the shape a broken frontend takes.
+// unit partially, the shape a broken frontend takes.
 func (f *Scripted) ParseFile(u *plugin.SourceUnit, path string) error {
 	b, err := u.Read(path)
 	if err != nil {
@@ -215,7 +224,7 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 		last        *node.Struct
 		pending     []string
 		annotations symbol.Annotations
-		carried     []directive.Raw
+		waiting     []directive.Raw
 	)
 	for i, line := range strings.Split(content, "\n") {
 		at := position.Pos{File: filePath, Line: i + 1}
@@ -244,10 +253,10 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 				Name: fields[1], Pos: at,
 				Doc: pending, Annotations: annotations,
 			}
-			for _, raw := range carried {
+			for _, raw := range waiting {
 				gb.Attach(last, raw)
 			}
-			pending, annotations, carried = nil, nil, nil
+			pending, annotations, waiting = nil, nil, nil
 			for j, spelling := range fields[2:] {
 				last.Fields = append(last.Fields, &node.Field{
 					Name: "f" + string(rune('0'+j)),
@@ -302,9 +311,11 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 					continue
 				}
 				raw.Pos = c.Pos
+				raw.Negated = c.Negated()
+				raw.DirectiveShaped = c.DirectiveShaped
 				// A comment opens the declaration under it, so its
 				// carrier waits for the type it documents.
-				carried = append(carried, raw)
+				waiting = append(waiting, raw)
 			}
 		case strings.HasPrefix(fields[0], "+") && last != nil:
 			raw, err := directive.Parse(strings.TrimPrefix(strings.TrimSpace(line), "+"))

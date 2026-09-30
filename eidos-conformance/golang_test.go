@@ -11,6 +11,14 @@ import (
 	gofrontend "go.dokimi.dev/eidos/lang/go/frontend"
 	gorules "go.dokimi.dev/eidos/lang/go/rules"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
+	"go.dokimi.dev/eidos/sdk/symbol"
+)
+
+// The Go corpus's signature root and its one unexported
+// declaration, which a signature-only load drops.
+const (
+	constantsRoot = "f/constants"
+	limitName     = "limit"
 )
 
 // Go's corpus entry: the first real language against the shared
@@ -36,9 +44,12 @@ func TestGolang(t *testing.T) {
 			"interfaces":          conformance.Projects,
 			"enum_values":         conformance.Projects,
 		},
-		Signatures: []string{"f/constants"},
-		Schemas:    frontendtest.ScriptedSchemas(),
-		Keys:       gofrontend.Keys,
-		Rules:      gorules.New(),
+		Signatures: []string{constantsRoot},
+		Dropped: []symbol.Identity{
+			{Lang: gofrontend.Lang, Package: constantsRoot, Name: limitName, Kind: symbol.KindConstant},
+		},
+		Schemas: frontendtest.ScriptedSchemas(),
+		Keys:    gofrontend.Keys,
+		Rules:   gorules.New(),
 	})
 }

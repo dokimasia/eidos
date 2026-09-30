@@ -29,13 +29,16 @@ func repoRoot(tb assert.TB) string {
 	return filepath.Dir(root)
 }
 
+// The facade is generated from the kernel, so the files it renders,
+// the documentation it copies and its bytes across runs are
+// contract.
 func TestGenerate(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Generate", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("renders every owned file", func(t *testing.T) {
+		t.Run("renders one file per curated package", func(t *testing.T) {
 			t.Parallel()
 
 			set, err := facade.Generate(repoRoot(t))
@@ -58,11 +61,11 @@ func TestGenerate(t *testing.T) {
 			assert.NoError(t, err, "the kernel generates")
 			root := string(set["eidos-sdk/facade.gen.go"])
 			assert.Contains(t, root, "// NewPlugin starts a plugin declaration.",
-				"a wrapper carries its kernel docblock")
+				"a wrapper keeps its kernel docblock")
 			kit := string(set["eidos-sdk/backendtest/facade.gen.go"])
 			assert.Contains(t, kit,
-				"// BenchPackages is how many packages the scaled fixture holds.",
-				"a re-declared constant carries its kernel docblock")
+				"// BenchPackages is the number of packages in the scaled fixture.",
+				"a re-declared constant keeps its kernel docblock")
 		})
 
 		t.Run("produces the same bytes twice", func(t *testing.T) {
@@ -79,11 +82,11 @@ func TestGenerate(t *testing.T) {
 			}
 		})
 
-		t.Run("reports a tree without a kernel", func(t *testing.T) {
+		t.Run("returns an error for a tree without a kernel", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := facade.Generate(t.TempDir())
-			assert.HasError(t, err, "a tree holding no kernel is reported")
+			assert.HasError(t, err, "a tree without a kernel generates nothing")
 		})
 
 		t.Run("matches the committed tree", func(t *testing.T) {
@@ -110,7 +113,7 @@ func TestGenerate(t *testing.T) {
 			set, err := facade.Generate(root)
 			assert.NoError(t, err, "the same tree generates in memory")
 			assert.NoError(t, genfile.Verify(root, set, facade.OwnedDirs),
-				"and what landed on disk is what the generator produces, "+
+				"and the bytes on disk are what the generator produces, "+
 					"in the facade module beside the kernel")
 		})
 
@@ -124,10 +127,10 @@ func TestGenerate(t *testing.T) {
 			assert.HasError(t, err, "a surface that cannot re-export refuses the run")
 			assert.Contains(t, err.Error(), "unexported row", "naming what defeated it")
 			assert.Empty(t, dirEntries(t, root, facade.FacadeDir),
-				"and no file landed: a refused surface leaves no half-generated facade")
+				"and no file was written: a refused surface leaves no half-generated facade")
 		})
 
-		t.Run("refuses a module that is not the kernel", func(t *testing.T) {
+		t.Run("returns an error for a module that is not the kernel", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()

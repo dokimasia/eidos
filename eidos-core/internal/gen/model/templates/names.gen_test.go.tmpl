@@ -19,17 +19,17 @@ func hostKind(host symbol.Symbol) symbol.Kind {
 }
 
 // Every declared name respells through the traversal: each kind's
-// own name under its host and visibility, and one name per
-// descent field.
-func TestRespellNames(t *testing.T) {
+// own name under its host and visibility, with the declaration it
+// belongs to, and one name per descent field.
+func TestNames(t *testing.T) {
 	t.Parallel()
+
+	t.Run("RespellNames", func(t *testing.T) {
+		t.Parallel()
 {{- range .Views}}
 {{- if or .NameStorage .NameWalked}}
 
-	t.Run("{{.Name}}", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("visits every declared name it reaches", func(t *testing.T) {
+		t.Run("offers each declared name of kind {{.Name}} once", func(t *testing.T) {
 			t.Parallel()
 
 			subject := &{{.Name}}{}
@@ -45,7 +45,7 @@ func TestRespellNames(t *testing.T) {
 			var hosts []symbol.Kind
 			var seen []symbol.Visibility
 			err := RespellNames(subject,
-				func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+				func(host, _ symbol.Symbol, _ symbol.Kind, v symbol.Visibility, name string) (string, error) {
 					hosts = append(hosts, hostKind(host))
 					seen = append(seen, v)
 					return strings.ToUpper(name), nil
@@ -57,7 +57,7 @@ func TestRespellNames(t *testing.T) {
 			assert.Equal(t, hosts[0], symbol.KindInvalid, "the top level has no host")
 {{- if .VisStorage}}
 			assert.Equal(t, seen[0], symbol.VisibilityInternal,
-				"the carrier's visibility reaches the hook")
+				"the hook receives the carrier's visibility")
 {{- end}}
 {{- end}}
 			for i, h := range hosts {
@@ -71,7 +71,34 @@ func TestRespellNames(t *testing.T) {
 			_ = seen
 		})
 
-		t.Run("stops wherever the hook first refuses", func(t *testing.T) {
+		t.Run("offers each declared name of kind {{.Name}} with the declaration it belongs to", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &{{.Name}}{}
+{{- if .NameStorage}}
+			subject.{{.NameStorage}} = "alpha"
+{{- end}}
+{{- range .NameChildren}}
+			{{.}}
+{{- end}}
+			var carriers []symbol.Symbol
+			var kinds []symbol.Kind
+			err := RespellNames(subject,
+				func(_, carrier symbol.Symbol, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+					carriers = append(carriers, carrier)
+					kinds = append(kinds, kind)
+					return name, nil
+				})
+			assert.NoError(t, err, "the traversal completes")
+			for i, c := range carriers {
+				assert.Equal(t, c.Kind(), kinds[i], "the carrier is the declaration the name belongs to")
+			}
+{{- if .NameStorage}}
+			assert.Equal(t, carriers[0], symbol.Symbol(subject), "the top-level name belongs to the subject")
+{{- end}}
+		})
+
+		t.Run("stops at the hook's first refusal in kind {{.Name}}", func(t *testing.T) {
 			t.Parallel()
 
 			// The hook refuses at each visit in turn, so every place
@@ -88,7 +115,7 @@ func TestRespellNames(t *testing.T) {
 {{- end}}
 				calls := 0
 				err := RespellNames(subject,
-					func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
+					func(_, _ symbol.Symbol, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 						calls++
 						if calls == stop {
 							return "", boom
@@ -101,45 +128,45 @@ func TestRespellNames(t *testing.T) {
 					"and no name after it is offered: the first error stops the traversal")
 			}
 		})
-	})
 {{- end}}
 {{- end}}
 {{- with firstNamed .Views}}
 
-	t.Run("propagates the hook's error", func(t *testing.T) {
-		t.Parallel()
+		t.Run("returns the hook's error", func(t *testing.T) {
+			t.Parallel()
 
-		subject := &{{.Name}}{ {{.NameStorage}}: "alpha"}
-		boom := errors.New("boom")
-		err := RespellNames(subject,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				return "", boom
-			})
-		assert.True(t, errors.Is(err, boom), "the first error returns")
-		assert.Equal(t, subject.{{.NameStorage}}, "alpha", "and the name stands")
-	})
+			subject := &{{.Name}}{ {{.NameStorage}}: "alpha"}
+			boom := errors.New("boom")
+			err := RespellNames(subject,
+				func(_, _ symbol.Symbol, _ symbol.Kind, _ symbol.Visibility, _ string) (string, error) {
+					return "", boom
+				})
+			assert.True(t, errors.Is(err, boom), "the first error returns")
+			assert.Equal(t, subject.{{.NameStorage}}, "alpha", "and the name is left as it was")
+		})
 
-	t.Run("skips an empty name", func(t *testing.T) {
-		t.Parallel()
+		t.Run("skips an empty name", func(t *testing.T) {
+			t.Parallel()
 
-		calls := 0
-		err := RespellNames(&{{.Name}}{},
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				calls++
-				return name, nil
-			})
-		assert.NoError(t, err, "an unnamed carrier walks clean")
-		assert.Equal(t, calls, 0, "and offers nothing to respell")
-	})
+			calls := 0
+			err := RespellNames(&{{.Name}}{},
+				func(_, _ symbol.Symbol, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+					calls++
+					return name, nil
+				})
+			assert.NoError(t, err, "an unnamed carrier walks clean")
+			assert.Equal(t, calls, 0, "and offers nothing to respell")
+		})
 
-	t.Run("a nil symbol walks nothing", func(t *testing.T) {
-		t.Parallel()
+		t.Run("walks nothing for a nil symbol", func(t *testing.T) {
+			t.Parallel()
 
-		err := RespellNames(nil,
-			func(host symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
-				return name, nil
-			})
-		assert.NoError(t, err, "nothing to walk is not a fault")
-	})
+			err := RespellNames(nil,
+				func(_, _ symbol.Symbol, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+					return name, nil
+				})
+			assert.NoError(t, err, "nothing to walk is not a fault")
+		})
 {{- end}}
+	})
 }

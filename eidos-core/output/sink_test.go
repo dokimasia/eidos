@@ -11,8 +11,8 @@ import (
 	"go.dokimi.dev/eidos/core/output"
 )
 
-// every returns one constructor per shipped sink, so the laws
-// they share are checked against each of them rather than against
+// every returns one constructor per shipped sink, so the rules
+// they share are checked against each of them, not against
 // whichever one was convenient.
 func every(t *testing.T) map[string]func() output.Sink {
 	t.Helper()
@@ -20,7 +20,7 @@ func every(t *testing.T) map[string]func() output.Sink {
 	return map[string]func() output.Sink{
 		"mem": func() output.Sink { return output.NewMem() },
 		"disk": func() output.Sink {
-			d, err := output.NewDisk(t.TempDir())
+			d, err := output.NewDisk(t.TempDir(), diskBrand)
 			assert.NoError(t, err, "the fixture root opens")
 			return d
 		},
@@ -28,174 +28,162 @@ func every(t *testing.T) map[string]func() output.Sink {
 }
 
 // Staging is what every sink shares: what it refuses to stage, and
-// that one staging serves one commit. The behaviour after the
-// bytes land is each sink's own.
+// that one staging serves one commit. How the bytes are written to
+// the destination is each sink's own.
 func TestSink(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Write", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("refuses a path no sink may take", func(t *testing.T) {
-			t.Parallel()
+		paths := []struct {
+			name string
+			path string
+		}{
+			{name: "returns an error for the empty path", path: ""},
+			{name: "returns an error for an absolute path", path: "/etc/passwd"},
+			{name: "returns an error for a path that climbs out of the root", path: "../outside.go"},
+			{name: "returns an error for a path that climbs out part-way", path: "svc/../../outside.go"},
+			{name: "returns an error for the root itself", path: "."},
+			{name: "returns an error for a path with a trailing slash", path: "svc/"},
+			{name: "returns an error for a path with a backslash", path: `svc\store.go`},
+			{name: "returns an error for a path with the reserved staging suffix", path: "svc/store.go.stage"},
+		}
+		pairs := []struct {
+			name          string
+			first, second string
+		}{
+			{
+				name:  "returns an error for a file where a directory is needed",
+				first: "svc/store.go", second: "svc/store.go/row.go",
+			},
+			{
+				name:  "returns an error for a directory where a file is staged",
+				first: "svc/store.go", second: "svc",
+			},
+			{
+				name:  "returns an error for two names that differ only in case",
+				first: "svc/store.go", second: "svc/Store.go",
+			},
+		}
+		for name, open := range every(t) {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 
-			paths := []struct {
-				name string
-				path string
-				why  string
-			}{
-				{"empty", "", "a file needs a path"},
-				{"absolute", "/etc/passwd", "a staged path is workspace-relative"},
-				{"parent", "../outside.go", "a path may not climb out of the root"},
-				{"interior parent", "svc/../../outside.go", "nor climb out part-way"},
-				{"the root itself", ".", "a directory is not a file"},
-				{"trailing slash", "svc/", "nor is a directory with a slash"},
-				{"backslash", `svc\store.go`, "paths are slash-separated on every platform"},
-				{"the reserved suffix", "svc/store.go.stage", "the commit stages through it"},
-			}
-			for name, open := range every(t) {
 				for _, tt := range paths {
-					t.Run(name+"/"+tt.name, func(t *testing.T) {
+					t.Run(tt.name, func(t *testing.T) {
 						t.Parallel()
-						assert.HasError(t, open().Write(tt.path, []byte("x\n")), tt.why)
+
+						assert.HasError(t, open().Write(tt.path, []byte("x\n")), "the staging fails")
 					})
 				}
-			}
-		})
 
-		t.Run("refuses one path staged twice", func(t *testing.T) {
-			t.Parallel()
-
-			for name, open := range every(t) {
-				t.Run(name, func(t *testing.T) {
-					t.Parallel()
-
-					s := open()
-					assert.NoError(t, s.Write("svc/store.go", []byte("first\n")),
-						"the first staging takes")
-					assert.HasError(t, s.Write("svc/store.go", []byte("second\n")),
-						"one sink writes each path once, so the second refuses "+
-							"rather than deciding which wins")
-				})
-			}
-		})
-
-		t.Run("refuses paths that cannot coexist on a filesystem", func(t *testing.T) {
-			t.Parallel()
-
-			pairs := []struct {
-				name          string
-				first, second string
-			}{
-				{"a file where a directory is needed", "svc/store.go", "svc/store.go/row.go"},
-				{"a directory where a file is staged", "svc/store.go", "svc"},
-				{"two names differing only in case", "svc/store.go", "svc/Store.go"},
-			}
-			for name, open := range every(t) {
 				for _, tt := range pairs {
-					t.Run(name+"/"+tt.name, func(t *testing.T) {
+					t.Run(tt.name, func(t *testing.T) {
 						t.Parallel()
 
 						s := open()
 						assert.NoError(t, s.Write(tt.first, []byte("a\n")), "the first path stages")
-						assert.HasError(t, s.Write(tt.second, []byte("b\n")),
-							"the second cannot exist beside it on a filesystem")
+						assert.HasError(t, s.Write(tt.second, []byte("b\n")), "the second path fails")
 					})
 				}
-				t.Run(name+"/two files in one directory", func(t *testing.T) {
+
+				t.Run("returns an error for one path staged twice", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					assert.NoError(t, s.Write("svc/store.go", []byte("first\n")), "the first staging succeeds")
+					assert.HasError(t, s.Write("svc/store.go", []byte("second\n")), "the second staging fails")
+				})
+
+				t.Run("stages two files in one directory", func(t *testing.T) {
 					t.Parallel()
 
 					s := open()
 					assert.NoError(t, s.Write("svc/store.go", []byte("a\n")), "the first path stages")
-					assert.NoError(t, s.Write("svc/store_test.go", []byte("b\n")),
-						"and a sibling beside it")
+					assert.NoError(t, s.Write("svc/store_test.go", []byte("b\n")), "the sibling stages")
 				})
-			}
-		})
 
-		t.Run("refuses everything after the sink finished", func(t *testing.T) {
-			t.Parallel()
-
-			for name, open := range every(t) {
-				t.Run(name+"/committed", func(t *testing.T) {
+				t.Run("returns ErrFinished for a write after the commit", func(t *testing.T) {
 					t.Parallel()
 
 					s := open()
-					assert.NoError(t, s.Write("a.go", []byte("a\n")), "the staging takes")
 					_, err := s.Commit()
-					assert.NoError(t, err, "the commit runs")
-					assert.ErrorIs(t, s.Write("b.go", []byte("b\n")), output.ErrFinished,
-						"a sink serves one staging")
-					_, err = s.Commit()
-					assert.ErrorIs(t, err, output.ErrFinished, "and commits once")
+					assert.NoError(t, err, "the commit succeeds")
+					assert.ErrorIs(t, s.Write("b.go", []byte("b\n")), output.ErrFinished, "a sink serves one staging")
 				})
-				t.Run(name+"/discarded", func(t *testing.T) {
+
+				t.Run("returns ErrFinished for a write after the discard", func(t *testing.T) {
 					t.Parallel()
 
 					s := open()
-					assert.NoError(t, s.Write("a.go", []byte("a\n")), "the staging takes")
-					assert.NoError(t, s.Discard(), "the discard runs")
-					assert.ErrorIs(t, s.Write("b.go", []byte("b\n")), output.ErrFinished,
-						"a discarded sink takes nothing more")
+					assert.NoError(t, s.Discard(), "the discard succeeds")
+					assert.ErrorIs(t, s.Write("b.go", []byte("b\n")), output.ErrFinished, "a sink serves one staging")
 				})
-			}
-		})
-	})
-
-	t.Run("String", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("spells what a commit did", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, output.ActionCreated.String(), "created",
-				"a path that was not there")
-			assert.Equal(t, output.ActionUpdated.String(), "updated",
-				"a path that held different bytes")
-			assert.Equal(t, output.ActionUnchanged.String(), "unchanged",
-				"a path the commit left alone")
-		})
-
-		t.Run("spells an action nothing declares by its number", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Equal(t, output.Action(7).String(), "Action(7)",
-				"a diagnostic over an unknown action still names it, "+
-					"rather than reading as one of the three")
-			assert.Equal(t, output.Action(12).String(), "Action(12)",
-				"in every digit its number has")
-		})
+			})
+		}
 	})
 
 	t.Run("Commit", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("records every staged path in path order", func(t *testing.T) {
-			t.Parallel()
+		for name, open := range every(t) {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
 
-			for name, open := range every(t) {
-				t.Run(name, func(t *testing.T) {
+				t.Run("records every staged path in path order", func(t *testing.T) {
 					t.Parallel()
 
 					s := open()
 					for _, p := range []string{"svc/store.go", "a.go", "svc/api.go"} {
-						assert.NoError(t, s.Write(p, []byte("package p\n")),
-							"the fixture stages "+p)
+						assert.NoError(t, s.Write(p, []byte("package p\n")), "the fixture stages "+p)
 					}
 					got, err := s.Commit()
-					assert.NoError(t, err, "the commit runs")
+					assert.NoError(t, err, "the commit succeeds")
 					assert.Equal(t, []string{got[0].Path, got[1].Path, got[2].Path},
 						[]string{"a.go", "svc/api.go", "svc/store.go"},
-						"sorted by path, whatever order they were staged in")
+						"the records are sorted by path")
 					for _, w := range got {
-						assert.Equal(t, w.Action, output.ActionCreated,
-							"nothing was there before")
+						assert.Equal(t, w.Action, output.ActionCreated, "nothing existed before")
 						assert.Equal(t, w.Hash, "sha256:"+
 							"0ad6261536f6380b14ade1a508ac911b8c48230731746e0c76abd26bf3e3a15d",
-							"the digest of the bytes as written")
+							"the hash is the digest of the bytes as written")
 					}
 				})
-			}
-		})
+
+				t.Run("returns ErrFinished for a second commit", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					_, err := s.Commit()
+					assert.NoError(t, err, "the first commit succeeds")
+					_, err = s.Commit()
+					assert.ErrorIs(t, err, output.ErrFinished, "a sink commits once")
+				})
+			})
+		}
+	})
+
+	t.Run("String", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give output.Action
+			want string
+		}{
+			{name: "returns created for ActionCreated", give: output.ActionCreated, want: "created"},
+			{name: "returns updated for ActionUpdated", give: output.ActionUpdated, want: "updated"},
+			{name: "returns unchanged for ActionUnchanged", give: output.ActionUnchanged, want: "unchanged"},
+			{name: "returns the number of an undeclared action", give: output.Action(7), want: "Action(7)"},
+			{name: "returns every digit of an undeclared action's number", give: output.Action(12), want: "Action(12)"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
+			})
+		}
 	})
 }

@@ -23,8 +23,8 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// testCode is a code for handler-side reporting cases; the sink
-// carries codes without consulting a registry.
+// testCode is a code for handler-side reporting cases. The sink
+// accepts a code without consulting a registry.
 var testCode = diag.Code{Prefix: "tst", Number: 1}
 
 // boolKey returns a registered bool key and a fact store built over
@@ -33,8 +33,7 @@ func boolKey(tb assert.TB) (meta.Key[bool], *meta.Facts) {
 	tb.Helper()
 
 	reg := meta.NewRegistry()
-	assert.NoError(tb, reg.ClaimNamespace("t", "the test"),
-		"the namespace is claimed")
+	assert.NoError(tb, reg.ClaimNamespace(fixtureNamespace), "the namespace is claimed")
 	key, err := meta.Register[bool](reg, meta.KeySpec{
 		Name: "t.flag", Doc: "marks a fixture subject",
 	})
@@ -46,12 +45,19 @@ func boolKey(tb assert.TB) (meta.Key[bool], *meta.Facts) {
 // gate on.
 const gateName directive.Name = "stub"
 
+// The plugin the generator context runs as, and another plugin the
+// opt-out cases compare it with.
+const (
+	contextPlugin plugin.ID = "weaver"
+	otherPlugin   plugin.ID = "audit"
+)
+
 // emitHandler is the handler shape every struct-triggered emitter
 // rule takes, so a case can vary the rule and keep the handler.
 type emitHandler = func(m *eidos.StructMatch, e *eidos.Emitter) error
 
-// fixtureGraph returns a frozen graph holding two positioned structs
-// in the store package.
+// fixtureGraph returns a frozen graph that contains two positioned
+// structs in the store package.
 func fixtureGraph(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
 	tb.Helper()
 
@@ -80,19 +86,19 @@ func genContext(
 		Facts:  facts,
 		Emit:   plugin.NewEmit(),
 		Sink:   diag.NewSink(),
-		Plugin: "weaver",
+		Plugin: contextPlugin,
 		Bucket: 2,
 	}
 }
 
-// seed arrives one earlier-bucket unit holding decls into ctx.Emit.
+// seed adds one earlier-bucket unit with decls to ctx.Emit.
 func seed(tb assert.TB, ctx *plugin.GeneratorContext, decls ...symbol.Symbol) {
 	tb.Helper()
 
 	assert.NoError(tb, ctx.Emit.Add(plugin.Unit{
 		Plugin: "earlier", Per: plugin.PerSource, Word: "impl",
 		Key: "a.go", Decls: decls,
-	}), "the earlier bucket's unit arrives")
+	}), "the earlier bucket's unit is added")
 }
 
 // emitted returns an origined emit struct for one node subject.
@@ -109,24 +115,44 @@ func generatorOf(tb assert.TB, p plugin.Plugin) plugin.Generator {
 	return gen
 }
 
-// Dispatch is where the rules meet: indexed enumeration, skip, gate
-// views, per-invocation grain, deterministic flush. Every case here
-// is a guarantee a plugin author gets to assume.
+// visitingStructs returns a plugin whose bare struct rule records
+// each subject it visits, and the record.
+func visitingStructs(name plugin.ID, rule func(emitHandler) eidos.Rule) (plugin.Plugin, *[]string) {
+	var visited []string
+	p := eidos.NewPlugin(name).
+		Handle(rule(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			visited = append(visited, m.Struct.Name)
+			return nil
+		})).
+		Build()
+	return p, &visited
+}
+
+// negatedOn returns the validated table with one negated instance of
+// the context plugin's stub directive on subject.
+func negatedOn(subject symbol.Identity) map[symbol.Identity][]directive.Directive {
+	return map[symbol.Identity][]directive.Directive{
+		subject: {{Name: directive.Name(string(contextPlugin) + ":stub"), Negated: true}},
+	}
+}
+
+// Dispatch routes every rule: indexed enumeration, skip, gate views,
+// per-invocation grain, deterministic flush. Every case here is a
+// guarantee a plugin author gets to assume.
 func TestDispatch(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Generate", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("runs a graph rule once and flushes its unit", func(t *testing.T) {
-			t.Parallel()
+		graphRun := func(tb assert.TB) (int, []plugin.Unit) {
+			tb.Helper()
 
-			g, _, _ := fixtureGraph(t)
-			_, facts := boolKey(t)
-			ctx := genContext(t, g, facts, nil)
-
+			g, _, _ := fixtureGraph(tb)
+			_, facts := boolKey(tb)
+			ctx := genContext(tb, g, facts, nil)
 			var calls int
-			p := eidos.NewPlugin("planner").
+			p := eidos.NewPlugin(contextPlugin).
 				Output(plugin.Output{Per: plugin.PerPlan, Word: "registry"}).
 				Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
 					calls++
@@ -137,25 +163,35 @@ func TestDispatch(t *testing.T) {
 					return nil
 				})).
 				Build()
-
-			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			assert.Equal(t, calls, 1, "a graph rule runs once per phase call")
-
+			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
 			var units []plugin.Unit
 			for u := range ctx.Emit.Units() {
-				if u.Plugin == "weaver" {
+				if u.Plugin == contextPlugin {
 					units = append(units, u)
 				}
 			}
-			assert.Length(t, units, 1, "one touched accumulator flushes one unit")
-			assert.Equal(t, units[0].Per, plugin.PerPlan, "under its declared cardinality")
-			assert.Equal(t, units[0].Key, "", "a plan unit has no key")
-			assert.Length(t, units[0].Decls, 1, "holding what the handler appended")
-			assert.Length(t, units[0].Origins, 0,
-				"a graph match has no subject, so no per-subject provenance arrives")
+			return calls, units
+		}
+
+		t.Run("runs a graph rule once", func(t *testing.T) {
+			t.Parallel()
+
+			calls, _ := graphRun(t)
+			assert.Equal(t, calls, 1, "the handler runs once per phase call")
 		})
 
-		t.Run("wraps a handler error with the plugin and rule", func(t *testing.T) {
+		t.Run("flushes a graph rule's accumulator as one unit", func(t *testing.T) {
+			t.Parallel()
+
+			_, units := graphRun(t)
+			assert.Length(t, units, 1, "the touched accumulator flushes one unit")
+			assert.Equal(t, units[0].Per, plugin.PerPlan, "the unit has its declared cardinality")
+			assert.Equal(t, units[0].Key, "", "a plan unit has no key")
+			assert.Length(t, units[0].Decls, 1, "the unit contains what the handler appended")
+			assert.Length(t, units[0].Origins, 0, "a graph match has no subject to record")
+		})
+
+		t.Run("returns a handler error wrapped with the plugin and the rule", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := fixtureGraph(t)
@@ -168,77 +204,72 @@ func TestDispatch(t *testing.T) {
 				Build()
 
 			err := generatorOf(t, p).Generate(genContext(t, g, facts, nil))
-			assert.ErrorIs(t, err, boom, "a returned error is fatal to the phase")
-			assert.Contains(t, err.Error(), "weaver", "naming the plugin")
-			assert.Contains(t, err.Error(), "rule 0", "and the rule that failed")
+			assert.ErrorIs(t, err, boom, "the handler's error stops the phase")
+			assert.Contains(t, err.Error(), string(contextPlugin), "the error names the plugin")
+			assert.Contains(t, err.Error(), "rule 0", "the error names the rule")
 		})
 
-		t.Run("a handler error is fatal on every dispatch path", func(t *testing.T) {
-			t.Parallel()
-
-			// Each indexed path resolves its subjects differently, so
-			// each carries its own error return. A path that swallowed
-			// one would finish the phase over a handler that failed.
-			schema := stubSchema(gateName)
-			for _, tt := range []struct {
-				path string
-				rule func(handler emitHandler) eidos.Rule
-			}{
-				{
-					path: "bare",
-					rule: eidos.OnStruct[*eidos.Emitter],
+		// Each indexed path resolves its subjects differently, so each
+		// has its own error return. A path that swallowed one would
+		// finish the phase over a handler that failed.
+		schema := stubSchema(gateName)
+		paths := []struct {
+			name string
+			rule func(handler emitHandler) eidos.Rule
+		}{
+			{
+				name: "returns a handler error on the bare path",
+				rule: eidos.OnStruct[*eidos.Emitter],
+			},
+			{
+				name: "returns a handler error on the fact-gated path",
+				rule: func(h emitHandler) eidos.Rule {
+					key, _ := boolKey(t)
+					return eidos.Where(eidos.HasKey(key), eidos.OnStruct(h))
 				},
-				{
-					path: "fact-gated",
-					rule: func(h emitHandler) eidos.Rule {
-						key, _ := boolKey(t)
-						return eidos.Where(eidos.HasKey(key), eidos.OnStruct(h))
-					},
+			},
+			{
+				name: "returns a handler error on the directive-gated path",
+				rule: func(h emitHandler) eidos.Rule {
+					return eidos.Directive(schema, eidos.OnStruct(h))
 				},
-				{
-					path: "directive-gated",
-					rule: func(h emitHandler) eidos.Rule {
-						return eidos.Directive(schema, eidos.OnStruct(h))
-					},
-				},
-			} {
-				t.Run(tt.path, func(t *testing.T) {
-					t.Parallel()
+			},
+		}
+		for _, tt := range paths {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-					alpha := coretest.Struct(coretest.StorePath, "Alpha")
-					g := store.New()
-					assert.NoError(t,
-						g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
-						"the fixture package is admitted")
-					assert.NoError(t, g.AttachDirectives(alpha.ID,
-						[]directive.Raw{{Name: gateName}}),
-						"the gating instance attaches")
-					g.Freeze()
+				alpha := coretest.Struct(coretest.StorePath, "Alpha")
+				g := store.New()
+				assert.NoError(t,
+					g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
+					"the fixture package is admitted")
+				assert.NoError(t, g.AttachDirectives(alpha.ID,
+					[]directive.Raw{{Name: gateName}}),
+					"the gating instance attaches")
+				g.Freeze()
 
-					key, facts := boolKey(t)
-					assert.NoError(t,
-						meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
-						"the fact gate has a stamped subject to find")
-					validated := map[symbol.Identity][]directive.Directive{
-						alpha.ID: {{Name: schema.Canonical(), Instance: 0}},
-					}
+				key, facts := boolKey(t)
+				assert.NoError(t,
+					meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
+					"the fact gate has a stamped subject to find")
+				validated := map[symbol.Identity][]directive.Directive{
+					alpha.ID: {{Name: schema.Canonical(), Instance: 0}},
+				}
 
-					boom := errors.New("boom")
-					p := eidos.NewPlugin("stubgen").
-						Handle(tt.rule(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-							return boom
-						})).
-						Build()
+				boom := errors.New("boom")
+				p := eidos.NewPlugin("stubgen").
+					Handle(tt.rule(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						return boom
+					})).
+					Build()
 
-					err := generatorOf(t, p).
-						Generate(genContext(t, g, facts, validated))
-					assert.ErrorIs(t, err, boom,
-						"the "+tt.path+" path stops the phase on a handler error")
-				})
-			}
-		})
+				err := generatorOf(t, p).Generate(genContext(t, g, facts, validated))
+				assert.ErrorIs(t, err, boom, "the handler's error stops the phase")
+			})
+		}
 
-		t.Run("skips a stamped subject the scope does not hold", func(t *testing.T) {
+		t.Run("skips a stamped subject the graph does not contain", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, _ := fixtureGraph(t)
@@ -249,24 +280,17 @@ func TestDispatch(t *testing.T) {
 				"a fact stamps on a subject no package declares")
 			assert.NoError(t,
 				meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
-				"and on one the scope does hold")
+				"a fact stamps on a subject the graph contains")
 
-			visited := []symbol.Identity{}
-			p := eidos.NewPlugin("gated").
-				Handle(eidos.Where(eidos.HasKey(key),
-					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-						visited = append(visited, m.Struct.Identity())
-						return nil
-					}))).
-				Build()
+			p, visited := visitingStructs("gated", func(h emitHandler) eidos.Rule {
+				return eidos.Where(eidos.HasKey(key), eidos.OnStruct(h))
+			})
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
 				"the phase call passes")
-			assert.Equal(t, visited, []symbol.Identity{alpha.ID},
-				"the fact index names a subject the scope cannot resolve, "+
-					"so the rule passes over it rather than inventing one")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the unresolved subject is not visited")
 		})
 
-		t.Run("skips a carrier of another kind", func(t *testing.T) {
+		t.Run("skips a directive on a declaration of another kind", func(t *testing.T) {
 			t.Parallel()
 
 			alpha := coretest.Struct(coretest.StorePath, "Alpha")
@@ -282,7 +306,6 @@ func TestDispatch(t *testing.T) {
 			}
 			g.Freeze()
 
-			schema := stubSchema(gateName)
 			canonical := schema.Canonical()
 			validated := map[symbol.Identity][]directive.Directive{
 				alpha.ID:  {{Name: canonical, Instance: 0}},
@@ -290,23 +313,16 @@ func TestDispatch(t *testing.T) {
 			}
 			_, facts := boolKey(t)
 
-			visited := []symbol.Identity{}
-			p := eidos.NewPlugin("stubgen").
-				Handle(eidos.Directive(schema,
-					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-						visited = append(visited, m.Struct.Identity())
-						return nil
-					}))).
-				Build()
+			p, visited := visitingStructs("stubgen", func(h emitHandler) eidos.Rule {
+				return eidos.Directive(schema, eidos.OnStruct(h))
+			})
 			assert.NoError(t,
 				generatorOf(t, p).Generate(genContext(t, g, facts, validated)),
 				"the phase call passes")
-			assert.Equal(t, visited, []symbol.Identity{alpha.ID},
-				"the same directive on an interface is indexed under the "+
-					"carrier, and a struct trigger passes over it")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the struct rule does not visit the interface")
 		})
 
-		t.Run("gates an emit rule per instance on the origin", func(t *testing.T) {
+		t.Run("runs a gated emit rule once per instance on the origin", func(t *testing.T) {
 			t.Parallel()
 
 			alpha := coretest.Struct(coretest.StorePath, "Alpha")
@@ -319,7 +335,6 @@ func TestDispatch(t *testing.T) {
 			}), "two gating instances attach to the origin")
 			g.Freeze()
 
-			schema := stubSchema(gateName)
 			canonical := schema.Canonical()
 			validated := map[symbol.Identity][]directive.Directive{
 				alpha.ID: {
@@ -338,18 +353,15 @@ func TestDispatch(t *testing.T) {
 					eidos.OnEmit(symbol.KindStruct,
 						func(m *eidos.EmitMatch, e *eidos.Emitter) error {
 							gate := m.Directive()
-							assert.NotNil(t, gate, "a gated emit match carries its instance")
+							assert.NotNil(t, gate, "a gated emit match has its instance")
 							if gate != nil {
 								instances = append(instances, gate.Instance)
 							}
 							return nil
 						}))).
 				Build()
-			assert.NoError(t, generatorOf(t, p).Generate(ctx),
-				"the phase call passes")
-			assert.Equal(t, instances, []int{0, 1},
-				"an emit rule under a gate runs once per instance on the "+
-					"value's origin, in source order")
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			assert.Equal(t, instances, []int{0, 1}, "the instances run in source order")
 		})
 
 		t.Run("panics on an undeclared tag", func(t *testing.T) {
@@ -374,22 +386,20 @@ func TestDispatch(t *testing.T) {
 	t.Run("OnEmit", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("visits earlier units and never its own", func(t *testing.T) {
-			t.Parallel()
+		ownRun := func(tb assert.TB) int {
+			tb.Helper()
 
-			g, alpha, _ := fixtureGraph(t)
-			_, facts := boolKey(t)
-			ctx := genContext(t, g, facts, nil)
-			seed(t, ctx, emitted(alpha))
+			g, alpha, _ := fixtureGraph(tb)
+			_, facts := boolKey(tb)
+			ctx := genContext(tb, g, facts, nil)
+			seed(tb, ctx, emitted(alpha))
 
 			var visited int
-			p := eidos.NewPlugin("weaver").
+			p := eidos.NewPlugin(contextPlugin).
 				Output(plugin.Output{Per: plugin.PerPlan, Word: "audit"}).
 				Handle(
 					eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
-						e.PlanFile().Append(&emit.Struct{
-							Origin: alpha.ID, Name: "Own",
-						})
+						e.PlanFile().Append(&emit.Struct{Origin: alpha.ID, Name: "Own"})
 						return nil
 					}),
 					eidos.OnEmit(symbol.KindStruct,
@@ -399,10 +409,20 @@ func TestDispatch(t *testing.T) {
 						}),
 				).
 				Build()
+			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+			return visited
+		}
 
-			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			assert.Equal(t, visited, 1,
-				"the emit rule sees the seeded unit and not the plugin's own flush")
+		t.Run("visits an earlier bucket's unit", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, ownRun(t) >= 1, "the seeded unit is visited")
+		})
+
+		t.Run("never visits the plugin's own unit", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, ownRun(t), 1, "only the seeded unit is visited")
 		})
 
 		t.Run("appends into another plugin's slot", func(t *testing.T) {
@@ -414,7 +434,7 @@ func TestDispatch(t *testing.T) {
 			other := emitted(alpha)
 			seed(t, ctx, other)
 
-			p := eidos.NewPlugin("weaver").
+			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnEmit(symbol.KindStruct,
 					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
 						s, ok := m.Value.(*emit.Struct)
@@ -427,11 +447,10 @@ func TestDispatch(t *testing.T) {
 				Build()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			assert.Equal(t, other.Methods.Len(), 1,
-				"the slot is the composition seam between plugins")
+			assert.Equal(t, other.Methods.Len(), 1, "the other plugin's slot has the appended method")
 		})
 
-		t.Run("gates on the origin's fact", func(t *testing.T) {
+		t.Run("evaluates a fact gate on the origin", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, beta := fixtureGraph(t)
@@ -443,7 +462,7 @@ func TestDispatch(t *testing.T) {
 			seed(t, ctx, emitted(alpha), emitted(beta))
 
 			var origins []string
-			p := eidos.NewPlugin("weaver").
+			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.Where(eidos.HasKey(key),
 					eidos.OnEmit(symbol.KindStruct,
 						func(m *eidos.EmitMatch, e *eidos.Emitter) error {
@@ -453,11 +472,10 @@ func TestDispatch(t *testing.T) {
 				Build()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			assert.Equal(t, origins, []string{"Alpha"},
-				"the predicate evaluates against the origin, and only its carrier matches")
+			assert.Equal(t, origins, []string{"Alpha"}, "only the stamped origin's value is visited")
 		})
 
-		t.Run("skip excludes by origin", func(t *testing.T) {
+		t.Run("skips an origin under a bare skip", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, beta := fixtureGraph(t)
@@ -469,7 +487,7 @@ func TestDispatch(t *testing.T) {
 			seed(t, ctx, emitted(alpha), emitted(beta))
 
 			var origins []string
-			p := eidos.NewPlugin("weaver").
+			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnEmit(symbol.KindStruct,
 					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
 						origins = append(origins, m.Origin().Name)
@@ -478,8 +496,28 @@ func TestDispatch(t *testing.T) {
 				Build()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			assert.Equal(t, origins, []string{"Alpha"},
-				"a skipped origin drops out of a bare emit rule")
+			assert.Equal(t, origins, []string{"Alpha"}, "the skipped origin's value is not visited")
+		})
+
+		t.Run("skips an origin with a negated directive of the plugin", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, negatedOn(beta.ID))
+			seed(t, ctx, emitted(alpha), emitted(beta))
+
+			var origins []string
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnEmit(symbol.KindStruct,
+					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+						origins = append(origins, m.Origin().Name)
+						return nil
+					})).
+				Build()
+
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			assert.Equal(t, origins, []string{"Alpha"}, "the negated origin's value is not visited")
 		})
 
 		t.Run("reports at the origin's position", func(t *testing.T) {
@@ -490,11 +528,10 @@ func TestDispatch(t *testing.T) {
 			ctx := genContext(t, g, facts, nil)
 			seed(t, ctx, emitted(alpha))
 
-			p := eidos.NewPlugin("weaver").
+			p := eidos.NewPlugin(contextPlugin).
 				Handle(eidos.OnEmit(symbol.KindStruct,
 					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
-						assert.Equal(t, m.Origin(), alpha.ID,
-							"the match names whose output it is looking at")
+						assert.Equal(t, m.Origin(), alpha.ID, "the match names the value's origin")
 						m.Warnf(testCode, "flagged")
 						return nil
 					})).
@@ -504,12 +541,10 @@ func TestDispatch(t *testing.T) {
 			var found bool
 			for d := range ctx.Sink.All() {
 				found = true
-				assert.Equal(t, d.Pos, alpha.Pos,
-					"an emit match reports at its origin's position")
-				assert.Equal(t, d.Origin, diag.Origin("weaver"),
-					"under the reporting plugin's identity")
+				assert.Equal(t, d.Pos, alpha.Pos, "the finding is at the origin's position")
+				assert.Equal(t, d.Origin, contextPlugin, "the finding is under the reporting plugin")
 			}
-			assert.True(t, found, "the report arrived")
+			assert.True(t, found, "the finding is reported")
 		})
 
 		t.Run("orders one accumulator's contributions by origin", func(t *testing.T) {
@@ -520,7 +555,7 @@ func TestDispatch(t *testing.T) {
 			ctx := genContext(t, g, facts, nil)
 			seed(t, ctx, emitted(beta), emitted(alpha))
 
-			p := eidos.NewPlugin("weaver").
+			p := eidos.NewPlugin(contextPlugin).
 				Output(plugin.Output{Per: plugin.PerPackage, Word: "audit"}).
 				Handle(eidos.OnEmit(symbol.KindStruct,
 					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
@@ -535,50 +570,42 @@ func TestDispatch(t *testing.T) {
 			var got plugin.Unit
 			var found bool
 			for u := range ctx.Emit.Units() {
-				if u.Plugin == "weaver" {
+				if u.Plugin == contextPlugin {
 					got, found = u, true
 				}
 			}
 			assert.True(t, found, "the accumulator flushed")
-			assert.Equal(t, got.Key, coretest.StorePath,
-				"a per-package unit keys on the origin's package path")
+			assert.Equal(t, got.Key, coretest.StorePath, "a per-package unit keys on the origin's package path")
 
 			var names []string
 			for _, d := range got.Decls {
 				s, ok := d.(*emit.Struct)
-				assert.True(t, ok, "the unit holds what the handler appended")
+				assert.True(t, ok, "the unit contains what the handler appended")
 				names = append(names, s.Name)
 			}
 			assert.Equal(t, names, []string{"ForAlpha", "ForBeta"},
-				"contributions order by origin identity, never by match order")
-			assert.Equal(t, got.Origins, []symbol.Identity{alpha.ID, beta.ID},
-				"and the provenance is sorted")
+				"the contributions are in origin identity order, not match order")
+			assert.Equal(t, got.Origins, []symbol.Identity{alpha.ID, beta.ID}, "the provenance is sorted")
 		})
 	})
 
-	t.Run("node rules", func(t *testing.T) {
+	t.Run("OnStruct", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("a bare rule visits every declaration of its kind", func(t *testing.T) {
+		bare := eidos.OnStruct[*eidos.Emitter]
+
+		t.Run("visits every declaration of its kind under a bare rule", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := fixtureGraph(t)
 			_, facts := boolKey(t)
-			var visited []string
-			p := eidos.NewPlugin("weaver").
-				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-					visited = append(visited, m.Struct.Name)
-					return nil
-				})).
-				Build()
-
+			p, visited := visitingStructs(contextPlugin, bare)
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
 				"the phase call passes")
-			assert.Equal(t, visited, []string{"Alpha", "Beta"},
-				"the full-price path visits everything, in the graph's own order")
+			assert.Equal(t, *visited, []string{"Alpha", "Beta"}, "the declarations are in the graph's order")
 		})
 
-		t.Run("a directive-gated rule runs per instance", func(t *testing.T) {
+		t.Run("runs a directive-gated rule once per instance", func(t *testing.T) {
 			t.Parallel()
 
 			alpha := coretest.Struct(coretest.StorePath, "Alpha")
@@ -586,11 +613,11 @@ func TestDispatch(t *testing.T) {
 			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
 				"the fixture package is admitted")
 			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{
-				{Name: "stub"}, {Name: "stub"},
+				{Name: gateName}, {Name: gateName},
 			}), "two raw instances attach")
 			g.Freeze()
 
-			schema := stubSchema("stub")
+			schema := stubSchema(gateName)
 			canonical := schema.Canonical()
 			validated := map[symbol.Identity][]directive.Directive{
 				alpha.ID: {
@@ -604,8 +631,7 @@ func TestDispatch(t *testing.T) {
 			p := eidos.NewPlugin("stubgen").
 				Handle(eidos.Directive(schema,
 					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-						assert.NotNil(t, m.Directive(),
-							"a gated match carries its instance")
+						assert.NotNil(t, m.Directive(), "a gated match has its instance")
 						instances = append(instances, m.Directive().Instance)
 						return nil
 					}))).
@@ -613,22 +639,21 @@ func TestDispatch(t *testing.T) {
 
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, validated)),
 				"the phase call passes")
-			assert.Equal(t, instances, []int{0, 1},
-				"a repeatable directive runs its handler once per instance, in source order")
+			assert.Equal(t, instances, []int{0, 1}, "the instances run in source order")
 		})
 
-		t.Run("a directive-gated rule skips the subject's other directives", func(t *testing.T) {
+		t.Run("runs a directive-gated rule for its own directive alone", func(t *testing.T) {
 			t.Parallel()
 
 			alpha := coretest.Struct(coretest.StorePath, "Alpha")
 			g := store.New()
 			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
 				"the fixture package is admitted")
-			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{{Name: "stub"}}),
+			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{{Name: gateName}}),
 				"the gating instance attaches")
 			g.Freeze()
 
-			schema := stubSchema("stub")
+			schema := stubSchema(gateName)
 			validated := map[symbol.Identity][]directive.Directive{
 				alpha.ID: {
 					{Name: directive.KernelSample, Instance: 0},
@@ -649,11 +674,65 @@ func TestDispatch(t *testing.T) {
 
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, validated)),
 				"the phase call passes")
-			assert.Equal(t, gates, []directive.Name{schema.Canonical()},
-				"the handler runs for its own directive's instance alone")
+			assert.Equal(t, gates, []directive.Name{schema.Canonical()}, "only the rule's own instance runs")
 		})
 
-		t.Run("a fact-gated rule visits the stamped carriers", func(t *testing.T) {
+		t.Run("runs no directive-gated rule for a negated instance", func(t *testing.T) {
+			t.Parallel()
+
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
+				"the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{{Name: gateName, Negated: true}}),
+				"the negated instance attaches")
+			g.Freeze()
+
+			schema := stubSchema(gateName)
+			validated := map[symbol.Identity][]directive.Directive{
+				alpha.ID: {{Name: schema.Canonical(), Negated: true}},
+			}
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, validated)
+			ctx.Plugin = plugin.ID(schema.Plugin)
+
+			p, visited := visitingStructs(ctx.Plugin, func(h emitHandler) eidos.Rule {
+				return eidos.Directive(schema, eidos.OnStruct(h))
+			})
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			assert.Empty(t, *visited, "the negated instance gates nothing")
+		})
+
+		t.Run("runs a directive-gated rule on a subject that negates another directive", func(t *testing.T) {
+			t.Parallel()
+
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
+				"the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{{Name: gateName}}),
+				"the gating instance attaches")
+			g.Freeze()
+
+			schema := stubSchema(gateName)
+			validated := map[symbol.Identity][]directive.Directive{
+				alpha.ID: {
+					{Name: schema.Canonical(), Instance: 0},
+					{Name: directive.Name(schema.Plugin + ":other"), Negated: true},
+				},
+			}
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, validated)
+			ctx.Plugin = plugin.ID(schema.Plugin)
+
+			p, visited := visitingStructs(ctx.Plugin, func(h emitHandler) eidos.Rule {
+				return eidos.Directive(schema, eidos.OnStruct(h))
+			})
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the subject opted in through the gate")
+		})
+
+		t.Run("visits only the stamped subjects under a fact-gated rule", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, _ := fixtureGraph(t)
@@ -662,102 +741,139 @@ func TestDispatch(t *testing.T) {
 				meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
 				"the fact stamps on one subject")
 
-			var visited []string
-			p := eidos.NewPlugin("weaver").
-				Handle(eidos.Where(eidos.HasKey(key),
-					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-						visited = append(visited, m.Struct.Name)
-						return nil
-					}))).
-				Build()
-
+			p, visited := visitingStructs(contextPlugin, func(h emitHandler) eidos.Rule {
+				return eidos.Where(eidos.HasKey(key), eidos.OnStruct(h))
+			})
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
 				"the phase call passes")
-			assert.Equal(t, visited, []string{"Alpha"},
-				"the fact index routes the rule to its carriers alone")
+			assert.Equal(t, *visited, []string{"Alpha"}, "only the stamped subject is visited")
 		})
 
-		t.Run("a narrowed skip excludes one plugin alone", func(t *testing.T) {
+		narrowed := func(beta symbol.Identity) map[symbol.Identity][]directive.Directive {
+			return map[symbol.Identity][]directive.Directive{
+				beta: {{
+					Name: directive.KernelSkip,
+					Params: map[directive.ParamKey]directive.Value{
+						directive.SkipPlugin: {Kind: directive.TypeString, Str: string(contextPlugin)},
+					},
+				}},
+			}
+		}
+
+		t.Run("skips a subject under a skip naming the plugin", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, beta := fixtureGraph(t)
 			_, facts := boolKey(t)
-			validated := map[symbol.Identity][]directive.Directive{
-				beta.ID: {{
-					Name: directive.KernelSkip,
-					Params: map[directive.ParamKey]directive.Value{
-						directive.SkipPlugin: {
-							Kind: directive.TypeString, Str: "weaver",
-						},
-					},
-				}},
-			}
-
-			counting := func() (plugin.Plugin, *[]string) {
-				var visited []string
-				p := eidos.NewPlugin("weaver").
-					Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-						visited = append(visited, m.Struct.Name)
-						return nil
-					})).
-					Build()
-				return p, &visited
-			}
-
-			named, visited := counting()
-			ctx := genContext(t, g, facts, validated)
-			assert.NoError(t, generatorOf(t, named).Generate(ctx), "the named plugin runs")
-			assert.Equal(t, *visited, []string{"Alpha"},
-				"the named plugin loses the skipped subject")
-
-			other, otherVisited := counting()
-			otherCtx := genContext(t, g, facts, validated)
-			otherCtx.Plugin = "audit"
-			assert.NoError(t, generatorOf(t, other).Generate(otherCtx),
-				"another plugin runs")
-			assert.Equal(t, *otherVisited, []string{"Alpha", "Beta"},
-				"every other plugin still matches the subject")
+			p, visited := visitingStructs(contextPlugin, bare)
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, narrowed(beta.ID))),
+				"the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the skipped subject is not visited")
 		})
 
-		t.Run("a dual-role plugin runs each phase's rules alone", func(t *testing.T) {
+		t.Run("visits a subject under a skip naming another plugin", func(t *testing.T) {
 			t.Parallel()
 
-			g, _, _ := fixtureGraph(t)
-			key, facts := boolKey(t)
-			ix, err := plugin.NewIndex(g, facts, nil, nil)
-			assert.NoError(t, err, "the routing surface builds")
+			g, _, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, narrowed(beta.ID))
+			ctx.Plugin = otherPlugin
+			p, visited := visitingStructs(otherPlugin, bare)
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha", "Beta"}, "both subjects are visited")
+		})
 
-			var stamped, emitted int
+		t.Run("skips a subject with a negated directive of the plugin under a bare rule", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			p, visited := visitingStructs(contextPlugin, bare)
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, negatedOn(beta.ID))),
+				"the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the negated subject is not visited")
+		})
+
+		t.Run("skips a subject with a negated directive of the plugin under a fact-gated rule", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, beta := fixtureGraph(t)
+			key, facts := boolKey(t)
+			for _, id := range []symbol.Identity{alpha.ID, beta.ID} {
+				assert.NoError(t, meta.Stamp(facts, key, true, meta.Claim{Subject: id}),
+					"the fact stamps on both subjects")
+			}
+			p, visited := visitingStructs(contextPlugin, func(h emitHandler) eidos.Rule {
+				return eidos.Where(eidos.HasKey(key), eidos.OnStruct(h))
+			})
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, negatedOn(beta.ID))),
+				"the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha"}, "the negated subject is not visited")
+		})
+
+		t.Run("visits a subject with another plugin's negated directive", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, beta := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, negatedOn(beta.ID))
+			ctx.Plugin = otherPlugin
+			p, visited := visitingStructs(otherPlugin, bare)
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha", "Beta"}, "both subjects are visited")
+		})
+
+		dualRun := func(tb assert.TB) (stamped, emittedCount [2]int) {
+			tb.Helper()
+
+			g, _, _ := fixtureGraph(tb)
+			key, facts := boolKey(tb)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(tb, err, "the routing surface builds")
+
+			var stamps, emits int
 			p := eidos.NewPlugin("dual").
 				Handle(
 					eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
-						stamped++
+						stamps++
 						eidos.Stamp(st, key, true)
 						return nil
 					}),
 					eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-						emitted++
+						emits++
 						return nil
 					}),
 				).
 				Build()
 
-			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)),
-				"the annotate call passes")
-			assert.Equal(t, stamped, 2, "the annotate call ran the stamper rule")
-			assert.Equal(t, emitted, 0, "and never the emitter rule")
+			assert.NoError(tb, annotatorOf(tb, p).Annotate(annContext(tb, facts, ix)), "the annotate call passes")
+			stamped[0], emittedCount[0] = stamps, emits
+			assert.NoError(tb, generatorOf(tb, p).Generate(genContext(tb, g, facts, nil)), "the generate call passes")
+			stamped[1], emittedCount[1] = stamps, emits
+			return stamped, emittedCount
+		}
 
-			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
-				"the generate call passes")
-			assert.Equal(t, emitted, 2, "the generate call ran the emitter rule")
-			assert.Equal(t, stamped, 2, "and never the stamper rule again")
+		t.Run("runs only the stamper rules of a dual-role plugin in the annotate phase", func(t *testing.T) {
+			t.Parallel()
+
+			stamped, emittedCount := dualRun(t)
+			assert.Equal(t, stamped[0], 2, "the stamper rule visits both subjects")
+			assert.Equal(t, emittedCount[0], 0, "the emitter rule does not run")
+		})
+
+		t.Run("runs only the emitter rules of a dual-role plugin in the generate phase", func(t *testing.T) {
+			t.Parallel()
+
+			stamped, emittedCount := dualRun(t)
+			assert.Equal(t, emittedCount[1], 2, "the emitter rule visits both subjects")
+			assert.Equal(t, stamped[1], 2, "the stamper rule does not run again")
 		})
 	})
 
 	t.Run("OnGraph", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("reports at the position it names", func(t *testing.T) {
+		t.Run("reports at the position the handler names", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, _ := fixtureGraph(t)
@@ -772,14 +888,13 @@ func TestDispatch(t *testing.T) {
 				Build()
 
 			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
-			assert.True(t, ctx.Sink.Failed(), "an Error fails the run")
+			assert.True(t, ctx.Sink.Failed(), "the Error fails the run")
 			for d := range ctx.Sink.All() {
-				assert.Equal(t, d.Pos, alpha.Pos,
-					"a graph match demands the position it reports at")
+				assert.Equal(t, d.Pos, alpha.Pos, "the finding is at the named position")
 			}
 		})
 
-		t.Run("reads the graph through the match", func(t *testing.T) {
+		t.Run("returns a reader over the graph", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, _ := fixtureGraph(t)
@@ -789,7 +904,7 @@ func TestDispatch(t *testing.T) {
 			p := eidos.NewPlugin("planner").
 				Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
 					_, held := m.Reader().Lookup(alpha.ID)
-					assert.True(t, held, "the reader returns the held declaration")
+					assert.True(t, held, "the reader finds the declaration")
 					return nil
 				})).
 				Build()
@@ -800,7 +915,7 @@ func TestDispatch(t *testing.T) {
 }
 
 // benchEmitStore seeds units of origined structs whose origins the
-// graph holds, so the dispatch path performs its position lookups.
+// graph contains, so the dispatch path performs its position lookups.
 func benchEmitStore(tb assert.TB, units, perUnit int) *plugin.Emit {
 	tb.Helper()
 
@@ -825,9 +940,9 @@ func benchEmitStore(tb assert.TB, units, perUnit int) *plugin.Emit {
 	return e
 }
 
-// gatedWorkspace returns a frozen workspace whose every struct
-// carries one raw instance of the gate directive, and the validated
-// table naming it by its canonical spelling.
+// gatedWorkspace returns a frozen workspace whose every struct has
+// one raw instance of the gate directive, and the validated table
+// naming it by its canonical spelling.
 func gatedWorkspace(
 	tb assert.TB, canonical directive.Name, packages, files, decls int,
 ) (*store.Graph, map[symbol.Identity][]directive.Directive) {
@@ -842,7 +957,7 @@ func gatedWorkspace(
 				continue
 			}
 			assert.NoError(tb, g.AttachDirectives(decl.Identity(), []directive.Raw{{Name: gateName}}),
-				"the carrier attaches")
+				"the directive attaches")
 			validated[decl.Identity()] = []directive.Directive{{Name: canonical}}
 		}
 	}
@@ -889,7 +1004,7 @@ func BenchmarkDispatch(b *testing.B) {
 		}
 	})
 
-	b.Run("fact-gated emit rule, one carrier in ten", func(b *testing.B) {
+	b.Run("fact-gated emit rule, one origin in ten", func(b *testing.B) {
 		b.ReportAllocs()
 		key, facts := boolKey(b)
 		const units, perUnit = 1_000, 20
@@ -1035,9 +1150,9 @@ func BenchmarkNodeDispatch(b *testing.B) {
 		}
 	})
 
-	b.Run("directive-gated rule over 20k carriers", func(b *testing.B) {
+	b.Run("directive-gated rule over 20k subjects", func(b *testing.B) {
 		b.ReportAllocs()
-		const carriers = 1_000 * 20
+		const gatedSubjects = 1_000 * 20
 		schema := stubSchema(gateName)
 		gated, validated := gatedWorkspace(b, schema.Canonical(), 1_000, 1, 20)
 		_, facts := boolKey(b)
@@ -1066,8 +1181,8 @@ func BenchmarkNodeDispatch(b *testing.B) {
 			if err := gen.Generate(ctx); err != nil {
 				b.Fatalf("Generate: unexpected error: %v", err)
 			}
-			if visited != carriers {
-				b.Fatalf("visited %d carriers", visited)
+			if visited != gatedSubjects {
+				b.Fatalf("visited %d subjects", visited)
 			}
 		}
 	})
@@ -1075,7 +1190,7 @@ func BenchmarkNodeDispatch(b *testing.B) {
 	b.Run("annotate stamps three facts after three reads per subject", func(b *testing.B) {
 		b.ReportAllocs()
 		reg := meta.NewRegistry()
-		if err := reg.ClaimNamespace("t", "the bench"); err != nil {
+		if err := reg.ClaimNamespace(fixtureNamespace); err != nil {
 			b.Fatalf("ClaimNamespace: unexpected error: %v", err)
 		}
 		var keys []meta.Key[bool]
@@ -1123,7 +1238,7 @@ func BenchmarkNodeDispatch(b *testing.B) {
 	b.Run("annotate stamps 200k subjects", func(b *testing.B) {
 		b.ReportAllocs()
 		reg := meta.NewRegistry()
-		if err := reg.ClaimNamespace("t", "the bench"); err != nil {
+		if err := reg.ClaimNamespace(fixtureNamespace); err != nil {
 			b.Fatalf("ClaimNamespace: unexpected error: %v", err)
 		}
 		benchKey, err := meta.Register[bool](reg, meta.KeySpec{

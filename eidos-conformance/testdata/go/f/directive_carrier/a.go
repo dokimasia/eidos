@@ -1,5 +1,5 @@
 package directive_carrier
 
 // Table maps a scripted table.
-//+gen:table name=t
+//+fixture:gen:table name=t
 type Table struct{}

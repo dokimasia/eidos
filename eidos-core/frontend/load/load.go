@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"hash"
+	"io"
 	"io/fs"
 	"runtime"
 	"slices"
@@ -70,13 +71,13 @@ type Config struct {
 	// [plugin.DepthFull].
 	Signatures []string
 
-	// Brand is the workspace's own output brand. A claimed file
-	// with this brand's provenance trailer is the workspace's
-	// own output and does not load: outputs are never inputs, and
-	// the exclusion runs before anything partitions. A file
-	// another brand stamped is ordinary input. A zero brand
-	// excludes nothing, which is what a composition declaring no
-	// output loads under.
+	// Brand is the composition's brand. Every unit reads its
+	// carriers under the brand's marks, and a claimed file with the
+	// brand's provenance trailer is the workspace's own output and
+	// does not load: outputs are never inputs, and the exclusion
+	// runs before anything partitions. A file another brand stamped
+	// is ordinary input. The load refuses a brand outside
+	// [output.Brand.Valid].
 	Brand output.Brand
 }
 
@@ -126,6 +127,12 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 	if cfg.Sink == nil {
 		return nil, nil, errors.New("load: no sink to report into")
 	}
+	if !cfg.Brand.Valid() {
+		return nil, nil, fmt.Errorf(
+			"load: %q is not a brand, and carriers and outputs are read under the composition's brand",
+			string(cfg.Brand),
+		)
+	}
 	for _, f := range cfg.Frontends {
 		if _, versioned := f.(plugin.Versioned); !versioned {
 			return nil, nil, fmt.Errorf(
@@ -142,7 +149,7 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	excluded, err := disown(cfg, claims)
+	excluded, err := dropOutput(cfg, claims)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -183,7 +190,7 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 			Frontend: u.frontend.Name(),
 			Files:    memberPaths(u.files),
 			Depth:    u.depth,
-			Key:      unitKey(u, cfg.PluginSet),
+			Key:      unitKey(u, cfg.PluginSet, cfg.Brand),
 		})
 	}
 	return g, report, nil
@@ -232,7 +239,7 @@ func claim(frontends []plugin.Frontend, files []string) ([][]string, error) {
 			}
 			if by, taken := claimed[path]; taken {
 				return nil, fmt.Errorf(
-					"load: %s is claimed by %s and %s; selection claims partition the tree",
+					"load: %s is claimed by %s and by %s, and selection claims partition the tree",
 					path, by, f.Name(),
 				)
 			}
@@ -243,26 +250,25 @@ func claim(frontends []plugin.Frontend, files []string) ([][]string, error) {
 	return out, nil
 }
 
-// disown drops every claimed file with a provenance trailer under
+// dropOutput drops every claimed file with a provenance trailer under
 // the load's own brand from the claims, and returns what it
 // dropped, sorted by path. The proof is read from the bytes and not
 // matched against declared output families, because an out=
 // redirect and the orphaned output of a removed plugin match no
-// current declaration. A zero brand proves nothing and drops
-// nothing.
-func disown(cfg Config, claims [][]string) ([]string, error) {
-	if cfg.Brand == "" {
-		return nil, nil
-	}
+// current declaration. A claimed file costs one read of its last
+// [output.TailSize] bytes, and a read of the whole file only where
+// those bytes contain a trailer's key.
+func dropOutput(cfg Config, claims [][]string) ([]string, error) {
 	var excluded []string
+	tail := make([]byte, output.TailSize)
 	for i, paths := range claims {
 		kept := paths[:0]
 		for _, path := range paths {
-			b, err := fs.ReadFile(cfg.FS, path)
+			stamped, err := stampedBy(cfg.FS, path, cfg.Brand, tail)
 			if err != nil {
 				return nil, fmt.Errorf("load: read %s: %w", path, err)
 			}
-			if prov, stamped := output.Read(b); stamped && prov.Brand == cfg.Brand {
+			if stamped {
 				excluded = append(excluded, path)
 				continue
 			}
@@ -272,6 +278,54 @@ func disown(cfg Config, claims [][]string) ([]string, error) {
 	}
 	slices.Sort(excluded)
 	return excluded, nil
+}
+
+// stampedBy reports whether a file has a provenance trailer under a
+// brand. It probes the file's tail into buf first, and reads the
+// whole file only where the tail contains a trailer's key.
+func stampedBy(fsys fs.FS, path string, brand output.Brand, buf []byte) (bool, error) {
+	keyed, err := tailKeyed(fsys, path, buf)
+	if err != nil {
+		return false, err
+	}
+	if !keyed {
+		return false, nil
+	}
+	b, err := fs.ReadFile(fsys, path)
+	if err != nil {
+		return false, err
+	}
+	prov, stamped := output.Read(b)
+	return stamped && prov.Brand == brand, nil
+}
+
+// tailKeyed reports whether a file's last len(buf) bytes contain a
+// trailer's key, reading them into buf through [io.Seeker]. A file
+// that does not implement io.Seeker reports true, so its caller
+// reads it whole.
+func tailKeyed(fsys fs.FS, path string, buf []byte) (bool, error) {
+	f, err := fsys.Open(path)
+	if err != nil {
+		return false, err
+	}
+	defer f.Close()
+	s, seeks := f.(io.Seeker)
+	if !seeks {
+		return true, nil
+	}
+	end, err := s.Seek(0, io.SeekEnd)
+	if err != nil {
+		return false, err
+	}
+	start := max(end-int64(len(buf)), 0)
+	if _, err = s.Seek(start, io.SeekStart); err != nil {
+		return false, err
+	}
+	n, err := io.ReadFull(f, buf[:end-start])
+	if err != nil {
+		return false, err
+	}
+	return output.HasTrailerKey(buf[:n]), nil
 }
 
 // partitionAll partitions each frontend's claim into units, checks
@@ -349,7 +403,7 @@ func checkPartition(name plugin.ID, claimed []string, parts [][]plugin.SourceRef
 		case 0:
 			return fmt.Errorf("load: partition %s: %s is claimed and in no unit", name, path)
 		default:
-			return fmt.Errorf("load: partition %s: %s is in %d units; every file is in exactly one",
+			return fmt.Errorf("load: partition %s: %s is in %d units, and every file is in exactly one",
 				name, path, counts[path])
 		}
 	}
@@ -408,7 +462,7 @@ func parseAll(ctx context.Context, cfg Config, units []*unit) error {
 			u.sink = diag.NewSink()
 			u.src = plugin.NewSourceUnit(
 				u.files, cfg.FS, u.depth, u.frontend.Syntax(),
-				u.sink, u.frontend.Name(),
+				string(cfg.Brand), u.sink, u.frontend.Name(),
 			)
 			if err := u.frontend.Parse(ctx, u.src); err != nil {
 				failures[i] = fmt.Errorf("load: parse %s: %w", u.frontend.Name(), err)
@@ -422,7 +476,7 @@ func parseAll(ctx context.Context, cfg Config, units []*unit) error {
 		return err
 	}
 	// The parent context may have been cancelled with every parse
-	// clean; a skipped unit has no source unit to key, so the load
+	// clean. A skipped unit has no source unit to key, so the load
 	// cannot finish.
 	for _, u := range units {
 		if u.src == nil {
@@ -453,11 +507,15 @@ func (r *recordingReader) Read(path string) ([]byte, error) {
 	return b, nil
 }
 
-// spliced is one merged package and the language it belongs to.
+// spliced is one merged package, the language it belongs to, whether
+// that language's frontend is a [plugin.Importer], and whether it
+// reports that the language overloads.
 type spliced struct {
-	pkg    *node.Package
-	lang   symbol.Lang
-	origin diag.Origin
+	pkg       *node.Package
+	lang      symbol.Lang
+	origin    diag.Origin
+	importer  bool
+	overloads bool
 }
 
 // scopeEntry joins one file's recorded bindings to the frontend
@@ -504,6 +562,8 @@ func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachE
 	for _, u := range units {
 		lang := u.frontend.Lang()
 		origin := u.frontend.Name()
+		_, importer := u.frontend.(plugin.Importer)
+		overloads := u.frontend.Overloads()
 		gb := u.src.Graph()
 		for _, p := range gb.Packages() {
 			key := mergeKey{lang: lang, path: p.ID.Package}
@@ -512,25 +572,27 @@ func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachE
 			// against a merged-away package node still resolves to
 			// the identity that is kept.
 			p.ID = symbol.Identity{Lang: lang, Package: p.ID.Package, Kind: symbol.KindPackage}
-			held, met := merged[key]
+			kept, met := merged[key]
 			if !met {
-				held = &spliced{pkg: p, lang: lang, origin: origin}
-				merged[key] = held
-				packages = append(packages, held)
+				kept = &spliced{
+					pkg: p, lang: lang, origin: origin, importer: importer, overloads: overloads,
+				}
+				merged[key] = kept
+				packages = append(packages, kept)
 				continue
 			}
-			if p.Name != "" && held.pkg.Name != "" && p.Name != held.pkg.Name {
+			if p.Name != "" && kept.pkg.Name != "" && p.Name != kept.pkg.Name {
 				sink.Warnf(DuplicateDeclaration, p.Pos, origin,
 					"package %s is declared %q and %q, and the first name is kept",
-					p.ID.Package, held.pkg.Name, p.Name)
+					p.ID.Package, kept.pkg.Name, p.Name)
 			}
-			if held.pkg.Name == "" {
-				held.pkg.Name = p.Name
+			if kept.pkg.Name == "" {
+				kept.pkg.Name = p.Name
 			}
-			if len(held.pkg.Doc) == 0 {
-				held.pkg.Doc = p.Doc
+			if len(kept.pkg.Doc) == 0 {
+				kept.pkg.Doc = p.Doc
 			}
-			held.pkg.Files = append(held.pkg.Files, p.Files...)
+			kept.pkg.Files = append(kept.pkg.Files, p.Files...)
 		}
 		for _, s := range gb.Scopes() {
 			scopes = append(scopes, scopeEntry{frontend: u.frontend, file: s.File, bindings: s.Bindings})
@@ -539,8 +601,8 @@ func splice(units []*unit, sink *diag.Sink) ([]*spliced, []scopeEntry, []attachE
 			attachments = append(attachments, attachEntry{subject: a.Subject, raw: a.Raw, origin: origin})
 		}
 		for _, s := range gb.StampRecords() {
-			// The origin is the kernel's to fill: a stamp cannot
-			// speak for another plugin.
+			// The kernel sets the origin, so every stamp is attributed
+			// to the frontend that recorded it.
 			s.Stamp.Origin = origin
 			stamps = append(stamps, stampEntry{subject: s.Subject, stamp: s.Stamp})
 		}

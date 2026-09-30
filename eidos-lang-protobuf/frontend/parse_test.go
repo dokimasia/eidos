@@ -25,6 +25,37 @@ const (
 	badFieldLine = "message M { string x = ; }\n"
 )
 
+// The files that declare the well-known types the package cases
+// name.
+const (
+	timestampFile = "google/protobuf/timestamp.proto"
+	durationFile  = "google/protobuf/duration.proto"
+	emptyFile     = "google/protobuf/empty.proto"
+	anyFile       = "google/protobuf/any.proto"
+)
+
+// wellKnownSource names a well-known type at every site a reference
+// lowers from: a plain field, a list's element, a map's value and an
+// rpc's request and response, beside a message and a scalar.
+const wellKnownSource = `syntax = "proto3";
+
+package svc.store;
+
+message Row {
+  google.protobuf.Timestamp when = 1;
+  repeated google.protobuf.Any items = 2;
+  map<string, google.protobuf.Duration> spans = 3;
+  Other other = 4;
+  string name = 5;
+}
+
+message Other {}
+
+service Store {
+  rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
+}
+`
+
 // formsOf returns the form of each field's type, in field order.
 func formsOf(s *node.Struct) []symbol.TypeForm {
 	out := make([]symbol.TypeForm, 0, len(s.Fields))
@@ -73,7 +104,7 @@ message Row {
 				"per field")
 		})
 
-		t.Run("states the label forms the projection has", func(t *testing.T) {
+		t.Run("lowers each field label to its type form", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto3";
@@ -180,7 +211,7 @@ message Row {
   // Body is what the row stores.
   oneof body {
     // Text is the row as text.
-    //+gen:table name=text
+    //+fixture:gen:table name=text
     string text = 1;
     bytes blob = 2;
   }
@@ -274,7 +305,7 @@ service Store {
 				[]string{"both"}, "or both")
 		})
 
-		t.Run("nests a message and an enum declared inside a message", func(t *testing.T) {
+		t.Run("nests the types a message declares under the message", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto3";
@@ -345,7 +376,7 @@ enum Colour {
 				"an enum reserves too")
 		})
 
-		t.Run("stamps an edition's reserved identifiers and extension range options", func(t *testing.T) {
+		t.Run("stamps an edition message's residue as written", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `edition = "2023";
@@ -365,7 +396,7 @@ message Row {
 				"an edition writes reserved names as identifiers, and no entry stamps empty")
 			assert.Equal(t, stampsOn(gb, row, string(protobuf.ExtensionsKey)),
 				[]string{"100 to 199 [verification = UNVERIFIED]"},
-				"and an extension range keeps the options it states")
+				"an extension range keeps the options it states")
 		})
 
 		t.Run("records the imports a schema states", func(t *testing.T) {
@@ -392,7 +423,57 @@ message Row {
 				"a well-known type keeps its qualified spelling")
 		})
 
-		t.Run("refuses an extend block, positioned", func(t *testing.T) {
+		t.Run("records the declaring file of a well-known type as a field's package", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, wellKnownSource)
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Equal(t, row.Fields[0].Type.Package, timestampFile,
+				"the workspace does not load the file, so no resolution names the import")
+		})
+
+		t.Run("records the declaring file of a well-known type as a list element's package", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, wellKnownSource)
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Equal(t, row.Fields[1].Type.Elems[0].Package, anyFile, "the element names the import")
+		})
+
+		t.Run("records the declaring file of a well-known type as a map value's package", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, wellKnownSource)
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Equal(t, row.Fields[2].Type.Elems[1].Package, durationFile, "the value names the import")
+		})
+
+		t.Run("records the declaring file of a well-known type as an rpc side's package", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, wellKnownSource)
+			store, _ := declOf(t, onlyFile(t, gb), "Store").(*node.Interface)
+			assert.Equal(t, store.Methods[0].Params[0].Type.Package, emptyFile, "the request names the import")
+			assert.Equal(t, store.Methods[0].Returns[0].Type.Package, emptyFile, "the response names the import")
+		})
+
+		t.Run("records no package for a reference to a message", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, wellKnownSource)
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Empty(t, row.Fields[3].Type.Package, "the resolution step names the import of a declaration")
+		})
+
+		t.Run("records no package for a scalar", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsed(t, wellKnownSource)
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			assert.Empty(t, row.Fields[4].Type.Package, "a scalar names no declaration")
+		})
+
+		t.Run("reports RefusedExtension at an extend block", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto2";
@@ -422,7 +503,7 @@ extend Row {
 			assert.Length(t, file.Decls, 1, "and the block loads as nothing")
 		})
 
-		t.Run("reports a syntax error and keeps what parsed", func(t *testing.T) {
+		t.Run("reports UnparsedFile at a syntax error", func(t *testing.T) {
 			t.Parallel()
 
 			_, sink := parsed(t, `syntax = "proto3";
@@ -475,7 +556,7 @@ message Row {
 package svc.store;
 
 // Row is a stored record.
-//+gen:table name=rows
+//+fixture:gen:table name=rows
 message Row {
   string name = 1;
 }
@@ -539,7 +620,7 @@ import weak "optional.proto";
 				"and a weak one, because it may be absent at run time")
 		})
 
-		t.Run("stamps a oneof's options and refuses a group inside it", func(t *testing.T) {
+		t.Run("stamps a oneof's options", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto2";
@@ -549,8 +630,28 @@ package svc.store;
 message Row {
   oneof body {
     option deprecated = true;
-    optional string text = 1;
-    optional group Inner = 2 {
+    string text = 1;
+  }
+}
+`)
+			assert.False(t, sink.Failed(), "the schema loads clean")
+			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
+			sum, _ := row.Types[0].(*node.Sum)
+			assert.Contains(t, stampsOn(gb, sum, string(protobuf.OptionsKey))[0], "deprecated=",
+				"a oneof's own options are stamped, the way every other level's are")
+		})
+
+		t.Run("reports RefusedGroup for a group in a oneof", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, `syntax = "proto2";
+
+package svc.store;
+
+message Row {
+  oneof body {
+    string text = 1;
+    group Inner = 2 {
       optional string v = 3;
     }
   }
@@ -558,15 +659,13 @@ message Row {
 `)
 			assert.True(t, sink.Failed(), "a group inside a oneof is a group like any other")
 			assert.True(t, slices.Contains(codesOf(sink), protofrontend.RefusedGroup),
-				"under the refusal's own code, never silently")
+				"the group reports under the refusal's own code")
 			row, _ := declOf(t, onlyFile(t, gb), "Row").(*node.Struct)
 			sum, _ := row.Types[0].(*node.Sum)
-			assert.Length(t, sum.Variants, 1, "the field loads and the group loads as nothing")
-			assert.Contains(t, stampsOn(gb, sum, string(protobuf.OptionsKey))[0], "deprecated=",
-				"and a oneof's own options are stamped, the way every other level's are")
+			assert.Length(t, sum.Variants, 1, "the field loads, and the group loads as nothing")
 		})
 
-		t.Run("refuses a group, positioned", func(t *testing.T) {
+		t.Run("reports RefusedGroup for a group in a message", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto2";
@@ -586,7 +685,7 @@ message Row {
 			assert.Empty(t, row.Fields, "and the group loads as nothing")
 		})
 
-		t.Run("refuses a carrier no declaration takes", func(t *testing.T) {
+		t.Run("reports UnaddressedCarrier for a carrier no declaration takes", func(t *testing.T) {
 			t.Parallel()
 
 			gb, sink := parsed(t, `syntax = "proto3";
@@ -597,26 +696,39 @@ message Row {
   string name = 1;
 }
 
-//+gen:table name=orphan
-
-//tool:mark on
+//+fixture:gen:table name=orphan
 `)
 			assert.True(t, sink.Failed(), "an authored directive above nothing is reported")
 			assert.True(t, slices.Contains(codesOf(sink), protofrontend.UnaddressedCarrier),
-				"under the carrier's own code, never silently")
+				"the carrier reports under its own code, never silently")
 			var msg string
 			for d := range sink.All() {
 				if d.Code == protofrontend.UnaddressedCarrier {
 					msg = d.Msg
-					assert.Equal(t, d.Pos.Line, 9, "positioned at the carrier's own line")
+					assert.Equal(t, d.Pos.Line, 9, "the finding is positioned at the carrier's own line")
 				}
 			}
-			assert.Contains(t, msg, "gen:table", "naming the directive that attached nowhere")
+			assert.Contains(t, msg, `"+fixture:gen:table name=orphan"`,
+				"the finding quotes the carrier as the author wrote it")
+			assert.Length(t, gb.Attachments(), 0, "nothing attaches")
+		})
 
-			file := onlyFile(t, gb)
-			assert.Length(t, gb.Attachments(), 0, "and nothing attached")
+		t.Run("annotates the file with a tool directive no declaration takes", func(t *testing.T) {
+			t.Parallel()
+
+			gb, sink := parsed(t, `syntax = "proto3";
+
+package svc.store;
+
+message Row {
+  string name = 1;
+}
+
+//tool:mark on
+`)
+			assert.False(t, sink.Failed(), "a tool directive is no authored directive, so nothing reports")
 			var names []string
-			for _, a := range file.Annotations {
+			for _, a := range onlyFile(t, gb).Annotations {
 				names = append(names, a.Name)
 			}
 			assert.Contains(t, strings.Join(names, " "), "tool:mark",
@@ -651,45 +763,43 @@ message Row {
 			assert.Length(t, store.Methods, 4, "every rpc streaming form loads")
 		})
 
-		t.Run("loads an edition and stamps its features per level", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name    string
+			give    string
+			edition string
+		}{
+			{name: "stamps edition 2023's features per level", give: "edition2023.proto", edition: "2023"},
+			{name: "stamps edition 2024's features per level", give: "edition2024.proto", edition: "2024"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			for _, tt := range []struct {
-				file    string
-				edition string
-			}{
-				{"edition2023.proto", "2023"},
-				{"edition2024.proto", "2024"},
-			} {
-				t.Run(tt.edition, func(t *testing.T) {
-					t.Parallel()
+				gb, sink := grammar(t, tt.give)
+				assert.False(t, sink.Failed(), "the edition schema loads clean")
+				file := onlyFile(t, gb)
+				features := string(protobuf.FeaturesKey)
 
-					gb, sink := grammar(t, tt.file)
-					assert.False(t, sink.Failed(), "the edition schema loads clean")
-					file := onlyFile(t, gb)
-					features := string(protobuf.FeaturesKey)
+				assert.Equal(t, stampsOn(gb, file, string(protobuf.SyntaxKey)),
+					[]string{tt.edition}, "the edition is stamped where a syntax would be")
+				assert.NotEmpty(t, stampsOn(gb, file, features),
+					"a file's features are stamped")
+				for _, options := range stampsOn(gb, file, string(protobuf.OptionsKey)) {
+					assert.NotContains(t, options, "features.",
+						"features are never mixed into the plain options")
+				}
 
-					assert.Equal(t, stampsOn(gb, file, string(protobuf.SyntaxKey)),
-						[]string{tt.edition}, "the edition is stamped where a syntax would be")
-					assert.NotEmpty(t, stampsOn(gb, file, features),
-						"a file's features are stamped")
-					for _, options := range stampsOn(gb, file, string(protobuf.OptionsKey)) {
-						assert.NotContains(t, options, "features.",
-							"and never mixed into the plain options")
-					}
+				row, _ := declOf(t, file, "Row").(*node.Struct)
+				var stated int
+				for _, f := range row.Fields {
+					stated += len(stampsOn(gb, f, features))
+				}
+				assert.True(t, stated > 0,
+					"a field states its own features, which is where presence is decided")
+			})
+		}
 
-					row, _ := declOf(t, file, "Row").(*node.Struct)
-					var stated int
-					for _, f := range row.Fields {
-						stated += len(stampsOn(gb, f, features))
-					}
-					assert.True(t, stated > 0,
-						"a field states its own features, which is where presence is decided")
-				})
-			}
-		})
-
-		t.Run("admits features on every level an edition states them", func(t *testing.T) {
+		t.Run("stamps features on every level an edition states them", func(t *testing.T) {
 			t.Parallel()
 
 			g := linked(t, map[string]string{"svc/ed.proto": `edition = "2023";
@@ -712,104 +822,108 @@ message Req {}
 			assert.True(t, held, "the load stamps an enum value's, a service's and an rpc's features and seals")
 		})
 
-		t.Run("loads every element the grammar admits", func(t *testing.T) {
+		t.Run("projects every proto2 declaration the model has a kind for", func(t *testing.T) {
 			t.Parallel()
 
-			gb, sink := grammar(t, "proto2.proto")
+			gb, _ := grammar(t, "proto2.proto")
 			file := onlyFile(t, gb)
+			row, is := declOf(t, file, "Row").(*node.Struct)
+			assert.True(t, is, "a message is a struct")
 
-			t.Run("projects every declaration the model has a kind for", func(t *testing.T) {
-				row, is := declOf(t, file, "Row").(*node.Struct)
-				assert.True(t, is, "a message is a struct")
+			var fields []string
+			for _, f := range row.Fields {
+				fields = append(fields, f.Name)
+			}
+			assert.Equal(t, fields,
+				[]string{"required_field", "defaulted", "repeated_field", "map_field"},
+				"every field form loads, in source order")
 
-				var fields []string
-				for _, f := range row.Fields {
-					fields = append(fields, f.Name)
+			var nested []string
+			for _, ty := range row.Types {
+				switch d := ty.(type) {
+				case *node.Sum:
+					nested = append(nested, "sum:"+d.Name)
+				case *node.Struct:
+					nested = append(nested, "message:"+d.Name)
+				case *node.Enum:
+					nested = append(nested, "enum:"+d.Name)
 				}
-				assert.Equal(t, fields,
-					[]string{"required_field", "defaulted", "repeated_field", "map_field"},
-					"every field form loads, in source order")
+			}
+			assert.Equal(t, nested, []string{"sum:body", "message:Nested", "enum:NestedEnum"},
+				"a oneof, a nested message and a nested enum each load as their own kind")
 
-				var nested []string
-				for _, ty := range row.Types {
-					switch d := ty.(type) {
-					case *node.Sum:
-						nested = append(nested, "sum:"+d.Name)
-					case *node.Struct:
-						nested = append(nested, "message:"+d.Name)
-					case *node.Enum:
-						nested = append(nested, "enum:"+d.Name)
-					}
+			_, isEnum := declOf(t, file, "Colour").(*node.Enum)
+			assert.True(t, isEnum, "a file-level enum loads")
+			_, isService := declOf(t, file, "Store").(*node.Interface)
+			assert.True(t, isService, "a service loads")
+			assert.Length(t, file.Imports, 3, "every import loads")
+		})
+
+		t.Run("stamps every proto2 residue the projection has no kind for", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := grammar(t, "proto2.proto")
+			file := onlyFile(t, gb)
+			row, _ := declOf(t, file, "Row").(*node.Struct)
+			colour, _ := declOf(t, file, "Colour").(*node.Enum)
+			store, _ := declOf(t, file, "Store").(*node.Interface)
+			sum, _ := row.Types[0].(*node.Sum)
+			nestedEnum, _ := row.Types[2].(*node.Enum)
+
+			for _, tt := range []struct {
+				what    string
+				subject symbol.Symbol
+				key     string
+			}{
+				{"a file's syntax", file, string(protobuf.SyntaxKey)},
+				{"a file's package", file, string(protobuf.PackageKey)},
+				{"a file's options", file, string(protobuf.OptionsKey)},
+				{"a file's imports", file, string(protobuf.ImportKey)},
+				{"a message's options", row, string(protobuf.OptionsKey)},
+				{"a message's reserved ranges", row, string(protobuf.ReservedKey)},
+				{"a message's extension ranges", row, string(protobuf.ExtensionsKey)},
+				{"a field's wire number", row.Fields[0], string(protobuf.FieldKey)},
+				{"a field's required label", row.Fields[0], string(protobuf.LabelKey)},
+				{"a map field's mark", row.Fields[3], string(protobuf.MapEntryKey)},
+				{"a oneof's mark", sum, string(protobuf.OneofKey)},
+				{"a oneof's options", sum, string(protobuf.OptionsKey)},
+				{"a nested enum's options", nestedEnum, string(protobuf.OptionsKey)},
+				{"a nested enum's reserved ranges", nestedEnum, string(protobuf.ReservedKey)},
+				{"an enum's options", colour, string(protobuf.OptionsKey)},
+				{"an enum's reserved ranges", colour, string(protobuf.ReservedKey)},
+				{"an enum value's options", colour.Variants[0], string(protobuf.OptionsKey)},
+				{"a service's options", store, string(protobuf.OptionsKey)},
+				{"an rpc's options", store.Methods[0], string(protobuf.OptionsKey)},
+			} {
+				assert.NotEmpty(t, stampsOn(gb, tt.subject, tt.key), tt.what+" is stamped")
+			}
+			assert.Equal(t, row.Fields[1].Value, "7",
+				"a default is on the field the model gives it to")
+		})
+
+		t.Run("reports every proto2 construct the model has no shape for", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := grammar(t, "proto2.proto")
+			var refusals []string
+			for d := range sink.All() {
+				refusals = append(refusals, d.Msg)
+				assert.True(t, d.Pos.Line > 0, "every refusal is positioned")
+			}
+			assert.Length(t, refusals, 4,
+				"two extend blocks and two groups each report, and none is dropped")
+
+			var groups, extends int
+			for _, msg := range refusals {
+				switch {
+				case strings.Contains(msg, "group"):
+					groups++
+				case strings.Contains(msg, "extends"):
+					extends++
 				}
-				assert.Equal(t, nested, []string{"sum:body", "message:Nested", "enum:NestedEnum"},
-					"a oneof, a nested message and a nested enum each load as their own kind")
-
-				_, isEnum := declOf(t, file, "Colour").(*node.Enum)
-				assert.True(t, isEnum, "a file-level enum loads")
-				_, isService := declOf(t, file, "Store").(*node.Interface)
-				assert.True(t, isService, "and a service does")
-				assert.Length(t, file.Imports, 3, "every import loads")
-			})
-
-			t.Run("stamps every residue the projection has no kind for", func(t *testing.T) {
-				row, _ := declOf(t, file, "Row").(*node.Struct)
-				colour, _ := declOf(t, file, "Colour").(*node.Enum)
-				store, _ := declOf(t, file, "Store").(*node.Interface)
-				sum, _ := row.Types[0].(*node.Sum)
-				nestedEnum, _ := row.Types[2].(*node.Enum)
-
-				for _, tt := range []struct {
-					what    string
-					subject symbol.Symbol
-					key     string
-				}{
-					{"a file's syntax", file, string(protobuf.SyntaxKey)},
-					{"a file's package", file, string(protobuf.PackageKey)},
-					{"a file's options", file, string(protobuf.OptionsKey)},
-					{"a file's imports", file, string(protobuf.ImportKey)},
-					{"a message's options", row, string(protobuf.OptionsKey)},
-					{"a message's reserved ranges", row, string(protobuf.ReservedKey)},
-					{"a message's extension ranges", row, string(protobuf.ExtensionsKey)},
-					{"a field's wire number", row.Fields[0], string(protobuf.FieldKey)},
-					{"a field's required label", row.Fields[0], string(protobuf.LabelKey)},
-					{"a map field's mark", row.Fields[3], string(protobuf.MapEntryKey)},
-					{"a oneof's mark", sum, string(protobuf.OneofKey)},
-					{"a oneof's options", sum, string(protobuf.OptionsKey)},
-					{"a nested enum's options", nestedEnum, string(protobuf.OptionsKey)},
-					{"a nested enum's reserved ranges", nestedEnum, string(protobuf.ReservedKey)},
-					{"an enum's options", colour, string(protobuf.OptionsKey)},
-					{"an enum's reserved ranges", colour, string(protobuf.ReservedKey)},
-					{"an enum value's options", colour.Variants[0], string(protobuf.OptionsKey)},
-					{"a service's options", store, string(protobuf.OptionsKey)},
-					{"an rpc's options", store.Methods[0], string(protobuf.OptionsKey)},
-				} {
-					assert.NotEmpty(t, stampsOn(gb, tt.subject, tt.key), tt.what+" is stamped")
-				}
-				assert.Equal(t, row.Fields[1].Value, "7",
-					"and a default is on the field the model gives it to")
-			})
-
-			t.Run("refuses every construct the model has no shape for", func(t *testing.T) {
-				var refusals []string
-				for d := range sink.All() {
-					refusals = append(refusals, d.Msg)
-					assert.True(t, d.Pos.Line > 0, "every refusal is positioned")
-				}
-				assert.Length(t, refusals, 4,
-					"two extend blocks and two groups, each refused and never dropped")
-
-				var groups, extends int
-				for _, msg := range refusals {
-					switch {
-					case strings.Contains(msg, "group"):
-						groups++
-					case strings.Contains(msg, "extends"):
-						extends++
-					}
-				}
-				assert.Equal(t, groups, 2, "the group in the message and the one in the oneof")
-				assert.Equal(t, extends, 2, "the extend inside the message and the one beside it")
-			})
+			}
+			assert.Equal(t, groups, 2, "the group in the message and the one in the oneof report")
+			assert.Equal(t, extends, 2, "the extend inside the message and the one beside it report")
 		})
 	})
 }

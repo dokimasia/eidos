@@ -35,6 +35,7 @@ func TestFeature(t *testing.T) {
 		FS:        tree,
 		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
 		Sink:      sink,
+		Brand:     frontendtest.Brand,
 	})
 	assert.NoError(t, err, "the rehomed tree loads")
 

@@ -18,8 +18,8 @@ import (
 // its read set and its sequence number are the invocation's own.
 //
 // A match is valid for the duration of its handler call and reused
-// for the rule's next invocation, which is what holds an
-// invocation at zero steady-state allocations. Retaining a match,
+// for the rule's next invocation, which keeps an invocation at zero
+// steady-state allocations. Retaining a match,
 // an effect handle or an [Out] past the call is a defect, the same
 // rule that forbids state on the plugin struct.
 type match struct {
@@ -41,7 +41,7 @@ type match struct {
 	// slice, and nothing writes to it.
 	derivation []meta.Read
 	derivedAt  int
-	// em and st are the invocation's effect handles, held in the
+	// em and st are the invocation's effect handles, stored in the
 	// match's own allocation so an invocation costs one heap
 	// object, not two.
 	em Emitter
@@ -59,9 +59,9 @@ func newMatch(inv invocation) match {
 	}
 	// The previous invocation's read set and reader recycle off the
 	// rule's scratch: the set resets so no read leaks into this
-	// invocation's derivation, the storage stays, and the reader
-	// stays valid because it binds the same index and the same set.
-	// A rule that never reads keeps costing nothing.
+	// invocation's derivation, its storage is kept, and the reader
+	// remains valid because it binds the same index and the same set.
+	// A rule that never reads costs nothing.
 	if prev, held := inv.scratch().(Matcher); held {
 		if b := prev.base(); b.reads != nil {
 			b.reads.Reset()
@@ -99,7 +99,7 @@ func (m *match) Reader() *store.Reader {
 		if err != nil {
 			// The index refused an unfrozen graph at its own
 			// construction, so a failed mint is a defect in the
-			// dispatch plumbing rather than a run condition.
+			// dispatch plumbing, not a run condition.
 			panic("eidos: minting a reader over the routing surface failed: " + err.Error())
 		}
 		m.reader = reader
@@ -154,9 +154,9 @@ func (rs *runState) rulesFor(lang symbol.Lang, at position.Pos) rules.SourceRule
 
 // Directive returns the gating instance, nil for bare and
 // fact-gated matches. Under a repeatable schema the handler runs
-// once per instance and each match carries its one instance, so
-// the accessor stays singular. The instance is the validated
-// table's own storage; do not mutate it.
+// once per instance and each match has its one instance, so the
+// accessor remains singular. The instance is the validated table's
+// own storage. Do not mutate it.
 func (m *match) Directive() *directive.Directive { return m.gate }
 
 // Errorf reports at Error severity, which fails the run, with the
@@ -178,17 +178,18 @@ func (m *match) Infof(c diag.Code, format string, a ...any) {
 }
 
 // ErrorfAt reports at Error severity at a position of the
-// handler's own: a directive's carrier line rather than the
-// subject's, for a finding about what an author wrote there. The
-// origin stays pre-bound.
-func (m *match) ErrorfAt(at position.Pos, c diag.Code, format string, a ...any) {
+// handler's own: a directive's carrier line, not the subject's, for
+// a finding about what an author wrote there. The code comes first,
+// as in every other reporting method, and the origin remains
+// pre-bound.
+func (m *match) ErrorfAt(c diag.Code, at position.Pos, format string, a ...any) {
 	m.rs.sink.Errorf(c, at, m.rs.plugin, format, a...)
 }
 
 // Kernel returns the kernel's registered keys, for a handler that
 // reads or stamps the kernel's own facts: the module identity, an
-// authored sample, a witness. The zero value arrives where the
-// phase call carried none.
+// authored sample, a witness. It returns the zero value where the
+// phase call has none.
 func (m *match) Kernel() meta.KernelKeys { return m.rs.kernel }
 
 // bind mints one binding over the invocation's view.
@@ -210,7 +211,7 @@ func (m *match) readset() *store.ReadSet {
 }
 
 // derived returns the invocation's point reads so far, in the read
-// set's own order: what a claim carries as its derivation. It
+// set's own order: what a claim records as its derivation. It
 // collects and sorts the set only after the set grew, so a handler
 // stamping many facts after its reads sorts them once.
 func (m *match) derived() []meta.Read {
@@ -228,7 +229,8 @@ func (m *match) derived() []meta.Read {
 	return out
 }
 
-// base returns the embedded surface; it is what closes [Matcher].
+// base returns the embedded surface. Its being unexported closes
+// [Matcher].
 func (m *match) base() *match { return m }
 
 // Matcher is the closed set of match types: only this package's
@@ -238,10 +240,9 @@ type Matcher interface {
 }
 
 // Fact returns the subject's winning value for k, recording the
-// read at (subject, key) into the invocation's read set; a miss
-// records too. On an emit match the subject is the origin; on a
-// graph match there is no subject, so Fact returns false and
-// records nothing.
+// read at (subject, key) into the invocation's read set, a miss
+// included. On an emit match the subject is the origin. A graph
+// match has no subject, so Fact returns false and records nothing.
 func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 	b := m.base()
 	if b.subject.IsZero() {

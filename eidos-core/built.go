@@ -14,9 +14,9 @@ import (
 )
 
 // built is a lowered declaration: the data every provider surface
-// returns, and the rules the role methods dispatch. The role methods
-// live on the wrapper types, so a type assertion returns exactly
-// the roles the rules imply.
+// returns, and the rules the role methods dispatch. The role
+// methods are on the wrapper types, so a type assertion returns
+// exactly the roles the rules imply.
 type built struct {
 	name     plugin.ID
 	version  string
@@ -27,7 +27,7 @@ type built struct {
 	requires []plugin.Capability
 	options  any
 	keys     []func(r *meta.Registry) error
-	trees    map[plugin.Target]fs.FS
+	pres     presentation
 	schemas  []directive.Schema
 	rules    []flatRule
 	subs     []plugin.Subscription
@@ -69,24 +69,36 @@ func (b *built) Keys(r *meta.Registry) error {
 	return errors.Join(errs...)
 }
 
-// Templates implements [plugin.TemplateProvider]: the declared
-// tree for one target, absent where none was declared.
+// Templates implements [plugin.TemplateProvider]: the tree
+// [Builder.For] declared for the target, else the plugin-level
+// tree, and false where neither was declared.
 func (b *built) Templates(t plugin.Target) (fs.FS, bool) {
-	tree, held := b.trees[t]
-	return tree, held
+	if tree, own := b.pres.trees[t]; own {
+		return tree, true
+	}
+	return b.pres.tree, b.pres.tree != nil
 }
 
-// TemplateFuncs implements [plugin.TemplateProvider]. The facade
-// carries no helper declaration: a plugin whose templates need
-// helpers implements the provider directly.
-func (*built) TemplateFuncs(plugin.Target) template.FuncMap { return nil }
+// TemplateTargets implements [plugin.TemplateProvider]: the targets
+// [Builder.For] declared a tree for, sorted, and nil where none.
+func (b *built) TemplateTargets() []plugin.Target { return b.pres.targets }
 
-// Overrides implements [plugin.TemplateProvider]. The facade
-// carries no override declaration, so a facade plugin never
-// replaces a shared vocabulary name.
-func (*built) Overrides() []string { return nil }
+// TemplateFuncs implements [plugin.TemplateProvider]: for a target
+// [Builder.For] declared, the plugin-level helpers with the
+// target's helpers and overrides layered over them; for any other
+// target, the plugin-level helpers. Nil where none was declared.
+func (b *built) TemplateFuncs(t plugin.Target) template.FuncMap {
+	if fm, own := b.pres.layered[t]; own {
+		return fm
+	}
+	return b.pres.funcs
+}
 
-// Directives returns the schemas the Directive wrappers carried,
+// Overrides implements [plugin.TemplateProvider]: the shared names
+// the target's overrides replace, sorted, and nil where none.
+func (b *built) Overrides(t plugin.Target) []string { return b.pres.overrides[t] }
+
+// Directives returns the schemas the Directive wrappers declared,
 // for registration at composition.
 func (b *built) Directives() []directive.Schema { return b.schemas }
 
@@ -102,8 +114,8 @@ func annotate(b *built, ctx *plugin.AnnotatorContext) error {
 
 // generate dispatches the generate- and emit-phase rules in
 // declaration order, then flushes the accumulators into the plan's
-// store — after every rule ran, which is what keeps a plugin's own
-// emit invisible to its own emit rules.
+// store after every rule ran, which keeps a plugin's own emit
+// invisible to its own emit rules.
 func generate(b *built, ctx *plugin.GeneratorContext) error {
 	rs := newRunState(b, ctx.Index, ctx.Facts, ctx.Sink, ctx.Emit, ctx.Plugin, ctx.Bucket, ctx.Rules, ctx.Kernel)
 	if err := rs.run(plugin.PhaseGenerate, plugin.PhaseEmit); err != nil {
@@ -128,7 +140,7 @@ func (b *builtGenerator) Generate(ctx *plugin.GeneratorContext) error {
 	return generate(b.built, ctx)
 }
 
-// builtDual is a lowered plugin holding both roles.
+// builtDual is a lowered plugin with both roles.
 type builtDual struct{ *built }
 
 // Annotate implements [plugin.Annotator].

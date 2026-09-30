@@ -14,86 +14,117 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// declOf returns an emit type carrying an origin, so the split's
+// The split's fixture: the routing key and family word of the unit
+// it reshapes, and the declarations the unit contains.
+const (
+	typesKey    = "svc/types.src"
+	splitWord   = "gen"
+	storeType   = "Store"
+	phaseName   = "Phase"
+	limitName   = "Limit"
+	limitValue  = "8"
+	fixtureLang = symbol.Lang("fixture")
+	fixturePkg  = "svc"
+)
+
+// declOf returns an emit type with an origin, so the split's
 // provenance narrowing has something to keep.
 func declOf(name string) *emit.Struct {
 	return &emit.Struct{
 		Origin: symbol.Identity{
-			Lang: "fixture", Package: "svc", Name: name, Kind: symbol.KindStruct,
+			Lang: fixtureLang, Package: fixturePkg, Name: name, Kind: symbol.KindStruct,
 		},
 		Name: name,
 	}
 }
 
-// A Java file holds one public type, so the split is what makes
+// typesUnit returns a per-source unit of the given declarations
+// under the fixture's routing key.
+func typesUnit(decls ...symbol.Symbol) plugin.Unit {
+	u := plugin.Unit{
+		Plugin: splitWord, Per: plugin.PerSource, Word: splitWord,
+		Key: typesKey, Decls: decls,
+	}
+	for _, d := range decls {
+		if id, held := emit.OriginOf(d); held && !id.IsZero() {
+			u.Origins = append(u.Origins, id)
+		}
+	}
+	return u
+}
+
+// limit returns the fixture's constant, a kind Java declares no
+// file of its own for.
+func limit() *emit.Constant {
+	return &emit.Constant{Name: limitName, Value: limitValue}
+}
+
+// A Java file declares one public type, so the split is what makes
 // the naming's file-per-type rule reachable at all.
 func TestSplit(t *testing.T) {
 	t.Parallel()
 
-	t.Run("returns one unit per file-level type", func(t *testing.T) {
+	t.Run("Split", func(t *testing.T) {
 		t.Parallel()
 
-		row, store := declOf("Row"), declOf("Store")
-		u := plugin.Unit{
-			Plugin: "gen", Per: plugin.PerSource, Word: "gen",
-			Key:     "svc/types.src",
-			Decls:   []symbol.Symbol{row, store},
-			Origins: []symbol.Identity{row.Origin, store.Origin},
-		}
-		out := backend.Split(u)
-		assert.Equal(t, len(out), 2, "two types, two units")
-		assert.Equal(t, out[0].Decls, []symbol.Symbol{row}, "the first type")
-		assert.Equal(t, out[1].Decls, []symbol.Symbol{store}, "the second")
-		assert.Equal(t, out[0].Key, u.Key,
-			"the routing key survives, carrying the source derivation")
-		assert.Equal(t, out[0].Origins, []symbol.Identity{row.Origin},
-			"provenance narrows to the split unit's own type")
-	})
+		t.Run("returns one unit per file-level type", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("splits an enum into a file of its own", func(t *testing.T) {
-		t.Parallel()
+			row, store := declOf(rowName), declOf(storeType)
+			out := backend.Split(typesUnit(row, store))
+			assert.Length(t, out, 2, "two types, two units")
+			assert.Equal(t, out[0].Decls, []symbol.Symbol{row}, "the first type")
+			assert.Equal(t, out[1].Decls, []symbol.Symbol{store}, "the second")
+		})
 
-		row := declOf("Row")
-		phase := &emit.Enum{Name: "Phase"}
-		odd := &emit.Constant{Name: "Limit", Value: "8"}
-		u := plugin.Unit{
-			Plugin: "gen", Per: plugin.PerSource, Word: "gen",
-			Key:   "svc/types.src",
-			Decls: []symbol.Symbol{row, phase, odd},
-		}
-		out := backend.Split(u)
-		assert.Equal(t, len(out), 3, "an enum is a file-level type like a class")
-		assert.Equal(t, out[1].Decls, []symbol.Symbol{phase}, "alone in its unit")
-		assert.Equal(t, out[2].Decls, []symbol.Symbol{odd}, "apart from the remainder")
-	})
+		t.Run("keeps the routing key of the unit it splits", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("keeps everything else together under the original key", func(t *testing.T) {
-		t.Parallel()
+			out := backend.Split(typesUnit(declOf(rowName), declOf(storeType)))
+			assert.Equal(t, out[0].Key, typesKey, "the source derivation survives")
+		})
 
-		row := declOf("Row")
-		odd := &emit.Constant{Name: "Limit", Value: "8"}
-		u := plugin.Unit{
-			Plugin: "gen", Per: plugin.PerSource, Word: "gen",
-			Key:   "svc/types.src",
-			Decls: []symbol.Symbol{row, odd},
-		}
-		out := backend.Split(u)
-		assert.Equal(t, len(out), 2, "the type and the remainder")
-		assert.Equal(t, out[1].Decls, []symbol.Symbol{odd},
-			"the remainder stays whole, for the render to report")
-		assert.Equal(t, out[1].Key, u.Key, "under the original key")
-	})
+		t.Run("narrows each split unit's provenance to its own type", func(t *testing.T) {
+			t.Parallel()
 
-	t.Run("keeps a typeless unit whole", func(t *testing.T) {
-		t.Parallel()
+			row := declOf(rowName)
+			out := backend.Split(typesUnit(row, declOf(storeType)))
+			assert.Equal(t, out[0].Origins, []symbol.Identity{row.Origin}, "the split unit's own type")
+		})
 
-		odd := &emit.Constant{Name: "Limit", Value: "8"}
-		u := plugin.Unit{
-			Plugin: "gen", Per: plugin.PerPlan, Word: "gen",
-			Decls: []symbol.Symbol{odd},
-		}
-		out := backend.Split(u)
-		assert.Equal(t, len(out), 1, "one unit in, one unit out")
-		assert.Equal(t, out[0].Decls, u.Decls, "untouched")
+		t.Run("returns an enum in a unit of its own", func(t *testing.T) {
+			t.Parallel()
+
+			phase := &emit.Enum{Name: phaseName}
+			out := backend.Split(typesUnit(declOf(rowName), phase, limit()))
+			assert.Length(t, out, 3, "an enum is a file-level type like a class")
+			assert.Equal(t, out[1].Decls, []symbol.Symbol{phase}, "alone in its unit")
+		})
+
+		t.Run("returns the other declarations in one unit after the types", func(t *testing.T) {
+			t.Parallel()
+
+			odd := limit()
+			out := backend.Split(typesUnit(declOf(rowName), odd))
+			assert.Length(t, out, 2, "the type and the remainder")
+			assert.Equal(t, out[1].Decls, []symbol.Symbol{odd},
+				"the remainder, whole, for the render to report under the refused kind")
+		})
+
+		t.Run("keeps the routing key of the unit of other declarations", func(t *testing.T) {
+			t.Parallel()
+
+			out := backend.Split(typesUnit(declOf(rowName), limit()))
+			assert.Equal(t, out[1].Key, typesKey, "the original key")
+		})
+
+		t.Run("returns a unit without a type whole", func(t *testing.T) {
+			t.Parallel()
+
+			u := typesUnit(limit())
+			out := backend.Split(u)
+			assert.Length(t, out, 1, "one unit in, one unit out")
+			assert.Equal(t, out[0].Decls, u.Decls, "untouched")
+		})
 	})
 }

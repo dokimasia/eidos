@@ -55,6 +55,12 @@ const (
 // string's pair, so two string fields of one message do not derive
 // alike. Every other form ignores it.
 //
+// A repeated field's element, a map's value, a message's field and a
+// oneof's field take the values an author stated for them first,
+// read through [rules.View.Authored]. The derivation completes each
+// half no author stated. A map's key is a scalar, which no
+// declaration states a value on.
+//
 // Both halves refuse together. [rules.RefusedUnresolved] means a
 // named type the view does not contain; [rules.RefusedNoLiteral]
 // means the type admits no two distinguishable values, which a
@@ -80,11 +86,11 @@ func (r Rules) derive(
 	case symbol.FormOptional:
 		return r.derive(child(ref, 0), hint, v, depth+1)
 	case symbol.FormList:
-		sample, alternate := r.derive(child(ref, 0), hint, v, depth+1)
+		sample, alternate := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
 		return element(ref, sample), element(ref, alternate)
 	case symbol.FormMap:
 		key, otherKey := r.derive(child(ref, 0), hint, v, depth+1)
-		value, _ := r.derive(child(ref, 1), hint, v, depth+1)
+		value, _ := r.partPair(symbol.Identity{}, child(ref, 1), hint, v, depth+1)
 		if !key.OK() || !otherKey.OK() || !value.OK() {
 			return rules.RefusedPair(rules.FirstRefusal(key, otherKey, value))
 		}
@@ -105,6 +111,22 @@ func (r Rules) derive(
 	}
 }
 
+// partPair returns the pair of one part of a composite: the values
+// an author stated on the declaration that has the part and on its
+// type, and the derivation for each half no author stated. A
+// repeated field's element and a map's value have no declaration of
+// their own, so subject is zero for them.
+func (r Rules) partPair(
+	subject symbol.Identity, ref *node.TypeRef, hint string, v rules.View, depth int,
+) (rules.Sample, rules.Sample) {
+	sample, alternate := v.Authored(r, subject, ref)
+	if sample.OK() && alternate.OK() {
+		return sample, alternate
+	}
+	derived, derivedAlternate := r.derive(ref, hint, v, depth)
+	return rules.Complete(sample, alternate, derived, derivedAlternate)
+}
+
 // declaredPair derives the pair of a message, a oneof or an enum the
 // view contains.
 func (r Rules) declaredPair(
@@ -120,7 +142,7 @@ func (r Rules) declaredPair(
 			if f == nil || f.Type == nil {
 				continue
 			}
-			if sample, alternate := r.derive(f.Type, f.Name, v, depth+1); sample.OK() && alternate.OK() {
+			if sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1); sample.OK() && alternate.OK() {
 				t := rules.EmitRef(ref)
 				return rules.Of(emit.Composite(t, emit.NamedField(f.Name, sample.Value))),
 					rules.Of(emit.Composite(t, emit.NamedField(f.Name, alternate.Value)))
@@ -139,7 +161,7 @@ func (r Rules) declaredPair(
 				continue
 			}
 			f := variant.Fields[0]
-			if sample, alternate := r.derive(f.Type, f.Name, v, depth+1); sample.OK() && alternate.OK() {
+			if sample, alternate := r.partPair(f.ID, f.Type, f.Name, v, depth+1); sample.OK() && alternate.OK() {
 				t := rules.EmitRef(ref)
 				return rules.Of(emit.Composite(t, emit.NamedField(f.Name, sample.Value))),
 					rules.Of(emit.Composite(t, emit.NamedField(f.Name, alternate.Value)))
