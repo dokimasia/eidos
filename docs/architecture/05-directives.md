@@ -14,10 +14,28 @@ stability stop competing.
 
 ### Carrier: per language, owned by the frontend
 
-The carrier is where a directive physically sits: `//+gen:` in Go
-and TypeScript, `#+gen:` in Python, a leading comment in proto,
-`//+gen:` in Rust. Each frontend recognizes its own carriers and
-hands the workspace one canonical parsed form.
+The carrier is the place in source that contains a directive. In a
+comment, a carrier line opens with a mark built from the composition's brand,
+the name that also scopes its config, its state directory and its
+provenance trailer
+([17-output-and-determinism.md](17-output-and-determinism.md)).
+`Builder.Brand` declares the brand, and Build requires it. Under
+the brand `acme`, a line takes one of three marks:
+
+- `+acme:` sets a directive: `//+acme:stub tag=test` in Go,
+  TypeScript, Rust and proto, and `#+acme:stub tag=test` in Python.
+- `acme:` sets a directive too. Go reads `//acme:stub` as a tool
+  directive when the brand has no hyphen: its documentation omits
+  the line, and gofmt moves it to the end of the doc comment.
+- `-acme:` negates a directive, as the schema layer below defines.
+
+A mark followed by anything but a letter opens no carrier, so
+`// +1 point` is documentation. A line under another brand's mark
+is comment text, so each product in a repository reads only its own
+carriers, and Kubernetes markers such as
+`// +kubebuilder:object:root=true` are comment text in every
+product. Each frontend recognizes its own carriers and hands the
+workspace one canonical parsed form.
 
 A language satellite may also register **native sugar**, meaning
 syntax the language already has for attaching metadata, read
@@ -61,9 +79,14 @@ The rules around it, decided:
   and no raw-string form. A value that needs more than that belongs
   in config rather than in a comment.
 - **Continue a line with a trailing `\`.** A payload line ending in
-  `\` joins the next carrier line, with the marker stripped, using a
-  single space. There is no repeated-marker rule, because one
-  mechanism is enough.
+  `\` joins the next comment line, with the comment marker stripped,
+  using a single space. There is no repeated-marker rule, because
+  one mechanism is enough. A carrier line in the tool-directive
+  shape, such as `//acme:stub \` under a brand without a hyphen,
+  does not continue: a formatter may move it away from its
+  continuation, as gofmt does. The frontend refuses it with a
+  positioned Error under `ContinuedCarrier`, whose message gives
+  the carrier in the `+acme:` form.
 - **Keys are flat.** No dotted or nested keys. A directive that
   needs structure uses a list or splits into two directives.
 - **Namespacing.** A plugin's directives become `<plugin>:<name>`
@@ -107,7 +130,10 @@ assume. The schema declares:
   that is reported as a validation Error naming both positions
   before any handler runs. `Repeatable: true` covers declarations that
   repeat, where `index fields=[…]` twice means two indexes. Dispatch then runs the handler once per instance, in
-  source order ([06b-authoring.md](06b-authoring.md)). Forcing a
+  source order ([06b-authoring.md](06b-authoring.md)). A subject
+  whose instances of one repeatable directive mix the tool-directive
+  shape with another carrier form reports a Warning under
+  `MixedCarriers`, because a formatter may reorder them. Forcing a
   repeatable declaration into one directive pushes authors to invent
   list-of-lists encodings, which is the two-notations problem this
   layer exists to prevent.
@@ -120,6 +146,14 @@ assume. The schema declares:
   ([06b-authoring.md](06b-authoring.md)) leaves no plugin able to
   see another plugin's directive. A contradiction between annotations is
   caught here or not at all.
+- **Negation.** A schema that sets `Negatable` accepts the negated
+  form. The zero value refuses a negated instance with a positioned
+  Error under `NegationRefused`, so a schema accepts the form only
+  when its plugin opts in. Registration refuses a negatable kernel
+  schema. A negated instance takes part in no requirement and no
+  conflict, and a subject that sets and negates one directive is
+  reported under `Conflict`, with every instance of that directive
+  on it refused.
 
 Every schema **generates constants** for its directive name and its
 param keys. Typed plugins and their tests reference the constants,
@@ -138,6 +172,7 @@ type Directive struct {
     Params   map[ParamKey]Value
     Pos      position.Pos   // the carrier line
     Instance int            // source order among repeatable instances
+    Negated  bool           // written under the negated mark
 }
 
 // Freeze-time validation: closure, types, resolution kinds,
@@ -171,6 +206,14 @@ that applies to everything never becomes per-plugin boilerplate
 unaffected, because a subject that opted in explicitly withdraws by
 deleting the directive rather than by adding a second annotation to
 fight the first.
+
+A negated plugin directive is the same exclusion, written in the
+plugin's own vocabulary. `//-acme:mockgen:mock` gates no rule, and
+dispatch excludes the declaration from the bare and fact-gated rules
+of the plugin that registered the `mock` schema, as
+`skip plugin=mockgen` does. Directive-gated rules are unaffected
+here too. The kernel's own schemas refuse negation, so `meta drop=`
+remains the one way to delete a fact.
 
 Two further kernel-owned schemas exist for authored values. `sample`
 carries a declaration's sample value and its alternate. `witness`

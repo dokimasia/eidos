@@ -13,7 +13,7 @@ the documentation anchors to it.
 
 | Field | Content |
 |---|---|
-| Code | a stable identifier: `EID-####` for the kernel, `EIDGO-####` and the like for satellites, and consumer prefixes registered at Build |
+| Code | a stable identifier: `EID-####` for the kernel, one prefix per satellite, such as `GOLANG-####` and `PROTO-####`, and consumer prefixes registered at Build |
 | Severity | `Error \| Warning \| Info` |
 | Position | file:line:column of the declaration that caused it. Every diagnostic is positioned, and one without a position is a bug in whatever emitted it |
 | Message | one sentence, present tense, naming the thing and the refusal or the finding |
@@ -23,8 +23,9 @@ the documentation anchors to it.
 Codes are API ([15-compatibility.md](15-compatibility.md)), so a
 changed meaning is a new code. Build enforces code uniqueness within
 a prefix and prefix ownership, the same way it enforces metadata
-namespaces. Every registered code generates a named constant in its
-own module, such as `codes.NoTargetSpelling` carrying `EIDGO-0412`.
+namespaces. Every registered code is a named constant in its own
+module, such as the Go frontend's `BadCarrier`, which spells
+`GOLANG-0002`.
 Tests and consumer tooling assert on the constant, and the digit
 form is what humans, carriers and JSON see.
 
@@ -96,7 +97,7 @@ above leaves unclaimed for exactly this reason.
 False positives happen, and a public framework owes a targeted
 opt-out that cannot decay into a blanket mute.
 
-- `+gen:diag off=EID-1234` on a declaration suppresses that code at
+- `+<brand>:diag off=EID-1234` on a declaration suppresses that code at
   that declaration. `diag` is a kernel-owned directive, so the
   carrier and the grammar are ordinary directive machinery
   ([05-directives.md](05-directives.md)). The diagnostic sink reads
@@ -120,9 +121,9 @@ severity and code, suppression counts included. The schema is public
 API. Concretely:
 
 ```json
-{"code":"EIDGO-0412","severity":"error","pos":"svc/store.go:41:2",
+{"code":"EID-0029","severity":"error","pos":"svc/store.go:41:2",
  "msg":"chan int has no TypeScript spelling",
- "origin":"lowering/typescript","related":["svc/api.go:12:1"]}
+ "origin":"typescript","related":["svc/api.go:12:1"]}
 {"summary":{"errors":1,"warnings":0,"suppressed":{"EID-0007":2}}}
 ```
 

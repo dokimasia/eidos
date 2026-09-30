@@ -21,7 +21,7 @@ everything that varies:
 |---|---|---|---|
 | per callable | exactly one | any number | one per (instance, role) |
 | arbitration | first claim wins ([04-metadata.md](04-metadata.md)) | accumulate: every stamp sticks | accumulate, per instance |
-| inferred? | optionally, by a `Detect` function. `+gen:shape <name>` overrides at directive authority | never: directive only | never: directive only |
+| inferred? | optionally, by a `Detect` function. `+<brand>:shape <name>` overrides at directive authority | never: directive only | never: directive only |
 | directive | single-instance | `mixin <name>`, repeatable | `contract <proto> role=<r>`, repeatable, with `id=` separating instances |
 | `precedence:` | required where signatures overlap | forbidden | forbidden |
 | `roles:` | forbidden | forbidden | required, with arity |

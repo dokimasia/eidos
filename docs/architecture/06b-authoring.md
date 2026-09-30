@@ -58,19 +58,20 @@ meaning, and the trigger names never mix the two.
 ## Effects
 
 **The handler picks the effect, not the trigger**, on the source
-side. Any node-kind trigger and `OnGraph` serve either role: a
-handler taking `*Emitter` generates, and one taking `*Stamper`
-annotates. That is a generic constraint over the two effect types,
-inferred at the call site.
+side. Any node-kind trigger serves either role: a handler taking
+`*Emitter` generates, and one taking `*Stamper` annotates. That is a
+generic constraint over the two effect types, inferred at the call
+site.
 
-`OnEmit` is the exception, and takes the Emitter only. Emit is per
-plan and plans run in parallel, so a fact on the emit side would
-live in a second universe that Close's records, the sealed state and
-sibling plans never see
-([08-workspace-and-plans.md](08-workspace-and-plans.md)). A fact
-about generated output is a fact on its *origin* symbol, stamped
-during Annotate, and Build rejects an `OnEmit` rule with a Stamper
-handler, naming the rule.
+`OnGraph` and `OnEmit` take the Emitter only. A Stamper writes to
+its subject's bag, which fixes every write's target from the
+trigger, and `OnGraph` has no subject, so an annotator that needs
+facts on many declarations subscribes to their kinds. `OnEmit` runs
+per plan, and plans run in parallel, so a fact stamped on the emit
+side would be invisible to Close's records, the sealed state and
+sibling plans ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
+A fact about generated output is a fact on its *origin* symbol,
+stamped during Annotate.
 
 ## Gates
 
@@ -87,7 +88,9 @@ A bare rule runs for every subject in the plan's source scope. The
 kernel `skip` directive ([05-directives.md](05-directives.md))
 excludes a declaration from bare and fact-gated rules only, because
 a directive-gated subject opted in explicitly and withdraws by
-deleting the directive.
+deleting the directive. A negated plugin directive gates no rule.
+It excludes the declaration from the bare and fact-gated rules of
+the plugin that registered its schema, as `skip plugin=` does.
 
 **Gates are declarative, always.** A handler that starts by
 filtering contains a gate that belongs in the rule. This is not
@@ -165,9 +168,10 @@ several tagged outputs, each with its own cardinality, and address
 them independently from one handler.
 
 Targets, stems and provenance derive from the subject and the
-family. `Mirror` carries the correctness lessons once, in the
-framework, rather than copied into every plugin: choosing the
-receiver against parameter names, and inferring imports. Slot access
+family. `Mirror` copies a signature once, in the framework, so no
+plugin repeats the copy, and leaves the receiver to the target: the
+Go satellite's `PointerReceiver` names a pointer receiver against
+the parameter names. Imports are collected at render. Slot access
 is one `SlotView` type, whether you are appending into your own
 method's prologue or, through `OnEmit`, into another plugin's.
 
@@ -266,7 +270,7 @@ or helpers.
 That split applies the Source and Target rule to the facade's own
 API: **read-side questions live on the Match, and write-side
 spellings on the Emitter.** A target fact in a neutral declaration is
-a leak, and plugintest checks for it.
+a leak.
 
 ## Directives
 
@@ -319,9 +323,12 @@ its owner, or it belongs in the consumer's own directive. Sharing it
 raw does not exist.
 
 **One directive may gate many rules, and it registers once.** The
-`Directive` wrapper both gates and carries its schema, and Build
-unifies identical redeclarations while refusing conflicting ones.
-The common multi-kind plugin is therefore one wrapper:
+`Directive` wrapper both gates and registers its schema, and a
+plugin declares each directive in one wrapper: the plugin's `Build`
+panics on a second wrapper that declares the same directive. A name
+that two plugins register is ambiguous under its bare spelling, so
+a carrier writes it with its plugin prefix. The common multi-kind
+plugin needs one wrapper:
 
 ```go
 Handle(Directive(Schema(),      // registered once
@@ -394,7 +401,7 @@ func Funcs(fm template.FuncMap) TargetOption
 func Overrides(fm template.FuncMap) TargetOption // the replace verb
 
 // Effects: the handler's second parameter picks the role.
-// Source-side triggers only; OnEmit is Emitter-only.
+// Node-kind triggers only; OnGraph and OnEmit are Emitter-only.
 type Effect interface{ *Emitter | *Stamper }
 
 // Triggers: one constructor per subject kind, plus two structural.
@@ -403,7 +410,7 @@ func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule
 // … OnStruct, OnSum, OnFunction, OnMethod, OnField, OnConstant,
 //   OnVariable, OnAlias: same shape per kind …
 func OnEmit(k emit.Kind, h func(*EmitMatch, *Emitter) error) Rule
-func OnGraph[E Effect](h func(*GraphMatch, E) error) Rule
+func OnGraph(h func(*GraphMatch, *Emitter) error) Rule
 
 // Scoping wrappers compose around any rules.
 func Directive(s directive.Schema, rules ...Rule) Rule // gate + register
@@ -419,18 +426,18 @@ func KeyEquals[T comparable](k meta.Key[T], v T) Pred
 //   Directive() *DirectiveView   // the gating instance; nil otherwise
 //   Kernel() meta.KernelKeys     // the kernel's own keys, for its facts
 //   Errorf / Warnf(code, format, ...) // origin and position pre-bound
-//   ErrorfAt(pos, code, format, ...)  // at a carrier line instead
+//   ErrorfAt(code, pos, format, ...)  // at a carrier line instead
 // plus its subject field (.Interface, .Enum, {.Host, .Method}, …).
 // EmitMatch also carries Origin(), the emit value's source symbol,
 // with tracked fact reads, so a weaver can ask whose output it is
 // looking at without ever seeing another plugin's directive.
 // Tracked fact reads: func Fact[T any](m Matcher, k meta.Key[T]) (T, bool)
 
-// Bodies a Mirror or Method accepts: the four forms of 07.
+// Bodies a Mirror or Method accepts: the forms of 07 without a
+// template, which Emitter.Ref below claims.
 func Unimplemented(msgf string, a ...any) Body // target spells panic/throw
 func Delegate(callee string, args ...Expr) Body
 func Stmts(ss ...Stmt) Body                    // the scaffolding vocabulary
-func Ref(name string, data any) Body           // TemplateRef, emitter's tree
 
 // Emitter: every target is an accumulator keyed by (key, family),
 // and the write-side spellings live here. The plan's target returns
@@ -439,6 +446,7 @@ func (e *Emitter) File(tag ...Tag) *FileBuilder        // per source file
 func (e *Emitter) PackageFile(tag ...Tag) *FileBuilder // per package
 func (e *Emitter) PlanFile(tag ...Tag) *FileBuilder    // per plan
 func (e *Emitter) JoinName(word, base string) string   // target's join
+func (e *Emitter) Ref(name string, data any) *emit.TemplateRef // resolves in this plugin's tree
 
 // Stamper: authority and origin filled in by the dispatch.
 func Stamp[T any](st *Stamper, k meta.Key[T], v T)

@@ -26,21 +26,22 @@ their own schedule.
 | [eidos-core](eidos-core) | `go.dokimi.dev/eidos/core` | the kernel: the symbol, node and emit models, metadata, directives, diagnostics, the store, projection rules, the plugin SPI and authoring surface, the frontend and backend kits, output, the workspace, the toolchain harness and the conformance kits |
 | [eidos-sdk](eidos-sdk) | `go.dokimi.dev/eidos/sdk` | the generated facade plugin modules import: one re-export per exported symbol of the kernel's plugin-facing packages |
 | [eidos-conformance](eidos-conformance) | `go.dokimi.dev/eidos/conformance` | the cross-language corpus: one feature inventory and one set of expectations that every language's frontend is checked against |
-| [eidos-lang](eidos-lang) | `go.dokimi.dev/eidos/lang` | the helper packages the satellites share: lowering, naming, scaffold, spellref and textfmt |
+| [eidos-lang](eidos-lang) | `go.dokimi.dev/eidos/lang` | the helper packages the satellites share: lowering, naming, numeric, scaffold, spellref and textfmt |
 | [eidos-lang-go](eidos-lang-go) | `go.dokimi.dev/eidos/lang/go` | Go satellite: frontend, projection rules, annotator, backend and the toolchain adapter for generated tests |
-| [eidos-lang-typescript](eidos-lang-typescript) | `go.dokimi.dev/eidos/lang/typescript` | TypeScript satellite: backend |
-| [eidos-lang-protobuf](eidos-lang-protobuf) | `go.dokimi.dev/eidos/lang/protobuf` | protobuf satellite, read-only by design |
-| [eidos-lang-java](eidos-lang-java) | `go.dokimi.dev/eidos/lang/java` | Java satellite: backend |
+| [eidos-lang-typescript](eidos-lang-typescript) | `go.dokimi.dev/eidos/lang/typescript` | TypeScript satellite: backend and the toolchain adapter for generated tests |
+| [eidos-lang-protobuf](eidos-lang-protobuf) | `go.dokimi.dev/eidos/lang/protobuf` | protobuf satellite: frontend and projection rules, read-only by design |
+| [eidos-lang-java](eidos-lang-java) | `go.dokimi.dev/eidos/lang/java` | Java satellite: backend and the toolchain adapter for generated tests |
 | [eidos-lang-kotlin](eidos-lang-kotlin) | `go.dokimi.dev/eidos/lang/kotlin` | Kotlin satellite: a statement of scope and no code |
 | [eidos-lang-php](eidos-lang-php) | `go.dokimi.dev/eidos/lang/php` | PHP satellite: a statement of scope and no code |
-| [eidos-lang-rust](eidos-lang-rust) | `go.dokimi.dev/eidos/lang/rust` | Rust satellite: backend |
+| [eidos-lang-rust](eidos-lang-rust) | `go.dokimi.dev/eidos/lang/rust` | Rust satellite: backend and the toolchain adapter for generated tests |
 | [eidos-plugin-shape](eidos-plugin-shape) | `go.dokimi.dev/eidos/plugin-shape` | the classification catalog of shapes, mixins and contracts: a statement of scope and no code |
 | [eidos-reference](eidos-reference) | `go.dokimi.dev/eidos/reference` | the reference plugin ensemble, a consumer of the authoring surface: a statement of scope and no code |
 
 Consumers depend on satellites, satellites depend on the kernel, and nothing
 depends the other way. One satellite never imports another. Anything
 cross-language goes through the kernel's canonical-type hub. The kernel knows
-no language and takes no third-party dependencies.
+no language, and its runtime packages import the standard library alone. Its
+conformance kits import `go.dokimi.dev/assert`.
 
 `go.work` holds the module list and ergon reads it from there. The root
 module `go.dokimi.dev/eidos` owns the import-path prefix and pins the

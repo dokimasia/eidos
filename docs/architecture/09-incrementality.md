@@ -48,6 +48,26 @@ than the load it skips, and the target is on the order of 100ms for
 100,000 files, warm. Hashing everything every run would miss the
 target on its own.
 
+Size and mtime miss one case. A file written twice within one
+timestamp tick keeps both, so a second write after the run read the
+file leaves a record that looks current and is not. The gate handles
+such racily clean files with git's two rules for its index, against
+an anchor that the generation's header records: the time the run's
+stat sweep began, less a margin for the coarsest mtime resolution in
+common use, FAT's two seconds, and for the tick of the clock that
+stamps an mtime.
+
+- At the gate, a file whose size and mtime match its record, and
+  whose mtime is not older than the recording generation's anchor,
+  is hashed instead of trusted.
+- A commit writes a zero size into every such record, so the next
+  gate that meets the file hashes it, even when a generation in
+  between copied the record forward unchecked.
+
+The anchor precedes the sweep because a run commits seconds after it
+reads. An anchor at the commit would trust a file rewritten within
+its own tick after the read.
+
 Unit fingerprints fold in the plugin-set fingerprint, so an upgraded
 plugin invalidates the graphs it now has to reinterpret, because the
 cached graph carries the metadata that downstream plugins read.
@@ -109,6 +129,22 @@ contributor set**, because an accumulator file is one output and
 rebuilds whole. A clean artifact executes nothing: no dispatch, no
 render, no write. Its manifest row carries forward and its bytes
 stay on disk, though drift is still checked.
+
+The warm cost of an edit follows the output cardinality of each
+family it dirties ([18-routing-and-layout.md](18-routing-and-layout.md)):
+
+| Cardinality | A dirty artifact re-runs over | Warm cost |
+|---|---|---|
+| `PerSource` | the edited source's contributors | the source's own outputs, whatever the corpus size |
+| `PerPackage` | the edited package's contributors | the package's outputs |
+| `PerPlan` | every contributor in the plan's scope | the whole file, which grows with the corpus |
+
+A `PerPlan` file costs its full size on every edit to one of its
+contributors, in any design, because rendering, formatting and
+hashing one file reads every byte of it. The warm-one-edit gate
+([19-benchmarking.md](19-benchmarking.md)) applies to per-source and
+per-package outputs, and a plan with a per-plan family adds that
+file's full cost to each such edit.
 
 O(dirty) is real without persisting emit, because "whose inputs
 moved" is a table lookup rather than a rerun. Two earlier rules are
@@ -237,7 +273,8 @@ directory ([20-cli.md](20-cli.md)):
                        generation references one
   gen-41/
     header             format + contract versions, plugin-set
-                       fingerprint, section checksums
+                       fingerprint, section checksums, the sweep
+                       anchor, intern-table size and live count
     graph              intern table · region index; clean regions
                        by segment reference, dirty ones written
                        fresh
@@ -294,6 +331,19 @@ generations, so a segment written under one generation reads
 unchanged under a later one and an ID never rebinds; run-local IDs
 translate at the boundary, and the canonical identity is the join,
 as it is everywhere ([02-symbol-model.md](02-symbol-model.md)).
+
+**Compaction.** The intern table only grows, so renames and branch
+switches leave entries that no live region, bag or row references,
+and every generation open reads them. The header records the table's
+size and the number of entries the generation references. When
+unreferenced entries pass half the table, the commit reports one
+Info, and the next run treats the generation as unusable and goes
+cold, the path a version mismatch takes. A cold run interns from an
+empty table, so the generation it writes contains live entries alone
+and does not share a segment with its predecessor. Compaction costs
+one cold run, and it follows warm runs that appended at least as
+many dead entries as the table has live ones, so its cost amortizes
+over those appends.
 
 **The fact store** persists the claim record, not winning values
 alone: per (symbol, key), the winning claim with its envelope, value

@@ -24,13 +24,13 @@ workspace member. The kernel module's root package is called
 `eidos`, so plugin authors write `eidos.NewPlugin(…)`.
 
 Language support is uneven by design, because a satellite arrives
-one side at a time. Go reads and writes: it ships a frontend, a
-backend and an annotator. TypeScript, Java and Rust ship backends
-only, so a Go workspace renders into them before they can be read
-from; TypeScript's frontend is milestone 0009. The protobuf, Kotlin
-and PHP modules hold their languages' places in the same anatomy
-and carry no packages yet, and further languages such as
-`eidos-lang-python` join as new modules
+one side at a time. Go reads and writes, through a frontend, its
+rules, a backend and an annotator. TypeScript, Java and Rust have
+backends only, so a Go workspace renders into them before they can
+be read from. protobuf is read-only by design, with a frontend and
+its rules. The Kotlin and PHP modules contain a package comment
+alone, and further languages such as `eidos-lang-python` join as
+new modules
 ([11-languages.md](11-languages.md)). There are no bridge modules:
 cross-language conversion goes through the kernel's hub, never
 pairwise ([10-cross-language.md](10-cross-language.md)).
@@ -77,6 +77,12 @@ eidos-core/
   plugin/        roles + capabilities, per-role priorities, plugin
                  values, the declarative host
                  plugintest/ — the kit holding a plugin to its roles
+  authored/      the sample and witness annotators, which stamp an
+                 author's values onto the kernel's own keys
+  rules/         the projection vocabulary and the rules seam: the
+                 questions every generator asks of a declaration, and
+                 the contract each language returns them through
+                 rulestest/ — the checks a language's rules run under
   store/         the graphs, per-plugin read tracking, scope predicates,
                  freeze enforcement
   frontend/      the read side's authoring kit: a language's claim,
@@ -91,22 +97,25 @@ eidos-core/
                  the fact-coverage guard
     backendtest/ the backend conformance suite, its fixtures and the
                  settle benchmark
+  toolchain/     the skeleton of every language's toolchain harness: the
+                 generated-output fixture, the assertion set, and the
+                 adapter a satellite implements over its own compiler
   output/        the output contract: rendered files to sink, headers,
                  provenance trailers, manifests
   workspace/     workspaces, plans, plan exports, cross-plan checks,
                  the audit mode
-  internal/gen/  the generators: model/ builds node and emit from
+  internal/
+    gen/         the generators: model/ builds node and emit from
                  symbol/schema, facade/ builds the SDK re-exports.
                  Plain go/ast + text/template, zero eidos dependencies
                  (see 02); never imported, only run
+    genfile/     formats, writes and guards generated Go sources
+    gosource/    loads Go packages from source, without a build cache
+    coretest/    the assertions and fixtures the kernel's own tests share
 ```
 
 Planned kernel packages, and the milestone that builds each:
 
-- `rules/` — the projection vocabulary (Tier 1/2), typed language
-  identity, the canonical type system, the Lowering seam
-  ([03-projection.md](03-projection.md)). Arrives with the Tier 1
-  projection work of milestone 0004.
 - `engine/` — incrementality: fingerprints, red-green invalidation,
   the sealed-graph persistence format. Milestone 0007.
 - `cli/` — command kernels: run, plan, explain, prune, doctor,
@@ -177,9 +186,15 @@ The tree encodes three constraints:
 
 - **The kernel knows no language.** No satellite name, no language
   string and no per-language table appears anywhere in it.
-- **The kernel takes no third-party dependencies.** This is a hard
-  property, because a public framework's kernel appears in every
-  consumer's supply-chain audit.
+- **The kernel's runtime takes no third-party dependencies.** Every
+  package a run executes imports the standard library alone, because
+  a public framework's kernel appears in every consumer's
+  supply-chain audit. The conformance kits `plugin/plugintest`,
+  `frontend/frontendtest`, `backend/backendtest` and
+  `rules/rulestest`, and `internal/coretest`, import
+  `go.dokimi.dev/assert`, which requires `github.com/google/go-cmp`.
+  A binary built from the runtime packages links neither module, and
+  a module whose tests run the kits compiles both.
 - **`symbol/schema` is the only hand-written definition of the
   declaration kinds.** `node/` and `emit/` are generated from it and
   committed ([02-symbol-model.md](02-symbol-model.md)). The

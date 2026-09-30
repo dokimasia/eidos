@@ -38,12 +38,14 @@ which is what makes cross-file and cross-package lookup a plain join
 for every later phase.
 
 A **workspace** holds N frontends, the annotator set, N named plans,
-the cache, the diagnostic sink and the config. The consumer's binary
-builds it, through the fluent builder or through YAML onto the same
-typed config structs.
+the output, the cache, the diagnostic sink and the config. The
+consumer's binary builds it, through the fluent builder or through
+YAML onto the same typed config structs. The output is a factory
+that opens a fresh sink. A sink serves one staging, so a run opens
+one for each plan it commits, and no plan has a sink of its own.
 
 A **plan** is one write side: a generator set, a layout policy,
-exactly one backend, one sink, a source scope and a name. Plans are
+exactly one backend, a source scope and a name. Plans are
 values, meaning declarable data that can be exported as presets,
 rather than plugins ([06-plugins.md](06-plugins.md)).
 
@@ -216,8 +218,11 @@ The steps, in order, where each assumes the ones before it:
 1. **Registries.** Language identities, metadata keys with their
    namespaces, groups, kinds and contracts, diagnostic codes and
    prefixes, capability labels, policy keys, and directive schemas.
-   Identical schema redeclarations unify, and conflicting ones are
-   refused, naming both plugins.
+   Each plugin registers through a handle bound to its name, so it
+   registers keys only into namespaces it claimed and schemas only
+   under its own name. A schema name registered twice is refused, and
+   a name that two plugins register is ambiguous under its bare
+   spelling.
 2. **Plugin lowering.** Authoring-surface values lower to the SPI
    ([06b-authoring.md](06b-authoring.md)), subscriptions are
    collected as data, and per-role priorities and capability
@@ -243,6 +248,8 @@ The builder and the two values it composes, pinned:
 
 ```go
 func New() *Builder
+func (b *Builder) Brand(brand output.Brand) *Builder // required: carriers, config, state, trailers
+func (b *Builder) Output(open func() (output.Sink, error)) *Builder // a fresh sink per plan a run commits
 func (b *Builder) Frontends(fs ...plugin.Frontend) *Builder
 func (b *Builder) Annotators(as ...plugin.Annotator) *Builder
 func (b *Builder) Checks(cs ...plugin.WorkspaceCheck) *Builder
@@ -258,7 +265,6 @@ type Plan struct {                // a value, not a plugin (D8)
     Generators []plugin.Generator
     Backend    plugin.Backend
     Layout     LayoutConfig
-    Sink       sink.Sink
     Exports    []ExportName       // what it publishes
     DependsOn  []ExportName       // the topo edges
 }
@@ -268,6 +274,9 @@ type ExportDoc struct {           // the versioned kernel schema of D34
     Symbols []ExportedSymbol
 }
 type ExportedSymbol struct {
+    Origin    symbol.Identity     // the declaration it derives from
+    Plugin    plugin.ID           // the plugin that emitted it
+    Name      string              // the name it declared, before respell
     Kind      symbol.Kind
     Signature TypeSig             // canonical TypeShape terms
     Spelling  string              // what the producing lowering named it
@@ -293,8 +302,8 @@ plans:
   - {name: py-clients,  sources: {lang: golang}, target: python}   # cross-language plan
 ```
 
-Several plans targeting one language, with different generator sets,
-layouts and sinks, fall out of that for free. Annotators run once
+Several plans targeting one language, with different generator sets
+and layouts, fall out of that for free. Annotators run once
 over the union graph, because facts are per source language anyway
 and detection dispatches per language.
 
@@ -341,7 +350,13 @@ a hidden one.
 The export is a versioned document under a kernel schema, and it is
 public API, because binding correctness leans on it
 ([15-compatibility.md](15-compatibility.md)). Per exported symbol it
-records the kind, the canonical-type signature in TypeShape terms
+records the key a dependent joins on: the declaration it derives
+from, the plugin that emitted it, and the name that plugin declared
+before the settle respelled it. The key needs all three parts,
+because two plugins can each emit a declaration from one source
+declaration, and a lowering can derive declarations beside the
+principal one. The export also records the
+kind, the canonical-type signature in TypeShape terms
 ([03-projection.md](03-projection.md)), and **the spelling the
 plan's lowering chose**, meaning the qualified name, the import path
 and the file it arrived in.
@@ -449,8 +464,8 @@ JSON Schema for editor completion, where the fluent builder is the
 Go-native equal: `Identity` for brand and workspace ID, `Scope`,
 `Cache` for enabled, directory override and memo size cap
 ([09-incrementality.md](09-incrementality.md)), and `Plans
-[]PlanConfig{Name, Sources, Target, Generators, Layout, Sink,
-Exports, DependsOn}`.
+[]PlanConfig{Name, Sources, Target, Generators, Layout, Exports,
+DependsOn}`.
 
 `DryRun` resolves the full multi-plan picture, meaning buckets,
 topological order, layouts and export edges, without executing

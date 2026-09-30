@@ -162,7 +162,7 @@ type CommentSyntax struct {
 ```
 
 That one value covers the landscape: Go's `//` and `/* */`, the
-C-family doc blocks with `*` gutters, where a `+gen:` carrier inside
+C-family doc blocks with `*` gutters, where a `+<brand>:` carrier inside
 `/** … */` resolves through gutter stripping with one leading space
 tolerated, Rust's three line forms, and Python's `#`.
 
@@ -178,7 +178,7 @@ the kit owns everything around it:
 ```go
 frontend.New(lang, syntax).
     Match("*.go").                      // include-shaped selection
-    Classify(eidos.TestFiles(isTest)).  // stamps go.testFile; excludes NOTHING
+    Classify(eidos.TestFiles(isTest)).  // stamps golang.testFile; excludes NOTHING
     Units(byDirectory).                 // the language defines the unit
     Parse(parseUnit).
     Build()
@@ -196,7 +196,7 @@ u.Errorf / u.Warnf            // scoped diagnostics
 Three rules ride the kit.
 
 **Classify rather than exclude.** The frontend parses everything it
-can parse and stamps classifications, such as `go.testFile=true`.
+can parse and stamps classifications, such as `golang.testFile=true`.
 Whether test files take part is the consumer's call, through Sources
 scopes and `Where` gating, never a satellite's hardcoded opinion.
 dokimi both generates and reads test files.
@@ -236,7 +236,8 @@ backend.New(name, target, syntax).
                                  // default; the header is not the
                                  // skeleton's to spell
     KindTemplates(kinds).        // how this language spells each kind
-    Funcs(langFuncmap).          // funcmap-once, per 07
+    RefusedKinds(refused).       // the kinds it cannot spell, and why
+    Funcs(helpersFor).           // func(*ImportSet) FuncMap, per 07
     Naming(spellFilename).       // word, tag and key join per target
     Scaffold(spellStmt).         // the neutral statement vocabulary
     Imports(renderImports).      // grouping/sorting are language facts
@@ -257,6 +258,9 @@ stamped after the formatter ran.
 It also owns **per-file render parallelism**. Files are independent
 and ImportSets are per file, so the kit parallelises the render
 loop, and a thousand `Finalise` calls stop being a serial tail.
+Each worker binds the language's helpers to its own import set once,
+so a helper that spells a type records the import the spelling
+needs in the file under render.
 
 The marker rule, the format-error rule and the merge order all
 become kernel behaviour, tested once, rather than reimplemented

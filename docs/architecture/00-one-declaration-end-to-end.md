@@ -10,32 +10,34 @@ A team keeps this in `svc/store.go`:
 ```go
 // Store is the persistence seam for sessions.
 //
-//+gen:stub tag=test
+//+acme:stub tag=test
 type Store interface {
     Get(ctx context.Context, key string) (Session, error)
     Put(ctx context.Context, s Session) error
 }
 ```
 
-Their binary composes a workspace with two plans. `go-stubs`
+Their binary, branded `acme`, composes a workspace with two plans. `go-stubs`
 generates Go test doubles. `ts-client` generates TypeScript types
 for the web app. One run produces both.
 
 ## Load
 
-The Go frontend parses the file with tree-sitter, using no toolchain
-and executing nothing ([11-languages.md](11-languages.md)). It
-produces symbols: a `symbol.Interface` named `Store` holding two
-`symbol.Method`s, each carrying its position, its docs, and an
-identity like `golang:svc/store.Store#Get(ctx,string)`
+The Go frontend parses the file with the standard library's
+`go/parser`, using no toolchain and executing nothing
+([11-languages.md](11-languages.md)). It produces symbols: a
+`symbol.Interface` named `Store` with two `symbol.Method`s, each
+with its position, its docs, and an identity like
+`golang:svc/store.Store#Get(ctx,string)`
 ([02-symbol-model.md](02-symbol-model.md)).
 
-The `//+gen:stub` line is a carrier. The frontend strips the marker
+The `//+acme:stub` line is a carrier, because it opens with the mark
+of the binary's brand. The frontend strips the mark
 and hands the workspace one canonical directive, `stub` with
 `tag=test`, already checked against stubgen's registered schema
 ([05-directives.md](05-directives.md)). The frontend also stamps
-what only it knows: `go.isContext` on the first parameter's type,
-under the `go.*` namespace it owns
+what only it knows: `golang.isContext` on the first parameter's type,
+under the `golang.*` namespace it claims
 ([04-metadata.md](04-metadata.md)). The whole unit gets a
 fingerprint, so on the next run an unchanged file never parses again
 ([09-incrementality.md](09-incrementality.md)).
@@ -52,8 +54,8 @@ only metadata. The shape catalog looks at `Get` through the neutral
 `LastReturn` error model, and stamps `shape.*` facts saying it is a
 reader ([12-shape-catalog.md](12-shape-catalog.md),
 [03-projection.md](03-projection.md)). One plan targets TypeScript,
-so the TypeScript naming annotator runs too and stamps `ts.name`
-spellings onto every symbol
+so the TypeScript naming annotator runs too and stamps
+`typescript.name` spellings onto every symbol
 ([10-cross-language.md](10-cross-language.md)). Every read was
 recorded, and every stamp knows what it came from.
 

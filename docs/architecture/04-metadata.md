@@ -31,7 +31,7 @@ graph.
 the negative, and `false` is never stamped. That makes deletion
 load-bearing, because you cannot negate a stamped boolean by writing
 a lower value. So the kernel `meta` directive has a drop form,
-`+gen:meta drop=shape.comparable`, which takes a key or a declared
+`+<brand>:meta drop=shape.comparable`, which takes a key or a declared
 fact group and removes the fact, or every member of the group
 including stamps that arrive later. A drop writes at `directive`
 authority: it outranks a `plugin` stamp and loses to `manual`, like
@@ -81,7 +81,7 @@ either writer.
 Registration returns the typed `meta.Key[T]` handle, and the handle
 is what code holds: reads, writes and read-set entries all go
 through it. The key's string spelling appears only at the boundary,
-in `+gen:meta java.nullability=nonnull` or as an `explain` argument,
+in `+<brand>:meta java.nullability=nonnull` or as an `explain` argument,
 and it resolves against the registry when the carrier is parsed.
 
 A key may also register into a **fact group**, which is a bundle
@@ -141,9 +141,14 @@ registration declares.
 holds the neutral facts every frontend writes: authored values
 ([03-projection.md](03-projection.md)) and module identity
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)). Each
-language satellite owns `<lang>.*`, so `go.*`, `java.*` and
-`rust.*`. eidos-plugin-shape owns `shape.*`. Consumers own their
-own. Build enforces the ownership.
+language satellite claims the namespace its language identity
+spells, `<lang>.*`, so `golang.*`, `java.*` and `rust.*`.
+eidos-plugin-shape claims `shape.*`, and each consumer claims its
+own. Build enforces the ownership. Each plugin registers through a
+registry handle bound to its name, and a namespace belongs to the
+registrant that claimed it. A key registers only into a namespace
+its own registrant claimed. A composition registers through a
+handle of its own and may claim any namespace nobody else claimed.
 
 ## Completeness contracts
 
@@ -184,7 +189,7 @@ preserves but the projection cannot hold
 
 Frontends stamp their own namespace: lifted annotations under
 `java.annotation.*`, plus `rust.lifetimeParams`,
-`go.constraintTypeSet`, `java.nullability=unknown`,
+`golang.typeSet`, `java.nullability=unknown`,
 `kotlin.companion`, and the original spelling behind every
 normalization, such as visibility and package paths.
 
@@ -192,7 +197,7 @@ Any plugin may read any namespace. In practice, facts on checks 2 and
 3 get read by that language's bindings. Build refuses a write
 outside the namespace you own.
 
-Authority applies uniformly, so `+gen:meta java.nullability=nonnull`
+Authority applies uniformly, so `+<brand>:meta java.nullability=nonnull`
 at a declaration outranks the frontend's stamp. That is how a
 consumer corrects a library's missing annotations without forking
 it.

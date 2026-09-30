@@ -57,8 +57,9 @@ promise is held.
 hand-built emit fixture it checks: that the fixture is populated,
 because an empty store passes everything vacuously; byte-stable
 render, two isolated runs compared as files and as a finding set;
-that every emit kind the fixture carries renders; that every body
-arrives whole, with slot contents spliced through the kind machinery;
+that every emit kind in the fixture renders or reports the refusal
+its backend declares; that every body arrives whole, with slot
+contents spliced through the kind machinery;
 and that a file's failure reports positioned and attributed while
 the render continues per [07-rendering.md](07-rendering.md), the
 refused file withheld. The header and trailer checks are the output

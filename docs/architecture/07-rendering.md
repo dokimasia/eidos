@@ -248,7 +248,11 @@ flow runs the same way in every satellite:
 2. **Render declarations** through the language's kind templates, in
    canonical order: origin identity, then the unit's declaration
    order. A plugin's claimed file template takes the whole group
-   instead, per the order above.
+   instead, per the order above. A backend declares each kind its
+   language cannot spell refused, with a reason, and the pass
+   skips a declaration of that kind under an Error that states
+   the reason. A file whose every declaration is skipped is
+   withheld, because it has no content to stamp.
 3. **Splice slot contributions** through the same kind machinery, so
    a contribution renders identically in every file it arrives in.
 4. **Resolve each `TemplateRef`** in its emitting plugin's tree for
@@ -272,9 +276,11 @@ The reference a generator hands the backend, pinned:
 
 ```go
 type TemplateRef struct {
-    Name string // resolves in the EMITTING plugin's tree, per target
-    Data any    // plugin-supplied payload; the lint checks the
-}               // emit-value half of a body template, never Data
+    Name  string      // resolves in the owner's tree, per target
+    Data  any         // plugin-supplied payload; the lint checks the
+                      // emit-value half of a body template, never Data
+    Owner diag.Origin // the emitting plugin, which Emitter.Ref sets;
+}                     // empty resolves in the unit's plugin's tree
 ```
 
 Byte-determinism is the backend's contract: the same emit graph

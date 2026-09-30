@@ -6,7 +6,7 @@ The document named in each row carries the full contract.
 | Term | Meaning | Doc |
 |---|---|---|
 | workspace | the composition frame: one read side, N plans, one merged manifest | [08](08-workspace-and-plans.md) |
-| plan | one write side: generators, a layout, exactly one backend, one sink and a source scope. A value, not a plugin | [08](08-workspace-and-plans.md) |
+| plan | one write side: generators, a layout, exactly one backend and a source scope. A value, not a plugin | [08](08-workspace-and-plans.md) |
 | symbol | one declaration in the canonical model, with an identity that survives across runs | [02](02-symbol-model.md) |
 | node / emit | the two generated models: what frontends produce, and what generators produce | [02](02-symbol-model.md) |
 | freeze | the seal after Annotate. From then on the store refuses structural writes | [08](08-workspace-and-plans.md) |
@@ -16,8 +16,10 @@ The document named in each row carries the full contract.
 | projection | a neutral view of language facts: Callable, TypeShape, Resolve, Members, Values | [03](03-projection.md) |
 | tier | where a language question may live: 1 mandatory, 2 optional and found by asserting, 3 the language sdk | [03](03-projection.md) |
 | degradation scale | the four levels a source construct can sit at: projected fully, projected partly with metadata, opaque with metadata, or refused at lowering | [03](03-projection.md) |
-| carrier | where a directive physically sits in source, such as `//+gen:` or an attribute | [05](05-directives.md) |
+| carrier | the place in source that contains a directive, such as a `//+<brand>:` line or an attribute | [05](05-directives.md) |
+| brand | the composition's name: the mark its carriers open with, the name of its config and state directory, and the owner its provenance trailers name | [05](05-directives.md), [17](17-output-and-determinism.md) |
 | directive | the canonical parsed annotation: one grammar, params checked against a schema | [05](05-directives.md) |
+| negated directive | a directive written under the `-<brand>:` mark. It gates no rule and opts its declaration out of the bare and fact-gated rules of the schema's plugin | [05](05-directives.md) |
 | slot | a typed append point on an emit value. Every body carries `prologue` and `epilogue` | [07](07-rendering.md) |
 | TemplateRef | a body claimed by a named template from its emitter, run by the backend at render time | [07](07-rendering.md) |
 | scaffolding vocabulary | the deliberately small set of body statements: delegate call, return, assignment, guard | [07](07-rendering.md) |

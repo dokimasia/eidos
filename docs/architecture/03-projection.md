@@ -132,12 +132,12 @@ leaves       Scalar{class: Int|Uint|Float, bits}   Bool   Text   Bytes
 
 Adding a form is a kernel change.
 
-Two exclusions are deliberate and recorded. There is **no Set**,
+One exclusion is deliberate and recorded. There is **no Set**,
 because every set type in these ecosystems is a library type, so it
 projects as `Reference`. Only a language with a set literal would
-force the shape, and no language in scope has one. And a
-fixed-length array is a `List` carrying `fixedLen`, not a shape of
-its own.
+force the shape, and no language in scope has one. A fixed-length
+array is a form of its own, `Array`, because its length is part of
+the type.
 
 **Optional** is explicit, so Go pointers, TypeScript `undefined`,
 Kotlin `T?` and Python `None` all project without any one language's
@@ -275,7 +275,7 @@ type OwnershipRules interface {
     Ownership(p ParamView) Ownership                    // ByValue | Borrow | BorrowMut
 }
 type PromotionRules interface {
-    Settable(s *node.Struct, v View) []Member           // declaration order
+    Settable(s *node.Struct, v View) MemberSet          // declaration order, with the walk's gaps
 }
 type EqualityRules interface {
     Comparable(ref *node.TypeRef, v View) (ok bool, problems []*node.TypeRef)
@@ -344,6 +344,6 @@ loading the package that declares it, which in Go means `any` and
 `gen.witness` stamps first, and derivation is the narrow fallback.
 
 **The unprojectable goes to metadata**: `rust.lifetimeParams`,
-`go.constraintTypeSet`, `ts.conditionalType`, `kotlin.reified`.
+`golang.typeSet`, `typescript.conditionalType`, `kotlin.reified`.
 Anyone may read them, and in practice that language's bindings do,
 which is Tier 3 doing its job.

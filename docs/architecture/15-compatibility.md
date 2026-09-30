@@ -115,8 +115,8 @@ every template and every formatter with it.
 
 ## Stable diagnostic codes
 
-Every kernel and satellite diagnostic carries a stable code:
-`EID-####` for the kernel, `EIDGO-####` for satellites. Codes are
-API. Tests and consumer tooling assert on them instead of matching
+Every kernel and satellite diagnostic has a stable code: `EID-####`
+for the kernel, and one prefix per satellite, `GOLANG-####` for Go
+and `PROTO-####` for protobuf. Codes are API. Tests and consumer tooling assert on them instead of matching
 message text, the documentation anchors on them, and a code's
 meaning never changes. A changed meaning is a new code.

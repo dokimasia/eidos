@@ -82,7 +82,7 @@ all that. Resolution has four steps, and after Build there is no
 fifth:
 
 1. **Register.** A target satellite registers each policy key with
-   its typed choices and a default: `ts.int64` accepts
+   its typed choices and a default: `typescript.int64` accepts
    `bigint|string|number` and defaults to `bigint`;
    `java.nullabilityUnknown` accepts `nullable|nonnull`. Keys and
    choices export as generated constants, and the spellings above
@@ -124,7 +124,7 @@ completeness check tests it per language.
 Cross-language naming, such as proto `user_id` becoming Go `UserID`
 and TypeScript `userId`, goes through the target's naming joins. The
 result is stamped as target-namespace metadata on the source symbol,
-such as `go.name`, at `plugin` authority. A consumer can therefore
+such as `golang.name`, at `plugin` authority. A consumer can therefore
 override any single name at the declaration with a directive, and
 `explain` shows where every spelling came from.
 

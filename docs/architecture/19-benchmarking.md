@@ -70,7 +70,10 @@ independent of the machine.
 than milliseconds: warm-no-change must not grow with corpus size,
 with the L/M ratio bounded near 1; warm-one-edit must track the
 dirty set, with the same edit at M and L staying within a bounded
-ratio; and the multi-plan speedup must clear a floor. These assert
+ratio over per-source and per-package outputs, because a per-plan
+file grows with the corpus by construction
+([09-incrementality.md](09-incrementality.md)); and the multi-plan
+speedup must meet its minimum. These assert
 the architecture's complexity claims and do not care how fast the
 runner is.
 
@@ -117,7 +120,7 @@ pipeline enforces:
 # conformance/bench/budgets.yaml
 scaling:
   warm-no-change: {ratio: L/M, max: 1.15}
-  warm-one-edit:  {ratio: L/M, max: 1.5}
+  warm-one-edit:  {ratio: L/M, max: 1.5}   # per-source and per-package outputs
 allocs:
   callable-projection: {per-op: 3}
 absolute:                    # dedicated runners only

@@ -147,9 +147,17 @@ How anything crosses a file or package boundary:
   `TypeRef` that names a declaration present in the graph, whether
   in scope or in a signature-only dependency, gains a
   `Target symbol.Identity`, and so does each reference to a type
-  parameter in scope. Builtins and genuinely external types keep
-  only their spelling. That is legitimate degradation rather than
-  failure, and a consumer asks before relying on a target.
+  parameter in scope. Builtins and types outside the workspace get
+  no target. They keep their spelling and the package their import
+  specifies. That is legitimate degradation, not failure, and a
+  consumer asks before relying on a target.
+
+  A proto import specifies a file and not a package, so the protobuf
+  frontend cannot state a reference's import before the reference
+  resolves. A frontend whose imports specify files implements
+  `Importer`. For each reference that Link resolves into another
+  file, Link asks that frontend for the import of the declaring file,
+  and records it as the reference's package.
 
   Link is a phase rather than an on-demand lookup because
   cross-package resolution needs the whole graph: two packages parse
@@ -242,11 +250,18 @@ seen it.
 - **Origin points one way.** An emit symbol links to the node symbol
   it came from, and a node symbol never refers to emit. The read
   side cannot observe the write side.
-- **A reference carries its spelling and its structure.** A type
-  reference holds the source spelling verbatim, the form the
-  frontend parsed from one closed enum, and its children in that
-  form's fixed order, so the resolution step reaches the named
-  types inside a composite and the projections parse nothing.
+- **A reference records its spelling, its structure and its
+  import.** A type reference contains the source spelling verbatim,
+  the form the frontend parsed from one closed enum, and its
+  children in that form's fixed order, so the resolution step
+  visits the named types inside a composite and the projections
+  parse nothing. A named reference also records `Package`, what its
+  import specifies: an import path, a module specifier, a package or
+  module path, and for protobuf the path of the imported file.
+  `Package` is empty for a builtin, for a structural form and for a
+  declaration the file uses without an import. A backend imports
+  a type the workspace never loaded through `Package`, because such
+  a reference has no target.
 - **A reference is an identity, never a pointer.** A type reference
   names what it resolves to, and an owned declaration names the
   declaration that holds it, both by canonical identity. A key can
