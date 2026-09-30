@@ -29,11 +29,12 @@ shape the target cannot spell is refused with a positioned code.
       produces `store_stub_test.go` and `store.ts` in one run.
 - [ ] Policy works per
       [10-cross-language.md](../architecture/10-cross-language.md):
-      `ts.int64` registers with `bigint`, `string` and `number`,
+      `typescript.int64` registers with `bigint`, `string` and `number`,
       config selects one, a directive overrides one declaration, and
       the `Policy` a lowering receives is total.
 - [ ] Naming annotators register automatically for every targeted
-      language, and `explain` traces a `ts.name` stamp to its origin.
+      language, and `explain` traces a `typescript.name` stamp to its
+      origin.
 - [ ] Refusal is fully supported: `chan int` into the TypeScript plan and
       a TypeScript union into a Go plan each report a stable
       positioned code, and neither guesses.
@@ -75,6 +76,7 @@ module per [01-repos-and-kernel.md](../architecture/01-repos-and-kernel.md).
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-09-30 | The TypeScript keys are spelled `typescript.*` | A satellite claims the namespace its language identity spells, and the identity is `typescript` |
 | 2026-08-31 | Moved the TypeScript-formatter risk to milestone 0003 | It belongs with the backend, which moved there on 2026-08-30; the row had stayed behind |
 | 2026-08-30 | The TypeScript backend moved to milestone 0003 | Two consumers hold the render kit's API, so the backend arrives beside Go's; this milestone keeps the frontend anatomy, the hub, the policies and the lowering |
 | 2026-08-30 | Added at position 9 | The second language proves the hub. TypeScript before protobuf because the schema-in work (0010) wants a second target to arrive on |

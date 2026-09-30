@@ -1,7 +1,7 @@
 ---
 milestone: 0004
 title: Go source loads into the symbol graph
-status: Planned
+status: In progress
 depends-on: 0001, 0002
 ships-in: unscheduled
 deadline: none
@@ -16,7 +16,7 @@ rfc: none
 
 The Go frontend parses real packages into the frozen graph through the
 frontend kit: identities, docs and positions, canonical directives out
-of `//+gen:` carriers, `go.*` and `gen.module` facts, and Link
+of `//+<brand>:` carriers, `golang.*` and `gen.module` facts, and Link
 resolving cross-package spellings. The projections cover Tier 1 for
 Go.
 
@@ -33,7 +33,7 @@ Go.
       afterwards.
 - [x] Reparsing an unchanged file yields the same identities. This
       seeds milestone 0007's diff-by-identity.
-- [x] `//+gen:` carriers strip and parse to canonical directives. An
+- [x] `//+<brand>:` carriers strip and parse to canonical directives. An
       unclaimed directive is reported, and the workspace opt-out
       silences it.
 - [x] The kernel-owned `sample` and `witness` directives stamp their
@@ -43,10 +43,15 @@ Go.
 - [ ] `go.work` and `go.mod` are read declaratively, `gen.module` and
       `gen.moduleRoot` are stamped, and a static check asserts the
       frontend never imports `os/exec`.
+- [ ] Dependency modules load signature-only from the module cache:
+      `go.mod` fixes each module's version, the cache directory
+      verifies against its `go.sum` hash, the dependency unit keys on
+      both, a `vendor/` tree with a consistent `modules.txt` is the
+      second source, and a module the machine lacks fails the load.
 - [x] Signature-only loading works: an out-of-scope dependency package
       loads through the same `Parse` with `Depth() == Signatures`,
       bodies and private members absent.
-- [x] Test files parse and carry `go.testFile`. The kit excludes
+- [x] Test files parse and receive `golang.testFile`. The kit excludes
       nothing except workspace-owned outputs, which it refuses before
       `Parse` when a fixture provides the trailer or manifest proof.
 - [x] Tier 1 is covered for Go: `CallableOf`, `TypeOf` into canonical
@@ -92,7 +97,7 @@ plus the completeness check from
   Milestone 0007.
 - eidos-lang and tree-sitter: milestone 0009.
 - Types the declarations do not state (inferred `var x = f()`): these
-  sits at level 2 with `go.inferred` carrying the spelling, per the
+  are at level 2, with `golang.inferred` recording the spelling, per the
   degradation scale. That is the declared behaviour, not deferred
   work.
 
@@ -106,6 +111,10 @@ plus the completeness check from
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-09-30 | Status set to In progress | Nine of the Done-when bullets are checked, and the status read Planned |
+| 2026-09-30 | Added the bullet for dependency modules | The frontend excludes `vendor/` and reads nothing from the module cache, so a type from another module keeps its spelling alone, and every embed of a third-party interface reports a gap |
+| 2026-09-30 | The Go keys are spelled `golang.*` | The satellite registers its keys under its language identity, `golang` |
+| 2026-09-30 | The carrier spelling in the goal and the carrier criterion changed from `//+gen:` to `//+<brand>:` | The carrier mark follows the composition's brand. The Go frontend reads carriers under the brand, and its suite passes with brand-marked fixtures |
 | 2026-09-01 | Widened to a horizontal wave: Go, protobuf, TypeScript, Rust and Java frontends build together, per capability, over one shared cross-language feature corpus with read-side coverage declared as data | Four audits of the old frontends against RFC-0013 found every contract defect through a language the others did not share; the backend kit held for the same reason two consumers arrived together. Pulls the tree-sitter platform forward from 0009; Java forces the two surfaces no sibling touches, dependency artifacts and read-side annotations; 0009 and 0010 keep their policy halves |
 | 2026-08-30 | Pinned the `sample`/`witness` directives and the toolchain-adapter skeleton into Done when | A coverage audit against the architecture found them held by Scope reference only |
 | 2026-08-30 | Added at position 4 | First real language. Go comes first because its parser needs no tree-sitter layer |

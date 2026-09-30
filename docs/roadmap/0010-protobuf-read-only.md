@@ -1,7 +1,7 @@
 ---
 milestone: 0010
 title: protobuf schemas drive generation
-status: Planned
+status: In progress
 depends-on: 0009
 ships-in: unscheduled
 deadline: none
@@ -62,7 +62,7 @@ protocompile (D16), and the well-known-type mappings of
 
 | Risk | What it delays | What we would do |
 |---|---|---|
-| protocompile's model diverges from the projection vocabulary in some corner of proto3 | 0014, through this milestone only | Carry the remainder as `proto.*` metadata at level 2 of the scale, and declare it in the feature matrix |
+| protocompile's model diverges from the projection vocabulary in some corner of proto3 | 0014, through this milestone only | Record the remainder as `protobuf.*` metadata at level 2 of the scale, and declare it in the feature matrix |
 
 ## Changes
 
@@ -72,3 +72,5 @@ protocompile (D16), and the well-known-type mappings of
 | 2026-09-03 | The frontend and the rules landed ahead of the sequence, during milestone 0004's wave | The projection vocabulary needed a second read-only language to hold its shape honest, and protobuf needs nothing from 0009 to load. The demo bullet still waits on the TypeScript spoke |
 | 2026-09-03 | Nested resolution, trailing comments, the whole well-known table, edition features and the proto2 residue followed, with a graded corpus entry | The first pass resolved no nested reference, dropped every trailing comment and mapped two well-known messages of twenty, which is a satellite that loads the easy shapes and loses the rest |
 | 2026-09-24 | Resolution moved to shadowing tiers with every namespace split, comments to protoc's attribution, edition presence into the field's form, enum values to typed conversions, and literals to protoc's grammar | An audit found a sub-package unreachable from its parent namespace, legal shadowing reported as ambiguous, licence headers read as package documentation, and Go's literal grammar applied to protobuf text |
+| 2026-09-30 | Status set to In progress | The read-only-shape bullet is checked, and the status read Planned |
+| 2026-09-30 | The residue namespace is spelled `protobuf.*` | A satellite claims the namespace its language identity spells, and the identity is `protobuf` |

@@ -27,9 +27,12 @@ runs as a fixture.
       over Go source produce the expected bytes, routed per layout,
       with a manifest slice and clean diagnostic discipline.
 - [ ] The end-to-end fixture works: an interface carrying
-      `//+gen:stub tag=test` produces `svc/store_stub_test.go` beside
+      `//+acme:stub tag=test` produces `svc/store_stub_test.go` beside
       its source, as the end-to-end document describes, minus the
       TypeScript plan.
+- [ ] The fixture's stub declares each method on a pointer receiver
+      named apart from the method's parameters, through the kernel's
+      `Mirror` and the Go satellite's `PointerReceiver`.
 - [ ] Layout resolves per
       [18-routing-and-layout.md](../architecture/18-routing-and-layout.md):
       the three cardinalities, tags with the target spelling the join
@@ -60,6 +63,11 @@ runs as a fixture.
 - [ ] A `PerPackage` accumulator file assembles from many matches
       ordered by subject identity, and stays byte-identical under
       `-race` with in-bucket parallelism enabled.
+- [ ] Slot appends route through the `Emitter`, buffer per handler
+      invocation, and apply in canonical match order when their
+      bucket finishes. A fixture whose handlers in one bucket append
+      into one slot renders identical bytes under `-race` with
+      in-bucket parallelism enabled.
 
 ## Why now
 
@@ -98,5 +106,8 @@ and the accumulator Emitter of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-09-30 | Added the bullet for the stub's pointer receivers | The kernel's `Mirror` leaves the receiver unset, because a pointer receiver is Go's syntax, and the Go satellite's `PointerReceiver` states it |
+| 2026-09-30 | Added the bullet for slot appends | A slot appends in insertion order without a lock, and an `OnEmit` handler appends into the emit value directly. Dispatch inside a bucket is sequential, so the order is deterministic today, and the in-bucket parallelism of this milestone would order a slot by scheduling |
+| 2026-09-30 | The end-to-end fixture's carrier changed from `//+gen:stub` to `//+acme:stub` | The carrier mark follows the composition's brand, and the end-to-end document's binary is branded `acme` |
 | 2026-08-30 | Pinned centralised-layout package identity and cancellation semantics into Done when | A coverage audit against the architecture found them held by Scope reference only |
 | 2026-08-30 | Added at position 5 | The first end-to-end run. Placed as early as its three inputs allow |

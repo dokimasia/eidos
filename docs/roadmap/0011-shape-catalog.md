@@ -37,7 +37,7 @@ fork.
       (writer, tx, atomic) validates, generates and stamps over Go
       fixtures. `Delete(v) error` goes to the deleter shape per
       declared precedence, and `explain` shows the losing claim.
-- [ ] `+gen:shape <name>` overrides a detector at directive authority,
+- [ ] `+<brand>:shape <name>` overrides a detector at directive authority,
       and `meta drop=shape.writer` removes the whole fact family.
 - [ ] The form grid is enforced: a mixin spec carrying `precedence:`
       fails the schema, and a contract role-arity violation is a
@@ -77,4 +77,5 @@ All of [12-shape-catalog.md](../architecture/12-shape-catalog.md).
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-09-30 | The override criterion's carrier changed from `+gen:shape` to `+<brand>:shape` | The carrier mark follows the composition's brand |
 | 2026-08-30 | Added at position 11 | First self-hosted generation: legal here because the tools module may depend on eidos-lang-go where the kernel may not |

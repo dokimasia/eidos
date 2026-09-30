@@ -47,6 +47,13 @@ warm≡cold check.
 - [ ] The (symbol, key) grain holds: an edit relevant to one plan's
       read keys re-runs that plan's dirty artifacts and no other plan,
       on the two-plan fixture from milestone 0006.
+- [ ] The edge format has four kinds of edge: a per-identity edge, a
+      fact edge at a subject and a key, a kind or directive membership
+      edge under the reader's scope, and a package-member edge for a
+      package that `PackageOf` returns. A fixture counts executions for
+      the two new edges: a declaration of an enumerated kind that enters
+      outside the reader's scope re-runs nothing, and an edit to one
+      member of a package read through `PackageOf` re-runs the reader.
 - [ ] The parse memo restores a branch-switch fixture without
       reparsing, its size cap evicts least-recently-used entries at
       `CommitRun`, and the cold mode ignores both layers without
@@ -84,5 +91,6 @@ All of [09-incrementality.md](../architecture/09-incrementality.md).
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-09-30 | Added the edge format to Done when, with scoped membership edges and package-member edges | `ByKind` records its kind-membership edge without the reader's scope, `PackageOf` returns a whole package on one identity edge, and `Claim.Derived` lists point reads alone, so no document stated the edges invalidation follows |
 | 2026-08-31 | Pinned incremental commit and the no-change skip into Done when | The incrementality design gained the write-side contract: a full-generation rewrite scales with the corpus and would fail the warm-one-edit gate on the commit alone |
 | 2026-08-30 | Added at position 7 | The riskiest milestone, placed as early as its dependency on the whole frame allows |

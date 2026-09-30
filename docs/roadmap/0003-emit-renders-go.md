@@ -92,6 +92,8 @@ rendering spells types through it.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-09-30 | Marked Done again: the `ImportSet` bullet is checked | Each backend binds its type helpers to the file's `ImportSet`, so a declaration's types record their imports. The Go field `When time.Duration` renders under `import "time"`, and two packages that share a name import under two names |
+| 2026-09-30 | Reopened: the `ImportSet` bullet is unchecked, and the status is In progress | Declaration types record no imports. A Go struct field `When time.Duration` renders without an import block, because only the `use` builtin and scaffold values record into the file's `ImportSet` |
 | 2026-09-01 | Marked Done | Every bullet holds under the committed suites; the render surface grew past the goal on the way — Java and Rust render beside the pair, and every backend declares its fact coverage as data |
 | 2026-09-01 | The slot rule landed as compile time, not a failing append | Slots generate as `Slot[T]`, so appending a method into a field slot does not compile; the mistake dies earlier than the bullet asked |
 | 2026-09-01 | Contribution order spells as origin, gating instance and insertion | Capability topology orders the schedule's buckets; within a slot, the emitting origin and its gating instance are the stable key the determinism contract pins |
