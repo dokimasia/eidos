@@ -58,11 +58,12 @@ linters:
   settings:
     depguard:
       rules:
-        # Plugin modules speak the facade alone (RFC-0012); the
-        # kernel arrives transitively through go.dokimi.dev/eidos/sdk.
-        # eidos-reference stays out: a reference composition is host
-        # side and composes the workspace, which the facade does not
-        # re-export.
+        # Plugin modules import the SDK facade alone, and the kernel
+        # arrives transitively through go.dokimi.dev/eidos/sdk, so a
+        # regrouping of the kernel moves no plugin's import path.
+        # eidos-reference is not listed: a reference composition is
+        # host side and composes the workspace, which the facade does
+        # not re-export.
         plugin-modules:
           files:
             - "**/eidos-lang/**"
@@ -164,11 +165,15 @@ linters:
       - path: _test\.go$
         linters: [forcetypeassert, unparam]
       # Test files put fakes and helper types below the tests that
-      # use them, which reads better and which decorder scores as
-      # "type after func". Declaration order in a test file is about
-      # reading order, not about API shape.
+      # use them, in reading order. funcorder scores declaration order
+      # by API shape, which a test file does not have.
       - path: _test\.go$
-        linters: [decorder, funcorder]
+        linters: [funcorder]
+      # A test fake returns a nil value with a nil error on purpose,
+      # to prove the guard against a hook that breaks the
+      # value-or-error contract. nilnil flags exactly that return.
+      - path: _test\.go$
+        linters: [nilnil]
 
 formatters:
   enable:
