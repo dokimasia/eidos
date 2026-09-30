@@ -9,7 +9,7 @@
         lint lint-vet lint-go lint-md lint-license \
         lint-skip-expiry lint-error-prefix lint-vuln \
         tidy check-tidy \
-        test test-race test-bench test-fuzz test-coverage test-e2e \
+        test test-race test-bench test-fuzz test-coverage \
         bench-baseline bench-regression bench-profile \
         check check-coverage check-uncovered check-mutation check-branch \
         release
@@ -27,6 +27,10 @@ ERGON ?= ergon
 # it out and records it. The scope is the backstop for anything that
 # limit cannot hold, and it keeps the kernel reaping inside the run
 # rather than across the session.
+#
+# A user scope needs a user service manager. Where `systemctl --user`
+# finds none, as on a CI runner that starts no user session, the gate
+# runs under GOMEMLIMIT alone.
 MUTATION_MEMORY ?= 24G
 MUTATION_GOMEMLIMIT ?= 2GiB
 
@@ -82,8 +86,6 @@ test-fuzz: ## Run every Fuzz target for the configured duration
 	$(ERGON) test fuzz
 test-coverage: ## Render per-module coverage profiles to HTML
 	$(ERGON) test coverage
-test-e2e: ## Run the end-to-end tests behind `//go:build e2e` (skipped by default)
-	go test -tags=e2e ./...
 
 bench-baseline: ## Pin the current benchmark numbers to bench/baseline.txt
 	$(ERGON) bench baseline
@@ -96,7 +98,7 @@ bench-profile: ## Collect CPU+mem pprof artefacts (PATTERN=. PACKAGE=./... MODUL
 		$(if $(TIME),--time=$(TIME),) $(FLAGS)
 
 check: ## Run the umbrella pre-merge gate (mod, lint, test, coverage, ...; --only / --skip to narrow)
-	@if command -v systemd-run >/dev/null 2>&1; then \
+	@if command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then \
 		systemd-run --user --scope --quiet -p MemoryMax=$(MUTATION_MEMORY) \
 			-p MemorySwapMax=0 --setenv=GOMEMLIMIT=$(MUTATION_GOMEMLIMIT) -- \
 			$(ERGON) check; \
@@ -108,7 +110,7 @@ check-coverage: ## Enforce per-layer coverage thresholds
 check-uncovered: ## List every uncovered line across the tree (ignores layer config + excludes)
 	$(ERGON) check coverage uncovered
 check-mutation: ## Run gremlins mutation testing per layer, naming survivors (slow, memory-capped)
-	@if command -v systemd-run >/dev/null 2>&1; then \
+	@if command -v systemd-run >/dev/null 2>&1 && systemctl --user show-environment >/dev/null 2>&1; then \
 		systemd-run --user --scope --quiet -p MemoryMax=$(MUTATION_MEMORY) \
 			-p MemorySwapMax=0 --setenv=GOMEMLIMIT=$(MUTATION_GOMEMLIMIT) -- \
 			$(ERGON) check mutation --mutants; \

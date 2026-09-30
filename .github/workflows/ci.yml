@@ -20,18 +20,24 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: Install ergon
-        run: go install go.thesmos.sh/ergon/cmd/ergon@latest
-      - run: ergon bootstrap
-      - run: ergon check
-  vuln:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v6
-      - uses: actions/setup-go@v6
+      # The toolchain harnesses skip a missing compiler locally and
+      # fail on one in CI, so the job installs every compiler they
+      # drive: tsc and node, javac and java, and cargo with rustfmt.
+      - uses: actions/setup-node@v7
         with:
-          go-version-file: go.mod
-          cache: true
-      - run: go install go.thesmos.sh/ergon/cmd/ergon@latest
+          node-version: 24
+      - name: Install TypeScript
+        run: npm install --global typescript@7.0.2
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: 25
+      - name: Install the Rust toolchain
+        run: rustup toolchain install stable --profile minimal --component rustfmt && rustup default stable
+      - name: Install ergon
+        run: go install go.thesmos.sh/ergon/cmd/ergon@v1.11.1
       - run: ergon bootstrap
-      - run: ergon lint vuln
+      # make check runs ergon check under the Makefile's memory limit,
+      # which contains the mutation stage. The gate's lint stage runs
+      # govulncheck.
+      - run: make check
