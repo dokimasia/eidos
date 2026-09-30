@@ -1,17 +1,17 @@
 ---
 adr: 0007
 title: Test code asserts through the assert module
-status: Accepted
+status: Superseded
 date: 2026-08-30
 supersedes: none
-superseded-by: none
+superseded-by: ADR-0008
 ---
 
 # ADR-0007: Test code asserts through the assert module
 
 ## Status
 
-Accepted
+Superseded by [ADR-0008](0008-pin-the-assert-module-by-version.md)
 
 ## Context
 
