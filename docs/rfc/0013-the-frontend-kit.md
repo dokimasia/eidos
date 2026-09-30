@@ -4,7 +4,7 @@ title: The frontend kit and its conformance suite
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Draft
 created: 2026-09-01
-updated: 2026-09-25
+updated: 2026-09-30
 discussion: none
 supersedes: none
 superseded-by: none
@@ -65,6 +65,13 @@ type Frontend interface {
     Lang() symbol.Lang
     Syntax() CommentSyntax
 
+    // Overloads reports whether the language declares two callables
+    // of one name in one scope, told apart by their parameters. The
+    // load spells such a language's discriminators from the parameter
+    // types, which the frontend normalizes at parse, and gives every
+    // callable of any other language the empty discriminator.
+    Overloads() bool
+
     // Selection is the file claim, gitignore-style globs against
     // workspace-relative paths, negations included: a testdata
     // tree is not Go source by Go's own definition, and that
@@ -113,6 +120,16 @@ type Frontend interface {
 // the candidate identities one scope offers, in probe order, and an
 // earlier tier shadows every later one.
 type Candidates [][]symbol.Identity
+
+// Importer is the optional role of a frontend whose imports specify
+// files and not packages, such as protobuf's. After Link resolves a
+// reference to a declaration of another file, it records what
+// ImportOf returns for the declaring file's workspace-relative path
+// as the reference's package, read through the referencing file's
+// scope.
+type Importer interface {
+    ImportOf(scope ImportScope, file string) string
+}
 ```
 
 `SourceRef` names a file without opening it: the workspace-relative
@@ -148,8 +165,14 @@ declaration's first. Every other spelling goes to the owning
 language's `Resolve`, and Link takes the first tier with a
 candidate the graph contains, in scope or signature-only. More than
 one such candidate in that tier reports as an ambiguity. Builtins and
-externals keep their spelling, which is degradation the reader can
-ask about, not failure. A file whose parse recorded no
+externals keep their spelling and the package the frontend recorded
+for their import, which is degradation the reader can ask about, not
+failure. Protobuf imports a file and not a package, so its frontend
+cannot record at parse time which import a reference needs. For a
+frontend that implements `Importer`, Link records the import of the
+declaring file as the package of each reference it resolves into
+another file. The load records declaring files for such a language
+alone. A file whose parse recorded no
 scope resolves nothing: there are no bindings to resolve through,
 and the suite's linked check is what catches a frontend that
 forgot to record them. A `Partition` error is fatal
@@ -181,9 +204,10 @@ content, the partition's reads, the unit's `Depth` — the same
 bytes at `Signatures` produce a different graph and must key
 differently — the frontend's declared version, the frontend's
 configuration in its canonical encoding, the composition's
-plugin-set fingerprint, and the kernel's model fingerprint,
-because a schema change reshapes the graph the same source
-produces. Each part is length-prefixed, so two parts cannot trade
+plugin-set fingerprint, the composition's brand, whose marks
+decide which comment lines are carriers, and the kernel's model
+fingerprint, because a schema change reshapes the graph the same
+source produces. Each part is length-prefixed, so two parts cannot trade
 bytes and collide, and the one stated order holds because a key
 derived two ways diverges. Configuration is in the fold by
 contract: a knob that changes the graph without changing a read —
@@ -240,7 +264,11 @@ identity under the canonical rules the model fixes — a package is
 lang:path, a file is named by its whole workspace-relative path, a
 member's owner is the dotted chain of enclosing type names, and a
 callable's discriminator is its parameter type spellings,
-comma-joined, so overloads spell apart. A second declaration
+comma-joined, in a language whose frontend reports that it
+overloads, so overloads spell apart. Such a frontend normalizes the
+spellings at parse, so one signature spells one discriminator. A
+language that cannot overload gives every callable the empty
+discriminator. A second declaration
 spelling one identity is not a defect — it is the unit's own
 source broken mid-edit, or a platform-variant collision the
 language must resolve — so it reports through the diagnostics, the
@@ -248,7 +276,11 @@ first stands, and the duplicate's subtree leaves every index; an
 attachment on the duplicate re-homes onto the survivor, whose
 identity is the same derivation. Reparsing an unchanged file
 yields the same identities, which is what 0007's diff-by-identity
-later stands on. Directive carriers strip through
+later relies on. Directive carriers open with one of the three
+marks of the composition's brand, which the load hands every
+unit: `<brand>:` and `+<brand>:` set a directive, and `-<brand>:`
+negates one. A line under another brand's mark is documentation.
+Carriers strip through
 the syntax value, parse under the kernel grammar, and attach as
 raw instances; validation against schemas stays the freeze's, the
 step between Link and the first handler, exactly as the plugin
@@ -285,8 +317,11 @@ frontend.New(name, lang, syntax).
     Build()                     // lowers to plugin.Frontend
 ```
 
+A frontend whose language overloads adds `Overloads()` to the chain.
+Go cannot overload, so its declaration leaves the call out.
+
 A `Classifier` inspects a parsed unit and stamps classification
-facts — `go.testFile`, the generated-marker for foreign
+facts — `golang.testFile`, the generated-marker for foreign
 generators' output — through the same fact store discipline
 annotators use, at plugin authority under the frontend's
 identity: the authority order gains no new level, a directive or
@@ -331,6 +366,7 @@ type Fixture struct {
     Sources    fs.FS    // the unit tree the suite selects from
     Signatures []string // unit roots loaded signature-only;
                         // everything else loads Full
+    Dropped []symbol.Identity       // what a Signatures load leaves out
     Schemas []directive.Schema      // what the carriers validate under
     Keys    func(*meta.Registry) error // what the stamps apply under
 }
@@ -356,18 +392,21 @@ own failure path is testable:
   selected file's declarations or refusal findings appear.
 - `AssertFingerprinted`: the load report's keys fold every read,
   the partition's reads, the depth, the declared version, the
-  configuration, the plugin-set fingerprint the suite drives, and
-  the model fingerprint — an untouched unit's key is stable
-  across two parses, one unit parsed at the two depths keys
-  differently, and a changed version or configuration changes
-  every key, which is what keeps the fold honest against a
+  configuration, the plugin-set fingerprint the suite drives, the
+  brand, and the model fingerprint — an untouched unit's key is
+  stable across two parses, one unit parsed at the two depths keys
+  differently, and a changed version, configuration or brand
+  changes every key, which is what keeps the fold honest against a
   constant nobody bumped.
 - `AssertJailedReads`: a scripted frontend reaching outside its
   unit is refused at `Read`, and the refusal names the path.
-- `AssertSignatureDepth`: a unit parsed at `Signatures` carries no
-  bodies and no unexported members, and the same unit at `Full`
-  is a superset under the same identities.
-- `AssertAttachedDirectives`: `//+gen:` carriers strip from the
+- `AssertSignatureDepth`: the graph loaded at `Signatures` is a
+  subset of the full graph under the same identities, and at least
+  one unit loads shallow. Every identity the fixture lists in
+  `Dropped` is in the full graph and absent from the shallow one, so
+  a frontend that ignores depth fails a fixture that lists one.
+- `AssertAttachedDirectives`: carriers under the suite's brand,
+  `fixture`, strip from the
   documentation, parse under the kernel grammar, attach as raw
   instances on the subjects that carried them, and validate under
   the fixture's schemas at the suite's freeze, after Link — the
@@ -438,13 +477,14 @@ until then.
   resolver either blocks on load order or resolves differently
   before and after the graph completes. One phase over the whole
   graph resolves once.
-- **Three old-kernel surfaces retire without successors, by
+- **Two old-kernel surfaces retire without successors, by
   choice** — the `value` directive's cases move to `meta` at
-  directive authority; the consumer directive-prefix override
-  gives way to one kernel grammar with plugin-prefixed names; the
-  `pkg=` routing key gives way to package identity derived from
-  the `gen.module` facts. Recorded here so the next audit does
-  not re-open them.
+  directive authority; the `pkg=` routing key gives way to package
+  identity derived from the `gen.module` facts. The consumer
+  directive-prefix override has a successor: the carrier mark
+  follows the composition's brand, over one kernel grammar with
+  plugin-prefixed names. Recorded here so the next audit does not
+  re-open them.
 
 ## Drawbacks
 

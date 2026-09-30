@@ -4,7 +4,7 @@ title: The directive grammar, schemas and validation
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Accepted
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-30
 discussion: none
 supersedes: none
 superseded-by: none
@@ -78,6 +78,10 @@ type Raw struct {
     Args []RawArg
     // Pos is the carrier line.
     Pos position.Pos
+    // Negated marks an instance written under the negated mark,
+    // -<brand>:. The carrier owner sets it, because the mark and
+    // not the payload spells it.
+    Negated bool
 }
 
 // RawArg is one argument as written.
@@ -228,6 +232,11 @@ type Schema struct {
     // Single-instance is the default: a second instance is a
     // contradiction, reported naming both positions.
     Repeatable bool
+    // Negatable admits the negated form, which opts a subject out
+    // of the plugin's bare and fact-gated rules. The zero value
+    // refuses a negated instance with a positioned Error, and a
+    // kernel schema is never negatable.
+    Negatable bool
     // Requires and ConflictsWith constrain the subject's full
     // directive list, by name, resolved against the registry at
     // its seal.
@@ -272,8 +281,8 @@ func NewRegistry() *Registry
 // any name outside the kernel's four, a reserved key among the
 // params, a param key or role declared twice, a positional param
 // carrying Roles, an undeclared role on a param, RolesRequired on
-// a schema declaring no roles, a list of lists, and an empty doc
-// anywhere. The composition registers the kernel
+// a schema declaring no roles, a list of lists, a negatable kernel
+// schema, and an empty doc anywhere. The composition registers the kernel
 // schemas before any plugin's, so an impersonation is a plain
 // duplicate by the time it arrives.
 //
@@ -335,6 +344,10 @@ type Directive struct {
     // Instance is the source order among a repeatable directive's
     // instances on one subject, starting at zero.
     Instance int
+    // Negated reports an instance written in the negated form. It
+    // gates no rule, and dispatch excludes its subject from the bare
+    // and fact-gated rules of the plugin that registered the schema.
+    Negated bool
 }
 
 // Param returns a keyed value and whether the instance carries it.
@@ -361,9 +374,15 @@ repeatability or constraints from.
 // omitted role a schema demands naming that set, a second
 // instance of a single-instance directive naming both positions, a
 // requirement no directive on the subject meets naming the
-// requiring position, a conflict naming both positions, and a
+// requiring position, a conflict naming both positions, a
 // metadata reference no key or group returns naming the
-// candidates.
+// candidates, a negated instance of a schema that is not
+// negatable, and a directive set and negated on one subject,
+// naming both positions.
+//
+// A negated instance takes part in no requirement and no conflict,
+// because it withdraws the subject from a plugin and states nothing
+// the constraints read. Repeatability counts each form apart.
 //
 // keys resolves ResolveMetadataKey params. Validation of one
 // subject is independent of every other, so a caller validates

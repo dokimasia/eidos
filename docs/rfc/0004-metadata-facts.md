@@ -4,7 +4,7 @@ title: Metadata keys and the fact store
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Accepted
 created: 2026-08-30
-updated: 2026-09-25
+updated: 2026-09-30
 discussion: none
 supersedes: none
 superseded-by: none
@@ -107,27 +107,38 @@ breakable by any plugin.
 ### Registration
 
 ```go
-// Registry holds every registered namespace, key and group.
+// Registry is a handle on the registered namespaces, keys and
+// groups, bound to one registrant: a plugin's name, or no name for
+// the composition that builds the workspace. Every handle For
+// derives shares one set of registrations.
 //
 // A Registry is not safe for concurrent use. Registration happens
 // while the workspace composes, which is single-threaded, and
 // completes before the first fact is written.
 type Registry struct{ ... }
 
+// NewRegistry returns an empty registry and the composition's
+// handle on it.
 func NewRegistry() *Registry
 
-// ClaimNamespace records who owns a namespace. A namespace claimed
-// twice is an error naming both owners. Every key registers into a
-// claimed namespace, so a typo in a key's namespace fails at
-// registration rather than reading as a new namespace.
-func (r *Registry) ClaimNamespace(ns, owner string) error
+// For returns a handle on the same registrations bound to one
+// registrant. The empty name returns the composition's handle.
+func (r *Registry) For(registrant string) *Registry
+
+// ClaimNamespace claims a namespace for the handle's registrant. A
+// namespace claimed twice is an error naming both registrants.
+// Every key registers into a claimed namespace, so a typo in a
+// key's namespace fails at registration and never reads as a new
+// namespace.
+func (r *Registry) ClaimNamespace(ns string) error
 
 // Register records a key and returns its typed handle.
 //
 // It refuses, with an error naming both claimants where two exist:
-// a name without a claimed namespace, a name registered twice, and
-// a spec without documentation. It returns an error rather than
-// panicking because composition collects every fault in one pass.
+// a name without a claimed namespace, a name in a namespace another
+// registrant claimed, a name registered twice, and a spec without
+// documentation. It returns an error and does not panic, because
+// composition collects every fault in one pass.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error)
 
 type KeySpec struct {
@@ -166,6 +177,12 @@ func (r *Registry) Spec(id KeyID) (KeySpec, bool)
 // Group returns a group's member keys, in registration order.
 func (r *Registry) Group(g GroupName) iter.Seq[KeyID]
 ```
+
+The workspace hands each plugin a handle bound to the plugin's
+name, and keeps the unbound handle for the keys the composition
+registers. A plugin registers keys only into namespaces it claimed
+itself, and the composition may claim any namespace nobody else
+claimed.
 
 A key is declared where it is registered: the `Key[T]` handle is
 the declared value, held by the code that registered it, so

@@ -4,7 +4,7 @@ title: The emit body and the scaffolding vocabulary
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Review
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-30
 discussion: none
 supersedes: none
 superseded-by: none
@@ -135,9 +135,18 @@ type NamedSlot struct {
     Slot Slot[Stmt] `json:"stmts,omitzero"`
 }
 
+// The standard slots' names, which a body-claiming template places
+// the prologue and the epilogue by. No owner slot takes either.
+const (
+    SlotPrologue = "prologue"
+    SlotEpilogue = "epilogue"
+)
+
 // Declare returns the named slot, adding it in declaration order
 // on first use; declaring a name twice returns the existing slot.
 // Declaring is the owner's act: a contributor looks a slot up.
+// Declare panics on SlotPrologue and SlotEpilogue, the standard
+// pair's names.
 func (b *Body) Declare(name string) *Slot[Stmt]
 
 // Slot returns a declared slot and false for a name the owner
@@ -183,15 +192,19 @@ it.
 
 ```go
 // TemplateRef claims a body for a template. The name resolves in
-// the emitting plugin's template tree for the plan's target, never
-// in the backend's or another plugin's, so the same emit graph renders
-// through a different tree per plan. Data is the plugin-supplied
-// payload the template executes over; the codec carries it as
-// generic JSON values, so a decoded reference reads its payload
-// dynamically, which is how a template reads it anyway.
+// its owner's template tree for the plan's target, never in the
+// backend's. Owner names the emitting plugin, and a reference
+// without an owner resolves in the tree of the plugin whose unit
+// contains the body, so a reference placed in another plugin's
+// declaration through a slot renders through its own plugin's
+// tree. Data is the plugin-supplied payload the template executes
+// over; the codec encodes it as generic JSON values, so a decoded
+// reference's payload is maps, slices and scalars, which is what a
+// template reads anyway.
 type TemplateRef struct {
-    Name string `json:"name"`
-    Data any    `json:"data,omitzero"`
+    Name  string      `json:"name"`
+    Data  any         `json:"data,omitzero"`
+    Owner diag.Origin `json:"owner,omitzero"`
 }
 ```
 

@@ -4,7 +4,7 @@ title: The authoring surface and dispatch
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Accepted
 created: 2026-08-30
-updated: 2026-08-30
+updated: 2026-09-30
 discussion: none
 supersedes: none
 superseded-by: none
@@ -277,9 +277,11 @@ func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive
 
 // Skipped reports whether the kernel skip directive excludes a
 // subject: for every plugin with no argument, for one plugin under
-// skip plugin=<name>. The table is computed once at NewIndex, so a
-// match costs one probe of a map holding only the subjects that
-// carry skip.
+// skip plugin=<name>. A negated directive excludes the subject for
+// the plugin that registered its schema, as skip plugin= would. The
+// table is computed once at NewIndex, so a match costs one probe of
+// a map that contains only the subjects with a skip or a negated
+// directive.
 func (ix *Index) Skipped(id symbol.Identity, p diag.PluginID) bool
 
 // Reader mints a tracked handle under the index's scope, recording
@@ -763,22 +765,28 @@ without a source position keys its per-source family under the
 empty string, so a fixture exercising per-source families sets
 positions.
 
-One signature-mirroring helper lives in the framework, because its
-correctness lesson is universal and easy to get wrong per plugin:
+One signature-mirroring helper is part of the framework, because a
+field-by-field signature copy is easy to get wrong per plugin:
 
 ```go
 // Mirror returns an emit method mirroring a node method's
-// signature, type spellings verbatim, origin set. The receiver is
-// named against the host type's name and the parameter names: a
-// method declaring Put(s Session) must not bind its receiver to s,
-// a duplicate-identifier compile error a formatter cannot catch.
+// signature, type spellings verbatim, origin set, and Receives
+// naming the host. The receiver is left unset, because its
+// spelling is the target's: a pointer receiver is Go's, and Rust
+// spells self.
 func Mirror(host string, m *node.Method) *emit.Method
 ```
+
+A Go stub states its pointer receiver through the Go satellite's
+`PointerReceiver` helper. The helper names the receiver apart from
+the names in the signature: a method declaring `Put(s Session)` must
+not bind its receiver to `s`, which Go rejects as a duplicate
+identifier.
 
 Import inference deliberately does not exist here: imports are
 node-only in the model, collected at render as a side effect of
 spelling types, so an emitter-side import guess would be a second
-answer to a question the renderer owns.
+answer to a question the renderer decides.
 
 ### The Stamper
 
@@ -845,6 +853,13 @@ directive-gated subject opted in explicitly and withdraws by deleting
 the directive. For an emit-triggered rule the origin's `skip`
 governs, since the origin is the subject consulted. A graph rule has
 no subject, so nothing excludes it.
+
+A negated directive is the same exclusion, spelled in a plugin's
+own vocabulary. The index reads each negated instance as
+`skip plugin=<name>` for the plugin that registered its schema, so
+the subject drops out of that plugin's bare and fact-gated rules. A
+negated instance gates no rule: a directive-gated rule skips it,
+and runs for the subject's other instances as before.
 
 Each invocation reuses its rule's match with a fresh read set,
 minted lazily, and its own effect handle, so the reads a handler

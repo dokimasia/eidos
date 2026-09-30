@@ -4,7 +4,7 @@ title: The render pass and the backend kit
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Review
 created: 2026-08-30
-updated: 2026-08-31
+updated: 2026-09-30
 discussion: none
 supersedes: none
 superseded-by: none
@@ -28,8 +28,8 @@ failure. The kernel gains `backend.New`, the kit that builds a
 renderer from the handful of things a language genuinely varies in.
 Template lint checks every declared template statically, and the
 conformance suite gains `backendtest` with the checks a valueless
-render can hold: byte-stable output, every kind rendered, slots
-spliced, format failures survived. Headers, trailers and sinks are
+render can prove: byte-stable output, every kind rendered or
+refused, slots spliced, format failures survived. Headers, trailers and sinks are
 the output contract's seams, consumed here and proposed elsewhere.
 
 ## Motivation
@@ -126,18 +126,26 @@ type RenderContext struct {
     Plugin ID
 }
 
-// TemplateProvider declares a plugin's template trees: the bodies
-// its references name, per target, and the helpers those
-// templates call. Overrides names the shared vocabulary entries
-// the plugin deliberately replaces, which is the replace verb: a
+// TemplateProvider declares a plugin's presentation for each
+// target: the tree its references resolve in, the helpers its
+// templates call, and the shared vocabulary names it replaces.
+//
+// Templates returns the tree that serves a target and reports
+// false where none does. TemplateTargets returns the targets the
+// plugin declares a tree of its own for, sorted, so a composition
+// refuses a plan whose target a plugin with such trees does not
+// serve, at Build and not at render. TemplateFuncs returns the
+// helpers for a target, the replacements included, and Overrides
+// the replaced names for that target, which is the replace verb: a
 // shared name shadowed without a declaration is a lint finding,
-// and where two plugins declare an override of one name, the
-// latest schedule position wins, because a plugin that changes
-// how a construct renders necessarily runs after what it changes.
+// and where two plugins override one name, the one at the latest
+// schedule position takes effect, because a plugin that changes
+// how a construct renders runs after what it changes.
 type TemplateProvider interface {
     Templates(t Target) (fs.FS, bool)
+    TemplateTargets() []Target
     TemplateFuncs(t Target) template.FuncMap
-    Overrides() []string
+    Overrides(t Target) []string
 }
 ```
 
@@ -150,9 +158,17 @@ passes the template declaration through the way it passes keys:
 ```go
 package eidos
 
-// Templates declares the plugin's tree for one target; repeatable,
-// one tree per target.
-func (b *Builder) Templates(t plugin.Target, tree fs.FS) *Builder
+// Templates and Funcs declare the plugin-level tree and helpers,
+// which serve every target without a declaration of its own.
+func (b *Builder) Templates(tree fs.FS) *Builder
+func (b *Builder) Funcs(fm template.FuncMap) *Builder
+
+// For layers one target's tree, helpers and overrides over the
+// plugin-level declarations.
+func (b *Builder) For(t plugin.Target, opts ...TargetOption) *Builder
+func Templates(tree fs.FS) TargetOption
+func Funcs(fm template.FuncMap) TargetOption
+func Overrides(fm template.FuncMap) TargetOption
 ```
 
 ### What a language is to the kit
@@ -240,36 +256,64 @@ type Clustered struct {
 }
 ```
 
-A standalone callable in a target with no file-level callable
-kind stays reported under the unspelt-kind finding. The pass does
-not adopt orphans into hosts: manufacturing a wrapper declaration
-is a generator's move through slots, on the model, where
-provenance and composition hold, and a render-level adoption
-would be the transform the model level already refuses.
+A target with no file-level callable kind declares the callable
+kinds refused, and the render reports a standalone callable under
+the refused-kind finding. The pass does not adopt orphans into
+hosts: manufacturing a wrapper declaration is a generator's move
+through slots, on the model, where provenance and composition
+apply, and a render-level adoption would be the transform the
+model level already refuses.
 
 ### The import entries
 
-An import set entry carries the path a spelling qualified with
-and, where the language's import form binds one, the simple name
-it binds. TypeScript writes the bound names in braces before the
+An import set entry records the path a spelling qualified with
+and, where the language's import form binds one, the name it binds
+in the file. TypeScript writes the bound names in braces before the
 path, Java binds one qualified name per statement, Rust one use
-path; Go reads the paths alone and a bare path is the side-effect
-or whole-namespace form everywhere.
+path, and Go one package name. A bare path is the side-effect or
+whole-namespace form everywhere.
 
 ```go
-// Entry is one collected import: the path, and the name it binds
-// where the language's import form binds one. A bare path leaves
-// Name empty.
+// Entry is one collected import: the path, the name it binds where
+// the language's import form binds one, and the declaration's own
+// name where the bound name renames it, as TypeScript's
+// { Row as Row2 } does. TypeOnly marks a binding the language
+// erases at run time, such as TypeScript's import type. A bare
+// path leaves Name empty.
 type Entry struct {
-    Path string
-    Name string
+    Path     string
+    Name     string
+    Item     string
+    TypeOnly bool
 }
 
-// Add records a bare path; AddNamed records a bound name under a
-// path. Paths returns the distinct paths sorted, for a renderer
-// that binds no names; Entries returns the full set sorted by
-// path then name.
+// Add records a bare path, AddNamed a bound name under a path, and
+// AddType a type-only one, each outside the name assignment. Paths
+// returns the distinct paths sorted, for a renderer that binds no
+// names; Entries returns the full set sorted by path, name and
+// item, a value binding before a type-only one.
 ```
+
+The set assigns the local names, so two imports never bind one
+name in a file:
+
+```go
+// Bind imports a whole package and returns the name the file
+// refers to it by: name where it is free, and otherwise name with
+// the lowest free numeric suffix. BindItem imports one declaration
+// of a path under its own name the same way. Claim imports one
+// declaration under its simple name and reports false where
+// another binding takes it, so the language writes the qualified
+// name instead. Reserve takes the names the file declares before
+// the first declaration renders, so no import binds one of them.
+// Every method leaves the file's own package out of the set, and
+// its declarations spell unqualified.
+```
+
+The first claimant of a name keeps it, and the pass renders
+declarations in canonical order, so two runs bind the same names.
+A declaration the pass skips withdraws every entry and name it
+recorded.
 
 ### The backend kit
 
@@ -288,11 +332,19 @@ func New(name plugin.ID, target plugin.Target, syntax plugin.CommentSyntax) *Bui
 func (b *Builder) FileTemplate(t string) *Builder
 
 // KindTemplates declares how the language spells each emit kind,
-// keyed by kind. Build refuses an empty set; the conformance
-// suite's every-kind check is what holds a backend to the full
-// inventory, because which kinds render standalone and which
-// render inside their hosts is the language's own split.
+// keyed by kind. Build refuses an empty set. Which kinds render
+// standalone and which render inside their hosts is the language's
+// own split.
 func (b *Builder) KindTemplates(ts map[symbol.Kind]string) *Builder
+
+// RefusedKinds declares the emit kinds the language cannot spell,
+// each with its reason. The render skips a declaration of a refused
+// kind under the refused-kind finding and states the reason. Build
+// refuses a kind both spelt and refused, and a refusal without a
+// reason. The conformance suite's every-kind check renders every
+// file-level kind and fails on a kind the backend neither spells,
+// lowers nor refuses.
+func (b *Builder) RefusedKinds(rs map[symbol.Kind]string) *Builder
 
 // Scaffold sets the language's statement printer: how each kind
 // of the neutral scaffolding vocabulary spells, recording into
@@ -302,8 +354,11 @@ func (b *Builder) KindTemplates(ts map[symbol.Kind]string) *Builder
 func (b *Builder) Scaffold(f func(s emit.Stmt, set *render.ImportSet) ([]byte, error)) *Builder
 
 // Funcs registers the language's shared template vocabulary, once,
-// into the overrideable bucket.
-func (b *Builder) Funcs(fs template.FuncMap) *Builder
+// into the overrideable bucket: a function returning the helpers
+// bound to one file's import set, so a helper that spells a type
+// records the import the spelling needs. The pass binds it once
+// per worker.
+func (b *Builder) Funcs(part func(set *render.ImportSet) template.FuncMap) *Builder
 
 // Naming sets the target's filename spelling.
 func (b *Builder) Naming(n Naming) *Builder
@@ -331,9 +386,10 @@ func (b *Builder) Finalise(f func(src []byte) ([]byte, error)) *Builder
 
 // Build freezes the declaration and returns the backend, which
 // implements plugin.Backend and plugin.Renderer both. It panics
-// on a declaration defect, the same rule the plugin builder holds:
-// an empty name, a zero target, an empty kind-template set, no naming, a
-// template that does not parse.
+// on a declaration defect, the same rule the plugin builder
+// follows: an empty name, a zero target, an empty kind-template
+// set, a kind both spelt and refused, no naming, a template that
+// does not parse.
 func (b *Builder) Build() plugin.Backend
 ```
 
@@ -377,8 +433,12 @@ sequenceDiagram
    canonical order: origin identity, then the unit's declaration
    order. Declarations the target's Cluster gathers render
    together through their group template instead, at the position
-   of the cluster's first member. A kind the language spells
-   neither way is the unspelt-kind finding.
+   of the cluster's first member. A declaration of a kind the
+   language declares refused reports under the refused-kind
+   finding with the language's reason. Any other declaration
+   without a template is the unspelt-kind finding. The pass skips
+   both, and withholds a file whose every declaration it skipped,
+   because the file has no content to stamp.
 3. **Splice slots.** Slot contents render through the same kind
    machinery, in the order they were appended, and the pass adds
    no sort of its own, because a slot item carries no attribution
@@ -449,11 +509,11 @@ type Fixture struct {
 // renders, fresh per call, the way the plugin suite's Setup does.
 type Setup func(tb assert.TB) (plugin.Renderer, *Fixture)
 
-// RunBackendSuite holds a renderer to the checks a render returns
+// RunBackendSuite checks a renderer against what a render returns
 // as values: two runs produce byte-identical files, every emit
-// kind renders, slot contents render through the kind machinery,
-// and a format failure reports positioned and does not stop the
-// remaining files.
+// kind renders or reports its declared refusal, slot contents
+// render through the kind machinery, and a format failure reports
+// positioned and does not stop the remaining files.
 func RunBackendSuite(t *testing.T, setup Setup)
 ```
 
@@ -538,9 +598,6 @@ the output contract has to validate twice.
   entries carry the bound name beside the path, so a named import
   form renders from the set alone while the spelling helpers that
   fill it stay the lowering's.
-- Does `RunBackendSuite` need a check refusing an undeclared kind
-  template, or is Build's panic the whole answer? The proposal
-  relies on Build.
 
 ## Unresolved and future work
 

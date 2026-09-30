@@ -4,7 +4,7 @@ title: The output contract
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Review
 created: 2026-08-31
-updated: 2026-08-31
+updated: 2026-09-30
 discussion: none
 supersedes: none
 superseded-by: none
@@ -25,10 +25,13 @@ root; discarding a staged sink leaves no trace. Disk, memory and
 fan-out sinks ship with the kernel, and the contract stays public
 for consumers with somewhere exotic to write.
 
-Nothing here runs inside the composition. A plan carries no sink
-and the run invokes no rendering; the consumer is whoever holds a
-renderer, a contract and a sink together, which today is a test
-and a satellite's own binary.
+The composition declares where files go as a sink factory,
+`Builder.Output`. A run renders its plans and stamps each file
+under the composition's brand. After the render, it opens a fresh
+sink from the factory for each commit, because a sink serves one
+staging. A plan that reported an Error commits nothing, so the
+previous generation of its files remains in place. A composition
+without an output stops after the settle.
 
 ## Motivation
 
@@ -76,23 +79,28 @@ and the sink decides how they get there.
 
 ```go
 // Brand names the tool built on the kernel: the name the marker
-// attributes generation to and the trailer claims ownership
-// under. Lowercase letters, digits and hyphens, nothing else.
+// attributes generation to, the trailer claims ownership under,
+// and the source's carriers open with. A lowercase letter, then
+// lowercase letters, digits and hyphens, nothing else.
 //
 // There is no default. Two tools built on the kernel and run in
 // one repository must never prove ownership of each other's
-// files, so every consumer states its own name.
+// files or read each other's carriers, so every consumer states
+// its own name.
 type Brand string
 
-// Valid reports whether b is spelled the way the frame requires:
-// one character at least, every one from the set above.
+// Valid reports whether b is spelled the way the frame and the
+// carrier mark require: a lowercase letter first, every other
+// character from the set above.
 func (b Brand) Valid() bool
 ```
 
 The kernel ships no brand value. `NewContract` refuses an empty
-brand and any character outside the set, so the brand is safe to
-embed in a comment line, a frame token and a state-directory
-name without escaping.
+brand and any spelling `Valid` rejects, so the brand is safe to
+embed in a comment line, a frame token, a carrier mark and a
+state-directory name without escaping. The leading letter makes
+`<brand>:` read as a directive name's spelling in every carrier
+form.
 
 ### The contract
 
@@ -331,7 +339,9 @@ sequenceDiagram
         S->>D: read existing
         alt identical bytes
             Note over S,D: untouched, mtime kept
-        else new or different
+        else different, and not this brand's intact output
+            Note over S,D: refused, naming the path
+        else new, or this brand's intact output
             S->>D: write <name>.stage, rename
         end
     end
@@ -341,12 +351,15 @@ sequenceDiagram
 ### The three sinks
 
 ```go
-// NewDisk stages for a directory tree. The root is opened once
-// and every staged path resolves inside it: the jail is the
-// operating system's, through os.Root, so a symlink pointing out
-// of the tree does not escape it either. Commit and Discard
-// close the root; the sink serves one staging.
-func NewDisk(root string) (*Disk, error)
+// NewDisk stages for a directory tree and writes as one brand. The
+// root is opened once and every staged path resolves inside it:
+// the jail is the operating system's, through os.Root, so a
+// symlink pointing out of the tree does not escape it either. A
+// commit overwrites an existing file only when its trailer names
+// the brand and its body verifies. It refuses a brand outside
+// Brand.Valid. Commit and Discard close the root, and the sink
+// serves one staging.
+func NewDisk(root string, brand Brand) (*Disk, error)
 
 // NewMem stages in memory, for tests and dry runs. Files returns
 // the committed files; before Commit it returns nothing, because
@@ -361,9 +374,14 @@ func NewTee(first Sink, rest ...Sink) *Tee
 ```
 
 The disk sink stages bytes in memory and touches the tree only
-at Commit. Per file, in path order: create the parent
-directories, read the existing file, and stop there when the
-bytes are identical. Otherwise write to a sibling named
+at Commit. Per file, in path order: read the existing file, and
+stop there when the bytes are identical. A differing file must
+prove the sink's ownership: its trailer names the sink's brand
+and its hash matches its body, the check `Verify` makes. A
+hand-written file, another brand's output and an output edited
+since its stamp are refused with an error naming the path, and
+remain as they are, while the other files still commit. Then
+create the parent directories, write to a sibling named
 `<name>.stage` and rename it over the target, so a reader sees
 the old file or the new one and never a half of either. The
 suffix is reserved at Write so a staged file can never collide
@@ -392,13 +410,14 @@ and syntax, which is exactly the pair its binary ships.
 
 ### What this proposal does not do
 
-The composition does not change: a plan carries no sink, nothing
-at composition validates one, and the run invokes no rendering.
-The plan's name is not in the frame for the same reason: which
-plan produced a file is a composition fact the stamp never sees,
-and the record that carries it is the manifest's. There is no
+A plan has no sink of its own: the composition declares one sink
+factory, and a run opens a fresh sink from it for each commit. The
+plan's name is not in the frame, because which plan produced a file
+is a composition fact the stamp never sees, and the record that
+states it is the manifest's. There is no
 manifest, no drift comparison, no adoption, no overwrite
-refusal, no workspace lock and no prune; every one of those
+refusal beyond the disk sink's trailer check, no workspace lock
+and no prune; every one of those
 consumes the records this proposal defines, and none of them is
 needed to hold the stamp and the sinks to their rules. Deriving a
 path from a file's package and name belongs to layout, which is
@@ -529,10 +548,6 @@ impossible at the API instead of documented against.
 
 ## Open questions
 
-- Is the brand charset too tight? Lowercase, digits and hyphens
-  covers `acme` and `acme-gen`; a reverse-DNS consumer wanting
-  `io.acme.gen` needs dots admitted, and dots are safe in every
-  place the brand arrives.
 - Does the frame need an explicit version key, or is the keyed
   grammar with readers skipping unknown keys enough? A version
   line is one more byte of ceremony on every file; its absence
@@ -542,9 +557,6 @@ impossible at the API instead of documented against.
 
 - The manifest, drift refusal, adoption and the workspace lock
   consume these records and are proposed separately.
-- Wiring a sink role into the plan and a render step into the
-  run is the composition's own change, proposed with it; the
-  plan's name joins the manifest's record there, not the frame.
 - Path derivation from a file's package and name is the layout
   seam's, proposed with layout.
 

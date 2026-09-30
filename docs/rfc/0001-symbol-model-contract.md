@@ -224,9 +224,9 @@ The string grammar, per kind family:
 | Package | `lang:package` | `golang:svc/store` |
 | File | `lang:package/file` | `golang:svc/store/store.go` |
 | top-level type, variable, constant | `lang:package.Name` | `golang:svc/store.Store` |
-| function | `lang:package.Name(disc)` | `golang:svc/store.Open(string)` |
+| function | `lang:package.Name(disc)` | `golang:svc/store.Open()` |
 | member field, enum or sum variant | `lang:package.Owner#Name` | `golang:svc/store.Store#timeout` |
-| method | `lang:package.Owner#Name(disc)` | `golang:svc/store.Store#Get(ctx,string)` |
+| method | `lang:package.Owner#Name(disc)` | `golang:svc/store.Store#Get()` |
 
 Callable identities always carry the parenthesized discriminator,
 even when empty (`#Close()`), so a field and a nullary method with
@@ -672,7 +672,7 @@ assertion, and loses nothing: nil already means "no docs".
 
 ### D. Kind as part of the identity string
 
-Spellings like `golang:svc/store.Store~struct#Get(ctx,string)` would
+Spellings like `golang:svc/store.Store~struct#Get()` would
 round-trip the whole struct through `Parse`. Every worked example in
 the architecture documents spells identities without a kind token,
 manifests already use that form, and the kind is recoverable from the

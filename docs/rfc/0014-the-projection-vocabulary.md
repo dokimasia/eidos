@@ -4,7 +4,7 @@ title: The projection vocabulary and the rules seam
 author: Roy Klopper <roy.klopper@stealthscale.io>
 status: Accepted
 created: 2026-09-02
-updated: 2026-09-25
+updated: 2026-09-30
 discussion: none
 supersedes: none
 superseded-by: none
@@ -172,8 +172,10 @@ type SourceRules interface {
     Resolve(scope Scope, name string, kind directive.ResolutionKind, v View) (symbol.Symbol, error)
 
     // SamplesOf returns two distinct values of a type, or two
-    // refusals carrying the reason. Authored values are read by the
-    // kernel before this is asked.
+    // refusals with the reason. The kernel reads the values an
+    // author stated for the type before it asks. A composite's walk
+    // reads the values of each element through View.Authored before
+    // it derives the element.
     SamplesOf(ref *node.TypeRef, hint string, v View) (sample, alternate Sample)
 
     // ZeroValue returns the type's zero value, and reports false
@@ -206,16 +208,24 @@ A projection reads declarations and facts, and both reads record.
 
 ```go
 // View is what a projection reads through: the invocation's
-// tracked declaration reader, the run's arbitrated facts, and the
-// read set both record into.
+// tracked declaration reader, the run's arbitrated facts, the read
+// set both record into, and the kernel's keys for the authored
+// values.
 type View struct {
-    Decls *store.Reader
-    Facts *meta.Facts
-    Reads meta.Recorder
+    Decls  *store.Reader
+    Facts  *meta.Facts
+    Reads  meta.Recorder
+    Kernel meta.KernelKeys
 }
 
 // Lookup returns one declaration by identity, recorded.
 func (v View) Lookup(id symbol.Identity) (symbol.Symbol, bool)
+
+// Authored returns the two values an author stated for a value of
+// a type. Each half reads the declaration that has the type, then
+// the declaration the type names, and lifts by the shape src folds
+// for the type. A half nobody stated is the zero Sample.
+func (v View) Authored(src SourceRules, subject symbol.Identity, ref *node.TypeRef) (Sample, Sample)
 
 // Fact returns a subject's winning value for a key, recorded.
 func Fact[T meta.FactValue](v View, id symbol.Identity, k meta.Key[T]) (T, bool)
@@ -488,12 +498,15 @@ reference and no shape: a detector that needs a parameter's shape
 asks the bound `TypeOf`, which memoises, so the catalog's detectors
 over every callable compute the shapes they read and no others.
 
-The Go rules return a first parameter of type `context.Context` as
-`Context`, a last return of type `error` as the `Error` role under
-`LastReturn`, a two-value return whose second is `bool` as `OkBool`
-on the second, a return of `iter.Seq` or `iter.Seq2` as `Stream`,
-and `Sync` always, because Go's concurrency is caller-side and never
-appears in a signature.
+The Go rules return a parameter of type `context.Context` in any
+position as `Context`, a last return of type `error` as the `Error`
+role under `LastReturn`, a two-value return whose second is `bool`
+as `OkBool` on the second, a return of `iter.Seq` or `iter.Seq2` as
+`Stream`, and `Sync` always, because Go's concurrency is caller-side
+and never appears in a signature. The rules match `context.Context`,
+`iter.Seq` and `iter.Seq2` by the import path the reference records
+and the name, so a parameter spelled through an aliased import
+classifies alike.
 
 ### MemberSet
 
@@ -615,12 +628,23 @@ at. Validation runs one subject per goroutine, which is why the
 contract states that a `SourceRules` value is safe for concurrent
 use.
 
-The Go rules resolve a bare name in the subject's package, a
-qualified name through the file's recorded imports, a value field
-through the member walk over the subject's type, a host parameter on
-the subject's own signature, a member on a handle through the
-handle's resolved type, and a type in scope the way a bare or
-qualified type spelling resolves.
+The Go rules resolve each kind the way Go scopes it:
+
+- A callable, a package variable and a type in scope resolve through
+  the probe the resolution step uses, which the Go satellite derives
+  from the imports of the subject's file. A bare name probes the
+  subject's package and then, when the name is exported, each
+  dot-imported package. A qualified name probes the package its
+  qualifier's import binds, or each unaliased import when no import
+  binds the qualifier. The first candidate the view declares is the
+  declaration the spelling names.
+- A spelling that is not a bare or qualified name, such as `[]Row`,
+  refuses. The probe strips decoration, so resolving it would name
+  `Row`, a different type from the one the author wrote.
+- A value field resolves through the member walk over the subject's
+  type.
+- A host parameter resolves on the subject's own signature.
+- A member on a handle resolves through the handle's resolved type.
 
 ### Values
 
@@ -752,8 +776,8 @@ it asks the language to derive, and every consumer receives the
 authored answer without knowing an annotator exists.
 
 ```
-//+gen:sample value="us-east" alternate="eu-west"
-//+gen:witness T=int U=time.Duration
+//+acme:sample value="us-east" alternate="eu-west"
+//+acme:witness T=int U=time.Duration
 ```
 
 `sample` takes two string params, `value` and `alternate`, on every
@@ -762,10 +786,20 @@ variable, a constant, an alias, a struct, an enum, a sum. A callable
 carries several and is refused. A language whose comment placement
 cannot reach a parameter or a return, as Go's cannot, reports that
 carrier under its own refusal, positioned; the key admits the kind
-for the languages that can. An authored value is text in the source
-language, so it stamps as text and arrives as a `LiteralRaw`, which
-the source language's backend spells and another language's
-refuses.
+for the languages that can.
+
+An authored value stamps as the text the author wrote. The kernel
+lifts it by the shape the fold returns for the declaration's type,
+with an alias followed to the type it names:
+
+- Text lifts to a string literal of the value.
+- A boolean lifts to a truth value.
+- A scalar lifts to a number at the width the shape states.
+- Every other form lifts to a `LiteralRaw`, which the source
+  language's backend spells and another language's refuses.
+
+On a string field, `value="us-east"` is the string `"us-east"` in
+every target.
 
 `witness` takes one key per type parameter, so its schema is open:
 
@@ -803,6 +837,15 @@ declaration the type names where the reference has a target, and
 asks the language to derive only what neither stated. Each half
 reads independently, because a derived first value is often fine
 where the second has to differ in a way the derivation cannot know.
+`Complete` pairs a stated half with the derived value that differs
+from it.
+
+The language's composite walk reads the same two keys for every
+part it derives, through `View.Authored`: a list's element, a map's
+key and value, and a struct's field. An element of `[]Region` takes
+the values authored on `Region`. A struct's composite takes the
+values authored on its field.
+
 `Witnesses` reads `gen.witness` per parameter first and derives only
 for a bound whose type set is knowable without loading the declaring
 package, which in Go means `any` and `comparable`. The bound
@@ -897,7 +940,7 @@ type OwnershipRules interface {
 }
 
 type PromotionRules interface {
-    Settable(s *node.Struct, v View) []Member
+    Settable(s *node.Struct, v View) MemberSet
 }
 
 type EqualityRules interface {
