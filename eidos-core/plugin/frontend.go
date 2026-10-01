@@ -46,11 +46,12 @@ type Frontend interface {
 	// Overloads reports whether the language declares two callables
 	// of one name in one scope, told apart by their parameters, as
 	// Java and TypeScript do. The load spells such a language's
-	// callable discriminator from its parameter type spellings, which
-	// the frontend normalizes at parse, so one signature spells one
-	// discriminator. A language that cannot overload, such as Go or
-	// protobuf, reports false, and the load gives every callable it
-	// declares the empty discriminator.
+	// callable discriminator from its parameters: each type spelling,
+	// which the frontend normalizes at parse so one signature spells
+	// one discriminator, with its instantiation's arguments and its
+	// variadic and optional marks. A language that cannot overload,
+	// such as Go or protobuf, reports false, and the load gives every
+	// callable it declares the empty discriminator.
 	Overloads() bool
 
 	// Selection is the file claim: gitignore-style globs against
@@ -73,7 +74,7 @@ type Frontend interface {
 	// read folds into every resulting unit's fingerprint, because
 	// the partition decided their shape. A returned error is fatal
 	// to the load: unit shape is structural, and a frontend that
-	// cannot say what its units are has nothing to parse.
+	// cannot name its units has nothing to parse.
 	Partition(ctx context.Context, files []SourceRef, r FileReader) ([][]SourceRef, error)
 
 	// Parse loads one unit through its handle. A unit's problem
@@ -117,6 +118,22 @@ type Importer interface {
 	// bindings are the frontend's own record, as for Resolve. It is
 	// called once per reference, after every unit parsed.
 	ImportOf(scope ImportScope, file string) string
+}
+
+// Exporter is the optional frontend role of a language whose files
+// publish names they do not declare, as a TypeScript export-from
+// statement and a Rust pub use do. When a candidate names no
+// declaration, the resolution step calls Exports for each file of the
+// candidate's package with the candidate's name, and resolves the
+// returned candidates by the same rule, so a reference through a
+// re-export targets the declaration it publishes.
+type Exporter interface {
+	// Exports returns the candidates that a name the file publishes,
+	// and does not declare, could mean, in shadowing tiers. It returns
+	// nil for a name the file does not publish. The scope is the
+	// file's own, with a zero Owner. It is called after every unit
+	// parsed.
+	Exports(scope ImportScope, name string) Candidates
 }
 
 // Candidates is what one spelling could mean, in tiers: each tier is

@@ -4,6 +4,9 @@
 package load_test
 
 import (
+	"context"
+	"slices"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -79,6 +82,71 @@ func dualTree(bound ...string) fstest.MapFS {
 			Data: []byte("package svc/hold\n" + imports + "\ntype Holder dual.Thing\n"),
 		},
 	}
+}
+
+// The fold tree: a holder declared in one file, and a method another
+// file of the package folds onto it through an alias that only the
+// second file binds.
+const (
+	foldPath       = "svc/fold"
+	foldHolderFile = "svc/fold/a.zz"
+	foldMethodFile = "svc/fold/b.zz"
+)
+
+// foldTree returns the fold tree and the package the method's alias
+// names.
+func foldTree() fstest.MapFS {
+	return fstest.MapFS{
+		"a/left/l.zz":  {Data: []byte("package " + leftPath + "\ntype " + thingName + " string\n")},
+		foldHolderFile: {Data: []byte("package " + foldPath + "\ntype " + holderName + "\n")},
+		foldMethodFile: {Data: []byte("package " + foldPath + "\nimport dep " + leftPath +
+			"\non " + holderName + "\nmethod Put dep." + thingName + "\n")},
+	}
+}
+
+// The fold tree's variants: the method's file declares another
+// package, the shape of a Rust impl block in another module, and the
+// file name a line directive puts in a position, which no tree has.
+const (
+	elsewherePath = "svc/elsewhere"
+	linedFile     = "gen.y"
+)
+
+// elsewhereTree returns the fold tree with the method's file in
+// another package than the holder's.
+func elsewhereTree() fstest.MapFS {
+	tree := foldTree()
+	tree[foldMethodFile] = &fstest.MapFile{Data: []byte("package " + elsewherePath + "\nimport dep " + leftPath +
+		"\non " + holderName + "\nmethod Put dep." + thingName + "\n")}
+	return tree
+}
+
+// The re-export trees: a barrel package whose files publish other
+// packages, a second barrel whose file publishes the left package,
+// and a barrel that publishes the first one back.
+const (
+	barrelPath = "svc/barrel"
+	barrelFile = "svc/barrel/index.zz"
+	moreFile   = "svc/barrel/more.zz"
+	innerPath  = "svc/inner"
+	innerFile  = "svc/inner/index.zz"
+	loopPath   = "svc/loop"
+	loopFile   = "svc/loop/index.zz"
+)
+
+// publishing returns the source of a file of one package that
+// publishes the given packages.
+func publishing(pkg string, published ...string) []byte {
+	return []byte("package " + pkg + "\nimport " + frontendtest.ScriptedPublish + " " +
+		strings.Join(published, " ") + "\n")
+}
+
+// barrelTree returns the dual tree with the holder's alias bound to
+// the barrel package, whose one file publishes the given packages.
+func barrelTree(published ...string) fstest.MapFS {
+	tree := dualTree(barrelPath)
+	tree[barrelFile] = &fstest.MapFile{Data: publishing(barrelPath, published...)}
+	return tree
 }
 
 // localTree returns one file declaring a holder and the type its one
@@ -187,6 +255,52 @@ func TestLink(t *testing.T) {
 				genDecl("", typeParamName, symbol.KindStruct),
 				"a sibling type sees no parameter of another declaration")
 		})
+
+		t.Run("resolves a folded method's reference through its own file's bindings", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, foldTree())
+			coretest.AssertCodes(t, sink)
+			holder, found := g.Lookup(symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: foldPath, Name: holderName, Kind: symbol.KindStruct,
+			})
+			assert.True(t, found, "the holder is indexed")
+			assert.Equal(t, holder.(*node.Struct).Methods[0].Params[0].Type.Target, thingIn(leftPath),
+				"the file that writes the method binds the alias, and the holder's file does not")
+		})
+
+		t.Run("resolves a folded method's reference through its own file's bindings in another package",
+			func(t *testing.T) {
+				t.Parallel()
+
+				g, _, sink := loadTree(t, elsewhereTree())
+				coretest.AssertCodes(t, sink)
+				holder, found := g.Lookup(symbol.Identity{
+					Lang: frontendtest.ScriptedLang, Package: foldPath, Name: holderName, Kind: symbol.KindStruct,
+				})
+				assert.True(t, found, "the holder is indexed")
+				assert.Equal(t, holder.(*node.Struct).Methods[0].Params[0].Type.Target, thingIn(leftPath),
+					"the method's file declares another package and binds the alias")
+			})
+
+		t.Run("resolves a declaration whose position names no recorded file under its enclosing scope",
+			func(t *testing.T) {
+				t.Parallel()
+
+				tree := foldTree()
+				tree[foldHolderFile] = &fstest.MapFile{Data: []byte("package " + foldPath + "\nimport dep " +
+					leftPath + "\ntype " + holderName + "\nmethod Put dep." + thingName + "\n")}
+				delete(tree, foldMethodFile)
+				g, _, sink := loadTree(t, tree, with(&relined{frontendtest.NewScripted()}))
+				coretest.AssertCodes(t, sink)
+				holder, _ := g.Lookup(symbol.Identity{
+					Lang: frontendtest.ScriptedLang, Package: foldPath, Name: holderName, Kind: symbol.KindStruct,
+				})
+				method := holder.(*node.Struct).Methods[0]
+				assert.Equal(t, method.Pos.File, linedFile, "the method's position names the directive's file")
+				assert.Equal(t, method.Params[0].Type.Target, thingIn(leftPath),
+					"the holder's file binds the alias the method spells")
+			})
 
 		t.Run("hands Resolve the innermost enclosing type as the owner", func(t *testing.T) {
 			t.Parallel()
@@ -301,6 +415,140 @@ func TestLink(t *testing.T) {
 			assert.Empty(t, ref.Package, "the load records no declaring file for the other frontend's declarations")
 		})
 	})
+
+	t.Run("hitsOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("follows a re-export to the declaration it publishes", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, barrelTree(leftPath), with(frontendtest.NewScriptedExporter()))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, holderRef(t, g, holdPath).Target, thingIn(leftPath),
+				"the barrel declares no Thing and publishes the left package's")
+		})
+
+		t.Run("follows no re-export for a frontend outside the exporter role", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, barrelTree(leftPath))
+			assert.True(t, holderRef(t, g, holdPath).Target.IsZero(), "the barrel declares no Thing")
+		})
+
+		t.Run("follows a re-export of a re-export", func(t *testing.T) {
+			t.Parallel()
+
+			tree := barrelTree(innerPath)
+			tree[innerFile] = &fstest.MapFile{Data: publishing(innerPath, leftPath)}
+			g, _, _ := loadTree(t, tree, with(frontendtest.NewScriptedExporter()))
+			assert.Equal(t, holderRef(t, g, holdPath).Target, thingIn(leftPath),
+				"the inner barrel publishes what the outer one publishes")
+		})
+
+		t.Run("reports AmbiguousReference for a name two published packages declare", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, sink := loadTree(t, barrelTree(leftPath, rightPath), with(frontendtest.NewScriptedExporter()))
+			coretest.AssertReports(t, sink, load.AmbiguousReference)
+		})
+
+		t.Run("resolves nothing through a cycle of re-exports", func(t *testing.T) {
+			t.Parallel()
+
+			tree := barrelTree(loopPath)
+			tree[loopFile] = &fstest.MapFile{Data: publishing(loopPath, barrelPath)}
+			g, _, _ := loadTree(t, tree, with(frontendtest.NewScriptedExporter()))
+			assert.True(t, holderRef(t, g, holdPath).Target.IsZero(),
+				"following stops where the path meets the barrel's name again")
+		})
+
+		t.Run("decides by the first file whose re-exports resolve", func(t *testing.T) {
+			t.Parallel()
+
+			tree := barrelTree(missingPath)
+			tree[moreFile] = &fstest.MapFile{Data: publishing(barrelPath, leftPath)}
+			g, _, _ := loadTree(t, tree, with(frontendtest.NewScriptedExporter()))
+			assert.Equal(t, holderRef(t, g, holdPath).Target, thingIn(leftPath),
+				"the first file publishes nothing the graph declares")
+		})
+
+		t.Run("decides by the first file in path order whatever the partition's order", func(t *testing.T) {
+			t.Parallel()
+
+			tree := barrelTree(rightPath)
+			tree[moreFile] = &fstest.MapFile{Data: publishing(barrelPath, leftPath)}
+			g, _, sink := loadTree(t, tree, with(&reversedExporter{frontendtest.NewScriptedExporter()}))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, holderRef(t, g, holdPath).Target, thingIn(rightPath),
+				"the barrel's index file sorts before its second file")
+		})
+
+		t.Run("follows no re-export for a candidate that names a member", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, barrelTree(leftPath), with(&memberExporter{frontendtest.NewScriptedExporter()}))
+			assert.True(t, holderRef(t, g, holdPath).Target.IsZero(), "no file re-exports a type's member")
+		})
+	})
+}
+
+// relined is the scripted language with every method's position
+// moved into a file no tree has, the shape of a Go line directive
+// that names the source a file was generated from.
+type relined struct {
+	*frontendtest.Scripted
+}
+
+// Parse lowers the unit, then moves every method's position.
+func (f *relined) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+	if err := f.Scripted.Parse(ctx, u); err != nil {
+		return err
+	}
+	for _, pkg := range u.Graph().Packages() {
+		node.Walk(pkg, func(s symbol.Symbol) bool {
+			if m, is := s.(*node.Method); is {
+				m.Pos.File = linedFile
+			}
+			return true
+		})
+	}
+	return nil
+}
+
+// reversedExporter is the scripted language in the exporter role
+// whose partition lists each unit's members in reverse path order.
+type reversedExporter struct {
+	*frontendtest.ScriptedExporter
+}
+
+// Partition reverses the members of each scripted unit.
+func (f *reversedExporter) Partition(
+	ctx context.Context, files []plugin.SourceRef, r plugin.FileReader,
+) ([][]plugin.SourceRef, error) {
+	parts, err := f.ScriptedExporter.Partition(ctx, files, r)
+	for _, part := range parts {
+		slices.Reverse(part)
+	}
+	return parts, err
+}
+
+// memberExporter is the scripted language in the exporter role whose
+// every candidate names a member of the holder, the shape of a
+// language that spells a nested type through its owner.
+type memberExporter struct {
+	*frontendtest.ScriptedExporter
+}
+
+// Resolve returns the scripted candidates, each a member of the
+// holder.
+func (f *memberExporter) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
+	tiers := f.ScriptedExporter.Resolve(scope, spelling)
+	for _, tier := range tiers {
+		for i := range tier {
+			tier[i].Owner = holderName
+		}
+	}
+	return tiers
 }
 
 // importing is the scripted language in the importer role. Its

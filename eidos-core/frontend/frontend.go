@@ -29,18 +29,20 @@ type Classifier func(u *plugin.SourceUnit) error
 // is data except the functions. Build freezes it, and a Builder is
 // not reused afterwards.
 type Builder struct {
-	name        plugin.ID
-	lang        symbol.Lang
-	syntax      plugin.CommentSyntax
-	overloads   bool
-	version     string
-	selection   []string
-	partition   func(context.Context, []plugin.SourceRef, plugin.FileReader) ([][]plugin.SourceRef, error)
-	parse       func(context.Context, *plugin.SourceUnit) error
-	resolve     func(plugin.ImportScope, string) plugin.Candidates
-	classifiers []Classifier
-	options     any
-	hasOptions  bool
+	name         plugin.ID
+	lang         symbol.Lang
+	syntax       plugin.CommentSyntax
+	overloads    bool
+	version      string
+	selection    []string
+	partition    func(context.Context, []plugin.SourceRef, plugin.FileReader) ([][]plugin.SourceRef, error)
+	parse        func(context.Context, *plugin.SourceUnit) error
+	resolve      func(plugin.ImportScope, string) plugin.Candidates
+	classifiers  []Classifier
+	options      any
+	hasOptions   bool
+	dependencies func(context.Context, plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error)
+	exports      func(plugin.ImportScope, string) plugin.Candidates
 }
 
 // New starts a frontend declaration for one language.
@@ -61,10 +63,11 @@ func (b *Builder) Version(v string) *Builder {
 
 // Overloads declares that the language overloads: two callables of
 // one name in one scope, told apart by their parameters. The load
-// then spells each callable's discriminator from its parameter type
-// spellings, which the parse normalizes. A declaration without it is
-// a language that cannot overload, and every callable it loads takes
-// the empty discriminator.
+// then spells each callable's discriminator from its parameters: the
+// type spellings, which the parse normalizes, with their
+// instantiations' arguments and their variadic and optional marks. A
+// declaration without it is a language that cannot overload, and
+// every callable it loads takes the empty discriminator.
 func (b *Builder) Overloads() *Builder {
 	b.overloads = true
 	return b
@@ -129,10 +132,35 @@ func (b *Builder) Options(o any) *Builder {
 	return b
 }
 
+// Dependencies declares the language's dependency rounds: the units
+// that declare what the loaded files import from outside the
+// workspace, placed through the round's recorded door. The built
+// frontend implements [plugin.Dependent], and the load parses every
+// unit the function returns at [plugin.DepthSignatures].
+func (b *Builder) Dependencies(
+	dependencies func(context.Context, plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error),
+) *Builder {
+	b.dependencies = dependencies
+	return b
+}
+
+// Exports declares what a file publishes and does not declare, in
+// shadowing tiers, as a re-export does. The built frontend implements
+// [plugin.Exporter], and the resolution step follows a candidate that
+// names no declaration through the function.
+func (b *Builder) Exports(exports func(plugin.ImportScope, string) plugin.Candidates) *Builder {
+	b.exports = exports
+	return b
+}
+
 // Build freezes the declaration and returns the lowered frontend,
 // which implements [plugin.Frontend]. The conformance suite runs the
 // same checks over it that a hand-rolled frontend meets, because the
-// lowering adds nothing the role does not state.
+// lowering adds nothing the role does not state. The frontend
+// implements an optional role exactly when the declaration states it:
+// [plugin.OptionsProvider] for [Builder.Options], [plugin.Dependent]
+// for [Builder.Dependencies], and [plugin.Exporter] for
+// [Builder.Exports].
 //
 // Build panics on a declaration defect: an empty name or language,
 // no declared version, an empty claim, or a missing partition,
@@ -170,11 +198,74 @@ func (b *Builder) Build() plugin.Frontend {
 		selection: b.selection, partition: b.partition, parse: b.parse,
 		resolve: b.resolve, classifiers: b.classifiers,
 	}
+	var roles role
 	if b.hasOptions {
-		return &optionedFrontend{builtFrontend: base, options: b.options}
+		roles |= optioned
 	}
-	return base
+	if b.dependencies != nil {
+		roles |= dependent
+	}
+	if b.exports != nil {
+		roles |= exporter
+	}
+	o, d, e := optionsRole{b.options}, dependentRole{b.dependencies}, exporterRole{b.exports}
+	switch roles {
+	case optioned:
+		return &struct {
+			*builtFrontend
+			optionsRole
+		}{base, o}
+	case dependent:
+		return &struct {
+			*builtFrontend
+			dependentRole
+		}{base, d}
+	case exporter:
+		return &struct {
+			*builtFrontend
+			exporterRole
+		}{base, e}
+	case optioned | dependent:
+		return &struct {
+			*builtFrontend
+			optionsRole
+			dependentRole
+		}{base, o, d}
+	case optioned | exporter:
+		return &struct {
+			*builtFrontend
+			optionsRole
+			exporterRole
+		}{base, o, e}
+	case dependent | exporter:
+		return &struct {
+			*builtFrontend
+			dependentRole
+			exporterRole
+		}{base, d, e}
+	case optioned | dependent | exporter:
+		return &struct {
+			*builtFrontend
+			optionsRole
+			dependentRole
+			exporterRole
+		}{base, o, d, e}
+	default:
+		return base
+	}
 }
+
+// role is one optional role a declaration adds to its built frontend,
+// as a bit of the set Build composes the frontend's type from.
+type role uint8
+
+// The optional roles: the options a load keys on, the dependency
+// rounds, and the re-exports the resolution step follows.
+const (
+	optioned  role = 1
+	dependent role = 2
+	exporter  role = 4
+)
 
 // builtFrontend is a lowered frontend declaration: the facts as
 // data, and the declared functions behind the role's methods.
@@ -242,12 +333,37 @@ func (f *builtFrontend) Resolve(
 	return f.resolve(scope, spelling)
 }
 
-// optionedFrontend is a built frontend declaring configuration.
-type optionedFrontend struct {
-	*builtFrontend
+// optionsRole is the options role of a built frontend that declares
+// configuration.
+type optionsRole struct {
 	options any
 }
 
 // Options implements [plugin.OptionsProvider] with the declared
 // value.
-func (f *optionedFrontend) Options() any { return f.options }
+func (r optionsRole) Options() any { return r.options }
+
+// dependentRole is the dependent role of a built frontend that
+// declares dependency rounds.
+type dependentRole struct {
+	dependencies func(context.Context, plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error)
+}
+
+// Dependencies implements [plugin.Dependent] through the declared
+// function.
+func (r dependentRole) Dependencies(
+	ctx context.Context, round plugin.DependencyRound, reader plugin.StoreReader,
+) ([][]plugin.SourceRef, error) {
+	return r.dependencies(ctx, round, reader)
+}
+
+// exporterRole is the exporter role of a built frontend that declares
+// what its files publish.
+type exporterRole struct {
+	exports func(plugin.ImportScope, string) plugin.Candidates
+}
+
+// Exports implements [plugin.Exporter] through the declared function.
+func (r exporterRole) Exports(scope plugin.ImportScope, name string) plugin.Candidates {
+	return r.exports(scope, name)
+}

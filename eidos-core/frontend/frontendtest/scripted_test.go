@@ -5,6 +5,7 @@ package frontendtest_test
 
 import (
 	"context"
+	"io/fs"
 	"testing"
 	"testing/fstest"
 
@@ -25,6 +26,7 @@ import (
 const (
 	svcPath       = "svc"
 	svcFile       = "svc/a.zz"
+	foldFile      = "svc/b.zz"
 	absentFile    = "svc/gone.zz"
 	depPackage    = "dep"
 	aliasName     = "api"
@@ -232,6 +234,32 @@ func TestScripted(t *testing.T) {
 				assert.True(t, gb.Attachments()[0].Raw.DirectiveShaped, "validation reads the shape off the instance")
 			})
 
+		t.Run("folds an on statement's methods onto a type an earlier member declared", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontendtest.NewScripted()
+			u, sink := unitOver(f, fstest.MapFS{
+				svcFile:  {Data: []byte("package svc\ntype A\n")},
+				foldFile: {Data: []byte("package svc\non A\nmethod Get int\n")},
+			}, svcFile, foldFile)
+			assert.NoError(t, f.Parse(context.Background(), u), "the unit parses")
+			coretest.AssertCodes(t, sink)
+			declared := u.Graph().Packages()[0].Files[0].Decls[0].(*node.Struct)
+			assert.Length(t, declared.Methods, 1, "the method folds onto the type")
+			assert.Equal(t, declared.Methods[0].Pos.File, foldFile, "the method is at its own file's position")
+		})
+
+		t.Run("reports an on statement that names no declared type", func(t *testing.T) {
+			t.Parallel()
+
+			f := frontendtest.NewScripted()
+			u, sink := unitOver(f, fstest.MapFS{
+				foldFile: {Data: []byte("package svc\non A\nmethod Get int\n")},
+			}, foldFile)
+			assert.NoError(t, f.Parse(context.Background(), u), "the unknown type is not fatal")
+			coretest.AssertReports(t, sink, frontendtest.ScriptedBadFile)
+		})
+
 		t.Run("returns the read's own error for an absent member", func(t *testing.T) {
 			t.Parallel()
 
@@ -343,7 +371,145 @@ func TestScripted(t *testing.T) {
 			assert.Contains(t, err.Error(), "fake", "the error names the namespace")
 		})
 	})
+
+	t.Run("Dependencies", func(t *testing.T) {
+		t.Parallel()
+
+		f := frontendtest.NewScriptedDependent()
+		lib := plugin.StorePath(frontendtest.ScriptedStore, extMember)
+		dependencies := func(tb assert.TB, store fs.FS, needs ...string) [][]plugin.SourceRef {
+			tb.Helper()
+
+			units, err := f.Dependencies(context.Background(), roundOf(needs...), storeReader{fsys: withStore(store)})
+			assert.NoError(tb, err, "the round lists the store")
+			return units
+		}
+
+		t.Run("returns the scripted files of a need's directory as one unit", func(t *testing.T) {
+			t.Parallel()
+
+			store := fstest.MapFS{extMember: {Data: []byte(extSource)}}
+			assert.Equal(t, dependencies(t, store, extPath), [][]plugin.SourceRef{{{Path: lib}}},
+				"the member is the qualified path of the store's file")
+		})
+
+		t.Run("leaves out a file without the scripted suffix", func(t *testing.T) {
+			t.Parallel()
+
+			store := fstest.MapFS{
+				extMember: {Data: []byte(extSource)},
+				extNotes:  {Data: []byte("not source\n")},
+			}
+			assert.Equal(t, dependencies(t, store, extPath), [][]plugin.SourceRef{{{Path: lib}}},
+				"the notes are not source")
+		})
+
+		t.Run("leaves out a directory with the scripted suffix", func(t *testing.T) {
+			t.Parallel()
+
+			store := fstest.MapFS{
+				extMember: {Data: []byte(extSource)},
+				extNested: {Data: []byte(extSource)},
+			}
+			assert.Equal(t, dependencies(t, store, extPath), [][]plugin.SourceRef{{{Path: lib}}},
+				"a directory is never a member")
+		})
+
+		t.Run("returns no unit for a need whose directory has no scripted file", func(t *testing.T) {
+			t.Parallel()
+
+			store := fstest.MapFS{extNotes: {Data: []byte("not source\n")}}
+			assert.Empty(t, dependencies(t, store, extPath), "a unit without members has nothing to parse")
+		})
+
+		t.Run("returns no unit for a need the store has no directory for", func(t *testing.T) {
+			t.Parallel()
+
+			store := fstest.MapFS{extMember: {Data: []byte(extSource)}}
+			assert.Empty(t, dependencies(t, store, absentPackage), "the store does not declare the package")
+		})
+
+		t.Run("returns no unit for a load without the store", func(t *testing.T) {
+			t.Parallel()
+
+			units, err := f.Dependencies(context.Background(), roundOf(extPath), storeReader{fsys: fstest.MapFS{}})
+			assert.NoError(t, err, "a store the composition leaves out turns the source off")
+			assert.Empty(t, units, "nothing is read")
+		})
+
+		t.Run("returns a listing's own error", func(t *testing.T) {
+			t.Parallel()
+
+			store := failingFS{tree: fstest.MapFS{extMember: {Data: []byte(extSource)}}, fail: extPath}
+			_, err := f.Dependencies(context.Background(), roundOf(extPath), storeReader{fsys: withStore(store)})
+			assert.ErrorIs(t, err, fs.ErrPermission, "the error is the store's own")
+		})
+	})
+
+	t.Run("Exports", func(t *testing.T) {
+		t.Parallel()
+
+		f := frontendtest.NewScriptedExporter()
+
+		t.Run("returns the name in each package the publishing alias binds as one tier", func(t *testing.T) {
+			t.Parallel()
+
+			scope := plugin.ImportScope{Bindings: map[string][]string{
+				frontendtest.ScriptedPublish: {depPackage, extPath},
+			}}
+			assert.Equal(t, f.Exports(scope, ownSpelling), plugin.Candidates{{
+				{Lang: frontendtest.ScriptedLang, Package: depPackage, Name: ownSpelling},
+				{Lang: frontendtest.ScriptedLang, Package: extPath, Name: ownSpelling},
+			}}, "a published package's name is a candidate")
+		})
+
+		t.Run("returns nothing for a file that publishes no package", func(t *testing.T) {
+			t.Parallel()
+
+			scope := plugin.ImportScope{Bindings: map[string][]string{aliasName: {depPackage}}}
+			assert.Empty(t, f.Exports(scope, ownSpelling), "an import publishes nothing")
+		})
+	})
 }
+
+// roundOf returns a first round with one need per path.
+func roundOf(paths ...string) plugin.DependencyRound {
+	needs := make([]plugin.Need, len(paths))
+	for i, p := range paths {
+		needs[i] = plugin.Need{Path: p}
+	}
+	return plugin.DependencyRound{Number: 1, Needs: needs}
+}
+
+// withStore returns an empty workspace tree with one store beside it
+// under the scripted dependent's store name.
+func withStore(store fs.FS) storeTree {
+	return storeTree{MapFS: fstest.MapFS{}, stores: map[string]fs.FS{frontendtest.ScriptedStore: store}}
+}
+
+// storeTree is a test tree with named stores beside it.
+type storeTree struct {
+	fstest.MapFS
+	stores map[string]fs.FS
+}
+
+// Store returns one of the tree's stores.
+func (t storeTree) Store(name string) (fs.FS, bool) {
+	s, held := t.stores[name]
+	return s, held
+}
+
+// storeReader is a dependency round's door over a test tree, which
+// resolves a qualified path where the tree has stores.
+type storeReader struct {
+	fsys fs.FS
+}
+
+// Read returns one file's bytes.
+func (r storeReader) Read(path string) ([]byte, error) { return plugin.ReadFile(r.fsys, path) }
+
+// ReadDir returns one directory's entries.
+func (r storeReader) ReadDir(path string) ([]fs.DirEntry, error) { return plugin.ReadDir(r.fsys, path) }
 
 // reader is the recorded partition door over a test tree.
 type reader struct {

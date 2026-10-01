@@ -98,15 +98,17 @@ func (u *SourceUnit) Files() []SourceRef { return u.files }
 
 // Read returns one file's bytes through the unit's one door. A
 // path outside the unit's files and their declared shared inputs
-// refuses, naming the path, and every accepted read folds path
-// and content into the unit's fingerprint, each behind its length.
+// refuses, naming the path. A qualified path reads from the store it
+// names, through the unit's tree as a [StoreFS], the way [ReadFile]
+// resolves it. Every accepted read folds path and content into the
+// unit's fingerprint, each behind its length.
 func (u *SourceUnit) Read(path string) ([]byte, error) {
 	if !u.allowed[path] {
 		return nil, fmt.Errorf(
 			"plugin: %s is outside the unit's files and shared inputs", path,
 		)
 	}
-	b, err := fs.ReadFile(u.fsys, path)
+	b, err := ReadFile(u.fsys, path)
 	if err != nil {
 		return nil, fmt.Errorf("plugin: read %s: %w", path, err)
 	}
@@ -331,42 +333,67 @@ type commentLine struct {
 }
 
 // commentLines removes one comment's markers, one entry per source
-// line so an index maps back to a line offset: the first matching
-// line prefix, or a block's delimiters and per-line gutter, one
-// leading space tolerated after either.
+// line so an index maps back to a line offset: a block's delimiters
+// and per-line gutter, or each line's line prefix, one leading space
+// tolerated after either. The longest form that matches decides,
+// because one language's markers can begin with each other, as Rust's
+// //, /// and //! do, and the shorter marker would leave the rest of
+// the longer one in the text.
 func commentLines(raw string, syntax CommentSyntax) []commentLine {
-	text := raw
-	for _, b := range syntax.Blocks {
-		if strings.HasPrefix(text, b.Open) && strings.HasSuffix(text, b.Close) {
-			body := strings.TrimSuffix(strings.TrimPrefix(text, b.Open), b.Close)
-			lines := strings.Split(body, "\n")
-			out := make([]commentLine, 0, len(lines))
-			for _, line := range lines {
-				trimmed := strings.TrimSpace(line)
-				if b.Gutter != "" {
-					trimmed = strings.TrimPrefix(trimmed, b.Gutter)
-					trimmed = strings.TrimPrefix(trimmed, " ")
-				}
-				out = append(out, commentLine{text: trimmed})
+	if b, enclosed := enclosingBlock(raw, syntax.Blocks); enclosed {
+		body := strings.TrimSuffix(strings.TrimPrefix(raw, b.Open), b.Close)
+		lines := strings.Split(body, "\n")
+		out := make([]commentLine, 0, len(lines))
+		for _, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if b.Gutter != "" {
+				trimmed = strings.TrimPrefix(trimmed, b.Gutter)
+				trimmed = strings.TrimPrefix(trimmed, " ")
 			}
-			return out
+			out = append(out, commentLine{text: trimmed})
 		}
+		return out
 	}
-	lines := strings.Split(text, "\n")
+	lines := strings.Split(raw, "\n")
 	out := make([]commentLine, 0, len(lines))
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
 		adjacent := false
-		for _, p := range syntax.Line {
-			if rest, marked := strings.CutPrefix(trimmed, p); marked {
-				adjacent = rest != "" && rest[0] != ' ' && rest[0] != '\t'
-				trimmed = strings.TrimPrefix(rest, " ")
-				break
-			}
+		if marker := longestPrefix(trimmed, syntax.Line); marker != "" {
+			rest := trimmed[len(marker):]
+			adjacent = rest != "" && rest[0] != ' ' && rest[0] != '\t'
+			trimmed = strings.TrimPrefix(rest, " ")
 		}
 		out = append(out, commentLine{text: trimmed, adjacent: adjacent})
 	}
 	return out
+}
+
+// enclosingBlock returns the block form whose opener and closer
+// enclose the whole comment, the longest opener among several, and
+// false when no form does.
+func enclosingBlock(raw string, blocks []CommentBlock) (CommentBlock, bool) {
+	var best CommentBlock
+	found := false
+	for _, b := range blocks {
+		if (!found || len(b.Open) > len(best.Open)) &&
+			strings.HasPrefix(raw, b.Open) && strings.HasSuffix(raw, b.Close) {
+			best, found = b, true
+		}
+	}
+	return best, found
+}
+
+// longestPrefix returns the longest marker the line starts with, and
+// the empty string when it starts with none.
+func longestPrefix(line string, markers []string) string {
+	best := ""
+	for _, m := range markers {
+		if len(m) > len(best) && strings.HasPrefix(line, m) {
+			best = m
+		}
+	}
+	return best
 }
 
 // carrierMarks are the three marks a carrier opens with under one
@@ -514,14 +541,20 @@ func newGraphBuilder() *GraphBuilder {
 }
 
 // Package returns the package for one path, created on first
-// touch: the container every file of that path joins.
+// touch: the container every file of that path joins. The empty path
+// is the package a language's global scope or unnamed package
+// declares into, and it has no segments.
 func (gb *GraphBuilder) Package(path string) *node.Package {
 	if p, held := gb.packages[path]; held {
 		return p
 	}
+	var segments []string
+	if path != "" {
+		segments = strings.Split(path, "/")
+	}
 	p := &node.Package{
 		ID:   symbol.Identity{Package: path},
-		Path: strings.Split(path, "/"),
+		Path: segments,
 	}
 	gb.packages[path] = p
 	gb.order = append(gb.order, path)

@@ -11,6 +11,7 @@ import (
 	"hash"
 	"io"
 	"io/fs"
+	"maps"
 	"runtime"
 	"slices"
 	"strings"
@@ -59,9 +60,9 @@ type Config struct {
 
 	// PluginSet is the composition's fingerprint, folded into every
 	// unit key: a recorded graph contains stamps a changed plugin
-	// set reinterprets. A composed workspace derives it —
-	// [go.dokimi.dev/eidos/core/workspace.Workspace.Fingerprint] —
-	// and a hand-written literal is a fixture's shortcut, never a
+	// set reinterprets. A composed workspace derives it with
+	// [go.dokimi.dev/eidos/core/workspace.Workspace.Fingerprint], and
+	// a hand-written literal is a fixture's shortcut, never a
 	// production caller's.
 	PluginSet []byte
 
@@ -79,6 +80,14 @@ type Config struct {
 	// is ordinary input. The load refuses a brand outside
 	// [output.Brand.Valid].
 	Brand output.Brand
+
+	// Stores maps each store's name to its read-only tree outside the
+	// workspace, which dependency units read: a Go module cache, a Go
+	// standard library, a JDK's ct.sym, a Maven or Gradle cache. The
+	// composition opens the trees, and no key folds where they are.
+	// The load refuses a name [plugin.ValidStoreName] refuses and a
+	// name without a tree.
+	Stores map[string]fs.FS
 }
 
 // Report is what one load records beside the graph.
@@ -102,24 +111,32 @@ type UnitReport struct {
 	// Key is the unit's finished key, folded as the package
 	// documentation states.
 	Key []byte
+	// Round is zero for a unit the partition returned, and the
+	// dependency round's number for a unit a [plugin.Dependent]
+	// frontend returned.
+	Round int
 }
 
 // unit is one compilation unit on its way through the pipeline.
 type unit struct {
-	frontend  plugin.Frontend
-	files     []plugin.SourceRef
-	depth     plugin.Depth
-	partition []byte // the partition's read fold, shared per frontend
+	frontend plugin.Frontend
+	files    []plugin.SourceRef
+	depth    plugin.Depth
+	// partition is the read fold of the door that shaped the unit:
+	// the partition's, shared per frontend, or the dependency round's,
+	// shared per round.
+	partition []byte
 	config    []byte // the frontend's options, canonically encoded
 	version   string
+	round     int
 	sink      *diag.Sink
 	src       *plugin.SourceUnit
 }
 
 // Load drives every frontend over the tree: select, partition,
-// parse, splice, resolve, seal. It returns the sealed graph and
-// the report. A nil graph means nothing loaded, and the error
-// states why.
+// parse, load the dependencies, splice, resolve, seal. It returns
+// the sealed graph and the report. A nil graph means nothing loaded,
+// and the error states why.
 func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 	if cfg.FS == nil {
 		return nil, nil, errors.New("load: no tree to read")
@@ -140,6 +157,10 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 			)
 		}
 	}
+	if err := checkStores(cfg.Stores); err != nil {
+		return nil, nil, err
+	}
+	tree := storeTree{FS: cfg.FS, stores: cfg.Stores}
 
 	files, err := treeFiles(cfg.FS)
 	if err != nil {
@@ -149,17 +170,30 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 	if err != nil {
 		return nil, nil, err
 	}
+	claimed := make(map[string]bool, len(files))
+	for _, paths := range claims {
+		for _, path := range paths {
+			claimed[path] = true
+		}
+	}
 	excluded, err := dropOutput(cfg, claims)
 	if err != nil {
 		return nil, nil, err
 	}
-	units, err := partitionAll(ctx, cfg, claims)
+	units, err := partitionAll(ctx, cfg, tree, claims)
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := parseAll(ctx, cfg, units); err != nil {
+	err = parseAll(ctx, cfg, tree, units)
+	if err != nil {
 		return nil, nil, err
 	}
+	deps, err := dependencies(ctx, cfg, tree, claimed, units)
+	if err != nil {
+		return nil, nil, err
+	}
+	units = append(units, deps...)
+	slices.SortFunc(units, byFirstMember)
 	for _, u := range units {
 		for d := range u.sink.All() {
 			cfg.Sink.Report(d)
@@ -191,6 +225,7 @@ func Load(ctx context.Context, cfg Config) (*store.Graph, *Report, error) {
 			Files:    memberPaths(u.files),
 			Depth:    u.depth,
 			Key:      unitKey(u, cfg.PluginSet, cfg.Brand),
+			Round:    u.round,
 		})
 	}
 	return g, report, nil
@@ -332,7 +367,7 @@ func tailKeyed(fsys fs.FS, path string, buf []byte) (bool, error) {
 // the partition contract, and fixes the splice order: units sorted
 // by their first file's path, which is unique because claims do
 // not overlap.
-func partitionAll(ctx context.Context, cfg Config, claims [][]string) ([]*unit, error) {
+func partitionAll(ctx context.Context, cfg Config, tree storeTree, claims [][]string) ([]*unit, error) {
 	var units []*unit
 	for i, f := range cfg.Frontends {
 		if len(claims[i]) == 0 {
@@ -342,7 +377,7 @@ func partitionAll(ctx context.Context, cfg Config, claims [][]string) ([]*unit, 
 		for j, path := range claims[i] {
 			refs[j] = plugin.SourceRef{Path: path}
 		}
-		reader := &recordingReader{fsys: cfg.FS, reads: sha256.New()}
+		reader := &recordingReader{fsys: tree, reads: sha256.New()}
 		parts, err := f.Partition(ctx, refs, reader)
 		if err != nil {
 			return nil, fmt.Errorf("load: partition %s: %w", f.Name(), err)
@@ -368,10 +403,15 @@ func partitionAll(ctx context.Context, cfg Config, claims [][]string) ([]*unit, 
 			})
 		}
 	}
-	slices.SortFunc(units, func(a, b *unit) int {
-		return strings.Compare(a.files[0].Path, b.files[0].Path)
-	})
+	slices.SortFunc(units, byFirstMember)
 	return units, nil
+}
+
+// byFirstMember orders units by their first member's path, the
+// splice order. Qualified paths sort among workspace paths, and the
+// order is total because no file is a member of two units.
+func byFirstMember(a, b *unit) int {
+	return strings.Compare(a.files[0].Path, b.files[0].Path)
 }
 
 // checkPartition checks a frontend's partition against the
@@ -442,7 +482,7 @@ func depthOf(files []plugin.SourceRef, roots []string) plugin.Depth {
 // unit and its own sink, so scheduling orders neither the graph
 // nor the findings. A frontend's returned error is fatal to the
 // whole load and cancels the rest.
-func parseAll(ctx context.Context, cfg Config, units []*unit) error {
+func parseAll(ctx context.Context, cfg Config, tree storeTree, units []*unit) error {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -461,7 +501,7 @@ func parseAll(ctx context.Context, cfg Config, units []*unit) error {
 			}
 			u.sink = diag.NewSink()
 			u.src = plugin.NewSourceUnit(
-				u.files, cfg.FS, u.depth, u.frontend.Syntax(),
+				u.files, tree, u.depth, u.frontend.Syntax(),
 				string(cfg.Brand), u.sink, u.frontend.Name(),
 			)
 			if err := u.frontend.Parse(ctx, u.src); err != nil {
@@ -486,17 +526,24 @@ func parseAll(ctx context.Context, cfg Config, units []*unit) error {
 	return nil
 }
 
-// recordingReader is the partition's door: reads over the whole
-// tree, each folded into the partition sum, which every resulting
-// unit's key folds.
+// recordingReader is a recorded door over the workspace tree and the
+// load's stores: the partition's, whose sum every unit of the
+// partition keys on, and a dependency round's, whose sum every unit
+// of the round keys on. A read that fails records nothing, because
+// it read nothing.
 type recordingReader struct {
 	fsys  fs.FS
 	reads hash.Hash
 }
 
+// listingMark opens the record of a directory listing. A read's
+// record opens with its path, which is never empty and never contains
+// a NUL byte, so the two kinds of record cannot pass for each other.
+const listingMark = "\x00list\x00"
+
 // Read returns one file's bytes and records the read.
 func (r *recordingReader) Read(path string) ([]byte, error) {
-	b, err := fs.ReadFile(r.fsys, path)
+	b, err := plugin.ReadFile(r.fsys, path)
 	if err != nil {
 		return nil, fmt.Errorf("load: read %s: %w", path, err)
 	}
@@ -505,6 +552,65 @@ func (r *recordingReader) Read(path string) ([]byte, error) {
 	r.reads.Write(b)
 	r.reads.Write([]byte{0})
 	return b, nil
+}
+
+// ReadDir returns one directory's entries sorted by name and records
+// the listing: the path, and each entry's name, a directory's behind
+// a trailing slash.
+func (r *recordingReader) ReadDir(path string) ([]fs.DirEntry, error) {
+	entries, err := plugin.ReadDir(r.fsys, path)
+	if err != nil {
+		return nil, fmt.Errorf("load: list %s: %w", path, err)
+	}
+	r.reads.Write([]byte(listingMark))
+	r.reads.Write([]byte(path))
+	r.reads.Write([]byte{0})
+	for _, e := range entries {
+		r.reads.Write([]byte(e.Name()))
+		if e.IsDir() {
+			r.reads.Write([]byte{'/'})
+		}
+		r.reads.Write([]byte{0})
+	}
+	r.reads.Write([]byte{0})
+	return entries, nil
+}
+
+// storeTree is the tree every door of one load reads: the workspace
+// tree, and the load's stores beside it. It keeps the workspace
+// tree's own fast paths for whole-file reads and listings.
+type storeTree struct {
+	fs.FS
+	stores map[string]fs.FS
+}
+
+// Store returns one of the load's stores.
+func (t storeTree) Store(name string) (fs.FS, bool) {
+	s, held := t.stores[name]
+	return s, held
+}
+
+// ReadFile reads one workspace file through the workspace tree's own
+// fast path where it has one.
+func (t storeTree) ReadFile(name string) ([]byte, error) { return fs.ReadFile(t.FS, name) }
+
+// ReadDir lists one workspace directory through the workspace tree's
+// own fast path where it has one.
+func (t storeTree) ReadDir(name string) ([]fs.DirEntry, error) { return fs.ReadDir(t.FS, name) }
+
+// checkStores refuses a store the load could not address: a name a
+// qualified path cannot spell, or a name without a tree.
+func checkStores(stores map[string]fs.FS) error {
+	for _, name := range slices.Sorted(maps.Keys(stores)) {
+		if !plugin.ValidStoreName(name) {
+			return fmt.Errorf("load: %q cannot name a store: a store's name is not empty, "+
+				"and it contains neither a colon nor a slash", name)
+		}
+		if stores[name] == nil {
+			return fmt.Errorf("load: store %s has no tree to read", name)
+		}
+	}
+	return nil
 }
 
 // spliced is one merged package, the language it belongs to, whether

@@ -12,16 +12,16 @@ import (
 )
 
 // unitKey folds one unit's key, by value, in the stated order: the
-// unit's roster-seeded reads, the partition's recorded reads, the
-// depth, the frontend's name, language and declared version, the
-// frontend's options in their canonical encoding, the
-// composition's plugin-set fingerprint, the composition's brand,
-// and the node model's fingerprint. The order is part of the
-// contract, because a key derived two ways diverges. The name and
-// language fold because both shape every identity the unit
-// produces. The brand folds because its marks decide which comment
-// lines are carriers. The comment syntax remains covered by the
-// version's bump-on-any-graph-change rule.
+// unit's roster-seeded reads, the recorded reads of the partition or
+// the dependency round that returned the unit, the depth, the
+// frontend's name, language and declared version, the frontend's
+// options in their canonical encoding, the composition's plugin-set
+// fingerprint, the composition's brand, and the node model's
+// fingerprint. The order is part of the contract, because a key
+// derived two ways diverges. The name and language fold because both
+// shape every identity the unit produces. The brand folds because its
+// marks decide which comment lines are carriers. The version's
+// bump-on-any-graph-change rule covers the comment syntax.
 //
 // Each part is length-prefixed, so two parts cannot trade bytes
 // and collide.

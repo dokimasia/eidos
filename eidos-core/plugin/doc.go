@@ -8,10 +8,10 @@
 // [Plugin] is the base contract, a stable name spelled as [ID].
 // The roles are Plugin plus one method taking a context struct:
 // [Annotator] stamps facts, [Generator] produces emit values into
-// one plan, and [Backend] carries the [Target] its plan resolves
+// one plan, and [Backend] returns the [Target] its plan resolves
 // at composition. [Subscribed] adds the gate tuples as data, so
 // the engine knows what a plugin watches without executing a
-// handler; a plugin that skips it reads as one implicit
+// handler. A plugin that skips it reads as one implicit
 // subscription to everything in scope. The provider interfaces,
 // [KeyProvider] among them, are what the composition asserts to
 // learn the rest of the declaration, and [ValidateOptions] is the
@@ -20,34 +20,45 @@
 //
 // # Two read surfaces
 //
-// Every context carries two, split by rule. [Index] is the
-// dispatcher's routing surface: untracked, scope-filtered, holding
-// the validated directive table and the skip table, and minting
-// the tracked readers. The [store.Reader] is the plugin's own
-// path, recording every read. The index wraps the graph rather
-// than exposing it, so nothing reachable from a context can make a
+// Every context has two, split by rule. [Index] is the dispatcher's
+// routing surface: untracked, scope-filtered, built over the
+// validated directive table and the skip table, and the source of
+// the tracked readers. The [store.Reader] is the plugin's own path,
+// recording every read. The index wraps the graph and does not
+// expose it, so nothing reachable from a context can make a
 // structural write or read another plugin's raw directives.
+//
+// # The read side
+//
+// [Frontend] loads one language into the node graph through a
+// [SourceUnit], the one door bytes enter a parse by. Three optional
+// roles widen what a frontend does: [Importer] names a file's import
+// of another file, [Exporter] names what a file publishes and does not
+// declare, and [Dependent] returns the dependency units the load
+// parses signature-only. A dependency unit's members are qualified
+// paths into the named stores a [StoreFS] provides, spelled by
+// [StorePath], or workspace paths the selection does not claim.
 //
 // # The emit store
 //
-// [Emit] holds one plan's accumulated [Unit] values and a per-kind
+// [Emit] contains one plan's accumulated [Unit] values and a per-kind
 // index over their declarations, maintained as units arrive, which
 // is what makes an emit-triggered rule cost only its matches. A [Unit]
-// carries its full routing key, so no consumer re-derives any part
+// records its full routing key, so no consumer re-derives any part
 // of it from the declarations.
 //
 // # Failure semantics
 //
 // A phase call attaches per-subject problems to its context's sink
-// and continues; a returned error is fatal to the phase. A defect
-// returns a plain error: a unit flushed twice, one carrying a nil
+// and continues. A returned error is fatal to the phase. A defect
+// returns a plain error: a unit flushed twice, a unit with a nil
 // declaration, a routing surface built over a moving graph.
 //
-// One defect class panics instead: a record on a nil subject —
-// [GraphBuilder.Scope], [GraphBuilder.Attach], [GraphBuilder.Stamp]
-// and [GraphBuilder.Rehome] — because nothing could ever join it
-// to a declaration, and a frontend that records one is broken in
-// its own constructor rather than on its input.
+// One defect class panics instead: a record on a nil subject through
+// [GraphBuilder.Scope], [GraphBuilder.Attach], [GraphBuilder.Stamp] or
+// [GraphBuilder.Rehome]. Nothing could ever join such a record to a
+// declaration, and a frontend that records one is broken in its own
+// constructor, not on its input.
 //
 // # Dependency position
 //

@@ -9,7 +9,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"path"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -94,6 +96,16 @@ const (
 const (
 	ownBrand     output.Brand = "own"
 	foreignBrand output.Brand = "foreign"
+)
+
+// The store paths the door cases read: the one directory at the
+// dependency store's root, a store no load provides, and an entry of
+// the library's directory that one case makes a file and another a
+// directory.
+const (
+	extRoot     = "ext"
+	absentStore = "absent"
+	dualEntry   = "ext/lib/x"
 )
 
 // stdTree is the happy-path fixture: two packages, one cross-package
@@ -635,6 +647,101 @@ func TestLoad(t *testing.T) {
 			two, second, _ := loadTree(t, stdTree())
 			assert.Equal(t, encoded(t, two), encoded(t, one), "two loads of one tree encode identically")
 			assert.Equal(t, keysOf(second), keysOf(first), "two loads of one tree fold the same keys")
+		})
+	})
+
+	t.Run("Read", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a store file's bytes for a qualified path", func(t *testing.T) {
+			t.Parallel()
+
+			probe := &probing{ScriptedDependent: frontendtest.NewScriptedDependent(), read: member(libFile)}
+			loadTree(t, depTree(), with(probe), stores(depStore()))
+			assert.NoError(t, probe.readErr, "the store provides the file")
+			assert.Equal(t, probe.bytes, depStore()[libFile].Data, "the bytes are the store's")
+		})
+	})
+
+	t.Run("ReadDir", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("lists a workspace directory", func(t *testing.T) {
+			t.Parallel()
+
+			probe := &probing{ScriptedDependent: frontendtest.NewScriptedDependent(), list: appPath}
+			loadTree(t, depTree(), with(probe))
+			assert.NoError(t, probe.listErr, "the workspace provides the directory")
+			assert.Equal(t, entryNames(probe.entries), []string{path.Base(appFile)}, "the entries are the tree's")
+		})
+
+		t.Run("lists a store's root", func(t *testing.T) {
+			t.Parallel()
+
+			probe := &probing{
+				ScriptedDependent: frontendtest.NewScriptedDependent(),
+				list:              plugin.StorePath(frontendtest.ScriptedStore, ""),
+			}
+			loadTree(t, depTree(), with(probe), stores(depStore()))
+			assert.NoError(t, probe.listErr, "the store has a root")
+			assert.Equal(t, entryNames(probe.entries), []string{extRoot}, "the root lists the store's one directory")
+		})
+
+		t.Run("returns ErrStoreAbsent naming a store the load does not provide", func(t *testing.T) {
+			t.Parallel()
+
+			absent := plugin.StorePath(absentStore, libPath)
+			probe := &probing{ScriptedDependent: frontendtest.NewScriptedDependent(), list: absent}
+			loadTree(t, depTree(), with(probe))
+			assert.ErrorIs(t, probe.listErr, plugin.ErrStoreAbsent, "the load provides no such store")
+			assert.Contains(t, probe.listErr.Error(), absent, "the error names the path")
+		})
+
+		t.Run("records a directory entry apart from a file of its name", func(t *testing.T) {
+			t.Parallel()
+
+			flat := depStore()
+			flat[dualEntry] = &fstest.MapFile{Data: []byte("not source\n")}
+			_, asFile, _ := loadTree(t, depTree(), with(recorded()), stores(flat))
+			nested := depStore()
+			nested[path.Join(dualEntry, path.Base(noteFile))] = &fstest.MapFile{Data: []byte("not source\n")}
+			_, asDir, _ := loadTree(t, depTree(), with(recorded()), stores(nested))
+			assert.NotEqual(t, keysOf(asDir)[member(libFile)], keysOf(asFile)[member(libFile)],
+				"a listing records which of its entries are directories")
+		})
+	})
+
+	t.Run("checkStores", func(t *testing.T) {
+		t.Parallel()
+
+		names := []struct {
+			name string
+			give string
+		}{
+			{name: "returns an error naming an empty store name", give: ""},
+			{name: "returns an error naming a store name with a colon", give: "go:mod"},
+			{name: "returns an error naming a store name with a slash", give: "go/mod"},
+		}
+		for _, tt := range names {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				err := refuse(t, stdTree(), func(cfg *load.Config) {
+					cfg.Stores = map[string]fs.FS{tt.give: fstest.MapFS{}}
+				})
+				assert.Contains(t, err.Error(), strconv.Quote(tt.give), "the error names the store")
+				assert.Contains(t, err.Error(), "cannot name a store", "a qualified path cannot spell the name")
+			})
+		}
+
+		t.Run("returns an error naming a store without a tree", func(t *testing.T) {
+			t.Parallel()
+
+			err := refuse(t, stdTree(), func(cfg *load.Config) {
+				cfg.Stores = map[string]fs.FS{frontendtest.ScriptedStore: nil}
+			})
+			assert.Contains(t, err.Error(), frontendtest.ScriptedStore, "the error names the store")
+			assert.Contains(t, err.Error(), "no tree", "the store has nothing to read")
 		})
 	})
 
@@ -1282,6 +1389,43 @@ func (*looseAttachment) Parse(_ context.Context, u *plugin.SourceUnit) error {
 	pkg.Files = append(pkg.Files, &node.File{Path: u.Files()[0].Path})
 	gb.Attach(&node.Struct{Name: looseName}, directive.Raw{Name: tableName})
 	return nil
+}
+
+// probing is the scripted language in the dependent role whose rounds
+// read one path and list another through the round's door, and record
+// what each returned. It returns no unit, so its first round is its
+// last.
+type probing struct {
+	*frontendtest.ScriptedDependent
+	read    string
+	list    string
+	bytes   []byte
+	readErr error
+	entries []fs.DirEntry
+	listErr error
+}
+
+// Dependencies reads and lists the stated paths and returns no unit.
+func (p *probing) Dependencies(
+	_ context.Context, _ plugin.DependencyRound, r plugin.StoreReader,
+) ([][]plugin.SourceRef, error) {
+	if p.read != "" {
+		p.bytes, p.readErr = r.Read(p.read)
+	}
+	if p.list != "" {
+		p.entries, p.listErr = r.ReadDir(p.list)
+	}
+	return nil, nil
+}
+
+// entryNames returns the names of a listing's entries, in listing
+// order.
+func entryNames(entries []fs.DirEntry) []string {
+	out := make([]string, len(entries))
+	for i, e := range entries {
+		out[i] = e.Name()
+	}
+	return out
 }
 
 // looseStamp stamps a declaration it never puts in a file, so the

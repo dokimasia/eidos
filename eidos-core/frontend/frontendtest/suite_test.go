@@ -52,6 +52,39 @@ const (
 	hiddenConst = "hidden"
 )
 
+// The store the dependent fixtures read: a package the api file
+// imports, its one scripted file, a file and a directory beside it
+// that are not source, a package no store declares, and the api
+// file's source that imports the package.
+const (
+	extPath       = "ext/lib"
+	extMember     = "ext/lib/lib.zz"
+	extNotes      = "ext/lib/notes.txt"
+	extNested     = "ext/lib/nested.zz/inner.zz"
+	extSource     = "package ext/lib\ntype Lib string\n"
+	absentPackage = "ext/absent"
+	usesSource    = "package svc/api\nimport ext ext/lib\ntype User ext.Lib\nmethod Get int\n"
+)
+
+// vendorRoot is the workspace directory the vendored language reads
+// its dependencies from, which the scripted claim carves out, and
+// vendoredMember is the library's file under it.
+const (
+	vendorRoot     = "skip"
+	vendoredMember = "skip/ext/lib/lib.zz"
+)
+
+// The barrel that publishes the api package in the exporter fixture,
+// the store file that spells User through the barrel, and the
+// declaration that spelling names.
+const (
+	barrelFile   = "svc/barrel/index.zz"
+	barrelSource = "package svc/barrel\nimport " + frontendtest.ScriptedPublish + " svc/api\n"
+	viaSource    = "package svc/store\nimport b svc/barrel\ntype Row b.User int\n"
+	apiPath      = "svc/api"
+	userName     = "User"
+)
+
 // depIdentity returns the identity of a declaration in the
 // signature root's package.
 func depIdentity(name string, kind symbol.Kind) symbol.Identity {
@@ -103,6 +136,47 @@ func plainFixture() *frontendtest.Fixture {
 			apiFile:   {Data: []byte(apiSource)},
 			storeFile: {Data: []byte(crossSource)},
 		},
+	}
+}
+
+// dependentFixture is the plain fixture whose api file imports a
+// package the one store declares.
+func dependentFixture() *frontendtest.Fixture {
+	return &frontendtest.Fixture{
+		Sources: fstest.MapFS{
+			apiFile:   {Data: []byte(usesSource)},
+			storeFile: {Data: []byte(crossSource)},
+		},
+		Stores: map[string]fs.FS{
+			frontendtest.ScriptedStore: fstest.MapFS{extMember: {Data: []byte(extSource)}},
+		},
+	}
+}
+
+// vendoredFixture is the dependent fixture with the library in the
+// workspace's skip directory and no store.
+func vendoredFixture() *frontendtest.Fixture {
+	return &frontendtest.Fixture{
+		Sources: fstest.MapFS{
+			apiFile:        {Data: []byte(usesSource)},
+			storeFile:      {Data: []byte(crossSource)},
+			vendoredMember: {Data: []byte(extSource)},
+		},
+	}
+}
+
+// exporterFixture is the plain fixture whose store file names the api
+// package's User through a barrel that publishes the package.
+func exporterFixture() *frontendtest.Fixture {
+	return &frontendtest.Fixture{
+		Sources: fstest.MapFS{
+			apiFile:    {Data: []byte(apiSource)},
+			barrelFile: {Data: []byte(barrelSource)},
+			storeFile:  {Data: []byte(viaSource)},
+		},
+		Reexported: []symbol.Identity{{
+			Lang: frontendtest.ScriptedLang, Package: apiPath, Name: userName, Kind: symbol.KindStruct,
+		}},
 	}
 }
 
@@ -158,6 +232,42 @@ func TestSuite(t *testing.T) {
 			// and one with no schema attaches nothing, so a suite that
 			// ran either check here would fail.
 			frontendtest.RunFrontendSuite(t, setupOver(plainFixture()))
+		})
+
+		t.Run("passes the scripted language in the dependent role through every check", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return frontendtest.NewScriptedDependent(), dependentFixture()
+			})
+		})
+
+		t.Run("passes the scripted language in the exporter role through every check", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return frontendtest.NewScriptedExporter(), exporterFixture()
+			})
+		})
+
+		t.Run("skips the dependency check for a fixture without stores", func(t *testing.T) {
+			t.Parallel()
+
+			// The plain fixture imports nothing outside itself, so a
+			// suite that ran the check here would fail it.
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return frontendtest.NewScriptedDependent(), plainFixture()
+			})
+		})
+
+		t.Run("skips the re-export check for a fixture that lists no re-exported declaration", func(t *testing.T) {
+			t.Parallel()
+
+			// The check fails a fixture that lists nothing, so a suite
+			// that ran it here would fail.
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return frontendtest.NewScriptedExporter(), plainFixture()
+			})
 		})
 	})
 }

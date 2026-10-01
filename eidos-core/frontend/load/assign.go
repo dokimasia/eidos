@@ -62,10 +62,10 @@ func bareOf(id symbol.Identity) symbol.Identity {
 //   - a member is lang:package.Owner#Name, the owner the dotted
 //     chain of enclosing type names; a top-level method's owner is
 //     the spelling of the type it attaches to
-//   - a callable's discriminator is its parameter type spellings,
+//   - a callable's discriminator is its parameters' spellings,
 //     comma-joined, where the frontend reports that its language
 //     overloads, so overloads spell apart, and empty where it does
-//     not
+//     not. [assigner.disc] states how one parameter spells
 //
 // Members get their Host filled beside the identity. A second
 // declaration spelling one identity reports under
@@ -432,11 +432,16 @@ func childOwner(owner, name string) string {
 }
 
 // disc spells a callable's discriminator. In a language that
-// overloads it is the parameter type spellings as written,
-// comma-joined, so two overloads spell apart and a nullary callable
-// spells empty. In a language that cannot overload it is empty. A nil
-// parameter panics with [assigner.nilSlot] in either language, before
-// anything reads it.
+// overloads it is the parameters' spellings, comma-joined, so two
+// overloads spell apart and a nullary callable spells empty. A
+// parameter spells its type as the frontend wrote it, with an
+// instantiation's arguments in the angle brackets every language that
+// overloads writes, a ... prefix where the parameter is positionally
+// variadic, a ** prefix where it is variadic by keyword, and a ? suffix
+// where it is optional: each changes which calls the callable accepts.
+// In a language that cannot overload it is empty. A nil parameter
+// panics with [assigner.nilSlot] in either language, before anything
+// reads it.
 func (a *assigner) disc(params []*node.Param) string {
 	if slices.Contains(params, nil) {
 		panic(a.nilSlot(symbol.KindParam))
@@ -444,11 +449,53 @@ func (a *assigner) disc(params []*node.Param) string {
 	if !a.overloads {
 		return ""
 	}
-	parts := make([]string, len(params))
+	var b strings.Builder
 	for i, p := range params {
-		if p.Type != nil {
-			parts[i] = p.Type.Spelling
+		if i > 0 {
+			b.WriteString(discSeparator)
+		}
+		switch p.Variadic {
+		case symbol.VariadicPositional:
+			b.WriteString(discPositional)
+		case symbol.VariadicKeyword:
+			b.WriteString(discKeyword)
+		}
+		discType(&b, p.Type)
+		if p.Optional {
+			b.WriteString(discOptional)
 		}
 	}
-	return strings.Join(parts, ",")
+	return b.String()
+}
+
+// The marks a discriminator spells between and around its parameters.
+const (
+	discSeparator  = ","
+	discPositional = "..."
+	discKeyword    = "**"
+	discOptional   = "?"
+	discArgsOpen   = "<"
+	discArgsClose  = ">"
+)
+
+// discType spells one parameter type into a discriminator: the
+// reference's spelling, and an instantiation's arguments after it in
+// angle brackets, each spelled the same way. A nil type spells
+// nothing.
+func discType(b *strings.Builder, t *node.TypeRef) {
+	if t == nil {
+		return
+	}
+	b.WriteString(t.Spelling)
+	if len(t.Args) == 0 {
+		return
+	}
+	b.WriteString(discArgsOpen)
+	for i, arg := range t.Args {
+		if i > 0 {
+			b.WriteString(discSeparator)
+		}
+		discType(b, arg)
+	}
+	b.WriteString(discArgsClose)
 }

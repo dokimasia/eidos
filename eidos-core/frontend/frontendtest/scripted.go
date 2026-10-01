@@ -5,6 +5,8 @@ package frontendtest
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"path"
 	"strings"
 
@@ -35,6 +37,21 @@ var ScriptedBadFile = diag.MustRegister(diag.Prefix("FAKE"), diag.CodeSpec{
 	Meaning: "a fake file opens without a package line",
 })
 
+// ScriptedStore is the store the scripted language in the dependent
+// role reads its dependency units from.
+const ScriptedStore = "fake"
+
+// ScriptedPublish is the import alias whose packages a file of the
+// scripted language in the exporter role publishes.
+const ScriptedPublish = "pub"
+
+// scriptedExt is the suffix of every scripted source file, and
+// scriptedManifest the name of the manifest at the tree's root.
+const (
+	scriptedExt      = ".zz"
+	scriptedManifest = "mod" + scriptedExt
+)
+
 // ScriptedOptions is the scripted frontend's declared
 // configuration.
 type ScriptedOptions struct {
@@ -48,10 +65,15 @@ type ScriptedOptions struct {
 // signature-sensitive declaration. One statement per line:
 //
 //	package PATH          the file's package path
-//	import ALIAS PATH...  bind an alias to one or more packages
+//	import ALIAS PATH...  bind an alias to one or more packages, one
+//	                      import record per path
 //	type NAME REF...      a struct, fields f0..fn typed by the refs
 //	typeparam NAME        a type parameter on the last type
 //	method NAME REF...    a method on the last type, params by ref
+//	on NAME               the last type is NAME, which an earlier
+//	                      member of the unit declared: the methods
+//	                      after it fold onto that type the way a Go
+//	                      receiver folds a method from another file
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
 //	// TEXT               a comment, split by the kernel: its
@@ -85,7 +107,7 @@ func NewScripted() *Scripted {
 		Ver: "1",
 		// The manifest is a shared input, never source: the claim
 		// carves it out and the partition reads it instead.
-		Sel:         []string{"**/*.zz", "!mod.zz", "!**/skip/**"},
+		Sel:         []string{"**/*" + scriptedExt, "!" + scriptedManifest, "!**/skip/**"},
 		Opts:        &ScriptedOptions{Tag: "steady"},
 		Overloading: true,
 	}
@@ -152,8 +174,8 @@ func (*Scripted) Partition(
 	_ context.Context, files []plugin.SourceRef, r plugin.FileReader,
 ) ([][]plugin.SourceRef, error) {
 	var shared []string
-	if _, err := r.Read("mod.zz"); err == nil {
-		shared = []string{"mod.zz"}
+	if _, err := r.Read(scriptedManifest); err == nil {
+		shared = []string{scriptedManifest}
 	}
 	byDir := map[string][]plugin.SourceRef{}
 	var dirs []string
@@ -171,10 +193,13 @@ func (*Scripted) Partition(
 	return out, nil
 }
 
-// Parse reads each member line by line into the unit's builder.
+// Parse reads each member line by line into the unit's builder. The
+// members share one table of the types they declare, so an on
+// statement in one member finds a type an earlier member declared.
 func (f *Scripted) Parse(_ context.Context, u *plugin.SourceUnit) error {
+	types := map[string]*node.Struct{}
 	for _, ref := range u.Files() {
-		if err := f.ParseFile(u, ref.Path); err != nil {
+		if err := f.parseMember(u, ref.Path, types); err != nil {
 			return err
 		}
 	}
@@ -182,14 +207,10 @@ func (f *Scripted) Parse(_ context.Context, u *plugin.SourceUnit) error {
 }
 
 // ParseFile reads and lowers one member, so a test can drive a
-// unit partially, the shape a broken frontend takes.
+// unit partially, the shape a broken frontend takes. The member sees
+// no type another member declared.
 func (f *Scripted) ParseFile(u *plugin.SourceUnit, path string) error {
-	b, err := u.Read(path)
-	if err != nil {
-		return err
-	}
-	f.parseFile(u, path, string(b))
-	return nil
+	return f.parseMember(u, path, map[string]*node.Struct{})
 }
 
 // Resolve probes the file's bindings in one tier: "alias.Name"
@@ -214,8 +235,20 @@ func (*Scripted) Resolve(scope plugin.ImportScope, spelling string) plugin.Candi
 	return nil
 }
 
-// parseFile lowers one file's statements.
-func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
+// parseMember reads one member and lowers it against the unit's
+// table of declared types.
+func (f *Scripted) parseMember(u *plugin.SourceUnit, path string, types map[string]*node.Struct) error {
+	b, err := u.Read(path)
+	if err != nil {
+		return err
+	}
+	f.parseFile(u, path, string(b), types)
+	return nil
+}
+
+// parseFile lowers one file's statements, recording each type it
+// declares in the unit's table.
+func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string, types map[string]*node.Struct) {
 	gb := u.Graph()
 	var (
 		file        *node.File
@@ -248,6 +281,9 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 			return
 		case fields[0] == "import" && len(fields) >= 3:
 			bindings[fields[1]] = append(bindings[fields[1]], fields[2:]...)
+			for _, imported := range fields[2:] {
+				file.Imports = append(file.Imports, &node.Import{Path: imported, Alias: fields[1], Pos: at})
+			}
 		case fields[0] == "type" && len(fields) >= 2:
 			last = &node.Struct{
 				Name: fields[1], Pos: at,
@@ -265,6 +301,15 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 				})
 			}
 			file.Decls = append(file.Decls, last)
+			types[last.Name] = last
+		case fields[0] == "on" && len(fields) == 2:
+			// The methods after it fold onto a type another member
+			// declared: each method's position names this file, and
+			// the type's names the other.
+			last = types[fields[1]]
+			if last == nil {
+				u.Errorf(ScriptedBadFile, at, "%s folds onto %s, which no earlier member declares", filePath, fields[1])
+			}
 		case fields[0] == "typeparam" && len(fields) == 2 && last != nil:
 			last.TypeParams = append(last.TypeParams, &node.TypeParam{Name: fields[1], Pos: at})
 		case fields[0] == "method" && len(fields) >= 2 && last != nil:
@@ -330,4 +375,74 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string) {
 	if file != nil {
 		gb.Scope(file, bindings)
 	}
+}
+
+// ScriptedDependent is the scripted language in the
+// [plugin.Dependent] role. A need resolves to the scripted files of
+// the directory its path names in [ScriptedStore], one unit per need,
+// and a need the store has no directory for yields no unit. A load
+// without the store loads no dependency.
+type ScriptedDependent struct {
+	*Scripted
+}
+
+// NewScriptedDependent returns the scripted language in the dependent
+// role, under its usual claim.
+func NewScriptedDependent() *ScriptedDependent {
+	return &ScriptedDependent{Scripted: NewScripted()}
+}
+
+// Dependencies returns one unit per need whose directory the store
+// lists, its members the directory's scripted files in name order.
+func (*ScriptedDependent) Dependencies(
+	_ context.Context, round plugin.DependencyRound, r plugin.StoreReader,
+) ([][]plugin.SourceRef, error) {
+	var out [][]plugin.SourceRef
+	for _, need := range round.Needs {
+		dir := plugin.StorePath(ScriptedStore, need.Path)
+		entries, err := r.ReadDir(dir)
+		if errors.Is(err, plugin.ErrStoreAbsent) || errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		var members []plugin.SourceRef
+		for _, e := range entries {
+			if !e.IsDir() && path.Ext(e.Name()) == scriptedExt {
+				members = append(members, plugin.SourceRef{Path: dir + "/" + e.Name()})
+			}
+		}
+		if len(members) > 0 {
+			out = append(out, members)
+		}
+	}
+	return out, nil
+}
+
+// ScriptedExporter is the scripted language in the [plugin.Exporter]
+// role: a file publishes every name of each package its
+// [ScriptedPublish] alias binds, the shape of TypeScript's export *.
+type ScriptedExporter struct {
+	*Scripted
+}
+
+// NewScriptedExporter returns the scripted language in the exporter
+// role, under its usual claim.
+func NewScriptedExporter() *ScriptedExporter {
+	return &ScriptedExporter{Scripted: NewScripted()}
+}
+
+// Exports returns, as one tier, the name in each package the file's
+// publishing alias binds, and nothing for a file that binds none.
+func (*ScriptedExporter) Exports(scope plugin.ImportScope, name string) plugin.Candidates {
+	bindings, _ := scope.Bindings.(map[string][]string)
+	var tier []symbol.Identity
+	for _, pkg := range bindings[ScriptedPublish] {
+		tier = append(tier, symbol.Identity{Lang: ScriptedLang, Package: pkg, Name: name})
+	}
+	if len(tier) == 0 {
+		return nil
+	}
+	return plugin.Candidates{tier}
 }

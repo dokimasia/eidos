@@ -5,9 +5,13 @@
 // language's read-side declaration, which is its identity, comment
 // syntax, overloading, file claim, partition, parse, resolve and
 // classifiers, and [Builder.Build] lowers it to the
-// [plugin.Frontend] role. The kit adds nothing the role does not
-// state, so a kit-built frontend and a hand-rolled one meet the same
-// conformance checks.
+// [plugin.Frontend] role. A declaration can state three optional
+// roles beside it: its options through [Builder.Options], its
+// dependency rounds through [Builder.Dependencies], and what its files
+// re-export through [Builder.Exports]. The built frontend implements
+// exactly the roles the declaration states. The kit adds nothing the
+// roles do not state, so a kit-built frontend and a hand-rolled one
+// meet the same conformance checks.
 //
 // # Failure semantics
 //

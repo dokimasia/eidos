@@ -185,7 +185,7 @@ func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 	assert.True(tb, load.Match(f.Selection(), own),
 		"the stamped copy is beside its source, inside the claim")
 
-	got := drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures})
+	got := drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures, Stores: fx.Stores})
 	assert.Equal(tb, got.report.Excluded, []string{own},
 		"the load refuses its own output and lists it")
 	for _, u := range got.report.Units {
@@ -220,8 +220,8 @@ func framed(
 }
 
 // AssertFingerprinted checks that the unit keys are honest: stable
-// across two identical loads, and changed by each folded part — a
-// read, a depth, a declared version, the options, the plugin set,
+// across two identical loads, and changed by each folded part: a
+// read, a depth, a declared version, the options, the plugin set and
 // the brand. The model fingerprint is a compiled constant no test
 // can vary. A unit missing from the load a key is compared against
 // fails the comparison, and never differs from nothing.
@@ -272,7 +272,7 @@ func AssertFingerprinted(tb assert.TB, setup Setup) {
 		slices.Clone(touched[first].Data), '\n',
 	)}
 	perturbed, err := tryDrive(f, &Fixture{
-		Sources: touched, Signatures: fx.Signatures,
+		Sources: touched, Signatures: fx.Signatures, Stores: fx.Stores,
 	})
 	if err == nil {
 		unit := unitHolding(base.report, first)
@@ -305,14 +305,16 @@ func keyed(tb assert.TB, before, after map[string][]byte, same bool, why string)
 // AssertJailedReads proves the one door from the frontend's side:
 // every unit reads its members through the unit, so a unit's key
 // moves when its members' bytes move. A frontend reading its
-// members any other way — the operating system's filesystem, a
-// cache it keeps across loads — keys a unit by bytes it never read
-// through the door, and a cache keyed that way serves a stale
+// members any other way, such as the operating system's filesystem
+// or a cache it keeps across loads, keys a unit by bytes it never
+// read through the door, and a cache keyed that way serves a stale
 // graph. The check loads a copy of the fixture twice, then a copy
 // whose every selected file gained a line break, and requires every
-// unit of the second load to key differently in the third. The
-// kernel's side of the door, a read outside the unit refusing and
-// naming the path, is the plugin package's own contract.
+// unit the partition returned to key differently in the third. A
+// dependency unit reads the stores and not the workspace, so the
+// comparison leaves it out. The kernel's side of the door, a read
+// outside the unit refusing and naming the path, is the plugin
+// package's own contract.
 func AssertJailedReads(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -321,20 +323,20 @@ func AssertJailedReads(tb assert.TB, setup Setup) {
 	tree := copyTree(tb, fx.Sources)
 	// The first load is a warm-up: a frontend caching across loads
 	// fills its cache here, and serves the second and third from it.
-	drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures})
-	warm := drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures})
+	drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures, Stores: fx.Stores})
+	warm := drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures, Stores: fx.Stores})
 
 	touched := copyTree(tb, tree)
 	for _, file := range files {
 		touched[file] = &fstest.MapFile{Data: append(slices.Clone(touched[file].Data), '\n')}
 	}
-	perturbed, err := tryDrive(f, &Fixture{Sources: touched, Signatures: fx.Signatures})
+	perturbed, err := tryDrive(f, &Fixture{Sources: touched, Signatures: fx.Signatures, Stores: fx.Stores})
 	if err != nil {
 		// A language refusing the appended bytes read them through a
 		// door: nothing else can read the copy this check made.
 		return
 	}
-	keyed(tb, keysOf(warm.report), keysOf(perturbed.report), false,
+	keyed(tb, workspaceKeysOf(warm.report), workspaceKeysOf(perturbed.report), false,
 		"every unit whose members changed re-keys, because its parse read them through the unit")
 }
 
@@ -373,9 +375,11 @@ func AssertSignatureDepth(tb assert.TB, setup Setup) {
 		}
 	}
 
+	// A dependency unit loads shallow under any root, so only the
+	// units the partition returned count.
 	shallow := 0
 	for _, u := range sig.report.Units {
-		if u.Depth == plugin.DepthSignatures {
+		if u.Round == 0 && u.Depth == plugin.DepthSignatures {
 			shallow++
 		}
 	}
@@ -447,10 +451,11 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 
 // AssertLinked checks the resolution step's outcome: at least one
 // in-graph spelling resolves, every resolved reference targets a
-// declaration in the graph, every reference left unresolved — a
-// builtin, an external — keeps its spelling, a multi-package
-// fixture resolves across its packages, and the tracked reader
-// joins the same targets afterwards.
+// declaration in the graph, every reference left unresolved keeps
+// its spelling, a multi-package fixture resolves across its
+// packages, and the tracked reader joins the same targets
+// afterwards. A builtin and an external are the references a load
+// leaves unresolved.
 func AssertLinked(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -503,6 +508,89 @@ func AssertLinked(tb assert.TB, setup Setup) {
 	assert.NoError(tb, err, "the sealed graph hands out a reader")
 	_, held := reader.Lookup(cross[0])
 	assert.True(tb, held, "the tracked reader joins across the packages")
+}
+
+// AssertDependencies checks the dependency rounds of a frontend in
+// the [plugin.Dependent] role: at least one unit arrives from a round,
+// and a changed byte in the first member of the first dependency unit
+// re-keys that unit, because its parse read the member through the
+// unit. The kernel parses every dependency unit at
+// [plugin.DepthSignatures] and refuses a member the selection claims,
+// so the check leaves both to the load. It copies the store it
+// changes, so a fixture's stores are small trees and never a
+// machine's module cache.
+func AssertDependencies(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	f, fx := setup(tb)
+	if _, dependent := f.(plugin.Dependent); !dependent {
+		tb.Errorf("the frontend is not in the dependent role, so no dependency round runs")
+		return
+	}
+	got := drive(tb, f, fx)
+	var first string
+	for _, u := range got.report.Units {
+		if u.Round > 0 {
+			first = u.Files[0]
+			break
+		}
+	}
+	if first == "" {
+		tb.Errorf("no dependency round returned a unit")
+		return
+	}
+
+	sources, stores := fx.Sources, fx.Stores
+	if store, inner, qualified := plugin.CutStorePath(first); qualified {
+		copied := copyTree(tb, fx.Stores[store])
+		copied[inner] = &fstest.MapFile{Data: append(slices.Clone(copied[inner].Data), '\n')}
+		stores = maps.Clone(fx.Stores)
+		stores[store] = copied
+	} else {
+		copied := copyTree(tb, fx.Sources)
+		copied[first] = &fstest.MapFile{Data: append(slices.Clone(copied[first].Data), '\n')}
+		sources = copied
+	}
+	perturbed, err := tryDrive(f, &Fixture{Sources: sources, Signatures: fx.Signatures, Stores: stores})
+	if err != nil {
+		// A language refusing the appended byte read it through the
+		// unit: nothing else can read the copy this check made.
+		return
+	}
+	keyed(tb, map[string][]byte{first: keysOf(got.report)[first]}, keysOf(perturbed.report), false,
+		"a changed byte in a dependency member re-keys the unit that read it")
+}
+
+// AssertReexports checks the resolution step's following of
+// re-exports for a frontend in the [plugin.Exporter] role: every
+// identity the fixture lists in [Fixture.Reexported], a declaration
+// the fixture's references name only through a re-export, is the
+// target of a reference in the graph.
+func AssertReexports(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	f, fx := setup(tb)
+	if _, exports := f.(plugin.Exporter); !exports {
+		tb.Errorf("the frontend is not in the exporter role, so no re-export is followed")
+		return
+	}
+	if len(fx.Reexported) == 0 {
+		tb.Errorf("the fixture lists no declaration a re-export publishes, so nothing is checked")
+		return
+	}
+	got := drive(tb, f, fx)
+	targets := map[symbol.Identity]bool{}
+	for pkg := range got.graph.ByKind(symbol.KindPackage) {
+		node.Walk(pkg, func(s symbol.Symbol) bool {
+			if ref, is := s.(*node.TypeRef); is && !ref.Target.IsZero() {
+				targets[ref.Target] = true
+			}
+			return true
+		})
+	}
+	for _, id := range fx.Reexported {
+		assert.True(tb, targets[id], "a reference through a re-export targets "+id.String())
+	}
 }
 
 // fullUnit returns the first member of a unit the base load parsed

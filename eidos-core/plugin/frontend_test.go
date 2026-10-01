@@ -36,7 +36,16 @@ func TestFrontend(t *testing.T) {
 			"the declared inputs whose bytes fold into dependent units")
 	})
 
-	t.Run("ImportScope/carries the language's own bindings", func(t *testing.T) {
+	t.Run("Exporter/returns the candidates a published name could mean", func(t *testing.T) {
+		t.Parallel()
+
+		var role plugin.Exporter = publishing{}
+		got := role.Exports(plugin.ImportScope{}, "User")
+		assert.Equal(t, got, plugin.Candidates{{{Lang: "typescript", Package: "src/models/user", Name: "User"}}},
+			"in the language's shadowing tiers")
+	})
+
+	t.Run("ImportScope/keeps the language's own bindings in their own form", func(t *testing.T) {
 		t.Parallel()
 
 		scope := plugin.ImportScope{
@@ -47,4 +56,13 @@ func TestFrontend(t *testing.T) {
 		assert.True(t, is, "the kernel hands the record back untyped")
 		assert.Equal(t, bound["emit"], "core/emit", "in the language's own form")
 	})
+}
+
+// publishing publishes one name it does not declare, the shape of a
+// TypeScript barrel module.
+type publishing struct{}
+
+// Exports returns the declaring module's candidate for User.
+func (publishing) Exports(_ plugin.ImportScope, name string) plugin.Candidates {
+	return plugin.Candidates{{{Lang: "typescript", Package: "src/models/user", Name: name}}}
 }

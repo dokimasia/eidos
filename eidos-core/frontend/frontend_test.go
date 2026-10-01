@@ -141,6 +141,51 @@ func TestFrontend(t *testing.T) {
 			assert.True(t, is, "the declared configuration folds into the keys")
 		})
 
+		dependent := frontendtest.NewScriptedDependent()
+		exporter := frontendtest.NewScriptedExporter()
+		roles := []struct {
+			name         string
+			options      bool
+			dependencies bool
+			exports      bool
+		}{
+			{name: "returns a frontend in no optional role for a declaration of none"},
+			{name: "returns a frontend in the options role alone", options: true},
+			{name: "returns a frontend in the dependent role alone", dependencies: true},
+			{name: "returns a frontend in the exporter role alone", exports: true},
+			{name: "returns a frontend in the options and dependent roles", options: true, dependencies: true},
+			{name: "returns a frontend in the options and exporter roles", options: true, exports: true},
+			{name: "returns a frontend in the dependent and exporter roles", dependencies: true, exports: true},
+			{
+				name:    "returns a frontend in every optional role",
+				options: true, dependencies: true, exports: true,
+			},
+		}
+		for _, tt := range roles {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				b := frontend.New(kitName, frontendtest.ScriptedLang, dependent.Syntax()).
+					Version("1").Match(anyScripted).
+					Units(dependent.Partition).Parse(dependent.Parse).Resolve(dependent.Resolve)
+				if tt.options {
+					b.Options(dependent.Opts)
+				}
+				if tt.dependencies {
+					b.Dependencies(dependent.Dependencies)
+				}
+				if tt.exports {
+					b.Exports(exporter.Exports)
+				}
+				built := b.Build()
+				_, optioned := built.(plugin.OptionsProvider)
+				_, depends := built.(plugin.Dependent)
+				_, exports := built.(plugin.Exporter)
+				assert.Equal(t, []bool{optioned, depends, exports},
+					[]bool{tt.options, tt.dependencies, tt.exports}, "exactly the declared roles")
+			})
+		}
+
 		inner := frontendtest.NewScripted()
 		whole := func() *frontend.Builder {
 			return frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
@@ -240,6 +285,50 @@ func TestFrontend(t *testing.T) {
 			t.Parallel()
 
 			assert.True(t, declared().Overloads().Build().Overloads(), "the declaration states it")
+		})
+	})
+
+	t.Run("Dependencies", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns what the declared function returns", func(t *testing.T) {
+			t.Parallel()
+
+			refused := errors.New("kitfake: the round refuses")
+			inner := frontendtest.NewScripted()
+			f := frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+				Version("1").Match(anyScripted).
+				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
+				Dependencies(func(context.Context, plugin.DependencyRound, plugin.StoreReader) (
+					[][]plugin.SourceRef, error,
+				) {
+					return nil, refused
+				}).
+				Build()
+			dependent, is := f.(plugin.Dependent)
+			assert.True(t, is, "the declaration states the role")
+			_, err := dependent.Dependencies(context.Background(), plugin.DependencyRound{Number: 1}, nil)
+			assert.ErrorIs(t, err, refused, "the round runs the declared function")
+		})
+	})
+
+	t.Run("Exports", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns what the declared function returns", func(t *testing.T) {
+			t.Parallel()
+
+			published := plugin.Candidates{{{Lang: frontendtest.ScriptedLang, Package: depPath, Name: kitName}}}
+			inner := frontendtest.NewScripted()
+			f := frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+				Version("1").Match(anyScripted).
+				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
+				Exports(func(plugin.ImportScope, string) plugin.Candidates { return published }).
+				Build()
+			exporter, is := f.(plugin.Exporter)
+			assert.True(t, is, "the declaration states the role")
+			assert.Equal(t, exporter.Exports(plugin.ImportScope{}, kitName), published,
+				"the resolution step follows the declared function")
 		})
 	})
 

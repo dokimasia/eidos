@@ -40,6 +40,8 @@ const (
 	writerType    = "Writer"
 	requestType   = "Request"
 	stringType    = "string"
+	mapType       = "Map"
+	listType      = "List"
 	servedDisc    = writerType + "," + requestType
 	secondByPlace = "#1"
 )
@@ -321,6 +323,67 @@ func TestAssign(t *testing.T) {
 			assert.True(t, held, "a nullary overload has no parameter to spell")
 			assert.Empty(t, nullary.(*node.Method).Params, "the nullary overload")
 		})
+
+		spelled := []struct {
+			name   string
+			params []*node.Param
+			want   string
+		}{
+			{
+				name: "spells an instantiation's arguments in angle brackets in a language that overloads",
+				params: []*node.Param{{Name: keyName, Type: &node.TypeRef{
+					Spelling: mapType,
+					Args: []*node.TypeRef{
+						{Spelling: stringType},
+						{Spelling: listType, Args: []*node.TypeRef{{Spelling: stringType}}},
+					},
+				}}},
+				want: mapType + "<" + stringType + "," + listType + "<" + stringType + ">>",
+			},
+			{
+				name: "spells a positionally variadic parameter behind a ... prefix",
+				params: []*node.Param{{
+					Name: keyName, Type: &node.TypeRef{Spelling: stringType},
+					Variadic: symbol.VariadicPositional,
+				}},
+				want: "..." + stringType,
+			},
+			{
+				name: "spells a parameter variadic by keyword behind a ** prefix",
+				params: []*node.Param{{
+					Name: keyName, Type: &node.TypeRef{Spelling: stringType},
+					Variadic: symbol.VariadicKeyword,
+				}},
+				want: "**" + stringType,
+			},
+			{
+				name: "spells an optional parameter before a ? suffix",
+				params: []*node.Param{{
+					Name: keyName, Type: &node.TypeRef{Spelling: stringType}, Optional: true,
+				}},
+				want: stringType + "?",
+			},
+			{
+				name:   "spells a parameter without a type as nothing between its separators",
+				params: []*node.Param{{Name: keyName}, {Name: blankName, Type: &node.TypeRef{Spelling: stringType}}},
+				want:   "," + stringType,
+			},
+		}
+		for _, tt := range spelled {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				g, _, sink := loadTree(t, oneFileTree(), with(&holey{
+					Scripted: frontendtest.NewScripted(),
+					decl:     &node.Function{Name: serveName, Params: tt.params},
+				}))
+				id := assigned("", serveName, symbol.KindFunction)
+				id.Disc = tt.want
+				_, held := g.Lookup(id)
+				assert.True(t, held, "the discriminator spells "+tt.want)
+				coretest.AssertCodes(t, sink)
+			})
+		}
 
 		t.Run("spells empty for a callable in a language without overloads", func(t *testing.T) {
 			t.Parallel()

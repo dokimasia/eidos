@@ -60,6 +60,15 @@ type Fixture struct {
 	// write, for the stamp application the suite runs in the
 	// workspace's place.
 	Keys func(*meta.Registry) error
+
+	// Stores are the named trees outside the workspace the load reads
+	// dependency units from, for the dependency check.
+	Stores map[string]fs.FS
+
+	// Reexported lists the identities of declarations the fixture's
+	// references name only through a re-export, for the re-export
+	// check: a reference in the graph targets each.
+	Reexported []symbol.Identity
 }
 
 // Setup builds the frontend under test and its fixture, fresh per
@@ -69,10 +78,11 @@ type Setup func(tb assert.TB) (plugin.Frontend, *Fixture)
 // RunFrontendSuite checks a frontend against the read side's contract:
 // deterministic parses, positioned findings, no silently dropped
 // file, the workspace's own outputs refused, honest unit keys, the
-// jailed read, signature depth, validated directive attachments
-// and resolved references. It
-// drives the SPI, so a kit-built frontend and a hand-rolled one
-// meet the same checks.
+// jailed read, signature depth, validated directive attachments,
+// resolved references, and for a frontend in the dependent or the
+// exporter role, its dependency units and its re-exports. It drives
+// the SPI, so a kit-built frontend and a hand-rolled one meet the
+// same checks.
 //
 // One survey load up front finds what the fixture cannot state:
 // classification keys, a unit loading full beside its signature
@@ -141,6 +151,28 @@ func RunFrontendSuite(t *testing.T, setup Setup) {
 			t.Skip("the fixture declares one package")
 		})
 	}
+	t.Run("loads dependencies through the jail", func(t *testing.T) {
+		t.Parallel()
+		f, fx := setup(t)
+		if _, dependent := f.(plugin.Dependent); !dependent {
+			t.Skip("the frontend is not in the dependent role")
+		}
+		if len(fx.Stores) == 0 {
+			t.Skip("the fixture states no stores")
+		}
+		AssertDependencies(t, setup)
+	})
+	t.Run("follows re-exports", func(t *testing.T) {
+		t.Parallel()
+		f, fx := setup(t)
+		if _, exports := f.(plugin.Exporter); !exports {
+			t.Skip("the frontend is not in the exporter role")
+		}
+		if len(fx.Reexported) == 0 {
+			t.Skip("the fixture lists no declaration a re-export publishes")
+		}
+		AssertReexports(t, setup)
+	})
 }
 
 // packagesOf counts the packages a graph declares.
@@ -185,6 +217,7 @@ func tryDrive(
 		PluginSet:  []byte(pluginSet),
 		Signatures: fx.Signatures,
 		Brand:      Brand,
+		Stores:     fx.Stores,
 	}
 	for _, m := range mutate {
 		m(&cfg)
@@ -260,6 +293,19 @@ func keysOf(report *load.Report) map[string][]byte {
 	out := make(map[string][]byte, len(report.Units))
 	for _, u := range report.Units {
 		out[u.Files[0]] = u.Key
+	}
+	return out
+}
+
+// workspaceKeysOf maps the first member of each unit the partition
+// returned onto its key, leaving out the dependency units, whose
+// reads are the stores' and not the workspace's.
+func workspaceKeysOf(report *load.Report) map[string][]byte {
+	out := make(map[string][]byte, len(report.Units))
+	for _, u := range report.Units {
+		if u.Round == 0 {
+			out[u.Files[0]] = u.Key
+		}
 	}
 	return out
 }

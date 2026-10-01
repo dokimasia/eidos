@@ -6,6 +6,7 @@ package frontendtest_test
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"path"
 	"strconv"
 	"strings"
@@ -248,6 +249,18 @@ func TestChecks(t *testing.T) {
 				"the rejection names what the stated root owes")
 		})
 
+		t.Run("rejects a stated root that contains no unit beside a dependency unit", func(t *testing.T) {
+			t.Parallel()
+
+			astray := dependentFixture()
+			astray.Signatures = []string{absentRoot}
+			msg := assert.Rejects(t, "a signature root the load never applies", func(tb assert.TB) {
+				frontendtest.AssertSignatureDepth(tb, over(frontendtest.NewScriptedDependent(), astray))
+			})
+			assert.Contains(t, msg, "at least one unit shallow",
+				"a dependency unit loads shallow under any root, so it proves nothing about the root")
+		})
+
 		t.Run("passes a fixture that lists what the signature-only load drops", func(t *testing.T) {
 			t.Parallel()
 
@@ -417,7 +430,174 @@ func TestChecks(t *testing.T) {
 			frontendtest.AssertLinked(t, setupOver(singleFixture()))
 		})
 	})
+
+	t.Run("AssertDependencies", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes the scripted language in the dependent role", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.AssertDependencies(t, over(frontendtest.NewScriptedDependent(), dependentFixture()))
+		})
+
+		t.Run("passes a dependent whose units are unclaimed workspace files", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.AssertDependencies(t, over(&vendored{frontendtest.NewScripted()}, vendoredFixture()))
+		})
+
+		t.Run("passes a language that refuses the perturbed byte", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.AssertDependencies(t, over(
+				strictDependent{&strict{frontendtest.NewScripted()}}, dependentFixture(),
+			))
+		})
+
+		t.Run("rejects a frontend outside the dependent role", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a frontend that loads no dependency", func(tb assert.TB) {
+				frontendtest.AssertDependencies(tb, setupOver(dependentFixture()))
+			})
+			assert.Contains(t, msg, "not in the dependent role", "the rejection names the missing role")
+		})
+
+		t.Run("rejects rounds that return no unit", func(t *testing.T) {
+			t.Parallel()
+
+			bare := dependentFixture()
+			bare.Stores = map[string]fs.FS{frontendtest.ScriptedStore: fstest.MapFS{}}
+			msg := assert.Rejects(t, "a store without the imported package", func(tb assert.TB) {
+				frontendtest.AssertDependencies(tb, over(frontendtest.NewScriptedDependent(), bare))
+			})
+			assert.Contains(t, msg, "no dependency round returned a unit", "the rejection names the empty rounds")
+		})
+
+		t.Run("rejects a dependency unit declared from bytes it never read through the unit", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a dependency parse that reads around the door", func(tb assert.TB) {
+				frontendtest.AssertDependencies(tb, over(
+					&unreadDependency{frontendtest.NewScriptedDependent()}, dependentFixture(),
+				))
+			})
+			assert.Contains(t, msg, "re-keys", "the rejection names the key the byte never moved")
+		})
+	})
+
+	t.Run("AssertReexports", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes the scripted language in the exporter role", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.AssertReexports(t, over(frontendtest.NewScriptedExporter(), exporterFixture()))
+		})
+
+		t.Run("rejects a frontend outside the exporter role", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a frontend that follows no re-export", func(tb assert.TB) {
+				frontendtest.AssertReexports(tb, setupOver(exporterFixture()))
+			})
+			assert.Contains(t, msg, "not in the exporter role", "the rejection names the missing role")
+		})
+
+		t.Run("rejects a fixture that lists no re-exported declaration", func(t *testing.T) {
+			t.Parallel()
+
+			bare := exporterFixture()
+			bare.Reexported = nil
+			msg := assert.Rejects(t, "a fixture with nothing to check", func(tb assert.TB) {
+				frontendtest.AssertReexports(tb, over(frontendtest.NewScriptedExporter(), bare))
+			})
+			assert.Contains(t, msg, "lists no declaration", "the rejection names what the fixture owes")
+		})
+
+		t.Run("rejects an exporter whose files publish nothing", func(t *testing.T) {
+			t.Parallel()
+
+			msg := assert.Rejects(t, "a re-export the frontend never names", func(tb assert.TB) {
+				frontendtest.AssertReexports(tb, over(&silentExporter{frontendtest.NewScriptedExporter()},
+					exporterFixture()))
+			})
+			assert.Contains(t, msg, "targets", "the rejection names the declaration no reference targets")
+		})
+	})
 }
+
+// vendored is the scripted language in the dependent role reading
+// each need from the workspace's skip directory, which the claim
+// carves out: the shape of a Go vendor tree, whose dependency members
+// are workspace files.
+type vendored struct {
+	*frontendtest.Scripted
+}
+
+// Dependencies returns one unit per need the skip directory lists.
+func (*vendored) Dependencies(
+	_ context.Context, round plugin.DependencyRound, r plugin.StoreReader,
+) ([][]plugin.SourceRef, error) {
+	var out [][]plugin.SourceRef
+	for _, need := range round.Needs {
+		dir := path.Join(vendorRoot, need.Path)
+		entries, err := r.ReadDir(dir)
+		if err != nil {
+			return nil, err
+		}
+		unit := make([]plugin.SourceRef, len(entries))
+		for i, e := range entries {
+			unit[i] = plugin.SourceRef{Path: path.Join(dir, e.Name())}
+		}
+		out = append(out, unit)
+	}
+	return out, nil
+}
+
+// unreadDependency is the scripted language in the dependent role
+// declaring each dependency unit's files from their paths alone, the
+// shape of a frontend that reads a dependency around the unit, which
+// the dependency check must expose.
+type unreadDependency struct {
+	*frontendtest.ScriptedDependent
+}
+
+// Parse lowers a workspace unit, and declares a dependency unit's
+// files without reading them.
+func (f *unreadDependency) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+	if _, _, qualified := plugin.CutStorePath(u.Files()[0].Path); !qualified {
+		return f.ScriptedDependent.Parse(ctx, u)
+	}
+	for _, ref := range u.Files() {
+		_, inner, _ := plugin.CutStorePath(ref.Path)
+		pkg := u.Graph().Package(path.Dir(inner))
+		pkg.Files = append(pkg.Files, &node.File{Path: ref.Path})
+	}
+	return nil
+}
+
+// strictDependent is the strict language in the dependent role, so a
+// perturbed dependency member fails the load.
+type strictDependent struct {
+	*strict
+}
+
+// Dependencies returns the scripted dependent's units.
+func (f strictDependent) Dependencies(
+	ctx context.Context, round plugin.DependencyRound, r plugin.StoreReader,
+) ([][]plugin.SourceRef, error) {
+	return (&frontendtest.ScriptedDependent{Scripted: f.Scripted}).Dependencies(ctx, round, r)
+}
+
+// silentExporter is the scripted language in the exporter role whose
+// files publish nothing, which the re-export check must expose.
+type silentExporter struct {
+	*frontendtest.ScriptedExporter
+}
+
+// Exports returns no candidate for any name.
+func (*silentExporter) Exports(plugin.ImportScope, string) plugin.Candidates { return nil }
 
 // The drifts the restless frontend can record.
 const (

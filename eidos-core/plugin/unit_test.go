@@ -32,6 +32,20 @@ func goSyntax() plugin.CommentSyntax {
 	}
 }
 
+// nestedSyntax is comment forms whose markers begin with each other,
+// as Rust's do: the plain line form first, because the render side
+// writes it, the outer and inner doc line forms after it, and a plain
+// block before a doc block with a star gutter.
+func nestedSyntax() plugin.CommentSyntax {
+	return plugin.CommentSyntax{
+		Line: []string{"//", "///", "//!"},
+		Blocks: []plugin.CommentBlock{
+			{Open: "/*", Close: "*/"},
+			{Open: "/**", Close: "*/", Gutter: "*"},
+		},
+	}
+}
+
 // unitCode is a code for the source unit fixtures' findings.
 var unitCode = diag.Code{Prefix: "tst", Number: 5}
 
@@ -191,6 +205,24 @@ func TestSourceUnit(t *testing.T) {
 			_, err := u.Read("svc/store/absent.go")
 			assert.HasError(t, err, "the read fails")
 			assert.Contains(t, err.Error(), "svc/store/absent.go", "the error names the path")
+		})
+
+		t.Run("returns a qualified member's bytes from its store", func(t *testing.T) {
+			t.Parallel()
+
+			u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: qualifiedFile}}, withCache(), plugin.DepthSignatures,
+				goSyntax(), unitBrand, diag.NewSink(), frontendOrigin)
+			b, err := u.Read(qualifiedFile)
+			assert.NoError(t, err, "the dependency member reads")
+			assert.Equal(t, string(b), "package lib\n", "the bytes are the store's")
+		})
+
+		t.Run("returns ErrStoreAbsent for a qualified member over a tree without stores", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOver([]plugin.SourceRef{{Path: qualifiedFile}}, plugin.DepthSignatures, goSyntax())
+			_, err := u.Read(qualifiedFile)
+			assert.ErrorIs(t, err, plugin.ErrStoreAbsent, "the unit's tree provides no store")
 		})
 	})
 
@@ -557,6 +589,32 @@ func TestSourceUnit(t *testing.T) {
 			}, "a tool name is lowercase alphanumeric throughout")
 			assert.Empty(t, parts.Annotations, "no annotation is returned")
 		})
+
+		t.Run("returns the documentation after the longest line marker", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOver([]plugin.SourceRef{unitFile()}, plugin.DepthFull, nestedSyntax())
+			parts := u.Comment("/// Row is one record.\n//! The module keeps rows.", continuedAt)
+			assert.Equal(t, parts.Docs, []string{"Row is one record.", "The module keeps rows."},
+				"no part of a longer marker is left in the text")
+		})
+
+		t.Run("returns a carrier after the longest line marker", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOver([]plugin.SourceRef{unitFile()}, plugin.DepthFull, nestedSyntax())
+			parts := u.Comment("/// "+setMark+tablePayload, continuedAt)
+			assert.Length(t, parts.Carriers, 1, "the carrier is returned")
+			assert.Equal(t, parts.Carriers[0].Payload, tablePayload, "the payload follows the mark")
+		})
+
+		t.Run("strips the delimiters of the longest enclosing block", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOver([]plugin.SourceRef{unitFile()}, plugin.DepthFull, nestedSyntax())
+			parts := u.Comment("/**\n * Row is one record.\n */", continuedAt)
+			assert.Equal(t, parts.Docs, []string{"Row is one record."}, "the doc block's gutter is removed")
+		})
 	})
 
 	t.Run("Negated", func(t *testing.T) {
@@ -812,6 +870,20 @@ func TestSourceUnit(t *testing.T) {
 			gb := unitOf(t, unitTree()).Graph()
 			a := gb.Package("svc/store")
 			assert.True(t, a == gb.Package("svc/store"), "the second call returns the first package")
+		})
+
+		t.Run("returns the path's segments", func(t *testing.T) {
+			t.Parallel()
+
+			gb := unitOf(t, unitTree()).Graph()
+			assert.Equal(t, gb.Package("svc/store").Path, []string{"svc", "store"}, "one segment per element")
+		})
+
+		t.Run("returns no segments for the empty path", func(t *testing.T) {
+			t.Parallel()
+
+			gb := unitOf(t, unitTree()).Graph()
+			assert.Empty(t, gb.Package("").Path, "the global package has no segments")
 		})
 	})
 

@@ -35,25 +35,113 @@ import (
 // A file without a recorded scope resolves nothing: there are no
 // bindings to resolve through, and its references keep their
 // spellings.
+//
+// A declaration resolves under the scope of the file its position
+// names, which is not always the file whose tree contains it: a
+// language that folds a method onto the declaration of its receiver
+// type, as Go and Rust do, moves the method into another file's tree,
+// and the method's spellings resolve through its own file's imports.
+// Where two packages each contain a file of that path, the file of
+// the declaration's own package is the one.
+//
+// A candidate that names no declaration is followed through the
+// re-exports of its package when its language's frontend is a
+// [plugin.Exporter]. The package's files name what they publish under
+// the candidate's name, in path order, and the first file whose
+// candidates resolve by the same rule decides. What that file's
+// candidates resolve to counts as the candidate's own hits in its
+// tier. A package and name already on the following path find
+// nothing, which stops a cycle of re-exports.
 func link(packages []*spliced, scopes []scopeEntry, ix *index, sink *diag.Sink) {
 	byFile := make(map[*node.File]scopeEntry, len(scopes))
 	for _, s := range scopes {
 		byFile[s.file] = s
 	}
+	byPath := make(map[fileKey]scopeEntry, len(scopes))
+	byName := make(map[string]scopeEntry, len(scopes))
+	exporters := map[pkgKey][]exporterEntry{}
 	for _, sp := range packages {
 		for _, f := range sp.pkg.Files {
 			entry, held := byFile[f]
 			if !held {
 				continue
 			}
-			linkUnder(f, symbol.Identity{}, nil, entry, f.ID, ix, sink)
+			byPath[fileKey{pkg: sp.pkg, path: f.Path}] = entry
+			if _, met := byName[f.Path]; !met {
+				byName[f.Path] = entry
+			}
+			if exp, exports := entry.frontend.(plugin.Exporter); exports {
+				key := pkgKey{lang: sp.lang, path: sp.pkg.ID.Package}
+				exporters[key] = append(exporters[key], exporterEntry{scope: entry, exporter: exp})
+			}
+		}
+	}
+	for _, files := range exporters {
+		slices.SortFunc(files, func(a, b exporterEntry) int {
+			return strings.Compare(a.scope.file.Path, b.scope.file.Path)
+		})
+	}
+	w := &linker{
+		byPath: byPath, byName: byName, exporters: exporters, following: map[followKey]bool{}, ix: ix, sink: sink,
+	}
+	for _, sp := range packages {
+		w.pkg = sp.pkg
+		for _, f := range sp.pkg.Files {
+			entry, held := byFile[f]
+			if !held {
+				continue
+			}
+			w.under(f, symbol.Identity{}, nil, entry)
 		}
 	}
 }
 
-// linkUnder resolves the references directly inside one
-// declaration, then descends into each nested declaration under its
-// own identity.
+// fileKey names one file of one package, which is how a declaration's
+// position finds the scope it resolves under: two packages can each
+// contain a file of one path, as a TypeScript namespace's package and
+// its file's own package do.
+type fileKey struct {
+	pkg  *node.Package
+	path string
+}
+
+// pkgKey names one package of one language, which is how following
+// a re-export finds the files of a candidate's package.
+type pkgKey struct {
+	lang symbol.Lang
+	path string
+}
+
+// followKey is one package and name on the following path.
+type followKey struct {
+	pkg  pkgKey
+	name string
+}
+
+// exporterEntry is one file that recorded a scope, in a language
+// whose frontend is a [plugin.Exporter].
+type exporterEntry struct {
+	scope    scopeEntry
+	exporter plugin.Exporter
+}
+
+// linker walks the packages' declarations one package at a time and
+// resolves their references. pkg is the package under the walk, byName
+// maps a path onto the first file of that path the splice recorded a
+// scope for, and following is the package-and-name path of the
+// re-exports it follows.
+type linker struct {
+	pkg       *node.Package
+	byPath    map[fileKey]scopeEntry
+	byName    map[string]scopeEntry
+	exporters map[pkgKey][]exporterEntry
+	following map[followKey]bool
+	ix        *index
+	sink      *diag.Sink
+}
+
+// under resolves the references directly inside one declaration,
+// then descends into each nested declaration under its own identity.
 //
 // The owner is what a lexically scoped language resolves against:
 // a name written inside a message resolves to that message's own
@@ -61,11 +149,12 @@ func link(packages []*spliced, scopes []scopeEntry, ix *index, sink *diag.Sink) 
 // identity, which a dropped duplicate is, keeps its parent's owner,
 // because its references are written inside the parent. The type
 // parameters in scope map each parameter's name to its identity.
-func linkUnder(
-	s symbol.Symbol, owner symbol.Identity, params map[string]symbol.Identity,
-	entry scopeEntry, file symbol.Identity, ix *index, sink *diag.Sink,
+// A nested declaration whose position names another file of the
+// package that recorded a scope resolves under that file's scope.
+func (w *linker) under(
+	s symbol.Symbol, owner symbol.Identity, params map[string]symbol.Identity, entry scopeEntry,
 ) {
-	scope := plugin.ImportScope{File: file, Owner: owner, Bindings: entry.bindings}
+	scope := plugin.ImportScope{File: entry.file.ID, Owner: owner, Bindings: entry.bindings}
 	node.Walk(s, func(child symbol.Symbol) bool {
 		if child == s {
 			return true
@@ -78,13 +167,14 @@ func linkUnder(
 				if id, spells := params[ref.Spelling]; spells && len(ref.Args) == 0 {
 					ref.Target = id
 				} else {
-					resolve(ref, entry.frontend, scope, ix, sink)
+					w.resolve(ref, entry.frontend, scope)
 				}
 			}
 			return true
 		}
+		next := w.scopeOf(child, entry)
 		declared := typeParamsOf(child)
-		if !scoped(child) && len(declared) == 0 {
+		if !scoped(child) && len(declared) == 0 && next.file == entry.file {
 			return true
 		}
 		inner := owner
@@ -93,9 +183,102 @@ func linkUnder(
 				inner = decl.Identity()
 			}
 		}
-		linkUnder(child, inner, withParams(params, declared), entry, file, ix, sink)
+		w.under(child, inner, withParams(params, declared), next)
 		return false // the recursion walks this subtree
 	})
+}
+
+// scopeOf returns the scope a declaration resolves under: the one its
+// position's file recorded when that is another file, and the
+// enclosing scope when the position names no file or a file with no
+// recorded scope, as a Go line directive can. A file of the package
+// under the walk comes first, and otherwise the first file of that
+// path the splice recorded, as for a Rust impl block written in
+// another module of the crate.
+func (w *linker) scopeOf(s symbol.Symbol, enclosing scopeEntry) scopeEntry {
+	at := s.Position().File
+	if at == "" || at == enclosing.file.Path {
+		return enclosing
+	}
+	if entry, held := w.byPath[fileKey{pkg: w.pkg, path: at}]; held {
+		return entry
+	}
+	if entry, held := w.byName[at]; held {
+		return entry
+	}
+	return enclosing
+}
+
+// resolve settles one reference: the first tier with a candidate the
+// graph contains decides, that candidate is the target, and several
+// such candidates in the tier report as an ambiguity. A target an
+// importer's language declares in another file records the import
+// naming that file as the reference's package.
+func (w *linker) resolve(ref *node.TypeRef, f plugin.Frontend, scope plugin.ImportScope) {
+	hits := w.firstTier(f.Resolve(scope, ref.Spelling))
+	if len(hits) == 0 {
+		return
+	}
+	ref.Target = hits[0]
+	if imp, imports := f.(plugin.Importer); imports {
+		if file := w.ix.files[ref.Target]; file != "" && file != scope.File.Name {
+			ref.Package = imp.ImportOf(scope, file)
+		}
+	}
+	if len(hits) > 1 {
+		names := make([]string, len(hits))
+		for i, h := range hits {
+			names[i] = h.String()
+		}
+		w.sink.Warnf(AmbiguousReference, ref.Pos, f.Name(),
+			"%q resolves to %s, and the first is the target", ref.Spelling, strings.Join(names, " and "))
+	}
+}
+
+// firstTier returns the declarations of the first tier that names
+// any, in candidate order and without repeats, and nothing when no
+// tier does.
+func (w *linker) firstTier(tiers plugin.Candidates) []symbol.Identity {
+	for _, tier := range tiers {
+		var hits []symbol.Identity
+		for _, c := range tier {
+			for _, full := range w.hitsOf(c) {
+				if !slices.Contains(hits, full) {
+					hits = append(hits, full)
+				}
+			}
+		}
+		if len(hits) > 0 {
+			return hits
+		}
+	}
+	return nil
+}
+
+// hitsOf returns the declarations one candidate names: the ones the
+// index lists under its bare identity, or else what following the
+// re-exports of its package finds. A candidate with an owner names a
+// member, which no file re-exports, and a package and name already on
+// the following path find nothing.
+func (w *linker) hitsOf(c symbol.Identity) []symbol.Identity {
+	if hits := w.ix.lookup(c); len(hits) > 0 || c.Owner != "" {
+		return hits
+	}
+	pkg := pkgKey{lang: c.Lang, path: c.Package}
+	files := w.exporters[pkg]
+	key := followKey{pkg: pkg, name: c.Name}
+	if len(files) == 0 || w.following[key] {
+		return nil
+	}
+	w.following[key] = true
+	defer delete(w.following, key)
+	for _, e := range files {
+		scope := plugin.ImportScope{File: e.scope.file.ID, Bindings: e.scope.bindings}
+		if hits := w.firstTier(e.exporter.Exports(scope, c.Name)); len(hits) > 0 {
+			return hits
+		}
+	}
+	return nil
 }
 
 // scoped reports whether a declaration opens a lexical scope a
@@ -152,43 +335,4 @@ func withParams(
 		}
 	}
 	return out
-}
-
-// resolve settles one reference: the first tier with a candidate
-// the graph contains decides, that candidate is the target, and
-// several such candidates in the tier report as an ambiguity. A
-// target an importer's language declares in another file records the
-// import naming that file as the reference's package.
-func resolve(
-	ref *node.TypeRef, f plugin.Frontend, scope plugin.ImportScope,
-	ix *index, sink *diag.Sink,
-) {
-	for _, tier := range f.Resolve(scope, ref.Spelling) {
-		var hits []symbol.Identity
-		for _, c := range tier {
-			for _, full := range ix.lookup(c) {
-				if !slices.Contains(hits, full) {
-					hits = append(hits, full)
-				}
-			}
-		}
-		if len(hits) == 0 {
-			continue
-		}
-		ref.Target = hits[0]
-		if imp, imports := f.(plugin.Importer); imports {
-			if file := ix.files[ref.Target]; file != "" && file != scope.File.Name {
-				ref.Package = imp.ImportOf(scope, file)
-			}
-		}
-		if len(hits) > 1 {
-			names := make([]string, len(hits))
-			for i, h := range hits {
-				names[i] = h.String()
-			}
-			sink.Warnf(AmbiguousReference, ref.Pos, f.Name(),
-				"%q resolves to %s, and the first is the target", ref.Spelling, strings.Join(names, " and "))
-		}
-		return
-	}
 }
