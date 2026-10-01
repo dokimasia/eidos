@@ -426,6 +426,82 @@ func TestMembers(t *testing.T) {
 				"two element types under one spelling conflict")
 		})
 
+		// inlineRead declares an interface whose Read takes an inline
+		// body of one field typed by a package's Buf.
+		inlineRead := func(host, field, pkg string) *node.Interface {
+			i := iface(svcPath, host)
+			m := coretest.Method(svcPath, host, "Read")
+			m.Params = []*node.Param{{Name: "p", Type: &node.TypeRef{
+				Spelling: "{" + field + ":Buf}", Form: symbol.FormInline,
+				Fields: []*node.Field{{Name: field, Type: named(pkg, "Buf", symbol.KindStruct)}},
+			}}}
+			i.Methods = []*node.Method{m}
+			return i
+		}
+		inlines := []struct {
+			name  string
+			field string
+			pkg   string
+			want  []rules.GapReason
+		}{
+			{
+				name:  "folds two inline parameters of one spelling and one target into one member",
+				field: "b", pkg: svcPath, want: []rules.GapReason{},
+			},
+			{
+				name:  "reports GapConflict for inline parameters of one spelling that name two targets",
+				field: "b", pkg: depPath, want: []rules.GapReason{rules.GapConflict},
+			},
+			{
+				name:  "reports GapConflict for inline parameters of two spellings",
+				field: "c", pkg: svcPath, want: []rules.GapReason{rules.GapConflict},
+			},
+		}
+		for _, tt := range inlines {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				local, second := inlineRead("Local", "b", svcPath), inlineRead("Second", tt.field, tt.pkg)
+				host := iface(svcPath, "Host")
+				host.Embeds = []*node.Embed{
+					{Ref: named(svcPath, "Local", symbol.KindInterface)},
+					{Ref: named(svcPath, "Second", symbol.KindInterface)},
+				}
+				b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, local, second, host)))
+				set, _ := b.MembersOf(host)
+				assert.Equal(t, reasons(set), tt.want, "an inline body keys by its spelling and its members' targets")
+			})
+		}
+
+		t.Run("reports GapConflict for inline parameters whose methods name two targets", func(t *testing.T) {
+			t.Parallel()
+
+			// getter declares an interface whose Read takes an inline
+			// body of one method returning a package's Buf.
+			getter := func(host, pkg string) *node.Interface {
+				i := iface(svcPath, host)
+				m := coretest.Method(svcPath, host, "Read")
+				m.Params = []*node.Param{{Name: "p", Type: &node.TypeRef{
+					Spelling: "{Get():Buf}", Form: symbol.FormInline,
+					Methods: []*node.Method{{
+						Name: "Get", Returns: []*node.Return{{Type: named(pkg, "Buf", symbol.KindStruct)}},
+					}},
+				}}}
+				i.Methods = []*node.Method{m}
+				return i
+			}
+			host := iface(svcPath, "Host")
+			host.Embeds = []*node.Embed{
+				{Ref: named(svcPath, "Local", symbol.KindInterface)},
+				{Ref: named(svcPath, "Foreign", symbol.KindInterface)},
+			}
+			b, _, _ := boundOver(t, coretest.Frozen(t,
+				coretest.Package(svcPath, getter("Local", svcPath), getter("Foreign", depPath), host)))
+			set, _ := b.MembersOf(host)
+			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapConflict},
+				"one spelling whose method returns two targets conflicts")
+		})
+
 		t.Run("names the host that lists a deeper conflicting contributor", func(t *testing.T) {
 			t.Parallel()
 

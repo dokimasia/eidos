@@ -619,10 +619,10 @@ func signature(m *node.Method) string {
 }
 
 // typeKey writes what a reference names: a resolved name by its
-// target, an unresolved one by its spelling, and a structural one
-// by its form, its length and split, and its children. Type
-// arguments follow in brackets. Two references spelled alike in two
-// packages key apart by their targets.
+// target, an unresolved one by its spelling, an inline body as
+// [inlineKey] writes it, and a structural one by its form, its length
+// and split, and its children. Type arguments follow in brackets. Two
+// references spelled alike in two packages key apart by their targets.
 func typeKey(b *strings.Builder, ref *node.TypeRef) {
 	if ref == nil {
 		return
@@ -630,6 +630,8 @@ func typeKey(b *strings.Builder, ref *node.TypeRef) {
 	switch {
 	case !ref.Target.IsZero():
 		b.WriteString(ref.Target.String())
+	case ref.Form == symbol.FormInline:
+		inlineKey(b, ref)
 	case ref.Form != symbol.FormNamed:
 		b.WriteString(strconv.Itoa(int(ref.Form)))
 		b.WriteByte(':')
@@ -652,4 +654,29 @@ func typeKey(b *strings.Builder, ref *node.TypeRef) {
 		b.WriteByte(',')
 	}
 	b.WriteByte(']')
+}
+
+// inlineKey writes an inline body's key: its form and its spelling,
+// which states the body's kind, its member names and the embeds no
+// member records, and then each field's type and each method's
+// signature by what they name. Two bodies spelled alike in two
+// packages key apart by their members' targets.
+func inlineKey(b *strings.Builder, ref *node.TypeRef) {
+	b.WriteString(strconv.Itoa(int(ref.Form)))
+	b.WriteByte(':')
+	b.WriteString(ref.Spelling)
+	b.WriteByte('{')
+	for _, f := range ref.Fields {
+		if f != nil {
+			typeKey(b, f.Type)
+		}
+		b.WriteByte(',')
+	}
+	for _, m := range ref.Methods {
+		if m != nil {
+			b.WriteString(signature(m))
+		}
+		b.WriteByte(',')
+	}
+	b.WriteByte('}')
 }
