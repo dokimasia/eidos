@@ -105,6 +105,29 @@ linters:
             - pkg: go.dokimi.dev/eidos/core/frontend
               desc: the write side never loads
 
+        # One layer in eidos-lang binds tree-sitter: it wraps the
+        # runtime binding and pins the grammars, so a change of binding
+        # changes one module, and the binding's leaks stay behind the
+        # functions the layer calls.
+        tree-sitter:
+          files:
+            - "$all"
+            - "!**/eidos-lang/treesitter/**"
+          deny:
+            - pkg: github.com/tree-sitter
+              desc: parse through go.dokimi.dev/eidos/lang/treesitter, the one package that binds tree-sitter
+
+        # A frontend reads bytes through its unit's door and the load's
+        # stores, which fold every byte into a unit key. A tool's output
+        # is bytes no key folds, so no frontend runs one.
+        frontend-tools:
+          files:
+            - "**/frontend/**"
+            - "!$test"
+          deny:
+            - pkg: os/exec
+              desc: a frontend runs no tool; read through the unit's door or a store
+
     funcorder:
       constructor: true
       struct-method: true
@@ -174,6 +197,12 @@ linters:
       # value-or-error contract. nilnil flags exactly that return.
       - path: _test\.go$
         linters: [nilnil]
+      # cgo rewrites a call that passes a Go pointer to C into a pointer
+      # check whose second argument is 0 == 0, and dupSubExpr reports
+      # that comparison at the call. The source is the call alone.
+      - linters: [gocritic]
+        text: "dupSubExpr: suspicious identical LHS and RHS for `==` operator"
+        source: "\\bC\\.\\w+\\("
 
 formatters:
   enable:
