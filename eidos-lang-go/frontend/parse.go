@@ -173,8 +173,8 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 
 	pkgPath := st.place.importPath
 	pkgName := parsed.Name.Name
-	if strings.HasSuffix(pkgName, "_test") {
-		pkgPath += "_test"
+	if strings.HasSuffix(pkgName, golang.TestSuffix) {
+		pkgPath += golang.TestSuffix
 	}
 	pkg := gb.Package(pkgPath)
 

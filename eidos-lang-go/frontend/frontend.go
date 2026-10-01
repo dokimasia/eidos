@@ -101,7 +101,7 @@ func markTests(u *plugin.SourceUnit) error {
 	gb := u.Graph()
 	for _, pkg := range gb.Packages() {
 		for _, file := range pkg.Files {
-			if strings.HasSuffix(file.Path, "_test"+golang.Extension) {
+			if strings.HasSuffix(file.Path, golang.TestSuffix+golang.Extension) {
 				gb.Stamp(file, meta.RawStamp{
 					Key: golang.TestFileKey, Value: true, Pos: file.Pos,
 				})

@@ -17,7 +17,12 @@
 // [Predeclared] reports Go's predeclared type names, and [Basic] and
 // [Ordered] the basic types among them, read off the universe scope
 // of go/types. [ImportName] and [AssumedName] return the qualifier an
-// import binds.
+// import binds. [ImportPath] returns the import path a workspace
+// directory's package loads under: the frontend loads a package under
+// it, and the backend names the package of a file it routes there by
+// it. [TestSuffix] ends a test file's stem and the import path the
+// frontend loads an external test package under, so the backend
+// spells a file of that package as a test file.
 //
 // [Scope] is what one file's imports bind, and [NewScope] derives it
 // from the file's import records. The load's resolution step, the

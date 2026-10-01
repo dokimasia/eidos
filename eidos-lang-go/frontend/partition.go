@@ -12,6 +12,7 @@ import (
 	"golang.org/x/mod/modfile"
 	"golang.org/x/mod/module"
 
+	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
@@ -110,15 +111,11 @@ func (p *moduleProbe) remember(dirs []string, root moduleRoot) {
 	}
 }
 
-// importPath derives the path a directory's package loads under.
+// importPath derives the path a directory's package loads under,
+// through the derivation the backend routes a written file's package
+// by.
 func (r moduleRoot) importPath(dir string) string {
-	if r.module == "" {
-		return dir
-	}
-	if dir == r.dir {
-		return r.module
-	}
-	return r.module + "/" + strings.TrimPrefix(dir, r.dir+"/")
+	return golang.ImportPath(r.module, r.dir, dir)
 }
 
 // unitPlace is where a unit's package directory loads: its import

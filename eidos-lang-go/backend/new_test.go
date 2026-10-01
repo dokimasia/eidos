@@ -15,6 +15,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/output"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/render"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
@@ -65,18 +66,30 @@ func rowOf(fields ...*emit.Field) *emit.Struct {
 func rendered(tb assert.TB, decls ...symbol.Symbol) (string, *diag.Sink) {
 	tb.Helper()
 
+	return renderedIn(tb, symbol.Identity{Lang: golang.Lang, Package: svcPkg, Kind: symbol.KindPackage}, decls...)
+}
+
+// renderedIn settles one unit of a package through the backend and
+// renders it, and returns the file beside the run's findings. The file
+// declares the unit's package, so the zero package is a file the
+// layout derives no package for.
+func renderedIn(tb assert.TB, pkg symbol.Identity, decls ...symbol.Symbol) (string, *diag.Sink) {
+	tb.Helper()
+
 	b := backend.New()
 	e := plugin.NewEmit()
 	assert.NoError(tb, e.Add(plugin.Unit{
-		Plugin: unitWord, Per: plugin.PerSource, Word: unitWord, Key: unitKey,
-		Pkg:   symbol.Identity{Lang: golang.Lang, Package: svcPkg, Kind: symbol.KindPackage},
-		Decls: decls,
+		Plugin: unitWord, Per: plugin.PerSource, Word: unitWord, Key: unitKey, Pkg: pkg, Decls: decls,
 	}), "the unit is added")
 	sink := diag.NewSink()
 	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles")
 	r, held := b.(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	files, err := r.Render(&plugin.RenderContext{Emit: e, Sink: sink, Plugin: golang.Name})
+	s, spells := b.(plugin.FileSpeller)
+	assert.True(tb, spells, "the built backend spells filenames")
+	files, err := r.Render(&plugin.RenderContext{
+		Emit: e, Files: backendtest.Files(e, s), Sink: sink, Plugin: golang.Name,
+	})
 	assert.NoError(tb, err, "the pass renders every file")
 	if len(files) == 0 {
 		return "", sink
@@ -190,6 +203,17 @@ func TestNew(t *testing.T) {
 			body, sink := rendered(t, rowOf(&emit.Field{Name: "When", Type: ref("time.Duration")}))
 			assert.Length(t, collected(sink), 1, "one finding for the skipped declaration")
 			assert.NotContains(t, body, "When", "the declaration is skipped")
+		})
+
+		t.Run("reports a file without a package as a refused skeleton", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := renderedIn(t, symbol.Identity{}, rowOf())
+			assert.Equal(t, body, "", "the file is withheld")
+			findings := collected(sink)
+			assert.Length(t, findings, 1, "one finding for the withheld file")
+			assert.Equal(t, findings[0].Code, render.RefusedTemplate, "the skeleton refuses the file")
+			assert.Contains(t, findings[0].Msg, "import base", "the finding names what the plan can state")
 		})
 	})
 }

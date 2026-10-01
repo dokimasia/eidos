@@ -366,17 +366,20 @@ func Docs(lines []string, prefix ...string) string {
 
 // Package writes the package clause's name, taken from the
 // identity's own name and falling back to the name its path
-// assumes, [golang.AssumedName]. An identity naming no package
-// spells nothing, and the formatter then refuses the file. The
-// backend invents no package name.
-func Package(id symbol.Identity) string {
+// assumes, [golang.AssumedName]. Every Go file declares a package,
+// and the backend invents no package name, so an identity naming no
+// package returns an error, and the render withholds the file. The
+// layout routes a file without a package where no Go module contains
+// the file's directory and the plan states no import base for it.
+func Package(id symbol.Identity) (string, error) {
 	switch {
 	case id.Name != "":
-		return id.Name
+		return id.Name, nil
 	case id.Package != "":
-		return golang.AssumedName(id.Package)
+		return golang.AssumedName(id.Package), nil
 	default:
-		return ""
+		return "", refuse("every Go file declares a package, and none derives for this file: " +
+			"no Go module contains its directory, and the plan states no import base for it")
 	}
 }
 

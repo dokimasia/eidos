@@ -701,21 +701,25 @@ func TestVocabulary(t *testing.T) {
 		t.Run("returns the identity's own name", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Package(symbol.Identity{Name: storeName, Package: yamlPkg}), storeName,
-				"the declared name")
+			got, err := backend.Package(symbol.Identity{Name: storeName, Package: yamlPkg})
+			assert.NoError(t, err, "a named package spells")
+			assert.Equal(t, got, storeName, "the declared name")
 		})
 
 		t.Run("returns the name the path assumes for an identity without a name", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Package(symbol.Identity{Package: yamlPkg}), yamlName,
-				"the major version is dropped")
+			got, err := backend.Package(symbol.Identity{Package: yamlPkg})
+			assert.NoError(t, err, "a package path spells")
+			assert.Equal(t, got, yamlName, "the major version is dropped")
 		})
 
-		t.Run("returns nothing for an identity naming nothing", func(t *testing.T) {
+		t.Run("returns an error for an identity naming no package", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, backend.Package(symbol.Identity{}), "", "the formatter then refuses the file")
+			_, err := backend.Package(symbol.Identity{})
+			assert.HasError(t, err, "every Go file declares a package")
+			assert.Contains(t, err.Error(), "import base", "the error names what the plan can state")
 		})
 	})
 
