@@ -855,6 +855,15 @@ func TestParse(t *testing.T) {
 			assert.Empty(t, onlyFile(t, gb).Annotations, "the tool directive leaves with the function")
 		})
 
+		t.Run("reports UnaddressedCarrier for a carrier on a member of an inline body", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedFindings(t, nil, plugin.DepthFull,
+				"package p\n\ntype H struct {\n\ta struct {\n\t\t// +fixture:gen:x\n\t\tX int\n\t}\n}\n")
+			assert.Length(t, found, 1, "the carrier refuses once")
+			assert.Equal(t, found[0].Code, frontend.UnaddressedCarrier, "no identity names the member")
+		})
+
 		t.Run("gives an import declaration's doc to the file", func(t *testing.T) {
 			t.Parallel()
 

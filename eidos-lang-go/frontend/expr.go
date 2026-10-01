@@ -83,9 +83,11 @@ func (l *lowered) spelling(e ast.Expr) string {
 // sized array an Array with its literal length, a map a Map, a
 // channel a Stream whose direction is kept in the spelling, a
 // function type a Func with its parameters then its results, and
-// an inline struct or interface body Inline. A variadic parameter
-// inside a function type is the list it is. A qualified name
-// records the import path its qualifier binds, [lowered.packageOf].
+// an inline struct or interface body Inline, its members recorded by
+// [lowered.inlineFields] and [lowered.inlineMethods]. A variadic
+// parameter inside a function type is the list it is. A qualified
+// name records the import path its qualifier binds,
+// [lowered.packageOf].
 func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 	if e == nil {
 		return nil
@@ -129,11 +131,67 @@ func (l *lowered) typeRef(e ast.Expr) *node.TypeRef {
 		return l.structural(e, symbol.FormStream, t.Value)
 	case *ast.FuncType:
 		return l.funcRef(e, t)
-	case *ast.StructType, *ast.InterfaceType:
-		return &node.TypeRef{Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: symbol.FormInline}
+	case *ast.StructType:
+		return &node.TypeRef{
+			Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: symbol.FormInline, Fields: l.inlineFields(t),
+		}
+	case *ast.InterfaceType:
+		return &node.TypeRef{
+			Spelling: l.spelling(e), Pos: l.at(e.Pos()), Form: symbol.FormInline, Methods: l.inlineMethods(t),
+		}
 	default:
 		return &node.TypeRef{Spelling: l.spelling(e), Pos: l.at(e.Pos())}
 	}
+}
+
+// inlineFields lowers an inline struct body's named fields as a
+// declared struct's are, without identities and without their
+// comments, whose carriers the sweep refuses. A blank field binds
+// nothing and an embedded field is no field of the model, so both are
+// left out and the reference's spelling keeps them.
+func (l *lowered) inlineFields(t *ast.StructType) []*node.Field {
+	var out []*node.Field
+	for _, field := range t.Fields.List {
+		for _, name := range field.Names {
+			if !named(name) {
+				continue
+			}
+			out = append(out, &node.Field{
+				Name: name.Name, Pos: l.at(name.Pos()), Visibility: visibilityOf(name.Name),
+				Type: l.typeRef(field.Type), Tag: tagOf(field.Tag),
+			})
+		}
+	}
+	return out
+}
+
+// inlineMethods lowers an inline interface body's methods as a
+// declared interface's are, abstract, without identities and without
+// their comments, whose carriers the sweep refuses. An embedded
+// interface, a constraint element and a blank method are left out, and
+// the reference's spelling keeps them.
+func (l *lowered) inlineMethods(t *ast.InterfaceType) []*node.Method {
+	var out []*node.Method
+	for _, member := range t.Methods.List {
+		sig, is := member.Type.(*ast.FuncType)
+		if !is || len(member.Names) == 0 || !named(member.Names[0]) {
+			continue
+		}
+		name := member.Names[0].Name
+		m := &node.Method{
+			Name: name, Pos: l.at(member.Pos()), Visibility: visibilityOf(name), Abstract: true,
+		}
+		for _, field := range sig.Params.List {
+			m.Params = l.appendParams(m.Params, field, "")
+		}
+		if sig.Results != nil {
+			for _, field := range sig.Results.List {
+				m.Returns = l.appendReturns(m.Returns, field, "")
+			}
+		}
+		out = append(out, m)
+	}
+	return out
 }
 
 // packageOf returns the import path a qualified type name's qualifier

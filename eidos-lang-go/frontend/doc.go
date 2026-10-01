@@ -62,14 +62,21 @@
 // optional, a slice as a list, a sized array as an array with its
 // literal length in any integer form, a map, a channel as a stream,
 // a function type with its parameters then results, and an inline
-// body as inline, each child a reference in turn. Arguments split
-// out for an explicit generic instantiation, and parentheses unwrap,
-// which is the model's stated representation. A defined type over an
-// ordered basic type, [golang.Ordered], whose constants in the same
-// file name it as their type promotes to the Enum the schema names
-// for a Go constant group. Its value spellings are kept verbatim,
-// and its methods fold in from every file of the package, as a
-// struct's do.
+// body as inline, each child a reference in turn. Arguments split out
+// for an explicit generic instantiation, and parentheses unwrap,
+// which is the model's stated representation.
+//
+// An inline struct's named fields and an inline interface's methods
+// are the reference's fields and methods, without identities and
+// without their comments, so a carrier in the body refuses as one no
+// declaration takes. The body's embedded fields, embedded interfaces
+// and constraint elements remain in its spelling alone.
+//
+// A defined type over an ordered basic type, [golang.Ordered], whose
+// constants in the same file name it as their type promotes to the
+// Enum the schema names for a Go constant group. Its value spellings
+// are kept verbatim, and its methods fold in from every file of the
+// package, as a struct's do.
 // Resolve returns, as one tier, the candidates of the file's
 // [golang.Scope], which the parse derives from the file's import
 // records. The rules resolve a directive's spelling through the same
@@ -93,13 +100,17 @@
 // dot, and otherwise in the module cache at the selected version, its
 // hash record checked against go.sum, or in a workspace module's
 // vendor tree when the cache lacks the version and the tree passes the
-// go command's consistency checks. An import of a workspace module and
-// an import no required module provides place nowhere. A dependency
-// unit is one package directory without its tests, parsed
-// signature-only, and loads under the import path the go command gives
-// it: a replacement's tree under the original module path, and a
-// vendored copy under its path under vendor/. A standard library file
-// imports the modules the standard library vendors under vendor/.
+// go command's consistency checks. A dependency unit is one package
+// directory without its tests, parsed signature-only, and loads under
+// the import path the go command gives it: a replacement's tree under
+// the original module path, and a vendored copy under its path under
+// vendor/. A standard library file imports the modules the standard
+// library vendors under vendor/.
+//
+// A need the build places nowhere, such as an import of a workspace
+// module or an import no required module provides, yields no unit, and
+// the round reports it with the reason. The import "C" names cgo's
+// preamble and no package, so the round passes over it.
 //
 // A signature-only file records only the imports its retained
 // declarations name, so the next round follows what exported

@@ -30,6 +30,32 @@ func fieldsOf(tb assert.TB, src string) []*node.Field {
 	return file.Decls[0].(*node.Struct).Fields
 }
 
+// inlineOf parses one file whose first declaration is a struct H of
+// one field of a type, and returns the field's type.
+func inlineOf(tb assert.TB, imports, typ string) *node.TypeRef {
+	tb.Helper()
+
+	return fieldsOf(tb, "package p\n\n"+imports+"type H struct {\n\ta "+typ+"\n}\n")[0].Type
+}
+
+// fieldNames returns the names of fields, in order.
+func fieldNames(fields []*node.Field) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, f.Name)
+	}
+	return out
+}
+
+// methodNames returns the names of methods, in order.
+func methodNames(methods []*node.Method) []string {
+	out := make([]string, 0, len(methods))
+	for _, m := range methods {
+		out = append(out, m.Name)
+	}
+	return out
+}
+
 // Type expressions keep their verbatim spellings with arguments split
 // for instantiations, and record the import a qualified name names.
 // The reference shapes the corpus depends on are pinned here through
@@ -98,6 +124,120 @@ func TestExpr(t *testing.T) {
 
 			fields := fieldsOf(t, "package p\n\ntype H struct {\n\ta int\n}\n")
 			assert.Equal(t, fields[0].Type.Pos.Line, 4, "at the type's own line")
+		})
+	})
+
+	t.Run("inlineFields", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("records an inline struct's named fields as the reference's fields", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "struct {\n\t\tX, y int\n\t\tZ string\n\t}")
+			assert.Equal(t, fieldNames(ref.Fields), []string{"X", "y", "Z"}, "one field per bound name")
+		})
+
+		t.Run("records an inline field's visibility from its name", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "struct{ X, y int }")
+			assert.Equal(t, ref.Fields[1].Visibility, symbol.VisibilityPackage, "a lowercase name is unexported")
+		})
+
+		t.Run("records an inline field's tag unquoted", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, inlineOf(t, "", "struct{ X int `json:\"x\"` }").Fields[0].Tag, `json:"x"`,
+				"the tag a declared field records")
+		})
+
+		t.Run("records the import path of an inline field's type", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "import \"time\"\n\n", "struct{ D time.Duration }")
+			assert.Equal(t, ref.Fields[0].Type.Package, timePath, "the member's type resolves as any reference does")
+		})
+
+		t.Run("leaves an embedded field out of an inline struct's fields", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "struct {\n\t\tio.Reader\n\t\tX int\n\t}")
+			assert.Equal(t, fieldNames(ref.Fields), []string{"X"}, "the spelling keeps the embed")
+		})
+
+		t.Run("leaves a blank field out of an inline struct's fields", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "struct {\n\t\t_ int\n\t\tX int\n\t}")
+			assert.Equal(t, fieldNames(ref.Fields), []string{"X"}, "padding binds nothing")
+		})
+	})
+
+	t.Run("inlineMethods", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("records an inline interface's methods as the reference's methods", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "interface {\n\t\tRead(p []byte) (n int, err error)\n\t\tclose()\n\t}")
+			assert.Equal(t, methodNames(ref.Methods), []string{"Read", "close"}, "each method in order")
+		})
+
+		t.Run("lowers an inline method as abstract", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, inlineOf(t, "", "interface{ Close() error }").Methods[0].Abstract,
+				"an interface's method has no body")
+		})
+
+		t.Run("lowers an inline method's variadic parameter as one argument's type", func(t *testing.T) {
+			t.Parallel()
+
+			p := inlineOf(t, "", "interface{ Log(format string, args ...int) }").Methods[0].Params[1]
+			assert.Equal(t, p.Variadic, symbol.VariadicPositional, "the ... marks it")
+			assert.Equal(t, p.Type.Spelling, "int", "typed as one argument it takes")
+		})
+
+		t.Run("lowers an inline method's named results", func(t *testing.T) {
+			t.Parallel()
+
+			m := inlineOf(t, "", "interface{ Read(p []byte) (n int, err error) }").Methods[0]
+			assert.Equal(t, m.Returns[1].Name, "err", "each result under its name")
+		})
+
+		t.Run("lowers an inline method's unnamed parameter by its type", func(t *testing.T) {
+			t.Parallel()
+
+			p := inlineOf(t, "", "interface{ Write([]byte) error }").Methods[0].Params[0]
+			assert.Equal(t, p.Type.Spelling, "[]byte", "the parameter's type")
+		})
+
+		t.Run("lowers an inline method's unnamed result by its type", func(t *testing.T) {
+			t.Parallel()
+
+			r := inlineOf(t, "", "interface{ Write([]byte) error }").Methods[0].Returns[0]
+			assert.Equal(t, r.Type.Spelling, "error", "the result's type")
+		})
+
+		t.Run("leaves an embedded interface out of an inline interface's methods", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "interface {\n\t\tio.Reader\n\t\tClose() error\n\t}")
+			assert.Equal(t, methodNames(ref.Methods), []string{"Close"}, "the spelling keeps the embed")
+		})
+
+		t.Run("leaves a constraint element out of an inline interface's methods", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "interface {\n\t\t~int\n\t\tString() string\n\t}")
+			assert.Equal(t, methodNames(ref.Methods), []string{"String"}, "the spelling keeps the type set")
+		})
+
+		t.Run("leaves a blank method out of an inline interface's methods", func(t *testing.T) {
+			t.Parallel()
+
+			ref := inlineOf(t, "", "interface {\n\t\t_()\n\t\tClose() error\n\t}")
+			assert.Equal(t, methodNames(ref.Methods), []string{"Close"}, "a blank method binds nothing")
 		})
 	})
 
