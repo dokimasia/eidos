@@ -65,8 +65,9 @@
 // A reference spells its tokens without the whitespace between them,
 // one space kept between two identifier tokens, and without its type
 // annotations. T[] is a List, one per dimension, as a declarator's and a
-// method's dimensions state them too, and a wildcard a Wildcard with
-// Variance Out for extends and In for super. A generic type keeps its
+// method's dimensions state them too, a bounded wildcard a Wildcard of
+// its bound with Variance Out for extends and In for super, and an
+// unbounded ? a Wildcard without a child. A generic type keeps its
 // bare name in the spelling and its arguments in Args. Every other type
 // is Named with its spelling, and a name a single-type import binds
 // records the package it imports from as its package. The frontend
@@ -124,6 +125,11 @@
 // names a class, as a static import's does, places the class's package.
 // A library neither store has, a digest that is not the JAR's, and a
 // release ct.sym does not list fail the load.
+//
+// A need whose package neither ct.sym nor a classpath JAR has yields no
+// unit, and the round reports it with the reason. The first round reads
+// the packages of the JARs it returns, and a later round's needs are
+// packages no loaded JAR declares.
 //
 // # Class files
 //

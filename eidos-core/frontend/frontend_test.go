@@ -299,7 +299,7 @@ func TestFrontend(t *testing.T) {
 			f := frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
 				Version("1").Match(anyScripted).
 				Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).
-				Dependencies(func(context.Context, plugin.DependencyRound, plugin.StoreReader) (
+				Dependencies(func(context.Context, *plugin.DependencyRound, plugin.StoreReader) (
 					[][]plugin.SourceRef, error,
 				) {
 					return nil, refused
@@ -307,7 +307,7 @@ func TestFrontend(t *testing.T) {
 				Build()
 			dependent, is := f.(plugin.Dependent)
 			assert.True(t, is, "the declaration states the role")
-			_, err := dependent.Dependencies(context.Background(), plugin.DependencyRound{Number: 1}, nil)
+			_, err := dependent.Dependencies(context.Background(), &plugin.DependencyRound{Number: 1}, nil)
 			assert.ErrorIs(t, err, refused, "the round runs the declared function")
 		})
 	})

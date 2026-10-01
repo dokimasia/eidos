@@ -41,7 +41,7 @@ type Builder struct {
 	classifiers  []Classifier
 	options      any
 	hasOptions   bool
-	dependencies func(context.Context, plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error)
+	dependencies func(context.Context, *plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error)
 	exports      func(plugin.ImportScope, string) plugin.Candidates
 }
 
@@ -134,11 +134,12 @@ func (b *Builder) Options(o any) *Builder {
 
 // Dependencies declares the language's dependency rounds: the units
 // that declare what the loaded files import from outside the
-// workspace, placed through the round's recorded door. The built
+// workspace, placed through the round's recorded door, and the needs
+// the language places nowhere, reported through the round. The built
 // frontend implements [plugin.Dependent], and the load parses every
 // unit the function returns at [plugin.DepthSignatures].
 func (b *Builder) Dependencies(
-	dependencies func(context.Context, plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error),
+	dependencies func(context.Context, *plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error),
 ) *Builder {
 	b.dependencies = dependencies
 	return b
@@ -346,13 +347,13 @@ func (r optionsRole) Options() any { return r.options }
 // dependentRole is the dependent role of a built frontend that
 // declares dependency rounds.
 type dependentRole struct {
-	dependencies func(context.Context, plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error)
+	dependencies func(context.Context, *plugin.DependencyRound, plugin.StoreReader) ([][]plugin.SourceRef, error)
 }
 
 // Dependencies implements [plugin.Dependent] through the declared
 // function.
 func (r dependentRole) Dependencies(
-	ctx context.Context, round plugin.DependencyRound, reader plugin.StoreReader,
+	ctx context.Context, round *plugin.DependencyRound, reader plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
 	return r.dependencies(ctx, round, reader)
 }

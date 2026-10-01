@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"maps"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -81,6 +82,26 @@ func jarClasses(u *plugin.SourceUnit, p string, data []byte, release int) []clas
 		}
 		if cf, ok := decodeClass(u, p, f.Name, data); ok {
 			out = append(out, cf)
+		}
+	}
+	return out
+}
+
+// jarPackages returns the packages a JAR has the class files of for a
+// release, the entries [jarClasses] decodes, each package by its slashed
+// path and the unnamed package as ".". A JAR that does not open has
+// none, and a manifest that does not read leaves the packages of the
+// root entries, as jarClasses loads them.
+func jarPackages(data []byte, release int) map[string]bool {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	if err != nil {
+		return nil
+	}
+	multi, _ := multiRelease(zr) // jarClasses reports the manifest's error when the JAR parses
+	out := map[string]bool{}
+	for _, f := range zr.File {
+		if class, _, ok := classEntry(f.Name, multi, release); ok {
+			out[path.Dir(class)] = true
 		}
 	}
 	return out

@@ -379,9 +379,10 @@ func (*Scripted) parseFile(u *plugin.SourceUnit, filePath, content string, types
 
 // ScriptedDependent is the scripted language in the
 // [plugin.Dependent] role. A need resolves to the scripted files of
-// the directory its path names in [ScriptedStore], one unit per need,
-// and a need the store has no directory for yields no unit. A load
-// without the store loads no dependency.
+// the directory its path names in [ScriptedStore], one unit per need.
+// A need the store has no scripted file for yields no unit, and the
+// round reports it placed nowhere, so a load without the store loads
+// no dependency and reports every need.
 type ScriptedDependent struct {
 	*Scripted
 }
@@ -393,18 +394,24 @@ func NewScriptedDependent() *ScriptedDependent {
 }
 
 // Dependencies returns one unit per need whose directory the store
-// lists, its members the directory's scripted files in name order.
+// lists, its members the directory's scripted files in name order, and
+// reports every other need placed nowhere: the store absent, the
+// directory absent, or a directory without a scripted file.
 func (*ScriptedDependent) Dependencies(
-	_ context.Context, round plugin.DependencyRound, r plugin.StoreReader,
+	_ context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
 	var out [][]plugin.SourceRef
 	for _, need := range round.Needs {
 		dir := plugin.StorePath(ScriptedStore, need.Path)
 		entries, err := r.ReadDir(dir)
-		if errors.Is(err, plugin.ErrStoreAbsent) || errors.Is(err, fs.ErrNotExist) {
+		switch {
+		case errors.Is(err, plugin.ErrStoreAbsent):
+			round.Unplace(need.Path, "the load provides no "+ScriptedStore+" store")
 			continue
-		}
-		if err != nil {
+		case errors.Is(err, fs.ErrNotExist):
+			round.Unplace(need.Path, "no directory is at "+dir)
+			continue
+		case err != nil:
 			return nil, err
 		}
 		var members []plugin.SourceRef
@@ -413,9 +420,11 @@ func (*ScriptedDependent) Dependencies(
 				members = append(members, plugin.SourceRef{Path: dir + "/" + e.Name()})
 			}
 		}
-		if len(members) > 0 {
-			out = append(out, members)
+		if len(members) == 0 {
+			round.Unplace(need.Path, dir+" has no scripted file")
+			continue
 		}
+		out = append(out, members)
 	}
 	return out, nil
 }

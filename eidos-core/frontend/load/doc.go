@@ -82,6 +82,12 @@
 // report records each unit's round, and zero for a unit the partition
 // returned.
 //
+// A frontend reports each need it places nowhere through the round, with
+// the reason. The load reports each such need once, under
+// [UnplacedNeed], at its import in the first file in path order that
+// imports it, naming how many files import it and quoting the reason.
+// Every reference into the need keeps its spelling.
+//
 // # Keys
 //
 // Every unit's key folds, in order: the unit's recorded reads, the
@@ -104,7 +110,8 @@
 // dependency unit that breaks the round's contract: an empty unit, a
 // member some frontend's selection claims, a member the round returns
 // twice, or a unit that shares only some of its members with loaded
-// units. What a unit's source gets wrong reports through the sink and
+// units, and so is a report of a path that is no need of the round.
+// What a unit's source gets wrong reports through the sink and
 // the load continues: a duplicate identity keeps the first declaration
 // under [DuplicateDeclaration], an ambiguous reference keeps the first
 // candidate under [AmbiguousReference], and an unresolved spelling

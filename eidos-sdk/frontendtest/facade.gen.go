@@ -223,9 +223,10 @@ func ScriptedSchemas() []directive.Schema {
 
 // ScriptedDependent is the scripted language in the
 // [plugin.Dependent] role. A need resolves to the scripted files of
-// the directory its path names in [ScriptedStore], one unit per need,
-// and a need the store has no directory for yields no unit. A load
-// without the store loads no dependency.
+// the directory its path names in [ScriptedStore], one unit per need.
+// A need the store has no scripted file for yields no unit, and the
+// round reports it placed nowhere, so a load without the store loads
+// no dependency and reports every need.
 type ScriptedDependent = core.ScriptedDependent
 
 // NewScriptedDependent returns the scripted language in the dependent

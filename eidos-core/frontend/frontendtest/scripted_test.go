@@ -437,6 +437,53 @@ func TestScripted(t *testing.T) {
 			assert.Empty(t, units, "nothing is read")
 		})
 
+		unplaced := []struct {
+			name  string
+			store fs.FS
+			need  string
+			want  string
+		}{
+			{
+				name:  "reports a need whose directory has no scripted file placed nowhere",
+				store: withStore(fstest.MapFS{extNotes: {Data: []byte("not source\n")}}),
+				need:  extPath,
+				want:  plugin.StorePath(frontendtest.ScriptedStore, extPath) + " has no scripted file",
+			},
+			{
+				name:  "reports a need the store has no directory for placed nowhere",
+				store: withStore(fstest.MapFS{extMember: {Data: []byte(extSource)}}),
+				need:  absentPackage,
+				want:  "no directory is at " + plugin.StorePath(frontendtest.ScriptedStore, absentPackage),
+			},
+			{
+				name:  "reports a need placed nowhere for a load without the store",
+				store: fstest.MapFS{},
+				need:  extPath,
+				want:  "the load provides no " + frontendtest.ScriptedStore + " store",
+			},
+		}
+		for _, tt := range unplaced {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				round := roundOf(tt.need)
+				_, err := f.Dependencies(context.Background(), round, storeReader{fsys: tt.store})
+				assert.NoError(t, err, "a need placed nowhere fails nothing")
+				assert.Equal(t, round.Unplaced(), []plugin.Unplaced{{Path: tt.need, Reason: tt.want}},
+					"the round records the need and why")
+			})
+		}
+
+		t.Run("reports nothing for a need it places", func(t *testing.T) {
+			t.Parallel()
+
+			round := roundOf(extPath)
+			store := withStore(fstest.MapFS{extMember: {Data: []byte(extSource)}})
+			_, err := f.Dependencies(context.Background(), round, storeReader{fsys: store})
+			assert.NoError(t, err, "the round lists the store")
+			assert.Empty(t, round.Unplaced(), "the store declares the package")
+		})
+
 		t.Run("returns a listing's own error", func(t *testing.T) {
 			t.Parallel()
 
@@ -473,12 +520,12 @@ func TestScripted(t *testing.T) {
 }
 
 // roundOf returns a first round with one need per path.
-func roundOf(paths ...string) plugin.DependencyRound {
+func roundOf(paths ...string) *plugin.DependencyRound {
 	needs := make([]plugin.Need, len(paths))
 	for i, p := range paths {
 		needs[i] = plugin.Need{Path: p}
 	}
-	return plugin.DependencyRound{Number: 1, Needs: needs}
+	return &plugin.DependencyRound{Number: 1, Needs: needs}
 }
 
 // withStore returns an empty workspace tree with one store beside it

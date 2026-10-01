@@ -1407,7 +1407,7 @@ type probing struct {
 
 // Dependencies reads and lists the stated paths and returns no unit.
 func (p *probing) Dependencies(
-	_ context.Context, _ plugin.DependencyRound, r plugin.StoreReader,
+	_ context.Context, _ *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
 	if p.read != "" {
 		p.bytes, p.readErr = r.Read(p.read)

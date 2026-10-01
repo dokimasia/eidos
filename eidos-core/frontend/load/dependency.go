@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 )
 
 // dependencies runs the dependency rounds of every [plugin.Dependent]
@@ -46,6 +47,12 @@ func dependencies(
 	return out, nil
 }
 
+// importKey names one file's imports of one path.
+type importKey struct {
+	path string
+	file string
+}
+
 // rounds is one frontend's dependency rounds: the load's claimed and
 // loaded files, and the units parsed so far, which the needs of each
 // round are read from.
@@ -75,7 +82,7 @@ func (r *rounds) run(ctx context.Context) ([]*unit, error) {
 	passed := map[string]bool{}
 	var out []*unit
 	for number := 1; ; number++ {
-		needs := r.needs(passed)
+		needs, at := r.needs(passed)
 		if number > 1 && len(needs) == 0 {
 			return out, nil
 		}
@@ -83,11 +90,13 @@ func (r *rounds) run(ctx context.Context) ([]*unit, error) {
 			passed[n.Path] = true
 		}
 		reader := &recordingReader{fsys: r.tree, reads: sha256.New()}
-		parts, err := r.dependent.Dependencies(ctx, plugin.DependencyRound{
-			Number: number, Needs: needs, Shared: shared,
-		}, reader)
+		asked := &plugin.DependencyRound{Number: number, Needs: needs, Shared: shared}
+		parts, err := r.dependent.Dependencies(ctx, asked, reader)
 		if err != nil {
 			return nil, fmt.Errorf("load: dependencies %s: %w", f.Name(), err)
+		}
+		if stray := r.warnUnplaced(asked, at); stray != nil {
+			return nil, stray
 		}
 		fresh, err := r.admit(parts)
 		if err != nil {
@@ -133,8 +142,10 @@ func (r *rounds) shared() []string {
 // that no loaded package of its language declares and no earlier
 // round passed, sorted, each with the files that import it, sorted.
 // What an import path means is the language's own, so the load
-// compares it with package paths and nothing else.
-func (r *rounds) needs(passed map[string]bool) []plugin.Need {
+// compares it with package paths and nothing else. It returns beside
+// them where each need's first file imports it: the position of the
+// file's first import of the path.
+func (r *rounds) needs(passed map[string]bool) ([]plugin.Need, map[string]position.Pos) {
 	lang := r.frontend.Lang()
 	declared := map[string]bool{}
 	for _, u := range r.units {
@@ -146,6 +157,7 @@ func (r *rounds) needs(passed map[string]bool) []plugin.Need {
 		}
 	}
 	from := map[string][]string{}
+	imported := map[importKey]position.Pos{}
 	for _, u := range r.units {
 		if u.frontend.Name() != r.frontend.Name() {
 			continue
@@ -157,17 +169,51 @@ func (r *rounds) needs(passed map[string]bool) []plugin.Need {
 						continue
 					}
 					from[imp.Path] = append(from[imp.Path], file.Path)
+					key := importKey{path: imp.Path, file: file.Path}
+					if _, met := imported[key]; !met {
+						imported[key] = imp.Pos
+					}
 				}
 			}
 		}
 	}
 	needs := make([]plugin.Need, 0, len(from))
+	at := make(map[string]position.Pos, len(from))
 	for _, path := range slices.Sorted(maps.Keys(from)) {
 		files := from[path]
 		slices.Sort(files)
 		needs = append(needs, plugin.Need{Path: path, From: slices.Compact(files)})
+		at[path] = imported[importKey{path: path, file: files[0]}]
 	}
-	return needs
+	return needs, at
+}
+
+// warnUnplaced reports each need the frontend reported placed nowhere,
+// once, under [UnplacedNeed]: at the need's import in the first file
+// that imports it, naming how many files import it and quoting the
+// frontend's reason. A reported path that is no need of the round is
+// fatal, naming the frontend.
+func (r *rounds) warnUnplaced(round *plugin.DependencyRound, at map[string]position.Pos) error {
+	importers := make(map[string]int, len(round.Needs))
+	for _, n := range round.Needs {
+		importers[n.Path] = len(n.From)
+	}
+	warned := map[string]bool{}
+	for _, u := range round.Unplaced() {
+		files, need := importers[u.Path]
+		if !need {
+			return fmt.Errorf("load: dependencies %s: round %d reports %s placed nowhere, "+
+				"and it is no need of the round", r.frontend.Name(), round.Number, u.Path)
+		}
+		if warned[u.Path] {
+			continue
+		}
+		warned[u.Path] = true
+		r.cfg.Sink.Warnf(UnplacedNeed, at[u.Path], r.frontend.Name(),
+			"%s places in no dependency unit: %s. It is imported by %d of the load's files, "+
+				"and every reference into it keeps its spelling", u.Path, u.Reason, files)
+	}
+	return nil
 }
 
 // admit checks a round's units against the dependency contract and

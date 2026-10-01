@@ -46,6 +46,15 @@ const (
 	libTestFile = libDir + "/pkg_test.go"
 )
 
+// The imports no source places: cgo's pseudo-package, a module path no
+// go.mod requires, and a standard library package the GOROOT fixture
+// lacks.
+const (
+	cgoPackage        = "C"
+	unrequiredPackage = "example.org/unrequired/pkg"
+	httpPackage       = "net/http"
+)
+
 // The standard library fixture: a package that imports a package the
 // standard library vendors, and the vendored package.
 const (
@@ -101,6 +110,21 @@ func depStores() map[string]fs.FS {
 	return map[string]fs.FS{frontend.ModCacheStore: depCache(), frontend.GoRootStore: goRootTree()}
 }
 
+// without returns the fixture's stores without one of them.
+func without(store string) map[string]fs.FS {
+	stores := depStores()
+	delete(stores, store)
+	return stores
+}
+
+// replacedWorkspace returns the workspace module with the library
+// replaced by a directory inside the workspace.
+func replacedWorkspace() fstest.MapFS {
+	tree := depWorkspace()
+	tree[appGoMod] = &fstest.MapFile{Data: append(tree[appGoMod].Data, "replace "+libModule+" => ./lib\n"...)}
+	return tree
+}
+
 // storeTree is a test workspace with named stores beside it.
 type storeTree struct {
 	fstest.MapFS
@@ -132,6 +156,15 @@ func (r roundReader) ReadDir(p string) ([]fs.DirEntry, error) { return plugin.Re
 func runRound(
 	tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
 ) ([][]plugin.SourceRef, error) {
+	units, _, err := reportedRound(tree, stores, needs...)
+	return units, err
+}
+
+// reportedRound runs the round [runRound] runs and returns the round
+// beside its units, for the cases that read the round's reports.
+func reportedRound(
+	tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
+) ([][]plugin.SourceRef, *plugin.DependencyRound, error) {
 	var goMods []string
 	for p := range tree {
 		if path.Base(p) == appGoMod {
@@ -139,7 +172,7 @@ func runRound(
 		}
 	}
 	slices.Sort(goMods)
-	round := plugin.DependencyRound{Number: 1, Shared: goMods}
+	round := &plugin.DependencyRound{Number: 1, Shared: goMods}
 	for _, need := range needs {
 		round.Needs = append(round.Needs, plugin.Need{Path: need})
 	}
@@ -147,7 +180,18 @@ func runRound(
 	if !is {
 		panic("the Go frontend is in the dependent role")
 	}
-	return dependent.Dependencies(context.Background(), round, roundReader{storeTree{tree, stores}})
+	units, err := dependent.Dependencies(context.Background(), round, roundReader{storeTree{tree, stores}})
+	return units, round, err
+}
+
+// unplacedBy runs a round that the case states succeeds and returns
+// the needs it reports placed nowhere.
+func unplacedBy(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) []plugin.Unplaced {
+	tb.Helper()
+
+	_, round, err := reportedRound(tree, stores, needs...)
+	assert.NoError(tb, err, "the round places what it can")
+	return round.Unplaced()
 }
 
 // placed runs a round that the case states succeeds and returns the
@@ -204,11 +248,83 @@ func TestDepend(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			dependent, _ := frontend.New(nil).(plugin.Dependent)
-			_, err := dependent.Dependencies(ctx, plugin.DependencyRound{
+			_, err := dependent.Dependencies(ctx, &plugin.DependencyRound{
 				Number: 1, Needs: []plugin.Need{{Path: libPackage}}, Shared: []string{appGoMod},
 			}, roundReader{storeTree{depWorkspace(), depStores()}})
 			assert.ErrorIs(t, err, context.Canceled, "a done context places nothing")
 		})
+
+		t.Run("reports nothing for the needs it places", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, unplacedBy(t, depWorkspace(), depStores(), fmtPackage, libPackage),
+				"the standard library and the module cache declare both")
+		})
+
+		t.Run("passes over cgo's import", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, unplacedBy(t, depWorkspace(), depStores(), cgoPackage), "it names no package")
+		})
+
+		t.Run("places nothing for cgo's import", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, placed(t, depWorkspace(), depStores(), cgoPackage), "it names no package")
+		})
+
+		reasons := []struct {
+			name   string
+			tree   fstest.MapFS
+			stores map[string]fs.FS
+			need   string
+			want   string
+		}{
+			{
+				name: "reports an import of a workspace module placed nowhere", tree: depWorkspace(),
+				stores: depStores(), need: appModule + "/other",
+				want: "a workspace module declares it, and the selection claims no file of its package",
+			},
+			{
+				name: "reports an import no required module provides placed nowhere", tree: depWorkspace(),
+				stores: depStores(), need: unrequiredPackage,
+				want: "no module the go.mod files require provides it",
+			},
+			{
+				name: "reports a module a directory inside the workspace replaces placed nowhere",
+				tree: replacedWorkspace(), stores: depStores(), need: libPackage,
+				want: appGoMod + " replaces " + libModule + " with the workspace directory ./lib, " +
+					"and the selection claims no file of its package",
+			},
+			{
+				name: "reports a module placed nowhere when the load provides no module cache",
+				tree: depWorkspace(), stores: without(frontend.ModCacheStore), need: libPackage,
+				want: "the load provides no " + frontend.ModCacheStore + " store, and no vendor tree has " + libTree,
+			},
+			{
+				name: "reports a package the cached module lacks placed nowhere", tree: depWorkspace(),
+				stores: depStores(), need: libModule + "/absent",
+				want: "no package directory is at " + cached(libTree+"/absent"),
+			},
+			{
+				name: "reports a standard library path GOROOT lacks placed nowhere", tree: depWorkspace(),
+				stores: depStores(), need: httpPackage,
+				want: "no package directory is at " + inRoot(httpPackage),
+			},
+			{
+				name: "reports a standard library path placed nowhere when the load provides no GOROOT",
+				tree: depWorkspace(), stores: without(frontend.GoRootStore), need: fmtPackage,
+				want: "the load provides no " + frontend.GoRootStore + " store",
+			},
+		}
+		for _, tt := range reasons {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, unplacedBy(t, tt.tree, tt.stores, tt.need),
+					[]plugin.Unplaced{{Path: tt.need, Reason: tt.want}}, "the round reports the need and why")
+			})
+		}
 	})
 
 	t.Run("place", func(t *testing.T) {
@@ -248,17 +364,15 @@ func TestDepend(t *testing.T) {
 		t.Run("places nothing for an import no required module provides", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Empty(t, placed(t, depWorkspace(), depStores(), "example.org/unrequired/pkg"),
+			assert.Empty(t, placed(t, depWorkspace(), depStores(), unrequiredPackage),
 				"the go command refuses it as provided by no required module")
 		})
 
 		t.Run("places nothing for a module a directory inside the workspace replaces", func(t *testing.T) {
 			t.Parallel()
 
-			tree := depWorkspace()
-			tree[appGoMod] = &fstest.MapFile{Data: append(tree[appGoMod].Data,
-				"replace "+libModule+" => ./lib\n"...)}
-			assert.Empty(t, placed(t, tree, depStores(), libPackage), "the replacement is a workspace module")
+			assert.Empty(t, placed(t, replacedWorkspace(), depStores(), libPackage),
+				"the replacement is a workspace module")
 		})
 
 		t.Run("returns an error for a module a directory outside the workspace replaces", func(t *testing.T) {
@@ -283,9 +397,7 @@ func TestDepend(t *testing.T) {
 		t.Run("places nothing for a module when the load provides no module cache", func(t *testing.T) {
 			t.Parallel()
 
-			stores := depStores()
-			delete(stores, frontend.ModCacheStore)
-			assert.Empty(t, placed(t, depWorkspace(), stores, libPackage), "the source is off")
+			assert.Empty(t, placed(t, depWorkspace(), without(frontend.ModCacheStore), libPackage), "the source is off")
 		})
 	})
 
@@ -406,10 +518,16 @@ func TestDepend(t *testing.T) {
 		t.Run("places a need in the vendor tree when the load provides no module cache", func(t *testing.T) {
 			t.Parallel()
 
-			stores := depStores()
-			delete(stores, frontend.ModCacheStore)
-			assert.Equal(t, placed(t, vendored(), stores, libPackage), [][]string{{"vendor/" + libPackage + "/pkg.go"}},
-				"the vendor tree is a source of its own")
+			assert.Equal(t, placed(t, vendored(), without(frontend.ModCacheStore), libPackage),
+				[][]string{{"vendor/" + libPackage + "/pkg.go"}}, "the vendor tree is a source of its own")
+		})
+
+		t.Run("reports a package the vendor tree lacks placed nowhere", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, unplacedBy(t, vendored(), noCache(), libModule+"/other"), []plugin.Unplaced{{
+				Path: libModule + "/other", Reason: "no package directory is at vendor/" + libModule + "/other",
+			}}, "the vendored module has no such directory")
 		})
 
 		t.Run("returns an error for a vendor tree its go.mod contradicts", func(t *testing.T) {
@@ -478,15 +596,25 @@ func TestDepend(t *testing.T) {
 		t.Run("places nothing for a standard library path GOROOT does not contain", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Empty(t, placed(t, depWorkspace(), depStores(), "C"), "cgo's pseudo-package is no directory")
+			assert.Empty(t, placed(t, depWorkspace(), depStores(), httpPackage), "the fixture's GOROOT has fmt alone")
 		})
 
 		t.Run("places nothing when the load provides no GOROOT", func(t *testing.T) {
 			t.Parallel()
 
+			assert.Empty(t, placed(t, depWorkspace(), without(frontend.GoRootStore), fmtPackage), "the source is off")
+		})
+
+		t.Run("reports a package directory without a Go file outside its tests placed nowhere", func(t *testing.T) {
+			t.Parallel()
+
 			stores := depStores()
-			delete(stores, frontend.GoRootStore)
-			assert.Empty(t, placed(t, depWorkspace(), stores, fmtPackage), "the source is off")
+			cache := depCache()
+			cache[libTree+"/tested/tested_test.go"] = &fstest.MapFile{Data: []byte("package tested\n")}
+			stores[frontend.ModCacheStore] = cache
+			assert.Equal(t, unplacedBy(t, depWorkspace(), stores, libModule+"/tested"), []plugin.Unplaced{{
+				Path: libModule + "/tested", Reason: cached(libTree+"/tested") + " has no Go file outside its tests",
+			}}, "a dependency's tests are not part of its API")
 		})
 	})
 

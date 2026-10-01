@@ -16,7 +16,19 @@ type Need struct {
 	From []string
 }
 
-// DependencyRound is what one dependency round hands a frontend.
+// Unplaced is one need a frontend reported placed nowhere: its import
+// path, and the reason the load's finding quotes.
+type Unplaced struct {
+	Path   string
+	Reason string
+}
+
+// DependencyRound is one dependency round of a frontend: its number,
+// its needs and its shared inputs, and the needs the frontend reports
+// it cannot place. The load passes the round by pointer and reads the
+// reports after Dependencies returns. A round is not safe for
+// concurrent use, so a frontend that places needs concurrently
+// serializes its reports.
 type DependencyRound struct {
 	// Number counts the rounds from one.
 	Number int
@@ -31,7 +43,23 @@ type DependencyRound struct {
 	// files a language reads its dependency set from, such as the
 	// nearest go.mod above each workspace file.
 	Shared []string
+
+	// unplaced lists the needs the frontend reported, in report order.
+	unplaced []Unplaced
 }
+
+// Unplace reports one of the round's needs as placed nowhere, and why.
+// The reason is a clause the load's finding quotes, such as "no module
+// the go.mod files require provides it". The load emits one warning per
+// need reported, at the need's import in the first file that imports
+// it, and fails on a path that is no need of the round.
+func (r *DependencyRound) Unplace(path, reason string) {
+	r.unplaced = append(r.unplaced, Unplaced{Path: path, Reason: reason})
+}
+
+// Unplaced returns the needs the frontend reported placed nowhere, in
+// report order.
+func (r *DependencyRound) Unplaced() []Unplaced { return r.unplaced }
 
 // StoreReader is a dependency round's recorded door: reads and
 // directory listings over the workspace tree and the stores. Every
@@ -59,7 +87,8 @@ type Dependent interface {
 	// declares whatever the needs are, such as a Java classpath. A
 	// member is a qualified store path, or a workspace path the
 	// selection does not claim, such as a Go vendor tree. A need the
-	// language cannot place yields no unit, and its references keep
-	// their spellings. A returned error is fatal to the load.
-	Dependencies(ctx context.Context, round DependencyRound, r StoreReader) ([][]SourceRef, error)
+	// language cannot place yields no unit, the frontend reports it
+	// through [DependencyRound.Unplace], and its references keep their
+	// spellings. A returned error is fatal to the load.
+	Dependencies(ctx context.Context, round *DependencyRound, r StoreReader) ([][]SourceRef, error)
 }

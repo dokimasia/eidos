@@ -64,7 +64,7 @@ func TestBuild(t *testing.T) {
 			t.Parallel()
 
 			dependent, _ := frontend.New(nil).(plugin.Dependent)
-			_, err := dependent.Dependencies(context.Background(), plugin.DependencyRound{
+			_, err := dependent.Dependencies(context.Background(), &plugin.DependencyRound{
 				Number: 1, Needs: []plugin.Need{{Path: libPackage}}, Shared: []string{svcGoMod},
 			}, roundReader{storeTree{depWorkspace(), depStores()}})
 			assert.ErrorIs(t, err, fs.ErrNotExist, "a go.mod the round lists and cannot read fails it")

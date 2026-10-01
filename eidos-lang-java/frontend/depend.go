@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -83,20 +84,32 @@ type jdkIndex map[string][]string
 
 // unitOf returns the package a need names and its unit: the need itself
 // where ct.sym has that package, and otherwise the package of the class
-// it names, as a static import's need and a single-type import of a
-// member class name a class, its last names left out one at a time. It
-// returns no unit for a need ct.sym has no package for.
+// it names, [packageIn]. It returns no unit for a need ct.sym has no
+// package for.
 func (x jdkIndex) unitOf(need string) (string, []plugin.SourceRef) {
+	p := packageIn(x, need)
+	if p == "" {
+		return "", nil
+	}
+	unit := make([]plugin.SourceRef, 0, len(x[p]))
+	for _, f := range x[p] {
+		unit = append(unit, plugin.SourceRef{Path: f})
+	}
+	return p, unit
+}
+
+// packageIn returns the package a need names among packages keyed by
+// path: the need itself where the map has it, and otherwise the package
+// of the class it names, as a static import's need and a single-type
+// import of a member class name a class, its last names left out one at
+// a time. It returns "" where the map has none.
+func packageIn[V any](packages map[string]V, need string) string {
 	for p := need; p != "."; p = path.Dir(p) {
-		if files, met := x[p]; met {
-			unit := make([]plugin.SourceRef, 0, len(files))
-			for _, f := range files {
-				unit = append(unit, plugin.SourceRef{Path: f})
-			}
-			return p, unit
+		if _, met := packages[p]; met {
+			return p
 		}
 	}
-	return "", nil
+	return ""
 }
 
 // dependencies is the Java frontend's dependency round. The first round
@@ -107,25 +120,32 @@ func (x jdkIndex) unitOf(need string) (string, []plugin.SourceRef) {
 // off. A library malformed in the option, one neither the Maven nor the
 // Gradle store has, a JAR whose SHA-1 digest is not its record's, and a
 // release ct.sym lists no entry for are errors.
+//
+// The round reports a need placed nowhere where neither ct.sym nor a
+// classpath JAR has its package. The first round reads the packages
+// from the JARs it returns, and a later round's needs are packages no
+// loaded JAR declares.
 func (f *javaFrontend) dependencies(
-	ctx context.Context, round plugin.DependencyRound, r plugin.StoreReader,
+	ctx context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
 	var out [][]plugin.SourceRef
 	needs := make([]string, 0, len(round.Needs)+1)
+	classpath := map[string]bool{}
 	if round.Number == 1 {
 		for _, spec := range f.opts.Classpath {
-			unit, err := library(r, spec)
+			unit, data, err := library(r, spec)
 			if err != nil {
 				return nil, err
 			}
 			out = append(out, unit)
+			maps.Copy(classpath, jarPackages(data, f.opts.Release))
 		}
 		needs = append(needs, javaLang)
 	}
 	for _, n := range round.Needs {
 		needs = append(needs, n.Path)
 	}
-	jdk, err := readJDK(ctx, r, f.opts.Release)
+	jdk, provided, err := readJDK(ctx, r, f.opts.Release)
 	if err != nil {
 		return nil, err
 	}
@@ -136,66 +156,77 @@ func (f *javaFrontend) dependencies(
 			out = append(out, unit)
 		}
 	}
+	reason := "neither the " + JDKStore + " store nor a classpath library has its package"
+	if !provided {
+		reason = "the load provides no " + JDKStore + " store, and no classpath library has its package"
+	}
+	for _, n := range round.Needs {
+		if packageIn(jdk, n.Path) == "" && packageIn(classpath, n.Path) == "" {
+			round.Unplace(n.Path, reason)
+		}
+	}
 	return out, nil
 }
 
-// library returns the unit of one classpath library: its JAR from the
-// Maven store, whose SHA-1 record is the unit's shared input, and from
-// the Gradle store where the Maven store lacks it.
-func library(r plugin.StoreReader, spec string) ([]plugin.SourceRef, error) {
+// library returns the unit of one classpath library and its JAR's
+// bytes: its JAR from the Maven store, whose SHA-1 record is the unit's
+// shared input, and from the Gradle store where the Maven store lacks
+// it.
+func library(r plugin.StoreReader, spec string) ([]plugin.SourceRef, []byte, error) {
 	c, err := parseCoordinate(spec)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	unit, found, err := fromMaven(r, c)
+	unit, data, found, err := fromMaven(r, c)
 	if err != nil || found {
-		return unit, err
+		return unit, data, err
 	}
-	unit, found, err = fromGradle(r, c)
+	unit, data, found, err = fromGradle(r, c)
 	if err != nil || found {
-		return unit, err
+		return unit, data, err
 	}
-	return nil, fmt.Errorf("frontend: neither the %s store nor the %s store has the classpath library %s",
+	return nil, nil, fmt.Errorf("frontend: neither the %s store nor the %s store has the classpath library %s",
 		MavenStore, GradleStore, spec)
 }
 
-// fromMaven returns the unit of a library's JAR in the Maven store, and
-// reports whether the store has the JAR. The SHA-1 record beside the JAR
-// must state the JAR's digest, its first word compared without case.
-func fromMaven(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, bool, error) {
+// fromMaven returns the unit of a library's JAR in the Maven store and
+// the JAR's bytes, and reports whether the store has the JAR. The SHA-1
+// record beside the JAR must state the JAR's digest, its first word
+// compared without case.
+func fromMaven(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, []byte, bool, error) {
 	jar := c.mavenJAR()
 	data, err := r.Read(jar)
 	if absent(err) {
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	record := jar + sha1Suffix
 	want, err := r.Read(record)
 	if err != nil {
-		return nil, false, fmt.Errorf("frontend: %s has no SHA-1 record to check it against: %w", jar, err)
+		return nil, nil, false, fmt.Errorf("frontend: %s has no SHA-1 record to check it against: %w", jar, err)
 	}
 	fields := strings.Fields(string(want))
 	if len(fields) == 0 || !strings.EqualFold(fields[0], digest(data)) {
-		return nil, false, fmt.Errorf("frontend: the SHA-1 digest of %s is %s, and %s records %q",
+		return nil, nil, false, fmt.Errorf("frontend: the SHA-1 digest of %s is %s, and %s records %q",
 			jar, digest(data), record, strings.TrimSpace(string(want)))
 	}
-	return []plugin.SourceRef{{Path: jar, Shared: []string{record}}}, true, nil
+	return []plugin.SourceRef{{Path: jar, Shared: []string{record}}}, data, true, nil
 }
 
-// fromGradle returns the unit of a library's JAR in the Gradle store,
-// and reports whether the store has the JAR. The JAR's directory is
-// named by its SHA-1 digest, which Gradle writes without leading zeros,
-// so the two compare without them.
-func fromGradle(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, bool, error) {
+// fromGradle returns the unit of a library's JAR in the Gradle store and
+// the JAR's bytes, and reports whether the store has the JAR. The JAR's
+// directory is named by its SHA-1 digest, which Gradle writes without
+// leading zeros, so the two compare without them.
+func fromGradle(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, []byte, bool, error) {
 	dir := c.gradleDir()
 	entries, err := r.ReadDir(dir)
 	if absent(err) {
-		return nil, false, nil
+		return nil, nil, false, nil
 	}
 	if err != nil {
-		return nil, false, err
+		return nil, nil, false, err
 	}
 	for _, e := range entries {
 		if !e.IsDir() {
@@ -207,34 +238,34 @@ func fromGradle(r plugin.StoreReader, c coordinate) ([]plugin.SourceRef, bool, e
 			continue
 		}
 		if err != nil {
-			return nil, false, err
+			return nil, nil, false, err
 		}
 		if strings.TrimLeft(e.Name(), leadingZero) != strings.TrimLeft(digest(data), leadingZero) {
-			return nil, false, fmt.Errorf("frontend: the SHA-1 digest of %s is %s, and its directory names %s",
+			return nil, nil, false, fmt.Errorf("frontend: the SHA-1 digest of %s is %s, and its directory names %s",
 				jar, digest(data), e.Name())
 		}
-		return []plugin.SourceRef{{Path: jar}}, true, nil
+		return []plugin.SourceRef{{Path: jar}}, data, true, nil
 	}
-	return nil, false, nil
+	return nil, nil, false, nil
 }
 
 // readJDK indexes the packages ct.sym has for a release, by a walk of
 // the directories whose names include the release's character, and
-// returns an empty index for a load without the JDK store. Release 0 is
-// the newest release ct.sym lists. ct.sym listing no entry for the
-// release is an error.
-func readJDK(ctx context.Context, r plugin.StoreReader, release int) (jdkIndex, error) {
+// reports whether the load provides the JDK store, returning an empty
+// index for a load without it. Release 0 is the newest release ct.sym
+// lists. ct.sym listing no entry for the release is an error.
+func readJDK(ctx context.Context, r plugin.StoreReader, release int) (jdkIndex, bool, error) {
 	root := plugin.StorePath(JDKStore, "")
 	tops, err := r.ReadDir(root)
 	if errors.Is(err, plugin.ErrStoreAbsent) {
-		return jdkIndex{}, nil
+		return jdkIndex{}, false, nil
 	}
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	mark, err := releaseMark(release, tops)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 	x := jdkIndex{}
 	for _, top := range tops {
@@ -243,17 +274,17 @@ func readJDK(ctx context.Context, r plugin.StoreReader, release int) (jdkIndex, 
 		}
 		modules, err := r.ReadDir(root + top.Name())
 		if err != nil {
-			return nil, err
+			return nil, true, err
 		}
 		for _, m := range modules {
 			if m.IsDir() {
 				if err := x.walk(ctx, r, root+top.Name()+binarySlash+m.Name(), ""); err != nil {
-					return nil, err
+					return nil, true, err
 				}
 			}
 		}
 	}
-	return x, nil
+	return x, true, nil
 }
 
 // walk adds a module directory's class files to their packages, below a

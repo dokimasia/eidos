@@ -52,7 +52,16 @@ var ContinuedCarrier = core.ContinuedCarrier
 // sorted.
 type Need = core.Need
 
-// DependencyRound is what one dependency round hands a frontend.
+// Unplaced is one need a frontend reported placed nowhere: its import
+// path, and the reason the load's finding quotes.
+type Unplaced = core.Unplaced
+
+// DependencyRound is one dependency round of a frontend: its number,
+// its needs and its shared inputs, and the needs the frontend reports
+// it cannot place. The load passes the round by pointer and reads the
+// reports after Dependencies returns. A round is not safe for
+// concurrent use, so a frontend that places needs concurrently
+// serializes its reports.
 type DependencyRound = core.DependencyRound
 
 // StoreReader is a dependency round's recorded door: reads and

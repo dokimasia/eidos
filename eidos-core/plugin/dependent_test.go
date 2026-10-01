@@ -6,6 +6,7 @@ package plugin_test
 import (
 	"context"
 	"io/fs"
+	"path"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -13,16 +14,28 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
+// The last element of a need's path the depending role reports placed
+// nowhere, and the reason it reports the need with.
+const (
+	missingName    = "missing"
+	unplacedReason = "the store has no such module"
+)
+
 // depending returns one unit per need, the shape of a language whose
-// dependency grain is the imported package.
+// dependency grain is the imported package, and reports a need whose
+// path ends in /missing placed nowhere.
 type depending struct{}
 
-// Dependencies returns one unit per need.
+// Dependencies returns one unit per need it places.
 func (depending) Dependencies(
-	_ context.Context, round plugin.DependencyRound, _ plugin.StoreReader,
+	_ context.Context, round *plugin.DependencyRound, _ plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
 	out := make([][]plugin.SourceRef, 0, len(round.Needs))
 	for _, n := range round.Needs {
+		if path.Base(n.Path) == missingName {
+			round.Unplace(n.Path, unplacedReason)
+			continue
+		}
 		out = append(out, []plugin.SourceRef{{Path: plugin.StorePath(cacheStore, n.Path+"/a.go")}})
 	}
 	return out, nil
@@ -51,7 +64,7 @@ func TestDependent(t *testing.T) {
 			t.Parallel()
 
 			var role plugin.Dependent = depending{}
-			parts, err := role.Dependencies(context.Background(), plugin.DependencyRound{
+			parts, err := role.Dependencies(context.Background(), &plugin.DependencyRound{
 				Number: 1,
 				Needs:  []plugin.Need{{Path: "example.test/lib", From: []string{workspaceFile}}},
 			}, listing{withCache()})
@@ -59,6 +72,32 @@ func TestDependent(t *testing.T) {
 			assert.Length(t, parts, 1, "one unit per need")
 			_, _, qualified := plugin.CutStorePath(parts[0][0].Path)
 			assert.True(t, qualified, "a dependency member is a store path")
+		})
+	})
+
+	t.Run("Unplaced", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the needs Unplace reported in report order", func(t *testing.T) {
+			t.Parallel()
+
+			round := &plugin.DependencyRound{Number: 1, Needs: []plugin.Need{
+				{Path: "example.test/b/" + missingName, From: []string{workspaceFile}},
+				{Path: "example.test/lib", From: []string{workspaceFile}},
+				{Path: "example.test/a/" + missingName, From: []string{workspaceFile}},
+			}}
+			_, err := depending{}.Dependencies(context.Background(), round, listing{withCache()})
+			assert.NoError(t, err, "the round returns")
+			assert.Equal(t, round.Unplaced(), []plugin.Unplaced{
+				{Path: "example.test/b/" + missingName, Reason: unplacedReason},
+				{Path: "example.test/a/" + missingName, Reason: unplacedReason},
+			}, "each report with its reason")
+		})
+
+		t.Run("returns nothing for a round without a report", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, (&plugin.DependencyRound{Number: 1}).Unplaced(), "the frontend placed every need")
 		})
 	})
 

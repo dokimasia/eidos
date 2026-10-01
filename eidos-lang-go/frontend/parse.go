@@ -34,6 +34,10 @@ const maxSyntaxFindings = 10
 // and with every syntax error, because each one reports.
 const parseMode = parser.ParseComments | parser.SkipObjectResolution | parser.AllErrors
 
+// cgoImport is the import path of cgo's pseudo-package: the import
+// marks a file that uses cgo, and names no package.
+const cgoImport = "C"
+
 // pendingUnderlying is one defined type's shape, stamped once the
 // promotion has decided whether an enum replaces the type.
 type pendingUnderlying struct {
@@ -180,7 +184,7 @@ func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath st
 	cgo := false
 	for _, spec := range parsed.Imports {
 		lowerImport(u, l, file, spec)
-		if imported, unquoteErr := strconv.Unquote(spec.Path.Value); unquoteErr == nil && imported == "C" {
+		if imported, unquoteErr := strconv.Unquote(spec.Path.Value); unquoteErr == nil && imported == cgoImport {
 			cgo = true
 		}
 	}
@@ -872,17 +876,23 @@ func (l *lowered) params(u *plugin.SourceUnit, fields *ast.FieldList) []*node.Pa
 	}
 	var out []*node.Param
 	for _, field := range fields.List {
-		comment := l.memberComment(u, field, fields.Closing, "a parameter")
-		if len(field.Names) == 0 {
-			out = append(out, l.param(field, comment))
-			continue
-		}
-		for _, name := range field.Names {
-			p := l.param(field, comment)
-			p.Name = name.Name
-			p.Pos = l.at(name.Pos())
-			out = append(out, p)
-		}
+		out = l.appendParams(out, field, l.memberComment(u, field, fields.Closing, "a parameter"))
+	}
+	return out
+}
+
+// appendParams appends one field's parameters to out, each with the
+// trailing comment: one per bound name at its own position, and one
+// for an unnamed parameter.
+func (l *lowered) appendParams(out []*node.Param, field *ast.Field, comment string) []*node.Param {
+	if len(field.Names) == 0 {
+		return append(out, l.param(field, comment))
+	}
+	for _, name := range field.Names {
+		p := l.param(field, comment)
+		p.Name = name.Name
+		p.Pos = l.at(name.Pos())
+		out = append(out, p)
 	}
 	return out
 }
@@ -916,22 +926,25 @@ func (l *lowered) returns(u *plugin.SourceUnit, fields *ast.FieldList) []*node.R
 	}
 	var out []*node.Return
 	for _, field := range fields.List {
-		comment := l.memberComment(u, field, fields.Closing, "a result")
-		if len(field.Names) == 0 {
-			out = append(out, &node.Return{
-				Pos: l.at(field.Pos()), Type: l.typeRef(field.Type), Comment: comment,
-			})
-			continue
-		}
-		for _, name := range field.Names {
-			// The underscore is kept: a mixed list re-renders only
-			// with every slot named, and go/parser rejects the
-			// half-named form dropping it would produce.
-			out = append(out, &node.Return{
-				Name: name.Name, Pos: l.at(name.Pos()), Type: l.typeRef(field.Type),
-				Comment: comment,
-			})
-		}
+		out = l.appendReturns(out, field, l.memberComment(u, field, fields.Closing, "a result"))
+	}
+	return out
+}
+
+// appendReturns appends one field's results to out, each with the
+// trailing comment: one per bound name at its own position, and one
+// for an unnamed result.
+func (l *lowered) appendReturns(out []*node.Return, field *ast.Field, comment string) []*node.Return {
+	if len(field.Names) == 0 {
+		return append(out, &node.Return{Pos: l.at(field.Pos()), Type: l.typeRef(field.Type), Comment: comment})
+	}
+	for _, name := range field.Names {
+		// The underscore is kept: a mixed list re-renders only with
+		// every slot named, and go/parser rejects the half-named form
+		// dropping it would produce.
+		out = append(out, &node.Return{
+			Name: name.Name, Pos: l.at(name.Pos()), Type: l.typeRef(field.Type), Comment: comment,
+		})
 	}
 	return out
 }

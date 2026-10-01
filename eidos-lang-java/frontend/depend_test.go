@@ -77,6 +77,22 @@ const (
 	pastLast  = 36
 )
 
+// The needs the placement reports name: a class of the classpath JAR's
+// package, a package a multi-release JAR has under version 21 alone, and
+// that package's class entry.
+const (
+	boxNeed   = libPackage + "/" + boxClass
+	lateNeed  = "com/acme/late"
+	lateEntry = "META-INF/versions/21/" + lateNeed + "/Late.class"
+)
+
+// The reasons a round reports a need placed nowhere with: the JDK store
+// provided, and not.
+const (
+	noPackageReason = "neither the " + frontend.JDKStore + " store nor a classpath library has its package"
+	noJDKReason     = "the load provides no " + frontend.JDKStore + " store, and no classpath library has its package"
+)
+
 // The texts of the errors a round returns, as each refusal case expects
 // them.
 const (
@@ -469,11 +485,84 @@ func TestDepend(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			cancel()
 			dependent, _ := frontend.New(nil).(plugin.Dependent)
-			_, err := dependent.Dependencies(ctx, plugin.DependencyRound{Number: 1},
+			_, err := dependent.Dependencies(ctx, &plugin.DependencyRound{Number: 1},
 				roundReader{storeTree{fstest.MapFS{}, jdkStores()}})
 			assert.ErrorIs(t, err, context.Canceled, "a cancelled round walks nothing")
 		})
+
+		lateJAR := jarOf(t, multiRelease, map[string][]byte{lateEntry: nil})
+		unplaced := []struct {
+			name   string
+			opts   *frontend.Options
+			stores map[string]fs.FS
+			number int
+			need   string
+			want   []plugin.Unplaced
+		}{
+			{
+				name: "reports a need neither ct.sym nor a classpath library has placed nowhere", stores: jdkStores(),
+				number: 2, need: appNeed, want: []plugin.Unplaced{{Path: appNeed, Reason: noPackageReason}},
+			},
+			{
+				name: "reports a need placed nowhere for a load without the JDK store", stores: map[string]fs.FS{},
+				number: 1, need: utilPackage, want: []plugin.Unplaced{{Path: utilPackage, Reason: noJDKReason}},
+			},
+			{
+				name: "reports nothing for a need of a JDK class", stores: jdkStores(), number: 2, need: mapNeed,
+			},
+			{
+				name: "reports nothing for a need of a classpath library's package",
+				opts: &frontend.Options{Classpath: []string{libCoordinate}}, stores: libStores(t, mustRead(t, libJAR)),
+				number: 1, need: libPackage,
+			},
+			{
+				name: "reports nothing for a need of a class in a classpath library",
+				opts: &frontend.Options{Classpath: []string{libCoordinate}}, stores: libStores(t, mustRead(t, libJAR)),
+				number: 1, need: boxNeed,
+			},
+			{
+				name: "reports a need placed nowhere where the classpath JAR does not open",
+				opts: &frontend.Options{Classpath: []string{libCoordinate}}, stores: libStores(t, []byte(jarBytes)),
+				number: 1, need: libPackage, want: []plugin.Unplaced{{Path: libPackage, Reason: noPackageReason}},
+			},
+			{
+				name:   "reports nothing for a need of a multi-release JAR's versioned package",
+				opts:   &frontend.Options{Classpath: []string{libCoordinate}, Release: release21},
+				stores: libStores(t, lateJAR), number: 1, need: lateNeed,
+			},
+			{
+				name:   "reports a need of a versioned package placed nowhere for an older release",
+				opts:   &frontend.Options{Classpath: []string{libCoordinate}, Release: release17},
+				stores: libStores(t, lateJAR), number: 1, need: lateNeed,
+				want: []plugin.Unplaced{{Path: lateNeed, Reason: noPackageReason}},
+			},
+		}
+		for _, tt := range unplaced {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				round := &plugin.DependencyRound{Number: tt.number, Needs: []plugin.Need{{Path: tt.need}}}
+				dependent, _ := frontend.New(tt.opts).(plugin.Dependent)
+				_, err := dependent.Dependencies(context.Background(), round,
+					roundReader{storeTree{fstest.MapFS{}, tt.stores}})
+				assert.NoError(t, err, "the round places what it can")
+				assert.Equal(t, round.Unplaced(), tt.want, "the needs the round reports and why")
+			})
+		}
 	})
+}
+
+// libStores returns the fake ct.sym beside a Maven store with the
+// library's JAR of some bytes and their SHA-1 record.
+func libStores(tb assert.TB, data []byte) map[string]fs.FS {
+	tb.Helper()
+
+	stores := jdkStores()
+	stores[frontend.MavenStore] = fstest.MapFS{
+		mavenJAR:    {Data: data},
+		mavenRecord: {Data: []byte(sha1Hex(string(data)) + "  " + jarName + "\n")},
+	}
+	return stores
 }
 
 // jdkStore returns the fake ct.sym.
@@ -523,7 +612,7 @@ func sha1Hex(data string) string {
 func runRound(
 	opts *frontend.Options, stores map[string]fs.FS, number int, needs ...string,
 ) ([][]plugin.SourceRef, error) {
-	round := plugin.DependencyRound{Number: number}
+	round := &plugin.DependencyRound{Number: number}
 	for _, need := range needs {
 		round.Needs = append(round.Needs, plugin.Need{Path: need})
 	}

@@ -45,6 +45,15 @@ var AmbiguousReference = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Meaning: "a type reference resolves to more than one declaration",
 })
 
+// UnplacedNeed reports an import a dependent frontend places in no
+// dependency unit: an import the language's toolchain rejects, or a
+// store, a classpath entry or a requirement the composition lacks.
+// Every reference into the import keeps its spelling alone.
+var UnplacedNeed = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  47,
+	Meaning: "an import places in no dependency unit, and its references keep their spellings",
+})
+
 // Config is one load's inputs.
 type Config struct {
 	// FS is the workspace tree every read resolves in.

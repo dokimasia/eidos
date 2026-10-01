@@ -96,6 +96,16 @@ func depStore() fstest.MapFS {
 	}
 }
 
+// absentTree returns the directory whose three files import a package
+// no store declares, the packages listing the files out of path order.
+func absentTree() fstest.MapFS {
+	return fstest.MapFS{
+		firstFile:  {Data: []byte("package " + onePath + "\nimport x " + absentPath + "\n")},
+		secondFile: {Data: []byte("package " + twoPath + "\nimport x " + absentPath + "\n")},
+		thirdFile:  {Data: []byte("package " + onePath + "\nimport x " + absentPath + "\n")},
+	}
+}
+
 // stores hands the load one store under the scripted dependent's
 // store name.
 func stores(tree fs.FS) func(*load.Config) {
@@ -127,7 +137,7 @@ func unitOf(tb assert.TB, report *load.Report, first string) load.UnitReport {
 }
 
 // needPaths returns the paths of a round's needs, in round order.
-func needPaths(round plugin.DependencyRound) []string {
+func needPaths(round *plugin.DependencyRound) []string {
 	out := make([]string, len(round.Needs))
 	for i, n := range round.Needs {
 		out[i] = n.Path
@@ -399,6 +409,82 @@ func TestDependency(t *testing.T) {
 		})
 	})
 
+	t.Run("warnUnplaced", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports UnplacedNeed for a need the frontend places nowhere", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, sink := loadTree(t, absentTree(), with(recorded()), stores(depStore()))
+			coretest.AssertCodes(t, sink, load.UnplacedNeed)
+		})
+
+		t.Run("reports nothing for a round that places every need", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, sink := loadTree(t, depTree(), with(recorded()), stores(depStore()))
+			coretest.AssertCodes(t, sink)
+		})
+
+		t.Run("positions the finding at the need's import in the first file in path order", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, sink := loadTree(t, absentTree(), with(recorded()), stores(depStore()))
+			found, _ := findingOf(sink, load.UnplacedNeed)
+			assert.Equal(t, [2]any{found.Pos.File, found.Pos.Line}, [2]any{firstFile, 2},
+				"the second line of the first file imports it")
+		})
+
+		t.Run("positions the finding at the first import of the need in its file", func(t *testing.T) {
+			t.Parallel()
+
+			twice := "package " + onePath + "\nimport x " + absentPath + "\nimport y " + absentPath + "\n"
+			_, _, sink := loadTree(t, fstest.MapFS{firstFile: {Data: []byte(twice)}}, with(recorded()),
+				stores(depStore()))
+			found, _ := findingOf(sink, load.UnplacedNeed)
+			assert.Equal(t, found.Pos.Line, 2, "the file imports it on lines 2 and 3")
+		})
+
+		t.Run("names how many files import the need", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, sink := loadTree(t, absentTree(), with(recorded()), stores(depStore()))
+			found, _ := findingOf(sink, load.UnplacedNeed)
+			assert.Contains(t, found.Msg, "imported by 3 of the load's files", "each importing file once")
+		})
+
+		t.Run("quotes the frontend's reason", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, sink := loadTree(t, absentTree(), with(recorded()), stores(depStore()))
+			found, _ := findingOf(sink, load.UnplacedNeed)
+			assert.Contains(t, found.Msg, "no directory is at "+member(absentPath), "the frontend states why")
+		})
+
+		t.Run("reports a need once that the frontend reports twice", func(t *testing.T) {
+			t.Parallel()
+
+			again := &reporting{
+				ScriptedDependent: frontendtest.NewScriptedDependent(),
+				extra:             []plugin.Unplaced{{Path: absentPath, Reason: "it is reported again"}},
+			}
+			_, _, sink := loadTree(t, absentTree(), with(again), stores(depStore()))
+			coretest.AssertCodes(t, sink, load.UnplacedNeed)
+		})
+
+		t.Run("returns an error naming a reported path that is no need of the round", func(t *testing.T) {
+			t.Parallel()
+
+			stray := &reporting{
+				ScriptedDependent: frontendtest.NewScriptedDependent(),
+				extra:             []plugin.Unplaced{{Path: otherPath, Reason: "nothing imports it"}},
+			}
+			err := refuse(t, depTree(), with(stray), stores(depStore()))
+			assert.Contains(t, err.Error(), otherPath, "the error names the path")
+			assert.Contains(t, err.Error(), "no need of the round", "a frontend reports only the round's needs")
+		})
+	})
+
 	t.Run("admit", func(t *testing.T) {
 		t.Parallel()
 
@@ -483,7 +569,7 @@ type fixedRounds struct {
 	*frontendtest.ScriptedDependent
 	units  map[int][][]plugin.SourceRef
 	err    error
-	rounds []plugin.DependencyRound
+	rounds []*plugin.DependencyRound
 }
 
 // recorded returns the scripted language in the dependent role with
@@ -495,7 +581,7 @@ func recorded() *fixedRounds {
 // Dependencies records the round, then returns the stated error, the
 // fixed units, or the scripted dependent's units.
 func (f *fixedRounds) Dependencies(
-	ctx context.Context, round plugin.DependencyRound, r plugin.StoreReader,
+	ctx context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
 	f.rounds = append(f.rounds, round)
 	if f.err != nil {
@@ -505,6 +591,25 @@ func (f *fixedRounds) Dependencies(
 		return units, nil
 	}
 	return f.ScriptedDependent.Dependencies(ctx, round, r)
+}
+
+// reporting is the scripted language in the dependent role that adds
+// the stated reports to each round after the scripted dependent's own.
+type reporting struct {
+	*frontendtest.ScriptedDependent
+	extra []plugin.Unplaced
+}
+
+// Dependencies returns the scripted dependent's units and reports the
+// stated needs placed nowhere.
+func (f *reporting) Dependencies(
+	ctx context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
+) ([][]plugin.SourceRef, error) {
+	units, err := f.ScriptedDependent.Dependencies(ctx, round, r)
+	for _, u := range f.extra {
+		round.Unplace(u.Path, u.Reason)
+	}
+	return units, err
 }
 
 // unencodableDependent declares options the driver cannot fold into a

@@ -537,7 +537,7 @@ type vendored struct {
 
 // Dependencies returns one unit per need the skip directory lists.
 func (*vendored) Dependencies(
-	_ context.Context, round plugin.DependencyRound, r plugin.StoreReader,
+	_ context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
 	var out [][]plugin.SourceRef
 	for _, need := range round.Needs {
@@ -585,7 +585,7 @@ type strictDependent struct {
 
 // Dependencies returns the scripted dependent's units.
 func (f strictDependent) Dependencies(
-	ctx context.Context, round plugin.DependencyRound, r plugin.StoreReader,
+	ctx context.Context, round *plugin.DependencyRound, r plugin.StoreReader,
 ) ([][]plugin.SourceRef, error) {
 	return (&frontendtest.ScriptedDependent{Scripted: f.Scripted}).Dependencies(ctx, round, r)
 }
