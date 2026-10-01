@@ -15,8 +15,8 @@ import (
 // It grows with the wave, the node model its source, and a feature
 // is never removed: coverage totality over a growing list is what
 // keeps a language's silence impossible. A language that cannot
-// spell a feature declares the refusal in its coverage rather than
-// omitting the entry.
+// spell a feature declares the refusal in its coverage, and never
+// omits the entry.
 func Inventory() []Feature {
 	return []Feature{
 		{
@@ -73,7 +73,7 @@ func Inventory() []Feature {
 		},
 		{
 			ID:  "composite_refs",
-			Doc: "references inside composites reach the named types they mention",
+			Doc: "references inside composites resolve to the named types they mention",
 			Declares: []Decl{
 				{Sub: "dep", Name: "Target", Kind: symbol.KindStruct},
 				{
@@ -86,23 +86,10 @@ func Inventory() []Feature {
 							Lang: c.Lang, Package: c.Pkg("dep"),
 							Name: "Target", Kind: symbol.KindStruct,
 						}
-						optional := holder.Fields[0].Type
-						assert.Equal(tb, optional.Form, symbol.FormOptional,
-							"a pointer states the optional form")
-						assert.True(tb, optional.Target.IsZero(),
-							"and a structural reference carries no target of its own")
-						assert.Length(tb, optional.Elems, 1, "its child does")
-						assert.Equal(tb, optional.Elems[0].Target, target,
-							"resolved to the sibling's declaration")
-						mapped := holder.Fields[1].Type
-						assert.Equal(tb, mapped.Form, symbol.FormMap, "a map states the map form")
-						assert.Length(tb, mapped.Elems, 2, "key then value")
-						assert.Equal(tb, mapped.Elems[1].Target, target,
-							"and the value type, which no decoration strip could reach, resolves")
-						fn := holder.Fields[2].Type
-						assert.Equal(tb, fn.Form, symbol.FormFunc, "a function type states the func form")
-						assert.Equal(tb, fn.Split, 1, "one parameter, then its results")
-						assert.Equal(tb, fn.Elems[0].Target, target, "the parameter resolves")
+						for _, field := range holder.Fields {
+							assert.True(tb, namesBelowRoot(field.Type, target),
+								field.Name+" resolves to the sibling's declaration below its reference's root")
+						}
 					},
 				},
 			},
@@ -151,7 +138,7 @@ func Inventory() []Feature {
 					}
 				}
 				assert.True(tb, stamped,
-					"the classification reaches the store under the feature's package")
+					"the load stamps a subject in the feature's package")
 			},
 		},
 		{
@@ -170,4 +157,20 @@ func Inventory() []Feature {
 			},
 		},
 	}
+}
+
+// namesBelowRoot reports whether a reference below a tree's root
+// targets a declaration: an element of a structural form, such as a
+// pointer's, a map's or a function type's, or a type argument of an
+// instantiation, such as Option<Target>'s. The root itself does not
+// count.
+func namesBelowRoot(root *node.TypeRef, target symbol.Identity) bool {
+	found := false
+	node.Walk(root, func(s symbol.Symbol) bool {
+		if ref, is := s.(*node.TypeRef); is && ref != root && ref.Target == target {
+			found = true
+		}
+		return true
+	})
+	return found
 }

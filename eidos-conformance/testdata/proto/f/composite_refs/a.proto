@@ -1,0 +1,11 @@
+syntax = "proto3";
+
+package f.composite_refs;
+
+import "f/composite_refs/dep/d.proto";
+
+message Holder {
+  optional f.composite_refs.dep.Target f0 = 1;
+  map<string, f.composite_refs.dep.Target> f1 = 2;
+  repeated f.composite_refs.dep.Target f2 = 3;
+}

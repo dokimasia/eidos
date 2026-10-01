@@ -18,6 +18,14 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// The directory the corpus convention places features under, which a
+// language's own package derivation starts from, and the feature whose
+// root a TypeScript test file spells.
+const (
+	featureDir         = "f"
+	testClassification = "test_classification"
+)
+
 // scriptedCorpus is the scripted language's entry: the corpus tree
 // under testdata, and a coverage refusing what the language cannot
 // spell.
@@ -43,9 +51,8 @@ func scriptedCorpus() conformance.Corpus {
 	}
 }
 
-// The armature must hold its own reference language: every covered
-// feature's expectations, every refusal's absence, the whole
-// frontend bar.
+// The scripted language passes its own run: every covered feature's
+// expectations, every refusal's absence, and the frontend suite.
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -79,7 +86,7 @@ func TestCoverage(t *testing.T) {
 		assert.Contains(t, msg, "warp_drives", "naming the stray")
 	})
 
-	t.Run("holds the verdict set to what the corpus may state", func(t *testing.T) {
+	t.Run("rejects a load verdict under a corpus with rules", func(t *testing.T) {
 		t.Parallel()
 
 		ruled := scriptedCorpus()
@@ -88,17 +95,25 @@ func TestCoverage(t *testing.T) {
 			conformance.AssertCoveredInventory(tb, ruled)
 		})
 		assert.Contains(t, msg, "states the level", "a corpus that projects states the level")
+	})
+
+	t.Run("rejects a projection level under a corpus without rules", func(t *testing.T) {
+		t.Parallel()
 
 		leveled := scriptedCorpus()
 		leveled.Coverage["struct_fields"] = conformance.Projects
-		msg = assert.Rejects(t, "a level under a corpus without rules", func(tb assert.TB) {
+		msg := assert.Rejects(t, "a level under a corpus without rules", func(tb assert.TB) {
 			conformance.AssertCoveredInventory(tb, leveled)
 		})
 		assert.Contains(t, msg, "without rules", "which nothing can evaluate")
+	})
+
+	t.Run("rejects a remainder outside the inventory", func(t *testing.T) {
+		t.Parallel()
 
 		strayRemainder := scriptedCorpus()
 		strayRemainder.Remainder = map[string][]conformance.Remainder{"warp_drives": nil}
-		msg = assert.Rejects(t, "a remainder naming no feature", func(tb assert.TB) {
+		msg := assert.Rejects(t, "a remainder naming no feature", func(tb assert.TB) {
 			conformance.AssertCoveredInventory(tb, strayRemainder)
 		})
 		assert.Contains(t, msg, "warp_drives", "naming the stray")
@@ -143,8 +158,8 @@ func TestCoverage(t *testing.T) {
 		t.Parallel()
 
 		// The tree is empty under the feature, so only the graph can
-		// catch the spelling: the corpus convention's package stands
-		// in the load whatever file declared it.
+		// catch the spelling: the load contains the corpus convention's
+		// package whatever file declared it.
 		hidden := scriptedCorpus()
 		hidden.Coverage["interfaces"] = conformance.Refuses
 		g := store.New()
@@ -160,7 +175,7 @@ func TestCoverage(t *testing.T) {
 		msg := assert.Rejects(t, "a refusal the load contradicts", func(tb assert.TB) {
 			conformance.AssertRefusedFeature(tb, hidden, g, featureByID(t, "interfaces"))
 		})
-		assert.Contains(t, msg, "f/interfaces", "naming the package that stood")
+		assert.Contains(t, msg, "f/interfaces", "naming the package the load contains")
 	})
 }
 
@@ -173,6 +188,6 @@ func featureByID(tb assert.TB, id string) conformance.Feature {
 			return f
 		}
 	}
-	tb.Fatalf("the inventory holds no %s", id)
+	tb.Fatalf("the inventory lists no %s", id)
 	return conformance.Feature{}
 }

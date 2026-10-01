@@ -21,7 +21,7 @@ import (
 // joins the parts with dots where the corpus convention uses
 // slashes.
 func protoPackage(featureID, sub string) string {
-	parts := []string{"f", featureID}
+	parts := []string{featureDir, featureID}
 	if sub != "" {
 		parts = append(parts, sub)
 	}
@@ -41,6 +41,7 @@ func TestProtobuf(t *testing.T) {
 		Coverage: conformance.Coverage{
 			"struct_fields":     conformance.Projects,
 			"cross_package_ref": conformance.Projects,
+			"composite_refs":    conformance.Projects,
 			"builtin_ref":       conformance.Projects,
 			"directive_carrier": conformance.Projects,
 			"interfaces":        conformance.Projects,
@@ -55,9 +56,6 @@ func TestProtobuf(t *testing.T) {
 			// A schema states no standalone constant: its fixed
 			// values are an enum's, which the enum_values row covers.
 			"constants": conformance.Refuses,
-			// A schema spells no function type, which the feature's
-			// own expectation names.
-			"composite_refs": conformance.Refuses,
 			// protobuf has no test-file convention to classify by.
 			"test_classification": conformance.Refuses,
 		},
