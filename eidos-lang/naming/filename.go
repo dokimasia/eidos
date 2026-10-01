@@ -9,11 +9,12 @@ import (
 )
 
 // FilenameParts returns the parts a unit's filename is built from, in
-// order: the routing key's stem without its extension, whatever the
-// source language spelled it as, then the family word and the tag.
-// An empty part is left out, so a plan unit, which has no key, yields
-// the word and the tag alone. Each target joins and cases the parts
-// in its own filename convention.
+// order: the stem of the unit's file key without its extension,
+// whatever the source language spelled it as, then the family word and
+// the tag. An empty part is left out, so a per-package or per-plan
+// unit, whose file key is empty, yields the word and the tag alone.
+// Each target joins and cases the parts in its own filename
+// convention.
 func FilenameParts(key, word, tag string) []string {
 	parts := make([]string, 0, 3)
 	if stem := path.Base(key); key != "" && stem != "." {
