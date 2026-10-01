@@ -36,7 +36,7 @@ const Version = "0.5.0"
 // FrontendVersion is the frontend's behavior version, folded into
 // every unit key the frontend builds beside the grammar's version:
 // bump it with any change to the graph a parse produces.
-const FrontendVersion = "0.1.0"
+const FrontendVersion = "0.2.0"
 
 // Syntax returns Rust's comment forms, declared once and shared: the
 // plain line form, which is canonical, the outer and inner doc line

@@ -35,8 +35,11 @@ const integerSuffix = "iu"
 //   - A function pointer type is a Func of its parameters' types and
 //     then its return type. A function trait such as Fn(A) -> B is a
 //     bound, and is Named.
-//   - The unit type, a raw pointer, the never type, impl Trait, dyn
-//     Trait and a bounded type are Named.
+//   - dyn Trait and impl Trait are an Intersection of their bounds, in
+//     order: the one trait, and each operand of + in dyn A + B. A
+//     lifetime and a use bound are left out, as from a bound list, and
+//     the reference's spelling keeps them and its dyn or impl.
+//   - The unit type, a raw pointer and the never type are Named.
 //
 // It returns nil for the zero Node.
 func (l *lowering) typeRef(n treesitter.Node) *node.TypeRef {
@@ -63,8 +66,31 @@ func (l *lowering) typeRef(n treesitter.Node) *node.TypeRef {
 		if n.Child(l.v.fieldTrait).IsZero() {
 			return l.funcRef(n)
 		}
+	case l.v.dynamicType, l.v.abstractType, l.v.boundedType:
+		var bounds []treesitter.Node
+		l.traitBounds(n, &bounds)
+		return l.structural(n, symbol.FormIntersection, bounds...)
 	}
 	return &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos()}
+}
+
+// traitBounds appends the bounds of a trait object, an impl Trait type
+// or a bounded type to out, in order: the trait of dyn and impl, and
+// each operand of +, a nested operand's bounds in its place. A lifetime
+// and a use bound constrain no type and append nothing, as in a bound
+// list.
+func (l *lowering) traitBounds(n treesitter.Node, out *[]treesitter.Node) {
+	switch n.Kind() {
+	case l.v.dynamicType, l.v.abstractType:
+		l.traitBounds(n.Child(l.v.fieldTrait), out)
+	case l.v.boundedType:
+		for _, operand := range l.children(n) {
+			l.traitBounds(operand, out)
+		}
+	case l.v.lifetime, l.v.useBounds:
+	default:
+		*out = append(*out, n)
+	}
 }
 
 // structural lowers a composite whose children are the given types, in

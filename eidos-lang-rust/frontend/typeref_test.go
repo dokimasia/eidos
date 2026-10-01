@@ -206,23 +206,88 @@ func TestTypeRef(t *testing.T) {
 			assert.Equal(t, bound.Spelling, "Fn(u8)->u8", "spelled as written")
 		})
 
-		t.Run("lowers a function trait as Named", func(t *testing.T) {
+		t.Run("lowers a function trait in a trait object as a Named bound", func(t *testing.T) {
 			t.Parallel()
 
-			ref := typeOf(t, "Box<dyn Fn(u8) -> u8>").Args[0]
-			assert.Equal(t, ref.Form, symbol.FormNamed, "a trait object")
-			assert.Equal(t, ref.Spelling, "dyn Fn(u8)->u8", "spelled as written")
+			bound := typeOf(t, "Box<dyn Fn(u8) -> u8>").Args[0].Elems[0]
+			assert.Equal(t, bound.Form, symbol.FormNamed, "a trait, not a function pointer")
+			assert.Equal(t, bound.Spelling, "Fn(u8)->u8", "spelled as written")
 		})
+
+		intersections := []struct {
+			name string
+			give string
+			want []string
+		}{
+			{
+				name: "lowers dyn Trait as an Intersection of its one bound",
+				give: "Box<dyn Send>", want: []string{"Send"},
+			},
+			{
+				name: "lowers impl Trait as an Intersection of its one bound",
+				give: "impl Into<u8>", want: []string{"Into"},
+			},
+			{
+				name: "lowers dyn A + B as an Intersection of every trait bound in order",
+				give: "Box<dyn Send + Sync>", want: []string{"Send", "Sync"},
+			},
+			{
+				name: "lowers impl A + B as an Intersection of every trait bound in order",
+				give: "impl Iterator<Item = u8> + Send", want: []string{"Iterator", "Send"},
+			},
+			{
+				name: "leaves a lifetime out of a trait object's bounds",
+				give: "Box<dyn Send + 'static>", want: []string{"Send"},
+			},
+			{
+				name: "leaves a use bound out of an impl Trait type's bounds",
+				give: "impl Copy + use<'a>", want: []string{"Copy"},
+			},
+			{
+				name: "lowers a ?Sized bound as a Named bound",
+				give: "impl ?Sized + Copy", want: []string{"?Sized", "Copy"},
+			},
+		}
+		for _, tt := range intersections {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				ref := typeOf(t, tt.give)
+				if len(ref.Args) > 0 {
+					ref = ref.Args[0]
+				}
+				assert.Equal(t, ref.Form, symbol.FormIntersection, "a value has every bound's type")
+				assert.Equal(t, spellingsOf(ref.Elems), tt.want, "the bounds")
+			})
+		}
+
+		spelled := []struct {
+			name string
+			give string
+			want string
+		}{
+			{name: "spells a trait object with its dyn", give: "Box<dyn Send + 'static>", want: "dyn Send+'static"},
+			{name: "spells an impl Trait type with its impl", give: "impl Into<u8>", want: "impl Into<u8>"},
+		}
+		for _, tt := range spelled {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				ref := typeOf(t, tt.give)
+				if len(ref.Args) > 0 {
+					ref = ref.Args[0]
+				}
+				assert.Equal(t, ref.Spelling, tt.want, "a backend restates the type from its spelling")
+			})
+		}
 
 		tests := []struct {
 			name string
 			give string
 		}{
-			{name: "lowers impl Trait as Named", give: "impl Into<u8>"},
 			{name: "lowers a raw pointer as Named", give: "*const u8"},
 			{name: "lowers the never type as Named", give: "!"},
 			{name: "lowers the unit type as Named", give: "()"},
-			{name: "lowers a bounded type as Named", give: "Box<dyn Send + 'static>"},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

@@ -79,12 +79,13 @@
 // A reference spells its tokens without the whitespace between them,
 // one space kept between two identifier tokens. &T is a Borrow, [T; N]
 // an Array, with N as its length where N is a literal, [T] a List, a
-// tuple a Tuple, and a function pointer type a Func. A generic type
-// keeps its bare name or path in the spelling and its arguments in
-// Args. Every other type is Named with its spelling, and a path, or a
-// name a use declaration binds, records the module it names as its
-// package. Rust cannot overload, and every callable takes the empty
-// discriminator.
+// tuple a Tuple, a function pointer type a Func, and dyn Trait, impl
+// Trait and dyn A + B an Intersection of their trait bounds, spelled
+// with the dyn or the impl. A generic type keeps its bare name or path
+// in the spelling and its arguments in Args. Every other type is Named
+// with its spelling, and a path, or a name a use declaration binds,
+// records the module it names as its package. Rust cannot overload,
+// and every callable takes the empty discriminator.
 //
 // # Resolution and re-exports
 //

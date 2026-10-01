@@ -34,7 +34,8 @@ type vocabulary struct {
 	lifetime, whereClause, block treesitter.Kind
 
 	// Types.
-	genericType, referenceType, arrayType, tupleType, functionType treesitter.Kind
+	genericType, referenceType, arrayType, tupleType, functionType, dynamicType, abstractType,
+	boundedType, useBounds treesitter.Kind
 
 	// Use trees.
 	scopedUseList, useList, useAsClause, useWildcard treesitter.Kind
@@ -108,6 +109,10 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		arrayType:     g.Kind("array_type"),
 		tupleType:     g.Kind("tuple_type"),
 		functionType:  g.Kind("function_type"),
+		dynamicType:   g.Kind("dynamic_type"),
+		abstractType:  g.Kind("abstract_type"),
+		boundedType:   g.Kind("bounded_type"),
+		useBounds:     g.Kind("use_bounds"),
 
 		scopedUseList: g.Kind("scoped_use_list"),
 		useList:       g.Kind("use_list"),
