@@ -53,25 +53,16 @@ var BadConfig = diag.MustRegister(typescript.CodePrefix, diag.CodeSpec{
 	Meaning: "a tsconfig.json does not parse",
 })
 
-// The extensions the frontend claims: TypeScript's own and its ES
-// module and CommonJS forms, and TSX, which parses with the TSX
-// grammar.
-const (
-	extensionTS  = ".ts"
-	extensionTSX = ".tsx"
-	extensionMTS = ".mts"
-	extensionCTS = ".cts"
-)
-
 // nodeModules is the directory a package manager installs packages
 // into, which the claim leaves out.
 const nodeModules = "node_modules"
 
-// New builds the TypeScript frontend through the kit. It declares that
-// the language overloads and implements the exporter role, so a
-// reference through a re-export resolves to the declaration it
-// publishes. Its version folds the grammar's, so an upgrade of the
-// grammar re-keys every unit.
+// New builds the TypeScript frontend through the kit. It claims
+// TypeScript's own extension, its ES module and CommonJS forms, and
+// TSX, which parses with the TSX grammar. It declares that the language
+// overloads and implements the exporter role, so a reference through a
+// re-export resolves to the declaration it publishes. Its version folds
+// the grammar's, so an upgrade of the grammar re-keys every unit.
 func New() plugin.Frontend {
 	f := &tsFrontend{
 		ts:  newVocabulary(tsgrammar.TypeScript),
@@ -80,7 +71,8 @@ func New() plugin.Frontend {
 	return frontend.New(typescript.Name, Lang, typescript.Syntax()).
 		Version(typescript.FrontendVersion+"; "+tsgrammar.TypeScript.Version()).
 		Overloads().
-		Match("**/*"+extensionTS, "**/*"+extensionTSX, "**/*"+extensionMTS, "**/*"+extensionCTS,
+		Match("**/*"+typescript.Extension, "**/*"+typescript.ExtensionTSX,
+			"**/*"+typescript.ExtensionMTS, "**/*"+typescript.ExtensionCTS,
 			"!**/"+nodeModules+"/**").
 		Units(partition).
 		Parse(f.parse).
@@ -99,7 +91,7 @@ type tsFrontend struct {
 // vocabularyOf returns the vocabulary of the grammar that parses a
 // file: TSX for a .tsx file, and TypeScript for every other.
 func (f *tsFrontend) vocabularyOf(path string) *vocabulary {
-	if strings.HasSuffix(path, extensionTSX) {
+	if strings.HasSuffix(path, typescript.ExtensionTSX) {
 		return f.tsx
 	}
 	return f.ts

@@ -5,20 +5,9 @@ package frontend
 
 import (
 	"path"
-	"slices"
 	"strings"
-)
 
-// The extensions a file's package path leaves out. A declaration file's
-// .d.ts, .d.mts and .d.cts count as one extension each, so a.d.ts and
-// a.ts are both the package a. A specifier may name the file it
-// imports by its emitted JavaScript extension, which names the source
-// file, and so does a TypeScript extension.
-var (
-	declarationExtensions = []string{".d.ts", ".d.mts", ".d.cts"}
-	moduleExtensions      = []string{
-		extensionTS, extensionTSX, extensionMTS, extensionCTS, ".js", ".jsx", ".mjs", ".cjs",
-	}
+	typescript "go.dokimi.dev/eidos/lang/typescript"
 )
 
 // indexModule is the file name a directory specifier resolves to.
@@ -27,34 +16,6 @@ const indexModule = "index"
 // defaultExport is the name a module's default export is published
 // under, and the name a default import binds.
 const defaultExport = "default"
-
-// packageOf returns the package path of a file: its path without its
-// extension.
-func packageOf(file string) string {
-	return stripExtension(file)
-}
-
-// declarationFile reports whether a file is a declaration file, every
-// declaration of which is implemented elsewhere.
-func declarationFile(file string) bool {
-	return slices.ContainsFunc(declarationExtensions, func(ext string) bool { return strings.HasSuffix(file, ext) })
-}
-
-// stripExtension removes a module path's extension: a declaration
-// file's whole one, or the last of TypeScript's and JavaScript's.
-func stripExtension(p string) string {
-	for _, ext := range declarationExtensions {
-		if trimmed, cut := strings.CutSuffix(p, ext); cut {
-			return trimmed
-		}
-	}
-	for _, ext := range moduleExtensions {
-		if trimmed, cut := strings.CutSuffix(p, ext); cut {
-			return trimmed
-		}
-	}
-	return p
-}
 
 // relative reports whether a module specifier names a path relative to
 // the importing file's directory.
@@ -113,7 +74,7 @@ type module struct {
 func newModule(file string, paths resolution) *module {
 	return &module{
 		dir:     path.Dir(file),
-		pkg:     packageOf(file),
+		pkg:     typescript.ModulePath(file),
 		imports: map[string]binding{},
 		aliases: map[string]string{},
 		paths:   paths,
@@ -144,7 +105,7 @@ func (m *module) packages(specifier string) [][]string {
 // fileAndIndex returns the two tiers one module path names: the file
 // without its extension, and the directory's index.
 func fileAndIndex(p string) [][]string {
-	base := stripExtension(p)
+	base := typescript.ModulePath(p)
 	return [][]string{{base}, {path.Join(base, indexModule)}}
 }
 

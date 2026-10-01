@@ -83,7 +83,12 @@ func (l *lowering) lower(root treesitter.Node) {
 	if !moduleFile {
 		l.module.pkg = ""
 	}
-	top := container{pkg: l.module.pkg, public: !moduleFile, module: moduleFile, ambient: declarationFile(l.path)}
+	top := container{
+		pkg:     l.module.pkg,
+		public:  !moduleFile,
+		module:  moduleFile,
+		ambient: typescript.DeclarationFile(l.path),
+	}
 	top.file = l.fileIn(top.pkg, nil, root.Pos())
 	l.record(root, top.file)
 	l.statements(root, top)

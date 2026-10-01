@@ -8,12 +8,17 @@
 // [Lang] is the language of every TypeScript declaration, and
 // [CodePrefix] opens every diagnostic code the satellite registers.
 // [Target] and [Name] are the spellings a plan resolves to select the
-// backend, [Extension] is the suffix of every TypeScript file,
-// [Version] is the backend's behavior version, and [FrontendVersion]
-// the frontend's. [Syntax] returns TypeScript's comment forms: the
-// frontend strips comments with them, and the output contract writes
-// the generated-file header through them. [Keys] registers the
-// typescript.* keys the frontend stamps.
+// backend, [Extension] is the suffix of every TypeScript file the
+// backend writes, [Version] is the backend's behavior version, and
+// [FrontendVersion] the frontend's. [Syntax] returns TypeScript's
+// comment forms: the frontend strips comments with them, and the
+// output contract writes the generated-file header through them.
+// [Keys] registers the typescript.* keys the frontend stamps.
+//
+// [ModulePath] returns the module a file or a specifier names, which
+// is the package the frontend loads a file into and the package the
+// backend names a written file's package by. [DeclarationFile]
+// reports a file whose every declaration is implemented elsewhere.
 //
 // # Packages
 //

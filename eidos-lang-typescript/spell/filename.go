@@ -12,12 +12,15 @@ import (
 )
 
 // Filename spells a unit's filename. TypeScript names files in kebab
-// case with dot-separated qualifiers, so each of the unit's
-// [naming.FilenameParts] converts alone and the parts join with
-// dots: a store unit of the stub family is written as store.stub.ts,
-// and a family word spelled HTTPClient as http-client.
+// case with dot-separated qualifiers, so each of the
+// [naming.FilenameParts] of the unit's [plugin.Unit.FileKey], word and
+// tag converts alone and the parts join with dots: a store unit of the
+// stub family is written as store.stub.ts, and a family word spelled
+// HTTPClient as http-client. A per-package or per-plan unit has no
+// file key, so its filename is the word and the tag alone: a
+// per-package suite family in the test companion is suite.test.ts.
 func Filename(u plugin.Unit) string {
-	parts := naming.FilenameParts(u.Key, u.Word, u.Tag)
+	parts := naming.FilenameParts(u.FileKey(), u.Word, u.Tag)
 	for i, part := range parts {
 		parts[i] = naming.Kebab(part)
 	}

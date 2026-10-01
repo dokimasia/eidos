@@ -45,7 +45,7 @@ func testFile(p string) bool {
 	if slices.Contains(strings.Split(path.Dir(p), "/"), testsDir) {
 		return true
 	}
-	base := stripExtension(path.Base(p))
+	base := typescript.ModulePath(path.Base(p))
 	return base == testName || base == specName ||
 		strings.HasSuffix(base, testSuffix) || strings.HasSuffix(base, specSuffix)
 }
