@@ -1,13 +1,13 @@
 ---
 milestone: 0005
 title: A single plan runs end to end
-status: Planned
+status: In progress
 depends-on: 0002, 0003, 0004
 ships-in: unscheduled
 deadline: none
 deadline-source: none
 prd: none
-rfc: none
+rfc: 0016, 0017, 0018
 ---
 
 # Milestone 0005: A single plan runs end to end
@@ -39,7 +39,7 @@ runs as a fixture.
       (`store_stub.go`, `suite_test.go`), `out=` and `tag=` overrides,
       refinement precedence. A within-plan collision and a collision
       with a hand-written file are Errors naming both sides.
-- [ ] Centralised layout derives package identity from the
+- [x] Centralised layout derives package identity from the
       `gen.module` facts, `importBase` covers an output directory
       outside every module, and a missing identity is refused at the
       referencing declaration, only when a cross-reference needs the
@@ -90,8 +90,8 @@ and the accumulator Emitter of
 ## Not in this milestone
 
 - Several plans, exports and cross-plan checks: milestone 0006.
-- Warm behaviour: every run here is cold. The ledger writes artifact
-  rows that nothing reads yet. Milestone 0007.
+- Warm behaviour: every run here is cold, and the ledger records the
+  run and its manifest without artifact rows. Milestone 0007.
 - The CLI: tests call `Workspace.Run` directly. The commands are
   milestone 0008.
 
@@ -106,6 +106,8 @@ and the accumulator Emitter of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-01 | Status In progress, linked RFC-0016, RFC-0017 and RFC-0018, and ticked the bullet for centralised package identity | The layout of RFC-0016 runs inside `Workspace.Run`: each target names a routed file's package from the module facts and the plan's `importBase`, and the reference step refuses an underived package where a reference needs it |
+| 2026-10-01 | The ledger records no artifact rows in this milestone | RFC-0017 records the run and its manifest alone, and the rows a warm run reads belong to milestone 0007 |
 | 2026-09-30 | Added the bullet for the stub's pointer receivers | The kernel's `Mirror` leaves the receiver unset, because a pointer receiver is Go's syntax, and the Go satellite's `PointerReceiver` states it |
 | 2026-09-30 | Added the bullet for slot appends | A slot appends in insertion order without a lock, and an `OnEmit` handler appends into the emit value directly. Dispatch inside a bucket is sequential, so the order is deterministic today, and the in-bucket parallelism of this milestone would order a slot by scheduling |
 | 2026-09-30 | The end-to-end fixture's carrier changed from `//+gen:stub` to `//+acme:stub` | The carrier mark follows the composition's brand, and the end-to-end document's binary is branded `acme` |

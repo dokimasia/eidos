@@ -51,12 +51,16 @@ exist on which emit kind is generated documentation and static
 knowledge. `Walk` and the lint check know every slot, and "what can I
 append to a Method" has a generated answer rather than a tribal one.
 
-Generation includes **typed accessors**. Go code appends through
-`s.FieldsSlot()` and `m.PrologueSlot()` rather than through a
-slot-name string, so appending to a slot that does not exist is a
-compile error. Slot names appear as strings only at the boundary: in
-the `{{slots}}` markers in templates, and in the declarative
-manifest.
+Generation includes **typed accessors** for member slots. Go code
+appends through `s.FieldsSlot()` and `s.MethodsSlot()` instead of
+through a slot-name string, so appending to a slot that does not
+exist is a compile error. A body's standard slots are the fields
+`Body.Prologue` and `Body.Epilogue`. `Body.Slot` looks up an owner's
+named body slot by its name and reports false for a name the owner
+never declared, so a contribution into an invented extension point
+fails where it is made. Otherwise slot names appear as strings only
+at the boundary: in the `{{slots}}` markers in templates, and in the
+declarative manifest.
 
 **A body is a slot sequence too.** Every body carries two standard
 slots by construction, `prologue` and `epilogue`, and its owner may
@@ -241,13 +245,15 @@ and the output contract finishes it
 ([17-output-and-determinism.md](17-output-and-determinism.md)); the
 flow runs the same way in every satellite:
 
-1. **Group** the plan's units into files through the target's
-   `Naming`: units sharing a name assemble one file, and the files
-   are independent from here, so the kit parallelises the per-file
-   loop.
+1. **Take the routed files** the plan's layout composed
+   ([18-routing-and-layout.md](18-routing-and-layout.md)): each file's
+   path, its package and its units, split through the target's `Split`
+   and named through its `Naming`. The files are independent from here,
+   so the kit parallelises the per-file loop, and each file's package
+   is the import home its references qualify against.
 2. **Render declarations** through the language's kind templates, in
    canonical order: origin identity, then the unit's declaration
-   order. A plugin's claimed file template takes the whole group
+   order. A plugin's claimed file template takes the whole file
    instead, per the order above. A backend declares each kind its
    language cannot spell refused, with a reason, and the pass
    skips a declaration of that kind under an Error that states
@@ -269,8 +275,9 @@ flow runs the same way in every satellite:
    an unformatted file.
 7. **Stamp** the generated-file header and the provenance trailer
    ([17-output-and-determinism.md](17-output-and-determinism.md)).
-8. **Write** through the plan's staged sink. Write-if-changed and
-   atomicity belong to the sink rather than the backend.
+8. **Write** through the plan's staged sink, at the file's routed
+   path. Write-if-changed and atomicity belong to the sink, not the
+   backend.
 
 The reference a generator hands the backend, pinned:
 

@@ -28,8 +28,8 @@ eidos-lang-<lang>/
                    Resolve, values, naming) + the Tier-2
                    optionals the language satisfies
   spell/           the write half: canonical-type spelling,
-                   optionality, error model, naming joins — the
-                   hub's spoke
+                   optionality, error model, naming joins, the
+                   package a routed file declares — the hub's spoke
   backend/         templates + finalise (fmt/imports) + render state
   sdk/             Tier 3: language-only questions, importable from
                    binding files alone (conformance ships the lint)
@@ -238,20 +238,22 @@ backend.New(name, target, syntax).
     KindTemplates(kinds).        // how this language spells each kind
     RefusedKinds(refused).       // the kinds it cannot spell, and why
     Funcs(helpersFor).           // func(*ImportSet) FuncMap, per 07
-    Naming(spellFilename).       // word, tag and key join per target
+    Naming(spellFilename).       // word, tag and file-key stem join per target
+    Packages(packageAt).         // the package a file at a routed path declares
     Scaffold(spellStmt).         // the neutral statement vocabulary
     Imports(renderImports).      // grouping/sorting are language facts
     Finalise(format.Source).
     Build()                      // panics on a declaration defect
 ```
 
-The kit owns the same work for every satellite: grouping units into
-files through the target's naming, merging plugin helpers and
-declared overrides ([07-rendering.md](07-rendering.md)), splicing
-slots, resolving `TemplateRef`s, collecting imports through the
-spelling helpers, and the continue-on-failure flow. The render ends
-at files as values: the generated-file header, the provenance
-trailer and write routing are the output contract's
+The kit does the same work for every satellite: the filename and
+package halves the plan's layout routes files through
+([18-routing-and-layout.md](18-routing-and-layout.md)), merging plugin
+helpers and declared overrides ([07-rendering.md](07-rendering.md)),
+splicing slots, resolving `TemplateRef`s, collecting imports through
+the spelling helpers, and the continue-on-failure flow. The render
+ends at files as values: the generated-file header, the provenance
+trailer and the write are the output contract's
 ([17-output-and-determinism.md](17-output-and-determinism.md)),
 stamped after the formatter ran.
 
