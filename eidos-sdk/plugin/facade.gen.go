@@ -122,6 +122,17 @@ func NewEmit() *Emit {
 	return core.NewEmit()
 }
 
+// File is one output file a plan writes: where it is written, the
+// package it declares, and the units it assembles, in render order.
+// The plan's layout composes the files after the settle, and the
+// render pass renders each one.
+type File = core.File
+
+// FileSpeller is a target's filename half: how a unit splits into the
+// files the target writes and what each file is named. The layout
+// calls it on one goroutine.
+type FileSpeller = core.FileSpeller
+
 // Depth is how deep one unit loads.
 //
 // Signature-only loading is the same Parse observing
@@ -254,6 +265,29 @@ func EncodeOptions(p Plugin) ([]byte, error) {
 	return core.EncodeOptions(p)
 }
 
+// Module is one toolchain module the load resolved, read off the
+// gen.module and gen.moduleRoot facts of its packages.
+type Module = core.Module
+
+// Resident is one source file the load placed in a directory, with
+// the package the file declares. The package's Name is the name its
+// files declare it under.
+type Resident = core.Resident
+
+// Placement is what a target reads to name the package of a routed
+// file. The run derives it from the frozen graph and the fact store,
+// so a target reads no source.
+type Placement = core.Placement
+
+// Packager is a target's package half: the package a file at a routed
+// path declares, which is the package the target language's own
+// frontend names when it reads that file.
+type Packager = core.Packager
+
+// PackageRule is a target's package rule in the form a backend kit
+// declares it: the function [Packager.PackageAt] runs.
+type PackageRule = core.PackageRule
+
 // ID is a plugin's declared name: the one identity everywhere it
 // appears. The diagnostic origin, the emit attribution and the
 // arbitration rank's plugin field all carry this same type, so no
@@ -332,9 +366,9 @@ type OptionsProvider = core.OptionsProvider
 // nothing reporting why.
 type Versioned = core.Versioned
 
-// RenderedFile is one rendered output as a value: the derived
-// filename and the finished bytes. Nothing here touches disk;
-// paths, staging and commit belong to the sink that consumes it.
+// RenderedFile is one rendered output as a value: the routed path and
+// the finished bytes. Nothing here touches disk. Staging and commit
+// belong to the sink that consumes it.
 type RenderedFile = core.RenderedFile
 
 // Renderer renders one plan's emit into files as values.
@@ -345,7 +379,7 @@ type RenderedFile = core.RenderedFile
 // bytes, which the conformance suite holds every renderer to.
 type Renderer = core.Renderer
 
-// RenderContext carries what one render call may touch.
+// RenderContext is what one render call may touch.
 type RenderContext = core.RenderContext
 
 // SyntaxProvider declares a target's comment forms: what the

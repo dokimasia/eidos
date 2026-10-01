@@ -527,6 +527,16 @@ type TypeParam = core.TypeParam
 // This is the emit spelling of the kind.
 type Embed = core.Embed
 
+// DeclaredName returns the name a file-level declaration declares in
+// its file's scope, and the empty string for a declaration that
+// declares none there. A method declares its name in its receiver's
+// scope, so it returns the empty string too. The render reserves the
+// names against import bindings, and the layout resolves bare
+// references to generated declarations by them.
+func DeclaredName(d symbol.Symbol) string {
+	return core.DeclaredName(d)
+}
+
 // RespellNames applies f to every declared name s contains, its
 // own and its members', parameters', type parameters' and
 // variants', depth first in schema field order, writing each

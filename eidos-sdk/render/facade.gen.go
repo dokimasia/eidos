@@ -214,9 +214,9 @@ type Naming = core.Naming
 // declares returns one unit per file-level type, and its Naming
 // reads the lone type's name. The file then takes the name the
 // language demands, and the routing key keeps the source
-// derivation. A nil Split keeps every unit whole. The pass applies
-// it before naming, preserves order, and calls it once per unit, so
-// a pure function keeps the render deterministic.
+// derivation. A nil Split keeps every unit whole. The plan's layout
+// applies it before naming, preserves order, and calls it once per
+// unit, so a pure function keeps the routing deterministic.
 type Split = core.Split
 
 // GroupName names a declaration cluster a group template spells.
@@ -255,8 +255,8 @@ type Refuser = core.Refuser
 // Scaffold, Imports, Finalise and Cluster, every helper in its
 // Funcs and in a context's Funcs, and every read of a context's
 // trees run on those workers concurrently, so each must be safe
-// for concurrent use. Naming and Split run on the calling
-// goroutine.
+// for concurrent use. Naming and Split run where the plan's layout
+// calls [Pass.FileName] and [Pass.SplitUnit], on its goroutine.
 type Pass = core.Pass
 
 // New composes a language into its pass. It returns an error

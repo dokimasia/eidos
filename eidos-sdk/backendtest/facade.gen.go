@@ -116,6 +116,17 @@ func CanonicalFixture(tb assert.TB) *Fixture {
 	return core.CanonicalFixture(tb)
 }
 
+// Files routes a hand-built store into the files a render renders,
+// the way a plan routes a store whose packages are at their package
+// paths: each unit splits through the target's speller, each part
+// takes its spelled name under its package's path, and parts sharing
+// a package and a name assemble one file, in the store's order. A plan
+// unit, which has no package, takes its name alone. The files sort by
+// path, then by package, which is the order a plan's layout returns.
+func Files(e *plugin.Emit, s plugin.FileSpeller) []plugin.File {
+	return core.Files(e, s)
+}
+
 // Fixture is a hand-built plan as the renderer sees it: the emit
 // store, the schedule, and the template trees, helpers and
 // override declarations the composition would have handed over.
@@ -130,10 +141,10 @@ type Setup = core.Setup
 // AssertStamped renders the fixture and takes every file through
 // the output contract: each one stamps, the body survives byte
 // for byte inside the frame, and the frame verifies whole under
-// the same contract, carrying the derivation the file declared.
+// the same contract, with the derivation the file declared.
 //
 // It is not part of [RunBackendSuite], because a brand is the
-// consumer's to state and the suite's [Setup] carries none. A
+// consumer's to state and the suite's [Setup] states none. A
 // satellite runs this beside the suite with the contract its own
 // binary ships.
 func AssertStamped(tb assert.TB, setup Setup, c *output.Contract) {
@@ -211,7 +222,7 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 }
 
 // AssertDeterministicRender renders two isolated setups and fails
-// unless the files are byte-equal: the same names, the same
+// unless the files are byte-equal: the same paths, the same
 // packages, the same bytes, which is the byte-identity contract as
 // values. The findings must match as a set too; only their order is
 // the run's, because the pass reports in completion order.
