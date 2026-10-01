@@ -18,14 +18,15 @@ import (
 // in that shape, and the generator's join puts the family word into
 // the type name.
 //
-// A unit without a lone type falls back to its
-// [naming.FilenameParts], joined and converted to Pascal case as
-// one.
+// A unit without a lone type falls back to the [naming.FilenameParts]
+// of its [plugin.Unit.FileKey], word and tag, joined and converted to
+// Pascal case as one. A per-package or per-plan unit has no file key,
+// so its fallback is the word and the tag alone.
 func Filename(u plugin.Unit) string {
 	if name, held := typeName(u); held {
 		return naming.Pascal(name) + java.Extension
 	}
-	return naming.Pascal(strings.Join(naming.FilenameParts(u.Key, u.Word, u.Tag), "_")) + java.Extension
+	return naming.Pascal(strings.Join(naming.FilenameParts(u.FileKey(), u.Word, u.Tag), "_")) + java.Extension
 }
 
 // typeName returns the name of the one file-level type a unit

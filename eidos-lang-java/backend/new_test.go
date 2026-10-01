@@ -67,7 +67,11 @@ func rendered(tb assert.TB, decls ...symbol.Symbol) (string, *diag.Sink) {
 	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles")
 	r, held := b.(plugin.Renderer)
 	assert.True(tb, held, "the built backend renders")
-	files, err := r.Render(&plugin.RenderContext{Emit: e, Sink: sink, Plugin: java.Name})
+	s, spells := b.(plugin.FileSpeller)
+	assert.True(tb, spells, "the built backend spells filenames")
+	files, err := r.Render(&plugin.RenderContext{
+		Emit: e, Files: backendtest.Files(e, s), Sink: sink, Plugin: java.Name,
+	})
 	assert.NoError(tb, err, "the pass renders every file")
 	if len(files) == 0 {
 		return "", sink

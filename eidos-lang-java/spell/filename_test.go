@@ -16,60 +16,71 @@ import (
 
 // The naming is total over the units a plan admits, and every
 // spelling is pinned: Java names a file after the public type it
-// holds, so a drift here renames types, not just files.
+// declares, so a drift here renames types, not just files.
 func TestFilename(t *testing.T) {
 	t.Parallel()
 
-	t.Run("a lone type names its file", func(t *testing.T) {
+	t.Run("Filename", func(t *testing.T) {
 		t.Parallel()
 
-		u := plugin.Unit{
-			Per: plugin.PerSource, Key: "svc/types.src", Word: "gen",
-			Decls: []symbol.Symbol{&emit.Struct{Name: "Row"}},
-		}
-		assert.Equal(t, spell.Filename(u), "Row.java",
-			"the type's own name, whatever the key and word spell")
-		u.Decls = []symbol.Symbol{&emit.Enum{Name: "Phase"}}
-		assert.Equal(t, spell.Filename(u), "Phase.java", "an enum names its file the same way")
-	})
-
-	tests := []struct {
-		name string
-		unit plugin.Unit
-		want string
-	}{
-		{
-			name: "a source unit joins stem and word as one type name",
-			unit: plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "stub"},
-			want: "StoreStub.java",
-		},
-		{
-			name: "a snake stem converts into the type name",
-			unit: plugin.Unit{Per: plugin.PerSource, Key: "svc/user_profile.ts", Word: "stub"},
-			want: "UserProfileStub.java",
-		},
-		{
-			name: "a tag joins after the word",
-			unit: plugin.Unit{
-				Per: plugin.PerSource, Key: "svc/store.go", Word: "stub", Tag: "grpc",
+		tests := []struct {
+			name string
+			give plugin.Unit
+			want string
+		}{
+			{
+				name: "returns a lone struct's name whatever the key and word spell",
+				give: plugin.Unit{
+					Per: plugin.PerSource, Key: "svc/types.src", Word: "gen",
+					Decls: []symbol.Symbol{&emit.Struct{Name: "Row"}},
+				},
+				want: "Row.java",
 			},
-			want: "StoreStubGrpc.java",
-		},
-		{
-			name: "a plan unit is the word alone",
-			unit: plugin.Unit{Per: plugin.PerPlan, Word: "registry"},
-			want: "Registry.java",
-		},
-		{
-			name: "an acronym run in the word survives",
-			unit: plugin.Unit{Per: plugin.PerPlan, Word: "HTTPClient"},
-			want: "HTTPClient.java",
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			assert.Equal(t, spell.Filename(tt.unit), tt.want, tt.name)
-		})
-	}
+			{
+				name: "returns a lone enum's name",
+				give: plugin.Unit{
+					Per: plugin.PerSource, Key: "svc/types.src", Word: "gen",
+					Decls: []symbol.Symbol{&emit.Enum{Name: "Phase"}},
+				},
+				want: "Phase.java",
+			},
+			{
+				name: "returns the stem and the word of a per-source unit as one type name",
+				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "stub"},
+				want: "StoreStub.java",
+			},
+			{
+				name: "returns a snake stem in the type name's case",
+				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/user_profile.ts", Word: "stub"},
+				want: "UserProfileStub.java",
+			},
+			{
+				name: "returns the tag after the word",
+				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "stub", Tag: "grpc"},
+				want: "StoreStubGrpc.java",
+			},
+			{
+				name: "returns the word alone for a per-package unit",
+				give: plugin.Unit{Per: plugin.PerPackage, Key: "svc/api", Word: "registry"},
+				want: "Registry.java",
+			},
+			{
+				name: "returns the word alone for a plan unit",
+				give: plugin.Unit{Per: plugin.PerPlan, Word: "registry"},
+				want: "Registry.java",
+			},
+			{
+				name: "returns an acronym run in the word as written",
+				give: plugin.Unit{Per: plugin.PerPlan, Word: "HTTPClient"},
+				want: "HTTPClient.java",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, spell.Filename(tt.give), tt.want, "the filename")
+			})
+		}
+	})
 }

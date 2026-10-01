@@ -27,6 +27,7 @@ func New() plugin.Backend {
 		Coverage(Coverage()).
 		Funcs(Funcs).
 		Naming(spell.Filename).
+		Packages(spell.Package).
 		Respell(spell.Name).
 		Lower(Lower).
 		Split(Split).
