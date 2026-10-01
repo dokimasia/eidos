@@ -39,18 +39,32 @@ import (
 // own brackets, so the one instantiation spells Map[K, V] in Go and
 // Map<K, V> in Java.
 //
-// Form and Elems record the structure the frontend parsed, in the
-// form's fixed child order: one child for Optional, List, Array,
-// Stream and Borrow; the key then the value for Map; the
-// parameters then the returns for Func, the returns from Split;
-// the members for Tuple and Union; the bound for Wildcard, with
-// Variance; none for Inline and Named. The spelling is kept
-// verbatim beside them, so a backend spells what it read, and the
-// resolution step visits the named types inside a composite
-// through the children. A structural reference has no target of
-// its own, and its Named children do. Length is a fixed array
-// length written as a literal, and 0 where the length is an
+// Form and Elems record the structure the frontend parsed, each
+// form's children in its fixed order:
+//
+//   - Optional, List, Array, Stream and Borrow: one child.
+//   - Map: the key, then the value.
+//   - Func: the parameters, then the returns, which begin at Split.
+//   - Tuple, Union and Intersection: the members.
+//   - Wildcard: the bound, with Variance, and none for an unbounded
+//     one.
+//   - Inline and Named: none.
+//
+// The spelling is kept verbatim beside them, so a backend spells what
+// it read, and the resolution step visits the named types inside a
+// composite through the children. A structural reference has no
+// target of its own, and its Named children do. Length is a fixed
+// array length written as a literal, and 0 where the length is an
 // expression the spelling keeps.
+//
+// Fields and Methods are an Inline reference's members: the
+// properties and methods of a TypeScript object type, and the fields
+// of a Go inline struct and the methods of a Go inline interface.
+// They are the nodes a declaration's members are, without
+// identities, so no carrier and no stamp can address them, and the
+// resolution step resolves the references among them. They are the
+// node model's alone: a backend spells an inline body from the
+// reference's spelling.
 type TypeRef struct {
 	ID       symbol.Identity `eidos:"node"`
 	Pos      position.Pos    `eidos:"node"`
@@ -63,6 +77,8 @@ type TypeRef struct {
 	Length   int             `eidos:"both"`      // FormArray: the literal length; 0 when the spelling keeps an expression
 	Variance symbol.Variance `eidos:"both"`      // FormWildcard: In for a lower bound, Out for an upper one
 	Args     []*TypeRef      `eidos:"both,walk"` // the type arguments of an instantiation
+	Fields   []*Field        `eidos:"node,walk"` // FormInline: the body's fields, without identities
+	Methods  []*Method       `eidos:"node,walk"` // FormInline: the body's methods, without identities
 }
 
 // TypeParam is one parameter of a generic declaration.

@@ -233,6 +233,16 @@ func TestAssign(t *testing.T) {
 				"its host is the declaration that contains it")
 		})
 
+		t.Run("leaves the members of an inline body without an identity", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := loadTree(t, stdTree(), with(&inlined{frontendtest.NewScripted()}))
+			row, _ := g.Lookup(rowID())
+			body := row.(*node.Struct).Fields[0].Type
+			assert.True(t, body.Fields[0].ID.IsZero(), "a directive cannot name the body's field")
+			assert.True(t, body.Methods[0].ID.IsZero(), "or its method")
+		})
+
 		t.Run("names an embed by the embedded type's bare name", func(t *testing.T) {
 			t.Parallel()
 

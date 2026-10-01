@@ -21,13 +21,13 @@ import (
 //
 // Throws lists the failure types the declaration announces: Java
 // checked exceptions, Swift typed throws. A language without
-// declared throws leaves it empty, and the error model stays the
+// declared throws leaves it empty, and the error model remains the
 // projection's neutral question.
 //
-// The node model carries the signature and never a body, because
-// parsed bodies are out of scope entirely. The emit model carries
-// what a generated body holds in its Body field: the standard
-// slots, and one content form.
+// The node model records the signature and never a body, because
+// parsed bodies are out of scope entirely. The emit model records a
+// generated body in its Body field: the standard slots, and one
+// content form.
 //
 // This is the emit spelling of the kind.
 type Function struct {
@@ -57,37 +57,36 @@ func (x *Function) Docs() []string { return x.Doc }
 
 // Method is a callable attached to a type.
 //
-// Receiver holds the explicit receiver where the language writes
-// one, as Go and Rust do, and stays nil where the receiver is
-// implicit. Level says whether the method belongs to instances or
-// to the type itself, which covers JVM statics and Kotlin
-// companions.
+// Receiver is the explicit receiver where the language writes one,
+// as Go and Rust do, and nil where the receiver is implicit. Level
+// states whether the method belongs to instances or to the type
+// itself, which covers JVM statics and Kotlin companions.
 //
-// Receives carries the type a method attaches to when it is
-// declared outside that type's own declaration: a Kotlin extension
-// function, a Swift extension member, a C# extension method, a Rust
-// impl for a type from another crate. Host stays the declaration
-// that contains the method, so the two answer different questions
-// and neither has to lie. A method declared inside its type leaves
-// Receives nil.
+// Receives names the type a method attaches to when it is declared
+// outside that type's own declaration: a Kotlin extension function,
+// a Swift extension member, a C# extension method, a Rust impl for
+// a type from another crate. Host remains the declaration that
+// contains the method, so each field records a different fact and
+// both are true. A method declared inside its type leaves Receives
+// nil.
 //
 // Abstract marks a member with no body that a subtype must supply.
 // Final forbids overriding. Override marks a member that replaces a
 // supertype's, which Kotlin, C#, Swift and TypeScript spell as a
-// keyword the emitted code has to carry; Java spells it as an
+// keyword the emitted code must write. Java spells it as an
 // annotation instead, so a Java frontend leaves the field false.
 //
-// HasDefault marks an interface method that carries a body: a Java
-// default method, a Kotlin interface method, a Rust default impl.
-// It differs from Abstract's inverse, because a class method with a
-// body is ordinary rather than a default.
+// HasDefault marks an interface method with a body: a Java default
+// method, a Kotlin interface method, a Rust default impl. It differs
+// from Abstract's inverse, because a class method with a body is an
+// ordinary method, not a default.
 //
-// Async and Throws carry what [Function]'s carry: the
+// Async and Throws record what [Function]'s record: the
 // asynchronous result in the language's own form, and the failure
 // types the declaration announces.
 //
-// The node model carries the signature and never a body; the emit
-// model carries what a generated body holds in its Body field.
+// The node model records the signature and never a body, and the
+// emit model records a generated body in its Body field.
 //
 // This is the emit spelling of the kind.
 type Method struct {
@@ -134,20 +133,22 @@ func (x *Method) Docs() []string { return x.Doc }
 // in "func greet(person name: String)" the label is "person" and
 // the name is "name".
 //
-// Default holds the source spelling of the default value,
-// unevaluated, and is empty when the parameter has none. A
-// generator that drops a default changes the callee's contract, so
-// the spelling is carried with the parameter rather than living in
-// metadata.
+// Default is the source spelling of the default value, unevaluated,
+// and is empty when the parameter has none. A generator that drops a
+// default changes the callee's contract, so the spelling is a field
+// of the parameter and not metadata.
 //
 // Variadic distinguishes the positional and keyword forms, because
 // Python, Ruby and PHP have both. It is legal on the trailing
-// parameters only, and frontends enforce that rather than the
-// model.
+// parameters only, and the frontends enforce that, not the model. A
+// variadic parameter's Type is the type of one argument it takes:
+// int for Go's ...int and Java's int..., and number for
+// TypeScript's ...xs: number[].
 //
-// A parameter is a subject: an authored value sits on it in a
-// language whose comments reach it, and its identity is the host's
-// chain, its name or its position, and the host's discriminator.
+// A parameter is a subject: an authored value attaches to it in a
+// language whose comments can address it, and its identity is the
+// host's chain, its name or its position, and the host's
+// discriminator.
 //
 // This is the emit spelling of the kind.
 type Param struct {
@@ -184,7 +185,7 @@ func (x *Param) TypeRef() symbol.Symbol {
 //
 // The list is a slice because Go returns several values. A language
 // with one result fills one entry, and a language with none fills
-// none. Name carries a Go named result and is empty elsewhere.
+// none. Name is a Go named result's name and is empty elsewhere.
 //
 // A return is a subject the way a parameter is, named by its
 // position where the language leaves it unnamed.
@@ -910,18 +911,32 @@ func (x *Alias) Docs() []string { return x.Doc }
 // own brackets, so the one instantiation spells Map[K, V] in Go and
 // Map<K, V> in Java.
 //
-// Form and Elems record the structure the frontend parsed, in the
-// form's fixed child order: one child for Optional, List, Array,
-// Stream and Borrow; the key then the value for Map; the
-// parameters then the returns for Func, the returns from Split;
-// the members for Tuple and Union; the bound for Wildcard, with
-// Variance; none for Inline and Named. The spelling is kept
-// verbatim beside them, so a backend spells what it read, and the
-// resolution step visits the named types inside a composite
-// through the children. A structural reference has no target of
-// its own, and its Named children do. Length is a fixed array
-// length written as a literal, and 0 where the length is an
+// Form and Elems record the structure the frontend parsed, each
+// form's children in its fixed order:
+//
+//   - Optional, List, Array, Stream and Borrow: one child.
+//   - Map: the key, then the value.
+//   - Func: the parameters, then the returns, which begin at Split.
+//   - Tuple, Union and Intersection: the members.
+//   - Wildcard: the bound, with Variance, and none for an unbounded
+//     one.
+//   - Inline and Named: none.
+//
+// The spelling is kept verbatim beside them, so a backend spells what
+// it read, and the resolution step visits the named types inside a
+// composite through the children. A structural reference has no
+// target of its own, and its Named children do. Length is a fixed
+// array length written as a literal, and 0 where the length is an
 // expression the spelling keeps.
+//
+// Fields and Methods are an Inline reference's members: the
+// properties and methods of a TypeScript object type, and the fields
+// of a Go inline struct and the methods of a Go inline interface.
+// They are the nodes a declaration's members are, without
+// identities, so no carrier and no stamp can address them, and the
+// resolution step resolves the references among them. They are the
+// node model's alone: a backend spells an inline body from the
+// reference's spelling.
 //
 // This is the emit spelling of the kind.
 type TypeRef struct {

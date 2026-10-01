@@ -45,6 +45,13 @@ const (
 	genSource     = "package svc/gen\ntype T string\ntype Box T\ntypeparam T\nmethod Put T\ntype Plain T\n"
 )
 
+// The inline body that types each struct's first field under inlined:
+// its spelling, and the name of its one field and its one method.
+const (
+	inlineSpelling = "{member}"
+	memberName     = "member"
+)
+
 // The import trees: one file declaring both ends of a reference, and
 // one package declaring them in two files.
 const (
@@ -254,6 +261,28 @@ func TestLink(t *testing.T) {
 			assert.Equal(t, plain.(*node.Struct).Fields[0].Type.Target,
 				genDecl("", typeParamName, symbol.KindStruct),
 				"a sibling type sees no parameter of another declaration")
+		})
+
+		t.Run("resolves a reference among an inline body's members", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, stdTree(), with(&inlined{frontendtest.NewScripted()}))
+			coretest.AssertCodes(t, sink)
+			row, _ := g.Lookup(rowID())
+			assert.Equal(t, row.(*node.Struct).Fields[0].Type.Fields[0].Type.Target, symbol.Identity{
+				Lang: frontendtest.ScriptedLang, Package: apiPath, Name: userName, Kind: symbol.KindStruct,
+			}, "the body's field resolves under the type that declares the typed field")
+		})
+
+		t.Run("targets nothing for a spelling of an inline method's type parameter", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, sink := loadTree(t, fstest.MapFS{genFile: {Data: []byte(genSource)}},
+				with(&inlined{frontendtest.NewScripted()}))
+			coretest.AssertCodes(t, sink)
+			plain, _ := g.Lookup(genDecl("", plainName, symbol.KindStruct))
+			assert.True(t, plain.(*node.Struct).Fields[0].Type.Methods[0].Params[0].Type.Target.IsZero(),
+				"the parameter shadows the package type T and has no identity to target")
 		})
 
 		t.Run("resolves a folded method's reference through its own file's bindings", func(t *testing.T) {
@@ -511,6 +540,46 @@ func (f *relined) Parse(ctx context.Context, u *plugin.SourceUnit) error {
 			}
 			return true
 		})
+	}
+	return nil
+}
+
+// inlined is the scripted language with each struct's first field
+// typed by an inline body, the shape of a TypeScript object type. The
+// body's one field has the type the source wrote, and its one method
+// declares the type parameter T and takes a parameter of type T.
+type inlined struct {
+	*frontendtest.Scripted
+}
+
+// Parse lowers the unit, then moves each struct's first field type
+// into an inline body.
+func (f *inlined) Parse(ctx context.Context, u *plugin.SourceUnit) error {
+	if err := f.Scripted.Parse(ctx, u); err != nil {
+		return err
+	}
+	for _, pkg := range u.Graph().Packages() {
+		for _, file := range pkg.Files {
+			for _, decl := range file.Decls {
+				st, is := decl.(*node.Struct)
+				if !is || len(st.Fields) == 0 {
+					continue
+				}
+				field := st.Fields[0]
+				field.Type = &node.TypeRef{
+					Spelling: inlineSpelling, Pos: field.Pos, Form: symbol.FormInline,
+					Fields: []*node.Field{{Name: memberName, Pos: field.Pos, Type: field.Type}},
+					Methods: []*node.Method{{
+						Name: memberName, Pos: field.Pos,
+						TypeParams: []*node.TypeParam{{Name: typeParamName, Pos: field.Pos}},
+						Params: []*node.Param{{
+							Name: memberName, Pos: field.Pos,
+							Type: &node.TypeRef{Spelling: typeParamName, Pos: field.Pos},
+						}},
+					}},
+				}
+			}
+		}
 	}
 	return nil
 }

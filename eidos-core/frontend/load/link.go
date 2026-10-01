@@ -21,7 +21,10 @@ import (
 // parameter: the parameters of every enclosing declaration are in
 // scope, the innermost first, so a parameter takes its name from a
 // package-level type of the same spelling the way every language
-// with generics scopes it. Every other reference resolves through
+// with generics scopes it. The references among an inline body's
+// members resolve the same way, and a parameter of the body's
+// method, which has no identity, leaves a reference that spells it
+// without a target. Every other reference resolves through
 // the bindings of its file's language: the frontend's Resolve names
 // the candidates in shadowing tiers, and the first tier with a
 // candidate the graph contains decides. That candidate is the
@@ -318,9 +321,10 @@ func typeParamsOf(s symbol.Symbol) []*node.TypeParam {
 // withParams returns the type parameters in scope inside a
 // declaration: the enclosing ones, shadowed by the declaration's
 // own of the same name. A parameter without an identity, which a
-// dropped duplicate is, names nothing a reference could target.
-// The enclosing map is never written, so a sibling declaration sees
-// what its parent saw.
+// dropped duplicate's and an inline body's method's are, still
+// shadows, and maps to the zero identity, so a reference that spells
+// it targets nothing and keeps its spelling. The enclosing map is
+// never written, so a sibling declaration sees what its parent saw.
 func withParams(
 	enclosing map[string]symbol.Identity, declared []*node.TypeParam,
 ) map[string]symbol.Identity {
@@ -330,7 +334,7 @@ func withParams(
 	out := make(map[string]symbol.Identity, len(enclosing)+len(declared))
 	maps.Copy(out, enclosing)
 	for _, tp := range declared {
-		if tp != nil && tp.Name != "" && !tp.ID.IsZero() {
+		if tp != nil && tp.Name != "" {
 			out[tp.Name] = tp.ID
 		}
 	}

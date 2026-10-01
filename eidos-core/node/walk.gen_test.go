@@ -317,13 +317,15 @@ func TestWalk(t *testing.T) {
 			subject := &TypeRef{}
 			subject.Elems = append(subject.Elems, &TypeRef{})
 			subject.Args = append(subject.Args, &TypeRef{})
+			subject.Fields = append(subject.Fields, &Field{})
+			subject.Methods = append(subject.Methods, &Method{})
 
 			var seen int
 			Walk(subject, func(symbol.Symbol) bool {
 				seen++
 				return true
 			})
-			assert.Equal(t, seen, 3,
+			assert.Equal(t, seen, 5,
 				"the walk descends into every traversed field")
 		})
 
@@ -598,6 +600,8 @@ func TestWalk(t *testing.T) {
 				subject := &TypeRef{}
 				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
 				var seen int
 				Walk(subject, func(symbol.Symbol) bool {
 					seen++
@@ -945,6 +949,8 @@ func TestWalk(t *testing.T) {
 				subject := &TypeRef{}
 				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
 				var walked int
 				Walk(subject, func(symbol.Symbol) bool {
 					walked++
@@ -1232,6 +1238,8 @@ func TestWalk(t *testing.T) {
 				subject := &TypeRef{}
 				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1423,6 +1431,8 @@ func TestWalk(t *testing.T) {
 				subject := &TypeRef{}
 				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -1747,6 +1757,8 @@ func TestWalk(t *testing.T) {
 				subject := &TypeRef{}
 				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
 				var yielded int
 				for range All(subject) {
 					yielded++
@@ -2042,6 +2054,8 @@ func TestWalk(t *testing.T) {
 				subject := &TypeRef{}
 				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
 				var yielded int
 				for range Declarations(subject) {
 					yielded++

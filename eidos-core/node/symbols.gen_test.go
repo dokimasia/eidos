@@ -637,6 +637,8 @@ func TestSymbols(t *testing.T) {
 				subject := &TypeRef{}
 				subject.Elems = append(subject.Elems, &TypeRef{})
 				subject.Args = append(subject.Args, &TypeRef{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
 				encoded, err := EncodeJSON(subject)
 				assert.NoError(t, err, "a populated declaration encodes")
 				decoded, err := DecodeJSON(encoded)
@@ -647,7 +649,7 @@ func TestSymbols(t *testing.T) {
 					walked++
 					return true
 				})
-				assert.Equal(t, walked, 3,
+				assert.Equal(t, walked, 5,
 					"with every child the original held")
 			}
 

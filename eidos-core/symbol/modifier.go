@@ -131,15 +131,21 @@ const (
 	FormTuple
 	// FormUnion has its members as children, in order, untagged.
 	FormUnion
+	// FormIntersection has its members as children, in order: a value
+	// of it has every member's type. TypeScript's A & B, and a Rust dyn
+	// or impl type over its bounds, one bound included.
+	FormIntersection
 	// FormStream has one child: a channel, an async iterator.
 	FormStream
 	// FormBorrow has one child: a Rust reference, a C++ reference.
 	FormBorrow
 	// FormWildcard has one child, the bound, and the reference
-	// records the variance.
+	// records the variance. An unbounded wildcard has no child, and
+	// its variance is invariant.
 	FormWildcard
 	// FormInline has no children: an inline struct, interface or
-	// object body.
+	// object body, whose members the reference records as its fields
+	// and methods.
 	FormInline
 
 	// FormScalar is a number; the shape carries its class and

@@ -44,6 +44,7 @@ var (
 	_ symbol.Membered = (*SumVariant)(nil)
 	_ symbol.Membered = (*Struct)(nil)
 	_ symbol.Membered = (*Interface)(nil)
+	_ symbol.Membered = (*TypeRef)(nil)
 	_ symbol.Typed    = (*Param)(nil)
 	_ symbol.Typed    = (*Return)(nil)
 	_ symbol.Typed    = (*Field)(nil)
@@ -384,6 +385,9 @@ func TestKinds(t *testing.T) {
 
 			assert.Nil(t, (&SumVariant{}).EmbedList(),
 				"a member list the kind does not carry returns nil")
+
+			assert.Nil(t, (&TypeRef{}).EmbedList(),
+				"a member list the kind does not carry returns nil")
 		})
 
 		t.Run("a member list the kind carries returns its members", func(t *testing.T) {
@@ -501,6 +505,26 @@ func TestKinds(t *testing.T) {
 				subject.Extends = append(subject.Extends, &TypeRef{})
 				subject.Permits = append(subject.Permits, &TypeRef{})
 				assert.NotEmpty(t, subject.EmbedList(),
+					"a member list the kind carries returns its members")
+			}
+
+			{
+				subject := &TypeRef{}
+				subject.Elems = append(subject.Elems, &TypeRef{})
+				subject.Args = append(subject.Args, &TypeRef{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				assert.NotEmpty(t, subject.FieldList(),
+					"a member list the kind carries returns its members")
+			}
+
+			{
+				subject := &TypeRef{}
+				subject.Elems = append(subject.Elems, &TypeRef{})
+				subject.Args = append(subject.Args, &TypeRef{})
+				subject.Fields = append(subject.Fields, &Field{})
+				subject.Methods = append(subject.Methods, &Method{})
+				assert.NotEmpty(t, subject.MethodList(),
 					"a member list the kind carries returns its members")
 			}
 		})

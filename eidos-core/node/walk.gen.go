@@ -182,6 +182,12 @@ func Walk(s symbol.Symbol, visit func(symbol.Symbol) bool) {
 		for _, child := range x.Args {
 			Walk(child, visit)
 		}
+		for _, child := range x.Fields {
+			Walk(child, visit)
+		}
+		for _, child := range x.Methods {
+			Walk(child, visit)
+		}
 	case *TypeParam:
 		for _, child := range x.Bounds {
 			Walk(child, visit)
