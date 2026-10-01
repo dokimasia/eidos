@@ -336,9 +336,9 @@ func hostParam(scope rules.Scope, name string, v rules.View) (symbol.Symbol, err
 // ownerOf splits a dotted chain into the chain above its last
 // segment and that segment.
 func ownerOf(chain string) (owner, name string) {
-	at := strings.LastIndex(chain, protobuf.NameSep)
-	if at < 0 {
+	owner, name, found := strings.CutLast(chain, protobuf.NameSep)
+	if !found {
 		return "", chain
 	}
-	return chain[:at], chain[at+1:]
+	return owner, name
 }
