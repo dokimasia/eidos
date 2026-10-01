@@ -37,6 +37,24 @@ func ifaceOf(tb assert.TB, body string) *node.Interface {
 	return named[*node.Interface](tb, declsOf(tb, "export interface "+ifaceName+" {\n"+body+"}\n"), ifaceName)
 }
 
+// classBuilt parses one exported class body and returns the unit's
+// builder beside the class, for the cases that read the stamps.
+func classBuilt(tb assert.TB, body string) (*plugin.GraphBuilder, *node.Struct) {
+	tb.Helper()
+
+	gb, _ := parsedSource(tb, "export class "+className+" {\n"+body+"}\n")
+	return gb, named[*node.Struct](tb, fileIn(tb, gb, aPackage).Decls, className)
+}
+
+// ifaceBuilt parses one exported interface body and returns the unit's
+// builder beside the interface, for the cases that read the stamps.
+func ifaceBuilt(tb assert.TB, body string) (*plugin.GraphBuilder, *node.Interface) {
+	tb.Helper()
+
+	gb, _ := parsedSource(tb, "export interface "+ifaceName+" {\n"+body+"}\n")
+	return gb, named[*node.Interface](tb, fileIn(tb, gb, aPackage).Decls, ifaceName)
+}
+
 // methodNames returns the names of methods, in order.
 func methodNames(methods []*node.Method) []string {
 	out := make([]string, 0, len(methods))
@@ -133,6 +151,42 @@ func TestMember(t *testing.T) {
 			c := named[*node.Struct](t, fileIn(t, gb, aPackage).Decls, className)
 			assert.Equal(t, fieldNames(c.Fields), []string{"b"}, "no other module can read a")
 		})
+
+		t.Run("stamps typescript.parameterProperty on a parameter property's field", func(t *testing.T) {
+			t.Parallel()
+
+			gb, c := classBuilt(t, "  constructor(private a: string, b: number) {}\n")
+			v, stamped := stampOn(gb, c.Fields[0], typescript.ParameterPropertyKey)
+			assert.True(t, stamped, "the field a parameter declares")
+			assert.Equal(t, v, any(true), "is marked")
+		})
+
+		t.Run("stamps typescript.parameterProperty on a parameter property's parameter", func(t *testing.T) {
+			t.Parallel()
+
+			gb, c := classBuilt(t, "  constructor(private a: string, b: number) {}\n")
+			_, stamped := stampOn(gb, c.Methods[0].Params[0], typescript.ParameterPropertyKey)
+			assert.True(t, stamped, "the parameter that declares a field")
+		})
+
+		t.Run("stamps no typescript.parameterProperty on a bare constructor parameter", func(t *testing.T) {
+			t.Parallel()
+
+			gb, c := classBuilt(t, "  constructor(private a: string, b: number) {}\n")
+			_, stamped := stampOn(gb, c.Methods[0].Params[1], typescript.ParameterPropertyKey)
+			assert.False(t, stamped, "b declares no field")
+		})
+
+		t.Run("stamps a private parameter property's parameter at signature depth", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedTree(t, fstest.MapFS{aFile: {Data: []byte(
+				"export class C {\n  constructor(private a: string) {}\n}\n",
+			)}}, aFile, plugin.DepthSignatures)
+			c := named[*node.Struct](t, fileIn(t, gb, aPackage).Decls, className)
+			_, stamped := stampOn(gb, c.Methods[0].Params[0], typescript.ParameterPropertyKey)
+			assert.True(t, stamped, "the constructor takes the parameter whatever field the depth keeps")
+		})
 	})
 
 	t.Run("methodOf", func(t *testing.T) {
@@ -204,6 +258,29 @@ func TestMember(t *testing.T) {
 			c := named[*node.Struct](t, fileIn(t, gb, aPackage).Decls, className)
 			assert.Equal(t, methodNames(c.Methods), []string{"shown"}, "no other module can call it")
 		})
+
+		t.Run("stamps typescript.generator on a generator method", func(t *testing.T) {
+			t.Parallel()
+
+			gb, c := classBuilt(t, "  *items(): Iterable<number> {}\n")
+			_, stamped := stampOn(gb, c.Methods[0], typescript.GeneratorKey)
+			assert.True(t, stamped, "the * declares a generator")
+		})
+
+		t.Run("stamps typescript.optional on a method declared with ?", func(t *testing.T) {
+			t.Parallel()
+
+			gb, i := ifaceBuilt(t, "  run?(): void;\n")
+			_, stamped := stampOn(gb, i.Methods[0], typescript.OptionalKey)
+			assert.True(t, stamped, "a value of the type may lack the method")
+		})
+
+		t.Run("stamps nothing on a method without * or ?", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := classBuilt(t, "  run(): void {}\n")
+			assert.Empty(t, gb.StampRecords(), "a plain method has no mark to record")
+		})
 	})
 
 	t.Run("field", func(t *testing.T) {
@@ -236,6 +313,40 @@ func TestMember(t *testing.T) {
 			)}}, aFile, plugin.DepthSignatures)
 			c := named[*node.Struct](t, fileIn(t, gb, aPackage).Decls, className)
 			assert.Equal(t, fieldNames(c.Fields), []string{"shown"}, "no other module can read it")
+		})
+
+		t.Run("stamps typescript.definiteAssignment on a property declared with !", func(t *testing.T) {
+			t.Parallel()
+
+			gb, c := classBuilt(t, "  id!: string;\n")
+			_, stamped := stampOn(gb, c.Fields[0], typescript.DefiniteAssignmentKey)
+			assert.True(t, stamped, "the class assigns it where the compiler cannot see")
+		})
+
+		t.Run("stamps nothing on a property without !", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := classBuilt(t, "  id: string;\n")
+			assert.Empty(t, gb.StampRecords(), "a plain property has no mark to record")
+		})
+	})
+
+	t.Run("indexer", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("stamps typescript.readonly on a readonly index signature", func(t *testing.T) {
+			t.Parallel()
+
+			gb, i := ifaceBuilt(t, "  readonly [key: string]: number;\n")
+			_, stamped := stampOn(gb, i.Methods[0], typescript.ReadonlyKey)
+			assert.True(t, stamped, "a holder cannot assign the entries")
+		})
+
+		t.Run("stamps nothing on an index signature without readonly", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := ifaceBuilt(t, "  [key: string]: number;\n")
+			assert.Empty(t, gb.StampRecords(), "a plain index signature has no mark to record")
 		})
 	})
 

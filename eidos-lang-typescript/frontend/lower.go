@@ -41,9 +41,10 @@ const wildcardName = "*"
 
 // lowering is one file's lowering state: the unit and the grammar's
 // vocabulary, the file's path and module record, the File node the file
-// contributes to each package, the comments a declaration took, and the
+// contributes to each package, the comments a declaration took, the
 // local names the module publishes through an export clause or a
-// default export.
+// default export, and how many inline object bodies enclose the member
+// under lowering, whose members have no identity.
 type lowering struct {
 	u        *plugin.SourceUnit
 	v        *vocabulary
@@ -53,6 +54,7 @@ type lowering struct {
 	files    map[string]*node.File
 	consumed map[position.Pos]bool
 	exported map[string]bool
+	inline   int
 }
 
 // container is where one statement list's declarations go: the File
@@ -60,14 +62,17 @@ type lowering struct {
 // the dotted name of the namespace the package is, and whether every
 // declaration in it is public, as in a script's global scope and an
 // ambient context. module reports the module's own top level, whose
-// declarations an export clause can publish by name.
+// declarations an export clause can publish by name. ambient reports a
+// context whose declarations are implemented elsewhere: a declaration
+// file, a declare block, and an ambient module.
 type container struct {
-	file   *node.File
-	pkg    string
-	outer  []string
-	dotted string
-	public bool
-	module bool
+	file    *node.File
+	pkg     string
+	outer   []string
+	dotted  string
+	public  bool
+	module  bool
+	ambient bool
 }
 
 // lower lowers one parsed file into the unit's builder: the module
@@ -78,7 +83,7 @@ func (l *lowering) lower(root treesitter.Node) {
 	if !moduleFile {
 		l.module.pkg = ""
 	}
-	top := container{pkg: l.module.pkg, public: !moduleFile, module: moduleFile}
+	top := container{pkg: l.module.pkg, public: !moduleFile, module: moduleFile, ambient: declarationFile(l.path)}
 	top.file = l.fileIn(top.pkg, nil, root.Pos())
 	l.record(root, top.file)
 	l.statements(root, top)
@@ -333,27 +338,29 @@ func (l *lowering) exportStatement(stmt treesitter.Node, c container, overloaded
 	}
 }
 
-// ambient lowers a declare statement: a declare global block into the
-// global package, an ambient module or namespace, whose members are
-// public, or one ambient declaration.
+// ambient lowers a declare statement in an ambient context: a declare
+// global block into the global package, an ambient module or namespace,
+// whose members are public, or one ambient declaration.
 func (l *lowering) ambient(n treesitter.Node, c container, exported bool, outermost treesitter.Node,
 	overloaded map[string]bool,
 ) {
 	if l.token(n, keywordGlobal) {
 		block := l.firstOf(n, l.v.statementBlock)
-		global := container{pkg: "", outer: []string{c.pkg}, public: true}
+		global := container{pkg: "", outer: []string{c.pkg}, public: true, ambient: true}
 		global.file = l.fileIn(global.pkg, global.outer, n.Pos())
 		l.statements(block, global)
 		return
 	}
+	declared := c
+	declared.ambient = true
 	for inner := range n.NamedChildren() {
 		switch inner.Kind() {
 		case l.v.comment:
 		case l.v.internalModule, l.v.module:
-			l.namespace(inner, c, exported, outermost, true)
+			l.namespace(inner, declared, exported, outermost, true)
 			return
 		default:
-			l.declaration(inner, c, exported, outermost, overloaded)
+			l.declaration(inner, declared, exported, outermost, overloaded)
 			return
 		}
 	}
@@ -361,25 +368,26 @@ func (l *lowering) ambient(n treesitter.Node, c container, exported bool, outerm
 
 // namespace lowers a namespace or a module declaration into the package
 // it is. A name in quotes declares an ambient module, the package of
-// that name, whose members are public. A dotted name declares the
-// namespace's package below the container's, stamped with the dotted
-// name, whose members are public in an ambient context and exported by
-// name otherwise. A namespace signature depth leaves out takes its
-// comments and its members with it.
+// that name, whose members are public and ambient. A dotted name
+// declares the namespace's package below the container's, stamped with
+// the dotted name, whose members are public where public is set and
+// exported by name otherwise, and ambient in an ambient context. A
+// namespace signature depth leaves out takes its comments and its
+// members with it.
 func (l *lowering) namespace(n treesitter.Node, c container, exported bool, outermost treesitter.Node,
-	ambient bool,
+	public bool,
 ) {
 	name := n.Child(l.v.fieldName)
 	var inner container
 	if name.Kind() == l.v.stringNode {
-		inner = container{pkg: l.unquote(name), outer: []string{c.pkg}, public: true}
+		inner = container{pkg: l.unquote(name), outer: []string{c.pkg}, public: true, ambient: true}
 	} else {
 		if l.u.Depth() == plugin.DepthSignatures && !l.visible(c, exported, "") {
 			l.skip(outermost)
 			return
 		}
 		segments := strings.Split(name.Compact(), namespaceSeparator)
-		inner = container{public: ambient, dotted: name.Compact()}
+		inner = container{public: public, ambient: c.ambient, dotted: name.Compact()}
 		if c.dotted != "" {
 			inner.dotted = c.dotted + namespaceSeparator + inner.dotted
 		}

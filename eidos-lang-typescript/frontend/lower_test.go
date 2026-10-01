@@ -259,6 +259,30 @@ func TestLower(t *testing.T) {
 			)}}, aFile, plugin.DepthSignatures)
 			assert.Equal(t, packagePaths(gb), []string{aPackage}, "no other module can name it")
 		})
+
+		t.Run("stamps typescript.ambient on a member of a declared namespace", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export declare namespace A {\n  class Shown {}\n}\n")
+			_, stamped := stampOn(gb, fileIn(t, gb, outerPackage).Decls[0], typescript.AmbientKey)
+			assert.True(t, stamped, "a declared namespace implements nothing")
+		})
+
+		t.Run("stamps typescript.ambient on a member of an ambient module", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "declare module 'lib' {\n  export interface I {}\n}\nexport {};\n")
+			_, stamped := stampOn(gb, fileIn(t, gb, modulePkg).Decls[0], typescript.AmbientKey)
+			assert.True(t, stamped, "an ambient module describes one implemented elsewhere")
+		})
+
+		t.Run("stamps no typescript.ambient on a member of a script's namespace", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "namespace A {\n  class X {}\n}\n")
+			_, stamped := stampOn(gb, fileIn(t, gb, "A").Decls[0], typescript.AmbientKey)
+			assert.False(t, stamped, "a script's namespace is public and implemented in place")
+		})
 	})
 
 	t.Run("ambient", func(t *testing.T) {
@@ -281,6 +305,14 @@ func TestLower(t *testing.T) {
 			t.Parallel()
 
 			assert.Length(t, declsOf(t, "export declare /* the A */ class A {}\n"), 1, "the comment declares nothing")
+		})
+
+		t.Run("stamps typescript.ambient on a declare global block's declaration", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export {};\ndeclare global {\n  interface Window { x: number }\n}\n")
+			_, stamped := stampOn(gb, fileIn(t, gb, "").Decls[0], typescript.AmbientKey)
+			assert.True(t, stamped, "the block describes the global scope's existing members")
 		})
 	})
 

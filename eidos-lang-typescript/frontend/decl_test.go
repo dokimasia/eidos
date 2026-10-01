@@ -9,6 +9,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	typescript "go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/node"
@@ -96,6 +97,32 @@ func TestDecl(t *testing.T) {
 			_, found := parsedSource(t, "export {};\n"+carrierLine+"if (ready) {}\n")
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "a statement declares nothing")
 		})
+
+		t.Run("stamps typescript.ambient on a declared class", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export declare class A {}\n")
+			a := named[*node.Struct](t, fileIn(t, gb, aPackage).Decls, "A")
+			_, stamped := stampOn(gb, a, typescript.AmbientKey)
+			assert.True(t, stamped, "its implementation is elsewhere")
+		})
+
+		t.Run("stamps typescript.ambient on a declaration of a declaration file", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedTree(t, fstest.MapFS{aDeclFile: {Data: []byte("export interface I {}\n")}},
+				aDeclFile, plugin.DepthFull)
+			i := named[*node.Interface](t, fileIn(t, gb, aPackage).Decls, "I")
+			_, stamped := stampOn(gb, i, typescript.AmbientKey)
+			assert.True(t, stamped, "a declaration file states no implementation")
+		})
+
+		t.Run("stamps nothing on a module's own declaration", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export class A {}\n")
+			assert.Empty(t, gb.StampRecords(), "the module implements it")
+		})
 	})
 
 	t.Run("class", func(t *testing.T) {
@@ -155,6 +182,37 @@ func TestDecl(t *testing.T) {
 			decls := declsOf(t, "export interface A { a: string }\nexport interface A { b: number }\n")
 			assert.Length(t, decls, 1, "one interface")
 			assert.Length(t, decls[0].(*node.Interface).Fields, 2, "with both declarations' members")
+		})
+	})
+
+	t.Run("mark", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("stamps nothing on a member of an inline object type", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export type T = { run?(): void; a: string };\n")
+			assert.Empty(t, gb.StampRecords(), "no identity names the member")
+		})
+
+		t.Run("stamps a member declared after an inline object type", func(t *testing.T) {
+			t.Parallel()
+
+			gb, i := ifaceBuilt(t, "  a: { b: string };\n  run?(): void;\n")
+			_, stamped := stampOn(gb, i.Methods[0], typescript.OptionalKey)
+			assert.True(t, stamped, "the inline body ends before the method")
+		})
+	})
+
+	t.Run("attach", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports UnaddressedCarrier for a carrier on a member of an inline object type", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "export type T = {\n  "+carrierLine+"  a: string;\n};\n")
+			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier},
+				"no identity names the member")
 		})
 	})
 
@@ -219,6 +277,22 @@ func TestDecl(t *testing.T) {
 
 			named[*node.Function](t, declsOf(t, "export declare function g(): void;\n"), "g")
 		})
+
+		t.Run("stamps typescript.generator on a generator function", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export function* g(): Iterable<number> {}\n")
+			fn := named[*node.Function](t, fileIn(t, gb, aPackage).Decls, "g")
+			_, stamped := stampOn(gb, fn, typescript.GeneratorKey)
+			assert.True(t, stamped, "the * declares a generator")
+		})
+
+		t.Run("stamps nothing on a function without *", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export function g(): void {}\n")
+			assert.Empty(t, gb.StampRecords(), "a plain function has no mark to record")
+		})
 	})
 
 	t.Run("variables", func(t *testing.T) {
@@ -258,6 +332,22 @@ func TestDecl(t *testing.T) {
 
 			_, found := parsedSource(t, "export {};\n// +fixture:gen:table name=t\nconst { a, b } = o;\n")
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "a pattern binds no single name")
+		})
+
+		t.Run("stamps typescript.ambient on a declared constant", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export declare const limit: number;\n")
+			c := named[*node.Constant](t, fileIn(t, gb, aPackage).Decls, "limit")
+			_, stamped := stampOn(gb, c, typescript.AmbientKey)
+			assert.True(t, stamped, "its value is elsewhere")
+		})
+
+		t.Run("stamps nothing on a module's own constant", func(t *testing.T) {
+			t.Parallel()
+
+			gb, _ := parsedSource(t, "export const limit = 16;\n")
+			assert.Empty(t, gb.StampRecords(), "the module defines it")
 		})
 	})
 

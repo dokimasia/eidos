@@ -5,6 +5,7 @@ package frontend
 
 import (
 	"go.dokimi.dev/eidos/lang/treesitter"
+	typescript "go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -79,7 +80,7 @@ func (l *lowering) method(m treesitter.Node, st *node.Struct, decorators symbol.
 		return
 	}
 	if built.Constructs {
-		st.Fields = append(st.Fields, l.parameterProperties(m.Child(l.v.fieldParameters))...)
+		st.Fields = append(st.Fields, l.parameterProperties(m.Child(l.v.fieldParameters), built.Params)...)
 	}
 	st.Methods = append(st.Methods, built)
 }
@@ -87,7 +88,9 @@ func (l *lowering) method(m treesitter.Node, st *node.Struct, decorators symbol.
 // methodOf builds one method: its accessibility, static level, accessor
 // kind, async and abstract marks, override modifier, a # name's hard
 // privacy, its signature and its decorators. A method named
-// constructor constructs. inInterface builds an interface's method
+// constructor constructs. A generator method, which its * declares, is
+// stamped typescript.generator, and a method declared with ?
+// typescript.optional. inInterface builds an interface's method
 // signature, which is public and abstract. It returns nil for a member
 // signature depth leaves out: a private or #-named one.
 func (l *lowering) methodOf(m treesitter.Node, decorators symbol.Annotations, inInterface bool) *node.Method {
@@ -128,15 +131,24 @@ func (l *lowering) methodOf(m treesitter.Node, decorators symbol.Annotations, in
 	if name == constructorName {
 		built.Constructs = true
 	}
-	l.u.AttachCarriers(built, parts.Carriers, BadCarrier)
+	if l.token(m, keywordStar) {
+		l.mark(built, typescript.GeneratorKey, m.Pos())
+	}
+	if l.token(m, keywordOptional) {
+		l.mark(built, typescript.OptionalKey, m.Pos())
+	}
+	l.attach(built, parts.Carriers)
 	return built
 }
 
 // parameterProperties returns the fields a constructor's parameter
 // properties declare: each parameter with an accessibility modifier or
 // readonly, under its name, readonly as immutable, a ? parameter as
-// optional. Signature depth leaves out a private one.
-func (l *lowering) parameterProperties(list treesitter.Node) []*node.Field {
+// optional. The field and the constructor's parameter of its name,
+// among params, are stamped typescript.parameterProperty. Signature
+// depth leaves out a private field and keeps its parameter's stamp,
+// because the constructor still takes the parameter.
+func (l *lowering) parameterProperties(list treesitter.Node, params []*node.Param) []*node.Field {
 	var out []*node.Field
 	for p := range list.NamedChildren() {
 		if p.Kind() != l.v.requiredParameter && p.Kind() != l.v.optionalParameter {
@@ -147,6 +159,11 @@ func (l *lowering) parameterProperties(list treesitter.Node) []*node.Field {
 		pattern := p.Child(l.v.fieldPattern)
 		if modifier.IsZero() && !readonly || pattern.Kind() != l.v.identifier {
 			continue
+		}
+		for _, param := range params {
+			if param.Name == pattern.Text() {
+				l.mark(param, typescript.ParameterPropertyKey, pattern.Pos())
+			}
 		}
 		vis := l.access(p, false)
 		if l.u.Depth() == plugin.DepthSignatures && vis == symbol.VisibilityPrivate {
@@ -161,6 +178,7 @@ func (l *lowering) parameterProperties(list treesitter.Node) []*node.Field {
 		if readonly {
 			f.Mutability = symbol.MutabilityImmutable
 		}
+		l.mark(f, typescript.ParameterPropertyKey, pattern.Pos())
 		out = append(out, f)
 	}
 	return out
@@ -168,8 +186,9 @@ func (l *lowering) parameterProperties(list treesitter.Node) []*node.Field {
 
 // field lowers one class property: its accessibility, static level,
 // readonly as immutable, ? as optional, a # name's hard privacy, its
-// type, its initializer verbatim and its decorators. It returns nil for
-// a property signature depth leaves out.
+// type, its initializer verbatim and its decorators. A property declared
+// with ! is stamped typescript.definiteAssignment. It returns nil for a
+// property signature depth leaves out.
 func (l *lowering) field(m treesitter.Node, decorators symbol.Annotations) *node.Field {
 	nameNode := m.Child(l.v.fieldName)
 	hard := nameNode.Kind() == l.v.privatePropertyIdentifier
@@ -194,13 +213,17 @@ func (l *lowering) field(m treesitter.Node, decorators symbol.Annotations) *node
 	if l.token(m, keywordReadonly) {
 		f.Mutability = symbol.MutabilityImmutable
 	}
+	if l.token(m, keywordDefinite) {
+		l.mark(f, typescript.DefiniteAssignmentKey, m.Pos())
+	}
 	l.u.AttachCarriers(f, parts.Carriers, BadCarrier)
 	return f
 }
 
 // indexer lowers an index signature: a method named [] that takes the
-// key and returns the value. A mapped type's signature names no key
-// type and declares nothing.
+// key and returns the value, stamped typescript.readonly where the
+// signature is readonly. A mapped type's signature names no key type and
+// declares nothing.
 func (l *lowering) indexer(m treesitter.Node) *node.Method {
 	key := m.Child(l.v.fieldIndexType)
 	if key.IsZero() {
@@ -213,7 +236,10 @@ func (l *lowering) indexer(m treesitter.Node) *node.Method {
 		Params:  []*node.Param{{Name: m.Child(l.v.fieldName).Text(), Pos: key.Pos(), Type: l.typeRef(key)}},
 		Returns: []*node.Return{{Pos: m.Child(l.v.fieldType).Pos(), Type: l.typeRef(m.Child(l.v.fieldType))}},
 	}
-	l.u.AttachCarriers(built, parts.Carriers, BadCarrier)
+	if l.token(m, keywordReadonly) {
+		l.mark(built, typescript.ReadonlyKey, m.Pos())
+	}
+	l.attach(built, parts.Carriers)
 	return built
 }
 
@@ -221,7 +247,8 @@ func (l *lowering) indexer(m treesitter.Node) *node.Method {
 // into fields and methods: a property signature a field, a method
 // signature an abstract method, a construct signature a method named
 // new that constructs, and an index signature a method named []. It
-// returns the call signatures as written, which the caller stamps.
+// returns the call signatures as written, which an interface's caller
+// stamps and an inline body's spelling keeps.
 func (l *lowering) objectMembers(body treesitter.Node, fields *[]*node.Field, methods *[]*node.Method) []string {
 	var calls []string
 	for m := range body.NamedChildren() {
@@ -272,7 +299,7 @@ func (l *lowering) property(m treesitter.Node) *node.Field {
 	if l.token(m, keywordReadonly) {
 		f.Mutability = symbol.MutabilityImmutable
 	}
-	l.u.AttachCarriers(f, parts.Carriers, BadCarrier)
+	l.attach(f, parts.Carriers)
 	return f
 }
 
@@ -288,7 +315,7 @@ func (l *lowering) construct(m treesitter.Node) *node.Method {
 		Params:     params,
 		Returns:    l.returns(m.Child(l.v.fieldType)),
 	}
-	l.u.AttachCarriers(built, parts.Carriers, BadCarrier)
+	l.attach(built, parts.Carriers)
 	return built
 }
 

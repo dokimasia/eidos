@@ -35,6 +35,8 @@ func TestKeys(t *testing.T) {
 			assert.NoError(t, typescript.Keys(r), "the vocabulary registers")
 			for _, key := range []meta.KeyName{
 				typescript.TestFileKey, typescript.NamespaceKey, typescript.CallSignatureKey,
+				typescript.AmbientKey, typescript.GeneratorKey, typescript.DefiniteAssignmentKey,
+				typescript.ParameterPropertyKey, typescript.OptionalKey, typescript.ReadonlyKey,
 			} {
 				_, known := r.Resolve(key)
 				assert.True(t, known, string(key)+" resolves")

@@ -49,8 +49,9 @@ type vocabulary struct {
 
 	// Types.
 	predefinedType, genericType, nestedTypeIdentifier, arrayType, tupleType,
-	optionalType, unionType, literalType, undefined, null, functionType,
-	objectType, parenthesizedType, mappedTypeClause treesitter.Kind
+	optionalType, unionType, intersectionType, literalType, undefined, null,
+	functionType, constructorType, readonlyType, objectType, parenthesizedType,
+	mappedTypeClause treesitter.Kind
 
 	// The fields the lowering reads children by.
 	fieldName, fieldBody, fieldDeclaration, fieldValue, fieldSource, fieldAlias,
@@ -155,10 +156,13 @@ func newVocabulary(g *treesitter.Grammar) *vocabulary {
 		tupleType:            g.Kind("tuple_type"),
 		optionalType:         g.Kind("optional_type"),
 		unionType:            g.Kind("union_type"),
+		intersectionType:     g.Kind("intersection_type"),
 		literalType:          g.Kind("literal_type"),
 		undefined:            g.Kind("undefined"),
 		null:                 g.Kind("null"),
 		functionType:         g.Kind("function_type"),
+		constructorType:      g.Kind("constructor_type"),
+		readonlyType:         g.Kind("readonly_type"),
 		objectType:           g.Kind("object_type"),
 		parenthesizedType:    g.Kind("parenthesized_type"),
 		mappedTypeClause:     g.Kind("mapped_type_clause"),

@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/lang/typescript/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -26,11 +27,12 @@ import (
 const brand = string(frontendtest.Brand)
 
 // The fixture paths the cases parse: a module file and the package its
-// path names, a TSX file, a governing tsconfig, and a tsconfig that does
-// not parse.
+// path names, the declaration file of that package, a TSX file, a
+// governing tsconfig, and a tsconfig that does not parse.
 const (
 	aFile       = "src/a.ts"
 	aPackage    = "src/a"
+	aDeclFile   = "src/a.d.ts"
 	tsxFile     = "src/view.tsx"
 	tsxPackage  = "src/view"
 	rootConfig  = "tsconfig.json"
@@ -286,4 +288,15 @@ func codesOf(found []diag.Diag) []diag.Code {
 		out = append(out, d.Code)
 	}
 	return out
+}
+
+// stampOn returns the value a builder stamped on a subject under a key,
+// and reports whether it stamped one.
+func stampOn(gb *plugin.GraphBuilder, subject symbol.Symbol, key meta.KeyName) (any, bool) {
+	for _, r := range gb.StampRecords() {
+		if r.Subject == subject && r.Stamp.Key == key {
+			return r.Stamp.Value, true
+		}
+	}
+	return nil, false
 }

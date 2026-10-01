@@ -44,17 +44,25 @@
 // callers. A const is a Constant, and let and var are mutable
 // Variables. A decorator is an annotation of its declaration, its
 // arguments verbatim. An anonymous default-exported class or function
-// declares under the name default.
+// declares under the name default. typescript.generator stamps a
+// generator function, and typescript.ambient a declaration whose
+// implementation is elsewhere: one a declare statement, a declare
+// block or an ambient module states, and every declaration of a
+// declaration file.
 //
 // A method's accessibility, static level, getter and setter, abstract,
 // async and override marks lower to the model's fields, and a # name is
 // hard and private. A constructor is a method named constructor that
-// constructs, and its parameter properties declare fields. An index
+// constructs, and its parameter properties declare fields, each field
+// and its parameter stamped typescript.parameterProperty. An index
 // signature is a method named [], a construct signature a method named
 // new that constructs, and an object type's call signatures stamp
 // typescript.callSignature on the interface or alias that declares
-// them. A declaration another module can import is public, and every
-// other is package-visible.
+// them. typescript.generator stamps a generator method,
+// typescript.optional a method declared with ?, typescript.readonly a
+// readonly index signature, and typescript.definiteAssignment a
+// property declared with !. A declaration another module can import is
+// public, and every other is package-visible.
 //
 // # Types
 //
@@ -62,13 +70,22 @@
 // one space kept between two identifier tokens, so reformatting a
 // signature changes no identity. The frontend declares that TypeScript
 // overloads, and a callable's discriminator spells its parameters'
-// types. The structural forms are the ones the syntax states: T[] is a
-// List, a tuple a Tuple, T | undefined and T | null an Optional, any
-// other union a Union, a function type a Func, an object type of one
-// index signature a Map, and any other object type Inline. A generic
-// instantiation keeps its bare name in the spelling and its arguments
-// in Args. Every other type is Named with its spelling, a name an
-// import binds recording the import's module specifier as its package.
+// types. A rest parameter is typed as one argument it takes, the
+// element of the array it collects into. The structural forms are the
+// ones the syntax states: T[] is a List, a tuple a Tuple, a readonly
+// array or tuple the List or Tuple it reads, T | undefined and T | null
+// an Optional, any other union a Union, an intersection an
+// Intersection, a function type and a constructor type a Func, an
+// object type of one index signature a Map, and any other object type
+// Inline. A generic instantiation keeps its bare name in the spelling
+// and its arguments in Args. Every other type is Named with its
+// spelling, a name an import binds recording the import's module
+// specifier as its package.
+//
+// An Inline reference records its object type's members as its fields
+// and methods, lowered as an interface's members are. They have no
+// identity, so no stamp names them, and a carrier on one reports under
+// [UnaddressedCarrier].
 //
 // # Resolution and re-exports
 //

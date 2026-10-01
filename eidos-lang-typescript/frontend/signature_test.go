@@ -47,13 +47,58 @@ func TestSignature(t *testing.T) {
 			assert.True(t, functionOf(t, "(a?: string)").Params[0].Optional, "the caller may omit it")
 		})
 
-		t.Run("marks a rest parameter positionally variadic over the list it collects into", func(t *testing.T) {
+		t.Run("marks a rest parameter positionally variadic under its pattern's name", func(t *testing.T) {
 			t.Parallel()
 
 			p := functionOf(t, "(...rest: string[])").Params[0]
 			assert.Equal(t, p.Variadic, symbol.VariadicPositional, "the remaining arguments")
 			assert.Equal(t, p.Name, "rest", "under the rest pattern's name")
-			assert.Equal(t, p.Type.Form, symbol.FormList, "typed as the list it collects into")
+		})
+
+		rests := []struct {
+			name string
+			give string
+			want string
+		}{
+			{
+				name: "types a rest parameter of an array type as the element",
+				give: "(...rest: string[])", want: "string",
+			},
+			{
+				name: "types a rest parameter of a readonly array as the element",
+				give: "(...rest: readonly string[])", want: "string",
+			},
+			{name: "types a rest parameter of Array<T> as T", give: "(...rest: Array<string>)", want: "string"},
+			{
+				name: "types a rest parameter of ReadonlyArray<T> as T",
+				give: "(...rest: ReadonlyArray<string>)", want: "string",
+			},
+			{
+				name: "keeps a rest parameter's tuple type, which states no element",
+				give: "(...rest: [string, number])", want: "[string,number]",
+			},
+			{
+				name: "keeps a rest parameter's generic type other than an array",
+				give: "(...rest: Set<string>)", want: "Set",
+			},
+			{
+				name: "keeps a rest parameter's Array of two arguments, which states no element",
+				give: "(...rest: Array<string, number>)", want: "Array",
+			},
+		}
+		for _, tt := range rests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, functionOf(t, tt.give).Params[0].Type.Spelling, tt.want,
+					"the type of one argument the parameter takes")
+			})
+		}
+
+		t.Run("leaves a rest parameter without a type untyped", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, functionOf(t, "(...rest)").Params[0].Type == nil, "the source states none")
 		})
 
 		t.Run("keeps a parameter's default verbatim", func(t *testing.T) {

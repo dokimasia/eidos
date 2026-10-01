@@ -5,6 +5,7 @@ package frontend
 
 import (
 	"path"
+	"slices"
 	"strings"
 )
 
@@ -31,6 +32,12 @@ const defaultExport = "default"
 // extension.
 func packageOf(file string) string {
 	return stripExtension(file)
+}
+
+// declarationFile reports whether a file is a declaration file, every
+// declaration of which is implemented elsewhere.
+func declarationFile(file string) bool {
+	return slices.ContainsFunc(declarationExtensions, func(ext string) bool { return strings.HasSuffix(file, ext) })
 }
 
 // stripExtension removes a module path's extension: a declaration

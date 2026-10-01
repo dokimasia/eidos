@@ -23,13 +23,15 @@ const (
 	keywordGet      = "get"
 	keywordSet      = "set"
 	keywordOptional = "?"
+	keywordDefinite = "!"
 )
 
 // declaration lowers one declaration into a container: a class, an
 // interface, an enum, a type alias, a function or overload signature,
 // or the variables of a let, const or var statement. outermost is the
 // statement that wraps it, an export or a declare, whose comments are
-// the declaration's. A declaration signature depth leaves out takes its
+// the declaration's. A declaration in an ambient context is stamped
+// typescript.ambient. A declaration signature depth leaves out takes its
 // comments with it. A function's implementation after its overload
 // signatures declares nothing at every depth, and neither does a
 // declaration whose name does not parse or a statement, so a carrier on
@@ -82,6 +84,9 @@ func (l *lowering) declaration(n treesitter.Node, c container, exported bool, ou
 		return
 	}
 	c.file.Decls = append(c.file.Decls, decl)
+	if c.ambient {
+		l.mark(decl, typescript.AmbientKey, n.Pos())
+	}
 	l.u.AttachCarriers(decl, parts.Carriers, BadCarrier)
 }
 
@@ -193,6 +198,27 @@ func (l *lowering) stampCalls(subject symbol.Symbol, calls []string, at treesitt
 	}
 }
 
+// mark stamps a key true on a subject, at the position of the source
+// that states the mark. A member of an inline body has no identity a
+// stamp can name, so mark stamps nothing on one.
+func (l *lowering) mark(subject symbol.Symbol, key meta.KeyName, at position.Pos) {
+	if l.inline > 0 {
+		return
+	}
+	l.u.Graph().Stamp(subject, meta.RawStamp{Key: key, Value: true, Pos: at})
+}
+
+// attach attaches a member's carriers to it. A member of an inline body
+// has no identity a directive can name, so its carriers refuse under
+// [UnaddressedCarrier].
+func (l *lowering) attach(member symbol.Symbol, carriers []plugin.Carrier) {
+	if l.inline > 0 {
+		refuseCarriers(l.u, carriers, "a member of an inline object type")
+		return
+	}
+	l.u.AttachCarriers(member, carriers, BadCarrier)
+}
+
 // enum lowers an enum, const where the declaration states it: each member
 // a variant, its value verbatim where the member assigns one.
 func (l *lowering) enum(n treesitter.Node, name string, vis symbol.Visibility, parts plugin.CommentParts,
@@ -243,27 +269,32 @@ func (l *lowering) alias(n treesitter.Node, name string, vis symbol.Visibility, 
 
 // function lowers a function or one overload signature: async where the
 // declaration states it, its type parameters, parameters and return
-// type.
+// type. A generator function, which its * declares, is stamped
+// typescript.generator.
 func (l *lowering) function(n treesitter.Node, name string, vis symbol.Visibility, parts plugin.CommentParts,
 	comment string,
 ) *node.Function {
 	params, _ := l.params(n.Child(l.v.fieldParameters))
-	return &node.Function{
+	fn := &node.Function{
 		Name: name, Pos: l.namePos(n), Doc: parts.Docs, Comment: comment, Visibility: vis,
 		Async:      l.token(n, keywordAsync),
 		TypeParams: l.typeParams(n.Child(l.v.fieldTypeParameters)),
 		Params:     params,
 		Returns:    l.returns(n.Child(l.v.fieldReturnType)),
 	}
+	if l.token(n, keywordStar) {
+		l.mark(fn, typescript.GeneratorKey, n.Pos())
+	}
+	return fn
 }
 
 // variables lowers a let, const or var statement: a constant per name a
 // const binds, and a mutable variable per name let and var bind, each
-// with its stated type and its initializer verbatim. Each takes the
-// statement's documentation and trailing comment, and the first takes
-// its carriers. A destructuring pattern binds no single name and
-// declares nothing, so a carrier on a statement of patterns alone
-// refuses.
+// with its stated type and its initializer verbatim, each stamped
+// typescript.ambient in an ambient context. Each takes the statement's
+// documentation and trailing comment, and the first takes its carriers.
+// A destructuring pattern binds no single name and declares nothing, so
+// a carrier on a statement of patterns alone refuses.
 func (l *lowering) variables(n treesitter.Node, c container, exported bool, outermost treesitter.Node) {
 	constant := l.token(n, keywordConst)
 	var names []treesitter.Node
@@ -308,6 +339,9 @@ func (l *lowering) variables(n treesitter.Node, c container, exported bool, oute
 			first = decl
 		}
 		c.file.Decls = append(c.file.Decls, decl)
+		if c.ambient {
+			l.mark(decl, typescript.AmbientKey, name.Pos())
+		}
 	}
 	l.u.AttachCarriers(first, parts.Carriers, BadCarrier)
 }

@@ -29,6 +29,33 @@ const (
 	// of the object type an alias names, each as written, because the
 	// model has no member for a callable object.
 	CallSignatureKey meta.KeyName = "typescript.callSignature"
+
+	// AmbientKey marks a declaration whose implementation is elsewhere:
+	// one a declare statement or a declare block states, and every
+	// declaration of a declaration file.
+	AmbientKey meta.KeyName = "typescript.ambient"
+
+	// GeneratorKey marks a generator function or method, which its *
+	// declares, because the model has no generator mark.
+	GeneratorKey meta.KeyName = "typescript.generator"
+
+	// DefiniteAssignmentKey marks a property declared with !, which its
+	// class assigns where the compiler cannot see. Such a property is
+	// neither optional nor initialized in its declaration.
+	DefiniteAssignmentKey meta.KeyName = "typescript.definiteAssignment"
+
+	// ParameterPropertyKey marks a constructor parameter that declares
+	// a field, and the field it declares, so the parameter list and the
+	// field list each state which entry is both.
+	ParameterPropertyKey meta.KeyName = "typescript.parameterProperty"
+
+	// OptionalKey marks a method declared with ?, which a value of its
+	// type may lack, because the model's method has no optional mark.
+	OptionalKey meta.KeyName = "typescript.optional"
+
+	// ReadonlyKey marks an index signature declared readonly, whose
+	// entries a holder of the value cannot assign.
+	ReadonlyKey meta.KeyName = "typescript.readonly"
 )
 
 // Keys claims the typescript namespace and registers every typescript
@@ -50,5 +77,34 @@ func Keys(r *meta.Registry) error {
 		Name: CallSignatureKey, Kinds: []symbol.Kind{symbol.KindInterface, symbol.KindAlias},
 		Doc: "records the call signatures of a callable object type as written",
 	})
-	return errors.Join(testErr, namespaceErr, callErr)
+	_, ambientErr := meta.Register[bool](r, meta.KeySpec{
+		Name: AmbientKey,
+		Kinds: []symbol.Kind{
+			symbol.KindStruct, symbol.KindInterface, symbol.KindEnum, symbol.KindAlias,
+			symbol.KindFunction, symbol.KindConstant, symbol.KindVariable,
+		},
+		Doc: "marks a declaration whose implementation is elsewhere",
+	})
+	_, generatorErr := meta.Register[bool](r, meta.KeySpec{
+		Name: GeneratorKey, Kinds: []symbol.Kind{symbol.KindFunction, symbol.KindMethod},
+		Doc: "marks a generator function or method",
+	})
+	_, definiteErr := meta.Register[bool](r, meta.KeySpec{
+		Name: DefiniteAssignmentKey, Kinds: []symbol.Kind{symbol.KindField},
+		Doc: "marks a property declared with !, which its class assigns where the compiler cannot see",
+	})
+	_, propertyErr := meta.Register[bool](r, meta.KeySpec{
+		Name: ParameterPropertyKey, Kinds: []symbol.Kind{symbol.KindField, symbol.KindParam},
+		Doc: "marks a constructor parameter that declares a field, and the field it declares",
+	})
+	_, optionalErr := meta.Register[bool](r, meta.KeySpec{
+		Name: OptionalKey, Kinds: []symbol.Kind{symbol.KindMethod},
+		Doc: "marks a method declared with ?, which a value of its type may lack",
+	})
+	_, readonlyErr := meta.Register[bool](r, meta.KeySpec{
+		Name: ReadonlyKey, Kinds: []symbol.Kind{symbol.KindMethod},
+		Doc: "marks an index signature declared readonly",
+	})
+	return errors.Join(testErr, namespaceErr, callErr, ambientErr, generatorErr, definiteErr, propertyErr,
+		optionalErr, readonlyErr)
 }

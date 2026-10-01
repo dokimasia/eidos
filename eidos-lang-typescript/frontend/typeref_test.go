@@ -76,6 +76,37 @@ func TestTyperef(t *testing.T) {
 			assert.Equal(t, ref.Elems[0].Spelling, "Imported", "of its element")
 		})
 
+		t.Run("lowers a readonly array as the List it reads", func(t *testing.T) {
+			t.Parallel()
+
+			ref := targetOf(t, "readonly Imported[]")
+			assert.Equal(t, ref.Form, symbol.FormList, "readonly reads an array")
+			assert.Equal(t, ref.Elems[0].Spelling, "Imported", "whose element resolves")
+		})
+
+		t.Run("spells a readonly array with its readonly", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, targetOf(t, "readonly Imported[]").Spelling, "readonly Imported[]",
+				"the spelling keeps what the form leaves out")
+		})
+
+		t.Run("lowers a readonly tuple as the Tuple it reads", func(t *testing.T) {
+			t.Parallel()
+
+			ref := targetOf(t, "readonly [string, Imported]")
+			assert.Equal(t, ref.Form, symbol.FormTuple, "readonly reads a tuple")
+			assert.Length(t, ref.Elems, 2, "of its members")
+		})
+
+		t.Run("keeps a named type after readonly as its own spelling", func(t *testing.T) {
+			t.Parallel()
+
+			ref := targetOf(t, "readonly Imported")
+			assert.Equal(t, ref.Spelling, "Imported", "the resolution step reads the name")
+			assert.Equal(t, ref.Package, "./lib", "and its import")
+		})
+
 		t.Run("lowers a tuple as a Tuple of its members", func(t *testing.T) {
 			t.Parallel()
 
@@ -158,6 +189,30 @@ func TestTyperef(t *testing.T) {
 			assert.Length(t, ref.Elems, 3, "and null is one of them")
 		})
 
+		t.Run("lowers an intersection as an Intersection of its members", func(t *testing.T) {
+			t.Parallel()
+
+			ref := targetOf(t, "Imported & Local")
+			assert.Equal(t, ref.Form, symbol.FormIntersection, "a value has both members' types")
+			assert.Length(t, ref.Elems, 2, "one child per member")
+		})
+
+		t.Run("flattens a chained intersection into one Intersection", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, formsOf(targetOf(t, "Imported & Local & Other")), []symbol.TypeForm{
+				symbol.FormNamed, symbol.FormNamed, symbol.FormNamed,
+			}, "the grammar nests a chain, and the model lists its members")
+		})
+
+		t.Run("keeps an intersection inside a union as one member", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, formsOf(targetOf(t, "Imported & Local | string")), []symbol.TypeForm{
+				symbol.FormIntersection, symbol.FormNamed,
+			}, "& binds tighter than |")
+		})
+
 		t.Run("lowers a function type as a Func of its parameters then its return", func(t *testing.T) {
 			t.Parallel()
 
@@ -165,6 +220,22 @@ func TestTyperef(t *testing.T) {
 			assert.Equal(t, ref.Form, symbol.FormFunc, "a function type is a func")
 			assert.Equal(t, ref.Split, 2, "two parameters, then the return")
 			assert.Equal(t, ref.Elems[2].Spelling, "number", "the return type")
+		})
+
+		t.Run("lowers a constructor type as a Func of its parameters then the type it constructs", func(t *testing.T) {
+			t.Parallel()
+
+			ref := targetOf(t, "new (a: string) => Imported")
+			assert.Equal(t, ref.Form, symbol.FormFunc, "a constructor type is a func")
+			assert.Equal(t, ref.Split, 1, "one parameter, then the result")
+			assert.Equal(t, ref.Elems[1].Spelling, "Imported", "the type it constructs")
+		})
+
+		t.Run("spells a constructor type with its new", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, targetOf(t, "new (a: string) => Imported").Spelling, "new(a:string)=>Imported",
+				"the spelling tells it from a function type")
 		})
 
 		t.Run("lowers an untyped parameter of a function type as a reference that spells nothing", func(t *testing.T) {
@@ -188,6 +259,28 @@ func TestTyperef(t *testing.T) {
 
 			assert.Equal(t, targetOf(t, "{ a: string; b: number }").Form, symbol.FormInline,
 				"an object type with members is an inline body")
+		})
+
+		t.Run("records an inline object type's properties as the reference's fields", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, fieldNames(targetOf(t, "{ a: string; b?: Imported }").Fields), []string{"a", "b"},
+				"each property signature is a field")
+		})
+
+		t.Run("records an inline object type's methods as the reference's methods", func(t *testing.T) {
+			t.Parallel()
+
+			ref := targetOf(t, "{ run(): void; new (): Imported; [k: number]: string }")
+			assert.Equal(t, methodNames(ref.Methods), []string{"run", "new", "[]"},
+				"a method, a construct and an index signature")
+		})
+
+		t.Run("records the import of an inline member's type", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, targetOf(t, "{ a: Imported }").Fields[0].Type.Package, "./lib",
+				"the member's type resolves as any reference does")
 		})
 
 		t.Run("lowers a mapped type as Named", func(t *testing.T) {

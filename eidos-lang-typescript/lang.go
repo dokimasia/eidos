@@ -36,7 +36,7 @@ const Version = "0.4.0"
 // FrontendVersion is the frontend's behavior version, folded into
 // every unit key the frontend builds beside the grammar's version:
 // bump it with any change to the graph a parse produces.
-const FrontendVersion = "0.1.0"
+const FrontendVersion = "0.2.0"
 
 // Syntax returns TypeScript's comment forms, declared once and
 // shared: the line form, the block form, and the doc-block form with

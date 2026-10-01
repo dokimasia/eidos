@@ -24,16 +24,22 @@ const restMark = "..."
 //     generic instantiation is Named with its arguments in Args, and
 //     its bare name in the spelling. A name an import binds records the
 //     import's module specifier as its package.
-//   - T[] is a List, and a tuple a Tuple of its members.
+//   - T[] is a List, and a tuple a Tuple of its members. A readonly
+//     array or tuple is the List or Tuple it reads, spelled with its
+//     readonly.
 //   - A union is Optional of its one other member where every other
 //     member is undefined or null, and a Union of its members otherwise.
+//     An intersection is an Intersection of its members. A nested union
+//     or intersection flattens into one of its own kind.
 //   - A function type is a Func of its parameters' types and then its
-//     return type.
+//     return type, and a constructor type a Func of its parameters' types
+//     and then the type it constructs, spelled with its new.
 //   - An object type with one index signature and no other member is a
 //     Map of the key and the value. A mapped type is Named, and every
-//     other object type Inline.
-//   - Intersection, conditional, indexed access, keyof, typeof, literal
-//     and template literal types are Named.
+//     other object type Inline, with its members as the reference's
+//     fields and methods.
+//   - Conditional, indexed access, keyof, typeof, literal and template
+//     literal types are Named.
 //
 // Parentheses and the colon of a type annotation unwrap. It returns nil
 // for the zero Node.
@@ -61,8 +67,14 @@ func (l *lowering) typeRef(n treesitter.Node) *node.TypeRef {
 		return l.tuple(n)
 	case l.v.unionType:
 		return l.union(n)
-	case l.v.functionType:
+	case l.v.intersectionType:
+		var members []treesitter.Node
+		l.flatten(n, &members)
+		return l.structural(n, symbol.FormIntersection, members...)
+	case l.v.functionType, l.v.constructorType:
 		return l.funcRef(n)
+	case l.v.readonlyType:
+		return l.readonly(n)
 	case l.v.objectType:
 		return l.object(n)
 	default:
@@ -134,13 +146,13 @@ func (l *lowering) union(n treesitter.Node) *node.TypeRef {
 	return l.structural(n, symbol.FormUnion, members...)
 }
 
-// flatten appends a union's members to out, a nested union's members
-// in its place.
+// flatten appends a union's or an intersection's members to out, the
+// members of a nested one of the same kind in its place.
 func (l *lowering) flatten(n treesitter.Node, out *[]treesitter.Node) {
 	for m := range n.NamedChildren() {
 		switch m.Kind() {
 		case l.v.comment:
-		case l.v.unionType:
+		case n.Kind():
 			l.flatten(m, out)
 		default:
 			*out = append(*out, m)
@@ -158,8 +170,10 @@ func (l *lowering) nullish(m treesitter.Node) bool {
 	return inner.Kind() == l.v.undefined || inner.Kind() == l.v.null
 }
 
-// funcRef lowers a function type: its parameters' types and then its
-// return type as children, the split where the return begins.
+// funcRef lowers a function type or a constructor type: its parameters'
+// types and then its result as children, the split where the result
+// begins. A function type states its result as its return type, and a
+// constructor type as the type it constructs.
 func (l *lowering) funcRef(n treesitter.Node) *node.TypeRef {
 	ref := &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos(), Form: symbol.FormFunc}
 	for p := range n.Child(l.v.fieldParameters).NamedChildren() {
@@ -168,14 +182,33 @@ func (l *lowering) funcRef(n treesitter.Node) *node.TypeRef {
 		}
 	}
 	ref.Split = len(ref.Elems)
-	if ret := n.Child(l.v.fieldReturnType); !ret.IsZero() {
-		ref.Elems = append(ref.Elems, l.elem(ret))
+	result := n.Child(l.v.fieldReturnType)
+	if n.Kind() == l.v.constructorType {
+		result = n.Child(l.v.fieldType)
+	}
+	if !result.IsZero() {
+		ref.Elems = append(ref.Elems, l.elem(result))
+	}
+	return ref
+}
+
+// readonly lowers a readonly array or tuple as the List or Tuple it
+// reads, spelled with its readonly. The grammar admits readonly before
+// any type and TypeScript before an array or a tuple alone, so a named
+// type after it keeps its own spelling, which the resolution step reads.
+func (l *lowering) readonly(n treesitter.Node) *node.TypeRef {
+	ref := l.elem(l.firstType(n))
+	if ref.Form != symbol.FormNamed {
+		ref.Spelling, ref.Pos = n.Compact(), n.Pos()
 	}
 	return ref
 }
 
 // object lowers an object type: a Map of the key and the value for a
-// lone index signature, Named for a mapped type, and Inline otherwise.
+// lone index signature, Named for a mapped type, and Inline otherwise,
+// its members lowered as an interface's are and recorded on the
+// reference. A member of an inline body has no identity, so a carrier
+// on one refuses and no mark stamps it.
 func (l *lowering) object(n treesitter.Node) *node.TypeRef {
 	var members []treesitter.Node
 	for m := range n.NamedChildren() {
@@ -191,7 +224,11 @@ func (l *lowering) object(n treesitter.Node) *node.TypeRef {
 		sig := members[0]
 		return l.structural(n, symbol.FormMap, sig.Child(l.v.fieldIndexType), sig.Child(l.v.fieldType))
 	}
-	return &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos(), Form: symbol.FormInline}
+	ref := &node.TypeRef{Spelling: n.Compact(), Pos: n.Pos(), Form: symbol.FormInline}
+	l.inline++
+	l.objectMembers(n, &ref.Fields, &ref.Methods)
+	l.inline--
+	return ref
 }
 
 // typeArgs lowers a type argument list, in order.
