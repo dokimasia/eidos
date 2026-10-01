@@ -1,7 +1,7 @@
 ---
 milestone: 0004
 title: Go source loads into the symbol graph
-status: In progress
+status: Done
 depends-on: 0001, 0002
 ships-in: unscheduled
 deadline: none
@@ -45,7 +45,7 @@ into the same graph through the tree-sitter platform in eidos-lang.
       `gen.moduleRoot` are stamped, and a static check asserts the
       frontend never imports `os/exec`. `go.work` is not read, because
       a workspace spans modules by its own configuration.
-- [ ] Dependency modules load signature-only from the module cache:
+- [x] Dependency modules load signature-only from the module cache:
       `go.mod` fixes each module's version, the cache directory
       verifies against its `go.sum` hash, the dependency unit keys on
       both, a `vendor/` tree with a consistent `modules.txt` is the
@@ -64,21 +64,21 @@ into the same graph through the tree-sitter platform in eidos-lang.
       comparability, generics with authored witnesses, and the
       whole-graph facts the old frontend stamped through its type
       checker: Stringer satisfaction and iter.Seq returns.
-- [ ] The conformance corpus is the completeness check: Go,
+- [x] The conformance corpus is the completeness check: Go,
       TypeScript, Rust and Java each have a graded entry, and each
       entry passes with every inventory feature on its declared level.
-- [ ] eidos-lang contains the tree-sitter bindings and the pinned
+- [x] eidos-lang contains the tree-sitter bindings and the pinned
       TypeScript, Rust and Java grammars, and is their only importer.
-- [ ] `RunFrontendSuite` passes for eidos-lang-typescript: its
+- [x] `RunFrontendSuite` passes for eidos-lang-typescript: its
       frontend parses through eidos-lang, and an overload set spells
       one discriminator per signature.
-- [ ] `RunFrontendSuite` passes for eidos-lang-rust: its frontend
+- [x] `RunFrontendSuite` passes for eidos-lang-rust: its frontend
       parses through eidos-lang.
-- [ ] `RunFrontendSuite` passes for eidos-lang-java: its frontend
+- [x] `RunFrontendSuite` passes for eidos-lang-java: its frontend
       parses through eidos-lang, an overload set spells one
       discriminator per signature, dependencies load signature-only
-      from JARs through the class-file reader, and annotations stamp
-      as `java.annotation.*` facts.
+      from JARs through the class-file reader, and every annotation
+      lowers into its declaration's `Annotations`.
 - [x] The kernel's toolchain-adapter skeleton exists and
       `eidos-lang-go/testing` implements it: the shared assertion set
       (`AssertParses`, `AssertTypeChecks`, `AssertTestsPass`,
@@ -114,6 +114,9 @@ and frontendtest plus the completeness check from
   Milestone 0007.
 - The projection rules of TypeScript, Rust and Java: TypeScript's go
   to milestone 0009, and nobody has scheduled Rust's or Java's yet.
+- Lifted annotation facts under `java.annotation.*`, such as
+  `java.nullability`: a lifted key registers with the rule that reads
+  it, so the facts go with the Java projection rules.
 - Wazero-based bindings: adopt when they mature. The binding choice
   is private to eidos-lang, so migrating later touches one module.
 - Types the declarations do not state (inferred `var x = f()`): these
@@ -132,6 +135,9 @@ and frontendtest plus the completeness check from
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-01 | Status set to Done | Every Done-when bullet is checked, and the four model questions are ruled and built. An intersection is a type form of its own, an inline object type records its members, an unbounded wildcard has no child, and a dependent frontend reports each import it places nowhere. Lint and coverage pass in all 13 modules |
+| 2026-10-01 | Checked the bullets for dependency modules, the conformance corpus, eidos-lang and the TypeScript, Rust and Java frontends. The status remains In progress | Each bullet's tests pass: the Go frontend's dependency tests, the corpus entries of all four languages, the depguard rule that confines tree-sitter to eidos-lang, and each frontend's `RunFrontendSuite`. The milestone closes when the model questions on intersections and on the members of inline object types are ruled |
+| 2026-10-01 | The Java bullet states that every annotation lowers into its declaration's `Annotations`, and lifted `java.annotation.*` facts moved to Not in this milestone | A lifted key registers with the rule that reads it, and the Java projection rules are not in this milestone |
 | 2026-09-30 | Added Done-when bullets for the tree-sitter platform and the TypeScript, Rust and Java frontends, and moved the wazero note and the cgo risk from milestone 0009 | The widening of 2026-09-01 pulled the platform and the three frontends into this milestone, and Done when and Not in this milestone had not followed |
 | 2026-09-30 | The completeness bullet names the conformance corpus | The specification makes the corpus the completeness check, one graded entry per language, in place of a `testdata/features/` tree per satellite |
 | 2026-09-30 | The module-file bullet names `go.mod` alone, and is checked | The frontend reads `go.mod` and stamps both module facts, and it does not read `go.work`, because a workspace spans modules by its own configuration |

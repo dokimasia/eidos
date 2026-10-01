@@ -380,7 +380,18 @@ type Need struct {
     From []string
 }
 
-// DependencyRound is what one dependency round hands a frontend.
+// Unplaced is one need a frontend reported placed nowhere: its import
+// path, and the reason the load's finding quotes.
+type Unplaced struct {
+    Path   string
+    Reason string
+}
+
+// DependencyRound is one dependency round of a frontend: its number,
+// its needs and its shared inputs, and the needs the frontend reports
+// it cannot place. The load passes the round by pointer and reads the
+// reports after Dependencies returns. A round is not safe for
+// concurrent use.
 type DependencyRound struct {
     // Number counts the rounds from one.
     Number int
@@ -395,7 +406,18 @@ type DependencyRound struct {
     // the build files a language reads its dependency set from, such
     // as the nearest go.mod above each workspace file.
     Shared []string
+
+    // unexported: the reports, in report order
 }
+
+// Unplace reports one of the round's needs as placed nowhere, and why.
+// The reason is a clause the load's finding quotes, such as "no module
+// the go.mod files require provides it".
+func (r *DependencyRound) Unplace(path, reason string)
+
+// Unplaced returns the needs the frontend reported placed nowhere, in
+// report order.
+func (r *DependencyRound) Unplaced() []Unplaced
 
 // StoreReader is a dependency round's recorded door: reads and
 // directory listings over the workspace tree and the stores. Every
@@ -420,11 +442,23 @@ type Dependent interface {
     // build declares whatever the needs are, such as a Java
     // classpath. A member is a qualified store path, or a workspace
     // path the selection does not claim, such as a Go vendor tree. A
-    // need the language cannot place yields no unit, and its
-    // references keep their spellings. A returned error is fatal to
-    // the load.
-    Dependencies(ctx context.Context, round DependencyRound, r StoreReader) ([][]SourceRef, error)
+    // need the language cannot place yields no unit, the frontend
+    // reports it through DependencyRound.Unplace, and its references
+    // keep their spellings. A returned error is fatal to the load.
+    Dependencies(ctx context.Context, round *DependencyRound, r StoreReader) ([][]SourceRef, error)
 }
+```
+
+```go
+package load
+
+// UnplacedNeed reports an import a dependent frontend places in no
+// dependency unit, at Warning. Every reference into the import keeps
+// its spelling alone.
+var UnplacedNeed = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+    Number:  47,
+    Meaning: "an import places in no dependency unit, and its references keep their spellings",
+})
 ```
 
 ```mermaid
@@ -437,8 +471,9 @@ sequenceDiagram
         L->>F: Dependencies(needs, shared inputs)
         F->>S: Read and ReadDir, recorded
         S-->>F: bytes and listings
-        F-->>L: dependency units
-        L->>L: parse them at DepthSignatures, in parallel
+        F-->>L: dependency units, and the needs placed nowhere
+        L->>L: warn once per need placed nowhere
+        L->>L: parse the units at DepthSignatures, in parallel
         L->>L: collect the imports no loaded package declares
     end
     L->>L: splice, assign, Link, seal
@@ -464,6 +499,20 @@ The load follows these rules:
   distinct import paths.
 - The splice orders units by their first member path, qualified paths
   included. The order is total, because no file is a member of two units.
+- A need the frontend reports placed nowhere reports `EID-0047`
+  (`UnplacedNeed`) once, at Warning, positioned at the need's first import
+  in the first of its `From` files. The message quotes the frontend's reason
+  and counts the files that import the need. Reporting reads nothing, so it
+  leaves every key unchanged.
+
+The toolchains treat an import that nothing provides as a broken build. The
+go command reports it as provided by no required module, and javac reports
+that the package does not exist. The kernel cannot detect it alone, because
+it compares import paths with package paths only. A Java static import names
+a class, and cgo's `import "C"` names no package, so only the frontend knows
+what its need means. The warning explains every unresolved reference into
+the need, which a store, a classpath entry or a requirement the composition
+lacks causes most often.
 
 Each of these conditions in a round's result is fatal to the load and names
 the frontend:
@@ -472,6 +521,7 @@ the frontend:
 - a member that some frontend's selection claims
 - a member that the round returns twice
 - a unit with some members already loaded and others not
+- a report of a path that is no need of the round
 
 The load drops a returned unit when a loaded unit already has every one of
 its members, so a language that returns its declared dependencies in every
@@ -594,6 +644,20 @@ The frontend places each need in order:
    workspace names a workspace module. A directory replacement outside the
    workspace fails the load.
 
+The round reports every need it places nowhere, with the reason:
+
+| Need | Reason |
+|---|---|
+| a package of a workspace module that the selection does not claim | a workspace module declares it, and the selection claims no file of its package |
+| an import no selected module provides | no module the go.mod files require provides it |
+| a module that a directory inside the workspace replaces | the go.mod, the module and the directory, and the selection claims no file of its package |
+| a package directory that the module, the vendor tree or GOROOT lacks | no package directory is at the qualified path |
+| a package directory without a Go file outside its tests | the directory has no Go file outside its tests |
+| a store the load does not provide | the load provides no `gomod` or `goroot` store |
+
+The import `"C"` names cgo's preamble and no package, so the round passes
+over it and reports nothing.
+
 The frontend verifies a module by the go command's own rules for a module it
 uses:
 
@@ -690,15 +754,16 @@ takes `modfile`, `semver`, and `module` for path escaping.
 |---|---|
 | `class`, `abstract class` | Struct: Abstract, Extends from `extends`, Implements from `implements` |
 | `interface` | Interface: Extends; a property is a Field, a method signature a Method |
-| index signature | Method with Indexer, named `[]` |
+| index signature | Method with Indexer, named `[]`; `typescript.readonly` for a `readonly` signature |
 | constructor, construct signature | Method with Constructs, named `constructor` in a class and `new` in an interface |
 | call signature | no member: `typescript.callSignature` stamps its text on the host, because the model has no callable-object member |
 | `enum`, `const enum` | Enum, Const for `const enum`; each member an EnumVariant, Value verbatim |
 | `type` alias | Alias |
-| `function` | One Function per overload signature. A function without overload signatures is one Function. The implementation of an overloaded function is none, because TypeScript hides it from callers |
-| method | Method: Abstract, Level Type for `static`, Accessor for `get` and `set`, Hard for a `#` name, Override, Async; overloaded as a function is |
-| property | Field: Optional for `?`, Mutability Immutable for `readonly`, Level, Hard, Value |
-| parameter property | a constructor Param and a Field |
+| `function` | One Function per overload signature. A function without overload signatures is one Function. The implementation of an overloaded function is none, because TypeScript hides it from callers. `typescript.generator` for `function*` |
+| method | Method: Abstract, Level Type for `static`, Accessor for `get` and `set`, Hard for a `#` name, Override, Async; overloaded as a function is; `typescript.generator` for `*` and `typescript.optional` for `?` |
+| property | Field: Optional for `?`, Mutability Immutable for `readonly`, Level, Hard, Value; `typescript.definiteAssignment` for `!` |
+| parameter property | a constructor Param and a Field, both stamped `typescript.parameterProperty` |
+| a declaration a `declare` statement, a `declare` block, an ambient module or a declaration file states | the declaration, stamped `typescript.ambient` |
 | `const` | Constant |
 | `let`, `var` | Variable, with a nil Type when the source states none |
 | `export default` of an anonymous class or function | its declaration, named `default` |
@@ -716,21 +781,27 @@ shape.
 |---|---|
 | `A`, `ns.A`, `A<T>` | Named, the type arguments in Args |
 | `number`, `string` and the other predefined types | Named, which no candidate resolves |
-| `T[]` | List |
-| `[A, B]` | Tuple |
+| `T[]`, `readonly T[]` | List, the `readonly` in the spelling |
+| `[A, B]`, `readonly [A, B]` | Tuple, the `readonly` in the spelling |
 | `T \| undefined`, `T \| null` | Optional, when one member is left after every `undefined` and `null` |
 | any other union | Union |
+| `A & B` | Intersection, a chain `A & B & C` flattened into its three members |
 | `(a: A) => B` | Func, the parameters and then the return |
+| `new (a: A) => B` | Func, the parameters and then the type it constructs, the `new` in the spelling |
 | `{ [k: K]: V }` with no other member | Map |
-| any other object type | Inline |
-| intersection, conditional, mapped, indexed access, `keyof`, `typeof`, literal and template literal types | Named, spelling verbatim |
+| any other object type | Inline, its members lowered as an interface's are into the reference's Fields and Methods |
+| conditional, mapped, indexed access, `keyof`, `typeof`, literal and template literal types | Named, spelling verbatim |
 
 #### Overloads
 
 Because the frontend declares `Overloads()`, a discriminator spells each
 parameter's type from the syntax tree. The spelling removes every whitespace
 run from the type's tokens and keeps one space between two word tokens, as
-in `keyof T`. A rest parameter's type takes a `...` prefix. An optional
+in `keyof T`. A rest parameter is typed as one argument it takes, as every
+backend renders a variadic parameter: the element of `T[]`, `readonly T[]`,
+`Array<T>` and `ReadonlyArray<T>`. A tuple or another type states no element,
+and the parameter keeps it. A rest parameter's type takes a `...` prefix, so
+`...xs: string[]` spells `...string`, as Java's `String...` does. An optional
 parameter's type takes a `?` suffix. Reformatting a signature keeps its
 identity: `fill(n: Array< int >, m?: number)` and
 `fill(n: Array<int>, m?: number)` both spell `Array<int>,number?`.
@@ -788,7 +859,8 @@ the declaration that `export default` names.
 - Comments: a declaration's documentation and carriers are the comments
   directly before it, or before its outermost `export` or `declare` wrapper,
   with decorators skipped. A carrier works in a `//` line and inside a
-  `/** */` block.
+  `/** */` block. A member of an inline object type has no identity, so a
+  carrier on one reports `TYPESCRIPT-0003` and no key stamps one.
 - Signature depth leaves out a declaration the module does not export, a
   `private` or `#`-named member, and a namespace member that is not exported.
 - Codes: `TYPESCRIPT-0001` for a syntax error, `TYPESCRIPT-0002` for a
@@ -796,8 +868,11 @@ the declaration that `export default` names.
   subject the model cannot address, and `TYPESCRIPT-0004` for a tsconfig
   chain that does not read whole. The files that chain governs resolve
   without its `baseUrl` and `paths`.
-- Keys: `typescript.testFile`, `typescript.namespace` and
-  `typescript.callSignature`.
+- Keys: `typescript.testFile`, `typescript.namespace`,
+  `typescript.callSignature`, `typescript.ambient`, `typescript.generator`,
+  `typescript.definiteAssignment`, `typescript.parameterProperty`,
+  `typescript.optional` and `typescript.readonly`. Each records a fact the
+  syntax states and the model has no field for.
 
 ### The Rust frontend
 
@@ -870,7 +945,8 @@ the declaration that `export default` names.
 | `[T]` | List |
 | `(A, B)` | Tuple |
 | `fn(A) -> B` | Func |
-| `Option<T>`, `Box<T>`, `impl Trait`, `dyn Trait`, raw pointers, `!` | Named, spelling verbatim |
+| `dyn Trait`, `impl Trait`, `dyn A + B` | Intersection of the trait bounds in order, a lifetime and a `use` bound left out as from a bound list, the `dyn` or `impl` in the spelling |
+| `Option<T>`, `Box<T>`, raw pointers, `!` | Named, spelling verbatim |
 
 #### Resolution and the rest
 
@@ -968,8 +1044,8 @@ the declaration that `export default` names.
 | `int` and the other primitives | Named, which no candidate resolves |
 | `A`, `a.b.A`, `A<B>` | Named, Args |
 | `T[]` | List |
-| `? extends T`, `? super T` | Wildcard, Variance Out and In |
-| `?` | Wildcard without a child, which the one-child docblock of the form gains |
+| `? extends T`, `? super T` | Wildcard of the bound, Variance Out and In |
+| `?` | Wildcard without a child, Variance Invariant |
 
 #### Resolution and the rest
 
@@ -1076,6 +1152,13 @@ type Options struct {
   fail the load.
 - A library that neither store has fails the load, and names the library
   and both stores.
+- A need whose package neither ct.sym nor a classpath JAR has yields no
+  unit, and the round reports it. Round one reads the packages of the JARs
+  it returns from their ZIP directories, by the entries a multi-release JAR
+  provides for the release, because the needs that a JAR places are still
+  needs in the round that returns it. A later round's needs are packages
+  that no loaded JAR declares. A load without the `jdk` store reports every
+  JDK package its sources import.
 - A JAR's SHA-1 digest must match its record. In `m2`, the record is the
   `.jar.sha1` file beside the JAR, which is the unit's `Shared` input, and its
   first field compares without case, because a record can follow the digest
@@ -1195,6 +1278,83 @@ spells it.
 - This proposal lowers no annotation to a canonical directive as native
   sugar.
 
+### Model changes
+
+The model gains one type form and two fields of the type reference, and it
+states the unbounded wildcard. Each change is a schema edit plus a
+regeneration. Each changes `node.ModelFingerprint`, so every unit key
+changes once.
+
+```go
+package symbol
+
+const (
+    // FormNamed through FormUnion are unchanged.
+
+    // FormIntersection has its members as children, in order: a value
+    // of it has every member's type. TypeScript's A & B, and a Rust dyn
+    // or impl type over its bounds, one bound included.
+    FormIntersection
+
+    // FormStream and FormBorrow are unchanged.
+
+    // FormWildcard has one child, the bound, and the reference records
+    // the variance. An unbounded wildcard has no child, and its variance
+    // is invariant.
+    FormWildcard
+
+    // FormInline has no children: an inline struct, interface or
+    // object body, whose members the reference records as its fields
+    // and methods.
+    FormInline
+)
+```
+
+```go
+package schema // the node model's TypeRef
+
+type TypeRef struct {
+    // The existing fields are unchanged.
+
+    Fields  []*Field  `eidos:"node,walk"` // FormInline: the body's fields, without identities
+    Methods []*Method `eidos:"node,walk"` // FormInline: the body's methods, without identities
+}
+```
+
+- Intersection: TypeScript composes component properties, mixins and
+  branded types with `A & B`. Rust names a trait through `dyn` and `impl` in
+  `Box<dyn Error>`, `impl Iterator<Item = T>` and `&dyn Read`. With the form,
+  each member links to its declaration. The spelling keeps `&`, `dyn` and
+  `impl`. The TypeScript, Rust and Java backends write that spelling, as for
+  every form other than Named. The Go backend refuses the form because it
+  cannot restate it. Java writes an intersection only among a type
+  parameter's bounds, which lower to a list of bounds. Go has no
+  intersection type expression.
+- The unbounded wildcard: Java's `List<?>` is `? extends Object` (JLS
+  §4.5.1). Kotlin's `Foo<*>` reads as `out Any?`. A language-neutral model
+  names no top type. The unbounded wildcard therefore has no child, and a
+  backend writes `?` for it.
+- Inline members: the types inside an inline body link to their
+  declarations through its members. That covers `type P = { a: A }`,
+  `A & { x: X }`, a parameter typed `{ a: A }` and Go's `struct{ X T }`. A
+  test generator that builds the argument for `f({ a, b }: { a: A; b: B })`
+  reads them.
+  - The members are the Field and Method nodes a declaration has, and the
+    generated walk visits them.
+  - The assignment step gives them no identity, because it descends through
+    declarations and never into a type reference. No directive and no stamp
+    can address one, so a carrier on one refuses, and the store indexes none.
+  - Link resolves the references among them. A type parameter of an inline
+    method shadows an enclosing name and has no identity, so a reference
+    that spells it targets nothing.
+  - The emit model has neither field, and a backend writes an inline body
+    from the reference's spelling.
+  - The TypeScript frontend lowers an object type's members as it lowers an
+    interface's. The Go frontend lowers an inline struct's named fields and
+    an inline interface's methods, without their comments. A Go body's
+    embedded fields, embedded interfaces and constraint elements remain in
+    its spelling alone, because a reference has no embed list.
+
 ### Kernel fixes
 
 - The comment splitter takes the first line marker of the syntax that a line
@@ -1272,11 +1432,17 @@ spells it.
   parse per grammar, `Errors` over broken input, positions against a fixture
   counted by hand, `Close` twice, `Kind` and `Field` panicking on an unknown
   name, and a context that is done.
-- The kernel tests cover the path helpers, a qualified read through a
-  `StoreFS`, the rounds and their contract errors, `Round` in the report, and
-  following through re-exports, a cycle included. The scripted language gains
-  the types `ScriptedDependent` and `ScriptedExporter` for these cases, and
-  the SDK facade regenerates for the added names.
+- The kernel tests cover these cases:
+  - the path helpers and a qualified read through a `StoreFS`
+  - the rounds, their contract errors and the warning for a need placed
+    nowhere
+  - `Round` in the report
+  - following through re-exports, a cycle included
+  - the references among an inline body's members
+
+  The scripted language gains the types `ScriptedDependent` and
+  `ScriptedExporter` for these cases. The SDK facade regenerates for the
+  added names.
 - `frontendtest.Fixture` gains `Stores map[string]fs.FS` and
   `Reexported []symbol.Identity`. The suite runs each of the two checks when
   the frontend implements the matching role and the fixture states the
@@ -1475,12 +1641,23 @@ fold is. Its imprecision is a drawback, counted below.
 - The kernel grows by these additions:
   - two optional roles, `Dependent` and `Exporter`, and the two kit hooks
     that state them, `Builder.Dependencies` and `Builder.Exports`
-  - three types, `Need`, `DependencyRound` and `StoreReader`
+  - four types, `Need`, `Unplaced`, `DependencyRound` and `StoreReader`,
+    and the round's two methods, `Unplace` and `Unplaced`
   - one optional interface, `StoreFS`, one sentinel, `ErrStoreAbsent`, and
     five helpers: `StorePath`, `CutStorePath`, `ValidStoreName`, `ReadFile`
     and `ReadDir`
-  - one `Config` field and one `UnitReport` field
+  - one `Config` field, one `UnitReport` field and one code, `EID-0047`
+  - one type form, `FormIntersection`, and two fields of the type
+    reference, `Fields` and `Methods`
   - the rounds in `Load`, and following in Link's `resolve`
+- A member of an inline body has no identity, so no directive can address
+  it, and a carrier on one refuses. Addressable anonymous declarations need
+  a design of their own.
+- A Go inline body's embedded field is no member, so a reference its type
+  spells keeps its spelling.
+- A load without the `jdk` store warns once for every JDK package its Java
+  sources import. Round one also parses the ZIP directory of every classpath
+  JAR, whose bytes it reads for the digest in any case.
 - Every binary that links a tree-sitter satellite needs `CGO_ENABLED=1` and a
   C11 compiler, and a cross-compiled binary needs a C cross-compiler. A build
   compiles 17.5 MB of TypeScript and TSX parser C, 6.5 MB of Rust and 2.6 MB
@@ -1524,6 +1701,8 @@ fold is. Its imprecision is a drawback, counted below.
   - the bounds of a Rust associated type, because an Alias has no bounds
   - the default of a Java annotation type's element, because a Method has no
     default value
+  - the members of a TypeScript rest tuple, `...args: [A, B]`, because a
+    variadic Param types one argument, so the parameter keeps the tuple
 - A method that an impl block in an inline module folds onto a type in the
   same file resolves through the type's module. Both modules' File nodes
   have the file's path, and Link takes the one in the declaration's own
@@ -1531,12 +1710,7 @@ fold is. Its imprecision is a drawback, counted below.
 
 ## Open questions
 
-1. Should an unbounded Java wildcard `?` be a Wildcard without a child, or a
-   Wildcard over `Object`, which the Java Language Specification states is
-   equivalent?
-2. Should a need that no module provides report an Info finding at the
-   import? The round has no sink. A finding would need the round to return
-   one.
+None.
 
 ## Unresolved and future work
 
@@ -1587,3 +1761,4 @@ fold is. Its imprecision is a drawback, counted below.
 | ct.sym of OpenJDK 27 | `$JAVA_HOME/lib/ct.sym`, counted on 2026-09-30: 21,487 entries; release 27 has 58 modules and 5,696 classes |
 | ct.sym of Temurin 25.0.2, the JDK CI installs | `$JAVA_HOME/lib/ct.sym`, counted on 2026-10-01: 20,668 entries; release 25 has 5,581 class files in 255 packages |
 | The Java Language Specification, Java SE 25, §8.8.1 | <https://docs.oracle.com/javase/specs/jls/se25/html/jls-8.html> |
+| The Java Language Specification, Java SE 25, §4.5.1, wildcards | <https://docs.oracle.com/javase/specs/jls/se25/html/jls-4.html> |
