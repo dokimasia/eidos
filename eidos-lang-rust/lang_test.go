@@ -11,9 +11,9 @@ import (
 	rust "go.dokimi.dev/eidos/lang/rust"
 )
 
-// The identity, the extension and the comment forms are what the
-// rest of the system spells to reach this satellite, so each is
-// pinned: a drift here breaks compositions, not this module.
+// The rest of the system names this satellite by its identity, its
+// extension and its comment forms, so each is pinned: a drift here
+// breaks compositions, not this module.
 func TestLang(t *testing.T) {
 	t.Parallel()
 
@@ -23,6 +23,7 @@ func TestLang(t *testing.T) {
 		assert.Equal(t, rust.Target, "rust", "the target a plan resolves")
 		assert.Equal(t, rust.Name, "rust", "the identity findings report under")
 		assert.Equal(t, rust.Extension, ".rs", "the suffix of every file")
+		assert.Equal(t, rust.CodePrefix, "RUST", "the prefix of every diagnostic code")
 	})
 
 	t.Run("declares the comment forms whole", func(t *testing.T) {
@@ -36,5 +37,17 @@ func TestLang(t *testing.T) {
 			assert.True(t, b.Open != "" && b.Close != "",
 				"every block form opens and closes")
 		}
+	})
+
+	t.Run("declares the doc block forms with their star gutter", func(t *testing.T) {
+		t.Parallel()
+
+		var opens []string
+		for _, b := range rust.Syntax().Blocks {
+			if b.Gutter == "*" {
+				opens = append(opens, b.Open)
+			}
+		}
+		assert.Equal(t, opens, []string{"/**", "/*!"}, "the outer and the inner doc block")
 	})
 }
