@@ -10,6 +10,9 @@ require (
 
 require (
 	github.com/google/go-cmp v0.7.0 // indirect
+	github.com/mattn/go-pointer v0.0.1 // indirect
+	github.com/tree-sitter/go-tree-sitter v0.25.0 // indirect
+	github.com/tree-sitter/tree-sitter-java v0.23.5 // indirect
 	go.dokimi.dev/eidos/core v0.0.0-00010101000000-000000000000 // indirect
 )
 

@@ -11,9 +11,9 @@ import (
 	java "go.dokimi.dev/eidos/lang/java"
 )
 
-// The identity, the extension and the comment forms are what the
-// rest of the system spells to reach this satellite, so each is
-// pinned: a drift here breaks compositions, not this module.
+// The rest of the system names this satellite by its identity, its
+// extension and its comment forms, so each is pinned: a drift here
+// breaks compositions, not this module.
 func TestLang(t *testing.T) {
 	t.Parallel()
 
@@ -23,6 +23,7 @@ func TestLang(t *testing.T) {
 		assert.Equal(t, java.Target, "java", "the target a plan resolves")
 		assert.Equal(t, java.Name, "java", "the identity findings report under")
 		assert.Equal(t, java.Extension, ".java", "the suffix of every file")
+		assert.Equal(t, java.CodePrefix, "JAVA", "the prefix of every diagnostic code")
 	})
 
 	t.Run("declares the comment forms whole", func(t *testing.T) {

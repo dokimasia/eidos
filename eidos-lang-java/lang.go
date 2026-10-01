@@ -4,6 +4,7 @@
 package java
 
 import (
+	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
@@ -12,7 +13,11 @@ import (
 // language the value target spells for.
 const Lang symbol.Lang = "java"
 
-// Target names the rendering target a plan resolves to reach the
+// CodePrefix opens every diagnostic code the satellite registers:
+// JAVA-0001 is the first.
+const CodePrefix diag.Prefix = "JAVA"
+
+// Target names the rendering target a plan resolves to select the
 // Java backend.
 const Target plugin.Target = "java"
 
@@ -27,6 +32,11 @@ const Extension = ".java"
 // composition fingerprint: bump it with any change to the rendered
 // output.
 const Version = "0.4.0"
+
+// FrontendVersion is the frontend's behavior version, folded into
+// every unit key the frontend builds beside the grammar's version:
+// bump it with any change to the graph a parse produces.
+const FrontendVersion = "0.1.0"
 
 // Syntax returns Java's comment forms, declared once and shared: the
 // line form, the block form, and the doc-block form with the star
