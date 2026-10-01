@@ -125,7 +125,7 @@ in fixed child order, and the kernel's fold adds the leaves:
 
 ```
 structural   Named   Optional   List   Array   Map   Func   Tuple
-             Union   Stream   Borrow   Wildcard   Inline
+             Union   Intersection   Stream   Borrow   Wildcard   Inline
 leaves       Scalar{class: Int|Uint|Float, bits}   Bool   Text   Bytes
              Reference{symbol, typeArgs}   Sum{ref}   Opaque
 ```
@@ -146,6 +146,20 @@ spelling leaking into the vocabulary.
 **Union and Sum stay separate.** Conflating them is how a lowering
 ends up guessing, and proto `oneof` alongside TypeScript unions
 forces both shapes on day one.
+
+**Intersection** has one child per member, and a value of it has
+every member's type: TypeScript's `A & B`, and a Rust `dyn` or `impl`
+type over its trait bounds. The spelling keeps the `&`, the `dyn` or
+the `impl`.
+
+**Wildcard** has the bound as its one child and records the variance.
+An unbounded wildcard, Java's `?`, has no child, because each language
+spells its top type differently, as Java's `Object` and Kotlin's
+`Any?` do.
+
+An **Inline** reference has no children and records the members of an
+inline struct, interface or object body as its fields and methods,
+without identities ([02-symbol-model.md](02-symbol-model.md)).
 
 **Well-known types are not shapes.** They are blessed `Reference`
 identities in a small kernel registry, holding `timestamp` and

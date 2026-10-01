@@ -255,9 +255,14 @@ seen it.
   the form the frontend parsed from one closed enum, and its
   children in that form's fixed order, so the resolution step
   visits the named types inside a composite and the projections
-  parse nothing. A named reference also records `Package`, what its
-  import specifies: an import path, a module specifier, a package or
-  module path, and for protobuf the path of the imported file.
+  parse nothing. An inline struct, interface or object body records
+  its members as the reference's `Fields` and `Methods`. They are
+  the nodes a declaration's members are, without identities: the
+  resolution step resolves the references among them, and no
+  directive or stamp addresses one. A named reference also records
+  `Package`, what its import specifies: an import path, a module
+  specifier, a package or module path, and for protobuf the path of
+  the imported file.
   `Package` is empty for a builtin, for a structural form and for a
   declaration the file uses without an import. A backend imports
   a type the workspace never loaded through `Package`, because such
