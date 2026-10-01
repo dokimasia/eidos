@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package spell writes Rust's spellings of naming facts: [Filename]
-// joins a unit's routing-key stem, family word and tag into a
-// filename, and [Name] spells a declared name in Rust's convention.
-// The kernel consumes both through the backend kit's naming and
+// joins a unit's file-key stem, family word and tag into a filename,
+// [Package] names the module a file at a routed path declares, and
+// [Name] spells a declared name in Rust's convention. The kernel
+// consumes them through the backend kit's naming, package and
 // respelling steps.
 //
 // # Dependency position

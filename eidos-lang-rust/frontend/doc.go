@@ -37,6 +37,11 @@
 // names loads under the module path its place in the crate's
 // directories spells, and reports under [UnlinkedFile].
 //
+// Every package of a unit takes the kernel's module facts: gen.module
+// with the target's crate name, and gen.moduleRoot with the directory
+// of its Cargo.toml, or the root file's directory for a crate of its
+// own.
+//
 // # Declarations
 //
 // A struct is a Struct, and a union a Struct stamped rust.union. An enum

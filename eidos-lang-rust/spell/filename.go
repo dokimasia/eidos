@@ -10,13 +10,13 @@ import (
 )
 
 // Filename spells a unit's filename. Rust names modules in snake
-// case, so the routing key's stem, the family word and the tag
-// join with underscores and convert as one: a store unit of the
-// stub family reaches disk as store_stub.rs.
+// case, so the stem of the unit's [plugin.Unit.FileKey], the family
+// word and the tag join with underscores and convert as one: a store
+// unit of the stub family reaches disk as store_stub.rs.
 //
-// The stem drops the key's own extension, whatever the source
-// language spelled it as. A plan unit carries no key, so its
-// filename is the word and the tag alone.
+// The stem drops the key's own extension, whatever the source language
+// spelled it as. A per-package or per-plan unit has no file key, so
+// its filename is the word and the tag alone.
 func Filename(u plugin.Unit) string {
-	return naming.SnakeFilename(u.Key, u.Word, u.Tag, rust.Extension)
+	return naming.SnakeFilename(u.FileKey(), u.Word, u.Tag, rust.Extension)
 }

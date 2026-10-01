@@ -18,6 +18,7 @@ import (
 	"go.dokimi.dev/eidos/lang/rust/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
+	"go.dokimi.dev/eidos/sdk/meta"
 	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -27,13 +28,15 @@ import (
 const brand = string(frontendtest.Brand)
 
 // The fixture crate: its manifest, which names the package with a
-// hyphen, the crate name Cargo spells from it, and its library root.
+// hyphen, the crate name Cargo spells from it, its library root, and
+// the directory a nested copy of it is in.
 const (
 	manifestPath = "Cargo.toml"
 	manifestSrc  = "[package]\nname = \"demo-crate\"\n"
 	crateName    = "demo_crate"
 	libRoot      = "src/lib.rs"
 	publicStruct = "pub struct A;\n"
+	nestedDir    = "crates/demo"
 )
 
 // The canonical scale every layer benches at: 1000 packages of 10 files
@@ -46,7 +49,7 @@ const (
 )
 
 // parseAllocs is the ceiling on the allocations of one parse of the
-// canonical corpus, over the 2,500,005 it measures.
+// canonical corpus, over the 2,509,005 it measures.
 const parseAllocs = 2_600_000
 
 // treeReader is the partition's recorded door over a test tree.
@@ -258,6 +261,61 @@ func TestParse(t *testing.T) {
 			gb, _ := parsedSource(t, publicStruct)
 			assert.Empty(t, stampsOf(gb, string(rust.TestKey)), "a library file is not a test file")
 		})
+
+		nested := fstest.MapFS{
+			nestedDir + "/" + manifestPath: {Data: []byte(manifestSrc)},
+			nestedDir + "/" + libRoot:      {Data: []byte("pub mod store;\n")},
+			nestedDir + "/src/store.rs":    {Data: []byte(publicStruct)},
+		}
+		loose := fstest.MapFS{"scripts/tool.rs": {Data: []byte(publicStruct)}}
+		virtual := fstest.MapFS{manifestPath: {Data: []byte("[workspace]\n")}, libRoot: {Data: []byte(publicStruct)}}
+		broken := fstest.MapFS{manifestPath: {Data: []byte("[package\n")}, libRoot: {Data: []byte(publicStruct)}}
+		modules := []struct {
+			name string
+			tree fstest.MapFS
+			root string
+			key  meta.KeyName
+			want []any
+		}{
+			{
+				name: "stamps every package of a crate gen.module with the crate's name",
+				tree: nested, root: nestedDir + "/" + libRoot, key: meta.ModuleKey,
+				want: []any{crateName, crateName},
+			},
+			{
+				name: "stamps every package of a crate gen.moduleRoot with its manifest's directory",
+				tree: nested, root: nestedDir + "/" + libRoot, key: meta.ModuleRootKey,
+				want: []any{nestedDir, nestedDir},
+			},
+			{
+				name: "stamps a crate of its own gen.module with its path",
+				tree: loose, root: "scripts/tool.rs", key: meta.ModuleKey,
+				want: []any{"scripts/tool"},
+			},
+			{
+				name: "stamps a crate of its own gen.moduleRoot with its directory",
+				tree: loose, root: "scripts/tool.rs", key: meta.ModuleRootKey,
+				want: []any{"scripts"},
+			},
+			{
+				name: "stamps a crate of a manifest that names no package gen.moduleRoot with its root's directory",
+				tree: virtual, root: libRoot, key: meta.ModuleRootKey,
+				want: []any{"src"},
+			},
+			{
+				name: "stamps a crate of a manifest that does not parse gen.moduleRoot with its root's directory",
+				tree: broken, root: libRoot, key: meta.ModuleRootKey,
+				want: []any{"src"},
+			},
+		}
+		for _, tt := range modules {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				gb, _ := parsedTree(t, tt.tree, tt.root, plugin.DepthFull, nil)
+				assert.Equal(t, stampsOf(gb, string(tt.key)), tt.want, "one stamp per package")
+			})
+		}
 
 		t.Run("names a binary target after the package", func(t *testing.T) {
 			t.Parallel()

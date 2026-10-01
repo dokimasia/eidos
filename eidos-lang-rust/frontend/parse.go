@@ -29,16 +29,18 @@ type exclusion struct {
 }
 
 // crate is one unit's parse state: the unit, the grammar's vocabulary,
-// the load's options, the target the unit is and its root file, the
-// members of the unit and the ones the module walk lowered, the modules
-// a cfg predicate keeps out, the types the crate declares by package
-// and name, and the impl blocks that fold once every module is lowered.
+// the load's options, the target the unit is, the directory the crate
+// is declared in and its root file, the members of the unit and the
+// ones the module walk lowered, the modules a cfg predicate keeps out,
+// the types the crate declares by package and name, and the impl blocks
+// that fold once every module is lowered.
 type crate struct {
 	ctx        context.Context
 	u          *plugin.SourceUnit
 	v          *vocabulary
 	opts       *Options
 	target     target
+	dir        string
 	root       string
 	members    map[string]bool
 	walked     map[string]bool
@@ -48,15 +50,18 @@ type crate struct {
 	err        error
 }
 
-// targetOf returns the target a unit is: the one its first member roots
-// in the package its manifest states. A file without a manifest, and a
-// file whose manifest names no package, is a crate of its own, named for
-// its path. A manifest that does not read or parse reports under
-// [BadManifest] and states no target.
-func (w *crate) targetOf(files []plugin.SourceRef) target {
+// targetOf returns the target a unit is and the directory its crate is
+// declared in: the target its first member roots in the package its
+// manifest states, declared in the manifest's directory. A file without
+// a manifest, and a file whose manifest names no package, is a crate of
+// its own, named for its path and declared in its own directory. A
+// manifest that does not read or parse reports under [BadManifest] and
+// states no target.
+func (w *crate) targetOf(files []plugin.SourceRef) (target, string) {
 	loose := target{role: roleShared, name: strings.TrimSuffix(w.root, rustExtension), root: w.root}
+	looseDir := path.Dir(w.root)
 	if len(files[0].Shared) == 0 {
-		return loose
+		return loose, looseDir
 	}
 	mpath := files[0].Shared[0]
 	var m *manifest
@@ -67,17 +72,17 @@ func (w *crate) targetOf(files []plugin.SourceRef) target {
 	if err != nil {
 		w.u.Warnf(BadManifest, position.Pos{File: mpath, Line: 1, Col: 1},
 			"%v. Each file of the package loads as a crate of its own", err)
-		return loose
+		return loose, looseDir
 	}
 	if m.crateName() == "" {
-		return loose
+		return loose, looseDir
 	}
 	dir := path.Dir(mpath)
 	rel := make(map[string]bool, len(files))
 	for _, ref := range files {
 		rel[relative(dir, ref.Path)] = true
 	}
-	return owner(m.targets(rel), m.crateName(), relative(dir, w.root))
+	return owner(m.targets(rel), m.crateName(), relative(dir, w.root)), dir
 }
 
 // walk lowers one module file, and through its mod items every module
@@ -196,6 +201,19 @@ func (w *crate) stamp(subject symbol.Symbol, key meta.KeyName, value any, at pos
 	w.u.Graph().Stamp(subject, meta.RawStamp{Key: key, Value: value, Pos: at})
 }
 
+// stampModule stamps every package the unit declared with the kernel's
+// neutral module identity: the crate's name, and the directory the
+// crate is declared in. Every package of the unit shares both values,
+// so each converts to a fact value once.
+func (w *crate) stampModule() {
+	name, dir := any(w.target.name), any(w.dir)
+	gb := w.u.Graph()
+	for _, pkg := range gb.Packages() {
+		gb.Stamp(pkg, meta.RawStamp{Key: meta.ModuleKey, Value: name, Pos: pkg.Pos})
+		gb.Stamp(pkg, meta.RawStamp{Key: meta.ModuleRootKey, Value: dir, Pos: pkg.Pos})
+	}
+}
+
 // moduleDir returns the directory the file modules of a module file are
 // in: the file's own directory for a crate root and a mod.rs, and a
 // directory named after the file's stem beside it for any other file.
@@ -224,10 +242,11 @@ func join(pkg, rel string) string {
 // the module path its place in the crate's directories spells, and
 // reports under [UnlinkedFile]. The inherent impl blocks fold onto the
 // types they name once every module is lowered, because a block
-// anywhere in the crate adds methods to a type the crate declares. A
-// syntax error is the source's problem: every ERROR and MISSING node
-// reports positioned, and every item the parser still recovered loads. A
-// member that does not read and a context that is done fail the unit.
+// anywhere in the crate adds methods to a type the crate declares, and
+// every package then takes the crate's module facts. A syntax error is
+// the source's problem: every ERROR and MISSING node reports
+// positioned, and every item the parser still recovered loads. A member
+// that does not read and a context that is done fail the unit.
 func (f *rustFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 	w := &crate{
 		ctx: ctx, u: u, v: f.v, opts: f.opts, root: u.Files()[0].Path,
@@ -237,7 +256,7 @@ func (f *rustFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 	for _, ref := range u.Files() {
 		w.members[ref.Path] = true
 	}
-	w.target = w.targetOf(u.Files())
+	w.target, w.dir = w.targetOf(u.Files())
 	w.walk(w.root, w.target.name)
 	for _, ref := range u.Files() {
 		if w.err != nil || w.walked[ref.Path] {
@@ -256,5 +275,6 @@ func (f *rustFrontend) parse(ctx context.Context, u *plugin.SourceUnit) error {
 		return w.err
 	}
 	w.fold()
+	w.stampModule()
 	return nil
 }
