@@ -14,6 +14,7 @@ import (
 	"go.dokimi.dev/eidos/lang/go/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
 	"go.dokimi.dev/eidos/sdk/frontendtest"
+	"go.dokimi.dev/eidos/sdk/node"
 	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/rulestest"
 	"go.dokimi.dev/eidos/sdk/symbol"
@@ -83,6 +84,25 @@ func TestNew(t *testing.T) {
 			frontendtest.RunFrontendSuite(t, setup)
 		})
 
+		t.Run("passes the conformance suite with its stores", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return frontend.New(nil), &frontendtest.Fixture{
+					Sources: depWorkspace(),
+					Stores:  depStores(),
+					Keys:    frontend.Keys,
+				}
+			})
+		})
+
+		t.Run("returns a frontend in the dependent role", func(t *testing.T) {
+			t.Parallel()
+
+			_, dependent := frontend.New(nil).(plugin.Dependent)
+			assert.True(t, dependent, "Go sources import packages outside the workspace")
+		})
+
 		t.Run("parses past a file with a syntax error", func(t *testing.T) {
 			t.Parallel()
 
@@ -113,6 +133,27 @@ func TestNew(t *testing.T) {
 			assert.True(t, versioned, "the frontend states a version")
 			assert.Equal(t, v.Version(), golang.FrontendVersion,
 				"the version is the frontend's, so a graph change bumps what the unit keys fold")
+		})
+
+		t.Run("returns a frontend whose folded method resolves through its own file's imports", func(t *testing.T) {
+			t.Parallel()
+
+			fx := rulestest.Loaded(t, frontend.New(nil), fstest.MapFS{
+				"go.mod":       {Data: []byte("module example.test/fix\n")},
+				"api/user.go":  {Data: []byte("package api\n\ntype User struct{}\n")},
+				"store/row.go": {Data: []byte("package store\n\ntype Row struct{}\n")},
+				"store/owner.go": {Data: []byte("package store\n\nimport \"example.test/fix/api\"\n\n" +
+					"func (r *Row) Owner(u api.User) {}\n")},
+			}, frontend.Keys)
+			row, found := fx.Graph.Lookup(symbol.Identity{
+				Lang: frontend.Lang, Package: "example.test/fix/store", Name: "Row", Kind: symbol.KindStruct,
+			})
+			assert.True(t, found, "the struct is indexed")
+			methods := row.(*node.Struct).Methods
+			assert.Length(t, methods, 1, "the method folds onto the struct its receiver names")
+			assert.Equal(t, methods[0].Params[0].Type.Target, symbol.Identity{
+				Lang: frontend.Lang, Package: "example.test/fix/api", Name: "User", Kind: symbol.KindStruct,
+			}, "owner.go imports api, and row.go, where the struct is declared, does not")
 		})
 
 		t.Run("claims no vendor tree", func(t *testing.T) {

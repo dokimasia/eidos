@@ -6,7 +6,7 @@
 // [New] builds the frontend through the kit. The claim is every .go
 // file outside testdata and vendor trees: a testdata tree is not Go
 // source by Go's own definition, and a vendor tree copies a
-// dependency the workspace does not own. Test files are claimed too
+// dependency, which loads as one. Test files are claimed too
 // and classify under golang.testFile, because whether they take part
 // is the consumer's call. Units are package directories, and a
 // directory with an external test package declares two packages,
@@ -27,7 +27,9 @@
 // implies under the go tool's own rule, contributes its file node, its
 // imports and a golang.constraint stamp and no declarations, because
 // two platform variants of one function share one canonical
-// identity. A generated-file marker classifies under
+// identity. Only its package clause and imports parse, as the go
+// command reads such a file, so a syntax error after its imports
+// reports nothing. A generated-file marker classifies under
 // golang.generated, and a file importing "C" under golang.cgo.
 //
 // # Comments, carriers and annotations
@@ -80,12 +82,36 @@
 // embeds: a union, an approximation, a predeclared basic type or a
 // type literal stamps its verbatim spelling under golang.typeSet.
 //
+// # Dependencies
+//
+// The frontend is in the dependent role. [Stores] roots the module
+// cache and the standard library where the go command finds them, and
+// a round reads the build list from the workspace's go.mod files: each
+// required module at the highest version any of them requires, after
+// the replace directives of the go.mod that requires that version. A
+// need places in the standard library when its first element has no
+// dot, and otherwise in the module cache at the selected version, its
+// hash record checked against go.sum, or in a workspace module's
+// vendor tree when the cache lacks the version and the tree passes the
+// go command's consistency checks. An import of a workspace module and
+// an import no required module provides place nowhere. A dependency
+// unit is one package directory without its tests, parsed
+// signature-only, and loads under the import path the go command gives
+// it: a replacement's tree under the original module path, and a
+// vendored copy under its path under vendor/. A standard library file
+// imports the modules the standard library vendors under vendor/.
+//
+// A signature-only file records only the imports its retained
+// declarations name, so the next round follows what exported
+// signatures reference and not what function bodies call.
+//
 // # Stamps
 //
-// Every package a unit declares is stamped with the kernel's neutral
-// module identity: gen.module with the module path, and
+// Every package a workspace unit declares is stamped with the kernel's
+// neutral module identity: gen.module with the module path, and
 // gen.moduleRoot with the directory its go.mod is in. A directory
-// outside every module has neither. Beside the classifications, the parse
+// outside every module has neither, and so does a dependency package,
+// which no workspace module governs. Beside the classifications, the parse
 // stamps what it alone can see: a pointer receiver, the iterator
 // return shapes, an empty or constraint interface, a defined type's
 // underlying shape (on the enum when one replaces the type), and
@@ -103,7 +129,8 @@
 //   - It keeps value spellings verbatim and implicit carriers empty.
 //     The exact values are in the stamp, and a constant an import
 //     feeds is left unstamped, absent over wrong.
-//   - It reads neither the legacy +build form nor vendor trees.
+//   - It reads no legacy +build form, and a vendor tree only as the
+//     second source of a dependency.
 //   - It reads go.mod and never go.work, because an eidos workspace
 //     spans toolchain modules by configuration, so the module set a
 //     go.work lists decides nothing about what loads, and bytes that
@@ -116,10 +143,11 @@
 //
 // # Dependency position
 //
-// lang/go/frontend imports the sdk facade, the satellite root, and
-// the Go toolchain's own parsing and checking packages, and nothing
-// that executes a process: a frontend reads what it can parse and
-// never runs a build tool, which the package's own test pins over
-// its whole import graph. The conformance corpus and the workspace
-// composition import it, and no package beneath it does.
+// lang/go/frontend imports the sdk facade, the satellite root, the Go
+// toolchain's own parsing and checking packages, and golang.org/x/mod's
+// modfile, module and semver packages, and nothing that executes a
+// process: a frontend reads what it can parse and never runs a build
+// tool, which the package's own test pins over its whole import graph.
+// The conformance corpus and the workspace composition import it, and
+// no package beneath it does.
 package frontend

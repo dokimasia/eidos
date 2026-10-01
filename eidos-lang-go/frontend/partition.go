@@ -5,8 +5,12 @@ package frontend
 
 import (
 	"context"
+	"fmt"
 	"path"
 	"strings"
+
+	"golang.org/x/mod/modfile"
+	"golang.org/x/mod/module"
 
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
@@ -117,11 +121,103 @@ func (r moduleRoot) importPath(dir string) string {
 	return r.module + "/" + strings.TrimPrefix(dir, r.dir+"/")
 }
 
+// unitPlace is where a unit's package directory loads: its import
+// path, the module that governs a workspace directory, and whether the
+// directory is in the standard library, whose files import the
+// packages it vendors under vendor/.
+type unitPlace struct {
+	importPath string
+	root       moduleRoot
+	std        bool
+}
+
+// placeUnit derives where a unit's package directory loads from its
+// first member's path, through the unit's door. A dependency unit
+// loads under the import path the go command gives its directory,
+// governed by no workspace module:
+//
+//   - A directory of [GoRootStore] is the standard library package
+//     its path inside the store names.
+//   - A directory of [ModCacheStore] is the package of the module its
+//     path escapes, under the module's path, or under the original
+//     path of a module the member's go.mod replaces by it.
+//   - A workspace directory under the vendor directory beside the
+//     member's go.mod is the package its path under vendor/ names.
+//
+// Every other directory is the workspace's own, under the governing
+// go.mod's module path.
+func placeUnit(u *plugin.SourceUnit) (unitPlace, error) {
+	first := u.Files()[0]
+	if store, inner, qualified := plugin.CutStorePath(first.Path); qualified {
+		dir := path.Dir(inner)
+		switch store {
+		case GoRootStore:
+			return unitPlace{importPath: dir, std: true}, nil
+		case ModCacheStore:
+			importPath, err := cachedImportPath(u, dir, first.Shared)
+			return unitPlace{importPath: importPath}, err
+		default:
+			return unitPlace{}, fmt.Errorf("frontend: %s is in store %s, which the Go frontend does not read",
+				first.Path, store)
+		}
+	}
+	dir := path.Dir(first.Path)
+	if len(first.Shared) == 1 {
+		vendorRoot := path.Join(path.Dir(first.Shared[0]), vendorDir) + "/"
+		if rel, vendored := strings.CutPrefix(dir, vendorRoot); vendored {
+			return unitPlace{importPath: rel}, nil
+		}
+	}
+	root := (&moduleProbe{reader: unitReader{u}, roots: map[string]moduleRoot{}}).governing(dir)
+	return unitPlace{importPath: root.importPath(dir), root: root}, nil
+}
+
+// cachedImportPath derives the import path of a module cache
+// directory: the module path and version its first elements escape,
+// and the directories under the module. A module the member's go.mod
+// replaces by that module version keeps the original path, which the
+// go.mod states and the parse reads through the unit's door.
+func cachedImportPath(u *plugin.SourceUnit, dir string, shared []string) (string, error) {
+	escPath, rest, marked := strings.Cut(dir, versionMark)
+	if !marked {
+		return "", fmt.Errorf("frontend: %s names no module version in the module cache", dir)
+	}
+	escVersion, rel, _ := strings.Cut(rest, "/")
+	modPath, err := module.UnescapePath(escPath)
+	if err != nil {
+		return "", fmt.Errorf("frontend: %w", err)
+	}
+	version, err := module.UnescapeVersion(escVersion)
+	if err != nil {
+		return "", fmt.Errorf("frontend: %w", err)
+	}
+	importPath := modPath
+	if len(shared) == 1 {
+		data, err := u.Read(shared[0])
+		if err != nil {
+			return "", err
+		}
+		f, err := modfile.Parse(shared[0], data, nil)
+		if err != nil {
+			return "", fmt.Errorf("frontend: %w", err)
+		}
+		for _, r := range f.Replace {
+			if r.New.Path == modPath && r.New.Version == version {
+				importPath = r.Old.Path
+				break
+			}
+		}
+	}
+	if rel == "" {
+		return importPath, nil
+	}
+	return importPath + "/" + rel, nil
+}
+
 // modulePath reads the module directive out of go.mod bytes: the
-// first `module` line, its path bare or quoted. The subset is
-// deliberate — the directive is all the partition needs, and a
-// go.mod the go tool would refuse derives an empty path and the
-// directory keeps its workspace spelling.
+// first `module` line, its path bare or quoted. The partition needs the
+// directive alone. A go.mod the go tool would refuse derives an empty
+// path, and the directory keeps its workspace spelling.
 func modulePath(src string) string {
 	for line := range strings.SplitSeq(src, "\n") {
 		line = strings.TrimSpace(line)

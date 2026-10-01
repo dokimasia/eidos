@@ -86,6 +86,7 @@ func New(opts *Options) plugin.Frontend {
 		Classify(markTests).
 		Resolve(resolve).
 		Options(opts).
+		Dependencies(f.dependencies).
 		Build()
 }
 

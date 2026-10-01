@@ -28,6 +28,12 @@ import (
 // the cap reports once.
 const maxSyntaxFindings = 10
 
+// parseMode is how every member parses: with its comments, which
+// contain the documentation and the directives, without go/parser's
+// deprecated identifier resolution, which the lowering never reads,
+// and with every syntax error, because each one reports.
+const parseMode = parser.ParseComments | parser.SkipObjectResolution | parser.AllErrors
+
 // pendingUnderlying is one defined type's shape, stamped once the
 // promotion has decided whether an enum replaces the type.
 type pendingUnderlying struct {
@@ -39,20 +45,25 @@ type pendingUnderlying struct {
 // into the unit's builder. A syntax error is the source's problem:
 // every error reports positioned and every declaration the parser
 // still recovered loads, because one bad token must not erase a
-// file. A file whose build constraint — spelled or
-// filename-implied — falls outside the load's tag set contributes
-// its file node and a golang.constraint stamp and no declarations.
+// file. A file whose build constraint, spelled or implied by its
+// name, falls outside the load's tag set contributes its file node,
+// its imports and a golang.constraint stamp, and no declarations.
+// Only its package clause and imports parse, as the go command reads
+// such a file, so a syntax error after its imports reports nothing.
 func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
-	root := (&moduleProbe{reader: unitReader{u}, roots: map[string]moduleRoot{}}).
-		governing(path.Dir(u.Files()[0].Path))
+	place, err := placeUnit(u)
+	if err != nil {
+		return err
+	}
 	st := &parseState{
 		fset:    token.NewFileSet(),
 		intern:  map[string]string{},
 		batches: map[string]*constBatch{},
 		named:   map[string]bool{},
+		place:   place,
 	}
 	for _, ref := range u.Files() {
-		if err := f.parseFile(u, root, st, ref.Path); err != nil {
+		if err := f.parseFile(u, st, ref.Path); err != nil {
 			return err
 		}
 	}
@@ -60,7 +71,7 @@ func (f *goFrontend) parse(_ context.Context, u *plugin.SourceUnit) error {
 		foldMethods(st.batches[pkgPath].files)
 		stampConstValues(u, st.fset, st.batches[pkgPath])
 	}
-	stampModule(u, root)
+	stampModule(u, place.root)
 	return nil
 }
 
@@ -83,13 +94,15 @@ func stampModule(u *plugin.SourceUnit, root moduleRoot) {
 // every member joins, the spelling intern the lowerings share, the
 // per-package batches the constant evaluation runs over once each,
 // so a constant referencing a sibling file's type still evaluates,
-// and the packages a file inside the build has named.
+// the packages a file inside the build has named, and where the
+// unit's package directory loads.
 type parseState struct {
 	fset    *token.FileSet
 	intern  map[string]string
 	batches map[string]*constBatch
 	order   []string
 	named   map[string]bool
+	place   unitPlace
 }
 
 // constBatch is one package's included files, parsed and lowered.
@@ -120,17 +133,24 @@ type unitReader struct {
 // Read reads through the unit's jail.
 func (r unitReader) Read(path string) ([]byte, error) { return r.u.Read(path) }
 
-// parseFile lowers one member.
-func (f *goFrontend) parseFile(
-	u *plugin.SourceUnit, root moduleRoot, st *parseState, filePath string,
-) error {
+// parseFile lowers one member. Its package clause and imports parse
+// first, and a file whose constraint excludes it lowers from them
+// alone. Every other file then parses whole.
+func (f *goFrontend) parseFile(u *plugin.SourceUnit, st *parseState, filePath string) error {
 	src, err := u.Read(filePath)
 	if err != nil {
 		return err
 	}
 
-	parsed, err := parser.ParseFile(st.fset, filePath, src,
-		parser.ParseComments|parser.SkipObjectResolution|parser.AllErrors)
+	parsed, err := parser.ParseFile(st.fset, filePath, src, parseMode|parser.ImportsOnly)
+	var constraintLine string
+	excluded := false
+	if parsed != nil && parsed.Name != nil && parsed.Package.IsValid() {
+		constraintLine, excluded = f.excluded(parsed, filePath)
+		if !excluded {
+			parsed, err = parser.ParseFile(st.fset, filePath, src, parseMode)
+		}
+	}
 	if err != nil {
 		reportSyntax(u, filePath, err)
 	}
@@ -143,11 +163,11 @@ func (f *goFrontend) parseFile(
 	l := &lowered{
 		file: st.fset.File(parsed.Package), src: src,
 		intern: st.intern, consumed: map[*ast.CommentGroup]bool{},
-		comments: parsed.Comments,
+		comments: parsed.Comments, std: st.place.std,
 	}
 	gb := u.Graph()
 
-	pkgPath := root.importPath(path.Dir(filePath))
+	pkgPath := st.place.importPath
 	pkgName := parsed.Name.Name
 	if strings.HasSuffix(pkgName, "_test") {
 		pkgPath += "_test"
@@ -179,14 +199,17 @@ func (f *goFrontend) parseFile(
 	if marker, generated := generatedMarker(parsed); generated {
 		gb.Stamp(file, meta.RawStamp{Key: golang.GeneratedKey, Value: marker, Pos: file.Pos})
 	}
-	if line, excluded := f.excluded(parsed, filePath); excluded {
+	if excluded {
 		// A file outside the build speaks for no package: it names
 		// one only where no file inside the build has, and its
 		// package doc and carriers are left out.
 		if pkg.Name == "" {
 			pkg.Name = pkgName
 		}
-		gb.Stamp(file, meta.RawStamp{Key: golang.ConstraintKey, Value: line, Pos: file.Pos})
+		gb.Stamp(file, meta.RawStamp{Key: golang.ConstraintKey, Value: constraintLine, Pos: file.Pos})
+		if u.Depth() == plugin.DepthSignatures {
+			pruneImports(file)
+		}
 		return nil
 	}
 	namePackage(u, st, pkg, pkgPath, pkgName, file.Pos)
@@ -215,6 +238,9 @@ func (f *goFrontend) parseFile(
 		gb.Stamp(subject, meta.RawStamp{
 			Key: golang.UnderlyingKey, Value: pending.kind, Pos: subject.Position(),
 		})
+	}
+	if u.Depth() == plugin.DepthSignatures {
+		pruneImports(file)
 	}
 	batch := st.batch(pkgPath, pkgName)
 	batch.parsed = append(batch.parsed, parsed)
@@ -304,12 +330,12 @@ func reportSyntax(u *plugin.SourceUnit, filePath string, err error) {
 	}
 }
 
-// excluded reports whether a file falls outside the load's tag
-// set, and the constraint that excludes it: a go:build line read off
-// the parsed comments before the package clause — a spelling
-// inside a block comment is not a constraint, which a raw line
-// scan gets wrong — or the filename's own implied GOOS and GOARCH
-// suffixes.
+// excluded reports whether a file falls outside the load's tag set,
+// and the constraint that excludes it: a go:build line among the
+// parsed comments before the package clause, or the GOOS and GOARCH
+// suffixes of the filename. A go:build spelling inside a block
+// comment is not a constraint, so the lines come from the parsed
+// comments and not from a scan of the raw source.
 func (f *goFrontend) excluded(parsed *ast.File, filePath string) (string, bool) {
 	for _, group := range parsed.Comments {
 		if group.Pos() >= parsed.Package {
@@ -366,11 +392,17 @@ func generatedMarker(parsed *ast.File) (string, bool) {
 // and a side-effect import round-trips as one. The file's
 // [golang.Scope] derives from these records. A carrier on an import
 // refuses positioned, because no rule takes an import as its subject,
-// and a tool directive there is the file's.
+// and a tool directive there is the file's. A standard library file
+// imports a package outside the standard library only from the
+// modules the standard library vendors, and the go command reads it
+// from vendor/, so the record's path is the vendored one.
 func lowerImport(u *plugin.SourceUnit, l *lowered, file *node.File, spec *ast.ImportSpec) {
 	imported, err := strconv.Unquote(spec.Path.Value)
 	if err != nil {
 		return
+	}
+	if l.std && !standard(imported) {
+		imported = vendorDir + "/" + imported
 	}
 	parts := l.declParts(u, plugin.CommentParts{}, spec.Doc, spec.Comment)
 	refuseCarriers(u, parts.Carriers, "an import")
@@ -675,10 +707,11 @@ func (*goFrontend) lowerStructBody(u *plugin.SourceUnit, l *lowered, st *node.St
 func named(name *ast.Ident) bool { return name.Name != blankName }
 
 // lowerInterfaceBody lowers method signatures and embedded
-// interfaces. A constraint element — a union or an approximation —
-// is not an embed: its verbatim spellings stamp onto the interface
-// as its type set, the language metadata the model routes them to.
-// An embed whose type spells no name is left out, as a struct's is.
+// interfaces. A constraint element, such as a union or an
+// approximation, is not an embed. Its verbatim spellings stamp onto
+// the interface as its type set, the language metadata the model
+// routes them to. An embed whose type spells no name is left out, as
+// a struct's is.
 func (*goFrontend) lowerInterfaceBody(u *plugin.SourceUnit, l *lowered, it *node.Interface, t *ast.InterfaceType) {
 	var terms []string
 	for _, member := range t.Methods.List {

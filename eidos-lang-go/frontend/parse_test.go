@@ -88,6 +88,15 @@ func TestParse(t *testing.T) {
 	t.Run("Parse", func(t *testing.T) {
 		t.Parallel()
 
+		t.Run("records a standard library file's import of a vendored package under vendor", func(t *testing.T) {
+			t.Parallel()
+
+			gb, err := dependencyUnit(depWorkspace(), depStores(), nil, inRoot(fmtFile))
+			assert.NoError(t, err, "the unit parses")
+			assert.Equal(t, importPaths(onlyFile(t, gb)), []string{"vendor/" + vendoredPath},
+				"the go command reads the standard library's module imports from its vendor tree")
+		})
+
 		t.Run("tells an alias from a defined type", func(t *testing.T) {
 			t.Parallel()
 
@@ -173,6 +182,30 @@ func TestParse(t *testing.T) {
 			tagged := parsedFile(t, &frontend.Options{Tags: []string{"exotic"}}, plugin.DepthFull,
 				"//go:build exotic\n\npackage p\n\ntype Gone struct{}\n")
 			assert.Length(t, onlyFile(t, tagged).Decls, 1, "inside the set it declares")
+		})
+
+		t.Run("records the imports of a file the build excludes", func(t *testing.T) {
+			t.Parallel()
+
+			file := onlyFile(t, parsedFile(t, nil, plugin.DepthFull,
+				"//go:build exotic\n\npackage p\n\nimport \""+signatureImport+"\"\n\ntype Gone struct{}\n"))
+			assert.Equal(t, importPaths(file), []string{signatureImport}, "the header parses")
+		})
+
+		t.Run("reports no syntax error after the imports of a file the build excludes", func(t *testing.T) {
+			t.Parallel()
+
+			_, findings := parsedFindings(t, nil, plugin.DepthFull,
+				"//go:build exotic\n\npackage p\n\nimport \""+signatureImport+"\"\n\nfunc F() { var = }\n")
+			assert.Empty(t, findings, "the go command reads only the header of an excluded file")
+		})
+
+		t.Run("reports a syntax error in the imports of a file the build excludes", func(t *testing.T) {
+			t.Parallel()
+
+			_, findings := parsedFindings(t, nil, plugin.DepthFull,
+				"//go:build exotic\n\npackage p\n\nimport (\n\t\""+signatureImport+"\"\n\tvar\n)\n")
+			assert.NotEmpty(t, findings, "the header's own error reports")
 		})
 
 		t.Run("splits an external test package by path", func(t *testing.T) {

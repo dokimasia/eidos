@@ -35,6 +35,9 @@ type lowered struct {
 	// enum promotion has decided which declaration replaces each
 	// type.
 	underlyings []pendingUnderlying
+	// std reports whether the file is in the standard library, whose
+	// imports of the packages it vendors read from vendor/.
+	std bool
 }
 
 // at converts one token position through the file's own table.
