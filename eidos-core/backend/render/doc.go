@@ -5,25 +5,27 @@
 // language shares, owned once.
 //
 // [New] composes a [Language], the handful of things a target
-// genuinely varies in, into a [Pass]. [Pass.Render] takes one
-// plan's emit store through the fixed steps: group units into files
-// through the target's [Naming], render declarations through the
-// kind templates in the canonical order the flush fixed, finalise
-// each file through the language formatter, and return files as
-// values. Nothing arrives on disk: staging, headers and trailers
-// belong to the output contract that consumes the values.
+// genuinely varies in, into a [Pass]. [Pass.Render] takes the files
+// a plan's layout routed through the fixed steps: render declarations
+// through the kind templates in the canonical order the flush fixed,
+// finalise each file through the language formatter, and return files
+// as values. The layout groups units into those files through the
+// language's [Naming] and [Split], which the pass serves as
+// [Pass.FileName] and [Pass.SplitUnit]. Nothing arrives on disk:
+// staging, headers and trailers belong to the output contract that
+// consumes the values.
 //
 // # Failure semantics
 //
 // A problem with one file or one declaration attaches to the sink
-// as a positioned Error, at the rendered file's name joined to its
-// package path, and the pass continues: a kind the language cannot
-// spell skips that declaration, and a file the formatter refuses is
-// withheld while its siblings render whole. A finding outside every
-// file is positioned at the unit's routing key, or at the pass's own
-// name for a plan unit and for the vocabulary merge. Findings arrive
-// in file order, whatever order the workers finish in. A returned
-// error is a defect in the pass's own inputs. Nothing here panics.
+// as a positioned Error, at the routed file's path, and the pass
+// continues: a kind the language cannot spell skips that declaration,
+// and a file the formatter refuses is withheld while its siblings
+// render whole. A finding outside every file, such as one from the
+// vocabulary merge, is positioned at the pass's own name. Findings
+// arrive in file order, whatever order the workers finish in. A
+// returned error is a defect in the pass's own inputs. Nothing here
+// panics.
 //
 // # Dependency position
 //

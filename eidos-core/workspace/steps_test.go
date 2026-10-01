@@ -124,7 +124,7 @@ func keyed(name plugin.ID, register func(*meta.Registry) error) plugin.Annotator
 // meets a plugin's own schema.
 func schemad(name plugin.ID, s directive.Schema) plugin.Generator {
 	p, held := eidos.NewPlugin(name).
-		Output(plugin.Output{Per: plugin.PerPlan, Word: "gen"}).
+		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
 		Handle(eidos.Directive(s, eidos.OnEmit(symbol.KindStruct,
 			func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }))).
 		Build().(plugin.Generator)
@@ -144,7 +144,7 @@ func slotted() fstest.MapFS {
 // with one family and a rule that emits nothing.
 func styled(b *eidos.Builder) plugin.Generator {
 	p, held := b.
-		Output(plugin.Output{Per: plugin.PerPlan, Word: "gen"}).
+		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
 		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })).
 		Build().(plugin.Generator)
 	if !held {
@@ -405,6 +405,24 @@ func TestSteps(t *testing.T) {
 			assert.HasError(t, err, "a writing composition needs every backend to render")
 			assert.Contains(t, err.Error(), "does not render", "the error names the cause")
 			assert.Contains(t, err.Error(), "framer", "the error names the backend")
+		})
+
+		t.Run("returns an error naming a backend that spells no filenames", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := workspace.New().
+				Brand(fixtureBrand).
+				Annotators(stamper("noter", quiet)).
+				Targets("fixture").
+				Plans(workspace.Plan{
+					Name:       "plan",
+					Generators: []plugin.Generator{mirror("mirror")},
+					Backend:    framing{fakeBackend{name: "framer", target: "fixture"}},
+				}).
+				Output(memOutput).
+				Build()
+			assert.HasError(t, err, "a writing composition needs every backend to name its files")
+			assert.Contains(t, err.Error(), "spells no filenames", "the error names the cause")
 		})
 	})
 

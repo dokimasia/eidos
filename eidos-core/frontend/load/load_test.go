@@ -170,7 +170,7 @@ func stamped(tb assert.TB, brand output.Brand, source string) []byte {
 	contract, err := output.NewContract(brand, frontendtest.NewScripted().Syntax())
 	assert.NoError(tb, err, "the contract builds over the fixture language's comment syntax")
 	b, err := contract.Stamp(plugin.RenderedFile{
-		Name: "gen.zz", Plugins: []plugin.ID{"gen"}, Body: []byte(source),
+		Path: "gen.zz", Plugins: []plugin.ID{"gen"}, Body: []byte(source),
 	})
 	assert.NoError(tb, err, "the source stamps")
 	return b

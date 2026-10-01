@@ -83,7 +83,7 @@ func BenchRender(b *testing.B, setup Setup, budget Budget) {
 	defer c.End()
 	for c.Loop() {
 		sink := diag.NewSink()
-		files, err := r.Render(f.context(sink))
+		files, err := r.Render(f.context(r, sink))
 		if err != nil {
 			b.Fatalf("the render aborted: %v", err)
 		}

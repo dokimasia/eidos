@@ -171,32 +171,6 @@ func (f *frame) nested(indent string, s symbol.Symbol) (string, error) {
 	return indented(out.String(), indent), nil
 }
 
-// declaredName returns the name a file-level declaration binds in
-// the file's scope, and empty for a kind that binds none there: a
-// method is scoped by its receiver, and a member by its host.
-func declaredName(d symbol.Symbol) string {
-	switch t := d.(type) {
-	case *emit.Struct:
-		return t.Name
-	case *emit.Interface:
-		return t.Name
-	case *emit.Enum:
-		return t.Name
-	case *emit.Sum:
-		return t.Name
-	case *emit.Function:
-		return t.Name
-	case *emit.Alias:
-		return t.Name
-	case *emit.Constant:
-		return t.Name
-	case *emit.Variable:
-		return t.Name
-	default:
-		return ""
-	}
-}
-
 // indented prefixes every non-empty line and drops the trailing
 // line break, keeping blank lines bare, so an indented block has
 // no trailing spaces.

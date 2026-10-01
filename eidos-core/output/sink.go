@@ -8,10 +8,11 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
-	"path"
 	"slices"
 	"strconv"
 	"strings"
+
+	"go.dokimi.dev/eidos/core/internal/pathset"
 )
 
 // stageSuffix names the file a commit writes before renaming it
@@ -99,11 +100,9 @@ type Sink interface {
 // destination.
 type staging struct {
 	files map[string][]byte
-	// folded maps the lower case of each staged path to the path.
-	// dirs contains every directory a staged path needs. fits checks
-	// a new path against both.
-	folded   map[string]string
-	dirs     map[string]struct{}
+	// tree contains the staged paths, which a new path must fit
+	// beside.
+	tree     pathset.Set
 	finished bool
 }
 
@@ -125,14 +124,9 @@ func (s *staging) stage(p string, body []byte) error {
 	}
 	if s.files == nil {
 		s.files = map[string][]byte{}
-		s.folded = map[string]string{}
-		s.dirs = map[string]struct{}{}
 	}
 	s.files[p] = body
-	s.folded[strings.ToLower(p)] = p
-	for dir := path.Dir(p); dir != "."; dir = path.Dir(dir) {
-		s.dirs[dir] = struct{}{}
-	}
+	s.tree.Add(p)
 	return nil
 }
 
@@ -140,23 +134,21 @@ func (s *staging) stage(p string, body []byte) error {
 // every filesystem: a path that differs from a staged one only in
 // case, which a case-insensitive filesystem stores as one file, a
 // path that a staged path needs as a directory, and a path under a
-// path staged as a file.
+// path staged as a file. Every comparison folds case.
 func (s *staging) fits(p string) error {
-	if other, held := s.folded[strings.ToLower(p)]; held {
+	switch clash, other := s.tree.Clash(p); clash {
+	case pathset.ClashCase:
 		return fmt.Errorf(
 			"output: %q and %q differ only in case, and a case-insensitive filesystem "+
 				"stores them as one file", other, p,
 		)
+	case pathset.ClashDirectory:
+		return fmt.Errorf("output: %q is a directory %q needs, so it cannot be a file", p, other)
+	case pathset.ClashFile:
+		return fmt.Errorf("output: %q needs %q as a directory, and it is staged as a file", p, other)
+	default:
+		return nil
 	}
-	if _, held := s.dirs[p]; held {
-		return fmt.Errorf("output: %q is a directory of staged files, so it cannot be a file", p)
-	}
-	for dir := path.Dir(p); dir != "."; dir = path.Dir(dir) {
-		if _, held := s.files[dir]; held {
-			return fmt.Errorf("output: %q needs %q as a directory, and it is staged as a file", p, dir)
-		}
-	}
-	return nil
 }
 
 // paths returns the staged paths in commit order.

@@ -10,6 +10,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -59,6 +60,7 @@ func TestVocabulary(t *testing.T) {
 		pass, err := render.New(passName, l)
 		assert.NoError(t, err, "the language composes")
 		sink := diag.NewSink()
+		ctx.Files = backendtest.Files(ctx.Emit, pass)
 		ctx.Sink = sink
 		ctx.Plugin = passName
 		files, err := pass.Render(ctx)

@@ -65,6 +65,14 @@ func TestSink(t *testing.T) {
 				name:  "returns an error for two names that differ only in case",
 				first: "svc/store.go", second: "svc/Store.go",
 			},
+			{
+				name:  "returns an error for a file whose name differs from a needed directory only in case",
+				first: "gen/a.go", second: "Gen",
+			},
+			{
+				name:  "returns an error for a path under a file whose name differs only in case",
+				first: "Gen", second: "gen/a.go",
+			},
 		}
 		for name, open := range every(t) {
 			t.Run(name, func(t *testing.T) {

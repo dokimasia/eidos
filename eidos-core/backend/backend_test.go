@@ -16,6 +16,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/backend"
+	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -257,7 +258,7 @@ func kitSettled(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
 	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles once")
 	coretest.AssertCodes(tb, sink)
 	files, err := r.Render(&plugin.RenderContext{
-		Emit: e, Sink: sink, Plugin: kitName,
+		Emit: e, Files: kitFiles(tb, b, e), Sink: sink, Plugin: kitName,
 	})
 	assert.NoError(tb, err, "the settled store renders")
 	coretest.AssertCodes(tb, sink)
@@ -271,13 +272,24 @@ func kitRender(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
 
 	r, held := b.(plugin.Renderer)
 	assert.True(tb, held, "a kit backend renders")
+	e := kitStore(tb)
 	sink := diag.NewSink()
 	files, err := r.Render(&plugin.RenderContext{
-		Emit: kitStore(tb), Sink: sink, Plugin: kitName,
+		Emit: e, Files: kitFiles(tb, b, e), Sink: sink, Plugin: kitName,
 	})
 	assert.NoError(tb, err, "the pass renders every file")
 	coretest.AssertCodes(tb, sink)
 	return files
+}
+
+// kitFiles routes the fixture store into files through b's filename
+// half, the way the suite routes a hand-built store.
+func kitFiles(tb assert.TB, b plugin.Backend, e *plugin.Emit) []plugin.File {
+	tb.Helper()
+
+	s, spells := b.(plugin.FileSpeller)
+	assert.True(tb, spells, "a kit backend spells filenames")
+	return backendtest.Files(e, s)
 }
 
 // The backend kit is the write side's authoring builder: the
@@ -324,7 +336,7 @@ func TestBackend(t *testing.T) {
 
 			files := kitRender(t, kitBackend(kitName, kitTarget).Build())
 			assert.Length(t, files, 1, "the fixture assembles one file")
-			assert.Equal(t, files[0].Name, kitWord+kitExt, "named by the naming")
+			assert.Equal(t, files[0].Path, kitWord+kitExt, "named by the naming")
 			assert.Equal(t, string(files[0].Body), kitBody,
 				"the skeleton, vocabulary, kinds and scaffold all spell")
 		})
@@ -343,8 +355,9 @@ func TestBackend(t *testing.T) {
 			built := kitRender(t, kitBackend(kitName, kitTarget).Build())
 			pass, err := render.New(kitName, kitLanguage())
 			assert.NoError(t, err, "the same language composes by hand")
+			e := kitStore(t)
 			direct, err := pass.Render(&plugin.RenderContext{
-				Emit: kitStore(t), Sink: diag.NewSink(), Plugin: kitName,
+				Emit: e, Files: backendtest.Files(e, pass), Sink: diag.NewSink(), Plugin: kitName,
 			})
 			assert.NoError(t, err, "the hand-built pass renders every file")
 			assert.Equal(t, built, direct, "the kit adds spelling and no semantics")
@@ -421,7 +434,7 @@ func TestBackend(t *testing.T) {
 				Build()
 			names := make([]string, 0, 2)
 			for _, f := range kitRender(t, b) {
-				names = append(names, f.Name)
+				names = append(names, f.Path)
 			}
 			assert.Equal(t, names, []string{
 				strings.ToLower(symbol.KindFunction.String()) + kitExt,
@@ -655,6 +668,88 @@ func TestBackend(t *testing.T) {
 				"import (" + runtimePkg + " " + storePkg + ")\n",
 				"type " + strings.ToUpper(rowName) + " " + storeLocal + "." + rowName + "\n",
 			}, "each part's helper renders, and the binding part's import is the file's")
+		})
+	})
+
+	t.Run("Packages", func(t *testing.T) {
+		t.Parallel()
+
+		at := plugin.Placement{Path: "svc/store/stub.txt", Origin: coretest.PackageID(coretest.StorePath)}
+
+		t.Run("returns a backend whose package half runs the declared rule", func(t *testing.T) {
+			t.Parallel()
+
+			rule := func(p plugin.Placement) (symbol.Identity, error) {
+				return symbol.Identity{Package: path.Dir(p.Path), Name: storeLocal}, nil
+			}
+			p, held := kitBackend(kitName, kitTarget).Packages(rule).Build().(plugin.Packager)
+			assert.True(t, held, "a kit backend names packages")
+			got, err := p.PackageAt(at)
+			assert.NoError(t, err, "the rule derives a package")
+			assert.Equal(t, got, symbol.Identity{Package: coretest.StorePath, Name: storeLocal},
+				"the rule's package")
+		})
+
+		t.Run("returns the rule's error", func(t *testing.T) {
+			t.Parallel()
+
+			rule := func(plugin.Placement) (symbol.Identity, error) {
+				return symbol.Identity{}, errors.New("no module contains the directory")
+			}
+			p, held := kitBackend(kitName, kitTarget).Packages(rule).Build().(plugin.Packager)
+			assert.True(t, held, "a kit backend names packages")
+			_, err := p.PackageAt(at)
+			assert.HasError(t, err, "the rule derives no package")
+		})
+
+		t.Run("returns the origin for a backend without a rule", func(t *testing.T) {
+			t.Parallel()
+
+			p, held := kitBackend(plainName, kitTarget).Build().(plugin.Packager)
+			assert.True(t, held, "an undeclared rule still names packages")
+			got, err := p.PackageAt(at)
+			assert.NoError(t, err, "the origin needs no derivation")
+			assert.Equal(t, got, at.Origin, "a file declares the package its declarations derive from")
+		})
+	})
+
+	t.Run("FileName", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the declared naming's spelling", func(t *testing.T) {
+			t.Parallel()
+
+			s, held := kitBackend(kitName, kitTarget).Build().(plugin.FileSpeller)
+			assert.True(t, held, "a kit backend spells filenames")
+			assert.Equal(t, s.FileName(kitUnit()), kitWord+kitExt, "the naming's spelling")
+		})
+	})
+
+	t.Run("SplitUnit", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the unit whole for a backend without a split", func(t *testing.T) {
+			t.Parallel()
+
+			s, held := kitBackend(kitName, kitTarget).Build().(plugin.FileSpeller)
+			assert.True(t, held, "a kit backend spells filenames")
+			parts := s.SplitUnit(kitUnit())
+			assert.Length(t, parts, 1, "one part")
+			assert.Length(t, parts[0].Decls, len(kitUnit().Decls), "the part keeps every declaration")
+		})
+
+		t.Run("returns the declared split's parts", func(t *testing.T) {
+			t.Parallel()
+
+			s, held := kitBackend(kitName, kitTarget).
+				Split(func(u plugin.Unit) []plugin.Unit {
+					first, rest := u, u
+					first.Decls, rest.Decls = u.Decls[:1], u.Decls[1:]
+					return []plugin.Unit{first, rest}
+				}).
+				Build().(plugin.FileSpeller)
+			assert.True(t, held, "a kit backend spells filenames")
+			assert.Length(t, s.SplitUnit(kitUnit()), 2, "the split's two parts")
 		})
 	})
 

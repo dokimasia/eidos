@@ -87,7 +87,7 @@ func AssertRenderedMembers(tb assert.TB, setup Setup) {
 			return
 		}
 	}
-	files, err := r.Render(f.context(sink))
+	files, err := r.Render(f.context(r, sink))
 	assert.NoError(tb, err, "the settled fixture renders")
 
 	var excused strings.Builder
@@ -280,7 +280,7 @@ func AssertCoveredFacts(tb assert.TB, setup Setup) {
 	}
 
 	sink := diag.NewSink()
-	if _, err := r.Render(f.context(sink)); err != nil {
+	if _, err := r.Render(f.context(r, sink)); err != nil {
 		tb.Errorf("the render completes: %v", err)
 		return
 	}
@@ -499,7 +499,7 @@ func runRender(tb assert.TB, setup Setup) ([]plugin.RenderedFile, []diag.Diag) {
 			return nil, nil
 		}
 	}
-	files, err := r.Render(f.context(sink))
+	files, err := r.Render(f.context(r, sink))
 	assert.NoError(tb, err,
 		"a file's problem attaches to the sink and the render continues")
 	return files, slices.Collect(sink.All())
@@ -524,7 +524,7 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 }
 
 // AssertDeterministicRender renders two isolated setups and fails
-// unless the files are byte-equal: the same names, the same
+// unless the files are byte-equal: the same paths, the same
 // packages, the same bytes, which is the byte-identity contract as
 // values. The findings must match as a set too; only their order is
 // the run's, because the pass reports in completion order.
@@ -586,9 +586,9 @@ func AssertContinuedRender(tb assert.TB, setup Setup) {
 	tb.Helper()
 
 	files, diags := runRender(tb, setup)
-	names := make(map[string]struct{}, len(files))
+	paths := make(map[string]struct{}, len(files))
 	for _, f := range files {
-		names[f.Name] = struct{}{}
+		paths[f.Path] = struct{}{}
 	}
 	for _, d := range diags {
 		assert.True(tb, !d.Pos.IsZero(),
@@ -596,7 +596,7 @@ func AssertContinuedRender(tb assert.TB, setup Setup) {
 		assert.Equal(tb, d.Origin, origin,
 			"every finding names the context's plugin as its origin")
 		if d.Code == render.UnformattedFile {
-			_, returned := names[d.Pos.File]
+			_, returned := paths[d.Pos.File]
 			assert.False(tb, returned,
 				"a file the formatter refused remains withheld: "+d.Pos.File)
 		}

@@ -153,7 +153,7 @@ func TestBench(t *testing.T) {
 			setup := func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 				return &fake{render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
 					rendered++
-					return []plugin.RenderedFile{{Name: fileA, Body: []byte(bodyX)}}, nil
+					return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
 				}}, &backendtest.Fixture{Emit: plugin.NewEmit()}
 			}
 			result := benchRender(setup, roomy)
@@ -227,7 +227,7 @@ func TestBench(t *testing.T) {
 					rendered++
 					// The files arrive whole, so the error is the only
 					// thing left to stop on.
-					return []plugin.RenderedFile{{Name: fileA, Body: []byte(bodyX)}},
+					return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}},
 						errors.New(abortMessage)
 				}}, &backendtest.Fixture{Emit: plugin.NewEmit()}
 			}

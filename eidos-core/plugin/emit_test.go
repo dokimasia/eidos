@@ -44,6 +44,65 @@ func unit(p, key string) plugin.Unit {
 func TestEmit(t *testing.T) {
 	t.Parallel()
 
+	t.Run("String", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give plugin.Cardinality
+			want string
+		}{
+			{name: "returns per-source for PerSource", give: plugin.PerSource, want: "per-source"},
+			{name: "returns per-package for PerPackage", give: plugin.PerPackage, want: "per-package"},
+			{name: "returns per-plan for PerPlan", give: plugin.PerPlan, want: "per-plan"},
+			{name: "returns the number of the zero cardinality", give: 0, want: "Cardinality(0)"},
+			{
+				name: "returns every digit of an undeclared cardinality's number",
+				give: plugin.Cardinality(12), want: "Cardinality(12)",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
+			})
+		}
+	})
+
+	t.Run("FileKey", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give plugin.Unit
+			want string
+		}{
+			{
+				name: "returns the source path of a per-source unit",
+				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go"},
+				want: "svc/store.go",
+			},
+			{
+				name: "returns the empty string for a per-package unit",
+				give: plugin.Unit{Per: plugin.PerPackage, Key: coretest.StorePath},
+				want: "",
+			},
+			{
+				name: "returns the empty string for a per-plan unit",
+				give: plugin.Unit{Per: plugin.PerPlan},
+				want: "",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.FileKey(), tt.want, "the filename's stem source")
+			})
+		}
+	})
+
 	t.Run("Add", func(t *testing.T) {
 		t.Parallel()
 

@@ -13,6 +13,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -255,7 +256,8 @@ func seeded(tb assert.TB, units ...plugin.Unit) *plugin.Emit {
 	return e
 }
 
-// runPass builds the pass over the language and renders the store.
+// runPass builds the pass over the language and renders the store,
+// routed into files through the pass's own filename half.
 func runPass(
 	tb assert.TB, l render.Language, e *plugin.Emit,
 ) ([]plugin.RenderedFile, *diag.Sink) {
@@ -265,7 +267,7 @@ func runPass(
 	assert.NoError(tb, err, "the language composes")
 	sink := diag.NewSink()
 	files, err := p.Render(&plugin.RenderContext{
-		Emit: e, Sink: sink, Plugin: passName,
+		Emit: e, Files: backendtest.Files(e, p), Sink: sink, Plugin: passName,
 	})
 	assert.NoError(tb, err, "the pass renders every file")
 	return files, sink
@@ -319,8 +321,9 @@ func renderRef(
 	p, err := render.New(passName, l)
 	assert.NoError(tb, err, "the language composes")
 	sink := diag.NewSink()
+	e := seeded(tb, fn(storeKey, handleName, b))
 	files, err := p.Render(&plugin.RenderContext{
-		Emit:  seeded(tb, fn(storeKey, handleName, b)),
+		Emit: e, Files: backendtest.Files(e, p),
 		Trees: trees, Sink: sink, Plugin: passName,
 	})
 	assert.NoError(tb, err, "the pass renders every file")

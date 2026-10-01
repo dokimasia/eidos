@@ -74,8 +74,8 @@
 //
 // # Dependency position
 //
-// core/output imports core/plugin and the Go stdlib. It never
-// imports the root authoring package or the render pass: a
-// renderer produces values, and stamping them is a separate step
-// its consumer takes.
+// core/output imports core/plugin, core/internal/pathset and the Go
+// stdlib. It never imports the root authoring package or the render
+// pass: a renderer produces values, and stamping them is a separate
+// step its consumer takes.
 package output

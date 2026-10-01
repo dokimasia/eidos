@@ -296,7 +296,7 @@ func scripted(r func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error)) 
 // store and nothing further along.
 func hollowSetup(assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	return &fake{render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-		return []plugin.RenderedFile{{Name: fileA, Body: []byte(bodyX)}}, nil
+		return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
 	}}, &backendtest.Fixture{}
 }
 
@@ -1267,7 +1267,7 @@ func TestSuite(t *testing.T) {
 				runs++
 				stamp := strconv.Itoa(runs)
 				return &fake{render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-					return []plugin.RenderedFile{{Name: fileA, Body: []byte(stamp)}}, nil
+					return []plugin.RenderedFile{{Path: fileA, Body: []byte(stamp)}}, nil
 				}}, &backendtest.Fixture{Emit: plugin.NewEmit()}
 			}
 
@@ -1304,7 +1304,7 @@ func TestSuite(t *testing.T) {
 						unformatted()
 						dropped()
 					}
-					return []plugin.RenderedFile{{Name: fileA, Body: []byte(bodyX)}}, nil
+					return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
 				}}
 				return r, &backendtest.Fixture{Emit: plugin.NewEmit()}
 			}
@@ -1414,7 +1414,7 @@ func TestSuite(t *testing.T) {
 			lying := scripted(func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
 				ctx.Sink.Errorf(render.UnformattedFile,
 					position.Pos{File: fileA}, ctx.Plugin, "the formatter refused %s", fileA)
-				return []plugin.RenderedFile{{Name: fileA, Body: []byte(bodyX)}}, nil
+				return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
 			})
 
 			failure := assert.Rejects(t, "a withheld file must remain withheld",

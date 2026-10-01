@@ -5,6 +5,8 @@ package workspace_test
 
 import (
 	"errors"
+	"maps"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -17,8 +19,13 @@ import (
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
@@ -181,6 +188,56 @@ func writing(tb assert.TB, open func() (output.Sink, error)) *workspace.Workspac
 	return w
 }
 
+// alphaFile is the source file the routing fixture declares Alpha in,
+// inside its package's own directory.
+const alphaFile = coretest.StorePath + "/alpha.go"
+
+// routedAlpha returns an unfrozen one-package graph whose one file
+// sits in the package's directory, and the struct it declares.
+func routedAlpha(tb assert.TB) (*store.Graph, *node.Struct) {
+	tb.Helper()
+
+	s := coretest.Struct(coretest.StorePath, "Alpha")
+	s.Pos = position.Pos{File: alphaFile, Line: 3, Col: 1}
+	pkg := coretest.Package(coretest.StorePath, s)
+	pkg.Files[0].Path = alphaFile
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(pkg), "the fixture package is admitted")
+	return g, s
+}
+
+// routing returns a composition whose one plan mirrors every struct
+// through the printer backend under the given layout, into the output
+// open returns.
+func routing(tb assert.TB, cfg layout.Config, open func() (output.Sink, error)) *workspace.Workspace {
+	tb.Helper()
+
+	w, err := workspace.New().
+		Brand(fixtureBrand).
+		Annotators(stamper("noter", quiet)).
+		Targets("fixture").
+		Plans(workspace.Plan{
+			Name:       "plan",
+			Generators: []plugin.Generator{mirror("mirror")},
+			Backend:    printer(tb, "fixture"),
+			Layout:     cfg,
+		}).
+		Output(open).
+		Build()
+	assert.NoError(tb, err, "the routing composition composes")
+	return w
+}
+
+// writtenPaths runs a composition over g and returns the paths its one
+// sink committed, sorted.
+func writtenPaths(t *testing.T, w *workspace.Workspace, g *store.Graph, o *opener) []string {
+	t.Helper()
+
+	_, err := w.Run(t.Context(), g)
+	assert.NoError(t, err, "the run is clean")
+	return slices.Sorted(maps.Keys(o.opened()[0].Files()))
+}
+
 // The write is the run's last step: the render's staged files go to
 // a sink the run opens for itself, and the report records what was
 // written to the destination.
@@ -307,6 +364,43 @@ func TestWrite(t *testing.T) {
 			assert.ErrorIs(t, err, errReadOnly, "the refused write fails the run")
 			assert.True(t, refusing.discarded, "the staging is discarded")
 			assert.Empty(t, run.Written, "the report records no file")
+		})
+
+		t.Run("writes a file beside the source it derives from", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			g, _ := routedAlpha(t)
+			assert.Equal(t, writtenPaths(t, routing(t, layout.Config{}, o.open), g, &o),
+				[]string{coretest.StorePath + "/gen.txt"}, "the package's file is in its directory")
+		})
+
+		t.Run("writes a file of a centralised plan under the output directory", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			g, _ := routedAlpha(t)
+			cfg := layout.Config{Policy: layout.PolicyCentralised, Dir: "out"}
+			assert.Equal(t, writtenPaths(t, routing(t, cfg, o.open), g, &o),
+				[]string{"out/" + coretest.StorePath + "/gen.txt"}, "the source directory under the output directory")
+		})
+
+		t.Run("opens no sink for a run whose layout refuses a declaration", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			g, s := routedAlpha(t)
+			assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{{
+				Name: directive.KernelOut,
+				Args: []directive.RawArg{{
+					Key: string(directive.OutPath), Value: directive.RawValue{Text: "/etc/gen.txt", Quoted: true},
+				}},
+				Pos: position.Pos{File: alphaFile, Line: 2, Col: 1},
+			}}), "the escaping override attaches before the seal")
+			run, err := routing(t, layout.Config{}, o.open).Run(t.Context(), g)
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the refusal fails the run")
+			coretest.AssertCodes(t, run.Sink, layout.EscapingPath)
+			assert.Empty(t, o.opened(), "no sink is opened")
 		})
 	})
 }

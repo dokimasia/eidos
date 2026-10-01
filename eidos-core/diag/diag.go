@@ -32,6 +32,9 @@ const (
 	PhaseAnnotate Origin = "annotate"
 	// PhaseGenerate is a plan's generators producing emit trees.
 	PhaseGenerate Origin = "generate"
+	// PhaseLayout routes a plan's settled declarations to the files
+	// they are written in.
+	PhaseLayout Origin = "layout"
 	// PhaseRender is a backend spelling an emit tree as source.
 	PhaseRender Origin = "render"
 	// PhaseClose merges the manifests, checks for collisions and

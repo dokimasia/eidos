@@ -32,11 +32,12 @@ type Builder struct {
 	// vocab lists the declared vocabulary parts in declaration
 	// order, and helpers records every name they declare, so a name
 	// declared twice is a defect before any render.
-	vocab   []func(set *render.ImportSet) template.FuncMap
-	helpers map[string]bool
-	lower   plugin.Lower
-	respell plugin.Respell
-	defects []string
+	vocab    []func(set *render.ImportSet) template.FuncMap
+	helpers  map[string]bool
+	lower    plugin.Lower
+	respell  plugin.Respell
+	packages plugin.PackageRule
+	defects  []string
 }
 
 // New starts a backend declaration for one target.
@@ -145,16 +146,27 @@ func (b *Builder) Funcs(part func(set *render.ImportSet) template.FuncMap) *Buil
 	return b
 }
 
-// Naming sets the target's filename spelling.
+// Naming sets the target's filename spelling, which the built
+// backend serves to the plan's layout as [plugin.FileSpeller].
 func (b *Builder) Naming(n render.Naming) *Builder {
 	b.lang.Naming = n
 	return b
 }
 
-// Split sets the target's unit reshaping; undeclared, every unit
-// files whole.
+// Split sets the target's unit reshaping, served beside the naming.
+// Undeclared, every unit files whole.
 func (b *Builder) Split(s render.Split) *Builder {
 	b.lang.Split = s
+	return b
+}
+
+// Packages sets the target's package rule: the package a file at a
+// routed path declares, which is the package the language's frontend
+// names when it reads that file. The built backend implements
+// [plugin.Packager] through it. Undeclared, every routed file takes
+// the package of its first unit.
+func (b *Builder) Packages(r plugin.PackageRule) *Builder {
+	b.packages = r
 	return b
 }
 
@@ -225,10 +237,11 @@ func (b *Builder) Respell(r plugin.Respell) *Builder {
 }
 
 // Build freezes the declaration and returns the lowered backend,
-// which implements [plugin.Backend] and [plugin.Renderer] both.
-// Its Render is the render pass over the declared language and
-// nothing more, so a kit backend and a hand-rolled pass over the
-// same language return the same bytes.
+// which implements [plugin.Backend], [plugin.Renderer],
+// [plugin.FileSpeller] and [plugin.Packager]. Its Render is the render
+// pass over the declared language and nothing more, so a kit backend
+// and a hand-rolled pass over the same language return the same
+// bytes.
 //
 // Build panics on a declaration defect, because a wrong declaration
 // is a bug in the backend's own constructor, and the panic comes on
@@ -262,7 +275,7 @@ func (b *Builder) Build() plugin.Backend {
 	}
 	base := &builtBackend{
 		name: b.name, target: b.target, syntax: b.syntax,
-		version: b.version, pass: pass,
+		version: b.version, pass: pass, packages: b.packages,
 		seams: b.lower != nil || b.respell != nil,
 	}
 	switch {
@@ -285,6 +298,9 @@ type builtBackend struct {
 	syntax  plugin.CommentSyntax
 	version string
 	pass    *render.Pass
+	// packages is the declared package rule, nil where the backend
+	// declares none.
+	packages plugin.PackageRule
 	// seams reports whether the backend declares a lowering or a
 	// respell seam. Render refuses an unsettled store when it does.
 	seams bool
@@ -313,6 +329,24 @@ func (b *builtBackend) Coverage() render.Coverage { return b.pass.Coverage() }
 // RefusedKinds implements [render.Refuser] through the composed
 // pass, so the suite reads the refusals the render reports.
 func (b *builtBackend) RefusedKinds() map[symbol.Kind]string { return b.pass.RefusedKinds() }
+
+// SplitUnit implements [plugin.FileSpeller] through the declared
+// Split.
+func (b *builtBackend) SplitUnit(u plugin.Unit) []plugin.Unit { return b.pass.SplitUnit(u) }
+
+// FileName implements [plugin.FileSpeller] through the declared
+// Naming.
+func (b *builtBackend) FileName(u plugin.Unit) string { return b.pass.FileName(u) }
+
+// PackageAt implements [plugin.Packager] through the declared package
+// rule, and returns the file's origin package where the backend
+// declares none.
+func (b *builtBackend) PackageAt(p plugin.Placement) (symbol.Identity, error) {
+	if b.packages == nil {
+		return p.Origin, nil
+	}
+	return b.packages(p)
+}
 
 // Render implements [plugin.Renderer] through the composed pass. A
 // backend declaring a seam refuses an unsettled store: the plan

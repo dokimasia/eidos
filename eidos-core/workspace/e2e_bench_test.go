@@ -56,7 +56,9 @@ const (
 func e2ePath(p int) string { return e2ePathPrefix + strconv.Itoa(p) }
 
 // e2eGraph builds a corpus of n packages, loaded and left unfrozen
-// the way a run takes a graph.
+// the way a run takes a graph. Each package's file sits in the
+// package's own directory, so each package's generated file routes
+// beside it.
 func e2eGraph(tb assert.TB, n int) *store.Graph {
 	tb.Helper()
 
@@ -73,16 +75,18 @@ func e2eGraph(tb assert.TB, n int) *store.Graph {
 		for i := range e2eUnmarked {
 			decls = append(decls, coretest.Struct(path, "pl"+strconv.Itoa(i)))
 		}
-		assert.NoError(tb, g.AddPackage(coretest.Package(path, decls...)),
-			"the corpus package loads")
+		pkg := coretest.Package(path, decls...)
+		pkg.Files[0].Path = path + "/" + coretest.UnitFile
+		assert.NoError(tb, g.AddPackage(pkg), "the corpus package loads")
 	}
 	return g
 }
 
 // e2eWorkspace composes the pipeline over n packages: an annotator
 // stamping the mark, a generator mirroring the marked symbols with
-// the stated share of cross-package references, and the fixture
-// backend the plan settles through.
+// the stated share of cross-package references, the fixture backend
+// the plan settles and renders through, and an output that commits
+// each run into a fresh memory sink.
 func e2eWorkspace(tb assert.TB, n int) *workspace.Workspace {
 	tb.Helper()
 
@@ -141,6 +145,7 @@ func e2eWorkspace(tb assert.TB, n int) *workspace.Workspace {
 			Generators: []plugin.Generator{mirror},
 			Backend:    e2eBackend(),
 		}).
+		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Build()
 	assert.NoError(tb, err, "the composition validates")
 	return w
@@ -194,39 +199,16 @@ func e2eBackend() plugin.Backend {
 }
 
 // e2ePipeline runs the corpus through every stage the kernel
-// implements: annotate, generate and settle inside the run, then
-// render, stamp and the sink's commit. The renderer arrives
-// composed, the way a host receives it. It returns the committed
+// implements, inside the run: annotate, generate, settle, layout,
+// render, stamp and the sink's commit. It returns the committed
 // files.
-func e2ePipeline(
-	tb assert.TB, w *workspace.Workspace, g *store.Graph, r plugin.Renderer,
-) []output.Written {
+func e2ePipeline(tb assert.TB, w *workspace.Workspace, g *store.Graph) []output.Written {
 	tb.Helper()
 
 	report, err := w.Run(context.Background(), g)
 	assert.NoError(tb, err, "the run completes")
 	assert.False(tb, report.Sink.Failed(), "and reports no errors")
-
-	files, err := r.Render(&plugin.RenderContext{
-		Emit: report.Emits["plan"], Sink: report.Sink, Plugin: "printer",
-	})
-	assert.NoError(tb, err, "the render completes")
-	assert.False(tb, report.Sink.Failed(), "and reports no findings that fail")
-
-	c, err := output.NewContract(e2eBrand, plugin.CommentSyntax{Line: []string{"//"}})
-	assert.NoError(tb, err, "the contract composes")
-	sink := output.NewMem()
-	for _, f := range files {
-		body, stampErr := c.Stamp(f)
-		assert.NoError(tb, stampErr, "every rendered file stamps")
-		// Routing a file under its package is the layout's half of
-		// the address, and the fixture routes by package path.
-		assert.NoError(tb, sink.Write(f.Pkg.Package+"/"+f.Name, body),
-			"and stages")
-	}
-	written, err := sink.Commit()
-	assert.NoError(tb, err, "the staging commits")
-	return written
+	return report.Written
 }
 
 // peakRSS reads the process's high-water resident set in bytes,
@@ -255,8 +237,8 @@ func peakRSS() uint64 {
 }
 
 // BenchmarkPipeline measures the kernel's whole pipeline over the
-// corpus: annotate, generate, settle, render, stamp and commit,
-// the corpus, composition and renderer built outside the
+// corpus: annotate, generate, settle, layout, render, stamp and
+// commit, the corpus and the composition built outside the
 // measurement, under an allocation ceiling pinned from measurement
 // with headroom. The peak resident set reports as a metric beside
 // the numbers, so the envelope reports memory as well as work.
@@ -266,17 +248,11 @@ func BenchmarkPipeline(b *testing.B) {
 	for c.Loop() {
 		var w *workspace.Workspace
 		var g *store.Graph
-		var r plugin.Renderer
 		c.Excluding(func() {
 			w = e2eWorkspace(b, e2ePackages)
 			g = e2eGraph(b, e2ePackages)
-			renderer, held := e2eBackend().(plugin.Renderer)
-			if !held {
-				b.Fatal("the fixture backend renders")
-			}
-			r = renderer
 		})
-		written := e2ePipeline(b, w, g, r)
+		written := e2ePipeline(b, w, g)
 		if len(written) != e2ePackages {
 			b.Fatalf("the envelope commits one file per package, got %d",
 				len(written))
@@ -301,12 +277,8 @@ func TestPipeline(t *testing.T) {
 
 			const n = 50
 			run := func() map[string]string {
-				w := e2eWorkspace(t, n)
-				g := e2eGraph(t, n)
-				r, held := e2eBackend().(plugin.Renderer)
-				assert.True(t, held, "the fixture backend renders")
 				out := map[string]string{}
-				for _, f := range e2ePipeline(t, w, g, r) {
+				for _, f := range e2ePipeline(t, e2eWorkspace(t, n), e2eGraph(t, n)) {
 					out[f.Path] = f.Hash
 				}
 				return out

@@ -15,6 +15,7 @@ import (
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
+	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -63,9 +64,9 @@ const (
 var qualifiedStruct = "type {{.Name}} " +
 	action(qualifyHelper, strconv.Quote(storePkg), strconv.Quote(rowName)) + "\n"
 
-// The pass is the procedure every language shares: group through the
-// naming, render kinds in canonical order, finalise per file and
-// continue past a failure.
+// The pass is the procedure every language shares: render the routed
+// files, kinds in canonical order, finalise per file and continue past
+// a failure.
 func TestPass(t *testing.T) {
 	t.Parallel()
 
@@ -272,7 +273,7 @@ func TestPass(t *testing.T) {
 			assert.Contains(t, err.Error(), "sink", "naming what it needs")
 		})
 
-		t.Run("renders two files for two packages that spell one filename", func(t *testing.T) {
+		t.Run("returns each file at its routed path with its package", func(t *testing.T) {
 			t.Parallel()
 
 			left := unitOf(emitter, leftPkg+"/"+storeKey, alphaName)
@@ -280,9 +281,24 @@ func TestPass(t *testing.T) {
 			right := unitOf(emitter, rightPkg+"/"+storeKey, betaName)
 			right.Pkg = coretest.Struct(rightPkg, anchorName).ID
 			files, _ := runPass(t, language(), seeded(t, left, right))
-			assert.Length(t, files, 2, "the package addresses the file")
-			assert.Equal(t, files[0].Name, files[1].Name, "one spelled name")
+			assert.Equal(t, paths(files), []string{leftPkg + "/" + storeFile, rightPkg + "/" + storeFile},
+				"two packages that spell one filename route to two paths")
 			assert.NotEqual(t, files[0].Pkg, files[1].Pkg, "two packages")
+		})
+
+		t.Run("renders the routed files and no other", func(t *testing.T) {
+			t.Parallel()
+
+			p, err := render.New(passName, language())
+			assert.NoError(t, err, "the language composes")
+			e := seeded(t, unitOf(emitter, storeKey, alphaName), unitOf(emitter, userKey, betaName))
+			routed := backendtest.Files(e, p)[:1]
+			routed[0].Path = "gen/" + storeFile
+			files, err := p.Render(&plugin.RenderContext{
+				Emit: e, Files: routed, Sink: diag.NewSink(), Plugin: passName,
+			})
+			assert.NoError(t, err, "the pass renders every file")
+			assert.Equal(t, paths(files), []string{"gen/" + storeFile}, "the one routed file at its path")
 		})
 
 		t.Run("records every plugin that contributed to a file", func(t *testing.T) {
@@ -327,8 +343,9 @@ func TestPass(t *testing.T) {
 			p, err := render.New(passName, language())
 			assert.NoError(t, err, "the language composes")
 			sink := diag.NewSink()
+			e := seeded(t, unspelt())
 			_, err = p.Render(&plugin.RenderContext{
-				Emit: seeded(t, unspelt()), Sink: sink, Plugin: composedPlugin,
+				Emit: e, Files: backendtest.Files(e, p), Sink: sink, Plugin: composedPlugin,
 			})
 			assert.NoError(t, err, "the pass renders every file")
 			coretest.AssertReports(t, sink, render.UnspeltKind)
@@ -344,7 +361,8 @@ func TestPass(t *testing.T) {
 			p, err := render.New(passName, language())
 			assert.NoError(t, err, "the language composes")
 			sink := diag.NewSink()
-			_, err = p.Render(&plugin.RenderContext{Emit: seeded(t, unspelt()), Sink: sink})
+			e := seeded(t, unspelt())
+			_, err = p.Render(&plugin.RenderContext{Emit: e, Files: backendtest.Files(e, p), Sink: sink})
 			assert.NoError(t, err, "the pass renders every file")
 			coretest.AssertReports(t, sink, render.UnspeltKind)
 			for d := range sink.All() {
@@ -368,7 +386,7 @@ func TestPass(t *testing.T) {
 			))
 			coretest.AssertCodes(t, sink, render.UnformattedFile)
 			assert.Length(t, files, 1, "the unformatted file is withheld")
-			assert.Equal(t, files[0].Name, storeFile, "its sibling renders whole")
+			assert.Equal(t, files[0].Path, storeFile, "its sibling renders whole")
 		})
 
 		t.Run("reports findings in file order whatever order the workers finish in", func(t *testing.T) {
@@ -503,7 +521,7 @@ func TestPass(t *testing.T) {
 			assert.Length(t, files, n, "one file per unit")
 			for _, f := range files {
 				assert.HasPrefix(t, string(f.Body), "use "+storePkg+" as "+storeLocal+"\n",
-					f.Name+" imports what it binds")
+					f.Path+" imports what it binds")
 			}
 		})
 
@@ -579,12 +597,13 @@ func structDecl(path, name string) symbol.Symbol {
 func benchRender(b *testing.B, p *render.Pass, e *plugin.Emit, trees map[plugin.ID]fs.FS, ceiling uint64) {
 	b.Helper()
 
+	routed := backendtest.Files(e, p)
 	c := bench.Start(b).MaxAllocs(ceiling)
 	defer c.End()
 	for c.Loop() {
 		sink := diag.NewSink()
 		files, err := p.Render(&plugin.RenderContext{
-			Emit: e, Trees: trees, Sink: sink, Plugin: passName,
+			Emit: e, Files: routed, Trees: trees, Sink: sink, Plugin: passName,
 		})
 		if err != nil {
 			b.Fatalf("Render: unexpected error: %v", err)

@@ -52,16 +52,18 @@
 // # The output
 //
 // A composition declaring output through [Builder.Output] takes the
-// frame one step further: each plan settles, renders through its
-// backend and stamps every file through the output contract, and a
-// run that reported no Error opens one sink, writes what every plan
-// staged into it and commits once. The render is parallel per plan
-// and the write is sequential in plan order, so one run writes one
-// tree in one order however the plans interleaved. A run that
-// reported an Error opens no sink, so the previous generation of
-// files remains in place. A composition declaring no output stops
-// after the settle, and its plans' emit stores are the run's whole
-// product.
+// frame one step further: each plan settles, routes its declarations
+// to files through its [layout.Config], renders the files through its
+// backend and stamps each one through the output contract, and a run
+// that reported no Error opens one sink, writes what every plan
+// staged into it and commits once. The routing reads the source tree
+// once per run, so every plan places its files against one view of
+// it. The render is parallel per plan and the write is sequential in
+// plan order, so one run writes one tree in one order however the
+// plans interleaved. A run that reported an Error opens no sink, so
+// the previous generation of files remains in place. A composition
+// declaring no output stops after the settle, and its plans' emit
+// stores are the run's whole product.
 //
 // # Failure semantics
 //
@@ -76,8 +78,8 @@
 // # Dependency position
 //
 // core/workspace imports core/plugin, core/store, core/node,
-// core/meta, core/directive, core/rules, core/output, core/diag,
-// core/symbol and the Go stdlib. It never imports the root
+// core/meta, core/directive, core/rules, core/layout, core/output,
+// core/diag, core/symbol and the Go stdlib. It never imports the root
 // authoring package: plugins arrive built, so the composition works
 // on the base contract every authoring layer lowers to.
 package workspace

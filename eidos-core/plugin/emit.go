@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"iter"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.dokimi.dev/eidos/core/emit"
@@ -27,6 +28,22 @@ const (
 	// PerPlan is one output per plan.
 	PerPlan
 )
+
+// String returns the cardinality's spelling in a diagnostic:
+// per-source, per-package or per-plan. A cardinality outside the three
+// returns its number.
+func (c Cardinality) String() string {
+	switch c {
+	case PerSource:
+		return "per-source"
+	case PerPackage:
+		return "per-package"
+	case PerPlan:
+		return "per-plan"
+	default:
+		return "Cardinality(" + strconv.Itoa(int(c)) + ")"
+	}
+}
 
 // Output declares one file family a generator emits.
 //
@@ -73,6 +90,18 @@ type Unit struct {
 	// Origins holds the node identities whose matches contributed,
 	// sorted and deduplicated: the provenance a manifest carries.
 	Origins []symbol.Identity
+}
+
+// FileKey returns the routing key a unit's filename takes its stem
+// from: the source path of a per-source unit, and the empty string for
+// a per-package or per-plan unit, whose filename joins its family word
+// and tag alone. A target's filename spelling reads the stem through
+// it, so no target spells a package path into a filename.
+func (u Unit) FileKey() string {
+	if u.Per != PerSource {
+		return ""
+	}
+	return u.Key
 }
 
 // unitKey addresses one accumulator: what one phase call may flush

@@ -40,7 +40,7 @@ func TestAssertStamped(t *testing.T) {
 		t.Parallel()
 
 		unterminated := scripted(func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-			return []plugin.RenderedFile{{Name: "a.txt", Body: []byte("no newline")}}, nil
+			return []plugin.RenderedFile{{Path: "a.txt", Body: []byte("no newline")}}, nil
 		})
 
 		failure := assert.Rejects(t, "a body without a trailing newline must fail",
@@ -56,7 +56,7 @@ func TestAssertStamped(t *testing.T) {
 
 		unsorted := scripted(func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
 			return []plugin.RenderedFile{{
-				Name:    "a.txt",
+				Path:    "a.txt",
 				Plugins: []plugin.ID{"stubgen", "acme-audit"},
 				Body:    []byte("package a\n"),
 			}}, nil
@@ -75,7 +75,7 @@ func TestAssertStamped(t *testing.T) {
 
 		unsorted := scripted(func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
 			return []plugin.RenderedFile{{
-				Name:    "a.txt",
+				Path:    "a.txt",
 				Sources: []string{"b.src", "a.src"},
 				Body:    []byte("package a\n"),
 			}}, nil
@@ -97,8 +97,8 @@ func TestAssertStamped(t *testing.T) {
 
 		faulty := scripted(func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
 			return []plugin.RenderedFile{
-				{Name: "a.txt", Body: []byte("no newline")},
-				{Name: "b.txt", Body: []byte("a carriage\r\n")},
+				{Path: "a.txt", Body: []byte("no newline")},
+				{Path: "b.txt", Body: []byte("a carriage\r\n")},
 			}, nil
 		})
 

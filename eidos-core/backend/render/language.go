@@ -23,9 +23,9 @@ type Naming func(u plugin.Unit) string
 // declares returns one unit per file-level type, and its Naming
 // reads the lone type's name. The file then takes the name the
 // language demands, and the routing key keeps the source
-// derivation. A nil Split keeps every unit whole. The pass applies
-// it before naming, preserves order, and calls it once per unit, so
-// a pure function keeps the render deterministic.
+// derivation. A nil Split keeps every unit whole. The plan's layout
+// applies it before naming, preserves order, and calls it once per
+// unit, so a pure function keeps the routing deterministic.
 type Split func(u plugin.Unit) []plugin.Unit
 
 // GroupName names a declaration cluster a group template spells.

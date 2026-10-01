@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/backend/backendtest"
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -242,8 +243,9 @@ func TestBody(t *testing.T) {
 			pass, err := render.New(passName, language())
 			assert.NoError(t, err, "the language composes")
 			sink := diag.NewSink()
+			e := seeded(t, unit(alphaPlugin, firstName), unit(betaPlugin, secondName))
 			files, err := pass.Render(&plugin.RenderContext{
-				Emit: seeded(t, unit(alphaPlugin, firstName), unit(betaPlugin, secondName)),
+				Emit: e, Files: backendtest.Files(e, pass),
 				Trees: map[plugin.ID]fs.FS{
 					alphaPlugin: fstest.MapFS{refName: &fstest.MapFile{Data: []byte(stmt(earlyCall) + slots)}},
 					betaPlugin:  fstest.MapFS{refName: &fstest.MapFile{Data: []byte(stmt(lateCall) + slots)}},

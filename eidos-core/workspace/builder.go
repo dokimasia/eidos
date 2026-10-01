@@ -8,12 +8,12 @@ import (
 	"fmt"
 
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
-	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // Config is what the composition populates from: option values per
@@ -39,12 +39,12 @@ type Plan struct {
 	// Backend renders the plan's settled store: exactly one per
 	// plan, its target registered.
 	Backend plugin.Backend
-	// Layout derives the path a rendered file takes in the output
-	// tree, from its package and its target-spelled name. Nil
-	// takes the convention: the package path and the name joined by
-	// a slash, and the name alone for a plan file. A composition
-	// whose tree is laid out otherwise states its own.
-	Layout func(pkg symbol.Identity, name string) string
+	// Layout routes the plan's declarations to files: its policy,
+	// its output directory, its import base and its refinements per
+	// generator and per family. The zero value writes every file
+	// beside its source. Build validates it against the families the
+	// plan's generators declare.
+	Layout layout.Config
 }
 
 // Builder collects a composition. Every method appends or sets data.

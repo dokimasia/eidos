@@ -15,12 +15,12 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
-	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // annEntry is one scheduled annotator. The bucket number is the
@@ -49,7 +49,10 @@ type compiledPlan struct {
 	scope   store.Scope
 	entries []genEntry
 	backend plugin.Backend
-	layout  func(pkg symbol.Identity, name string) string
+	// routing is the plan's validated layout, and outputs the
+	// families each of its generators declares.
+	routing layout.Config
+	outputs map[plugin.ID][]plugin.Output
 	// contract stamps the plan's rendered files, nil for a
 	// composition declaring no output.
 	contract *output.Contract
@@ -65,6 +68,7 @@ var kernelPhases = map[plugin.ID]bool{
 	diag.PhaseFreeze:   true,
 	diag.PhaseAnnotate: true,
 	diag.PhaseGenerate: true,
+	diag.PhaseLayout:   true,
 	diag.PhaseRender:   true,
 	diag.PhaseClose:    true,
 }
@@ -561,8 +565,9 @@ func populate(p plugin.Plugin, section map[string]any) []error {
 // compilePlans is the fifth and sixth step: every plan named once,
 // at least one generator, exactly one backend against a registered
 // target, every generator that declares templates serving that
-// target, and the roles fixed in bucket order, which is the
-// schedule the run executes as data.
+// target, a layout the plan's generators' families admit, and the
+// roles fixed in bucket order, which is the schedule the run executes
+// as data.
 func compilePlans(
 	declared []Plan, gens []genEntry, targets map[plugin.Target]bool,
 ) ([]compiledPlan, []error) {
@@ -586,6 +591,7 @@ func compilePlans(
 			names[pl.Name] = true
 		}
 		listed := map[plugin.ID]bool{}
+		outputs := map[plugin.ID][]plugin.Output{}
 		var roles []genEntry
 		for _, g := range pl.Generators {
 			if g == nil {
@@ -603,6 +609,10 @@ func compilePlans(
 			}
 			listed[name] = true
 			roles = append(roles, seatOf[name])
+			outputs[name] = nil
+			if op, declares := g.(plugin.OutputProvider); declares {
+				outputs[name] = op.Outputs()
+			}
 		}
 		if len(roles) == 0 {
 			faults = append(faults, fmt.Errorf(
@@ -624,9 +634,10 @@ func compilePlans(
 			))
 		}
 		faults = append(faults, unserved(pl)...)
+		faults = append(faults, pl.Layout.Check(pl.Name, outputs)...)
 		out = append(out, compiledPlan{
 			name: pl.Name, scope: pl.Scope, entries: roles,
-			backend: pl.Backend, layout: pl.Layout,
+			backend: pl.Backend, routing: pl.Layout, outputs: outputs,
 		})
 	}
 	return out, faults
@@ -670,10 +681,11 @@ func unserved(pl Plan) []error {
 
 // stampable builds each plan's output contract from the brand and
 // the backend's own comment syntax, and reports what cannot be
-// written: a backend that does not render, an invalid brand, or a
-// backend stating no syntax to frame a generated file through. It
-// runs only where a composition declares output, because a run
-// that writes nothing needs no render and no frame.
+// written: a backend that does not render, a backend that spells no
+// filenames, an invalid brand, or a backend stating no syntax to
+// frame a generated file through. It runs only where a composition
+// declares output, because a run that writes nothing needs no
+// layout, no render and no frame.
 func stampable(plans []compiledPlan, brand output.Brand) []error {
 	var faults []error
 	for i := range plans {
@@ -684,6 +696,12 @@ func stampable(plans []compiledPlan, brand output.Brand) []error {
 		if _, renders := pl.backend.(plugin.Renderer); !renders {
 			faults = append(faults, fmt.Errorf(
 				"workspace: plan %q writes output and its backend %s does not render",
+				pl.name, pl.backend.Name(),
+			))
+		}
+		if _, spells := pl.backend.(plugin.FileSpeller); !spells {
+			faults = append(faults, fmt.Errorf(
+				"workspace: plan %q writes output and its backend %s spells no filenames",
 				pl.name, pl.backend.Name(),
 			))
 		}

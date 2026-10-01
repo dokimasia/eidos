@@ -31,6 +31,7 @@ func TestDiag(t *testing.T) {
 			{name: "freeze", id: diag.PhaseFreeze, want: "freeze"},
 			{name: "annotate", id: diag.PhaseAnnotate, want: "annotate"},
 			{name: "generate", id: diag.PhaseGenerate, want: "generate"},
+			{name: "layout", id: diag.PhaseLayout, want: "layout"},
 			{name: "render", id: diag.PhaseRender, want: "render"},
 			{name: "close", id: diag.PhaseClose, want: "close"},
 		}

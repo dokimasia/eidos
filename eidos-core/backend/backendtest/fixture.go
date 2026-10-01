@@ -46,10 +46,16 @@ type Fixture struct {
 type Setup func(tb assert.TB) (plugin.Renderer, *Fixture)
 
 // context lowers the fixture to one render call's context, whole,
-// over a fresh sink and under the suite's identity.
-func (f *Fixture) context(sink *diag.Sink) *plugin.RenderContext {
+// over a fresh sink and under the suite's identity, with the store
+// routed into files through the renderer's own filename spelling by
+// [Files]. A renderer that spells no filenames gets no files.
+func (f *Fixture) context(r plugin.Renderer, sink *diag.Sink) *plugin.RenderContext {
+	var files []plugin.File
+	if s, spells := r.(plugin.FileSpeller); spells {
+		files = Files(f.Emit, s)
+	}
 	return &plugin.RenderContext{
-		Emit: f.Emit, Schedule: f.Schedule, Trees: f.Trees,
+		Emit: f.Emit, Files: files, Schedule: f.Schedule, Trees: f.Trees,
 		Funcs: f.Funcs, Overrides: f.Overrides,
 		Sink: sink, Plugin: origin,
 	}

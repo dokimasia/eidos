@@ -9,7 +9,6 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/backend/render"
-	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -62,33 +61,34 @@ func structsOnly(decls []symbol.Symbol) []render.Clustered {
 // vanishing is a split that returns no unit for any input.
 func vanishing(plugin.Unit) []plugin.Unit { return nil }
 
-// vanished renders one populated unit through a language whose split
-// vanishes it, under the composition's identity.
-func vanished(tb assert.TB) ([]plugin.RenderedFile, *diag.Sink) {
-	tb.Helper()
-
-	l := language()
-	l.Split = vanishing
-	p, err := render.New(passName, l)
-	assert.NoError(tb, err, "the language composes")
-	sink := diag.NewSink()
-	files, err := p.Render(&plugin.RenderContext{
-		Emit: seeded(tb, unitOf(emitter, storeKey, alphaName)), Sink: sink, Plugin: composedPlugin,
-	})
-	assert.NoError(tb, err, "the pass runs whole")
-	return files, sink
+// paths returns the routed paths of rendered files, in order.
+func paths(files []plugin.RenderedFile) []string {
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		out = append(out, f.Path)
+	}
+	return out
 }
 
-// A language's Naming, Split and Cluster are the hooks it routes and
-// groups its output through, so how the pass applies each is
-// contract.
+// A language's Naming, Split and Cluster are the hooks a plan's files
+// are named, split and grouped through, so how the pass applies each
+// is contract.
 func TestLanguage(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Naming", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("assembles one file per spelled name", func(t *testing.T) {
+		t.Run("spells each unit's filename", func(t *testing.T) {
+			t.Parallel()
+
+			p, err := render.New(passName, language())
+			assert.NoError(t, err, "the language composes")
+			assert.Equal(t, p.FileName(unitOf(emitter, storeKey, alphaName)), storeFile,
+				"the naming's spelling")
+		})
+
+		t.Run("renders one file per spelled name", func(t *testing.T) {
 			t.Parallel()
 
 			files, sink := runPass(t, language(), seeded(t,
@@ -96,14 +96,10 @@ func TestLanguage(t *testing.T) {
 				unitOf(emitter, userKey, betaName),
 			))
 			coretest.AssertCodes(t, sink)
-			names := make([]string, 0, len(files))
-			for _, f := range files {
-				names = append(names, f.Name)
-			}
-			assert.Equal(t, names, []string{storeFile, userFile}, "one file per name, in name order")
+			assert.Equal(t, paths(files), []string{storeFile, userFile}, "one file per name, in name order")
 		})
 
-		t.Run("assembles the units that spell one name into one file", func(t *testing.T) {
+		t.Run("renders the units of one file in unit order", func(t *testing.T) {
 			t.Parallel()
 
 			files, _ := runPass(t, language(), seeded(t,
@@ -136,47 +132,29 @@ func TestLanguage(t *testing.T) {
 			}
 			files, sink := runPass(t, l, seeded(t, unitOf(emitter, storeKey, alphaName, betaName)))
 			coretest.AssertCodes(t, sink)
-			names := make([]string, 0, len(files))
-			for _, f := range files {
-				names = append(names, f.Name)
-			}
-			assert.Equal(t, names, []string{alphaFile, betaFile},
+			assert.Equal(t, paths(files), []string{alphaFile, betaFile},
 				"one file per split unit, named from the rewritten key")
 		})
 
-		t.Run("reports RefusedTemplate for a split that returns nothing for a populated unit", func(t *testing.T) {
+		t.Run("returns the unit whole for a language without a split", func(t *testing.T) {
 			t.Parallel()
 
-			_, sink := vanished(t)
-			assert.Contains(t, reported(t, sink, render.RefusedTemplate), "into nothing",
-				"the vanishing reports instead of narrowing silently")
+			p, err := render.New(passName, language())
+			assert.NoError(t, err, "the language composes")
+			u := unitOf(emitter, storeKey, alphaName, betaName)
+			parts := p.SplitUnit(u)
+			assert.Length(t, parts, 1, "one part")
+			assert.Equal(t, parts[0].Decls, u.Decls, "the part is the unit")
 		})
 
-		t.Run("renders no file for a unit its split vanishes", func(t *testing.T) {
+		t.Run("returns no part for a unit its split vanishes", func(t *testing.T) {
 			t.Parallel()
 
-			files, _ := vanished(t)
-			assert.Length(t, files, 0, "nothing routed, nothing rendered")
-		})
-
-		t.Run("positions the finding of a vanishing split at its unit's routing key", func(t *testing.T) {
-			t.Parallel()
-
-			_, sink := vanished(t)
-			coretest.AssertReports(t, sink, render.RefusedTemplate)
-			for d := range sink.All() {
-				assert.Equal(t, d.Pos.File, storeKey, "the unit it could not route")
-			}
-		})
-
-		t.Run("reports the finding of a vanishing split under the context's plugin", func(t *testing.T) {
-			t.Parallel()
-
-			_, sink := vanished(t)
-			coretest.AssertReports(t, sink, render.RefusedTemplate)
-			for d := range sink.All() {
-				assert.Equal(t, d.Origin, composedPlugin, "the composition's identity")
-			}
+			l := language()
+			l.Split = vanishing
+			p, err := render.New(passName, l)
+			assert.NoError(t, err, "the language composes")
+			assert.Empty(t, p.SplitUnit(unitOf(emitter, storeKey, alphaName)), "the split's result as returned")
 		})
 	})
 

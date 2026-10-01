@@ -213,7 +213,7 @@ func framed(
 	contract, err := output.NewContract(brand, f.Syntax())
 	assert.NoError(tb, err, "the language's syntax frames the file")
 	b, err := contract.Stamp(plugin.RenderedFile{
-		Name: path.Base(name), Plugins: []plugin.ID{f.Name()}, Body: source,
+		Path: name, Plugins: []plugin.ID{f.Name()}, Body: source,
 	})
 	assert.NoError(tb, err, "the source stamps")
 	return b

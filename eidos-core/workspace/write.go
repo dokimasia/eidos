@@ -7,64 +7,89 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"path"
 	"text/template"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
-	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // staged is one rendered file on its way to the sink: the path the
-// plan's layout derived, and the stamped bytes.
+// plan's layout routed it to, and the stamped bytes.
 type staged struct {
 	path string
 	body []byte
 }
 
-// render drives one plan's backend over its settled store and
-// returns the files it produced, stamped through the plan's
-// contract and addressed through its layout.
-//
-// It returns nothing for a composition declaring no output: a run
-// that writes nothing renders nothing. A backend that does not
-// render is a declaration defect the composition already refused,
-// so the assertion here returns an error and does not panic.
-func render(pl compiledPlan, into *plugin.Emit, sink *diag.Sink) ([]staged, error) {
-	if pl.contract == nil {
-		return nil, nil
+// write routes one plan's settled store to files against the run's
+// source tree and renders the files. A backend that spells no
+// filenames is a declaration defect the composition already refused,
+// so the assertion here returns an error and does not panic, and so
+// does a defect in the routing's inputs.
+func (w *Workspace) write(
+	pl compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, sink *diag.Sink,
+) ([]staged, error) {
+	speller, spells := pl.backend.(plugin.FileSpeller)
+	if !spells {
+		return nil, fmt.Errorf("backend %s writes output and spells no filenames", pl.backend.Name())
 	}
+	packager, _ := pl.backend.(plugin.Packager)
+	files, err := layout.Route(layout.Input{
+		Emit:       into,
+		Config:     pl.routing,
+		Outputs:    pl.outputs,
+		Speller:    speller,
+		Packager:   packager,
+		Index:      ix,
+		Directives: w.directives,
+		Residents:  src.residents,
+		Modules:    src.modules,
+		Sink:       sink,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("route: %w", err)
+	}
+	return render(pl, into, files, sink)
+}
+
+// render drives one plan's backend over the files its layout routed
+// and returns what the backend produced, stamped through the plan's
+// contract and staged at each file's routed path. A backend that does
+// not render is a declaration defect the composition already refused,
+// so the assertion here returns an error and does not panic.
+func render(pl compiledPlan, into *plugin.Emit, files []plugin.File, sink *diag.Sink) ([]staged, error) {
 	renderer, renders := pl.backend.(plugin.Renderer)
 	if !renders {
 		return nil, fmt.Errorf(
 			"backend %s writes output and does not render", pl.backend.Name(),
 		)
 	}
-	files, err := renderer.Render(renderContext(pl, into, sink))
+	rendered, err := renderer.Render(renderContext(pl, into, files, sink))
 	if err != nil {
 		return nil, fmt.Errorf("render: %w", err)
 	}
-	out := make([]staged, 0, len(files))
-	for _, f := range files {
+	out := make([]staged, 0, len(rendered))
+	for _, f := range rendered {
 		body, err := pl.contract.Stamp(f)
 		if err != nil {
-			return nil, fmt.Errorf("stamp %s: %w", f.Name, err)
+			return nil, fmt.Errorf("stamp %s: %w", f.Path, err)
 		}
-		out = append(out, staged{path: layout(pl, f), body: body})
+		out = append(out, staged{path: f.Path, body: body})
 	}
 	return out, nil
 }
 
-// renderContext assembles what the pass reads: the settled store,
-// the plan's schedule, and the template surfaces its generators
-// declare for the backend's target.
+// renderContext assembles what the pass reads: the settled store, the
+// routed files, the plan's schedule, and the template surfaces its
+// generators declare for the backend's target.
 func renderContext(
-	pl compiledPlan, into *plugin.Emit, sink *diag.Sink,
+	pl compiledPlan, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
 ) *plugin.RenderContext {
 	target := pl.backend.Target()
 	ctx := &plugin.RenderContext{
 		Emit:      into,
+		Files:     files,
 		Schedule:  make([]plugin.ID, 0, len(pl.entries)),
 		Trees:     map[plugin.ID]fs.FS{},
 		Funcs:     map[plugin.ID]template.FuncMap{},
@@ -89,25 +114,6 @@ func renderContext(
 		}
 	}
 	return ctx
-}
-
-// layout derives one file's path through the plan's own derivation,
-// or through the convention: the file's package path joined to its
-// name by a slash, and the name alone for a plan file, which has no
-// package.
-func layout(pl compiledPlan, f plugin.RenderedFile) string {
-	if pl.layout != nil {
-		return pl.layout(f.Pkg, f.Name)
-	}
-	return conventionalPath(f.Pkg, f.Name)
-}
-
-// conventionalPath is the default layout.
-func conventionalPath(pkg symbol.Identity, name string) string {
-	if pkg.Package == "" {
-		return name
-	}
-	return path.Join(pkg.Package, name)
 }
 
 // commit opens the run's own sink, writes every plan's staged files

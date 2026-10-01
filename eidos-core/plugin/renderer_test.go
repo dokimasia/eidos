@@ -29,7 +29,7 @@ type valueless struct {
 
 // Render returns one file as a value.
 func (valueless) Render(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-	return []plugin.RenderedFile{{Name: "store_stub.go", Body: []byte("package store\n")}}, nil
+	return []plugin.RenderedFile{{Path: "svc/store_stub.go", Body: []byte("package store\n")}}, nil
 }
 
 // treed is a fixture plugin declaring a template tree for one
@@ -73,7 +73,7 @@ func TestRenderer(t *testing.T) {
 			files, err := r.Render(&plugin.RenderContext{})
 			assert.NoError(t, err, "the fixture renders")
 			assert.Length(t, files, 1, "one file is returned")
-			assert.Equal(t, files[0].Name, "store_stub.go", "the file has its target-spelled name")
+			assert.Equal(t, files[0].Path, "svc/store_stub.go", "the file has its routed path")
 		})
 
 		t.Run("is absent from a plugin that renders nothing", func(t *testing.T) {
@@ -89,7 +89,7 @@ func TestRenderer(t *testing.T) {
 		t.Parallel()
 
 		derived := plugin.RenderedFile{
-			Name:    "store_stub.go",
+			Path:    "svc/store_stub.go",
 			Plugins: []plugin.ID{"acme-audit", "stubgen"},
 			Sources: []string{"svc/session.go", "svc/store.go"},
 			Body:    []byte("package store\n"),
@@ -112,7 +112,7 @@ func TestRenderer(t *testing.T) {
 		t.Run("lists no source for a plan file", func(t *testing.T) {
 			t.Parallel()
 
-			plan := plugin.RenderedFile{Name: "registry.go", Body: []byte("package p\n")}
+			plan := plugin.RenderedFile{Path: "registry.go", Body: []byte("package p\n")}
 			assert.Length(t, plan.Sources, 0, "a plan file derives from nothing")
 		})
 	})

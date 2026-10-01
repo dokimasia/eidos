@@ -12,6 +12,7 @@ import (
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -41,7 +42,7 @@ func tuned(name plugin.ID, cfg any) plugin.Generator {
 // nothing registers.
 func needy() plugin.Generator {
 	p, held := eidos.NewPlugin("needy").
-		Output(plugin.Output{Per: plugin.PerPlan, Word: "gen"}).
+		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
 		Handle(eidos.Directive(
 			directive.Schema{
 				Plugin: "needy", Name: "gate",
@@ -113,6 +114,36 @@ func TestBuilder(t *testing.T) {
 					return valid().Annotators(stamper("freeze", quiet))
 				},
 				markers: []string{"kernel phase", `"freeze"`},
+			},
+			{
+				name: "returns an error naming a plugin named after the layout phase",
+				compose: func() *workspace.Builder {
+					return valid().Annotators(stamper("layout", quiet))
+				},
+				markers: []string{"kernel phase", `"layout"`},
+			},
+			{
+				name: "returns an error naming a layout refinement of a generator outside the plan",
+				compose: func() *workspace.Builder {
+					p := planTo("second", "fixture", mirror("second-mirror"))
+					p.Layout = layout.Config{Plugins: map[plugin.ID]layout.Refinement{"ghost": {}}}
+					return valid().Plans(p)
+				},
+				markers: []string{`plan "second"`, "ghost", "no generator of the plan"},
+			},
+			{
+				name: "returns an error naming a per-plan family without a directory",
+				compose: func() *workspace.Builder {
+					indexer, held := eidos.NewPlugin("indexer").
+						Output(plugin.Output{Per: plugin.PerPlan, Word: "index"}).
+						Handle(eidos.OnStruct(mirrored)).
+						Build().(plugin.Generator)
+					if !held {
+						panic("workspace_test: an emitter rule lowers to the generator role")
+					}
+					return valid().Plans(planTo("second", "fixture", indexer))
+				},
+				markers: []string{`plan "second"`, "indexer", "states none"},
 			},
 			{
 				name: "returns an error naming a namespace the composition claims twice",

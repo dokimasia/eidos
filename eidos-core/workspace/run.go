@@ -15,6 +15,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -62,7 +63,11 @@ func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 	if err := w.annotateAll(ctx, g, facts, table, sink); err != nil {
 		return report, errors.Join(err, failure(sink))
 	}
-	files, errs := w.generateAll(ctx, g, facts, table, sink, report.Emits)
+	var src tree
+	if w.open != nil {
+		src = tree{residents: layout.Residents(g), modules: layout.Modules(g, facts, w.kernel)}
+	}
+	files, errs := w.generateAll(ctx, g, facts, table, sink, src, report.Emits)
 	if err := failure(sink); err != nil {
 		errs = append(errs, err)
 	}
@@ -78,6 +83,14 @@ func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
 		report.Written = written
 	}
 	return report, errors.Join(errs...)
+}
+
+// tree is the source tree every plan of one run routes against, read
+// once from the frozen graph and the fact store: the files each
+// directory holds, and the toolchain modules the load resolved.
+type tree struct {
+	residents map[string][]plugin.Resident
+	modules   []plugin.Module
 }
 
 // failure classifies the sink: [ErrRunFailed] when any Error
@@ -323,7 +336,7 @@ func (w *Workspace) annotateAll(
 func (w *Workspace) generateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
-	emits map[string]*plugin.Emit,
+	src tree, emits map[string]*plugin.Emit,
 ) ([][]staged, []error) {
 	stores := make([]*plugin.Emit, len(w.plans))
 	files := make([][]staged, len(w.plans))
@@ -332,7 +345,7 @@ func (w *Workspace) generateAll(
 	for i := range w.plans {
 		wg.Go(func() {
 			stores[i] = plugin.NewEmit()
-			files[i], failures[i] = w.runPlan(ctx, g, facts, table, sink, w.plans[i], stores[i])
+			files[i], failures[i] = w.runPlan(ctx, g, facts, table, sink, src, w.plans[i], stores[i])
 		})
 	}
 	wg.Wait()
@@ -348,11 +361,13 @@ func (w *Workspace) generateAll(
 
 // runPlan runs one plan's roles in bucket order, which is what an
 // emit-triggered rule's visibility is defined against: the store
-// contains earlier buckets' units when a later role runs.
+// contains earlier buckets' units when a later role runs. Where the
+// composition writes output, the settled store routes to files
+// against the run's source tree, and the files render.
 func (w *Workspace) runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
-	pl compiledPlan, into *plugin.Emit,
+	src tree, pl compiledPlan, into *plugin.Emit,
 ) ([]staged, error) {
 	ix, err := plugin.NewIndex(g, facts, table, pl.scope)
 	if err != nil {
@@ -384,5 +399,8 @@ func (w *Workspace) runPlan(
 	if err := plugin.Settle(into, pl.backend, facts, sink); err != nil {
 		return nil, fmt.Errorf("settle: %w", err)
 	}
-	return render(pl, into, sink)
+	if pl.contract == nil {
+		return nil, nil
+	}
+	return w.write(pl, ix, src, into, sink)
 }

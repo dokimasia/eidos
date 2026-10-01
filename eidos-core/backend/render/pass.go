@@ -5,7 +5,6 @@ package render
 
 import (
 	"bytes"
-	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -34,8 +33,8 @@ const skeletonName = "file"
 // Scaffold, Imports, Finalise and Cluster, every helper in its
 // Funcs and in a context's Funcs, and every read of a context's
 // trees run on those workers concurrently, so each must be safe
-// for concurrent use. Naming and Split run on the calling
-// goroutine.
+// for concurrent use. Naming and Split run where the plan's layout
+// calls [Pass.FileName] and [Pass.SplitUnit], on its goroutine.
 type Pass struct {
 	name    plugin.ID
 	kinds   map[symbol.Kind]*template.Template
@@ -166,26 +165,24 @@ func New(name plugin.ID, l Language) (*Pass, error) {
 	}, nil
 }
 
-// group is one output file before it renders: its name, its
-// package, and its units in the store's total order.
-type group struct {
-	name  string
-	pkg   symbol.Identity
-	units []plugin.Unit
+// FileName spells one unit's filename through the language's Naming:
+// the kit's [plugin.FileSpeller] half the plan's layout calls.
+func (p *Pass) FileName(u plugin.Unit) string { return p.spell(u) }
+
+// SplitUnit reshapes one unit through the language's Split, and
+// returns the unit whole for a language that declares none.
+func (p *Pass) SplitUnit(u plugin.Unit) []plugin.Unit {
+	if p.split == nil {
+		return []plugin.Unit{u}
+	}
+	return p.split(u)
 }
 
-// fileKey addresses one output file: the spelled name under its
-// package, because two packages can spell one filename and remain
-// two files, whatever directory layout places them in.
-type fileKey struct {
-	pkg  symbol.Identity
-	name string
-}
-
-// Render takes one plan's emit through the procedure and returns the
-// files as values, in name order. Findings attach to the context's
-// sink at the rendered filename; a returned error is a defect in
-// the inputs, never a finding.
+// Render takes the context's routed files through the procedure and
+// returns them as values, in the context's order, which the layout
+// sorts by path. A file whose every declaration is skipped is
+// withheld. Findings attach to the context's sink at the file's path.
+// A returned error is a defect in the inputs, never a finding.
 func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
 	if ctx == nil || ctx.Emit == nil {
 		return nil, errors.New("render: the pass needs a plan's emit store")
@@ -198,46 +195,12 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	if origin == "" {
 		origin = p.name
 	}
-
-	byFile := map[fileKey]*group{}
-	var order []*group
-	for u := range ctx.Emit.Units() {
-		units := []plugin.Unit{u}
-		if p.split != nil {
-			units = p.split(u)
-			if len(units) == 0 && len(u.Decls) > 0 {
-				// A split that returns nothing for a populated unit
-				// would vanish its declarations without a finding,
-				// which is the narrowing the engine exists to
-				// refuse.
-				ctx.Sink.Errorf(RefusedTemplate, p.unitPos(u), origin,
-					"%s splits a %s unit of %d declarations into nothing, and they are skipped",
-					p.name, u.Word, len(u.Decls))
-				continue
-			}
-		}
-		for _, su := range units {
-			key := fileKey{pkg: su.Pkg, name: p.spell(su)}
-			g, held := byFile[key]
-			if !held {
-				g = &group{name: key.name, pkg: key.pkg}
-				byFile[key] = g
-				order = append(order, g)
-			}
-			g.units = append(g.units, su)
-		}
-	}
-	slices.SortFunc(order, func(a, b *group) int {
-		if c := a.pkg.Compare(b.pkg); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.name, b.name)
-	})
+	order := ctx.Files
 
 	seed := &frame{pass: p, sink: ctx.Sink, origin: origin, trees: ctx.Trees}
 	merged := seed.mergeVocabulary(ctx)
 
-	// Files are independent after grouping, so workers share the
+	// Files are independent of each other, so workers share the
 	// render. Each worker has its own frame, buffers and parsed
 	// reference templates. The worker count is bounded by the
 	// parallelism, never by the file count, and the trees are read
@@ -274,10 +237,10 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 				if i >= len(order) {
 					return
 				}
-				body, held := w.file(order[i], b)
+				body, held := w.file(&order[i], b)
 				r := rendered{body: body, held: held}
 				if held {
-					r.plugins, r.sources = derivation(order[i].units)
+					r.plugins, r.sources = derivation(order[i].Units)
 				}
 				if found := slices.Collect(w.sink.All()); len(found) > 0 {
 					r.found = found
@@ -297,26 +260,16 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 		}
 	}
 	files := make([]plugin.RenderedFile, 0, len(order))
-	for i, g := range order {
+	for i := range order {
 		if results[i].held {
 			files = append(files, plugin.RenderedFile{
-				Name: g.name, Pkg: g.pkg,
+				Path: order[i].Path, Pkg: order[i].Pkg,
 				Plugins: results[i].plugins, Sources: results[i].sources,
 				Body: results[i].body,
 			})
 		}
 	}
 	return files, nil
-}
-
-// unitPos positions a finding about a unit that has no file yet:
-// the unit's routing key, or the pass's own name for a plan unit,
-// which derives from no source.
-func (p *Pass) unitPos(u plugin.Unit) position.Pos {
-	if u.Key == "" {
-		return position.Pos{File: string(p.name)}
-	}
-	return position.Pos{File: u.Key}
 }
 
 // derivation reads a file's emitters and the keys it derives from
@@ -480,49 +433,50 @@ func (f *frame) decls() (string, error) {
 	return f.out.String(), nil
 }
 
-// file renders one group into the frame's shared buffer: every
+// file renders one routed file into the frame's shared buffer: every
 // unit's declarations in the order the flush fixed, then the
-// formatter. A false result means the file is withheld, and the
-// findings that explain it are on the sink: the skeleton or the
-// formatter refused the file, or every declaration of it was
-// skipped, which leaves no content to stamp. The buffer is reset
-// per file and its bytes are copied out, so a formatter that
-// returns its input, as a pass-through one does, never aliases
-// storage a following file overwrites.
-func (f *frame) file(g *group, b *bound) ([]byte, bool) {
+// formatter. The file's package is the import home, so a reference
+// into it spells bare and every other package it names is imported.
+// A false result means the file is withheld, and the findings that
+// explain it are on the sink: the skeleton or the formatter refused
+// the file, or every declaration of it was skipped, which leaves no
+// content to stamp. The buffer is reset per file and its bytes are
+// copied out, so a formatter that returns its input, as a
+// pass-through one does, never aliases storage a following file
+// overwrites.
+func (f *frame) file(g *plugin.File, b *bound) ([]byte, bool) {
 	f.out.Reset()
 	f.fileOut.Reset()
 	f.set.Reset()
-	f.set.SetHome(g.pkg.Package)
+	f.set.SetHome(g.Pkg.Package)
 	// The file's own declarations take their names before anything
 	// renders, so no import binds a name the file declares.
 	declared := 0
-	for _, u := range g.units {
+	for _, u := range g.Units {
 		declared += len(u.Decls)
 		for _, d := range u.Decls {
-			f.set.Reserve(declaredName(d))
+			f.set.Reserve(emit.DeclaredName(d))
 		}
 	}
-	// The package qualifies the spelled name, because two packages
-	// can spell one filename and the two files remain distinct.
-	f.at = position.Pos{File: path.Join(g.pkg.Package, g.name)}
+	f.at = position.Pos{File: g.Path}
 	spelt := false
-	for _, u := range g.units {
+	for _, u := range g.Units {
 		f.plugin = u.Plugin
 		spelt = f.declRun(u, b) || spelt
 	}
 	if declared > 0 && !spelt {
 		return nil, false
 	}
-	if err := b.file.Execute(&f.fileOut, fileView{Name: g.name, Pkg: g.pkg}); err != nil {
+	name := path.Base(g.Path)
+	if err := b.file.Execute(&f.fileOut, fileView{Name: name, Pkg: g.Pkg}); err != nil {
 		f.sink.Errorf(RefusedTemplate, f.at, f.origin,
-			"the file skeleton refused %s: %v", g.name, err)
+			"the file skeleton refused %s: %v", g.Path, err)
 		return nil, false
 	}
 	body, err := f.pass.final(f.fileOut.Bytes())
 	if err != nil {
 		f.sink.Errorf(UnformattedFile, f.at, f.origin,
-			"%s cannot be formatted and is withheld: %v", g.name, err)
+			"%s cannot be formatted and is withheld: %v", g.Path, err)
 		return nil, false
 	}
 	return bytes.Clone(body), true
