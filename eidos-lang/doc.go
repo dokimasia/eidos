@@ -20,6 +20,10 @@
 //     references.
 //   - [go.dokimi.dev/eidos/lang/textfmt] writes comments and import
 //     statements and normalizes rendered source.
+//   - [go.dokimi.dev/eidos/lang/treesitter] parses source with a
+//     pinned tree-sitter grammar, and its packages java, rust and
+//     typescript pin the grammars the tree-sitter satellites parse
+//     with.
 //
 // # Dependency position
 //
@@ -27,6 +31,9 @@
 // alone. lowering and spellref import sdk/emit, numeric imports
 // sdk/emit and sdk/rules, textfmt imports sdk/render and sdk/symbol,
 // and scaffold imports sdk/emit, sdk/render and sdk/symbol, each
-// beside the Go stdlib. No package in the module parses source or
-// binds a grammar.
+// beside the Go stdlib. treesitter imports the tree-sitter runtime
+// binding and sdk/position, and each grammar package imports its
+// grammar's binding and treesitter. Only treesitter and its grammar
+// packages parse source or bind a grammar, and a binary that links
+// one compiles C through cgo.
 package lang
