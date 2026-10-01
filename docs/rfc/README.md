@@ -26,3 +26,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0012](0012-the-sdk-contract-module.md) | The SDK facade module | Draft |
 | [0013](0013-the-frontend-kit.md) | The frontend kit and its conformance suite | Draft |
 | [0014](0014-the-projection-vocabulary.md) | The projection vocabulary and the rules seam | Accepted |
+| [0015](0015-tree-sitter-frontends-and-dependency-stores.md) | Tree-sitter frontends, dependency stores and re-exports | Draft |

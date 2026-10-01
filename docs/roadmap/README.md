@@ -62,12 +62,14 @@ engine work if there are hands to do it. They sit after the kernel
 milestones because one team builds the kernel first, not because
 anything blocks them.
 
-The Java, Kotlin, PHP and Rust satellites exist as stub modules and
-are not scheduled. Each becomes a milestone when someone commits to
-it. dokimi, the reference consumer, reads Go, TypeScript, Rust,
-Java, Kotlin and Python, so the unscheduled satellites are demand
-rather than speculation, and eidos-lang-python still needs its stub
-module before it can become one. Their sequencing notes live in
+The Java and Rust satellites have backends and toolchain adapters,
+and their frontends load in milestone 0004. The Kotlin and PHP
+satellites exist as stub modules and are not scheduled. Each becomes
+a milestone when someone commits to it. dokimi, the reference
+consumer, reads Go, TypeScript, Rust, Java, Kotlin and Python, so the
+unscheduled satellites are demand, not speculation, and
+eidos-lang-python still needs its stub module before it can become
+one. Their sequencing notes are in
 [11-languages.md](../architecture/11-languages.md): Kotlin waits on
 its grammar closing a measured gap, and PHP forces no new model
 element, so it can come early and cheap.
