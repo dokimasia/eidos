@@ -62,8 +62,8 @@ func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 }
 
 // AssertFingerprinted checks that the unit keys are honest: stable
-// across two identical loads, and changed by each folded part — a
-// read, a depth, a declared version, the options, the plugin set,
+// across two identical loads, and changed by each folded part: a
+// read, a depth, a declared version, the options, the plugin set and
 // the brand. The model fingerprint is a compiled constant no test
 // can vary. A unit missing from the load a key is compared against
 // fails the comparison, and never differs from nothing.
@@ -74,14 +74,16 @@ func AssertFingerprinted(tb assert.TB, setup Setup) {
 // AssertJailedReads proves the one door from the frontend's side:
 // every unit reads its members through the unit, so a unit's key
 // moves when its members' bytes move. A frontend reading its
-// members any other way — the operating system's filesystem, a
-// cache it keeps across loads — keys a unit by bytes it never read
-// through the door, and a cache keyed that way serves a stale
+// members any other way, such as the operating system's filesystem
+// or a cache it keeps across loads, keys a unit by bytes it never
+// read through the door, and a cache keyed that way serves a stale
 // graph. The check loads a copy of the fixture twice, then a copy
 // whose every selected file gained a line break, and requires every
-// unit of the second load to key differently in the third. The
-// kernel's side of the door, a read outside the unit refusing and
-// naming the path, is the plugin package's own contract.
+// unit the partition returned to key differently in the third. A
+// dependency unit reads the stores and not the workspace, so the
+// comparison leaves it out. The kernel's side of the door, a read
+// outside the unit refusing and naming the path, is the plugin
+// package's own contract.
 func AssertJailedReads(tb assert.TB, setup Setup) {
 	core.AssertJailedReads(tb, setup)
 }
@@ -110,12 +112,35 @@ func AssertAttachedDirectives(tb assert.TB, setup Setup) {
 
 // AssertLinked checks the resolution step's outcome: at least one
 // in-graph spelling resolves, every resolved reference targets a
-// declaration in the graph, every reference left unresolved — a
-// builtin, an external — keeps its spelling, a multi-package
-// fixture resolves across its packages, and the tracked reader
-// joins the same targets afterwards.
+// declaration in the graph, every reference left unresolved keeps
+// its spelling, a multi-package fixture resolves across its
+// packages, and the tracked reader joins the same targets
+// afterwards. A builtin and an external are the references a load
+// leaves unresolved.
 func AssertLinked(tb assert.TB, setup Setup) {
 	core.AssertLinked(tb, setup)
+}
+
+// AssertDependencies checks the dependency rounds of a frontend in
+// the [plugin.Dependent] role: at least one unit arrives from a round,
+// and a changed byte in the first member of the first dependency unit
+// re-keys that unit, because its parse read the member through the
+// unit. The kernel parses every dependency unit at
+// [plugin.DepthSignatures] and refuses a member the selection claims,
+// so the check leaves both to the load. It copies the store it
+// changes, so a fixture's stores are small trees and never a
+// machine's module cache.
+func AssertDependencies(tb assert.TB, setup Setup) {
+	core.AssertDependencies(tb, setup)
+}
+
+// AssertReexports checks the resolution step's following of
+// re-exports for a frontend in the [plugin.Exporter] role: every
+// identity the fixture lists in [Fixture.Reexported], a declaration
+// the fixture's references name only through a re-export, is the
+// target of a reference in the graph.
+func AssertReexports(tb assert.TB, setup Setup) {
+	core.AssertReexports(tb, setup)
 }
 
 // ScriptedLang is the language of every scripted declaration.
@@ -133,6 +158,14 @@ const ScriptedTestKey = core.ScriptedTestKey
 // with no package line declares nothing.
 var ScriptedBadFile = core.ScriptedBadFile
 
+// ScriptedStore is the store the scripted language in the dependent
+// role reads its dependency units from.
+const ScriptedStore = core.ScriptedStore
+
+// ScriptedPublish is the import alias whose packages a file of the
+// scripted language in the exporter role publishes.
+const ScriptedPublish = core.ScriptedPublish
+
 // ScriptedOptions is the scripted frontend's declared
 // configuration.
 type ScriptedOptions = core.ScriptedOptions
@@ -144,10 +177,15 @@ type ScriptedOptions = core.ScriptedOptions
 // signature-sensitive declaration. One statement per line:
 //
 //	package PATH          the file's package path
-//	import ALIAS PATH...  bind an alias to one or more packages
+//	import ALIAS PATH...  bind an alias to one or more packages, one
+//	                      import record per path
 //	type NAME REF...      a struct, fields f0..fn typed by the refs
 //	typeparam NAME        a type parameter on the last type
 //	method NAME REF...    a method on the last type, params by ref
+//	on NAME               the last type is NAME, which an earlier
+//	                      member of the unit declared: the methods
+//	                      after it fold onto that type the way a Go
+//	                      receiver folds a method from another file
 //	const name            a constant; skipped at signature depth
 //	+NAME ARGS            a directive on the last type
 //	// TEXT               a comment, split by the kernel: its
@@ -183,6 +221,30 @@ func ScriptedSchemas() []directive.Schema {
 	return core.ScriptedSchemas()
 }
 
+// ScriptedDependent is the scripted language in the
+// [plugin.Dependent] role. A need resolves to the scripted files of
+// the directory its path names in [ScriptedStore], one unit per need,
+// and a need the store has no directory for yields no unit. A load
+// without the store loads no dependency.
+type ScriptedDependent = core.ScriptedDependent
+
+// NewScriptedDependent returns the scripted language in the dependent
+// role, under its usual claim.
+func NewScriptedDependent() *ScriptedDependent {
+	return core.NewScriptedDependent()
+}
+
+// ScriptedExporter is the scripted language in the [plugin.Exporter]
+// role: a file publishes every name of each package its
+// [ScriptedPublish] alias binds, the shape of TypeScript's export *.
+type ScriptedExporter = core.ScriptedExporter
+
+// NewScriptedExporter returns the scripted language in the exporter
+// role, under its usual claim.
+func NewScriptedExporter() *ScriptedExporter {
+	return core.NewScriptedExporter()
+}
+
 // Brand is the brand every suite load runs under. A fixture writes
 // its carriers under Brand's marks, fixture:, +fixture: and
 // -fixture:, and the ownership check stamps the workspace's own
@@ -202,10 +264,11 @@ type Setup = core.Setup
 // RunFrontendSuite checks a frontend against the read side's contract:
 // deterministic parses, positioned findings, no silently dropped
 // file, the workspace's own outputs refused, honest unit keys, the
-// jailed read, signature depth, validated directive attachments
-// and resolved references. It
-// drives the SPI, so a kit-built frontend and a hand-rolled one
-// meet the same checks.
+// jailed read, signature depth, validated directive attachments,
+// resolved references, and for a frontend in the dependent or the
+// exporter role, its dependency units and its re-exports. It drives
+// the SPI, so a kit-built frontend and a hand-rolled one meet the
+// same checks.
 //
 // One survey load up front finds what the fixture cannot state:
 // classification keys, a unit loading full beside its signature

@@ -47,6 +47,30 @@ type Backend = core.Backend
 // shape, so a continued carrier written with it keeps its place.
 var ContinuedCarrier = core.ContinuedCarrier
 
+// Need is one import path that no loaded package of the frontend's
+// language declares, and the paths of the files that import it,
+// sorted.
+type Need = core.Need
+
+// DependencyRound is what one dependency round hands a frontend.
+type DependencyRound = core.DependencyRound
+
+// StoreReader is a dependency round's recorded door: reads and
+// directory listings over the workspace tree and the stores. Every
+// read and every listing folds into the key of every unit the round
+// returns. A qualified path naming a store the load does not provide
+// returns an error wrapping [ErrStoreAbsent].
+type StoreReader = core.StoreReader
+
+// Dependent is the optional role of a frontend whose sources name
+// declarations outside the workspace tree. After the workspace's units
+// parse, the load calls Dependencies once per round, parses every
+// returned unit at [DepthSignatures], and calls it again with the
+// imports the returned units name. A round after the first runs only
+// when it has a need no earlier round passed, and the rounds end at
+// the first round that returns no unit the load has not loaded.
+type Dependent = core.Dependent
+
 // Cardinality says how many outputs a family produces. The zero
 // value addresses nothing: every declared family states its
 // cardinality, and [Emit.Add] refuses a unit that does not.
@@ -121,6 +145,15 @@ type Frontend = core.Frontend
 // package. The load records each declaration's file only for a
 // language whose frontend implements the role.
 type Importer = core.Importer
+
+// Exporter is the optional frontend role of a language whose files
+// publish names they do not declare, as a TypeScript export-from
+// statement and a Rust pub use do. When a candidate names no
+// declaration, the resolution step calls Exports for each file of the
+// candidate's package with the candidate's name, and resolves the
+// returned candidates by the same rule, so a reference through a
+// re-export targets the declaration it publishes.
+type Exporter = core.Exporter
 
 // Candidates is what one spelling could mean, in tiers: each tier is
 // the candidate identities one scope offers, in probe order, and an
@@ -447,6 +480,55 @@ type Respeller = core.Respeller
 // whole plan, not one declaration.
 func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 	return core.Settle(e, b, facts, sink)
+}
+
+// ErrStoreAbsent reports a qualified path naming a store the load does
+// not provide. A dependent frontend reads it as that source being off:
+// the composition configured no such tree, which differs from a
+// configured store that lacks a file.
+var ErrStoreAbsent = core.ErrStoreAbsent
+
+// StorePath returns the qualified path of a file inside a store: the
+// store's name, "://", and the slash path inside the store, as in
+// "gomod://golang.org/x/mod@v0.41.0/modfile/rule.go". No workspace path
+// is a qualified path, because [fs.ValidPath] refuses the empty element
+// that "//" spells.
+func StorePath(store, path string) string {
+	return core.StorePath(store, path)
+}
+
+// CutStorePath splits a qualified path into its store and the path
+// inside the store, and reports false for a workspace path. The root
+// of a store is the qualified path with nothing after the separator.
+func CutStorePath(qualified string) (store, path string, ok bool) {
+	return core.CutStorePath(qualified)
+}
+
+// ValidStoreName reports whether a name can name a store: it is not
+// empty, and it contains neither the colon nor the slash that a
+// qualified path separates on.
+func ValidStoreName(name string) bool {
+	return core.ValidStoreName(name)
+}
+
+// StoreFS is a workspace tree with named stores beside it. The load
+// hands every unit a StoreFS, and a unit resolves a qualified path
+// through it.
+type StoreFS = core.StoreFS
+
+// ReadFile returns the bytes of one file: a workspace path from the
+// tree itself, and a qualified path from the store it names, which the
+// tree provides as a [StoreFS]. A qualified path whose store the tree
+// does not provide returns an error wrapping [ErrStoreAbsent].
+func ReadFile(fsys fs.FS, path string) ([]byte, error) {
+	return core.ReadFile(fsys, path)
+}
+
+// ReadDir returns one directory's entries sorted by name, and resolves
+// a qualified path the way [ReadFile] does. The root of a store is its
+// qualified path with nothing after the separator.
+func ReadDir(fsys fs.FS, path string) ([]fs.DirEntry, error) {
+	return core.ReadDir(fsys, path)
 }
 
 // RuleID is a rule's ordinal in its plugin's declaration order.
