@@ -63,7 +63,10 @@ const (
 	variadicMark = "..."
 	pointerMark  = "*"
 	sliceMark    = "[]"
-	mapOpen      = "map["
+	// mapOpen opens a map's key, and mapClose closes it before the
+	// value.
+	mapOpen  = "map["
+	mapClose = "]"
 	// recvChan, sendChan and chanWord open a receive-only, a
 	// send-only and a bidirectional channel.
 	recvChan = "<-chan "
@@ -275,8 +278,11 @@ func (s Speller) qualified(t *emit.TypeRef) (string, bool, error) {
 }
 
 // composite writes a structural reference: as written where every
-// child spells as written, and restated from its structure
-// otherwise.
+// child spells as written and the spelling still composes from the
+// children's, and restated from its structure otherwise. A form whose
+// structure determines its spelling and whose spelling no longer
+// composes had a child respelled by the settle, so it is restated and
+// the child's settled name shows in its parent.
 func (s Speller) composite(t *emit.TypeRef) (string, bool, error) {
 	elems := make([]string, 0, len(t.Elems))
 	written := true
@@ -288,11 +294,56 @@ func (s Speller) composite(t *emit.TypeRef) (string, bool, error) {
 		written = written && childWritten
 		elems = append(elems, out)
 	}
-	if written {
+	if written && (!determined(t) || composes(t, elems)) {
 		return t.Spelling, true, nil
 	}
 	out, err := restate(t, elems)
 	return out, false, err
+}
+
+// determined reports whether a reference's structure determines its Go
+// spelling, so a restatement from its children loses nothing: a pointer,
+// a slice or a variadic list, a channel and an array of a literal length
+// over their one child, and a map over its key and its value. A function
+// type is not, because its spelling can name its parameters.
+func determined(t *emit.TypeRef) bool {
+	switch t.Form {
+	case symbol.FormOptional, symbol.FormList, symbol.FormStream:
+		return len(t.Elems) == 1
+	case symbol.FormArray:
+		return len(t.Elems) == 1 && t.Length > 0
+	case symbol.FormMap:
+		return len(t.Elems) == 2
+	default:
+		return false
+	}
+}
+
+// composes reports whether a determined reference's spelling is the one
+// its children's spellings compose: a pointer, a slice and a variadic
+// list are their mark and their element, a map its key and its value
+// in their brackets, and a channel and a sized array end with their
+// element, because the settle respells no direction and no length. It
+// compares in place and allocates nothing.
+func composes(t *emit.TypeRef, elems []string) bool {
+	switch t.Form {
+	case symbol.FormOptional:
+		rest, marked := strings.CutPrefix(t.Spelling, pointerMark)
+		return marked && rest == elems[0]
+	case symbol.FormList:
+		rest, marked := strings.CutPrefix(t.Spelling, sliceMark)
+		if !marked {
+			rest, marked = strings.CutPrefix(t.Spelling, variadicMark)
+		}
+		return marked && rest == elems[0]
+	case symbol.FormMap:
+		rest, opened := strings.CutPrefix(t.Spelling, mapOpen)
+		rest, keyed := strings.CutPrefix(rest, elems[0])
+		rest, closed := strings.CutPrefix(rest, mapClose)
+		return opened && keyed && closed && rest == elems[1]
+	default:
+		return strings.HasSuffix(t.Spelling, elems[0])
+	}
 }
 
 // bound writes one parameter's constraint: [Anonymous] for none,
@@ -584,7 +635,7 @@ func restate(t *emit.TypeRef, elems []string) (string, error) {
 		}
 		return "[" + strconv.Itoa(t.Length) + "]" + elems[0], nil
 	case symbol.FormMap:
-		return mapOpen + elems[0] + "]" + elems[1], nil
+		return mapOpen + elems[0] + mapClose + elems[1], nil
 	case symbol.FormStream:
 		return direction(t.Spelling) + elems[0], nil
 	case symbol.FormFunc:
