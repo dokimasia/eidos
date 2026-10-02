@@ -141,17 +141,27 @@ and a target language, not about a plan.
 
 Some generators must reference generated artifacts on the other side
 of a boundary: FFI bindings, JNI, cgo, wasm bindings. They do not
-read a sibling plan's emit. They consume **plan exports**, the
-typed, deterministic summaries that plans publish, with dependencies
-declared and topologically ordered
-([08-workspace-and-plans.md](08-workspace-and-plans.md)). Working
-the names out again by applying the same naming rules and hoping
-they match is rejected, because it drifts by construction.
+read a sibling plan's emit. Their plan declares a dependency on the
+producing plan by name, and they read its **export**
+([08-workspace-and-plans.md](08-workspace-and-plans.md)): every
+declaration the producer rendered, keyed by the declaration it
+derives from, the plugin, the family and the names it was emitted
+under, and spelled with the name the producer's settle gave it, its
+package's import path and its file. Working the names out again by
+applying the same naming rules and hoping they match is rejected,
+because it drifts by construction.
+
+An export records no signature, because a generated declaration's
+types are emit references that no projection reads. A binding
+generator that needs a declaration's type reads the shape of the
+declaration's origin through its own reader, which needs the
+origin's package in its plan's scope.
 
 ## Consistency
 
 Cross-language claims are checked rather than hoped for.
-`WorkspaceCheck` plugins run at Close, read the records (manifests,
-exports, graph and facts) and report a mismatch such as "proto
-service method X has a Go handler and no TypeScript client method"
-as a positioned diagnostic with a stable code.
+`WorkspaceCheck` plugins run at Close, read the records of the plans
+they name (manifest entries and exports, with the graph and facts)
+and report a mismatch such as "proto service method X has a Go
+handler and no TypeScript client method" as a positioned diagnostic
+with a stable code.

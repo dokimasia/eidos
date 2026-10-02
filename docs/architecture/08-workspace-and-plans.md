@@ -45,9 +45,9 @@ that opens a fresh sink. A sink serves one staging, so a run opens
 one for each plan it commits, and no plan has a sink of its own.
 
 A **plan** is one write side: a generator set, a layout policy,
-exactly one backend, a source scope and a name. Plans are
-values, meaning declarable data that can be exported as presets,
-rather than plugins ([06-plugins.md](06-plugins.md)).
+exactly one backend, a source scope, the plans it depends on and a
+name. Plans are values, meaning declarable data that can be exported
+as presets, rather than plugins ([06-plugins.md](06-plugins.md)).
 
 **Freeze is enforced.** After Annotate the store seals, and a
 structural write is refused with a stable code.
@@ -55,7 +55,8 @@ structural write is refused with a stable code.
 **Plans are isolated.** One plan failing does not abort its
 siblings. The workspace joins the errors and reports status per
 plan, and a plan's manifest slice commits only when that plan
-succeeds.
+succeeds. A plan that depends on a failed plan commits nothing
+either.
 
 **Outputs are never inputs.** A workspace does not read its own
 generated files as source. Load excludes every file whose provenance
@@ -192,9 +193,9 @@ Workspace.Run (the only conductor; cli `run` calls it, main calls cli)
 ├─ per plan, after every render:
 │    Stage → Prepare   staged files and stale removals, then what
 │                      each destination path contains
-├─ Close               manifest merge, collisions, sweep, checks
-│                      (over records), audit
-├─ plan Commits        then ledger.CommitRun
+├─ Close               manifest merge, collisions, sweep, audit,
+│                      checks (over records)
+├─ plan Commits        dependency order, then ledger.CommitRun
 └─ report
 ```
 
@@ -207,9 +208,11 @@ every placement, slot append and finding of its matches in canonical
 match order, so the count does not change the output
 ([06b-authoring.md](06b-authoring.md)). A stamp is not buffered,
 since bag arbitration is already deterministic. Plans run in
-parallel except across export edges. Render runs per file inside the
-kit. Close runs single-threaded over immutable records. A dry run is
-this same Run with the staging discarded.
+parallel, except that a plan generates after every plan it depends
+on has rendered. Render runs per file inside the kit. Close runs
+single-threaded over immutable records. The plans commit one after
+another, each after every plan it depends on. A dry run is this same
+Run with the staging discarded.
 
 ## Build: the validation sequence
 
@@ -238,11 +241,14 @@ The steps, in order, where each assumes the ones before it:
    members.
 3. **Options.** Every plugin's options schema populates from its
    config section, and a failure names the plugin and the field.
-4. **Plans.** Per plan: exactly one backend and a registered target;
-   every template-claiming plugin declares that target; layout
-   refinements name plugins and tags that exist; Sources predicates
-   resolve against the registries; and export dependencies
-   topologically sort, where a cycle names both plans.
+4. **Plans.** Each plan has exactly one backend and a registered
+   target, and every template-claiming plugin declares that target.
+   Layout refinements name plugins and tags that exist. The sources
+   name a language that a frontend loads or a rules value declares,
+   and patterns that name workspace directories. The dependencies
+   name plans the composition declares and sort topologically, and a
+   cycle is one fault naming every plan in it. Each workspace check
+   reads plans the composition declares.
 5. **Policies.** Selections validate against registered keys and
    choices, and each plan's total `Policy` is fixed here
    ([10-cross-language.md](10-cross-language.md)).
@@ -252,7 +258,7 @@ The steps, in order, where each assumes the ones before it:
    registered component
    ([15-compatibility.md](15-compatibility.md)).
 
-The builder and the two values it composes, pinned:
+The builder and the values it composes, pinned:
 
 ```go
 func New() *Builder
@@ -263,7 +269,7 @@ func (b *Builder) Workspace(id string) *Builder // the manifest's name; the root
 func (b *Builder) Parallel(workers int) *Builder // matches a phase call runs at once; 0 and 1 run sequentially
 func (b *Builder) Frontends(fs ...plugin.Frontend) *Builder
 func (b *Builder) Annotators(as ...plugin.Annotator) *Builder
-func (b *Builder) Checks(cs ...plugin.WorkspaceCheck) *Builder
+func (b *Builder) Checks(cs ...plugin.WorkspaceCheck) *Builder // Close runs them in registration order
 func (b *Builder) Plans(ps ...Plan) *Builder
 func (b *Builder) Rules(rs ...rules.SourceRules) *Builder // one value per language; absent otherwise
 func (b *Builder) Config(c Config) *Builder   // same structs the YAML maps onto
@@ -271,29 +277,38 @@ func (b *Builder) Build() (*Workspace, error) // collect-all; see above
 
 type Plan struct {                // a value, not a plugin (D8)
     Name       string
-    Sources    Sources            // lang / packages / module — conjunctive
-    Target     rules.Target
+    Sources    Sources            // what the generators see; the zero value admits everything
+    DependsOn  []string           // the plans whose exports it reads: the topo edges
     Generators []plugin.Generator
-    Backend    plugin.Backend
-    Layout     LayoutConfig
-    Exports    []ExportName       // what it publishes
-    DependsOn  []ExportName       // the topo edges
+    Backend    plugin.Backend     // exactly one, its target registered
+    Layout     layout.Config
+}
+
+type Sources struct {             // conjunctive: every field that is set matches
+    Lang     symbol.Lang          // the packages of one source language
+    Packages []string             // workspace directories: ./svc, and ./svc/... below it
+    Module   string               // the neutral gen.module fact
 }
 
 type ExportDoc struct {           // the versioned kernel schema of D34
     Plan    string
-    Symbols []ExportedSymbol
+    Symbols []ExportedSymbol      // sorted by key, then by file
+}
+type ExportKey struct {           // what a dependent knows before the producer runs
+    Origin symbol.Identity        // the declaration it derives from
+    Plugin plugin.ID              // the plugin that emitted it
+    Tag    string                 // the family it was emitted into
+    Host   string                 // the emitted name of the declaration it is a member of
+    Name   string                 // the name it declared, before respell
 }
 type ExportedSymbol struct {
-    Origin    symbol.Identity     // the declaration it derives from
-    Plugin    plugin.ID           // the plugin that emitted it
-    Name      string              // the name it declared, before respell
-    Kind      symbol.Kind
-    Signature TypeSig             // canonical TypeShape terms
-    Spelling  string              // what the producing lowering named it
-    Import    string              // the path a dependent qualifies with
-    File      string              // where it arrived
+    ExportKey
+    Kind     symbol.Kind
+    Spelling string               // what the producing plan's settle named it
+    Package  symbol.Identity      // the file's package: import path and clause name
+    File     string               // where it arrived
 }
+func (d ExportDoc) Find(k ExportKey) []ExportedSymbol // one binary search, no allocation
 ```
 
 ## Source scopes: mixed monorepos
@@ -325,7 +340,7 @@ matches.
 ```yaml
 sources:
   lang: golang            # source language identity
-  packages: ["./svc/..."] # workspace-relative path globs
+  packages: ["./svc/..."] # workspace directories; a trailing /... adds every one below
   module: "billing"       # toolchain-module identity (the neutral gen.module fact)
 ```
 
@@ -335,6 +350,24 @@ kernel change, additive under the compatibility policy. `golang`
 here is the human spelling, resolved against the language registry
 at Build, and a plan composed in Go uses the satellite's exported
 identity ([03-projection.md](03-projection.md)).
+
+A pattern is a workspace-relative, slash-separated directory with an
+optional leading `./`, and a trailing `/...` extends it to every
+directory below. `.`, `...` and `./...` name the whole tree. Build
+refuses a language that no frontend loads and no rules value
+declares, and a pattern that names no directory of a workspace tree:
+an empty one, a `..` element, a backslash, an absolute path, and
+`...` anywhere but at the end.
+
+A package matches `packages` only when every one of its files is in
+a named directory, so a scope admits a package whole or not at all.
+A package that a store provides, such as the standard library's, is
+in no workspace directory, so no pattern admits it. `module` admits
+such a package only where its own `gen.module` fact names the module,
+and a plan scoped by `lang` alone matches the store's packages of its
+language, as an unscoped plan matches every package. Each run binds a
+plan's sources to the frozen graph before the plan generates, and the
+composition's fingerprint folds them.
 
 ## Plan exports: the one declared edge between plans
 
@@ -350,35 +383,48 @@ plan generated, and working those out again by applying the same
 naming rules and hoping drifts by construction.
 
 So the coupling exists only in its explicit form. A plan may
-**publish an export**, which is a typed, deterministic summary of
-what it generated: a frozen value rather than a window into its emit
-graph. And a plan may **declare a dependency** on a named export.
-Plans then sort topologically on declared dependencies, a cycle is a
-Build error naming both plans, plans that declare nothing stay fully
-parallel, and the incrementality engine gets a real edge instead of
-a hidden one.
+**declare a dependency** on other plans by name. It generates after
+each of them has rendered, reads their **exports**, and commits only
+where each of them commits. An export is a typed, deterministic
+summary of what a plan rendered: a frozen value rather than a window
+into its emit graph. Plans sort topologically on their declared
+dependencies, a cycle is a Build error naming every plan in it, plans
+that declare nothing run fully in parallel, and the incrementality
+engine gets a real edge instead of a hidden one.
 
 The export is a versioned document under a kernel schema, and it is
 public API, because binding correctness leans on it
 ([15-compatibility.md](15-compatibility.md)). Per exported symbol it
 records the key a dependent joins on: the declaration it derives
-from, the plugin that emitted it, and the name that plugin declared
-before the settle respelled it. The key needs all three parts,
-because two plugins can each emit a declaration from one source
+from, the plugin that emitted it, the family it was emitted into,
+the emitted name of the declaration it is a member of, and the name
+that plugin declared before the settle respelled it. The key needs
+every part. Two plugins can each emit a declaration from one source
 declaration, and a lowering can derive declarations beside the
-principal one. The export also records the
-kind, the canonical-type signature in TypeShape terms
-([03-projection.md](03-projection.md)), and **the spelling the
-plan's lowering chose**, meaning the qualified name, the import path
-and the file it arrived in.
+principal one. One generator can emit one name into two families,
+and a stub and a mock of one interface give one method to two
+receivers. The export also records the kind and **the spelling the
+plan's settle chose**, with the package, meaning the import path and
+the name of its package clause, and the file it arrived in.
+
+The export records no signature. A generated declaration's types are
+emit references, which no projection reads, so the kernel cannot
+state them in TypeShape terms ([03-projection.md](03-projection.md)).
+A binding generator that needs a declaration's type reads its
+origin's shape through its own reader, which needs the origin's
+package in its plan's scope.
 
 A dependent reads spellings from the export rather than recomputing
 naming conventions, which is the entire point: the producing plan's
-lowering is the only authority on what it named things. Exports hash
+settle is the only authority on what it named things. Exports hash
 into their dependents' fingerprints, so an export that did not
 change causes nobody to run again, and one that did re-runs exactly
-its dependents. Each publishes beside the producing plan's manifest
-slice.
+its dependents.
+
+A dependent never commits a file that refers to a declaration its
+producer did not commit. Where a producer fails, its dependents
+generate nothing and report a `FailedDependency` Info at the
+producer's first Error, and their previous files and entries remain.
 
 Considered and refused: **per-plan model transforms**, meaning
 filtering or renaming the shared graph per plan before generation.
@@ -391,7 +437,8 @@ graph, and per-target spellings are lowering policy.
 
 ## Close
 
-Close runs after every plan has staged.
+Close runs after every plan has staged, in four steps, on one
+goroutine.
 
 It merges the **workspace manifest**, recording plan to files, and
 the ledger records it after the plans commit. The record is what
@@ -411,17 +458,22 @@ Out-of-scope entries carry forward untouched, because a partial run
 must not delete outputs it merely did not look at. Reconciling the
 whole workspace is `prune`'s job.
 
-It runs the **cross-plan checks**. `WorkspaceCheck` plugins read the
-*records*, meaning manifests, exports, graph and facts, and never
-raw emit, which on a warm run does not exist for a clean plan. So
-the checks run identically cold and warm, including over carried
-records. They run over the plans that succeeded. A check whose claim
-needs a failed plan's records reports one Info and stands down,
-because the missing output is already that plan's Error and does not
-need re-litigating once per check.
-
-Finally, **audit mode** verifies the metadata completeness contracts
+**Audit mode** verifies the metadata completeness contracts
 ([04-metadata.md](04-metadata.md)).
+
+Last, it runs the **cross-plan checks**, one after another in
+registration order. Each `WorkspaceCheck` names the plans it reads
+and reads their *records*, meaning their manifest entries and their
+exports, with the graph and the facts, and never raw emit, which on a
+warm run does not exist for a clean plan. So the checks run
+identically cold and warm, including over carried records. A check
+that reads a failed plan does not run, and the run reports one
+`FailedDependency` Info for it at the plan's first Error, because the
+missing output is already that plan's Error and does not need
+re-litigating once per check. A check's Error blocks every commit of
+the run, as a collision does, because a claim across plans names no
+plan at fault. Close runs no check after an Error in a phase every
+plan shares, because the records of such a run are incomplete.
 
 ## Repositories with several workspaces
 
@@ -461,6 +513,14 @@ A config that declares `workspaces` declares nothing else. The list
 is the whole file, so nobody has to ask which workspace a stray
 top-level field belongs to.
 
+Each workspace of the list loads only the tree under its root, writes
+through a sink at its root that refuses a path with a `..` element,
+and records its manifest in the state directory under its root, so
+two workspaces over sibling roots share no file. The reader of the
+list refuses two roots that nest. The outer root's load would read
+the inner root's sources, and its plans would generate files inside
+the inner root.
+
 Nested configs are never implicitly independent workspaces, because
 two things that each own a manifest and do not know about each other
 is exactly how generated files end up orphaned. Nothing crosses a
@@ -475,8 +535,7 @@ JSON Schema for editor completion, where the fluent builder is the
 Go-native equal: `Identity` for brand and workspace ID, `Scope`,
 `Cache` for enabled, directory override and memo size cap
 ([09-incrementality.md](09-incrementality.md)), and `Plans
-[]PlanConfig{Name, Sources, Target, Generators, Layout, Exports,
-DependsOn}`.
+[]PlanConfig{Name, Sources, Target, Generators, Layout, DependsOn}`.
 
 `DryRun` resolves the full multi-plan picture, meaning buckets,
 topological order, layouts and export edges, without executing

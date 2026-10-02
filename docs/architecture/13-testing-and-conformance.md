@@ -18,7 +18,7 @@ Eight checks, each proving something the others cannot:
 | plugintest | one plugin's declarations, its determinism, that no fixture panics (the other half of D68), and its diagnostic discipline, while rendering nothing. It includes template lint: every declared template parses against the merged funcmap per language, and every body-claiming template places the slot marker |
 | backendtest | one backend over a hand-built emit graph |
 | pipelinetest | plugins plus a real backend producing rendered files, driving one plan |
-| workspacetest | a full workspace: several plans, exports, and Close, covering collision detection, sweep, cross-plan checks and audit mode |
+| workspacetest | a full workspace: several plans, exports, dependencies and Close, covering collision detection, isolation, sweep, cross-plan checks and audit mode |
 | frontendtest | a real frontend with the plugin chain behind it |
 | acceptancetest | the consumer's binary end to end. The only check that compiles generated output |
 | completeness | every corpus feature sits on the degradation level its language declared ([11-languages.md](11-languages.md)) |
@@ -114,23 +114,40 @@ because they are the hardest to retrofit: every workspace mechanism
 they exercise had to be built so it could be tested.
 
 **workspacetest** composes a real multi-plan workspace over fixture
-sources and checks the frame's promises one at a time:
+sources and checks the frame's promises one at a time, each check
+over a directory of its own. The fixture supplies a working
+composition without its plans, and the plans. The suite composes
+every failure it checks: a copy of a plan, a seeded failure, a probe
+plan, a contract key, a cycle and two checks.
 
-1. **collision**: routing two plans to one path is an Error at
-   Close, naming both plans, and never last-writer-wins;
-2. **isolation**: a plan seeded to fail leaves its siblings' staged
-   output and manifest slices intact;
-3. **exports**: a dependent plan reads the producer's export in
-   topological order, and an unchanged export causes no dependent to
-   run again;
-4. **sweep**: removing a plan from the composition deletes exactly
-   that plan's files, except drifted ones, and a narrowed run
-   deletes nothing outside its scope
-   ([08-workspace-and-plans.md](08-workspace-and-plans.md));
-5. **audit**: a completeness contract left unmet by a deliberately
-   absent annotator reports at the severity it declared;
-6. **checks**: a `WorkspaceCheck` sees identical records cold and
-   warm, including carried plans.
+1. **generated**: the plans generate the wanted files, byte for
+   byte, each recorded under the plan whose commit wrote it.
+2. **collision**: a copy of the first plan under another name routes
+   its files to the same paths. That is an Error at Close naming both
+   plans, never last-writer-wins, and nothing commits.
+3. **isolation**: a failure seeded into the last plan keeps that
+   plan's files and entries, and every other plan commits.
+4. **exports**: a probe plan that depends on every plan reads each
+   one's export, and each export lists exactly the files, plugins
+   and origins that the plan's record lists.
+5. **cycles**: two plans that depend on each other are a Build error
+   naming both.
+6. **sweep**: removing the last plan from the composition deletes
+   exactly that plan's files, except one edited since its stamp,
+   which remains on disk under a KeptOutput warning
+   ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
+7. **audit**: a completeness contract that no annotator meets
+   reports at the severity it declared.
+8. **checks**: a `WorkspaceCheck` that reads a failed plan does not
+   run and reports one FailedDependency Info. One that reads a clean
+   plan reads the plan's files as its commit records them, and its
+   export.
+
+warm≡cold adds the frame's warm promises: an unchanged export causes
+no dependent to run again, and a `WorkspaceCheck` sees identical
+records cold and warm, including carried plans. The sweep of a
+narrowed run, which deletes nothing outside its scope, has no check
+in workspacetest, because the suite runs over the whole tree.
 
 **warm≡cold** is three runs and two comparisons:
 
@@ -148,10 +165,18 @@ Both harnesses are kernel code, and the fixtures and compositions
 are the caller's:
 
 ```go
-func RunWorkspaceSuite(t *testing.T, f WorkspaceFixture)
+func RunWorkspaceSuite(t *testing.T, f workspacetest.Fixture)
 func RunWarmColdSuite(t *testing.T, f WorkspaceFixture)
 
-type WorkspaceFixture struct {
+type Fixture struct {                            // workspacetest's
+    Tree    fs.FS                                // the fixture tree
+    Stores  map[string]fs.FS                     // the trees dependency units read
+    Compose func(root string) *workspace.Builder // the composition without its plans
+    Plans   func() []workspace.Plan              // two or more, fresh instances per call
+    Want    map[string][]byte                    // every generated file, frame included
+}
+
+type WorkspaceFixture struct {                   // warm≡cold's
     Sources fs.FS                       // the fixture tree
     Compose func() *workspace.Workspace // plans, plugins, config
     Mutate  func(Tree)                  // warm≡cold's one edit

@@ -83,7 +83,7 @@ run.
 | `Sources` | `core/workspace` | A plan's source scope as data: a language, directory patterns and a module |
 | `Plan.DependsOn` | `core/workspace` | The plans whose exports a plan reads, and the order the run follows |
 | `ExportDoc`, `ExportKey`, `ExportedSymbol` | `core/plugin` | One plan's export |
-| `Emit.Emitted` | `core/plugin` | The name a declaration had before the settle respelled it |
+| `NewExport` | `core/plugin` | Builds a plan's export from the files it rendered and the settle's record of emitted names |
 | `GeneratorContext.Exports`, the matches' `Export` | `core/plugin`, `core` | How a generator reads an export |
 | `WorkspaceCheck`, `CheckContext`, `PlanRecord` | `core/plugin` | The check role and what it reads |
 | `Builder.Checks` | `core/workspace` | The checks Close runs |
@@ -181,6 +181,10 @@ type Plan struct {
 }
 ```
 
+A composition admits a plugin name twice only where both entries are the same
+provider. Plans that target one language render through one backend value,
+which they share safely, because a backend keeps no state of a run.
+
 ### Dependencies between plans
 
 Each plan runs on a goroutine of its own. A dependent waits until every plan it
@@ -248,9 +252,9 @@ over:
 // producing target's naming rules a second time.
 //
 // The run builds the export of a plan that a dependent plan or a
-// workspace check reads, after the plan renders. Every dependent and
-// every check of the run reads the same value, so a reader does not
-// mutate it.
+// workspace check reads, after the plan renders, through NewExport.
+// Every dependent and every check of the run reads the same value, so a
+// reader does not mutate it.
 type ExportDoc struct {
     // Plan is the producing plan's name.
     Plan string
@@ -346,29 +350,44 @@ family exports this:
 | `Package` | `golang:example.com/acme/svc`, clause name `svc` |
 | `File` | `svc/store_stub_test.go` |
 
-After the plan renders, the run walks the units of each rendered file and
-visits every name the way the settle does. The emitted names come from the
-settle's record. The run builds no export for a plan that no dependent and no
-check reads.
+The run builds no export for a plan that no dependent and no check reads.
 
 ### The settle's record of emitted names
 
 The settle respells every name in place, so the emitted name is gone when the
-layout runs. The settle records what it changed:
+layout runs. The settle records the emitted name of every declaration whose
+name it changed, in a map of the plan's store that no API exposes. A settle
+that changes no name allocates no map.
+
+`NewExport` builds an export from the files a plan rendered and the store its
+settle ran over:
 
 ```go
-// Emitted returns the name a declaration of the store had before the
-// settle respelled it: the emitted name where the settle changed it,
-// and the declaration's own name otherwise. The settle records the
-// emitted name of every declaration whose name it changed, so a store
-// that never settled, or whose target respells nothing, returns each
-// declaration's own name. It returns the empty string for a symbol
-// that declares no name.
-func (e *Emit) Emitted(d symbol.Symbol) string
+// NewExport returns a plan's export: every declaration of the units of
+// files, and every name the settle visits inside them except
+// parameters, results and type parameters, so a type's fields and
+// methods and an enum's values are listed beside the type. Each is keyed
+// by its origin, its unit's plugin and tag, and the names it and its
+// host were emitted under, and it is spelled as the settle left it, at
+// its file's path and package. files are the files the plan rendered.
+// settled is the store the plan's settle ran over, whose record supplies
+// the emitted name of each declaration a respell changed. A nil store
+// reads every name as emitted.
+//
+// A method attached to a receiver is keyed under the emitted name of
+// the type its receiver names: the settle rewrote the receiver's
+// spelling with the type, and the type's record maps it back. A receiver
+// that names a type no file declares keeps its spelling as the host.
+func NewExport(plan string, files []File, settled *Emit) ExportDoc
 ```
 
-The record has one map entry per declaration whose name changed. A settle that
-changes no name allocates no map.
+`NewExport` walks the names twice, once to count them and once to list them,
+and sorts the result once. A member's host is the nearest declaration the walk
+entered and has not left, which a stack of four entries on the goroutine's
+stack tracks. A method's receiver maps back through one binary search over the
+file-level declarations, which the call sorts once. It allocates two slices,
+the result and the sorted declarations: for 2,000 declarations, 2 allocations,
+664 KB and 1 ms.
 
 ### Reading an export
 
@@ -471,8 +490,9 @@ type PlanRecord struct {
 // Checks registers the workspace checks Close runs, in registration
 // order. Build refuses a nil check, a check whose name another plugin
 // of the composition has, and a check that reads a plan the
-// composition does not declare. A check takes options and keys the way
-// any plugin of the composition does.
+// composition does not declare or names one plan twice. A check takes
+// options, keys and capabilities the way any plugin of the composition
+// does.
 func (b *Builder) Checks(cs ...plugin.WorkspaceCheck) *Builder
 ```
 
@@ -516,8 +536,8 @@ reader of such a list has to refuse two roots that nest.
 
 A conformance test runs two workspaces over `platform/` and `tools/gen/` of one
 repository. It checks that each records its manifest under its own root, that
-neither reads the other's sources, and that removing a plan from one removes
-no file of the other.
+each record's sources are declarations of its own module, and that removing a
+plan from one changes no file of the other.
 
 ### Failure semantics
 
@@ -544,12 +564,13 @@ Build reports each of these faults in its joined error:
 | An invalid pattern | `workspace: plan "server" scopes the pattern "../svc", which names no directory of a workspace tree` |
 | A nil check | `workspace: check 1 of 2 is nil` |
 | A check that reads an undeclared plan | `workspace: check stubbed reads plan "server", which the composition does not declare` |
+| A check that reads one plan twice | `workspace: check stubbed reads plan "server" twice` |
 
 ### The workspace suite
 
 ```go
 // Package workspacetest checks a composition of more than one plan
-// against the workspace frame.
+// against the workspace frame, over a source tree on disk.
 package workspacetest
 
 // Fixture is a multi-plan case: a source tree, the stores its load
@@ -572,7 +593,11 @@ type Fixture struct {
     Compose func(root string) *workspace.Builder
     // Plans returns the fixture's plans, with fresh generator and
     // backend instances on every call: at least two, each routing at
-    // least one file, and no two routing a file to one path.
+    // least one file, no two routing a file to one path, the first
+    // routing a file that derives from a source declaration, and a last
+    // one that no other plan depends on and whose generators register no
+    // directive the tree writes, so the composition without it loads the
+    // tree clean.
     Plans func() []workspace.Plan
     // Want is every file the plans generate, frame included, keyed by
     // its workspace-relative, slash-separated path.
@@ -580,19 +605,20 @@ type Fixture struct {
 }
 
 // RunWorkspaceSuite checks the fixture against the workspace frame,
-// each check in a parallel subtest over temporary directories of its
+// each check in a parallel subtest over a temporary directory of its
 // own.
 func RunWorkspaceSuite(t *testing.T, f Fixture)
 
 // AssertGenerated runs the fixture's plans in root and checks that the
 // files under the brand's frame are the wanted files, byte for byte,
-// each recorded under the plan that routed it.
+// and that the record lists each file under the plan whose commit
+// wrote it.
 func AssertGenerated(tb assert.TB, f Fixture, root string)
 
 // AssertCollision runs the fixture's plans and a copy of the first plan
-// under another name, and checks that each path the two route is a
-// PlanCollision naming both plans, that no plan commits, and that the
-// run records nothing.
+// under another name, and checks that the run reports PlanCollision
+// naming both plans, that no plan commits, and that the run records
+// nothing.
 func AssertCollision(tb assert.TB, f Fixture, root string)
 
 // AssertIsolated runs the fixture's plans, then runs them again with a
@@ -603,59 +629,72 @@ func AssertIsolated(tb assert.TB, f Fixture, root string)
 
 // AssertExported runs the fixture's plans and a probe plan that
 // depends on each of them, and checks that the probe reads each plan's
-// export, and that each export lists the files, plugins and origins
-// that the plan's committed entries record.
+// export, that every exported declaration is in a recorded file, under
+// one of the file's plugins and, at file level, from one of its
+// sources, and that every recorded file exports a declaration.
 func AssertExported(tb assert.TB, f Fixture, root string)
 
-// AssertCycleRefused builds the fixture with copies of the first plan
-// under two names that depend on each other, and checks that Build
-// returns an error naming both.
+// AssertCycleRefused builds the fixture's own plans, then the fixture
+// with copies of the first plan under two names that depend on each
+// other, and checks that Build returns an error naming both.
 func AssertCycleRefused(tb assert.TB, f Fixture, root string)
 
-// AssertSwept runs the fixture's plans, edits one file of the last
-// plan, and runs again without the last plan. It checks that the run
-// removes every other file of the last plan, keeps the edited file
-// under a KeptOutput warning, and changes no file of another plan.
+// AssertSwept runs the fixture's plans, then runs them without the last
+// plan, and checks that the run removes every file of the last plan and
+// changes no other file. It then runs every plan again, edits one file
+// of the last plan, and runs without the last plan once more, and
+// checks that the run keeps the edited file under a KeptOutput warning.
 func AssertSwept(tb assert.TB, f Fixture, root string)
 
 // AssertAudited runs the fixture's plans, then runs them again with a
 // key whose completeness contract promises it at Warning severity on
-// the kind of the first plan's first source, which no annotator stamps.
-// It checks that the run reports an UnmetContract Warning at that
-// source and commits.
+// the kind of the first plan's first origin, which no annotator stamps.
+// It checks that the run reports an UnmetContract Warning naming that
+// origin and commits every plan.
 func AssertAudited(tb assert.TB, f Fixture, root string)
 
 // AssertChecked runs the fixture's plans with a plan seeded to fail
 // and two checks: one reads the seeded plan, and one reads the first
 // plan. It checks that the run does not call the first check and
-// reports one FailedDependency for it, and that the second check reads
-// the first plan's files and export as the run commits them.
+// reports one FailedDependency for it at the seeded failure, and that
+// the second check reads the first plan's files as its commit records
+// them, and its export.
 func AssertChecked(tb assert.TB, f Fixture, root string)
 ```
 
 Each check composes from the fixture's builder and adds what it needs: a copy
 of a plan, a seeded generator, a probe plan, a contract key or a check. So the
 caller supplies a working composition, and the suite constructs every failure
-it checks. The kernel's tests run the suite over fixture frontends and
-backends, and run each check against compositions it must reject.
+it checks. A check stops at its first fatal failure through the TB's `Fatalf`,
+as the pipeline suite's checks do. The kernel's tests run the suite over
+fixture frontends and backends, and run each check against compositions it
+must reject. The pipeline suite and the workspace suite read a run's directory
+through one internal package of `core/workspace`.
 
 The Go fixture runs in `eidos-conformance`, over a tree that declares the
-interface `Store` under the stub directive in `svc/store.go` and a package
-`admin` in `admin/admin.go`:
+interface `Store` under the stub directive in `svc/store.go` and the struct
+`Registry` in `admin/admin.go`:
 
 - The plan `stubs` is scoped to `./svc/...` and runs the stub generator.
 - The plan `registry` is scoped to `./admin/...` and depends on `stubs`. Its
   generator emits a type alias into `admin` for each stub the export lists,
   with the export's spelling, qualified with its import path. The stub
-  generator emits a name that the Go settle respells, so a dependent that
-  applied Go's naming rules itself would have to repeat the respell.
-- A test generator in `registry` looks up `svc.Store` through its reader and
-  finds nothing, because `svc` is outside the plan's scope.
+  generator emits `stubStore`, a name in the neutral convention that the Go
+  settle respells to `StubStore`, so a dependent that applied Go's naming
+  rules itself would have to repeat the respell. The registry's generator
+  takes no directive, so a composition without the plan validates every
+  directive of the tree.
+- Both plans render through one Go backend value.
+- A test generator in `registry` looks up the origin of each declaration the
+  export lists through its reader, and finds none, because `svc` is outside
+  the plan's scope.
 - A check named `stubbed` reads `stubs`, and reports an Error at each
   interface under the stub directive from which no exported stub derives. It
   runs in a second composition, whose tree also marks an interface in `admin`
   with the directive. That interface is outside the scope of `stubs`, so the
   check reports one Error, at the interface.
+
+The workspace suite runs over the two plans as well.
 
 ### Cost
 
@@ -664,22 +703,25 @@ interface `Store` under the stub directive in `svc/store.go` and a package
   package where `Module` is set. A plan without sources costs nothing.
 - An exported declaration is 280 bytes on a 64-bit platform. Its strings are
   shared with the emit store, so an export of 20,000 declarations is about
-  5.6 MB, in one slice that grows by appending.
+  5.6 MB, in one slice sized from a count of its names.
 - The settle's record is one map entry per declaration whose name changed.
 - A dependent starts generating after its producers render, so a chain of
   dependent plans runs one plan after another.
 - Close runs the checks one after another. A check costs what it reads.
 - The end-to-end benchmark's composition has one plan and no sources,
   dependencies or checks. Its run binds the nil scope and builds no export.
+  It measures 484,383 allocations at four workers, under its ceiling of
+  520,000.
 
 ### Migration
 
 | Caller | Change |
 |---|---|
-| `Plan.Scope`, set by one test in `workspace/pipelinetest/suite_test.go` | `Sources{Packages: []string{"./..."}}`, which admits the tree's package and not the store's |
+| `Plan.Scope`, set by one test in `workspace/pipelinetest/suite_test.go` | `Sources{Packages: []string{"svc/api"}}`, which admits the tree's package and not the store's |
 | `compiledPlan.scope` and the fingerprint | Bind `Sources` per run, and fold it |
 | `manifest.Entry.Plugins` | Spelled `[]diag.Origin`. The type is unchanged |
 | The `GeneratorContext` literals in `workspace/plan.go`, `plugintest/fixture.go` and 3 test files | None: `Exports` is a new field, nil where nothing depends |
+| The Go backend's composite speller | Restates a pointer, slice, map, channel or sized array whose spelling no longer composes from its children, so a receiver over a double the settle respelled names the settled type |
 | `eidos-sdk` | The facade regenerates for the new exported names |
 
 ## Alternatives considered
@@ -758,6 +800,14 @@ declaration's types are emit references, which no projection reads, and the
 kernel has no lowering from shapes back to a target. A dependent that needs the
 origin's shape reads the origin through its own reader.
 
+### Expose the settle's record
+
+The store gains `Emitted(d symbol.Symbol) string`, which returns the name a
+declaration had before the settle respelled it, and the run builds the export
+from it. It lost because `NewExport` is the record's one reader, and a method
+on the store would publish a second way to read a name that only an export
+needs.
+
 ### Run a dependent whose producer failed
 
 The dependent generates against the export of a producer that failed, and
@@ -805,10 +855,13 @@ independent without it.
 - The check role has two methods, and every check states the plans it reads.
 - A check's Error blocks every commit of the run.
 - The workspace suite's fixture differs from the pipeline suite's: it supplies
-  a builder without plans and a function that returns the plans.
-- The kernel gains the package `workspacetest`, one code, seven types, three
-  fields and four methods. `Sources` is in `core/workspace`, and the six other
-  types are in `core/plugin`.
+  a builder without plans and a function that returns the plans. Its last plan
+  can register no directive the tree writes.
+- Two plans that target one language share one backend value.
+- The kernel gains the package `workspacetest`, an internal package the two
+  run suites share, one code, seven types, three fields, three methods and one
+  function. `Sources` is in `core/workspace`, and the six other types are in
+  `core/plugin`.
 - The kernel has no reader for a `workspaces:` list, so nothing refuses two
   roots that nest.
 
@@ -834,6 +887,9 @@ independent without it.
 - Dispatch matches the declarations of dependency packages wherever a scope
   admits their packages. Whether a bare rule should match them at all is not
   proposed here.
+- A structural reference whose child the settle respelled renders stale in the
+  TypeScript, Java and Rust backends, which write a reference's spelling as
+  written. Restating those forms in each backend is not proposed here.
 
 ## References
 

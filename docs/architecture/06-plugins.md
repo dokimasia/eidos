@@ -28,9 +28,9 @@ rather than process boundaries.
 |---|---|---|---|
 | `Frontend` | Load | source | node symbols |
 | `Annotator` | Annotate | the node graph, tracked | metadata only |
-| `Generator` | Generate, per plan | the scoped node graph and its own plan's emit, tracked | emit and slots |
+| `Generator` | Generate, per plan | the scoped node graph, its own plan's emit, and the exports of the plans its plan depends on, tracked | emit and slots |
 | `Backend` | Render, per plan | its own plan's emit | files, through the sink |
-| `WorkspaceCheck` | Close | the records: manifests, exports, graph and facts | diagnostics only |
+| `WorkspaceCheck` | Close | the records of the plans it names: manifest entries and exports, with the graph and facts | diagnostics only |
 
 Every role is `Plugin` plus one method taking a context struct, and
 every context carries the tracked reader and the diagnostic sink:
@@ -46,7 +46,7 @@ type Annotator interface {
 }
 type Generator interface {
     Plugin
-    Generate(ctx *GeneratorContext) error  // ctx: scoped tracked reader, plan emit, diag
+    Generate(ctx *GeneratorContext) error  // ctx: scoped tracked reader, plan emit, exports, diag
 }
 type Backend interface {
     Plugin
@@ -55,7 +55,8 @@ type Backend interface {
 }
 type WorkspaceCheck interface {
     Plugin
-    Check(ctx *CheckContext) error         // ctx: manifests, exports, graph, facts, diag
+    Reads() []string                       // the plans whose records it reads; nil reads every plan
+    Check(ctx *CheckContext) error         // ctx: their records, index, reader, facts, diag
 }
 ```
 
@@ -118,12 +119,15 @@ What a plugin may assume is stated here rather than discovered:
   state outside its effects, a field of the plugin or an emit value
   it appends to directly, has to be safe under the opt-in. The
   conformance suite races exactly that.
-- Plans always run concurrently with each other, which a plugin
-  never observes, because plans are read-isolated by construction.
+- Plans run concurrently with each other, which a plugin never
+  observes, because plans are read-isolated by construction. A plan
+  that depends on others generates after each of them has rendered,
+  and its generators read their exports as frozen values.
 - A plugin does not leave goroutines running after its phase call
   returns. Whatever work it forks, it joins before returning.
   Otherwise the read tracking that feeds incrementality has already
   closed underneath it.
+- Workspace checks run one after another, on one goroutine.
 
 ## Options
 

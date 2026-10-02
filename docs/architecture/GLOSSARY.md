@@ -7,6 +7,7 @@ The document named in each row carries the full contract.
 |---|---|---|
 | workspace | the composition frame: one read side, N plans, one merged manifest | [08](08-workspace-and-plans.md) |
 | plan | one write side: generators, a layout, exactly one backend and a source scope. A value, not a plugin | [08](08-workspace-and-plans.md) |
+| source scope | a plan's `Sources`: a language, workspace directories and a module. A package is in scope where every field that is set matches it | [08](08-workspace-and-plans.md) |
 | symbol | one declaration in the canonical model, with an identity that survives across runs | [02](02-symbol-model.md) |
 | node / emit | the two generated models: what frontends produce, and what generators produce | [02](02-symbol-model.md) |
 | freeze | the seal after Annotate. From then on the store refuses structural writes | [08](08-workspace-and-plans.md) |
@@ -26,8 +27,8 @@ The document named in each row carries the full contract.
 | funcmap | a language's shared template vocabulary, registered once by its backend | [07](07-rendering.md) |
 | lowering | how a target language spells the canonical shapes. The write half of the hub | [10](10-cross-language.md) |
 | policy | the contested mappings a lowering receives already resolved, such as `ts.int64` | [10](10-cross-language.md) |
-| plan export | a plan's published, typed summary of what it generated. The only edge between plans | [08](08-workspace-and-plans.md) |
-| WorkspaceCheck | the role that runs at Close, reads the records (manifests, exports, graph, facts) and produces diagnostics only | [06](06-plugins.md) |
+| plan export | the declarations a plan rendered, keyed by origin, plugin, family, host and emitted name, with the spelling the plan's settle gave each. The plans that depend on the plan and the checks that read it receive it. The only edge between plans | [08](08-workspace-and-plans.md) |
+| WorkspaceCheck | the role that runs at Close, reads the records of the plans it names (manifest entries and exports, with the graph and facts) and produces diagnostics only | [06](06-plugins.md) |
 | read set | the (symbol, key) inputs recorded for a derived artifact. `explain` and invalidation both use it | [09](09-incrementality.md) |
 | fingerprint gate | the stat and hash pass above the loader that decides whether anything loads | [09](09-incrementality.md) |
 | early cutoff | recompute only when a read *value* changed, not merely when its input was touched | [09](09-incrementality.md) |
