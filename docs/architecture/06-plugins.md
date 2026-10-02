@@ -109,8 +109,14 @@ What a plugin may assume is stated here rather than discovered:
   instance must tolerate concurrent `Load` calls. The store
   serializes graph writes per package.
 - Annotators and generators run sequentially by default.
-  Parallelism inside a bucket is a workspace opt-in, and a plugin
-  that holds state across calls has to be safe under it. The
+  Parallelism inside a bucket is a workspace opt-in,
+  `Builder.Parallel`, under which one plugin's phase call runs its
+  matches on up to the worker count. The dispatcher buffers the
+  placements, slot appends and findings of every match and applies the
+  buffers in canonical match order, so a plugin's output does not
+  depend on the count ([06b-authoring.md](06b-authoring.md)). A handler that writes
+  state outside its effects, a field of the plugin or an emit value
+  it appends to directly, has to be safe under the opt-in. The
   conformance suite races exactly that.
 - Plans always run concurrently with each other, which a plugin
   never observes, because plans are read-isolated by construction.

@@ -1,7 +1,7 @@
 ---
 milestone: 0005
 title: A single plan runs end to end
-status: In progress
+status: Done
 depends-on: 0002, 0003, 0004
 ships-in: unscheduled
 deadline: none
@@ -23,17 +23,17 @@ runs as a fixture.
 
 ## Done when
 
-- [ ] `RunPipelineSuite` passes: fixture plugins plus the Go backend
+- [x] `RunPipelineSuite` passes: fixture plugins plus the Go backend
       over Go source produce the expected bytes, routed per layout,
       with a manifest slice and clean diagnostic discipline.
-- [ ] The end-to-end fixture works: an interface carrying
+- [x] The end-to-end fixture works: an interface carrying
       `//+acme:stub tag=test` produces `svc/store_stub_test.go` beside
       its source, as the end-to-end document describes, minus the
       TypeScript plan.
-- [ ] The fixture's stub declares each method on a pointer receiver
+- [x] The fixture's stub declares each method on a pointer receiver
       named apart from the method's parameters, through the kernel's
       `Mirror` and the Go satellite's `PointerReceiver`.
-- [ ] Layout resolves per
+- [x] Layout resolves per
       [18-routing-and-layout.md](../architecture/18-routing-and-layout.md):
       the three cardinalities, tags with the target spelling the join
       (`store_stub.go`, `suite_test.go`), `out=` and `tag=` overrides,
@@ -44,26 +44,26 @@ runs as a fixture.
       outside every module, and a missing identity is refused at the
       referencing declaration, only when a cross-reference needs the
       qualification (D69).
-- [ ] Drift and adoption work: editing a generated file makes the next
+- [x] Drift and adoption work: editing a generated file makes the next
       run refuse with an Error naming the file, and a byte-equal
       unmanifested file is adopted silently.
-- [ ] Close runs for one plan: the versioned manifest arrives in
+- [x] Close runs for one plan: the versioned manifest arrives in
       `.<brand>/`, the in-scope sweep removes an orphaned output, and
       audit mode reports a fixture completeness contract at its
       declared severity.
-- [ ] The commit is two-phase: staging, then the plan commit, then
+- [x] The commit is two-phase: staging, then the plan commit, then
       `CommitRun` strictly last. A test crashes between the last two
       and the next run corrects by deriving again and writing nothing
       new.
-- [ ] Cancelling the run's context stops it between units of work:
+- [x] Cancelling the run's context stops it between units of work:
       writes stay atomic, nothing arrives mid-file or mid-manifest, and
       the report says what committed.
-- [ ] Running twice produces byte-identical trees, and the second run
+- [x] Running twice produces byte-identical trees, and the second run
       touches no mtime.
-- [ ] A `PerPackage` accumulator file assembles from many matches
+- [x] A `PerPackage` accumulator file assembles from many matches
       ordered by subject identity, and stays byte-identical under
       `-race` with in-bucket parallelism enabled.
-- [ ] Slot appends route through the `Emitter`, buffer per handler
+- [x] Slot appends route through the `Emitter`, buffer per handler
       invocation, and apply in canonical match order when their
       bucket finishes. A fixture whose handlers in one bucket append
       into one slot renders identical bytes under `-race` with
@@ -106,6 +106,8 @@ and the accumulator Emitter of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-02 | Ticked the bullets for the `PerPackage` accumulator and for slot appends, and set the status to Done | The dispatch of RFC-0018 runs a phase call's matches on up to the worker count `Builder.Parallel` sets, and applies every placement, slot append and finding in canonical match order. The workspace tests compare the bytes of a package's accumulator and of one slot 32 invocations append into, on one worker and on eight, under `-race`. The Go fixture's frame and manifest entry now name the audit weaver beside stubgen |
+| 2026-10-01 | Ticked the bullets for the pipeline suite, the end-to-end fixture, the pointer receivers, layout, drift and adoption, Close, the two-phase commit, cancellation and the second run | The run of RFC-0017 commits through a sink per plan and records its manifest in `.<brand>/` last. The Go fixture runs `RunPipelineSuite` in `eidos-conformance`, because a plugin module imports the SDK facade alone and the facade does not re-export the workspace. Its stub delegates each call to a wrapped `Store`, and its manifest entry names stubgen alone: the audit weaver appends into slots and assembles no unit. The two open bullets are RFC-0018's |
 | 2026-10-01 | Status In progress, linked RFC-0016, RFC-0017 and RFC-0018, and ticked the bullet for centralised package identity | The layout of RFC-0016 runs inside `Workspace.Run`: each target names a routed file's package from the module facts and the plan's `importBase`, and the reference step refuses an underived package where a reference needs it |
 | 2026-10-01 | The ledger records no artifact rows in this milestone | RFC-0017 records the run and its manifest alone, and the rows a warm run reads belong to milestone 0007 |
 | 2026-09-30 | Added the bullet for the stub's pointer receivers | The kernel's `Mirror` leaves the receiver unset, because a pointer receiver is Go's syntax, and the Go satellite's `PointerReceiver` states it |

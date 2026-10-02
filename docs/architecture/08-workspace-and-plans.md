@@ -58,8 +58,8 @@ plan, and a plan's manifest slice commits only when that plan
 succeeds.
 
 **Outputs are never inputs.** A workspace does not read its own
-generated files as source. Load excludes every path the workspace
-can prove it owns, through a manifest entry or a provenance trailer
+generated files as source. Load excludes every file whose provenance
+trailer names the workspace's brand
 ([17-output-and-determinism.md](17-output-and-determinism.md)), at
 the fingerprint gate, before anything parses.
 
@@ -188,7 +188,10 @@ Workspace.Run (the only conductor; cli `run` calls it, main calls cli)
 │                      early cutoff against persisted fact values
 ├─ per plan (topo on exports, else parallel):
 │    Generate          dirty artifacts only, whole contributor sets
-│    Layout → Render (kit, per-file ∥) → Stage
+│    Layout → Render (kit, per-file ∥)
+├─ per plan, after every render:
+│    Stage → Prepare   staged files and stale removals, then what
+│                      each destination path contains
 ├─ Close               manifest merge, collisions, sweep, checks
 │                      (over records), audit
 ├─ plan Commits        then ledger.CommitRun
@@ -196,8 +199,13 @@ Workspace.Run (the only conductor; cli `run` calls it, main calls cli)
 ```
 
 Concurrency per phase: phases are barriers. Load shards per unit,
-with graph writes serialized per package. Annotate runs
-bucket-sequentially, with parallelism inside a bucket as an opt-in,
+with graph writes serialized per package. Annotate and each plan's
+Generate run bucket-sequentially. Parallelism inside a bucket is the
+workspace's opt-in, `Builder.Parallel`: one plugin's phase call runs
+its matches on up to the worker count, and the dispatcher applies
+every placement, slot append and finding of its matches in canonical
+match order, so the count does not change the output
+([06b-authoring.md](06b-authoring.md)). A stamp is not buffered,
 since bag arbitration is already deterministic. Plans run in
 parallel except across export edges. Render runs per file inside the
 kit. Close runs single-threaded over immutable records. A dry run is
@@ -250,6 +258,9 @@ The builder and the two values it composes, pinned:
 func New() *Builder
 func (b *Builder) Brand(brand output.Brand) *Builder // required: carriers, config, state, trailers
 func (b *Builder) Output(open func() (output.Sink, error)) *Builder // a fresh sink per plan a run commits
+func (b *Builder) Ledger(open func() (ledger.Ledger, error)) *Builder // the previous record, and this run's
+func (b *Builder) Workspace(id string) *Builder // the manifest's name; the root's base name when empty
+func (b *Builder) Parallel(workers int) *Builder // matches a phase call runs at once; 0 and 1 run sequentially
 func (b *Builder) Frontends(fs ...plugin.Frontend) *Builder
 func (b *Builder) Annotators(as ...plugin.Annotator) *Builder
 func (b *Builder) Checks(cs ...plugin.WorkspaceCheck) *Builder
@@ -380,12 +391,12 @@ graph, and per-target spellings are lowering policy.
 
 ## Close
 
-Close runs after every plan.
+Close runs after every plan has staged.
 
-It writes the **merged workspace manifest**, recording plan to
-files, which is what stops a deleted plan leaving its generated
-files behind: a workspace that no longer declares a plan deletes
-that plan's files.
+It merges the **workspace manifest**, recording plan to files, and
+the ledger records it after the plans commit. The record is what
+stops a deleted plan leaving its generated files behind: a workspace
+that no longer declares a plan deletes that plan's files.
 
 It runs **path-collision detection** across the plan manifests,
 producing a stable error rather than letting the last writer win.

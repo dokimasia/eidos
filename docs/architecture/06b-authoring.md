@@ -171,24 +171,39 @@ Targets, stems and provenance derive from the subject and the
 family. `Mirror` copies a signature once, in the framework, so no
 plugin repeats the copy, and leaves the receiver to the target: the
 Go satellite's `PointerReceiver` names a pointer receiver against
-the parameter names. Imports are collected at render. Slot access
-is one `SlotView` type, whether you are appending into your own
-method's prologue or, through `OnEmit`, into another plugin's.
+the parameter names. Imports are collected at render.
 
-## Two ordering rules
+Slot access is one `SlotView` type, which `Emitter.Slot` returns,
+whether you are appending into your own method's prologue or, through
+`OnEmit`, into another plugin's. An append into another plugin's value
+names your plugin among the contributors of the unit that contains the
+value. The frame of the file the value is written in, and the file's
+manifest entry, then name the weaver beside the emitter
+([17-output-and-determinism.md](17-output-and-determinism.md)).
 
-These make dispatch safe to parallelize and the output
+## Ordering rules
+
+These rules make dispatch safe to parallelize and keep the output
 deterministic.
 
 **Handlers are order-independent within a plugin.** No handler may
 depend on another match of the same plugin having run first.
 
-**Accumulator files order contributions** by subject identity, then
-by directive-instance source order, then by insertion. So repeatable
-instances arrive in the order the author wrote them, and never in the
-order the dispatcher happened to run them. Metadata writes obey the
-same canonical order through first-claim-wins arbitration
+**A handler's writes apply when its phase call ends.** The dispatcher
+buffers the declarations an invocation places, the values it appends
+into slots, and the findings it reports. The buffers apply in canonical
+match order once the phase call's rules have run, on any number of
+workers. So a handler sees the plan's store and the slots as they were
+when its phase call began, and it does not see its own appends. A
+stamp arrives in the fact store at once, because arbitration ranks
+claims by their canonical sequence and not by their arrival
 ([04-metadata.md](04-metadata.md)).
+
+**An accumulator file orders its contributions** by subject identity,
+then by directive-instance source order, then by canonical match order
+and the order of the appends. So repeatable instances arrive in the order
+the author wrote them, and never in the order the dispatcher happened
+to run them.
 
 ## Annotators
 
@@ -311,9 +326,9 @@ which works as a dual role through per-role priorities.
 The weaver **declares its gate**:
 `Where(HasKey(handlergen.KeyIsHandler), OnEmit(kind, weave))`, with
 the predicate evaluating against the origin, per the rule that gates
-are declarative. It appends into **slots**: the standard body slots,
-which need no foresight from the owner, or named slots the owner
-exported as constants.
+are declarative. It appends into **slots** through `Emitter.Slot`: the
+standard body slots, which every body has without a declaration from
+the owner, or named slots the owner exported as constants.
 
 And **`Requires(owner.Cap)`** turns the ordering into a scheduled
 guarantee.
@@ -440,12 +455,15 @@ func Delegate(callee string, args ...Expr) Body
 func Stmts(ss ...Stmt) Body                    // the scaffolding vocabulary
 
 // Emitter: every target is an accumulator keyed by (key, family),
-// and the write-side spellings live here. The plan's target returns
-// them, never the plugin's declaration.
-func (e *Emitter) File(tag ...Tag) *FileBuilder        // per source file
-func (e *Emitter) PackageFile(tag ...Tag) *FileBuilder // per package
-func (e *Emitter) PlanFile(tag ...Tag) *FileBuilder    // per plan
-func (e *Emitter) JoinName(word, base string) string   // target's join
+// and the write-side spellings are on it. The plan's target returns
+// them, never the plugin's declaration. Every write is buffered and
+// applies in canonical match order when the phase call ends.
+func (e *Emitter) File(tag ...Tag) *Out                    // per source file
+func (e *Emitter) PackageFile(tag ...Tag) *Out             // per package
+func (e *Emitter) PlanFile(tag ...Tag) *Out                // per plan
+func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] // one slot's write view
+func (v SlotView[T]) Append(values ...T)                   // names a weaver among the contributors
+func (e *Emitter) JoinName(word, base string) string       // target's join
 func (e *Emitter) Ref(name string, data any) *emit.TemplateRef // resolves in this plugin's tree
 
 // Stamper: authority and origin filled in by the dispatch.

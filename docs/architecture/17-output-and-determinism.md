@@ -24,8 +24,8 @@ depends on map iteration, registration order or scheduling.
 
 **No clocks, no randomness, no environment.** Output never contains
 a timestamp, a hostname, a username, an absolute path or a toolchain
-path. The header carries the brand and the source it derives from,
-and nothing that varies with the invocation.
+path. The header lists the brand, the plugins and the source the
+file derives from, and nothing that varies with the invocation.
 
 **One text policy.** UTF-8 and LF line endings, on every platform. A
 formatter that emits CRLF gets wrapped rather than obeyed. Manifest
@@ -77,13 +77,22 @@ isolation free:
 type Sink interface {
     Write(path string, body []byte) error // stage: workspace-relative,
                                           // root-jailed, not yet visible
+    Delete(path string) error             // stage the removal of a stale file
+    Prepare() ([]Change, error)           // what each staged path contains
+                                          // now, before anything is written
     Commit() ([]Written, error)           // write-if-changed + atomic
                                           // rename, per file
     Discard() error                       // dry-run, failed plan
 }
+type Change struct {
+    Path   string
+    Action Action // what Commit does to the path
+    Found  Found  // Nothing | Same | Intact | Drifted | Foreign
+    Hash   string // sha256 of the staged bytes, empty for a removal
+}
 type Written struct {
     Path   string
-    Action Action // Created | Updated | Unchanged
+    Action Action // Created | Updated | Unchanged | Deleted
     Hash   string // sha256 of the bytes, which is the manifest's value
 }
 ```
@@ -104,7 +113,7 @@ compares the body hash on disk with the attested one.
 **Match** is the normal case, and write-if-changed proceeds.
 **Missing** means recreate the file. **Different** means the file
 drifted: somebody edited generated output. The run refuses to
-overwrite it, reports an Error naming the file and the run that last
+overwrite it, reports an Error naming the file and the plan that last
 produced it, and `prune` never deletes it. `run --overwrite-drift`
 accepts the loss explicitly. The honest fix is moving the edit into
 source, config or a directive, where regeneration will keep it.
@@ -114,9 +123,11 @@ create, update, unchanged and stale.
 
 **Adoption.** A path with no manifest record but an existing file is
 not drift. That happens on the first run ever, or when migrating
-from another generator, and it should not be a wall. If the output's
-body hash matches the file, eidos adopts it into the manifest
-silently. If the body differs, that is the tree-collision Error
+from another generator, and it should not be a wall. If the file has
+the bytes the run would write, eidos adopts it into the manifest
+silently. A file under the brand's intact trailer with other bytes is
+the brand's output, and the run updates it. A file without the
+brand's trailer is the tree-collision Error
 ([18-routing-and-layout.md](18-routing-and-layout.md)), and
 `--adopt` accepts replacement explicitly. Adopting a tool must not
 fail on the first file.
@@ -150,12 +161,14 @@ First, a marker that machines recognize as generated code, spelled
 the way the target ecosystem spells it, so linters, review tools and
 coverage exclusions detect it without configuration.
 
-Second, attribution: the brand, and the source the file derives
-from, workspace-relative. The invocation command is deliberately
-absent, because `run ./svc/...` and `run ./...` have to produce
-identical bytes, and a header that varies with the phrasing forces
-write-if-changed to rewrite files whose content never moved. Which
-command produced a file is what the manifest and `explain` answer.
+Second, attribution: the brand, the plugins whose units assembled the
+file and the plugins that appended into the units' slots, one line per
+plugin, and the source the file derives from, workspace-relative. The
+invocation command is deliberately absent, because `run ./svc/...`
+and `run ./...` have to produce identical bytes, and a header that
+varies with the phrasing forces write-if-changed to rewrite files
+whose content never moved. Which command produced a file is what the
+manifest and `explain` answer.
 
 Third, nothing else. No version that churns the diff, no date.
 
@@ -170,17 +183,16 @@ it is and that it is intact. It is the file's ownership record,
 carried in the file itself, because the manifest is not committed
 and a fresh clone arrives with no state.
 
-**The ownership rule.** eidos overwrites or deletes only what it can
-prove it owns, through a trailer carrying this brand or a manifest
-entry. Delete the trailer by hand and the file becomes a
-hand-written one: colliding with it is an Error
+**The ownership rule.** eidos overwrites or deletes only a file whose
+trailer names this brand. Delete the trailer by hand and the file
+becomes a hand-written one: colliding with it is an Error
 ([18-routing-and-layout.md](18-routing-and-layout.md)) rather than
 an overwrite, and the sweep honours the same proof.
 
 **Drift is decidable per file.** Recompute the body hash and compare
-it with the trailer. The trailer must be the file's final bytes, so
-anything after it counts as drift, which closes the
-append-past-the-marker case.
+it with the trailer. The trailer must be the file's final line. A
+file with anything after it has no frame and counts as hand-written.
+No append past the marker can pass for the brand's output.
 
 **First contact works with no state.** Excluding a workspace's own
 outputs from Load
@@ -204,9 +216,9 @@ versioned JSON as everything else.
 ## The manifest
 
 The workspace manifest is versioned public API. For every file it
-records the producing plan, the content hash, the emitting plugins,
-and the source declarations the file derives from, so `prune` and
-`explain` read the same record.
+records the producing plan, the content hash, the plugins the file's
+header names, and the source declarations the file derives from, so
+`prune` and `explain` read the same record.
 
 It lives in the brand's state directory, at
 `.<brand>/manifest.json` ([20-cli.md](20-cli.md)), and it is **not
@@ -221,15 +233,16 @@ The document is versioned at the root and names its workspace
 {"version":1,"workspace":"platform",
  "files":[
   {"path":"svc/store_stub.go","plan":"go-services",
-   "hash":"sha256:9f2c…","plugins":["stubgen","acme-audit"],
+   "hash":"sha256:9f2c…","plugins":["acme-audit","stubgen"],
    "sources":["golang:svc/store.Store#Get(ctx,string)"]}
  ]}
 ```
 
-The `sources` entries are canonical symbol identities
-([02-symbol-model.md](02-symbol-model.md)). Format changes follow
-the compatibility policy
-([15-compatibility.md](15-compatibility.md)).
+The `plugins` entries are sorted and distinct: `stubgen` assembled the
+file, and `acme-audit` appended into its slots. The `sources` entries
+are canonical symbol identities
+([02-symbol-model.md](02-symbol-model.md)). Format changes follow the
+compatibility policy ([15-compatibility.md](15-compatibility.md)).
 
 Plan exports publish into the same state directory, one document per
 plan and export, beside the manifest, under the export schema

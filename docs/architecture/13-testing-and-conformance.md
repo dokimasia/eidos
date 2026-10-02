@@ -37,21 +37,29 @@ failures are written once.
 
 **plugintest**, through `RunPluginSuite(t, setup Setup)`, where the
 setup builds the plugin with its fixture fresh per call. Per plugin
-it checks: declaration stability, meaning the name, the gate
-records, the outputs and the owned schemas come back identical
-across builds;
-determinism, meaning two runs over one fixture store produce
-byte-equal emit under `-count=2`; annotator idempotence; that no
-structural write happened, since the node count is unchanged; that
-every diagnostic is positioned; that emitted tags are declared tags;
-attribution, meaning every emit value carries its plugin; options
-schema stability, with unknown keys and missing required keys
-rejected; template lint, meaning every declared template parses
-against each language's merged funcmap, body templates place the
-slot marker, and no name collides with a reserved one; and the
-lowering guarantee, meaning a facade-authored plugin and its
-hand-rolled SPI twin produce byte-equal output, which is where 06b's
-promise is held.
+it checks these properties:
+
+- Declaration stability. The name, the gate records, the outputs and
+  the schemas the plugin registers come back identical across builds.
+- Determinism. Two runs over one fixture store produce byte-equal emit
+  under `-count=2`.
+- Parallel dispatch. A run on eight workers produces the emit, the fact
+  values and the findings of a run on one worker. Under the race
+  detector, the run on eight workers also exposes state a handler
+  writes outside its effects.
+- Annotator idempotence.
+- No structural write. The node count is unchanged.
+- Positioned diagnostics. Every diagnostic has a position.
+- Declared tags. Every emitted tag is a declared tag.
+- Attribution. Every unit names the plugin that emitted it.
+- Options schema stability. Unknown keys and missing required keys are
+  rejected.
+- Template lint. Every declared template parses against each
+  language's merged funcmap, body templates place the slot marker, and
+  no name collides with a reserved one.
+- The lowering guarantee. A facade-authored plugin and its hand-rolled
+  SPI twin produce byte-equal output, the contributors each unit
+  records included. This is where 06b's promise is checked.
 
 **backendtest**, through `RunBackendSuite(t, setup Setup)`. Over a
 hand-built emit fixture it checks: that the fixture is populated,
@@ -65,9 +73,15 @@ the render continues per [07-rendering.md](07-rendering.md), the
 refused file withheld. The header and trailer checks are the output
 contract's and join the suite with it.
 
-**pipelinetest**, through `RunPipelineSuite(t, f PipelineFixture)`.
-Plugins plus a real backend driving one plan: end-to-end bytes,
-layout routing, the manifest slice, and diagnostic discipline.
+**pipelinetest**, through `RunPipelineSuite(t, f Fixture)`, where the
+fixture is a source tree, the stores its load reads, a composition
+over the directory a check runs in, and every file the run generates.
+Plugins plus a real backend driving one plan, each check over
+directories of its own: a clean run with every finding positioned,
+end-to-end bytes at their routed paths with no other file under the
+brand's frame, the manifest slice with each file's digest, a second
+run that leaves every byte and every mtime unchanged, and a run in a
+second directory that writes the same bytes and records the same files.
 
 **frontendtest**, through `RunFrontendSuite(t, f FrontendFixture)`.
 A real frontend with the chain behind it: deterministic graphs, a
