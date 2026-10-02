@@ -7,7 +7,7 @@ ships-in: unscheduled
 deadline: none
 deadline-source: none
 prd: none
-rfc: none
+rfc: 0019
 ---
 
 # Milestone 0006: Several plans run in one workspace
@@ -39,8 +39,10 @@ records at Close.
       only the records and reports a positioned diagnostic. A check
       that needs a failed plan's records reports one Info and stands
       down.
-- [ ] A `workspaces:` list runs two workspaces with separate
-      `.<brand>/` state, and nothing crosses between them.
+- [ ] Two compositions over sibling roots of one repository each
+      record their manifest in their own `.<brand>/`. Neither reads
+      the other's sources, and removing a plan from one removes no
+      file of the other.
 
 ## Why now
 
@@ -63,6 +65,8 @@ repositories.
   dependent; checks seeing identical records warm): milestone 0007
   owns warm behaviour.
 - A second target language: both plans here target Go. Milestone 0009.
+- The reader of a `workspaces:` list, and its refusal of two roots
+  that nest: milestone 0008, beside config discovery.
 
 ## Risks to the sequence
 
@@ -74,4 +78,5 @@ repositories.
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-02 | Linked RFC-0019. The last bullet asks for two compositions over sibling roots instead of a `workspaces:` list | The kernel defines no file format, so the list needs the config reader that milestone 0008 builds with config discovery. That reader is also the one place that can refuse two roots that nest for every list. Two compositions over sibling roots are independent without new kernel code, because each has its own tree, sink and state directory |
 | 2026-08-30 | Added at position 6 | The frame must be whole before 0007 proves warm over it |

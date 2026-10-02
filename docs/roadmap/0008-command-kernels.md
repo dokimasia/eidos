@@ -26,6 +26,9 @@ code to get them.
       codes 0, 1 and 64 per the contract, a seeded panic exits 2
       untouched, config discovery walks up to `.<brand>.yaml` and
       stops at the VCS root, and the generated output compiles.
+- [ ] A `.<brand>.yaml` that declares a `workspaces:` list runs each
+      member over its own root, with its own `.<brand>/`. A list
+      whose roots nest exits 64 before any member runs.
 - [ ] `run` works: `--dry-run` reports create, update, unchanged,
       stale and drifted; `--check` exits 1 on a non-empty diff;
       `--overwrite-drift`, `--cold` and `--plan` behave per contract;
@@ -80,6 +83,7 @@ and the machine-output schemas of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-02 | Added the bullet for a `workspaces:` list | Milestone 0006 proves that two compositions over sibling roots are independent, and leaves the list to the config reader, because the kernel defines no file format. The reader is the one place that can refuse two roots that nest for every list |
 | 2026-09-30 | The suppression criterion's carrier changed from `+gen:diag` to `+<brand>:diag` | The carrier mark follows the composition's brand |
 | 2026-08-30 | Pinned diagnostic suppression and its audit counts into Done when | A coverage audit against the architecture found them held by Scope reference only |
 | 2026-08-30 | Added at position 8 | The commands wrap the engine, so they follow it. Everything a consumer script touches exists after this |
