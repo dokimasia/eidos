@@ -25,8 +25,16 @@
 // then shows in the language the others do not share, while the
 // contract can still change. The whole-composition acceptance runs and
 // the end-to-end corpus benchmark belong in this module. Go's
-// end-to-end fixture runs the kernel's pipeline suite over a stub
-// generator and an audit weaver, through the Go backend.
+// end-to-end fixtures run through the Go backend:
+//
+//   - the kernel's pipeline suite, over a stub generator and an audit
+//     weaver;
+//   - the kernel's workspace suite, over a plan scoped to svc that
+//     doubles its interfaces and a plan scoped to admin that aliases
+//     each double through the first plan's export;
+//   - a scoped plan whose reader finds nothing outside its sources, a
+//     workspace check that reads the doubles' record, and two
+//     workspaces over sibling roots of one repository.
 //
 // # Dependency position
 //
@@ -34,8 +42,9 @@
 // core/frontend/frontendtest and core/rules/rulestest, beside
 // core/rules, core/store, core/node, core/directive, core/meta,
 // core/plugin, core/symbol and the assert module. Its tests import the
-// language satellites whose frontends exist. Go's end-to-end fixture
-// also imports the Go backend, core/workspace, core/ledger and the
-// kernel's pipeline kit, core/workspace/pipelinetest. No module
-// imports conformance.
+// language satellites whose frontends exist. Go's end-to-end fixtures
+// also import the Go backend, core/workspace, core/ledger,
+// core/manifest and the kernel's pipeline and workspace kits,
+// core/workspace/pipelinetest and core/workspace/workspacetest. No
+// module imports conformance.
 package conformance

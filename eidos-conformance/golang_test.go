@@ -217,9 +217,16 @@ func stubgen() plugin.Generator {
 // stub emits the double of one interface into the primary family, and
 // the directive's tag redirects it.
 func stub(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
-	name := e.JoinName(stubWord, m.Interface.Name)
-	double := &emit.Struct{Origin: m.Interface.ID, Name: name}
-	double.Fields.Append(&emit.Field{
+	e.File().Append(double(e.JoinName(stubWord, m.Interface.Name), m))
+	return nil
+}
+
+// double returns the double of one interface under a name: a struct
+// that wraps a value of the interface and delegates every method to it,
+// each method on a pointer receiver named apart from its parameters.
+func double(name string, m *eidos.InterfaceMatch) *emit.Struct {
+	d := &emit.Struct{Origin: m.Interface.ID, Name: name}
+	d.Fields.Append(&emit.Field{
 		Name:       nextField,
 		Visibility: symbol.VisibilityPackage,
 		Type:       &emit.TypeRef{Spelling: m.Interface.Name, Target: m.Interface.ID},
@@ -238,10 +245,9 @@ func stub(m *eidos.InterfaceMatch, e *eidos.Emitter) error {
 			Kind:  emit.StmtReturn,
 			Value: emit.Expr{Kind: emit.ExprCall, Fn: &callee, Args: args},
 		}}
-		double.Methods.Append(mirrored)
+		d.Methods.Append(mirrored)
 	}
-	e.File().Append(double)
-	return nil
+	return d
 }
 
 // audit returns the fixture's weaver: it runs after stubgen, through the
