@@ -18,8 +18,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The end-to-end fixture: the brand the output contract stamps under,
-// and the unit a rendered declaration comes from.
+// These constants name the end-to-end fixture's brand, which the
+// output contract stamps under, and the unit a rendered declaration
+// comes from.
 const (
 	contractBrand = "java"
 	unitPkg       = "svc/app"
@@ -27,6 +28,21 @@ const (
 	unitWord      = "gen"
 	holderName    = "Holder"
 )
+
+// doubleName is a generated class's name in the neutral convention,
+// and settledDouble the name the settle gives it.
+const (
+	doubleName    = "stubRow"
+	settledDouble = "StubRow"
+)
+
+// declared returns a struct of the unit's package named name.
+func declared(name string) *emit.Struct {
+	return &emit.Struct{
+		Origin: symbol.Identity{Lang: java.Lang, Package: unitPkg, Name: name, Kind: symbol.KindStruct},
+		Name:   name,
+	}
+}
 
 // setup builds the backend over the kernel's canonical fixture,
 // which emits every file-level kind: the backend spells the three
@@ -147,10 +163,7 @@ func TestNew(t *testing.T) {
 		t.Run("returns a backend that imports the class a field's type names", func(t *testing.T) {
 			t.Parallel()
 
-			holder := &emit.Struct{
-				Origin: symbol.Identity{Lang: java.Lang, Package: unitPkg, Name: holderName, Kind: symbol.KindStruct},
-				Name:   holderName,
-			}
+			holder := declared(holderName)
 			holder.Fields.Append(&emit.Field{Name: "row", Type: imported(storePkg, rowName)})
 			body, sink := rendered(t, holder)
 			for d := range sink.All() {
@@ -158,6 +171,22 @@ func TestNew(t *testing.T) {
 			}
 			assert.Contains(t, body, "import svc.store.Row;\n", "the class's import")
 			assert.Contains(t, body, "    public Row row;\n", "the field through the simple name")
+		})
+
+		t.Run("returns a backend that names the settled class in an array", func(t *testing.T) {
+			t.Parallel()
+
+			holder := declared(holderName)
+			holder.Fields.Append(&emit.Field{Name: "rows", Type: &emit.TypeRef{
+				Form:     symbol.FormList,
+				Spelling: doubleName + "[]",
+				Elems:    []*emit.TypeRef{{Spelling: doubleName}},
+			}})
+			body, sink := rendered(t, declared(doubleName), holder)
+			for d := range sink.All() {
+				t.Errorf("unexpected finding: %s", d.Msg)
+			}
+			assert.Contains(t, body, "    public "+settledDouble+"[] rows;\n", "the array names the settled class")
 		})
 	})
 }

@@ -40,11 +40,6 @@ const (
 	qualifiedRow = storeName + "." + rowName
 	// protoLang is a language other than Go that a target can be in.
 	protoLang symbol.Lang = "protobuf"
-	// emittedName is a generated type's name in the neutral convention,
-	// and settledName the name the settle gives it for a public
-	// declaration.
-	emittedName = "stubStore"
-	settledName = "StubStore"
 )
 
 // ref returns an unresolved reference spelled s.
@@ -363,70 +358,6 @@ func TestVocabulary(t *testing.T) {
 			})
 		}
 
-		respelled := func() *emit.TypeRef { return ref(settledName) }
-		settledTests := []struct {
-			name string
-			give *emit.TypeRef
-			want string
-		}{
-			{
-				name: "restates a pointer whose element the settle respelled",
-				give: composite(symbol.FormOptional, "*"+emittedName, respelled()),
-				want: "*" + settledName,
-			},
-			{
-				name: "restates a slice whose element the settle respelled",
-				give: composite(symbol.FormList, "[]"+emittedName, respelled()),
-				want: "[]" + settledName,
-			},
-			{
-				name: "restates a variadic list whose element the settle respelled",
-				give: composite(symbol.FormList, "..."+emittedName, respelled()),
-				want: "..." + settledName,
-			},
-			{
-				name: "restates a map whose key the settle respelled",
-				give: composite(symbol.FormMap, "map["+emittedName+"]int", respelled(), ref("int")),
-				want: "map[" + settledName + "]int",
-			},
-			{
-				name: "restates a map whose value the settle respelled",
-				give: composite(symbol.FormMap, "map[string]"+emittedName, ref("string"), respelled()),
-				want: "map[string]" + settledName,
-			},
-			{
-				name: "restates a channel whose element the settle respelled",
-				give: composite(symbol.FormStream, "chan "+emittedName, respelled()),
-				want: "chan " + settledName,
-			},
-			{
-				name: "restates a sized array whose element the settle respelled",
-				give: &emit.TypeRef{
-					Form:     symbol.FormArray,
-					Spelling: "[4]" + emittedName,
-					Length:   4,
-					Elems:    []*emit.TypeRef{respelled()},
-				},
-				want: "[4]" + settledName,
-			},
-		}
-		for _, tt := range settledTests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
-
-				s, _ := speller()
-				assert.Equal(t, spelled(t, s, tt.give), tt.want, "the settled element shows in its parent")
-			})
-		}
-
-		t.Run("keeps the written spelling of a map whose children are short of its form", func(t *testing.T) {
-			t.Parallel()
-
-			s, _ := speller()
-			assert.Equal(t, spelled(t, s, composite(symbol.FormMap, "map[string]Row", ref("string"))),
-				"map[string]Row", "as written")
-		})
-
 		t.Run("returns an error restating an array whose length is an expression", func(t *testing.T) {
 			t.Parallel()
 
@@ -717,15 +648,6 @@ func TestVocabulary(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, receiver(t, &emit.Method{Receives: ref("*Store")}), "*Store", "no name")
-		})
-
-		t.Run("writes a pointer receiver over the name the settle gave its host", func(t *testing.T) {
-			t.Parallel()
-
-			m := golang.PointerReceiver(&emit.Method{Name: "Get", Receives: ref(emittedName)})
-			m.Receives.Spelling = settledName
-			m.Receiver.Type.Elems[0].Spelling = settledName
-			assert.Equal(t, receiver(t, m), "s *"+settledName, "the receiver follows its host")
 		})
 
 		t.Run("returns nothing for a method without a receiver", func(t *testing.T) {

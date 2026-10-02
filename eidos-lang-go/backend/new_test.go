@@ -19,14 +19,24 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The end-to-end fixture: the brand the output contract stamps under,
-// the file a unit of svcPkg renders into, and the method a stated
-// receiver attaches to rowName.
+// These constants name the end-to-end fixture's brand, which the
+// output contract stamps under, the file a unit of svcPkg renders into,
+// the method a stated receiver attaches to its host, and a field of a
+// function type.
 const (
 	contractBrand = "golang"
 	unitKey       = svcPkg + "/row.go"
 	unitWord      = "gen"
 	touchName     = "touch"
+	visitName     = "Visit"
+)
+
+// emittedName is a generated struct's name in the neutral convention,
+// and settledName the name the settle gives it for a public
+// declaration.
+const (
+	emittedName = "stubStore"
+	settledName = "StubStore"
 )
 
 // setup builds the backend over the kernel's canonical fixture,
@@ -50,13 +60,18 @@ func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
 	return r, backendtest.ScaledFixture(tb, backend.RefusedKinds())
 }
 
+// structOf returns a struct of svcPkg named name.
+func structOf(name string) *emit.Struct {
+	return &emit.Struct{
+		Origin: symbol.Identity{Lang: golang.Lang, Package: svcPkg, Name: name, Kind: symbol.KindStruct},
+		Name:   name,
+	}
+}
+
 // rowOf returns a struct of svcPkg named rowName with the given
 // fields.
 func rowOf(fields ...*emit.Field) *emit.Struct {
-	row := &emit.Struct{
-		Origin: symbol.Identity{Lang: golang.Lang, Package: svcPkg, Name: rowName, Kind: symbol.KindStruct},
-		Name:   rowName,
-	}
+	row := structOf(rowName)
 	row.Fields.Append(fields...)
 	return row
 }
@@ -195,6 +210,36 @@ func TestNew(t *testing.T) {
 			body, sink := rendered(t, row)
 			assert.Length(t, collected(sink), 0, "the file renders clean")
 			assert.Contains(t, body, "func (r *Row) Touch() {", "the receiver points at the host")
+		})
+
+		t.Run("returns a backend that renders a pointer receiver over a host the settle respells", func(t *testing.T) {
+			t.Parallel()
+
+			double := structOf(emittedName)
+			double.Methods.Append(golang.PointerReceiver(&emit.Method{
+				Origin: symbol.Identity{
+					Lang: golang.Lang, Package: svcPkg, Owner: emittedName, Name: touchName, Kind: symbol.KindMethod,
+				},
+				Name:     touchName,
+				Receives: &emit.TypeRef{Spelling: emittedName},
+			}))
+			body, sink := rendered(t, double)
+			assert.Length(t, collected(sink), 0, "the file renders clean")
+			assert.Contains(t, body, "func (s *"+settledName+") Touch() {", "the receiver names the settled host")
+		})
+
+		t.Run("returns a backend that renders a function type over a respelled declaration", func(t *testing.T) {
+			t.Parallel()
+
+			body, sink := rendered(t, structOf(emittedName), rowOf(&emit.Field{Name: visitName, Type: &emit.TypeRef{
+				Form:     symbol.FormFunc,
+				Spelling: "func(next " + emittedName + ") error",
+				Split:    1,
+				Elems:    []*emit.TypeRef{{Spelling: emittedName}, {Spelling: "error"}},
+			}}))
+			assert.Length(t, collected(sink), 0, "the file renders clean")
+			assert.Contains(t, body, "\t"+visitName+" func(next "+settledName+") error\n",
+				"the function type names the settled declaration, its parameter's name as written")
 		})
 
 		t.Run("reports a declaration whose reference records no package", func(t *testing.T) {

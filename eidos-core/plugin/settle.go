@@ -8,6 +8,8 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -126,8 +128,8 @@ func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 
 	if l, held := b.(Lowerer); held {
 		if err := lowerAll(e, l, by, sink); err != nil {
-			// The flag remains down: a store abandoned mid-lowering is
-			// not settled, and Settled must not say it is.
+			// A store abandoned mid-lowering is not settled, so the
+			// flag remains down and Settled reports false.
 			return err
 		}
 	}
@@ -302,10 +304,11 @@ func planNames(e *Emit, r Respeller, over overrides) *plan {
 		all:   make([]planned, 0, total*2),
 	}
 	var at position.Pos
-	// One recording callback serves every walk: the per-visit
-	// state is beside it, so planning allocates the arena's
-	// growth and nothing else. The walk never errors: a hook fault
-	// is kept in its entry and judged per declaration.
+	// One recording callback serves every walk. Its per-visit state
+	// is declared beside it, so planning allocates the arena's
+	// growth and nothing else. The callback returns no error. It
+	// keeps a hook fault in the fault's entry, and the apply pass
+	// judges the fault per declaration.
 	record := func(
 		host, carrier symbol.Symbol, kind symbol.Kind, v symbol.Visibility, name string,
 	) (string, error) {
@@ -668,9 +671,10 @@ func pinnedByVerbatim(host symbol.Symbol, kind symbol.Kind) bool {
 // rewriteRefs follows the settled names through the store's
 // references: a resolved reference follows its origin where its
 // spelling is the referent's emitted bare name, a bare reference
-// follows its own package's table, and structured body names
-// follow locals first, then the package. Composite spellings,
-// verbatim bodies and template text are left as written.
+// follows its own package's table, a structural reference's spelling
+// follows the names beneath it, and structured body names follow
+// locals first, then the package. A composite spelling without
+// elements, verbatim bodies and template text are left as written.
 func rewriteRefs(
 	e *Emit, plans *plan,
 	table map[pkgName]tableEntry,
@@ -726,37 +730,142 @@ func paramNames(list []planned) map[symbol.Symbol]map[string]string {
 	return out
 }
 
-// rewriteRef follows one type reference: resolved by origin where
-// the spelling is the referent's emitted bare name, bare by the
-// package's table otherwise. A reference without a target that names
-// another package is qualified, so no declaration of this package
-// binds it, and it is left as written. An ambiguous match reports and
-// is left as written.
+// rewriteRef follows one type reference: a named one to the spelling
+// [settledSpelling] returns, and a structural one through the names
+// beneath it. An ambiguous match reports and is left as written.
 func rewriteRef(
 	t *emit.TypeRef, pkg string, table map[pkgName]tableEntry,
 	byOrigin map[originName]string,
 	at position.Pos, by diag.Origin, sink *diag.Sink,
 ) {
-	if !t.Target.IsZero() {
-		if settled, match := byOrigin[originName{id: t.Target, emitted: t.Spelling}]; match {
-			t.Spelling = settled
-		}
+	if t.Form != symbol.FormNamed {
+		followElements(t, t.Elems, pkg, table, byOrigin)
 		return
 	}
-	if t.Package != "" && t.Package != pkg {
-		return
-	}
-	ent, held := table[pkgName{pkg: pkg, emitted: t.Spelling}]
-	if !held {
-		return
-	}
-	if ent.ambiguous {
+	settled, ambiguous := settledSpelling(t, pkg, table, byOrigin)
+	if ambiguous {
 		sink.Errorf(AmbiguousReference, at, by,
 			"%q matches declarations whose settled names diverge, and the "+
 				"reference is left as written", t.Spelling)
 		return
 	}
-	t.Spelling = ent.settled
+	t.Spelling = settled
+}
+
+// settledSpelling returns the spelling a named reference settles to:
+// by origin where the reference is resolved and its spelling is the
+// referent's emitted bare name, by the package's table where it is
+// bare, and as written otherwise. A reference without a target that
+// names another package is qualified, so no declaration of this
+// package binds it, and it is left as written. It reports true for a
+// spelling the table matches to declarations whose settled names
+// diverge, which is left as written too. It reads two maps and
+// allocates nothing.
+func settledSpelling(
+	t *emit.TypeRef, pkg string, table map[pkgName]tableEntry, byOrigin map[originName]string,
+) (string, bool) {
+	if !t.Target.IsZero() {
+		if settled, match := byOrigin[originName{id: t.Target, emitted: t.Spelling}]; match {
+			return settled, false
+		}
+		return t.Spelling, false
+	}
+	if t.Package != "" && t.Package != pkg {
+		return t.Spelling, false
+	}
+	ent, held := table[pkgName{pkg: pkg, emitted: t.Spelling}]
+	switch {
+	case !held:
+		return t.Spelling, false
+	case ent.ambiguous:
+		return t.Spelling, true
+	default:
+		return ent.settled, false
+	}
+}
+
+// followElements rewrites a structural reference's spelling for the
+// named references beneath it: its elements, and their elements and
+// type arguments at any depth. Each emitted name that settles apart is
+// replaced with its settled name wherever it is a whole, unqualified
+// name of the spelling, so the spelling's other text, a modifier, a
+// label, a lifetime or a bracket, remains as written. The walk visits a
+// reference before its elements, so the elements still have their
+// emitted spellings when their parent follows them. It allocates only
+// where it replaces a name.
+func followElements(
+	parent *emit.TypeRef, refs []*emit.TypeRef,
+	pkg string, table map[pkgName]tableEntry, byOrigin map[originName]string,
+) {
+	for _, r := range refs {
+		if r == nil {
+			continue
+		}
+		if r.Form == symbol.FormNamed {
+			if settled, _ := settledSpelling(r, pkg, table, byOrigin); settled != r.Spelling {
+				parent.Spelling = replaceName(parent.Spelling, r.Spelling, settled)
+			}
+		}
+		followElements(parent, r.Elems, pkg, table, byOrigin)
+		followElements(parent, r.Args, pkg, table, byOrigin)
+	}
+}
+
+// qualifierMarks are the characters that, written before a name in a
+// spelling, make it something other than a bare name of the unit's
+// package: a qualifier separator, the dot of Go, Java and TypeScript
+// and the colon of Rust's path, or a quote that opens a literal type.
+const qualifierMarks = ".:'\"`"
+
+// replaceName returns s with each occurrence of the name old that
+// [wholeName] accepts replaced with now. It returns s itself where it
+// replaces nothing, and builds the result in one buffer where it does.
+func replaceName(s, old, now string) string {
+	if old == "" {
+		return s
+	}
+	var out strings.Builder
+	written, from := 0, 0
+	for {
+		i := strings.Index(s[from:], old)
+		if i < 0 {
+			break
+		}
+		at, end := from+i, from+i+len(old)
+		from = at + 1
+		if !wholeName(s, at, end) {
+			continue
+		}
+		if written == 0 {
+			out.Grow(len(s) - len(old) + len(now))
+		}
+		out.WriteString(s[written:at])
+		out.WriteString(now)
+		written, from = end, end
+	}
+	if written == 0 {
+		return s
+	}
+	out.WriteString(s[written:])
+	return out.String()
+}
+
+// wholeName reports whether s[at:end] is a whole, unqualified name: no
+// character of a name adjoins it, and no character of [qualifierMarks]
+// precedes it.
+func wholeName(s string, at, end int) bool {
+	if before, size := utf8.DecodeLastRuneInString(s[:at]); size > 0 &&
+		(nameRune(before) || strings.ContainsRune(qualifierMarks, before)) {
+		return false
+	}
+	after, size := utf8.DecodeRuneInString(s[end:])
+	return size == 0 || !nameRune(after)
+}
+
+// nameRune reports whether r continues a name in a target language: a
+// letter, a digit, an underscore or a dollar sign.
+func nameRune(r rune) bool {
+	return r == '_' || r == '$' || unicode.IsLetter(r) || unicode.IsDigit(r)
 }
 
 // rewriteBody follows a body's structured names: statement and

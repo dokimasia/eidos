@@ -18,8 +18,9 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The end-to-end fixture: the brand the output contract stamps under,
-// and the unit a rendered declaration comes from.
+// These constants name the end-to-end fixture's brand, which the
+// output contract stamps under, and the unit a rendered declaration
+// comes from.
 const (
 	contractBrand = "rust"
 	unitModule    = "crate/app"
@@ -27,6 +28,21 @@ const (
 	unitWord      = "gen"
 	holderName    = "Holder"
 )
+
+// doubleName is a generated struct's name in the neutral convention,
+// and settledDouble the name the settle gives it.
+const (
+	doubleName    = "stubRow"
+	settledDouble = "StubRow"
+)
+
+// declared returns a struct of the unit's module named name.
+func declared(name string) *emit.Struct {
+	return &emit.Struct{
+		Origin: symbol.Identity{Lang: rust.Lang, Package: unitModule, Name: name, Kind: symbol.KindStruct},
+		Name:   name,
+	}
+}
 
 // setup builds the backend over the kernel's canonical fixture,
 // which emits every file-level kind: the backend spells each, the
@@ -151,8 +167,7 @@ func TestNew(t *testing.T) {
 		t.Run("returns a backend that uses the item a field's type names", func(t *testing.T) {
 			t.Parallel()
 
-			origin := symbol.Identity{Lang: rust.Lang, Package: unitModule, Name: holderName, Kind: symbol.KindStruct}
-			holder := &emit.Struct{Origin: origin, Name: holderName}
+			holder := declared(holderName)
 			holder.Fields.Append(&emit.Field{Name: "row", Type: imported(storeModule, rowName)})
 			body, sink := rendered(t, holder)
 			for d := range sink.All() {
@@ -160,6 +175,23 @@ func TestNew(t *testing.T) {
 			}
 			assert.Contains(t, body, "use crate::store::Row;\n", "the item's use")
 			assert.Contains(t, body, "    pub row: Row,\n", "the field through the item's name")
+		})
+
+		t.Run("returns a backend that names the settled struct in a borrow", func(t *testing.T) {
+			t.Parallel()
+
+			holder := declared(holderName)
+			holder.Fields.Append(&emit.Field{Name: "row", Type: &emit.TypeRef{
+				Form:     symbol.FormBorrow,
+				Spelling: "&'static " + doubleName,
+				Elems:    []*emit.TypeRef{{Spelling: doubleName}},
+			}})
+			body, sink := rendered(t, declared(doubleName), holder)
+			for d := range sink.All() {
+				t.Errorf("unexpected finding: %s", d.Msg)
+			}
+			assert.Contains(t, body, "    pub row: &'static "+settledDouble+",\n",
+				"the borrow names the settled struct, its lifetime as written")
 		})
 	})
 }

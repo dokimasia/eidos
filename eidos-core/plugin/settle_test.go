@@ -189,9 +189,10 @@ func overridden(t *testing.T, name string, a meta.Authority) string {
 // respelledStore is the reference-following fixture after its
 // settle: a struct whose field names it and whose method's body
 // reads a local and a parameter, an alias resolved to the struct, a
-// variable of a composite spelling, and two variables whose bare
-// references to the struct's name state a package: another one, and
-// the struct's own.
+// variable of a composite spelling without structure, two variables
+// whose bare references to the struct's name state a package, another
+// one and the struct's own, and variables of structural references
+// over the struct's name.
 type respelledStore struct {
 	box       *emit.Struct
 	fetch     *emit.Method
@@ -199,6 +200,23 @@ type respelledStore struct {
 	composite *emit.Variable
 	foreign   *emit.Variable
 	own       *emit.Variable
+	listed    *emit.Variable
+	nested    *emit.Variable
+	argued    *emit.Variable
+	keyed     *emit.Variable
+	labeled   *emit.Variable
+	qualified *emit.Variable
+}
+
+// structural returns a structural reference of a form, spelled as
+// written, over elements.
+func structural(form symbol.TypeForm, spelling string, elems ...*emit.TypeRef) *emit.TypeRef {
+	return &emit.TypeRef{Form: form, Spelling: spelling, Elems: elems}
+}
+
+// variableOf returns a variable of svc named name, of the type t.
+func variableOf(name string, t *emit.TypeRef) *emit.Variable {
+	return &emit.Variable{Origin: settleOrigin(name, symbol.KindVariable), Name: name, Type: t}
 }
 
 // settleRespelled builds the reference-following fixture and settles
@@ -252,6 +270,20 @@ func settleRespelled(t *testing.T) respelledStore {
 		Name:   "own",
 		Type:   &emit.TypeRef{Spelling: "box", Package: "svc"},
 	}
+	boxRef := func() *emit.TypeRef { return &emit.TypeRef{Spelling: "box"} }
+	listed := variableOf("listed", structural(symbol.FormList, "[]box", boxRef()))
+	nested := variableOf("nested", structural(symbol.FormList, "[]*box",
+		structural(symbol.FormOptional, "*box", boxRef())))
+	argued := variableOf("argued", structural(symbol.FormList, "[]Pair[box]",
+		&emit.TypeRef{Spelling: "Pair", Args: []*emit.TypeRef{boxRef()}}))
+	keyed := variableOf("keyed", structural(symbol.FormMap, "map[inbox]box",
+		&emit.TypeRef{Spelling: "inbox"}, boxRef()))
+	labeled := variableOf("labeled", &emit.TypeRef{
+		Form: symbol.FormFunc, Spelling: "func(boxed box) error", Split: 1,
+		Elems: []*emit.TypeRef{boxRef(), {Spelling: "error"}},
+	})
+	qualified := variableOf("qualified", structural(symbol.FormMap, "map[other.box]box",
+		&emit.TypeRef{Spelling: "other.box", Package: "elsewhere"}, boxRef()))
 	b := respelling(func(host, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 		switch {
 		case host == symbol.KindInvalid:
@@ -265,9 +297,13 @@ func settleRespelled(t *testing.T) respelledStore {
 	e := storeOf(t,
 		settleUnit("svc", "svc/a.src", box, match),
 		settleUnit("svc", "svc/b.src", composite, foreign, own),
+		settleUnit("svc", "svc/c.src", listed, nested, argued, keyed, labeled, qualified),
 	)
 	coretest.AssertCodes(t, settled(t, e, b))
-	return respelledStore{box: box, fetch: fetch, match: match, composite: composite, foreign: foreign, own: own}
+	return respelledStore{
+		box: box, fetch: fetch, match: match, composite: composite, foreign: foreign, own: own,
+		listed: listed, nested: nested, argued: argued, keyed: keyed, labeled: labeled, qualified: qualified,
+	}
 }
 
 // settleGuarded builds a callable whose body reads its parameter
@@ -552,8 +588,36 @@ func TestSettle(t *testing.T) {
 				got:  func(s respelledStore) string { return s.box.Fields.Items()[0].Type.Spelling }, want: "Tbox",
 			},
 			{
-				name: "leaves a composite spelling as written",
+				name: "leaves a composite spelling without elements as written",
 				got:  func(s respelledStore) string { return s.composite.Type.Spelling }, want: "[]box",
+			},
+			{
+				name: "rewrites a structural reference's spelling with its element's settled name",
+				got:  func(s respelledStore) string { return s.listed.Type.Spelling }, want: "[]Tbox",
+			},
+			{
+				name: "rewrites a structural reference's spelling with a nested element's settled name",
+				got:  func(s respelledStore) string { return s.nested.Type.Spelling }, want: "[]*Tbox",
+			},
+			{
+				name: "rewrites a nested structural reference's spelling with its element's settled name",
+				got:  func(s respelledStore) string { return s.nested.Type.Elems[0].Spelling }, want: "*Tbox",
+			},
+			{
+				name: "rewrites a structural reference's spelling with a type argument's settled name",
+				got:  func(s respelledStore) string { return s.argued.Type.Spelling }, want: "[]Pair[Tbox]",
+			},
+			{
+				name: "leaves a longer name that ends in an element's emitted name as written",
+				got:  func(s respelledStore) string { return s.keyed.Type.Spelling }, want: "map[inbox]Tbox",
+			},
+			{
+				name: "leaves a parameter label that begins with an element's emitted name as written",
+				got:  func(s respelledStore) string { return s.labeled.Type.Spelling }, want: "func(boxed Tbox) error",
+			},
+			{
+				name: "leaves a qualified name in a structural reference's spelling as written",
+				got:  func(s respelledStore) string { return s.qualified.Type.Spelling }, want: "map[other.box]Tbox",
 			},
 			{
 				name: "leaves a bare reference that states another package as written",
