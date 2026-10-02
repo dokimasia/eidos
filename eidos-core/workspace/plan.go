@@ -21,22 +21,32 @@ import (
 )
 
 // planRun is one plan's way through a run: its store and findings,
-// what it rendered, and what its sink staged and found. Each plan's run
-// is written by its own goroutine until the plans finish, and read on
-// the run's goroutine after.
+// what it rendered and exported, and what its sink staged and found.
+// Each plan's run is written by its own goroutine until it closes
+// done, and read after that by the plans that depend on it and by the
+// run's goroutine.
 type planRun struct {
 	plan *compiledPlan
 	emit *plugin.Emit
 	// sink takes the plan's own findings, which the run merges into
 	// the report's sink in composition order.
 	sink *diag.Sink
+	// done is closed when the plan's render ends, whatever its outcome.
+	done chan struct{}
 	// err is a returned error: a generator's, the settle's, the
 	// layout's, the sink's or the commit's.
 	err error
 	// cancelled reports a plan the run's cancellation stopped.
 	cancelled bool
+	// upstream is the first plan this one depends on that failed
+	// before this one generated, nil where every one of them rendered.
+	// A plan with an upstream generates nothing.
+	upstream *planRun
 	// files are what the plan rendered, in path order.
 	files []stagedFile
+	// export is what the plan rendered, as its dependents and the
+	// checks read it. The run builds it only for a plan marked exported.
+	export plugin.ExportDoc
 	// out is the plan's prepared sink, nil where it staged nothing or
 	// discarded its staging.
 	out output.Sink
@@ -49,53 +59,116 @@ type planRun struct {
 	status PlanStatus
 }
 
-// failed reports whether the plan cannot commit: it returned an error
-// or reported an Error.
-func (p *planRun) failed() bool { return p.err != nil || p.sink.Failed() }
+// failed reports whether the plan cannot commit: it returned an error,
+// reported an Error, or generated nothing because a plan it depends on
+// failed.
+func (p *planRun) failed() bool { return p.err != nil || p.sink.Failed() || p.upstream != nil }
+
+// cause returns the position of the first Error of the plan whose
+// failure made this one fail: its own first Error, or, for a plan that
+// failed only because a plan it depends on failed, that plan's cause.
+// It reports false for a plan that failed on a returned error alone.
+func (p *planRun) cause() (position.Pos, bool) {
+	for d := range p.sink.All() {
+		if d.Severity == diag.SeverityError {
+			return d.Pos, true
+		}
+	}
+	if p.upstream != nil {
+		return p.upstream.cause()
+	}
+	return position.Pos{}, false
+}
 
 // generateAll runs the plans in parallel through Generate, Settle,
 // Layout, Render and Stamp, each over its own emit store, scoped
-// index, readers and findings. A plan's failure does not stop its
-// siblings, and every plan's store arrives in the report either way.
+// index, readers and findings. A plan that depends on others starts
+// after each of them has rendered and reads their exports. A plan's
+// failure does not stop its siblings, every plan that depends on it
+// generates nothing, and every plan's store arrives in the report
+// either way.
 func (w *Workspace) generateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, src tree,
 ) []*planRun {
 	runs := make([]*planRun, len(w.plans))
-	var wg sync.WaitGroup
 	for i := range w.plans {
-		p := &planRun{plan: &w.plans[i], emit: plugin.NewEmit(), sink: diag.NewSink()}
-		runs[i] = p
+		runs[i] = &planRun{
+			plan: &w.plans[i], emit: plugin.NewEmit(), sink: diag.NewSink(), done: make(chan struct{}),
+		}
+	}
+	var wg sync.WaitGroup
+	for _, p := range runs {
 		wg.Go(func() {
-			p.files, p.err = w.runPlan(ctx, g, facts, table, src, p)
+			defer close(p.done)
+			exports, ready := p.await(runs)
+			if !ready {
+				return
+			}
+			var rendered []plugin.File
+			p.files, rendered, p.err = w.runPlan(ctx, g, facts, table, src, p, exports)
 			p.cancelled = p.err != nil && ctx.Err() != nil && errors.Is(p.err, ctx.Err())
+			if p.plan.exported && !p.failed() {
+				p.export = plugin.NewExport(p.plan.name, rendered, p.emit)
+			}
 		})
 	}
 	wg.Wait()
 	return runs
 }
 
+// await blocks until every plan this one depends on has rendered, and
+// returns their exports, keyed by plan name. It reports false where
+// one of them was cancelled, which cancels this plan, or failed, which
+// it records as this plan's upstream. Either way the plan generates
+// nothing. A plan without dependencies returns at once.
+func (p *planRun) await(runs []*planRun) (map[string]plugin.ExportDoc, bool) {
+	if len(p.plan.deps) == 0 {
+		return nil, true
+	}
+	exports := make(map[string]plugin.ExportDoc, len(p.plan.deps))
+	for _, d := range p.plan.deps {
+		dep := runs[d]
+		<-dep.done
+		switch {
+		case dep.cancelled:
+			p.cancelled, p.err = true, dep.err
+			return nil, false
+		case dep.failed():
+			p.upstream = dep
+			return nil, false
+		}
+		exports[dep.plan.name] = dep.export
+	}
+	return exports, true
+}
+
 // runPlan runs one plan's roles in bucket order, which is what an
 // emit-triggered rule's visibility is defined against: the store
-// contains earlier buckets' units when a later role runs. Where the
+// contains earlier buckets' units when a later role runs. The plan's
+// sources bind its scope over the run's graph and facts, and every
+// generator reads the exports of the plans it depends on. Where the
 // composition writes output, the settled store routes to files
-// against the run's source tree, and the files render and stamp.
+// against the run's source tree, and the files render and stamp. It
+// returns the stamped files, and for a plan marked exported, the
+// routed files that rendered, which the plan's export lists.
 func (w *Workspace) runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, src tree, p *planRun,
-) ([]stagedFile, error) {
+	exports map[string]plugin.ExportDoc,
+) ([]stagedFile, []plugin.File, error) {
 	pl := p.plan
-	ix, err := plugin.NewIndex(g, facts, table, pl.scope)
+	ix, err := plugin.NewIndex(g, facts, table, pl.sources.bind(g, facts, w.kernel))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	for _, s := range pl.entries {
 		if err := ctx.Err(); err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		reader, err := ix.Reader(store.NewReadSet())
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		call := &plugin.GeneratorContext{
 			Index:   ix,
@@ -108,19 +181,20 @@ func (w *Workspace) runPlan(
 			Plugin:  s.name,
 			Bucket:  s.bucket,
 			Workers: w.workers,
+			Exports: exports,
 		}
 		if err := s.run.Generate(call); err != nil {
-			return nil, fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
+			return nil, nil, fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
 		}
 	}
 	if err := plugin.Settle(p.emit, pl.backend, facts, p.sink); err != nil {
-		return nil, fmt.Errorf("settle: %w", err)
+		return nil, nil, fmt.Errorf("settle: %w", err)
 	}
 	if pl.contract == nil {
-		return nil, nil
+		return nil, nil, nil
 	}
 	if err := ctx.Err(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	return w.write(pl, ix, src, p.emit, p.sink)
 }

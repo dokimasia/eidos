@@ -6,21 +6,34 @@
 // the frame to committed files and a recorded manifest.
 //
 // [Builder] collects the composition: the brand, the frontends,
-// annotators, plans, target names, metadata key registrations, ignored
-// directive spellings, the output, the ledger, the workspace's name,
-// the worker count and the config. [Builder.Build] runs its validation
-// steps in one pass: the brand, the worker count, the frontends, the
-// roster, the registries with the kernel's own keys and schemas
-// registered first and every registry sealed, the lowering into
-// priority buckets, the options and their canonical encoding, the plans
-// and their compiled schedule, with every generator that declares
-// templates serving its plan's target, and, where the composition
-// declares output, the output contract each plan writes through. Every
-// step runs even when an earlier one found faults. Build returns either
-// the [Workspace] or one error joining everything found, so the
+// annotators, plans, workspace checks, target names, metadata key
+// registrations, ignored directive spellings, the output, the ledger,
+// the workspace's name, the worker count and the config.
+// [Builder.Build] runs its validation steps in one pass: the brand, the
+// worker count, the frontends, the roster, the registries with the
+// kernel's own keys and schemas registered first and every registry
+// sealed, the lowering into priority buckets, the options and their
+// canonical encoding, the plans and their compiled schedule, with every
+// generator that declares templates serving its plan's target, each
+// plan's [Sources] and dependencies, the plans' dependency order, the
+// plans each check reads, and, where the composition declares output,
+// the output contract each plan writes through. Every step runs even
+// when an earlier one found faults. Build returns either the
+// [Workspace] or one error joining everything found, so the
 // composition's author reads every fault at once. A Build that succeeds
 // has resolved every human-typed name in the composition. Nothing after
 // it fails on a name.
+//
+// # Plans that share a workspace
+//
+// A plan's [Sources] scope what its generators see: a language,
+// directory patterns and a module, checked at Build and bound to each
+// run's graph and facts. A plan that names others in [Plan.DependsOn]
+// generates after each of them has rendered, reads their exports, the
+// [plugin.ExportDoc] values that list what they rendered, and commits
+// only where each of them commits. Build refuses a cycle, naming every
+// plan in it. A [plugin.WorkspaceCheck] that [Builder.Checks] registers
+// runs at Close over the records of the plans it reads.
 //
 // # The brand
 //
@@ -48,8 +61,9 @@
 // directive validation, the stamp replay, the kernel meta drops and
 // the annotate schedule in bucket order follow. The plans then run in
 // parallel: each generates, settles, routes, renders and stamps over
-// its own emit store, scoped index, readers and findings. Plans
-// exchange nothing, so one plan's failure does not stop its siblings.
+// its own emit store, scoped index, readers and findings, and a plan
+// that depends on others starts after them. Plans exchange exports
+// alone, so one plan's failure stops only the plans that depend on it.
 // One annotator's or generator's phase call runs its matches on up to
 // the worker count [Builder.Parallel] sets, one at a time by default,
 // and the run's output does not depend on the count.
@@ -67,8 +81,9 @@
 // the plan writes is an Error of that plan. Close then runs on one
 // goroutine: two plans routing a file to one path are [PlanCollision],
 // the outputs of plans the composition no longer declares are swept,
-// and every metadata completeness contract is audited. The plans commit
-// in composition order and the sweep after them. The ledger records the
+// every metadata completeness contract is audited, and the workspace
+// checks run. The plans commit in dependency order, composition order
+// between plans without one, and the sweep after them. The ledger records the
 // merged manifest strictly after the last commit, and only where a
 // plan or the sweep committed. A stale output is removed
 // only where it is the brand's intact output, and one edited since its
@@ -83,9 +98,11 @@
 // it refuses a duplicate naming both claimants. Run refuses an input
 // that names neither or both of a tree and a graph with a plain error.
 // A plan's own Error, and an error its generator, its sink or its
-// commit returns, fails that plan alone, and its previous files and
-// record entries remain. An Error in a phase every plan shares, Load,
-// validation, Annotate or Close, commits nothing at all. Findings
+// commit returns, fails that plan and every plan that depends on it, and
+// their previous files and record entries remain. A plan or a check
+// that reads a failed plan reports [FailedDependency]. An Error in a
+// phase every plan shares, Load, validation, Annotate or Close, a
+// workspace check's included, commits nothing at all. Findings
 // arrive in the report's sink, and any Error among them classifies the
 // run under [ErrRunFailed]. A previous record that does not read is
 // [UnreadableRecord], and the run removes nothing. A cancelled context

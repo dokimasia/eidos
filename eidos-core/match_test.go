@@ -172,6 +172,65 @@ func TestMatch(t *testing.T) {
 		})
 	})
 
+	t.Run("Export", func(t *testing.T) {
+		t.Parallel()
+
+		exportsSeen := func(tb assert.TB, exports map[string]plugin.ExportDoc, plan string) (plugin.ExportDoc, bool) {
+			tb.Helper()
+
+			g, _, _ := fixtureGraph(tb)
+			_, facts := boolKey(tb)
+			ctx := genContext(tb, g, facts, nil)
+			ctx.Exports = exports
+			var got plugin.ExportDoc
+			var held bool
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+					got, held = m.Export(plan)
+					return nil
+				})).
+				Build()
+			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+			return got, held
+		}
+
+		t.Run("returns the export of a plan the generator's plan depends on", func(t *testing.T) {
+			t.Parallel()
+
+			exports := map[string]plugin.ExportDoc{exportingPlan: {Plan: exportingPlan}}
+			got, held := exportsSeen(t, exports, exportingPlan)
+			assert.True(t, held, "the export is found")
+			assert.Equal(t, got.Plan, exportingPlan, "the export is the plan's")
+		})
+
+		t.Run("returns false for a plan the generator's plan does not depend on", func(t *testing.T) {
+			t.Parallel()
+
+			_, held := exportsSeen(t, map[string]plugin.ExportDoc{exportingPlan: {Plan: exportingPlan}}, "other")
+			assert.False(t, held, "no export is found")
+		})
+
+		t.Run("returns false in an annotator's phase call", func(t *testing.T) {
+			t.Parallel()
+
+			g, _, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(t, err, "the routing surface builds")
+			held, ran := true, false
+			p := eidos.NewPlugin("classify").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Stamper) error {
+					ran = true
+					_, held = m.Export(exportingPlan)
+					return nil
+				})).
+				Build()
+			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)), "the phase call passes")
+			assert.True(t, ran, "the handler ran")
+			assert.False(t, held, "an annotator reads no export")
+		})
+	})
+
 	t.Run("Rules", func(t *testing.T) {
 		t.Parallel()
 
@@ -251,6 +310,10 @@ func TestMatch(t *testing.T) {
 
 // reportingPlugin is who the reporting cases report as.
 const reportingPlugin = "reporter"
+
+// exportingPlan is the plan whose export the export cases hand a
+// generator.
+const exportingPlan = "stubs"
 
 // reported is the code the reporting cases report under. One code
 // is enough: the cases are about severity, position and origin, not

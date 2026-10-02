@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/internal/pathset"
 	"go.dokimi.dev/eidos/core/manifest"
@@ -185,6 +186,90 @@ func (w *Workspace) audit(g *store.Graph, facts *meta.Facts, loaded *load.Report
 		}
 	}
 	return failed
+}
+
+// check runs the composition's workspace checks over the plans'
+// records, one after another in registration order, and reports
+// whether any of them reported an Error. Each check reads an index and
+// a reader over the whole graph, the facts, and the records of the
+// plans it reads: their manifest entries and their exports. A check
+// that reads a plan that failed or was cancelled does not run, and the
+// run reports one FailedDependency for it at the failed plan's cause,
+// where the plan has one. A check's findings arrive in the run's sink
+// in the order it reported them. A check's returned error stops the
+// step and returns, wrapped with the check's name.
+func (w *Workspace) check(
+	g *store.Graph, facts *meta.Facts, table map[symbol.Identity][]directive.Directive,
+	runs []*planRun, sink *diag.Sink,
+) (bool, error) {
+	if len(w.checks) == 0 {
+		return false, nil
+	}
+	ix, err := plugin.NewIndex(g, facts, table, nil)
+	if err != nil {
+		return false, fmt.Errorf("workspace: %w", err)
+	}
+	failed := false
+	for _, c := range w.checks {
+		if p := blocking(c, runs); p != nil {
+			if at, caused := p.cause(); caused {
+				sink.Report(diag.Diag{
+					Code:     FailedDependency,
+					Severity: diag.SeverityInfo,
+					Pos:      at,
+					Msg: fmt.Sprintf("check %s reads plan %q, which failed, and checks nothing",
+						c.name, p.plan.name),
+					Origin: diag.PhaseClose,
+				})
+			}
+			continue
+		}
+		reader, err := ix.Reader(store.NewReadSet())
+		if err != nil {
+			return failed, fmt.Errorf("workspace: %w", err)
+		}
+		local := diag.NewSink()
+		err = c.run.Check(&plugin.CheckContext{
+			Index:  ix,
+			Reader: reader,
+			Facts:  facts,
+			Sink:   local,
+			Rules:  w.rules,
+			Kernel: w.kernel,
+			Plugin: c.name,
+			Plans:  records(c.reads, runs),
+		})
+		for d := range local.All() {
+			sink.Report(d)
+		}
+		failed = failed || local.Failed()
+		if err != nil {
+			return true, fmt.Errorf("workspace: check %s: %w", c.name, err)
+		}
+	}
+	return failed, nil
+}
+
+// blocking returns the first plan a check reads that failed or was
+// cancelled, and nil where every one of them staged cleanly.
+func blocking(c compiledCheck, runs []*planRun) *planRun {
+	for _, i := range c.reads {
+		if p := runs[i]; p.failed() || p.cancelled {
+			return p
+		}
+	}
+	return nil
+}
+
+// records returns the records of the plans at the indexes, in their
+// order: each plan's manifest entries and its export.
+func records(at []int, runs []*planRun) []plugin.PlanRecord {
+	out := make([]plugin.PlanRecord, 0, len(at))
+	for _, i := range at {
+		p := runs[i]
+		out = append(out, plugin.PlanRecord{Name: p.plan.name, Files: p.entries(), Export: p.export})
+	}
+	return out
 }
 
 // kinds spells a contract's kinds in a finding.

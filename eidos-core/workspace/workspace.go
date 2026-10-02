@@ -30,6 +30,12 @@ type Workspace struct {
 	rules      *rules.Registry
 	annotate   []annEntry
 	plans      []compiledPlan
+	// order is the plans' commit order, as indexes into plans: every
+	// plan after the plans it depends on.
+	order []int
+	// checks are the workspace checks Close runs, in registration
+	// order.
+	checks []compiledCheck
 	// frontends load a run's tree, in composition order.
 	frontends []plugin.Frontend
 	// contracts are the registered keys that promise completeness, in

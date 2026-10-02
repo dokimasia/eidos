@@ -8,8 +8,9 @@
 // [Plugin] is the base contract, a stable name spelled as [ID].
 // The roles are Plugin plus one method taking a context struct:
 // [Annotator] stamps facts, [Generator] produces emit values into
-// one plan, and [Backend] returns the [Target] its plan resolves
-// at composition. [Subscribed] adds the gate tuples as data, so
+// one plan, [WorkspaceCheck] reports what the records of several
+// plans break at Close, and [Backend] returns the [Target] its plan
+// resolves at composition. [Subscribed] adds the gate tuples as data, so
 // the engine knows what a plugin watches without executing a
 // handler. A plugin that skips it reads as one implicit
 // subscription to everything in scope. The provider interfaces,
@@ -58,6 +59,16 @@
 // run derives from the graph and the fact store. The render pass
 // renders the routed files it receives in [RenderContext.Files].
 //
+// # Exports
+//
+// [NewExport] lists what a plan rendered as an [ExportDoc]: each
+// declaration under an [ExportKey] a dependent builds before the run,
+// from the declaration's origin, its plugin, its family and its emitted
+// names, with the spelling the settle chose and the file and package the
+// layout chose. A dependent plan reads the exports of the plans it
+// depends on from [GeneratorContext.Exports], and a workspace check reads
+// every plan's export and manifest entries from [CheckContext.Plans].
+//
 // # Failure semantics
 //
 // A phase call attaches per-subject problems to its context's sink
@@ -74,6 +85,6 @@
 // # Dependency position
 //
 // core/plugin imports core/diag, core/directive, core/emit,
-// core/meta, core/node, core/position, core/rules, core/store,
-// core/symbol and the Go stdlib.
+// core/manifest, core/meta, core/node, core/position, core/rules,
+// core/store, core/symbol and the Go stdlib.
 package plugin

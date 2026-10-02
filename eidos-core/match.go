@@ -227,6 +227,16 @@ func (m *match) ErrorfAt(c diag.Code, at position.Pos, format string, a ...any) 
 // phase call has none.
 func (m *match) Kernel() meta.KernelKeys { return m.rs.kernel }
 
+// Export returns the export of a plan the handler's plan depends on,
+// and false for any other plan and in an annotator's phase call, which
+// runs before any plan. Every dependent of the plan reads the same
+// value, so a handler does not mutate it. The read records nothing in
+// the invocation's read set, and it allocates nothing.
+func (m *match) Export(plan string) (plugin.ExportDoc, bool) {
+	doc, held := m.rs.exports[plan]
+	return doc, held
+}
+
 // bind mints one binding over the invocation's view.
 func (m *match) bind(lang symbol.Lang) rules.Bound {
 	view := rules.View{

@@ -20,7 +20,7 @@ import (
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/rules"
-	"go.dokimi.dev/eidos/core/store"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // annEntry is one scheduled annotator. The bucket number is the
@@ -42,13 +42,20 @@ type genEntry struct {
 }
 
 // compiledPlan is one write side as the run executes it: the
-// roles in bucket order, the scope, and the name that keys its
-// store in the report.
+// roles in bucket order, the sources each run binds its scope from,
+// the plans it depends on, and the name that keys its store in the
+// report.
 type compiledPlan struct {
 	name    string
-	scope   store.Scope
-	entries []genEntry
-	backend plugin.Backend
+	sources Sources
+	// deps are the indexes of the plans this one depends on, in the
+	// order its DependsOn lists them.
+	deps []int
+	// exported reports that a dependent plan or a workspace check reads
+	// the plan's export, so a run builds it.
+	exported bool
+	entries  []genEntry
+	backend  plugin.Backend
 	// routing is the plan's validated layout, and outputs the
 	// families each of its generators declares.
 	routing layout.Config
@@ -56,6 +63,16 @@ type compiledPlan struct {
 	// contract stamps the plan's rendered files, nil for a
 	// composition declaring no output.
 	contract *output.Contract
+}
+
+// compiledCheck is one workspace check as Close runs it.
+type compiledCheck struct {
+	name plugin.ID
+	run  plugin.WorkspaceCheck
+	// reads are the indexes of the plans the check reads, in
+	// composition order: every plan of the composition for a check
+	// whose Reads returns nil.
+	reads []int
 }
 
 // kernelPhases lists the origins the kernel reports under. A
@@ -124,8 +141,8 @@ func contractsOf(keys *meta.Registry) []contract {
 // assemble is the first step: the plugin universe, deduplicated by
 // name, one name one plugin. The roster's order is the declaration
 // order, annotators first, then each plan's generators and backend,
-// and it is the registration order every later step depends on for
-// determinism.
+// then the checks, and it is the registration order every later step
+// depends on for determinism.
 func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []error) {
 	var roster []plugin.Plugin
 	var faults []error
@@ -173,6 +190,15 @@ func (b *Builder) assemble() ([]plugin.Plugin, map[plugin.ID]plugin.Plugin, []er
 		if pl.Backend != nil {
 			admit(pl.Backend)
 		}
+	}
+	for i, c := range b.checks {
+		if c == nil {
+			faults = append(faults, fmt.Errorf(
+				"workspace: check %d of %d is nil", i+1, len(b.checks),
+			))
+			continue
+		}
+		admit(c)
 	}
 	return roster, byName, faults
 }
@@ -613,16 +639,24 @@ func populate(p plugin.Plugin, section map[string]any) []error {
 // compilePlans is the fifth and sixth step: every plan named once,
 // at least one generator, exactly one backend against a registered
 // target, every generator that declares templates serving that
-// target, a layout the plan's generators' families admit, and the
-// roles fixed in bucket order, which is the schedule the run executes
-// as data.
+// target, a layout the plan's generators' families admit, sources in
+// the languages langs contains, dependencies on declared plans, and
+// the roles fixed in bucket order, which is the schedule the run
+// executes as data. A plan that another plan depends on is marked
+// exported.
 func compilePlans(
-	declared []Plan, gens []genEntry, targets map[plugin.Target]bool,
+	declared []Plan, gens []genEntry, targets map[plugin.Target]bool, langs map[symbol.Lang]bool,
 ) ([]compiledPlan, []error) {
 	var faults []error
 	seatOf := map[plugin.ID]genEntry{}
 	for _, s := range gens {
 		seatOf[s.name] = s
+	}
+	at := make(map[string]int, len(declared))
+	for i, pl := range declared {
+		if _, taken := at[pl.Name]; !taken && pl.Name != "" {
+			at[pl.Name] = i
+		}
 	}
 	names := map[string]bool{}
 	out := make([]compiledPlan, 0, len(declared))
@@ -683,12 +717,207 @@ func compilePlans(
 		}
 		faults = append(faults, unserved(pl)...)
 		faults = append(faults, pl.Layout.Check(pl.Name, outputs)...)
+		faults = append(faults, pl.Sources.check(pl.Name, langs)...)
+		deps, dfaults := dependencies(pl, at)
+		faults = append(faults, dfaults...)
 		out = append(out, compiledPlan{
-			name: pl.Name, scope: pl.Scope, entries: roles,
+			name: pl.Name, sources: pl.Sources, deps: deps, entries: roles,
 			backend: pl.Backend, routing: pl.Layout, outputs: outputs,
 		})
 	}
+	for i := range out {
+		for _, d := range out[i].deps {
+			out[d].exported = true
+		}
+	}
 	return out, faults
+}
+
+// dependencies resolves one plan's DependsOn into the indexes of the
+// plans it names, at mapping each declared name to its first plan. It
+// refuses a name listed twice, a name the composition does not
+// declare, and the plan's own name, each fault naming the plan.
+func dependencies(pl Plan, at map[string]int) ([]int, []error) {
+	var deps []int
+	var faults []error
+	listed := make(map[string]bool, len(pl.DependsOn))
+	for _, name := range pl.DependsOn {
+		i, declared := at[name]
+		switch {
+		case listed[name]:
+			faults = append(faults, fmt.Errorf(
+				"workspace: plan %q lists %q twice in its dependencies", pl.Name, name,
+			))
+		case !declared:
+			faults = append(faults, fmt.Errorf(
+				"workspace: plan %q depends on %q, which the composition does not declare", pl.Name, name,
+			))
+		case name == pl.Name:
+			faults = append(faults, fmt.Errorf("workspace: plan %q depends on itself", pl.Name))
+		default:
+			deps = append(deps, i)
+		}
+		listed[name] = true
+	}
+	return deps, faults
+}
+
+// orderPlans returns the plans' commit order: every plan after the
+// plans it depends on, and composition order between plans that do not
+// depend on each other. A cycle is one fault naming every plan in it,
+// in name order. The plans the order cannot place, those of a cycle and
+// those that depend on one, follow the others in composition order, so
+// the order remains total for the steps that run on a faulted
+// composition. Placing the plans costs O(n²) in the number of plans,
+// and naming a cycle's plans costs one walk of the dependencies from
+// each plan left unplaced.
+func orderPlans(plans []compiledPlan) ([]int, []error) {
+	waiting := make([]int, len(plans))
+	dependents := make([][]int, len(plans))
+	for i := range plans {
+		for _, d := range plans[i].deps {
+			waiting[i]++
+			dependents[d] = append(dependents[d], i)
+		}
+	}
+	order := make([]int, 0, len(plans))
+	placed := make([]bool, len(plans))
+	for len(order) < len(plans) {
+		next := -1
+		for i := range plans {
+			if !placed[i] && waiting[i] == 0 {
+				next = i
+				break
+			}
+		}
+		if next < 0 {
+			break
+		}
+		placed[next] = true
+		order = append(order, next)
+		for _, r := range dependents[next] {
+			waiting[r]--
+		}
+	}
+	if len(order) == len(plans) {
+		return order, nil
+	}
+	var faults []error
+	reach := make([][]bool, len(plans))
+	for i := range plans {
+		if !placed[i] {
+			reach[i] = reachable(plans, i)
+		}
+	}
+	named := make([]bool, len(plans))
+	for i := range plans {
+		if placed[i] || named[i] {
+			continue
+		}
+		var cycle []string
+		for j := range plans {
+			if !placed[j] && reach[i][j] && reach[j][i] {
+				cycle = append(cycle, strconv.Quote(plans[j].name))
+				named[j] = true
+			}
+		}
+		if len(cycle) > 1 {
+			slices.Sort(cycle)
+			faults = append(faults, fmt.Errorf(
+				"workspace: plans %s depend on each other in a cycle", strings.Join(cycle, " and "),
+			))
+		}
+	}
+	for i := range plans {
+		if !placed[i] {
+			order = append(order, i)
+		}
+	}
+	return order, faults
+}
+
+// reachable returns, for each plan, whether a walk of the dependencies
+// that starts at from and takes at least one step arrives at it.
+func reachable(plans []compiledPlan, from int) []bool {
+	seen := make([]bool, len(plans))
+	stack := slices.Clone(plans[from].deps)
+	for len(stack) > 0 {
+		at := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+		if seen[at] {
+			continue
+		}
+		seen[at] = true
+		stack = append(stack, plans[at].deps...)
+	}
+	return seen
+}
+
+// compileChecks resolves each check's reads into the indexes of the
+// plans it names, sorted into composition order, and marks every plan
+// a check reads as exported. A check whose Reads returns nil reads
+// every plan. It refuses a plan read twice and a plan the composition
+// does not declare, each fault naming the check. A nil check is the
+// roster's fault, and it is skipped here.
+func compileChecks(declared []plugin.WorkspaceCheck, plans []compiledPlan) ([]compiledCheck, []error) {
+	at := make(map[string]int, len(plans))
+	for i := range plans {
+		if _, taken := at[plans[i].name]; !taken {
+			at[plans[i].name] = i
+		}
+	}
+	var faults []error
+	out := make([]compiledCheck, 0, len(declared))
+	for _, c := range declared {
+		if c == nil {
+			continue
+		}
+		name, names := c.Name(), c.Reads()
+		var reads []int
+		if names == nil {
+			reads = make([]int, 0, len(plans))
+			for i := range plans {
+				reads = append(reads, i)
+			}
+		}
+		listed := make(map[string]bool, len(names))
+		for _, plan := range names {
+			i, declared := at[plan]
+			switch {
+			case listed[plan]:
+				faults = append(faults, fmt.Errorf("workspace: check %s reads plan %q twice", name, plan))
+			case !declared:
+				faults = append(faults, fmt.Errorf(
+					"workspace: check %s reads plan %q, which the composition does not declare", name, plan,
+				))
+			default:
+				reads = append(reads, i)
+			}
+			listed[plan] = true
+		}
+		slices.Sort(reads)
+		for _, i := range reads {
+			plans[i].exported = true
+		}
+		out = append(out, compiledCheck{name: name, run: c, reads: reads})
+	}
+	return out, faults
+}
+
+// languages returns the languages the composition knows: each
+// registered frontend's and each registered rules value's. A plan's
+// sources name one of them.
+func languages(fs []plugin.Frontend, rs *rules.Registry) map[symbol.Lang]bool {
+	langs := map[symbol.Lang]bool{}
+	for _, f := range fs {
+		if f != nil {
+			langs[f.Lang()] = true
+		}
+	}
+	for _, lang := range rs.Languages() {
+		langs[lang] = true
+	}
+	return langs
 }
 
 // unserved refuses each generator of a plan that declares template

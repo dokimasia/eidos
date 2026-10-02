@@ -6,6 +6,7 @@ package workspace
 import (
 	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"slices"
 	"strings"
 
@@ -14,24 +15,23 @@ import (
 
 // Fingerprint returns the composition's fingerprint: every
 // scheduled annotator and generator with its version and canonical
-// options, each plan's name and backend, folded in sorted order. A
-// load takes it as its plugin-set, so two compositions never share
-// unit keys and a composition change re-keys every unit. What a
-// plugin declares beyond its identity — keys, schemas, templates —
-// is covered by its version under the bump-on-any-change rule, so
-// the fingerprint needs no registry walk. A plan's scope is a
-// function and spells nothing, so a scope change re-keys only
-// through the plan's own name. The fingerprint is taken at Build,
-// over the options as the config left them, and every call returns
-// a fresh copy.
+// options, each plan's name, sources, dependencies and backend, and
+// each workspace check with the plans it reads, folded in sorted
+// order. A load takes it as its plugin-set, so two compositions never
+// share unit keys and a composition change re-keys every unit, a
+// change of a plan's scope included. What a plugin declares beyond its
+// identity — keys, schemas, templates — is covered by its version
+// under the bump-on-any-change rule, so the fingerprint needs no
+// registry walk. The fingerprint is taken at Build, over the options
+// as the config left them, and every call returns a fresh copy.
 func (w *Workspace) Fingerprint() []byte { return slices.Clone(w.fingerprint) }
 
-// fingerprintOf folds the composition's scheduled plugins and plans
-// with each plugin's options encoding.
+// fingerprintOf folds the composition's scheduled plugins, plans and
+// checks with each plugin's options encoding.
 func fingerprintOf(
-	annotate []annEntry, plans []compiledPlan, options map[plugin.ID][]byte,
+	annotate []annEntry, plans []compiledPlan, checks []compiledCheck, options map[plugin.ID][]byte,
 ) []byte {
-	entries := make([]string, 0, len(annotate)+len(plans))
+	entries := make([]string, 0, len(annotate)+len(plans)+len(checks))
 	for _, a := range annotate {
 		entries = append(entries, "annotator\x00"+pluginEntry(a.name, a.run, options))
 	}
@@ -40,6 +40,10 @@ func fingerprintOf(
 		b.WriteString("plan\x00")
 		b.WriteString(p.name)
 		b.WriteByte(0)
+		b.WriteString(p.sources.fold())
+		b.WriteByte(0)
+		b.WriteString(planNames(plans, p.deps))
+		b.WriteByte(0)
 		for _, g := range p.entries {
 			b.WriteString(pluginEntry(g.name, g.run, options))
 			b.WriteByte(0)
@@ -47,6 +51,9 @@ func fingerprintOf(
 		b.WriteString("backend\x00")
 		b.WriteString(pluginEntry(p.backend.Name(), p.backend, options))
 		entries = append(entries, b.String())
+	}
+	for _, c := range checks {
+		entries = append(entries, "check\x00"+pluginEntry(c.name, c.run, options)+"\x00"+planNames(plans, c.reads))
 	}
 	slices.Sort(entries)
 
@@ -58,6 +65,17 @@ func fingerprintOf(
 		h.Write([]byte(e))
 	}
 	return h.Sum(nil)
+}
+
+// planNames spells the names of the plans at the indexes, sorted and
+// quoted, for the fold.
+func planNames(plans []compiledPlan, at []int) string {
+	names := make([]string, 0, len(at))
+	for _, i := range at {
+		names = append(names, plans[i].name)
+	}
+	slices.Sort(names)
+	return fmt.Sprintf("%q", names)
 }
 
 // pluginEntry spells one scheduled plugin for the fold: its name,

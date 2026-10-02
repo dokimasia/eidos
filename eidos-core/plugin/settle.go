@@ -558,13 +558,14 @@ func collides(list []planned, a int) bool {
 }
 
 // applyNames replays every plan over its declaration, writing the
-// final spellings back. A declaration whose plan contains a hook
-// refusal is withheld whole under a positioned finding, because
-// rendering it half-respelt would misstate it. Its entry in the
-// unit is set to nil, and [dropWithheld] removes it once the
-// references are rewritten. A verbatim body pins its callable's
-// parameter and result names, under a finding where one would have
-// changed.
+// final spellings back, and records the emitted name of each
+// declaration whose spelling changed, which an export keys on. A
+// declaration whose plan contains a hook refusal is withheld whole
+// under a positioned finding, because rendering it half-respelt would
+// misstate it. Its entry in the unit is set to nil, and
+// [dropWithheld] removes it once the references are rewritten. A
+// verbatim body pins its callable's parameter and result names, under
+// a finding where one would have changed.
 func applyNames(
 	e *Emit, plans *plan, by diag.Origin, sink *diag.Sink,
 ) {
@@ -575,7 +576,7 @@ func applyNames(
 	// positionally; the warning set exists only where a verbatim
 	// pin met a rename.
 	apply := func(
-		host, _ symbol.Symbol, kind symbol.Kind, _ symbol.Visibility, name string,
+		host, carrier symbol.Symbol, kind symbol.Kind, _ symbol.Visibility, name string,
 	) (string, error) {
 		if at >= len(list) {
 			return name, nil
@@ -590,6 +591,9 @@ func applyNames(
 				warned[host] = true
 			}
 			p.final = p.emitted
+		}
+		if p.final != p.emitted {
+			e.respelled(carrier, p.emitted)
 		}
 		return p.final, nil
 	}
@@ -724,8 +728,10 @@ func paramNames(list []planned) map[symbol.Symbol]map[string]string {
 
 // rewriteRef follows one type reference: resolved by origin where
 // the spelling is the referent's emitted bare name, bare by the
-// package's table otherwise. An ambiguous match reports and is left
-// as written.
+// package's table otherwise. A reference without a target that names
+// another package is qualified, so no declaration of this package
+// binds it, and it is left as written. An ambiguous match reports and
+// is left as written.
 func rewriteRef(
 	t *emit.TypeRef, pkg string, table map[pkgName]tableEntry,
 	byOrigin map[originName]string,
@@ -735,6 +741,9 @@ func rewriteRef(
 		if settled, match := byOrigin[originName{id: t.Target, emitted: t.Spelling}]; match {
 			t.Spelling = settled
 		}
+		return
+	}
+	if t.Package != "" && t.Package != pkg {
 		return
 	}
 	ent, held := table[pkgName{pkg: pkg, emitted: t.Spelling}]

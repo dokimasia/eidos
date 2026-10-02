@@ -188,13 +188,17 @@ func overridden(t *testing.T, name string, a meta.Authority) string {
 
 // respelledStore is the reference-following fixture after its
 // settle: a struct whose field names it and whose method's body
-// reads a local and a parameter, an alias resolved to the struct,
-// and a variable of a composite spelling.
+// reads a local and a parameter, an alias resolved to the struct, a
+// variable of a composite spelling, and two variables whose bare
+// references to the struct's name state a package: another one, and
+// the struct's own.
 type respelledStore struct {
 	box       *emit.Struct
 	fetch     *emit.Method
 	match     *emit.Alias
 	composite *emit.Variable
+	foreign   *emit.Variable
+	own       *emit.Variable
 }
 
 // settleRespelled builds the reference-following fixture and settles
@@ -238,6 +242,16 @@ func settleRespelled(t *testing.T) respelledStore {
 		Name:   "pool",
 		Type:   &emit.TypeRef{Spelling: "[]box"},
 	}
+	foreign := &emit.Variable{
+		Origin: settleOrigin("other", symbol.KindVariable),
+		Name:   "other",
+		Type:   &emit.TypeRef{Spelling: "box", Package: "elsewhere"},
+	}
+	own := &emit.Variable{
+		Origin: settleOrigin("own", symbol.KindVariable),
+		Name:   "own",
+		Type:   &emit.TypeRef{Spelling: "box", Package: "svc"},
+	}
 	b := respelling(func(host, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 		switch {
 		case host == symbol.KindInvalid:
@@ -250,10 +264,10 @@ func settleRespelled(t *testing.T) respelledStore {
 	})
 	e := storeOf(t,
 		settleUnit("svc", "svc/a.src", box, match),
-		settleUnit("svc", "svc/b.src", composite),
+		settleUnit("svc", "svc/b.src", composite, foreign, own),
 	)
 	coretest.AssertCodes(t, settled(t, e, b))
-	return respelledStore{box: box, fetch: fetch, match: match, composite: composite}
+	return respelledStore{box: box, fetch: fetch, match: match, composite: composite, foreign: foreign, own: own}
 }
 
 // settleGuarded builds a callable whose body reads its parameter
@@ -540,6 +554,14 @@ func TestSettle(t *testing.T) {
 			{
 				name: "leaves a composite spelling as written",
 				got:  func(s respelledStore) string { return s.composite.Type.Spelling }, want: "[]box",
+			},
+			{
+				name: "leaves a bare reference that states another package as written",
+				got:  func(s respelledStore) string { return s.foreign.Type.Spelling }, want: "box",
+			},
+			{
+				name: "rewrites a bare reference that states its own package through the package's table",
+				got:  func(s respelledStore) string { return s.own.Type.Spelling }, want: "Tbox",
 			},
 			{
 				name: "leaves a declared local as written",

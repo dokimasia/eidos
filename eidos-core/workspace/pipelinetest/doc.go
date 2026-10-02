@@ -32,8 +32,8 @@
 //
 // # Dependency position
 //
-// core/workspace/pipelinetest imports core/workspace, core/ledger,
-// core/manifest, core/output, core/diag, the assert module and the Go
-// stdlib. It drives the whole run, so it is above core/workspace, and
-// no package of the kernel imports it.
+// core/workspace/pipelinetest imports core/workspace,
+// core/workspace/internal/rundir, core/diag, the assert module and the
+// Go stdlib. It drives the whole run, so it is above core/workspace,
+// and no package of the kernel imports it.
 package pipelinetest

@@ -11,6 +11,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -72,6 +73,42 @@ func (m meddling) Commit() ([]output.Written, error) {
 	return m.Sink.Commit()
 }
 
+// ordering is a sink that remembers the first path it staged, and logs
+// it when it commits into a log the run's sinks share: the order the
+// plans commit in.
+type ordering struct {
+	output.Sink
+	mu    *sync.Mutex
+	order *[]string
+	first string
+}
+
+// Write remembers the first staged path, then stages.
+func (o *ordering) Write(path string, body []byte) error {
+	if o.first == "" {
+		o.first = path
+	}
+	return o.Sink.Write(path, body)
+}
+
+// Commit logs the first staged path, then commits.
+func (o *ordering) Commit() ([]output.Written, error) {
+	o.mu.Lock()
+	*o.order = append(*o.order, o.first)
+	o.mu.Unlock()
+	return o.Sink.Commit()
+}
+
+// dependentOn returns a plan mirroring every struct under dir that
+// depends on deps.
+func dependentOn(tb assert.TB, name, dir string, deps ...string) workspace.Plan {
+	tb.Helper()
+
+	p := diskPlan(tb, name, centralised(dir))
+	p.DependsOn = deps
+	return p
+}
+
 // digestOf returns a file's digest the way a record spells it.
 func digestOf(content string) string {
 	sum := sha256.Sum256([]byte(content))
@@ -95,8 +132,8 @@ func age(t *testing.T, root, path string) {
 }
 
 // The commit is two-phase: every plan stages, the clean plans commit in
-// composition order, and the ledger records the merged manifest
-// strictly after the last of them.
+// dependency order, and the ledger records the merged manifest strictly
+// after the last of them.
 func TestCommit(t *testing.T) {
 	t.Parallel()
 
@@ -289,6 +326,81 @@ func TestCommit(t *testing.T) {
 				Path: storeGen, Action: output.ActionUnchanged, Found: output.FoundIntact,
 			}, "the report records no removal")
 			assert.Equal(t, paths(recorded(t, root)), []string{cacheGen, storeGen}, "and the record keeps its entry")
+		})
+
+		t.Run("commits a plan after the plans it depends on", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			var mu sync.Mutex
+			var order []string
+			w := built(t, onDisk(t, root, dependentOn(t, "dependent", "b", "producer"),
+				diskPlan(t, "producer", centralised("a"))).
+				Output(func() (output.Sink, error) {
+					d, err := output.NewDisk(root, fixtureBrand)
+					return &ordering{Sink: d, mu: &mu, order: &order}, err
+				}))
+			report := cleanRun(t, w, routedIn(t, coretest.StorePath))
+			assert.Equal(t, order, []string{"a/" + storeGen, "b/" + storeGen}, "the producer commits first")
+			assert.Equal(t, []string{report.Plans[0].Name, report.Plans[1].Name}, []string{"dependent", "producer"},
+				"the report lists the plans in composition order")
+		})
+
+		t.Run("fails a plan whose dependency fails at its staging", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			w := built(t, onDisk(t, root, diskPlan(t, "producer", centralised("a")),
+				dependentOn(t, "dependent", "b", "producer")))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			place(t, root, "a/"+storeGen, edited(read(t, root, "a/"+storeGen)))
+
+			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the drift fails the run")
+			assert.Equal(t, report.Plans[1].Status, workspace.PlanFailed, "the dependent commits nothing")
+			stood := findings(report.Sink, workspace.FailedDependency)
+			assert.Length(t, stood, 1, "one finding for the dependent")
+			assert.Equal(t, stood[0].Pos, alphaAt, "at the producer's drift")
+		})
+
+		t.Run("prepares a plan after the plans it depends on under Dry", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "producer", centralised("a")),
+				dependentOn(t, "dependent", "b", "producer")))
+			report, err := w.Run(t.Context(), workspace.Input{Graph: routedIn(t, coretest.StorePath), Dry: true})
+			assert.NoError(t, err, "the dry run is clean")
+			assert.Equal(t, report.Plans[1].Status, workspace.PlanPrepared, "the dependent prepares")
+		})
+
+		t.Run("reports no FailedDependency in a run an Error of a shared phase blocks", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "producer", centralised("a")),
+				dependentOn(t, "dependent", "b", "producer")))
+			g := routedIn(t, coretest.StorePath)
+			assert.NoError(t, g.AttachDirectives(coretest.Struct(coretest.StorePath, "Alpha").ID,
+				[]directive.Raw{{Name: unclaimedName}}), "an unclaimed directive attaches before the seal")
+			report, err := runOver(t, w, g)
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the shared Error fails the run")
+			assert.Equal(t, report.Plans[1].Status, workspace.PlanFailed, "the dependent commits nothing")
+			explained := findings(report.Sink, workspace.FailedDependency)
+			assert.Length(t, explained, 0, "and no FailedDependency explains it")
+		})
+
+		t.Run("cancels a plan whose dependency's commit a cancellation skipped", func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			canceller := &recordingCheck{name: "canceller", script: func(*plugin.CheckContext) { cancel() }}
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "producer", centralised("a")),
+				dependentOn(t, "dependent", "b", "producer")).Checks(canceller))
+			report, err := w.Run(ctx, workspace.Input{Graph: routedIn(t, coretest.StorePath)})
+			assert.ErrorIs(t, err, context.Canceled, "the cancellation is returned")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanCancelled, "the producer's commit is skipped")
+			assert.Equal(t, report.Plans[1].Status, workspace.PlanCancelled, "and so is the dependent's")
+			explained := findings(report.Sink, workspace.FailedDependency)
+			assert.Length(t, explained, 0, "and no FailedDependency explains it")
 		})
 	})
 }

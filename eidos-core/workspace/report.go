@@ -59,7 +59,8 @@ const (
 	// PlanCommitted reports a plan whose staging committed.
 	PlanCommitted PlanStatus = 1
 	// PlanFailed reports a plan that reported an Error or returned an
-	// error, or that a shared phase's Error kept from committing.
+	// error, or that a shared phase's Error, a Close Error or a plan it
+	// depends on kept from committing.
 	PlanFailed PlanStatus = 2
 	// PlanCancelled reports a plan whose commit the run's cancellation
 	// skipped.

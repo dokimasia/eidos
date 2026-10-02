@@ -15,7 +15,6 @@ import (
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/rules"
-	"go.dokimi.dev/eidos/core/store"
 )
 
 // Config is what the composition populates from: option values per
@@ -27,14 +26,20 @@ type Config struct {
 }
 
 // Plan is one write side: a value, never a plugin. Build validates
-// it whole, so a plan that survives names only registered things.
+// it whole, so a plan that Build accepts names only registered things.
 type Plan struct {
 	// Name keys the plan's store in the run's report and must be
 	// unique across the composition.
 	Name string
-	// Scope filters what the plan's generators see, and nil admits
-	// everything.
-	Scope store.Scope
+	// Sources scopes what the plan's generators see. The zero value
+	// admits every package.
+	Sources Sources
+	// DependsOn names the plans whose exports the plan's generators
+	// read. The plan generates after each of them has rendered, and
+	// commits only where each of them commits. Build refuses a name the
+	// composition does not declare, the plan's own name, a name listed
+	// twice, and a cycle, naming every plan in it.
+	DependsOn []string
 	// Generators run in bucket order within the plan, whatever
 	// order they are listed in.
 	Generators []plugin.Generator
@@ -56,6 +61,7 @@ type Builder struct {
 	frontends  []plugin.Frontend
 	annotators []plugin.Annotator
 	plans      []Plan
+	checks     []plugin.WorkspaceCheck
 	targets    []plugin.Target
 	brand      output.Brand
 	open       func() (output.Sink, error)
@@ -104,6 +110,17 @@ func (b *Builder) Annotators(as ...plugin.Annotator) *Builder {
 // Plans registers the write sides.
 func (b *Builder) Plans(ps ...Plan) *Builder {
 	b.plans = append(b.plans, ps...)
+	return b
+}
+
+// Checks registers the workspace checks Close runs, in registration
+// order. Build refuses a nil check, a check whose name another plugin
+// of the composition has, and a check that reads a plan the
+// composition does not declare or names one plan twice. A check takes
+// options, keys and capabilities the way any plugin of the composition
+// does.
+func (b *Builder) Checks(cs ...plugin.WorkspaceCheck) *Builder {
+	b.checks = append(b.checks, cs...)
 	return b
 }
 
@@ -226,8 +243,12 @@ func (b *Builder) Build() (*Workspace, error) {
 	faults = append(faults, lerr...)
 	options, cerr := configure(roster, byName, b.config)
 	faults = append(faults, cerr...)
-	plans, perr := compilePlans(b.plans, gens, reg.targets)
+	plans, perr := compilePlans(b.plans, gens, reg.targets, languages(b.frontends, reg.rules))
 	faults = append(faults, perr...)
+	order, oerr := orderPlans(plans)
+	faults = append(faults, oerr...)
+	checks, kerr := compileChecks(b.checks, plans)
+	faults = append(faults, kerr...)
 	if b.open != nil && b.brand.Valid() {
 		faults = append(faults, stampable(plans, b.brand)...)
 	}
@@ -241,6 +262,8 @@ func (b *Builder) Build() (*Workspace, error) {
 		rules:       reg.rules,
 		annotate:    ann,
 		plans:       plans,
+		order:       order,
+		checks:      checks,
 		frontends:   slices.Clone(b.frontends),
 		contracts:   contractsOf(reg.keys),
 		open:        b.open,
@@ -248,7 +271,7 @@ func (b *Builder) Build() (*Workspace, error) {
 		id:          b.id,
 		workers:     b.workers,
 		brand:       b.brand,
-		fingerprint: fingerprintOf(ann, plans, options),
+		fingerprint: fingerprintOf(ann, plans, checks, options),
 	}, nil
 }
 

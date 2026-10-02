@@ -77,6 +77,10 @@ type phaseCall struct {
 	rules   *rules.Registry
 	kernel  meta.KernelKeys
 	workers int
+	// exports are the exports of the plans a generator's plan depends
+	// on, keyed by plan name, which every lane reads and none writes. An
+	// annotator's phase call has none.
+	exports map[string]plugin.ExportDoc
 	// collects reports that the call runs on more than one worker, so
 	// it collects each rule's matches before it runs them.
 	collects bool

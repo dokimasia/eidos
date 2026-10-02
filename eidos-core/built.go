@@ -124,10 +124,12 @@ func annotate(b *built, ctx *plugin.AnnotatorContext) error {
 // declaration order, each on up to the context's workers, then applies
 // the buffered effects in canonical match order and flushes the
 // accumulators into the plan's store after every rule ran, which keeps
-// a plugin's own emit invisible to its own emit rules.
+// a plugin's own emit invisible to its own emit rules. Every handler
+// reads the context's exports through its match.
 func generate(b *built, ctx *plugin.GeneratorContext) error {
 	c := newPhaseCall(b, ctx.Index, ctx.Facts, ctx.Sink, ctx.Emit, ctx.Plugin, ctx.Bucket, ctx.Rules, ctx.Kernel,
 		ctx.Workers)
+	c.exports = ctx.Exports
 	if err := c.run(plugin.PhaseGenerate, plugin.PhaseEmit); err != nil {
 		return err
 	}

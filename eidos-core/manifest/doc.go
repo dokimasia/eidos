@@ -40,5 +40,8 @@
 //
 // # Dependency position
 //
-// core/manifest imports core/plugin and the Go stdlib.
+// core/manifest imports core/diag and the Go stdlib. core/plugin
+// imports it for the records a workspace check reads, so it names a
+// plugin by its origin, [diag.Origin], which a plugin's ID is an alias
+// of.
 package manifest

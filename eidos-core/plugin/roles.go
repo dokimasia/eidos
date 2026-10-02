@@ -5,6 +5,7 @@ package plugin
 
 import (
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
@@ -31,6 +32,26 @@ type Annotator interface {
 type Generator interface {
 	Plugin
 	Generate(ctx *GeneratorContext) error
+}
+
+// WorkspaceCheck checks a claim across plans at Close, over the run's
+// records: each plan's files, each plan's export, the frozen graph and
+// the facts. It reports diagnostics and writes nothing.
+//
+// A problem with one item is a finding on the context's sink, and the
+// check continues. A returned error is fatal to Close: the run commits
+// nothing and returns the error, wrapped with the check's name. The run
+// calls a check only where every plan it reads staged cleanly, and
+// reports one Info for a check it does not call.
+type WorkspaceCheck interface {
+	Plugin
+	// Reads returns the names of the plans whose records the check
+	// reads, and nil for every plan of the composition. The
+	// composition refuses a name it does not declare, and a name
+	// listed twice.
+	Reads() []string
+	// Check reports what the records break.
+	Check(ctx *CheckContext) error
 }
 
 // AnnotatorContext is what one Annotate call may touch.
@@ -88,4 +109,42 @@ type GeneratorContext struct {
 	// Workers is how many invocations the call may run at once, with
 	// the meaning [AnnotatorContext.Workers] states.
 	Workers int
+	// Exports are the exports of the plans the plan depends on, keyed
+	// by plan name, each complete before the plan's first generator
+	// runs. It is nil for a plan that depends on none. Every dependent
+	// of a plan reads the same values, so a generator does not mutate
+	// them.
+	Exports map[string]ExportDoc
+}
+
+// PlanRecord is one plan's record as Close reads it: what the plan's
+// commit records, and its export.
+type PlanRecord struct {
+	// Name is the plan's name.
+	Name string
+	// Files are the manifest entries of the files the plan routed,
+	// sorted by path, each with the digest of the bytes the plan
+	// staged.
+	Files []manifest.Entry
+	// Export is the plan's export.
+	Export ExportDoc
+}
+
+// CheckContext is what one Check call may read. Its Index and Reader
+// see the whole graph, and the reader records into a set the run
+// discards, because Close runs every check on every run.
+type CheckContext struct {
+	Index  *Index
+	Reader *store.Reader
+	Facts  *meta.Facts
+	Sink   *diag.Sink
+	// Rules and Kernel have the meaning the annotator's context gives
+	// the fields of the same names.
+	Rules  *rules.Registry
+	Kernel meta.KernelKeys
+	// Plugin is the check's identity: the origin of its findings.
+	Plugin ID
+	// Plans are the records of the plans the check reads, in
+	// composition order.
+	Plans []PlanRecord
 }

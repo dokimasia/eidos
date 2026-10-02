@@ -4,6 +4,7 @@
 package workspace_test
 
 import (
+	"errors"
 	"io/fs"
 	"strings"
 	"testing"
@@ -13,6 +14,7 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/layout"
@@ -61,6 +63,40 @@ func (p *promise) keeper() plugin.Annotator {
 	})
 }
 
+// errCheck is the error the returning check returns.
+var errCheck = errors.New("the check cannot read its records")
+
+// recordingCheck is a workspace check that reads the plans it names,
+// records each context it is called with, appends its name to a log
+// checks share, runs a script over the context and returns err.
+type recordingCheck struct {
+	name   plugin.ID
+	reads  []string
+	called []*plugin.CheckContext
+	log    *[]plugin.ID
+	script func(ctx *plugin.CheckContext)
+	err    error
+}
+
+// Name returns the check's name.
+func (c *recordingCheck) Name() plugin.ID { return c.name }
+
+// Reads returns the plans the check names.
+func (c *recordingCheck) Reads() []string { return c.reads }
+
+// Check records the call, runs the script and returns the check's
+// error.
+func (c *recordingCheck) Check(ctx *plugin.CheckContext) error {
+	c.called = append(c.called, ctx)
+	if c.log != nil {
+		*c.log = append(*c.log, c.name)
+	}
+	if c.script != nil {
+		c.script(ctx)
+	}
+	return c.err
+}
+
 // keptAndGone returns a composition of two plans writing under a and
 // b: the first run of every case that removes the second plan.
 func keptAndGone(tb assert.TB, root string) *workspace.Workspace {
@@ -71,7 +107,8 @@ func keptAndGone(tb assert.TB, root string) *workspace.Workspace {
 
 // Close runs over the plans' records on one goroutine: the collisions
 // between plans, the sweep of the plans the composition no longer
-// declares, and the audit of the completeness contracts.
+// declares, the audit of the completeness contracts, and the workspace
+// checks.
 func TestClose(t *testing.T) {
 	t.Parallel()
 
@@ -272,6 +309,175 @@ func TestClose(t *testing.T) {
 			unmet := findings(report.Sink, workspace.UnmetContract)
 			assert.Length(t, unmet, 1, "the workspace's struct alone")
 			assert.Equal(t, unmet[0].Pos.File, "svc/a/a.zz", "the dependency's struct is not audited")
+		})
+
+		t.Run("hands a check the records of the plans it reads", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			c := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			cleanRun(t, built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})).Checks(c)),
+				routedIn(t, coretest.StorePath))
+			assert.Length(t, c.called, 1, "the check runs once")
+			plans := c.called[0].Plans
+			assert.Length(t, plans, 1, "over one plan's record")
+			assert.Equal(t, plans[0].Name, "plan", "the plan it reads")
+			assert.Equal(t, plans[0].Files, []manifest.Entry{{
+				Path:    storeGen,
+				Plan:    "plan",
+				Hash:    digestOf(read(t, root, storeGen)),
+				Plugins: []plugin.ID{"plan-mirror"},
+				Sources: []string{coretest.Struct(coretest.StorePath, "Alpha").ID.String()},
+			}}, "the plan's files as the record lists them")
+			assert.Equal(t, plans[0].Export.Symbols[0].Name, "ForAlpha", "the plan's export")
+		})
+
+		t.Run("hands a check that names no plan the record of every plan in composition order", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "everything"}
+			cleanRun(t, built(t, onDisk(t, t.TempDir(),
+				diskPlan(t, "b", centralised("b")), diskPlan(t, "a", centralised("a"))).Checks(c)),
+				routedIn(t, coretest.StorePath))
+			names := make([]string, 0, 2)
+			for _, p := range c.called[0].Plans {
+				names = append(names, p.Name)
+			}
+			assert.Equal(t, names, []string{"b", "a"}, "the plans the check reads")
+		})
+
+		t.Run("hands a check a reader over the whole graph", func(t *testing.T) {
+			t.Parallel()
+
+			var seen, indexed bool
+			alphaID := coretest.Struct(coretest.StorePath, "Alpha").ID
+			c := &recordingCheck{name: "reading", reads: []string{"plan"}, script: func(ctx *plugin.CheckContext) {
+				_, seen = ctx.Reader.Lookup(alphaID)
+				_, indexed = ctx.Index.Lookup(alphaID)
+			}}
+			scoped := diskPlan(t, "plan", layout.Config{})
+			scoped.Sources = workspace.Sources{Packages: []string{"./other/..."}}
+			cleanRun(t, built(t, onDisk(t, t.TempDir(), scoped).Checks(c)), routedIn(t, coretest.StorePath))
+			assert.True(t, seen, "the reader returns a declaration outside the plan's scope")
+			assert.True(t, indexed, "and so does the index")
+		})
+
+		t.Run("reports a check's findings in the run's sink", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "warning", reads: []string{"plan"}, script: func(ctx *plugin.CheckContext) {
+				ctx.Sink.Warnf(runCode, alphaAt, ctx.Plugin, "the claim is advisory")
+			}}
+			report := cleanRun(t, built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).Checks(c)),
+				routedIn(t, coretest.StorePath))
+			warned := findings(report.Sink, runCode)
+			assert.Length(t, warned, 1, "the check's one finding")
+			assert.Equal(t, warned[0].Origin, diag.Origin("warning"), "under the check's origin")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "a warning blocks no commit")
+		})
+
+		t.Run("blocks every commit for a check's Error", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			c := &recordingCheck{name: "refusing", reads: []string{"plan"}, script: func(ctx *plugin.CheckContext) {
+				ctx.Sink.Errorf(runCode, alphaAt, ctx.Plugin, "no stub derives from Alpha")
+			}}
+			report, err := runOver(t, built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})).Checks(c)),
+				routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the check's Error fails the run")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "the plan commits nothing")
+			assert.True(t, absent(root, storeGen), "nothing is written")
+		})
+
+		t.Run("returns a check's error wrapped with its name", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "returning", reads: []string{"plan"}, err: errCheck}
+			report, err := runOver(t, built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).Checks(c)),
+				routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, errCheck, "the check's error is returned")
+			assert.Contains(t, err.Error(), "check returning", "naming the check")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "the plan commits nothing")
+		})
+
+		t.Run("runs no check after a check returned an error", func(t *testing.T) {
+			t.Parallel()
+
+			later := &recordingCheck{name: "later", reads: []string{"plan"}}
+			_, err := runOver(t, built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Checks(&recordingCheck{name: "returning", reads: []string{"plan"}, err: errCheck}, later)),
+				routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, errCheck, "the first check's error is returned")
+			assert.Length(t, later.called, 0, "the later check does not run")
+		})
+
+		t.Run("does not call a check that reads a failed plan", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			_, err := runOver(t, built(t, onDisk(t, t.TempDir(), failing(t, "plan")).Checks(c)),
+				routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the failing plan fails the run")
+			assert.Length(t, c.called, 0, "the check does not run")
+		})
+
+		t.Run("reports FailedDependency at the first Error of a failed plan a check reads", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			report, _ := runOver(t, built(t, onDisk(t, t.TempDir(), failing(t, "plan")).Checks(c)),
+				routedIn(t, coretest.StorePath))
+			stood := findings(report.Sink, workspace.FailedDependency)
+			assert.Length(t, stood, 1, "one finding for the check")
+			assert.Equal(t, stood[0].Pos, alphaAt, "at the failed plan's first Error")
+			assert.Equal(t, stood[0].Severity, diag.SeverityInfo, "at Info")
+			assert.Contains(t, stood[0].Msg, `check stubbed reads plan "plan"`, "naming the check and the plan")
+		})
+
+		t.Run("calls a check that reads no failed plan", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "stubbed", reads: []string{"fine"}}
+			_, err := runOver(t, built(t, onDisk(t, t.TempDir(),
+				failing(t, "plan"), diskPlan(t, "fine", centralised("fine"))).Checks(c)),
+				routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the failing plan fails the run")
+			assert.Length(t, c.called, 1, "the check over the clean plan runs")
+		})
+
+		t.Run("reports no FailedDependency for a check whose plan returned an error alone", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			report, err := runOver(t, built(t, onDisk(t, t.TempDir(), broken(t, "plan")).Checks(c)),
+				routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, errBroken, "the generator's error is returned")
+			assert.Length(t, c.called, 0, "the check does not run")
+			assert.Length(t, findings(report.Sink, workspace.FailedDependency), 0, "and nothing explains it")
+		})
+
+		t.Run("runs no check after an Error in a phase every plan shares", func(t *testing.T) {
+			t.Parallel()
+
+			c := &recordingCheck{name: "stubbed", reads: []string{"plan"}}
+			g := routedIn(t, coretest.StorePath)
+			assert.NoError(t, g.AttachDirectives(coretest.Struct(coretest.StorePath, "Alpha").ID,
+				[]directive.Raw{{Name: unclaimedName}}), "an unclaimed directive attaches before the seal")
+			_, err := runOver(t, built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).Checks(c)), g)
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the shared Error fails the run")
+			assert.Length(t, c.called, 0, "the check does not run")
+		})
+
+		t.Run("runs the checks in registration order", func(t *testing.T) {
+			t.Parallel()
+
+			var log []plugin.ID
+			cleanRun(t, built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Checks(&recordingCheck{name: "zeta", log: &log}).
+				Checks(&recordingCheck{name: "alpha", log: &log})),
+				routedIn(t, coretest.StorePath))
+			assert.Equal(t, log, []plugin.ID{"zeta", "alpha"}, "the order the checks ran in")
 		})
 	})
 }

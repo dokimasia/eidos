@@ -5,6 +5,7 @@ package workspace_test
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/store"
+	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
@@ -248,6 +250,68 @@ func recording(t *testing.T, entries ...manifest.Entry) *ledger.Mem {
 // sink refuses to stage: it ends in the reserved staging suffix.
 func stageEntry(plan string) manifest.Entry {
 	return manifest.Entry{Path: "svc/old.txt.stage", Plan: plan, Hash: "sha256:" + strings.Repeat("ab", 32)}
+}
+
+// errBroken is the error the broken plan's generator returns.
+var errBroken = errors.New("the generator is broken")
+
+// exportReader is a generator recording whether it ran and the
+// exports its context handed over.
+type exportReader struct {
+	name plugin.ID
+	ran  bool
+	got  map[string]plugin.ExportDoc
+}
+
+// Name returns the reader's name.
+func (r *exportReader) Name() plugin.ID { return r.name }
+
+// Generate records the run and the exports.
+func (r *exportReader) Generate(ctx *plugin.GeneratorContext) error {
+	r.ran, r.got = true, ctx.Exports
+	return nil
+}
+
+// dependent returns a plan that depends on deps and runs the reader
+// through a printer of its own. It routes no file.
+func dependent(tb assert.TB, name string, r *exportReader, deps ...string) workspace.Plan {
+	tb.Helper()
+
+	return workspace.Plan{
+		Name:       name,
+		DependsOn:  deps,
+		Generators: []plugin.Generator{r},
+		Backend:    printerAs(tb, plugin.ID(name+"-printer"), "fixture", ""),
+	}
+}
+
+// failing returns a plan whose one generator reports an Error at every
+// struct it sees, through a printer of its own.
+func failing(tb assert.TB, name string) workspace.Plan {
+	tb.Helper()
+
+	return workspace.Plan{
+		Name: name,
+		Generators: []plugin.Generator{generator(plugin.ID(name+"-refuser"),
+			func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+				m.Errorf(runCode, "%s is refused", m.Struct.Name)
+				return nil
+			})},
+		Backend: printerAs(tb, plugin.ID(name+"-printer"), "fixture", ""),
+	}
+}
+
+// broken returns a plan whose one generator returns errBroken and
+// reports nothing, through a printer of its own.
+func broken(tb assert.TB, name string) workspace.Plan {
+	tb.Helper()
+
+	return workspace.Plan{
+		Name: name,
+		Generators: []plugin.Generator{generator(plugin.ID(name+"-breaker"),
+			func(*eidos.StructMatch, *eidos.Emitter) error { return errBroken })},
+		Backend: printerAs(tb, plugin.ID(name+"-printer"), "fixture", ""),
+	}
 }
 
 // A plan stages its files and the removal of its stale outputs into a
@@ -506,6 +570,116 @@ func TestPlan(t *testing.T) {
 					assert.Equal(t, e.Plan, "second", "the record lists it under the new plan")
 				}
 			}
+		})
+
+		t.Run("hands a dependent the export of the plan it depends on", func(t *testing.T) {
+			t.Parallel()
+
+			reader := &exportReader{name: "bindings-reader"}
+			w := built(t, onDisk(t, t.TempDir(),
+				diskPlan(t, "plan", layout.Config{}), dependent(t, "bindings", reader, "plan")))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			doc, held := reader.got["plan"]
+			assert.True(t, held, "the dependent reads the plan's export")
+			assert.Length(t, doc.Symbols, 1, "the export lists the plan's one declaration")
+			got := doc.Symbols[0]
+			assert.Equal(t, got.ExportKey, plugin.ExportKey{
+				Origin: coretest.Struct(coretest.StorePath, "Alpha").ID, Plugin: "plan-mirror", Name: "ForAlpha",
+			}, "the declaration's key")
+			assert.Equal(t, got.Spelling, "ForAlpha", "the spelling the settle left")
+			assert.Equal(t, got.File, storeGen, "the file the declaration was rendered into")
+			assert.Equal(t, got.Kind, symbol.KindStruct, "the declaration's kind")
+		})
+
+		t.Run("hands a dependent the export of each plan it depends on", func(t *testing.T) {
+			t.Parallel()
+
+			reader := &exportReader{name: "bindings-reader"}
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "a", centralised("a")),
+				diskPlan(t, "b", centralised("b")), dependent(t, "bindings", reader, "a", "b")))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			assert.Equal(t, reader.got["a"].Symbols[0].File, "a/"+storeGen, "the first plan's export")
+			assert.Equal(t, reader.got["b"].Symbols[0].File, "b/"+storeGen, "the second plan's export")
+		})
+
+		t.Run("hands a plan without dependencies no export", func(t *testing.T) {
+			t.Parallel()
+
+			reader := &exportReader{name: "alone-reader"}
+			w := built(t, onDisk(t, t.TempDir(), dependent(t, "alone", reader)))
+			cleanRun(t, w, routedIn(t, coretest.StorePath))
+			assert.True(t, reader.ran, "the plan generates")
+			assert.Length(t, reader.got, 0, "the exports the plan reads")
+		})
+
+		t.Run("generates nothing for a plan whose dependency failed", func(t *testing.T) {
+			t.Parallel()
+
+			reader := &exportReader{name: "bindings-reader"}
+			w := built(t, onDisk(t, t.TempDir(), failing(t, "plan"), dependent(t, "bindings", reader, "plan")))
+			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the failing plan fails the run")
+			assert.False(t, reader.ran, "the dependent generates nothing")
+			assert.Equal(t, report.Plans[1].Status, workspace.PlanFailed, "the dependent commits nothing")
+		})
+
+		t.Run("reports FailedDependency at the first Error of the plan a dependent depends on", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), failing(t, "plan"),
+				dependent(t, "bindings", &exportReader{name: "bindings-reader"}, "plan")))
+			report, _ := runOver(t, w, routedIn(t, coretest.StorePath))
+			stood := findings(report.Sink, workspace.FailedDependency)
+			assert.Length(t, stood, 1, "one finding for the dependent")
+			assert.Equal(t, stood[0].Pos, alphaAt, "at the failed plan's first Error")
+			assert.Equal(t, stood[0].Severity, diag.SeverityInfo, "at Info")
+			assert.Contains(t, stood[0].Msg, `plan "bindings" depends on plan "plan"`, "naming both plans")
+		})
+
+		t.Run("reports FailedDependency at the cause of a chain of dependencies", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), failing(t, "a"),
+				dependent(t, "b", &exportReader{name: "b-reader"}, "a"),
+				dependent(t, "c", &exportReader{name: "c-reader"}, "b")))
+			report, _ := runOver(t, w, routedIn(t, coretest.StorePath))
+			stood := findings(report.Sink, workspace.FailedDependency)
+			assert.Length(t, stood, 2, "one finding for each dependent")
+			assert.Contains(t, stood[1].Msg, `plan "c" depends on plan "b"`, "naming the plan the last one depends on")
+			assert.Equal(t, stood[1].Pos, alphaAt, "at the first Error of the chain")
+		})
+
+		t.Run("reports no FailedDependency for a dependency that failed on a returned error alone", func(t *testing.T) {
+			t.Parallel()
+
+			reader := &exportReader{name: "bindings-reader"}
+			w := built(t, onDisk(t, t.TempDir(), broken(t, "plan"), dependent(t, "bindings", reader, "plan")))
+			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, errBroken, "the generator's error is returned")
+			assert.False(t, reader.ran, "the dependent generates nothing")
+			assert.Equal(t, report.Plans[1].Status, workspace.PlanFailed, "the dependent commits nothing")
+			assert.Length(t, findings(report.Sink, workspace.FailedDependency), 0, "and nothing explains it")
+		})
+
+		t.Run("cancels a plan whose dependency was cancelled", func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(t.Context())
+			cancelled := workspace.Plan{
+				Name: "plan",
+				Generators: []plugin.Generator{generator("plan-canceller",
+					func(*eidos.StructMatch, *eidos.Emitter) error {
+						cancel()
+						return context.Canceled
+					})},
+				Backend: printerAs(t, "plan-printer", "fixture", ""),
+			}
+			reader := &exportReader{name: "bindings-reader"}
+			w := built(t, onDisk(t, t.TempDir(), cancelled, dependent(t, "bindings", reader, "plan")))
+			report, err := w.Run(ctx, workspace.Input{Graph: routedIn(t, coretest.StorePath)})
+			assert.ErrorIs(t, err, context.Canceled, "the cancellation is returned")
+			assert.False(t, reader.ran, "the dependent generates nothing")
+			assert.Equal(t, report.Plans[1].Status, workspace.PlanCancelled, "the dependent is cancelled")
 		})
 	})
 }

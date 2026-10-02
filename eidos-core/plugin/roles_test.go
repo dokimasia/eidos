@@ -34,6 +34,20 @@ func (g *generator) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
+// check mirrors it for the check role, reading the plans it names.
+type check struct {
+	named
+	reads []string
+	got   *plugin.CheckContext
+}
+
+func (c *check) Reads() []string { return c.reads }
+
+func (c *check) Check(ctx *plugin.CheckContext) error {
+	c.got = ctx
+	return nil
+}
+
 // A role is Plugin plus one method taking a context struct, and the
 // context is the whole surface a phase call may touch, so the
 // invocation shape is contract.
@@ -71,6 +85,39 @@ func TestRoles(t *testing.T) {
 			assert.NoError(t, p.Generate(ctx), "the fixture call passes")
 			assert.True(t, g.got == ctx,
 				"the phase call touches exactly what its context carries")
+		})
+
+		t.Run("reads the exports of the plans it depends on through its context", func(t *testing.T) {
+			t.Parallel()
+
+			g := &generator{name: "bindings"}
+			exports := map[string]plugin.ExportDoc{"stubs": {Plan: "stubs"}}
+			assert.NoError(t, g.Generate(&plugin.GeneratorContext{Plugin: "bindings", Exports: exports}),
+				"the fixture call passes")
+			assert.Equal(t, g.got.Exports["stubs"].Plan, "stubs", "the export the context hands over")
+		})
+	})
+
+	t.Run("WorkspaceCheck", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("receives the context it is invoked with", func(t *testing.T) {
+			t.Parallel()
+
+			c := &check{name: "stubbed", reads: []string{"stubs"}}
+			var p plugin.WorkspaceCheck = c
+
+			ctx := &plugin.CheckContext{Plugin: "stubbed", Plans: []plugin.PlanRecord{{Name: "stubs"}}}
+			assert.NoError(t, p.Check(ctx), "the fixture call passes")
+			assert.True(t, c.got == ctx,
+				"the check touches exactly what its context carries")
+		})
+
+		t.Run("names the plans it reads", func(t *testing.T) {
+			t.Parallel()
+
+			var p plugin.WorkspaceCheck = &check{name: "stubbed", reads: []string{"stubs"}}
+			assert.Equal(t, p.Reads(), []string{"stubs"}, "the plans the check reads")
 		})
 	})
 }

@@ -146,6 +146,11 @@ type Emit struct {
 	// lowering seams ran, and the declarations the readers see are
 	// the ones that render.
 	settled bool
+	// emitted maps each declaration whose name the settle changed to the
+	// name it was emitted under, which [NewExport] keys an export on. The
+	// settle allocates it at its first change, so a store whose names all
+	// kept their spelling has none.
+	emitted map[symbol.Symbol]string
 }
 
 // NewEmit returns an empty emit store.
@@ -301,6 +306,16 @@ func (e *Emit) reindex() {
 		e.index(i, e.units[i].Decls)
 	}
 	e.order, e.holders = nil, nil
+}
+
+// respelled records the name a declaration was emitted under, which the
+// settle replaced with another spelling. The first record allocates the
+// map, and a later record of the same declaration replaces the earlier.
+func (e *Emit) respelled(d symbol.Symbol, emitted string) {
+	if e.emitted == nil {
+		e.emitted = map[symbol.Symbol]string{}
+	}
+	e.emitted[d] = emitted
 }
 
 // sorted returns the unit indexes in Units order, rebuilding the

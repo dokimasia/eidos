@@ -55,3 +55,13 @@ var UnmetContract = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  60,
 	Meaning: "a declaration lacks a fact its key's completeness contract promises",
 })
+
+// FailedDependency reports a plan that depends on a plan that failed,
+// and a workspace check that reads one, at the first Error of the plan
+// whose failure started the chain. The plan commits nothing, and the
+// check does not run. The run reports none where that plan failed on a
+// returned error alone, because the run returns the error.
+var FailedDependency = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  61,
+	Meaning: "a plan or a check reads a plan that failed, and generates or checks nothing",
+})

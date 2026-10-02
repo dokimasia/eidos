@@ -173,7 +173,7 @@ func dependentFixture() pipelinetest.Fixture {
 		},
 		Compose: func(root string) (*workspace.Workspace, error) {
 			scoped := plan(planName, resolving)
-			scoped.Scope = func(pkg symbol.Identity) bool { return pkg.Package == userPath }
+			scoped.Sources = workspace.Sources{Packages: []string{userPath}}
 			return onDisk(root, frontendtest.NewScriptedDependent()).Plans(scoped).Build()
 		},
 		Want: map[string][]byte{userGen: []byte(userStamped)},

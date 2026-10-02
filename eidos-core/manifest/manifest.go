@@ -13,7 +13,7 @@ import (
 	"slices"
 	"strings"
 
-	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/diag"
 )
 
 // Version is the format this package writes and reads.
@@ -38,7 +38,7 @@ var ErrUnsupported = errors.New("manifest: unsupported format")
 // The empty lists Encode writes where an entry's slice is nil, shared
 // so a nil slice costs no allocation.
 var (
-	noPlugins = []plugin.ID{}
+	noPlugins = []diag.Origin{}
 	noSources = []string{}
 )
 
@@ -70,8 +70,10 @@ type Entry struct {
 	Hash string `json:"hash"`
 	// Plugins are the emitters whose units assembled the file and the
 	// plugins that appended into the units' slots, distinct and sorted:
-	// the names the file's frame attributes it to.
-	Plugins []plugin.ID `json:"plugins"`
+	// the names the file's frame attributes it to. A plugin's name is
+	// the origin its findings report under, so the type is
+	// [diag.Origin], which a plugin's ID is an alias of.
+	Plugins []diag.Origin `json:"plugins"`
 	// Sources are the canonical identities of the declarations the file
 	// derives from, sorted, in the canonical spelling that symbol.Parse
 	// reads back.

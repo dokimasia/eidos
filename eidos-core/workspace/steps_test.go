@@ -558,5 +558,131 @@ func TestSteps(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "the plugin-level tree serves the plan's target")
 		})
+
+		refused := []struct {
+			name string
+			deps []string
+			want string
+		}{
+			{
+				name: "returns an error naming a dependency the composition does not declare",
+				deps: []string{"absent"},
+				want: `plan "bindings" depends on "absent", which the composition does not declare`,
+			},
+			{
+				name: "returns an error naming a plan that depends on itself",
+				deps: []string{"bindings"},
+				want: `plan "bindings" depends on itself`,
+			},
+			{
+				name: "returns an error naming a dependency listed twice",
+				deps: []string{"plan", "plan"},
+				want: `plan "bindings" lists "plan" twice in its dependencies`,
+			},
+		}
+		for _, tt := range refused {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				bindings := planTo("bindings", "fixture", mirror("bindings-mirror"))
+				bindings.DependsOn = tt.deps
+				_, err := valid().Plans(bindings).Build()
+				assert.HasError(t, err, "the dependency is refused")
+				assert.Contains(t, err.Error(), tt.want, "the error names the plan and the dependency")
+			})
+		}
+
+		t.Run("returns no error for a dependency on a declared plan", func(t *testing.T) {
+			t.Parallel()
+
+			bindings := planTo("bindings", "fixture", mirror("bindings-mirror"))
+			bindings.DependsOn = []string{"plan"}
+			_, err := valid().Plans(bindings).Build()
+			assert.NoError(t, err, "the dependency is on the valid composition's plan")
+		})
+	})
+
+	t.Run("orderPlans", func(t *testing.T) {
+		t.Parallel()
+
+		dependingOn := func(name string, deps ...string) workspace.Plan {
+			p := planTo(name, "fixture", mirror(plugin.ID(name+"-mirror")))
+			p.DependsOn = deps
+			return p
+		}
+
+		t.Run("returns an error naming the two plans of a cycle", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Plans(dependingOn("server", "bindings"), dependingOn("bindings", "server")).Build()
+			assert.HasError(t, err, "the cycle is refused")
+			assert.Contains(t, err.Error(), `plans "bindings" and "server" depend on each other in a cycle`,
+				"the error names both plans")
+		})
+
+		t.Run("returns an error naming every plan of a longer cycle", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Plans(dependingOn("a", "c"), dependingOn("b", "a"), dependingOn("c", "b")).Build()
+			assert.HasError(t, err, "the cycle is refused")
+			assert.Contains(t, err.Error(), `plans "a" and "b" and "c" depend on each other in a cycle`,
+				"the error names every plan of the cycle")
+		})
+
+		t.Run("returns one error for each of two cycles", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Plans(dependingOn("a", "b"), dependingOn("b", "a"),
+				dependingOn("c", "d"), dependingOn("d", "c")).Build()
+			assert.HasError(t, err, "both cycles are refused")
+			assert.Contains(t, err.Error(), `plans "a" and "b" depend`, "the first cycle")
+			assert.Contains(t, err.Error(), `plans "c" and "d" depend`, "the second cycle")
+		})
+
+		t.Run("names no plan that depends on a cycle and is not in it", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Plans(dependingOn("a", "b"), dependingOn("b", "a"), dependingOn("tail", "a")).Build()
+			assert.HasError(t, err, "the cycle is refused")
+			assert.False(t, strings.Contains(err.Error(), `"tail"`), "the error names the cycle's plans alone")
+		})
+	})
+
+	t.Run("compileChecks", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns an error for a nil check", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Checks(nil, &recordingCheck{name: "stubbed"}).Build()
+			assert.HasError(t, err, "a nil check is refused")
+			assert.Contains(t, err.Error(), "check 1 of 2 is nil", "the error counts the checks")
+		})
+
+		t.Run("returns an error naming a check that reads an undeclared plan", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Checks(&recordingCheck{name: "stubbed", reads: []string{"absent"}}).Build()
+			assert.HasError(t, err, "the read is refused")
+			assert.Contains(t, err.Error(), `check stubbed reads plan "absent", which the composition does not declare`,
+				"the error names the check and the plan")
+		})
+
+		t.Run("returns an error naming a check that reads one plan twice", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Checks(&recordingCheck{name: "stubbed", reads: []string{"plan", "plan"}}).Build()
+			assert.HasError(t, err, "the second read is refused")
+			assert.Contains(t, err.Error(), `check stubbed reads plan "plan" twice`,
+				"the error names the check and the plan")
+		})
+
+		t.Run("returns an error naming a check whose name another plugin has", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Checks(&recordingCheck{name: "mirror"}).Build()
+			assert.HasError(t, err, "the name is taken")
+			assert.Contains(t, err.Error(), `two plugins return the name "mirror"`, "the error names the plugin")
+		})
 	})
 }

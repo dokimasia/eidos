@@ -49,19 +49,23 @@ type Input struct {
 
 // Run takes the input through the frame and returns what happened:
 // Begin, Load, directive validation and Annotate, then each plan's
-// Generate, Settle, Layout, Render, Stamp and staging in parallel, then
-// Close, the commits and the record.
+// Generate, Settle, Layout, Render, Stamp and staging in parallel, a
+// plan that depends on others after each of them has rendered, then
+// Close with its workspace checks, the commits in dependency order and
+// the record.
 //
-// A plan that reports an Error commits nothing, and its siblings
-// commit. An Error in a phase every plan shares, Load, validation,
-// Annotate or Close, commits nothing at all. Every finding is in the
-// report's sink, and any Error returns [ErrRunFailed] beside the
-// report. A handler's returned error is joined into Run's error,
-// wrapped with its role: an annotator's stops the frame, and a
-// generator's fails its plan. A cancelled context stops the run between
-// units of work and returns the context's error beside the report,
-// which states each plan's outcome. An input that sets neither or both
-// of a tree and a graph is the one refusal that returns a nil report.
+// A plan that reports an Error commits nothing, and neither does a
+// plan that depends on it. The other plans commit. An Error in a phase
+// every plan shares, Load, validation, Annotate or Close, commits
+// nothing at all, and a workspace check's Error is a Close Error.
+// Every finding is in the report's sink, and any Error returns
+// [ErrRunFailed] beside the report. A handler's returned error is
+// joined into Run's error, wrapped with its role: an annotator's stops
+// the frame, a generator's fails its plan, and a check's fails Close.
+// A cancelled context stops the run between units of work and returns
+// the context's error beside the report, which states each plan's
+// outcome. An input that sets neither or both of a tree and a graph is
+// the one refusal that returns a nil report.
 //
 // The ledger records the merged manifest strictly after the last
 // commit, and only where a plan or the sweep committed. It records
@@ -113,9 +117,14 @@ func (w *Workspace) Run(ctx context.Context, in Input) (*Report, error) {
 	sw, err := w.sweep(rec, runs, sink, shared || collided)
 	errs := []error{err}
 	unmet := w.audit(g, facts, loaded, sink)
-	blocked := shared || collided || unmet
+	checked := false
+	if !shared {
+		checked, err = w.check(g, facts, table, runs, sink)
+		errs = append(errs, err)
+	}
+	blocked := shared || collided || unmet || checked
 
-	errs = append(errs, commitAll(ctx, runs, sw, blocked, in.Dry, report))
+	errs = append(errs, commitAll(ctx, runs, w.order, sw, blocked, in.Dry, report))
 	report.Manifest = w.merged(rec, runs, sw)
 	errs = append(errs, commitRecord(ctx, rec, runs, sw, in.Dry, report.Manifest))
 	for _, p := range runs {

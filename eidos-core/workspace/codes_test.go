@@ -47,6 +47,10 @@ func TestCodes(t *testing.T) {
 			name: "UnmetContract", code: workspace.UnmetContract, spelt: "EID-0060",
 			meaning: "a declaration lacks a fact its key's completeness contract promises",
 		},
+		{
+			name: "FailedDependency", code: workspace.FailedDependency, spelt: "EID-0061",
+			meaning: "a plan or a check reads a plan that failed, and generates or checks nothing",
+		},
 	}
 	for _, tt := range codes {
 		t.Run(tt.name, func(t *testing.T) {
