@@ -95,7 +95,8 @@ func HasTrailerKey(tail []byte) bool {
 // digest matches its body, which [Contract.Verify] checks the same
 // way. A hand-written file, another brand's output and an output
 // edited since it was stamped are refused, naming the path, and
-// remain as they are.
+// remain as they are. A staged removal deletes only the brand's
+// intact output, and leaves any other file in place.
 type Disk = core.Disk
 
 // NewDisk opens a sink over an existing directory that writes as
@@ -109,9 +110,10 @@ func NewDisk(root string, brand Brand) (*Disk, error) {
 }
 
 // Mem stages in memory and commits into a map, for tests and for
-// a dry run that computes everything and writes nowhere. It holds
-// the same staging law as the disk sink: nothing is readable
-// until the commit.
+// a dry run that computes everything and writes nowhere. It follows
+// the same staging rule as the disk sink: nothing is readable
+// until the commit. Its destination starts empty, so every file it
+// commits is created and every staged removal finds nothing.
 type Mem = core.Mem
 
 // NewMem opens a sink over memory.
@@ -132,13 +134,40 @@ const (
 	// ActionUpdated reports a path that existed with different
 	// bytes.
 	ActionUpdated = core.ActionUpdated
-	// ActionUnchanged reports identical bytes, so the file and its
-	// mtime were not touched.
+	// ActionUnchanged reports a path the commit left as it was:
+	// identical bytes, whose file and mtime were not touched, or a
+	// staged removal that found nothing of the brand's to remove.
 	ActionUnchanged = core.ActionUnchanged
+	// ActionDeleted reports a file the commit removed.
+	ActionDeleted = core.ActionDeleted
+)
+
+// Found is what a destination path contains before a commit, as the
+// brand's trailer proves it. The zero value names no verdict.
+type Found = core.Found
+
+const (
+	// FoundNothing reports a path with no file.
+	FoundNothing = core.FoundNothing
+	// FoundSame reports a file whose bytes equal the staged bytes.
+	FoundSame = core.FoundSame
+	// FoundIntact reports the brand's intact output: a frame under the
+	// brand and a body that hashes to its trailer.
+	FoundIntact = core.FoundIntact
+	// FoundDrifted reports the brand's frame over a body edited since
+	// its stamp.
+	FoundDrifted = core.FoundDrifted
+	// FoundForeign reports a path without the brand's frame: a
+	// hand-written file, another tool's output, a generated file whose
+	// trailer was deleted, or a directory.
+	FoundForeign = core.FoundForeign
 )
 
 // Written is one committed file's record.
 type Written = core.Written
+
+// Change is one staged path before the commit.
+type Change = core.Change
 
 // Sink takes stamped files to their destination in two steps:
 // stage, then commit. Staging is invisible, so a failed or
@@ -154,9 +183,9 @@ type Sink = core.Sink
 type Tee = core.Tee
 
 // NewTee fans out to first and every sink after it. The first is
-// the one of record: its Commit returns the records the caller
-// reads, because the actions taken are one destination's answer
-// and not a merged one.
+// the one of record: its Prepare and its Commit return what the
+// caller reads, because the verdicts and the actions are one
+// destination's answer and not a merged one.
 func NewTee(first Sink, rest ...Sink) *Tee {
 	return core.NewTee(first, rest...)
 }

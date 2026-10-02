@@ -80,7 +80,7 @@ type StoreReader = core.StoreReader
 // the first round that returns no unit the load has not loaded.
 type Dependent = core.Dependent
 
-// Cardinality says how many outputs a family produces. The zero
+// Cardinality is how many outputs a family produces. The zero
 // value addresses nothing: every declared family states its
 // cardinality, and [Emit.Add] refuses a unit that does not.
 type Cardinality = core.Cardinality
@@ -103,11 +103,11 @@ type Output = core.Output
 
 // Unit is one accumulated output entity: everything one plugin
 // contributed to one (family, cardinality key) in one phase call.
-// It carries the full routing key, so no consumer re-derives any
+// It contains the full routing key, so no consumer re-derives any
 // part of it from the declarations.
 type Unit = core.Unit
 
-// Emit holds one plan's accumulated units, plus a per-kind index
+// Emit contains one plan's accumulated units, plus a per-kind index
 // over their declarations that is maintained at [Emit.Add]: each
 // unit's tree is walked once when it arrives, so an emit-triggered
 // rule enumerates its matches rather than the emit graph.
@@ -117,7 +117,7 @@ type Unit = core.Unit
 // the index it is being read from.
 type Emit = core.Emit
 
-// NewEmit returns an emit store holding nothing.
+// NewEmit returns an empty emit store.
 func NewEmit() *Emit {
 	return core.NewEmit()
 }
@@ -376,7 +376,7 @@ type RenderedFile = core.RenderedFile
 // A problem with one file attaches to the context's sink and the
 // pass continues with the remaining files; a returned error is
 // fatal to the pass. Two calls over one store return the same
-// bytes, which the conformance suite holds every renderer to.
+// bytes, which the conformance suite checks every renderer for.
 type Renderer = core.Renderer
 
 // RenderContext is what one render call may touch.
@@ -423,18 +423,18 @@ type Annotator = core.Annotator
 // context and emits neutral values into the plan's store.
 type Generator = core.Generator
 
-// AnnotatorContext carries what one Annotate call may touch.
+// AnnotatorContext is what one Annotate call may touch.
 //
 // The two read surfaces split by rule: Index is the dispatcher's
 // routing path and records nothing, and Reader is the plugin's
 // tracked path, recording into the phase's read set. Plugin and
-// Bucket are the arbitration rank fields every stamp made under
-// this call carries.
+// Bucket are the arbitration rank fields of every stamp made under
+// this call.
 type AnnotatorContext = core.AnnotatorContext
 
-// GeneratorContext carries what one Generate call may touch. Its
-// Index and Reader are scoped to the plan's sources, and Emit is
-// the plan's store, where every accumulator flushes.
+// GeneratorContext is what one Generate call may touch. Its Index
+// and Reader are scoped to the plan's sources, and Emit is the plan's
+// store, where every accumulator flushes.
 type GeneratorContext = core.GeneratorContext
 
 // RefusedConstruct reports a lowering hook refusing a declaration:

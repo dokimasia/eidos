@@ -56,18 +56,31 @@ type Tag = core.Tag
 
 // Emitter is a handler's write surface, scoped to its subject.
 //
-// Each accessor returns the one accumulator for its cardinality key
-// and family, created on first touch and appended to thereafter, so
-// two interfaces in one source file assemble one per-source unit
-// and a package's matches assemble one registry. At most one tag
-// per call; more is a defect and panics.
+// Each accessor returns a handle onto the one accumulator for its
+// cardinality key and family, created on first touch and appended to
+// thereafter, so two interfaces in one source file assemble one
+// per-source unit and a package's matches assemble one registry. At
+// most one tag per call; more is a defect and panics.
+//
+// Every write through the Emitter is buffered with the invocation and
+// applies when the phase call's rules have run, in canonical match
+// order, so the output is the same whether the phase call runs its
+// invocations one after another or on several workers. A handler sees
+// the plan's store and the slots as they were when its phase call
+// began.
 type Emitter = core.Emitter
 
-// Out is one accumulator seen from one match. The handle records
-// the match's subject and gating instance, so an append is
-// attributed without shared mutable state: two matches have two
-// handles onto one accumulator.
+// Out is one accumulator seen from one match. The handle records the
+// invocation's sequence and its accessor call, which records the
+// match's subject and gating instance, so an append is attributed and
+// ordered without shared mutable state: two matches have two handles
+// onto one accumulator.
 type Out = core.Out
+
+// SlotView is one invocation's write access to one slot, returned by
+// [Emitter.Slot]. Its zero value has no invocation to buffer with,
+// and appending through it panics.
+type SlotView[T any] = core.SlotView[T]
 
 // FunctionMatch is the OnFunction subject.
 type FunctionMatch = core.FunctionMatch
@@ -205,16 +218,16 @@ func OnAlias[E Effect](h func(*AliasMatch, E) error) Rule {
 // matches satisfy it, because the base surface is unexported.
 type Matcher = core.Matcher
 
-// Fact returns the subject's winning value for k, recording the
-// read at (subject, key) into the invocation's read set, a miss
-// included. On an emit match the subject is the origin. A graph
+// Fact returns the value of k on the subject whose claim ranks first,
+// recording the read at (subject, key) into the invocation's read set,
+// a miss included. On an emit match the subject is the origin. A graph
 // match has no subject, so Fact returns false and records nothing.
 func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 	return core.Fact[T](m, k)
 }
 
-// FactOf returns another declaration's winning value, recorded the
-// same way: reading a sibling's stamped facts is the sanctioned
+// FactOf returns the value of k on another declaration whose claim
+// ranks first, recorded the same way: reading a sibling's stamped facts is the sanctioned
 // channel between plugins. A zero identity returns false and
 // records nothing.
 func FactOf[T meta.FactValue](m Matcher, id symbol.Identity, k meta.Key[T]) (T, bool) {
@@ -337,7 +350,7 @@ func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 
 // Stamper is the annotator effect: a write handle bound to its
 // match's subject. A stamper writes only to its subject's bag and
-// the bags of the declarations the subject owns, its parameters,
+// the bags of the declarations the subject declares, its parameters,
 // returns and type parameters: a fact "about" a sibling is a fact
 // on the subject whose value names the sibling, so every write's
 // target is statically known from the trigger, which is what keeps
@@ -354,11 +367,11 @@ func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
 	core.Stamp[T](st, k, v)
 }
 
-// StampOn records v under k on a declaration the subject owns: one
+// StampOn records v under k on a declaration the subject declares: one
 // of its parameters, returns or type parameters, which no trigger
 // matches on their own where a directive on the subject states
 // something about them. The envelope is the subject's. An identity
-// the subject does not own is refused under [RefusedStamp] at the
+// the subject does not declare is refused under [RefusedStamp] at the
 // subject's position, and the phase continues.
 func StampOn[T meta.FactValue](st *Stamper, owned symbol.Identity, k meta.Key[T], v T) {
 	core.StampOn[T](st, owned, k, v)
@@ -386,11 +399,11 @@ func OnGraph(h func(*GraphMatch, *Emitter) error) Rule {
 type EmitMatch = core.EmitMatch
 
 // OnEmit runs the handler once per emit value of one kind,
-// wherever a slot holds it. It takes the Emitter only: emit is per
-// plan and plans run in parallel, so a fact stamped from the emit
-// side would live in a universe sibling plans never see. A fact
-// about generated output is a fact on its origin, stamped during
-// Annotate.
+// wherever a slot contains it. It takes the Emitter only: emit is
+// per plan and plans run in parallel, so a fact stamped from the emit
+// side would be visible to one plan, and sibling plans would never
+// read it. A fact about generated output is a fact on its origin,
+// stamped during Annotate.
 func OnEmit(k symbol.Kind, h func(*EmitMatch, *Emitter) error) Rule {
 	return core.OnEmit(k, h)
 }

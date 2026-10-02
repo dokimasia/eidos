@@ -67,10 +67,10 @@ type Setup = core.Setup
 
 // RunPluginSuite runs the conformance checks a fixture needs no
 // workspace for: declaration stability, byte-equal emit across
-// isolated runs, annotator idempotence, positioned diagnostics,
-// attribution, declared tags, the options schema, the template
-// lint, and no panics. It skips the checks for a role or a surface
-// the plugin does not implement.
+// isolated runs, the same output under parallel dispatch, annotator
+// idempotence, positioned diagnostics, attribution, declared tags,
+// the options schema, the template lint, and no panics. It skips the
+// checks for a role or a surface the plugin does not implement.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	core.RunPluginSuite(t, setup)
 }
@@ -117,17 +117,28 @@ func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 	core.AssertDeterministicEmit(tb, setup)
 }
 
+// AssertParallelDispatch runs every phase the plugin implements over
+// two isolated fixtures, one dispatching sequentially and one on eight
+// workers, and fails unless both runs emit the same bytes, end with the
+// same fact values and report the same findings in the same order: the
+// output of a phase call does not depend on its worker count. Run under
+// the race detector, the parallel run also exposes state a handler
+// writes outside its effects.
+func AssertParallelDispatch(tb assert.TB, setup Setup) {
+	core.AssertParallelDispatch(tb, setup)
+}
+
 // AssertIdempotentAnnotate runs one plugin's annotate phase twice
 // over one fixture. It fails unless both passes stamp clean and the
-// second pass leaves every winning value unchanged. A stamp that
+// second pass leaves every fact's value unchanged. A stamp that
 // depends on run state either claims a second value from the same
-// rank source, which the fact store refuses, or moves a winning
-// value, which the comparison refuses.
+// rank source, which the fact store refuses, or changes the value
+// that ranks first, which the comparison refuses.
 func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	core.AssertIdempotentAnnotate(tb, setup)
 }
 
-// AssertPositionedDiagnostics runs every phase the plugin holds and
+// AssertPositionedDiagnostics runs every phase the plugin implements and
 // refuses a finding without a position: a diagnostic nobody can
 // jump to is a defect in whatever reported it.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
