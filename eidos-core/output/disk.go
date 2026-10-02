@@ -10,6 +10,8 @@ import (
 	"io/fs"
 	"os"
 	"path"
+
+	"go.dokimi.dev/eidos/core/internal/stagefile"
 )
 
 // The permissions a commit writes with: generated files are
@@ -30,12 +32,15 @@ const (
 // digest matches its body, which [Contract.Verify] checks the same
 // way. A hand-written file, another brand's output and an output
 // edited since it was stamped are refused, naming the path, and
-// remain as they are.
+// remain as they are. A staged removal deletes only the brand's
+// intact output, and leaves any other file in place.
 type Disk struct {
 	staging
 	root  *os.Root
 	brand Brand
 }
+
+var _ Sink = (*Disk)(nil)
 
 // NewDisk opens a sink over an existing directory that writes as
 // one brand. It refuses a brand outside [Brand.Valid], because the
@@ -57,16 +62,45 @@ func NewDisk(root string, brand Brand) (*Disk, error) {
 	return &Disk{root: r, brand: brand}, nil
 }
 
-// Write stages one file. Nothing reaches the tree until Commit.
+// Write stages one file. Nothing is written to the tree until Commit.
 func (d *Disk) Write(path string, body []byte) error { return d.stage(path, body) }
 
-// Commit writes every staged file, in path order: identical bytes
-// leave the file and its mtime untouched, a file the brand cannot
-// prove it wrote is refused, and anything else is written to a
-// staging file, synced, and renamed over the target, so a reader
+// Delete stages the removal of one file. Nothing leaves the tree
+// until Commit.
+func (d *Disk) Delete(path string) error { return d.remove(path) }
+
+// Prepare reads every staged path once, in path order, and reports
+// what it contains and the action Commit takes on it. A path that is a
+// directory is foreign. It writes nothing, and it returns an error for
+// a path it cannot read, such as one a symlink leads out of the root.
+func (d *Disk) Prepare() ([]Change, error) {
+	if err := d.prepare(); err != nil {
+		return nil, err
+	}
+	paths := d.paths()
+	changes := make([]Change, 0, len(paths))
+	for _, p := range paths {
+		body, write := d.files[p]
+		f, err := d.found(p, body, write)
+		if err != nil {
+			return nil, err
+		}
+		c := Change{Path: p, Action: planned(write, f), Found: f}
+		if write {
+			c.Hash = digest(body)
+		}
+		changes = append(changes, c)
+	}
+	return changes, nil
+}
+
+// Commit writes and removes every staged path, in path order:
+// identical bytes leave the file and its mtime untouched, a file the
+// brand cannot prove it wrote is refused, and anything else is written
+// to a staging file, synced, and renamed over the target, so a reader
 // sees the old file or the new one and never half of either. A
-// staging file that fails to write or sync is removed. A file that
-// fails is one error and the rest still commit.
+// removal deletes the brand's intact output and leaves any other file.
+// A path that fails is one error and the rest still commit.
 func (d *Disk) Commit() ([]Written, error) {
 	if err := d.finish(); err != nil {
 		return nil, err
@@ -77,12 +111,19 @@ func (d *Disk) Commit() ([]Written, error) {
 	records := make([]Written, 0, len(paths))
 	var faults []error
 	for _, p := range paths {
-		record, err := d.commit(p, d.files[p])
-		if err != nil {
-			faults = append(faults, err)
-			continue
+		var record Written
+		var err error
+		if body, write := d.files[p]; write {
+			record, err = d.commit(p, body)
+		} else {
+			record, err = d.delete(p)
 		}
-		records = append(records, record)
+		switch {
+		case err != nil:
+			faults = append(faults, err)
+		case record.Path != "":
+			records = append(records, record)
+		}
 	}
 	return records, errors.Join(faults...)
 }
@@ -93,6 +134,7 @@ func (d *Disk) Discard() error {
 		return err
 	}
 	clear(d.files)
+	clear(d.removals)
 	return d.root.Close()
 }
 
@@ -116,36 +158,57 @@ func (d *Disk) commit(at string, body []byte) (Written, error) {
 			return Written{}, fmt.Errorf("output: making the directory for %q: %w", at, err)
 		}
 	}
-	// A staging file a killed run left is stale by definition, and
-	// writing truncates it.
-	stage := at + stageSuffix
-	if err := d.writeStage(stage, body); err != nil {
-		return Written{}, fmt.Errorf("output: staging %q: %w", at, err)
-	}
-	if err := d.root.Rename(stage, at); err != nil {
-		_ = d.root.Remove(stage)
-		return Written{}, fmt.Errorf("output: committing %q: %w", at, err)
+	if err := stagefile.Replace(d.root, at, body, filePerm); err != nil {
+		return Written{}, fmt.Errorf("output: writing %q through its staging file: %w", at, err)
 	}
 	return Written{Path: at, Action: action, Hash: digest(body)}, nil
 }
 
-// writeStage writes body to the staging file and syncs it, so the
-// rename that follows publishes bytes already on disk. A failed
-// write, sync or close removes the staging file.
-func (d *Disk) writeStage(stage string, body []byte) error {
-	f, err := d.root.OpenFile(stage, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, filePerm)
-	if err != nil {
-		return err
+// delete removes one staged removal's file where it is the brand's
+// intact output, and returns the zero record where the path contains
+// nothing or a file the brand cannot prove it wrote intact.
+func (d *Disk) delete(at string) (Written, error) {
+	f, err := d.found(at, nil, false)
+	if err != nil || f != FoundIntact {
+		return Written{}, err
 	}
-	_, err = f.Write(body)
-	if err == nil {
-		err = f.Sync()
+	if err := d.root.Remove(at); err != nil {
+		return Written{}, fmt.Errorf("output: removing %q: %w", at, err)
 	}
-	if closeErr := f.Close(); err == nil {
-		err = closeErr
+	return Written{Path: at, Action: ActionDeleted}, nil
+}
+
+// found reads what a path contains and classifies it against the
+// staged bytes, for a path staged for writing, and the sink's brand. A
+// path that is a directory is foreign.
+func (d *Disk) found(at string, body []byte, write bool) (Found, error) {
+	existing, err := d.root.ReadFile(at)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+		return FoundNothing, nil
+	case err != nil:
+		if info, statErr := d.root.Lstat(at); statErr == nil && info.IsDir() {
+			return FoundForeign, nil
+		}
+		return 0, fmt.Errorf("output: reading %q: %w", at, err)
+	case write && bytes.Equal(existing, body):
+		return FoundSame, nil
+	default:
+		return ownership(existing, d.brand), nil
 	}
-	if err != nil {
-		_ = d.root.Remove(stage)
+}
+
+// ownership classifies a file that exists against one brand: the
+// brand's intact output, the brand's frame over a body edited since
+// its stamp, or anything else, which is foreign.
+func ownership(existing []byte, brand Brand) Found {
+	f, held := parse(existing)
+	switch {
+	case !held || f.record.Brand != brand:
+		return FoundForeign
+	case digest(f.body) != f.record.Hash:
+		return FoundDrifted
+	default:
+		return FoundIntact
 	}
-	return err
 }

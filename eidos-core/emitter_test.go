@@ -4,6 +4,7 @@
 package eidos_test
 
 import (
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -43,6 +44,40 @@ func referenced(t *testing.T) *emit.TemplateRef {
 	assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
 	assert.NotNil(t, got, "the handler ran")
 	return got
+}
+
+// woven runs a weaver whose handler appends the given number of fields
+// through the view into the seeded value's slot, then appends nothing,
+// and returns the seeded value and the seeded unit after the phase
+// call.
+func woven(tb assert.TB, fields int) (*emit.Struct, plugin.Unit) {
+	tb.Helper()
+
+	g, alpha, _ := fixtureGraph(tb)
+	_, facts := boolKey(tb)
+	ctx := genContext(tb, g, facts, nil)
+	host := emitted(alpha)
+	seed(tb, ctx, host)
+	p := eidos.NewPlugin(contextPlugin).
+		Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+			s, held := m.Value.(*emit.Struct)
+			assert.True(tb, held, "a struct rule receives structs")
+			view := e.Slot(&s.Fields)
+			for range fields {
+				view.Append(&emit.Field{Name: "audited"})
+			}
+			view.Append()
+			return nil
+		})).
+		Build()
+	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+	var earlier plugin.Unit
+	for u := range ctx.Emit.Units() {
+		if u.Plugin == "earlier" {
+			earlier = u
+		}
+	}
+	return host, earlier
 }
 
 // The emitter is the handler's write surface: family misuse is a
@@ -197,6 +232,42 @@ func TestEmitter(t *testing.T) {
 			assert.Length(t, got.Decls, 0, "the unit has no declaration")
 			assert.Length(t, got.Origins, 0, "an empty append fabricates no provenance")
 		})
+
+		t.Run("places one origin's declarations in gating instance order across rules", func(t *testing.T) {
+			t.Parallel()
+
+			const instances = 2
+			g, alpha := gatedStruct(t, instances)
+			_, facts := boolKey(t)
+			schema := stubSchema(gateName)
+			schema.Repeatable = true
+			ctx := genContext(t, g, facts, repeated(alpha.ID, schema, instances))
+			placing := func(rule string) emitHandler {
+				return func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.File().Append(&emit.Struct{
+						Origin: m.Struct.Identity(),
+						Name:   rule + strconv.Itoa(m.Directive().Instance),
+					})
+					return nil
+				}
+			}
+			p := eidos.NewPlugin(contextPlugin).
+				Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
+				Handle(eidos.Directive(schema, eidos.OnStruct(placing("A")), eidos.OnStruct(placing("B")))).
+				Build()
+			assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+
+			var names []string
+			for u := range ctx.Emit.Units() {
+				for _, d := range u.Decls {
+					s, held := d.(*emit.Struct)
+					assert.True(t, held, "the fixture emits structs")
+					names = append(names, s.Name)
+				}
+			}
+			assert.Equal(t, names, []string{"A0", "B0", "A1", "B1"},
+				"each instance's declarations precede the next instance's, in rule order")
+		})
 	})
 
 	t.Run("File", func(t *testing.T) {
@@ -348,6 +419,61 @@ func TestEmitter(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, referenced(t).Data, any(refPayload), "the payload is the one given")
+		})
+	})
+
+	t.Run("Slot", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a view whose appends apply to the slot", func(t *testing.T) {
+			t.Parallel()
+
+			host, _ := woven(t, 2)
+			assert.Equal(t, fieldNames(host), []string{"audited", "audited"}, "both appends apply")
+		})
+
+		t.Run("returns a view that names the plugin among the host unit's contributors", func(t *testing.T) {
+			t.Parallel()
+
+			_, unit := woven(t, 1)
+			assert.Equal(t, unit.Contributors, []plugin.ID{contextPlugin},
+				"the weaver is attributed in the unit it appended into")
+		})
+
+		t.Run("panics on a nil slot", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			ctx := genContext(t, g, facts, nil)
+			seed(t, ctx, emitted(alpha))
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+					e.Slot[*emit.Field](nil)
+					return nil
+				})).
+				Build()
+			assert.Panics(t, func() { _ = generatorOf(t, p).Generate(ctx) },
+				"a view of no slot would append nowhere")
+		})
+	})
+
+	t.Run("SlotView.Append", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("records no contributor for no values", func(t *testing.T) {
+			t.Parallel()
+
+			_, unit := woven(t, 0)
+			assert.Length(t, unit.Contributors, 0, "an empty append contributes nothing")
+		})
+
+		t.Run("panics on the zero view", func(t *testing.T) {
+			t.Parallel()
+
+			var view eidos.SlotView[*emit.Field]
+			assert.Panics(t, func() { view.Append(&emit.Field{Name: "lost"}) },
+				"the zero view has no invocation to buffer with")
 		})
 	})
 }

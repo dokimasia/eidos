@@ -50,6 +50,9 @@ type Fixture struct {
 	Languages map[plugin.Target]render.Language
 	// Bucket is the priority bucket phase calls claim to run in.
 	Bucket int
+	// Workers is how many invocations each phase call runs at once.
+	// Zero and one dispatch sequentially.
+	Workers int
 
 	emit    *plugin.Emit
 	claimed map[string]bool
@@ -177,14 +180,15 @@ func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 	ix := f.index(tb)
 	sink := diag.NewSink()
 	err := ann.Annotate(&plugin.AnnotatorContext{
-		Index:  ix,
-		Reader: mintReader(tb, ix),
-		Facts:  f.Facts,
-		Sink:   sink,
-		Rules:  f.Rules,
-		Kernel: f.Kernel,
-		Plugin: p.Name(),
-		Bucket: f.Bucket,
+		Index:   ix,
+		Reader:  mintReader(tb, ix),
+		Facts:   f.Facts,
+		Sink:    sink,
+		Rules:   f.Rules,
+		Kernel:  f.Kernel,
+		Plugin:  p.Name(),
+		Bucket:  f.Bucket,
+		Workers: f.Workers,
 	})
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }
@@ -201,15 +205,16 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 	ix := f.index(tb)
 	sink := diag.NewSink()
 	err := gen.Generate(&plugin.GeneratorContext{
-		Index:  ix,
-		Reader: mintReader(tb, ix),
-		Facts:  f.Facts,
-		Emit:   f.store(),
-		Sink:   sink,
-		Rules:  f.Rules,
-		Kernel: f.Kernel,
-		Plugin: p.Name(),
-		Bucket: f.Bucket,
+		Index:   ix,
+		Reader:  mintReader(tb, ix),
+		Facts:   f.Facts,
+		Emit:    f.store(),
+		Sink:    sink,
+		Rules:   f.Rules,
+		Kernel:  f.Kernel,
+		Plugin:  p.Name(),
+		Bucket:  f.Bucket,
+		Workers: f.Workers,
 	})
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }

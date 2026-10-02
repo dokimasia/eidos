@@ -33,20 +33,20 @@ type Generator interface {
 	Generate(ctx *GeneratorContext) error
 }
 
-// AnnotatorContext carries what one Annotate call may touch.
+// AnnotatorContext is what one Annotate call may touch.
 //
 // The two read surfaces split by rule: Index is the dispatcher's
 // routing path and records nothing, and Reader is the plugin's
 // tracked path, recording into the phase's read set. Plugin and
-// Bucket are the arbitration rank fields every stamp made under
-// this call carries.
+// Bucket are the arbitration rank fields of every stamp made under
+// this call.
 type AnnotatorContext struct {
 	Index  *Index
 	Reader *store.Reader
 	Facts  *meta.Facts
 	Sink   *diag.Sink
-	// Rules holds the composition's registered language rules,
-	// and Kernel the kernel's registered keys: what the authoring
+	// Rules is the composition's registry of language rules, and
+	// Kernel the kernel's registered keys: what the authoring
 	// surface binds the kernel's walks over. A nil registry binds
 	// every language to the absent rules.
 	Rules  *rules.Registry
@@ -57,26 +57,35 @@ type AnnotatorContext struct {
 	// Bucket is the priority bucket this call runs in: the rank's
 	// bucket field.
 	Bucket int
+	// Workers is how many invocations the call may run at once. Zero
+	// and one mean sequentially. A plugin implementing the role
+	// directly may ignore it, and a plugin that runs work on
+	// goroutines joins them before its call returns, whatever the
+	// count.
+	Workers int
 }
 
-// GeneratorContext carries what one Generate call may touch. Its
-// Index and Reader are scoped to the plan's sources, and Emit is
-// the plan's store, where every accumulator flushes.
+// GeneratorContext is what one Generate call may touch. Its Index
+// and Reader are scoped to the plan's sources, and Emit is the plan's
+// store, where every accumulator flushes.
 type GeneratorContext struct {
 	Index  *Index
 	Reader *store.Reader
 	Facts  *meta.Facts
 	Emit   *Emit
 	Sink   *diag.Sink
-	// Rules and Kernel are what the annotator's context carries
-	// under the same names.
+	// Rules and Kernel have the meaning the annotator's context gives
+	// the fields of the same names.
 	Rules  *rules.Registry
 	Kernel meta.KernelKeys
 	// Plugin is the caller's identity: the diagnostic origin and
 	// the emit attribution.
 	Plugin ID
 	// Bucket is the priority bucket this call runs in, which
-	// decides what an emit-triggered rule can see: the store holds
+	// decides what an emit-triggered rule can see: the store contains
 	// earlier buckets' units.
 	Bucket int
+	// Workers is how many invocations the call may run at once, with
+	// the meaning [AnnotatorContext.Workers] states.
+	Workers int
 }

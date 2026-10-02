@@ -6,9 +6,11 @@ package workspace
 import (
 	"errors"
 	"fmt"
+	"slices"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -51,11 +53,15 @@ type Plan struct {
 // Nothing validates until [Builder.Build] runs the steps, which lets
 // one error join every fault.
 type Builder struct {
+	frontends  []plugin.Frontend
 	annotators []plugin.Annotator
 	plans      []Plan
 	targets    []plugin.Target
 	brand      output.Brand
 	open       func() (output.Sink, error)
+	ledger     func() (ledger.Ledger, error)
+	id         string
+	workers    int
 	keys       []func(r *meta.Registry) error
 	rules      []rules.SourceRules
 	ignored    []directive.Name
@@ -77,6 +83,18 @@ func (b *Builder) Brand(brand output.Brand) *Builder {
 	return b
 }
 
+// Frontends registers the frontends a run loads its tree with, in
+// load order. Build refuses a nil frontend, a frontend without a
+// declared version, because every unit key folds the version, an
+// empty name, a name another frontend of the composition already has,
+// and a frontend named after a kernel phase. A language's frontend and
+// backend may share the language's name, as the Go satellite's both
+// report under golang.
+func (b *Builder) Frontends(fs ...plugin.Frontend) *Builder {
+	b.frontends = append(b.frontends, fs...)
+	return b
+}
+
 // Annotators registers the read side's stamping plugins.
 func (b *Builder) Annotators(as ...plugin.Annotator) *Builder {
 	b.annotators = append(b.annotators, as...)
@@ -90,17 +108,49 @@ func (b *Builder) Plans(ps ...Plan) *Builder {
 }
 
 // Output declares where a run's rendered files go: open returns a
-// fresh sink or an error, and every run that commits calls it once,
-// after the render, so each run stages into a sink of its own. A run
-// whose open returns neither fails. A run that reports an Error
-// opens nothing, and the previous generation of files remains in
-// place.
+// fresh sink or an error, and a run calls it once for each plan it
+// stages, after the render, so each plan stages into a sink of its
+// own. A run calls it from the plans' goroutines, so open is safe for
+// concurrent use. A run whose open returns neither fails. A plan that
+// reports an Error, and every plan of a run whose shared phases
+// reported one, opens nothing, and the previous generation of its
+// files remains in place.
 //
 // A composition declaring no output stops after the settle, and its
 // plans' emit stores are the run's whole product: a composition
 // that computes what it would write, and writes nothing.
 func (b *Builder) Output(open func() (output.Sink, error)) *Builder {
 	b.open = open
+	return b
+}
+
+// Ledger declares where a run reads the previous run's record and
+// writes its own: open returns a fresh ledger, and every run of a
+// composition declaring output calls it once before it loads. A
+// composition declaring no ledger runs as if no run had ever
+// committed: it removes nothing, and records nothing.
+func (b *Builder) Ledger(open func() (ledger.Ledger, error)) *Builder {
+	b.ledger = open
+	return b
+}
+
+// Workspace names the workspace in its manifest. Empty leaves the name
+// to the ledger, and the disk ledger records the base name of the
+// workspace root.
+func (b *Builder) Workspace(id string) *Builder {
+	b.id = id
+	return b
+}
+
+// Parallel lets one phase call run up to workers invocations at once:
+// an annotator's or a generator's matches inside its bucket. Zero and
+// one dispatch sequentially, which is the default, and Build refuses
+// a negative count. The output does not depend on the count: the
+// placements, slot appends and findings of a phase call apply in
+// canonical match order, and the fact store ranks stamps by that
+// order. Plans run in parallel whatever the count.
+func (b *Builder) Parallel(workers int) *Builder {
+	b.workers = workers
 	return b
 }
 
@@ -111,7 +161,7 @@ func (b *Builder) Targets(ts ...plugin.Target) *Builder {
 	return b
 }
 
-// Keys registers composition-owned metadata keys, beyond what the
+// Keys registers the composition's own metadata keys, beyond what the
 // plugins' own providers register: a consumer's keys, a fixture's.
 // The registrations run at Build, in declaration order, through the
 // composition's handle on the registry.
@@ -161,6 +211,13 @@ func (b *Builder) Ignore(names ...directive.Name) *Builder {
 // Build, over the values the config left.
 func (b *Builder) Build() (*Workspace, error) {
 	faults := b.brandFaults()
+	if b.workers < 0 {
+		faults = append(faults, fmt.Errorf(
+			"workspace: Parallel(%d) is negative, and a phase call runs at least one invocation at a time",
+			b.workers,
+		))
+	}
+	faults = append(faults, frontendFaults(b.frontends)...)
 	roster, byName, afaults := b.assemble()
 	faults = append(faults, afaults...)
 	reg, rerr := b.register(roster)
@@ -184,7 +241,12 @@ func (b *Builder) Build() (*Workspace, error) {
 		rules:       reg.rules,
 		annotate:    ann,
 		plans:       plans,
+		frontends:   slices.Clone(b.frontends),
+		contracts:   contractsOf(reg.keys),
 		open:        b.open,
+		ledger:      b.ledger,
+		id:          b.id,
+		workers:     b.workers,
 		brand:       b.brand,
 		fingerprint: fingerprintOf(ann, plans, options),
 	}, nil

@@ -13,6 +13,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/backend/render"
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
@@ -28,12 +29,16 @@ import (
 // fresh pair every call.
 type Setup func(tb assert.TB) (plugin.Plugin, *Fixture)
 
+// parallelWorkers is how many invocations a phase call runs at once in
+// the parallel dispatch check.
+const parallelWorkers = 8
+
 // RunPluginSuite runs the conformance checks a fixture needs no
 // workspace for: declaration stability, byte-equal emit across
-// isolated runs, annotator idempotence, positioned diagnostics,
-// attribution, declared tags, the options schema, the template
-// lint, and no panics. It skips the checks for a role or a surface
-// the plugin does not implement.
+// isolated runs, the same output under parallel dispatch, annotator
+// idempotence, positioned diagnostics, attribution, declared tags,
+// the options schema, the template lint, and no panics. It skips the
+// checks for a role or a surface the plugin does not implement.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
@@ -79,6 +84,10 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 			AssertIdempotentAnnotate(t, setup)
 		})
 	}
+	t.Run("parallel dispatch", func(t *testing.T) {
+		t.Parallel()
+		AssertParallelDispatch(t, setup)
+	})
 	t.Run("positioned diagnostics", func(t *testing.T) {
 		t.Parallel()
 		AssertPositionedDiagnostics(t, setup)
@@ -106,11 +115,11 @@ func AssertPopulatedFixture(tb assert.TB, setup Setup) {
 
 	_, f := setup(tb)
 	if f == nil || f.Graph == nil {
-		tb.Errorf("the setup carries no fixture graph")
+		tb.Errorf("the setup returns no fixture graph")
 		return
 	}
-	// The check owns this setup's fixture, so sealing it here is
-	// the same seal the first phase call would make.
+	// No other check uses this setup's fixture, so sealing it here
+	// is the same seal the first phase call would make.
 	f.Graph.Freeze()
 	for pkg := range f.Graph.Packages() {
 		for _, file := range pkg.Files {
@@ -155,7 +164,7 @@ func AssertStableDeclaration(tb assert.TB, setup Setup) {
 }
 
 // declaresTree reports whether the plugin declares a template tree
-// for any language the fixture carries. The facade gives every
+// for any language the fixture lists. The facade gives every
 // plugin the provider's shape, so the shape alone proves nothing:
 // the suite gates its lint on a declared tree, never on the
 // interface.
@@ -231,12 +240,47 @@ func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 		"two isolated runs emit the same bytes")
 }
 
+// AssertParallelDispatch runs every phase the plugin implements over
+// two isolated fixtures, one dispatching sequentially and one on eight
+// workers, and fails unless both runs emit the same bytes, end with the
+// same fact values and report the same findings in the same order: the
+// output of a phase call does not depend on its worker count. Run under
+// the race detector, the parallel run also exposes state a handler
+// writes outside its effects.
+func AssertParallelDispatch(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	serialPlugin, serialFixture := setup(tb)
+	parallelPlugin, parallelFixture := setup(tb)
+	serialFixture.Workers, parallelFixture.Workers = 1, parallelWorkers
+	serial := runAll(tb, serialPlugin, serialFixture)
+	parallel := runAll(tb, parallelPlugin, parallelFixture)
+	assert.Equal(tb,
+		string(encodeEmit(tb, parallelFixture.store())),
+		string(encodeEmit(tb, serialFixture.store())),
+		"a parallel phase call emits what a sequential one does")
+	assert.Equal(tb, presentFacts(parallelFixture), presentFacts(serialFixture),
+		"and it ends with the fact values a sequential call ends with")
+	assert.Equal(tb, findingsOf(parallel), findingsOf(serial),
+		"and it reports the same findings in the same order")
+}
+
+// findingsOf returns every finding of a sequence of phase results, in
+// phase order and then report order.
+func findingsOf(results []Result) []diag.Diag {
+	var out []diag.Diag
+	for _, r := range results {
+		out = slices.AppendSeq(out, r.Sink.All())
+	}
+	return out
+}
+
 // AssertIdempotentAnnotate runs one plugin's annotate phase twice
 // over one fixture. It fails unless both passes stamp clean and the
-// second pass leaves every winning value unchanged. A stamp that
+// second pass leaves every fact's value unchanged. A stamp that
 // depends on run state either claims a second value from the same
-// rank source, which the fact store refuses, or moves a winning
-// value, which the comparison refuses.
+// rank source, which the fact store refuses, or changes the value
+// that ranks first, which the comparison refuses.
 func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -244,32 +288,32 @@ func AssertIdempotentAnnotate(tb assert.TB, setup Setup) {
 	first := f.Annotate(tb, p)
 	assert.NoError(tb, first.Err, "the first pass runs whole")
 	assert.False(tb, first.Sink.Failed(), "and stamps clean")
-	settled := winners(f)
+	settled := presentFacts(f)
 	second := f.Annotate(tb, p)
 	assert.NoError(tb, second.Err, "the second pass runs whole")
 	assert.False(tb, second.Sink.Failed(),
 		"a repeated pass re-stamps identical claims, never new values")
-	assert.Equal(tb, winners(f), settled,
-		"a repeated pass leaves every winning value where the first pass put it")
+	assert.Equal(tb, presentFacts(f), settled,
+		"a repeated pass leaves every fact's value as the first pass left it")
 }
 
-// winner is one present fact: its subject, its key and its winning
-// value.
-type winner struct {
+// presentFact is one present fact: its subject, its key and the value
+// of its claim that ranks first.
+type presentFact struct {
 	subject symbol.Identity
 	key     meta.KeyName
 	value   any
 }
 
-// winners returns every present fact in the fixture's store, in key
-// registration order and then identity order.
-func winners(f *Fixture) []winner {
-	var out []winner
+// presentFacts returns every present fact in the fixture's store, in
+// key registration order and then identity order.
+func presentFacts(f *Fixture) []presentFact {
+	var out []presentFact
 	for name := range f.Keys.Keys() {
 		id, _ := f.Keys.Resolve(name)
 		for subject := range f.Facts.ByKey(id) {
 			for view := range f.Facts.Claims(subject, id) {
-				out = append(out, winner{subject: subject, key: name, value: view.Value})
+				out = append(out, presentFact{subject: subject, key: name, value: view.Value})
 				break
 			}
 		}
@@ -277,7 +321,7 @@ func winners(f *Fixture) []winner {
 	return out
 }
 
-// AssertPositionedDiagnostics runs every phase the plugin holds and
+// AssertPositionedDiagnostics runs every phase the plugin implements and
 // refuses a finding without a position: a diagnostic nobody can
 // jump to is a defect in whatever reported it.
 func AssertPositionedDiagnostics(tb assert.TB, setup Setup) {
@@ -322,7 +366,7 @@ func AssertAttributedEmit(tb assert.TB, setup Setup) {
 	}
 }
 
-// unitRef is the key an emit store holds one unit under.
+// unitRef is the key an emit store records one unit under.
 type unitRef struct {
 	plugin plugin.ID
 	tag    string
@@ -330,7 +374,7 @@ type unitRef struct {
 	key    string
 }
 
-// refOf returns the key a unit is held under.
+// refOf returns the key a unit is recorded under.
 func refOf(u plugin.Unit) unitRef {
 	return unitRef{plugin: u.Plugin, tag: u.Tag, pkg: u.Pkg, key: u.Key}
 }
@@ -350,7 +394,7 @@ func AssertTwins(tb assert.TB, facade, twin Setup) {
 		"both spellings of the plugin emit the same bytes")
 }
 
-// runAll runs every phase the plugin holds, annotate first, over
+// runAll runs every phase the plugin implements, annotate first, over
 // one fixture, and returns the results in phase order.
 func runAll(tb assert.TB, p plugin.Plugin, f *Fixture) []Result {
 	tb.Helper()
@@ -369,7 +413,7 @@ func runAll(tb assert.TB, p plugin.Plugin, f *Fixture) []Result {
 	return out
 }
 
-// generateOnce runs annotate where the plugin holds it, then
+// generateOnce runs annotate where the plugin implements it, then
 // generate, and returns the fixture's emit store.
 func generateOnce(tb assert.TB, p plugin.Plugin, f *Fixture) *plugin.Emit {
 	tb.Helper()
@@ -394,6 +438,9 @@ func encodeEmit(tb assert.TB, e *plugin.Emit) []byte {
 			u.Plugin, u.Tag, u.Per, u.Word, u.Key, u.Pkg)
 		for _, id := range u.Origins {
 			fmt.Fprintf(&out, "origin %s\n", id)
+		}
+		for _, p := range u.Contributors {
+			fmt.Fprintf(&out, "contributor %s\n", p)
 		}
 		for _, d := range u.Decls {
 			encoded, err := emit.EncodeJSON(d)

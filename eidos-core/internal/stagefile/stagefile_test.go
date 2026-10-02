@@ -1,0 +1,127 @@
+// Copyright ThesmOS B.V. 2026
+// SPDX-License-Identifier: Apache-2.0
+
+package stagefile_test
+
+import (
+	"io/fs"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"go.dokimi.dev/assert"
+
+	"go.dokimi.dev/eidos/core/internal/stagefile"
+)
+
+// The fixture's target, its bytes, and a mode every umask leaves whole.
+const (
+	target = "out.txt"
+	body   = "replaced\n"
+	mode   = fs.FileMode(0o600)
+)
+
+// rooted returns a fresh directory and the root opened over it, closed
+// when the test ends.
+func rooted(t *testing.T) (string, *os.Root) {
+	t.Helper()
+
+	dir := t.TempDir()
+	r, err := os.OpenRoot(dir)
+	assert.NoError(t, err, "the root opens")
+	t.Cleanup(func() { _ = r.Close() })
+	return dir, r
+}
+
+// entries returns the names a directory contains.
+func entries(t *testing.T, dir string) []string {
+	t.Helper()
+
+	es, err := os.ReadDir(dir)
+	assert.NoError(t, err, "the directory reads")
+	names := make([]string, 0, len(es))
+	for _, e := range es {
+		names = append(names, e.Name())
+	}
+	return names
+}
+
+// A replacement is atomic per file: the target contains the old bytes
+// or the new ones, and no staging file outlives the call.
+func TestStagefile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Replace", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("writes the body to a missing target with the given mode", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			assert.NoError(t, stagefile.Replace(r, target, []byte(body), mode), "the target is written")
+			got, err := os.ReadFile(filepath.Join(dir, target))
+			assert.NoError(t, err, "the target reads")
+			assert.Equal(t, string(got), body, "the target contains the body")
+			info, err := os.Stat(filepath.Join(dir, target))
+			assert.NoError(t, err, "the target stats")
+			assert.Equal(t, info.Mode().Perm(), mode, "the target has the mode")
+		})
+
+		t.Run("replaces the bytes of an existing target", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			assert.NoError(t, os.WriteFile(filepath.Join(dir, target), []byte("old and longer\n"), mode),
+				"the old target is written")
+			assert.NoError(t, stagefile.Replace(r, target, []byte(body), mode), "the target is replaced")
+			got, err := os.ReadFile(filepath.Join(dir, target))
+			assert.NoError(t, err, "the target reads")
+			assert.Equal(t, string(got), body, "the target contains the new body alone")
+		})
+
+		t.Run("leaves no staging file behind", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			assert.NoError(t, stagefile.Replace(r, target, []byte(body), mode), "the target is written")
+			assert.Equal(t, entries(t, dir), []string{target}, "the target alone remains")
+		})
+
+		t.Run("truncates a staging file a killed process left", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			assert.NoError(t, os.WriteFile(filepath.Join(dir, target+stagefile.Suffix),
+				[]byte("a stale staging file much longer than the body\n"), mode), "the stale staging file is written")
+			assert.NoError(t, stagefile.Replace(r, target, []byte(body), mode), "the target is written")
+			got, err := os.ReadFile(filepath.Join(dir, target))
+			assert.NoError(t, err, "the target reads")
+			assert.Equal(t, string(got), body, "the target contains the body alone")
+		})
+
+		t.Run("returns an error for a target whose directory is missing", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			assert.HasError(t, stagefile.Replace(r, "missing/"+target, []byte(body), mode), "nothing is written")
+			assert.Empty(t, entries(t, dir), "the root is untouched")
+		})
+
+		t.Run("returns an error for a target that is a directory", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			assert.NoError(t, os.Mkdir(filepath.Join(dir, target), 0o700), "the directory is made")
+			assert.NoError(t, os.WriteFile(filepath.Join(dir, target, "kept"), nil, mode), "the directory is not empty")
+			assert.HasError(t, stagefile.Replace(r, target, []byte(body), mode), "the rename is refused")
+			assert.Equal(t, entries(t, dir), []string{target}, "the staging file is removed")
+		})
+
+		t.Run("returns an error for a target outside the root", func(t *testing.T) {
+			t.Parallel()
+
+			_, r := rooted(t)
+			assert.HasError(t, stagefile.Replace(r, "../"+target, []byte(body), mode), "the root jails the write")
+		})
+	})
+}

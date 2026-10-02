@@ -20,18 +20,18 @@ type GraphMatch struct{ match }
 // names: a graph match has no subject, and a positionless finding
 // is a defect in whatever reported it.
 func (m *GraphMatch) Errorf(c diag.Code, at position.Pos, format string, a ...any) {
-	m.rs.sink.Errorf(c, at, m.rs.plugin, format, a...)
+	m.rs.reportf(m.seq, c, diag.SeverityError, at, format, a...)
 }
 
 // Warnf reports at Warning severity at the position the handler
 // names.
 func (m *GraphMatch) Warnf(c diag.Code, at position.Pos, format string, a ...any) {
-	m.rs.sink.Warnf(c, at, m.rs.plugin, format, a...)
+	m.rs.reportf(m.seq, c, diag.SeverityWarning, at, format, a...)
 }
 
 // Infof reports at Info severity at the position the handler names.
 func (m *GraphMatch) Infof(c diag.Code, at position.Pos, format string, a ...any) {
-	m.rs.sink.Infof(c, at, m.rs.plugin, format, a...)
+	m.rs.reportf(m.seq, c, diag.SeverityInfo, at, format, a...)
 }
 
 // OnGraph runs the handler once per phase call: the pressure valve
@@ -64,11 +64,11 @@ type EmitMatch struct {
 func (m *EmitMatch) Origin() symbol.Identity { return m.subject }
 
 // OnEmit runs the handler once per emit value of one kind,
-// wherever a slot holds it. It takes the Emitter only: emit is per
-// plan and plans run in parallel, so a fact stamped from the emit
-// side would live in a universe sibling plans never see. A fact
-// about generated output is a fact on its origin, stamped during
-// Annotate.
+// wherever a slot contains it. It takes the Emitter only: emit is
+// per plan and plans run in parallel, so a fact stamped from the emit
+// side would be visible to one plan, and sibling plans would never
+// read it. A fact about generated output is a fact on its origin,
+// stamped during Annotate.
 func OnEmit(k symbol.Kind, h func(*EmitMatch, *Emitter) error) Rule {
 	return Rule{leaf: &leaf{
 		kind:  k,

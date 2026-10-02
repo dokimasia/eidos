@@ -5,8 +5,10 @@ package eidos_test
 
 import (
 	"errors"
+	"slices"
 	"strconv"
 	"testing"
+	"time"
 
 	"go.dokimi.dev/assert"
 
@@ -26,6 +28,25 @@ import (
 // testCode is a code for handler-side reporting cases. The sink
 // accepts a code without consulting a registry.
 var testCode = diag.Code{Prefix: "tst", Number: 1}
+
+// The two failures the parallel error cases script, at two subjects
+// of the many-subject fixture.
+var (
+	errFirst = errors.New("eidos_test: the earlier failure")
+	errLast  = errors.New("eidos_test: the later failure")
+)
+
+// The subjects the parallel error cases fail at, by index into the
+// many-subject fixture.
+const (
+	firstFailure = 10
+	lastFailure  = 40
+)
+
+// failureWait bounds how long the earlier failure waits for the later
+// one, so a dispatcher that never runs the later invocation fails the
+// case instead of hanging it.
+const failureWait = 5 * time.Second
 
 // boolKey returns a registered bool key and a fact store built over
 // its registry.
@@ -207,6 +228,119 @@ func TestDispatch(t *testing.T) {
 			assert.ErrorIs(t, err, boom, "the handler's error stops the phase")
 			assert.Contains(t, err.Error(), string(contextPlugin), "the error names the plugin")
 			assert.Contains(t, err.Error(), "rule 0", "the error names the rule")
+		})
+
+		// registry runs a plugin that places one struct per subject into
+		// its package's accumulator, on the given workers, and returns
+		// the plugin's units.
+		registry := func(tb assert.TB, workers int) []plugin.Unit {
+			tb.Helper()
+
+			g, _ := manySubjects(tb, manyStructs)
+			_, facts := boolKey(tb)
+			ctx := on(genContext(tb, g, facts, nil), workers)
+			p := eidos.NewPlugin(contextPlugin).
+				Output(plugin.Output{Per: plugin.PerPackage, Word: "registry"}).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.PackageFile().Append(&emit.Struct{Origin: m.Struct.ID, Name: "For" + m.Struct.Name})
+					return nil
+				})).
+				Build()
+			assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+			return slices.Collect(ctx.Emit.Units())
+		}
+
+		t.Run("assembles a package's accumulator in subject order on one worker", func(t *testing.T) {
+			t.Parallel()
+
+			units := registry(t, oneWorker)
+			assert.Length(t, units, 1, "the package's matches assemble one unit")
+			assert.Length(t, units[0].Decls, manyStructs, "every match placed its struct")
+			assert.True(t, slices.IsSortedFunc(units[0].Origins, symbol.Identity.Compare),
+				"the declarations follow subject identity")
+		})
+
+		t.Run("assembles on eight workers the units one worker assembles", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, registry(t, eightWorkers), registry(t, oneWorker),
+				"the units do not depend on the worker count")
+		})
+
+		// failAt runs a plugin that warns once per subject and fails at
+		// two of them, on the given workers, and returns the findings and
+		// the error. On more than one worker the earlier failure waits
+		// until the later one has failed, so both failures and the
+		// invocations between them have run when the rule stops.
+		failAt := func(tb assert.TB, workers int) ([]string, error) {
+			tb.Helper()
+
+			g, structs := manySubjects(tb, manyStructs)
+			_, facts := boolKey(tb)
+			ctx := on(genContext(tb, g, facts, nil), workers)
+			later := make(chan struct{})
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					m.Warnf(testCode, "%s", m.Struct.Name)
+					switch m.Struct.ID {
+					case structs[firstFailure].ID:
+						if workers > 1 {
+							select {
+							case <-later:
+							case <-time.After(failureWait):
+							}
+						}
+						return errFirst
+					case structs[lastFailure].ID:
+						close(later)
+						return errLast
+					}
+					return nil
+				})).
+				Build()
+			err := generatorOf(tb, p).Generate(ctx)
+			return messages(ctx.Sink), err
+		}
+
+		t.Run("returns the first handler error by sequence on eight workers", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := failAt(t, eightWorkers)
+			assert.ErrorIs(t, err, errFirst, "the failure earliest in match order stops the phase")
+		})
+
+		t.Run("reports the findings up to a failed invocation on one worker", func(t *testing.T) {
+			t.Parallel()
+
+			got, _ := failAt(t, oneWorker)
+			assert.Length(t, got, firstFailure+1, "the invocations up to the failure reported")
+		})
+
+		t.Run("reports the findings of one worker before a failed invocation on eight", func(t *testing.T) {
+			t.Parallel()
+
+			parallel, _ := failAt(t, eightWorkers)
+			serial, _ := failAt(t, oneWorker)
+			assert.Equal(t, parallel, serial, "the findings do not depend on the worker count")
+		})
+
+		t.Run("panics with a handler's panic on eight workers", func(t *testing.T) {
+			t.Parallel()
+
+			g, structs := manySubjects(t, manyStructs)
+			_, facts := boolKey(t)
+			ctx := on(genContext(t, g, facts, nil), eightWorkers)
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					if m.Struct.ID == structs[firstFailure].ID {
+						panic(errFirst)
+					}
+					return nil
+				})).
+				Build()
+			got := assert.Panics(t, func() { _ = generatorOf(t, p).Generate(ctx) },
+				"the panic propagates to the caller")
+			assert.Equal(t, got, any(errFirst), "with the handler's own value")
 		})
 
 		// Each indexed path resolves its subjects differently, so each
@@ -439,7 +573,7 @@ func TestDispatch(t *testing.T) {
 					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
 						s, ok := m.Value.(*emit.Struct)
 						assert.True(t, ok, "a struct rule receives structs")
-						s.Methods.Append(&emit.Method{
+						e.Slot(&s.Methods).Append(&emit.Method{
 							Origin: m.Origin(), Name: "Audit",
 						})
 						return nil

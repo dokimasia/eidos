@@ -13,13 +13,8 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/core/internal/pathset"
+	"go.dokimi.dev/eidos/core/internal/stagefile"
 )
-
-// stageSuffix names the file a commit writes before renaming it
-// over the target. It is reserved: a staged path ending in it is
-// refused, so a plan's own file can never collide with a commit
-// in progress.
-const stageSuffix = ".stage"
 
 // ErrFinished reports a sink used after Commit or Discard. A sink
 // serves one staging and is not reused.
@@ -34,9 +29,12 @@ const (
 	// ActionUpdated reports a path that existed with different
 	// bytes.
 	ActionUpdated
-	// ActionUnchanged reports identical bytes, so the file and its
-	// mtime were not touched.
+	// ActionUnchanged reports a path the commit left as it was:
+	// identical bytes, whose file and mtime were not touched, or a
+	// staged removal that found nothing of the brand's to remove.
 	ActionUnchanged
+	// ActionDeleted reports a file the commit removed.
+	ActionDeleted
 )
 
 // String spells the action for a diagnostic or a dry run.
@@ -48,8 +46,49 @@ func (a Action) String() string {
 		return "updated"
 	case ActionUnchanged:
 		return "unchanged"
+	case ActionDeleted:
+		return "deleted"
 	default:
 		return "Action(" + strconv.Itoa(int(a)) + ")"
+	}
+}
+
+// Found is what a destination path contains before a commit, as the
+// brand's trailer proves it. The zero value names no verdict.
+type Found uint8
+
+const (
+	// FoundNothing reports a path with no file.
+	FoundNothing Found = 1
+	// FoundSame reports a file whose bytes equal the staged bytes.
+	FoundSame Found = 2
+	// FoundIntact reports the brand's intact output: a frame under the
+	// brand and a body that hashes to its trailer.
+	FoundIntact Found = 3
+	// FoundDrifted reports the brand's frame over a body edited since
+	// its stamp.
+	FoundDrifted Found = 4
+	// FoundForeign reports a path without the brand's frame: a
+	// hand-written file, another tool's output, a generated file whose
+	// trailer was deleted, or a directory.
+	FoundForeign Found = 5
+)
+
+// String spells the verdict for a diagnostic or a dry run.
+func (f Found) String() string {
+	switch f {
+	case FoundNothing:
+		return "nothing"
+	case FoundSame:
+		return "same"
+	case FoundIntact:
+		return "intact"
+	case FoundDrifted:
+		return "drifted"
+	case FoundForeign:
+		return "foreign"
+	default:
+		return "Found(" + strconv.Itoa(int(f)) + ")"
 	}
 }
 
@@ -60,9 +99,23 @@ type Written struct {
 	// Action is what the commit did.
 	Action Action
 	// Hash is "sha256:" and the hex digest of the file's bytes as
-	// written, frame included. The trailer's own digest covers the
-	// body alone. This one covers what was written to the
-	// destination, which is the value a record of the run keeps.
+	// written, frame included, and empty for a removed file. The
+	// trailer's own digest covers the body alone. This one covers what
+	// was written to the destination, which is the value a record of
+	// the run keeps.
+	Hash string
+}
+
+// Change is one staged path before the commit.
+type Change struct {
+	// Path is the staged path, workspace-relative.
+	Path string
+	// Action is what Commit does to the path when it proceeds.
+	Action Action
+	// Found is what the path contains before the commit.
+	Found Found
+	// Hash is "sha256:" and the hex digest of the staged bytes, empty
+	// for a removal.
 	Hash string
 }
 
@@ -75,49 +128,65 @@ type Written struct {
 type Sink interface {
 	// Write stages one file under a workspace-relative,
 	// slash-separated path. It refuses a path that is invalid,
-	// climbs out of the root, ends in the reserved staging suffix
-	// or was staged before. It refuses a path that cannot exist on
-	// a filesystem beside the staged ones: a file where a staged path
-	// needs a directory, a directory where a file is staged, and a
-	// name that differs from a staged one only in case. It refuses
-	// every call after Commit or Discard with [ErrFinished].
+	// climbs out of the root, ends in the reserved staging suffix,
+	// was staged before or is staged for removal. It refuses a path
+	// that cannot exist on a filesystem beside the staged ones: a file
+	// where a staged path needs a directory, a directory where a file
+	// is staged, and a name that differs from a staged one only in
+	// case. It refuses a call after Prepare, and every call after
+	// Commit or Discard with [ErrFinished].
 	Write(path string, body []byte) error
+	// Delete stages the removal of one file. It refuses an invalid
+	// path, a path staged for writing and a path staged before. It
+	// refuses a call after Prepare, and every call after Commit or
+	// Discard with [ErrFinished].
+	Delete(path string) error
+	// Prepare reads the destination and returns, per staged path in
+	// path order, the action Commit takes and what the path contains
+	// now. It writes nothing. A sink prepares once, before Commit or
+	// Discard, and refuses a second call.
+	Prepare() ([]Change, error)
 	// Commit makes the staged files real, one atomic rename per
 	// file, write-if-changed: identical bytes leave the file and
 	// its mtime untouched. A sink over a destination that has files
 	// of its own, such as [Disk], refuses to overwrite a file its
-	// brand did not write. Commit returns one record per file it
-	// committed, sorted by path, and keeps going past a file that
-	// fails, joining the errors.
+	// brand did not write. It removes a staged removal's file only
+	// where the file is the brand's intact output, and leaves any
+	// other file in place without a record. Commit returns one record
+	// per file it wrote or removed, sorted by path, and keeps going
+	// past a file that fails, joining the errors.
 	Commit() ([]Written, error)
 	// Discard drops the staged files without touching the
 	// destination.
 	Discard() error
 }
 
-// staging is the bookkeeping every sink shares: the staged bytes,
-// and the one-staging rule. Each sink decides how it writes to its
-// destination.
+// staging is the bookkeeping every sink shares: the staged bytes and
+// removals, and the one-staging rule. Each sink decides how it reads
+// and writes its destination.
 type staging struct {
 	files map[string][]byte
-	// tree contains the staged paths, which a new path must fit
+	// removals are the paths staged for deletion.
+	removals map[string]struct{}
+	// tree contains the staged file paths, which a new path must fit
 	// beside.
 	tree     pathset.Set
+	prepared bool
 	finished bool
 }
 
 // stage records one file, refusing what no sink may take.
 func (s *staging) stage(p string, body []byte) error {
-	if s.finished {
-		return ErrFinished
-	}
-	if err := stageable(p); err != nil {
+	if err := s.open(p); err != nil {
 		return err
 	}
 	if _, held := s.files[p]; held {
 		return fmt.Errorf(
 			"output: %q is staged twice: one sink writes each path once", p,
 		)
+	}
+	if _, removed := s.removals[p]; removed {
+		return fmt.Errorf("output: %q is staged for removal, so it cannot be written", p)
 	}
 	if err := s.fits(p); err != nil {
 		return err
@@ -128,6 +197,36 @@ func (s *staging) stage(p string, body []byte) error {
 	s.files[p] = body
 	s.tree.Add(p)
 	return nil
+}
+
+// remove records one removal, refusing a path staged before.
+func (s *staging) remove(p string) error {
+	if err := s.open(p); err != nil {
+		return err
+	}
+	if _, held := s.files[p]; held {
+		return fmt.Errorf("output: %q is staged for writing, so it cannot be removed", p)
+	}
+	if _, removed := s.removals[p]; removed {
+		return fmt.Errorf("output: %q is staged for removal twice", p)
+	}
+	if s.removals == nil {
+		s.removals = map[string]struct{}{}
+	}
+	s.removals[p] = struct{}{}
+	return nil
+}
+
+// open refuses a path no staging takes, and every path once the
+// staging is prepared or finished.
+func (s *staging) open(p string) error {
+	switch {
+	case s.finished:
+		return ErrFinished
+	case s.prepared:
+		return fmt.Errorf("output: %q arrives after the staging was prepared, and a prepared staging is closed", p)
+	}
+	return stageable(p)
 }
 
 // fits refuses a path that cannot exist beside the staged ones on
@@ -151,8 +250,26 @@ func (s *staging) fits(p string) error {
 	}
 }
 
-// paths returns the staged paths in commit order.
-func (s *staging) paths() []string { return slices.Sorted(maps.Keys(s.files)) }
+// paths returns every staged path, written and removed, in commit
+// order.
+func (s *staging) paths() []string {
+	all := slices.AppendSeq(slices.Collect(maps.Keys(s.files)), maps.Keys(s.removals))
+	slices.Sort(all)
+	return all
+}
+
+// prepare marks the staging prepared, refusing a second preparation and
+// one after Commit or Discard.
+func (s *staging) prepare() error {
+	switch {
+	case s.finished:
+		return ErrFinished
+	case s.prepared:
+		return errors.New("output: the staging is prepared once")
+	}
+	s.prepared = true
+	return nil
+}
 
 // finish closes the staging, refusing a second Commit or Discard.
 func (s *staging) finish() error {
@@ -178,10 +295,29 @@ func stageable(p string) error {
 			"output: %q separates with a backslash, and paths are slash-separated "+
 				"on every platform", p,
 		)
-	case strings.HasSuffix(p, stageSuffix):
+	case strings.HasSuffix(p, stagefile.Suffix):
 		return fmt.Errorf(
-			"output: %q ends in %s, which a commit stages through", p, stageSuffix,
+			"output: %q ends in %s, which a commit stages through", p, stagefile.Suffix,
 		)
 	}
 	return nil
+}
+
+// planned returns the action Commit takes on a path staged for writing
+// or for removal, from what the path contains: a write creates, leaves
+// equal bytes alone or updates, and a removal deletes the brand's
+// intact output and leaves anything else.
+func planned(write bool, f Found) Action {
+	switch {
+	case write && f == FoundNothing:
+		return ActionCreated
+	case write && f == FoundSame:
+		return ActionUnchanged
+	case write:
+		return ActionUpdated
+	case f == FoundIntact:
+		return ActionDeleted
+	default:
+		return ActionUnchanged
+	}
 }

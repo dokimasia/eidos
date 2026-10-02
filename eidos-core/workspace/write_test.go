@@ -50,6 +50,23 @@ func (s *partialSink) Write(path string, _ []byte) error {
 	return nil
 }
 
+// Delete stages nothing.
+func (*partialSink) Delete(string) error { return nil }
+
+// Prepare reports every staged path as a file to create.
+func (s *partialSink) Prepare() ([]output.Change, error) {
+	changes := make([]output.Change, 0, len(s.staged))
+	for _, p := range s.staged {
+		changes = append(changes, output.Change{
+			Path:   p,
+			Action: output.ActionCreated,
+			Found:  output.FoundNothing,
+			Hash:   "sha256:" + strings.Repeat("ab", 32),
+		})
+	}
+	return changes, nil
+}
+
 // Commit records the first staged path and returns errDiskFull.
 func (s *partialSink) Commit() ([]output.Written, error) {
 	return []output.Written{{Path: s.staged[0], Action: output.ActionCreated}}, errDiskFull
@@ -64,6 +81,12 @@ type refusingSink struct{ discarded bool }
 
 // Write returns errReadOnly.
 func (*refusingSink) Write(string, []byte) error { return errReadOnly }
+
+// Delete returns errReadOnly.
+func (*refusingSink) Delete(string) error { return errReadOnly }
+
+// Prepare prepares nothing.
+func (*refusingSink) Prepare() ([]output.Change, error) { return nil, nil }
 
 // Commit commits nothing.
 func (*refusingSink) Commit() ([]output.Written, error) { return nil, nil }
@@ -158,7 +181,7 @@ func renderedBody(t *testing.T, w *workspace.Workspace, o *opener) string {
 	t.Helper()
 
 	g, _ := alpha(t)
-	_, err := w.Run(t.Context(), g)
+	_, err := w.Run(t.Context(), workspace.Input{Graph: g})
 	assert.NoError(t, err, "the run is clean")
 	files := o.opened()[0].Files()
 	assert.Length(t, files, 1, "the run writes one file")
@@ -193,7 +216,7 @@ func writing(tb assert.TB, open func() (output.Sink, error)) *workspace.Workspac
 const alphaFile = coretest.StorePath + "/alpha.go"
 
 // routedAlpha returns an unfrozen one-package graph whose one file
-// sits in the package's directory, and the struct it declares.
+// is in the package's directory, and the struct it declares.
 func routedAlpha(tb assert.TB) (*store.Graph, *node.Struct) {
 	tb.Helper()
 
@@ -233,14 +256,14 @@ func routing(tb assert.TB, cfg layout.Config, open func() (output.Sink, error)) 
 func writtenPaths(t *testing.T, w *workspace.Workspace, g *store.Graph, o *opener) []string {
 	t.Helper()
 
-	_, err := w.Run(t.Context(), g)
+	_, err := w.Run(t.Context(), workspace.Input{Graph: g})
 	assert.NoError(t, err, "the run is clean")
 	return slices.Sorted(maps.Keys(o.opened()[0].Files()))
 }
 
-// The write is the run's last step: the render's staged files go to
-// a sink the run opens for itself, and the report records what was
-// written to the destination.
+// The write is the plan's last step: the render's stamped files go to
+// a sink the plan opens for itself, and the report records what each
+// plan's commit wrote to the destination.
 func TestWrite(t *testing.T) {
 	t.Parallel()
 
@@ -251,10 +274,17 @@ func TestWrite(t *testing.T) {
 			t.Parallel()
 
 			w := writing(t, func() (output.Sink, error) { return &partialSink{}, nil })
-			g, _ := alpha(t)
-			run, err := w.Run(t.Context(), g)
+			g := routedIn(t, coretest.StorePath)
+			cache := coretest.Struct(coretest.CachePath, "Beta")
+			cache.Pos = position.Pos{File: coretest.CachePath + "/beta.go", Line: 3, Col: 1}
+			pkg := coretest.Package(coretest.CachePath, cache)
+			pkg.Files[0].Path = coretest.CachePath + "/beta.go"
+			assert.NoError(t, g.AddPackage(pkg), "the second package is admitted")
+			run, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, errDiskFull, "the refused commit fails the run")
-			assert.Length(t, run.Written, 1, "the report records the file written to its destination")
+			assert.Equal(t, run.Plans[0].Status, workspace.PlanFailed, "the plan fails")
+			assert.Equal(t, len(run.Plans[0].Changes), 1, "the report records the one file written to its destination")
+			assert.Equal(t, run.Plans[0].Changes[0].Path, cacheGen, "the file the commit wrote before the refusal")
 		})
 
 		t.Run("opens one sink for each committing run", func(t *testing.T) {
@@ -264,11 +294,11 @@ func TestWrite(t *testing.T) {
 			w := writing(t, o.open)
 			for range 2 {
 				g, _ := alpha(t)
-				_, err := w.Run(t.Context(), g)
+				_, err := w.Run(t.Context(), workspace.Input{Graph: g})
 				assert.NoError(t, err, "the run is clean")
 			}
 			sinks := o.opened()
-			assert.Length(t, sinks, 2, "each run opens one sink")
+			assert.Length(t, sinks, 2, "each run opens one sink for its one plan")
 			for _, s := range sinks {
 				assert.Length(t, s.Files(), 1, "each sink has its own run's file")
 			}
@@ -284,7 +314,7 @@ func TestWrite(t *testing.T) {
 			for i := range errs {
 				g, _ := alpha(t)
 				wg.Go(func() {
-					_, errs[i] = w.Run(t.Context(), g)
+					_, errs[i] = w.Run(t.Context(), workspace.Input{Graph: g})
 				})
 			}
 			wg.Wait()
@@ -302,9 +332,10 @@ func TestWrite(t *testing.T) {
 			g, s := alpha(t)
 			assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{{Name: unclaimedName}}),
 				"an unclaimed directive attaches before the seal")
-			run, err := w.Run(t.Context(), g)
+			run, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run reports an Error")
-			assert.Empty(t, run.Written, "the report records no file")
+			assert.Equal(t, run.Plans[0].Status, workspace.PlanFailed, "the shared phase's Error fails the plan")
+			assert.Empty(t, run.Plans[0].Changes, "the report records no file")
 			assert.Empty(t, o.opened(), "no sink is opened")
 		})
 
@@ -314,9 +345,9 @@ func TestWrite(t *testing.T) {
 			w, err := valid().Build()
 			assert.NoError(t, err, "the composition builds")
 			g, _ := alpha(t)
-			run, err := w.Run(t.Context(), g)
+			run, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the run is clean")
-			assert.Empty(t, run.Written, "the report records no file")
+			assert.Empty(t, run.Plans[0].Changes, "the report records no file")
 		})
 
 		t.Run("returns an error for an output that fails to open", func(t *testing.T) {
@@ -324,7 +355,7 @@ func TestWrite(t *testing.T) {
 
 			w := writing(t, func() (output.Sink, error) { return nil, errNoDevice })
 			g, _ := alpha(t)
-			_, err := w.Run(t.Context(), g)
+			_, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, errNoDevice, "the open's error fails the run")
 		})
 
@@ -333,7 +364,7 @@ func TestWrite(t *testing.T) {
 
 			w := writing(t, func() (output.Sink, error) { return nil, nil })
 			g, _ := alpha(t)
-			_, err := w.Run(t.Context(), g)
+			_, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.HasError(t, err, "the run fails")
 			assert.Contains(t, err.Error(), "returned (nil, nil)", "the error names the fault")
 		})
@@ -360,10 +391,10 @@ func TestWrite(t *testing.T) {
 			refusing := &refusingSink{}
 			w := writing(t, func() (output.Sink, error) { return refusing, nil })
 			g, _ := alpha(t)
-			run, err := w.Run(t.Context(), g)
+			run, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, errReadOnly, "the refused write fails the run")
 			assert.True(t, refusing.discarded, "the staging is discarded")
-			assert.Empty(t, run.Written, "the report records no file")
+			assert.Empty(t, run.Plans[0].Changes, "the report records no file")
 		})
 
 		t.Run("writes a file beside the source it derives from", func(t *testing.T) {
@@ -397,7 +428,7 @@ func TestWrite(t *testing.T) {
 				}},
 				Pos: position.Pos{File: alphaFile, Line: 2, Col: 1},
 			}}), "the escaping override attaches before the seal")
-			run, err := routing(t, layout.Config{}, o.open).Run(t.Context(), g)
+			run, err := routing(t, layout.Config{}, o.open).Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the refusal fails the run")
 			coretest.AssertCodes(t, run.Sink, layout.EscapingPath)
 			assert.Empty(t, o.opened(), "no sink is opened")

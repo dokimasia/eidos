@@ -4,13 +4,14 @@
 package eidos
 
 import (
+	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
 // Stamper is the annotator effect: a write handle bound to its
 // match's subject. A stamper writes only to its subject's bag and
-// the bags of the declarations the subject owns, its parameters,
+// the bags of the declarations the subject declares, its parameters,
 // returns and type parameters: a fact "about" a sibling is a fact
 // on the subject whose value names the sibling, so every write's
 // target is statically known from the trigger, which is what keeps
@@ -36,17 +37,17 @@ func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
 	stamp(st.m, st.m.subject, k, v)
 }
 
-// StampOn records v under k on a declaration the subject owns: one
+// StampOn records v under k on a declaration the subject declares: one
 // of its parameters, returns or type parameters, which no trigger
 // matches on their own where a directive on the subject states
 // something about them. The envelope is the subject's. An identity
-// the subject does not own is refused under [RefusedStamp] at the
+// the subject does not declare is refused under [RefusedStamp] at the
 // subject's position, and the phase continues.
 func StampOn[T meta.FactValue](st *Stamper, owned symbol.Identity, k meta.Key[T], v T) {
 	m := st.m
 	if !owns(m.subject, owned) {
-		m.rs.sink.Errorf(RefusedStamp, m.pos, m.rs.plugin,
-			"%s does not own %s: a stamper writes to its subject and what the subject declares",
+		m.rs.reportf(m.seq, RefusedStamp, diag.SeverityError, m.pos,
+			"%s does not declare %s: a stamper writes to its subject and what the subject declares",
 			m.subject, owned)
 		return
 	}
@@ -66,7 +67,7 @@ func stamp[T meta.FactValue](m *match, target symbol.Identity, k meta.Key[T], v 
 		Derived:   m.derived(),
 	})
 	if err != nil {
-		m.rs.sink.Errorf(RefusedStamp, m.pos, m.rs.plugin, "%v", err)
+		m.rs.reportf(m.seq, RefusedStamp, diag.SeverityError, m.pos, "%v", err)
 	}
 }
 

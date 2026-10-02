@@ -39,6 +39,8 @@ const (
 	// e2ePackages is the benchmark's package count, the medium
 	// size: 200,000 symbols.
 	e2ePackages = 1_000
+	// e2eTestPackages is the corpus share the pipeline test runs.
+	e2eTestPackages = 50
 	// e2eRefs, e2eMarked and e2eUnmarked split one package's
 	// symbols by role: marked and cross-referencing, marked, and
 	// present alone.
@@ -52,11 +54,18 @@ const (
 	e2eBrand output.Brand = "e2e"
 )
 
+// The worker counts the pipeline runs its phase calls on: sequential
+// dispatch, and four workers.
+const (
+	e2eOneWorker   = 1
+	e2eFourWorkers = 4
+)
+
 // e2ePath is one corpus package's path.
 func e2ePath(p int) string { return e2ePathPrefix + strconv.Itoa(p) }
 
 // e2eGraph builds a corpus of n packages, loaded and left unfrozen
-// the way a run takes a graph. Each package's file sits in the
+// the way a run takes a graph. Each package's file is in the
 // package's own directory, so each package's generated file routes
 // beside it.
 func e2eGraph(tb assert.TB, n int) *store.Graph {
@@ -82,12 +91,12 @@ func e2eGraph(tb assert.TB, n int) *store.Graph {
 	return g
 }
 
-// e2eWorkspace composes the pipeline over n packages: an annotator
-// stamping the mark, a generator mirroring the marked symbols with
-// the stated share of cross-package references, the fixture backend
-// the plan settles and renders through, and an output that commits
-// each run into a fresh memory sink.
-func e2eWorkspace(tb assert.TB, n int) *workspace.Workspace {
+// e2eWorkspace composes the pipeline over n packages on the given
+// workers: an annotator stamping the mark, a generator mirroring the
+// marked symbols with the stated share of cross-package references,
+// the fixture backend the plan settles and renders through, and an
+// output that commits each run into a fresh memory sink.
+func e2eWorkspace(tb assert.TB, n, workers int) *workspace.Workspace {
 	tb.Helper()
 
 	var mark meta.Key[bool]
@@ -140,6 +149,7 @@ func e2eWorkspace(tb assert.TB, n int) *workspace.Workspace {
 		Brand(e2eBrand).
 		Annotators(stamper).
 		Targets("fixture").
+		Parallel(workers).
 		Plans(workspace.Plan{
 			Name:       "plan",
 			Generators: []plugin.Generator{mirror},
@@ -200,15 +210,28 @@ func e2eBackend() plugin.Backend {
 
 // e2ePipeline runs the corpus through every stage the kernel
 // implements, inside the run: annotate, generate, settle, layout,
-// render, stamp and the sink's commit. It returns the committed
-// files.
-func e2ePipeline(tb assert.TB, w *workspace.Workspace, g *store.Graph) []output.Written {
+// render, stamp, the sink's preparation and its commit. It returns the
+// committed files' changes.
+func e2ePipeline(tb assert.TB, w *workspace.Workspace, g *store.Graph) []output.Change {
 	tb.Helper()
 
-	report, err := w.Run(context.Background(), g)
+	report, err := w.Run(context.Background(), workspace.Input{Graph: g})
 	assert.NoError(tb, err, "the run completes")
 	assert.False(tb, report.Sink.Failed(), "and reports no errors")
-	return report.Written
+	return report.Plans[0].Changes
+}
+
+// e2eHashes runs the pipeline over the test's share of the corpus on
+// the given workers, and returns the committed files' hashes by path.
+func e2eHashes(tb assert.TB, workers int) map[string]string {
+	tb.Helper()
+
+	out := map[string]string{}
+	w := e2eWorkspace(tb, e2eTestPackages, workers)
+	for _, f := range e2ePipeline(tb, w, e2eGraph(tb, e2eTestPackages)) {
+		out[f.Path] = f.Hash
+	}
+	return out
 }
 
 // peakRSS reads the process's high-water resident set in bytes,
@@ -240,26 +263,39 @@ func peakRSS() uint64 {
 // corpus: annotate, generate, settle, layout, render, stamp and
 // commit, the corpus and the composition built outside the
 // measurement, under an allocation ceiling pinned from measurement
-// with headroom. The peak resident set reports as a metric beside
-// the numbers, so the envelope reports memory as well as work.
+// with headroom. It runs the phase calls on one worker and on four.
+// The peak resident set reports as a metric beside the numbers, so
+// the envelope reports memory as well as work.
 func BenchmarkPipeline(b *testing.B) {
-	c := bench.Start(b).MaxAllocs(520_000)
-	defer c.End()
-	for c.Loop() {
-		var w *workspace.Workspace
-		var g *store.Graph
-		c.Excluding(func() {
-			w = e2eWorkspace(b, e2ePackages)
-			g = e2eGraph(b, e2ePackages)
-		})
-		written := e2ePipeline(b, w, g)
-		if len(written) != e2ePackages {
-			b.Fatalf("the envelope commits one file per package, got %d",
-				len(written))
-		}
+	runs := []struct {
+		name    string
+		workers int
+		ceiling uint64
+	}{
+		{name: "one worker", workers: e2eOneWorker, ceiling: 520_000},
+		{name: "four workers", workers: e2eFourWorkers, ceiling: 520_000},
 	}
-	if rss := peakRSS(); rss > 0 {
-		b.ReportMetric(float64(rss)/(1<<20), "peak-RSS-MB")
+	for _, tt := range runs {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.ceiling)
+			defer c.End()
+			for c.Loop() {
+				var w *workspace.Workspace
+				var g *store.Graph
+				c.Excluding(func() {
+					w = e2eWorkspace(b, e2ePackages, tt.workers)
+					g = e2eGraph(b, e2ePackages)
+				})
+				written := e2ePipeline(b, w, g)
+				if len(written) != e2ePackages {
+					b.Fatalf("the envelope commits one file per package, got %d",
+						len(written))
+				}
+			}
+			if rss := peakRSS(); rss > 0 {
+				b.ReportMetric(float64(rss)/(1<<20), "peak-RSS-MB")
+			}
+		})
 	}
 }
 
@@ -275,18 +311,17 @@ func TestPipeline(t *testing.T) {
 		t.Run("writes the same bytes on a warm run as on a cold run", func(t *testing.T) {
 			t.Parallel()
 
-			const n = 50
-			run := func() map[string]string {
-				out := map[string]string{}
-				for _, f := range e2ePipeline(t, e2eWorkspace(t, n), e2eGraph(t, n)) {
-					out[f.Path] = f.Hash
-				}
-				return out
-			}
-			cold := run()
-			warm := run()
-			assert.Length(t, warm, n, "one file per package commits")
+			cold := e2eHashes(t, e2eOneWorker)
+			warm := e2eHashes(t, e2eOneWorker)
+			assert.Length(t, warm, e2eTestPackages, "one file per package commits")
 			assert.Equal(t, warm, cold, "the warm run's hashes are the cold run's")
+		})
+
+		t.Run("writes on four workers the bytes one worker writes", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, e2eHashes(t, e2eFourWorkers), e2eHashes(t, e2eOneWorker),
+				"the hashes do not depend on the worker count")
 		})
 	})
 }

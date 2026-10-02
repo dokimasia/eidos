@@ -7,18 +7,27 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"slices"
+	"sync/atomic"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/backend"
+	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/rules"
@@ -153,7 +162,7 @@ func keyedRun(
 	if attach != nil {
 		attach(g, s.Identity())
 	}
-	report, err := w.Run(t.Context(), g)
+	report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 	return report, s.Identity(), *flag, err
 }
 
@@ -210,18 +219,29 @@ func TestRun(t *testing.T) {
 			assert.NoError(t, err, "the fixture composition is valid")
 			g, _ := alpha(t)
 			g.Freeze()
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the run takes the sealed graph")
 			assert.NotNil(t, report, "the frame runs whole")
 		})
 
-		t.Run("returns an error for a missing graph", func(t *testing.T) {
+		t.Run("returns an error for an input without a tree or a graph", func(t *testing.T) {
 			t.Parallel()
 
 			w, err := valid().Build()
 			assert.NoError(t, err, "the fixture composition is valid")
-			report, err := w.Run(t.Context(), nil)
+			report, err := w.Run(t.Context(), workspace.Input{})
 			assert.HasError(t, err, "there is nothing to run over")
+			assert.Nil(t, report, "nothing ran")
+		})
+
+		t.Run("returns an error for an input with both a tree and a graph", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			g, _ := alpha(t)
+			report, err := w.Run(t.Context(), workspace.Input{Tree: fstest.MapFS{}, Graph: g})
+			assert.HasError(t, err, "one input is read")
 			assert.Nil(t, report, "nothing ran")
 		})
 
@@ -371,7 +391,7 @@ func TestRun(t *testing.T) {
 				Name: "k8s:deepcopy-gen",
 				Pos:  position.Pos{File: "alpha.go", Line: 5, Col: 1},
 			}}), "the foreign directive attaches like any other")
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the run passes")
 			coretest.AssertCodes(t, report.Sink)
 			assert.Length(t, units(report.Emits["plan"]), 1, "the frame runs whole")
@@ -446,7 +466,7 @@ func TestRun(t *testing.T) {
 			w, err := optingOut(true).Build()
 			assert.NoError(t, err, "the composition composes")
 			g, first, _ := pair(t)
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the negation is authored intent, not a finding")
 			got := units(report.Emits["plan"])
 			assert.Length(t, got, 1, "one unit is emitted")
@@ -460,7 +480,7 @@ func TestRun(t *testing.T) {
 			w, err := optingOut(false).Build()
 			assert.NoError(t, err, "the composition composes")
 			g, _, _ := pair(t)
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the refused negation fails the run")
 			coretest.AssertReports(t, report.Sink, directive.NegationRefused)
 		})
@@ -471,7 +491,7 @@ func TestRun(t *testing.T) {
 			w, err := optingOut(false).Build()
 			assert.NoError(t, err, "the composition composes")
 			g, first, second := pair(t)
-			report, _ := w.Run(t.Context(), g)
+			report, _ := w.Run(t.Context(), workspace.Input{Graph: g})
 			got := units(report.Emits["plan"])
 			assert.Length(t, got, 1, "one unit is emitted")
 			assert.Equal(t, got[0].Origins, []symbol.Identity{first.Identity(), second.Identity()},
@@ -492,7 +512,7 @@ func TestRun(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "the failing composition composes")
 			g, _ := alpha(t)
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.HasError(t, err, "the returned error stops the frame")
 			assert.Contains(t, err.Error(), "angry", "the error names the role")
 			assert.Contains(t, err.Error(), "boom", "the error has the cause")
@@ -516,7 +536,7 @@ func TestRun(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "the two-plan composition composes")
 			g, _ := alpha(t)
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.HasError(t, err, "the failing plan is reported")
 			assert.Contains(t, err.Error(), `"crashing"`, "the error names the plan")
 			assert.Length(t, units(report.Emits["steady"]), 1, "the sibling ran whole")
@@ -536,7 +556,7 @@ func TestRun(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "a backend declaring a lowering seam composes")
 			g, _ := alpha(t)
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.HasError(t, err, "the lowering fails the plan")
 			assert.Contains(t, err.Error(), "settle", "the error names the stage")
 			assert.Contains(t, err.Error(), "origin", "the error names the rule the backend broke")
@@ -557,8 +577,67 @@ func TestRun(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
 			cancel()
 			g, _ := alpha(t)
-			_, err = w.Run(ctx, g)
+			report, err := w.Run(ctx, workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, context.Canceled, "the caller's cancellation is returned")
+			assert.Equal(t, report.Plans, []workspace.PlanReport{{Name: "plan", Status: workspace.PlanCancelled}},
+				"the report states the plan's outcome")
+		})
+
+		t.Run("reports UnreadableRecord for a record that does not read", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			place(t, root, ledger.ManifestPath(fixtureBrand), "not a record")
+			report := cleanRun(t, built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{}))),
+				routedIn(t, coretest.StorePath))
+			unreadable := findings(report.Sink, workspace.UnreadableRecord)
+			assert.Length(t, unreadable, 1, "one finding for the record")
+			assert.Equal(t, unreadable[0].Severity, diag.SeverityInfo, "as information")
+			assert.Equal(t, unreadable[0].Pos, position.Pos{File: ledger.ManifestPath(fixtureBrand)},
+				"at the record's path")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the run proceeds")
+		})
+
+		t.Run("returns an error for a ledger that fails to open", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Ledger(func() (ledger.Ledger, error) { return nil, errNoDevice }))
+			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, errNoDevice, "the open's error fails the run")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "no plan runs")
+		})
+
+		t.Run("returns an error for a ledger open function that returns (nil, nil)", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
+				Ledger(func() (ledger.Ledger, error) { return nil, nil }))
+			_, err := runOver(t, w, routedIn(t, coretest.StorePath))
+			assert.HasError(t, err, "the run fails")
+			assert.Contains(t, err.Error(), "returned (nil, nil)", "the error names the fault")
+		})
+
+		t.Run("returns an error for a tree without a frontend to load it", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			_, err = w.Run(t.Context(), workspace.Input{Tree: fstest.MapFS{}})
+			assert.HasError(t, err, "the tree is not loaded")
+			assert.Contains(t, err.Error(), "no frontend", "the error names the fault")
+		})
+
+		t.Run("returns the load's error for a store the load refuses", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Frontends(frontendtest.NewScripted()).Build()
+			assert.NoError(t, err, "the loading composition is valid")
+			report, err := w.Run(t.Context(), workspace.Input{
+				Tree: fstest.MapFS{}, Stores: map[string]fs.FS{"go:mod": fstest.MapFS{}},
+			})
+			assert.HasError(t, err, "the load fails")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "and no plan runs")
 		})
 
 		t.Run("stops before the next annotator after a cancellation", func(t *testing.T) {
@@ -585,7 +664,7 @@ func TestRun(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "the two-annotator composition composes")
 			g, _ := alpha(t)
-			_, err = w.Run(ctx, g)
+			_, err = w.Run(ctx, workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, context.Canceled, "the cancellation is returned")
 			assert.False(t, later, "the schedule stops at the next role")
 		})
@@ -611,9 +690,9 @@ func TestRun(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "the two-generator plan composes")
 			g, _ := alpha(t)
-			_, err = w.Run(ctx, g)
+			report, err := w.Run(ctx, workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, context.Canceled, "the plan returns the cancellation")
-			assert.Contains(t, err.Error(), `"plan"`, "the error names the plan")
+			assert.Equal(t, report.Plans[0].Status, workspace.PlanCancelled, "the report states the plan's outcome")
 			assert.False(t, later, "the later bucket never ran")
 		})
 
@@ -632,7 +711,7 @@ func TestRun(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "the grumpy composition composes")
 			g, _ := alpha(t)
-			return w.Run(t.Context(), g)
+			return w.Run(t.Context(), workspace.Input{Graph: g})
 		}
 
 		t.Run("returns ErrRunFailed for an Error finding", func(t *testing.T) {
@@ -693,7 +772,7 @@ func TestRun(t *testing.T) {
 			assert.NoError(t, g.AddPackage(pkg), "the fixture package is admitted")
 			assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{rawRef("Alpha", 2)}),
 				"the directive attaches")
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the run is clean")
 			assert.False(t, report.Sink.Failed(), "nothing is reported")
 			assert.Equal(t, bound, s.Identity(), "the handler receives the bound identity")
@@ -710,7 +789,7 @@ func TestRun(t *testing.T) {
 			g, s := alpha(t)
 			assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{rawRef("Ghost", 2)}),
 				"the directive attaches")
-			_, err = w.Run(t.Context(), g)
+			_, err = w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
 			assert.True(t, bound.IsZero(), "the rejected instance never gated the rule")
 		})
@@ -724,7 +803,7 @@ func TestRun(t *testing.T) {
 			g, s := alpha(t)
 			assert.NoError(t, g.AttachDirectives(s.Identity(), []directive.Raw{rawRef("Alpha", 2)}),
 				"the directive attaches")
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
 			assert.True(t, slices.Contains(coretest.Codes(report.Sink), directive.UnresolvedReference),
 				"UnresolvedReference is reported")
@@ -747,13 +826,224 @@ func TestRun(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "the composition composes")
 			g, _ := alpha(t)
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the run is clean")
 			assert.Equal(t, form, symbol.FormScalar, "the annotator's match folds through the registered rules")
 			assert.False(t, slices.Contains(coretest.Codes(report.Sink), rules.AbsentRules),
 				"no language is unregistered")
 		})
+
+		t.Run("hands the composition's worker count to every phase call", func(t *testing.T) {
+			t.Parallel()
+
+			annotated, generated := &atomic.Int64{}, &atomic.Int64{}
+			w := built(t, workspace.New().
+				Brand(fixtureBrand).
+				Annotators(annotateSeen{seen: annotated}).
+				Targets("fixture").
+				Parallel(eightWorkers).
+				Plans(workspace.Plan{
+					Name:       "plan",
+					Generators: []plugin.Generator{generateSeen{seen: generated}},
+					Backend:    fakeBackend{name: "printer", target: "fixture"},
+				}))
+			g, _ := alpha(t)
+			cleanRun(t, w, g)
+			assert.Equal(t, annotated.Load(), int64(eightWorkers), "the annotator's call runs on the workers")
+			assert.Equal(t, generated.Load(), int64(eightWorkers), "and so does the generator's")
+		})
+
+		t.Run("writes on eight workers the bytes one worker writes for a package's accumulator", func(t *testing.T) {
+			t.Parallel()
+
+			registry := func() plugin.Generator { return generator("registry", mirrored) }
+			serial := parallelFiles(t, 1, crowded(t, parallelSubjects, 0), registry())
+			parallel := parallelFiles(t, eightWorkers, crowded(t, parallelSubjects, 0), registry())
+			assert.Length(t, serial, 1, "the package's matches assemble one file")
+			assert.Equal(t, parallel, serial, "the file does not depend on the worker count")
+		})
+
+		t.Run("writes on eight workers the bytes one worker writes for one slot many invocations append into",
+			func(t *testing.T) {
+				t.Parallel()
+
+				serial := parallelFiles(t, 1, crowded(t, 1, parallelInstances), providing(), weaverOf())
+				parallel := parallelFiles(t, eightWorkers, crowded(t, 1, parallelInstances), providing(), weaverOf())
+				assert.Length(t, serial, 1, "the woven struct renders in one file")
+				for _, body := range serial {
+					assert.Contains(t, body, "audit00 audit01", "the fields follow the instances' order")
+				}
+				assert.Equal(t, parallel, serial, "the file does not depend on the worker count")
+			})
+
+		t.Run("names a weaver in the frame of the file it appends into", func(t *testing.T) {
+			t.Parallel()
+
+			mirror, weaver := providing(), weaverOf()
+			files := parallelFiles(t, 1, crowded(t, 1, 1), mirror, weaver)
+			assert.Length(t, files, 1, "the woven struct renders in one file")
+			for _, body := range files {
+				record, framed := output.Read([]byte(body))
+				assert.True(t, framed, "the file is stamped")
+				assert.Equal(t, record.Plugins, []plugin.ID{mirror.Name(), weaver.Name()},
+					"the frame names the emitter and the weaver")
+			}
+		})
 	})
+}
+
+// The sizes of the parallel run fixtures: structs in one package, the
+// instances of the weaver's repeatable directive on one struct, and the
+// worker count the parallel runs take.
+const (
+	parallelSubjects  = 64
+	parallelInstances = 32
+	eightWorkers      = 8
+)
+
+// mirroredCapability is what the providing mirror declares and the
+// weaver requires, which puts the weaver in the later bucket.
+const mirroredCapability plugin.Capability = "mirrored"
+
+// annotateSeen is a hand-rolled annotator that records the worker
+// count its phase call hands it.
+type annotateSeen struct{ seen *atomic.Int64 }
+
+// Name returns the annotator's name.
+func (annotateSeen) Name() plugin.ID { return "annotate-seen" }
+
+// Annotate records the call's worker count.
+func (a annotateSeen) Annotate(ctx *plugin.AnnotatorContext) error {
+	a.seen.Store(int64(ctx.Workers))
+	return nil
+}
+
+// generateSeen is a hand-rolled generator that records the worker
+// count its phase call hands it.
+type generateSeen struct{ seen *atomic.Int64 }
+
+// Name returns the generator's name.
+func (generateSeen) Name() plugin.ID { return "generate-seen" }
+
+// Generate records the call's worker count.
+func (g generateSeen) Generate(ctx *plugin.GeneratorContext) error {
+	g.seen.Store(int64(ctx.Workers))
+	return nil
+}
+
+// auditSchema is the weaver's repeatable directive: each instance on a
+// subject adds one field to the subject's mirrored struct.
+var auditSchema = directive.Schema{
+	Plugin: "weaver", Name: "audit", Repeatable: true,
+	Doc: "adds one audited field to the mirrored struct",
+}
+
+// crowded returns an unfrozen graph declaring n structs in one file of
+// the store package's own directory, and that many raw instances of the
+// weaver's audit directive on the first struct.
+func crowded(tb assert.TB, n, instances int) *store.Graph {
+	tb.Helper()
+
+	file := coretest.StorePath + "/crowd.go"
+	decls := make([]symbol.Symbol, n)
+	structs := make([]*node.Struct, n)
+	for i := range structs {
+		s := coretest.Struct(coretest.StorePath, fmt.Sprintf("S%02d", i))
+		s.Pos = position.Pos{File: file, Line: i + 1, Col: 1}
+		structs[i], decls[i] = s, s
+	}
+	p := coretest.Package(coretest.StorePath, decls...)
+	p.Files[0].Path = file
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(p), "the fixture package is admitted")
+	raws := make([]directive.Raw, instances)
+	for i := range raws {
+		raws[i] = directive.Raw{Name: auditSchema.Canonical(), Pos: position.Pos{File: file, Line: i + 1, Col: 1}}
+	}
+	if instances > 0 {
+		assert.NoError(tb, g.AttachDirectives(structs[0].Identity(), raws), "the instances attach before the seal")
+	}
+	return g
+}
+
+// providing returns the mirror generator under the capability the
+// weaver requires.
+func providing() plugin.Generator {
+	p, held := eidos.NewPlugin("mirror").
+		Provides(mirroredCapability).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.OnStruct(mirrored)).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// weaverOf returns the weaver: after the mirror, each instance of its
+// audit directive on a subject appends one field into the subject's
+// mirrored struct through the Emitter.
+func weaverOf() plugin.Generator {
+	p, held := eidos.NewPlugin("weaver").
+		Requires(mirroredCapability).
+		Handle(eidos.Directive(auditSchema,
+			eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+				s, held := m.Value.(*emit.Struct)
+				if !held {
+					return nil
+				}
+				e.Slot(&s.Fields).Append(&emit.Field{
+					Name: fmt.Sprintf("audit%02d", m.Directive().Instance),
+					Type: &emit.TypeRef{Spelling: "int"},
+				})
+				return nil
+			}))).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// listing is a kit backend whose struct template spells the name of
+// each field, so the order of a struct's field slot shows in the
+// rendered bytes.
+func listing(tb assert.TB) plugin.Backend {
+	tb.Helper()
+
+	return backend.New("lister", "fixture", plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "type {{.Name}} struct { {{range .Fields.Items}}{{.Name}} {{end}}}\n",
+		}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
+}
+
+// parallelFiles runs one plan of the given generators toward the
+// listing backend on the given workers over the graph, and returns the
+// files the run committed, by path.
+func parallelFiles(t *testing.T, workers int, g *store.Graph, gens ...plugin.Generator) map[string]string {
+	t.Helper()
+
+	var o opener
+	w := built(t, workspace.New().
+		Brand(fixtureBrand).
+		Targets("fixture").
+		Parallel(workers).
+		Plans(workspace.Plan{Name: "plan", Generators: gens, Backend: listing(t)}).
+		Output(o.open))
+	cleanRun(t, w, g)
+	out := map[string]string{}
+	for _, sink := range o.opened() {
+		for path, body := range sink.Files() {
+			out[path] = string(body)
+		}
+	}
+	return out
 }
 
 // BenchmarkRun takes the frame over the canonical workspace: 1000
@@ -780,7 +1070,7 @@ func BenchmarkRun(b *testing.B) {
 					b.Fatalf("AddPackage: unexpected error: %v", err)
 				}
 			}
-			report, err := w.Run(b.Context(), g)
+			report, err := w.Run(b.Context(), workspace.Input{Graph: g})
 			if err != nil {
 				b.Fatalf("Run: unexpected error: %v", err)
 			}
@@ -798,7 +1088,7 @@ func BenchmarkRun(b *testing.B) {
 			if err := g.AddPackage(one); err != nil {
 				b.Fatalf("AddPackage: unexpected error: %v", err)
 			}
-			if _, err := w.Run(b.Context(), g); err != nil {
+			if _, err := w.Run(b.Context(), workspace.Input{Graph: g}); err != nil {
 				b.Fatalf("Run: unexpected error: %v", err)
 			}
 		}

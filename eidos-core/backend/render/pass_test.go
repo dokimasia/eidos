@@ -314,6 +314,17 @@ func TestPass(t *testing.T) {
 				"every emitter, distinct and sorted")
 		})
 
+		t.Run("records every plugin that appended into a file's slots", func(t *testing.T) {
+			t.Parallel()
+
+			woven := unitOf(emitter, storeKey, alphaName)
+			woven.Contributors = []plugin.ID{betaPlugin, alphaPlugin}
+			files, sink := runPass(t, language(), seeded(t, woven))
+			coretest.AssertCodes(t, sink)
+			assert.Equal(t, files[0].Plugins, []plugin.ID{alphaPlugin, betaPlugin, emitter},
+				"the emitter and its contributors, distinct and sorted")
+		})
+
 		t.Run("records each routing key a file derives from once", func(t *testing.T) {
 			t.Parallel()
 

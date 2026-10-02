@@ -4,32 +4,48 @@
 package workspace
 
 import (
-	"errors"
 	"fmt"
 	"io/fs"
+	"slices"
 	"text/template"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/layout"
-	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// staged is one rendered file on its way to the sink: the path the
-// plan's layout routed it to, and the stamped bytes.
-type staged struct {
+// stagedFile is one rendered file on its way to the sink: the path the
+// plan's layout routed it to, the stamped bytes, and what the manifest
+// and the findings record about it.
+type stagedFile struct {
 	path string
 	body []byte
+	// plugins are the emitters whose units assembled the file and the
+	// plugins that appended into the units' slots, distinct and sorted.
+	plugins []plugin.ID
+	// sources are the canonical identities of the declarations the file
+	// derives from, sorted, in the spelling symbol.Parse reads back.
+	sources []string
+	// at is the origin of the file's first declaration, and the file
+	// itself where the origin has no position: where a finding about
+	// the file is positioned.
+	at position.Pos
+	// first is the file's first declaration, which a finding about the
+	// file names through describe, and nil for a file without one.
+	first symbol.Symbol
 }
 
 // write routes one plan's settled store to files against the run's
-// source tree and renders the files. A backend that spells no
-// filenames is a declaration defect the composition already refused,
-// so the assertion here returns an error and does not panic, and so
-// does a defect in the routing's inputs.
+// source tree, renders the files and stamps each one. A backend that
+// spells no filenames is a declaration defect the composition already
+// refused, so the assertion here returns an error and does not panic,
+// and so does a defect in the routing's inputs.
 func (w *Workspace) write(
-	pl compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, sink *diag.Sink,
-) ([]staged, error) {
+	pl *compiledPlan, ix *plugin.Index, src tree, into *plugin.Emit, sink *diag.Sink,
+) ([]stagedFile, error) {
 	speller, spells := pl.backend.(plugin.FileSpeller)
 	if !spells {
 		return nil, fmt.Errorf("backend %s writes output and spells no filenames", pl.backend.Name())
@@ -50,15 +66,17 @@ func (w *Workspace) write(
 	if err != nil {
 		return nil, fmt.Errorf("route: %w", err)
 	}
-	return render(pl, into, files, sink)
+	return render(pl, ix, into, files, sink)
 }
 
 // render drives one plan's backend over the files its layout routed
 // and returns what the backend produced, stamped through the plan's
-// contract and staged at each file's routed path. A backend that does
-// not render is a declaration defect the composition already refused,
-// so the assertion here returns an error and does not panic.
-func render(pl compiledPlan, into *plugin.Emit, files []plugin.File, sink *diag.Sink) ([]staged, error) {
+// contract, at each file's routed path and in path order. A backend
+// that does not render is a declaration defect the composition already
+// refused, so the assertion here returns an error and does not panic.
+func render(
+	pl *compiledPlan, ix *plugin.Index, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
+) ([]stagedFile, error) {
 	renderer, renders := pl.backend.(plugin.Renderer)
 	if !renders {
 		return nil, fmt.Errorf(
@@ -69,22 +87,79 @@ func render(pl compiledPlan, into *plugin.Emit, files []plugin.File, sink *diag.
 	if err != nil {
 		return nil, fmt.Errorf("render: %w", err)
 	}
-	out := make([]staged, 0, len(rendered))
+	out := make([]stagedFile, 0, len(rendered))
+	routed := 0
 	for _, f := range rendered {
 		body, err := pl.contract.Stamp(f)
 		if err != nil {
 			return nil, fmt.Errorf("stamp %s: %w", f.Path, err)
 		}
-		out = append(out, staged{path: f.Path, body: body})
+		// The render returns the routed files it rendered, in their
+		// path order, so the routed file of each is found by walking on.
+		for routed < len(files) && files[routed].Path != f.Path {
+			routed++
+		}
+		if routed == len(files) {
+			return nil, fmt.Errorf("render: %s returns %s, which the layout did not route", pl.backend.Name(), f.Path)
+		}
+		staged := stagedFile{path: f.Path, body: body, plugins: f.Plugins, at: position.Pos{File: f.Path}}
+		describeFile(&staged, &files[routed], ix)
+		out = append(out, staged)
 	}
 	return out, nil
+}
+
+// describeFile records what the manifest and the findings read off a
+// routed file: the identities its units derive from, and its first
+// declaration and that declaration's origin.
+func describeFile(staged *stagedFile, f *plugin.File, ix *plugin.Index) {
+	n := 0
+	for _, u := range f.Units {
+		n += len(u.Origins)
+	}
+	if n > 0 {
+		staged.sources = make([]string, 0, n)
+		for _, u := range f.Units {
+			for _, origin := range u.Origins {
+				staged.sources = append(staged.sources, origin.String())
+			}
+		}
+		slices.Sort(staged.sources)
+		staged.sources = slices.Compact(staged.sources)
+	}
+	if len(f.Units) == 0 || len(f.Units[0].Decls) == 0 {
+		return
+	}
+	staged.first = f.Units[0].Decls[0]
+	origin, _ := emit.OriginOf(staged.first)
+	if origin.IsZero() {
+		return
+	}
+	if s, held := ix.Lookup(origin); held {
+		if pos := s.Position(); !pos.IsZero() {
+			staged.at = pos
+		}
+	}
+}
+
+// describe names a declaration in a finding: its kind and its name, its
+// kind alone for a declaration without a name, and the empty string for
+// none.
+func describe(d symbol.Symbol) string {
+	if d == nil {
+		return ""
+	}
+	if name := emit.DeclaredName(d); name != "" {
+		return d.Kind().String() + " " + name
+	}
+	return d.Kind().String()
 }
 
 // renderContext assembles what the pass reads: the settled store, the
 // routed files, the plan's schedule, and the template surfaces its
 // generators declare for the backend's target.
 func renderContext(
-	pl compiledPlan, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
+	pl *compiledPlan, into *plugin.Emit, files []plugin.File, sink *diag.Sink,
 ) *plugin.RenderContext {
 	target := pl.backend.Target()
 	ctx := &plugin.RenderContext{
@@ -114,49 +189,4 @@ func renderContext(
 		}
 	}
 	return ctx
-}
-
-// commit opens the run's own sink, writes every plan's staged files
-// into it, in plan order and then in the order each plan rendered
-// them, and commits once. A composition declaring no output opens
-// nothing. The write is sequential where the render was parallel,
-// so one run writes one tree in one order however the plans
-// interleaved.
-//
-// A failed write discards the staging and commits nothing. A commit
-// refused part-way returns its error together with the records of
-// the files it wrote before the refusal, so the report lists every
-// file that changed on disk.
-func (w *Workspace) commit(staged [][]staged) ([]output.Written, error) {
-	if w.open == nil {
-		return nil, nil
-	}
-	sink, err := w.open()
-	if err != nil {
-		return nil, fmt.Errorf("workspace: open the output: %w", err)
-	}
-	if sink == nil {
-		return nil, errors.New("workspace: the output's open function returned (nil, nil)")
-	}
-	for _, files := range staged {
-		for _, f := range files {
-			if werr := sink.Write(f.path, f.body); werr != nil {
-				return nil, fmt.Errorf("workspace: stage %s: %w", f.path, discarding(sink, werr))
-			}
-		}
-	}
-	written, err := sink.Commit()
-	if err != nil {
-		return written, fmt.Errorf("workspace: commit the output: %w", err)
-	}
-	return written, nil
-}
-
-// discarding drops a failed run's staging, joining whatever the
-// discard itself reports so neither failure hides the other.
-func discarding(sink output.Sink, err error) error {
-	if derr := sink.Discard(); derr != nil {
-		return fmt.Errorf("%w (the staging also failed to discard: %w)", err, derr)
-	}
-	return err
 }

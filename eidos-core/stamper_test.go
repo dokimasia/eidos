@@ -11,6 +11,7 @@ import (
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -232,6 +233,72 @@ func TestStamper(t *testing.T) {
 			_, visited, _, err := refusingRun(t)
 			assert.NoError(t, err, "the refused stamp does not stop the phase")
 			assert.Equal(t, visited, 2, "both subjects run")
+		})
+	})
+
+	t.Run("StampOn", func(t *testing.T) {
+		t.Parallel()
+
+		// stampOn annotates the fixture graph with a plugin whose handler
+		// stamps the flag on the identity target returns, through the
+		// first subject's stamper, and returns the context and the facts.
+		stampOn := func(tb assert.TB, target func(alpha, beta *node.Struct) symbol.Identity) (
+			*plugin.AnnotatorContext, *meta.Facts, meta.Key[bool],
+		) {
+			tb.Helper()
+
+			g, alpha, beta := fixtureGraph(tb)
+			key, facts := boolKey(tb)
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(tb, err, "the routing surface builds")
+			p := eidos.NewPlugin("classify").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+					if m.Struct.Identity() == alpha.ID {
+						eidos.StampOn(st, target(alpha, beta), key, true)
+					}
+					return nil
+				})).
+				Build()
+			ctx := annContext(tb, facts, ix)
+			assert.NoError(tb, annotatorOf(tb, p).Annotate(ctx), "the phase call passes")
+			return ctx, facts, key
+		}
+
+		t.Run("records the claim on a type parameter the subject declares", func(t *testing.T) {
+			t.Parallel()
+
+			var owned symbol.Identity
+			ctx, facts, key := stampOn(t, func(alpha, _ *node.Struct) symbol.Identity {
+				owned = symbol.Identity{
+					Lang: alpha.ID.Lang, Package: alpha.ID.Package, Owner: alpha.ID.Name,
+					Name: "T", Kind: symbol.KindTypeParam,
+				}
+				return owned
+			})
+			assert.False(t, ctx.Sink.Failed(), "nothing is refused")
+			got, held := meta.Get(facts, owned, key)
+			assert.True(t, held, "the type parameter is stamped")
+			assert.True(t, got, "the value is the stamped one")
+		})
+
+		t.Run("reports RefusedStamp at the subject's position for an identity it does not declare", func(t *testing.T) {
+			t.Parallel()
+
+			var sibling symbol.Identity
+			var at position.Pos
+			ctx, facts, key := stampOn(t, func(alpha, beta *node.Struct) symbol.Identity {
+				sibling, at = beta.ID, alpha.Pos
+				return sibling
+			})
+			var reported []diag.Diag
+			for d := range ctx.Sink.All() {
+				reported = append(reported, d)
+			}
+			assert.Length(t, reported, 1, "the refusal is reported once")
+			assert.Equal(t, reported[0].Code, eidos.RefusedStamp, "the code is RefusedStamp")
+			assert.Equal(t, reported[0].Pos, at, "the finding is at the subject's position")
+			_, held := meta.Get(facts, sibling, key)
+			assert.False(t, held, "nothing is stamped on the sibling")
 		})
 	})
 }

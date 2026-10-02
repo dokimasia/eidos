@@ -6,8 +6,8 @@ package workspace
 import (
 	"errors"
 
-	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -22,7 +22,7 @@ var ErrRunFailed = errors.New("workspace: the run reported errors")
 // registries and the compiled schedules, and nothing else, because
 // everything mutable belongs to one run. Concurrent runs are safe.
 // Each creates its own fact store, indexes and emit stores, and a
-// run that commits opens its own sink.
+// run that commits opens its own sinks and its own ledger.
 type Workspace struct {
 	keys       *meta.Registry
 	kernel     meta.KernelKeys
@@ -30,15 +30,36 @@ type Workspace struct {
 	rules      *rules.Registry
 	annotate   []annEntry
 	plans      []compiledPlan
-	// open returns a fresh sink for a run that commits, nil for a
+	// frontends load a run's tree, in composition order.
+	frontends []plugin.Frontend
+	// contracts are the registered keys that promise completeness, in
+	// registration order: what the audit checks.
+	contracts []contract
+	// open returns a fresh sink for each plan a run stages, nil for a
 	// composition that stops after the settle.
 	open func() (output.Sink, error)
+	// ledger returns a fresh ledger for each run, nil for a composition
+	// that keeps no record.
+	ledger func() (ledger.Ledger, error)
+	// id names the workspace in its manifest, empty to leave the name
+	// to the ledger.
+	id string
+	// workers is how many invocations one phase call runs at once.
+	workers int
 	// brand is what the output contract stamps under, what a load
 	// reads carriers under, and what the load refuses as the
 	// workspace's own output.
 	brand output.Brand
 	// fingerprint is the composition's fold, taken at Build.
 	fingerprint []byte
+}
+
+// contract is one key's completeness promise, with the key it is
+// read under.
+type contract struct {
+	key  meta.KeyID
+	name meta.KeyName
+	meta.Completeness
 }
 
 // Brand returns the composition's brand: what a load runs under, so
@@ -50,17 +71,3 @@ func (w *Workspace) Brand() output.Brand { return w.brand }
 // reader of a run's report uses for the kernel's own facts: the
 // module identity, an authored sample, a witness.
 func (w *Workspace) Kernel() meta.KernelKeys { return w.kernel }
-
-// Report is what a run leaves behind, for callers and their tests:
-// the findings, the arbitrated facts, and each plan's emit store.
-type Report struct {
-	Sink  *diag.Sink
-	Facts *meta.Facts
-	// Written records what the run committed to its sink, in the
-	// order the sink reports: empty for a composition declaring no
-	// output, and for a run whose findings kept it from writing.
-	Written []output.Written
-	// Emits is each plan's store, keyed by plan name. It is empty
-	// where the frame stopped before the plans ran.
-	Emits map[string]*plugin.Emit
-}

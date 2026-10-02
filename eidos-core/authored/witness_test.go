@@ -25,7 +25,7 @@ func TestWitness(t *testing.T) {
 		f := build(t)
 		attach(t, f.graph, f.box.ID, 2, directive.KernelWitness, "T="+alphaName)
 		w := composed(t)
-		report, err := w.Run(t.Context(), f.graph)
+		report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
 		assert.NoError(t, err, "the run is clean")
 		assert.False(t, report.Sink.Failed(), "without a finding")
 		got, held := meta.Get(report.Facts, f.box.TypeParams[0].ID, w.Kernel().Witness)
@@ -39,7 +39,7 @@ func TestWitness(t *testing.T) {
 		f := build(t)
 		attach(t, f.graph, f.box.ID, 2, directive.KernelWitness, "U="+alphaName, "T="+alphaName)
 		w := composed(t)
-		report, err := w.Run(t.Context(), f.graph)
+		report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
 		assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
 		var refusal diag.Diag
 		for d := range report.Sink.All() {
@@ -61,7 +61,7 @@ func TestWitness(t *testing.T) {
 		f := build(t)
 		attach(t, f.graph, f.alpha.ID, 7, directive.KernelWitness, "T="+boxName)
 		w := composed(t)
-		report, err := w.Run(t.Context(), f.graph)
+		report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
 		assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
 		var msgs []string
 		for d := range report.Sink.All() {
@@ -79,7 +79,7 @@ func TestWitness(t *testing.T) {
 		f := build(t)
 		attach(t, f.graph, f.box.ID, 2, directive.KernelWitness, "T=Ghost")
 		w := composed(t)
-		report, err := w.Run(t.Context(), f.graph)
+		report, err := w.Run(t.Context(), workspace.Input{Graph: f.graph})
 		assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
 		codes := make([]diag.Code, 0)
 		for d := range report.Sink.All() {

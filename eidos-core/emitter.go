@@ -26,11 +26,18 @@ type Tag string
 
 // Emitter is a handler's write surface, scoped to its subject.
 //
-// Each accessor returns the one accumulator for its cardinality key
-// and family, created on first touch and appended to thereafter, so
-// two interfaces in one source file assemble one per-source unit
-// and a package's matches assemble one registry. At most one tag
-// per call; more is a defect and panics.
+// Each accessor returns a handle onto the one accumulator for its
+// cardinality key and family, created on first touch and appended to
+// thereafter, so two interfaces in one source file assemble one
+// per-source unit and a package's matches assemble one registry. At
+// most one tag per call; more is a defect and panics.
+//
+// Every write through the Emitter is buffered with the invocation and
+// applies when the phase call's rules have run, in canonical match
+// order, so the output is the same whether the phase call runs its
+// invocations one after another or on several workers. A handler sees
+// the plan's store and the slots as they were when its phase call
+// began.
 type Emitter struct {
 	rs *runState
 	m  *match
@@ -54,6 +61,21 @@ func (e *Emitter) PackageFile(tags ...Tag) *Out {
 // plan has one output per family, so its key is empty.
 func (e *Emitter) PlanFile(tags ...Tag) *Out {
 	return e.out(plugin.PerPlan, "", tags)
+}
+
+// Slot returns the invocation's write view of one slot: a slot of a
+// value this plugin creates, or, through [OnEmit], a slot of a value
+// an earlier bucket placed. Appends through the view apply when the
+// phase call's rules have run, in canonical match order, and an append
+// into a slot of an earlier bucket's value names the plugin among the
+// contributors of the unit that contains the value. The view is valid
+// during the handler call. A nil slot panics, because the view would
+// append nowhere.
+func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] {
+	if s == nil {
+		panic("eidos: " + string(e.rs.plugin) + " asks for the view of a nil slot")
+	}
+	return SlotView[T]{rs: e.rs, seq: e.m.seq, host: e.m.host, slot: s}
 }
 
 // JoinName joins a family word onto a base name, the way a
@@ -90,7 +112,8 @@ func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
 	return &emit.TemplateRef{Name: name, Data: data, Owner: e.rs.plugin}
 }
 
-// out resolves the family and returns the subject-bound handle.
+// out resolves the family, buffers the accumulator's touch, and
+// returns the subject-bound handle.
 func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 	tag := oneTag(tags)
 	fam, declared := e.rs.b.outByTag[tag]
@@ -106,18 +129,18 @@ func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 	if per == plugin.PerPackage {
 		k.lang = e.m.subject.Lang
 	}
-	acc := e.rs.accFor(k, fam, e.m.subject)
 	instance := 0
 	if e.m.gate != nil {
 		instance = e.m.gate.Instance
 	}
+	at := e.rs.fx.touch(e.m.seq, touch{key: k, fam: fam, subject: e.m.subject, instance: instance})
 	if e.rs.minted < len(e.rs.handles) {
 		h := &e.rs.handles[e.rs.minted]
 		e.rs.minted++
-		*h = Out{acc: acc, subject: e.m.subject, instance: instance}
+		*h = Out{rs: e.rs, seq: e.m.seq, touch: at}
 		return h
 	}
-	return &Out{acc: acc, subject: e.m.subject, instance: instance}
+	return &Out{rs: e.rs, seq: e.m.seq, touch: at}
 }
 
 // oneTag returns the selected family: none means the primary, and
@@ -133,35 +156,55 @@ func oneTag(tags []Tag) Tag {
 	}
 }
 
-// Out is one accumulator seen from one match. The handle records
-// the match's subject and gating instance, so an append is
-// attributed without shared mutable state: two matches have two
-// handles onto one accumulator.
+// Out is one accumulator seen from one match. The handle records the
+// invocation's sequence and its accessor call, which records the
+// match's subject and gating instance, so an append is attributed and
+// ordered without shared mutable state: two matches have two handles
+// onto one accumulator.
 type Out struct {
-	acc      *accumulator
-	subject  symbol.Identity
-	instance int
+	rs    *runState
+	seq   int
+	touch int
 }
 
 // Append places emit declarations under the handle's subject; with
-// none it is a no-op and records nothing. The flush orders a unit's
+// none it is a no-op and records nothing. The placements apply when
+// the phase call's rules have run, and the flush orders a unit's
 // declarations by origin identity, then by the gating instance's
-// source order under a repeatable directive, then by insertion, so
-// output order is canonical and never match order. A slot append
-// inside an already-placed declaration needs no Out at all: the
-// value is placed, and slots are the composition seam.
+// source order under a repeatable directive, then by canonical match
+// order and the order of the appends, so output order is canonical
+// and never schedule order. The call copies the declarations, so the
+// caller may reuse the slice it passed.
 func (o *Out) Append(decls ...symbol.Symbol) {
 	if len(decls) == 0 {
 		return
 	}
-	for _, d := range decls {
-		o.acc.places = append(o.acc.places, placed{
-			origin:   o.subject,
-			instance: o.instance,
-			seq:      len(o.acc.places),
-			decl:     d,
-		})
+	o.rs.fx.place(o.seq, o.touch, decls)
+}
+
+// SlotView is one invocation's write access to one slot, returned by
+// [Emitter.Slot]. Its zero value has no invocation to buffer with,
+// and appending through it panics.
+type SlotView[T any] struct {
+	rs   *runState
+	seq  int
+	host symbol.Symbol
+	slot *emit.Slot[T]
+}
+
+// Append buffers values for the slot, in order. They apply when the
+// phase call's rules have run, after the values of every invocation
+// earlier in canonical match order. An append of no values is not
+// recorded.
+func (v SlotView[T]) Append(values ...T) {
+	if v.rs == nil {
+		panic("eidos: a zero SlotView appends nowhere; Emitter.Slot returns the view to append through")
 	}
+	if len(values) == 0 {
+		return
+	}
+	v.rs.fx.contribute(v.seq, v.host)
+	appendSlot(&v.rs.fx, v.seq, v.slot, values)
 }
 
 // accKey addresses one accumulator: a family under one cardinality
@@ -175,9 +218,9 @@ type accKey struct {
 }
 
 // accumulator gathers one output entity's contributions until the
-// phase call returns and the flush orders them. It keeps no origin
-// set of its own: the flush reads the unique origins off the
-// sorted contributions, so an append costs no map entry.
+// phase call's effects have applied and the flush orders them. It
+// keeps no origin set of its own: the flush reads the unique origins
+// off the sorted contributions, so a placement costs no map entry.
 type accumulator struct {
 	out    plugin.Output
 	key    string
@@ -221,25 +264,25 @@ func originsOf(places []placed) []symbol.Identity {
 
 // accFor returns the accumulator for one key, created on first
 // touch with its namespace resolved once.
-func (rs *runState) accFor(k accKey, fam plugin.Output, subject symbol.Identity) *accumulator {
-	if acc, held := rs.accs[k]; held {
+func (c *phaseCall) accFor(k accKey, fam plugin.Output, subject symbol.Identity) *accumulator {
+	if acc, held := c.accs[k]; held {
 		return acc
 	}
 	acc := &accumulator{out: fam, key: k.key}
 	if k.per != plugin.PerPlan && !subject.IsZero() {
-		if pkg, held := rs.index.PackageOf(subject); held {
+		if pkg, held := c.index.PackageOf(subject); held {
 			acc.pkg = pkg.ID
 		}
 	}
-	rs.accs[k] = acc
+	c.accs[k] = acc
 	return acc
 }
 
 // flush turns every touched accumulator into a unit, contributions
 // in canonical order, and arrives them in the plan's store. The
 // accumulators flush in key order, so refusals arrive in one order.
-func (rs *runState) flush(into *plugin.Emit) error {
-	keys := slices.SortedFunc(maps.Keys(rs.accs), func(a, b accKey) int {
+func (c *phaseCall) flush(into *plugin.Emit) error {
+	keys := slices.SortedFunc(maps.Keys(c.accs), func(a, b accKey) int {
 		if c := cmp.Compare(a.per, b.per); c != 0 {
 			return c
 		}
@@ -252,7 +295,7 @@ func (rs *runState) flush(into *plugin.Emit) error {
 		return cmp.Compare(a.tag, b.tag)
 	})
 	for _, k := range keys {
-		acc := rs.accs[k]
+		acc := c.accs[k]
 		slices.SortStableFunc(acc.places, func(a, b placed) int {
 			if c := a.origin.Compare(b.origin); c != 0 {
 				return c
@@ -268,7 +311,7 @@ func (rs *runState) flush(into *plugin.Emit) error {
 		}
 		origins := originsOf(acc.places)
 		err := into.Add(plugin.Unit{
-			Plugin:  rs.plugin,
+			Plugin:  c.plugin,
 			Tag:     string(k.tag),
 			Per:     k.per,
 			Word:    acc.out.Word,
@@ -278,7 +321,7 @@ func (rs *runState) flush(into *plugin.Emit) error {
 			Origins: origins,
 		})
 		if err != nil {
-			return fmt.Errorf("eidos: %s flush: %w", rs.plugin, err)
+			return fmt.Errorf("eidos: %s flush: %w", c.plugin, err)
 		}
 	}
 	return nil

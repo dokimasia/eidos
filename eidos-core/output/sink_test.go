@@ -11,6 +11,10 @@ import (
 	"go.dokimi.dev/eidos/core/output"
 )
 
+// packageHash is the digest of "package p\n", computed outside this
+// package, so a case pins the bytes and does not mirror the code.
+const packageHash = "sha256:0ad6261536f6380b14ade1a508ac911b8c48230731746e0c76abd26bf3e3a15d"
+
 // every returns one constructor per shipped sink, so the rules
 // they share are checked against each of them, not against
 // whichever one was convenient.
@@ -104,6 +108,23 @@ func TestSink(t *testing.T) {
 					assert.HasError(t, s.Write("svc/store.go", []byte("second\n")), "the second staging fails")
 				})
 
+				t.Run("returns an error for a path staged for removal", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					assert.NoError(t, s.Delete("svc/store.go"), "the removal stages")
+					assert.HasError(t, s.Write("svc/store.go", []byte("x\n")), "the write fails")
+				})
+
+				t.Run("returns an error for a write after the preparation", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					_, err := s.Prepare()
+					assert.NoError(t, err, "the staging prepares")
+					assert.HasError(t, s.Write("svc/store.go", []byte("x\n")), "a prepared staging is closed")
+				})
+
 				t.Run("stages two files in one directory", func(t *testing.T) {
 					t.Parallel()
 
@@ -132,6 +153,103 @@ func TestSink(t *testing.T) {
 		}
 	})
 
+	t.Run("Delete", func(t *testing.T) {
+		t.Parallel()
+
+		for name, open := range every(t) {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				t.Run("returns an error for a path that climbs out of the root", func(t *testing.T) {
+					t.Parallel()
+
+					assert.HasError(t, open().Delete("../outside.go"), "the removal fails")
+				})
+
+				t.Run("returns an error for a path staged for writing", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					assert.NoError(t, s.Write("svc/store.go", []byte("x\n")), "the write stages")
+					assert.HasError(t, s.Delete("svc/store.go"), "the removal fails")
+				})
+
+				t.Run("returns an error for one path staged for removal twice", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					assert.NoError(t, s.Delete("svc/store.go"), "the first removal stages")
+					assert.HasError(t, s.Delete("svc/store.go"), "the second removal fails")
+				})
+
+				t.Run("returns an error for a removal after the preparation", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					_, err := s.Prepare()
+					assert.NoError(t, err, "the staging prepares")
+					assert.HasError(t, s.Delete("svc/store.go"), "a prepared staging is closed")
+				})
+
+				t.Run("returns ErrFinished for a removal after the commit", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					_, err := s.Commit()
+					assert.NoError(t, err, "the commit succeeds")
+					assert.ErrorIs(t, s.Delete("b.go"), output.ErrFinished, "a sink serves one staging")
+				})
+			})
+		}
+	})
+
+	t.Run("Prepare", func(t *testing.T) {
+		t.Parallel()
+
+		for name, open := range every(t) {
+			t.Run(name, func(t *testing.T) {
+				t.Parallel()
+
+				t.Run("returns every staged path in path order", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					assert.NoError(t, s.Write("svc/store.go", []byte("package p\n")), "the file stages")
+					assert.NoError(t, s.Delete("a.go"), "the removal stages")
+					got, err := s.Prepare()
+					assert.NoError(t, err, "the staging prepares")
+					assert.Equal(t, got, []output.Change{
+						{Path: "a.go", Action: output.ActionUnchanged, Found: output.FoundNothing},
+						{
+							Path: "svc/store.go", Action: output.ActionCreated,
+							Found: output.FoundNothing, Hash: packageHash,
+						},
+					}, "a removal of nothing, then a new file with its digest")
+				})
+
+				t.Run("returns an error for a second preparation", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					_, err := s.Prepare()
+					assert.NoError(t, err, "the first preparation succeeds")
+					_, err = s.Prepare()
+					assert.HasError(t, err, "a sink prepares once")
+				})
+
+				t.Run("returns ErrFinished after the commit", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					_, err := s.Commit()
+					assert.NoError(t, err, "the commit succeeds")
+					_, err = s.Prepare()
+					assert.ErrorIs(t, err, output.ErrFinished, "a sink serves one staging")
+				})
+			})
+		}
+	})
+
 	t.Run("Commit", func(t *testing.T) {
 		t.Parallel()
 
@@ -153,10 +271,18 @@ func TestSink(t *testing.T) {
 						"the records are sorted by path")
 					for _, w := range got {
 						assert.Equal(t, w.Action, output.ActionCreated, "nothing existed before")
-						assert.Equal(t, w.Hash, "sha256:"+
-							"0ad6261536f6380b14ade1a508ac911b8c48230731746e0c76abd26bf3e3a15d",
-							"the hash is the digest of the bytes as written")
+						assert.Equal(t, w.Hash, packageHash, "the hash is the digest of the bytes as written")
 					}
+				})
+
+				t.Run("records nothing for a removal of a path that contains nothing", func(t *testing.T) {
+					t.Parallel()
+
+					s := open()
+					assert.NoError(t, s.Delete("svc/gone.go"), "the removal stages")
+					got, err := s.Commit()
+					assert.NoError(t, err, "the commit succeeds")
+					assert.Empty(t, got, "nothing was removed")
 				})
 
 				t.Run("returns ErrFinished for a second commit", func(t *testing.T) {
@@ -172,7 +298,7 @@ func TestSink(t *testing.T) {
 		}
 	})
 
-	t.Run("String", func(t *testing.T) {
+	t.Run("Action.String", func(t *testing.T) {
 		t.Parallel()
 
 		tests := []struct {
@@ -183,8 +309,33 @@ func TestSink(t *testing.T) {
 			{name: "returns created for ActionCreated", give: output.ActionCreated, want: "created"},
 			{name: "returns updated for ActionUpdated", give: output.ActionUpdated, want: "updated"},
 			{name: "returns unchanged for ActionUnchanged", give: output.ActionUnchanged, want: "unchanged"},
+			{name: "returns deleted for ActionDeleted", give: output.ActionDeleted, want: "deleted"},
 			{name: "returns the number of an undeclared action", give: output.Action(7), want: "Action(7)"},
 			{name: "returns every digit of an undeclared action's number", give: output.Action(12), want: "Action(12)"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
+			})
+		}
+	})
+
+	t.Run("Found.String", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give output.Found
+			want string
+		}{
+			{name: "returns nothing for FoundNothing", give: output.FoundNothing, want: "nothing"},
+			{name: "returns same for FoundSame", give: output.FoundSame, want: "same"},
+			{name: "returns intact for FoundIntact", give: output.FoundIntact, want: "intact"},
+			{name: "returns drifted for FoundDrifted", give: output.FoundDrifted, want: "drifted"},
+			{name: "returns foreign for FoundForeign", give: output.FoundForeign, want: "foreign"},
+			{name: "returns the number of the zero verdict", give: output.Found(0), want: "Found(0)"},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {

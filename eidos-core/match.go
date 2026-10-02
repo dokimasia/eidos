@@ -4,9 +4,12 @@
 package eidos
 
 import (
+	"fmt"
+
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
@@ -18,18 +21,22 @@ import (
 // its read set and its sequence number are the invocation's own.
 //
 // A match is valid for the duration of its handler call and reused
-// for the rule's next invocation, which keeps an invocation at zero
-// steady-state allocations. Retaining a match,
-// an effect handle or an [Out] past the call is a defect, the same
-// rule that forbids state on the plugin struct.
+// for the rule's next invocation on the same lane, which keeps an
+// invocation at zero steady-state allocations. Retaining a match, an
+// effect handle, an [Out] or a [SlotView] past the call is a defect,
+// the same rule that forbids state on the plugin struct.
 type match struct {
 	rs      *runState
 	seq     int
 	subject symbol.Identity
 	pos     position.Pos
 	gate    *directive.Directive
-	reads   *store.ReadSet
-	reader  *store.Reader
+	// host is the emit value an [OnEmit] invocation matched, which a
+	// slot append names its plugin's contribution to, and nil for
+	// every other trigger.
+	host   symbol.Symbol
+	reads  *store.ReadSet
+	reader *store.Reader
 	// bound is the subject language's rules over the invocation's
 	// view, minted on first use, so a handler that never projects
 	// costs no memo.
@@ -56,6 +63,9 @@ func newMatch(inv invocation) match {
 		subject: inv.subject,
 		pos:     inv.pos,
 		gate:    inv.gate,
+	}
+	if inv.fr != nil && inv.fr.phase == plugin.PhaseEmit {
+		m.host = inv.value
 	}
 	// The previous invocation's read set and reader recycle off the
 	// rule's scratch: the set resets so no read leaks into this
@@ -133,9 +143,10 @@ func (m *match) RulesFor(lang symbol.Lang) rules.Bound { return m.bind(lang) }
 // rulesFor returns the registered rules for a language, and the
 // absent rules for one the composition registered none for,
 // warning once per phase call and language under
-// [rules.AbsentRules]. The zero language, a graph match's, binds
+// [rules.AbsentRules], from the first invocation in canonical match
+// order that bound them. The zero language, a graph match's, binds
 // the absent rules without a finding: nothing was declared in it.
-func (rs *runState) rulesFor(lang symbol.Lang, at position.Pos) rules.SourceRules {
+func (rs *runState) rulesFor(lang symbol.Lang, seq int, at position.Pos) rules.SourceRules {
 	if rs.rules != nil {
 		if src, held := rs.rules.For(lang); held {
 			return src
@@ -146,10 +157,32 @@ func (rs *runState) rulesFor(lang symbol.Lang, at position.Pos) rules.SourceRule
 			rs.warned = map[symbol.Lang]bool{}
 		}
 		rs.warned[lang] = true
-		rs.sink.Warnf(rules.AbsentRules, at, rs.plugin,
-			"no rules are registered for %s: its walks run under the absent rules", lang)
+		rs.fx.report(seq, finding{
+			d: diag.Diag{
+				Code:     rules.AbsentRules,
+				Severity: diag.SeverityWarning,
+				Pos:      at,
+				Msg:      fmt.Sprintf("no rules are registered for %s: its walks run under the absent rules", lang),
+				Origin:   rs.plugin,
+			},
+			lang: lang,
+		})
 	}
 	return rules.Absent(lang)
+}
+
+// reportf buffers one finding of the invocation at seq, under the
+// plugin's origin.
+func (rs *runState) reportf(
+	seq int, c diag.Code, sev diag.Severity, at position.Pos, format string, a ...any,
+) {
+	rs.fx.report(seq, finding{d: diag.Diag{
+		Code:     c,
+		Severity: sev,
+		Pos:      at,
+		Msg:      fmt.Sprintf(format, a...),
+		Origin:   rs.plugin,
+	}})
 }
 
 // Directive returns the gating instance, nil for bare and
@@ -160,21 +193,23 @@ func (rs *runState) rulesFor(lang symbol.Lang, at position.Pos) rules.SourceRule
 func (m *match) Directive() *directive.Directive { return m.gate }
 
 // Errorf reports at Error severity, which fails the run, with the
-// plugin's origin and the subject's position pre-bound.
+// plugin's origin and the subject's position pre-bound. Every finding
+// a match reports arrives in the sink when the phase call's rules have
+// run, in canonical match order.
 func (m *match) Errorf(c diag.Code, format string, a ...any) {
-	m.rs.sink.Errorf(c, m.pos, m.rs.plugin, format, a...)
+	m.rs.reportf(m.seq, c, diag.SeverityError, m.pos, format, a...)
 }
 
 // Warnf reports at Warning severity, origin and position pre-bound.
 // A warning never fails a run.
 func (m *match) Warnf(c diag.Code, format string, a ...any) {
-	m.rs.sink.Warnf(c, m.pos, m.rs.plugin, format, a...)
+	m.rs.reportf(m.seq, c, diag.SeverityWarning, m.pos, format, a...)
 }
 
 // Infof reports at Info severity, origin and position pre-bound:
 // provenance and progress, never a verdict.
 func (m *match) Infof(c diag.Code, format string, a ...any) {
-	m.rs.sink.Infof(c, m.pos, m.rs.plugin, format, a...)
+	m.rs.reportf(m.seq, c, diag.SeverityInfo, m.pos, format, a...)
 }
 
 // ErrorfAt reports at Error severity at a position of the
@@ -183,7 +218,7 @@ func (m *match) Infof(c diag.Code, format string, a ...any) {
 // as in every other reporting method, and the origin remains
 // pre-bound.
 func (m *match) ErrorfAt(c diag.Code, at position.Pos, format string, a ...any) {
-	m.rs.sink.Errorf(c, at, m.rs.plugin, format, a...)
+	m.rs.reportf(m.seq, c, diag.SeverityError, at, format, a...)
 }
 
 // Kernel returns the kernel's registered keys, for a handler that
@@ -197,8 +232,8 @@ func (m *match) bind(lang symbol.Lang) rules.Bound {
 	view := rules.View{
 		Decls: m.Reader(), Facts: m.rs.facts, Reads: m.readset(), Kernel: m.rs.kernel,
 	}
-	return rules.NewBound(m.rs.rulesFor(lang, m.pos), view, func(other symbol.Lang) rules.SourceRules {
-		return m.rs.rulesFor(other, m.pos)
+	return rules.NewBound(m.rs.rulesFor(lang, m.seq, m.pos), view, func(other symbol.Lang) rules.SourceRules {
+		return m.rs.rulesFor(other, m.seq, m.pos)
 	})
 }
 
@@ -239,9 +274,9 @@ type Matcher interface {
 	base() *match
 }
 
-// Fact returns the subject's winning value for k, recording the
-// read at (subject, key) into the invocation's read set, a miss
-// included. On an emit match the subject is the origin. A graph
+// Fact returns the value of k on the subject whose claim ranks first,
+// recording the read at (subject, key) into the invocation's read set,
+// a miss included. On an emit match the subject is the origin. A graph
 // match has no subject, so Fact returns false and records nothing.
 func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 	b := m.base()
@@ -252,8 +287,8 @@ func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 	return meta.Fact(b.rs.facts, b.readset(), b.subject, k)
 }
 
-// FactOf returns another declaration's winning value, recorded the
-// same way: reading a sibling's stamped facts is the sanctioned
+// FactOf returns the value of k on another declaration whose claim
+// ranks first, recorded the same way: reading a sibling's stamped facts is the sanctioned
 // channel between plugins. A zero identity returns false and
 // records nothing.
 func FactOf[T meta.FactValue](

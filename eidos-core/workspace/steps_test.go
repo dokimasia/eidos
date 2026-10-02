@@ -46,7 +46,7 @@ func runOrdering(t *testing.T, anns ...plugin.Annotator) {
 		Build()
 	assert.NoError(t, err, "the ordering fixture composes")
 	g, _ := alpha(t)
-	_, err = w.Run(t.Context(), g)
+	_, err = w.Run(t.Context(), workspace.Input{Graph: g})
 	assert.NoError(t, err, "the ordering fixture runs")
 }
 
@@ -266,7 +266,7 @@ func TestSteps(t *testing.T) {
 			w, err := valid().Build()
 			assert.NoError(t, err, "the composition builds")
 			g, _ := alpha(t)
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the composition runs")
 			return report.Facts.Registry()
 		}
@@ -492,7 +492,7 @@ func TestSteps(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "the bucket fixture composes")
 			g, s := alpha(t)
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the bucket fixture runs")
 
 			got, held := meta.Get(report.Facts, s.Identity(), rank)
@@ -531,7 +531,7 @@ func TestSteps(t *testing.T) {
 				Build()
 			assert.NoError(t, err, "the plan fixture composes")
 			g, _ := alpha(t)
-			_, err = w.Run(t.Context(), g)
+			_, err = w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the plan fixture runs")
 			assert.Equal(t, calls, []plugin.ID{"early", "late"}, "the list order does not decide")
 		})

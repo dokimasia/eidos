@@ -67,31 +67,55 @@
 //
 // Dispatch is indexed: a directive-gated rule visits its carriers,
 // a fact-gated rule visits its stamped subjects, and only a bare
-// rule visits the whole graph. Every invocation has its own read
-// set, minted on first read, so a fact write's derivation names
-// what its match read; sequence numbers follow canonical match
-// order, so arbitration never depends on scheduling. The kernel
-// skip directive excludes a subject from bare and fact-gated rules,
-// for every plugin or one named plugin, and directive-gated rules
-// run regardless.
+// rule visits the whole graph. A phase call collects each rule's
+// matches before it runs them and numbers them in canonical match
+// order: the rules in declaration order, each rule's subjects in
+// the order its index enumerates them, and a subject's gating
+// instances in source order. Every invocation has its own read set,
+// minted on first read, so a fact write's derivation names what its
+// match read. The kernel skip directive excludes a subject from
+// bare and fact-gated rules, for every plugin or one named plugin,
+// and directive-gated rules run regardless.
+//
+// A phase call runs a rule's matches on up to the worker count its
+// context names, and one at a time where the count is below two or
+// the rule has one match. An invocation's placements, slot appends
+// and findings are buffered with its sequence number: the
+// declarations an [Out] places, the values a [SlotView] appends and
+// the findings its match reports. The buffers apply when the phase call's rules have
+// run, in canonical match order, so the output does not depend on
+// the worker count, and a handler sees the plan's store and the
+// slots as they were when its phase call began. A stamp arrives in
+// the fact store as it is made, because the store ranks claims by
+// sequence number and not by arrival. An append through
+// [Emitter.Slot] into a value an earlier bucket placed names the
+// plugin among the contributors of the unit that contains the
+// value.
 //
 // # Failure semantics
 //
 // A declaration defect panics at [Builder.Build], before any run
 // exists. A handler's per-subject problem goes to the sink through
-// its match and the phase continues; a returned error is fatal to
-// the phase, wrapped with the plugin and rule. A stamp the fact
+// its match and the phase continues. A returned error is fatal to
+// the phase call, wrapped with the plugin and rule. Whatever the
+// worker count, the call returns the error earliest in canonical
+// match order, the findings of the invocations up to that one arrive
+// in the sink, and none of the call's placements or slot appends
+// apply. The stamps already made remain in the fact store, and on
+// more than one worker they can include stamps of invocations after
+// the failed one. A handler's panic is raised again on the calling
+// goroutine, the earliest in canonical match order. A stamp the fact
 // store refuses reports under [RefusedStamp] at the subject's
 // position.
 //
 // # Determinism
 //
 // Byte-identity is the contract: the same workspace over the same
-// input produces the same bytes on every machine, warm or cold.
-// Every ordering is defined: units order by plugin, cardinality,
-// key, package and tag, and contributions by origin, gating
-// instance and insertion. Output contains no clock reading and
-// nothing from the environment.
+// input produces the same bytes on every machine, warm or cold, on
+// any worker count. Every ordering is defined: units order by
+// plugin, cardinality, key, package and tag, and contributions by
+// origin, gating instance and canonical match order. Output
+// contains no clock reading and nothing from the environment.
 //
 // # Dependency position
 //

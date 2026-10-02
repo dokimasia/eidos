@@ -15,8 +15,8 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// structID returns the identity a resolved struct of that name
-// carries, for origins the fixtures below derive from.
+// structID returns the identity a resolved struct of that name has,
+// for origins the fixtures below derive from.
 func structID(name string) symbol.Identity {
 	return symbol.Identity{
 		Lang:    coretest.Lang,
@@ -35,6 +35,33 @@ func unit(p, key string) plugin.Unit {
 		Key:    key,
 		Pkg:    coretest.PackageID(coretest.StorePath),
 	}
+}
+
+// hosting returns a unit that contains one origined struct with one
+// origined method in its slot.
+func hosting(p, key, structName string) plugin.Unit {
+	s := &emit.Struct{Origin: structID(structName), Name: structName}
+	s.Methods.Append(&emit.Method{Origin: structID(structName), Name: "Get"})
+	u := unit(p, key)
+	u.Decls = []symbol.Symbol{s}
+	u.Origins = []symbol.Identity{structID(structName)}
+	return u
+}
+
+// methodOf returns the method in the slot of a hosting unit's struct.
+func methodOf(u plugin.Unit) symbol.Symbol {
+	s, _ := u.Decls[0].(*emit.Struct)
+	return s.Methods.Items()[0]
+}
+
+// contributorsOf returns the contributors of every unit of a store, in
+// Units order.
+func contributorsOf(e *plugin.Emit) [][]plugin.ID {
+	var out [][]plugin.ID
+	for u := range e.Units() {
+		out = append(out, u.Contributors)
+	}
+	return out
 }
 
 // The emit store is one plan's accumulated output: its refusals keep
@@ -117,7 +144,7 @@ func TestEmit(t *testing.T) {
 			for u := range e.Units() {
 				got = append(got, u)
 			}
-			assert.Length(t, got, 1, "the store holds what arrived")
+			assert.Length(t, got, 1, "the store contains what arrived")
 			assert.Equal(t, got[0].Key, "svc/store/unit.go",
 				"the unit comes back as it was added")
 		})
@@ -198,6 +225,75 @@ func TestEmit(t *testing.T) {
 		})
 	})
 
+	t.Run("Contribute", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("records the plugin on the unit that contains the host", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			u := hosting("stubgen", "a.go", "Store")
+			assert.NoError(t, e.Add(u), "the hosting unit arrives")
+			assert.True(t, e.Contribute(methodOf(u), "audit"), "the store contains the host")
+			assert.Equal(t, contributorsOf(e), [][]plugin.ID{{"audit"}}, "the unit names the weaver")
+		})
+
+		t.Run("records a plugin once", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			u := hosting("stubgen", "a.go", "Store")
+			assert.NoError(t, e.Add(u), "the hosting unit arrives")
+			e.Contribute(methodOf(u), "audit")
+			e.Contribute(u.Decls[0], "audit")
+			assert.Equal(t, contributorsOf(e), [][]plugin.ID{{"audit"}}, "a second append names no one twice")
+		})
+
+		t.Run("records the contributors in sorted order", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			u := hosting("stubgen", "a.go", "Store")
+			assert.NoError(t, e.Add(u), "the hosting unit arrives")
+			e.Contribute(methodOf(u), "zeta")
+			e.Contribute(methodOf(u), "audit")
+			assert.Equal(t, contributorsOf(e), [][]plugin.ID{{"audit", "zeta"}}, "the order is the names'")
+		})
+
+		t.Run("records nothing for the unit's own plugin", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			u := hosting("stubgen", "a.go", "Store")
+			assert.NoError(t, e.Add(u), "the hosting unit arrives")
+			assert.True(t, e.Contribute(methodOf(u), "stubgen"), "the store contains the host")
+			assert.Equal(t, contributorsOf(e), [][]plugin.ID{nil}, "a unit's emitter is not its contributor")
+		})
+
+		t.Run("returns false for a host the store does not contain", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			assert.NoError(t, e.Add(hosting("stubgen", "a.go", "Store")), "the hosting unit arrives")
+			assert.False(t, e.Contribute(&emit.Struct{Origin: structID("Store"), Name: "Elsewhere"}, "audit"),
+				"a value no unit contains has no unit to name the weaver in")
+			assert.Equal(t, contributorsOf(e), [][]plugin.ID{nil}, "and nothing is recorded")
+		})
+
+		t.Run("records the plugin on a unit that arrived after an earlier contribution", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			first := hosting("stubgen", "a.go", "Store")
+			assert.NoError(t, e.Add(first), "the first unit arrives")
+			e.Contribute(methodOf(first), "audit")
+			second := hosting("stubgen", "b.go", "Cache")
+			assert.NoError(t, e.Add(second), "the second unit arrives")
+			assert.True(t, e.Contribute(methodOf(second), "audit"), "the store contains the later host")
+			assert.Equal(t, contributorsOf(e), [][]plugin.ID{{"audit"}, {"audit"}}, "both units name the weaver")
+		})
+	})
+
 	t.Run("Units", func(t *testing.T) {
 		t.Parallel()
 
@@ -251,24 +347,13 @@ func TestEmit(t *testing.T) {
 	t.Run("ByKind", func(t *testing.T) {
 		t.Parallel()
 
-		// carrying returns a unit holding one origined struct with
-		// one origined method in its slot.
-		carrying := func(p, key, structName string) plugin.Unit {
-			s := &emit.Struct{Origin: structID(structName), Name: structName}
-			s.Methods.Append(&emit.Method{Origin: structID(structName), Name: "Get"})
-			u := unit(p, key)
-			u.Decls = []symbol.Symbol{s}
-			u.Origins = []symbol.Identity{structID(structName)}
-			return u
-		}
-
 		t.Run("walks each unit's tree in Units order", func(t *testing.T) {
 			t.Parallel()
 
 			e := plugin.NewEmit()
-			assert.NoError(t, e.Add(carrying("stubgen", "b.go", "Store")),
+			assert.NoError(t, e.Add(hosting("stubgen", "b.go", "Store")),
 				"the later-ordered unit arrives first")
-			assert.NoError(t, e.Add(carrying("audit", "a.go", "Cache")),
+			assert.NoError(t, e.Add(hosting("audit", "a.go", "Cache")),
 				"the earlier-ordered unit arrives second")
 
 			var structs []string
@@ -321,8 +406,8 @@ func TestEmit(t *testing.T) {
 			t.Parallel()
 
 			e := plugin.NewEmit()
-			assert.NoError(t, e.Add(carrying("stubgen", "a.go", "Store")),
-				"a carrying unit arrives")
+			assert.NoError(t, e.Add(hosting("stubgen", "a.go", "Store")),
+				"a hosting unit arrives")
 
 			var got int
 			for range e.ByKind(symbol.KindMethod) {
@@ -334,7 +419,7 @@ func TestEmit(t *testing.T) {
 	})
 }
 
-// benchUnit returns one unit holding structs of methods, the tree
+// benchUnit returns one unit containing structs of methods, the tree
 // Add walks and indexes.
 func benchUnit(p, key string, structs, methods int) plugin.Unit {
 	decls := make([]symbol.Symbol, 0, structs)

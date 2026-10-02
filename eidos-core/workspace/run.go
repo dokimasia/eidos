@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"runtime"
 	"slices"
@@ -15,82 +16,235 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/ledger"
+	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Run takes one loaded graph through the frame: seal, directive
-// validation, the kernel meta drops, annotate buckets, per-plan
-// generation, and — where the composition declares output — the
-// render, the stamp and the commit into a sink the run opens for
-// itself.
-//
-// The caller loads packages and attaches raw directives before
-// handing the graph over. Run seals the graph itself, and takes
-// one the load already sealed as it is: sealing is idempotent,
-// and a write after the seal refuses at the store under its own
-// code, which is where that fault belongs.
-//
-// A handler's returned error stops the frame, wrapped with its
-// role, and the report contains whatever ran before it. Findings
-// never stop the frame: they arrive in the report's sink, and any
-// Error among them returns [ErrRunFailed] beside the report. A
-// missing graph is the one refusal, and it returns a nil report,
-// because nothing ran.
-func (w *Workspace) Run(ctx context.Context, g *store.Graph) (*Report, error) {
-	if g == nil {
-		return nil, errors.New("workspace: Run needs a loaded graph")
-	}
-	g.Freeze()
+// Input is what one run reads: a tree the composition's frontends
+// load, or a graph the caller loaded or built. Exactly one of Tree and
+// Graph is set.
+type Input struct {
+	// Tree is the workspace tree. Every path in a run is relative to
+	// its root.
+	Tree fs.FS
+	// Stores are the read-only trees dependency units read, keyed by
+	// store name: a Go module cache, a JDK's ct.sym.
+	Stores map[string]fs.FS
+	// Graph is a sealed graph, or one the run seals. The run starts at
+	// directive validation and audits every declaration in it.
+	Graph *store.Graph
+	// Dry runs every phase and commits nothing: each plan stages,
+	// prepares and discards, and the ledger records nothing.
+	Dry bool
+}
 
+// Run takes the input through the frame and returns what happened:
+// Begin, Load, directive validation and Annotate, then each plan's
+// Generate, Settle, Layout, Render, Stamp and staging in parallel, then
+// Close, the commits and the record.
+//
+// A plan that reports an Error commits nothing, and its siblings
+// commit. An Error in a phase every plan shares, Load, validation,
+// Annotate or Close, commits nothing at all. Every finding is in the
+// report's sink, and any Error returns [ErrRunFailed] beside the
+// report. A handler's returned error is joined into Run's error,
+// wrapped with its role: an annotator's stops the frame, and a
+// generator's fails its plan. A cancelled context stops the run between
+// units of work and returns the context's error beside the report,
+// which states each plan's outcome. An input that sets neither or both
+// of a tree and a graph is the one refusal that returns a nil report.
+//
+// The ledger records the merged manifest strictly after the last
+// commit, and only where a plan or the sweep committed. It records
+// under a context without the run's cancellation, because the record
+// has to match the destination once a commit wrote to it.
+func (w *Workspace) Run(ctx context.Context, in Input) (*Report, error) {
+	if (in.Tree == nil) == (in.Graph == nil) {
+		return nil, errors.New("workspace: Run needs exactly one of a tree to load and a graph")
+	}
 	sink := diag.NewSink()
 	facts := meta.NewFacts(w.keys)
 	report := &Report{Sink: sink, Facts: facts, Emits: map[string]*plugin.Emit{}}
 
-	table := w.validated(g, facts, sink)
-	applyStamps(g, facts, sink)
-	if err := w.applyDrops(table, facts); err != nil {
-		return report, errors.Join(err, failure(sink))
+	rec, err := w.begin(ctx, sink)
+	if err == nil {
+		err = ctx.Err()
 	}
-	if err := ctx.Err(); err != nil {
-		return report, err
+	if err != nil {
+		return w.stopped(ctx, report, err)
 	}
-	if err := w.annotateAll(ctx, g, facts, table, sink); err != nil {
-		return report, errors.Join(err, failure(sink))
+	report.Manifest = rec.previous
+	g, loaded, err := w.load(ctx, in, sink)
+	report.Load = loaded
+	if err != nil {
+		return w.stopped(ctx, report, err)
 	}
+	table, err := w.annotateRun(ctx, g, facts, sink)
+	if err != nil {
+		return w.stopped(ctx, report, err)
+	}
+	shared := sink.Failed()
+
 	var src tree
 	if w.open != nil {
 		src = tree{residents: layout.Residents(g), modules: layout.Modules(g, facts, w.kernel)}
 	}
-	files, errs := w.generateAll(ctx, g, facts, table, sink, src, report.Emits)
-	if err := failure(sink); err != nil {
-		errs = append(errs, err)
+	runs := w.generateAll(ctx, g, facts, table, src)
+	if !shared {
+		w.stageAll(ctx, runs, rec)
 	}
-	if len(errs) == 0 {
-		// A run that reported nothing writes. A failed run opens no
-		// sink, so the previous generation of files remains in place
-		// and the findings state why. A commit refused part-way
-		// still records the files it wrote before the refusal.
-		written, err := w.commit(files)
-		if err != nil {
-			errs = append(errs, err)
+	for _, p := range runs {
+		report.Emits[p.plan.name] = p.emit
+		for d := range p.sink.All() {
+			sink.Report(d)
 		}
-		report.Written = written
 	}
+
+	collided := collide(runs, sink)
+	sw, err := w.sweep(rec, runs, sink, shared || collided)
+	errs := []error{err}
+	unmet := w.audit(g, facts, loaded, sink)
+	blocked := shared || collided || unmet
+
+	errs = append(errs, commitAll(ctx, runs, sw, blocked, in.Dry, report))
+	report.Manifest = w.merged(rec, runs, sw)
+	errs = append(errs, commitRecord(ctx, rec, runs, sw, in.Dry, report.Manifest))
+	for _, p := range runs {
+		if p.err != nil && !p.cancelled {
+			errs = append(errs, fmt.Errorf("workspace: plan %q: %w", p.plan.name, p.err))
+		}
+	}
+	errs = append(errs, ctx.Err(), failure(sink))
 	return report, errors.Join(errs...)
 }
 
 // tree is the source tree every plan of one run routes against, read
 // once from the frozen graph and the fact store: the files each
-// directory holds, and the toolchain modules the load resolved.
+// directory contains, and the toolchain modules the load resolved.
 type tree struct {
 	residents map[string][]plugin.Resident
 	modules   []plugin.Module
+}
+
+// record is the previous run's record as a run reads it: the ledger it
+// came from, nil where the composition keeps none, the manifest, and
+// its entries by plan and by path.
+type record struct {
+	ledger   ledger.Ledger
+	previous manifest.Manifest
+	byPlan   map[string][]manifest.Entry
+	byPath   map[string]manifest.Entry
+}
+
+// generator returns the plan the record lists for a path, and fallback
+// where the record lists no file there.
+func (r *record) generator(path, fallback string) string {
+	if e, held := r.byPath[path]; held {
+		return e.Plan
+	}
+	return fallback
+}
+
+// begin opens the composition's ledger and reads the previous record.
+// A composition that declares no output, or no ledger, reads the empty
+// record. A record that does not read is reported and read as empty,
+// so the run removes nothing. A ledger that fails to open is a
+// returned error, because nothing in the source causes it.
+func (w *Workspace) begin(ctx context.Context, sink *diag.Sink) (*record, error) {
+	rec := &record{
+		previous: manifest.Manifest{Version: manifest.Version},
+		byPlan:   map[string][]manifest.Entry{},
+		byPath:   map[string]manifest.Entry{},
+	}
+	if w.ledger == nil || w.open == nil {
+		return rec, nil
+	}
+	l, err := w.ledger()
+	if err != nil {
+		return nil, fmt.Errorf("workspace: open the ledger: %w", err)
+	}
+	if l == nil {
+		return nil, errors.New("workspace: the ledger's open function returned (nil, nil)")
+	}
+	rec.ledger = l
+	previous, err := l.BeginRun(ctx)
+	if err != nil {
+		sink.Infof(UnreadableRecord, position.Pos{File: ledger.ManifestPath(w.brand)}, diag.PhaseLoad,
+			"the previous record does not read, so the run removes nothing: %v", err)
+		return rec, nil
+	}
+	rec.previous = previous
+	for _, e := range previous.Files {
+		rec.byPlan[e.Plan] = append(rec.byPlan[e.Plan], e)
+		rec.byPath[e.Path] = e
+	}
+	return rec, nil
+}
+
+// load returns the graph the run works on, sealed: the caller's, or
+// the one the composition's frontends load from the input's tree under
+// the composition's brand and fingerprint. A load that fails is a
+// returned error, and so is a tree without a frontend to load it.
+func (w *Workspace) load(ctx context.Context, in Input, sink *diag.Sink) (*store.Graph, *load.Report, error) {
+	if in.Graph != nil {
+		in.Graph.Freeze()
+		return in.Graph, nil, nil
+	}
+	if len(w.frontends) == 0 {
+		return nil, nil, errors.New("workspace: the composition registers no frontend to load a tree with")
+	}
+	g, loaded, err := load.Load(ctx, load.Config{
+		FS:        in.Tree,
+		Frontends: w.frontends,
+		Sink:      sink,
+		PluginSet: w.fingerprint,
+		Brand:     w.brand,
+		Stores:    in.Stores,
+	})
+	if err != nil {
+		return nil, loaded, fmt.Errorf("workspace: %w", err)
+	}
+	return g, loaded, ctx.Err()
+}
+
+// annotateRun runs the shared phases after the load: directive
+// validation, the stamp replay, the kernel meta drops and the annotate
+// schedule. An annotator's returned error stops the frame.
+func (w *Workspace) annotateRun(
+	ctx context.Context, g *store.Graph, facts *meta.Facts, sink *diag.Sink,
+) (map[symbol.Identity][]directive.Directive, error) {
+	table := w.validated(g, facts, sink)
+	applyStamps(g, facts, sink)
+	if err := w.applyDrops(table, facts); err != nil {
+		return nil, err
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return table, w.annotateAll(ctx, g, facts, table, sink)
+}
+
+// stopped returns the report of a frame that stopped before the plans
+// committed: every plan is cancelled where the context ended, and
+// failed otherwise.
+func (w *Workspace) stopped(ctx context.Context, report *Report, err error) (*Report, error) {
+	status := PlanFailed
+	if ctx.Err() != nil {
+		status = PlanCancelled
+	}
+	for i := range w.plans {
+		report.Plans = append(report.Plans, PlanReport{Name: w.plans[i].name, Status: status})
+	}
+	return report, errors.Join(err, failure(report.Sink))
 }
 
 // failure classifies the sink: [ErrRunFailed] when any Error
@@ -311,14 +465,15 @@ func (w *Workspace) annotateAll(
 			return err
 		}
 		call := &plugin.AnnotatorContext{
-			Index:  ix,
-			Reader: reader,
-			Facts:  facts,
-			Sink:   sink,
-			Rules:  w.rules,
-			Kernel: w.kernel,
-			Plugin: s.name,
-			Bucket: s.bucket,
+			Index:   ix,
+			Reader:  reader,
+			Facts:   facts,
+			Sink:    sink,
+			Rules:   w.rules,
+			Kernel:  w.kernel,
+			Plugin:  s.name,
+			Bucket:  s.bucket,
+			Workers: w.workers,
 		}
 		if err := s.run.Annotate(call); err != nil {
 			return fmt.Errorf(
@@ -327,80 +482,4 @@ func (w *Workspace) annotateAll(
 		}
 	}
 	return nil
-}
-
-// generateAll runs the plans in parallel, each over its own emit
-// store, its own scoped index and its own readers. A plan's
-// failure does not stop its siblings; every plan's store arrives in
-// emits either way, so the report shows what each plan produced.
-func (w *Workspace) generateAll(
-	ctx context.Context, g *store.Graph, facts *meta.Facts,
-	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
-	src tree, emits map[string]*plugin.Emit,
-) ([][]staged, []error) {
-	stores := make([]*plugin.Emit, len(w.plans))
-	files := make([][]staged, len(w.plans))
-	failures := make([]error, len(w.plans))
-	var wg sync.WaitGroup
-	for i := range w.plans {
-		wg.Go(func() {
-			stores[i] = plugin.NewEmit()
-			files[i], failures[i] = w.runPlan(ctx, g, facts, table, sink, src, w.plans[i], stores[i])
-		})
-	}
-	wg.Wait()
-	var errs []error
-	for i, pl := range w.plans {
-		emits[pl.name] = stores[i]
-		if failures[i] != nil {
-			errs = append(errs, fmt.Errorf("workspace: plan %q: %w", pl.name, failures[i]))
-		}
-	}
-	return files, errs
-}
-
-// runPlan runs one plan's roles in bucket order, which is what an
-// emit-triggered rule's visibility is defined against: the store
-// contains earlier buckets' units when a later role runs. Where the
-// composition writes output, the settled store routes to files
-// against the run's source tree, and the files render.
-func (w *Workspace) runPlan(
-	ctx context.Context, g *store.Graph, facts *meta.Facts,
-	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
-	src tree, pl compiledPlan, into *plugin.Emit,
-) ([]staged, error) {
-	ix, err := plugin.NewIndex(g, facts, table, pl.scope)
-	if err != nil {
-		return nil, err
-	}
-	for _, s := range pl.entries {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		reader, err := ix.Reader(store.NewReadSet())
-		if err != nil {
-			return nil, err
-		}
-		call := &plugin.GeneratorContext{
-			Index:  ix,
-			Reader: reader,
-			Facts:  facts,
-			Emit:   into,
-			Sink:   sink,
-			Rules:  w.rules,
-			Kernel: w.kernel,
-			Plugin: s.name,
-			Bucket: s.bucket,
-		}
-		if err := s.run.Generate(call); err != nil {
-			return nil, fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
-		}
-	}
-	if err := plugin.Settle(into, pl.backend, facts, sink); err != nil {
-		return nil, fmt.Errorf("settle: %w", err)
-	}
-	if pl.contract == nil {
-		return nil, nil
-	}
-	return w.write(pl, ix, src, into, sink)
 }

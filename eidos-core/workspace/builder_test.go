@@ -11,6 +11,7 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/meta"
@@ -58,6 +59,22 @@ func needy() plugin.Generator {
 	return p
 }
 
+// unversioned is a frontend that declares no version: the embedded
+// interface promotes the frontend's methods and not its version.
+type unversioned struct{ plugin.Frontend }
+
+// renamed is a versioned frontend under another name.
+type renamed struct {
+	plugin.Frontend
+	name plugin.ID
+}
+
+// Name returns the frontend's new name.
+func (r renamed) Name() plugin.ID { return r.name }
+
+// Version returns a fixed version.
+func (renamed) Version() string { return "1" }
+
 // Build is the one gate every human-typed name passes: it runs
 // every step and collects, so the composition's author reads every
 // fault at once.
@@ -73,6 +90,20 @@ func TestBuilder(t *testing.T) {
 			w, err := valid().Build()
 			assert.NoError(t, err, "the composition builds")
 			assert.NotNil(t, w, "the workspace is returned")
+		})
+
+		t.Run("returns the workspace for a frontend named after its language's backend", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Frontends(renamed{frontendtest.NewScripted(), "plan-printer"}).Build()
+			assert.NoError(t, err, "a language's frontend and backend share the language's name")
+		})
+
+		t.Run("returns the workspace for zero workers", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := valid().Parallel(0).Build()
+			assert.NoError(t, err, "zero workers dispatch sequentially")
 		})
 
 		tests := []struct {
@@ -93,6 +124,13 @@ func TestBuilder(t *testing.T) {
 					return valid().Brand("Acme")
 				},
 				markers: []string{`"Acme"`, "not a brand"},
+			},
+			{
+				name: "returns an error naming a negative worker count",
+				compose: func() *workspace.Builder {
+					return valid().Parallel(-1)
+				},
+				markers: []string{"Parallel(-1)", "negative"},
 			},
 			{
 				name: "returns an error naming two plugins with one name",
@@ -329,6 +367,41 @@ func TestBuilder(t *testing.T) {
 					return valid().Rules(nil)
 				},
 				markers: []string{"nil"},
+			},
+			{
+				name: "returns an error for a nil frontend",
+				compose: func() *workspace.Builder {
+					return valid().Frontends(nil)
+				},
+				markers: []string{"frontend 1 of 1 is nil"},
+			},
+			{
+				name: "returns an error naming a frontend without a version",
+				compose: func() *workspace.Builder {
+					return valid().Frontends(unversioned{frontendtest.NewScripted()})
+				},
+				markers: []string{"declares no version", strconv.Quote(string(frontendtest.ScriptedID))},
+			},
+			{
+				name: "returns an error naming two frontends with one name",
+				compose: func() *workspace.Builder {
+					return valid().Frontends(frontendtest.NewScripted(), frontendtest.NewScripted())
+				},
+				markers: []string{"two frontends", strconv.Quote(string(frontendtest.ScriptedID))},
+			},
+			{
+				name: "returns an error naming a frontend named after a kernel phase",
+				compose: func() *workspace.Builder {
+					return valid().Frontends(renamed{frontendtest.NewScripted(), "load"})
+				},
+				markers: []string{"kernel phase", `"load"`},
+			},
+			{
+				name: "returns an error for a frontend with an empty name",
+				compose: func() *workspace.Builder {
+					return valid().Frontends(renamed{frontendtest.NewScripted(), ""})
+				},
+				markers: []string{"empty name"},
 			},
 		}
 		for _, tt := range tests {

@@ -26,11 +26,14 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The fixture's generators and the families they declare.
+// The fixture's generators and the families they declare, and two
+// weavers that append into the generators' slots.
 const (
 	stubgen plugin.ID = "stubgen"
 	docgen  plugin.ID = "docgen"
 	pkggen  plugin.ID = "pkggen"
+	auditor plugin.ID = "auditor"
+	weaver  plugin.ID = "weaver"
 
 	// tagTest is the per-source companion family of stubgen.
 	tagTest = "test"
@@ -626,7 +629,34 @@ func TestRoute(t *testing.T) {
 				"the provenance joins both units'")
 		})
 
-		t.Run("returns no origins for a unit whose declarations carry none", func(t *testing.T) {
+		t.Run("returns a unit's contributors for a file that contains the whole unit", func(t *testing.T) {
+			t.Parallel()
+
+			u := stubOf(storeFile, storePkg, generated(storeID, "StoreStub"))
+			u.Contributors = []plugin.ID{weaver}
+			files, _ := newFixture(u).route(t)
+			assert.Length(t, files, 1, "one file routes")
+			assert.Equal(t, files[0].Units[0].Contributors, []plugin.ID{weaver},
+				"the weaver's attribution is kept")
+		})
+
+		t.Run("returns the source units' contributors for a file of two whole units", func(t *testing.T) {
+			t.Parallel()
+
+			row := stubOf(rowFile, storePkg, generated(rowID, "RowStub"))
+			row.Contributors = []plugin.ID{weaver}
+			suite := unitOf(stubgen, families()[stubgen][2], storePkg, coretest.PackageID(storePkg),
+				generated(storeID, "StoreSuite"))
+			suite.Contributors = []plugin.ID{auditor}
+			f := newFixture(row, suite).
+				on(rowID, written(stubDirective, 1, string(directive.ReservedTag), tagPkg))
+			files, _ := f.route(t)
+			assert.Length(t, files, 1, "both units route to the package's file")
+			assert.Equal(t, files[0].Units[0].Contributors, []plugin.ID{auditor, weaver},
+				"the attribution joins both units'")
+		})
+
+		t.Run("returns no origins for a unit whose declarations have none", func(t *testing.T) {
 			t.Parallel()
 
 			f := newFixture(stubOf(storeFile, storePkg,

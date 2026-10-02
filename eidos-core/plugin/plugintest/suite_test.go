@@ -16,8 +16,10 @@ import (
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/plugin/plugintest"
@@ -38,6 +40,10 @@ const (
 
 // suiteCode is a code for the fixture plugins' findings.
 var suiteCode = diag.Code{Prefix: "tst", Number: 2}
+
+// auditedField is the field the auditing weaver and its SPI twins
+// append into the seeded struct.
+const auditedField = "audited"
 
 // twoStructs returns a fixture with two positioned structs.
 func twoStructs(tb assert.TB) (*plugintest.Fixture, *node.Struct, *node.Struct) {
@@ -199,6 +205,166 @@ func (handRolled) Generate(ctx *plugin.GeneratorContext) error {
 	return ctx.Emit.Add(unit)
 }
 
+// counted is a hand-rolled generator that names its one struct after
+// the worker count its phase call runs on: output the parallel
+// dispatch check must expose.
+type counted struct{ handRolled }
+
+// Generate flushes one plan unit whose struct names the worker count.
+func (counted) Generate(ctx *plugin.GeneratorContext) error {
+	return ctx.Emit.Add(plugin.Unit{
+		Plugin: "twin", Per: plugin.PerPlan, Word: "audit",
+		Decls: []symbol.Symbol{&emit.Struct{Name: "On" + strconv.Itoa(ctx.Workers)}},
+	})
+}
+
+// workerStamper is a hand-rolled annotator that stamps its flag on
+// every struct when its phase call runs on more than one worker: facts
+// the parallel dispatch check must expose.
+type workerStamper struct{ key meta.Key[bool] }
+
+// Name returns the annotator's name.
+func (workerStamper) Name() plugin.ID { return "stamper" }
+
+// Annotate stamps the flag on every struct, and on more than one
+// worker alone.
+func (w workerStamper) Annotate(ctx *plugin.AnnotatorContext) error {
+	if ctx.Workers <= 1 {
+		return nil
+	}
+	for s := range ctx.Reader.ByKind(symbol.KindStruct) {
+		decl, ok := s.(*node.Struct)
+		if !ok {
+			continue
+		}
+		err := meta.Stamp(ctx.Facts, w.key, true, meta.Claim{
+			Subject: decl.Identity(), Authority: meta.AuthorityPlugin, Bucket: ctx.Bucket, Plugin: ctx.Plugin,
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// workerReporter is a hand-rolled generator that warns at a position
+// when its phase call runs on more than one worker: findings the
+// parallel dispatch check must expose.
+type workerReporter struct{ at position.Pos }
+
+// Name returns the generator's name.
+func (workerReporter) Name() plugin.ID { return "reporter" }
+
+// Generate warns, and on more than one worker alone.
+func (w workerReporter) Generate(ctx *plugin.GeneratorContext) error {
+	if ctx.Workers > 1 {
+		ctx.Sink.Warnf(suiteCode, w.at, ctx.Plugin, "runs on %d workers", ctx.Workers)
+	}
+	return nil
+}
+
+// unattributed is an SPI spelling of the auditing weaver that appends
+// into the seeded struct's field slot and names itself among no unit's
+// contributors: the twin the twins check must expose.
+type unattributed struct{}
+
+// Name returns the weaver's name, which the facade spelling shares.
+func (unattributed) Name() plugin.ID { return "weaver" }
+
+// Generate appends the audited field into every struct of the store.
+func (unattributed) Generate(ctx *plugin.GeneratorContext) error {
+	for s := range ctx.Emit.ByKind(symbol.KindStruct) {
+		if host, held := s.(*emit.Struct); held {
+			host.Fields.Append(&emit.Field{Name: auditedField})
+		}
+	}
+	return nil
+}
+
+// attributed is the SPI spelling of the auditing weaver: it appends
+// into the seeded struct's field slot and names itself among the
+// contributors of the unit that contains the struct.
+type attributed struct{}
+
+// Name returns the weaver's name, which the facade spelling shares.
+func (attributed) Name() plugin.ID { return "weaver" }
+
+// Generate appends the audited field into every struct of the store,
+// and records the contribution.
+func (attributed) Generate(ctx *plugin.GeneratorContext) error {
+	for s := range ctx.Emit.ByKind(symbol.KindStruct) {
+		if host, held := s.(*emit.Struct); held {
+			host.Fields.Append(&emit.Field{Name: auditedField})
+			ctx.Emit.Contribute(host, ctx.Plugin)
+		}
+	}
+	return nil
+}
+
+// seeded returns the two-struct fixture with an earlier bucket's unit
+// that contains one struct for alpha.
+func seeded(tb assert.TB) *plugintest.Fixture {
+	tb.Helper()
+
+	f, alpha, _ := twoStructs(tb)
+	f.Seed(tb, plugin.Unit{
+		Plugin: "earlier", Per: plugin.PerSource, Word: "impl", Key: "alpha.go",
+		Decls: []symbol.Symbol{&emit.Struct{Origin: alpha.ID, Name: "ForAlpha"}},
+	})
+	return f
+}
+
+// auditing is a weaver over the seeded struct that appends the audited
+// field into its slot through the Emitter.
+func auditing(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+	tb.Helper()
+
+	p := eidos.NewPlugin("weaver").
+		Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+			if s, held := m.Value.(*emit.Struct); held {
+				e.Slot(&s.Fields).Append(&emit.Field{Name: auditedField})
+			}
+			return nil
+		})).
+		Build()
+	return p, seeded(tb)
+}
+
+// woven is how many instances of the weaver's repeatable directive the
+// weaving fixture places on one subject.
+const woven = 16
+
+// weaving is a weaver over an earlier bucket's struct whose origin has
+// many instances of one repeatable directive: every instance appends a
+// field into the one struct's slot through the Emitter.
+func weaving(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+	tb.Helper()
+
+	f, alpha, _ := twoStructs(tb)
+	schema := directive.Schema{Plugin: "weaver", Name: "audit", Repeatable: true, Doc: "audits the subject"}
+	instances := make([]directive.Directive, woven)
+	for i := range instances {
+		instances[i] = directive.Directive{Name: schema.Canonical(), Instance: i}
+	}
+	f.Validated(tb, alpha.ID, instances...)
+	f.Seed(tb, plugin.Unit{
+		Plugin: "earlier", Per: plugin.PerSource, Word: "impl", Key: "alpha.go",
+		Decls: []symbol.Symbol{&emit.Struct{Origin: alpha.ID, Name: "ForAlpha"}},
+	})
+	p := eidos.NewPlugin("weaver").
+		Handle(eidos.Directive(schema,
+			eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+				s, held := m.Value.(*emit.Struct)
+				if !held {
+					return nil
+				}
+				e.Slot(&s.Fields).Append(&emit.Field{Name: "audit" + strconv.Itoa(m.Directive().Instance)})
+				return nil
+			}))).
+		Build()
+	return p, f
+}
+
 // The suite is the contract a plugin author tests against, so it
 // passes a valid plugin and fails each way of cheating, and the
 // failing half is what justifies it.
@@ -212,6 +378,12 @@ func TestSuite(t *testing.T) {
 			t.Parallel()
 
 			plugintest.RunPluginSuite(t, wellBehaved)
+		})
+
+		t.Run("passes a weaver whose handlers append into one slot", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.RunPluginSuite(t, weaving)
 		})
 
 		t.Run("lints the tree a plugin declares", func(t *testing.T) {
@@ -260,7 +432,7 @@ func TestSuite(t *testing.T) {
 	t.Run("AssertIdempotentAnnotate", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fails a second pass that moves a winning value", func(t *testing.T) {
+		t.Run("fails a second pass that changes a fact's value", func(t *testing.T) {
 			t.Parallel()
 
 			stateful := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
@@ -284,7 +456,7 @@ func TestSuite(t *testing.T) {
 				func(tb assert.TB) {
 					plugintest.AssertIdempotentAnnotate(tb, stateful)
 				})
-			assert.Contains(t, failure, "winning value", "the check names what moved")
+			assert.Contains(t, failure, "fact's value", "the check names what changed")
 		})
 	})
 
@@ -317,6 +489,58 @@ func TestSuite(t *testing.T) {
 					plugintest.AssertDeterministicEmit(tb, nondeterministic)
 				})
 			assert.Contains(t, failure, "same bytes", "the check names the byte-identity contract")
+		})
+	})
+
+	t.Run("AssertParallelDispatch", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes a weaver whose handlers append into one slot", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertParallelDispatch(t, weaving)
+		})
+
+		t.Run("fails emit that depends on the worker count", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				return counted{}, f
+			}
+			failure := assert.Rejects(t, "emit that varies with the worker count must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertParallelDispatch(tb, setup)
+				})
+			assert.Contains(t, failure, "parallel phase call", "the check names the worker-count contract")
+		})
+
+		t.Run("fails facts that depend on the worker count", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				return workerStamper{key: plugintest.Key[bool](tb, f, "t.flag", "marks a fixture subject")}, f
+			}
+			failure := assert.Rejects(t, "facts that vary with the worker count must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertParallelDispatch(tb, setup)
+				})
+			assert.Contains(t, failure, "fact values", "the check names the fact contract")
+		})
+
+		t.Run("fails findings that depend on the worker count", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, alpha, _ := twoStructs(tb)
+				return workerReporter{at: alpha.Pos}, f
+			}
+			failure := assert.Rejects(t, "findings that vary with the worker count must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertParallelDispatch(tb, setup)
+				})
+			assert.Contains(t, failure, "same findings", "the check names the finding contract")
 		})
 	})
 
@@ -476,7 +700,7 @@ func TestSuite(t *testing.T) {
 						func(m *eidos.EmitMatch, e *eidos.Emitter) error {
 							s, ok := m.Value.(*emit.Struct)
 							if ok {
-								s.Methods.Append(&emit.Method{Origin: m.Origin(), Name: "Audit"})
+								e.Slot(&s.Methods).Append(&emit.Method{Origin: m.Origin(), Name: "Audit"})
 							}
 							return nil
 						})).
@@ -536,6 +760,26 @@ func TestSuite(t *testing.T) {
 				f, _, _ := twoStructs(tb)
 				return handRolled{}, f
 			})
+		})
+
+		t.Run("passes a weaver and its SPI twin that names itself among the contributors", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertTwins(t, auditing, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				return attributed{}, seeded(tb)
+			})
+		})
+
+		t.Run("fails a weaver's SPI twin that names itself among no contributors", func(t *testing.T) {
+			t.Parallel()
+
+			failure := assert.Rejects(t, "a twin that drops the weaver's attribution must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertTwins(tb, auditing, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+						return unattributed{}, seeded(tb)
+					})
+				})
+			assert.Contains(t, failure, "same bytes", "the check names the byte-identity contract")
 		})
 	})
 

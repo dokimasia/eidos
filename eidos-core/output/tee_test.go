@@ -17,6 +17,8 @@ import (
 type refusing struct{ err error }
 
 func (r refusing) Write(string, []byte) error        { return r.err }
+func (r refusing) Delete(string) error               { return r.err }
+func (r refusing) Prepare() ([]output.Change, error) { return nil, r.err }
 func (r refusing) Commit() ([]output.Written, error) { return nil, r.err }
 func (r refusing) Discard() error                    { return r.err }
 
@@ -37,12 +39,33 @@ func TestTee(t *testing.T) {
 		assert.NoError(t, err, "the commit runs")
 
 		assert.Equal(t, string(first.Files()["store.go"]), "package svc\n",
-			"the first sink holds the bytes")
+			"the first sink has the bytes")
 		assert.Equal(t, string(second.Files()["store.go"]), "package svc\n",
 			"and so does the second")
 		assert.Length(t, got, 1, "one record per staged file")
 		assert.Equal(t, got[0].Path, "store.go",
 			"read off the first sink, which is the one of record")
+	})
+
+	t.Run("stages a removal into every sink", func(t *testing.T) {
+		t.Parallel()
+
+		first, second := output.NewMem(), output.NewMem()
+		tee := output.NewTee(first, second)
+		assert.NoError(t, tee.Delete("gone.go"), "the removal stages")
+		assert.HasError(t, first.Delete("gone.go"), "the first sink has the removal")
+		assert.HasError(t, second.Delete("gone.go"), "and so does the second")
+	})
+
+	t.Run("returns the first sink's changes", func(t *testing.T) {
+		t.Parallel()
+
+		tee := output.NewTee(output.NewMem(), output.NewMem())
+		assert.NoError(t, tee.Write("store.go", []byte("package svc\n")), "the staging takes")
+		got, err := tee.Prepare()
+		assert.NoError(t, err, "every sink prepares")
+		assert.Length(t, got, 1, "one change per staged path")
+		assert.Equal(t, got[0].Action, output.ActionCreated, "the first sink's verdict")
 	})
 
 	t.Run("joins what any sink refused", func(t *testing.T) {
@@ -53,8 +76,11 @@ func TestTee(t *testing.T) {
 
 		assert.ErrorIs(t, tee.Write("store.go", []byte("package svc\n")), refused,
 			"a staging that failed anywhere failed")
-		_, err := tee.Commit()
-		assert.ErrorIs(t, err, refused, "and so does a commit")
+		assert.ErrorIs(t, tee.Delete("gone.go"), refused, "and so does a removal")
+		_, err := tee.Prepare()
+		assert.ErrorIs(t, err, refused, "and a preparation")
+		_, err = tee.Commit()
+		assert.ErrorIs(t, err, refused, "and a commit")
 		assert.ErrorIs(t, tee.Discard(), refused, "and a discard")
 	})
 
@@ -66,7 +92,7 @@ func TestTee(t *testing.T) {
 		assert.NoError(t, tee.Write("store.go", []byte("package svc\n")),
 			"the staging takes")
 		assert.NoError(t, tee.Discard(), "the discard runs")
-		assert.Length(t, first.Files(), 0, "the first sink held nothing")
+		assert.Length(t, first.Files(), 0, "the first sink committed nothing")
 		assert.Length(t, second.Files(), 0, "and neither did the second")
 	})
 }

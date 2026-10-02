@@ -272,14 +272,16 @@ func (p *Pass) Render(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) 
 	return files, nil
 }
 
-// derivation reads a file's emitters and the keys it derives from
-// off the units that assembled it, distinct and sorted. A unit
-// without a key contributes no source, which is what a plan file
-// is: it derives from the plan and from no declaration.
+// derivation reads a file's plugins and the keys it derives from off
+// the units that assembled it, distinct and sorted: each unit's
+// emitter and the plugins that appended into its slots. A unit
+// without a key contributes no source, which is what a plan file is:
+// it derives from the plan and from no declaration.
 func derivation(units []plugin.Unit) (plugins []plugin.ID, sources []string) {
 	plugins = make([]plugin.ID, 0, len(units))
 	for _, u := range units {
 		plugins = append(plugins, u.Plugin)
+		plugins = append(plugins, u.Contributors...)
 		if u.Key != "" {
 			sources = append(sources, u.Key)
 		}

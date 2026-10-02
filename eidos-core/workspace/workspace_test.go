@@ -189,7 +189,7 @@ func TestWorkspace(t *testing.T) {
 			w, err := valid().Build()
 			assert.NoError(t, err, "the fixture composition is valid")
 			g, _ := alpha(t)
-			report, err := w.Run(t.Context(), g)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
 			assert.NoError(t, err, "the fixture run is clean")
 			assert.NotNil(t, report.Sink, "the report has the findings")
 			assert.NotNil(t, report.Facts, "the report has the arbitrated facts")
@@ -208,7 +208,7 @@ func TestWorkspace(t *testing.T) {
 			for i := range reports {
 				g, _ := alpha(t)
 				wg.Go(func() {
-					reports[i], errs[i] = w.Run(t.Context(), g)
+					reports[i], errs[i] = w.Run(t.Context(), workspace.Input{Graph: g})
 				})
 			}
 			wg.Wait()

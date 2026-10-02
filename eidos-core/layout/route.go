@@ -133,8 +133,8 @@ type router struct {
 	spread map[placement]map[string]struct{}
 	// dirs caches each package's source directory.
 	dirs map[symbol.Identity]packageDir
-	// buckets are the destinations in the order a declaration first
-	// reached each, and at indexes them.
+	// buckets are the destinations in the order their first
+	// declaration arrived, and at indexes them.
 	buckets []bucket
 	at      map[destKey]int
 	// files are the routed files, sorted by path, and byPath indexes
@@ -174,9 +174,9 @@ type destination struct {
 
 // index returns the fields that tell two destinations apart: a
 // family's cardinality and word follow from its plugin and tag, and a
-// unit's package from its language and path. The key stays under the
-// size a map stores inline, so a bucket's first reach allocates
-// nothing for its key.
+// unit's package from its language and path. The key is under the
+// size a map stores inline, so creating a bucket allocates nothing for
+// its key.
 func (d destination) index() destKey {
 	return destKey{
 		plugin: d.plugin, tag: d.tag, key: d.key,
@@ -257,7 +257,7 @@ func (r *router) readOverrides() {
 // place decides every declaration's destination and gathers the
 // declarations into one bucket per destination. A unit whose family
 // its plugin does not declare, and a declaration a finding refuses,
-// reach no bucket. A unit without an overridden declaration routes
+// join no bucket. A unit without an overridden declaration routes
 // whole to its family's file for its key.
 func (r *router) place() {
 	var dests []destination
@@ -444,7 +444,7 @@ func (r *router) gather(unit int, dests []destination, routed []bool) {
 }
 
 // add appends declarations of one source unit to the bucket of a
-// destination, creating the bucket on first reach.
+// destination, creating the bucket on first use.
 func (r *router) add(dest destination, unit int, decls []symbol.Symbol, whole bool) {
 	k := dest.index()
 	at, reached := r.at[k]
@@ -476,6 +476,7 @@ func (r *router) name() error {
 		u := plugin.Unit{
 			Plugin: b.dest.plugin, Tag: b.dest.tag, Per: b.dest.per, Word: b.dest.word,
 			Key: b.dest.key, Pkg: b.dest.pkg, Decls: b.decls, Origins: r.originsOf(b),
+			Contributors: r.contributorsOf(b),
 		}
 		parts := r.in.Speller.SplitUnit(u)
 		if kept := declsOf(parts); kept != len(u.Decls) {
@@ -699,6 +700,26 @@ func (r *router) originsOf(b *bucket) []symbol.Identity {
 	}
 	slices.SortFunc(origins, symbol.Identity.Compare)
 	return slices.Compact(origins)
+}
+
+// contributorsOf returns the plugins that appended into slots of a
+// bucket's declarations, sorted and distinct: the contributors of
+// every source unit the bucket takes declarations from. A unit records
+// its contributors whole, so a declaration a tag moves takes its
+// unit's contributors along.
+func (r *router) contributorsOf(b *bucket) []plugin.ID {
+	if len(b.more) == 0 {
+		return r.units[b.first].Contributors
+	}
+	contributors := slices.Clone(r.units[b.first].Contributors)
+	for _, unit := range b.more {
+		contributors = append(contributors, r.units[unit].Contributors...)
+	}
+	if len(contributors) == 0 {
+		return nil
+	}
+	slices.Sort(contributors)
+	return slices.Compact(contributors)
 }
 
 // positionOf returns where a finding about a declaration is

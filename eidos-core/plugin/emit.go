@@ -15,7 +15,7 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Cardinality says how many outputs a family produces. The zero
+// Cardinality is how many outputs a family produces. The zero
 // value addresses nothing: every declared family states its
 // cardinality, and [Emit.Add] refuses a unit that does not.
 type Cardinality uint8
@@ -60,7 +60,7 @@ type Output struct {
 
 // Unit is one accumulated output entity: everything one plugin
 // contributed to one (family, cardinality key) in one phase call.
-// It carries the full routing key, so no consumer re-derives any
+// It contains the full routing key, so no consumer re-derives any
 // part of it from the declarations.
 type Unit struct {
 	// Plugin is the contributor: the attribution a manifest names,
@@ -78,18 +78,23 @@ type Unit struct {
 	// filename's stem derives from, so the key and the filename
 	// cannot disagree.
 	Key string
-	// Pkg is the owning package's identity for per-source and
+	// Pkg is the identity of the unit's package for per-source and
 	// per-package units, zero for a plan unit: the namespace half of
 	// the routing key.
 	Pkg symbol.Identity
-	// Decls holds the emit declarations, ordered by origin identity,
+	// Decls are the emit declarations, ordered by origin identity,
 	// then instance order under a repeatable directive, then
 	// insertion, so contributions arrive in canonical subject order
 	// and never in dispatch order.
 	Decls []symbol.Symbol
-	// Origins holds the node identities whose matches contributed,
-	// sorted and deduplicated: the provenance a manifest carries.
+	// Origins are the node identities whose matches contributed,
+	// sorted and deduplicated: the provenance a manifest records.
 	Origins []symbol.Identity
+	// Contributors are the plugins that appended into slots of the
+	// unit's declarations through their Emitter, sorted, without the
+	// unit's own plugin: the attribution a weaver gets in the file's
+	// frame and its manifest entry beside the unit's plugin.
+	Contributors []ID
 }
 
 // FileKey returns the routing key a unit's filename takes its stem
@@ -114,7 +119,7 @@ type unitKey struct {
 	key    string
 }
 
-// Emit holds one plan's accumulated units, plus a per-kind index
+// Emit contains one plan's accumulated units, plus a per-kind index
 // over their declarations that is maintained at [Emit.Add]: each
 // unit's tree is walked once when it arrives, so an emit-triggered
 // rule enumerates its matches rather than the emit graph.
@@ -125,20 +130,25 @@ type unitKey struct {
 type Emit struct {
 	units []Unit
 	held  map[unitKey]struct{}
-	// byKind maps a kind to the origin-carrying declarations each
-	// unit's tree holds, in walk order, keyed by the unit's index
+	// byKind maps a kind to the declarations with an origin that each
+	// unit's tree contains, in walk order, keyed by the unit's index
 	// into units.
 	byKind map[symbol.Kind]map[int][]symbol.Symbol
 	// order caches the unit indexes in Units order; nil after a
 	// unit arrived since it was built.
 	order []int
-	// settled says the store passed through [Settle]: the backend's
+	// holders maps each declaration the per-kind index lists to its
+	// unit's index into units. The first [Emit.Contribute] after a
+	// unit arrived builds it, so a plan without contributions never
+	// builds it.
+	holders map[symbol.Symbol]int
+	// settled reports that the store passed through [Settle]: the backend's
 	// lowering seams ran, and the declarations the readers see are
 	// the ones that render.
 	settled bool
 }
 
-// NewEmit returns an emit store holding nothing.
+// NewEmit returns an empty emit store.
 func NewEmit() *Emit {
 	return &Emit{
 		held:   map[unitKey]struct{}{},
@@ -194,8 +204,39 @@ func (e *Emit) Add(u Unit) error {
 	at := len(e.units)
 	e.units = append(e.units, u)
 	e.index(at, u.Decls)
-	e.order = nil
+	e.order, e.holders = nil, nil
 	return nil
+}
+
+// Contribute records that a plugin appended into a slot of a
+// declaration the store contains: the unit whose tree contains host
+// names the plugin among its [Unit.Contributors]. It reports false for
+// a host the per-kind index does not list, which is a declaration
+// without an origin or one no unit contains. The unit's own plugin is
+// not recorded, and a plugin is recorded once.
+func (e *Emit) Contribute(host symbol.Symbol, p ID) bool {
+	if e.holders == nil {
+		e.holders = map[symbol.Symbol]int{}
+		for _, per := range e.byKind {
+			for at, decls := range per {
+				for _, d := range decls {
+					e.holders[d] = at
+				}
+			}
+		}
+	}
+	at, held := e.holders[host]
+	if !held {
+		return false
+	}
+	u := &e.units[at]
+	if p == u.Plugin {
+		return true
+	}
+	if i, recorded := slices.BinarySearch(u.Contributors, p); !recorded {
+		u.Contributors = slices.Insert(u.Contributors, i, p)
+	}
+	return true
 }
 
 // Units enumerates every unit: by plugin, then cardinality, then
@@ -214,7 +255,7 @@ func (e *Emit) Units() iter.Seq[Unit] {
 // ByKind enumerates the emit declarations of one kind across every
 // unit, in [Emit.Units] order, each unit's tree walked depth first.
 //
-// Only values carrying a nonzero origin are returned, because every
+// Only values with a nonzero origin are returned, because every
 // emit-trigger mechanism resolves through the origin: predicates,
 // skip and reporting alike. A value whose producer left the origin
 // zero still arrives in its unit; it is just not a subject.
@@ -259,7 +300,7 @@ func (e *Emit) reindex() {
 	for i := range e.units {
 		e.index(i, e.units[i].Decls)
 	}
-	e.order = nil
+	e.order, e.holders = nil, nil
 }
 
 // sorted returns the unit indexes in Units order, rebuilding the

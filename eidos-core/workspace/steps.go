@@ -73,6 +73,54 @@ var kernelPhases = map[plugin.ID]bool{
 	diag.PhaseClose:    true,
 }
 
+// frontendFaults is the frontend step: every registered frontend is
+// present, declares a version, has a name no other frontend has, and
+// is not named after a kernel phase. A frontend may share its name
+// with the backend of its language, because both report under the
+// language's name.
+func frontendFaults(fs []plugin.Frontend) []error {
+	var faults []error
+	named := map[plugin.ID]bool{}
+	for i, f := range fs {
+		if f == nil {
+			faults = append(faults, fmt.Errorf("workspace: frontend %d of %d is nil", i+1, len(fs)))
+			continue
+		}
+		name := f.Name()
+		if _, versioned := f.(plugin.Versioned); !versioned {
+			faults = append(faults, fmt.Errorf(
+				"workspace: frontend %q declares no version, which every unit key folds", name,
+			))
+		}
+		switch {
+		case name == "":
+			faults = append(faults, errors.New("workspace: a frontend returns an empty name"))
+		case named[name]:
+			faults = append(faults, fmt.Errorf("workspace: two frontends return the name %q", name))
+		case kernelPhases[name]:
+			faults = append(faults, fmt.Errorf(
+				"workspace: frontend %q is named after a kernel phase, whose findings it would report under", name,
+			))
+		}
+		named[name] = true
+	}
+	return faults
+}
+
+// contractsOf returns the registered keys that promise completeness,
+// in registration order: what a run's audit checks.
+func contractsOf(keys *meta.Registry) []contract {
+	var out []contract
+	for name := range keys.Keys() {
+		id, _ := keys.Resolve(name)
+		spec, _ := keys.Spec(id)
+		if spec.Contract != nil {
+			out = append(out, contract{key: id, name: name, Completeness: *spec.Contract})
+		}
+	}
+	return out
+}
+
 // assemble is the first step: the plugin universe, deduplicated by
 // name, one name one plugin. The roster's order is the declaration
 // order, annotators first, then each plan's generators and backend,

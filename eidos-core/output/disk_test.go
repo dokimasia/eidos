@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -76,6 +77,36 @@ func placed(t *testing.T, root, name, content string) string {
 	return at
 }
 
+// drifted returns the brand's output of firstBody with its body edited
+// after the stamp, the trailer left as it was.
+func drifted(t *testing.T) string {
+	t.Helper()
+
+	return strings.Replace(stampedAs(t, diskBrand, firstBody), "package svc", "package edited", 1)
+}
+
+// prepared stages one write or one removal of storeFile over a root
+// whose storeFile contains existing, where existing is not empty, and
+// returns the one change Prepare reports.
+func prepared(t *testing.T, existing string, staged *string) output.Change {
+	t.Helper()
+
+	root := t.TempDir()
+	if existing != "" {
+		placed(t, root, storeFile, existing)
+	}
+	s := disk(t, root)
+	if staged != nil {
+		assert.NoError(t, s.Write(storeFile, []byte(*staged)), "the file stages")
+	} else {
+		assert.NoError(t, s.Delete(storeFile), "the removal stages")
+	}
+	got, err := s.Prepare()
+	assert.NoError(t, err, "the staging prepares")
+	assert.Length(t, got, 1, "one staged path is one change")
+	return got[0]
+}
+
 // refusedOverwrite commits a stamped body over an existing file and
 // returns the file's bytes afterwards and the commit's error.
 func refusedOverwrite(t *testing.T, existing string) (string, error) {
@@ -137,6 +168,133 @@ func TestDisk(t *testing.T) {
 			entries, err := os.ReadDir(root)
 			assert.NoError(t, err, "the root reads")
 			assert.Length(t, entries, 0, "the tree is unchanged")
+		})
+	})
+
+	t.Run("Delete", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("removes nothing from the tree before the commit", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			at := placed(t, root, storeFile, stampedAs(t, diskBrand, firstBody))
+			assert.NoError(t, disk(t, root).Delete(storeFile), "the removal stages")
+			_, err := os.Stat(at)
+			assert.NoError(t, err, "the file remains")
+		})
+	})
+
+	t.Run("Prepare", func(t *testing.T) {
+		t.Parallel()
+
+		writes := []struct {
+			name     string
+			existing func(t *testing.T) string
+			want     output.Found
+			action   output.Action
+		}{
+			{
+				name:     "returns FoundSame for a file with the staged bytes",
+				existing: func(t *testing.T) string { t.Helper(); return stampedAs(t, diskBrand, secondBody) },
+				want:     output.FoundSame, action: output.ActionUnchanged,
+			},
+			{
+				name:     "returns FoundIntact for the brand's output with other bytes",
+				existing: func(t *testing.T) string { t.Helper(); return stampedAs(t, diskBrand, firstBody) },
+				want:     output.FoundIntact, action: output.ActionUpdated,
+			},
+			{
+				name:     "returns FoundDrifted for the brand's output edited since its stamp",
+				existing: drifted,
+				want:     output.FoundDrifted, action: output.ActionUpdated,
+			},
+			{
+				name:     "returns FoundForeign for a hand-written file",
+				existing: func(*testing.T) string { return firstBody },
+				want:     output.FoundForeign, action: output.ActionUpdated,
+			},
+			{
+				name:     "returns FoundForeign for another brand's output",
+				existing: func(t *testing.T) string { t.Helper(); return stampedAs(t, rivalBrand, firstBody) },
+				want:     output.FoundForeign, action: output.ActionUpdated,
+			},
+			{
+				name: "returns FoundForeign for the brand's output with a line after its trailer",
+				existing: func(t *testing.T) string {
+					t.Helper()
+					return stampedAs(t, diskBrand, firstBody) + "// an edit after the trailer\n"
+				},
+				want: output.FoundForeign, action: output.ActionUpdated,
+			},
+		}
+		for _, tt := range writes {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				staged := stampedAs(t, diskBrand, secondBody)
+				got := prepared(t, tt.existing(t), &staged)
+				assert.Equal(t, got.Found, tt.want, "the verdict")
+				assert.Equal(t, got.Action, tt.action, "the action the commit takes")
+			})
+		}
+
+		removals := []struct {
+			name     string
+			existing func(t *testing.T) string
+			want     output.Found
+			action   output.Action
+		}{
+			{
+				name:     "returns ActionDeleted for a removal of the brand's intact output",
+				existing: func(t *testing.T) string { t.Helper(); return stampedAs(t, diskBrand, firstBody) },
+				want:     output.FoundIntact, action: output.ActionDeleted,
+			},
+			{
+				name:     "returns ActionUnchanged for a removal of the brand's drifted output",
+				existing: drifted,
+				want:     output.FoundDrifted, action: output.ActionUnchanged,
+			},
+			{
+				name:     "returns ActionUnchanged for a removal of a hand-written file",
+				existing: func(*testing.T) string { return firstBody },
+				want:     output.FoundForeign, action: output.ActionUnchanged,
+			},
+		}
+		for _, tt := range removals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				got := prepared(t, tt.existing(t), nil)
+				assert.Equal(t, got.Found, tt.want, "the verdict")
+				assert.Equal(t, got.Action, tt.action, "the action the commit takes")
+				assert.Equal(t, got.Hash, "", "a removal stages no bytes")
+			})
+		}
+
+		t.Run("returns FoundForeign for a directory at the staged path", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			assert.NoError(t, os.Mkdir(filepath.Join(root, storeFile), 0o755), "the fixture makes a directory")
+			s := disk(t, root)
+			assert.NoError(t, s.Write(storeFile, []byte(firstBody)), "the file stages")
+			got, err := s.Prepare()
+			assert.NoError(t, err, "the staging prepares")
+			assert.Equal(t, got[0].Found, output.FoundForeign, "a directory is no file of the brand's")
+		})
+
+		t.Run("returns an error for a path a symlink leads out of the root", func(t *testing.T) {
+			t.Parallel()
+
+			root, outside := t.TempDir(), t.TempDir()
+			placed(t, outside, "escaped.go", firstBody)
+			assert.NoError(t, os.Symlink(outside, filepath.Join(root, "away")),
+				"the fixture links out of the root")
+			s := disk(t, root)
+			assert.NoError(t, s.Write("away/escaped.go", []byte(firstBody)), "the path stages")
+			_, err := s.Prepare()
+			assert.HasError(t, err, "the read does not escape the root")
 		})
 	})
 
@@ -224,6 +382,85 @@ func TestDisk(t *testing.T) {
 			assert.HasError(t, err, "the commit fails")
 			assert.Equal(t, got, firstBody, "the file has its own bytes")
 		})
+
+		t.Run("returns an error for a file edited between the preparation and the commit", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			at := placed(t, root, storeFile, stampedAs(t, diskBrand, firstBody))
+			s := disk(t, root)
+			assert.NoError(t, s.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
+			got, err := s.Prepare()
+			assert.NoError(t, err, "the staging prepares")
+			assert.Equal(t, got[0].Found, output.FoundIntact, "the file is intact at the preparation")
+			edited := drifted(t)
+			assert.NoError(t, os.WriteFile(at, []byte(edited), 0o644), "a person edits the file")
+			_, err = s.Commit()
+			assert.HasError(t, err, "the commit refuses the edited file")
+			after, readErr := os.ReadFile(at)
+			assert.NoError(t, readErr, "the file reads")
+			assert.Equal(t, string(after), edited, "the edit remains")
+		})
+
+		t.Run("removes the brand's intact output a removal names", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			at := placed(t, root, storeFile, stampedAs(t, diskBrand, firstBody))
+			s := disk(t, root)
+			assert.NoError(t, s.Delete(storeFile), "the removal stages")
+			got, err := s.Commit()
+			assert.NoError(t, err, "the commit succeeds")
+			assert.Equal(t, got, []output.Written{{Path: storeFile, Action: output.ActionDeleted}},
+				"one removal without a digest")
+			_, statErr := os.Stat(at)
+			assert.True(t, os.IsNotExist(statErr), "the file is gone")
+		})
+
+		t.Run("returns an error for the brand's output it cannot remove", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			dir := filepath.Join(root, "svc")
+			assert.NoError(t, os.Mkdir(dir, 0o755), "the fixture makes the directory")
+			placed(t, dir, storeFile, stampedAs(t, diskBrand, firstBody))
+			assert.NoError(t, os.Chmod(dir, 0o555), "the directory refuses a removal")
+			t.Cleanup(func() { _ = os.Chmod(dir, 0o755) })
+			s := disk(t, root)
+			assert.NoError(t, s.Delete("svc/"+storeFile), "the removal stages")
+			got, err := s.Commit()
+			assert.HasError(t, err, "the removal fails")
+			assert.Contains(t, err.Error(), `"svc/`+storeFile+`"`, "the error names the file")
+			assert.Empty(t, got, "no record claims the removal")
+		})
+
+		kept := []struct {
+			name     string
+			existing func(t *testing.T) string
+		}{
+			{name: "leaves the brand's drifted output a removal names", existing: drifted},
+			{
+				name:     "leaves a hand-written file a removal names",
+				existing: func(*testing.T) string { return firstBody },
+			},
+		}
+		for _, tt := range kept {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				root := t.TempDir()
+				existing := tt.existing(t)
+				at := placed(t, root, storeFile, existing)
+				s := disk(t, root)
+				assert.NoError(t, s.Delete(storeFile), "the removal stages")
+				got, err := s.Commit()
+				assert.NoError(t, err, "a kept file is no fault")
+				assert.Empty(t, got, "no record claims a removal")
+				after, readErr := os.ReadFile(at)
+				assert.NoError(t, readErr, "the file remains")
+				assert.Equal(t, string(after), existing, "with its own bytes")
+			})
+		}
 
 		t.Run("commits the other files after a refused overwrite", func(t *testing.T) {
 			t.Parallel()

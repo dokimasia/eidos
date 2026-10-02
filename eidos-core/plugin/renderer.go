@@ -21,9 +21,10 @@ type RenderedFile struct {
 	// Pkg is the package the file declares, the [File.Pkg] the render
 	// rendered, zero where the target derives none.
 	Pkg symbol.Identity
-	// Plugins names the emitters whose units assembled the file,
-	// distinct and sorted. The output contract writes one
-	// attribution line per name.
+	// Plugins names the emitters whose units assembled the file and
+	// the plugins that appended into the units' slots, distinct and
+	// sorted. The output contract writes one attribution line per
+	// name.
 	Plugins []ID
 	// Sources names what the file derives from: the distinct
 	// routing keys of its units, sorted. A source-keyed unit
@@ -40,7 +41,7 @@ type RenderedFile struct {
 // A problem with one file attaches to the context's sink and the
 // pass continues with the remaining files; a returned error is
 // fatal to the pass. Two calls over one store return the same
-// bytes, which the conformance suite holds every renderer to.
+// bytes, which the conformance suite checks every renderer for.
 type Renderer interface {
 	Render(ctx *RenderContext) ([]RenderedFile, error)
 }
@@ -55,26 +56,26 @@ type RenderContext struct {
 	// [RenderedFile], and a context with no files renders nothing.
 	Files []File
 	// Schedule is the plan's generators in bucket order: what
-	// declared template overrides resolve against, carried as data
+	// declared template overrides resolve against, passed as data
 	// so the pass decides nothing.
 	Schedule []ID
-	// Trees holds each plugin's declared template tree for this
-	// target, keyed by plugin: what a template reference resolves
-	// in. The composition reads them off the [TemplateProvider]
-	// surface; a fixture hands them over directly.
+	// Trees maps each plugin to its declared template tree for this
+	// target: what a template reference resolves in. The composition
+	// reads them off the [TemplateProvider] surface; a fixture hands
+	// them over directly.
 	Trees map[ID]fs.FS
-	// Funcs holds each plugin's template helpers for this target,
-	// and Overrides the shared names each declares it replaces,
-	// both read off the same surface. The merge is the pass's:
-	// schedule order, latest wins, and a shared name shadowed
+	// Funcs maps each plugin to its template helpers for this target,
+	// and Overrides to the shared names it declares it replaces, both
+	// read off the same surface. The merge is the pass's: schedule
+	// order, the latest taking precedence, and a shared name shadowed
 	// without a declaration is refused and reported.
 	Funcs     map[ID]template.FuncMap
 	Overrides map[ID][]string
 	// Sink takes the pass's findings: an unresolved reference, a
 	// dropped slot marker, a format failure.
 	Sink *diag.Sink
-	// Plugin is the backend's own identity, the origin its
-	// findings carry.
+	// Plugin is the backend's own identity, the origin of its
+	// findings.
 	Plugin ID
 }
 
