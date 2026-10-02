@@ -4,7 +4,7 @@ go 1.27.0
 
 require (
 	github.com/BurntSushi/toml v1.6.0
-	go.dokimi.dev/assert v0.0.0-20260902112452-9d6eca9d7234
+	go.dokimi.dev/assert v0.0.0-20260930235119-12f31f1abf48
 	go.dokimi.dev/eidos/lang v0.0.0-00010101000000-000000000000
 	go.dokimi.dev/eidos/sdk v0.0.0-00010101000000-000000000000
 )

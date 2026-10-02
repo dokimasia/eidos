@@ -7,7 +7,7 @@ require (
 	github.com/tree-sitter/tree-sitter-java v0.23.5
 	github.com/tree-sitter/tree-sitter-rust v0.24.2
 	github.com/tree-sitter/tree-sitter-typescript v0.23.2
-	go.dokimi.dev/assert v0.0.0-20260902112452-9d6eca9d7234
+	go.dokimi.dev/assert v0.0.0-20260930235119-12f31f1abf48
 	go.dokimi.dev/eidos/sdk v0.0.0-00010101000000-000000000000
 )
 

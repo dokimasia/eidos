@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -314,17 +315,17 @@ func TestExportAllocs(t *testing.T) {
 }
 
 // BenchmarkExport measures an export of 1,000 structs in each of two
-// files: building it and finding one key in it. Both report their
-// allocations, and [TestExportAllocs] pins them: two for NewExport and
-// none for Find.
+// files: building it, which allocates its result and its sorted
+// declarations, and finding one key in it, which allocates nothing.
 func BenchmarkExport(b *testing.B) {
 	files := keyedFiles(1000)
 	key := plugin.ExportKey{Origin: settleOrigin("row500", symbol.KindStruct), Plugin: exportPlugin, Name: "row500"}
 
 	b.Run("NewExport", func(b *testing.B) {
-		b.ReportAllocs()
+		c := bench.Start(b).MaxAllocs(2)
+		defer c.End()
 		var got plugin.ExportDoc
-		for b.Loop() {
+		for c.Loop() {
 			got = plugin.NewExport(exportPlan, files, nil)
 		}
 		if len(got.Symbols) != 2000 {
@@ -334,9 +335,10 @@ func BenchmarkExport(b *testing.B) {
 
 	b.Run("Find", func(b *testing.B) {
 		doc := plugin.NewExport(exportPlan, files, nil)
-		b.ReportAllocs()
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
 		var got []plugin.ExportedSymbol
-		for b.Loop() {
+		for c.Loop() {
 			got = doc.Find(key)
 		}
 		if len(got) != 2 {
