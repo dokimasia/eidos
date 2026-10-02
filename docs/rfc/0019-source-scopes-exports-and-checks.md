@@ -721,7 +721,7 @@ The workspace suite runs over the two plans as well.
 | `compiledPlan.scope` and the fingerprint | Bind `Sources` per run, and fold it |
 | `manifest.Entry.Plugins` | Spelled `[]diag.Origin`. The type is unchanged |
 | The `GeneratorContext` literals in `workspace/plan.go`, `plugintest/fixture.go` and 3 test files | None: `Exports` is a new field, nil where nothing depends |
-| The Go backend's composite speller | Restates a pointer, slice, map, channel or sized array whose spelling no longer composes from its children, so a receiver over a double the settle respelled names the settled type |
+| The settle | Rewrites a structural reference's spelling for each name it respells beneath it, so a pointer receiver over a respelled double names the settled type in every backend |
 | `eidos-sdk` | The facade regenerates for the new exported names |
 
 ## Alternatives considered
@@ -887,9 +887,6 @@ independent without it.
 - Dispatch matches the declarations of dependency packages wherever a scope
   admits their packages. Whether a bare rule should match them at all is not
   proposed here.
-- A structural reference whose child the settle respelled renders stale in the
-  TypeScript, Java and Rust backends, which write a reference's spelling as
-  written. Restating those forms in each backend is not proposed here.
 
 ## References
 
