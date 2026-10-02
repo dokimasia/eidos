@@ -122,6 +122,64 @@ func NewEmit() *Emit {
 	return core.NewEmit()
 }
 
+// ExportKey identifies an exported declaration the way a dependent
+// knows it before the producing plan runs: the source declaration it
+// derives from, the plugin that emitted it, the family it was emitted
+// into, and the names the plugin gave it and its host. Both names are
+// the emitted ones, before the settle respelled them, so a dependent
+// builds a key from the producing plugin's conventions and reads the
+// target's spelling from the export.
+type ExportKey = core.ExportKey
+
+// ExportedSymbol is one declaration of an export.
+type ExportedSymbol = core.ExportedSymbol
+
+// ExportDoc is one plan's export. It lists every declaration in the
+// files the plan rendered, each with the name the plan's settle gave it
+// and the file and package its layout routed it to. A dependent plan
+// reads names and import paths from it instead of applying the
+// producing target's naming rules a second time.
+//
+// The run builds the export of a plan that a dependent plan or a
+// workspace check reads, after the plan renders, through [NewExport].
+// Every dependent and every check of the run reads the same value, so a
+// reader does not mutate it.
+type ExportDoc = core.ExportDoc
+
+// NewExport returns a plan's export: every declaration of the units of
+// files, and every name the settle visits inside them except
+// parameters, results and type parameters, so a type's fields and
+// methods and an enum's values are listed beside the type. Each is keyed
+// by its origin, its unit's plugin and tag, and the names it and its
+// host were emitted under, and it is spelled as the settle left it, at
+// its file's path and package. files are the files the plan rendered.
+// settled is the store the plan's settle ran over, whose record supplies
+// the emitted name of each declaration a respell changed. A nil store
+// reads every name as emitted.
+//
+// A method attached to a receiver is keyed under the emitted name of
+// the type its receiver names: the settle rewrote the receiver's
+// spelling with the type, and the type's record maps it back. A receiver
+// that names a type no file declares keeps its spelling as the host.
+//
+// The walk visits names through [emit.RespellNames], with visitors that
+// return every name unchanged, so it writes back the spellings it reads.
+// It walks the names twice, once to count them and once to list them,
+// and sorts the result once. A member's host is the nearest declaration
+// the walk entered and has not left, which a stack of four entries
+// tracks, and a method's receiver maps back through one binary search
+// over the file-level declarations, sorted once. The symbols share their
+// strings with the store.
+//
+// # Allocation contract
+//
+// NewExport allocates two slices: the result, sized from the count, and
+// the sorted file-level declarations. A host nested more than four deep
+// grows the stack onto the heap.
+func NewExport(plan string, files []File, settled *Emit) ExportDoc {
+	return core.NewExport(plan, files, settled)
+}
+
 // File is one output file a plan writes: where it is written, the
 // package it declares, and the units it assembles, in render order.
 // The plan's layout composes the files after the settle, and the
@@ -423,6 +481,17 @@ type Annotator = core.Annotator
 // context and emits neutral values into the plan's store.
 type Generator = core.Generator
 
+// WorkspaceCheck checks a claim across plans at Close, over the run's
+// records: each plan's files, each plan's export, the frozen graph and
+// the facts. It reports diagnostics and writes nothing.
+//
+// A problem with one item is a finding on the context's sink, and the
+// check continues. A returned error is fatal to Close: the run commits
+// nothing and returns the error, wrapped with the check's name. The run
+// calls a check only where every plan it reads staged cleanly, and
+// reports one Info for a check it does not call.
+type WorkspaceCheck = core.WorkspaceCheck
+
 // AnnotatorContext is what one Annotate call may touch.
 //
 // The two read surfaces split by rule: Index is the dispatcher's
@@ -436,6 +505,15 @@ type AnnotatorContext = core.AnnotatorContext
 // and Reader are scoped to the plan's sources, and Emit is the plan's
 // store, where every accumulator flushes.
 type GeneratorContext = core.GeneratorContext
+
+// PlanRecord is one plan's record as Close reads it: what the plan's
+// commit records, and its export.
+type PlanRecord = core.PlanRecord
+
+// CheckContext is what one Check call may read. Its Index and Reader
+// see the whole graph, and the reader records into a set the run
+// discards, because Close runs every check on every run.
+type CheckContext = core.CheckContext
 
 // RefusedConstruct reports a lowering hook refusing a declaration:
 // the target declares no idiom for the construct, and the
