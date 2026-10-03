@@ -29,11 +29,11 @@ The document named in each row carries the full contract.
 | policy | the contested mappings a lowering receives already resolved, such as `ts.int64` | [10](10-cross-language.md) |
 | plan export | the declarations a plan rendered, keyed by origin, plugin, family, host and emitted name, with the spelling the plan's settle gave each. The plans that depend on the plan and the checks that read it receive it. The only edge between plans | [08](08-workspace-and-plans.md) |
 | WorkspaceCheck | the role that runs at Close, reads the records of the plans it names (manifest entries and exports, with the graph and facts) and produces diagnostics only | [06](06-plugins.md) |
-| read set | the (symbol, key) inputs recorded for a derived artifact. `explain` and invalidation both use it | [09](09-incrementality.md) |
+| read set | the edges one execution read: declarations, (symbol, key) facts, kind and directive membership, and packages taken whole. `explain` and invalidation both use it | [09](09-incrementality.md) |
 | fingerprint gate | the stat and hash pass above the loader that decides whether anything loads | [09](09-incrementality.md) |
 | early cutoff | recompute only when a read *value* changed, not merely when its input was touched | [09](09-incrementality.md) |
 | sealed graph | the persisted symbol graph. Regions decode on first touch, so opening it costs what the run reads | [09](09-incrementality.md) |
-| warm≡cold | the check proving that a cached run and a cold run produce byte-identical manifests | [13](13-testing-and-conformance.md) |
+| warm≡cold | the check proving that a warm run and a cold run produce byte-identical files and manifests and the same findings | [13](13-testing-and-conformance.md) |
 | check | one suite of the conformance set | [13](13-testing-and-conformance.md) |
 | manifest | the versioned record of every generated file: its plan, its hash, and what it derives from | [17](17-output-and-determinism.md) |
 | drift | a manifested file whose hash on disk no longer matches. Someone edited it, and eidos never overwrites it | [17](17-output-and-determinism.md) |
@@ -52,17 +52,18 @@ The document named in each row carries the full contract.
 | accumulator output | a `PerPackage` or `PerPlan` file filled across matches, ordered by subject identity | [18](18-routing-and-layout.md) |
 | Link | the step after Load that resolves type spellings to canonical identities | [02](02-symbol-model.md) |
 | kit | the frontend and backend authoring surface: declarations plus a few language callbacks, with the kit owning the rest | [11](11-languages.md) |
-| unit | the load granule the language defines. `u.Read` is its only way to reach the filesystem, and every read is fingerprinted | [11](11-languages.md) |
+| unit | the load granule the language defines. `u.Read` is its only door to the filesystem, and the unit's key folds the digest of every file the door admits | [11](11-languages.md) |
 | repeatable directive | a directive its schema allows more than once per subject. The handler runs once per instance | [05](05-directives.md) |
-| Workspace / Run | the immutable composition (registries, compiled dispatch plan) against one invocation's mutable state (ledger, graph, facts, plans, diagnostics) | [08](08-workspace-and-plans.md) |
-| artifact | one generated file. It is the re-execution granule, and its ledger row decides whether it is dirty | [09](09-incrementality.md) |
-| sealed state | what a run persists for the next one: the sealed graph, the fact store and the artifact table, written per generation | [08](08-workspace-and-plans.md) |
+| Workspace / Run | the immutable composition (registries, compiled dispatch plan) against one invocation's mutable state (sealed state, graph, facts, plans, diagnostics) | [08](08-workspace-and-plans.md) |
+| artifact | one generated file, the re-execution granule. Its row in the sealed state records its manifest entry, its export rows, its name entries and its findings | [09](09-incrementality.md) |
+| group | the artifacts that execute together: the files one unit splits into, the files two units share, and the files an emit-phase invocation reads and places into. A dirty group runs every invocation that contributed to it | [09](09-incrementality.md) |
+| sealed state | what a run persists for the next one: regions, facts, read records, artifacts, groups and name entries, as immutable segments under the generation that `CURRENT` names | [08](08-workspace-and-plans.md) |
 | dispatch plan | the index of every subscription, compiled at Build by kind, directive and fact key, owned by the Workspace | [08](08-workspace-and-plans.md) |
 | subscription record | a rule's gate as data (`kind`, `directive` or `factKey`, phase). It is both the dispatch index and the dirty-routing key | [06b](06b-authoring.md) |
 | provenance trailer | the `<brand>:provenance sha256:<body-hash>` line ending every generated file. It proves ownership and detects drift without the manifest | [17](17-output-and-determinism.md) |
 | fact group | a bundle of metadata keys its writer declares, which `meta drop` can remove under one public name | [04](04-metadata.md) |
 | Members | the Tier-1 projection giving a type's effective member set across embeds and supertypes, and where each member came from | [03](03-projection.md) |
 | Build | the validation sequence that runs once per composition and produces the immutable Workspace. Every boundary string resolves here | [08](08-workspace-and-plans.md) |
-| parse memo | the content-addressed store of parsed regions keyed by unit fingerprint. It returns branch switches, where the sealed state returns the edit loop | [09](09-incrementality.md) |
-| Reader | the tracked, scope-filtered read handle. Targeted reads record identity edges; enumerations record set-membership edges | [02](02-symbol-model.md) |
+| parse memo | the content-addressed store of parsed regions keyed by the unit's key and the executable's digest, which several workspaces can share. It returns branch switches, where the sealed state returns the edit loop | [09](09-incrementality.md) |
+| Reader | the tracked, scope-filtered read handle. A read records a declaration, fact, membership or package edge | [02](02-symbol-model.md) |
 | classification form | shape, mixin or contract: the spec field that pins a classification's cardinality, arbitration, inference and directive shape | [12](12-shape-catalog.md) |

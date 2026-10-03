@@ -47,8 +47,8 @@ allocations:
 | Scenario | What it asserts |
 |---|---|
 | cold, full run | O(corpus) is accepted; the amortized per-symbol budgets hold |
-| warm, no change | the fingerprint gate does its job: nothing recomputes, and L stays under the sub-second bound |
-| warm, one source file edited | cost tracks the dirty set: invalidation, early cutoff, and re-rendering only the affected files |
+| warm, no change | the fingerprint gate does its job: a probe counts zero work, the time per walked file does not grow from M to L, and L is under the sub-second bound |
+| warm, one source file edited | the edit's cost tracks the dirty set: invalidation, early cutoff, and re-rendering only the affected files |
 | warm, one annotation-relevant edit | (symbol, key) granularity: unrelated plans do not run again |
 | warm, export-chain edit | a dependent plan runs again and independent plans do not |
 | multi-plan, 1 against 3 plans on one corpus | plan parallelism: three plans cost far less than three times one plan |
@@ -66,16 +66,25 @@ Timing on a shared CI runner is noise, and a gate that flakes
 teaches people to ignore it. So the budgets split by what is
 independent of the machine.
 
-**Scaling-rule gates run everywhere.** They compare ratios rather
-than milliseconds: warm-no-change must not grow with corpus size,
-with the L/M ratio bounded near 1; warm-one-edit must track the
-dirty set, with the same edit at M and L staying within a bounded
-ratio over per-source and per-package outputs, because a per-plan
-file grows with the corpus by construction
-([09-incrementality.md](09-incrementality.md)); and the multi-plan
-speedup must meet its minimum. These assert
-the architecture's complexity claims and do not care how fast the
-runner is.
+**Scaling-rule gates run everywhere.** They count work and compare
+ratios of times, not milliseconds. They measure the two parts of a
+warm run apart, because the stat sweep is linear in the file count by
+construction:
+
+- A warm run with no change does zero work. A probe asserts exactly
+  that it hashes no file, parses no unit, decodes no region, runs no
+  invocation, calls no check and writes no blob.
+- The same run's time per walked file at L is within 1.15 of its time
+  at M.
+- An edit's cost is the edited run's time less the time of a run with
+  no change over the same tree. The same edit's cost at L is within
+  1.5 of its cost at M over per-source and per-package outputs,
+  because a per-plan file grows with the corpus by construction
+  ([09-incrementality.md](09-incrementality.md)).
+- The multi-plan speedup meets its minimum.
+
+These assert the architecture's complexity claims and do not care
+how fast the runner is.
 
 **Allocation gates run everywhere.** Allocations per operation on
 the micro suite, and total allocations per macro scenario, both
@@ -118,9 +127,11 @@ pipeline enforces:
 
 ```yaml
 # conformance/bench/budgets.yaml
+zero-work:
+  warm-no-change: {hashed: 0, parsed: 0, decoded: 0, invoked: 0, checked: 0, written: 0}
 scaling:
-  warm-no-change: {ratio: L/M, max: 1.15}
-  warm-one-edit:  {ratio: L/M, max: 1.5}   # per-source and per-package outputs
+  warm-no-change: {ratio: L/M, per: walked-file, max: 1.15}
+  warm-one-edit:  {ratio: L/M, cost: edited-less-unchanged, max: 1.5}   # per-source and per-package outputs
 allocs:
   callable-projection: {per-op: 3}
 absolute:                    # dedicated runners only

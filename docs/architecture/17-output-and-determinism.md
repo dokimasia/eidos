@@ -101,7 +101,8 @@ Commit renames each file atomically, but not all of them jointly. A
 crash mid-commit leaves a mixed tree, where new files are owned by
 their trailers and old files by the previous manifest, and the next
 run corrects it by construction: derive again, write if changed, and
-rewrite the manifest. No repair pass exists because none is needed.
+rewrite the manifest documents whose entries changed. No repair pass
+exists because none is needed.
 
 ## Drift
 
@@ -220,17 +221,25 @@ records the producing plan, the content hash, the plugins the file's
 header names, and the source declarations the file derives from, so
 `prune` and `explain` read the same record.
 
-It lives in the brand's state directory, at
-`.<brand>/manifest.json` ([20-cli.md](20-cli.md)), and it is **not
+It is in the brand's state directory, as up to 256 documents under
+`.<brand>/manifest/` ([20-cli.md](20-cli.md)), and it is **not
 committed**. Committed, it generates merge conflicts. Uncommitted,
 nothing is lost, because every per-file answer it speeds up, meaning
 ownership, drift and adoption, is also carried in the provenance trailer.
 
-The document is versioned at the root and names its workspace
-([08-workspace-and-plans.md](08-workspace-and-plans.md)):
+A file's entry belongs to the document named by the first byte of the
+SHA-256 of its path, as two lowercase hex digits. A commit rewrites
+only the documents whose entries changed, and removes a document whose
+bucket became empty. A reader lists the directory, decodes every
+document and joins them.
+
+Each document is versioned at the root and names its workspace
+([08-workspace-and-plans.md](08-workspace-and-plans.md)) and its
+bucket. The entry for `svc/store_stub.go` is in
+`.<brand>/manifest/ea.json`:
 
 ```json
-{"version":1,"workspace":"platform",
+{"version":2,"workspace":"platform","bucket":"ea",
  "files":[
   {"path":"svc/store_stub.go","plan":"go-services",
    "hash":"sha256:9f2c…","plugins":["acme-audit","stubgen"],
@@ -244,10 +253,10 @@ are canonical symbol identities
 ([02-symbol-model.md](02-symbol-model.md)). Format changes follow the
 compatibility policy ([15-compatibility.md](15-compatibility.md)).
 
-Plan exports publish into the same state directory, one document per
-plan and export, beside the manifest, under the export schema
-([08-workspace-and-plans.md](08-workspace-and-plans.md)). They
-persist because they are inputs to later runs: an export's hash
-folds into its dependents' artifact fingerprints
-([09-incrementality.md](09-incrementality.md)), so a warm run has to
-read the previous export without re-running its producer.
+Plan exports persist in the sealed state alone, as the export rows of
+each plan's files, and no file beside the manifest publishes them
+([09-incrementality.md](09-incrementality.md)). They persist because
+they are inputs to later runs. A warm run assembles a plan's export
+from the recorded rows of its clean files and the new rows of its
+dirty files, so a dependent reads the previous export without
+re-running its producer.

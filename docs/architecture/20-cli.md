@@ -175,8 +175,10 @@ the poll, and the default is one second.
 ### version
 
 The kernel version, the contract version, every registered plugin
-with its version, and the composed plugin-set fingerprint, which is
-the identity that keys caches and appears in the manifest.
+with its version, the composition fingerprint and the executable's
+digest. The sealed state's header records the last two, and a
+difference in either runs the next run cold
+([09-incrementality.md](09-incrementality.md)).
 
 ## Machine output
 

@@ -87,8 +87,8 @@ Workspace (built once, survives forever)
 └─ dispatch plan per phase, per bucket: gate→handler tables — COMPILED
 
 Run (per invocation; holds the workspace lock)
-├─ ledger        the engine's run side: fingerprints, read-sets,
-│                dirty work-lists, sealed-state open/commit
+├─ state         the sealed state over the ledger's blobs: the gate,
+│                read records, the dirty set, open and commit
 ├─ graph         node symbols · freeze · kind + directive indexes
 ├─ facts         bags · fact-key index · stamp arbitration
 ├─ interner B    run-local symbol IDs
@@ -109,7 +109,7 @@ because compile-time plugins make every subscription known at Build.
 The run-time dispatcher is then a stateless executor over static
 tables.
 
-Those same tables are the ledger's invalidation metadata, so
+Those same tables are the sealed state's invalidation metadata, so
 dispatch and invalidation cannot disagree with each other.
 
 The conductor is a function rather than a state machine: `Run()`
@@ -118,27 +118,27 @@ reads as straight-line code.
 The seams, as contracts:
 
 ```go
-type Ledger interface {
-    BeginRun(ctx context.Context) (*RunPlan, error) // stat-first sweep +
-                                                    // sealed-state open
-    Track(r Reader, at ArtifactID) Reader           // the only read path
-    Artifacts(p PlanID) (dirty []ArtifactID, carried []manifest.Entry)
-    CommitRun(ctx context.Context) error            // AFTER sinks commit
+type State interface {                          // the sealed state, over the ledger's blobs
+    Open(ctx context.Context) (*RunPlan, error) // header check + stat-first sweep
+    Groups(p PlanID) (dirty []GroupID, kept []manifest.Entry)
+    Commit(ctx context.Context) error           // AFTER sinks commit
 }
 type RunPlan struct {
-    ParseUnits []UnitWork // (unit, Depth) to (re)parse
-    CarryUnits []UnitRef  // graph regions opened from sealed state
+    ParseUnits []UnitWork // (unit, Depth) to parse, or to restore from the memo
+    KeptUnits  []UnitRef  // regions the generation keeps, decoded on first read
 }
 type Graph interface {
     AddUnit(u ParsedUnit) error                    // Load only
     Link(frontier []UnitRef) (dirty SymbolSet, err error)
     Freeze()                                       // builds directive index
+    Reader(reads *ReadSet, sc Scope) (Reader, error) // the only read path
     ByKind(symbol.Kind) SubjectSet
     ByDirective(name string) SubjectSet
     Lookup(symbol.ID) (Symbol, bool)
 }
 type Facts interface {
     Stamp(sym symbol.ID, k KeyID, v Value, at Authority, by PluginID)
+    Withdraw(k KeyID, c Claim) error               // a claim whose match runs again or disappeared
     ByKey(KeyID) SubjectSet
     Of(symbol.ID) TrackedBag
 }
@@ -148,12 +148,14 @@ type EmitStore interface {                 // one per plan
     AppendSlot(host emit.Node, s SlotName, v emit.Node, p Provenance) error
 }
 type Dispatcher struct{ tables PhaseTables }       // Build's output
-// One call serves cold (subjects=all) and warm (subjects=an
-// artifact's contributor set); yields matches in canonical order:
-// (bucket, plugin, rule, subject identity, instance).
-func (d *Dispatcher) MatchesOver(ph Phase, bucket int, s SubjectSet) iter.Seq[MatchWork]
+// One call serves cold (sel nil: every match) and warm (sel: the
+// recorded matches of dirty groups, plus the candidate subjects whose
+// matches may have changed). It yields matches in canonical order,
+// (bucket, plugin, rule, subject identity, instance, host), and
+// journals what each invocation read and touched.
+func (d *Dispatcher) MatchesOver(ph Phase, bucket int, sel *Selection, j Journal) iter.Seq[MatchWork]
 type PlanExec interface {
-    Generate(dirty []ArtifactID, d *Dispatcher, g Graph, f Facts) error
+    Generate(dirty []GroupID, d *Dispatcher, g Graph, f Facts) error
     LayoutAndRender(ctx context.Context) ([]StagedFile, error)
     Stage([]StagedFile) error   // temp files, not yet visible
     Export() (ExportDoc, error)
@@ -161,18 +163,21 @@ type PlanExec interface {
 }
 ```
 
-**The sealed state** is the persisted trio: the sealed graph, the
-fact store and the artifact table, written one generation at a time,
-with N+1 beside N and a swap on success. Facts persist because they
-have to. Bags that died with the run would force full re-annotation
-on every warm run, which is O(subjects) against the performance
-target. Symbol IDs are local to a generation, and canonical
-identities are the stored form.
+**The sealed state** is the persisted record: the graph's regions,
+the fact store, the read records, the artifact and group tables and
+the plans' name entries, written one generation at a time as
+immutable segments, with a swap of `CURRENT` on success
+([09-incrementality.md](09-incrementality.md)). Facts persist because
+they have to. Bags discarded with the run would force full
+re-annotation on every warm run, which is O(subjects) against the
+performance target. Symbol IDs are local to a run. Canonical
+identities are the stored form, spelled in each region's string table
+and hashed in every edge.
 
 **The commit protocol is two-phase, and its behaviour under a crash
 is stated.** Every plan stages. A plan's `Commit`, meaning its
 renames plus its manifest slice, runs only when that plan succeeds.
-`Ledger.CommitRun` runs last, after every sink. So the engine's
+The state's `Commit` runs last, after every sink. So the engine's
 memory never records an output that disk does not hold, and a crash
 between the two fails conservatively: derive again, write identical
 bytes, report `Unchanged`.
@@ -181,21 +186,24 @@ bytes, report `Unchanged`.
 
 ```
 Workspace.Run (the only conductor; cli `run` calls it, main calls cli)
-├─ ledger.BeginRun     stat-first sweep → RunPlan
-├─ Load                kit units, parallel; carried regions opened
-├─ Link                dirty frontier from the spelling diff
+├─ state.Open          header check, stat-first sweep → RunPlan
+├─ Load                kit units, parallel, the memo first, and kept
+│                      regions decode on first read
+├─ Link                changed units, and the references whose
+│                      candidates moved, from the recorded tiers
 ├─ Freeze              directive index built here, free
-├─ Annotate            dispatcher over frontier-intersecting gates;
+├─ Annotate            dispatcher over the matches the dirty set meets,
 │                      early cutoff against persisted fact values
 ├─ per plan (topo on exports, else parallel):
-│    Generate          dirty artifacts only, whole contributor sets
+│    Generate          dirty groups only, every contributing invocation,
+│                      settled against the clean groups' name entries
 │    Layout → Render (kit, per-file ∥)
 ├─ per plan, after every render:
 │    Stage → Prepare   staged files and stale removals, then what
 │                      each destination path contains
 ├─ Close               manifest merge, collisions, sweep, audit,
 │                      checks (over records)
-├─ plan Commits        dependency order, then ledger.CommitRun
+├─ plan Commits        dependency order, then state.Commit
 └─ report
 ```
 
@@ -265,6 +273,7 @@ func New() *Builder
 func (b *Builder) Brand(brand output.Brand) *Builder // required: carriers, config, state, trailers
 func (b *Builder) Output(open func() (output.Sink, error)) *Builder // a fresh sink per plan a run commits
 func (b *Builder) Ledger(open func() (ledger.Ledger, error)) *Builder // the previous record, and this run's
+func (b *Builder) Memo(m Memo) *Builder // the parse memo's cap and its ledger, none by default
 func (b *Builder) Workspace(id string) *Builder // the manifest's name; the root's base name when empty
 func (b *Builder) Parallel(workers int) *Builder // matches a phase call runs at once; 0 and 1 run sequentially
 func (b *Builder) Frontends(fs ...plugin.Frontend) *Builder
@@ -416,10 +425,12 @@ package in its plan's scope.
 
 A dependent reads spellings from the export rather than recomputing
 naming conventions, which is the entire point: the producing plan's
-settle is the only authority on what it named things. Exports hash
-into their dependents' fingerprints, so an export that did not
+settle is the only authority on what it named things. A dependent
+invocation records each export it read, so an export that did not
 change causes nobody to run again, and one that did re-runs exactly
-its dependents.
+the invocations that read it. A dependent that implements its role
+directly reads every export its context hands over, so any changed
+export runs it again.
 
 A dependent never commits a file that refers to a declaration its
 producer did not commit. Where a producer fails, its dependents
@@ -441,7 +452,8 @@ Close runs after every plan has staged, in four steps, on one
 goroutine.
 
 It merges the **workspace manifest**, recording plan to files, and
-the ledger records it after the plans commit. The record is what
+the state's commit writes the documents whose entries changed after
+the plans commit. The record is what
 stops a deleted plan leaving its generated files behind: a workspace
 that no longer declares a plan deletes that plan's files.
 
@@ -465,8 +477,12 @@ Last, it runs the **cross-plan checks**, one after another in
 registration order. Each `WorkspaceCheck` names the plans it reads
 and reads their *records*, meaning their manifest entries and their
 exports, with the graph and the facts, and never raw emit, which on a
-warm run does not exist for a clean plan. So the checks run
-identically cold and warm, including over carried records. A check
+warm run does not exist for a clean plan. So a check that runs reads
+identical records cold and warm, the records of kept files included.
+A warm run calls a check again only when a plan it reads rendered,
+added or removed a file, when such a plan's export changed, or when
+the check's read record meets the dirty set. Otherwise the run
+reports the check's recorded findings. A check
 that reads a failed plan does not run, and the run reports one
 `FailedDependency` Info for it at the plan's first Error, because the
 missing output is already that plan's Error and does not need
@@ -533,7 +549,8 @@ workspace with two plans, and the architecture offers nothing weaker.
 The typed groups the YAML maps onto one-to-one, with a published
 JSON Schema for editor completion, where the fluent builder is the
 Go-native equal: `Identity` for brand and workspace ID, `Scope`,
-`Cache` for enabled, directory override and memo size cap
+`Cache` for the parse memo's size cap, where zero keeps no memo, and
+the directory of its entries
 ([09-incrementality.md](09-incrementality.md)), and `Plans
 []PlanConfig{Name, Sources, Target, Generators, Layout, DependsOn}`.
 

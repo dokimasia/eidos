@@ -50,8 +50,11 @@ arrival order:
 3. Within a bucket, **plugin name**, alphabetically, which is the
    same tie-break slots use.
 4. Within a plugin, the **first claim wins**, in canonical match
-   order: subject identity, then directive-instance source order,
-   then insertion.
+   order: the rule that made it, then the subject identity of its
+   invocation, then the gating directive instance in source order.
+   Every run computes that order the same way, so a claim a warm run
+   kept ranks against a new one. One invocation that claims a key
+   twice states one value both times.
 
 A later claim carrying a different value does nothing, by design.
 That is precedence rather than conflict, and the shape catalog's

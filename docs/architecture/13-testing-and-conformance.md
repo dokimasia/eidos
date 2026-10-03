@@ -22,7 +22,7 @@ Eight checks, each proving something the others cannot:
 | frontendtest | a real frontend with the plugin chain behind it |
 | acceptancetest | the consumer's binary end to end. The only check that compiles generated output |
 | completeness | every corpus feature sits on the degradation level its language declared ([11-languages.md](11-languages.md)) |
-| warm≡cold | the same workspace, run cold and warm, produces byte-identical manifests ([09-incrementality.md](09-incrementality.md)) |
+| warm≡cold | the same workspace, run cold and warm, produces byte-identical files and manifests and the same findings ([09-incrementality.md](09-incrementality.md)) |
 
 Two disciplines apply throughout. Run with `-count=2` at minimum, so
 a defect that depends on map order cannot hide behind a single pass.
@@ -47,6 +47,9 @@ it checks these properties:
   values and the findings of a run on one worker. Under the race
   detector, the run on eight workers also exposes state a handler
   writes outside its effects.
+- Selective dispatch. A selection that lists every match the full
+  call ran reproduces the full call's emit, facts and findings, and
+  the journal lists every match once.
 - Annotator idempotence.
 - No structural write. The node count is unchanged.
 - Positioned diagnostics. Every diagnostic has a position.
@@ -87,8 +90,8 @@ second directory that writes the same bytes and records the same files.
 A real frontend with the chain behind it: deterministic graphs, a
 populated store, positioned diagnostics, classification stamps
 present, owned outputs excluded, and fingerprint-keyed caching,
-where a probe cache observes that the keys fold in the unit
-fingerprint and the frontend version.
+where a probe cache observes that the keys fold in the digests of the
+unit's inputs and the frontend version.
 
 **acceptancetest** drives the consumer's binary as a process: exit
 codes per [16-diagnostics.md](16-diagnostics.md), config discovery,
@@ -116,9 +119,10 @@ they exercise had to be built so it could be tested.
 **workspacetest** composes a real multi-plan workspace over fixture
 sources and checks the frame's promises one at a time, each check
 over a directory of its own. The fixture supplies a working
-composition without its plans, and the plans. The suite composes
-every failure it checks: a copy of a plan, a seeded failure, a probe
-plan, a contract key, a cycle and two checks.
+composition without its plans, the plans and one edit. The suite
+composes every failure it checks: a copy of a plan, a seeded failure,
+a probe plan, a contract key, a cycle, two checks and a recording
+check.
 
 1. **generated**: the plans generate the wanted files, byte for
    byte, each recorded under the plan whose commit wrote it.
@@ -142,46 +146,66 @@ plan, a contract key, a cycle and two checks.
    run and reports one FailedDependency Info. One that reads a clean
    plan reads the plan's files as its commit records them, and its
    export.
+9. **export cutoff**: the fixture's edit changes the first plan's
+   output and none of its export rows. The warm run after it runs the
+   first plan again and no invocation of a plan that depends on it.
+10. **warm checks**: a recording check that reads the first plan
+    reads the same records on the warm run after the edit as on a
+    cold run over the edited tree.
 
-warm≡cold adds the frame's warm promises: an unchanged export causes
-no dependent to run again, and a `WorkspaceCheck` sees identical
-records cold and warm, including carried plans. The sweep of a
-narrowed run, which deletes nothing outside its scope, has no check
-in workspacetest, because the suite runs over the whole tree.
+The sweep of a narrowed run, which deletes nothing outside its scope,
+has no check in workspacetest, because the suite runs over the whole
+tree.
 
-**warm≡cold** is three runs and two comparisons:
+**warm≡cold** runs the same fixture through five checks, each in a
+parallel subtest over directories of its own:
 
-1. Run cold over the fixture, then snapshot the manifest and every
-   byte.
-2. Run warm with nothing changed. Assert that nothing re-executed,
-   meaning the run stats report no rule ran, and that the manifest
-   is byte-identical.
-3. Change one declaration and run warm. Separately, run cold over
-   the changed tree in a fresh state directory. The two runs'
-   manifests and bytes must be identical. The warm path may skip
-   work; it may never change output.
+1. **unchanged**: a cold run, then a warm run with nothing changed.
+   The warm run hashes no file, parses no unit, runs no invocation,
+   calls no check and writes no blob, and the manifest and every
+   file are unchanged.
+2. **touched**: a cold run, then one source file's modification time
+   set to the present with its bytes unchanged. The warm run hashes
+   that file once and parses nothing.
+3. **edited**: a cold run, the edit and a warm run in one directory,
+   and the edit and a cold run in a fresh copy. The two directories
+   contain the same files and manifest documents, a probe plan that
+   depends on every plan reads the same exports, and the two runs
+   report the same findings. The warm path may skip work. It may
+   never change output.
+4. **damaged**: a cold run, then the live generation's run segment
+   truncated. The next run reports one `ColdState` Info and leaves
+   the files a cold run leaves.
+5. **restored**: a composition with a parse memo runs cold, runs
+   after the edit, and runs again after reverting it. The last run
+   parses no unit and restores every unit the edit changed from the
+   memo.
 
 Both harnesses are kernel code, and the fixtures and compositions
 are the caller's:
 
 ```go
 func RunWorkspaceSuite(t *testing.T, f workspacetest.Fixture)
-func RunWarmColdSuite(t *testing.T, f WorkspaceFixture)
+func RunWarmColdSuite(t *testing.T, f workspacetest.Fixture)
 
-type Fixture struct {                            // workspacetest's
+type Fixture struct {
     Tree    fs.FS                                // the fixture tree
     Stores  map[string]fs.FS                     // the trees dependency units read
     Compose func(root string) *workspace.Builder // the composition without its plans
     Plans   func() []workspace.Plan              // two or more, fresh instances per call
     Want    map[string][]byte                    // every generated file, frame included
-}
-
-type WorkspaceFixture struct {                   // warm≡cold's
-    Sources fs.FS                       // the fixture tree
-    Compose func() *workspace.Workspace // plans, plugins, config
-    Mutate  func(Tree)                  // warm≡cold's one edit
+    Edit    func(root string) error              // changes one declaration the first plan
+                                                 // generates from: its output changes,
+                                                 // its export does not
 }
 ```
+
+The kernel's own tests cover what the suites cannot vary through a
+fixture: early cutoff, the (symbol, key) grain across two plans, the
+scoped membership edge, the package edge, lazy region decoding, the
+size of an incremental commit, pending work after a failed plan, the
+two re-link cases that parse a unit again, and the memo's eviction
+and sharing.
 
 ## The toolchain-adapter skeleton
 

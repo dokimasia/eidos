@@ -203,32 +203,44 @@ How anything crosses a file or package boundary:
 
 Every phase context and every Match carries one: the tracked,
 scope-filtered read handle, and the only path a read takes. The
-ledger's `Track` provides it
+frozen graph's `Reader` method provides it, recording into the read
+set of the one execution that reads
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)). The
 surface, pinned:
 
 ```go
 type Reader interface {
-    ByKind(k symbol.Kind) iter.Seq[Symbol]     // enumeration
-    Lookup(id symbol.Identity) (Symbol, bool)  // the join, post-Link
-    PackageOf(id symbol.Identity) (*Package, bool)
+    ByKind(k symbol.Kind) iter.Seq[Symbol]          // enumeration by kind
+    ByDirective(n directive.Name) iter.Seq[Symbol]  // enumeration by spelling
+    Lookup(id symbol.Identity) (Symbol, bool)       // the join, post-Link
+    PackageOf(id symbol.Identity) (*Package, bool)  // a package, taken whole
     // Projections enter through Rules(), facts through Fact()
     // (06b-authoring.md). Every path records per the rule below.
 }
 ```
 
-**What a read records**, which is the grain invalidation runs on:
+**What a read records**, which is the grain invalidation runs on, is
+one of four edges:
 
-- A **targeted** read records a per-identity edge. That covers
-  `Lookup`, walking a symbol's members, and reading a fact through
-  `Fact`, where facts record at the (symbol, key) grain
+- A **declaration** edge for a targeted read: `Lookup`, and the
+  subject of every invocation, which the match hands over without a
+  read. The edge covers the declaration's whole subtree, so walking
+  its members needs no further read, and a change anywhere in the
+  subtree dirties it.
+- A **fact** edge for a fact read through `Fact`, `FactOf` or a
+  projection, at the (symbol, key) grain
   ([09-incrementality.md](09-incrementality.md)).
-- An **enumeration** records a set-membership edge. That covers
-  `ByKind` and a package's declaration list. The reader runs again
-  when a symbol of that kind or package is added or removed, and
-  never when one merely changes. Sensitivity to changes comes from
-  the per-identity edges the enumerator recorded for the symbols it
-  actually touched while iterating.
+- A **membership** edge for an enumeration: `ByKind` by kind, and
+  `ByDirective` by spelling. The reader runs again when a declaration
+  of that kind, or a subject of that spelling, appears or disappears
+  inside its scope, and never when one merely changes. A generator's
+  scope is its plan's sources, and an annotator's is the whole graph.
+  Sensitivity to changes comes from the declaration edge the
+  enumeration records for each declaration it yields.
+- A **package** edge for a package taken whole: `PackageOf`, and
+  `Lookup` of a package's own identity. The caller can walk every
+  member of the package without another tracked read, so a change to
+  any member dirties the edge.
 
 The economics match the gate-free handler rule, extended to reads. A
 targeted read is a cheap precise edge, and an enumeration honestly

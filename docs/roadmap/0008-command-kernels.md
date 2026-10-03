@@ -44,8 +44,9 @@ code to get them.
       and nothing else: the run summary counts suppressions per code,
       and a kernel Error is not suppressible.
 - [ ] `watch` re-runs when the fingerprint gate's poll reports a
-      change; `version` prints the kernel version, the contract
-      version, every plugin, and the plugin-set fingerprint.
+      change, and `version` prints the kernel version, the contract
+      version, every plugin, the composition fingerprint and the
+      executable's digest.
 - [ ] Every command's `--format=json` emits line-delimited events plus
       a summary under a versioned schema, and a second concurrent
       `run` fails naming the lock holder.
@@ -83,6 +84,7 @@ and the machine-output schemas of
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-02 | The `version` bullet names the composition fingerprint and the executable's digest in place of the plugin-set fingerprint | The sealed state's header checks those two digests, and a unit's key no longer folds a fingerprint of the composition |
 | 2026-10-02 | Added the bullet for a `workspaces:` list | Milestone 0006 proves that two compositions over sibling roots are independent, and leaves the list to the config reader, because the kernel defines no file format. The reader is the one place that can refuse two roots that nest for every list |
 | 2026-09-30 | The suppression criterion's carrier changed from `+gen:diag` to `+<brand>:diag` | The carrier mark follows the composition's brand |
 | 2026-08-30 | Pinned diagnostic suppression and its audit counts into Done when | A coverage audit against the architecture found them held by Scope reference only |

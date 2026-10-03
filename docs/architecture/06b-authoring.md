@@ -143,6 +143,14 @@ The split keeps both promises at once. The engine indexes gates as
 data without ever executing plugin code to discover them, and the
 plugin that wants to parse everything stays a two-method affair.
 
+A warm run hands a phase call a selection and a journal through its
+context. The authoring surface runs the selected matches that its
+gates still admit, evaluates every rule over the selection's candidate
+subjects, and reports what each invocation read, placed, appended,
+claimed and found to the journal in canonical match order
+([09-incrementality.md](09-incrementality.md)). A hand-rolled plugin
+ignores both, and the run records its call as one invocation.
+
 ## The Match
 
 **The Match positions you without confining you.** Every match
@@ -196,8 +204,10 @@ match order once the phase call's rules have run, on any number of
 workers. So a handler sees the plan's store and the slots as they were
 when its phase call began, and it does not see its own appends. A
 stamp arrives in the fact store at once, because arbitration ranks
-claims by their canonical sequence and not by their arrival
-([04-metadata.md](04-metadata.md)).
+claims by their canonical order and not by their arrival
+([04-metadata.md](04-metadata.md)). The canonical order is the rule,
+the subject and the gating instance. Every run computes it the same
+way, so a claim a warm run keeps ranks against a new one.
 
 **An accumulator file orders its contributions** by subject identity,
 then by directive-instance source order, then by canonical match order

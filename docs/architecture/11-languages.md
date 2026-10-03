@@ -213,10 +213,10 @@ any other fact.
 **There is no ambient filesystem.** `u.Read` is the only way bytes
 enter a frontend. It is jailed to the unit's files, to declared
 shared inputs such as `go.mod`, which fold into every dependent
-fingerprint, and to declared dependency artifacts. Every read feeds
-the unit fingerprint automatically, which turns hermeticity and
-cache correctness from rules into mechanisms: a frontend cannot read
-what the cache does not know about.
+unit's key, and to declared dependency artifacts. The unit's key
+folds the digest of every file the door admits, which turns
+hermeticity and cache correctness from rules into mechanisms: a
+frontend cannot read what the key does not cover.
 
 **The unit belongs to the language.** For Go it is the package
 directory, so package docs spanning several files form one unit. For

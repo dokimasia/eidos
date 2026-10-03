@@ -42,11 +42,13 @@ drift from the other, because they are the same edges.
 
 **1. The fingerprint gate, above the loader.** A stat-first pass
 decides whether to load anything at all. Size and mtime stand in for
-an unchanged file, and a content hash runs only on suspicion,
-meaning a file whose stat moved. That is orders of magnitude cheaper
-than the load it skips, and the target is on the order of 100ms for
-100,000 files, warm. Hashing everything every run would miss the
-target on its own.
+an unchanged file, together with the change time and the inode where
+the platform's file information reports them, and a content hash
+runs only on suspicion, meaning a file whose stat moved. That is
+orders of magnitude cheaper than the load it skips, and the target is
+on the order of 100ms for 100,000 files, warm. Hashing everything
+every run would miss the target on its own. The walk skips the
+brand's state directory.
 
 Size and mtime miss one case. A file written twice within one
 timestamp tick keeps both, so a second write after the run read the
@@ -68,24 +70,48 @@ The anchor precedes the sweep because a run commits seconds after it
 reads. An anchor at the commit would trust a file rewritten within
 its own tick after the read.
 
-Unit fingerprints fold in the plugin-set fingerprint, so an upgraded
-plugin invalidates the graphs it now has to reinterpret, because the
-cached graph carries the metadata that downstream plugins read.
+A unit's key folds the digest of each member and each shared input
+in roster order, the reads of the partition or dependency round that
+returned the unit, the depth, the frontend's name, language, version
+and options, the brand and the node model's fingerprint. The load
+computes the key from the gate's digests before the parse, so the
+parse memo can restore a region without parsing. The key does not
+fold the composition, because a region depends on its frontend and
+its inputs alone.
 
-The fingerprint is complete for a structural reason rather than a
-disciplinary one. The frontend kit's `u.Read` is the only door bytes
-enter through ([11-languages.md](11-languages.md)), and every read
-through it feeds the unit fingerprint. A frontend cannot read what
-the cache does not know about, so a stale graph that looks current
-is not expressible.
+The generation's header checks the composition and the code once per
+run. It records two digests:
+
+- The composition fingerprint folds everything the composition reads
+  from outside the executable: its plugins with their versions and
+  options, its plans with their sources, dependencies and layouts, the
+  brand, the workspace name, the ignored directive spellings and the
+  template trees read from disk.
+- The executable digest is the SHA-256 of the running executable. The
+  run hashes the executable only where its path, size or modification
+  time differs from the header's record.
+
+A difference in either sends the run cold. The executable digest makes
+an upgraded plugin safe without trusting its declared version: code
+that changed is a different executable, and a rebuild of unchanged
+source produces the same bytes.
+
+The key is complete by construction. The frontend kit's `u.Read` is
+the only door bytes enter through
+([11-languages.md](11-languages.md)), and the door refuses every path
+whose digest the key does not fold. A frontend cannot read what the
+key does not cover, so a stale graph that looks current is not
+expressible.
 
 The gate also enforces the rule that outputs are never inputs
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)). Paths the
 workspace owns, proven by a manifest entry or a provenance trailer,
-are excluded here, at the cost of a stat, before anything parses.
-Declared output families make a cheap pre-filter, but the ownership
-proof is what decides, because `out=` redirects and the orphaned
-outputs of a removed plugin match no current declaration.
+are excluded here before anything parses. The gate records each
+file's verdict, so it reads a file's tail for the trailer only where
+the file is new or its content changed. Declared output families make
+a cheap pre-filter, but the ownership proof is what decides, because
+`out=` redirects and the orphaned outputs of a removed plugin match
+no current declaration.
 
 **2. Scoped and signature-only loading.** Patterns define the scope.
 In-scope symbols load fully, and dependency symbols load as
@@ -106,29 +132,52 @@ sequence them.
 ## The artifact granule
 
 Emit is never persisted. Files are. So the re-execution granule is
-the **artifact**, meaning one generated file. The ledger's artifact
-table, part of the sealed state, holds per artifact:
+the **artifact**, meaning one generated file. Artifacts that must
+execute together form a **group**:
 
-```
-ArtifactRow{ plan, relpath,
-  inputs:  hash( contributing (rule, subject, directive-instance)…,
-                 each subject's read-set closure values,
-                 plugin version, template tree hash, options hash,
-                 policy + target lowering version, dependency
-                 exports' hashes ),
-  contributors: []subjectID,   output: contentHash }
-```
+- the files a backend splits one unit into
+- the files two units share
+- the files that contain an emit value an emit-phase invocation
+  matched, and the files that invocation places into
 
-On a warm run, per plan: the dirty symbol frontier, meaning Link's
-diff plus the fact re-stamps that survived early cutoff, intersects
-the contributor sets and read-set closures, which gives the dirty
-artifact set.
+The sealed state's `artifacts` table records per artifact:
 
-A dirty artifact re-runs its contributing rules **over its whole
-contributor set**, because an accumulator file is one output and
-rebuilds whole. A clean artifact executes nothing: no dispatch, no
-render, no write. Its manifest row carries forward and its bytes
-stay on disk, though drift is still checked.
+- the manifest entry: path, plan, digest, plugins and sources
+- its group, whose row lists the group's units and the invocations
+  that contributed to them
+- the position and the description of its first declaration, which a
+  finding about the file is reported at
+- the export rows of its declarations
+- the name entries it declares and the name entries its references
+  read, across files of the plan
+- the facts the settle read for it, each origin's name override
+- the digest of its placement: its directory's residents and the
+  modules containing it
+- the findings the settle, the layout and the render reported for it
+
+On a warm run, per plan, a group is dirty in each of these cases:
+
+- A contributing invocation's read record meets the dirty set, or the
+  invocation read an export that changed.
+- A contributing match disappeared.
+- A dirty invocation or a new match placed a declaration into one of
+  the group's units.
+- One of its files changed on disk since the commit that wrote it.
+- A fact the settle read for it changed, or the placement of one of
+  its files changed.
+- A name entry one of its files read changed, or an entry entered or
+  left a collision scope that one of its names settles in.
+- The plan did not commit in the last run, and the group was dirty
+  then.
+
+A dirty group re-runs every invocation that contributed to it,
+because an accumulated file is one output and rebuilds whole. A clean
+group executes nothing: no dispatch, no render, no write. Its
+manifest rows, export rows, name entries and findings remain, and its
+bytes remain on disk, though drift is still checked. A change to
+names across files, a new collision or a respelled referent, makes
+the groups that read the changed names dirty, and the plan generates
+again until no group joins.
 
 The warm cost of an edit follows the output cardinality of each
 family it dirties ([18-routing-and-layout.md](18-routing-and-layout.md)):
@@ -153,9 +202,9 @@ subject identity, and gate-free handlers make contributor sets
 computable from tables rather than by running code.
 
 An artifact whose identity changes, because layout inputs moved its
-path, is not carried. The old row's producer is gone, so it is
-swept, and the new path is a new artifact. The sweep and the table
-agree by construction, because both read the same records.
+path, is not kept. The old row's producer is gone, so it is swept,
+and the new path is a new artifact. The sweep and the table agree by
+construction, because both read the same records.
 
 ## Red-green with early cutoff
 
@@ -174,12 +223,21 @@ gate a change can affect, which is why a gate hidden inside a
 handler is banned: the engine cannot route around selectivity it
 cannot see.
 
-**Structural reads have two grains**, and
-[02-symbol-model.md](02-symbol-model.md) pins the rule per query. A
-targeted read records a per-identity edge. An enumeration records a
-set-membership edge, so adding or removing a symbol runs the
-enumerators again, while changing one runs only its targeted
-readers.
+**Structural reads have three grains**, and
+[02-symbol-model.md](02-symbol-model.md) pins the rule per query.
+
+- A targeted read, `Lookup`, records a declaration edge, which a
+  change anywhere in the declaration's subtree dirties. Every
+  invocation's subject is such an edge too, because the match hands
+  the subject over without a read.
+- An enumeration by kind or by directive records a membership edge
+  under the reader's scope, so adding or removing a symbol in scope
+  runs the enumerators again, while changing one runs only its
+  targeted readers.
+- A package taken whole, through `PackageOf` or a package's own
+  `Lookup`, records a package edge, which any member's change
+  dirties, because the reader walks the members without another
+  tracked read.
 
 **Metadata reads have (symbol, key) granularity.** The reason,
 measured against the language landscape: bags are fat, since
@@ -201,39 +259,49 @@ The rules above applied in order, which is the warm body of
 ([08-workspace-and-plans.md](08-workspace-and-plans.md)), written
 out so that O(dirty) names an algorithm rather than a hope.
 
-1. **BeginRun.** Read `CURRENT` and validate the state header,
-   meaning the format version, the contract version and the
-   plugin-set fingerprint. Any mismatch discards the generation and
-   the run goes cold. Then run the stat-first sweep over the scope:
+1. **Open.** Read `CURRENT` and validate the generation's header,
+   meaning the format version, the composition fingerprint and the
+   executable digest. Any mismatch discards the generation and the
+   run goes cold. Then run the stat-first sweep over the scope:
    changed, added and removed files become the dirty unit set, and
    owned outputs are excluded at the gate.
 2. **Load.** Reparse the dirty units at their recorded `Depth`,
    consulting the parse memo first. A memo hit restores the region
-   without parsing. Carried regions stay sealed until a read touches
+   without parsing. Clean regions remain sealed until a read touches
    them.
 3. **Diff by identity.** Unchanged declarations keep their canonical
    identities ([02-symbol-model.md](02-symbol-model.md)), and the
-   changed remainder seeds the dirty symbol frontier S.
-4. **Link the frontier.** A resolution that changed, meaning a
-   spelling that now arrives on a different identity, extends S.
-5. **Annotate.** Run exactly the rules whose gate tuple, one of
-   (kind), (kind, directive) or (kind, factKey), intersects S. Every
-   re-stamp compares against the persisted fact value. Equal stops
-   there, which is early cutoff. Changed joins S as (symbol, key)
-   dirt.
-6. **Generate, per plan**, in export topological order, otherwise in
-   parallel. The dirty artifacts are the rows whose contributor set
-   or read-set closure intersects S, plus the rows whose non-graph
-   inputs moved, meaning plugin version, options, template tree,
-   policy or dependency exports. Each dirty artifact re-runs its
-   contributing rules over its whole contributor set, and a clean
-   artifact executes nothing and carries its manifest row.
-7. **Layout, Render, Stage**, for the re-run artifacts only.
-8. **Close and commit.** Close reads records and is identical to the
-   cold path by construction. The plan commits run, then the state
-   writer's `Commit`, which is the ledger's `CommitRun` and is
-   strictly last
-   ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
+   changed remainder seeds the dirty set S.
+4. **Link again.** A reference whose candidate appeared or
+   disappeared, or whose followed re-export changed, selects its
+   target again from the candidate tiers its region recorded. A
+   re-export the link never followed, or an import of a new file,
+   parses one unit of the package again. A resolution that changed
+   extends S.
+5. **Validate.** The subjects of changed declarations, and the
+   subjects whose validation read a member of S, validate again. A
+   changed validation extends S with its subject.
+6. **Stamps and drops.** The claims of changed units and changed
+   validations are withdrawn and applied again. Each fact whose
+   winner changed joins S.
+7. **Annotate**, bucket by bucket. Run exactly the matches whose read
+   record meets S and the matches that appeared, and withdraw the
+   claims of matches that disappeared. Every re-stamp compares
+   against the persisted fact value. Equal stops there, which is
+   early cutoff. Changed joins S as (symbol, key) dirt before the
+   next bucket reads.
+8. **Generate, per plan**, in export topological order, otherwise in
+   parallel. The plan's dirty groups re-run their contributing
+   invocations through a selection, settle against the clean groups'
+   name entries, and route, render and stage their files. A plan's
+   export changes only where a dirty file's export rows changed, and
+   an unchanged export re-runs no dependent.
+9. **Close.** Collisions, the audit and the checks read records, and
+   each re-runs only for what changed. Every kept record reports the
+   findings its execution reported, so the run's findings equal a
+   cold run's.
+10. **Commit.** The plan commits run, then the state commit, strictly
+    last ([08-workspace-and-plans.md](08-workspace-and-plans.md)).
 
 ## The interning rule
 
@@ -246,6 +314,12 @@ manifests, exports, explain and JSON.
 Read-set records are packed pairs of interned IDs, deduplicated per
 derived artifact, so comparing edges compares integers.
 
+The sealed state stores no run-local ID. Each region keeps a string
+table of its own, and every edge on disk is the first eight bytes of
+the SHA-256 of its spelling, so a region decodes without the
+generation that wrote it. Two spellings that share a hash make a run
+execute more than an edit requires, and never less.
+
 At L scale, memory comes down to the bags. A symbol's `meta.Bag` is
 backed by a small slice over interned key IDs, and upgrades to a map
 only past a threshold, because a two-fact bag must not carry a map's
@@ -254,66 +328,65 @@ overhead a few million times over.
 ## The sealed state, designed
 
 The persisted state has to be loadable lazily and committable
-incrementally, and this is the design that delivers both. The stored
-set is
-[08](08-workspace-and-plans.md)'s trio, meaning the sealed graph,
-the fact store and the artifact table, plus the header that gates
-all three.
+incrementally, and this is the design that delivers both.
 
-**On disk**, one generation is one directory in the brand's state
-directory ([20-cli.md](20-cli.md)):
+**On disk**, the state is in the brand's state directory
+([20-cli.md](20-cli.md)):
 
 ```
 .<brand>/state/
-  CURRENT              names the live generation ("gen-41");
-                       rewritten atomically at commit
-  segments/            immutable, content-addressed payload files,
-                       each grouping many regions and bags; shared
-                       between generations, released when no live
-                       generation references one
-  gen-41/
-    header             format + contract versions, plugin-set
-                       fingerprint, section checksums, the sweep
-                       anchor, intern-table size and live count
-    graph              intern table · region index; clean regions
-                       by segment reference, dirty ones written
-                       fresh
-    facts              the claim record, packed interned pairs;
-                       clean bags by segment reference
-    artifacts          the ArtifactRow table
+  CURRENT              names the live generation, replaced atomically
+                       at commit
+  gen/<sha256>         one generation: the header, the digest of each
+                       manifest document, and each table's runs
+  seg/<xx>/<sha256>    immutable, content-addressed segments of runs
+                       and regions, shared between generations and
+                       released when no live generation references one
 ```
 
-Commit writes the dirty state into `gen-42/` and its fresh segments,
-carries the rest forward by reference, fsyncs what it wrote,
-atomically rewrites `CURRENT`, then releases whatever no live
-generation references, on a best-effort basis. A reference is never
-mutated, so a crash at any point leaves `CURRENT` naming a complete
-generation, old or new but never partial, which is the conservative
-half of the two-phase commit
-([08-workspace-and-plans.md](08-workspace-and-plans.md)).
+**Tables are sorted runs.** Every table, from the file records to the
+fact store, the invocation records, the reverse index of edges and
+the artifact rows, maps a key to a row. A run stores rows sorted by
+key in blocks of 4 KiB, each with its CRC-32C, and a sparse index of
+each block's first key. A lookup reads one block. A commit adds one
+run to each table it changed, and merges a table's runs once there
+are more than eight or its newer runs contain more bytes than its
+oldest, so a merge rewrites a written row at most once on average.
 
 **Incremental commit is the write side's contract, mirroring lazy
 regions on the read side.** Opening costs what the run touches, and
-committing costs what the run changed: encoding and I/O proportional
-to the dirty regions, bags and rows, plus the header, the index and
-the intern-table delta, never to the corpus. A full-generation
-rewrite would scale the commit with the corpus and fail the
-warm-one-edit scaling gate ([19-benchmarking.md](19-benchmarking.md))
-on the last step alone. Grouped segments with periodic compaction,
-delta-over-base sections and filesystem block sharing are permitted
-mechanisms behind the contract, the way memory-mapping is behind the
-read side's. A run that changed nothing writes no generation at all:
-`CommitRun` validates, enforces the memo cap, and returns with
-`CURRENT` in place.
+committing costs what the run changed: one segment for the regions of
+the units it parsed or restored and one for the runs of the tables it
+changed, plus the generation, never the corpus. A full-generation
+rewrite would scale
+the commit with the corpus and fail the warm-one-edit scaling gate
+([19-benchmarking.md](19-benchmarking.md)) on the last step alone. A
+run that changed nothing writes nothing at all.
 
-**The graph section** holds an intern table, a region index and the
-region references. A region is one frontend unit, so the parse
-granule, the graph-write lock granule and the invalidation granule
-are one grain, with no translation layer between them.
+The commit writes its segments and the generation, then the manifest
+documents whose bytes changed
+([17-output-and-determinism.md](17-output-and-determinism.md)), then
+replaces `CURRENT`, then releases whatever no live generation
+references, on a best-effort basis, and last writes the memo's new
+entries. Everything before `CURRENT` is synced. A crash at any point
+leaves `CURRENT` naming a complete generation, old or new but never
+partial, which is the conservative
+half of the two-phase commit
+([08-workspace-and-plans.md](08-workspace-and-plans.md)). A crash
+before `CURRENT` leaves outputs newer than the live generation's
+records, so the next run finds their groups dirty and writes the same
+bytes.
 
-The index maps unit identity to a segment, an offset, a length, a
-fingerprint and a checksum, so opening a generation costs the
-header, the index and the intern table. Regions decode on first touch: dirty regions
+**Regions.** A region is one frontend unit, so the parse granule, the
+graph-write lock granule and the invalidation granule are one grain,
+with no translation layer between them. A region contains the unit's
+declarations after assignment and link, the raw directives and stamps
+attached to them, the link record and the findings of its parse and
+link. The link record lists each reference's candidate tiers and the
+re-exports the link followed, so a warm run links again from the
+record. The `units` table maps each unit to its segment, offset and
+summary, so opening a generation costs the header and the tables a
+run reads. Regions decode on first touch: dirty regions
 eagerly at Load, and clean regions only when a tracked read arrives in
 one.
 
@@ -324,31 +397,14 @@ not buy a performance property with platform-specific machinery when
 it can state the observable contract without it.
 
 **Encoding** is length-prefixed and uses only the standard library,
-per the kernel's zero-dependency rule. Canonical identities, key
-names and paths live once in the intern table, and regions and
-tables reference dense IDs. The table is append-only across
-generations, so a segment written under one generation reads
-unchanged under a later one and an ID never rebinds; run-local IDs
-translate at the boundary, and the canonical identity is the join,
-as it is everywhere ([02-symbol-model.md](02-symbol-model.md)).
-
-**Compaction.** The intern table only grows, so renames and branch
-switches leave entries that no live region, bag or row references,
-and every generation open reads them. The header records the table's
-size and the number of entries the generation references. When
-unreferenced entries pass half the table, the commit reports one
-Info, and the next run treats the generation as unusable and goes
-cold, the path a version mismatch takes. A cold run interns from an
-empty table, so the generation it writes contains live entries alone
-and does not share a segment with its predecessor. Compaction costs
-one cold run, and it follows warm runs that appended at least as
-many dead entries as the table has live ones, so its cost amortizes
-over those appends.
+per the kernel's zero-dependency rule. The node model's binary codec
+is generated from the schema, as its JSON codec is, and the
+generation header's format version covers it.
 
 **The fact store** persists the claim record, not winning values
 alone: per (symbol, key), the winning claim with its envelope, value
-and derived reads, every drop tombstone, and the losing claims,
-packed over interned IDs. The envelopes are load-bearing for
+and derived reads, every drop tombstone, and the losing claims, in
+rank order and keyed by edge hash. The envelopes are load-bearing for
 warm≡cold, because a warm re-stamp arbitrates against the claims
 already held: a store keeping only winning values would let a plugin
 re-stamp beat the directive drop it lost to on the cold run. Losers
@@ -361,28 +417,34 @@ bags that die with the run force full re-annotation on every warm
 run, which is O(subjects) against the target.
 
 **When the state is unusable, the run goes cold rather than wrong.**
-A version mismatch, a checksum failure or a truncated section
-discards the generation, and the run proceeds cold, reporting one
-Info. Stale or damaged state must never fail a run that source alone
-could complete, because the state is there to make things faster,
-and something that can veto a run is a dependency instead.
+A version or fingerprint mismatch, a different executable, an
+executable the run cannot read, a checksum failure, a missing segment
+or a truncated run discards the generation, and the run proceeds
+cold, reporting one `ColdState` Info. A failure found mid-run
+discards everything the run derived, which is in memory until the
+commit, and starts again cold. Stale or damaged state must never fail
+a run that source alone could complete, because the state is there to
+make things
+faster, and something that can veto a run is a dependency instead.
 
-The contracts, pinned. The byte format behind them is versioned and
-private, and these are what the engine holds:
+The contract, pinned. The byte format is versioned and private to the
+kernel, and the ledger stores bytes:
 
 ```go
-type SealedState interface {
-    Header() StateHeader                   // versions, fingerprints
-    OpenRegion(u UnitRef) (Region, error)  // decode on first touch
-    Facts() FactSnapshot                   // the claim record; cutoff diffs its winners
-    Artifacts() []ArtifactRow
+type Ledger interface {
+    Read(ctx context.Context, name string) ([]byte, error)
+    ReadAt(ctx context.Context, name string, p []byte, off int64) (int, error)
+    Write(ctx context.Context, name string, b []byte) error // atomic and synced
+    Put(ctx context.Context, name string, b []byte) error   // atomic, unsynced: the memo
+    Touch(ctx context.Context, name string) error
+    Remove(ctx context.Context, name string) error
+    List(ctx context.Context, dir string) ([]Blob, error)
 }
-type StateWriter interface {
-    PutRegion(u UnitRef, r Region) error   // dirty regions only
-    PutFacts(FactSnapshot) error           // changed bags; clean ones carry by reference
-    PutArtifacts([]ArtifactRow) error      // changed rows; clean ones carry by reference
-    Commit() error                         // fsync, swap CURRENT — CommitRun;
-                                           // writes nothing when nothing changed
+
+type Blob struct {
+    Name    string
+    Size    int64
+    ModTime time.Time
 }
 ```
 
@@ -395,7 +457,10 @@ which is a syscall floor that eats the sub-second budget by itself.
 **Encodings that deserialize everything**, such as gob or JSON:
 those reintroduce as a format exactly the pressure that ruled out a
 daemon. **Committing the state**: the same argument that keeps the
-manifest uncommitted, made worse by binary conflicts.
+manifest uncommitted, made worse by binary conflicts. **A global
+intern table**: a memo region encoded against one generation's
+identifiers would read only with that generation's table, and a table
+that only grows needs a compaction that rewrites every reference.
 
 ## The parse memo
 
@@ -403,9 +468,9 @@ The sealed state returns the edit loop. The memo returns
 **history**.
 
 It is a second, optional persistence layer: a content-addressed
-store of parsed regions keyed by unit fingerprint and frontend
-version, both of which already exist, holding the same serialized
-region encoding the graph file uses.
+store of parsed regions keyed by the unit's key and the executable's
+digest. An entry contains the same region encoding the generation
+uses.
 
 A generational snapshot alone is not enough. Switch branches and the
 fingerprint diff marks thousands of units dirty against generation
@@ -414,29 +479,38 @@ The memo is where they still live. A unit that is dirty against the
 current generation but was seen in any past one is a memo hit, and
 the region restores without parsing.
 
-Four rules keep it honest.
+Five rules keep it honest.
 
 **One client.** Only the Load path consults it, between "sealed
 region" and "reparse". Plugins never see it, and the `u.Read` door
 and the fingerprint discipline are untouched, because a memo hit
 means `Parse` never runs at all.
 
-**Correct by key.** The same bytes plus the same frontend version is
-the same parse, so a hit equalling a fresh parse follows from the
-key rather than from a promise, and folding in the frontend version
-is why a frontend upgrade misses cleanly. Warm≡cold licenses the
-memo the way it licenses everything else.
+**Correct by key.** The same inputs and the same executable produce
+the same parse, so the key alone guarantees that a hit equals a fresh
+parse. Keying on the executable makes a frontend change miss even
+when nobody bumped its version. Warm≡cold licenses the memo the way it
+licenses everything else.
 
-**Eviction is part of the contract.** The memo is size-capped
-through the `Cache` config group
-([08-workspace-and-plans.md](08-workspace-and-plans.md)), evicted
-least-recently-used, and enforced at `CommitRun`. A cache that only
+**Eviction is part of the contract.** The memo is size-capped through
+the `Cache` config group
+([08-workspace-and-plans.md](08-workspace-and-plans.md)) and evicted
+least-recently-used at the commit. A hit touches its entry. When the
+memo's size total passes the cap, or when its last full listing is a
+day old, the commit removes the entries with the oldest modification
+times until the total is under 90% of the cap. A cache that only
 grows is a disk leak, and this cap is the eviction policy that
 version 1 deferred to a layer nobody ever built.
 
 **Writes are boring.** Every fresh parse writes through. Entries are
-immutable, written atomically and keyed by content, reusing the
-sink's discipline.
+immutable, written atomically without a sync, keyed by content, and
+end in a CRC-32C, so an entry a machine crash tore reads as a miss.
+
+**Sharing is safe.** The memo's entries are in a ledger the
+composition chooses, by default under the brand's state directory.
+Two worktrees that open one memo ledger restore each other's parses,
+because an entry addressed by its inputs and its executable is the
+parse either would make.
 
 **CI restores are safe by design.** CI machinery can cache and
 restore both layers, state and memo, because header validation,
@@ -456,8 +530,9 @@ of the warm≡cold check.
 
 ## The non-negotiable
 
-**Warm and cold produce identical bytes.** A conformance check runs
-the same workspace cold and warm and diffs the manifests
+**Warm and cold produce identical bytes and identical findings.** A
+conformance check runs the same workspace cold and warm and diffs the
+files, the manifests and the findings
 ([13-testing-and-conformance.md](13-testing-and-conformance.md)).
 
 Every optimization above is licensed by that check and by nothing
