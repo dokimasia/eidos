@@ -7,6 +7,10 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
+	"strconv"
+	"strings"
+	"sync"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -122,6 +126,97 @@ func TestStagefile(t *testing.T) {
 
 			_, r := rooted(t)
 			assert.HasError(t, stagefile.Replace(r, "../"+target, []byte(body), mode), "the root jails the write")
+		})
+	})
+
+	t.Run("ReplaceShared", func(t *testing.T) {
+		t.Parallel()
+
+		durabilities := []struct {
+			name string
+			give stagefile.Durability
+		}{
+			{name: "writes the synced body to a missing target with the given mode", give: stagefile.Synced},
+			{name: "writes the unsynced body to a missing target with the given mode", give: stagefile.Unsynced},
+		}
+		for _, tt := range durabilities {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				dir, r := rooted(t)
+				assert.NoError(t, stagefile.ReplaceShared(r, target, []byte(body), mode, tt.give),
+					"the target is written")
+				got, err := os.ReadFile(filepath.Join(dir, target))
+				assert.NoError(t, err, "the target reads")
+				assert.Equal(t, string(got), body, "the target contains the body")
+				info, err := os.Stat(filepath.Join(dir, target))
+				assert.NoError(t, err, "the target stats")
+				assert.Equal(t, info.Mode().Perm(), mode, "the target has the mode")
+				assert.Equal(t, entries(t, dir), []string{target}, "no staging file remains")
+			})
+		}
+
+		t.Run("replaces the bytes of an existing target", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			assert.NoError(t, os.WriteFile(filepath.Join(dir, target), []byte("old and longer\n"), mode),
+				"the old target is written")
+			assert.NoError(t, stagefile.ReplaceShared(r, target, []byte(body), mode, stagefile.Synced),
+				"the target is replaced")
+			got, err := os.ReadFile(filepath.Join(dir, target))
+			assert.NoError(t, err, "the target reads")
+			assert.Equal(t, string(got), body, "the target contains the new body alone")
+		})
+
+		t.Run("leaves one writer's whole body when writers replace one target at once", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			bodies := make([]string, 16)
+			for i := range bodies {
+				bodies[i] = strings.Repeat(strconv.Itoa(i%10), 4096+i)
+			}
+			var wg sync.WaitGroup
+			for _, b := range bodies {
+				wg.Go(func() {
+					assert.NoError(t, stagefile.ReplaceShared(r, target, []byte(b), mode, stagefile.Unsynced),
+						"each writer replaces the target")
+				})
+			}
+			wg.Wait()
+			got, err := os.ReadFile(filepath.Join(dir, target))
+			assert.NoError(t, err, "the target reads")
+			assert.True(t, slices.Contains(bodies, string(got)), "the target is one writer's whole body")
+			assert.Equal(t, entries(t, dir), []string{target}, "no staging file remains")
+		})
+
+		t.Run("returns an error for a target whose directory is missing", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			assert.HasError(t, stagefile.ReplaceShared(r, "missing/"+target, []byte(body), mode, stagefile.Synced),
+				"nothing is written")
+			assert.Empty(t, entries(t, dir), "the root is untouched")
+		})
+
+		t.Run("returns an error for a target that is a directory", func(t *testing.T) {
+			t.Parallel()
+
+			dir, r := rooted(t)
+			assert.NoError(t, os.Mkdir(filepath.Join(dir, target), 0o700), "the directory is made")
+			assert.NoError(t, os.WriteFile(filepath.Join(dir, target, "kept"), nil, mode), "the directory is not empty")
+			assert.HasError(t, stagefile.ReplaceShared(r, target, []byte(body), mode, stagefile.Synced),
+				"the rename is refused")
+			assert.Equal(t, entries(t, dir), []string{target}, "the staging file is removed")
+		})
+
+		t.Run("returns an error for a target outside the root", func(t *testing.T) {
+			t.Parallel()
+
+			_, r := rooted(t)
+			assert.HasError(t, stagefile.ReplaceShared(r, "../"+target, []byte(body), mode, stagefile.Synced),
+				"the root jails the write")
 		})
 	})
 }

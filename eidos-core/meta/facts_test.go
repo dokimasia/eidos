@@ -51,9 +51,15 @@ func fixture(tb assert.TB) (*meta.Registry, *meta.Facts,
 	return r, meta.NewFacts(r), role, flag
 }
 
-// by returns a plugin-authority claim on the fixture subject.
-func by(plugin diag.Origin, seq int) meta.Claim {
-	return meta.Claim{Subject: subject, Plugin: plugin, Seq: seq, Pos: carrier}
+// by returns a plugin-authority claim on the fixture subject at one
+// instance of its order.
+func by(plugin diag.Origin, instance int) meta.Claim {
+	return meta.Claim{
+		Subject: subject,
+		Plugin:  plugin,
+		Order:   meta.Order{Subject: subject, Instance: instance},
+		Pos:     carrier,
+	}
 }
 
 // recorder records fact reads for the tracked-read cases.
@@ -261,6 +267,97 @@ func TestFacts(t *testing.T) {
 		})
 	})
 
+	t.Run("Withdraw", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("removes the claim of the rank source so the next claim wins", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "the first plugin stamps")
+			assert.NoError(t, meta.Stamp(f, role, "reader", by("beta", 1)), "the second plugin stamps")
+			assert.NoError(t, f.Withdraw(role.ID(), by("alpha", 1)), "the first claim is withdrawn")
+
+			got, held := meta.Get(f, subject, role)
+			assert.True(t, held, "the fact remains present")
+			assert.Equal(t, got, "reader", "under the remaining claim")
+			assert.Length(t, slices.Collect(f.Claims(subject, role.ID())), 1, "one claim remains")
+		})
+
+		t.Run("removes the subject from ByKey with its last claim", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "the plugin stamps")
+			assert.Length(t, slices.Collect(f.ByKey(role.ID())), 1, "the subject carries the key")
+			assert.NoError(t, f.Withdraw(role.ID(), by("alpha", 1)), "the claim is withdrawn")
+			assert.Empty(t, slices.Collect(f.ByKey(role.ID())), "the subject no longer carries the key")
+		})
+
+		t.Run("returns nil for a claim the store does not contain", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "the plugin stamps")
+			assert.NoError(t, f.Withdraw(role.ID(), by("alpha", 2)), "another instance holds no claim")
+			_, held := meta.Get(f, subject, role)
+			assert.True(t, held, "and the stamped claim remains")
+		})
+
+		t.Run("returns an error for a key nothing registered", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, _, _ := fixture(t)
+			assert.HasError(t, f.Withdraw(meta.KeyID(999), by("alpha", 1)), "the key is refused")
+		})
+	})
+
+	t.Run("WithdrawGroup", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("restores the member a group drop covered", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			drop := by("defaults", 1)
+			drop.Authority = meta.AuthorityDirective
+			assert.NoError(t, f.DropGroup("shape.writer", drop), "the group drop arrives")
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("shape", 1)), "a member stamps")
+			assert.NoError(t, f.WithdrawGroup("shape.writer", drop), "the group drop is withdrawn")
+
+			got, held := meta.Get(f, subject, role)
+			assert.True(t, held, "the member reads present again")
+			assert.Equal(t, got, "writer", "with its value")
+			assert.Equal(t, slices.Collect(f.ByKey(role.ID())), []symbol.Identity{subject}, "and ByKey lists it")
+		})
+
+		t.Run("returns nil for a drop the store does not contain", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, _, _ := fixture(t)
+			assert.NoError(t, f.WithdrawGroup("shape.writer", by("defaults", 1)), "no drop is no error")
+		})
+
+		t.Run("returns an error for a group nothing registered into", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, _, _ := fixture(t)
+			assert.HasError(t, f.WithdrawGroup("shape.nonexistent", by("defaults", 1)), "the group is refused")
+		})
+	})
+
+	t.Run("Damaged", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nil for a store that restores nothing", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "the plugin stamps")
+			assert.NoError(t, f.Damaged(), "nothing restores, so nothing is damaged")
+		})
+	})
+
 	t.Run("Get", func(t *testing.T) {
 		t.Parallel()
 
@@ -423,7 +520,7 @@ func BenchmarkFacts(b *testing.B) {
 
 // Contention: bags shard by subject, so parallel writers
 // on distinct subjects and parallel readers of stamped facts both
-// scale rather than serialize.
+// scale and do not serialize.
 func BenchmarkFactsParallel(b *testing.B) {
 	subjects := benchIdentities(benchSubjects)
 

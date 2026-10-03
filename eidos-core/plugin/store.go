@@ -79,6 +79,16 @@ func ReadDir(fsys fs.FS, path string) ([]fs.DirEntry, error) {
 	return fs.ReadDir(tree, inner)
 }
 
+// Stat returns the stat of one file, and resolves a qualified path the
+// way [ReadFile] does.
+func Stat(fsys fs.FS, path string) (fs.FileInfo, error) {
+	tree, inner, err := treeOf(fsys, path)
+	if err != nil {
+		return nil, err
+	}
+	return fs.Stat(tree, inner)
+}
+
 // treeOf returns the tree a path resolves in and the path inside that
 // tree.
 func treeOf(fsys fs.FS, path string) (fs.FS, string, error) {

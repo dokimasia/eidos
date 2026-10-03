@@ -31,6 +31,39 @@ const (
 	AuthorityManual
 )
 
+// Order is a claim's place among the claims of one plugin in one
+// bucket: the rule that made it, the subject of the invocation that made
+// it, and the gating instance. A frontend's stamp has rule zero and the
+// stamp's index among its subject's stamps as its instance. A drop has
+// rule zero and the directive's instance.
+//
+// Every run computes the same Order for the same claim, whatever else
+// the run executes, so a claim a warm run keeps ranks against one it
+// makes. The zero Order is rule zero on no subject at instance zero.
+type Order struct {
+	// Rule is the rule's place in its plugin's declaration order.
+	Rule int
+	// Subject is the identity of the invocation's subject, which for a
+	// claim on a declaration the subject declares is the subject, not
+	// the claim's own.
+	Subject symbol.Identity
+	// Instance is the gating directive instance's place among the
+	// subject's instances of its directive, zero for a rule without one.
+	Instance int
+}
+
+// Compare orders two places in canonical match order: the rule, then the
+// subject identity, then the instance. It returns a negative number,
+// zero or a positive one as o sorts before, with or after other, and
+// allocates nothing.
+func (o Order) Compare(other Order) int {
+	return cmp.Or(
+		cmp.Compare(o.Rule, other.Rule),
+		o.Subject.Compare(other.Subject),
+		cmp.Compare(o.Instance, other.Instance),
+	)
+}
+
 // Claim is one write's envelope: the rank that arbitrates it and
 // the provenance that explains it.
 type Claim struct {
@@ -44,7 +77,9 @@ type Claim struct {
 	Authority Authority
 	Bucket    int
 	Plugin    diag.Origin
-	Seq       int
+	// Order is the claim's place in canonical match order, the last
+	// step of the rank.
+	Order Order
 
 	// Pos locates the authoring carrier: a directive's position, or
 	// zero for a plugin's inference.
@@ -79,7 +114,7 @@ func rank(c, other Claim) int {
 		// The alphabetically first plugin ranks first.
 		cmp.Compare(c.Plugin, other.Plugin),
 		// The first claim ranks first, in canonical match order.
-		cmp.Compare(c.Seq, other.Seq),
+		c.Order.Compare(other.Order),
 	)
 }
 
@@ -87,8 +122,9 @@ func rank(c, other Claim) int {
 func (c Claim) outranks(other Claim) bool { return rank(c, other) < 0 }
 
 // sameRankSource reports whether two claims come from one source at
-// one rank, which is what an idempotent re-stamp repeats.
+// one rank, which is what an idempotent re-stamp repeats and what a
+// withdrawal names.
 func (c Claim) sameRankSource(other Claim) bool {
 	return c.Authority == other.Authority && c.Bucket == other.Bucket &&
-		c.Plugin == other.Plugin && c.Seq == other.Seq
+		c.Plugin == other.Plugin && c.Order == other.Order
 }

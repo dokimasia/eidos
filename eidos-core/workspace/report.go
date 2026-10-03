@@ -36,6 +36,8 @@ type Report struct {
 	// Emits is each plan's store, keyed by plan name. It is empty where
 	// the frame stopped before the plans ran.
 	Emits map[string]*plugin.Emit
+	// Stats counts what the run executed.
+	Stats Stats
 }
 
 // PlanReport records one plan's status and the changes its commit

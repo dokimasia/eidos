@@ -29,10 +29,11 @@ func stamperInto(m *match) *Stamper {
 
 // Stamp records v under k with the envelope pre-bound: plugin
 // authority, the phase call's bucket and plugin, the invocation's
-// sequence in canonical match order, and the invocation's point
-// reads so far as the claim's derivation. A write the fact store
-// refuses reports an Error at the subject's position under
-// [RefusedStamp], and the phase continues.
+// place in canonical match order, meaning the rule, the subject and the
+// gating instance, and the invocation's point reads so far as the
+// claim's derivation. A write the fact store refuses reports an Error
+// at the subject's position under [RefusedStamp], and the phase
+// continues.
 func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
 	stamp(st.m, st.m.subject, k, v)
 }
@@ -56,19 +57,34 @@ func StampOn[T meta.FactValue](st *Stamper, owned symbol.Identity, k meta.Key[T]
 
 // stamp records v under k on target with the invocation's
 // envelope, and reports a refusal under [RefusedStamp] at the
-// subject's position.
+// subject's position. A call that journals notes each accepted claim
+// in the invocation's record.
 func stamp[T meta.FactValue](m *match, target symbol.Identity, k meta.Key[T], v T) {
 	err := meta.Stamp(m.rs.facts, k, v, meta.Claim{
 		Subject:   target,
 		Authority: meta.AuthorityPlugin,
 		Bucket:    m.rs.bucket,
 		Plugin:    m.rs.plugin,
-		Seq:       m.seq,
+		Order:     m.order(),
 		Derived:   m.derived(),
 	})
 	if err != nil {
 		m.rs.reportf(m.seq, RefusedStamp, diag.SeverityError, m.pos, "%v", err)
+		return
 	}
+	if m.rs.journal != nil {
+		m.rs.noteClaim(meta.FactRef{Subject: target, Key: k.Name()})
+	}
+}
+
+// order returns the invocation's place in canonical match order: the
+// rule, the subject, and the gating instance, zero without one.
+func (m *match) order() meta.Order {
+	o := meta.Order{Rule: m.rule, Subject: m.subject}
+	if m.gate != nil {
+		o.Instance = m.gate.Instance
+	}
+	return o
 }
 
 // owns reports whether owned is a parameter, a return or a type

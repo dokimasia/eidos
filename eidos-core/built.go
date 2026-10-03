@@ -107,34 +107,48 @@ func (b *built) Directives() []directive.Schema { return b.schemas }
 func (b *built) Subscriptions() []plugin.Subscription { return b.subs }
 
 // annotate dispatches the annotate-phase rules on up to the context's
-// workers, then reports the buffered findings in canonical match
-// order. The stamps arrive in the fact store as they are made, because
-// the store ranks claims by their sequence and not by their arrival.
+// workers, restricted to the context's selection where it has one, then
+// reports the buffered findings in canonical match order and hands the
+// context's journal its records. The stamps arrive in the fact store as
+// they are made, because the store ranks claims by their rule, subject
+// and instance and not by their arrival.
 func annotate(b *built, ctx *plugin.AnnotatorContext) error {
 	c := newPhaseCall(b, ctx.Index, ctx.Facts, ctx.Sink, nil, ctx.Plugin, ctx.Bucket, ctx.Rules, ctx.Kernel,
 		ctx.Workers)
+	c.journal = ctx.Journal
+	c.restrict(ctx.Select)
 	if err := c.run(plugin.PhaseAnnotate); err != nil {
 		return err
 	}
 	c.applyEffects()
+	c.deliver()
 	return nil
 }
 
 // generate dispatches the generate- and emit-phase rules in
-// declaration order, each on up to the context's workers, then applies
-// the buffered effects in canonical match order and flushes the
+// declaration order, each on up to the context's workers and restricted
+// to the context's selection where it has one, then applies the
+// buffered effects in canonical match order and flushes the
 // accumulators into the plan's store after every rule ran, which keeps
-// a plugin's own emit invisible to its own emit rules. Every handler
-// reads the context's exports through its match.
+// a plugin's own emit invisible to its own emit rules. It hands the
+// context's journal its records once the flush has added the units.
+// Every handler reads the context's exports through its match.
 func generate(b *built, ctx *plugin.GeneratorContext) error {
 	c := newPhaseCall(b, ctx.Index, ctx.Facts, ctx.Sink, ctx.Emit, ctx.Plugin, ctx.Bucket, ctx.Rules, ctx.Kernel,
 		ctx.Workers)
 	c.exports = ctx.Exports
+	c.journal = ctx.Journal
+	c.restrict(ctx.Select)
 	if err := c.run(plugin.PhaseGenerate, plugin.PhaseEmit); err != nil {
 		return err
 	}
 	c.applyEffects()
-	return c.flush(ctx.Emit)
+	c.keyHosts()
+	if err := c.flush(ctx.Emit); err != nil {
+		return err
+	}
+	c.deliver()
+	return nil
 }
 
 // builtAnnotator is a lowered plugin whose rules stamp only.

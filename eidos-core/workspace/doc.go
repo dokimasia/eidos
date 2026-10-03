@@ -116,7 +116,8 @@
 // core/workspace imports core/frontend/load, core/plugin, core/store,
 // core/node, core/meta, core/directive, core/rules, core/layout,
 // core/emit, core/output, core/ledger, core/manifest, core/diag,
-// core/position, core/symbol, core/internal/pathset and the Go stdlib.
+// core/position, core/symbol, core/internal/pathset, core/internal/state
+// and the Go stdlib.
 // It never imports the root authoring package: plugins arrive built,
 // so the composition works on the base contract every authoring layer
 // lowers to.

@@ -19,8 +19,8 @@ import (
 // declaration.
 type Scope func(pkg symbol.Identity) bool
 
-// admits reports whether the scope admits a package, and holds the
-// rule that a nil Scope admits every one.
+// admits reports whether the scope admits a package, under the rule
+// that a nil Scope admits every one.
 func (sc Scope) admits(pkg symbol.Identity) bool { return sc == nil || sc(pkg) }
 
 // verdicts asks a scope once per package run. The graph's indexes
@@ -52,10 +52,12 @@ func (v *verdicts) admits(id symbol.Identity) bool {
 // Reader is a tracked, scope-filtered read handle over a frozen
 // graph.
 //
-// A declaration outside scope is neither returned nor recorded. Both
-// halves matter: returning it would let one plan observe another's
-// sources, and recording it would let a change the plan could never
-// have seen re-run it.
+// A declaration outside scope is neither returned nor recorded.
+// Returning it would let one plan observe another's sources, and
+// recording it would let a change the plan could never have seen run
+// the plan again.
+//
+// # Concurrency
 //
 // A Reader is not safe for concurrent use, because the [ReadSet] it
 // records into is not. The graph beneath it is.
@@ -67,13 +69,12 @@ type Reader struct {
 
 // ByKind enumerates the declarations of one kind.
 //
-// It records a set-membership edge, so the reader runs again when a
-// declaration of that kind enters or leaves the set, and never when
-// one merely changes. Sensitivity to a change inside the set comes
-// from the per-identity edges recorded for the declarations the
-// caller actually reached, which is why this returns an iterator
-// rather than a slice: it records what the caller reached, not what
-// it might have.
+// It records a membership edge, so the reader runs again when a
+// declaration of that kind enters or leaves the set, and not when one
+// only changes. A change inside the set runs the reader again through
+// the declaration edge recorded for each declaration the caller met.
+// The iterator records what the caller met, so a caller that stops
+// early records only the declarations it saw.
 func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
 		r.reads.recordKind(k)
@@ -82,7 +83,7 @@ func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 		// set can size its map up front. Under a scope the admitted
 		// count is unknown, and reserving the full set would hand a
 		// narrow reader a map sized for the whole graph.
-		held := r.graph.byKind[k]
+		held := r.graph.kind(k)
 		if r.scope == nil {
 			r.reads.reserve(len(held))
 		}
@@ -103,16 +104,16 @@ func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 
 // ByDirective enumerates the declarations carrying a spelling,
 // under the reader's scope: a subject outside it is neither
-// returned nor recorded. It records a directive-membership edge,
-// so the reader runs again when a subject gains or loses the
-// directive, plus a per-identity edge for each declaration the
-// caller reached.
+// returned nor recorded. It records a membership edge on the
+// spelling, so the reader runs again when a subject gains or loses
+// the directive, plus a declaration edge for each declaration the
+// caller met.
 func (r *Reader) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
 		r.reads.recordDirective(n)
 
 		scope := verdicts{scope: r.scope}
-		for _, decl := range r.graph.byDirective[n] {
+		for _, decl := range r.graph.carriers(n) {
 			id := decl.Identity()
 			if !scope.admits(id) {
 				continue
@@ -127,36 +128,42 @@ func (r *Reader) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 
 // Lookup returns one declaration by identity.
 //
-// It records a per-identity edge, so a change to that declaration
-// alone re-runs the reader. A lookup that returned nothing records
-// too: the reader asked, so it has to run again when a declaration
-// appears under that identity.
+// It records a declaration edge, so a change to that declaration,
+// anywhere in its subtree, runs the reader again. A lookup of a
+// package's own identity returns the package whole, whose members the
+// reader can walk without another tracked read, so it records a package
+// edge, which any member's change dirties. A lookup that returned
+// nothing records too: the reader asked, so it has to run again when a
+// declaration appears under that identity.
 func (r *Reader) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 	if !r.scope.admits(owningPackage(id)) {
 		return nil, false
 	}
-	r.reads.recordIdentity(id)
+	if id.Kind == symbol.KindPackage {
+		r.reads.recordPackage(id)
+	} else {
+		r.reads.recordIdentity(id)
+	}
 	return r.graph.Lookup(id)
 }
 
-// PackageOf returns the package holding a declaration, recording a
-// per-identity edge on the package.
+// PackageOf returns the package that contains a declaration, and
+// records a package edge: the reader can walk every member of the
+// package it returns without another tracked read, so a change to any
+// member runs the reader again.
 func (r *Reader) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	pkg := owningPackage(id)
 	if !r.scope.admits(pkg) {
 		return nil, false
 	}
-	r.reads.recordIdentity(pkg)
+	r.reads.recordPackage(pkg)
 	return r.graph.packageOf(id)
 }
 
 // owningPackage returns the identity of the package a declaration
 // belongs to.
 //
-// It reads the identity rather than the graph, so scope is decided
-// for a declaration the graph does not hold too. Deciding it from a
-// lookup instead would let an out-of-scope caller learn whether a
-// declaration exists.
-func owningPackage(id symbol.Identity) symbol.Identity {
-	return symbol.Identity{Lang: id.Lang, Package: id.Package, Kind: symbol.KindPackage}
-}
+// It reads the identity, not the graph, so scope is decided for a
+// declaration the graph does not contain too. Deciding it from a lookup
+// would let an out-of-scope caller learn whether a declaration exists.
+func owningPackage(id symbol.Identity) symbol.Identity { return id.PackageIdentity() }

@@ -587,15 +587,16 @@ func TestRun(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			place(t, root, ledger.ManifestPath(fixtureBrand), "not a record")
+			place(t, root, ledger.ManifestPath(fixtureBrand)+"/ea.json", "not a record")
 			report := cleanRun(t, built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{}))),
 				routedIn(t, coretest.StorePath))
 			unreadable := findings(report.Sink, workspace.UnreadableRecord)
 			assert.Length(t, unreadable, 1, "one finding for the record")
 			assert.Equal(t, unreadable[0].Severity, diag.SeverityInfo, "as information")
 			assert.Equal(t, unreadable[0].Pos, position.Pos{File: ledger.ManifestPath(fixtureBrand)},
-				"at the record's path")
+				"at the record's directory")
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "the run proceeds")
+			assert.Equal(t, paths(recorded(t, root)), []string{storeGen}, "and its commit replaces the broken record")
 		})
 
 		t.Run("returns an error for a ledger that fails to open", func(t *testing.T) {

@@ -72,6 +72,7 @@ type Builder struct {
 	rules      []rules.SourceRules
 	ignored    []directive.Name
 	config     Config
+	memo       Memo
 }
 
 // New returns an empty builder.
@@ -234,6 +235,11 @@ func (b *Builder) Build() (*Workspace, error) {
 			b.workers,
 		))
 	}
+	if b.memo.Limit < 0 {
+		faults = append(faults, fmt.Errorf(
+			"workspace: the memo's limit %d is negative, and zero keeps no memo", b.memo.Limit,
+		))
+	}
 	faults = append(faults, frontendFaults(b.frontends)...)
 	roster, byName, afaults := b.assemble()
 	faults = append(faults, afaults...)
@@ -271,6 +277,7 @@ func (b *Builder) Build() (*Workspace, error) {
 		id:          b.id,
 		workers:     b.workers,
 		brand:       b.brand,
+		memo:        b.memo,
 		fingerprint: fingerprintOf(ann, plans, checks, options),
 	}, nil
 }

@@ -504,6 +504,18 @@ func TestSettle(t *testing.T) {
 				"the index lists the target's shape and not the lowered kind")
 		})
 
+		t.Run("discards the reference of a declaration a lowering replaced", func(t *testing.T) {
+			t.Parallel()
+
+			alias := &emit.Alias{Origin: settleOrigin("state", symbol.KindEnum), Name: "state"}
+			e := storeOf(t, settleUnit("svc", "svc/a.src", alias))
+			_, held := e.Ref(alias)
+			assert.True(t, held, "the emitted alias has a reference before the settle")
+			settled(t, e, lowering(splitAlias))
+			_, held = e.Ref(alias)
+			assert.False(t, held, "the lowered alias has none after it")
+		})
+
 		t.Run("keeps the declaration a lowering returns nil for", func(t *testing.T) {
 			t.Parallel()
 

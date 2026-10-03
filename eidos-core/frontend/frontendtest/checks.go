@@ -5,6 +5,7 @@ package frontendtest
 
 import (
 	"bytes"
+	"context"
 	"io/fs"
 	"iter"
 	"maps"
@@ -150,7 +151,7 @@ func AssertClassified(tb assert.TB, setup Setup) {
 				Subject:   id,
 				Authority: meta.AuthorityPlugin,
 				Plugin:    s.Origin,
-				Seq:       i,
+				Order:     meta.Order{Subject: id, Instance: i},
 				Pos:       s.Pos,
 			})
 			assert.NoError(tb, err, "a recorded stamp applies under the fixture's keys")
@@ -189,11 +190,11 @@ func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 	assert.Equal(tb, got.report.Excluded, []string{own},
 		"the load refuses its own output and lists it")
 	for _, u := range got.report.Units {
-		assert.False(tb, slices.Contains(u.Files, own), "no unit contains the refused file")
+		assert.False(tb, contains(u.Files, own), "no unit contains the refused file")
 	}
 	loaded := false
 	for _, u := range got.report.Units {
-		loaded = loaded || slices.Contains(u.Files, foreign)
+		loaded = loaded || contains(u.Files, foreign)
 	}
 	assert.True(tb, loaded, "another brand's output is ordinary input in a unit")
 	for decl := range got.graph.ByKind(symbol.KindFile) {
@@ -221,10 +222,10 @@ func framed(
 
 // AssertFingerprinted checks that the unit keys are honest: stable
 // across two identical loads, and changed by each folded part: a
-// read, a depth, a declared version, the options, the plugin set and
-// the brand. The model fingerprint is a compiled constant no test
-// can vary. A unit missing from the load a key is compared against
-// fails the comparison, and never differs from nothing.
+// read, a depth, a declared version, the options and the brand. The
+// model fingerprint is a compiled constant no test can vary. A unit
+// missing from the load a key is compared against fails the
+// comparison, and never differs from nothing.
 func AssertFingerprinted(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -255,12 +256,6 @@ func AssertFingerprinted(tb assert.TB, setup Setup) {
 	cMoved := drive(tb, reoption{Frontend: f, options: "probe-b"}, fx)
 	keyed(tb, keysOf(cBase.report), keysOf(cMoved.report), false,
 		"a configuration change re-keys every unit")
-
-	reset := drive(tb, f, fx, func(cfg *load.Config) {
-		cfg.PluginSet = []byte("frontendtest-moved")
-	})
-	keyed(tb, baseKeys, keysOf(reset.report), false,
-		"the composition's fingerprint folds into every key")
 
 	rebranded := drive(tb, f, fx, func(cfg *load.Config) { cfg.Brand = foreignBrand })
 	keyed(tb, baseKeys, keysOf(rebranded.report), false,
@@ -303,18 +298,18 @@ func keyed(tb assert.TB, before, after map[string][]byte, same bool, why string)
 }
 
 // AssertJailedReads proves the one door from the frontend's side:
-// every unit reads its members through the unit, so a unit's key
-// moves when its members' bytes move. A frontend reading its
-// members any other way, such as the operating system's filesystem
-// or a cache it keeps across loads, keys a unit by bytes it never
-// read through the door, and a cache keyed that way serves a stale
-// graph. The check loads a copy of the fixture twice, then a copy
-// whose every selected file gained a line break, and requires every
-// unit the partition returned to key differently in the third. A
-// dependency unit reads the stores and not the workspace, so the
-// comparison leaves it out. The kernel's side of the door, a read
-// outside the unit refusing and naming the path, is the plugin
-// package's own contract.
+// every unit reads its members through the unit, so the fold of the
+// unit's reads moves when its members' bytes move. A unit's key folds
+// the digests of its members, so a frontend reading its members any
+// other way, such as the operating system's filesystem or a cache it
+// keeps across loads, builds a region from bytes its key does not
+// cover, and the parse memo serves that region stale. The check loads
+// a copy of the fixture twice, then parses each unit the partition
+// returned again over a copy whose every selected file gained a line
+// break, and requires each unit's door fold to move. A dependency unit
+// reads the stores and not the workspace, so the comparison leaves it
+// out. The kernel's side of the door, a read outside the unit refusing
+// and naming the path, is the plugin package's own contract.
 func AssertJailedReads(tb assert.TB, setup Setup) {
 	tb.Helper()
 
@@ -322,7 +317,7 @@ func AssertJailedReads(tb assert.TB, setup Setup) {
 	files := selected(tb, f, fx)
 	tree := copyTree(tb, fx.Sources)
 	// The first load is a warm-up: a frontend caching across loads
-	// fills its cache here, and serves the second and third from it.
+	// fills its cache here, and serves the parses after it from it.
 	drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures, Stores: fx.Stores})
 	warm := drive(tb, f, &Fixture{Sources: tree, Signatures: fx.Signatures, Stores: fx.Stores})
 
@@ -330,14 +325,73 @@ func AssertJailedReads(tb assert.TB, setup Setup) {
 	for _, file := range files {
 		touched[file] = &fstest.MapFile{Data: append(slices.Clone(touched[file].Data), '\n')}
 	}
-	perturbed, err := tryDrive(f, &Fixture{Sources: touched, Signatures: fx.Signatures, Stores: fx.Stores})
+	before := doorFolds(tb, f, warm.report, tree, fx.Stores)
+	after, err := tryDoorFolds(f, warm.report, touched, fx.Stores)
 	if err != nil {
 		// A language refusing the appended bytes read them through a
 		// door: nothing else can read the copy this check made.
 		return
 	}
-	keyed(tb, workspaceKeysOf(warm.report), workspaceKeysOf(perturbed.report), false,
-		"every unit whose members changed re-keys, because its parse read them through the unit")
+	keyed(tb, workspaceOnly(warm.report, before), after, false,
+		"every unit whose members changed folds the new bytes, because its parse read them through the unit")
+}
+
+// doorFolds parses every unit a load reported again, each through a
+// fresh unit of its own over the tree and its stores, and returns each
+// unit's door fold by its first member: the fold of the unit's roster
+// and of every read its parse made through the unit. A parse that read
+// its members around the door folds the roster alone, so its fold does
+// not move when the members' bytes do.
+func doorFolds(
+	tb assert.TB, f plugin.Frontend, report *load.Report, sources fs.FS, stores map[string]fs.FS,
+) map[string][]byte {
+	tb.Helper()
+
+	out, err := tryDoorFolds(f, report, sources, stores)
+	assert.NoError(tb, err, "every unit parses again")
+	return out
+}
+
+// tryDoorFolds is [doorFolds], returning a parse's own error.
+func tryDoorFolds(
+	f plugin.Frontend, report *load.Report, sources fs.FS, stores map[string]fs.FS,
+) (map[string][]byte, error) {
+	tree := fixtureTree{FS: sources, stores: stores}
+	out := make(map[string][]byte, len(report.Units))
+	for _, u := range report.Units {
+		src := plugin.NewSourceUnit(u.Files, tree, u.Depth, f.Syntax(), string(Brand), diag.NewSink(), f.Name())
+		if err := f.Parse(context.Background(), src); err != nil {
+			return nil, err
+		}
+		out[u.Files[0].Path] = src.ReadSum()
+	}
+	return out, nil
+}
+
+// workspaceOnly keeps the entries of the units the partition returned,
+// leaving out the dependency units, whose reads are the stores' and
+// not the workspace's.
+func workspaceOnly(report *load.Report, byFirst map[string][]byte) map[string][]byte {
+	out := make(map[string][]byte, len(byFirst))
+	for _, u := range report.Units {
+		if u.Round == 0 {
+			out[u.Files[0].Path] = byFirst[u.Files[0].Path]
+		}
+	}
+	return out
+}
+
+// fixtureTree is a fixture's tree with its stores beside it, which a
+// unit parsed outside a load resolves a qualified path through.
+type fixtureTree struct {
+	fs.FS
+	stores map[string]fs.FS
+}
+
+// Store returns one of the fixture's stores.
+func (t fixtureTree) Store(name string) (fs.FS, bool) {
+	s, held := t.stores[name]
+	return s, held
 }
 
 // homeOf returns a package declaration's own path, and nothing for
@@ -513,8 +567,8 @@ func AssertLinked(tb assert.TB, setup Setup) {
 // AssertDependencies checks the dependency rounds of a frontend in
 // the [plugin.Dependent] role: at least one unit arrives from a round,
 // and a changed byte in the first member of the first dependency unit
-// re-keys that unit, because its parse read the member through the
-// unit. The kernel parses every dependency unit at
+// moves the door fold of that unit, because its parse read the member
+// through the unit. The kernel parses every dependency unit at
 // [plugin.DepthSignatures] and refuses a member the selection claims,
 // so the check leaves both to the load. It copies the store it
 // changes, so a fixture's stores are small trees and never a
@@ -531,7 +585,7 @@ func AssertDependencies(tb assert.TB, setup Setup) {
 	var first string
 	for _, u := range got.report.Units {
 		if u.Round > 0 {
-			first = u.Files[0]
+			first = u.Files[0].Path
 			break
 		}
 	}
@@ -551,14 +605,15 @@ func AssertDependencies(tb assert.TB, setup Setup) {
 		copied[first] = &fstest.MapFile{Data: append(slices.Clone(copied[first].Data), '\n')}
 		sources = copied
 	}
-	perturbed, err := tryDrive(f, &Fixture{Sources: sources, Signatures: fx.Signatures, Stores: stores})
+	before := doorFolds(tb, f, got.report, fx.Sources, fx.Stores)
+	after, err := tryDoorFolds(f, got.report, sources, stores)
 	if err != nil {
 		// A language refusing the appended byte read it through the
 		// unit: nothing else can read the copy this check made.
 		return
 	}
-	keyed(tb, map[string][]byte{first: keysOf(got.report)[first]}, keysOf(perturbed.report), false,
-		"a changed byte in a dependency member re-keys the unit that read it")
+	keyed(tb, map[string][]byte{first: before[first]}, after, false,
+		"a changed byte in a dependency member moves the door fold of the unit that read it")
 }
 
 // AssertReexports checks the resolution step's following of
@@ -598,7 +653,7 @@ func AssertReexports(tb assert.TB, setup Setup) {
 func fullUnit(report *load.Report) string {
 	for _, u := range report.Units {
 		if u.Depth == plugin.DepthFull {
-			return u.Files[0]
+			return u.Files[0].Path
 		}
 	}
 	return ""
@@ -608,11 +663,16 @@ func fullUnit(report *load.Report) string {
 // file.
 func unitHolding(report *load.Report, path string) string {
 	for _, u := range report.Units {
-		if slices.Contains(u.Files, path) {
-			return u.Files[0]
+		if contains(u.Files, path) {
+			return u.Files[0].Path
 		}
 	}
 	return path
+}
+
+// contains reports whether a unit's members include a path.
+func contains(members []plugin.SourceRef, path string) bool {
+	return slices.ContainsFunc(members, func(ref plugin.SourceRef) bool { return ref.Path == path })
 }
 
 // reversion re-declares the frontend's version and keeps

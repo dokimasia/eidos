@@ -109,27 +109,23 @@ func (u Unit) FileKey() string {
 	return u.Key
 }
 
-// unitKey addresses one accumulator: what one phase call may flush
-// exactly once. The key includes the package, because two
-// languages may spell one package path as two namespaces.
-type unitKey struct {
-	plugin ID
-	tag    string
-	pkg    symbol.Identity
-	key    string
+// Ref returns the unit's reference: the key one phase call flushes the
+// unit under. It allocates nothing.
+func (u Unit) Ref() UnitRef {
+	return UnitRef{Plugin: u.Plugin, Tag: u.Tag, Pkg: u.Pkg, Key: u.Key}
 }
 
 // Emit contains one plan's accumulated units, plus a per-kind index
 // over their declarations that is maintained at [Emit.Add]: each
 // unit's tree is walked once when it arrives, so an emit-triggered
-// rule enumerates its matches rather than the emit graph.
+// rule enumerates its matches and not the whole emit graph.
 //
 // An Emit is not safe for concurrent use: annotators and generators
 // run sequentially, and a unit arriving mid-enumeration would race
 // the index it is being read from.
 type Emit struct {
 	units []Unit
-	held  map[unitKey]struct{}
+	held  map[UnitRef]struct{}
 	// byKind maps a kind to the declarations with an origin that each
 	// unit's tree contains, in walk order, keyed by the unit's index
 	// into units.
@@ -142,6 +138,12 @@ type Emit struct {
 	// unit arrived builds it, so a plan without contributions never
 	// builds it.
 	holders map[symbol.Symbol]int
+	// refs maps each declaration of the walked units' trees to its
+	// reference, and walked counts those units, in arrival order. [Emit.Ref]
+	// walks the units that arrived since its last call, so a plan whose
+	// phase calls journal nothing never builds the map.
+	refs   map[symbol.Symbol]EmitRef
+	walked int
 	// settled reports that the store passed through [Settle]: the backend's
 	// lowering seams ran, and the declarations the readers see are
 	// the ones that render.
@@ -156,7 +158,7 @@ type Emit struct {
 // NewEmit returns an empty emit store.
 func NewEmit() *Emit {
 	return &Emit{
-		held:   map[unitKey]struct{}{},
+		held:   map[UnitRef]struct{}{},
 		byKind: map[symbol.Kind]map[int][]symbol.Symbol{},
 	}
 }
@@ -197,7 +199,7 @@ func (e *Emit) Add(u Unit) error {
 			)
 		}
 	}
-	k := unitKey{plugin: u.Plugin, tag: u.Tag, pkg: u.Pkg, key: u.Key}
+	k := u.Ref()
 	if _, taken := e.held[k]; taken {
 		return fmt.Errorf(
 			"plugin: %s flushes (%q, %q) twice: one phase call flushes each accumulator once",
@@ -242,6 +244,41 @@ func (e *Emit) Contribute(host symbol.Symbol, p ID) bool {
 		u.Contributors = slices.Insert(u.Contributors, i, p)
 	}
 	return true
+}
+
+// Ref returns the reference of a declaration in a unit of the store: the
+// unit's reference, and the declaration's place in the depth-first walk
+// of the unit's declarations. It reports false for a declaration no unit
+// contains. A declaration that two units contain, or that one unit's
+// tree contains twice, returns the place the walk visited first, in the
+// order the units arrived.
+//
+// A call walks the trees of the units that arrived since the previous
+// call, and the settle discards every reference, because it may replace
+// declarations.
+//
+// # Allocation contract
+//
+// A call after no unit arrived allocates nothing. A call after units
+// arrived grows the map by one entry for each declaration they contain.
+func (e *Emit) Ref(d symbol.Symbol) (EmitRef, bool) {
+	for ; e.walked < len(e.units); e.walked++ {
+		if e.refs == nil {
+			e.refs = map[symbol.Symbol]EmitRef{}
+		}
+		unit := e.units[e.walked].Ref()
+		at := 0
+		for _, root := range e.units[e.walked].Decls {
+			for s := range emit.All(root) {
+				if _, seen := e.refs[s]; !seen {
+					e.refs[s] = EmitRef{Unit: unit, Index: at}
+				}
+				at++
+			}
+		}
+	}
+	r, held := e.refs[d]
+	return r, held
 }
 
 // Units enumerates every unit: by plugin, then cardinality, then
@@ -305,7 +342,7 @@ func (e *Emit) reindex() {
 	for i := range e.units {
 		e.index(i, e.units[i].Decls)
 	}
-	e.order, e.holders = nil, nil
+	e.order, e.holders, e.refs, e.walked = nil, nil, nil, 0
 }
 
 // respelled records the name a declaration was emitted under, which the

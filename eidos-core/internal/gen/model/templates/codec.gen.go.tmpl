@@ -1,0 +1,223 @@
+{{template "header" .}}
+import (
+	"fmt"
+
+	"go.dokimi.dev/eidos/core/internal/wire"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// AppendBinary appends the binary encoding of s to dst and returns the
+// extended buffer, numbering every string s spells in t.
+//
+// The encoding is the symbol's kind as one byte, then each of the kind's
+// fields in schema order, each child written the same way, so it covers
+// the symbol's whole subtree. A nil symbol is one zero byte. Where t is
+// nil, each string is its length and its bytes, so two equal subtrees
+// encode to equal bytes whatever table either region numbers its strings
+// in: the form a comparison of two declarations reads.
+//
+// Error modes: an error for a symbol anywhere in the subtree whose type
+// the model does not declare. dst comes back unchanged with it, and t
+// may have numbered strings of the part written before it.
+//
+// # Allocation contract
+//
+// AppendBinary allocates only to grow dst and t.
+func AppendBinary(dst []byte, s symbol.Symbol, t *StringTable) ([]byte, error) {
+	w := binaryWriter{buf: dst, t: t}
+	if err := w.symbol(s); err != nil {
+		return dst, err
+	}
+	return w.buf, nil
+}
+
+// DecodeBinary decodes one symbol [AppendBinary] wrote at the start of b
+// against t, and returns it with the number of bytes it read. A zero
+// byte decodes to a nil symbol. t is the table the encoding numbered
+// its strings in, and nil for an encoding written without one.
+//
+// Error modes: an error wrapping [ErrMalformed] where b ends inside
+// the encoding, names a kind the model does not declare, places a kind
+// in a field that admits another, states a bool other than zero or one,
+// names a string t does not contain, or states a list longer than the
+// bytes left. Nothing else comes back with the error.
+//
+// # Allocation contract
+//
+// DecodeBinary allocates each declaration and each non-empty list of
+// the subtree once. A string decoded against a table is a string of the
+// table and allocates nothing, and one decoded without a table
+// allocates once.
+func DecodeBinary(b []byte, t *StringTable) (symbol.Symbol, int, error) {
+	r := binaryReader{Decoder: wire.NewDecoder(b), t: t}
+	s := r.symbol()
+	if err := r.Err(); err != nil {
+		return nil, 0, err
+	}
+	return s, r.Read(), nil
+}
+
+// symbol writes any symbol behind its kind, and a zero byte for nil.
+func (w *binaryWriter) symbol(s symbol.Symbol) error {
+	switch x := s.(type) {
+	case nil:
+		w.kind(symbol.KindInvalid)
+		return nil
+{{- range .Views}}
+	case *{{.Name}}:
+{{- if .Fallible}}
+		return w.encode{{.Name}}(x)
+{{- else}}
+		w.encode{{.Name}}(x)
+		return nil
+{{- end}}
+{{- end}}
+	default:
+		return fmt.Errorf("{{.Package}}: encode %v: %T is not a kind of the model", s.Kind(), s)
+	}
+}
+
+// symbol reads any symbol by the kind in front of it.
+func (r *binaryReader) symbol() symbol.Symbol {
+	switch k := r.kind(); k {
+	case symbol.KindInvalid:
+		return nil
+{{- range .Views}}
+	case symbol.Kind{{.Name}}:
+		return r.decode{{.Name}}()
+{{- end}}
+	default:
+		r.Fail(fmt.Errorf("{{.Package}}: decode: %w: kind %d at byte %d is not a kind of the model",
+			ErrMalformed, k, r.Read()-1))
+		return nil
+	}
+}
+
+// ref reads a symbol into a field that admits one kind: the zero value
+// for a nil symbol, and a failure for a symbol of another kind.
+func ref[T symbol.Symbol](r *binaryReader) T {
+	var zero T
+	s := r.symbol()
+	if s == nil {
+		return zero
+	}
+	typed, admitted := s.(T)
+	if !admitted {
+		r.Fail(fmt.Errorf("{{.Package}}: decode: %w: a %v ends at byte %d in a field that admits %T",
+			ErrMalformed, s.Kind(), r.Read(), zero))
+	}
+	return typed
+}
+{{- range .Views}}
+
+// encode{{.Name}} writes one {{.Name}} behind its kind, and a zero byte
+// for nil.
+{{- if .Fallible}}
+func (w *binaryWriter) encode{{.Name}}(x *{{.Name}}) error {
+	if x == nil {
+		w.kind(symbol.KindInvalid)
+		return nil
+	}
+{{- else}}
+func (w *binaryWriter) encode{{.Name}}(x *{{.Name}}) {
+	if x == nil {
+		w.kind(symbol.KindInvalid)
+		return
+	}
+{{- end}}
+	w.kind(symbol.Kind{{.Name}})
+{{- range .Fields}}
+{{- if eq .Codec "string"}}
+	w.str(x.{{.Storage}})
+{{- else if eq .Codec "bool"}}
+	w.boolean(x.{{.Storage}})
+{{- else if eq .Codec "int"}}
+	w.integer(x.{{.Storage}})
+{{- else if eq .Codec "enum"}}
+	w.unsigned(uint64(x.{{.Storage}}))
+{{- else if eq .Codec "identity"}}
+	w.identity(x.{{.Storage}})
+{{- else if eq .Codec "pos"}}
+	w.pos(x.{{.Storage}})
+{{- else if eq .Codec "strings"}}
+	w.strs(x.{{.Storage}})
+{{- else if eq .Codec "annotations"}}
+	w.annotations(x.{{.Storage}})
+{{- else if and (eq .Codec "ref") .Fallible}}
+	if err := w.encode{{.Elem}}(x.{{.Storage}}); err != nil {
+		return err
+	}
+{{- else if eq .Codec "ref"}}
+	w.encode{{.Elem}}(x.{{.Storage}})
+{{- else if and (eq .Codec "refs") .Fallible}}
+	w.unsigned(uint64(len(x.{{.Storage}})))
+	for _, child := range x.{{.Storage}} {
+		if err := w.encode{{.Elem}}(child); err != nil {
+			return err
+		}
+	}
+{{- else if eq .Codec "refs"}}
+	w.unsigned(uint64(len(x.{{.Storage}})))
+	for _, child := range x.{{.Storage}} {
+		w.encode{{.Elem}}(child)
+	}
+{{- else if eq .Codec "symbols"}}
+	w.unsigned(uint64(len(x.{{.Storage}})))
+	for _, child := range x.{{.Storage}} {
+		if err := w.symbol(child); err != nil {
+			return err
+		}
+	}
+{{- else}}
+	the binary codec cannot write {{.Storage}}
+{{- end}}
+{{- end}}
+{{- if .Fallible}}
+	return nil
+{{- end}}
+}
+
+// decode{{.Name}} reads the fields of one {{.Name}}, the kind in front
+// of them already read.
+func (r *binaryReader) decode{{.Name}}() *{{.Name}} {
+	x := &{{.Name}}{}
+{{- range .Fields}}
+{{- if eq .Codec "string"}}
+	x.{{.Storage}} = r.str()
+{{- else if eq .Codec "bool"}}
+	x.{{.Storage}} = r.boolean()
+{{- else if eq .Codec "int"}}
+	x.{{.Storage}} = r.integer()
+{{- else if eq .Codec "enum"}}
+	x.{{.Storage}} = {{.Decl}}(r.unsigned())
+{{- else if eq .Codec "identity"}}
+	x.{{.Storage}} = r.identity()
+{{- else if eq .Codec "pos"}}
+	x.{{.Storage}} = r.pos()
+{{- else if eq .Codec "strings"}}
+	x.{{.Storage}} = r.strs()
+{{- else if eq .Codec "annotations"}}
+	x.{{.Storage}} = r.annotations()
+{{- else if eq .Codec "ref"}}
+	x.{{.Storage}} = ref[*{{.Elem}}](r)
+{{- else if eq .Codec "refs"}}
+	if n := r.count(); n > 0 {
+		x.{{.Storage}} = make({{.Decl}}, n)
+		for i := range x.{{.Storage}} {
+			x.{{.Storage}}[i] = ref[*{{.Elem}}](r)
+		}
+	}
+{{- else if eq .Codec "symbols"}}
+	if n := r.count(); n > 0 {
+		x.{{.Storage}} = make({{.Decl}}, n)
+		for i := range x.{{.Storage}} {
+			x.{{.Storage}}[i] = r.symbol()
+		}
+	}
+{{- else}}
+	the binary codec cannot read {{.Storage}}
+{{- end}}
+{{- end}}
+	return x
+}
+{{- end}}

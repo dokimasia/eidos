@@ -3,7 +3,10 @@
 
 package model
 
-import "strings"
+import (
+	"strconv"
+	"strings"
+)
 
 // The packages the generator writes into.
 const (
@@ -51,6 +54,31 @@ const (
 	// takes its address.
 	zeroLiteral = "{}"
 	addressOf   = "&"
+)
+
+// The codecs a node-side field's value encodes through in the binary
+// codec, which its template switches on. A field whose type matches
+// none renders text gofmt refuses, so a schema type the codec cannot
+// write fails the generation.
+const (
+	codecString      = "string"
+	codecBool        = "bool"
+	codecInt         = "int"
+	codecIdentity    = "identity"
+	codecPos         = "pos"
+	codecStrings     = "strings"
+	codecAnnotations = "annotations"
+	codecEnum        = "enum"
+	codecRef         = "ref"
+	codecRefs        = "refs"
+	codecSymbols     = "symbols"
+)
+
+// The schema spellings of the types the binary codec writes by name.
+const (
+	identityType = symbolQualifier + "Identity"
+	posType      = positionQualifier + "Pos"
+	stringsType  = sliceMarker + "string"
 )
 
 // Field names the models treat by convention and not by tag.
@@ -157,6 +185,15 @@ type view struct {
 	// has the wrong JSON type, so a decoder places the kind and then
 	// fails on its body.
 	Malformed string
+	// Fallible reports whether the binary encoding of the kind can
+	// fail: the kind has a field that admits any kind, or a field of a
+	// kind whose encoding can fail. Only a symbol from outside the
+	// model fails an encoding.
+	Fallible bool
+	// Populate are the statements a test uses to give the subject a
+	// value other than the zero value in every field the binary codec
+	// writes as a value, each field a value of its own.
+	Populate []string
 }
 
 // IsMembered reports whether the kind has any member list.
@@ -232,6 +269,11 @@ type fieldView struct {
 	// declared type, with a slice of the marker spelled as the
 	// kind-discriminated [symbolsType] slice.
 	JSONType string
+	// Codec is how the binary codec writes the field, one of the codec
+	// constants, and empty for a type it cannot write. Fallible
+	// reports whether writing the field can fail.
+	Codec    string
+	Fallible bool
 }
 
 // viewsFor prepares every kind for one model side.
@@ -246,7 +288,125 @@ func viewsFor(kinds []KindSpec, side string) []view {
 		out = append(out, viewOf(kind, side, reach, named))
 	}
 	fillFacts(kinds, side, out)
+	fillCodec(kinds, side, out)
 	return out
+}
+
+// fillCodec prepares the binary codec's views on the node side: which
+// kinds and fields can fail to encode, and the statements that give
+// every field the codec writes as a value a value of its own. It runs
+// after viewOf, because fallibility follows the fields of every kind.
+func fillCodec(kinds []KindSpec, side string, views []view) {
+	if side != NodePackage {
+		return
+	}
+	fallible := fallibleReach(kinds)
+	for i := range views {
+		v := &views[i]
+		v.Fallible = fallible[v.Name]
+		for j := range v.Fields {
+			f := &v.Fields[j]
+			f.Fallible = f.Codec == codecSymbols ||
+				((f.Codec == codecRef || f.Codec == codecRefs) && fallible[f.Elem])
+			if stmt := populateOf(*f, j); stmt != "" {
+				v.Populate = append(v.Populate, stmt)
+			}
+		}
+	}
+}
+
+// fallibleReach computes which kinds' binary encodings can fail: every
+// kind with a node-side field that admits any kind, because only a
+// symbol from outside the model fails, and every kind with a node-side
+// field of such a kind.
+func fallibleReach(kinds []KindSpec) map[string]bool {
+	fallible := map[string]bool{}
+	for _, k := range kinds {
+		for _, f := range k.Fields {
+			if f.IsSymbol && f.Side.OnNode() {
+				fallible[k.Name] = true
+				break
+			}
+		}
+	}
+	for changed := true; changed; {
+		changed = false
+		for _, k := range kinds {
+			if fallible[k.Name] {
+				continue
+			}
+			for _, f := range k.Fields {
+				if f.Side.OnNode() && fallible[f.Elem] {
+					fallible[k.Name] = true
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	return fallible
+}
+
+// codecOf returns how the binary codec writes a field: by the shape of
+// a field that references kinds, and by the type of any other. It
+// returns the empty string for a type the codec cannot write.
+func codecOf(field FieldSpec) string {
+	switch {
+	case field.IsSymbol && field.Slice:
+		return codecSymbols
+	case field.Elem != "" && field.Slice:
+		return codecRefs
+	case field.Elem != "":
+		return codecRef
+	case field.Type == "string":
+		return codecString
+	case field.Type == "bool":
+		return codecBool
+	case field.Type == "int":
+		return codecInt
+	case field.Type == stringsType:
+		return codecStrings
+	case field.Type == identityType:
+		return codecIdentity
+	case field.Type == posType:
+		return codecPos
+	case field.Type == annotationsType:
+		return codecAnnotations
+	case strings.HasPrefix(field.Type, symbolQualifier):
+		return codecEnum
+	}
+	return ""
+}
+
+// populateOf writes the statement a test uses to give one field a
+// value other than the zero value, distinct from every other field's:
+// the field's name in a string, the field's ordinal in a number. A
+// field that references kinds gets its value from the children a test
+// builds, so it gets no statement here.
+func populateOf(f fieldView, ordinal int) string {
+	target := "subject." + f.Storage
+	n := strconv.Itoa(ordinal + 1)
+	switch f.Codec {
+	case codecString:
+		return target + ` = "` + f.Name + `"`
+	case codecBool:
+		return target + " = true"
+	case codecInt:
+		return target + " = -" + n
+	case codecEnum:
+		return target + " = " + n
+	case codecIdentity:
+		return target + ` = symbol.Identity{Lang: "lang", Package: "pkg/` + f.Name +
+			`", Owner: "Owner", Name: "` + f.Name + `", Kind: symbol.KindStruct, Disc: "disc"}`
+	case codecPos:
+		return target + ` = position.Pos{File: "` + f.Name + `.go", Line: ` + n + `, Col: ` + n + `}`
+	case codecStrings:
+		return target + ` = []string{"` + f.Name + `", "", "` + f.Name + `"}`
+	case codecAnnotations:
+		return target + ` = symbol.Annotations{{Name: "` + f.Name +
+			`", Args: []string{"x", "y"}}, {Name: "bare"}}`
+	}
+	return ""
 }
 
 // fillFacts prepares the facts traversal's views on the emit side:
@@ -684,6 +844,7 @@ func fieldOf(field FieldSpec, side string) fieldView {
 		f.JSONType = qualify(field.Type)
 	}
 	f.Decl = f.JSONType
+	f.Codec = codecOf(field)
 
 	if side == EmitPackage && field.Slot != "" {
 		element := strings.TrimPrefix(qualify(field.Type), sliceMarker)

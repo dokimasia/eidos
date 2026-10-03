@@ -82,15 +82,35 @@
 // the rule has one match. An invocation's placements, slot appends
 // and findings are buffered with its sequence number: the
 // declarations an [Out] places, the values a [SlotView] appends and
-// the findings its match reports. The buffers apply when the phase call's rules have
-// run, in canonical match order, so the output does not depend on
-// the worker count, and a handler sees the plan's store and the
-// slots as they were when its phase call began. A stamp arrives in
-// the fact store as it is made, because the store ranks claims by
-// sequence number and not by arrival. An append through
-// [Emitter.Slot] into a value an earlier bucket placed names the
-// plugin among the contributors of the unit that contains the
-// value.
+// the findings its match reports. The buffers apply when the phase
+// call's rules have run, in canonical match order, so the output does
+// not depend on the worker count, and a handler sees the plan's store
+// and the slots as they were when its phase call began. A stamp
+// arrives in the fact store as it is made, because the store ranks
+// claims by their rule, subject and gating instance and not by
+// arrival. An append through [Emitter.Slot] into a value an earlier
+// bucket placed names the plugin among the contributors of the unit
+// that contains the value.
+//
+// # Selective dispatch
+//
+// A phase context's selection restricts every rule that is not
+// emit-phase to the listed matches its gates still admit and to every
+// match of a candidate, in canonical match order: rule, subject
+// identity, gating instance. A graph rule runs where the selection
+// lists it, and emit-phase rules run over every value of the plan's
+// store. A full call and a selected call order their invocations
+// differently within a rule, and no output depends on that order. A
+// claim ranks by its rule, subject and instance, a unit orders its
+// declarations by origin first, and the invocations that append into
+// one slot share the origin of the slot's value. A selected call
+// reports the findings a full call reports, in the order it runs
+// their invocations. A phase context's journal receives one record
+// for each invocation once the call's effects apply, in canonical
+// match order, then each candidate's matches. A rule's invocations on
+// one worker share one read set, reset between them, and a call that
+// journals copies each invocation's edges into a [store.ReadLog] as
+// the invocation returns.
 //
 // # Failure semantics
 //

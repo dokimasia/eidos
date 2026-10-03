@@ -33,17 +33,14 @@ var errRecord = errors.New("the state directory is gone")
 // aged is the mtime a case sets on a file, so a write moves it.
 var aged = time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
 
-// crashing is a ledger whose commit fails: the window between the last
-// plan's commit and the record.
-type crashing struct{}
-
-// BeginRun returns the empty manifest.
-func (crashing) BeginRun(context.Context) (manifest.Manifest, error) {
-	return manifest.Manifest{Version: manifest.Version}, nil
+// crashing is a memory ledger whose writes fail: the window between the
+// last plan's commit and the record.
+type crashing struct {
+	*ledger.Mem
 }
 
-// CommitRun returns errRecord.
-func (crashing) CommitRun(context.Context, manifest.Manifest) error { return errRecord }
+// Write returns errRecord.
+func (crashing) Write(context.Context, string, []byte) error { return errRecord }
 
 // cancelling is a sink that cancels the run's context when it commits:
 // a cancellation that arrives between two plans' commits.
@@ -148,8 +145,7 @@ func TestCommit(t *testing.T) {
 			w := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})).
 				Ledger(func() (ledger.Ledger, error) { return mem, nil }))
 			cleanRun(t, w, routedIn(t, coretest.StorePath))
-			got, err := mem.BeginRun(t.Context())
-			assert.NoError(t, err, "the record reads")
+			got := recordIn(t, mem)
 			assert.Equal(t, got.Files, []manifest.Entry{{
 				Path:    storeGen,
 				Plan:    "plan",
@@ -232,7 +228,8 @@ func TestCommit(t *testing.T) {
 				[]directive.Raw{{Name: unclaimedName}}), "an unclaimed directive attaches before the seal")
 			report, err := runOver(t, w, g)
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the run fails")
-			assert.Equal(t, report.Manifest.Files, []manifest.Entry{gone}, "the removed plan's entry remains")
+			want := manifest.Manifest{Version: manifest.Version, Files: []manifest.Entry{gone}}
+			assert.True(t, report.Manifest.Equal(want), "the removed plan's entry remains")
 		})
 
 		t.Run("keeps the previous entries of a plan that fails", func(t *testing.T) {
@@ -267,8 +264,7 @@ func TestCommit(t *testing.T) {
 			assert.Equal(t, report.Plans[1].Status, workspace.PlanCancelled, "the second is cancelled")
 			assert.True(t, absent(root, "b/"+storeGen), "the cancelled plan writes nothing")
 			assert.Equal(t, mem.Writes(), 1, "the record matches the destination")
-			got, _ := mem.BeginRun(t.Context())
-			assert.Equal(t, paths(got), []string{"a/" + storeGen}, "it lists the committed plan's file")
+			assert.Equal(t, paths(recordIn(t, mem)), []string{"a/" + storeGen}, "it lists the committed plan's file")
 		})
 
 		t.Run("derives the same bytes after a crash between the last commit and the record", func(t *testing.T) {
@@ -276,7 +272,7 @@ func TestCommit(t *testing.T) {
 
 			root := t.TempDir()
 			crashed := built(t, onDisk(t, root, diskPlan(t, "plan", layout.Config{})).
-				Ledger(func() (ledger.Ledger, error) { return crashing{}, nil }))
+				Ledger(func() (ledger.Ledger, error) { return crashing{Mem: ledger.NewMem()}, nil }))
 			_, err := runOver(t, crashed, routedIn(t, coretest.StorePath))
 			assert.ErrorIs(t, err, errRecord, "the record fails")
 			age(t, root, storeGen)

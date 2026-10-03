@@ -26,14 +26,27 @@
 // Every write comes with a [Claim], and rank decides the winner,
 // never arrival order: higher [Authority] first, then the earlier
 // capability bucket, then the plugin name alphabetically, then the
-// first claim in canonical match order. A claim that loses on rank
-// changes nothing, whenever it arrives. [Facts.Claims] lists every
-// claim, the losing ones included.
+// first claim in canonical match order, which the claim's [Order]
+// states as the rule, the invocation's subject and the gating instance.
+// A claim that loses on rank changes nothing, whenever it arrives.
+// [Facts.Claims] lists every claim, the losing ones included.
 //
 // A drop is a claim of absence at directive authority: it outranks
 // a plugin stamp whenever the stamp arrives, and loses to a manual
 // write. [Facts.DropGroup] covers every member of a fact group,
 // including the stamps that arrive after it.
+//
+// # Warm runs
+//
+// Every run computes the same [Order] for the same claim, so a claim a
+// previous run recorded ranks against a claim the current run makes.
+// [Restore] returns a store that loads each subject's recorded claims
+// from a [BagSource] on first use, and each key's recorded presence on
+// its first enumeration. [Facts.Withdraw] and [Facts.WithdrawGroup]
+// remove the claim of one rank source before its match runs again, or
+// where its match disappeared, and [Facts.ClaimedBy] lists the facts
+// one plugin claimed in the current run. A source that fails leaves the
+// bag empty, and [Facts.Damaged] returns the failure.
 //
 // # Reading
 //

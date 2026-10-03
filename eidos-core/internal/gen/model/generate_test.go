@@ -196,6 +196,8 @@ func TestGenerate(t *testing.T) {
 				"emit/walk.gen_test.go",
 				"match.gen.go",
 				"match.gen_test.go",
+				"node/codec.gen.go",
+				"node/codec.gen_test.go",
 				fingerprintFile,
 				"node/fingerprint.gen_test.go",
 				"node/kinds.gen.go",

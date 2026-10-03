@@ -15,9 +15,9 @@ import (
 //
 // A problem with one subject attaches to the context's sink and the
 // phase continues; a returned error is fatal to the phase. An
-// annotator never adds or removes declarations, which the store
-// enforces rather than this docblock: nothing reachable from the
-// context can write to the graph.
+// annotator never adds or removes declarations, and the store
+// enforces it: nothing reachable from the context can write to the
+// graph.
 type Annotator interface {
 	Plugin
 	Annotate(ctx *AnnotatorContext) error
@@ -84,6 +84,15 @@ type AnnotatorContext struct {
 	// goroutines joins them before its call returns, whatever the
 	// count.
 	Workers int
+	// Select restricts the call to what a warm run executes again, and
+	// nil runs every match. A plugin implementing the role directly may
+	// ignore it.
+	Select *Selection
+	// Journal receives a record for each invocation the call runs, and
+	// nil keeps none. A plugin implementing the role directly may
+	// journal nothing, and the run then records the call under
+	// [WholeCall].
+	Journal Journal
 }
 
 // GeneratorContext is what one Generate call may touch. Its Index
@@ -109,6 +118,10 @@ type GeneratorContext struct {
 	// Workers is how many invocations the call may run at once, with
 	// the meaning [AnnotatorContext.Workers] states.
 	Workers int
+	// Select and Journal have the meaning the annotator's context gives
+	// the fields of the same names.
+	Select  *Selection
+	Journal Journal
 	// Exports are the exports of the plans the plan depends on, keyed
 	// by plan name, each complete before the plan's first generator
 	// runs. It is nil for a plan that depends on none. Every dependent

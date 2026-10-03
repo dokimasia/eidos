@@ -16,6 +16,7 @@ import (
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
@@ -149,7 +150,15 @@ func recorded(t *testing.T, root string) manifest.Manifest {
 
 	l, err := ledger.OpenDir(root, fixtureBrand)
 	assert.NoError(t, err, "the ledger opens")
-	m, err := l.BeginRun(t.Context())
+	return recordIn(t, l)
+}
+
+// recordIn returns the record a ledger contains: its manifest's
+// documents, joined.
+func recordIn(t *testing.T, l ledger.Ledger) manifest.Manifest {
+	t.Helper()
+
+	m, _, err := state.ReadManifest(t.Context(), l)
 	assert.NoError(t, err, "the record reads")
 	return m
 }
@@ -241,8 +250,8 @@ func recording(t *testing.T, entries ...manifest.Entry) *ledger.Mem {
 	t.Helper()
 
 	mem := ledger.NewMem()
-	assert.NoError(t, mem.CommitRun(t.Context(), manifest.Manifest{Version: manifest.Version, Files: entries}),
-		"the previous record commits")
+	_, err := state.WriteManifest(t.Context(), mem, manifest.Manifest{Version: manifest.Version, Files: entries}, nil)
+	assert.NoError(t, err, "the previous record commits")
 	return mem
 }
 

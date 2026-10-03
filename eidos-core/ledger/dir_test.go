@@ -4,38 +4,21 @@
 package ledger_test
 
 import (
+	"context"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/ledger"
-	"go.dokimi.dev/eidos/core/manifest"
 )
 
-// The fixture record's plan, path and digest.
-const (
-	planName = "go-services"
-	stubPath = "svc/store_stub.go"
-)
-
-// past is the mtime a fixture sets on a record, so a commit that writes
-// it moves the time.
+// past is the mtime a fixture sets on a blob, so a touch moves the time.
 var past = time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
-
-// recorded returns a well-formed manifest naming a workspace.
-func recorded(workspace string) manifest.Manifest {
-	return manifest.Manifest{
-		Version:   manifest.Version,
-		Workspace: workspace,
-		Files: []manifest.Entry{{
-			Path: stubPath, Plan: planName, Hash: "sha256:" + strings.Repeat("ab", 32),
-		}},
-	}
-}
 
 // opened returns a ledger over a fresh workspace root and the root.
 func opened(t *testing.T) (*ledger.Dir, string) {
@@ -47,14 +30,24 @@ func opened(t *testing.T) (*ledger.Dir, string) {
 	return d, root
 }
 
-// manifestFile returns the manifest's absolute path under a root.
-func manifestFile(root string) string {
-	return filepath.Join(root, filepath.FromSlash(ledger.ManifestPath(brand)))
+// onDisk returns the absolute path of a blob of a workspace root's
+// state directory.
+func onDisk(root, name string) string {
+	return filepath.Join(root, ledger.StateDir(brand), filepath.FromSlash(name))
 }
 
-// The state directory's ledger records the manifest atomically, under
-// the root's name where it states none, and writes nothing for a
-// manifest it already records.
+// written returns a ledger over a fresh root that contains one blob.
+func written(t *testing.T, name, body string) (*ledger.Dir, string) {
+	t.Helper()
+
+	d, root := opened(t)
+	assert.NoError(t, d.Write(t.Context(), name, []byte(body)), "the blob is written")
+	return d, root
+}
+
+// The disk ledger stores each blob as a file of the brand's state
+// directory, resolved inside the workspace root, and replaces it through
+// a staging file of its own.
 func TestDir(t *testing.T) {
 	t.Parallel()
 
@@ -85,146 +78,201 @@ func TestDir(t *testing.T) {
 		})
 	})
 
-	t.Run("BeginRun", func(t *testing.T) {
+	t.Run("OpenAt", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the empty manifest for a root without a state directory", func(t *testing.T) {
+		t.Run("returns a ledger whose first write creates its directory", func(t *testing.T) {
 			t.Parallel()
 
-			d, _ := opened(t)
-			got, err := d.BeginRun(t.Context())
-			assert.NoError(t, err, "no record is no error")
-			assert.True(t, got.Equal(manifest.Manifest{Version: manifest.Version}), "the empty manifest")
+			dir := filepath.Join(t.TempDir(), "memo", "shared")
+			d, err := ledger.OpenAt(dir)
+			assert.NoError(t, err, "a missing directory opens")
+			assert.NoError(t, d.Put(t.Context(), docName, []byte(docBody)), "the first write creates it")
+			got, err := os.ReadFile(filepath.Join(dir, filepath.FromSlash(docName)))
+			assert.NoError(t, err, "the blob is a file of the directory itself")
+			assert.Equal(t, string(got), docBody, "with its bytes")
 		})
 
-		t.Run("returns the manifest the last commit recorded", func(t *testing.T) {
+		t.Run("returns an error for a path that is a file", func(t *testing.T) {
 			t.Parallel()
 
-			d, _ := opened(t)
-			assert.NoError(t, d.CommitRun(t.Context(), recorded("platform")), "the record commits")
-			got, err := d.BeginRun(t.Context())
-			assert.NoError(t, err, "the record reads")
-			assert.True(t, got.Equal(recorded("platform")), "the recorded manifest")
+			file := filepath.Join(t.TempDir(), "file")
+			assert.NoError(t, os.WriteFile(file, nil, 0o600), "the file is written")
+			_, err := ledger.OpenAt(file)
+			assert.HasError(t, err, "the path is refused")
 		})
 
-		t.Run("returns an error naming the path for a record that does not decode", func(t *testing.T) {
+		t.Run("returns an error for a path whose parent does not stat", func(t *testing.T) {
 			t.Parallel()
 
-			d, root := opened(t)
-			assert.NoError(t, os.MkdirAll(filepath.Dir(manifestFile(root)), 0o700), "the state directory is made")
-			assert.NoError(t, os.WriteFile(manifestFile(root), []byte("not json"), 0o600), "a broken record")
-			got, err := d.BeginRun(t.Context())
-			assert.ErrorIs(t, err, manifest.ErrUnsupported, "the record does not read")
-			assert.Contains(t, err.Error(), ledger.ManifestPath(brand), "the error names the record")
-			assert.True(t, got.Equal(manifest.Manifest{Version: manifest.Version}), "beside the empty manifest")
+			file := filepath.Join(t.TempDir(), "file")
+			assert.NoError(t, os.WriteFile(file, nil, 0o600), "the file is written")
+			_, err := ledger.OpenAt(filepath.Join(file, "below"))
+			assert.HasError(t, err, "a path below a file is refused")
 		})
 
-		t.Run("returns an error for a record that is a directory", func(t *testing.T) {
+		t.Run("returns a ledger whose write fails where its directory cannot be made", func(t *testing.T) {
 			t.Parallel()
 
-			d, root := opened(t)
-			assert.NoError(t, os.MkdirAll(manifestFile(root), 0o700), "the record's path is a directory")
-			_, err := d.BeginRun(t.Context())
-			assert.HasError(t, err, "the record does not read")
-		})
-
-		t.Run("returns an error for a root removed after the ledger opened", func(t *testing.T) {
-			t.Parallel()
-
-			d, root := opened(t)
-			assert.NoError(t, os.RemoveAll(root), "the root is removed")
-			_, err := d.BeginRun(t.Context())
-			assert.HasError(t, err, "the root does not open")
+			parent := filepath.Join(t.TempDir(), "memo")
+			d, err := ledger.OpenAt(filepath.Join(parent, "shared"))
+			assert.NoError(t, err, "a missing directory opens")
+			assert.NoError(t, os.WriteFile(parent, nil, 0o600), "a file takes the parent's place")
+			assert.HasError(t, d.Put(t.Context(), docName, []byte(docBody)), "the directory is not made")
 		})
 	})
 
-	t.Run("CommitRun", func(t *testing.T) {
+	t.Run("Workspace", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("records a manifest without a workspace under the root's base name", func(t *testing.T) {
+		t.Run("returns the base name of the workspace root", func(t *testing.T) {
 			t.Parallel()
 
 			d, root := opened(t)
-			assert.NoError(t, d.CommitRun(t.Context(), recorded("")), "the record commits")
-			got, err := d.BeginRun(t.Context())
-			assert.NoError(t, err, "the record reads")
-			assert.Equal(t, got.Workspace, filepath.Base(root), "the root's base name")
+			assert.Equal(t, d.Workspace(), filepath.Base(root), "the root's base name")
 		})
 
-		t.Run("records a manifest's own workspace name", func(t *testing.T) {
+		t.Run("returns the empty string for a ledger OpenAt returned", func(t *testing.T) {
+			t.Parallel()
+
+			d, err := ledger.OpenAt(t.TempDir())
+			assert.NoError(t, err, "the directory opens")
+			assert.Equal(t, d.Workspace(), "", "no workspace")
+		})
+	})
+
+	t.Run("Read", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the bytes the last write stored", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			assert.NoError(t, d.Write(t.Context(), docName, []byte(otherBody)), "the blob is replaced")
+			got, err := d.Read(t.Context(), docName)
+			assert.NoError(t, err, "the blob reads")
+			assert.Equal(t, string(got), otherBody, "the second write's bytes")
+		})
+
+		t.Run("returns ErrNotExist for a name nothing wrote", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			_, err := d.Read(t.Context(), segName)
+			assert.ErrorIs(t, err, fs.ErrNotExist, "nothing is stored there")
+		})
+
+		t.Run("returns ErrNotExist before the state directory exists", func(t *testing.T) {
 			t.Parallel()
 
 			d, _ := opened(t)
-			assert.NoError(t, d.CommitRun(t.Context(), recorded("platform")), "the record commits")
-			got, err := d.BeginRun(t.Context())
-			assert.NoError(t, err, "the record reads")
-			assert.Equal(t, got.Workspace, "platform", "the stated name")
+			_, err := d.Read(t.Context(), docName)
+			assert.ErrorIs(t, err, fs.ErrNotExist, "no state directory")
 		})
 
-		t.Run("writes nothing for a manifest equal to the record", func(t *testing.T) {
+		t.Run("returns ErrNotExist for a ledger OpenAt returned before its first write", func(t *testing.T) {
 			t.Parallel()
 
-			d, root := opened(t)
-			assert.NoError(t, d.CommitRun(t.Context(), recorded("platform")), "the record commits")
-			assert.NoError(t, os.Chtimes(manifestFile(root), past, past), "the record ages")
-			assert.NoError(t, d.CommitRun(t.Context(), recorded("platform")), "the equal record commits")
-			info, err := os.Stat(manifestFile(root))
-			assert.NoError(t, err, "the record stats")
-			assert.True(t, info.ModTime().Equal(past), "the record's mtime does not move")
+			d, err := ledger.OpenAt(filepath.Join(t.TempDir(), "memo"))
+			assert.NoError(t, err, "the directory opens")
+			_, err = d.Read(t.Context(), docName)
+			assert.ErrorIs(t, err, fs.ErrNotExist, "no directory")
 		})
 
-		t.Run("replaces a record that does not decode", func(t *testing.T) {
+		t.Run("returns the context's error for a cancelled context", func(t *testing.T) {
 			t.Parallel()
 
-			d, root := opened(t)
-			assert.NoError(t, os.MkdirAll(filepath.Dir(manifestFile(root)), 0o700), "the state directory is made")
-			assert.NoError(t, os.WriteFile(manifestFile(root), []byte("not json"), 0o600), "a broken record")
-			assert.NoError(t, d.CommitRun(t.Context(), recorded("platform")), "the record commits")
-			got, err := d.BeginRun(t.Context())
-			assert.NoError(t, err, "the record reads")
-			assert.True(t, got.Equal(recorded("platform")), "the new record")
+			d, _ := written(t, docName, docBody)
+			_, err := d.Read(cancelled(t), docName)
+			assert.ErrorIs(t, err, context.Canceled, "the cancellation is returned")
 		})
 
-		t.Run("leaves the manifest alone in the state directory", func(t *testing.T) {
+		for _, tt := range invalidNames {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				d, _ := opened(t)
+				_, err := d.Read(t.Context(), tt.give)
+				assert.ErrorIs(t, err, fs.ErrInvalid, "the name is refused")
+			})
+		}
+	})
+
+	t.Run("ReadAt", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the bytes at an offset", func(t *testing.T) {
 			t.Parallel()
 
-			d, root := opened(t)
-			assert.NoError(t, d.CommitRun(t.Context(), recorded("platform")), "the record commits")
-			listed, err := os.ReadDir(filepath.Dir(manifestFile(root)))
-			assert.NoError(t, err, "the state directory reads")
+			d, _ := written(t, docName, docBody)
+			p := make([]byte, 5)
+			n, err := d.ReadAt(t.Context(), docName, p, 4)
+			assert.NoError(t, err, "the range reads")
+			assert.Equal(t, string(p[:n]), "first", "the bytes at the offset")
+		})
+
+		t.Run("returns EOF beside the count for a range past the end", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			p := make([]byte, 64)
+			n, err := d.ReadAt(t.Context(), docName, p, 4)
+			assert.ErrorIs(t, err, io.EOF, "the range ends early")
+			assert.Equal(t, string(p[:n]), docBody[4:], "beside the bytes it read")
+		})
+
+		t.Run("returns ErrNotExist for a name nothing wrote", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			_, err := d.ReadAt(t.Context(), segName, make([]byte, 1), 0)
+			assert.ErrorIs(t, err, fs.ErrNotExist, "nothing is stored there")
+		})
+
+		t.Run("returns ErrInvalid for an invalid name", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			_, err := d.ReadAt(t.Context(), "../x", make([]byte, 1), 0)
+			assert.ErrorIs(t, err, fs.ErrInvalid, "the name is refused")
+		})
+	})
+
+	t.Run("Write", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("creates the state directory and the blob's directories", func(t *testing.T) {
+			t.Parallel()
+
+			_, root := written(t, segName, docBody)
+			got, err := os.ReadFile(onDisk(root, segName))
+			assert.NoError(t, err, "the blob is a file of the state directory")
+			assert.Equal(t, string(got), docBody, "with its bytes")
+		})
+
+		t.Run("leaves the blob alone in its directory", func(t *testing.T) {
+			t.Parallel()
+
+			_, root := written(t, docName, docBody)
+			listed, err := os.ReadDir(filepath.Dir(onDisk(root, docName)))
+			assert.NoError(t, err, "the directory reads")
 			assert.Length(t, listed, 1, "no staging file remains")
-			assert.Equal(t, listed[0].Name(), filepath.Base(manifestFile(root)), "the manifest")
 		})
 
-		t.Run("returns an error for a manifest that breaks the format", func(t *testing.T) {
+		t.Run("returns an error for a blob whose directory is a file", func(t *testing.T) {
 			t.Parallel()
 
-			d, root := opened(t)
-			broken := recorded("platform")
-			broken.Files = append(broken.Files, broken.Files[0])
-			assert.HasError(t, d.CommitRun(t.Context(), broken), "the record is refused")
-			_, err := os.Stat(filepath.Dir(manifestFile(root)))
-			assert.True(t, os.IsNotExist(err), "the state directory is not made")
+			d, _ := written(t, "manifest", docBody)
+			assert.HasError(t, d.Write(t.Context(), docName, []byte(docBody)), "the directory is a file")
 		})
 
-		t.Run("returns an error for a state directory path that is a file", func(t *testing.T) {
+		t.Run("returns an error for a blob that is a directory", func(t *testing.T) {
 			t.Parallel()
 
-			d, root := opened(t)
-			assert.NoError(t, os.WriteFile(filepath.Join(root, ledger.StateDir(brand)), nil, 0o600),
-				"the state directory's path is a file")
-			assert.HasError(t, d.CommitRun(t.Context(), recorded("platform")), "the record is refused")
-		})
-
-		t.Run("returns an error for a manifest path that is a directory", func(t *testing.T) {
-			t.Parallel()
-
-			d, root := opened(t)
-			assert.NoError(t, os.MkdirAll(filepath.Join(manifestFile(root), "kept"), 0o700),
-				"the manifest's path is a directory that is not empty")
-			err := d.CommitRun(t.Context(), recorded("platform"))
-			assert.HasError(t, err, "the record is refused")
-			assert.Contains(t, err.Error(), ledger.ManifestPath(brand), "the error names the record")
+			d, root := written(t, segName, docBody)
+			assert.HasError(t, d.Write(t.Context(), "state/seg", []byte(docBody)), "the rename is refused")
+			_, err := os.Stat(onDisk(root, segName))
+			assert.NoError(t, err, "the directory's blob remains")
 		})
 
 		t.Run("returns an error for a root removed after the ledger opened", func(t *testing.T) {
@@ -232,7 +280,188 @@ func TestDir(t *testing.T) {
 
 			d, root := opened(t)
 			assert.NoError(t, os.RemoveAll(root), "the root is removed")
-			assert.HasError(t, d.CommitRun(t.Context(), recorded("platform")), "the root does not open")
+			assert.HasError(t, d.Write(t.Context(), docName, []byte(docBody)), "the root does not open")
+		})
+
+		t.Run("returns the context's error for a cancelled context", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := opened(t)
+			assert.ErrorIs(t, d.Write(cancelled(t), docName, []byte(docBody)), context.Canceled,
+				"the cancellation is returned")
+			_, err := os.Stat(filepath.Join(root, ledger.StateDir(brand)))
+			assert.ErrorIs(t, err, fs.ErrNotExist, "and nothing is created")
+		})
+
+		t.Run("returns ErrInvalid for an invalid name", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			assert.ErrorIs(t, d.Write(t.Context(), "../x", []byte(docBody)), fs.ErrInvalid, "the name is refused")
+		})
+	})
+
+	t.Run("Put", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("stores the bytes a read returns", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			assert.NoError(t, d.Put(t.Context(), segName, []byte(docBody)), "the blob is put")
+			got, err := d.Read(t.Context(), segName)
+			assert.NoError(t, err, "the blob reads")
+			assert.Equal(t, string(got), docBody, "the bytes put")
+		})
+
+		t.Run("returns ErrInvalid for an invalid name", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			assert.ErrorIs(t, d.Put(t.Context(), "", []byte(docBody)), fs.ErrInvalid, "the name is refused")
+		})
+	})
+
+	t.Run("Touch", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("moves the blob's modification time to the present", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := written(t, docName, docBody)
+			assert.NoError(t, os.Chtimes(onDisk(root, docName), past, past), "the blob ages")
+			assert.NoError(t, d.Touch(t.Context(), docName), "the blob is touched")
+			listed, err := d.List(t.Context(), "manifest")
+			assert.NoError(t, err, "the blobs list")
+			assert.True(t, listed[0].ModTime.After(past), "the time moved")
+		})
+
+		t.Run("returns ErrNotExist for a name nothing wrote", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			assert.ErrorIs(t, d.Touch(t.Context(), segName), fs.ErrNotExist, "nothing is stored there")
+		})
+
+		t.Run("returns ErrInvalid for an invalid name", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			assert.ErrorIs(t, d.Touch(t.Context(), "a//b"), fs.ErrInvalid, "the name is refused")
+		})
+	})
+
+	t.Run("Remove", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("deletes the blob", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			assert.NoError(t, d.Remove(t.Context(), docName), "the blob is removed")
+			_, err := d.Read(t.Context(), docName)
+			assert.ErrorIs(t, err, fs.ErrNotExist, "nothing is stored there")
+		})
+
+		t.Run("returns nil for a name nothing wrote", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			assert.NoError(t, d.Remove(t.Context(), segName), "a missing blob is no error")
+		})
+
+		t.Run("returns nil for a ledger OpenAt returned before its first write", func(t *testing.T) {
+			t.Parallel()
+
+			d, err := ledger.OpenAt(filepath.Join(t.TempDir(), "memo"))
+			assert.NoError(t, err, "the directory opens")
+			assert.NoError(t, d.Remove(t.Context(), docName), "a missing directory is no error")
+		})
+
+		t.Run("returns an error for a name that is a directory with blobs", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, segName, docBody)
+			assert.HasError(t, d.Remove(t.Context(), "state/seg"), "the directory is not removed")
+		})
+
+		t.Run("returns ErrInvalid for an invalid name", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			assert.ErrorIs(t, d.Remove(t.Context(), "/x"), fs.ErrInvalid, "the name is refused")
+		})
+	})
+
+	t.Run("List", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns every blob below the directory sorted by name", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, "state/seg/ab/0123", docBody)
+			for _, name := range []string{"state/seg/a.b", "state/gen/0001", "state/seg/0f/9999"} {
+				assert.NoError(t, d.Write(t.Context(), name, []byte(otherBody)), "a blob is written")
+			}
+			listed, err := d.List(t.Context(), "state/seg")
+			assert.NoError(t, err, "the blobs list")
+			names := make([]string, 0, len(listed))
+			for _, b := range listed {
+				names = append(names, b.Name)
+			}
+			assert.Equal(t, names, []string{"state/seg/0f/9999", "state/seg/a.b", "state/seg/ab/0123"},
+				"the directory's blobs alone, in name order")
+			assert.Equal(t, listed[2].Size, int64(len(docBody)), "with their sizes")
+		})
+
+		t.Run("returns nothing for a directory nothing wrote under", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			listed, err := d.List(t.Context(), "memo")
+			assert.NoError(t, err, "a missing directory is no error")
+			assert.Empty(t, listed, "and lists nothing")
+		})
+
+		t.Run("returns nothing for a name that is a blob", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := written(t, docName, docBody)
+			listed, err := d.List(t.Context(), docName)
+			assert.NoError(t, err, "a blob's name is no error")
+			assert.Empty(t, listed, "and lists nothing below it")
+		})
+
+		t.Run("returns nothing for a ledger OpenAt returned before its first write", func(t *testing.T) {
+			t.Parallel()
+
+			d, err := ledger.OpenAt(filepath.Join(t.TempDir(), "memo"))
+			assert.NoError(t, err, "the directory opens")
+			listed, err := d.List(t.Context(), "ab")
+			assert.NoError(t, err, "a missing directory is no error")
+			assert.Empty(t, listed, "and lists nothing")
+		})
+
+		t.Run("returns an error for a directory that does not walk", func(t *testing.T) {
+			t.Parallel()
+
+			d, root := written(t, segName, docBody)
+			blocked := filepath.Dir(onDisk(root, segName))
+			assert.NoError(t, os.Chmod(blocked, 0), "the directory loses its permissions")
+			t.Cleanup(func() { _ = os.Chmod(blocked, 0o755) })
+			if _, err := os.ReadDir(blocked); err == nil {
+				t.Skip("the process reads a directory without permissions, as root does")
+			}
+			_, err := d.List(t.Context(), "state")
+			assert.HasError(t, err, "the walk is refused")
+		})
+
+		t.Run("returns ErrInvalid for an invalid directory", func(t *testing.T) {
+			t.Parallel()
+
+			d, _ := opened(t)
+			_, err := d.List(t.Context(), ".")
+			assert.ErrorIs(t, err, fs.ErrInvalid, "the name is refused")
 		})
 	})
 }

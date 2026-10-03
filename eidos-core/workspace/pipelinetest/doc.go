@@ -18,7 +18,7 @@
 //     wanted paths, each under the fixture's plan and with the digest of
 //     its file.
 //   - [AssertIdempotent]: a second run in the same directory changes no
-//     byte and moves no mtime.
+//     byte and moves no mtime outside the sealed state.
 //   - [AssertRelocated]: a run in a second directory generates the same
 //     bytes and records the same files.
 //
@@ -33,7 +33,7 @@
 // # Dependency position
 //
 // core/workspace/pipelinetest imports core/workspace,
-// core/workspace/internal/rundir, core/diag, the assert module and the
-// Go stdlib. It drives the whole run, so it is above core/workspace,
+// core/workspace/internal/rundir, core/diag, core/output, the assert
+// module and the Go stdlib. It drives the whole run, so it is above core/workspace,
 // and no package of the kernel imports it.
 package pipelinetest

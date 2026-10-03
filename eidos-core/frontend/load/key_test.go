@@ -19,7 +19,7 @@ import (
 func keysOf(report *load.Report) map[string][]byte {
 	out := make(map[string][]byte, len(report.Units))
 	for _, u := range report.Units {
-		out[u.Files[0]] = u.Key
+		out[u.Files[0].Path] = u.Key
 	}
 	return out
 }
@@ -112,11 +112,6 @@ func TestKeys(t *testing.T) {
 					f.Opts.Tag = "moved"
 					cfg.Frontends = []plugin.Frontend{f}
 				},
-			},
-			{
-				name:   "changes the key for another plugin set",
-				file:   apiFile,
-				mutate: func(cfg *load.Config) { cfg.PluginSet = []byte("set-2") },
 			},
 			{
 				name: "changes the key for another frontend name",

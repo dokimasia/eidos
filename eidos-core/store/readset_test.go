@@ -11,6 +11,7 @@ import (
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -76,6 +77,52 @@ func TestReadSet(t *testing.T) {
 		})
 	})
 
+	t.Run("Packages", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for a set that took no package", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, slices.Collect(store.NewReadSet().Packages()),
+				"a set that took no package has no package edge")
+		})
+
+		t.Run("records one edge for a package taken twice", func(t *testing.T) {
+			t.Parallel()
+
+			decl := coretest.Struct(coretest.StorePath, "Store")
+			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
+			r.PackageOf(decl.ID)
+			r.Lookup(coretest.PackageID(coretest.StorePath))
+
+			assert.Equal(t, slices.Collect(reads.Packages()),
+				[]symbol.Identity{coretest.PackageID(coretest.StorePath)},
+				"PackageOf and a lookup of the package record one edge")
+		})
+
+		t.Run("returns one order however the reads arrived", func(t *testing.T) {
+			t.Parallel()
+
+			pkgs := []*node.Package{coretest.Package(coretest.StorePath), coretest.Package(coretest.CachePath)}
+			forward, forwardReads := coretest.Reading(t, nil, pkgs...)
+			forward.Lookup(coretest.PackageID(coretest.StorePath))
+			forward.Lookup(coretest.PackageID(coretest.CachePath))
+
+			backward, backwardReads := coretest.Reading(t, nil, pkgs...)
+			backward.Lookup(coretest.PackageID(coretest.CachePath))
+			backward.Lookup(coretest.PackageID(coretest.StorePath))
+
+			assert.Equal(t,
+				slices.Collect(forwardReads.Packages()),
+				[]symbol.Identity{coretest.PackageID(coretest.CachePath), coretest.PackageID(coretest.StorePath)},
+				"the edges come back in identity order")
+			assert.Equal(t,
+				slices.Collect(backwardReads.Packages()),
+				slices.Collect(forwardReads.Packages()),
+				"whatever order the reads arrived in")
+		})
+	})
+
 	t.Run("Kinds", func(t *testing.T) {
 		t.Parallel()
 
@@ -119,6 +166,7 @@ func TestReadSet(t *testing.T) {
 			r, err := g.Reader(s, nil)
 			assert.NoError(t, err, "the tracked handle mints")
 			r.Lookup(id)
+			r.PackageOf(id)
 			for range r.ByKind(symbol.KindStruct) {
 				break
 			}
@@ -126,7 +174,7 @@ func TestReadSet(t *testing.T) {
 				break
 			}
 			s.RecordFact(id, "shape.role")
-			assert.Equal(t, s.Len(), 4, "all four grains recorded")
+			assert.Equal(t, s.Len(), 5, "all five grains recorded")
 
 			s.Reset()
 			assert.Equal(t, s.Len(), 0, "a reset set holds no edges")
@@ -216,18 +264,20 @@ func TestReadSet(t *testing.T) {
 				"a set that read nothing counts nothing")
 		})
 
-		t.Run("counts both grains", func(t *testing.T) {
+		t.Run("counts every grain", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
 			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
 			r.Lookup(decl.ID)
+			r.PackageOf(decl.ID)
 			enumerate(r, symbol.KindFile)
 			reads.RecordFact(decl.ID, "shape.role")
 
-			// One identity from the lookup, one from the file the
-			// enumeration reached, one kind edge, and one fact edge.
-			assert.Equal(t, reads.Len(), 4, "Len counts all three grains")
+			// One declaration edge from the lookup, one package edge, one
+			// declaration edge from the file the enumeration met, one
+			// kind edge, and one fact edge.
+			assert.Equal(t, reads.Len(), 5, "Len counts every grain")
 		})
 	})
 }

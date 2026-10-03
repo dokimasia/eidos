@@ -55,6 +55,15 @@ func TestDirectives(t *testing.T) {
 				"a directive on nothing indexes nowhere")
 		})
 
+		t.Run("refuses an attachment to a sealed graph", func(t *testing.T) {
+			t.Parallel()
+
+			f := newSplit()
+			g, _ := f.sealed()
+			err := g.AttachDirectives(f.store.ID, []directive.Raw{stubAt(1)})
+			assertRefused(t, err, store.FrozenWrite)
+		})
+
 		t.Run("refuses no instances at all", func(t *testing.T) {
 			t.Parallel()
 
@@ -307,7 +316,7 @@ func TestDirectives(t *testing.T) {
 // parallel load, one index pass at the seal, and enumeration per
 // gated rule.
 func BenchmarkDirectives(b *testing.B) {
-	// The scale: a tenth of the subjects carry one directive, which
+	// The scale: a tenth of the subjects have one directive, which
 	// is a directive-heavy workspace.
 	const carriers = 20_000
 

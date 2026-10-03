@@ -48,7 +48,6 @@ func setup(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
 		FS:        scriptedTree(),
 		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
 		Sink:      sink,
-		PluginSet: []byte("rulestest"),
 		Brand:     frontendtest.Brand,
 	})
 	assert.NoError(tb, err, "the scripted tree loads")

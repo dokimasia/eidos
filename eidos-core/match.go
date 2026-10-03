@@ -5,6 +5,7 @@ package eidos
 
 import (
 	"fmt"
+	"slices"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -26,8 +27,11 @@ import (
 // effect handle, an [Out] or a [SlotView] past the call is a defect,
 // the same rule that forbids state on the plugin struct.
 type match struct {
-	rs      *runState
-	seq     int
+	rs  *runState
+	seq int
+	// rule is the rule's place in its plugin's declaration order, the
+	// first step of a claim's order.
+	rule    int
 	subject symbol.Identity
 	pos     position.Pos
 	gate    *directive.Directive
@@ -64,19 +68,24 @@ func newMatch(inv invocation) match {
 		pos:     inv.pos,
 		gate:    inv.gate,
 	}
-	if inv.fr != nil && inv.fr.phase == plugin.PhaseEmit {
-		m.host = inv.value
+	if inv.fr != nil {
+		m.rule = int(inv.fr.ordinal)
+		if inv.fr.phase == plugin.PhaseEmit {
+			m.host = inv.value
+		}
 	}
 	// The previous invocation's read set and reader recycle off the
 	// rule's scratch: the set resets so no read leaks into this
 	// invocation's derivation, its storage is kept, and the reader
 	// remains valid because it binds the same index and the same set.
-	// A rule that never reads costs nothing.
+	// A rule that never reads costs nothing. The lane notes the set, so a
+	// call that journals logs what the invocation read when it returns.
 	if prev, held := inv.scratch().(Matcher); held {
 		if b := prev.base(); b.reads != nil {
 			b.reads.Reset()
 			m.reads = b.reads
 			m.reader = b.reader
+			inv.rs.reading = m.reads
 		}
 	}
 	return m
@@ -231,9 +240,13 @@ func (m *match) Kernel() meta.KernelKeys { return m.rs.kernel }
 // and false for any other plan and in an annotator's phase call, which
 // runs before any plan. Every dependent of the plan reads the same
 // value, so a handler does not mutate it. The read records nothing in
-// the invocation's read set, and it allocates nothing.
+// the invocation's read set. A call that journals notes the plan in the
+// invocation's record, and a call that does not allocates nothing.
 func (m *match) Export(plan string) (plugin.ExportDoc, bool) {
 	doc, held := m.rs.exports[plan]
+	if held && m.rs.journal != nil {
+		m.rs.noteExport(plan)
+	}
 	return doc, held
 }
 
@@ -247,18 +260,23 @@ func (m *match) bind(lang symbol.Lang) rules.Bound {
 	})
 }
 
-// readset returns the invocation's read set, created on first use.
+// readset returns the invocation's read set, created on first use, and
+// notes it on the lane, so a call that journals logs what the invocation
+// read when it returns.
 func (m *match) readset() *store.ReadSet {
 	if m.reads == nil {
 		m.reads = store.NewReadSet()
+		m.rs.reading = m.reads
 	}
 	return m.reads
 }
 
 // derived returns the invocation's point reads so far, in the read
-// set's own order: what a claim records as its derivation. It
-// collects and sorts the set only after the set grew, so a handler
-// stamping many facts after its reads sorts them once.
+// set's own order: what a claim records as its derivation. The
+// declarations come first, a package taken whole among them, each
+// identity once and in identity order, then the facts. It collects and
+// sorts the set only after the set grew, so a handler stamping many
+// facts after its reads sorts them once.
 func (m *match) derived() []meta.Read {
 	if m.reads == nil || m.reads.Len() == m.derivedAt {
 		return m.derivation
@@ -267,6 +285,11 @@ func (m *match) derived() []meta.Read {
 	for id := range m.reads.Identities() {
 		out = append(out, meta.Read{Subject: id})
 	}
+	for id := range m.reads.Packages() {
+		out = append(out, meta.Read{Subject: id})
+	}
+	slices.SortFunc(out, func(a, b meta.Read) int { return a.Subject.Compare(b.Subject) })
+	out = slices.CompactFunc(out, func(a, b meta.Read) bool { return a.Subject == b.Subject })
 	for id, key := range m.reads.Facts() {
 		out = append(out, meta.Read{Subject: id, Key: key})
 	}

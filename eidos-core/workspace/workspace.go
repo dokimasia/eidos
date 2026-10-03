@@ -56,6 +56,8 @@ type Workspace struct {
 	// reads carriers under, and what the load refuses as the
 	// workspace's own output.
 	brand output.Brand
+	// memo configures the parse memo, the zero value keeping none.
+	memo Memo
 	// fingerprint is the composition's fold, taken at Build.
 	fingerprint []byte
 }

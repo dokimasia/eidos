@@ -4,14 +4,17 @@
 package rundir
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/output"
@@ -42,6 +45,15 @@ func Files(tb assert.TB, root string) []string {
 // path under root.
 func Path(root, slash string) string {
 	return filepath.Join(root, filepath.FromSlash(slash))
+}
+
+// Sealed reports whether a slash-separated path relative to root is in
+// the brand's sealed state: the state directory outside the manifest's
+// documents, which a run rewrites as it records what it read. A warm
+// run and a cold run over one tree may leave different bytes there.
+func Sealed(brand output.Brand, path string) bool {
+	return strings.HasPrefix(path, ledger.StateDir(brand)+"/") &&
+		!strings.HasPrefix(path, ledger.ManifestPath(brand)+"/")
 }
 
 // Framed returns the text of every file under root that has the
@@ -83,15 +95,20 @@ func Digest(tb assert.TB, root, path string) string {
 	return digestPrefix + hex.EncodeToString(sum[:])
 }
 
-// Record returns the record in the brand's state directory under root.
-// It stops the check where the directory contains no record or the
-// record does not decode.
+// Record returns the record in the brand's state directory under root:
+// the documents of its manifest, joined, and the empty manifest where
+// the directory contains no document, which is how an empty record is
+// stored. It stops the check where root does not open or a document
+// does not decode.
 func Record(tb assert.TB, root string, brand output.Brand) manifest.Manifest {
 	tb.Helper()
 
-	b, err := os.ReadFile(Path(root, ledger.ManifestPath(brand)))
-	assert.NoError(tb, err, "the state directory contains the run's record")
-	m, err := manifest.Decode(b)
-	assert.NoError(tb, err, "the record decodes")
+	l, err := ledger.OpenDir(root, brand)
+	assert.NoError(tb, err, "the workspace root opens")
+	if err != nil {
+		return manifest.Manifest{}
+	}
+	m, _, err := state.ReadManifest(context.Background(), l)
+	assert.NoError(tb, err, "the record's documents decode")
 	return m
 }

@@ -263,10 +263,14 @@ func originsOf(places []placed) []symbol.Identity {
 }
 
 // accFor returns the accumulator for one key, created on first
-// touch with its namespace resolved once.
+// touch with its namespace resolved once. The first touch of the call
+// creates the map, so a call that touches nothing allocates none.
 func (c *phaseCall) accFor(k accKey, fam plugin.Output, subject symbol.Identity) *accumulator {
 	if acc, held := c.accs[k]; held {
 		return acc
+	}
+	if c.accs == nil {
+		c.accs = map[accKey]*accumulator{}
 	}
 	acc := &accumulator{out: fam, key: k.key}
 	if k.per != plugin.PerPlan && !subject.IsZero() {
@@ -280,8 +284,12 @@ func (c *phaseCall) accFor(k accKey, fam plugin.Output, subject symbol.Identity)
 
 // flush turns every touched accumulator into a unit, contributions
 // in canonical order, and arrives them in the plan's store. The
-// accumulators flush in key order, so refusals arrive in one order.
+// accumulators flush in key order, so refusals arrive in one order. A
+// call that touched nothing flushes nothing and allocates nothing.
 func (c *phaseCall) flush(into *plugin.Emit) error {
+	if len(c.accs) == 0 {
+		return nil
+	}
 	keys := slices.SortedFunc(maps.Keys(c.accs), func(a, b accKey) int {
 		if c := cmp.Compare(a.per, b.per); c != 0 {
 			return c

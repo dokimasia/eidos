@@ -24,8 +24,8 @@ type parseCase struct {
 // with the identities it reads, and the spellings it refuses.
 //
 // [FuzzParse] seeds its corpus from the same table, so the fuzzer
-// starts inside the grammar rather than spending its budget
-// discovering the colon.
+// starts inside the grammar and spends no budget discovering the
+// colon.
 func parseCases() []parseCase {
 	return []parseCase{
 		{
@@ -54,7 +54,7 @@ func parseCases() []parseCase {
 		{
 			// The name search admits a dot at the very front of the
 			// last segment, so a name directly after the slash keeps
-			// its package rather than reading as one whole path.
+			// its package, and does not read as one whole path.
 			name: "a name opening the segment after the slash",
 			in:   "golang:svc/.Name",
 			want: symbol.Identity{Lang: "golang", Package: "svc/", Name: "Name"},
@@ -326,6 +326,32 @@ func TestIdentity(t *testing.T) {
 			"a populated Identity names something")
 	})
 
+	t.Run("PackageIdentity", func(t *testing.T) {
+		t.Parallel()
+
+		pkg := symbol.Identity{Lang: "golang", Package: "svc/store", Kind: symbol.KindPackage}
+		tests := []struct {
+			name string
+			give symbol.Identity
+		}{
+			{name: "returns the package of a member", give: symbol.Identity{
+				Lang: "golang", Package: "svc/store", Owner: "Store", Name: "Get",
+				Kind: symbol.KindMethod, Disc: "ctx",
+			}},
+			{name: "returns the package of a file", give: symbol.Identity{
+				Lang: "golang", Package: "svc/store", Name: "svc/store/store.go", Kind: symbol.KindFile,
+			}},
+			{name: "returns a package's own identity", give: pkg},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.PackageIdentity(), pkg, "the language and the package path alone")
+			})
+		}
+	})
+
 	t.Run("Compare", func(t *testing.T) {
 		t.Parallel()
 
@@ -399,7 +425,7 @@ func TestIdentity(t *testing.T) {
 }
 
 // Parse reads spellings a person typed into a manifest or a
-// directive, so it meets bytes nothing generated. It answers on any
+// directive, so it meets bytes nothing generated. It returns for any
 // of them, and the grammar is closed under the round trip: an
 // identity it read spells back into the same identity.
 func FuzzParse(f *testing.F) {

@@ -4,9 +4,7 @@
 package manifest
 
 import (
-	"bytes"
 	"cmp"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -16,8 +14,9 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 )
 
-// Version is the format this package writes and reads.
-const Version = 1
+// Version is the format this package writes and reads: the record split
+// into 256 documents by the first byte of each path's SHA-256.
+const Version = 2
 
 // The digest every entry's hash states: its name, the hex width of a
 // sha256 sum, and the digits it is spelled in.
@@ -27,32 +26,26 @@ const (
 	hexDigits  = "0123456789abcdef"
 )
 
-// indent is what Encode indents each nesting level by.
-const indent = "  "
-
-// ErrUnsupported reports a manifest this package cannot read: another
+// ErrUnsupported reports a document this package cannot read: another
 // version, bytes that are not JSON, and a record that breaks the
 // format's invariants.
 var ErrUnsupported = errors.New("manifest: unsupported format")
 
-// The empty lists Encode writes where an entry's slice is nil, shared
-// so a nil slice costs no allocation.
-var (
-	noPlugins = []diag.Origin{}
-	noSources = []string{}
-)
-
-// Manifest is the record of every generated file of one workspace.
+// Manifest is the record of every generated file of one workspace, as
+// the documents of its buckets state it joined.
 type Manifest struct {
-	Version   int    `json:"version"`
-	Workspace string `json:"workspace"`
+	// Version is [Version].
+	Version int
+	// Workspace names the workspace the record belongs to.
+	Workspace string
 	// Files is sorted by path, one entry per path.
-	Files []Entry `json:"files"`
+	Files []Entry
 }
 
 // Equal reports whether two manifests record one version, one
 // workspace name and the same files. A nil list and an empty one are
-// equal, which is how Encode writes both. Equal allocates nothing.
+// equal, which is how the documents encode both. Equal allocates
+// nothing.
 func (m Manifest) Equal(o Manifest) bool {
 	return m.Version == o.Version && m.Workspace == o.Workspace &&
 		slices.EqualFunc(m.Files, o.Files, Entry.equal)
@@ -86,65 +79,19 @@ func (e Entry) equal(o Entry) bool {
 		slices.Equal(e.Plugins, o.Plugins) && slices.Equal(e.Sources, o.Sources)
 }
 
-// Encode returns the manifest's bytes: JSON indented by two spaces,
-// with a final newline, and [] wherever a list is nil. Two equal
-// manifests encode to equal bytes. It refuses a manifest that breaks
-// the package's invariants, naming the first entry that breaks one,
-// and copies the file list once, so the caller's manifest is not
-// changed.
-func Encode(m Manifest) ([]byte, error) {
-	if err := check(m); err != nil {
-		return nil, fmt.Errorf("manifest: encode: %w", err)
-	}
-	out := m
-	out.Files = make([]Entry, len(m.Files))
-	for i, e := range m.Files {
-		if e.Plugins == nil {
-			e.Plugins = noPlugins
-		}
-		if e.Sources == nil {
-			e.Sources = noSources
-		}
-		out.Files[i] = e
-	}
-	var buf bytes.Buffer
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", indent)
-	if err := enc.Encode(out); err != nil {
-		return nil, fmt.Errorf("manifest: encode: %w", err)
-	}
-	return buf.Bytes(), nil
-}
-
-// Decode reads a manifest. It returns an error wrapping
-// [ErrUnsupported] for another version, for bytes that are not a JSON
-// object of the format, and for a record that breaks the package's
-// invariants. A key the format does not know is skipped.
-func Decode(b []byte) (Manifest, error) {
-	var m Manifest
-	if err := json.Unmarshal(b, &m); err != nil {
-		return Manifest{}, fmt.Errorf("%w: %w", ErrUnsupported, err)
-	}
-	if err := check(m); err != nil {
-		return Manifest{}, fmt.Errorf("%w: %w", ErrUnsupported, err)
-	}
-	return m, nil
-}
-
-// check returns the first invariant a manifest breaks, nil where it
-// breaks none.
-func check(m Manifest) error {
-	if m.Version != Version {
-		return fmt.Errorf("version %d is not version %d", m.Version, Version)
-	}
-	for i, e := range m.Files {
+// checkFiles returns the first invariant a list of entries breaks, nil
+// where it breaks none: sorted by path with one entry per path, each
+// path workspace-relative and slash-separated, each entry naming its
+// plan, each hash spelled as "sha256:" and 64 lowercase hex digits, and
+// each entry's plugins and sources sorted without a repeat.
+func checkFiles(files []Entry) error {
+	for i, e := range files {
 		switch {
 		case !fs.ValidPath(e.Path) || e.Path == "." || strings.ContainsRune(e.Path, '\\'):
 			return fmt.Errorf("file %d names %q, which is no workspace-relative, slash-separated path", i, e.Path)
-		case i > 0 && e.Path <= m.Files[i-1].Path:
+		case i > 0 && e.Path <= files[i-1].Path:
 			return fmt.Errorf("file %q does not sort after %q, and the files are sorted by path, one entry per path",
-				e.Path, m.Files[i-1].Path)
+				e.Path, files[i-1].Path)
 		case e.Plan == "":
 			return fmt.Errorf("file %q names no plan", e.Path)
 		case !hashed(e.Hash):

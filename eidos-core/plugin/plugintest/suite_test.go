@@ -263,6 +263,42 @@ func (w workerReporter) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
+// journaledKey is the match a journaling hand-rolled generator records.
+var journaledKey = plugin.MatchKey{Plugin: "journaling"}
+
+// doubled is a hand-rolled generator that journals one match twice:
+// the repeat the selective dispatch check must expose.
+type doubled struct{}
+
+// Name returns the generator's name.
+func (doubled) Name() plugin.ID { return "journaling" }
+
+// Generate journals one match twice where the call has a journal.
+func (doubled) Generate(ctx *plugin.GeneratorContext) error {
+	if ctx.Journal != nil {
+		ctx.Journal.Invoked(plugin.Invocation{Match: journaledKey})
+		ctx.Journal.Invoked(plugin.Invocation{Match: journaledKey})
+	}
+	return nil
+}
+
+// forgetful is a hand-rolled generator that journals its match only in
+// a call without a selection: the selected call the selective dispatch
+// check must expose.
+type forgetful struct{}
+
+// Name returns the generator's name.
+func (forgetful) Name() plugin.ID { return "journaling" }
+
+// Generate journals one match where the call has a journal and no
+// selection.
+func (forgetful) Generate(ctx *plugin.GeneratorContext) error {
+	if ctx.Journal != nil && ctx.Select == nil {
+		ctx.Journal.Invoked(plugin.Invocation{Match: journaledKey})
+	}
+	return nil
+}
+
 // unattributed is an SPI spelling of the auditing weaver that appends
 // into the seeded struct's field slot and names itself among no unit's
 // contributors: the twin the twins check must expose.
@@ -363,6 +399,21 @@ func weaving(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 			}))).
 		Build()
 	return p, f
+}
+
+// reversed returns a fixture with two positioned structs declared in
+// the reverse of their identity order, so the index enumerates them in
+// another order than a selection runs them.
+func reversed(tb assert.TB) *plugintest.Fixture {
+	tb.Helper()
+
+	alpha := coretest.Struct(coretest.StorePath, "Alpha")
+	alpha.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
+	beta := coretest.Struct(coretest.StorePath, "Beta")
+	beta.Pos = position.Pos{File: "beta.go", Line: 7, Col: 1}
+	f := plugintest.New(tb)
+	f.Load(tb, coretest.Package(coretest.StorePath, beta, alpha))
+	return f
 }
 
 // The suite is the contract a plugin author tests against, so it
@@ -541,6 +592,138 @@ func TestSuite(t *testing.T) {
 					plugintest.AssertParallelDispatch(tb, setup)
 				})
 			assert.Contains(t, failure, "same findings", "the check names the finding contract")
+		})
+	})
+
+	t.Run("AssertSelective", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes a dual-role plugin", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertSelective(t, wellBehaved)
+		})
+
+		t.Run("passes a weaver whose handlers append into one slot", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertSelective(t, weaving)
+		})
+
+		t.Run("passes a hand-rolled plugin that journals nothing", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertSelective(t, bare)
+		})
+
+		t.Run("passes findings reported in the order the index enumerates", func(t *testing.T) {
+			t.Parallel()
+
+			plugintest.AssertSelective(t, func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				p := eidos.NewPlugin("reporter").
+					Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+						m.Warnf(suiteCode, "visited %s", m.Struct.Name)
+						return nil
+					})).
+					Build()
+				return p, reversed(tb)
+			})
+		})
+
+		t.Run("fails emit that depends on the order of invocations", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				order := 0
+				p := eidos.NewPlugin("cheat").
+					Output(plugin.Output{Per: plugin.PerPackage, Word: "out"}).
+					Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+						order++
+						e.PackageFile().Append(&emit.Struct{
+							Origin: m.Struct.Identity(), Name: "Order" + strconv.Itoa(order),
+						})
+						return nil
+					})).
+					Build()
+				return p, reversed(tb)
+			}
+			failure := assert.Rejects(t, "emit that varies with the order of invocations must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertSelective(tb, setup)
+				})
+			assert.Contains(t, failure, "selection of every match", "the check names the selection contract")
+		})
+
+		t.Run("fails facts that depend on the order of invocations", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f := reversed(tb)
+				key := plugintest.Key[string](tb, f, "t.order", "names a subject's place in the dispatch")
+				order := 0
+				p := eidos.NewPlugin("cheat").
+					Handle(eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+						order++
+						eidos.Stamp(st, key, strconv.Itoa(order))
+						return nil
+					})).
+					Build()
+				return p, f
+			}
+			failure := assert.Rejects(t, "facts that vary with the order of invocations must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertSelective(tb, setup)
+				})
+			assert.Contains(t, failure, "fact values", "the check names the fact contract")
+		})
+
+		t.Run("fails findings that depend on the order of invocations", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				order := 0
+				p := eidos.NewPlugin("cheat").
+					Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+						order++
+						m.Warnf(suiteCode, "visited %d", order)
+						return nil
+					})).
+					Build()
+				return p, reversed(tb)
+			}
+			failure := assert.Rejects(t, "findings that vary with the order of invocations must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertSelective(tb, setup)
+				})
+			assert.Contains(t, failure, "same findings", "the check names the finding contract")
+		})
+
+		t.Run("fails a journal that lists a match twice", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				return doubled{}, f
+			}
+			failure := assert.Rejects(t, "a repeated record must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertSelective(tb, setup)
+				})
+			assert.Contains(t, failure, "every match once", "the check names the journal contract")
+		})
+
+		t.Run("fails a selected call that journals other matches", func(t *testing.T) {
+			t.Parallel()
+
+			setup := func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+				f, _, _ := twoStructs(tb)
+				return forgetful{}, f
+			}
+			failure := assert.Rejects(t, "a selected call that drops a record must fail the check",
+				func(tb assert.TB) {
+					plugintest.AssertSelective(tb, setup)
+				})
+			assert.Contains(t, failure, "the whole run journaled", "the check names the selection contract")
 		})
 	})
 

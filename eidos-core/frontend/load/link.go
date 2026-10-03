@@ -4,6 +4,7 @@
 package load
 
 import (
+	"fmt"
 	"maps"
 	"slices"
 	"strings"
@@ -11,11 +12,13 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// link resolves every type reference in the graph, nested type
-// arguments included.
+// link resolves every type reference of the parsed units' packages,
+// nested type arguments included, and returns the linker, which selects
+// the references of kept and restored units again afterwards.
 //
 // A bare name that spells a type parameter in scope targets that
 // parameter: the parameters of every enclosing declaration are in
@@ -55,7 +58,13 @@ import (
 // candidates resolve to counts as the candidate's own hits in its
 // tier. A package and name already on the following path find
 // nothing, which stops a cycle of re-exports.
-func link(packages []*spliced, scopes []scopeEntry, ix *index, sink *diag.Sink) {
+//
+// Every reference resolved through its frontend leaves a record on the
+// unit whose file contains it: the tiers the frontend returned, the
+// candidates whose re-exports the selection followed, the candidates
+// the followed re-exports offered, and the ambiguity it reported. A run
+// that keeps the unit selects the target again from the record.
+func link(packages []*spliced, scopes []scopeEntry, ix *index, sink *diag.Sink) *linker {
 	byFile := make(map[*node.File]scopeEntry, len(scopes))
 	for _, s := range scopes {
 		byFile[s.file] = s
@@ -80,12 +89,11 @@ func link(packages []*spliced, scopes []scopeEntry, ix *index, sink *diag.Sink) 
 		}
 	}
 	for _, files := range exporters {
-		slices.SortFunc(files, func(a, b exporterEntry) int {
-			return strings.Compare(a.scope.file.Path, b.scope.file.Path)
-		})
+		slices.SortFunc(files, byExporterPath)
 	}
 	w := &linker{
-		byPath: byPath, byName: byName, exporters: exporters, following: map[followKey]bool{}, ix: ix, sink: sink,
+		byPath: byPath, byName: byName, exporters: exporters, merged: map[pkgKey]bool{},
+		following: map[followKey]bool{}, ix: ix, sink: sink,
 	}
 	for _, sp := range packages {
 		w.pkg = sp.pkg
@@ -94,9 +102,11 @@ func link(packages []*spliced, scopes []scopeEntry, ix *index, sink *diag.Sink) 
 			if !held {
 				continue
 			}
+			w.unit = sp.units[f]
 			w.under(f, symbol.Identity{}, nil, entry)
 		}
 	}
+	return w
 }
 
 // fileKey names one file of one package, which is how a declaration's
@@ -129,16 +139,24 @@ type exporterEntry struct {
 }
 
 // linker walks the packages' declarations one package at a time and
-// resolves their references. pkg is the package under the walk, byName
-// maps a path onto the first file of that path the splice recorded a
-// scope for, and following is the package-and-name path of the
-// re-exports it follows.
+// resolves their references. pkg is the package under the walk and unit
+// the unit of the file under the walk, byName maps a path onto the
+// first file of that path the splice recorded a scope for, exporters
+// maps a package to its exporting files, merged marks a package whose
+// exporting files of kept units joined the parsed ones, following is the
+// package-and-name path of the re-exports it follows. followed contains
+// the candidates whose re-exports the reference under selection
+// followed, and reached the candidates those re-exports offered.
 type linker struct {
 	pkg       *node.Package
+	unit      *unit
 	byPath    map[fileKey]scopeEntry
 	byName    map[string]scopeEntry
 	exporters map[pkgKey][]exporterEntry
+	merged    map[pkgKey]bool
 	following map[followKey]bool
+	followed  []symbol.Identity
+	reached   []symbol.Identity
 	ix        *index
 	sink      *diag.Sink
 }
@@ -216,26 +234,33 @@ func (w *linker) scopeOf(s symbol.Symbol, enclosing scopeEntry) scopeEntry {
 // graph contains decides, that candidate is the target, and several
 // such candidates in the tier report as an ambiguity. A target an
 // importer's language declares in another file records the import
-// naming that file as the reference's package.
+// naming that file as the reference's package. The reference's record
+// goes on the unit under the walk, and a reference the frontend offers
+// no candidate for leaves none, because no graph can give it a target.
 func (w *linker) resolve(ref *node.TypeRef, f plugin.Frontend, scope plugin.ImportScope) {
-	hits := w.firstTier(f.Resolve(scope, ref.Spelling))
-	if len(hits) == 0 {
+	tiers := f.Resolve(scope, ref.Spelling)
+	if len(tiers) == 0 {
 		return
 	}
-	ref.Target = hits[0]
-	if imp, imports := f.(plugin.Importer); imports {
-		if file := w.ix.files[ref.Target]; file != "" && file != scope.File.Name {
-			ref.Package = imp.ImportOf(scope, file)
+	w.followed, w.reached = nil, nil
+	hits := w.firstTier(tiers)
+	record := store.Link{Tiers: tiers, Followed: w.followed, Reached: w.reached}
+	if len(hits) > 0 {
+		ref.Target = hits[0]
+		if imp, imports := f.(plugin.Importer); imports {
+			if file := w.ix.file(ref.Target); file != "" && file != scope.File.Name {
+				ref.Package = imp.ImportOf(scope, file)
+			}
 		}
 	}
-	if len(hits) > 1 {
-		names := make([]string, len(hits))
-		for i, h := range hits {
-			names[i] = h.String()
-		}
-		w.sink.Warnf(AmbiguousReference, ref.Pos, f.Name(),
-			"%q resolves to %s, and the first is the target", ref.Spelling, strings.Join(names, " and "))
+	record.Findings = ambiguity(ref, f, hits)
+	for _, d := range record.Findings {
+		w.sink.Report(d)
 	}
+	if w.unit.resolved == nil {
+		w.unit.resolved = map[*node.TypeRef]store.Link{}
+	}
+	w.unit.resolved[ref] = record
 }
 
 // firstTier returns the declarations of the first tier that names
@@ -262,19 +287,24 @@ func (w *linker) firstTier(tiers plugin.Candidates) []symbol.Identity {
 // index lists under its bare identity, or else what following the
 // re-exports of its package finds. A candidate with an owner names a
 // member, which no file re-exports, and a package and name already on
-// the following path find nothing.
+// the following path find nothing. hitsOf records each candidate a
+// followed re-export offered in reached.
 func (w *linker) hitsOf(c symbol.Identity) []symbol.Identity {
+	if len(w.following) > 0 {
+		w.reached = append(w.reached, bareOf(c))
+	}
 	if hits := w.ix.lookup(c); len(hits) > 0 || c.Owner != "" {
 		return hits
 	}
 	pkg := pkgKey{lang: c.Lang, path: c.Package}
-	files := w.exporters[pkg]
+	files := w.exportersOf(pkg)
 	key := followKey{pkg: pkg, name: c.Name}
 	if len(files) == 0 || w.following[key] {
 		return nil
 	}
 	w.following[key] = true
 	defer delete(w.following, key)
+	w.followed = append(w.followed, bareOf(c))
 	for _, e := range files {
 		scope := plugin.ImportScope{File: e.scope.file.ID, Bindings: e.scope.bindings}
 		if hits := w.firstTier(e.exporter.Exports(scope, c.Name)); len(hits) > 0 {
@@ -282,6 +312,46 @@ func (w *linker) hitsOf(c symbol.Identity) []symbol.Identity {
 		}
 	}
 	return nil
+}
+
+// exportersOf returns a package's exporting files in path order: the
+// parsed units' and, the first time it is asked, the kept and restored
+// units' too.
+func (w *linker) exportersOf(pkg pkgKey) []exporterEntry {
+	if w.merged[pkg] || w.ix.kept == nil {
+		return w.exporters[pkg]
+	}
+	w.merged[pkg] = true
+	files := slices.Concat(w.exporters[pkg], w.ix.kept.exportersOf(pkg))
+	slices.SortFunc(files, byExporterPath)
+	w.exporters[pkg] = files
+	return files
+}
+
+// byExporterPath orders exporting files by path, the order a package's
+// re-exports are asked in.
+func byExporterPath(a, b exporterEntry) int {
+	return strings.Compare(a.scope.file.Path, b.scope.file.Path)
+}
+
+// ambiguity returns the finding of a reference whose first tier with a
+// match matched more than one declaration, and nothing for any other.
+func ambiguity(ref *node.TypeRef, f plugin.Frontend, hits []symbol.Identity) []diag.Diag {
+	if len(hits) < 2 {
+		return nil
+	}
+	names := make([]string, len(hits))
+	for i, h := range hits {
+		names[i] = h.String()
+	}
+	return []diag.Diag{{
+		Code:     AmbiguousReference,
+		Severity: diag.SeverityWarning,
+		Pos:      ref.Pos,
+		Msg: fmt.Sprintf("%q resolves to %s, and the first is the target",
+			ref.Spelling, strings.Join(names, " and ")),
+		Origin: f.Name(),
+	}}
 }
 
 // scoped reports whether a declaration opens a lexical scope a

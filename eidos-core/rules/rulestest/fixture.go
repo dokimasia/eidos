@@ -16,10 +16,6 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// pluginSet is the plugin-set fingerprint every fixture load folds:
-// a fixed value in place of the one a composed workspace computes.
-const pluginSet = "rulestest"
-
 // Loaded loads a source tree through one frontend into a fixture:
 // the sealed graph, and a fact store with the load's classification
 // stamps under the kernel's keys and every key the registrations
@@ -37,7 +33,6 @@ func Loaded(
 		FS:        sources,
 		Frontends: []plugin.Frontend{f},
 		Sink:      sink,
-		PluginSet: []byte(pluginSet),
 		Brand:     frontendtest.Brand,
 	})
 	assert.NoError(tb, err, "the fixture tree loads")
@@ -56,7 +51,11 @@ func Loaded(
 	for id, stamps := range g.Stamps() {
 		for i, s := range stamps {
 			err := facts.StampRaw(s, meta.Claim{
-				Subject: id, Authority: meta.AuthorityPlugin, Plugin: s.Origin, Seq: i, Pos: s.Pos,
+				Subject:   id,
+				Authority: meta.AuthorityPlugin,
+				Plugin:    s.Origin,
+				Order:     meta.Order{Subject: id, Instance: i},
+				Pos:       s.Pos,
 			})
 			assert.NoError(tb, err, "a load stamp applies")
 		}

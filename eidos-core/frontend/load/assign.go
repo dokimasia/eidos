@@ -28,15 +28,45 @@ import (
 // Only the kinds a type position can name are indexed: the type
 // declarations and their variants. A value position, such as
 // TypeScript's typeof, therefore resolves nothing.
+//
+// The index contains the declarations the load assigned. kept looks up the
+// declarations of the units the load keeps or restores, and is nil
+// where it keeps none.
 type index struct {
 	byBare  map[symbol.Identity][]symbol.Identity
 	dropped map[symbol.Symbol]symbol.Identity
 	files   map[symbol.Identity]string
+	kept    *keptIndex
 }
 
-// lookup returns the indexed identities a candidate names.
+// lookup returns the declarations a candidate names, in identity order:
+// the ones the load assigned and the ones of the units it keeps.
 func (ix *index) lookup(c symbol.Identity) []symbol.Identity {
-	return ix.byBare[bareOf(c)]
+	bare := bareOf(c)
+	assigned := ix.byBare[bare]
+	if ix.kept == nil {
+		return assigned
+	}
+	kept := ix.kept.lookup(bare)
+	if len(kept) == 0 {
+		return assigned
+	}
+	if len(assigned) == 0 {
+		return kept
+	}
+	merged := slices.Concat(assigned, kept)
+	slices.SortFunc(merged, symbol.Identity.Compare)
+	return merged
+}
+
+// file returns the workspace path of the file that declares an indexed
+// identity of an importing language, and the empty string for any other
+// identity.
+func (ix *index) file(id symbol.Identity) string {
+	if f := ix.files[id]; f != "" || ix.kept == nil {
+		return f
+	}
+	return ix.kept.file(id)
 }
 
 // add records one assigned identity under its bare spelling.
@@ -70,10 +100,10 @@ func bareOf(id symbol.Identity) symbol.Identity {
 // Members get their Host filled beside the identity. A second
 // declaration spelling one identity reports under
 // [DuplicateDeclaration], one finding for the subtree's root alone,
-// and its subtree leaves every index. Anything attached to the
-// duplicate attaches to the identity of the declaration that is
-// kept. Reparsing an unchanged file yields the same identities,
-// which diff-by-identity depends on.
+// recorded as a finding of the unit that declares it, and its subtree
+// leaves every index. Anything attached to the duplicate attaches to
+// the identity of the declaration that is kept. Reparsing an unchanged
+// file yields the same identities, which diff-by-identity depends on.
 func assign(packages []*spliced, sink *diag.Sink) *index {
 	ix := &index{
 		byBare:  map[symbol.Identity][]symbol.Identity{},
@@ -88,6 +118,7 @@ func assign(packages []*spliced, sink *diag.Sink) *index {
 			origin:    sp.origin,
 			importer:  sp.importer,
 			overloads: sp.overloads,
+			units:     sp.units,
 			seen:      seen,
 			ix:        ix,
 			sink:      sink,
@@ -106,13 +137,17 @@ func assign(packages []*spliced, sink *diag.Sink) *index {
 // the language's frontend is a [plugin.Importer], and every indexed
 // identity records path, the file under assignment. Where overloads
 // is set, the language's frontend reports that it overloads, and a
-// callable's discriminator spells its parameters.
+// callable's discriminator spells its parameters. unit is the unit of
+// the file under assignment, which a duplicate's finding is recorded
+// on.
 type assigner struct {
 	lang      symbol.Lang
 	pkg       string
 	origin    diag.Origin
 	importer  bool
 	overloads bool
+	units     map[*node.File]*unit
+	unit      *unit
 	path      string
 	seen      map[symbol.Identity]symbol.Symbol
 	ix        *index
@@ -126,6 +161,7 @@ func (a *assigner) file(f *node.File) {
 		panic(fmt.Sprintf("load: %s built a file with no path in %s", a.origin, a.pkg))
 	}
 	a.path = f.Path
+	a.unit = a.units[f]
 	id := symbol.Identity{Lang: a.lang, Package: a.pkg, Name: f.Path, Kind: symbol.KindFile}
 	assigned, dropping := a.claim(f, id, f.Pos, false)
 	f.ID = assigned
@@ -148,17 +184,14 @@ func (a *assigner) claim(
 		return symbol.Identity{}, true
 	}
 	if first, held := a.seen[id]; held {
-		a.sink.Warnf(DuplicateDeclaration, at, a.origin,
+		a.unit.warnf(a.sink, DuplicateDeclaration, at, a.origin,
 			"%s is declared twice, and the first, at %s:%d, is kept",
 			id, first.Position().File, first.Position().Line)
 		a.ix.dropped[s] = id
 		return symbol.Identity{}, true
 	}
 	a.seen[id] = s
-	switch id.Kind {
-	case symbol.KindStruct, symbol.KindInterface, symbol.KindEnum,
-		symbol.KindSum, symbol.KindAlias,
-		symbol.KindEnumVariant, symbol.KindSumVariant:
+	if targetable(id.Kind) {
 		a.ix.add(id)
 		if a.importer {
 			a.ix.files[id] = a.path

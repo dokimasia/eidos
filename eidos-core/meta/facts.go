@@ -22,13 +22,15 @@ import (
 // order the writes arrived.
 type Facts struct {
 	registry *Registry
-	// groupOf and kindsOf are each key's group and kind restriction
-	// by id, precomputed from the registry so a read consults one
-	// slice entry and copies no spec. Registration completes before
-	// the first write, which is what makes the snapshot safe.
+	// groupOf, kindsOf and nameOf are each key's group, kind
+	// restriction and name by id, precomputed from the registry so a
+	// read consults one slice entry and copies no spec. Registration
+	// completes before the first write, which is what makes the
+	// snapshot safe.
 	groupOf []GroupName
 	kindsOf [][]symbol.Kind
-	// bags holds each subject's bag. Writers mostly own disjoint
+	nameOf  []KeyName
+	// bags contains each subject's bag. Writers mostly write disjoint
 	// subjects, which is what keeps two bags from contending on one
 	// lock.
 	bags sync.Map
@@ -36,6 +38,13 @@ type Facts struct {
 	// their own write lock, so two racing writes on one subject
 	// cannot record their transitions out of order.
 	index *factIndex
+	// source restores each bag's recorded claims on first use, nil for
+	// a store NewFacts returned.
+	source BagSource
+	// damage is the first failure of the source, which [Facts.Damaged]
+	// returns.
+	damageMu sync.Mutex
+	damage   error
 }
 
 // NewFacts returns an empty fact store reading specs from r.
@@ -44,19 +53,21 @@ type Facts struct {
 func NewFacts(r *Registry) *Facts {
 	groupOf := make([]GroupName, len(r.specs)+1)
 	kindsOf := make([][]symbol.Kind, len(r.specs)+1)
+	nameOf := make([]KeyName, len(r.specs)+1)
 	for i, spec := range r.specs {
 		groupOf[i+1] = spec.Group
 		kindsOf[i+1] = spec.Kinds
+		nameOf[i+1] = spec.Name
 	}
-	return &Facts{registry: r, groupOf: groupOf, kindsOf: kindsOf, index: newFactIndex()}
+	return &Facts{registry: r, groupOf: groupOf, kindsOf: kindsOf, nameOf: nameOf, index: newFactIndex(nil)}
 }
 
 // Stamp records one claim of v under k.
 //
 // It refuses a zero key, a subject kind the key does not admit, and
 // a false boolean — absence is the negative, so false is never
-// stamped and deletion stays load-bearing. A claim identical to one
-// already held, same rank source and equal value, changes nothing.
+// stamped and deletion remains load-bearing. A claim identical to one
+// already kept, same rank source and equal value, changes nothing.
 // Values compare per vocabulary term; slices compare element-wise
 // and are copied in.
 func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
@@ -76,9 +87,9 @@ func (f *Facts) Registry() *Registry { return f.registry }
 
 // DropKey claims the fact's absence.
 //
-// A drop is a claim like any other: it wins and loses by rank, so a
-// directive-authority drop beats a plugin stamp whenever the stamp
-// arrives, and loses to a manual write.
+// A drop is a claim like any other and ranks like one, so a
+// directive-authority drop ranks above a plugin stamp whenever the stamp
+// arrives, and below a manual write.
 func (f *Facts) DropKey(k KeyID, c Claim) error {
 	spec, err := f.spec(k)
 	if err != nil {
@@ -105,18 +116,67 @@ func (f *Facts) DropGroup(g GroupName, c Claim) error {
 		return fmt.Errorf("meta: group %s on %s %w", g, c.Subject, err)
 	}
 	if changed {
-		// The tombstone can flip any member the bag holds claims
-		// for, so every member's presence re-records.
-		for _, member := range members {
-			f.index.record(c.Subject, member, b.presentLocked(g, member))
-		}
+		f.recordMembers(c.Subject, b, g, members)
 	}
 	return nil
 }
 
+// Withdraw removes the claim on (c.Subject, k) that has c's rank
+// source, meaning its authority, bucket, plugin and order, and ranks the
+// remaining claims again: what a warm run does before it executes a
+// match again, and for a match that disappeared. A fact whose presence
+// the withdrawal changes moves in [Facts.ByKey].
+//
+// Error modes: a key nothing registered. Withdrawing a claim the store
+// does not contain is not an error.
+func (f *Facts) Withdraw(k KeyID, c Claim) error {
+	if _, err := f.spec(k); err != nil {
+		return err
+	}
+	b := f.bag(c.Subject)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if state, held := b.state(k); held && state.withdraw(c) {
+		f.index.record(c.Subject, k, b.presentLocked(f.group(k), k))
+	}
+	return nil
+}
+
+// WithdrawGroup removes the group drop on c.Subject that has c's rank
+// source, and records every member's presence again.
+//
+// Error modes: a group nothing registered into. Withdrawing a drop the
+// store does not contain is not an error.
+func (f *Facts) WithdrawGroup(g GroupName, c Claim) error {
+	members := slices.Collect(f.registry.Group(g))
+	if len(members) == 0 {
+		return fmt.Errorf("meta: group %q holds no keys: nothing registered into it", g)
+	}
+	b := f.bag(c.Subject)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if state, held := b.perGroup[g]; held && state.withdraw(c) {
+		f.recordMembers(c.Subject, b, g, members)
+	}
+	return nil
+}
+
+// Damaged returns the first failure of the recorded source a store
+// [Restore] returned met, and nil where every read of it succeeded or
+// the store restores nothing. A bag the source failed to restore reads
+// as empty, so a run that finds Damaged set after a phase discards what
+// it derived and runs cold.
+func (f *Facts) Damaged() error {
+	f.damageMu.Lock()
+	defer f.damageMu.Unlock()
+	return f.damage
+}
+
 // Get returns the winning value, untracked, and false where the
 // winner is a drop or nothing was stamped. Slice values are copied
-// out, so a caller cannot reach into a bag.
+// out, so a caller cannot write into a bag.
 func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 	var zero T
 	value, held := f.lookup(id, k.ID())
@@ -154,10 +214,28 @@ type Recorder interface {
 
 // ByKey enumerates the subjects on which k presently reads present,
 // in identity order. The index is maintained at stamp time, which
-// is what lets a fact-gated rule visit its matches rather than the
+// is what lets a fact-gated rule visit its matches and not the whole
 // graph.
 func (f *Facts) ByKey(k KeyID) iter.Seq[symbol.Identity] {
 	return slices.Values(f.index.enumerate(k))
+}
+
+// recordMembers records the presence of every member of a group on one
+// subject: a group tombstone can flip any of them. The caller has
+// locked b.mu.
+func (f *Facts) recordMembers(id symbol.Identity, b *bag, g GroupName, members []KeyID) {
+	for _, member := range members {
+		f.index.record(id, member, b.presentLocked(g, member))
+	}
+}
+
+// damaged records the first failure of the recorded source.
+func (f *Facts) damaged(err error) {
+	f.damageMu.Lock()
+	defer f.damageMu.Unlock()
+	if f.damage == nil {
+		f.damage = err
+	}
 }
 
 // spec returns a key's spec or the refusal naming what was wrong.
@@ -190,20 +268,29 @@ func (f *Facts) admits(k KeyID, kind symbol.Kind) bool {
 
 // bag returns the subject's bag, creating it on first touch: the
 // write path's own lookup. A read goes through [Facts.peek], so a
-// miss on a subject nothing stamped allocates nothing.
+// miss on a subject nothing stamped allocates nothing. In a store
+// [Restore] returned, the first touch restores the bag's recorded
+// claims.
 func (f *Facts) bag(id symbol.Identity) *bag {
-	if held, ok := f.bags.Load(id); ok {
-		b, _ := held.(*bag)
-		return b
+	held, ok := f.bags.Load(id)
+	if !ok {
+		held, _ = f.bags.LoadOrStore(id, &bag{})
 	}
-	held, _ := f.bags.LoadOrStore(id, &bag{})
 	b, _ := held.(*bag)
+	if f.source != nil {
+		b.restore.Do(func() { f.restoreBag(id, b) })
+	}
 	return b
 }
 
 // peek returns the subject's bag and false where nothing was ever
-// stamped, allocating nothing.
+// stamped, allocating nothing. In a store [Restore] returned, a
+// subject's recorded claims may exist without a bag, so peek restores
+// the bag and reports true.
 func (f *Facts) peek(id symbol.Identity) (*bag, bool) {
+	if f.source != nil {
+		return f.bag(id), true
+	}
 	held, ok := f.bags.Load(id)
 	if !ok {
 		return nil, false

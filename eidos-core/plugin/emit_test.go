@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -128,6 +129,20 @@ func TestEmit(t *testing.T) {
 				assert.Equal(t, tt.give.FileKey(), tt.want, "the filename's stem source")
 			})
 		}
+	})
+
+	t.Run("Unit.Ref", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the key the unit flushes under", func(t *testing.T) {
+			t.Parallel()
+
+			u := unit("stubgen", "svc/store/a.go")
+			u.Tag = "test"
+			assert.Equal(t, u.Ref(), plugin.UnitRef{
+				Plugin: "stubgen", Tag: "test", Pkg: coretest.PackageID(coretest.StorePath), Key: "svc/store/a.go",
+			}, "the reference names the plugin, the tag, the package and the key")
+		})
 	})
 
 	t.Run("Add", func(t *testing.T) {
@@ -294,6 +309,93 @@ func TestEmit(t *testing.T) {
 		})
 	})
 
+	t.Run("Ref", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a root's unit and place", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			u := hosting("stubgen", "a.go", "Store")
+			assert.NoError(t, e.Add(u), "the hosting unit arrives")
+			ref, held := e.Ref(u.Decls[0])
+			assert.True(t, held, "the store contains the root")
+			assert.Equal(t, ref, plugin.EmitRef{Unit: u.Ref(), Index: 0}, "a root's place is its walk position")
+		})
+
+		t.Run("returns a slotted declaration's place in its unit's walk", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			u := hosting("stubgen", "a.go", "Store")
+			assert.NoError(t, e.Add(u), "the hosting unit arrives")
+			ref, _ := e.Ref(methodOf(u))
+			assert.Equal(t, ref, plugin.EmitRef{Unit: u.Ref(), Index: 1}, "the method follows its struct")
+		})
+
+		t.Run("counts the declarations of the roots before a later root", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			u := hosting("stubgen", "a.go", "Store")
+			later := &emit.Struct{Origin: structID("Cache"), Name: "Cache"}
+			u.Decls = append(u.Decls, later)
+			assert.NoError(t, e.Add(u), "the two-root unit arrives")
+			ref, _ := e.Ref(later)
+			assert.Equal(t, ref.Index, 2, "the second root follows the first root's struct and method")
+		})
+
+		t.Run("returns false for a declaration no unit contains", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			assert.NoError(t, e.Add(hosting("stubgen", "a.go", "Store")), "the hosting unit arrives")
+			_, held := e.Ref(&emit.Struct{Origin: structID("Store"), Name: "Elsewhere"})
+			assert.False(t, held, "a value no unit contains has no reference")
+		})
+
+		t.Run("returns the place of a declaration in a unit that arrived after an earlier call", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			first := hosting("stubgen", "a.go", "Store")
+			assert.NoError(t, e.Add(first), "the first unit arrives")
+			e.Ref(first.Decls[0])
+			second := hosting("stubgen", "b.go", "Cache")
+			assert.NoError(t, e.Add(second), "the second unit arrives")
+			ref, held := e.Ref(methodOf(second))
+			assert.True(t, held, "the later unit's tree is walked")
+			assert.Equal(t, ref, plugin.EmitRef{Unit: second.Ref(), Index: 1}, "the place is in the later unit")
+		})
+
+		t.Run("returns the first place of a declaration two units contain", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			first := hosting("stubgen", "b.go", "Store")
+			second := unit("stubgen", "a.go")
+			second.Decls = first.Decls
+			assert.NoError(t, e.Add(first), "the first unit arrives")
+			assert.NoError(t, e.Add(second), "the second unit shares the first unit's root")
+			ref, _ := e.Ref(first.Decls[0])
+			assert.Equal(t, ref.Unit, first.Ref(), "the unit that arrived first names the shared root")
+		})
+
+		t.Run("returns the first place of a declaration one tree contains twice", func(t *testing.T) {
+			t.Parallel()
+
+			s := &emit.Struct{Origin: structID("Store"), Name: "Store"}
+			get := &emit.Method{Origin: structID("Store"), Name: "Get"}
+			s.Methods.Append(get, get)
+			u := unit("stubgen", "a.go")
+			u.Decls = []symbol.Symbol{s}
+			e := plugin.NewEmit()
+			assert.NoError(t, e.Add(u), "the unit arrives")
+			ref, _ := e.Ref(get)
+			assert.Equal(t, ref.Index, 1, "the walk's first visit names the method")
+		})
+	})
+
 	t.Run("Units", func(t *testing.T) {
 		t.Parallel()
 
@@ -419,6 +521,28 @@ func TestEmit(t *testing.T) {
 	})
 }
 
+// A reference lookup over a walked store allocates nothing, because a
+// journaled phase call resolves one for every emit-phase invocation.
+// The checks run alone, because AllocsPerRun counts every goroutine's
+// allocations and refuses to run beside parallel tests.
+func TestEmitZeroAlloc(t *testing.T) {
+	e := plugin.NewEmit()
+	u := hosting("stubgen", "a.go", "Store")
+	assert.NoError(t, e.Add(u), "the hosting unit arrives")
+	host := methodOf(u)
+	e.Ref(host)
+	assert.MaxAllocs(t, func() {
+		if _, held := e.Ref(host); !held {
+			t.Fatal("Ref misses the walked method")
+		}
+	}, 0, "Ref allocates nothing once the store is walked")
+	assert.MaxAllocs(t, func() {
+		if u.Ref().Key != "a.go" {
+			t.Fatal("Unit.Ref returns another key")
+		}
+	}, 0, "Unit.Ref allocates nothing")
+}
+
 // benchUnit returns one unit containing structs of methods, the tree
 // Add walks and indexes.
 func benchUnit(p, key string, structs, methods int) plugin.Unit {
@@ -486,6 +610,42 @@ func BenchmarkEmit(b *testing.B) {
 			if n != units {
 				b.Fatalf("Units yielded %d units", n)
 			}
+		}
+	})
+
+	b.Run("Ref", func(b *testing.B) {
+		e := plugin.NewEmit()
+		const units, methods = 100, 20
+		var host symbol.Symbol
+		for i := range units {
+			u := benchUnit("stubgen", "unit"+strconv.Itoa(i)+".go", 1, methods)
+			if err := e.Add(u); err != nil {
+				b.Fatalf("Add: unexpected error: %v", err)
+			}
+			host = methodOf(u)
+		}
+		e.Ref(host)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got plugin.EmitRef
+		for c.Loop() {
+			got, _ = e.Ref(host)
+		}
+		if got.Index != 1 {
+			b.Fatalf("Ref places the last unit's first method at %d", got.Index)
+		}
+	})
+
+	b.Run("Unit.Ref", func(b *testing.B) {
+		u := unit("stubgen", "a.go")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got plugin.UnitRef
+		for c.Loop() {
+			got = u.Ref()
+		}
+		if got.Key != "a.go" {
+			b.Fatalf("Unit.Ref returns key %q", got.Key)
 		}
 	})
 }

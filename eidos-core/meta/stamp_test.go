@@ -41,13 +41,14 @@ func subjectFile() symbol.Identity {
 	}
 }
 
-// plugAt returns a plugin-authority claim on the fixture subject.
-func plugAt(seq int) meta.Claim {
+// plugAt returns a plugin-authority claim on the fixture subject at one
+// instance of its order.
+func plugAt(instance int) meta.Claim {
 	return meta.Claim{
 		Subject:   subjectFile(),
 		Authority: meta.AuthorityPlugin,
 		Plugin:    "fakefront",
-		Seq:       seq,
+		Order:     meta.Order{Subject: subjectFile(), Instance: instance},
 	}
 }
 

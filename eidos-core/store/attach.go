@@ -7,7 +7,6 @@ import (
 	"cmp"
 	"errors"
 	"fmt"
-	"iter"
 	"maps"
 	"slices"
 	"strings"
@@ -88,14 +87,12 @@ func (s *attachSet[T]) seal(compare func(a, b T) int) {
 // The slice is the graph's own storage.
 func (s *attachSet[T]) of(id symbol.Identity) []T { return s.sealed[id] }
 
-// all enumerates every subject that has items, paired with its
-// items, in identity order.
-func (s *attachSet[T]) all() iter.Seq2[symbol.Identity, []T] {
-	return func(yield func(symbol.Identity, []T) bool) {
-		for _, id := range s.order {
-			if !yield(id, s.sealed[id]) {
-				return
-			}
+// each calls yield with every subject that has items, paired with its
+// items, in identity order, until yield returns false.
+func (s *attachSet[T]) each(yield func(symbol.Identity, []T) bool) {
+	for _, id := range s.order {
+		if !yield(id, s.sealed[id]) {
+			return
 		}
 	}
 }

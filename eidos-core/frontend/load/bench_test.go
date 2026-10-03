@@ -66,7 +66,6 @@ func BenchmarkLoad(b *testing.B) {
 			FS:        tree,
 			Frontends: fronts,
 			Sink:      diag.NewSink(),
-			PluginSet: []byte("bench"),
 			Brand:     benchBrand,
 		})
 		if err != nil || !g.Frozen() || len(report.Units) != benchPackages {

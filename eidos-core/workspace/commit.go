@@ -11,6 +11,7 @@ import (
 	"slices"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/output"
 )
@@ -176,8 +177,9 @@ func reconcile(changes []output.Change, records []output.Written) []output.Chang
 // previous entries, and per plan the composition no longer declares,
 // the entries whose files the sweep did not remove. A path a committing
 // plan routes a file to takes that plan's entry whatever another plan's
-// previous entry listed there.
-func (w *Workspace) merged(rec *record, runs []*planRun, sw *swept) manifest.Manifest {
+// previous entry listed there. It names the workspace the run records
+// under.
+func merged(rec *record, runs []*planRun, sw *swept) manifest.Manifest {
 	entries := map[string]manifest.Entry{}
 	keep := func(es ...manifest.Entry) {
 		for _, e := range es {
@@ -212,7 +214,7 @@ func (w *Workspace) merged(rec *record, runs []*planRun, sw *swept) manifest.Man
 	files := slices.SortedFunc(maps.Values(entries), func(a, b manifest.Entry) int {
 		return cmp.Compare(a.Path, b.Path)
 	})
-	return manifest.Manifest{Version: manifest.Version, Workspace: w.id, Files: files}
+	return manifest.Manifest{Version: manifest.Version, Workspace: rec.workspace, Files: files}
 }
 
 // commits reports whether the plan commits, or would under Dry.
@@ -257,10 +259,12 @@ func survivors(stale []manifest.Entry, changes []output.Change) []manifest.Entry
 }
 
 // commitRecord records the merged manifest strictly after the last
-// commit, where the run committed a plan or swept a file. It records
-// under a context without the run's cancellation, because the record
-// has to match the destination once a commit wrote to it. A dry run
-// and a composition without a ledger record nothing.
+// commit, where the run committed a plan or swept a file: it writes the
+// documents whose bytes differ from the previous record's and removes
+// those the manifest leaves empty. It records under a context without
+// the run's cancellation, because the record has to match the
+// destination once a commit wrote to it. A dry run and a composition
+// without a ledger record nothing.
 func commitRecord(
 	ctx context.Context, rec *record, runs []*planRun, sw *swept, dry bool, m manifest.Manifest,
 ) error {
@@ -271,7 +275,7 @@ func commitRecord(
 	if !committed && !sw.applies {
 		return nil
 	}
-	if err := rec.ledger.CommitRun(context.WithoutCancel(ctx), m); err != nil {
+	if _, err := state.WriteManifest(context.WithoutCancel(ctx), rec.ledger, m, rec.digests); err != nil {
 		return fmt.Errorf("workspace: record the run: %w", err)
 	}
 	return nil

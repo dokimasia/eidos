@@ -73,6 +73,8 @@ var outputs = []output{
 	{Path: "node/kinds.gen_test.go", Template: "kinds.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
 	{Path: "node/walk.gen.go", Template: "walk.gen.go.tmpl", Package: NodePackage, Side: NodePackage},
 	{Path: "node/walk.gen_test.go", Template: "walk.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
+	{Path: "node/codec.gen.go", Template: "codec.gen.go.tmpl", Package: NodePackage, Side: NodePackage},
+	{Path: "node/codec.gen_test.go", Template: "codec.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
 	{
 		Path: "node/fingerprint.gen.go", Template: "fingerprint.gen.go.tmpl",
 		Package: NodePackage, Side: NodePackage,

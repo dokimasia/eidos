@@ -193,9 +193,15 @@ func slotBufferOf[T any](fx *effects) *slotBuffer[T] {
 // order: the sequence of the invocation that made them, then the order
 // it made them in. Two lanes never share a sequence, so the merge
 // takes the next effect of the lane whose next effect has the lowest
-// sequence, which applies one invocation's effects together.
+// sequence, which applies one invocation's effects together. A call
+// that journals fills each effect's record as the effect applies.
 func (c *phaseCall) applyEffects() {
-	c.merge(math.MaxInt, func(ln *runState, e effect) { c.applyEffect(ln, e) })
+	c.merge(math.MaxInt, func(ln *runState, e effect) {
+		if c.journal != nil {
+			c.fill(ln, e.seq)
+		}
+		c.applyEffect(ln, e)
+	})
 }
 
 // reportThrough reports the buffered findings of the invocations up
@@ -235,12 +241,20 @@ func (c *phaseCall) merge(through int, visit func(*runState, effect)) {
 
 // applyEffect applies one effect a lane buffered. A touch applies
 // before every placement through its handle, because both are on one
-// lane and the touch is earlier in its stream.
+// lane and the touch is earlier in its stream. Where a record fills, a
+// touch, a host and a reported finding also enter it. The report of a
+// failed call fills none.
 func (c *phaseCall) applyEffect(ln *runState, e effect) {
 	switch e.kind {
 	case effectTouch:
 		t := &ln.fx.touches[e.at]
 		t.acc = c.accFor(t.key, t.fam, t.subject)
+		if c.filling != nil {
+			c.units = append(c.units, plugin.UnitRef{
+				Plugin: c.plugin, Tag: string(t.key.tag), Pkg: t.acc.pkg, Key: t.acc.key,
+			})
+			c.filling.units.to = int32(len(c.units))
+		}
 	case effectPlace:
 		p := ln.fx.places[e.at]
 		t := &ln.fx.touches[p.touch]
@@ -267,9 +281,22 @@ func (c *phaseCall) applyEffect(ln *runState, e effect) {
 			c.reported[f.lang] = true
 		}
 		c.sink.Report(f.d)
+		if c.filling != nil {
+			c.findings = append(c.findings, f.d)
+			c.filling.findings.to = int32(len(c.findings))
+		}
 	case effectHost:
-		if c.emit != nil {
-			c.emit.Contribute(ln.fx.hosts[e.at], c.plugin)
+		if c.emit == nil {
+			return
+		}
+		host := ln.fx.hosts[e.at]
+		c.emit.Contribute(host, c.plugin)
+		if c.filling == nil {
+			return
+		}
+		if ref, held := c.emit.Ref(host); held {
+			c.hosts = append(c.hosts, ref)
+			c.filling.hosts.to = int32(len(c.hosts))
 		}
 	}
 }

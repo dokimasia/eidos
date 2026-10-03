@@ -53,6 +53,11 @@ type Fixture struct {
 	// Workers is how many invocations each phase call runs at once.
 	// Zero and one dispatch sequentially.
 	Workers int
+	// Select restricts each phase call to what a warm run executes
+	// again, and nil runs every match.
+	Select *plugin.Selection
+	// Journal receives each phase call's records, and nil keeps none.
+	Journal plugin.Journal
 
 	emit    *plugin.Emit
 	claimed map[string]bool
@@ -189,6 +194,8 @@ func (f *Fixture) Annotate(tb assert.TB, p plugin.Plugin) Result {
 		Plugin:  p.Name(),
 		Bucket:  f.Bucket,
 		Workers: f.Workers,
+		Select:  f.Select,
+		Journal: f.Journal,
 	})
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }
@@ -215,6 +222,8 @@ func (f *Fixture) Generate(tb assert.TB, p plugin.Plugin) Result {
 		Plugin:  p.Name(),
 		Bucket:  f.Bucket,
 		Workers: f.Workers,
+		Select:  f.Select,
+		Journal: f.Journal,
 	})
 	return Result{Emit: f.store(), Sink: sink, Err: err}
 }

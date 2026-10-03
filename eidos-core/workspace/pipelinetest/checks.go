@@ -10,6 +10,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/workspace/internal/rundir"
 )
 
@@ -77,19 +78,21 @@ func AssertRecorded(tb assert.TB, f Fixture, root string) {
 
 // AssertIdempotent runs the fixture twice in root, an empty directory,
 // and checks the second run: it changes the bytes of no file under root
-// and moves the mtime of none, the source tree's and the record's
+// and moves the mtime of none, the source tree's and the manifest's
 // included. Between the runs every file's times are set to an instant in
-// the past, so a rewrite of unchanged bytes moves its mtime.
+// the past, so a rewrite of unchanged bytes moves its mtime. The sealed
+// state outside the manifest is the run's record of what it read, and
+// the second run records the files' new times there.
 func AssertIdempotent(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
-	_, _, _ = first(tb, f, root)
+	w, _, _ := first(tb, f, root)
 	for _, path := range rundir.Files(tb, root) {
 		assert.NoError(tb, os.Chtimes(rundir.Path(root, path), aged, aged), "a file of the run's directory ages")
 	}
-	before := states(tb, root)
+	before := states(tb, root, w.Brand())
 	_, _, _ = run(tb, f, root)
-	assert.Equal(tb, states(tb, root), before, "a second run changes no byte and moves no mtime")
+	assert.Equal(tb, states(tb, root, w.Brand()), before, "a second run changes no byte and moves no mtime")
 }
 
 // AssertRelocated runs the fixture in one and in two, two empty
@@ -122,13 +125,16 @@ type state struct {
 	mtime string
 }
 
-// states returns the state of every file under root, keyed by its
-// slash-separated path relative to root.
-func states(tb assert.TB, root string) map[string]state {
+// states returns the state of every file under root outside the brand's
+// sealed state, keyed by its slash-separated path relative to root.
+func states(tb assert.TB, root string, brand output.Brand) map[string]state {
 	tb.Helper()
 
 	out := map[string]state{}
 	for _, path := range rundir.Files(tb, root) {
+		if rundir.Sealed(brand, path) {
+			continue
+		}
 		b, err := os.ReadFile(rundir.Path(root, path))
 		assert.NoError(tb, err, "a file of the run's directory reads")
 		info, err := os.Stat(rundir.Path(root, path))

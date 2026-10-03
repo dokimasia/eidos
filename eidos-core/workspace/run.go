@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/load"
+	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
@@ -45,6 +46,9 @@ type Input struct {
 	// Dry runs every phase and commits nothing: each plan stages,
 	// prepares and discards, and the ledger records nothing.
 	Dry bool
+	// Cold runs the tree without reading the sealed state, and reports
+	// nothing for it. The run writes the next generation as any run does.
+	Cold bool
 }
 
 // Run takes the input through the frame and returns what happened:
@@ -67,15 +71,40 @@ type Input struct {
 // outcome. An input that sets neither or both of a tree and a graph is
 // the one refusal that returns a nil report.
 //
-// The ledger records the merged manifest strictly after the last
-// commit, and only where a plan or the sweep committed. It records
+// The ledger records the run strictly after the last commit: the next
+// generation of the sealed state, with the merged manifest's documents
+// that differ from the ledger's. A dry run records nothing. A run over a
+// caller's graph, a run whose previous record does not read, and a run
+// that cannot read its executable write no generation, and record the
+// manifest only where a plan or the sweep committed. The ledger records
 // under a context without the run's cancellation, because the record
 // has to match the destination once a commit wrote to it.
+//
+// A run over a tree compares the tree with the sealed state's live
+// generation. A run that finds the generation damaged, at the load, at
+// the record of the load, or at a region its graph decodes for a later
+// phase, discards what it derived before any plan commits, reports
+// [ColdState], and runs again cold over the same input.
 func (w *Workspace) Run(ctx context.Context, in Input) (*Report, error) {
 	if (in.Tree == nil) == (in.Graph == nil) {
 		return nil, errors.New("workspace: Run needs exactly one of a tree to load and a graph")
 	}
+	report, err := w.run(ctx, in, nil)
+	if d, found := errors.AsType[*damage](err); found && !in.Cold {
+		in.Cold = true
+		return w.run(ctx, in, d)
+	}
+	return report, err
+}
+
+// run is one attempt at a run: the frame over the input, after which
+// [Workspace.Run] runs again cold where the attempt met damage. A cold
+// attempt after damage reports the damage first.
+func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, error) {
 	sink := diag.NewSink()
+	if after != nil {
+		w.coldState(sink, "the sealed state is damaged, and the run started again cold: %v", after.err)
+	}
 	facts := meta.NewFacts(w.keys)
 	report := &Report{Sink: sink, Facts: facts, Emits: map[string]*plugin.Emit{}}
 
@@ -87,8 +116,19 @@ func (w *Workspace) Run(ctx context.Context, in Input) (*Report, error) {
 		return w.stopped(ctx, report, err)
 	}
 	report.Manifest = rec.previous
-	g, loaded, err := w.load(ctx, in, sink)
+	sealed, err := w.openSealed(ctx, rec, in, sink)
+	if err == nil {
+		err = w.openMemo(ctx, rec, sealed)
+	}
+	if err != nil {
+		return w.stopped(ctx, report, err)
+	}
+	g, loaded, err := w.load(ctx, in, sealed, sink)
 	report.Load = loaded
+	report.Stats.count(loaded, sealed)
+	if err == nil {
+		err = sealed.record(ctx, loaded)
+	}
 	if err != nil {
 		return w.stopped(ctx, report, err)
 	}
@@ -122,11 +162,25 @@ func (w *Workspace) Run(ctx context.Context, in Input) (*Report, error) {
 		checked, err = w.check(g, facts, table, runs, sink)
 		errs = append(errs, err)
 	}
-	blocked := shared || collided || unmet || checked
+	broken := damaged(g.Damaged())
+	blocked := shared || collided || unmet || checked || broken != nil
 
 	errs = append(errs, commitAll(ctx, runs, w.order, sw, blocked, in.Dry, report))
-	report.Manifest = w.merged(rec, runs, sw)
-	errs = append(errs, commitRecord(ctx, rec, runs, sw, in.Dry, report.Manifest))
+	if broken != nil {
+		return report, errors.Join(append(errs, broken)...)
+	}
+	report.Manifest = merged(rec, runs, sw)
+	if sealed.commit != nil {
+		errs = append(errs, sealed.write(ctx, report.Manifest, &report.Stats))
+	} else {
+		errs = append(errs, commitRecord(ctx, rec, runs, sw, in.Dry, report.Manifest))
+	}
+	if sealed.memo != nil && !in.Dry {
+		errs = append(errs, sealed.writeMemo(ctx))
+	}
+	if loaded != nil {
+		report.Stats.Decoded = loaded.Decoded()
+	}
 	for _, p := range runs {
 		if p.err != nil && !p.cancelled {
 			errs = append(errs, fmt.Errorf("workspace: plan %q: %w", p.plan.name, p.err))
@@ -145,13 +199,26 @@ type tree struct {
 }
 
 // record is the previous run's record as a run reads it: the ledger it
-// came from, nil where the composition keeps none, the manifest, and
-// its entries by plan and by path.
+// came from, nil where the composition keeps none, the manifest, the
+// digest of each of its documents, nil where the record does not read,
+// its entries by plan and by path, and the workspace name the run
+// records under.
 type record struct {
 	ledger   ledger.Ledger
 	previous manifest.Manifest
+	digests  state.Digests
 	byPlan   map[string][]manifest.Entry
 	byPath   map[string]manifest.Entry
+	// workspace names the workspace in the manifest the run records: the
+	// composition's name, or the ledger's where the composition states
+	// none.
+	workspace string
+}
+
+// named is a ledger that names the workspace it records, such as the
+// disk ledger, which names it after the workspace root.
+type named interface {
+	Workspace() string
 }
 
 // generator returns the plan the record lists for a path, and fallback
@@ -163,16 +230,18 @@ func (r *record) generator(path, fallback string) string {
 	return fallback
 }
 
-// begin opens the composition's ledger and reads the previous record.
-// A composition that declares no output, or no ledger, reads the empty
-// record. A record that does not read is reported and read as empty,
-// so the run removes nothing. A ledger that fails to open is a
-// returned error, because nothing in the source causes it.
+// begin opens the composition's ledger and reads the previous record:
+// the documents of its manifest, joined. A composition that declares no
+// output, or no ledger, reads the empty record. A record that does not
+// read is reported and read as empty, so the run removes nothing. A
+// ledger that fails to open is a returned error, because nothing in
+// the source causes it.
 func (w *Workspace) begin(ctx context.Context, sink *diag.Sink) (*record, error) {
 	rec := &record{
-		previous: manifest.Manifest{Version: manifest.Version},
-		byPlan:   map[string][]manifest.Entry{},
-		byPath:   map[string]manifest.Entry{},
+		previous:  manifest.Manifest{Version: manifest.Version},
+		byPlan:    map[string][]manifest.Entry{},
+		byPath:    map[string]manifest.Entry{},
+		workspace: w.id,
 	}
 	if w.ledger == nil || w.open == nil {
 		return rec, nil
@@ -185,13 +254,16 @@ func (w *Workspace) begin(ctx context.Context, sink *diag.Sink) (*record, error)
 		return nil, errors.New("workspace: the ledger's open function returned (nil, nil)")
 	}
 	rec.ledger = l
-	previous, err := l.BeginRun(ctx)
+	if n, names := l.(named); names && rec.workspace == "" {
+		rec.workspace = n.Workspace()
+	}
+	previous, digests, err := state.ReadManifest(ctx, l)
 	if err != nil {
 		sink.Infof(UnreadableRecord, position.Pos{File: ledger.ManifestPath(w.brand)}, diag.PhaseLoad,
 			"the previous record does not read, so the run removes nothing: %v", err)
 		return rec, nil
 	}
-	rec.previous = previous
+	rec.previous, rec.digests = previous, digests
 	for _, e := range previous.Files {
 		rec.byPlan[e.Plan] = append(rec.byPlan[e.Plan], e)
 		rec.byPath[e.Path] = e
@@ -201,9 +273,13 @@ func (w *Workspace) begin(ctx context.Context, sink *diag.Sink) (*record, error)
 
 // load returns the graph the run works on, sealed: the caller's, or
 // the one the composition's frontends load from the input's tree under
-// the composition's brand and fingerprint. A load that fails is a
-// returned error, and so is a tree without a frontend to load it.
-func (w *Workspace) load(ctx context.Context, in Input, sink *diag.Sink) (*store.Graph, *load.Report, error) {
+// the composition's brand, against the sealed state's record of the
+// last load where the run is warm. A load that meets a damaged record
+// returns [damage]. A load that fails otherwise is a returned error,
+// and so is a tree without a frontend to load it.
+func (w *Workspace) load(
+	ctx context.Context, in Input, s *sealedState, sink *diag.Sink,
+) (*store.Graph, *load.Report, error) {
 	if in.Graph != nil {
 		in.Graph.Freeze()
 		return in.Graph, nil, nil
@@ -215,12 +291,13 @@ func (w *Workspace) load(ctx context.Context, in Input, sink *diag.Sink) (*store
 		FS:        in.Tree,
 		Frontends: w.frontends,
 		Sink:      sink,
-		PluginSet: w.fingerprint,
 		Brand:     w.brand,
 		Stores:    in.Stores,
+		Prior:     s.loadPrior(),
+		Memo:      s.loadMemo(in.Cold),
 	})
 	if err != nil {
-		return nil, loaded, fmt.Errorf("workspace: %w", err)
+		return nil, loaded, damaged(fmt.Errorf("workspace: %w", err))
 	}
 	return g, loaded, ctx.Err()
 }
@@ -401,7 +478,7 @@ func applyStamps(g *store.Graph, facts *meta.Facts, sink *diag.Sink) {
 				Subject:   id,
 				Authority: meta.AuthorityPlugin,
 				Plugin:    s.Origin,
-				Seq:       i,
+				Order:     meta.Order{Subject: id, Instance: i},
 				Pos:       s.Pos,
 			}
 			if err := facts.StampRaw(s, claim); err != nil {
@@ -433,7 +510,7 @@ func (w *Workspace) applyDrops(
 			claim := meta.Claim{
 				Subject:   id,
 				Authority: meta.AuthorityDirective,
-				Seq:       d.Instance,
+				Order:     meta.Order{Subject: id, Instance: d.Instance},
 				Pos:       d.Pos,
 			}
 			if key, registered := w.keys.Resolve(meta.KeyName(v.Ref)); registered {

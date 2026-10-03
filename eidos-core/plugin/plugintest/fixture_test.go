@@ -20,15 +20,99 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// keyRecorder is a journal that keeps the match key of every
+// invocation a phase call hands it.
+type keyRecorder struct{ keys []plugin.MatchKey }
+
+// Invoked keeps the invocation's key.
+func (r *keyRecorder) Invoked(inv plugin.Invocation) { r.keys = append(r.keys, inv.Match) }
+
+// Evaluated keeps nothing: the cases name no candidate.
+func (*keyRecorder) Evaluated(symbol.Identity, []plugin.MatchKey) {}
+
 // The fixture is the run's read side built by hand, so what a
 // phase call sees through it is contract: loaded packages,
-// validated gates, stamped facts, seeded units, and the roles it
-// refuses to hand a phase call to.
+// validated gates, stamped facts, seeded units, the selection and
+// the journal, and the roles it refuses to hand a phase call to.
 func TestFixture(t *testing.T) {
 	t.Parallel()
 
+	t.Run("Annotate", func(t *testing.T) {
+		t.Parallel()
+
+		// stamper returns an annotator that stamps a flag on every struct
+		// of the fixture, and the flag.
+		stamper := func(tb assert.TB, f *plugintest.Fixture) (plugin.Plugin, meta.Key[bool]) {
+			tb.Helper()
+
+			key := plugintest.Key[bool](tb, f, "t.flag", "marks a subject")
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+					eidos.Stamp(st, key, true)
+					return nil
+				})).
+				Build()
+			return p, key
+		}
+
+		t.Run("restricts the call to the fixture's selection", func(t *testing.T) {
+			t.Parallel()
+
+			f, _, beta := twoStructs(t)
+			p, key := stamper(t, f)
+			f.Select = &plugin.Selection{Matches: []plugin.MatchKey{{Plugin: "t", Subject: beta.ID}}}
+			assert.NoError(t, f.Annotate(t, p).Err, "the phase call passes")
+			assert.Equal(t, slices.Collect(f.Facts.ByKey(key.ID())), []symbol.Identity{beta.ID},
+				"the listed subject alone is stamped")
+		})
+
+		t.Run("hands the call the fixture's journal", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, beta := twoStructs(t)
+			p, _ := stamper(t, f)
+			rec := &keyRecorder{}
+			f.Journal = rec
+			assert.NoError(t, f.Annotate(t, p).Err, "the phase call passes")
+			assert.Equal(t, rec.keys, []plugin.MatchKey{
+				{Plugin: "t", Subject: alpha.ID}, {Plugin: "t", Subject: beta.ID},
+			}, "the journal receives both invocations")
+		})
+	})
+
 	t.Run("Generate", func(t *testing.T) {
 		t.Parallel()
+
+		t.Run("restricts the call to the fixture's selection", func(t *testing.T) {
+			t.Parallel()
+
+			f, _, beta := twoStructs(t)
+			var visited []string
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+					visited = append(visited, m.Struct.Name)
+					return nil
+				})).
+				Build()
+			f.Select = &plugin.Selection{Matches: []plugin.MatchKey{{Plugin: "t", Subject: beta.ID}}}
+			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
+			assert.Equal(t, visited, []string{"Beta"}, "the listed subject alone runs")
+		})
+
+		t.Run("hands the call the fixture's journal", func(t *testing.T) {
+			t.Parallel()
+
+			f, alpha, beta := twoStructs(t)
+			p := eidos.NewPlugin("t").
+				Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })).
+				Build()
+			rec := &keyRecorder{}
+			f.Journal = rec
+			assert.NoError(t, f.Generate(t, p).Err, "the phase call passes")
+			assert.Equal(t, rec.keys, []plugin.MatchKey{
+				{Plugin: "t", Subject: alpha.ID}, {Plugin: "t", Subject: beta.ID},
+			}, "the journal receives both invocations")
+		})
 
 		t.Run("dispatches over what was loaded", func(t *testing.T) {
 			t.Parallel()

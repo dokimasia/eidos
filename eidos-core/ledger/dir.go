@@ -4,49 +4,68 @@
 package ledger
 
 import (
-	"bytes"
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
+	"time"
 
 	"go.dokimi.dev/eidos/core/internal/stagefile"
-	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/output"
 )
 
-// The permissions a commit writes with, the ones the output sinks
-// write generated files and their directories with.
+// The permissions a write creates files and directories with, the ones
+// the output sinks write generated files and their directories with.
 const (
 	filePerm = 0o644
 	dirPerm  = 0o755
 )
 
-// Dir is the ledger of one workspace root's state directory, .<brand>/.
-// Each call opens the root, resolves every path inside it and closes
-// it, so a Dir keeps no file open between calls.
+// Dir is the ledger of a directory on disk. Each name maps to a file
+// below the directory, resolved through an [os.Root], so a symlink does
+// not lead a read or a write outside it. Each call opens the root,
+// resolves the name inside it and closes it, so a Dir keeps no file
+// open between calls.
+//
+// # Concurrency
+//
+// A Dir is safe for concurrent use, and so are two Dirs over one
+// directory in two processes. [Dir.Write] and [Dir.Put] stage each blob
+// in a file of their own and rename it over the name, so a reader sees
+// one writer's whole bytes.
+//
+// # Allocation contract
+//
+// Every call allocates for the root it opens and the path it resolves.
+// [Dir.Read] allocates the blob's bytes, and [Dir.List] one [Blob] per
+// file it lists.
 type Dir struct {
-	root  string
-	brand output.Brand
-	// name is the base name of the root, which a manifest without a
-	// workspace name is recorded under.
-	name string
+	// root is the absolute directory the jail opens: the workspace root
+	// for OpenDir, and the ledger's own directory for OpenAt.
+	root string
+	// base is the ledger's directory inside root: .<brand> for OpenDir,
+	// and the root itself, ".", for OpenAt.
+	base string
+	// creates reports whether a write creates root itself, which OpenAt's
+	// directory may not yet exist for.
+	creates bool
+	// workspace is the base name of the workspace root, and empty for
+	// OpenAt.
+	workspace string
 }
 
 var _ Ledger = (*Dir)(nil)
 
 // OpenDir returns the ledger of the state directory .<brand>/ under
-// root, which it creates on the first commit. The manifest is
-// .<brand>/manifest.json, and a manifest without a workspace name is
-// recorded under the base name of root. A commit writes the manifest
-// to a staging file beside it, syncs it, renames it over the manifest
-// and syncs the directory, so a reader sees the old record or the new
-// one.
+// root, which the first write creates.
 //
-// It refuses a brand outside [output.Brand.Valid] and a root that is
-// not a directory.
+// Error modes: a brand outside [output.Brand.Valid], and a root that
+// does not exist or is not a directory.
 func OpenDir(root string, brand output.Brand) (*Dir, error) {
 	if !brand.Valid() {
 		return nil, fmt.Errorf(
@@ -65,78 +84,263 @@ func OpenDir(root string, brand output.Brand) (*Dir, error) {
 	if !info.IsDir() {
 		return nil, fmt.Errorf("ledger: the workspace root %s is not a directory", root)
 	}
-	return &Dir{root: abs, brand: brand, name: filepath.Base(abs)}, nil
+	return &Dir{root: abs, base: StateDir(brand), workspace: filepath.Base(abs)}, nil
 }
 
-// BeginRun reads the recorded manifest. A missing state directory and
-// a missing manifest are a workspace no run has committed, and return
-// the empty manifest. A manifest that does not read returns the empty
-// manifest and an error naming its path.
-func (d *Dir) BeginRun(context.Context) (manifest.Manifest, error) {
-	at := ManifestPath(d.brand)
-	r, err := os.OpenRoot(d.root)
+// OpenAt returns the ledger of the directory dir itself, which the first
+// write creates: the location of a parse memo that more than one
+// workspace shares.
+//
+// Error modes: a dir that exists and is not a directory, and a dir that
+// does not resolve to an absolute path.
+func OpenAt(dir string) (*Dir, error) {
+	abs, err := filepath.Abs(dir)
 	if err != nil {
-		return empty(), fmt.Errorf("ledger: opening the workspace root: %w", err)
+		return nil, fmt.Errorf("ledger: resolving the ledger directory: %w", err)
+	}
+	info, err := os.Stat(abs)
+	switch {
+	case errors.Is(err, fs.ErrNotExist):
+	case err != nil:
+		return nil, fmt.Errorf("ledger: opening the ledger directory: %w", err)
+	case !info.IsDir():
+		return nil, fmt.Errorf("ledger: the ledger directory %s is not a directory", dir)
+	}
+	return &Dir{root: abs, base: ".", creates: true}, nil
+}
+
+// Workspace returns the base name of the workspace root, which a
+// manifest that names no workspace is recorded under, and the empty
+// string for a ledger [OpenAt] returned.
+func (d *Dir) Workspace() string { return d.workspace }
+
+// Read returns the file a name maps to, whole.
+//
+// Error modes: an invalid name wraps [fs.ErrInvalid], a name nothing
+// wrote wraps [fs.ErrNotExist], and a file that does not read returns
+// the operating system's error.
+func (d *Dir) Read(ctx context.Context, name string) ([]byte, error) {
+	r, at, err := d.resolve(ctx, name, false)
+	if err != nil {
+		return nil, err
 	}
 	defer r.Close()
-	data, err := r.ReadFile(at)
+	b, err := r.ReadFile(at)
+	if err != nil {
+		return nil, fmt.Errorf("ledger: read %s: %w", name, err)
+	}
+	return b, nil
+}
+
+// ReadAt reads len(p) bytes of the file a name maps to from offset off,
+// under the contract of [io.ReaderAt]: fewer bytes than len(p) return
+// [io.EOF] or another error beside the count.
+//
+// Error modes: an invalid name wraps [fs.ErrInvalid], a name nothing
+// wrote wraps [fs.ErrNotExist], and a read past the end returns
+// [io.EOF] unwrapped, as io.ReaderAt states it.
+func (d *Dir) ReadAt(ctx context.Context, name string, p []byte, off int64) (int, error) {
+	r, at, err := d.resolve(ctx, name, false)
+	if err != nil {
+		return 0, err
+	}
+	defer r.Close()
+	f, err := r.Open(at)
+	if err != nil {
+		return 0, fmt.Errorf("ledger: read %s: %w", name, err)
+	}
+	defer f.Close()
+	return f.ReadAt(p, off)
+}
+
+// Write replaces the file a name maps to through a staging file of its
+// own, synced, then syncs the file's directory. A directory the write
+// creates is synced into its parent, so once Write returns, a crash of
+// the machine keeps the new bytes.
+//
+// Error modes: an invalid name wraps [fs.ErrInvalid], and a directory or
+// a file that cannot be created, written, synced or renamed returns the
+// operating system's error, with the old file remaining in place.
+func (d *Dir) Write(ctx context.Context, name string, b []byte) error {
+	return d.replace(ctx, name, b, stagefile.Synced)
+}
+
+// Put replaces the file a name maps to through a staging file of its
+// own, without a sync of the file or of a directory.
+//
+// Error modes: those of [Dir.Write].
+func (d *Dir) Put(ctx context.Context, name string, b []byte) error {
+	return d.replace(ctx, name, b, stagefile.Unsynced)
+}
+
+// Touch sets the modification and access times of a name's file to the
+// current time.
+//
+// Error modes: an invalid name wraps [fs.ErrInvalid], and a name nothing
+// wrote wraps [fs.ErrNotExist].
+func (d *Dir) Touch(ctx context.Context, name string) error {
+	r, at, err := d.resolve(ctx, name, false)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	now := time.Now()
+	if err := r.Chtimes(at, now, now); err != nil {
+		return fmt.Errorf("ledger: touch %s: %w", name, err)
+	}
+	return nil
+}
+
+// Remove deletes the file a name maps to, without a sync of its
+// directory: a crash of the machine can undo the removal. A name nothing
+// wrote, and a ledger directory that does not exist, are not errors.
+//
+// Error modes: an invalid name wraps [fs.ErrInvalid], and a file the
+// operating system refuses to remove returns its error.
+func (d *Dir) Remove(ctx context.Context, name string) error {
+	r, at, err := d.resolve(ctx, name, false)
 	if errors.Is(err, fs.ErrNotExist) {
-		return empty(), nil
-	}
-	if err != nil {
-		return empty(), fmt.Errorf("ledger: reading %s: %w", at, err)
-	}
-	m, err := manifest.Decode(data)
-	if err != nil {
-		return empty(), fmt.Errorf("ledger: reading %s: %w", at, err)
-	}
-	return m, nil
-}
-
-// CommitRun records the run's manifest under the root's base name
-// where it names no workspace. Bytes equal to the recorded manifest's
-// write nothing. Anything else creates the state directory where it is
-// missing, replaces the manifest through a synced staging file, and
-// syncs the directory so the rename survives a crash.
-func (d *Dir) CommitRun(_ context.Context, m manifest.Manifest) error {
-	if m.Workspace == "" {
-		m.Workspace = d.name
-	}
-	data, err := manifest.Encode(m)
-	if err != nil {
-		return fmt.Errorf("ledger: %w", err)
-	}
-	at := ManifestPath(d.brand)
-	r, err := os.OpenRoot(d.root)
-	if err != nil {
-		return fmt.Errorf("ledger: opening the workspace root: %w", err)
-	}
-	defer r.Close()
-	if held, err := r.ReadFile(at); err == nil && bytes.Equal(held, data) {
 		return nil
 	}
-	if err := r.MkdirAll(StateDir(d.brand), dirPerm); err != nil {
-		return fmt.Errorf("ledger: making the state directory: %w", err)
+	if err != nil {
+		return err
 	}
-	if err := stagefile.Replace(r, at, data, filePerm); err != nil {
-		return fmt.Errorf("ledger: committing %s: %w", at, err)
+	defer r.Close()
+	if err := r.Remove(at); err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("ledger: remove %s: %w", name, err)
 	}
-	return syncDir(r, StateDir(d.brand))
+	return nil
 }
 
-// syncDir syncs a directory inside the root, so a rename into it is on
-// disk before the call returns.
+// List walks the directory a name maps to and returns every regular
+// file below it, at any depth, sorted by name. A directory that does not
+// exist lists nothing.
+//
+// Error modes: an invalid dir wraps [fs.ErrInvalid], and a directory
+// that does not walk returns the operating system's error.
+func (d *Dir) List(ctx context.Context, dir string) ([]Blob, error) {
+	r, at, err := d.resolve(ctx, dir, false)
+	if errors.Is(err, fs.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	defer r.Close()
+	var out []Blob
+	err = fs.WalkDir(r.FS(), at, func(p string, e fs.DirEntry, err error) error {
+		switch {
+		case p == at && errors.Is(err, fs.ErrNotExist):
+			return fs.SkipAll
+		case err != nil:
+			return err
+		case p == at || !e.Type().IsRegular():
+			return nil
+		}
+		info, err := e.Info()
+		if err != nil {
+			return err
+		}
+		out = append(out, Blob{Name: path.Join(dir, p[len(at)+1:]), Size: info.Size(), ModTime: info.ModTime()})
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("ledger: list %s: %w", dir, err)
+	}
+	slices.SortFunc(out, func(a, b Blob) int { return cmp.Compare(a.Name, b.Name) })
+	return out, nil
+}
+
+// replace creates the directories a name's file needs and replaces the
+// file through a staging file of its own, at the durability d states: a
+// synced write syncs every directory it creates into its parent, and the
+// file's directory after the rename.
+func (d *Dir) replace(ctx context.Context, name string, b []byte, durability stagefile.Durability) error {
+	r, at, err := d.resolve(ctx, name, true)
+	if err != nil {
+		return err
+	}
+	defer r.Close()
+	dir := path.Dir(at)
+	if err := ensure(r, dir, durability); err != nil {
+		return fmt.Errorf("ledger: write %s: %w", name, err)
+	}
+	if err := stagefile.ReplaceShared(r, at, b, filePerm, durability); err != nil {
+		return fmt.Errorf("ledger: write %s: %w", name, err)
+	}
+	if durability == stagefile.Synced {
+		if err := syncDir(r, dir); err != nil {
+			return fmt.Errorf("ledger: write %s: %w", name, err)
+		}
+	}
+	return nil
+}
+
+// resolve checks a name and opens the jail, and returns the root and the
+// name's path inside it. A write creates the root of an [OpenAt] ledger
+// where it does not exist. The caller closes the root.
+func (d *Dir) resolve(ctx context.Context, name string, write bool) (*os.Root, string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, "", err
+	}
+	if err := checkName(name); err != nil {
+		return nil, "", err
+	}
+	if write && d.creates {
+		if err := os.MkdirAll(d.root, dirPerm); err != nil {
+			return nil, "", fmt.Errorf("ledger: making the ledger directory: %w", err)
+		}
+	}
+	r, err := os.OpenRoot(d.root)
+	if err != nil {
+		return nil, "", fmt.Errorf("ledger: opening %s: %w", d.root, err)
+	}
+	return r, path.Join(d.base, name), nil
+}
+
+// ensure creates dir and every directory above it that is missing,
+// inside the root, one level at a time. Where durability is
+// [stagefile.Synced] it syncs the parent of each directory it creates,
+// so the new directory survives a crash of the machine.
+func ensure(r *os.Root, dir string, durability stagefile.Durability) error {
+	if dir == "." {
+		return nil
+	}
+	info, err := r.Stat(dir)
+	switch {
+	case err == nil && info.IsDir():
+		return nil
+	case err == nil:
+		return fmt.Errorf("%s is not a directory", dir)
+	case !errors.Is(err, fs.ErrNotExist):
+		return err
+	}
+	parent := path.Dir(dir)
+	if err := ensure(r, parent, durability); err != nil {
+		return err
+	}
+	if err := r.Mkdir(dir, dirPerm); err != nil && !errors.Is(err, fs.ErrExist) {
+		return err
+	}
+	if durability == stagefile.Synced {
+		return syncDir(r, parent)
+	}
+	return nil
+}
+
+// syncDir syncs a directory inside the root, so an entry created or
+// renamed into it is on disk before the call returns.
 func syncDir(r *os.Root, dir string) error {
 	f, err := r.Open(dir)
 	if err != nil {
-		return fmt.Errorf("ledger: opening %s to sync it: %w", dir, err)
+		return fmt.Errorf("opening %s to sync it: %w", dir, err)
 	}
 	err = f.Sync()
 	if closeErr := f.Close(); err == nil {
 		err = closeErr
 	}
 	if err != nil {
-		return fmt.Errorf("ledger: syncing %s: %w", dir, err)
+		return fmt.Errorf("syncing %s: %w", dir, err)
 	}
 	return nil
 }

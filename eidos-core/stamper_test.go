@@ -105,7 +105,8 @@ func TestStamper(t *testing.T) {
 			assert.Equal(t, claim.Plugin, plugin.ID("classify"), "the claim has the context's plugin")
 			assert.Equal(t, claim.Bucket, 1, "the claim has the context's bucket")
 			assert.Equal(t, claim.Authority, meta.AuthorityPlugin, "the claim has plugin authority")
-			assert.Equal(t, claim.Seq, 0, "the first match in canonical order has sequence zero")
+			assert.Equal(t, claim.Order, meta.Order{Subject: alpha.ID},
+				"the claim's order is the first rule and the subject, without a gating instance")
 			assert.Equal(t, claim.Derived, []meta.Read{{
 				Subject: alpha.ID, Key: key.Name(),
 			}}, "the derivation names the invocation's reads, the miss included")
@@ -189,25 +190,42 @@ func TestStamper(t *testing.T) {
 			}, "a claim after another read has that read too")
 		})
 
-		t.Run("assigns the sequence in canonical match order", func(t *testing.T) {
+		t.Run("orders each claim by its rule and its invocation's subject", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, beta := fixtureGraph(t)
-			key, facts := boolKey(t)
+			reg := meta.NewRegistry()
+			assert.NoError(t, reg.ClaimNamespace(fixtureNamespace), "the namespace is claimed")
+			var keys []meta.Key[bool]
+			for _, name := range []meta.KeyName{"t.first", "t.second"} {
+				key, err := meta.Register[bool](reg, meta.KeySpec{Name: name, Doc: "a fixture key"})
+				assert.NoError(t, err, "the key registers")
+				keys = append(keys, key)
+			}
+			facts := meta.NewFacts(reg)
 			ix, err := plugin.NewIndex(g, facts, nil, nil)
 			assert.NoError(t, err, "the routing surface builds")
 
 			p := eidos.NewPlugin("classify").
-				Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
-					eidos.Stamp(st, key, true)
-					return nil
-				})).
+				Handle(
+					eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+						eidos.Stamp(st, keys[0], true)
+						return nil
+					}),
+					eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+						eidos.Stamp(st, keys[1], true)
+						return nil
+					}),
+				).
 				Build()
 			assert.NoError(t, annotatorOf(t, p).Annotate(annContext(t, facts, ix)),
 				"the phase call passes")
 
-			for v := range facts.Claims(beta.ID, key.ID()) {
-				assert.Equal(t, v.Claim.Seq, 1, "the second subject in identity order has the next sequence")
+			for i, key := range keys {
+				for v := range facts.Claims(beta.ID, key.ID()) {
+					assert.Equal(t, v.Claim.Order, meta.Order{Rule: i, Subject: beta.ID},
+						"the claim names its rule and the subject its invocation ran on")
+				}
 			}
 		})
 

@@ -47,8 +47,8 @@ func withCache() storeTree {
 	}
 }
 
-// Qualified paths address a file inside a named store, and the two
-// read helpers resolve them against the load's tree.
+// Qualified paths address a file inside a named store, and the read
+// and stat helpers resolve them against the load's tree.
 func TestStore(t *testing.T) {
 	t.Parallel()
 
@@ -185,6 +185,40 @@ func TestStore(t *testing.T) {
 
 			_, err := plugin.ReadDir(withCache(), "goroot://")
 			assert.ErrorIs(t, err, plugin.ErrStoreAbsent, "the source is off")
+		})
+	})
+
+	t.Run("Stat", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a store file's stat for a qualified path", func(t *testing.T) {
+			t.Parallel()
+
+			info, err := plugin.Stat(withCache(), qualifiedFile)
+			assert.NoError(t, err, "the store provides the file")
+			assert.Equal(t, info.Size(), int64(len("package lib\n")), "the stat is the store file's")
+		})
+
+		t.Run("returns a workspace file's stat", func(t *testing.T) {
+			t.Parallel()
+
+			info, err := plugin.Stat(withCache(), workspaceFile)
+			assert.NoError(t, err, "the workspace provides the file")
+			assert.Equal(t, info.Size(), int64(len("package svc\n")), "the stat is the workspace file's")
+		})
+
+		t.Run("returns ErrStoreAbsent for a store the tree does not provide", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := plugin.Stat(withCache(), "goroot://fmt/print.go")
+			assert.ErrorIs(t, err, plugin.ErrStoreAbsent, "the source is off")
+		})
+
+		t.Run("returns ErrNotExist for a path no file is at", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := plugin.Stat(withCache(), "svc/absent.go")
+			assert.ErrorIs(t, err, fs.ErrNotExist, "nothing is at the path")
 		})
 	})
 }

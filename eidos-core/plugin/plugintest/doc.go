@@ -24,15 +24,19 @@
 // [AssertPopulatedFixture], [AssertStableDeclaration],
 // [AssertOptionsSchema], [AssertTemplates],
 // [AssertDeterministicEmit], [AssertIdempotentAnnotate],
-// [AssertParallelDispatch], [AssertPositionedDiagnostics],
-// [AssertNoStructuralWrites] and [AssertAttributedEmit].
-// [AssertParallelDispatch] runs the plugin on one worker and on
-// eight and requires the same emit, facts and findings. Under the
-// race detector it also exposes state a handler writes outside its
-// effects. [AssertTwins] requires byte-equal emit from two spellings
-// of one plugin, which is how the lowering guarantee is checked from
-// the outside. Each assertion takes the [assert.TB] role, so its own
-// failure path is testable.
+// [AssertParallelDispatch], [AssertSelective],
+// [AssertPositionedDiagnostics], [AssertNoStructuralWrites] and
+// [AssertAttributedEmit]. [AssertParallelDispatch] runs the plugin on
+// one worker and on eight and requires the same emit, facts and
+// findings. Under the race detector it also exposes state a handler
+// writes outside its effects. [AssertSelective] runs the plugin whole,
+// then under a selection of every match it journaled, and requires the
+// same emit, facts and findings, which a warm run assumes of every
+// handler. [Fixture.Select] and [Fixture.Journal] hand a selection and
+// a journal to each phase call. [AssertTwins] requires byte-equal emit
+// from two spellings of one plugin, which is how the lowering
+// guarantee is checked from the outside. Each assertion takes the
+// [assert.TB] role, so its own failure path is testable.
 //
 // # Dependency position
 //

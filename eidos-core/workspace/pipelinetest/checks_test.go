@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"testing/fstest"
@@ -19,6 +20,7 @@ import (
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/output"
@@ -268,7 +270,10 @@ func TestChecks(t *testing.T) {
 			{
 				name: "rejects a record that lists a file the fixture does not want",
 				edit: func(m manifest.Manifest) manifest.Manifest {
-					m.Files = append(m.Files, manifest.Entry{Path: missingFile, Plan: planName, Hash: emptyDigest})
+					if !slices.ContainsFunc(m.Files, func(e manifest.Entry) bool { return e.Path == missingFile }) {
+						m.Files = append(m.Files, manifest.Entry{Path: missingFile, Plan: planName, Hash: emptyDigest})
+						slices.SortFunc(m.Files, byPath)
+					}
 					return m
 				},
 				want: missingFile,
@@ -383,14 +388,16 @@ func over(front plugin.Frontend) pipelinetest.Fixture {
 }
 
 // rewritten returns the plain fixture whose ledger records the edited
-// copy of every manifest the run commits.
+// copy of every record the run commits. The edit is applied after every
+// document the commit writes, so it is idempotent.
 func rewritten(edit func(manifest.Manifest) manifest.Manifest) pipelinetest.Fixture {
 	f := fixture()
+	var runs atomic.Int64
 	f.Compose = func(root string) (*workspace.Workspace, error) {
 		return onDisk(root, frontendtest.NewScripted()).
 			Ledger(func() (ledger.Ledger, error) {
-				dir, err := ledger.OpenDir(root, fixtureBrand)
-				return rewriting{Dir: dir, edit: edit}, err
+				return coretest.NewRewriting(context.Background(), root, fixtureBrand, int(runs.Add(1)),
+					func(_ int, m manifest.Manifest) manifest.Manifest { return edit(m) })
 			}).
 			Plans(plan(planName, mirror())).Build()
 	}
@@ -449,17 +456,7 @@ func (s *touching) Commit() ([]output.Written, error) {
 	return written, err
 }
 
-// rewriting is the state directory's ledger recording an edited copy of
-// each manifest the run commits: the shape of a ledger that records
-// something other than what the run wrote, which the record check must
-// expose.
-type rewriting struct {
-	*ledger.Dir
-	edit func(manifest.Manifest) manifest.Manifest
-}
-
-// CommitRun records the edited copy.
-func (l rewriting) CommitRun(ctx context.Context, m manifest.Manifest) error {
-	m.Files = slices.Clone(m.Files)
-	return l.Dir.CommitRun(ctx, l.edit(m))
+// byPath orders two entries by path, the order a record keeps.
+func byPath(a, b manifest.Entry) int {
+	return strings.Compare(a.Path, b.Path)
 }

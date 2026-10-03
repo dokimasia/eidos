@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
@@ -209,7 +210,7 @@ func TestChecks(t *testing.T) {
 
 		edits := []struct {
 			name string
-			edit func(manifest.Manifest) manifest.Manifest
+			edit coretest.Edit
 			want string
 		}{
 			{
@@ -219,7 +220,7 @@ func TestChecks(t *testing.T) {
 			},
 			{
 				name: "rejects a record that names another plugin",
-				edit: func(m manifest.Manifest) manifest.Manifest {
+				edit: func(_ int, m manifest.Manifest) manifest.Manifest {
 					for i := range m.Files {
 						m.Files[i].Plugins = []plugin.ID{otherPlugin}
 					}
@@ -229,7 +230,7 @@ func TestChecks(t *testing.T) {
 			},
 			{
 				name: "rejects a record that lists another source",
-				edit: func(m manifest.Manifest) manifest.Manifest {
+				edit: func(_ int, m manifest.Manifest) manifest.Manifest {
 					for i := range m.Files {
 						m.Files[i].Sources = []string{otherSource}
 					}
@@ -239,9 +240,12 @@ func TestChecks(t *testing.T) {
 			},
 			{
 				name: "rejects a record that lists a file the export does not",
-				edit: func(m manifest.Manifest) manifest.Manifest {
-					m.Files = append(m.Files, manifest.Entry{Path: missingFile, Plan: mirrorsPlan, Hash: emptyDigest})
-					slices.SortFunc(m.Files, func(a, b manifest.Entry) int { return strings.Compare(a.Path, b.Path) })
+				edit: func(_ int, m manifest.Manifest) manifest.Manifest {
+					if !slices.ContainsFunc(m.Files, func(e manifest.Entry) bool { return e.Path == missingFile }) {
+						missing := manifest.Entry{Path: missingFile, Plan: mirrorsPlan, Hash: emptyDigest}
+						m.Files = append(m.Files, missing)
+						slices.SortFunc(m.Files, byPath)
+					}
 					return m
 				},
 				want: missingFile,
@@ -366,53 +370,42 @@ func unbranded(t *testing.T) workspacetest.Fixture {
 }
 
 // rewritten returns the fixture whose ledger records the edited copy of
-// every manifest a run commits.
-func rewritten(t *testing.T, edit func(manifest.Manifest) manifest.Manifest) workspacetest.Fixture {
+// every record a run commits. The edit is applied after every document
+// a commit writes, so it is idempotent, and it reads the run's ordinal,
+// counted per fixture.
+func rewritten(t *testing.T, edit coretest.Edit) workspacetest.Fixture {
 	t.Helper()
 
 	f := fixture(t)
+	var runs atomic.Int64
 	f.Compose = func(root string) *workspace.Builder {
 		return onDisk(root).Ledger(func() (ledger.Ledger, error) {
-			dir, err := ledger.OpenDir(root, fixtureBrand)
-			return rewriting{Dir: dir, edit: edit}, err
+			return coretest.NewRewriting(context.Background(), root, fixtureBrand, int(runs.Add(1)), edit)
 		})
 	}
 	return f
 }
 
 // underOther records every entry under the other plan.
-func underOther(m manifest.Manifest) manifest.Manifest {
+func underOther(_ int, m manifest.Manifest) manifest.Manifest {
 	for i := range m.Files {
 		m.Files[i].Plan = otherPlan
 	}
 	return m
 }
 
-// forgetting returns an edit that keeps a run's first manifest and drops
-// the entries of one plan from every later one. The edit counts the
-// manifests it sees, so each fixture takes an edit of its own.
-func forgetting(plan string) func(manifest.Manifest) manifest.Manifest {
-	var commits atomic.Int64
-	return func(m manifest.Manifest) manifest.Manifest {
-		if commits.Add(1) > 1 {
+// forgetting returns an edit that keeps a fixture's first record and
+// drops the entries of one plan from the record of every later run.
+func forgetting(plan string) coretest.Edit {
+	return func(run int, m manifest.Manifest) manifest.Manifest {
+		if run > 1 {
 			m.Files = slices.DeleteFunc(m.Files, func(e manifest.Entry) bool { return e.Plan == plan })
 		}
 		return m
 	}
 }
 
-// rewriting is the state directory's ledger recording an edited copy of
-// each manifest a run commits: the shape of a ledger that records
-// something other than what the plans wrote, which the checks must
-// expose.
-type rewriting struct {
-	*ledger.Dir
-	edit func(manifest.Manifest) manifest.Manifest
-}
-
-// CommitRun records the edited copy of a clone of the manifest's
-// entries, so the edit leaves the run's own list unchanged.
-func (l rewriting) CommitRun(ctx context.Context, m manifest.Manifest) error {
-	m.Files = slices.Clone(m.Files)
-	return l.Dir.CommitRun(ctx, l.edit(m))
+// byPath orders two entries by path, the order a record keeps.
+func byPath(a, b manifest.Entry) int {
+	return strings.Compare(a.Path, b.Path)
 }

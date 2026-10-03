@@ -133,6 +133,13 @@ func TestBuilder(t *testing.T) {
 				markers: []string{"Parallel(-1)", "negative"},
 			},
 			{
+				name: "returns an error naming a negative memo limit",
+				compose: func() *workspace.Builder {
+					return valid().Memo(workspace.Memo{Limit: -1})
+				},
+				markers: []string{"memo's limit -1", "negative"},
+			},
+			{
 				name: "returns an error naming two plugins with one name",
 				compose: func() *workspace.Builder {
 					return valid().Annotators(stamper("noter", quiet))

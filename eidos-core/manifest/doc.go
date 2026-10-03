@@ -14,29 +14,41 @@
 // decides it, so a fresh clone without a manifest gets the same
 // verdicts.
 //
+// # Documents
+//
+// The record is stored as up to 256 documents, one [Shard] per bucket:
+// a file belongs to the bucket [BucketOf] names, the first byte of the
+// SHA-256 of its path. [Split] returns a manifest's documents and
+// [Join] returns the manifest its documents record, so a commit
+// rewrites only the documents whose entries changed, and a reader
+// joins every document of the directory.
+//
 // # Encoding
 //
-// [Encode] writes JSON indented by two spaces, with a final newline,
-// and an empty list as [] wherever a slice is nil, so two equal
-// manifests encode to equal bytes. The record contains no clock, no
-// command line and no absolute path, so two runs over one tree record
-// the same bytes. [Decode] reads what Encode writes and skips a key it
-// does not know.
+// [EncodeShard] writes JSON indented by two spaces, with a final
+// newline, and an empty list as [] wherever a slice is nil, so two
+// equal documents encode to equal bytes. A document contains no clock,
+// no command line and no absolute path, so two runs over one tree
+// record the same bytes. [DecodeShard] reads what EncodeShard writes
+// and skips a key it does not know.
 //
 // # Invariants
 //
-// Both directions check one set of invariants:
+// Encoding, decoding and joining check one set of invariants:
 //
 //   - the version is [Version];
+//   - the bucket is two lowercase hex digits, and every entry's path
+//     belongs to it;
 //   - the files are sorted by path, with one entry per path;
 //   - every path is workspace-relative and slash-separated;
 //   - every entry names its plan;
 //   - every hash is "sha256:" and 64 lowercase hex digits;
 //   - every entry's plugins and sources are sorted, with no repeat.
 //
-// Encode refuses a manifest that breaks one. Decode returns an error
-// wrapping [ErrUnsupported] for it, as it does for another version and
-// for bytes that are not JSON.
+// EncodeShard refuses a document that breaks one. DecodeShard returns an
+// error wrapping [ErrUnsupported] for it, as it does for another
+// version and for bytes that are not JSON, and so does Join, which also
+// refuses two documents of one bucket and documents of two workspaces.
 //
 // # Dependency position
 //

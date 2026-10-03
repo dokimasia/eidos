@@ -35,10 +35,11 @@ const parallelWorkers = 8
 
 // RunPluginSuite runs the conformance checks a fixture needs no
 // workspace for: declaration stability, byte-equal emit across
-// isolated runs, the same output under parallel dispatch, annotator
-// idempotence, positioned diagnostics, attribution, declared tags,
-// the options schema, the template lint, and no panics. It skips the
-// checks for a role or a surface the plugin does not implement.
+// isolated runs, the same output under parallel dispatch, the same
+// output under a selection of every match, annotator idempotence,
+// positioned diagnostics, attribution, declared tags, the options
+// schema, the template lint, and no panics. It skips the checks for a
+// role or a surface the plugin does not implement.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	t.Helper()
 
@@ -87,6 +88,10 @@ func RunPluginSuite(t *testing.T, setup Setup) {
 	t.Run("parallel dispatch", func(t *testing.T) {
 		t.Parallel()
 		AssertParallelDispatch(t, setup)
+	})
+	t.Run("selective dispatch", func(t *testing.T) {
+		t.Parallel()
+		AssertSelective(t, setup)
 	})
 	t.Run("positioned diagnostics", func(t *testing.T) {
 		t.Parallel()
@@ -265,6 +270,93 @@ func AssertParallelDispatch(tb assert.TB, setup Setup) {
 		"and it reports the same findings in the same order")
 }
 
+// AssertSelective runs every phase the plugin implements over two
+// isolated fixtures: whole with a journal, then under a selection that
+// lists every match the whole run journaled for the phase. It fails
+// unless both runs emit the same bytes, end with the same fact values
+// and report the same findings, and unless each phase's journal lists
+// every match once, in canonical match order. The selected run executes
+// its matches in canonical match order and the whole run in the order
+// the index enumerates them, so a handler whose output depends on
+// another invocation fails the check. The two runs report their
+// findings in those two orders, so the check compares the findings in
+// [diag.Diag.Compare] order. A plugin that journals nothing runs whole
+// both times and passes.
+func AssertSelective(tb assert.TB, setup Setup) {
+	tb.Helper()
+
+	wholePlugin, wholeFixture := setup(tb)
+	selectedPlugin, selectedFixture := setup(tb)
+	whole, wholeKeys := journaledRun(tb, wholePlugin, wholeFixture, nil)
+	selected, selectedKeys := journaledRun(tb, selectedPlugin, selectedFixture, wholeKeys)
+	for _, keys := range wholeKeys {
+		assert.True(tb, ascending(keys), "the journal lists every match once, in canonical match order")
+	}
+	assert.Equal(tb, selectedKeys, wholeKeys, "the selected run journals the matches the whole run journaled")
+	assert.Equal(tb,
+		string(encodeEmit(tb, selectedFixture.store())),
+		string(encodeEmit(tb, wholeFixture.store())),
+		"a selection of every match emits what the whole call does")
+	assert.Equal(tb, presentFacts(selectedFixture), presentFacts(wholeFixture),
+		"and it ends with the fact values the whole call ends with")
+	assert.Equal(tb, canonicalFindings(selected), canonicalFindings(whole),
+		"and it reports the same findings")
+}
+
+// keyJournal keeps the match keys one phase call journals, in the order
+// the call hands them.
+type keyJournal struct{ keys []plugin.MatchKey }
+
+// Invoked keeps the invocation's key.
+func (j *keyJournal) Invoked(inv plugin.Invocation) { j.keys = append(j.keys, inv.Match) }
+
+// Evaluated keeps nothing: neither run of [AssertSelective] names a
+// candidate.
+func (*keyJournal) Evaluated(symbol.Identity, []plugin.MatchKey) {}
+
+// journaledRun runs every phase the plugin implements, annotate first,
+// each with a journal of its own, and under a selection of the phase's
+// keys where selected lists keys for the phase. It returns the results
+// and the keys each phase journaled, both in phase order.
+func journaledRun(
+	tb assert.TB, p plugin.Plugin, f *Fixture, selected [][]plugin.MatchKey,
+) ([]Result, [][]plugin.MatchKey) {
+	tb.Helper()
+
+	var results []Result
+	var keys [][]plugin.MatchKey
+	run := func(call func(assert.TB, plugin.Plugin) Result) {
+		j := &keyJournal{}
+		f.Journal, f.Select = j, nil
+		if phase := len(keys); phase < len(selected) {
+			f.Select = &plugin.Selection{Matches: selected[phase]}
+		}
+		r := call(tb, p)
+		assert.NoError(tb, r.Err, "the phase runs whole")
+		results = append(results, r)
+		keys = append(keys, j.keys)
+	}
+	if _, held := p.(plugin.Annotator); held {
+		run(f.Annotate)
+	}
+	if _, held := p.(plugin.Generator); held {
+		run(f.Generate)
+	}
+	f.Journal, f.Select = nil, nil
+	return results, keys
+}
+
+// ascending reports whether every key sorts after the one before it in
+// canonical match order, which no repeated key does.
+func ascending(keys []plugin.MatchKey) bool {
+	for i := 1; i < len(keys); i++ {
+		if keys[i-1].Compare(keys[i]) >= 0 {
+			return false
+		}
+	}
+	return true
+}
+
 // findingsOf returns every finding of a sequence of phase results, in
 // phase order and then report order.
 func findingsOf(results []Result) []diag.Diag {
@@ -272,6 +364,14 @@ func findingsOf(results []Result) []diag.Diag {
 	for _, r := range results {
 		out = slices.AppendSeq(out, r.Sink.All())
 	}
+	return out
+}
+
+// canonicalFindings returns every finding of a sequence of phase
+// results in [diag.Diag.Compare] order.
+func canonicalFindings(results []Result) []diag.Diag {
+	out := findingsOf(results)
+	slices.SortStableFunc(out, diag.Diag.Compare)
 	return out
 }
 
@@ -351,12 +451,12 @@ func AssertAttributedEmit(tb assert.TB, setup Setup) {
 			declared[o.Tag] = true
 		}
 	}
-	seeded := map[unitRef]bool{}
+	seeded := map[plugin.UnitRef]bool{}
 	for u := range f.store().Units() {
-		seeded[refOf(u)] = true
+		seeded[u.Ref()] = true
 	}
 	for u := range generateOnce(tb, p, f).Units() {
-		if seeded[refOf(u)] {
+		if seeded[u.Ref()] {
 			continue
 		}
 		assert.Equal(tb, u.Plugin, p.Name(),
@@ -364,19 +464,6 @@ func AssertAttributedEmit(tb assert.TB, setup Setup) {
 		assert.True(tb, declared[u.Tag],
 			"every unit arrives under a declared family")
 	}
-}
-
-// unitRef is the key an emit store records one unit under.
-type unitRef struct {
-	plugin plugin.ID
-	tag    string
-	pkg    symbol.Identity
-	key    string
-}
-
-// refOf returns the key a unit is recorded under.
-func refOf(u plugin.Unit) unitRef {
-	return unitRef{plugin: u.Plugin, tag: u.Tag, pkg: u.Pkg, key: u.Key}
 }
 
 // AssertTwins fails unless two spellings of one plugin, usually a

@@ -4,7 +4,6 @@
 package store_test
 
 import (
-	"errors"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -31,37 +30,86 @@ func stampAt(line int) meta.RawStamp {
 }
 
 // Stamps are the second raw attachment class, so their seal
-// behavior is pinned beside the directives they mirror.
+// behaviour is pinned beside the directives they mirror.
 func TestStamps(t *testing.T) {
 	t.Parallel()
 
-	t.Run("sorts by position at the seal, per subject", func(t *testing.T) {
+	t.Run("AttachStamps", func(t *testing.T) {
 		t.Parallel()
 
-		g := store.New()
-		assert.NoError(t, g.AddPackage(&node.Package{ID: stampSubject()}), "the subject loads")
-		assert.NoError(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(9)}), "one attaches")
-		assert.NoError(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(2)}), "another attaches")
+		t.Run("returns an error for a zero subject", func(t *testing.T) {
+			t.Parallel()
 
-		assert.Length(t, g.StampsOf(stampSubject()), 0, "nothing reads before the seal")
-		g.Freeze()
+			assert.HasError(t, store.New().AttachStamps(symbol.Identity{}, []meta.RawStamp{stampAt(1)}),
+				"a zero subject indexes nowhere")
+		})
 
-		held := g.StampsOf(stampSubject())
-		assert.Length(t, held, 2, "both stamps survive the seal")
-		assert.True(t, held[0].Pos.Line == 2 && held[1].Pos.Line == 9,
-			"in position order, whatever order they attached in")
+		t.Run("returns an error for an empty attachment", func(t *testing.T) {
+			t.Parallel()
 
-		subjects := 0
-		for id, ss := range g.Stamps() {
-			subjects++
-			assert.Equal(t, id, stampSubject(), "under the one subject")
-			assert.Length(t, ss, 2, "with its stamps")
-		}
-		assert.Equal(t, subjects, 1, "the walk visits each subject once")
+			assert.HasError(t, store.New().AttachStamps(stampSubject(), nil),
+				"an empty attachment is a defect")
+		})
+
+		t.Run("refuses a write after Freeze", func(t *testing.T) {
+			t.Parallel()
+
+			g := store.New()
+			g.Freeze()
+			assertRefused(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(1)}), store.FrozenWrite)
+		})
+
+		t.Run("refuses a write to a sealed graph", func(t *testing.T) {
+			t.Parallel()
+
+			f := newSplit()
+			g, _ := f.sealed()
+			assertRefused(t, g.AttachStamps(f.store.ID, []meta.RawStamp{stampAt(1)}), store.FrozenWrite)
+		})
+	})
+
+	t.Run("StampsOf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing before the seal", func(t *testing.T) {
+			t.Parallel()
+
+			g := store.New()
+			assert.NoError(t, g.AddPackage(&node.Package{ID: stampSubject()}), "the subject loads")
+			assert.NoError(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(9)}), "a stamp attaches")
+			assert.Length(t, g.StampsOf(stampSubject()), 0, "nothing reads before the seal")
+		})
+
+		t.Run("returns a subject's stamps in position order", func(t *testing.T) {
+			t.Parallel()
+
+			g := store.New()
+			assert.NoError(t, g.AddPackage(&node.Package{ID: stampSubject()}), "the subject loads")
+			assert.NoError(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(9)}), "one attaches")
+			assert.NoError(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(2)}), "another attaches")
+			g.Freeze()
+
+			assert.Equal(t, g.StampsOf(stampSubject()), []meta.RawStamp{stampAt(2), stampAt(9)},
+				"in position order, whatever order they attached in")
+		})
 	})
 
 	t.Run("Stamps", func(t *testing.T) {
 		t.Parallel()
+
+		t.Run("returns each subject once with its stamps", func(t *testing.T) {
+			t.Parallel()
+
+			g := store.New()
+			assert.NoError(t, g.AddPackage(&node.Package{ID: stampSubject()}), "the subject loads")
+			assert.NoError(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(9)}), "one attaches")
+			assert.NoError(t, g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(2)}), "another attaches")
+			g.Freeze()
+
+			assert.Equal(t, attached(g.Stamps()), []attachment[meta.RawStamp]{
+				{subject: stampSubject(), items: []meta.RawStamp{stampAt(2), stampAt(9)}},
+			}, "the walk visits the subject once, with both stamps")
+		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
 			t.Parallel()
@@ -81,25 +129,7 @@ func TestStamps(t *testing.T) {
 				break
 			}
 			assert.Equal(t, seen, []symbol.Identity{stampSubject()},
-				"the walk stops at the first subject in identity order when "+
-					"the range stops")
+				"the walk stops at the first subject in identity order")
 		})
-	})
-
-	t.Run("refuses what cannot index", func(t *testing.T) {
-		t.Parallel()
-
-		g := store.New()
-		assert.HasError(t, g.AttachStamps(symbol.Identity{}, []meta.RawStamp{stampAt(1)}),
-			"a zero subject indexes nowhere")
-		assert.HasError(t, g.AttachStamps(stampSubject(), nil),
-			"an empty attachment is a defect")
-
-		g.Freeze()
-		err := g.AttachStamps(stampSubject(), []meta.RawStamp{stampAt(1)})
-		assert.HasError(t, err, "the seal excludes writes")
-		var refused *store.RefusedError
-		assert.True(t, errors.As(err, &refused) && refused.Code == store.FrozenWrite,
-			"under the frozen write code")
 	})
 }

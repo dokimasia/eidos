@@ -29,6 +29,20 @@
 // expose it, so nothing reachable from a context can make a
 // structural write or read another plugin's raw directives.
 //
+// # Invocations
+//
+// A [MatchKey] names one invocation of a phase call across runs: the
+// plugin, the rule, the subject, the gating instance and, for an
+// emit-phase rule, the [EmitRef] of the value it matched. The order of
+// the key is the canonical match order. A phase context's
+// [Selection] restricts the call to the listed matches and the
+// candidates' matches, and its [Journal] receives one [Invocation] for
+// each invocation the call ran: what it read, the exports it read, the
+// [UnitRef] of each unit it touched, the values whose slots it
+// appended into, the facts it stamped and the findings it reported. A
+// plugin that implements its role directly may ignore both, and the
+// run records its call as one invocation under [WholeCall].
+//
 // # The read side
 //
 // [Frontend] loads one language into the node graph through a
@@ -46,7 +60,8 @@
 // index over their declarations, maintained as units arrive, which
 // is what makes an emit-triggered rule cost only its matches. A [Unit]
 // records its full routing key, so no consumer re-derives any part
-// of it from the declarations.
+// of it from the declarations. [Emit.Ref] returns the [EmitRef] of a
+// declaration in the store, from an index it builds on first use.
 //
 // # Routed files
 //

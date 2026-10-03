@@ -8,10 +8,12 @@ import (
 	"encoding/hex"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/output"
@@ -26,6 +28,16 @@ const (
 	nestedFile              = "a/b.txt"
 	topFile                 = "a.txt"
 	deepFile                = "c/d/e.txt"
+)
+
+// The paths the Sealed cases classify: the own brand's pointer to its
+// live generation, one of its segments and one of its manifest's
+// documents, and another brand's pointer.
+var (
+	currentPath  = ledger.StateDir(ownBrand) + "/state/CURRENT"
+	segmentPath  = ledger.StateDir(ownBrand) + "/state/seg/ab/" + strings.Repeat("ab", 32)
+	documentPath = ledger.ManifestPath(ownBrand) + "/ea.json"
+	otherCurrent = ledger.StateDir(otherBrand) + "/state/CURRENT"
 )
 
 // placed writes content at a slash path under root.
@@ -83,6 +95,29 @@ func TestRundir(t *testing.T) {
 
 			assert.Equal(t, rundir.Path("root", nestedFile), filepath.Join("root", "a", "b.txt"), "the joined path")
 		})
+	})
+
+	t.Run("Sealed", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give string
+			want bool
+		}{
+			{name: "reports true for the pointer to the live generation", give: currentPath, want: true},
+			{name: "reports true for a segment", give: segmentPath, want: true},
+			{name: "reports false for a manifest document", give: documentPath},
+			{name: "reports false for a source file", give: topFile},
+			{name: "reports false for another brand's state", give: otherCurrent},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, rundir.Sealed(ownBrand, tt.give), tt.want, "whether the path is sealed state")
+			})
+		}
 	})
 
 	t.Run("Framed", func(t *testing.T) {
@@ -149,32 +184,42 @@ func TestRundir(t *testing.T) {
 	t.Run("Record", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the record the ledger committed", func(t *testing.T) {
+		t.Run("returns the record a commit wrote", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
 			l, err := ledger.OpenDir(root, ownBrand)
 			assert.NoError(t, err, "the ledger opens")
-			want := manifest.Manifest{Version: manifest.Version, Workspace: "platform"}
-			assert.NoError(t, l.CommitRun(t.Context(), want), "the record commits")
+			want := manifest.Manifest{Version: manifest.Version, Workspace: "platform", Files: []manifest.Entry{{
+				Path: topFile, Plan: "plan", Hash: "sha256:" + strings.Repeat("ab", 32),
+			}}}
+			_, err = state.WriteManifest(t.Context(), l, want, nil)
+			assert.NoError(t, err, "the record commits")
 			assert.True(t, rundir.Record(t, root, ownBrand).Equal(want), "the record reads back")
 		})
 
-		t.Run("stops the check where the directory contains no record", func(t *testing.T) {
+		t.Run("returns the empty record for a directory without documents", func(t *testing.T) {
 			t.Parallel()
 
-			rec := assert.NewRecorder()
-			rundir.Record(rec, t.TempDir(), ownBrand)
-			assert.True(t, rec.Failed(), "the check stops")
+			got := rundir.Record(t, t.TempDir(), ownBrand)
+			assert.True(t, got.Equal(manifest.Manifest{Version: manifest.Version}), "the empty record")
 		})
 
-		t.Run("stops the check where the record does not decode", func(t *testing.T) {
+		t.Run("stops the check where a document does not decode", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
-			placed(t, root, ledger.ManifestPath(ownBrand), "not a record\n")
+			placed(t, root, ledger.ManifestPath(ownBrand)+"/ea.json", "not a record\n")
 			rec := assert.NewRecorder()
 			rundir.Record(rec, root, ownBrand)
+			assert.True(t, rec.Failed(), "the check stops")
+		})
+
+		t.Run("stops the check where the workspace root does not exist", func(t *testing.T) {
+			t.Parallel()
+
+			rec := assert.NewRecorder()
+			rundir.Record(rec, filepath.Join(t.TempDir(), "absent"), ownBrand)
 			assert.True(t, rec.Failed(), "the check stops")
 		})
 	})

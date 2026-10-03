@@ -29,10 +29,6 @@ import (
 // copies under it.
 const Brand output.Brand = "fixture"
 
-// pluginSet is the plugin-set fingerprint every suite load folds: a
-// fixed value in place of the one a composed workspace computes.
-const pluginSet = "frontendtest"
-
 // Fixture is what a frontend brings to the suite: the tree the
 // selection claims from, and what the checks that need more can
 // read. A field left empty skips the checks that need it, and the
@@ -214,7 +210,6 @@ func tryDrive(
 		FS:         fx.Sources,
 		Frontends:  []plugin.Frontend{f},
 		Sink:       sink,
-		PluginSet:  []byte(pluginSet),
 		Signatures: fx.Signatures,
 		Brand:      Brand,
 		Stores:     fx.Stores,
@@ -292,20 +287,7 @@ func copyTree(tb assert.TB, fsys fs.FS) fstest.MapFS {
 func keysOf(report *load.Report) map[string][]byte {
 	out := make(map[string][]byte, len(report.Units))
 	for _, u := range report.Units {
-		out[u.Files[0]] = u.Key
-	}
-	return out
-}
-
-// workspaceKeysOf maps the first member of each unit the partition
-// returned onto its key, leaving out the dependency units, whose
-// reads are the stores' and not the workspace's.
-func workspaceKeysOf(report *load.Report) map[string][]byte {
-	out := make(map[string][]byte, len(report.Units))
-	for _, u := range report.Units {
-		if u.Round == 0 {
-			out[u.Files[0]] = u.Key
-		}
+		out[u.Files[0].Path] = u.Key
 	}
 	return out
 }

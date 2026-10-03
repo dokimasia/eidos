@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 	"go.dokimi.dev/assert/expect"
 
 	"go.dokimi.dev/eidos/core/diag"
@@ -59,6 +60,15 @@ func TestGraph(t *testing.T) {
 			assertRefused(t, err, store.FrozenWrite)
 		})
 
+		t.Run("refuses a write to a sealed graph", func(t *testing.T) {
+			t.Parallel()
+
+			g, _ := newSplit().sealed()
+
+			err := g.AddPackage(coretest.Package("svc/index"))
+			assertRefused(t, err, store.FrozenWrite)
+		})
+
 		t.Run("refuses a package naming no identity", func(t *testing.T) {
 			t.Parallel()
 
@@ -95,6 +105,87 @@ func TestGraph(t *testing.T) {
 				held++
 			}
 			assert.Equal(t, held, frontends, "no concurrent write is lost")
+		})
+	})
+
+	t.Run("Sealed", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a frozen graph", func(t *testing.T) {
+			t.Parallel()
+
+			g, _ := newSplit().sealed()
+			assert.True(t, g.Frozen(), "a sealed graph is frozen from the start")
+		})
+
+		t.Run("decodes no region", func(t *testing.T) {
+			t.Parallel()
+
+			_, src := newSplit().sealed()
+			assert.Equal(t, src.decoded(), []int{0, 0, 0}, "Sealed reads the summaries alone")
+		})
+
+		t.Run("returns a graph that hands out a reader", func(t *testing.T) {
+			t.Parallel()
+
+			g, _ := newSplit().sealed()
+			r, err := g.Reader(store.NewReadSet(), nil)
+			assert.NoError(t, err, "a sealed graph hands out readers")
+			assert.NotNil(t, r, "and returns one")
+		})
+	})
+
+	t.Run("Damaged", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nil for a graph New returned", func(t *testing.T) {
+			t.Parallel()
+
+			assert.NoError(t, coretest.Frozen(t).Damaged(), "a loaded graph decodes nothing")
+		})
+
+		t.Run("returns nil where every region decoded whole", func(t *testing.T) {
+			t.Parallel()
+
+			g, _ := newSplit().sealed()
+			for range g.Packages() { // ranging is what decodes every region
+			}
+			assert.NoError(t, g.Damaged(), "every region read whole")
+		})
+
+		t.Run("returns the failure of a region that did not decode", func(t *testing.T) {
+			t.Parallel()
+
+			f := newSplit()
+			src := newMemory(f.regions...)
+			src.fails = map[int]error{1: errDecode}
+			g := store.Sealed(src)
+			for range g.Packages() { // ranging is what decodes every region
+			}
+			assert.ErrorIs(t, g.Damaged(), errDecode, "the source's failure is the damage")
+		})
+
+		t.Run("returns nil before a read decodes the region that fails", func(t *testing.T) {
+			t.Parallel()
+
+			f := newSplit()
+			src := newMemory(f.regions...)
+			src.fails = map[int]error{1: errDecode}
+			g := store.Sealed(src)
+			g.Lookup(f.store.ID)
+			assert.NoError(t, g.Damaged(), "no read reached the cache package's region")
+		})
+
+		t.Run("returns an error for a region the source decoded to nothing", func(t *testing.T) {
+			t.Parallel()
+
+			f := newSplit()
+			infos := newMemory(f.regions...).Regions()
+			f.regions[1] = nil
+			g := store.Sealed(summarized{memory: newMemory(f.regions...), infos: infos})
+			_, held := g.Lookup(coretest.EveryKindID(coretest.CachePath, coretest.StructName, symbol.KindStruct))
+			assert.False(t, held, "the region reads as absent")
+			assert.HasError(t, g.Damaged(), "and a region decoded to nothing is damage")
 		})
 	})
 
@@ -352,11 +443,37 @@ func assertRefused(t *testing.T, err error, want diag.Code) {
 		"under the code consumers script against")
 }
 
+// TestGraphAllocs checks the ceiling of sealing the summaries of the
+// canonical workspace, the cost of a warm run before it decodes
+// anything. The check runs alone, because AllocsPerRun refuses to run
+// beside parallel tests.
+func TestGraphAllocs(t *testing.T) {
+	src := canonicalSource()
+	assert.MaxAllocs(t, func() {
+		if !store.Sealed(src).Frozen() {
+			t.Fatal("Sealed returned a graph that is not frozen")
+		}
+	}, sealAllocs, "Sealed allocates its index of the summaries")
+}
+
 // The graph is loaded once per run and read from for the rest of
 // it, so the cost that matters is the seal and the untracked read
 // the dispatcher makes.
 func BenchmarkGraph(b *testing.B) {
 	const packages, files, decls = benchPackages, benchFiles, benchDecls
+
+	b.Run("Sealed", func(b *testing.B) {
+		src := canonicalSource()
+		c := bench.Start(b).MaxAllocs(sealAllocs)
+		defer c.End()
+		var got *store.Graph
+		for c.Loop() {
+			got = store.Sealed(src)
+		}
+		if !got.Frozen() {
+			b.Fatal("Sealed returned a graph that is not frozen")
+		}
+	})
 
 	b.Run("Freeze", func(b *testing.B) {
 		b.ReportAllocs()
@@ -488,9 +605,9 @@ func BenchmarkGraph(b *testing.B) {
 }
 
 // The workspace the benchmarks load: a thousand packages of ten
-// files each, every file holding twenty declarations. That is ten
-// thousand files and two hundred thousand declarations, which is the
-// scale the graph has to hold rather than the scale a case reads.
+// files each, every file declaring twenty. That is ten thousand files
+// and two hundred thousand declarations: the scale the graph contains,
+// and not the scale a case reads.
 const (
 	benchPackages = 1_000
 	benchFiles    = 10

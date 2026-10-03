@@ -17,6 +17,7 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/rules"
+	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -81,6 +82,21 @@ type phaseCall struct {
 	// on, keyed by plan name, which every lane reads and none writes. An
 	// annotator's phase call has none.
 	exports map[string]plugin.ExportDoc
+	// journal receives the call's records once its effects apply, and is
+	// nil for a call that keeps none.
+	journal plugin.Journal
+	// selects reports that the call runs under a selection, and selection
+	// is the call's view of it.
+	selects   bool
+	selection selection
+	// units, hosts and findings are the buffers the ranges of the
+	// journaled records index, which the effects fill as they apply, and
+	// filling is the record the applying effects fill, nil before the
+	// effects apply and in a call that journals nothing.
+	units    []plugin.UnitRef
+	hosts    []plugin.EmitRef
+	findings []diag.Diag
+	filling  *record
 	// collects reports that the call runs on more than one worker, so
 	// it collects each rule's matches before it runs them.
 	collects bool
@@ -100,7 +116,9 @@ type phaseCall struct {
 	// own allocation, so a sequential call allocates no lane.
 	first runState
 	one   [1]*runState
-	accs  map[accKey]*accumulator
+	// accs maps each touched accumulator's key to it, nil until the
+	// call's first touch.
+	accs map[accKey]*accumulator
 	// reported records the languages whose absent rules the phase call
 	// already warned about, so the warning comes once per plugin and
 	// language.
@@ -125,7 +143,6 @@ func newPhaseCall(
 		kernel:   kernel,
 		workers:  workers,
 		collects: workers > 1,
-		accs:     map[accKey]*accumulator{},
 	}
 	c.first = runState{phaseCall: c, scratch: make([]any, len(b.rules)), fx: effects{lastHost: -1}}
 	c.one[0] = &c.first
@@ -165,6 +182,21 @@ type runState struct {
 	// goroutine.
 	panicked  int
 	recovered any
+	// reading is the read set the running invocation's match records
+	// into, nil until the match has one.
+	reading *store.ReadSet
+	// records are the lane's journaled invocations, in increasing
+	// sequence. log keeps their reads, readExports and stamped are the
+	// buffers their export and claim ranges index, and matched contains
+	// the hosts of their emit-phase matches. All remain empty in a call
+	// that journals nothing. cursor is the record the effect merge
+	// fills.
+	records     []record
+	log         store.ReadLog
+	readExports []string
+	stamped     []meta.FactRef
+	matched     []plugin.EmitRef
+	cursor      int
 }
 
 // lane returns the phase call's i-th lane, created on first use.
@@ -325,24 +357,30 @@ func (rs *runState) drain(fr *flatRule, base int, next *atomic.Int64, stop *atom
 }
 
 // invoke runs one match on the lane with its sequence in canonical
-// match order, binding the lane, the rule and the sequence into inv.
+// match order, binding the lane, the rule and the sequence into inv. A
+// call that journals opens the invocation's record first, so what the
+// handler stamps arrives in it, and logs the handler's reads after.
 func (rs *runState) invoke(fr *flatRule, inv *invocation, seq int) error {
 	inv.rs, inv.fr, inv.seq = rs, fr, seq
-	return fr.invoke(*inv)
+	if rs.journal == nil {
+		return fr.invoke(*inv)
+	}
+	rs.open(fr, inv)
+	err := fr.invoke(*inv)
+	rs.close()
+	return err
 }
 
 // invocationOf resolves a collected match's subject and position
 // again, the way its rule's enumeration resolved them.
 func (c *phaseCall) invocationOf(fr *flatRule, p pending) invocation {
-	inv := invocation{gate: p.gate, value: p.value}
+	inv := invocation{gate: p.gate, value: p.value, subject: subjectOf(fr, p.value)}
 	switch {
 	case fr.graph:
 	case fr.phase == plugin.PhaseEmit:
-		inv.subject, _ = emit.OriginOf(p.value)
 		inv.pos = c.positionOf(inv.subject)
 	default:
-		decl, _ := p.value.(node.Declaration)
-		inv.subject, inv.pos = decl.Identity(), decl.Position()
+		inv.pos = p.value.Position()
 	}
 	return inv
 }
@@ -352,13 +390,16 @@ func (c *phaseCall) invocationOf(fr *flatRule, p pending) invocation {
 // subjects in, then each subject's gating instances in source order.
 // It hands each to take, and stops where take reports false. A
 // fact-gated or bare rule has no gating directive, so its visits hand
-// their one match to take directly.
+// their one match to take directly. Under a selection, a rule that is
+// not emit-phase visits the matches the selection admits instead.
 func (c *phaseCall) enumerate(fr *flatRule) {
 	switch {
-	case fr.graph:
-		c.take(fr, &invocation{})
 	case fr.phase == plugin.PhaseEmit:
 		c.enumerateEmit(fr)
+	case c.selects:
+		c.enumerateSelected(fr)
+	case fr.graph:
+		c.take(fr, &invocation{})
 	case fr.gate != "":
 		c.enumerateDirective(fr)
 	case len(fr.preds) > 0:
@@ -456,7 +497,7 @@ func (c *phaseCall) takeEach(fr *flatRule, inv *invocation) bool {
 	}
 	ds := c.index.DirectivesOf(inv.subject)
 	for i := range ds {
-		if ds[i].Name != fr.gate || ds[i].Negated {
+		if !gates(fr, &ds[i]) {
 			continue
 		}
 		inv.gate = &ds[i]
@@ -502,4 +543,26 @@ func spellingsOf(fr *flatRule) []directive.Name {
 		return []directive.Name{fr.gate}
 	}
 	return []directive.Name{fr.gate, fr.schema.Name}
+}
+
+// gates reports whether a validated instance gates a rule: an instance
+// of the rule's gating directive that is not negated.
+func gates(fr *flatRule, d *directive.Directive) bool {
+	return d.Name == fr.gate && !d.Negated
+}
+
+// subjectOf returns the subject of a rule's match on a value: none for
+// a graph-wide rule, the origin of an emit value, and the identity of a
+// declaration otherwise.
+func subjectOf(fr *flatRule, value symbol.Symbol) symbol.Identity {
+	switch {
+	case fr.graph:
+		return symbol.Identity{}
+	case fr.phase == plugin.PhaseEmit:
+		origin, _ := emit.OriginOf(value)
+		return origin
+	default:
+		decl, _ := value.(node.Declaration)
+		return decl.Identity()
+	}
 }

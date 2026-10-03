@@ -21,7 +21,7 @@ type Lang string
 //
 // Equality is the whole struct. Overloads differ only in Disc, and
 // a language that cannot overload writes the empty string. Lang is
-// part of the key because a mixed workspace can hold two languages'
+// part of the key because a mixed workspace can contain two languages'
 // packages in one directory.
 type Identity struct {
 	Lang    Lang   `json:"lang,omitzero"` // "golang", "protobuf"
@@ -34,6 +34,13 @@ type Identity struct {
 
 // IsZero reports whether id names nothing.
 func (id Identity) IsZero() bool { return id == Identity{} }
+
+// PackageIdentity returns the identity of the package id names: its
+// language and its package path, of [KindPackage]. A package's identity
+// returns itself.
+func (id Identity) PackageIdentity() Identity {
+	return Identity{Lang: id.Lang, Package: id.Package, Kind: KindPackage}
+}
 
 // String renders the identity in the canonical grammar:
 //
@@ -53,8 +60,8 @@ func (id Identity) String() string {
 	// the colon, the dot, the hash and a member callable's two
 	// parentheses.
 	const separators = 5
-	// The parts are written into one buffer rather than concatenated
-	// in steps, because an identity is spelled on every ordering the
+	// The parts are written into one buffer, and not concatenated in
+	// steps, because an identity is spelled on every ordering the
 	// kernel makes deterministic.
 	var out strings.Builder
 	out.Grow(len(id.Lang) + len(id.Package) + len(id.Owner) + len(id.Name) + len(id.Disc) + separators)
@@ -89,8 +96,8 @@ func (id Identity) String() string {
 // or a positive one as id sorts before, with, or after other.
 //
 // The order is field order: language, package, owner, name, kind,
-// discriminator. It exists so that a caller sorting identities for a
-// deterministic output compares the parts rather than
+// discriminator. A caller sorting identities for a deterministic
+// output compares the parts through it, and not through
 // [Identity.String], which builds a string per comparison.
 func (id Identity) Compare(other Identity) int {
 	return cmp.Or(
@@ -115,12 +122,12 @@ func (id Identity) Compare(other Identity) int {
 //
 // Two forms do not round-trip. A file identity's string form is
 // indistinguishable from a dotted top-level name and parses as
-// one. So is a package whose last segment carries a dot —
-// gopkg.in/yaml.v2 — because the grammar cuts a path at the first
+// one. So is a package whose last segment contains a dot, such as
+// gopkg.in/yaml.v2, because the grammar cuts a path at the first
 // dot after the last slash: the package and the name it spells
 // are recovered wrong, and String is not injective across that
-// pair. Nothing in the framework parses identities back today;
-// a boundary that starts to must state which half it holds.
+// pair. Nothing in the framework parses identities back, and a
+// boundary that parses one must state which half it contains.
 func Parse(s string) (Identity, error) {
 	lang, rest, found := strings.Cut(s, ":")
 	if !found || lang == "" || rest == "" {
@@ -173,7 +180,7 @@ func Parse(s string) (Identity, error) {
 
 // splitName cuts a path at the first '.' after the last '/': the
 // package half against the name half. It reports false when the
-// final segment carries no dot, which is the bare package form.
+// final segment contains no dot, which is the bare package form.
 func splitName(path string) (pkg, name string, found bool) {
 	slash := strings.LastIndexByte(path, '/')
 	dot := strings.IndexByte(path[slash+1:], '.')

@@ -151,7 +151,7 @@ func (w *Workspace) audit(g *store.Graph, facts *meta.Facts, loaded *load.Report
 		for _, u := range loaded.Units {
 			if u.Depth == plugin.DepthFull {
 				for _, f := range u.Files {
-					audited[f] = true
+					audited[f.Path] = true
 				}
 			}
 		}

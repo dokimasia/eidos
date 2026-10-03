@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"io/fs"
+	"path"
 	"testing"
 	"testing/fstest"
 
@@ -128,7 +129,7 @@ func unitOf(tb assert.TB, report *load.Report, first string) load.UnitReport {
 	tb.Helper()
 
 	for _, u := range report.Units {
-		if u.Files[0] == first {
+		if u.Files[0].Path == first {
 			return u
 		}
 	}
@@ -197,6 +198,52 @@ func TestDependency(t *testing.T) {
 		})
 	})
 
+	t.Run("reuse", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keeps the recorded rounds of an unchanged tree", func(t *testing.T) {
+			t.Parallel()
+
+			prior := committed(t, loadOf(t, depTree(), with(recorded()), stores(depStore())).report)
+			rec := recorded()
+			warm := loadOf(t, depTree(), with(rec), stores(depStore()), func(cfg *load.Config) { cfg.Prior = prior })
+			assert.Empty(t, rec.rounds, "every round would return its recorded units")
+			assertSameLoad(t, warm, loadOf(t, depTree(), with(recorded()), stores(depStore())))
+		})
+
+		t.Run("reports the recorded rounds' findings again", func(t *testing.T) {
+			t.Parallel()
+
+			warm, cold := warmCold(t, absentTree(), absentTree(), with(recorded()))
+			coretest.AssertReports(t, warm.sink, load.UnplacedNeed)
+			assertSameLoad(t, warm, cold)
+		})
+
+		t.Run("runs the rounds again where a unit's imports change", func(t *testing.T) {
+			t.Parallel()
+
+			after := depTree()
+			after[appFile] = &fstest.MapFile{Data: []byte("package " + appPath + "\nimport ext " + libPath +
+				" " + deepPath + "\ntype " + appName + " ext." + libName + "\n")}
+			warm, cold := warmCold(t, depTree(), after, with(recorded()), stores(depStore()))
+			assertSameLoad(t, warm, cold)
+		})
+
+		t.Run("runs the rounds again where a directory a round listed changes", func(t *testing.T) {
+			t.Parallel()
+
+			prior := committed(t, loadOf(t, depTree(), with(recorded()), stores(depStore())).report)
+			grown := depStore()
+			grown[path.Join(path.Dir(libFile), "more.zz")] = &fstest.MapFile{
+				Data: []byte("package " + libPath + "\ntype More string\n"),
+			}
+			rec := recorded()
+			warm := loadOf(t, depTree(), with(rec), stores(grown), func(cfg *load.Config) { cfg.Prior = prior })
+			assert.NotEmpty(t, rec.rounds, "the listing of the library's directory moved")
+			assertSameLoad(t, warm, loadOf(t, depTree(), with(recorded()), stores(grown)))
+		})
+	})
+
 	t.Run("run", func(t *testing.T) {
 		t.Parallel()
 
@@ -232,7 +279,7 @@ func TestDependency(t *testing.T) {
 			_, report, _ := loadTree(t, depTree(), with(recorded()), stores(depStore()))
 			rounds := map[string]int{}
 			for _, u := range report.Units {
-				rounds[u.Files[0]] = u.Round
+				rounds[u.Files[0].Path] = u.Round
 			}
 			assert.Equal(t, rounds, map[string]int{appFile: 0, member(libFile): 1, member(deepFile): 2},
 				"a partition's unit is round zero, and a dependency unit is its round's number")
@@ -536,7 +583,7 @@ func TestDependency(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 			loaded := 0
 			for _, u := range report.Units {
-				if u.Files[0] == member(libFile) {
+				if u.Files[0].Path == member(libFile) {
 					loaded++
 				}
 			}

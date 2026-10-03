@@ -16,10 +16,15 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// recorded reports whether the read set holds a per-identity edge on
+// recorded reports whether the read set contains a declaration edge on
 // id.
 func recorded(reads *store.ReadSet, id symbol.Identity) bool {
 	return slices.Contains(slices.Collect(reads.Identities()), id)
+}
+
+// took reports whether the read set contains a package edge on id.
+func took(reads *store.ReadSet, id symbol.Identity) bool {
+	return slices.Contains(slices.Collect(reads.Packages()), id)
 }
 
 // The reader is the only path a plugin's read takes: it filters by
@@ -41,6 +46,19 @@ func TestReader(t *testing.T) {
 			assert.True(t, got == symbol.Symbol(want), "the very declaration, not a copy")
 			assert.True(t, recorded(reads, want.ID),
 				"and records the edge invalidation follows")
+		})
+
+		t.Run("records a package edge for a package's own identity", func(t *testing.T) {
+			t.Parallel()
+
+			pkg := coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store"))
+			r, reads := coretest.Reading(t, nil, pkg)
+
+			got, held := r.Lookup(pkg.ID)
+			assert.True(t, held, "Lookup returns the package")
+			assert.True(t, got == symbol.Symbol(pkg), "whole, as the graph contains it")
+			assert.True(t, took(reads, pkg.ID), "and records a package edge")
+			assert.False(t, recorded(reads, pkg.ID), "in place of a declaration edge")
 		})
 
 		t.Run("records an identity the graph does not hold", func(t *testing.T) {
@@ -72,7 +90,7 @@ func TestReader(t *testing.T) {
 	t.Run("ByKind", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("records a set-membership edge", func(t *testing.T) {
+		t.Run("records a membership edge", func(t *testing.T) {
 			t.Parallel()
 
 			r, reads := coretest.Reading(t, nil,
@@ -81,7 +99,7 @@ func TestReader(t *testing.T) {
 			}
 
 			assert.Equal(t, slices.Collect(reads.Kinds()), []symbol.Kind{symbol.KindStruct},
-				"an enumeration records a set-membership edge")
+				"an enumeration records a membership edge")
 		})
 
 		t.Run("records an enumeration that returned nothing", func(t *testing.T) {
@@ -223,15 +241,18 @@ func TestReader(t *testing.T) {
 				"the one the declaration's identity names")
 		})
 
-		t.Run("records a per-identity edge on the package", func(t *testing.T) {
+		t.Run("records a package edge", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
 			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
 			r.PackageOf(decl.ID)
 
-			assert.True(t, recorded(reads, coretest.PackageID(coretest.StorePath)),
-				"PackageOf records a per-identity edge on the package")
+			assert.Equal(t, slices.Collect(reads.Packages()),
+				[]symbol.Identity{coretest.PackageID(coretest.StorePath)},
+				"PackageOf records a package edge on the package it returns")
+			assert.Empty(t, slices.Collect(reads.Identities()),
+				"and no declaration edge")
 		})
 
 		t.Run("returns false for a package nothing holds", func(t *testing.T) {
@@ -247,8 +268,8 @@ func TestReader(t *testing.T) {
 
 			// A declaration whose identity names an unloaded package is
 			// malformed input from a frontend; the holder is derived
-			// from the identity, so it returns nothing rather than the
-			// package the file sat in.
+			// from the identity, so it returns nothing, and not the
+			// package of the file the declaration is in.
 			stray := coretest.Struct(coretest.CachePath, "Stray")
 			r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, stray))
 
@@ -266,8 +287,7 @@ func TestReader(t *testing.T) {
 
 			_, held := r.PackageOf(hidden.ID)
 			assert.False(t, held, "a package outside scope is not returned")
-			assert.False(t, recorded(reads, coretest.PackageID(coretest.CachePath)),
-				"and not recorded")
+			assert.Equal(t, reads.Len(), 0, "and not recorded")
 		})
 	})
 
@@ -303,8 +323,8 @@ func counting(path string) (store.Scope, *int) {
 }
 
 // A tracked read costs an untracked one plus the bookkeeping. What
-// these measure is that difference: every read a plugin makes carries
-// it, and nothing consumes the edges yet.
+// these measure is that difference, which every read a plugin makes
+// costs.
 func BenchmarkReader(b *testing.B) {
 	const packages, files, decls = benchPackages, benchFiles, benchDecls
 

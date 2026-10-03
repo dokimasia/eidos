@@ -9,12 +9,9 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
-	"path"
-	"slices"
 	"strconv"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"testing/fstest"
 
@@ -134,7 +131,6 @@ func config(tree fs.FS, mutate ...func(*load.Config)) (load.Config, *diag.Sink) 
 		FS:         tree,
 		Frontends:  []plugin.Frontend{frontendtest.NewScripted()},
 		Sink:       sink,
-		PluginSet:  []byte("set-1"),
 		Signatures: []string{depPath},
 		Brand:      ownBrand,
 	}
@@ -250,7 +246,7 @@ func TestLoad(t *testing.T) {
 			for _, u := range report.Units {
 				assert.Equal(t, u.Frontend, frontendtest.ScriptedID, "each unit names its frontend")
 				assert.NotEmpty(t, u.Key, "each unit records its key")
-				first = append(first, u.Files[0])
+				first = append(first, u.Files[0].Path)
 			}
 			assert.Equal(t, first, []string{apiFile, depFile, storeFile},
 				"the units sort by their first member's path, which claims make unique")
@@ -330,7 +326,7 @@ func TestLoad(t *testing.T) {
 		})
 	})
 
-	t.Run("dropOutput", func(t *testing.T) {
+	t.Run("judge", func(t *testing.T) {
 		t.Parallel()
 
 		outputFile := "svc/store/row_gen.zz"
@@ -349,7 +345,9 @@ func TestLoad(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 			assert.Equal(t, report.Excluded, []string{outputFile}, "the report lists the excluded file")
 			for _, u := range report.Units {
-				assert.False(t, slices.Contains(u.Files, outputFile), "no unit contains the file")
+				for _, f := range u.Files {
+					assert.NotEqual(t, f.Path, outputFile, "no unit contains the file")
+				}
 			}
 			_, held := g.Lookup(generatedID)
 			assert.False(t, held, "the file's declarations never enter the graph")
@@ -386,7 +384,7 @@ func TestLoad(t *testing.T) {
 			assert.Contains(t, err.Error(), storeFile, "the error names the file the proof could not read")
 		})
 
-		t.Run("reads a file without a trailer once beside its tail", func(t *testing.T) {
+		t.Run("reads a claimed file whole for its digest and again for its unit", func(t *testing.T) {
 			t.Parallel()
 
 			tree := stdTree()
@@ -394,8 +392,8 @@ func TestLoad(t *testing.T) {
 			tree[bulkFile] = &fstest.MapFile{Data: bulk}
 			counted := &countingFS{tree: tree, read: map[string]int{}}
 			loadTree(t, counted)
-			assert.Equal(t, counted.bytesOf(bulkFile), len(bulk)+output.TailSize,
-				"the proof reads the tail, and the unit reads the file")
+			assert.Equal(t, counted.bytesOf(bulkFile), 2*len(bulk),
+				"the gate reads the file to hash it and judge its trailer, and the unit reads it to parse")
 		})
 
 		t.Run("excludes the brand's own output longer than the probe", func(t *testing.T) {
@@ -429,29 +427,18 @@ func TestLoad(t *testing.T) {
 			assert.True(t, held, "a key without a frame proves nothing, so the file loads")
 		})
 
-		faults := []struct {
-			name  string
-			fault fault
-		}{
-			{name: "returns a seek's own error", fault: faultSeek},
-			{name: "returns a rewind's own error", fault: faultRewind},
-			{name: "returns a tail read's own error", fault: faultRead},
-			{name: "returns a whole read's own error", fault: faultReopen},
-		}
-		for _, tt := range faults {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
+		t.Run("returns an error wrapping a failed read's own", func(t *testing.T) {
+			t.Parallel()
 
-				tree := stdTree()
-				tree[outputFile] = &fstest.MapFile{Data: stamped(t, ownBrand, generated)}
-				err := refuse(t, &faultyFS{tree: tree, path: outputFile, fault: tt.fault})
-				assert.True(t, errors.Is(err, errFault), "the error wraps the filesystem's own")
-				assert.HasPrefix(t, err.Error(), proofError+outputFile, "the proof returns it, naming the file")
-			})
-		}
+			tree := stdTree()
+			tree[outputFile] = &fstest.MapFile{Data: stamped(t, ownBrand, generated)}
+			err := refuse(t, &faultyFS{tree: tree, path: outputFile})
+			assert.True(t, errors.Is(err, errFault), "the error wraps the filesystem's own")
+			assert.HasPrefix(t, err.Error(), proofError+outputFile, "the gate returns it, naming the file")
+		})
 	})
 
-	t.Run("treeFiles", func(t *testing.T) {
+	t.Run("walk", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("returns an error wrapping a walk's cause", func(t *testing.T) {
@@ -499,6 +486,51 @@ func TestLoad(t *testing.T) {
 				assert.Equal(t, u.Frontend, frontendtest.ScriptedID, "the claiming frontend produced every unit")
 			}
 		})
+
+		t.Run("keeps the recorded partition of an unchanged tree", func(t *testing.T) {
+			t.Parallel()
+
+			counter := &partitionCounter{Scripted: frontendtest.NewScripted()}
+			prior := committed(t, loadOf(t, stdTree()).report)
+			loadOf(t, stdTree(), with(counter), func(cfg *load.Config) { cfg.Prior = prior })
+			assert.Equal(t, counter.calls, 0, "the claims and every read are the recorded ones")
+		})
+
+		withoutMod := func() fstest.MapFS {
+			tree := stdTree()
+			delete(tree, modFile)
+			return tree
+		}
+		partitioned := []struct {
+			name          string
+			before, after func() fstest.MapFS
+		}{
+			{
+				name:   "partitions again where a file the partition read changes",
+				before: stdTree,
+				after:  func() fstest.MapFS { return stdTreeWith(modFile, "mod v2\n") },
+			},
+			{
+				name:   "partitions again where a file the partition found absent appears",
+				before: withoutMod,
+				after:  stdTree,
+			},
+			{
+				name:   "partitions again where the claims change",
+				before: stdTree,
+				after:  func() fstest.MapFS { return stdTreeWith(bulkFile, "package svc/bulk\ntype Bulk string\n") },
+			},
+		}
+		for _, tt := range partitioned {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				counter := &partitionCounter{Scripted: frontendtest.NewScripted()}
+				warm, cold := warmCold(t, tt.before(), tt.after(), with(counter))
+				assert.Equal(t, counter.calls, 3, "the warm load partitions beside the two cold ones")
+				assertSameLoad(t, warm, cold)
+			})
+		}
 	})
 
 	t.Run("checkPartition", func(t *testing.T) {
@@ -597,7 +629,7 @@ func TestLoad(t *testing.T) {
 
 			for _, u := range report.Units {
 				want := plugin.DepthFull
-				if u.Files[0] == depFile {
+				if u.Files[0].Path == depFile {
 					want = plugin.DepthSignatures
 				}
 				assert.Equal(t, u.Depth, want, "the report records each unit's depth")
@@ -647,67 +679,6 @@ func TestLoad(t *testing.T) {
 			two, second, _ := loadTree(t, stdTree())
 			assert.Equal(t, encoded(t, two), encoded(t, one), "two loads of one tree encode identically")
 			assert.Equal(t, keysOf(second), keysOf(first), "two loads of one tree fold the same keys")
-		})
-	})
-
-	t.Run("Read", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("returns a store file's bytes for a qualified path", func(t *testing.T) {
-			t.Parallel()
-
-			probe := &probing{ScriptedDependent: frontendtest.NewScriptedDependent(), read: member(libFile)}
-			loadTree(t, depTree(), with(probe), stores(depStore()))
-			assert.NoError(t, probe.readErr, "the store provides the file")
-			assert.Equal(t, probe.bytes, depStore()[libFile].Data, "the bytes are the store's")
-		})
-	})
-
-	t.Run("ReadDir", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("lists a workspace directory", func(t *testing.T) {
-			t.Parallel()
-
-			probe := &probing{ScriptedDependent: frontendtest.NewScriptedDependent(), list: appPath}
-			loadTree(t, depTree(), with(probe))
-			assert.NoError(t, probe.listErr, "the workspace provides the directory")
-			assert.Equal(t, entryNames(probe.entries), []string{path.Base(appFile)}, "the entries are the tree's")
-		})
-
-		t.Run("lists a store's root", func(t *testing.T) {
-			t.Parallel()
-
-			probe := &probing{
-				ScriptedDependent: frontendtest.NewScriptedDependent(),
-				list:              plugin.StorePath(frontendtest.ScriptedStore, ""),
-			}
-			loadTree(t, depTree(), with(probe), stores(depStore()))
-			assert.NoError(t, probe.listErr, "the store has a root")
-			assert.Equal(t, entryNames(probe.entries), []string{extRoot}, "the root lists the store's one directory")
-		})
-
-		t.Run("returns ErrStoreAbsent naming a store the load does not provide", func(t *testing.T) {
-			t.Parallel()
-
-			absent := plugin.StorePath(absentStore, libPath)
-			probe := &probing{ScriptedDependent: frontendtest.NewScriptedDependent(), list: absent}
-			loadTree(t, depTree(), with(probe))
-			assert.ErrorIs(t, probe.listErr, plugin.ErrStoreAbsent, "the load provides no such store")
-			assert.Contains(t, probe.listErr.Error(), absent, "the error names the path")
-		})
-
-		t.Run("records a directory entry apart from a file of its name", func(t *testing.T) {
-			t.Parallel()
-
-			flat := depStore()
-			flat[dualEntry] = &fstest.MapFile{Data: []byte("not source\n")}
-			_, asFile, _ := loadTree(t, depTree(), with(recorded()), stores(flat))
-			nested := depStore()
-			nested[path.Join(dualEntry, path.Base(noteFile))] = &fstest.MapFile{Data: []byte("not source\n")}
-			_, asDir, _ := loadTree(t, depTree(), with(recorded()), stores(nested))
-			assert.NotEqual(t, keysOf(asDir)[member(libFile)], keysOf(asFile)[member(libFile)],
-				"a listing records which of its entries are directories")
 		})
 	})
 
@@ -815,7 +786,7 @@ func TestLoad(t *testing.T) {
 		})
 	})
 
-	t.Run("attach", func(t *testing.T) {
+	t.Run("regionOf", func(t *testing.T) {
 		t.Parallel()
 
 		t.Run("attaches directives on assigned identities", func(t *testing.T) {
@@ -860,10 +831,6 @@ func TestLoad(t *testing.T) {
 			}, "a directive on an undeclared subject is the frontend's defect")
 			assert.Contains(t, got, "never identified", "the panic names the defect")
 		})
-	})
-
-	t.Run("attachStamps", func(t *testing.T) {
-		t.Parallel()
 
 		t.Run("records classification stamps in the store", func(t *testing.T) {
 			t.Parallel()
@@ -885,7 +852,7 @@ func TestLoad(t *testing.T) {
 			assert.Equal(t, stamps[0].Origin, frontendtest.ScriptedID, "the kernel sets the origin")
 		})
 
-		t.Run("panics on a subject the resolution step never identified", func(t *testing.T) {
+		t.Run("panics on a stamp subject the resolution step never identified", func(t *testing.T) {
 			t.Parallel()
 
 			got := assert.Panics(t, func() {
@@ -894,6 +861,81 @@ func TestLoad(t *testing.T) {
 				))
 			}, "a stamp on an undeclared subject is the frontend's defect")
 			assert.Contains(t, got, "never identified", "the panic names the defect")
+		})
+
+		t.Run("returns each unit's own package nodes", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, _ := loadTree(t, twoDirTree(), with(names(sharedPath, sharedPath)))
+			for _, u := range report.Units {
+				assert.Length(t, u.Region.Packages, 1, "each unit contributes one package")
+				assert.Length(t, u.Region.Packages[0].Files, 1, "with its own file alone")
+				assert.Equal(t, u.Region.Packages[0].Files[0].Path, u.Files[0].Path, "the unit's member")
+			}
+		})
+
+		t.Run("records each reference its frontend resolved", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, _ := loadTree(t, stdTree())
+			store := unitOf(t, report, storeFile)
+			var spellings []string
+			for _, link := range store.Region.Links {
+				assert.NotEmpty(t, link.Tiers, "each record keeps the candidates the frontend returned")
+				spellings = append(spellings, refAt(t, store.Region, link.Ref).Spelling)
+			}
+			assert.Contains(t, spellings, "api.User",
+				"a record names its reference by the reference's place in the walk")
+		})
+
+		t.Run("records an ambiguity on the reference's link", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, sink := loadTree(t, dualTree(leftPath, rightPath))
+			coretest.AssertReports(t, sink, load.AmbiguousReference)
+			var found int
+			for _, u := range report.Units {
+				for _, l := range u.Region.Links {
+					found += len(l.Findings)
+				}
+			}
+			assert.Equal(t, found, 1, "the ambiguity is the one link's finding")
+		})
+
+		t.Run("records a duplicate's finding on the region of the unit that declares it", func(t *testing.T) {
+			t.Parallel()
+
+			tree := fstest.MapFS{
+				oneFile: {Data: []byte("package shared\ntype Twin left\n")},
+				twoFile: {Data: []byte("package shared\ntype Twin right\n")},
+			}
+			_, report, _ := loadTree(t, tree)
+			assert.Empty(t, unitOf(t, report, oneFile).Region.Findings, "the kept declaration's unit reports nothing")
+			later := unitOf(t, report, twoFile).Region.Findings
+			assert.Length(t, later, 1, "the dropped declaration's unit records the duplicate")
+			assert.Equal(t, later[0].Code, load.DuplicateDeclaration, "under the duplicate's code")
+		})
+
+		t.Run("records the candidates whose re-exports a selection followed", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, _ := loadTree(t, barrelTree(leftPath), with(frontendtest.NewScriptedExporter()))
+			var followed []symbol.Identity
+			for _, u := range report.Units {
+				for _, l := range u.Region.Links {
+					followed = append(followed, l.Followed...)
+				}
+			}
+			assert.NotEmpty(t, followed, "the reference through the barrel followed its re-export")
+		})
+
+		t.Run("records a unit's parse findings on its region", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, _ := loadTree(t, fstest.MapFS{"bad/oops.zz": {Data: []byte("type Lost string\n")}})
+			found := unitOf(t, report, "bad/oops.zz").Region.Findings
+			assert.Length(t, found, 1, "the parse's finding is the region's")
+			assert.Equal(t, found[0].Code, frontendtest.ScriptedBadFile, "under the frontend's code")
 		})
 	})
 
@@ -929,6 +971,28 @@ func encoded(tb assert.TB, g *store.Graph) []string {
 		}
 	}
 	return out
+}
+
+// refAt returns the type reference at a place in the depth-first walk
+// of a region's packages, counting type references alone.
+func refAt(tb assert.TB, r *store.Region, at int) *node.TypeRef {
+	tb.Helper()
+
+	n := 0
+	var found *node.TypeRef
+	for _, p := range r.Packages {
+		node.Walk(p, func(s symbol.Symbol) bool {
+			if ref, is := s.(*node.TypeRef); is {
+				if n == at {
+					found = ref
+				}
+				n++
+			}
+			return true
+		})
+	}
+	assert.NotNil(tb, found, "the region has a reference at the place")
+	return found
 }
 
 // packageOf returns the package the graph contains under a path.
@@ -1081,71 +1145,32 @@ func (s streamFile) Read(p []byte) (int, error) { return s.f.Read(p) }
 // Close closes the file.
 func (s streamFile) Close() error { return s.f.Close() }
 
-// fault names the one operation a faulty file fails.
-type fault uint8
-
-// The operations a faulty file can fail: the Seek to its end, the
-// Seek back to the tail's start, every Read, or its path's second
-// Open, the whole read after the probe.
-const (
-	faultSeek fault = iota + 1
-	faultRewind
-	faultRead
-	faultReopen
-)
-
-// errFault is the error every fault returns.
+// errFault is the error a faulty file's reads return.
 var errFault = errors.New("load_test: the fixture's fault")
 
-// faultyFS fails one operation on one path and opens every other
-// path as the tree has it.
+// faultyFS fails every read of one path and opens every other path as
+// the tree has it.
 type faultyFS struct {
-	tree  fstest.MapFS
-	path  string
-	fault fault
-	opens atomic.Int64
+	tree fstest.MapFS
+	path string
 }
 
-// Open returns the path's file behind a faulty handle, and fails the
-// path's second Open under faultReopen.
+// Open returns the path's file behind a faulty handle.
 func (f *faultyFS) Open(name string) (fs.File, error) {
 	file, err := f.tree.Open(name)
 	if err != nil || name != f.path {
 		return file, err
 	}
-	if f.opens.Add(1) > 1 && f.fault == faultReopen {
-		return nil, errFault
-	}
-	return &faultyFile{File: file, fault: f.fault}, nil
+	return &faultyFile{File: file}, nil
 }
 
-// faultyFile fails the operation its fault names.
+// faultyFile fails every read.
 type faultyFile struct {
 	fs.File
-	fault fault
 }
 
-// Seek fails a seek from the file's end under faultSeek, and a seek
-// from its start under faultRewind.
-func (f *faultyFile) Seek(offset int64, whence int) (int64, error) {
-	s, seeks := f.File.(io.Seeker)
-	switch {
-	case !seeks,
-		f.fault == faultSeek && whence == io.SeekEnd,
-		f.fault == faultRewind && whence == io.SeekStart:
-		return 0, errFault
-	default:
-		return s.Seek(offset, whence)
-	}
-}
-
-// Read fails under faultRead.
-func (f *faultyFile) Read(p []byte) (int, error) {
-	if f.fault == faultRead {
-		return 0, errFault
-	}
-	return f.File.Read(p)
-}
+// Read returns the fixture's fault.
+func (*faultyFile) Read([]byte) (int, error) { return 0, errFault }
 
 // hiddenOptions declares an options struct with an unexported
 // field, which the canonical encoding cannot see and the load must
@@ -1270,6 +1295,21 @@ func (*idle) Partition(
 	context.Context, []plugin.SourceRef, plugin.FileReader,
 ) ([][]plugin.SourceRef, error) {
 	return nil, errors.New("load_test: the driver asks a frontend claiming nothing to partition")
+}
+
+// partitionCounter is the scripted language counting the partitions it
+// runs. The loads that count share it one after another, never at once.
+type partitionCounter struct {
+	*frontendtest.Scripted
+	calls int
+}
+
+// Partition counts the call and partitions as the scripted language.
+func (f *partitionCounter) Partition(
+	ctx context.Context, files []plugin.SourceRef, r plugin.FileReader,
+) ([][]plugin.SourceRef, error) {
+	f.calls++
+	return f.Scripted.Partition(ctx, files, r)
 }
 
 // partitioning returns the partition a case states, so the contract

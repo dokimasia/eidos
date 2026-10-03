@@ -1,0 +1,148 @@
+{{template "header" .}}
+import (
+	"testing"
+
+	"go.dokimi.dev/assert"
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
+)
+
+// foreignSymbol is a symbol from outside the model, the one value the
+// binary codec refuses to write.
+type foreignSymbol struct{}
+
+func (foreignSymbol) Kind() symbol.Kind      { return symbol.Kind{{(index .Views 0).Name}} }
+func (foreignSymbol) Position() position.Pos { return position.Pos{} }
+func (foreignSymbol) Docs() []string         { return nil }
+
+// populated returns a subject of every kind with a value in every field
+// the binary codec writes, and one child in every field of children.
+func populated() []symbol.Symbol {
+	var out []symbol.Symbol
+{{- range .Views}}
+	{
+		subject := &{{.Name}}{}
+{{- range .Populate}}
+		{{.}}
+{{- end}}
+{{- range .Children}}
+		{{.}}
+{{- end}}
+		out = append(out, subject)
+	}
+{{- end}}
+	return out
+}
+
+// tableTrip encodes s against a fresh table and returns the encoding,
+// with the table as its own encoding decodes.
+func tableTrip(tb testing.TB, s symbol.Symbol) ([]byte, *StringTable) {
+	tb.Helper()
+
+	table := &StringTable{}
+	encoded, err := AppendBinary(nil, s, table)
+	assert.NoError(tb, err, "a symbol of the model encodes")
+	tableBytes, err := table.AppendBinary(nil)
+	assert.NoError(tb, err, "its table encodes")
+	decoded, read, err := DecodeStringTable(tableBytes)
+	assert.NoError(tb, err, "and decodes")
+	assert.Equal(tb, read, len(tableBytes), "whole")
+	return encoded, decoded
+}
+
+func TestCodec(t *testing.T) {
+	t.Parallel()
+
+	t.Run("AppendBinary", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("encodes a nil symbol as one zero byte", func(t *testing.T) {
+			t.Parallel()
+
+			encoded, err := AppendBinary(nil, nil, nil)
+			assert.NoError(t, err, "a nil symbol encodes")
+			assert.Equal(t, encoded, []byte{0}, "as one zero byte")
+		})
+
+		t.Run("encodes a nil declaration of every kind as one zero byte", func(t *testing.T) {
+			t.Parallel()
+{{- range .Views}}
+
+			{
+				var none *{{.Name}}
+				encoded, err := AppendBinary(nil, none, nil)
+				assert.NoError(t, err, "a nil *{{.Name}} encodes")
+				assert.Equal(t, encoded, []byte{0}, "as one zero byte")
+			}
+{{- end}}
+		})
+
+		t.Run("returns an error for a symbol the model does not declare", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := AppendBinary(nil, foreignSymbol{}, nil)
+			assert.HasError(t, err, "a foreign symbol has no encoding")
+			assert.HasPrefix(t, err.Error(), "{{.Package}}: encode ", "under the package prefix")
+		})
+{{- range .Views}}
+{{- $kind := .Name}}
+{{- range .Fields}}
+{{- if eq .Codec "symbols"}}
+
+		t.Run("returns an error for a foreign symbol in {{$kind}}.{{.Storage}}", func(t *testing.T) {
+			t.Parallel()
+
+			subject := &{{$kind}}{}
+			subject.{{.Storage}} = {{.Decl}}{foreignSymbol{}}
+			dst := []byte{7}
+			got, err := AppendBinary(dst, subject, nil)
+			assert.HasError(t, err, "a foreign symbol deep in the subtree has no encoding")
+			assert.Equal(t, got, []byte{7}, "and dst comes back unchanged")
+		})
+{{- end}}
+{{- end}}
+{{- end}}
+	})
+
+	t.Run("DecodeBinary", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("round-trips a populated symbol of every kind through a table", func(t *testing.T) {
+			t.Parallel()
+
+			for _, subject := range populated() {
+				encoded, table := tableTrip(t, subject)
+				decoded, read, err := DecodeBinary(encoded, table)
+				assert.NoError(t, err, "the encoding decodes: "+subject.Kind().String())
+				assert.Equal(t, read, len(encoded), "whole")
+				assert.Equal(t, decoded, subject, "to the symbol that encoded it")
+			}
+		})
+
+		t.Run("round-trips a populated symbol of every kind without a table", func(t *testing.T) {
+			t.Parallel()
+
+			for _, subject := range populated() {
+				encoded, err := AppendBinary(nil, subject, nil)
+				assert.NoError(t, err, "the symbol encodes: "+subject.Kind().String())
+				decoded, read, err := DecodeBinary(encoded, nil)
+				assert.NoError(t, err, "the encoding decodes")
+				assert.Equal(t, read, len(encoded), "whole")
+				assert.Equal(t, decoded, subject, "to the symbol that encoded it")
+			}
+		})
+
+		t.Run("returns an error for every encoding cut short", func(t *testing.T) {
+			t.Parallel()
+
+			for _, subject := range populated() {
+				encoded, err := AppendBinary(nil, subject, nil)
+				assert.NoError(t, err, "the symbol encodes: "+subject.Kind().String())
+				for end := range len(encoded) {
+					_, _, err := DecodeBinary(encoded[:end], nil)
+					assert.HasError(t, err, "an encoding cut short does not decode")
+				}
+			}
+		})
+	})
+}

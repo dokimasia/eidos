@@ -482,7 +482,7 @@ func TestChecks(t *testing.T) {
 					&unreadDependency{frontendtest.NewScriptedDependent()}, dependentFixture(),
 				))
 			})
-			assert.Contains(t, msg, "re-keys", "the rejection names the key the byte never moved")
+			assert.Contains(t, msg, "door fold", "the rejection names the fold the byte never moved")
 		})
 	})
 

@@ -41,8 +41,8 @@ var KeptOutput = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 })
 
 // UnreadableRecord reports a previous record that does not read, at the
-// manifest's path. The run proceeds as if no run had committed, so it
-// removes nothing.
+// directory of the manifest's documents. The run proceeds as if no run
+// had committed, so it removes nothing.
 var UnreadableRecord = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  59,
 	Meaning: "the previous record does not read, and the run removes nothing",
@@ -64,4 +64,15 @@ var UnmetContract = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 var FailedDependency = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
 	Number:  61,
 	Meaning: "a plan or a check reads a plan that failed, and generates or checks nothing",
+})
+
+// ColdState reports a run that ignored the sealed state and ran cold, at
+// the state directory's CURRENT, and states the cause: a CURRENT that
+// names no generation, an executable the run cannot read, a generation
+// of another format, composition or executable, or a generation whose
+// blocks, segments or regions do not read whole. The run's outcome is
+// the cold run's: damaged state costs time and never correctness.
+var ColdState = diag.MustRegister(diag.KernelPrefix, diag.CodeSpec{
+	Number:  62,
+	Meaning: "the run ignored the sealed state and ran cold",
 })
