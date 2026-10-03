@@ -7,7 +7,7 @@ ships-in: unscheduled
 deadline: none
 deadline-source: none
 prd: none
-rfc: none
+rfc: 0020
 ---
 
 # Milestone 0007: A warm run redoes only what changed
@@ -31,10 +31,13 @@ warm≡cold check.
       file hashes once and loads nothing.
 - [ ] The sealed state matches
       [09-incrementality.md](../architecture/09-incrementality.md):
-      generation directories with an atomic `CURRENT` swap, a
-      region-lazy graph (a probe counts decoded regions against
+      generations named by their content with an atomic `CURRENT`
+      swap, a region-lazy graph (a probe counts decoded regions against
       touched ones), persisted facts that early cutoff diffs against,
       and the artifact table returning dirtiness by lookup.
+- [ ] The state follows the executable: a rebuild that changes no code
+      keeps it, and one that changes code runs the next run cold with
+      one `ColdState` Info.
 - [ ] Commit is incremental: a probe compares bytes written after one
       edit against the state's size, a no-change run writes no
       generation, and clean regions and bags carry by segment
@@ -55,12 +58,17 @@ warm≡cold check.
       outside the reader's scope re-runs nothing, and an edit to one
       member of a package read through `PackageOf` re-runs the reader.
 - [ ] The parse memo restores a branch-switch fixture without
-      reparsing, its size cap evicts least-recently-used entries at
-      `CommitRun`, and the cold mode ignores both layers without
-      deleting them.
+      reparsing, its size cap evicts least-recently-used entries at the
+      commit, the cold mode ignores both layers without deleting them,
+      and two workspaces that open one memo ledger restore each other's
+      units.
 - [ ] The warm legs of `RunWorkspaceSuite` left open in milestone 0006
       now pass: an unchanged export re-runs no dependent, and a check
       sees identical records cold and warm.
+- [ ] Warm and cold runs report identical findings, and a plan that
+      failed in one run executes its pending work in the next.
+- [ ] The manifest is 256 documents, and a warm run after one edit
+      rewrites only the documents whose entries changed.
 
 ## Why now
 
@@ -78,7 +86,7 @@ All of [09-incrementality.md](../architecture/09-incrementality.md).
 
 - Performance numbers and gates: milestone 0013 measures. This
   milestone proves correctness only.
-- A daemon or a remote cache: refused by D9 and D77, not deferred.
+- A daemon or a remote cache: refused by D9 and D106, not deferred.
 
 ## Risks to the sequence
 
@@ -91,6 +99,8 @@ All of [09-incrementality.md](../architecture/09-incrementality.md).
 
 | Date | What changed | Why |
 |---|---|---|
+| 2026-10-02 | Aligned Done when with the accepted RFC-0020: generations named by their content, the executable check, a shared memo, identical findings with pending work for failed plans, and the manifest's 256 documents | The decisions RFC-0020 recorded change what a warm run has to prove |
+| 2026-10-02 | Linked RFC-0020 | The milestone's design: the fingerprint gate, the sealed state, re-execution by artifact, the parse memo and the warm checks |
 | 2026-09-30 | Added the edge format to Done when, with scoped membership edges and package-member edges | `ByKind` records its kind-membership edge without the reader's scope, `PackageOf` returns a whole package on one identity edge, and `Claim.Derived` lists point reads alone, so no document stated the edges invalidation follows |
 | 2026-08-31 | Pinned incremental commit and the no-change skip into Done when | The incrementality design gained the write-side contract: a full-generation rewrite scales with the corpus and would fail the warm-one-edit gate on the commit alone |
 | 2026-08-30 | Added at position 7 | The riskiest milestone, placed as early as its dependency on the whole frame allows |

@@ -31,3 +31,4 @@ the decision is already made and there is nothing left to argue, write an
 | [0017](0017-the-end-to-end-run.md) | The end-to-end run, its manifest and its commit | Draft |
 | [0018](0018-parallel-dispatch-and-slot-appends.md) | Parallel dispatch inside a bucket, and slot appends through the Emitter | Draft |
 | [0019](0019-source-scopes-exports-and-checks.md) | Source scopes, plan exports and workspace checks | Accepted |
+| [0020](0020-warm-runs-and-the-sealed-state.md) | Warm runs, the sealed state and re-execution by artifact | Accepted |

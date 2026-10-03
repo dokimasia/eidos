@@ -24,3 +24,6 @@ way.
 | [0008](0008-pin-the-assert-module-by-version.md) | Pin the assert module by version | Accepted |
 | [0009](0009-the-carrier-mark-follows-the-brand.md) | The carrier mark follows the brand | Accepted |
 | [0010](0010-export-entries-have-a-five-part-key.md) | An export entry has a five-part key and no signature | Accepted |
+| [0011](0011-region-string-tables-and-hashed-edges.md) | Each region has its own string table, and edges are hashed | Accepted |
+| [0012](0012-package-reads-depend-on-every-member.md) | A package read whole depends on every member | Accepted |
+| [0013](0013-the-parse-memo-is-keyed-by-the-executable.md) | The parse memo is keyed by the executable and can be shared | Accepted |
