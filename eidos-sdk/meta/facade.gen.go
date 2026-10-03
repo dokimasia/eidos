@@ -38,6 +38,17 @@ const (
 	AuthorityManual = core.AuthorityManual
 )
 
+// Order is a claim's place among the claims of one plugin in one
+// bucket: the rule that made it, the subject of the invocation that made
+// it, and the gating instance. A frontend's stamp has rule zero and the
+// stamp's index among its subject's stamps as its instance. A drop has
+// rule zero and the directive's instance.
+//
+// Every run computes the same Order for the same claim, whatever else
+// the run executes, so a claim a warm run keeps ranks against one it
+// makes. The zero Order is rule zero on no subject at instance zero.
+type Order = core.Order
+
 // Claim is one write's envelope: the rank that arbitrates it and
 // the provenance that explains it.
 type Claim = core.Claim
@@ -45,6 +56,9 @@ type Claim = core.Claim
 // Read is one recorded read: a declaration read when Key is empty,
 // a fact read at (subject, key) otherwise.
 type Read = core.Read
+
+// FactRef names one fact: a subject and a key.
+type FactRef = core.FactRef
 
 // RefusedStamp reports a refused stamp. The fact store refuses a
 // write naming an unregistered key, a subject kind the key does not
@@ -78,8 +92,8 @@ func NewFacts(r *Registry) *Facts {
 //
 // It refuses a zero key, a subject kind the key does not admit, and
 // a false boolean — absence is the negative, so false is never
-// stamped and deletion stays load-bearing. A claim identical to one
-// already held, same rank source and equal value, changes nothing.
+// stamped and deletion remains load-bearing. A claim identical to one
+// already kept, same rank source and equal value, changes nothing.
 // Values compare per vocabulary term; slices compare element-wise
 // and are copied in.
 func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
@@ -88,7 +102,7 @@ func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
 
 // Get returns the winning value, untracked, and false where the
 // winner is a drop or nothing was stamped. Slice values are copied
-// out, so a caller cannot reach into a bag.
+// out, so a caller cannot write into a bag.
 func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 	return core.Get[T](f, id, k)
 }
@@ -248,6 +262,30 @@ func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 // a handle that exists reads what was written.
 func Lookup[T FactValue](r *Registry, name KeyName) (Key[T], bool) {
 	return core.Lookup[T](r, name)
+}
+
+// BagSource restores a subject's recorded claims the first time a read,
+// a write or a withdrawal needs the subject's bag. The sealed state of
+// a previous run implements it.
+type BagSource = core.BagSource
+
+// StoredClaim is one recorded claim: its key or its group, its
+// envelope, and its value, nil for a drop. A group drop names its group
+// and no key.
+type StoredClaim = core.StoredClaim
+
+// Restore returns a fact store over r that restores bags from src on
+// first use: a read, a write or a withdrawal of a subject loads the
+// subject's recorded claims before it proceeds, and [Facts.ByKey]
+// merges the recorded presence with the transitions of the run. A
+// restored claim ranks against the run's own claims exactly as it did
+// when it was made, because its envelope is recorded whole.
+//
+// A failure of the source is not returned by the read that met it: the
+// bag reads as empty, and [Facts.Damaged] returns the failure, so the
+// run discards what it derived and runs cold.
+func Restore(r *Registry, src BagSource) *Facts {
+	return core.Restore(r, src)
 }
 
 // RawStamp is one classification stamp as a frontend recorded it:

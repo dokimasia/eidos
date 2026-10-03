@@ -19,38 +19,73 @@ import (
 
 // Graph is the run's node declarations.
 //
+// A graph comes from one of two constructors. [New] returns an empty
+// graph that a load fills through [Graph.AddPackage] and the attach
+// methods and seals with [Graph.Freeze]. [Sealed] returns a frozen graph
+// over a [Source]'s regions, which decode on first use.
+//
 // # Concurrency
 //
-// [Graph.AddPackage] is safe to call concurrently: frontends shard
-// per unit and load in parallel, so the graph serializes writes
-// itself rather than asking every frontend to. Serialization is per
-// package, so two frontends adding two packages do not contend.
-// [Graph.Freeze] is the one exclusive operation, and it excludes
-// writes rather than racing them: a package cannot arrive after the
-// indexes are built and go missing from them.
+// [Graph.AddPackage] is safe to call concurrently: frontends shard per
+// unit and load in parallel, so the graph serializes writes itself.
+// Serialization is per package, so two frontends adding two packages do
+// not contend. [Graph.Freeze] is the one exclusive operation, and it
+// excludes every write: a package cannot arrive after the indexes are
+// built and go missing from them.
 //
-// Reads are safe to make concurrently with each other once the graph
-// is frozen, which is the only state annotators and generators see
-// it in.
+// Reads are safe to make concurrently with each other once the graph is
+// frozen, which is the only state annotators and generators see it in.
+// A sealed graph builds each lazy index under a [sync.Once], so two
+// readers that need one region decode it once.
 //
 // # Reading
 //
 // [Graph.ByKind], [Graph.Lookup] and [Graph.PackageOf] return
-// untracked, and are the kernel's own path. Everything a plugin
-// reaches goes through a
-// [Reader], which a plugin is handed instead of the graph. That is
-// what makes the single door structural rather than a review
-// comment.
+// untracked, and are the kernel's own path. A plugin reads through a
+// [Reader], which it is handed in place of the graph, so the single
+// door is a property of the types.
 //
-// Both indexes build at [Graph.Freeze], where they are free: nothing
-// may add a declaration afterwards, so neither can go stale. An
-// untracked read before the seal therefore returns nothing rather
-// than a partial result.
+// Both indexes of a graph [New] returned build at [Graph.Freeze]:
+// nothing may add a declaration afterwards, so neither can go stale. An
+// untracked read before the seal returns nothing, never a partial
+// result.
+//
+// # Allocation contract
+//
+// A read of a built index allocates nothing, and neither does an
+// enumeration ranged over directly. A sealed graph allocates while it
+// decodes a region and builds an index over it, once for each region
+// and each index.
 type Graph = core.Graph
 
-// New returns an unfrozen graph holding nothing.
+// New returns an unfrozen graph that contains nothing.
 func New() *Graph {
 	return core.New()
+}
+
+// Sealed returns a frozen graph over the regions of src.
+//
+// [Graph.Lookup], [Graph.Holds] and [Graph.PackageOf] decode the
+// regions of the package an identity names, and [Graph.ByKind] and
+// [Graph.ByDirective] decode the regions whose summary lists the kind
+// or the spelling, each on first use. [Graph.Packages],
+// [Graph.Directives] and [Graph.Stamps] decode every region. Every read
+// returns what a graph that loaded the same regions through [New]
+// returns, in the same order: a package that more than one region
+// contributes files to reads as one package, merged in region order the
+// way the load's splice merges units.
+//
+// A region that fails to decode reads as absent, and [Graph.Damaged]
+// then returns the failure. Sealed calls [Source.Regions] once and
+// decodes no region itself.
+//
+// # Allocation contract
+//
+// Sealed allocates the graph and an index of the summaries 15 times
+// over the canonical workspace of 1,000 packages. Only the tables of
+// the index's two maps grow in number with the packages and spellings.
+func Sealed(src Source) *Graph {
+	return core.Sealed(src)
 }
 
 // Scope decides which packages a reader may see.
@@ -64,35 +99,68 @@ type Scope = core.Scope
 // Reader is a tracked, scope-filtered read handle over a frozen
 // graph.
 //
-// A declaration outside scope is neither returned nor recorded. Both
-// halves matter: returning it would let one plan observe another's
-// sources, and recording it would let a change the plan could never
-// have seen re-run it.
+// A declaration outside scope is neither returned nor recorded.
+// Returning it would let one plan observe another's sources, and
+// recording it would let a change the plan could never have seen run
+// the plan again.
+//
+// # Concurrency
 //
 // A Reader is not safe for concurrent use, because the [ReadSet] it
 // records into is not. The graph beneath it is.
 type Reader = core.Reader
 
+// ReadLog keeps the edges of many read sets in flat storage, one entry
+// for each set it records: what a dispatcher keeps of each invocation's
+// reads while it reuses one set across a rule's invocations.
+//
+// [ReadLog.Append] copies a set's edges into the log, and
+// [ReadLog.Load] records an entry's edges into a set again, so a
+// consumer reads every entry through one set the caller resets between
+// entries. An entry keeps the set's edges and not the order they
+// arrived in, which no enumeration of a set returns either.
+//
+// The zero ReadLog is empty and ready to record.
+//
+// # Concurrency
+//
+// A ReadLog is not safe for concurrent use. A dispatcher keeps one for
+// each worker.
+//
+// # Allocation contract
+//
+// Append allocates only to grow the log's slices, and Load only to grow
+// the set's maps past the largest entry the set held since its
+// creation.
+type ReadLog = core.ReadLog
+
 // ReadSet is what one derived artifact read.
 //
 // Edges deduplicate, so a loop reading one declaration a thousand
-// times records one edge. Four grains are recorded: a per-identity
-// edge for a targeted read, a set-membership edge for an
-// enumeration by kind, a directive-membership edge for one by
-// directive, and a (subject, key) edge for a fact read — ReadSet
-// satisfies [meta.Recorder], so one artifact's declaration reads
-// and fact reads arrive in one set.
+// times records one edge. The set records five grains of the four edge
+// kinds: a declaration edge for a targeted read, a package edge for a
+// package taken whole, a membership edge for an enumeration by kind,
+// a membership edge for an enumeration by directive, and a fact edge at
+// (subject, key) for a fact read. ReadSet satisfies [meta.Recorder], so
+// one artifact's declaration reads and fact reads arrive in one set.
 //
-// A ReadSet belongs to one derived artifact and is not shared, so it
-// is not safe for concurrent use even though the graph beneath it
-// is. That is the honest split: the graph is shared and the
+// The zero ReadSet is ready to record, and [NewReadSet] returns one.
+//
+// # Concurrency
+//
+// A ReadSet belongs to one derived artifact and is not safe for
+// concurrent use. The graph it records reads of is shared, and its
 // bookkeeping is not.
 //
-// The zero ReadSet is ready to record. [NewReadSet] is the spelling
-// that says so.
+// # Allocation contract
+//
+// Each grain allocates its map on its first edge, and the map grows as
+// edges arrive. [ReadSet.Reset] keeps every map, so a set reused across
+// invocations allocates only to grow. Each enumeration allocates the
+// sorted slice it returns.
 type ReadSet = core.ReadSet
 
-// NewReadSet returns a read set holding no edges.
+// NewReadSet returns a read set with no edges.
 func NewReadSet() *ReadSet {
 	return core.NewReadSet()
 }
@@ -119,3 +187,54 @@ var (
 // handing over no package at all, return a plain error instead: they
 // carry no code because nothing should be scripted against them.
 type RefusedError = core.RefusedError
+
+// Source is a sealed graph's regions: one for each frontend unit, in
+// splice order. A warm run builds one over its last generation's
+// regions and the units it parsed or restored.
+//
+// A Source states each region's summary without decoding the region,
+// and decodes a region when [Sealed] first needs it. A summary lists
+// every package its region's declarations, directives and stamps name,
+// as [Region.Info] computes it: a region whose summary leaves out a
+// package is unreachable through that package.
+//
+// # Concurrency
+//
+// [Sealed] calls Region at most once for each region, from the
+// goroutine that first needs the region, and calls it for different
+// regions at once.
+type Source = core.Source
+
+// RegionInfo is what a run knows of a region without decoding it.
+type RegionInfo = core.RegionInfo
+
+// RegionFile is one file of a region and the package it declares.
+type RegionFile = core.RegionFile
+
+// Region is one unit's share of the graph: the unit's packages with
+// their files and declarations, after identity assignment and link,
+// the raw directives and classification stamps attached to them, the
+// link record of its references, and the findings its parse and its
+// link reported.
+//
+// A package that more than one unit contributes files to appears in
+// each of those units' regions, each time with that unit's files alone.
+// A sealed graph merges the parts in region order, as the load's splice
+// merges units. Every declaration's identity names the package whose
+// files contain it, and every directive and stamp subject names a
+// package of the region. A sealed graph reads the packages, the
+// directives and the stamps, and a warm load reads the links and the
+// findings.
+//
+// # Concurrency
+//
+// A Region is not mutated once a [Source] returns it, so any number of
+// goroutines read it at once.
+type Region = core.Region
+
+// Link is the record of one type reference a frontend resolved: the
+// reference's place among the region's references, the candidates the
+// frontend's Resolve returned, and the re-exports the selection
+// followed. A run that keeps the region selects the reference's target
+// again from the candidates, without the frontend.
+type Link = core.Link

@@ -359,10 +359,11 @@ type Stamper = core.Stamper
 
 // Stamp records v under k with the envelope pre-bound: plugin
 // authority, the phase call's bucket and plugin, the invocation's
-// sequence in canonical match order, and the invocation's point
-// reads so far as the claim's derivation. A write the fact store
-// refuses reports an Error at the subject's position under
-// [RefusedStamp], and the phase continues.
+// place in canonical match order, meaning the rule, the subject and the
+// gating instance, and the invocation's point reads so far as the
+// claim's derivation. A write the fact store refuses reports an Error
+// at the subject's position under [RefusedStamp], and the phase
+// continues.
 func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
 	core.Stamp[T](st, k, v)
 }

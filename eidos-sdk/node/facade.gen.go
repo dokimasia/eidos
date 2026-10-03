@@ -20,6 +20,55 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// ErrMalformed is the class of every failure of [DecodeBinary] and
+// [DecodeStringTable] to read an encoding: bytes that end inside it, or
+// that state a kind, a bool, a string number or a length outside the
+// encoding's range. Every record of the kernel's sealed state decodes under
+// the same class.
+var ErrMalformed = core.ErrMalformed
+
+// AppendBinary appends the binary encoding of s to dst and returns the
+// extended buffer, numbering every string s spells in t.
+//
+// The encoding is the symbol's kind as one byte, then each of the kind's
+// fields in schema order, each child written the same way, so it covers
+// the symbol's whole subtree. A nil symbol is one zero byte. Where t is
+// nil, each string is its length and its bytes, so two equal subtrees
+// encode to equal bytes whatever table either region numbers its strings
+// in: the form a comparison of two declarations reads.
+//
+// Error modes: an error for a symbol anywhere in the subtree whose type
+// the model does not declare. dst comes back unchanged with it, and t
+// may have numbered strings of the part written before it.
+//
+// # Allocation contract
+//
+// AppendBinary allocates only to grow dst and t.
+func AppendBinary(dst []byte, s symbol.Symbol, t *StringTable) ([]byte, error) {
+	return core.AppendBinary(dst, s, t)
+}
+
+// DecodeBinary decodes one symbol [AppendBinary] wrote at the start of b
+// against t, and returns it with the number of bytes it read. A zero
+// byte decodes to a nil symbol. t is the table the encoding numbered
+// its strings in, and nil for an encoding written without one.
+//
+// Error modes: an error wrapping [ErrMalformed] where b ends inside
+// the encoding, names a kind the model does not declare, places a kind
+// in a field that admits another, states a bool other than zero or one,
+// names a string t does not contain, or states a list longer than the
+// bytes left. Nothing else comes back with the error.
+//
+// # Allocation contract
+//
+// DecodeBinary allocates each declaration and each non-empty list of
+// the subtree once. A string decoded against a table is a string of the
+// table and allocates nothing, and one decoded without a table
+// allocates once.
+func DecodeBinary(b []byte, t *StringTable) (symbol.Symbol, int, error) {
+	return core.DecodeBinary(b, t)
+}
+
 // ModelFingerprint identifies the node model's shape: a sha256 over
 // every kind and node-side field the schema declares, its facts, and
 // the names and values of the symbol package's enums, hex-spelled.
@@ -484,6 +533,46 @@ type TypeParam = core.TypeParam
 //
 // This is the node spelling of the kind.
 type Embed = core.Embed
+
+// StringTable numbers the strings of one encoded region, so the
+// encoding writes each distinct string once and refers to it by its
+// number. A region decodes against its own table and no other, so a
+// region read from a generation and one read from the memo decode the
+// same way.
+//
+// The empty string is number zero and is never stored. Every other
+// string is numbered from one, in the order [StringTable.Add] first
+// met it.
+//
+// The zero StringTable is empty and ready to use.
+//
+// # Concurrency
+//
+// A StringTable is not safe for concurrent use. A decoded table is not
+// mutated by a read, so any number of goroutines decode against it at
+// once.
+//
+// # Allocation contract
+//
+// [StringTable.Add] allocates only when the table grows its list or its
+// index. [StringTable.Reset] keeps both, so a table reused across
+// regions allocates only to grow. [DecodeStringTable] allocates three
+// times: the table, its list, and one string that every decoded string
+// is a substring of.
+type StringTable = core.StringTable
+
+// DecodeStringTable decodes a table [StringTable.AppendBinary] wrote at
+// the start of b, and returns it with the number of bytes it read. It
+// reads the table twice: once to check every length against the bytes
+// left, and once to slice each string out of one copy of the table's
+// bytes.
+//
+// Error modes: an error wrapping [ErrMalformed] where b ends inside the
+// table, or where the count or a string's length exceeds the bytes
+// left.
+func DecodeStringTable(b []byte) (*StringTable, int, error) {
+	return core.DecodeStringTable(b)
+}
 
 // Symbols is the type of a field that admits declarations of any
 // kind, such as a file's declaration list.

@@ -107,7 +107,7 @@ type Lang = core.Lang
 //
 // Equality is the whole struct. Overloads differ only in Disc, and
 // a language that cannot overload writes the empty string. Lang is
-// part of the key because a mixed workspace can hold two languages'
+// part of the key because a mixed workspace can contain two languages'
 // packages in one directory.
 type Identity = core.Identity
 
@@ -123,12 +123,12 @@ type Identity = core.Identity
 //
 // Two forms do not round-trip. A file identity's string form is
 // indistinguishable from a dotted top-level name and parses as
-// one. So is a package whose last segment carries a dot —
-// gopkg.in/yaml.v2 — because the grammar cuts a path at the first
+// one. So is a package whose last segment contains a dot, such as
+// gopkg.in/yaml.v2, because the grammar cuts a path at the first
 // dot after the last slash: the package and the name it spells
 // are recovered wrong, and String is not injective across that
-// pair. Nothing in the framework parses identities back today;
-// a boundary that starts to must state which half it holds.
+// pair. Nothing in the framework parses identities back, and a
+// boundary that parses one must state which half it contains.
 func Parse(s string) (Identity, error) {
 	return core.Parse(s)
 }

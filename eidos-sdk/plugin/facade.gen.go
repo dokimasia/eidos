@@ -110,7 +110,7 @@ type Unit = core.Unit
 // Emit contains one plan's accumulated units, plus a per-kind index
 // over their declarations that is maintained at [Emit.Add]: each
 // unit's tree is walked once when it arrives, so an emit-triggered
-// rule enumerates its matches rather than the emit graph.
+// rule enumerates its matches and not the whole emit graph.
 //
 // An Emit is not safe for concurrent use: annotators and generators
 // run sequentially, and a unit arriving mid-enumeration would race
@@ -298,6 +298,98 @@ func NewIndex(g *store.Graph, f *meta.Facts, validated map[symbol.Identity][]dir
 	return core.NewIndex(g, f, validated, sc)
 }
 
+// WholeCall is the rule of the one invocation a run records for a phase
+// call that journals none of its own: the call of a plugin that
+// implements its role directly.
+const WholeCall = core.WholeCall
+
+// UnitRef names one accumulated unit of a plan by the key a phase call
+// flushes it under: its plugin, its family's tag, its package and its
+// key. The key includes the package, because two languages may spell
+// one package path as two namespaces. [Unit.Ref] returns a unit's
+// reference, and [Emit.Add] refuses a second unit under one reference.
+//
+// # Concurrency
+//
+// A UnitRef is a value, and any number of goroutines may read one.
+//
+// # Allocation contract
+//
+// [UnitRef.Compare] allocates nothing.
+type UnitRef = core.UnitRef
+
+// EmitRef names one emit value of a plan: the unit that contains it,
+// and its place in the depth-first walk of the unit's declarations, each
+// declaration's subtree in order, counted from zero. [Emit.Ref] returns a
+// value's reference. The reference depends on the unit alone, so it is
+// the same in every run that flushes the unit with the same
+// declarations.
+//
+// # Concurrency
+//
+// An EmitRef is a value, and any number of goroutines may read one.
+//
+// # Allocation contract
+//
+// [EmitRef.Compare] allocates nothing.
+type EmitRef = core.EmitRef
+
+// MatchKey identifies one invocation of a phase call across runs. Its
+// order is the canonical match order: plugin, rule, subject identity,
+// gating instance, then host.
+//
+// A rule's ordinal is its place in its plugin's declaration order, so a
+// key is valid for one declaration order only. The rules are code, and
+// a run that records keys runs cold over a record another executable
+// wrote.
+//
+// # Concurrency
+//
+// A MatchKey is a value, and any number of goroutines may read one.
+//
+// # Allocation contract
+//
+// [MatchKey.Compare] allocates nothing.
+type MatchKey = core.MatchKey
+
+// Selection restricts a phase call to what a warm run executes again.
+//
+// The authoring surface honours it. A rule that is not emit-phase runs
+// the matches Matches lists that its gates still admit, and every match
+// its gates admit on a candidate, and no other match. Emit-phase rules
+// ignore the selection and run over every emit value of the plan's
+// store. A plugin that implements its role directly may ignore the
+// selection, and the run then records the whole call as one invocation
+// under [WholeCall].
+//
+// # Concurrency
+//
+// A phase call reads the selection and writes nothing to it, so one
+// selection may serve concurrent calls.
+type Selection = core.Selection
+
+// Invocation is what one handler call read and touched: the record a
+// warm run keys the call's re-execution on.
+//
+// # Concurrency
+//
+// A journal receives an Invocation on the goroutine that made the phase
+// call, and the record's slices and read set are the call's own until
+// [Journal.Invoked] returns.
+type Invocation = core.Invocation
+
+// Journal receives a phase call's records after the call's effects
+// apply: one [Invocation] for each invocation the call ran, in canonical
+// match order, then one Evaluated record for each candidate of the
+// call's [Selection], in identity order.
+//
+// # Concurrency
+//
+// A phase call makes every Journal call on the goroutine that made the
+// phase call, one record at a time, so an implementation that serves one
+// call at a time needs no lock.
+type Journal = core.Journal
+
 // ValidateOptions holds a plugin's options declaration to the tag
 // contract: a pointer to a struct, exported fields only, an opt
 // tag naming each field's config key, a doc tag stating its
@@ -468,9 +560,9 @@ type TemplateProvider = core.TemplateProvider
 //
 // A problem with one subject attaches to the context's sink and the
 // phase continues; a returned error is fatal to the phase. An
-// annotator never adds or removes declarations, which the store
-// enforces rather than this docblock: nothing reachable from the
-// context can write to the graph.
+// annotator never adds or removes declarations, and the store
+// enforces it: nothing reachable from the context can write to the
+// graph.
 type Annotator = core.Annotator
 
 // Generator produces emit values into one plan.
@@ -650,6 +742,12 @@ func ReadFile(fsys fs.FS, path string) ([]byte, error) {
 // qualified path with nothing after the separator.
 func ReadDir(fsys fs.FS, path string) ([]fs.DirEntry, error) {
 	return core.ReadDir(fsys, path)
+}
+
+// Stat returns the stat of one file, and resolves a qualified path the
+// way [ReadFile] does.
+func Stat(fsys fs.FS, path string) (fs.FileInfo, error) {
+	return core.Stat(fsys, path)
 }
 
 // RuleID is a rule's ordinal in its plugin's declaration order.

@@ -63,27 +63,27 @@ func AssertOwnedExcluded(tb assert.TB, setup Setup) {
 
 // AssertFingerprinted checks that the unit keys are honest: stable
 // across two identical loads, and changed by each folded part: a
-// read, a depth, a declared version, the options, the plugin set and
-// the brand. The model fingerprint is a compiled constant no test
-// can vary. A unit missing from the load a key is compared against
-// fails the comparison, and never differs from nothing.
+// read, a depth, a declared version, the options and the brand. The
+// model fingerprint is a compiled constant no test can vary. A unit
+// missing from the load a key is compared against fails the
+// comparison, and never differs from nothing.
 func AssertFingerprinted(tb assert.TB, setup Setup) {
 	core.AssertFingerprinted(tb, setup)
 }
 
 // AssertJailedReads proves the one door from the frontend's side:
-// every unit reads its members through the unit, so a unit's key
-// moves when its members' bytes move. A frontend reading its
-// members any other way, such as the operating system's filesystem
-// or a cache it keeps across loads, keys a unit by bytes it never
-// read through the door, and a cache keyed that way serves a stale
-// graph. The check loads a copy of the fixture twice, then a copy
-// whose every selected file gained a line break, and requires every
-// unit the partition returned to key differently in the third. A
-// dependency unit reads the stores and not the workspace, so the
-// comparison leaves it out. The kernel's side of the door, a read
-// outside the unit refusing and naming the path, is the plugin
-// package's own contract.
+// every unit reads its members through the unit, so the fold of the
+// unit's reads moves when its members' bytes move. A unit's key folds
+// the digests of its members, so a frontend reading its members any
+// other way, such as the operating system's filesystem or a cache it
+// keeps across loads, builds a region from bytes its key does not
+// cover, and the parse memo serves that region stale. The check loads
+// a copy of the fixture twice, then parses each unit the partition
+// returned again over a copy whose every selected file gained a line
+// break, and requires each unit's door fold to move. A dependency unit
+// reads the stores and not the workspace, so the comparison leaves it
+// out. The kernel's side of the door, a read outside the unit refusing
+// and naming the path, is the plugin package's own contract.
 func AssertJailedReads(tb assert.TB, setup Setup) {
 	core.AssertJailedReads(tb, setup)
 }
@@ -124,8 +124,8 @@ func AssertLinked(tb assert.TB, setup Setup) {
 // AssertDependencies checks the dependency rounds of a frontend in
 // the [plugin.Dependent] role: at least one unit arrives from a round,
 // and a changed byte in the first member of the first dependency unit
-// re-keys that unit, because its parse read the member through the
-// unit. The kernel parses every dependency unit at
+// moves the door fold of that unit, because its parse read the member
+// through the unit. The kernel parses every dependency unit at
 // [plugin.DepthSignatures] and refuses a member the selection claims,
 // so the check leaves both to the load. It copies the store it
 // changes, so a fixture's stores are small trees and never a

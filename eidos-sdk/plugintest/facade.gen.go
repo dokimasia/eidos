@@ -67,10 +67,11 @@ type Setup = core.Setup
 
 // RunPluginSuite runs the conformance checks a fixture needs no
 // workspace for: declaration stability, byte-equal emit across
-// isolated runs, the same output under parallel dispatch, annotator
-// idempotence, positioned diagnostics, attribution, declared tags,
-// the options schema, the template lint, and no panics. It skips the
-// checks for a role or a surface the plugin does not implement.
+// isolated runs, the same output under parallel dispatch, the same
+// output under a selection of every match, annotator idempotence,
+// positioned diagnostics, attribution, declared tags, the options
+// schema, the template lint, and no panics. It skips the checks for a
+// role or a surface the plugin does not implement.
 func RunPluginSuite(t *testing.T, setup Setup) {
 	core.RunPluginSuite(t, setup)
 }
@@ -126,6 +127,22 @@ func AssertDeterministicEmit(tb assert.TB, setup Setup) {
 // writes outside its effects.
 func AssertParallelDispatch(tb assert.TB, setup Setup) {
 	core.AssertParallelDispatch(tb, setup)
+}
+
+// AssertSelective runs every phase the plugin implements over two
+// isolated fixtures: whole with a journal, then under a selection that
+// lists every match the whole run journaled for the phase. It fails
+// unless both runs emit the same bytes, end with the same fact values
+// and report the same findings, and unless each phase's journal lists
+// every match once, in canonical match order. The selected run executes
+// its matches in canonical match order and the whole run in the order
+// the index enumerates them, so a handler whose output depends on
+// another invocation fails the check. The two runs report their
+// findings in those two orders, so the check compares the findings in
+// [diag.Diag.Compare] order. A plugin that journals nothing runs whole
+// both times and passes.
+func AssertSelective(tb assert.TB, setup Setup) {
+	core.AssertSelective(tb, setup)
 }
 
 // AssertIdempotentAnnotate runs one plugin's annotate phase twice
