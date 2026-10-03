@@ -409,15 +409,32 @@ func siblings(t *testing.T) string {
 	return repo
 }
 
-// recorded returns the manifest the state directory under root records.
+// recorded returns the manifest the state directory under root records:
+// every document of its manifest directory, decoded and joined.
 func recorded(t *testing.T, root string) manifest.Manifest {
 	t.Helper()
 
-	b, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(ledger.ManifestPath(acmeBrand))))
-	assert.NoError(t, err, "the record under "+root+" reads")
-	m, err := manifest.Decode(b)
-	assert.NoError(t, err, "the record under "+root+" decodes")
+	dir := filepath.Join(root, filepath.FromSlash(ledger.ManifestPath(acmeBrand)))
+	listed, err := os.ReadDir(dir)
+	assert.NoError(t, err, "the record under "+root+" lists")
+	shards := make([]manifest.Shard, 0, len(listed))
+	for _, e := range listed {
+		shards = append(shards, document(t, filepath.Join(dir, e.Name())))
+	}
+	m, err := manifest.Join(shards)
+	assert.NoError(t, err, "the documents under "+root+" join")
 	return m
+}
+
+// document returns the manifest document a file of a record states.
+func document(t *testing.T, path string) manifest.Shard {
+	t.Helper()
+
+	b, err := os.ReadFile(path)
+	assert.NoError(t, err, "the document "+path+" reads")
+	s, err := manifest.DecodeShard(b)
+	assert.NoError(t, err, "the document "+path+" decodes")
+	return s
 }
 
 // recordedPaths returns the paths the record under root lists, in its
