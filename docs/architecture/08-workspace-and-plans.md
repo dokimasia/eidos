@@ -290,7 +290,7 @@ type Sources struct {             // conjunctive: every field that is set matche
     Module   string               // the neutral gen.module fact
 }
 
-type ExportDoc struct {           // the versioned kernel schema of D34
+type ExportDoc struct {           // the versioned kernel schema of D99
     Plan    string
     Symbols []ExportedSymbol      // sorted by key, then by file
 }

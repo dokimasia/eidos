@@ -23,3 +23,4 @@ way.
 | [0007](0007-assert-through-the-assert-module.md) | Test code asserts through the assert module | Superseded by [0008](0008-pin-the-assert-module-by-version.md) |
 | [0008](0008-pin-the-assert-module-by-version.md) | Pin the assert module by version | Accepted |
 | [0009](0009-the-carrier-mark-follows-the-brand.md) | The carrier mark follows the brand | Accepted |
+| [0010](0010-export-entries-have-a-five-part-key.md) | An export entry has a five-part key and no signature | Accepted |

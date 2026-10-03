@@ -2,13 +2,13 @@
 rfc: 0019
 title: Source scopes, plan exports and workspace checks
 author: Roy Klopper <roy.klopper@stealthscale.io>
-status: Draft
+status: Accepted
 created: 2026-10-02
 updated: 2026-10-02
 discussion: none
 supersedes: none
 superseded-by: none
-produces-adr: tbd
+produces-adr: ADR-0010
 ---
 
 # RFC-0019: Source scopes, plan exports and workspace checks
@@ -865,21 +865,20 @@ independent without it.
 - The kernel has no reader for a `workspaces:` list, so nothing refuses two
   roots that nest.
 
-## Open questions
-
-- Where does a finding about a plan, rather than about a declaration, take its
-  position? `FailedDependency` takes the first Error of the failed plan, and a
-  scope that admits no package reports nothing because no position fits.
-- Is the origin's shape enough for a binding generator in another target
-  language, or does the export need the generated declaration's own signature?
-- Should the pattern vocabulary accept `...` inside a pattern, as the go
-  command does?
-
 ## Unresolved and future work
 
 - A run that keeps a plan's previous output without running the plan needs the
   plan's export without its emit store. This proposal persists no export, and
   the checks read only records the run built.
+- A finding about a whole plan has no position of its own. `FailedDependency`
+  takes the position of the failed plan's first Error, and a scope that admits
+  no package reports nothing. A position for such findings is not proposed
+  here.
+- A binding generator in another target language reads the origin's shape
+  through its own reader. A signature of the generated declaration in the
+  export is not proposed here.
+- The pattern vocabulary accepts `...` only at the end of a pattern. A wildcard
+  inside a pattern, which the go command accepts, is not proposed here.
 - A reader of a `workspaces:` list, with its refusal of two roots that nest, is
   not proposed here.
 - Check rules in the authoring surface are not proposed here.
@@ -902,4 +901,5 @@ independent without it.
 | D18: several workspaces are declared explicitly, and nothing crosses between them | [21-decisions.md](../architecture/21-decisions.md) |
 | D34: the export's key | [21-decisions.md](../architecture/21-decisions.md) |
 | D61: checks read records | [21-decisions.md](../architecture/21-decisions.md) |
+| D99 to D102: the decisions this proposal records, D99 superseding D34 | [21-decisions.md](../architecture/21-decisions.md) |
 | The go command's package patterns, checked at go1.27.1 | `go help packages` |
