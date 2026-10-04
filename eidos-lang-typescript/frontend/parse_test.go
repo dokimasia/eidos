@@ -26,9 +26,9 @@ import (
 // brand is the brand every fixture unit reads its carriers under.
 const brand = string(frontendtest.Brand)
 
-// The fixture paths the cases parse: a module file and the package its
-// path names, the declaration file of that package, a TSX file, a
-// governing tsconfig, and a tsconfig that does not parse.
+// The cases parse a module file under the package its path names, the
+// declaration file of that package, and a TSX file, beside the root
+// tsconfig and a tsconfig that does not parse.
 const (
 	aFile       = "src/a.ts"
 	aPackage    = "src/a"
@@ -49,9 +49,13 @@ const (
 	benchDecls    = 20
 )
 
-// parseAllocs is the ceiling on the allocations of one parse of the
-// canonical corpus, over the 2,550,004 it measures.
-const parseAllocs = 2_650_000
+// parseAllocs is one parse of the canonical corpus. With the collector
+// off a parse allocates 2,400,001 times: the lowering's nodes, texts,
+// stamps and type references, each unit's source and sink, and one tree
+// handle per file. Tree-sitter builds its trees in C memory, which the
+// count does not see. The collections that run during a parse add more:
+// 10 fresh processes counted up to 9 more. The ceiling allows 32 more.
+const parseAllocs = 2_400_001 + 32
 
 // treeReader is the partition's recorded door over a test tree.
 type treeReader struct {
@@ -136,7 +140,9 @@ func TestParse(t *testing.T) {
 // the scaled corpus through Parse into a builder of its own, the
 // partition run once before the loop, so the number measures the
 // tree-sitter parse and the lowering alone, and fails above
-// parseAllocs.
+// parseAllocs. Only -bench checks the ceiling. One parse takes about
+// 2.1 s on four cores, and the 101 calls of an allocation check would
+// take more than three minutes.
 func BenchmarkParse(b *testing.B) {
 	tree := scaledTypeScript()
 	f := frontend.New()

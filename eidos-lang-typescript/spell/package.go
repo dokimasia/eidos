@@ -15,7 +15,8 @@ import (
 // declares. Every file is a module of its own, so its package is its
 // [typescript.ModulePath], named after the path's last element, the
 // way the TypeScript frontend names a module it loads. Every path
-// derives a package, so Package never returns an error.
+// derives a package, so Package never returns an error. It allocates
+// nothing: the module path and its name are parts of the path.
 func Package(p plugin.Placement) (symbol.Identity, error) {
 	module := typescript.ModulePath(p.Path)
 	return symbol.Identity{

@@ -34,7 +34,8 @@ var (
 // last of TypeScript's and JavaScript's. A path without either is its
 // own module path. Every file is a module of its own, so the module
 // path is the package the frontend loads a file's declarations into
-// and the package the backend names a written file's package by.
+// and the package the backend names a written file's package by. The
+// module path is a part of p, so ModulePath allocates nothing.
 func ModulePath(p string) string {
 	for _, ext := range declarationExtensions {
 		if trimmed, cut := strings.CutSuffix(p, ext); cut {
@@ -50,7 +51,7 @@ func ModulePath(p string) string {
 }
 
 // DeclarationFile reports whether a file is a declaration file, every
-// declaration of which is implemented elsewhere.
+// declaration of which is implemented elsewhere. It allocates nothing.
 func DeclarationFile(file string) bool {
 	return slices.ContainsFunc(declarationExtensions, func(ext string) bool {
 		return strings.HasSuffix(file, ext)

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	typescript "go.dokimi.dev/eidos/lang/typescript"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -19,9 +20,19 @@ const (
 	rivalKey    meta.KeyName = "typescript.rival"
 )
 
+// allocRuns is how many calls an allocation check makes: one to warm
+// up and the hundred it counts.
+const allocRuns = 101
+
+// keysAllocs is a registration into a fresh registry: the nine kind
+// lists of the keys, and fifteen allocations of the registry, its
+// namespace claim and the growth of its spec list, type list and name
+// map to nine keys.
+const keysAllocs = 9 + 15
+
 // The frontend stamps these keys, and a composition registers them
-// once, so the registration round is pinned: every key resolves, the
-// namespace is the satellite's, and a second claim fails.
+// once. The registration is pinned: every key resolves, the namespace
+// is the satellite's, and a second claim fails.
 func TestKeys(t *testing.T) {
 	t.Parallel()
 
@@ -63,4 +74,45 @@ func TestKeys(t *testing.T) {
 			assert.HasError(t, typescript.Keys(r), "the namespace is claimed once")
 		})
 	})
+}
+
+// A registration allocates its kind lists and the registry's growth.
+// The ordinary run, which runs no benchmark, checks that ceiling here,
+// each call into a registry of its own.
+func TestKeysAllocs(t *testing.T) {
+	registries := freshRegistries(allocRuns)
+	next := 0
+	var err error
+	keys := func() {
+		err = typescript.Keys(registries[next])
+		next++
+	}
+	assert.MaxAllocs(t, keys, keysAllocs, "Keys allocates the kind lists and the registry's growth")
+	assert.NoError(t, err, "Keys registers the vocabulary")
+}
+
+// BenchmarkKeys measures the registration a composition makes once,
+// each into a registry of its own.
+func BenchmarkKeys(b *testing.B) {
+	b.Run("Keys", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(keysAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			var r *meta.Registry
+			c.Excluding(func() { r = meta.NewRegistry() })
+			err = typescript.Keys(r)
+		}
+		assert.NoError(b, err, "Keys registers the vocabulary")
+	})
+}
+
+// freshRegistries returns n empty registries, one for each counted
+// registration.
+func freshRegistries(n int) []*meta.Registry {
+	out := make([]*meta.Registry, 0, n)
+	for range n {
+		out = append(out, meta.NewRegistry())
+	}
+	return out
 }

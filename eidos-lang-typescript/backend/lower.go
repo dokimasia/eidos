@@ -46,6 +46,18 @@ const discriminant = "kind"
 // refuses, because TypeScript decorates classes alone, and a
 // payload entry without a name refuses, because a property has one.
 // Everything else passes through unchanged.
+//
+// # Allocation contract
+//
+// A declaration that passes through allocates nothing. A sum allocates
+// the list of outputs, the union alias, its target and the joined
+// union: four allocations. Each variant adds eight: its interface, the
+// three steps of its name (the variant's Pascal form, the join and the
+// final spelling), its list of fields, the discriminant field, its type
+// and the quoted literal. A sum of two variants allocates 20 times. A
+// generic sum adds, per variant, the copy of its type parameters and
+// the variant's spelling with its type arguments. A refusal allocates
+// its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	sum, is := s.(*emit.Sum)
 	if !is {
@@ -102,18 +114,21 @@ func variantInterface(
 		Visibility: sum.Visibility,
 		TypeParams: lowering.CopyTypeParams(sum.TypeParams),
 	}
-	iface.Fields.Append(&emit.Field{
+	payload := v.Fields.Items()
+	fields := make([]*emit.Field, 0, 1+len(payload))
+	fields = append(fields, &emit.Field{
 		Origin: v.Origin,
 		Name:   discriminant,
 		Type:   &emit.TypeRef{Spelling: quote(v.Name)},
 	})
-	for _, f := range v.Fields.Items() {
+	for _, f := range payload {
 		if f.Name == "" {
 			return nil, "", refuse("a property has a name, and a payload entry in %s states none",
 				v.Name)
 		}
-		iface.Fields.Append(f)
+		fields = append(fields, f)
 	}
+	iface.Fields.Append(fields...)
 	part := name
 	if len(sum.TypeParams) > 0 {
 		args := make([]string, 0, len(sum.TypeParams))

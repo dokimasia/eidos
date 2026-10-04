@@ -16,55 +16,17 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The builtin stubs' output: the marker each stubbed builtin writes,
-// so a template's own bytes are distinguishable from the pass's.
+// Each stubbed builtin writes its own marker, so a template's own
+// bytes are distinguishable from the pass's.
 const (
 	bodyStub    = "    body();\n"
 	importsStub = "IMPORTS\n"
 	declsStub   = "DECLS\n"
 )
 
-// execute runs one template over one declaration the way the render
-// pass does, the builtins stubbed, and asserts it executes.
-func execute(t *testing.T, src string, data any) string {
-	t.Helper()
-
-	got, _, err := run(t, src, data)
-	assert.NoError(t, err, "the template executes")
-	return got
-}
-
-// run runs one template over one declaration and returns the text or
-// the refusal beside the file's import set.
-func run(t *testing.T, src string, data any) (string, *render.ImportSet, error) {
-	t.Helper()
-
-	set := &render.ImportSet{}
-	tmpl, err := template.New("kind").
-		Funcs(backend.Funcs(set)).
-		Funcs(template.FuncMap{
-			render.BuiltinBody:    func(any) string { return bodyStub },
-			render.BuiltinUse:     func(string) string { return "" },
-			render.BuiltinImports: func() string { return importsStub },
-			render.BuiltinDecls:   func() string { return declsStub },
-			render.BuiltinSlots:   func() string { return "" },
-			render.BuiltinSlot:    func(string) string { return "" },
-		}).
-		Parse(src)
-	assert.NoError(t, err, "the template parses")
-	var b strings.Builder
-	err = tmpl.Execute(&b, data)
-	return b.String(), set, err
-}
-
-// refused runs one template over one declaration and returns the
-// refusal.
-func refused(t *testing.T, src string, data any) error {
-	t.Helper()
-
-	_, _, err := run(t, src, data)
-	return err
-}
+// templateMapAllocs is a map of kinds onto templates or reasons: the
+// map and its one group.
+const templateMapAllocs = 2
 
 // Each kind template is pinned byte for byte, and so is the method
 // kind's refusal: members render inside their host.
@@ -107,7 +69,7 @@ func TestTemplates(t *testing.T) {
 			out, set, err := run(t, kind(symbol.KindStruct), s)
 			assert.NoError(t, err, "the template executes")
 			assert.Contains(t, out, "  row: Row;\n", "the imported name")
-			assert.Equal(t, set.Paths(), []string{storeModule}, "and its module")
+			assert.Equal(t, set.Paths(), []string{storeModule}, "the import of its module")
 		})
 
 		t.Run("writes an interface's methods as signatures", func(t *testing.T) {
@@ -120,7 +82,7 @@ func TestTemplates(t *testing.T) {
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"export interface Store {\n  load(key: string): Row;\n}\n",
-				"a semicolon and no body")
+				"a semicolon in place of a body")
 		})
 
 		t.Run("writes a function around its body", func(t *testing.T) {
@@ -185,7 +147,7 @@ func TestTemplates(t *testing.T) {
 				"export interface Store {\n"+
 					"  get(key: string /* the row key */): string /* the row */; // by key\n"+
 					"} // read side\n",
-				"the method's and the interface's comments close their lines")
+				"the method's comments inside its line")
 		})
 
 		t.Run("writes a function's trailing comment after its closing brace", func(t *testing.T) {
@@ -212,7 +174,7 @@ func TestTemplates(t *testing.T) {
 				"export enum Phase {\n  Open,\n} // closed set\n", "on the brace's line")
 		})
 
-		t.Run("writes a generic declaration's parameters behind its name", func(t *testing.T) {
+		t.Run("writes a generic class's parameters behind its name", func(t *testing.T) {
 			t.Parallel()
 
 			s := &emit.Struct{Name: "Box", TypeParams: []*emit.TypeParam{{Name: "T"}}}
@@ -228,7 +190,11 @@ func TestTemplates(t *testing.T) {
 					"  item: T;\n"+
 					"  map<U extends Codec>(item: U): U {\n"+bodyStub+"  }\n"+
 					"}\n",
-				"the class's list behind its name, the member's behind its own")
+				"the member's list behind its own name")
+		})
+
+		t.Run("writes a generic interface's parameters behind its name", func(t *testing.T) {
+			t.Parallel()
 
 			i := &emit.Interface{
 				Name:       "Keyed",
@@ -239,7 +205,11 @@ func TestTemplates(t *testing.T) {
 				Returns: []*emit.Return{{Type: ref("K")}},
 			})
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
-				"export interface Keyed<K extends Codec> {\n  pick(key: K): K;\n}\n", "an interface's list")
+				"export interface Keyed<K extends Codec> {\n  pick(key: K): K;\n}\n", "the bound behind extends")
+		})
+
+		t.Run("writes a generic function's parameters behind its name", func(t *testing.T) {
+			t.Parallel()
 
 			f := &emit.Function{
 				Name:       "sort",
@@ -248,7 +218,11 @@ func TestTemplates(t *testing.T) {
 				Returns:    []*emit.Return{{Type: ref("T")}},
 			}
 			assert.Equal(t, execute(t, kind(symbol.KindFunction), f),
-				"export function sort<T extends Codec>(items: T): T {\n"+bodyStub+"}\n", "a function's list")
+				"export function sort<T extends Codec>(items: T): T {\n"+bodyStub+"}\n", "the bound behind extends")
+		})
+
+		t.Run("writes a generic alias's parameters behind its name", func(t *testing.T) {
+			t.Parallel()
 
 			a := &emit.Alias{
 				Name:       "Match",
@@ -256,7 +230,7 @@ func TestTemplates(t *testing.T) {
 				Target:     &emit.TypeRef{Spelling: "Keyed", Args: []*emit.TypeRef{ref("T")}},
 			}
 			assert.Equal(t, execute(t, kind(symbol.KindAlias), a),
-				"export type Match<T extends Codec> = Keyed<T>;\n", "an alias's list")
+				"export type Match<T extends Codec> = Keyed<T>;\n", "the bound behind extends")
 		})
 
 		t.Run("writes a class's heritage behind its name", func(t *testing.T) {
@@ -300,7 +274,7 @@ func TestTemplates(t *testing.T) {
 					"  override async load(): Promise<Row> {\n"+bodyStub+"  }\n"+
 					"  abstract pick(): Row;\n"+
 					"}\n",
-				"the decorator above, the abstract method a signature alone")
+				"the decorator above the class, the abstract method a signature alone")
 		})
 
 		t.Run("writes readonly on an interface property", func(t *testing.T) {
@@ -366,19 +340,11 @@ func TestTemplates(t *testing.T) {
 				"export class Cache {\n  set size(n: number) {\n"+bodyStub+"  }\n}\n", "the setter shape")
 		})
 
-		index := func() *emit.Method {
-			return &emit.Method{
-				Name: "index", Indexer: true,
-				Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
-				Returns: []*emit.Return{{Type: ref(rowName)}},
-			}
-		}
-
 		t.Run("writes a class's index signature whole", func(t *testing.T) {
 			t.Parallel()
 
 			s := &emit.Struct{Name: "Cache"}
-			s.Methods.Append(index())
+			s.Methods.Append(indexer())
 			assert.Equal(t, execute(t, kind(symbol.KindStruct), s),
 				"export class Cache {\n  [key: string]: Row;\n}\n", "nameless")
 		})
@@ -386,7 +352,7 @@ func TestTemplates(t *testing.T) {
 		t.Run("writes static before a class index signature's brackets", func(t *testing.T) {
 			t.Parallel()
 
-			static := index()
+			static := indexer()
 			static.Level = symbol.LevelType
 			s := &emit.Struct{Name: "Cache"}
 			s.Methods.Append(static)
@@ -397,7 +363,7 @@ func TestTemplates(t *testing.T) {
 		t.Run("returns an error for an accessibility on a class index signature", func(t *testing.T) {
 			t.Parallel()
 
-			private := index()
+			private := indexer()
 			private.Visibility = symbol.VisibilityPrivate
 			s := &emit.Struct{Name: "Cache"}
 			s.Methods.Append(private)
@@ -408,7 +374,7 @@ func TestTemplates(t *testing.T) {
 			t.Parallel()
 
 			i := &emit.Interface{Name: "Rows"}
-			i.Methods.Append(index())
+			i.Methods.Append(indexer())
 			assert.Equal(t, execute(t, kind(symbol.KindInterface), i),
 				"export interface Rows {\n  [key: string]: Row;\n}\n", "the key and element typed")
 		})
@@ -422,7 +388,7 @@ func TestTemplates(t *testing.T) {
 				"export interface Rows {\n  new (): Rows;\n}\n", "behind new")
 		})
 
-		asyncIndex := index()
+		asyncIndex := indexer()
 		asyncIndex.Async = true
 		signatures := []struct {
 			name string
@@ -561,4 +527,85 @@ func TestTemplates(t *testing.T) {
 			}
 		})
 	})
+}
+
+// A map of kinds allocates itself. The ordinary run, which runs no
+// benchmark, checks those ceilings here.
+func TestTemplatesAllocs(t *testing.T) {
+	checkAllocs(t, templatesCalls())
+}
+
+// BenchmarkTemplates measures the maps the backend reads once per
+// build.
+func BenchmarkTemplates(b *testing.B) {
+	benchCalls(b, templatesCalls())
+}
+
+// templatesCalls returns a call of KindTemplates and of RefusedKinds.
+func templatesCalls() []allocCall {
+	var kinds map[symbol.Kind]string
+	return []allocCall{
+		{
+			name: "KindTemplates", allocs: templateMapAllocs,
+			call:  func() { kinds = backend.KindTemplates() },
+			check: func(tb assert.TB) { assert.Length(tb, kinds, 7, "KindTemplates returns seven templates") },
+		},
+		{
+			name: "RefusedKinds", allocs: templateMapAllocs,
+			call:  func() { kinds = backend.RefusedKinds() },
+			check: func(tb assert.TB) { assert.Length(tb, kinds, 1, "RefusedKinds returns the method") },
+		},
+	}
+}
+
+// run runs one template over one declaration the way the render pass
+// does, the builtins stubbed, and returns the text or the refusal
+// beside the file's import set.
+func run(t *testing.T, src string, data any) (string, *render.ImportSet, error) {
+	t.Helper()
+
+	set := &render.ImportSet{}
+	tmpl, err := template.New("kind").
+		Funcs(backend.Funcs(set)).
+		Funcs(template.FuncMap{
+			render.BuiltinBody:    func(any) string { return bodyStub },
+			render.BuiltinUse:     func(string) string { return "" },
+			render.BuiltinImports: func() string { return importsStub },
+			render.BuiltinDecls:   func() string { return declsStub },
+			render.BuiltinSlots:   func() string { return "" },
+			render.BuiltinSlot:    func(string) string { return "" },
+		}).
+		Parse(src)
+	assert.NoError(t, err, "the template parses")
+	var b strings.Builder
+	err = tmpl.Execute(&b, data)
+	return b.String(), set, err
+}
+
+// execute runs one template over one declaration and asserts it
+// executes.
+func execute(t *testing.T, src string, data any) string {
+	t.Helper()
+
+	got, _, err := run(t, src, data)
+	assert.NoError(t, err, "the template executes")
+	return got
+}
+
+// refused runs one template over one declaration and returns the
+// refusal.
+func refused(t *testing.T, src string, data any) error {
+	t.Helper()
+
+	_, _, err := run(t, src, data)
+	return err
+}
+
+// indexer returns an index signature of a string key onto a row.
+func indexer() *emit.Method {
+	return &emit.Method{
+		Name: "index", Indexer: true,
+		Params:  []*emit.Param{{Name: "key", Type: ref("string")}},
+		Returns: []*emit.Return{{Type: ref(rowName)}},
+	}
 }

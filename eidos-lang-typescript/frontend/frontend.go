@@ -63,6 +63,12 @@ const nodeModules = "node_modules"
 // overloads and implements the exporter role, so a reference through a
 // re-export resolves to the declaration it publishes. Its version folds
 // the grammar's, so an upgrade of the grammar re-keys every unit.
+//
+// # Allocation contract
+//
+// New allocates the frontend's state with its two vocabularies and its
+// parse hook, the version, the syntax, two allocations, and the kit's
+// four: eleven allocations.
 func New() plugin.Frontend {
 	f := &tsFrontend{
 		ts:  newVocabulary(tsgrammar.TypeScript),

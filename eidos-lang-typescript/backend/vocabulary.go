@@ -5,6 +5,7 @@ package backend
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -87,12 +88,18 @@ const (
 )
 
 // annotationSep, promiseOpen and promiseClose are the spellings an
-// async callable's annotation joins.
+// async callable's annotation joins, and voidType the result type of a
+// callable that returns nothing.
 const (
 	annotationSep = ": "
 	promiseOpen   = "Promise<"
 	promiseClose  = ">"
+	voidType      = "void"
 )
+
+// discardName is the name an unnamed parameter binds, numbered from
+// the second on.
+const discardName = "_"
 
 // refusalPrefix opens every refusal the backend returns: the
 // language's identity, as every backend's refusals open.
@@ -104,14 +111,27 @@ const refusalPrefix = string(typescript.Lang) + ": "
 // import or a declaration of the file takes that name, and the
 // spelling names it through the bound name. The module is the
 // reference's target's where the target is a TypeScript declaration,
-// and the one the reference records where it has no target. A
-// Speller is not safe for concurrent use, because its set is not.
+// and the one the reference records where it has no target.
+//
+// # Concurrency
+//
+// A Speller is not safe for concurrent use, because its set is not.
+//
+// # Allocation contract
+//
+// Each method allocates the text it writes and nothing else, so a name
+// spelled as written and a declaration whose import is bound allocate
+// nothing. Binding a declaration's import for the first time allocates
+// in the set. A method that joins more than two parts also allocates
+// its list of parts, because Go places a list of at most two strings on
+// the stack. A trailing comment allocates its block comment and the
+// part it ends. A refusal allocates its error.
 type Speller struct {
 	set *render.ImportSet
 }
 
 // NewSpeller returns the speller for the file whose import set is
-// set. The set is not nil.
+// set. The set is not nil. It allocates nothing.
 func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 
 // Spell writes a type reference in a type position, and imports what
@@ -123,6 +143,12 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 // and Spell returns an error where a type inside it imports under
 // another name, because TypeScript's composite spelling does not
 // follow from its structure.
+//
+// Spell allocates nothing for a name spelled as written, an imported
+// declaration, a missing reference and a structural reference. A
+// reference with arguments writes into one buffer, one allocation where
+// every bound name is as long as its written spelling. A member of an
+// imported declaration allocates the member behind the bound name.
 func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	return s.spell(t, true)
 }
@@ -130,7 +156,8 @@ func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 // IndexSig writes an index signature whole: the one key parameter
 // in brackets, the element type behind the colon. It refuses what
 // an index signature cannot state: more parameters, no result, type
-// parameters or an accessor.
+// parameters or an accessor. It allocates the signature, one
+// allocation, and what the key's and the element's spellings allocate.
 func (s Speller) IndexSig(m *emit.Method) (string, error) {
 	switch {
 	case len(m.Params) != 1 || m.Params[0].Name == "" || m.Params[0].Type == nil:
@@ -159,6 +186,13 @@ func (s Speller) IndexSig(m *emit.Method) (string, error) {
 // parameter refuses, because the model's Const takes a value
 // argument and TypeScript's const modifier applies to a type
 // argument.
+//
+// TypeParams allocates one spelling for each clause a parameter
+// states, which is its variance with its name, its bounds or its
+// default, and the joined bounds of more than one. It allocates the
+// joined list and its brackets, and what each type's spelling
+// allocates: four allocations for a parameter of two bounds beside an
+// unbounded one.
 func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -195,6 +229,11 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 // contract imports for the type checker alone. A second class base
 // refuses, because TypeScript extends one, and an embed refuses on
 // either, because nothing promotes members.
+//
+// Heritage allocates each clause behind its keyword and the joined
+// contracts of more than one, with what each type's spelling
+// allocates: one allocation for a base alone, three for a base beside
+// two contracts, and nothing for a type without heritage.
 func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -241,16 +280,23 @@ func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 // Params writes a parameter list, the rest marker included and a
 // stated default behind its equals sign, verbatim from the model. A
 // rest parameter stating a default refuses, because TypeScript
-// initializes no rest.
+// initializes no rest. An unnamed parameter binds the discard name,
+// numbered from the second on.
+//
+// Params allocates each parameter's spelling and the joined list of
+// more than one, with what each type's spelling allocates: three
+// allocations for two parameters, and nothing for none. A numbered
+// discard name, an optional marker and a default each allocate one
+// more.
 func (s Speller) Params(ps []*emit.Param) (string, error) {
 	parts := make([]string, 0, len(ps))
 	unnamed := 0
 	for _, p := range ps {
 		name := p.Name
 		if name == "" {
-			name = "_"
+			name = discardName
 			if unnamed > 0 {
-				name = fmt.Sprintf("_%d", unnamed)
+				name = discardName + strconv.Itoa(unnamed)
 			}
 			unnamed++
 		} else if !spell.IsIdentifier(name) {
@@ -290,7 +336,10 @@ func (s Speller) Params(ps []*emit.Param) (string, error) {
 // Returns writes a callable's return annotation: the [Results]
 // spelling, inside Promise for an async callable, because an async
 // function returns a promise of its result, and nothing for a
-// setter, which TypeScript forbids an annotation.
+// setter, which TypeScript forbids an annotation. It allocates what
+// [Speller.Results] allocates, the promise taking the annotation's
+// place, and nothing for a setter or an async callable that returns
+// nothing.
 func (s Speller) Returns(d symbol.Symbol) (string, error) {
 	var rs []*emit.Return
 	async := false
@@ -303,17 +352,32 @@ func (s Speller) Returns(d symbol.Symbol) (string, error) {
 		}
 		rs, async = c.Returns, c.Async
 	}
-	annotation, err := s.Results(rs)
-	if err != nil || !async {
-		return annotation, err
+	switch {
+	case !async:
+		return s.Results(rs)
+	case len(rs) == 0:
+		return annotationSep + promiseOpen + voidType + promiseClose, nil
 	}
-	return annotationSep + promiseOpen + strings.TrimPrefix(annotation, annotationSep) + promiseClose, nil
+	return s.resultType(rs, annotationSep+promiseOpen, promiseClose)
 }
 
 // Results writes a return type annotation: void for none, the
 // type for one, and a tuple for several, because TypeScript
-// returns one value however many the delegate hands back.
+// returns one value however many the delegate hands back. It allocates
+// the annotation and the joined tuple of more than one result, with
+// what each type's spelling allocates: one allocation for one result,
+// two for a tuple of two, and nothing for none.
 func (s Speller) Results(rs []*emit.Return) (string, error) {
+	if len(rs) == 0 {
+		return annotationSep + voidType, nil
+	}
+	return s.resultType(rs, annotationSep, "")
+}
+
+// resultType writes the type one or more results return as, between
+// open and closer: the one result's type, and a tuple of several. The
+// text joins in one concatenation, so one result allocates once.
+func (s Speller) resultType(rs []*emit.Return, open, closer string) (string, error) {
 	parts := make([]string, 0, len(rs))
 	for _, r := range rs {
 		typ, err := s.Spell(r.Type)
@@ -322,14 +386,10 @@ func (s Speller) Results(rs []*emit.Return) (string, error) {
 		}
 		parts = append(parts, typ+textfmt.Inline(r.Comment))
 	}
-	switch len(parts) {
-	case 0:
-		return ": void", nil
-	case 1:
-		return ": " + parts[0], nil
-	default:
-		return ": [" + strings.Join(parts, ", ") + "]", nil
+	if len(parts) == 1 {
+		return open + parts[0] + closer, nil
 	}
+	return open + "[" + strings.Join(parts, ", ") + "]" + closer, nil
 }
 
 // spellValue writes a reference in a value position, where the
@@ -381,7 +441,9 @@ func (Speller) all(ts []*emit.TypeRef, spell func(*emit.TypeRef) (string, error)
 
 // Funcs returns the shared template vocabulary the kind templates
 // call, bound to one file's import set: every declaration a helper
-// names from another module is imported there.
+// names from another module is imported there. Funcs allocates the map
+// of twenty-one helpers, four allocations, and the speller's seven
+// bound helpers.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
@@ -411,7 +473,8 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 
 // Docs writes a declaration's documentation as a TSDoc block,
 // each line prefixed with the given indentation, so a member's
-// doc is at its member's depth.
+// doc is at its member's depth. It allocates what [textfmt.BlockDocs]
+// allocates: the block, sized once, and nothing for no lines.
 func Docs(lines []string, prefix ...string) string {
 	if len(lines) == 0 {
 		return ""
@@ -423,7 +486,8 @@ func Docs(lines []string, prefix ...string) string {
 // other name, such as the wire name content-type or a digit-led key,
 // in single quotes, so the type declares the name whole. A
 // hard-private field must be an identifier, because # admits no
-// quoted form.
+// quoted form. PropKey allocates a quoted key, one allocation, and
+// nothing for an identifier. A refusal allocates its error.
 func PropKey(f *emit.Field) (string, error) {
 	if spell.IsIdentifier(f.Name) {
 		return f.Name, nil
@@ -438,7 +502,9 @@ func PropKey(f *emit.Field) (string, error) {
 // MethodKey spells a method's member key: the identifier bare, and
 // anything else quoted, which TypeScript admits on classes and
 // interfaces alike. A hard-private name refuses the quoted form
-// the way a property's does.
+// the way a property's does. MethodKey allocates a quoted key, one
+// allocation, and nothing for an identifier. A refusal allocates its
+// error.
 func MethodKey(m *emit.Method) (string, error) {
 	if spell.IsIdentifier(m.Name) {
 		return m.Name, nil
@@ -452,7 +518,8 @@ func MethodKey(m *emit.Method) (string, error) {
 
 // EnumKey writes an enum member's key: an identifier bare, and any
 // other name in single quotes, which TypeScript admits on an enum
-// member.
+// member. It allocates a quoted key, one allocation, and nothing for an
+// identifier.
 func EnumKey(v *emit.EnumVariant) string {
 	if spell.IsIdentifier(v.Name) {
 		return v.Name
@@ -464,7 +531,8 @@ func EnumKey(v *emit.EnumVariant) string {
 // declaration outside the accessor's shape: a getter takes nothing
 // and returns one value, a setter takes one value and returns
 // nothing, and neither declares type parameters, because
-// TypeScript's accessors admit none.
+// TypeScript's accessors admit none. AccessorKw returns a constant
+// keyword and allocates nothing, and a refusal allocates its error.
 func AccessorKw(m *emit.Method) (string, error) {
 	switch m.Accessor {
 	case symbol.AccessorNone:
@@ -494,7 +562,8 @@ func AccessorKw(m *emit.Method) (string, error) {
 
 // Hard writes a member's hard-private prefix. A hard-private name
 // is runtime privacy in the name itself, so a stated visibility
-// beside it refuses: the two mechanisms cannot combine.
+// beside it refuses: the two mechanisms cannot combine. Hard allocates
+// nothing, and a refusal allocates its error.
 func Hard(s symbol.Symbol) (string, error) {
 	name, hard, vis := "", false, symbol.VisibilityUnknown
 	switch d := s.(type) {
@@ -521,7 +590,10 @@ func Hard(s symbol.Symbol) (string, error) {
 // refuses because TypeScript seals nothing, and a constant without a
 // value refuses, because const X = declares nothing. An annotation
 // list refuses on every declaration decorators cannot mark:
-// TypeScript decorates classes and their members alone.
+// TypeScript decorates classes and their members alone. Mods allocates
+// the keywords of an abstract class or an async function, one
+// allocation, and nothing for every other declaration. A refusal
+// allocates its error.
 func Mods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -597,7 +669,9 @@ func Mods(d symbol.Symbol) (string, error) {
 // default refuses, because a class method states its body outright,
 // and an abstract method with a body refuses, because an abstract
 // method is a signature. A package or internal accessibility
-// refuses, because class members do not take one.
+// refuses, because class members do not take one. MemberMods allocates
+// one join per keyword it writes behind the first, and nothing for a
+// member of one keyword or none. A refusal allocates its error.
 func MemberMods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Field:
@@ -646,12 +720,13 @@ func MemberMods(d symbol.Symbol) (string, error) {
 	}
 }
 
-// IndexMods writes a class index signature's keywords: static for a
-// type-level signature, and nothing else. An index signature is a
+// IndexMods writes a class index signature's one keyword: static for a
+// type-level signature. An index signature is a
 // declaration without a body, so a body refuses, and so do an
 // accessibility, abstract, override, final, a default, asynchrony,
 // a hard-private name, a throws clause and decorators, because
-// TypeScript spells none of them on an index signature.
+// TypeScript spells none of them on an index signature. IndexMods
+// allocates nothing, and a refusal allocates its error.
 func IndexMods(m *emit.Method) (string, error) {
 	switch {
 	case !m.Body.IsZero():
@@ -678,7 +753,8 @@ func IndexMods(m *emit.Method) (string, error) {
 // parameters, so static and type parameters refuse, and so do
 // abstract, override, final, a default, asynchrony, an accessor, a
 // hard-private name, a throws clause and decorators, because
-// TypeScript spells none of them on a constructor.
+// TypeScript spells none of them on a constructor. CtorMods allocates
+// nothing, and a refusal allocates its error.
 func CtorMods(m *emit.Method) (string, error) {
 	switch {
 	case m.Level == symbol.LevelType:
@@ -701,7 +777,8 @@ func CtorMods(m *emit.Method) (string, error) {
 // PropMods writes an interface property's keywords: readonly
 // where the property is immutable. An interface member takes no
 // accessibility, no static level and no decorator, so each of them
-// refuses.
+// refuses. PropMods allocates nothing, and a refusal allocates its
+// error.
 func PropMods(f *emit.Field) (string, error) {
 	switch {
 	case f.Hard:
@@ -726,7 +803,8 @@ func PropMods(f *emit.Field) (string, error) {
 // SigMods guards an interface member signature, which takes no
 // keywords and no body: a method signature, an index signature and
 // a construct signature alike. A stated modifier or a body is
-// refused, and the signature spells bare.
+// refused, and the signature spells bare. SigMods allocates nothing,
+// and a refusal allocates its error.
 func SigMods(m *emit.Method) (string, error) {
 	switch {
 	case !m.Body.IsZero():
@@ -751,7 +829,8 @@ func SigMods(m *emit.Method) (string, error) {
 // Binding writes a module-level binding's keyword: const for an
 // immutable binding, let otherwise. An immutable binding without an
 // initializer refuses, because TypeScript requires a const to be
-// initialized where it is declared.
+// initialized where it is declared. Binding returns a constant keyword
+// and allocates nothing, and a refusal allocates its error.
 func Binding(v *emit.Variable) (string, error) {
 	if v.Mutability != symbol.MutabilityImmutable {
 		return letBinding, nil
@@ -766,7 +845,8 @@ func Binding(v *emit.Variable) (string, error) {
 // Decorators writes a declaration's decorator lines, one per
 // annotation, each prefixed with the given indentation: the name
 // behind its marker, and the argument spellings verbatim in
-// parentheses where any are stated.
+// parentheses where any are stated. It allocates what [textfmt.Marked]
+// allocates: the lines, sized once, and nothing for no annotations.
 func Decorators(a symbol.Annotations, prefix ...string) string {
 	return textfmt.Marked(a, "@", "", prefix...)
 }

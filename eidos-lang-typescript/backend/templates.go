@@ -97,7 +97,9 @@ const (
 
 // KindTemplates maps each emit kind to the template that spells
 // it. A file-level kind absent from the map is one the lowering
-// reshapes, as it does a sum, or one [RefusedKinds] refuses.
+// reshapes, as it does a sum, or one [RefusedKinds] refuses. It builds
+// the map on every call, which the caller keeps: the map and its one
+// group, two allocations.
 func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,
@@ -112,7 +114,9 @@ func KindTemplates() map[symbol.Kind]string {
 
 // RefusedKinds maps each emit kind TypeScript declares no spelling
 // for at module level to the reason, which the render reports beside
-// every declaration of the kind it skips.
+// every declaration of the kind it skips. It builds the map on every
+// call, which the caller keeps: the map and its one group, two
+// allocations.
 func RefusedKinds() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindMethod: "TypeScript declares a method inside the class or interface it belongs to",

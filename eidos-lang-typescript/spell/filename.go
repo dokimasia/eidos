@@ -19,6 +19,13 @@ import (
 // HTTPClient as http-client. A per-package or per-plan unit has no
 // file key, so its filename is the word and the tag alone: a
 // per-package suite family in the test companion is suite.test.ts.
+//
+// # Allocation contract
+//
+// Filename allocates the list of the filename's parts and the name with
+// its extension. It allocates once more for the join of more than one
+// part, and once for each part that is not kebab case already: three
+// allocations for a per-source unit of kebab-case parts.
 func Filename(u plugin.Unit) string {
 	parts := naming.FilenameParts(u.FileKey(), u.Word, u.Tag)
 	for i, part := range parts {

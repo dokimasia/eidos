@@ -41,7 +41,8 @@ const FrontendVersion = "0.2.0"
 // Syntax returns TypeScript's comment forms, declared once and
 // shared: the line form, the block form, and the doc-block form with
 // the star gutter TSDoc continuation lines use. The output contract
-// writes the generated-file header through them.
+// writes the generated-file header through them. It allocates the two
+// lists, so no caller shares another's.
 func Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{
 		Line: []string{"//"},

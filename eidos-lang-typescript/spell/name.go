@@ -26,6 +26,12 @@ import (
 // kind has no quoted form either, so Name refuses a non-identifier
 // on it. A spelling that is a reserved word is refused, because the
 // declaration it produces does not parse.
+//
+// # Allocation contract
+//
+// Name allocates a converted spelling, one allocation, and nothing for
+// a name the convention spells as it is or passes through. A refusal
+// allocates its error.
 func Name(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 	if !IsIdentifier(name) {
 		if quotable(kind) {
@@ -68,7 +74,7 @@ func Name(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error)
 
 // IsIdentifier reports whether a name spells bare in TypeScript: an
 // ASCII letter, an underscore or a dollar first, those and digits
-// after.
+// after. It allocates nothing.
 func IsIdentifier(name string) bool {
 	if name == "" {
 		return false

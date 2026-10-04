@@ -7,12 +7,13 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	typescript "go.dokimi.dev/eidos/lang/typescript"
 )
 
-// A file's module path is its package, so the frontend that loads a
-// module and the backend that writes one agree on it.
+// A file's module path is its package. The frontend that loads a module
+// and the backend that writes one agree on it.
 func TestModulePath(t *testing.T) {
 	t.Parallel()
 
@@ -82,5 +83,45 @@ func TestModulePath(t *testing.T) {
 				assert.Equal(t, typescript.DeclarationFile(tt.give), tt.want, "whether the file declares only")
 			})
 		}
+	})
+}
+
+// A module path is a part of the path, and the declaration check reads
+// the path's suffix, so neither allocates. The ordinary run, which runs
+// no benchmark, checks that here.
+func TestModulePathZeroAlloc(t *testing.T) {
+	var (
+		module   string
+		declares bool
+	)
+	assert.MaxAllocs(t, func() { module = typescript.ModulePath("svc/store.ts") }, 0, "ModulePath allocates nothing")
+	assert.Equal(t, module, "svc/store", "ModulePath trims the extension")
+	assert.MaxAllocs(t, func() { declares = typescript.DeclarationFile("types/api.d.ts") }, 0,
+		"DeclarationFile allocates nothing")
+	assert.True(t, declares, "DeclarationFile reports a declaration file")
+}
+
+// BenchmarkModulePath measures the module path the frontend and the
+// backend derive once per file, and the declaration check the frontend
+// makes once per file.
+func BenchmarkModulePath(b *testing.B) {
+	b.Run("ModulePath", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var module string
+		for c.Loop() {
+			module = typescript.ModulePath("svc/store.ts")
+		}
+		assert.Equal(b, module, "svc/store", "ModulePath trims the extension")
+	})
+
+	b.Run("DeclarationFile", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var declares bool
+		for c.Loop() {
+			declares = typescript.DeclarationFile("types/api.d.ts")
+		}
+		assert.True(b, declares, "DeclarationFile reports a declaration file")
 	})
 }

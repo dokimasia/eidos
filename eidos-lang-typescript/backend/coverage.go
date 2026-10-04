@@ -18,6 +18,10 @@ import (
 // are a Go idiom and refuse. An index signature and a constructor
 // take a narrower set of modifiers than a method, and their keyword
 // helpers refuse the rest.
+//
+// Coverage builds the table on every call, which the caller keeps: the
+// fact map's four allocations, and the exception map's four with its
+// twelve kinds' two each, 32 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{
