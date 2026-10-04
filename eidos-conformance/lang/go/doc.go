@@ -19,6 +19,9 @@
 //     fixture: [StubsPlan], scoped to svc, doubles the interfaces under
 //     the stub directive, and the registry plan, scoped to admin, aliases
 //     each double through the export of [StubsPlan].
+//   - [EditWorkspace] is the workspace fixture's edit: it renames the
+//     parameter of Get in the stubbed interface, which changes the double
+//     and leaves the export of [StubsPlan] unchanged.
 //   - [Stubbed] is the workspace check that reads the record of
 //     [StubsPlan], and reports each interface under the stub directive
 //     without a double under [Unstubbed].

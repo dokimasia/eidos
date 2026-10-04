@@ -4,6 +4,11 @@
 package golang
 
 import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/workspace"
 	golang "go.dokimi.dev/eidos/lang/go"
@@ -34,6 +39,14 @@ const (
 	registrarID  plugin.ID = "registrar"
 	registryWord           = "registry"
 	stubbedID    plugin.ID = "stubbed"
+)
+
+// The file [EditWorkspace] edits, and the signature of Get in the
+// stubbed interface before and after the edit renames its parameter.
+const (
+	storeFile = "svc/store.go"
+	getByKey  = "Get(key string)"
+	getByID   = "Get(id string)"
 )
 
 // The prefix, number and meaning that [Unstubbed] registers.
@@ -125,6 +138,26 @@ func WorkspacePlans(extra ...plugin.Generator) []workspace.Plan {
 			Backend:    backend,
 		},
 	}
+}
+
+// EditWorkspace is the workspace fixture's edit: it renames the parameter
+// of Get in the stubbed interface of svc/store.go under root, so the
+// double [StubsPlan] generates changes and the plan's export, which
+// lists no parameter, does not. It reads and writes the one file.
+//
+// Error modes: the error of a file that does not read or write, and an
+// error for a file that declares no Get with the parameter key.
+func EditWorkspace(root string) error {
+	path := filepath.Join(root, filepath.FromSlash(storeFile))
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	src := string(b)
+	if !strings.Contains(src, getByKey) {
+		return fmt.Errorf("golang: %s declares no %s to rename", storeFile, getByKey)
+	}
+	return os.WriteFile(path, []byte(strings.Replace(src, getByKey, getByID, 1)), 0o644)
 }
 
 // doubles returns the workspace fixture's stub generator: per interface

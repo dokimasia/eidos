@@ -27,8 +27,9 @@ import (
 )
 
 // These constants name the workspace fixture's trees, the files its
-// plans generate, the probe generator, the two roots of the repository
-// that the sibling workspaces share, and their modules.
+// plans generate, the file its edit changes, the line of Get in that
+// file before and after the edit, the probe generator, the two roots of
+// the repository that the sibling workspaces share, and their modules.
 const (
 	workspaceTree            = "testdata/workspace/tree"
 	checkedTree              = "testdata/workspace/checked"
@@ -38,6 +39,9 @@ const (
 	registryFile             = "admin/registry.go"
 	auditorFile              = "admin/auditor.go"
 	hookDoubleFile           = "hook/hook_stub.go"
+	storeFile                = "svc/store.go"
+	getByKey                 = "\tGet(key string) (Session, error)\n"
+	getByID                  = "\tGet(id string) (Session, error)\n"
 	peekID         plugin.ID = "peek"
 	platformRoot             = "platform"
 	genRoot                  = "tools/gen"
@@ -59,7 +63,8 @@ type sight struct {
 // svc, the registry plan reads its export and aliases each double in
 // admin, each plan's reader returns only its own directories, a check
 // reads the records, and neither of two workspaces of one repository
-// reads or changes the other's files.
+// reads or changes the other's files. The fixture's edit renames a
+// parameter of an interface the stubs plan doubles.
 func TestWorkspace(t *testing.T) {
 	t.Parallel()
 
@@ -70,6 +75,12 @@ func TestWorkspace(t *testing.T) {
 			t.Parallel()
 
 			workspacetest.RunWorkspaceSuite(t, workspaceFixture(t))
+		})
+
+		t.Run("passes the warm check over an edit that renames a parameter of Get", func(t *testing.T) {
+			t.Parallel()
+
+			workspacetest.AssertWarmEdited(t, workspaceFixture(t), t.TempDir(), t.TempDir())
 		})
 
 		t.Run("records each workspace's manifest under its own root", func(t *testing.T) {
@@ -136,6 +147,38 @@ func TestWorkspace(t *testing.T) {
 		})
 	})
 
+	t.Run("EditWorkspace", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("renames the parameter of Get in the stubbed interface", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			copyTree(t, root, workspaceTree)
+			want := filesUnder(t, root)
+			want[storeFile] = strings.Replace(want[storeFile], getByKey, getByID, 1)
+			assert.NoError(t, golang.EditWorkspace(root), "the edit applies")
+			assert.Equal(t, filesUnder(t, root), want, "the edit changes the line of Get and no other line")
+		})
+
+		t.Run("returns an error for a store whose Get has no parameter key", func(t *testing.T) {
+			t.Parallel()
+
+			root := t.TempDir()
+			copyTree(t, root, workspaceTree)
+			assert.NoError(t, golang.EditWorkspace(root), "the first edit applies")
+			err := golang.EditWorkspace(root)
+			assert.HasError(t, err, "a second edit finds no parameter key to rename")
+			assert.Contains(t, err.Error(), storeFile, "the error names the file")
+		})
+
+		t.Run("returns fs.ErrNotExist for a root without the store", func(t *testing.T) {
+			t.Parallel()
+
+			assert.ErrorIs(t, golang.EditWorkspace(t.TempDir()), fs.ErrNotExist, "an empty root has no store to read")
+		})
+	})
+
 	t.Run("Stubbed.Check", func(t *testing.T) {
 		t.Parallel()
 
@@ -162,7 +205,8 @@ func TestWorkspace(t *testing.T) {
 }
 
 // workspaceFixture returns the workspace suite's fixture: the tree, the
-// composition, the two plans, and the two files they generate.
+// composition, the two plans, the two files they generate, and the edit
+// that renames a parameter of Get.
 func workspaceFixture(t *testing.T) workspacetest.Fixture {
 	t.Helper()
 
@@ -177,6 +221,7 @@ func workspaceFixture(t *testing.T) workspacetest.Fixture {
 		Compose: golang.ComposeWorkspace,
 		Plans:   func() []workspace.Plan { return golang.WorkspacePlans() },
 		Want:    want,
+		Edit:    golang.EditWorkspace,
 	}
 }
 
