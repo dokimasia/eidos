@@ -40,16 +40,6 @@ const (
 	regenerateMiniAllocs = 15_004 + 8*1
 )
 
-// repoRoot returns the repository root, one directory above the
-// kernel module every case here generates from.
-func repoRoot(tb assert.TB) string {
-	tb.Helper()
-
-	root, err := gosource.ModuleRoot(".")
-	assert.NoError(tb, err, "the kernel's module root resolves")
-	return filepath.Dir(root)
-}
-
 // The facade is generated from the kernel, so the files it renders,
 // the documentation it copies and its bytes across runs are
 // contract.
@@ -247,6 +237,16 @@ func BenchmarkGenerate(b *testing.B) {
 		}
 		assert.NoError(b, err, "the facade regenerates")
 	})
+}
+
+// repoRoot returns the repository root, one directory above the
+// kernel module every case here generates from.
+func repoRoot(tb assert.TB) string {
+	tb.Helper()
+
+	root, err := gosource.ModuleRoot(".")
+	assert.NoError(tb, err, "the kernel's module root resolves")
+	return filepath.Dir(root)
 }
 
 // dirEntries lists the entries of a directory under root, and none

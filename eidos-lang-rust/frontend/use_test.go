@@ -47,24 +47,6 @@ func exportsIn(tb assert.TB, src string) []imported {
 	return out
 }
 
-// mustParse parses the fixture crate whose library root is src and
-// returns its builder.
-func mustParse(tb assert.TB, src string) *plugin.GraphBuilder {
-	tb.Helper()
-
-	gb, _ := parsedSource(tb, src)
-	return gb
-}
-
-// bindingsOf returns bindings as name and alias pairs, in order.
-func bindingsOf(bs []*node.Binding) [][2]string {
-	var out [][2]string
-	for _, b := range bs {
-		out = append(out, [2]string{b.Name, b.Alias})
-	}
-	return out
-}
-
 // A module's use and extern crate declarations are its import scope as
 // written, so the File node's imports and exports are pinned.
 func TestUse(t *testing.T) {
@@ -223,4 +205,22 @@ func TestUse(t *testing.T) {
 			assert.Equal(t, ref.Package, crateName+"/store", "the boundary is read before the items")
 		})
 	})
+}
+
+// mustParse parses the fixture crate whose library root is src and
+// returns its builder.
+func mustParse(tb assert.TB, src string) *plugin.GraphBuilder {
+	tb.Helper()
+
+	gb, _ := parsedSource(tb, src)
+	return gb
+}
+
+// bindingsOf returns bindings as name and alias pairs, in order.
+func bindingsOf(bs []*node.Binding) [][2]string {
+	var out [][2]string
+	for _, b := range bs {
+		out = append(out, [2]string{b.Name, b.Alias})
+	}
+	return out
 }

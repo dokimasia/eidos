@@ -22,31 +22,6 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// goSyntax is the fixture's comment forms: Go's line form and the
-// C-family block with a star gutter, the tool-directive convention
-// declared.
-func goSyntax() plugin.CommentSyntax {
-	return plugin.CommentSyntax{
-		Line:       []string{"//"},
-		Blocks:     []plugin.CommentBlock{{Open: "/**", Close: "*/", Gutter: "*"}},
-		Directives: true,
-	}
-}
-
-// nestedSyntax is comment forms whose markers begin with each other,
-// as Rust's do: the plain line form first, because the render side
-// writes it, the outer and inner doc line forms after it, and a plain
-// block before a doc block with a star gutter.
-func nestedSyntax() plugin.CommentSyntax {
-	return plugin.CommentSyntax{
-		Line: []string{"//", "///", "//!"},
-		Blocks: []plugin.CommentBlock{
-			{Open: "/*", Close: "*/"},
-			{Open: "/**", Close: "*/", Gutter: "*"},
-		},
-	}
-}
-
 // unitCode is a code for the source unit fixtures' findings.
 var unitCode = diag.Code{Prefix: "tst", Number: 5}
 
@@ -155,70 +130,6 @@ type unitReport struct {
 type unitRecord struct {
 	method string
 	record func(*plugin.GraphBuilder)
-}
-
-// unitTree is the fixture tree: the unit's member, its shared
-// module file, and a file outside the unit.
-func unitTree() fstest.MapFS {
-	return fstest.MapFS{
-		"svc/store/row.go": {Data: []byte("package store\n")},
-		"go.mod":           {Data: []byte("module svc\n")},
-		"svc/other/x.go":   {Data: []byte("package other\n")},
-	}
-}
-
-// unitFile is the one member the fixture unit declares, with the
-// module file as its shared input.
-func unitFile() plugin.SourceRef {
-	return plugin.SourceRef{Path: "svc/store/row.go", Shared: []string{"go.mod"}}
-}
-
-// unitOf builds a source unit over the given tree, one file with
-// one shared input, full depth.
-func unitOf(tb assert.TB, tree fstest.MapFS) *plugin.SourceUnit {
-	tb.Helper()
-
-	u, _ := reporting(tb, tree)
-	return u
-}
-
-// reporting builds the fixture unit together with the sink its
-// findings arrive in, so a case reads back what the frontend
-// reported.
-func reporting(tb assert.TB, tree fstest.MapFS) (*plugin.SourceUnit, *diag.Sink) {
-	tb.Helper()
-
-	sink := diag.NewSink()
-	return plugin.NewSourceUnit(
-		[]plugin.SourceRef{unitFile()}, tree, plugin.DepthFull, goSyntax(),
-		unitBrand, sink, frontendOrigin,
-	), sink
-}
-
-// unitOver builds a unit over the fixture tree with the given
-// members, depth and syntax.
-func unitOver(
-	refs []plugin.SourceRef, depth plugin.Depth, syntax plugin.CommentSyntax,
-) *plugin.SourceUnit {
-	return plugin.NewSourceUnit(refs, unitTree(), depth, syntax, unitBrand, diag.NewSink(), frontendOrigin)
-}
-
-// reported returns a sink's findings in report order, which is what
-// a case comparing severities and origins reads.
-func reported(s *diag.Sink) []diag.Diag {
-	var out []diag.Diag
-	for d := range s.All() {
-		out = append(out, d)
-	}
-	return out
-}
-
-// comment takes one raw comment apart through the fixture unit, at
-// line 1 of the member.
-func comment(tb assert.TB, raw string) plugin.CommentParts {
-	tb.Helper()
-
-	return unitOf(tb, unitTree()).Comment(raw, position.Pos{File: "svc/store/row.go", Line: 1})
 }
 
 // The source unit is the one door bytes enter a frontend through,
@@ -1380,6 +1291,95 @@ func BenchmarkSourceUnit(b *testing.B) {
 		}
 		assert.Length(b, got, 1, "StampRecords returns the record")
 	})
+}
+
+// goSyntax is the fixture's comment forms: Go's line form and the
+// C-family block with a star gutter, the tool-directive convention
+// declared.
+func goSyntax() plugin.CommentSyntax {
+	return plugin.CommentSyntax{
+		Line:       []string{"//"},
+		Blocks:     []plugin.CommentBlock{{Open: "/**", Close: "*/", Gutter: "*"}},
+		Directives: true,
+	}
+}
+
+// nestedSyntax is comment forms whose markers begin with each other,
+// as Rust's do: the plain line form first, because the render side
+// writes it, the outer and inner doc line forms after it, and a plain
+// block before a doc block with a star gutter.
+func nestedSyntax() plugin.CommentSyntax {
+	return plugin.CommentSyntax{
+		Line: []string{"//", "///", "//!"},
+		Blocks: []plugin.CommentBlock{
+			{Open: "/*", Close: "*/"},
+			{Open: "/**", Close: "*/", Gutter: "*"},
+		},
+	}
+}
+
+// unitTree is the fixture tree: the unit's member, its shared
+// module file, and a file outside the unit.
+func unitTree() fstest.MapFS {
+	return fstest.MapFS{
+		"svc/store/row.go": {Data: []byte("package store\n")},
+		"go.mod":           {Data: []byte("module svc\n")},
+		"svc/other/x.go":   {Data: []byte("package other\n")},
+	}
+}
+
+// unitFile is the one member the fixture unit declares, with the
+// module file as its shared input.
+func unitFile() plugin.SourceRef {
+	return plugin.SourceRef{Path: "svc/store/row.go", Shared: []string{"go.mod"}}
+}
+
+// unitOf builds a source unit over the given tree, one file with
+// one shared input, full depth.
+func unitOf(tb assert.TB, tree fstest.MapFS) *plugin.SourceUnit {
+	tb.Helper()
+
+	u, _ := reporting(tb, tree)
+	return u
+}
+
+// reporting builds the fixture unit together with the sink its
+// findings arrive in, so a case reads back what the frontend
+// reported.
+func reporting(tb assert.TB, tree fstest.MapFS) (*plugin.SourceUnit, *diag.Sink) {
+	tb.Helper()
+
+	sink := diag.NewSink()
+	return plugin.NewSourceUnit(
+		[]plugin.SourceRef{unitFile()}, tree, plugin.DepthFull, goSyntax(),
+		unitBrand, sink, frontendOrigin,
+	), sink
+}
+
+// unitOver builds a unit over the fixture tree with the given
+// members, depth and syntax.
+func unitOver(
+	refs []plugin.SourceRef, depth plugin.Depth, syntax plugin.CommentSyntax,
+) *plugin.SourceUnit {
+	return plugin.NewSourceUnit(refs, unitTree(), depth, syntax, unitBrand, diag.NewSink(), frontendOrigin)
+}
+
+// reported returns a sink's findings in report order, which is what
+// a case comparing severities and origins reads.
+func reported(s *diag.Sink) []diag.Diag {
+	var out []diag.Diag
+	for d := range s.All() {
+		out = append(out, d)
+	}
+	return out
+}
+
+// comment takes one raw comment apart through the fixture unit, at
+// line 1 of the member.
+func comment(tb assert.TB, raw string) plugin.CommentParts {
+	tb.Helper()
+
+	return unitOf(tb, unitTree()).Comment(raw, position.Pos{File: "svc/store/row.go", Line: 1})
 }
 
 // unitReports returns each reporting method of the unit, writing one

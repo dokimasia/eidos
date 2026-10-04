@@ -36,11 +36,6 @@ const (
 // against the merged vocabulary.
 const lintAllocs = 67
 
-// tree returns a one-template tree.
-func tree(name, src string) fstest.MapFS {
-	return fstest.MapFS{name: &fstest.MapFile{Data: []byte(src)}}
-}
-
 // unreadable is a tree that lists its templates and refuses to open
 // one of them: a file the walk names and the read cannot serve.
 type unreadable struct {
@@ -69,9 +64,6 @@ type sealed struct{}
 func (sealed) Open(name string) (fs.File, error) {
 	return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
 }
-
-// identity is the helper body every fixture helper shares.
-func identity(s string) string { return s }
 
 // The lint is the static half of the marker rule: every template of a
 // plugin's tree parses against the merged vocabulary before any run,
@@ -276,6 +268,14 @@ func BenchmarkLint(b *testing.B) {
 		assert.Empty(b, findings, "the marker is placed and every helper resolves")
 	})
 }
+
+// tree returns a one-template tree.
+func tree(name, src string) fstest.MapFS {
+	return fstest.MapFS{name: &fstest.MapFile{Data: []byte(src)}}
+}
+
+// identity is the helper body every fixture helper shares.
+func identity(s string) string { return s }
 
 // lintFixture returns a pass over the fixture language with the shared
 // helper, and a tree of one template that calls the helper and places

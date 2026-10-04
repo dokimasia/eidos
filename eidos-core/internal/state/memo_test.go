@@ -52,51 +52,6 @@ const (
 	memoWriteAllocs = 35
 )
 
-// memoAt returns a memo of this build over a ledger, at an instant.
-func memoAt(l ledger.Ledger, limit int64, now time.Time) *state.Memo {
-	return state.NewMemo(context.Background(), l, thisBuild, limit, now)
-}
-
-// putAll writes one entry for each key into the ledger's memo, the
-// region of each its encoding of fullRegion, at an instant.
-func putAll(tb testing.TB, l ledger.Ledger, limit int64, now time.Time, keys ...string) {
-	tb.Helper()
-
-	m := memoAt(l, limit, now)
-	for _, k := range keys {
-		m.Put([]byte(k), fullRegion())
-	}
-	_, err := m.Write(tb.Context())
-	assert.NoError(tb, err, "the memo writes")
-}
-
-// entriesOf returns the names of the memo's entries, without its own
-// blobs.
-func entriesOf(t *testing.T, l ledger.Ledger) []string {
-	t.Helper()
-
-	blobs, err := l.List(t.Context(), "memo")
-	assert.NoError(t, err, "the memo lists")
-	var out []string
-	for _, b := range blobs {
-		if b.Name != memoTotal && b.Name != memoTrimmed {
-			out = append(out, b.Name)
-		}
-	}
-	return out
-}
-
-// numberIn returns the number one of the memo's own blobs states.
-func numberIn(t *testing.T, l ledger.Ledger, name string) int64 {
-	t.Helper()
-
-	b, err := l.Read(t.Context(), name)
-	assert.NoError(t, err, "the blob reads")
-	n, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
-	assert.NoError(t, err, "and states a number")
-	return n
-}
-
 // The memo restores a unit some earlier run parsed, so its keys, its
 // entries' damage and its cap are each pinned.
 func TestMemo(t *testing.T) {
@@ -351,6 +306,51 @@ func BenchmarkMemo(b *testing.B) {
 		assert.NoError(b, err, "the memo writes")
 		assert.True(b, written > 0, "the entry's bytes")
 	})
+}
+
+// memoAt returns a memo of this build over a ledger, at an instant.
+func memoAt(l ledger.Ledger, limit int64, now time.Time) *state.Memo {
+	return state.NewMemo(context.Background(), l, thisBuild, limit, now)
+}
+
+// putAll writes one entry for each key into the ledger's memo, the
+// region of each its encoding of fullRegion, at an instant.
+func putAll(tb testing.TB, l ledger.Ledger, limit int64, now time.Time, keys ...string) {
+	tb.Helper()
+
+	m := memoAt(l, limit, now)
+	for _, k := range keys {
+		m.Put([]byte(k), fullRegion())
+	}
+	_, err := m.Write(tb.Context())
+	assert.NoError(tb, err, "the memo writes")
+}
+
+// entriesOf returns the names of the memo's entries, without its own
+// blobs.
+func entriesOf(t *testing.T, l ledger.Ledger) []string {
+	t.Helper()
+
+	blobs, err := l.List(t.Context(), "memo")
+	assert.NoError(t, err, "the memo lists")
+	var out []string
+	for _, b := range blobs {
+		if b.Name != memoTotal && b.Name != memoTrimmed {
+			out = append(out, b.Name)
+		}
+	}
+	return out
+}
+
+// numberIn returns the number one of the memo's own blobs states.
+func numberIn(t *testing.T, l ledger.Ledger, name string) int64 {
+	t.Helper()
+
+	b, err := l.Read(t.Context(), name)
+	assert.NoError(t, err, "the blob reads")
+	n, err := strconv.ParseInt(strings.TrimSpace(string(b)), 10, 64)
+	assert.NoError(t, err, "and states a number")
+	return n
 }
 
 // newMemos returns n memos of this build, each over a ledger of its own.

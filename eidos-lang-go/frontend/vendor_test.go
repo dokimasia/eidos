@@ -26,24 +26,6 @@ const (
 	forkVersion    = "v1.0.0"
 )
 
-// vendorTree returns the workspace with a vendor tree whose list states
-// the lines given and whose copy of the library's package is on disk.
-func vendorTree(goModExtra, list string) fstest.MapFS {
-	tree := depWorkspace()
-	tree[appGoMod] = &fstest.MapFile{Data: append(tree[appGoMod].Data, goModExtra...)}
-	tree[vendorList] = &fstest.MapFile{Data: []byte(list)}
-	tree["vendor/"+libPackage+"/pkg.go"] = &fstest.MapFile{Data: []byte(libSource)}
-	return tree
-}
-
-// uncached returns the stores with an empty module cache, so a module
-// need falls back to the vendor tree.
-func uncached() map[string]fs.FS {
-	stores := depStores()
-	stores[frontend.ModCacheStore] = fstest.MapFS{}
-	return stores
-}
-
 // The vendor tree is the second source of a module, and the go
 // command's consistency checks decide whether it may be one, so the
 // list's reading and each check are pinned.
@@ -170,4 +152,22 @@ func TestVendor(t *testing.T) {
 				"the go.mod's replacement of every version covers the listed version")
 		})
 	})
+}
+
+// vendorTree returns the workspace with a vendor tree whose list states
+// the lines given and whose copy of the library's package is on disk.
+func vendorTree(goModExtra, list string) fstest.MapFS {
+	tree := depWorkspace()
+	tree[appGoMod] = &fstest.MapFile{Data: append(tree[appGoMod].Data, goModExtra...)}
+	tree[vendorList] = &fstest.MapFile{Data: []byte(list)}
+	tree["vendor/"+libPackage+"/pkg.go"] = &fstest.MapFile{Data: []byte(libSource)}
+	return tree
+}
+
+// uncached returns the stores with an empty module cache, so a module
+// need falls back to the vendor tree.
+func uncached() map[string]fs.FS {
+	stores := depStores()
+	stores[frontend.ModCacheStore] = fstest.MapFS{}
+	return stores
 }

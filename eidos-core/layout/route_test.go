@@ -110,120 +110,10 @@ var (
 	ghostID = coretest.ID("svc/ghost", "Ghost", symbol.KindStruct)
 )
 
-// families returns the families each fixture generator declares.
-func families() map[plugin.ID][]plugin.Output {
-	return map[plugin.ID][]plugin.Output{
-		stubgen: {
-			{Tag: "", Per: plugin.PerSource, Word: wordStub},
-			{Tag: tagTest, Per: plugin.PerSource, Word: wordStub},
-			{Tag: tagPkg, Per: plugin.PerPackage, Word: wordSuite},
-			{Tag: tagPlan, Per: plugin.PerPlan, Word: wordIndex},
-		},
-		docgen: {
-			{Tag: "", Per: plugin.PerSource, Word: wordDoc},
-		},
-		pkggen: {
-			{Tag: "", Per: plugin.PerPackage, Word: wordRegistry},
-			{Tag: tagFile, Per: plugin.PerSource, Word: wordPart},
-		},
-	}
-}
-
-// at returns the position of a declaration on line 3 of a file.
-func at(file string) position.Pos { return position.Pos{File: file, Line: 3, Col: 6} }
-
-// sourceOf returns one source struct at line 3 of its file.
-func sourceOf(id symbol.Identity, file string) *node.Struct {
-	return &node.Struct{ID: id, Name: id.Name, Pos: at(file)}
-}
-
 // source is one file of a fixture package, declaring one struct.
 type source struct {
 	file string
 	id   symbol.Identity
-}
-
-// sourcePackage returns a package of one struct per file, its files
-// in the order given.
-func sourcePackage(pkg, name string, files ...source) *node.Package {
-	p := &node.Package{ID: coretest.PackageID(pkg), Path: strings.Split(pkg, "/"), Name: name}
-	for _, s := range files {
-		p.Files = append(p.Files, &node.File{
-			ID:    symbol.Identity{Lang: coretest.Lang, Package: pkg, Name: path.Base(s.file), Kind: symbol.KindFile},
-			Path:  s.file,
-			Decls: node.Symbols{sourceOf(s.id, s.file)},
-		})
-	}
-	return p
-}
-
-// graph returns the fixture workspace, frozen.
-func graph(tb testing.TB) *store.Graph {
-	tb.Helper()
-
-	return coretest.Frozen(tb,
-		sourcePackage(storePkg, "store", source{storeFile, storeID}, source{rowFile, rowID}),
-		sourcePackage(cachePkg, "cache", source{cacheFile, cacheID}),
-		sourcePackage(multiPkg, "multi", source{zedFile, zedID}, source{aceFile, aceID}),
-		sourcePackage(depPkg, "dep", source{depFile, depID}),
-	)
-}
-
-// registry returns the schemas of the fixture generators' directives.
-func registry(tb testing.TB) *directive.Registry {
-	tb.Helper()
-
-	r := directive.NewRegistry()
-	for _, s := range []directive.Schema{
-		{Plugin: string(stubgen), Name: "stub", Doc: "marks a declaration stubgen stubs"},
-		{Plugin: string(docgen), Name: "doc", Doc: "marks a declaration docgen documents"},
-		{Plugin: string(pkggen), Name: "reg", Doc: "marks a declaration pkggen registers"},
-	} {
-		assert.NoError(tb, r.Register(s), "the fixture schema registers")
-	}
-	return r
-}
-
-// written returns a validated directive instance at a carrier line,
-// with its string params.
-func written(name directive.Name, line int, params ...string) directive.Directive {
-	d := directive.Directive{
-		Name:   name,
-		Pos:    position.Pos{File: storeFile, Line: line, Col: 1},
-		Params: map[directive.ParamKey]directive.Value{},
-	}
-	for i := 0; i+1 < len(params); i += 2 {
-		d.Params[directive.ParamKey(params[i])] = directive.Value{Kind: directive.TypeString, Str: params[i+1]}
-	}
-	return d
-}
-
-// generated returns an emitted struct deriving from origin.
-func generated(origin symbol.Identity, name string, fields ...*emit.Field) *emit.Struct {
-	s := &emit.Struct{Origin: origin, Name: name}
-	for _, f := range fields {
-		s.Fields.Append(f)
-	}
-	return s
-}
-
-// unitOf returns one unit of a generator's family, its declarations
-// and their origins.
-func unitOf(p plugin.ID, out plugin.Output, key string, pkg symbol.Identity, decls ...symbol.Symbol) plugin.Unit {
-	u := plugin.Unit{Plugin: p, Tag: out.Tag, Per: out.Per, Word: out.Word, Key: key, Pkg: pkg, Decls: decls}
-	seen := map[symbol.Identity]bool{}
-	for _, d := range decls {
-		if origin, _ := emit.OriginOf(d); !origin.IsZero() && !seen[origin] {
-			seen[origin] = true
-			u.Origins = append(u.Origins, origin)
-		}
-	}
-	return u
-}
-
-// stubOf returns stubgen's primary unit of one source file.
-func stubOf(file, pkg string, decls ...symbol.Symbol) plugin.Unit {
-	return unitOf(stubgen, families()[stubgen][0], file, coretest.PackageID(pkg), decls...)
 }
 
 // fixture is one routing case: the plan's units, the directives on
@@ -389,22 +279,6 @@ type recording struct{ seen *[]plugin.Placement }
 func (r recording) PackageAt(p plugin.Placement) (symbol.Identity, error) {
 	*r.seen = append(*r.seen, p)
 	return p.Origin, nil
-}
-
-// layoutOf returns each file's path and the names of its declarations,
-// unit by unit, which is what a case compares against.
-func layoutOf(files []plugin.File) []string {
-	out := make([]string, 0, len(files))
-	for _, f := range files {
-		var names []string
-		for _, u := range f.Units {
-			for _, d := range u.Decls {
-				names = append(names, emit.DeclaredName(d))
-			}
-		}
-		out = append(out, f.Path+": "+strings.Join(names, " "))
-	}
-	return out
 }
 
 // A plan's declarations route to files by family, configuration and
@@ -829,6 +703,132 @@ func BenchmarkRoute(b *testing.B) {
 	b.Run("Route/one package of 200 declarations", func(b *testing.B) {
 		benchRoute(b, 1, routeOneAllocs)
 	})
+}
+
+// families returns the families each fixture generator declares.
+func families() map[plugin.ID][]plugin.Output {
+	return map[plugin.ID][]plugin.Output{
+		stubgen: {
+			{Tag: "", Per: plugin.PerSource, Word: wordStub},
+			{Tag: tagTest, Per: plugin.PerSource, Word: wordStub},
+			{Tag: tagPkg, Per: plugin.PerPackage, Word: wordSuite},
+			{Tag: tagPlan, Per: plugin.PerPlan, Word: wordIndex},
+		},
+		docgen: {
+			{Tag: "", Per: plugin.PerSource, Word: wordDoc},
+		},
+		pkggen: {
+			{Tag: "", Per: plugin.PerPackage, Word: wordRegistry},
+			{Tag: tagFile, Per: plugin.PerSource, Word: wordPart},
+		},
+	}
+}
+
+// at returns the position of a declaration on line 3 of a file.
+func at(file string) position.Pos { return position.Pos{File: file, Line: 3, Col: 6} }
+
+// sourceOf returns one source struct at line 3 of its file.
+func sourceOf(id symbol.Identity, file string) *node.Struct {
+	return &node.Struct{ID: id, Name: id.Name, Pos: at(file)}
+}
+
+// sourcePackage returns a package of one struct per file, its files
+// in the order given.
+func sourcePackage(pkg, name string, files ...source) *node.Package {
+	p := &node.Package{ID: coretest.PackageID(pkg), Path: strings.Split(pkg, "/"), Name: name}
+	for _, s := range files {
+		p.Files = append(p.Files, &node.File{
+			ID:    symbol.Identity{Lang: coretest.Lang, Package: pkg, Name: path.Base(s.file), Kind: symbol.KindFile},
+			Path:  s.file,
+			Decls: node.Symbols{sourceOf(s.id, s.file)},
+		})
+	}
+	return p
+}
+
+// graph returns the fixture workspace, frozen.
+func graph(tb testing.TB) *store.Graph {
+	tb.Helper()
+
+	return coretest.Frozen(tb,
+		sourcePackage(storePkg, "store", source{storeFile, storeID}, source{rowFile, rowID}),
+		sourcePackage(cachePkg, "cache", source{cacheFile, cacheID}),
+		sourcePackage(multiPkg, "multi", source{zedFile, zedID}, source{aceFile, aceID}),
+		sourcePackage(depPkg, "dep", source{depFile, depID}),
+	)
+}
+
+// registry returns the schemas of the fixture generators' directives.
+func registry(tb testing.TB) *directive.Registry {
+	tb.Helper()
+
+	r := directive.NewRegistry()
+	for _, s := range []directive.Schema{
+		{Plugin: string(stubgen), Name: "stub", Doc: "marks a declaration stubgen stubs"},
+		{Plugin: string(docgen), Name: "doc", Doc: "marks a declaration docgen documents"},
+		{Plugin: string(pkggen), Name: "reg", Doc: "marks a declaration pkggen registers"},
+	} {
+		assert.NoError(tb, r.Register(s), "the fixture schema registers")
+	}
+	return r
+}
+
+// written returns a validated directive instance at a carrier line,
+// with its string params.
+func written(name directive.Name, line int, params ...string) directive.Directive {
+	d := directive.Directive{
+		Name:   name,
+		Pos:    position.Pos{File: storeFile, Line: line, Col: 1},
+		Params: map[directive.ParamKey]directive.Value{},
+	}
+	for i := 0; i+1 < len(params); i += 2 {
+		d.Params[directive.ParamKey(params[i])] = directive.Value{Kind: directive.TypeString, Str: params[i+1]}
+	}
+	return d
+}
+
+// generated returns an emitted struct deriving from origin.
+func generated(origin symbol.Identity, name string, fields ...*emit.Field) *emit.Struct {
+	s := &emit.Struct{Origin: origin, Name: name}
+	for _, f := range fields {
+		s.Fields.Append(f)
+	}
+	return s
+}
+
+// unitOf returns one unit of a generator's family, its declarations
+// and their origins.
+func unitOf(p plugin.ID, out plugin.Output, key string, pkg symbol.Identity, decls ...symbol.Symbol) plugin.Unit {
+	u := plugin.Unit{Plugin: p, Tag: out.Tag, Per: out.Per, Word: out.Word, Key: key, Pkg: pkg, Decls: decls}
+	seen := map[symbol.Identity]bool{}
+	for _, d := range decls {
+		if origin, _ := emit.OriginOf(d); !origin.IsZero() && !seen[origin] {
+			seen[origin] = true
+			u.Origins = append(u.Origins, origin)
+		}
+	}
+	return u
+}
+
+// stubOf returns stubgen's primary unit of one source file.
+func stubOf(file, pkg string, decls ...symbol.Symbol) plugin.Unit {
+	return unitOf(stubgen, families()[stubgen][0], file, coretest.PackageID(pkg), decls...)
+}
+
+// layoutOf returns each file's path and the names of its declarations,
+// unit by unit, which is what a case compares against.
+func layoutOf(files []plugin.File) []string {
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		var names []string
+		for _, u := range f.Units {
+			for _, d := range u.Decls {
+				names = append(names, emit.DeclaredName(d))
+			}
+		}
+		out = append(out, f.Path+": "+strings.Join(names, " "))
+	}
+	return out
 }
 
 // benchRoute measures Route over an input of the given number of

@@ -65,33 +65,6 @@ const (
 	shapedComment  = "package svc\n//" + string(frontendtest.Brand) + ":table\ntype A int\n"
 )
 
-// unitOver assembles one unit over a tree under the suite's brand,
-// the way the driver does.
-func unitOver(f *frontendtest.Scripted, tree fstest.MapFS, files ...string) (
-	*plugin.SourceUnit, *diag.Sink,
-) {
-	refs := make([]plugin.SourceRef, len(files))
-	for i, path := range files {
-		refs[i] = plugin.SourceRef{Path: path}
-	}
-	sink := diag.NewSink()
-	return plugin.NewSourceUnit(
-		refs, tree, plugin.DepthFull, f.Syntax(), string(frontendtest.Brand), sink, f.Name(),
-	), sink
-}
-
-// parsed lowers one source as the single member of a unit and
-// returns the unit's builder, failing the test on a finding.
-func parsed(tb assert.TB, source string) *plugin.GraphBuilder {
-	tb.Helper()
-
-	f := frontendtest.NewScripted()
-	u, sink := unitOver(f, fstest.MapFS{svcFile: {Data: []byte(source)}}, svcFile)
-	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
-	coretest.AssertCodes(tb, sink)
-	return u.Graph()
-}
-
 // The scripted language substitutes for five real ones, so its own
 // lowering is pinned: what it declares, binds, stamps and refuses.
 func TestScripted(t *testing.T) {
@@ -517,6 +490,33 @@ func TestScripted(t *testing.T) {
 			assert.Empty(t, f.Exports(scope, ownSpelling), "an import publishes nothing")
 		})
 	})
+}
+
+// unitOver assembles one unit over a tree under the suite's brand,
+// the way the driver does.
+func unitOver(f *frontendtest.Scripted, tree fstest.MapFS, files ...string) (
+	*plugin.SourceUnit, *diag.Sink,
+) {
+	refs := make([]plugin.SourceRef, len(files))
+	for i, path := range files {
+		refs[i] = plugin.SourceRef{Path: path}
+	}
+	sink := diag.NewSink()
+	return plugin.NewSourceUnit(
+		refs, tree, plugin.DepthFull, f.Syntax(), string(frontendtest.Brand), sink, f.Name(),
+	), sink
+}
+
+// parsed lowers one source as the single member of a unit and
+// returns the unit's builder, failing the test on a finding.
+func parsed(tb assert.TB, source string) *plugin.GraphBuilder {
+	tb.Helper()
+
+	f := frontendtest.NewScripted()
+	u, sink := unitOver(f, fstest.MapFS{svcFile: {Data: []byte(source)}}, svcFile)
+	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+	coretest.AssertCodes(tb, sink)
+	return u.Graph()
 }
 
 // roundOf returns a first round with one need per path.

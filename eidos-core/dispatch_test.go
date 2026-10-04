@@ -56,20 +56,6 @@ const failureWait = 5 * time.Second
 // some round, whatever the parallel cases beside it take from the pool.
 const reuses = 8
 
-// boolKey returns a registered bool key and a fact store built over
-// its registry.
-func boolKey(tb assert.TB) (meta.Key[bool], *meta.Facts) {
-	tb.Helper()
-
-	reg := meta.NewRegistry()
-	assert.NoError(tb, reg.ClaimNamespace(fixtureNamespace), "the namespace is claimed")
-	key, err := meta.Register[bool](reg, meta.KeySpec{
-		Name: "t.flag", Doc: "marks a fixture subject",
-	})
-	assert.NoError(tb, err, "the key registers")
-	return key, meta.NewFacts(reg)
-}
-
 // gateName is the directive the gated dispatch cases attach and
 // gate on.
 const gateName directive.Name = "stub"
@@ -251,86 +237,6 @@ func (r dispatchRun) check(tb assert.TB) {
 	tb.Helper()
 
 	assert.Equal(tb, *r.visited, r.want, "the rule visits every subject it routes to")
-}
-
-// fixtureGraph returns a frozen graph that contains two positioned
-// structs in the store package.
-func fixtureGraph(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
-	tb.Helper()
-
-	alpha := coretest.Struct(coretest.StorePath, "Alpha")
-	alpha.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
-	beta := coretest.Struct(coretest.StorePath, "Beta")
-	beta.Pos = position.Pos{File: "beta.go", Line: 7, Col: 1}
-	g := store.New()
-	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, alpha, beta)),
-		"the fixture package is admitted")
-	g.Freeze()
-	return g, alpha, beta
-}
-
-// genContext returns a generator context over the fixture graph.
-func genContext(
-	tb assert.TB, g *store.Graph, facts *meta.Facts,
-	validated map[symbol.Identity][]directive.Directive,
-) *plugin.GeneratorContext {
-	tb.Helper()
-
-	ix, err := plugin.NewIndex(g, facts, validated, nil)
-	assert.NoError(tb, err, "the routing surface builds")
-	return &plugin.GeneratorContext{
-		Index:  ix,
-		Facts:  facts,
-		Emit:   plugin.NewEmit(),
-		Sink:   diag.NewSink(),
-		Plugin: contextPlugin,
-		Bucket: 2,
-	}
-}
-
-// seed adds one earlier-bucket unit with decls to ctx.Emit.
-func seed(tb assert.TB, ctx *plugin.GeneratorContext, decls ...symbol.Symbol) {
-	tb.Helper()
-
-	assert.NoError(tb, ctx.Emit.Add(plugin.Unit{
-		Plugin: "earlier", Per: plugin.PerSource, Word: "impl",
-		Key: "a.go", Decls: decls,
-	}), "the earlier bucket's unit is added")
-}
-
-// emitted returns an origined emit struct for one node subject.
-func emitted(origin *node.Struct) *emit.Struct {
-	return &emit.Struct{Origin: origin.ID, Name: "Gen" + origin.Name}
-}
-
-// generatorOf builds and asserts the generator role of a plugin.
-func generatorOf(tb assert.TB, p plugin.Plugin) plugin.Generator {
-	tb.Helper()
-
-	gen, ok := p.(plugin.Generator)
-	assert.True(tb, ok, "emitter rules make the value a generator")
-	return gen
-}
-
-// visitingStructs returns a plugin whose bare struct rule records
-// each subject it visits, and the record.
-func visitingStructs(name plugin.ID, rule func(emitHandler) eidos.Rule) (plugin.Plugin, *[]string) {
-	var visited []string
-	p := eidos.NewPlugin(name).
-		Handle(rule(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-			visited = append(visited, m.Struct.Name)
-			return nil
-		})).
-		Build()
-	return p, &visited
-}
-
-// negatedOn returns the validated table with one negated instance of
-// the context plugin's stub directive on subject.
-func negatedOn(subject symbol.Identity) map[symbol.Identity][]directive.Directive {
-	return map[symbol.Identity][]directive.Directive{
-		subject: {{Name: directive.Name(string(contextPlugin) + ":stub"), Negated: true}},
-	}
 }
 
 // Dispatch routes every rule: indexed enumeration, skip, gate views,
@@ -1392,57 +1298,6 @@ func TestDispatchAllocs(t *testing.T) {
 	}
 }
 
-// benchEmitStore seeds units of origined structs whose origins the
-// graph contains, so the dispatch path performs its position lookups.
-func benchEmitStore(tb assert.TB, units, perUnit int) *plugin.Emit {
-	tb.Helper()
-
-	e := plugin.NewEmit()
-	for u := range units {
-		path := coretest.StorePath + "/" + strconv.Itoa(u)
-		decls := make([]symbol.Symbol, 0, perUnit)
-		for i := range perUnit {
-			origin := coretest.Struct(path, "Decl0_"+strconv.Itoa(i)).ID
-			decls = append(decls, &emit.Struct{
-				Origin: origin, Name: "Gen" + strconv.Itoa(i),
-			})
-		}
-		err := e.Add(plugin.Unit{
-			Plugin: "earlier", Per: plugin.PerSource, Word: "impl",
-			Key: "unit" + strconv.Itoa(u) + ".go", Decls: decls,
-		})
-		if err != nil {
-			tb.Fatalf("Add: unexpected error: %v", err)
-		}
-	}
-	return e
-}
-
-// gatedWorkspace returns a frozen workspace whose every struct has
-// one raw instance of the gate directive, and the validated table
-// naming it by its canonical spelling.
-func gatedWorkspace(
-	tb assert.TB, canonical directive.Name, packages, files, decls int,
-) (*store.Graph, map[symbol.Identity][]directive.Directive) {
-	tb.Helper()
-
-	g := store.New()
-	validated := map[symbol.Identity][]directive.Directive{}
-	for _, pkg := range coretest.Workspace(packages, files, decls) {
-		assert.NoError(tb, g.AddPackage(pkg), "the bench package loads")
-		for decl := range node.Declarations(pkg) {
-			if decl.Kind() != symbol.KindStruct {
-				continue
-			}
-			assert.NoError(tb, g.AttachDirectives(decl.Identity(), []directive.Raw{{Name: gateName}}),
-				"the directive attaches")
-			validated[decl.Identity()] = []directive.Directive{{Name: canonical}}
-		}
-	}
-	g.Freeze()
-	return g, validated
-}
-
 // BenchmarkDispatch measures generate-phase calls on the emit side of
 // the canonical workspace: an emit rule over 20,000 values, a fact gate
 // on their origins, and the flush of 10,000 declarations a graph rule
@@ -1618,6 +1473,151 @@ func BenchmarkNodeDispatch(b *testing.B) {
 		assert.NoError(b, err, "the annotate call passes")
 		assert.False(b, ctx.Sink.Failed(), "no stamp is refused")
 	})
+}
+
+// boolKey returns a registered bool key and a fact store built over
+// its registry.
+func boolKey(tb assert.TB) (meta.Key[bool], *meta.Facts) {
+	tb.Helper()
+
+	reg := meta.NewRegistry()
+	assert.NoError(tb, reg.ClaimNamespace(fixtureNamespace), "the namespace is claimed")
+	key, err := meta.Register[bool](reg, meta.KeySpec{
+		Name: "t.flag", Doc: "marks a fixture subject",
+	})
+	assert.NoError(tb, err, "the key registers")
+	return key, meta.NewFacts(reg)
+}
+
+// fixtureGraph returns a frozen graph that contains two positioned
+// structs in the store package.
+func fixtureGraph(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
+	tb.Helper()
+
+	alpha := coretest.Struct(coretest.StorePath, "Alpha")
+	alpha.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
+	beta := coretest.Struct(coretest.StorePath, "Beta")
+	beta.Pos = position.Pos{File: "beta.go", Line: 7, Col: 1}
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, alpha, beta)),
+		"the fixture package is admitted")
+	g.Freeze()
+	return g, alpha, beta
+}
+
+// genContext returns a generator context over the fixture graph.
+func genContext(
+	tb assert.TB, g *store.Graph, facts *meta.Facts,
+	validated map[symbol.Identity][]directive.Directive,
+) *plugin.GeneratorContext {
+	tb.Helper()
+
+	ix, err := plugin.NewIndex(g, facts, validated, nil)
+	assert.NoError(tb, err, "the routing surface builds")
+	return &plugin.GeneratorContext{
+		Index:  ix,
+		Facts:  facts,
+		Emit:   plugin.NewEmit(),
+		Sink:   diag.NewSink(),
+		Plugin: contextPlugin,
+		Bucket: 2,
+	}
+}
+
+// seed adds one earlier-bucket unit with decls to ctx.Emit.
+func seed(tb assert.TB, ctx *plugin.GeneratorContext, decls ...symbol.Symbol) {
+	tb.Helper()
+
+	assert.NoError(tb, ctx.Emit.Add(plugin.Unit{
+		Plugin: "earlier", Per: plugin.PerSource, Word: "impl",
+		Key: "a.go", Decls: decls,
+	}), "the earlier bucket's unit is added")
+}
+
+// emitted returns an origined emit struct for one node subject.
+func emitted(origin *node.Struct) *emit.Struct {
+	return &emit.Struct{Origin: origin.ID, Name: "Gen" + origin.Name}
+}
+
+// generatorOf builds and asserts the generator role of a plugin.
+func generatorOf(tb assert.TB, p plugin.Plugin) plugin.Generator {
+	tb.Helper()
+
+	gen, ok := p.(plugin.Generator)
+	assert.True(tb, ok, "emitter rules make the value a generator")
+	return gen
+}
+
+// visitingStructs returns a plugin whose bare struct rule records
+// each subject it visits, and the record.
+func visitingStructs(name plugin.ID, rule func(emitHandler) eidos.Rule) (plugin.Plugin, *[]string) {
+	var visited []string
+	p := eidos.NewPlugin(name).
+		Handle(rule(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			visited = append(visited, m.Struct.Name)
+			return nil
+		})).
+		Build()
+	return p, &visited
+}
+
+// negatedOn returns the validated table with one negated instance of
+// the context plugin's stub directive on subject.
+func negatedOn(subject symbol.Identity) map[symbol.Identity][]directive.Directive {
+	return map[symbol.Identity][]directive.Directive{
+		subject: {{Name: directive.Name(string(contextPlugin) + ":stub"), Negated: true}},
+	}
+}
+
+// benchEmitStore seeds units of origined structs whose origins the
+// graph contains, so the dispatch path performs its position lookups.
+func benchEmitStore(tb assert.TB, units, perUnit int) *plugin.Emit {
+	tb.Helper()
+
+	e := plugin.NewEmit()
+	for u := range units {
+		path := coretest.StorePath + "/" + strconv.Itoa(u)
+		decls := make([]symbol.Symbol, 0, perUnit)
+		for i := range perUnit {
+			origin := coretest.Struct(path, "Decl0_"+strconv.Itoa(i)).ID
+			decls = append(decls, &emit.Struct{
+				Origin: origin, Name: "Gen" + strconv.Itoa(i),
+			})
+		}
+		err := e.Add(plugin.Unit{
+			Plugin: "earlier", Per: plugin.PerSource, Word: "impl",
+			Key: "unit" + strconv.Itoa(u) + ".go", Decls: decls,
+		})
+		if err != nil {
+			tb.Fatalf("Add: unexpected error: %v", err)
+		}
+	}
+	return e
+}
+
+// gatedWorkspace returns a frozen workspace whose every struct has
+// one raw instance of the gate directive, and the validated table
+// naming it by its canonical spelling.
+func gatedWorkspace(
+	tb assert.TB, canonical directive.Name, packages, files, decls int,
+) (*store.Graph, map[symbol.Identity][]directive.Directive) {
+	tb.Helper()
+
+	g := store.New()
+	validated := map[symbol.Identity][]directive.Directive{}
+	for _, pkg := range coretest.Workspace(packages, files, decls) {
+		assert.NoError(tb, g.AddPackage(pkg), "the bench package loads")
+		for decl := range node.Declarations(pkg) {
+			if decl.Kind() != symbol.KindStruct {
+				continue
+			}
+			assert.NoError(tb, g.AttachDirectives(decl.Identity(), []directive.Raw{{Name: gateName}}),
+				"the directive attaches")
+			validated[decl.Identity()] = []directive.Directive{{Name: canonical}}
+		}
+	}
+	g.Freeze()
+	return g, validated
 }
 
 // annotateKeys returns a registry with one boolean key registered under

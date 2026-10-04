@@ -29,12 +29,6 @@ const (
 // error that carries it.
 const refuseValueAllocs = 2
 
-// valueUnit returns a unit of one struct and one function whose body
-// states s, so a skipped function leaves the struct to render.
-func valueUnit(s emit.Stmt) plugin.Unit {
-	return besideAlpha(fn(storeKey, handleName, emit.Body{Stmts: []emit.Stmt{s}}))
-}
-
 // A value refusal is classified by its type, so the render reports
 // it under its own code and every other refusal as a template
 // refusal.
@@ -134,4 +128,10 @@ func BenchmarkValue(b *testing.B) {
 		}
 		assert.Equal(b, got, refusingLang+": "+refusedValue, "Error joins the target and the message")
 	})
+}
+
+// valueUnit returns a unit of one struct and one function whose body
+// states s, so a skipped function leaves the struct to render.
+func valueUnit(s emit.Stmt) plugin.Unit {
+	return besideAlpha(fn(storeKey, handleName, emit.Body{Stmts: []emit.Stmt{s}}))
 }

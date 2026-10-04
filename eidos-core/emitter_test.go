@@ -68,59 +68,6 @@ const (
 	joinNameAllocs = 1
 )
 
-// referenced returns the reference a graph handler of refPlugin asks
-// its emitter for.
-func referenced(t *testing.T) *emit.TemplateRef {
-	t.Helper()
-
-	g, _, _ := fixtureGraph(t)
-	_, facts := boolKey(t)
-	var got *emit.TemplateRef
-	p := eidos.NewPlugin(refPlugin).
-		Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
-			got = e.Ref(refTemplate, refPayload)
-			return nil
-		})).
-		Build()
-	assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
-	assert.NotNil(t, got, "the handler ran")
-	return got
-}
-
-// woven runs a weaver whose handler appends the given number of fields
-// through the view into the seeded value's slot, then appends nothing,
-// and returns the seeded value and the seeded unit after the phase
-// call.
-func woven(tb assert.TB, fields int) (*emit.Struct, plugin.Unit) {
-	tb.Helper()
-
-	g, alpha, _ := fixtureGraph(tb)
-	_, facts := boolKey(tb)
-	ctx := genContext(tb, g, facts, nil)
-	host := emitted(alpha)
-	seed(tb, ctx, host)
-	p := eidos.NewPlugin(contextPlugin).
-		Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
-			s, held := m.Value.(*emit.Struct)
-			assert.True(tb, held, "a struct rule receives structs")
-			view := e.Slot(&s.Fields)
-			for range fields {
-				view.Append(&emit.Field{Name: "audited"})
-			}
-			view.Append()
-			return nil
-		})).
-		Build()
-	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
-	var earlier plugin.Unit
-	for u := range ctx.Emit.Units() {
-		if u.Plugin == "earlier" {
-			earlier = u
-		}
-	}
-	return host, earlier
-}
-
 // The emitter is the handler's write surface: family misuse is a
 // defect that panics, every family has its own handle, an empty
 // append changes nothing, and the spellings a target decides arrive
@@ -564,6 +511,59 @@ func BenchmarkEmitter(b *testing.B) {
 		}
 		assert.Equal(b, got, "store", "JoinName returns the base for an empty word")
 	})
+}
+
+// referenced returns the reference a graph handler of refPlugin asks
+// its emitter for.
+func referenced(t *testing.T) *emit.TemplateRef {
+	t.Helper()
+
+	g, _, _ := fixtureGraph(t)
+	_, facts := boolKey(t)
+	var got *emit.TemplateRef
+	p := eidos.NewPlugin(refPlugin).
+		Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+			got = e.Ref(refTemplate, refPayload)
+			return nil
+		})).
+		Build()
+	assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
+	assert.NotNil(t, got, "the handler ran")
+	return got
+}
+
+// woven runs a weaver whose handler appends the given number of fields
+// through the view into the seeded value's slot, then appends nothing,
+// and returns the seeded value and the seeded unit after the phase
+// call.
+func woven(tb assert.TB, fields int) (*emit.Struct, plugin.Unit) {
+	tb.Helper()
+
+	g, alpha, _ := fixtureGraph(tb)
+	_, facts := boolKey(tb)
+	ctx := genContext(tb, g, facts, nil)
+	host := emitted(alpha)
+	seed(tb, ctx, host)
+	p := eidos.NewPlugin(contextPlugin).
+		Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+			s, held := m.Value.(*emit.Struct)
+			assert.True(tb, held, "a struct rule receives structs")
+			view := e.Slot(&s.Fields)
+			for range fields {
+				view.Append(&emit.Field{Name: "audited"})
+			}
+			view.Append()
+			return nil
+		})).
+		Build()
+	assert.NoError(tb, generatorOf(tb, p).Generate(ctx), "the phase call passes")
+	var earlier plugin.Unit
+	for u := range ctx.Emit.Units() {
+		if u.Plugin == "earlier" {
+			earlier = u
+		}
+	}
+	return host, earlier
 }
 
 // emitterCases returns a phase call over the invocation fixture for each

@@ -36,24 +36,6 @@ type matchCase struct {
 	check func(testing.TB)
 }
 
-// dispatched runs p's generate phase over a graph holding pkgs, and
-// fails the test unless the phase call passes. It is what puts a
-// rule in front of real subjects rather than in front of its own
-// declaration.
-func dispatched(tb assert.TB, p plugin.Plugin, pkgs ...*node.Package) {
-	tb.Helper()
-
-	facts := meta.NewFacts(meta.NewRegistry())
-	ix, err := plugin.NewIndex(coretest.Frozen(tb, pkgs...), facts, nil, nil)
-	assert.NoError(tb, err, "the routing surface builds")
-	gen, generates := p.(plugin.Generator)
-	assert.True(tb, generates, "an emitter handler makes a generator")
-	assert.NoError(tb, gen.Generate(&plugin.GeneratorContext{
-		Index: ix, Facts: facts, Emit: plugin.NewEmit(),
-		Sink: diag.NewSink(), Plugin: subjectPlugin, Bucket: 1,
-	}), "the phase call passes")
-}
-
 // Every subject kind's constructor lowers one way: the effect
 // parameter picks the phase, the record carries the kind, and the
 // handler sees the subjects of its kind and nothing else. The
@@ -1129,6 +1111,24 @@ func BenchmarkMatches(b *testing.B) {
 			tt.check(b)
 		})
 	}
+}
+
+// dispatched runs p's generate phase over a graph holding pkgs, and
+// fails the test unless the phase call passes. It is what puts a
+// rule in front of real subjects rather than in front of its own
+// declaration.
+func dispatched(tb assert.TB, p plugin.Plugin, pkgs ...*node.Package) {
+	tb.Helper()
+
+	facts := meta.NewFacts(meta.NewRegistry())
+	ix, err := plugin.NewIndex(coretest.Frozen(tb, pkgs...), facts, nil, nil)
+	assert.NoError(tb, err, "the routing surface builds")
+	gen, generates := p.(plugin.Generator)
+	assert.True(tb, generates, "an emitter handler makes a generator")
+	assert.NoError(tb, gen.Generate(&plugin.GeneratorContext{
+		Index: ix, Facts: facts, Emit: plugin.NewEmit(),
+		Sink: diag.NewSink(), Plugin: subjectPlugin, Bucket: 1,
+	}), "the phase call passes")
 }
 
 // matchCases returns one case for every subject kind's constructor,

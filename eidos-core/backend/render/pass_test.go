@@ -617,17 +617,6 @@ func TestPass(t *testing.T) {
 	})
 }
 
-// unspelt returns a unit whose second declaration has no template in
-// the fixture language, so a render reports one finding.
-func unspelt() plugin.Unit {
-	u := unitOf(emitter, storeKey, alphaName)
-	u.Decls = append(u.Decls, &emit.Method{
-		Origin: coretest.Method(coretest.StorePath, coretest.StructName, handleName).ID,
-		Name:   handleName,
-	})
-	return u
-}
-
 // The benchmarks' scale: per-package files of per-file declarations.
 const (
 	benchPackages = 1_000
@@ -677,54 +666,6 @@ const (
 	// template and the body it places.
 	renderReferencesAllocs = 3_213_480 + 8*16
 )
-
-// benchStore returns an emit store of [benchPackages] per-package
-// units, each of [benchDecls] declarations that decl builds from a
-// package path and a name.
-func benchStore(b *testing.B, decl func(path, name string) symbol.Symbol, prefix string) *plugin.Emit {
-	b.Helper()
-
-	e := plugin.NewEmit()
-	for i := range benchPackages {
-		path := benchPkgPrefix + strconv.Itoa(i)
-		u := unitOf(emitter, path+"/"+storeKey)
-		u.Pkg = coretest.Struct(path, anchorName).ID
-		for d := range benchDecls {
-			u.Decls = append(u.Decls, decl(path, prefix+strconv.Itoa(d)))
-		}
-		if err := e.Add(u); err != nil {
-			b.Fatalf("Add: unexpected error: %v", err)
-		}
-	}
-	return e
-}
-
-// structDecl builds one benchmark struct.
-func structDecl(path, name string) symbol.Symbol {
-	return &emit.Struct{Origin: coretest.Struct(path, name).ID, Name: name}
-}
-
-// benchRender renders e through p once per iteration under the
-// allocation ceiling, with trees as the emitting plugin's trees.
-func benchRender(b *testing.B, p *render.Pass, e *plugin.Emit, trees map[plugin.ID]fs.FS, ceiling uint64) {
-	b.Helper()
-
-	routed := backendtest.Files(e, p)
-	c := bench.Start(b).MaxAllocs(ceiling)
-	defer c.End()
-	for c.Loop() {
-		sink := diag.NewSink()
-		files, err := p.Render(&plugin.RenderContext{
-			Emit: e, Files: routed, Trees: trees, Sink: sink, Plugin: passName,
-		})
-		if err != nil {
-			b.Fatalf("Render: unexpected error: %v", err)
-		}
-		if len(files) != benchPackages || sink.Failed() {
-			b.Fatal("every file renders clean")
-		}
-	}
-}
 
 // The pass's methods allocate within their ceilings in the ordinary
 // run, which runs no benchmark: a composition, a refusal map's copy, a
@@ -875,6 +816,65 @@ func BenchmarkPass(b *testing.B) {
 		}, benchFunc)
 		benchRender(b, composedPass(b), e, refTree("\tref()\n"+action(render.BuiltinSlots)), renderReferencesAllocs)
 	})
+}
+
+// unspelt returns a unit whose second declaration has no template in
+// the fixture language, so a render reports one finding.
+func unspelt() plugin.Unit {
+	u := unitOf(emitter, storeKey, alphaName)
+	u.Decls = append(u.Decls, &emit.Method{
+		Origin: coretest.Method(coretest.StorePath, coretest.StructName, handleName).ID,
+		Name:   handleName,
+	})
+	return u
+}
+
+// benchStore returns an emit store of [benchPackages] per-package
+// units, each of [benchDecls] declarations that decl builds from a
+// package path and a name.
+func benchStore(b *testing.B, decl func(path, name string) symbol.Symbol, prefix string) *plugin.Emit {
+	b.Helper()
+
+	e := plugin.NewEmit()
+	for i := range benchPackages {
+		path := benchPkgPrefix + strconv.Itoa(i)
+		u := unitOf(emitter, path+"/"+storeKey)
+		u.Pkg = coretest.Struct(path, anchorName).ID
+		for d := range benchDecls {
+			u.Decls = append(u.Decls, decl(path, prefix+strconv.Itoa(d)))
+		}
+		if err := e.Add(u); err != nil {
+			b.Fatalf("Add: unexpected error: %v", err)
+		}
+	}
+	return e
+}
+
+// structDecl builds one benchmark struct.
+func structDecl(path, name string) symbol.Symbol {
+	return &emit.Struct{Origin: coretest.Struct(path, name).ID, Name: name}
+}
+
+// benchRender renders e through p once per iteration under the
+// allocation ceiling, with trees as the emitting plugin's trees.
+func benchRender(b *testing.B, p *render.Pass, e *plugin.Emit, trees map[plugin.ID]fs.FS, ceiling uint64) {
+	b.Helper()
+
+	routed := backendtest.Files(e, p)
+	c := bench.Start(b).MaxAllocs(ceiling)
+	defer c.End()
+	for c.Loop() {
+		sink := diag.NewSink()
+		files, err := p.Render(&plugin.RenderContext{
+			Emit: e, Files: routed, Trees: trees, Sink: sink, Plugin: passName,
+		})
+		if err != nil {
+			b.Fatalf("Render: unexpected error: %v", err)
+		}
+		if len(files) != benchPackages || sink.Failed() {
+			b.Fatal("every file renders clean")
+		}
+	}
 }
 
 // composedPass returns the pass over the fixture language.

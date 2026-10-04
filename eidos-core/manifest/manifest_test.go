@@ -30,31 +30,6 @@ const (
 // generated files.
 const benchFiles = 10_000
 
-// hash returns a well-formed digest of one repeated byte pair.
-func hash(pair string) string { return "sha256:" + strings.Repeat(pair, 32) }
-
-// entry returns a well-formed entry for one path.
-func entry(path string) manifest.Entry {
-	return manifest.Entry{
-		Path: path, Plan: planName, Hash: hash("ab"),
-		Plugins: []plugin.ID{audit, stubgen}, Sources: []string{storeSource},
-	}
-}
-
-// record returns a well-formed manifest of the given entries.
-func record(files ...manifest.Entry) manifest.Manifest {
-	return manifest.Manifest{Version: manifest.Version, Workspace: workspaceName, Files: files}
-}
-
-// scaled returns a manifest of benchFiles entries, sorted by path.
-func scaled() manifest.Manifest {
-	m := record()
-	for i := range benchFiles {
-		m.Files = append(m.Files, entry(fmt.Sprintf("p%04d/f%d_stub.go", i/10, i%10)))
-	}
-	return m
-}
-
 // Two records are equal when they record one version, one workspace and
 // the same files, a nil list and an empty one alike.
 func TestManifest(t *testing.T) {
@@ -138,4 +113,29 @@ func BenchmarkManifest(b *testing.B) {
 			b.Fatal("Equal reports two equal records apart")
 		}
 	})
+}
+
+// hash returns a well-formed digest of one repeated byte pair.
+func hash(pair string) string { return "sha256:" + strings.Repeat(pair, 32) }
+
+// entry returns a well-formed entry for one path.
+func entry(path string) manifest.Entry {
+	return manifest.Entry{
+		Path: path, Plan: planName, Hash: hash("ab"),
+		Plugins: []plugin.ID{audit, stubgen}, Sources: []string{storeSource},
+	}
+}
+
+// record returns a well-formed manifest of the given entries.
+func record(files ...manifest.Entry) manifest.Manifest {
+	return manifest.Manifest{Version: manifest.Version, Workspace: workspaceName, Files: files}
+}
+
+// scaled returns a manifest of benchFiles entries, sorted by path.
+func scaled() manifest.Manifest {
+	m := record()
+	for i := range benchFiles {
+		m.Files = append(m.Files, entry(fmt.Sprintf("p%04d/f%d_stub.go", i/10, i%10)))
+	}
+	return m
 }

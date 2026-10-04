@@ -30,33 +30,6 @@ const (
 	rowSource = "package svc/store\nimport api svc/api\ntype Row api.User int string\nmethod Put int\nconst rowmax\n"
 )
 
-// scriptedTree returns the tree.
-func scriptedTree() fstest.MapFS {
-	return fstest.MapFS{
-		apiFile:   {Data: []byte(apiSource)},
-		storeFile: {Data: []byte(rowSource)},
-	}
-}
-
-// setup loads the tree and binds the scripted rules over it with
-// the kernel's keys registered, fresh per call.
-func setup(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
-	tb.Helper()
-
-	sink := diag.NewSink()
-	g, _, err := load.Load(context.Background(), load.Config{
-		FS:        scriptedTree(),
-		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
-		Sink:      sink,
-		Brand:     frontendtest.Brand,
-	})
-	assert.NoError(tb, err, "the scripted tree loads")
-	registry := meta.NewRegistry()
-	keys, err := meta.Kernel(registry)
-	assert.NoError(tb, err, "the kernel keys register")
-	return rulestest.Scripted(), &rulestest.Fixture{Graph: g, Facts: meta.NewFacts(registry), Keys: keys}
-}
-
 // The loaded fixture is the suite's entry for a satellite: a tree
 // through its frontend, the kernel's keys and the load's stamps.
 func TestLoaded(t *testing.T) {
@@ -102,4 +75,31 @@ func TestLoaded(t *testing.T) {
 			assert.Equal(t, attached, 1, "the carrier attaches")
 		})
 	})
+}
+
+// scriptedTree returns the tree.
+func scriptedTree() fstest.MapFS {
+	return fstest.MapFS{
+		apiFile:   {Data: []byte(apiSource)},
+		storeFile: {Data: []byte(rowSource)},
+	}
+}
+
+// setup loads the tree and binds the scripted rules over it with
+// the kernel's keys registered, fresh per call.
+func setup(tb assert.TB) (rules.SourceRules, *rulestest.Fixture) {
+	tb.Helper()
+
+	sink := diag.NewSink()
+	g, _, err := load.Load(context.Background(), load.Config{
+		FS:        scriptedTree(),
+		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
+		Sink:      sink,
+		Brand:     frontendtest.Brand,
+	})
+	assert.NoError(tb, err, "the scripted tree loads")
+	registry := meta.NewRegistry()
+	keys, err := meta.Kernel(registry)
+	assert.NoError(tb, err, "the kernel keys register")
+	return rulestest.Scripted(), &rulestest.Fixture{Graph: g, Facts: meta.NewFacts(registry), Keys: keys}
 }

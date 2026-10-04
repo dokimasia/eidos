@@ -51,52 +51,6 @@ func (c stampCase) check(tb assert.TB, ctx *plugin.AnnotatorContext) {
 	}
 }
 
-// annContext returns an annotator context over one routing surface.
-func annContext(tb assert.TB, facts *meta.Facts, ix *plugin.Index) *plugin.AnnotatorContext {
-	tb.Helper()
-
-	return &plugin.AnnotatorContext{
-		Index:  ix,
-		Facts:  facts,
-		Sink:   diag.NewSink(),
-		Plugin: "classify",
-		Bucket: 1,
-	}
-}
-
-// annotatorOf builds and asserts the annotator role of a plugin.
-func annotatorOf(tb assert.TB, p plugin.Plugin) plugin.Annotator {
-	tb.Helper()
-
-	ann, ok := p.(plugin.Annotator)
-	assert.True(tb, ok, "stamper rules make the value an annotator")
-	return ann
-}
-
-// refusingRun annotates the fixture graph with a plugin whose every
-// invocation stamps a false boolean, and returns the context, the
-// visit count, the first subject's position and the phase's error.
-func refusingRun(tb assert.TB) (*plugin.AnnotatorContext, int, position.Pos, error) {
-	tb.Helper()
-
-	g, alpha, _ := fixtureGraph(tb)
-	key, facts := boolKey(tb)
-	ix, err := plugin.NewIndex(g, facts, nil, nil)
-	assert.NoError(tb, err, "the routing surface builds")
-
-	var visited int
-	p := eidos.NewPlugin("classify").
-		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
-			visited++
-			eidos.Stamp(st, key, false)
-			return nil
-		})).
-		Build()
-	ctx := annContext(tb, facts, ix)
-	err = annotatorOf(tb, p).Annotate(ctx)
-	return ctx, visited, alpha.Pos, err
-}
-
 // The stamper binds the claim envelope once, for every plugin: the
 // rank fields, the canonical sequence and the derivation are what
 // arbitration and attribution read, so each is contract.
@@ -398,6 +352,52 @@ func BenchmarkStamper(b *testing.B) {
 			tt.check(b, ctx)
 		})
 	}
+}
+
+// annContext returns an annotator context over one routing surface.
+func annContext(tb assert.TB, facts *meta.Facts, ix *plugin.Index) *plugin.AnnotatorContext {
+	tb.Helper()
+
+	return &plugin.AnnotatorContext{
+		Index:  ix,
+		Facts:  facts,
+		Sink:   diag.NewSink(),
+		Plugin: "classify",
+		Bucket: 1,
+	}
+}
+
+// annotatorOf builds and asserts the annotator role of a plugin.
+func annotatorOf(tb assert.TB, p plugin.Plugin) plugin.Annotator {
+	tb.Helper()
+
+	ann, ok := p.(plugin.Annotator)
+	assert.True(tb, ok, "stamper rules make the value an annotator")
+	return ann
+}
+
+// refusingRun annotates the fixture graph with a plugin whose every
+// invocation stamps a false boolean, and returns the context, the
+// visit count, the first subject's position and the phase's error.
+func refusingRun(tb assert.TB) (*plugin.AnnotatorContext, int, position.Pos, error) {
+	tb.Helper()
+
+	g, alpha, _ := fixtureGraph(tb)
+	key, facts := boolKey(tb)
+	ix, err := plugin.NewIndex(g, facts, nil, nil)
+	assert.NoError(tb, err, "the routing surface builds")
+
+	var visited int
+	p := eidos.NewPlugin("classify").
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+			visited++
+			eidos.Stamp(st, key, false)
+			return nil
+		})).
+		Build()
+	ctx := annContext(tb, facts, ix)
+	err = annotatorOf(tb, p).Annotate(ctx)
+	return ctx, visited, alpha.Pos, err
 }
 
 // stampCases returns an annotate phase call over the invocation fixture

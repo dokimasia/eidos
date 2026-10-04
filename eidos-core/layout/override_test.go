@@ -26,19 +26,6 @@ var (
 	keyKTag = string(directive.OutTag)
 )
 
-// storeStub returns stubgen's primary unit of store.go with one stub
-// of Store.
-func storeStub() plugin.Unit {
-	return stubOf(storeFile, storePkg, generated(storeID, "StoreStub"))
-}
-
-// storeStubTest returns stubgen's test unit of store.go with one test
-// stub of Store.
-func storeStubTest() plugin.Unit {
-	return unitOf(stubgen, families()[stubgen][1], storeFile, coretest.PackageID(storePkg),
-		generated(storeID, "StoreStubTest"))
-}
-
 // An author routes one declaration's output with the reserved keys on
 // a plugin's own directive, or with the kernel out directive for every
 // plugin's output.
@@ -400,4 +387,17 @@ func TestOverride(t *testing.T) {
 				"the unit's key decides")
 		})
 	})
+}
+
+// storeStub returns stubgen's primary unit of store.go with one stub
+// of Store.
+func storeStub() plugin.Unit {
+	return stubOf(storeFile, storePkg, generated(storeID, "StoreStub"))
+}
+
+// storeStubTest returns stubgen's test unit of store.go with one test
+// stub of Store.
+func storeStubTest() plugin.Unit {
+	return unitOf(stubgen, families()[stubgen][1], storeFile, coretest.PackageID(storePkg),
+		generated(storeID, "StoreStubTest"))
 }

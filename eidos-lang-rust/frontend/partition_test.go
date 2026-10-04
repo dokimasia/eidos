@@ -24,53 +24,6 @@ const (
 	nestedRoot     = "sub/src/lib.rs"
 )
 
-// partitioned partitions a tree's Rust files through the frontend and
-// returns its units.
-func partitioned(tb assert.TB, tree fstest.MapFS) [][]plugin.SourceRef {
-	tb.Helper()
-
-	var claimed []plugin.SourceRef
-	for p := range tree {
-		if strings.HasSuffix(p, rust.Extension) {
-			claimed = append(claimed, plugin.SourceRef{Path: p})
-		}
-	}
-	slices.SortFunc(claimed, func(a, b plugin.SourceRef) int { return strings.Compare(a.Path, b.Path) })
-	units, err := frontend.New(nil).Partition(context.Background(), claimed, treeReader{tree})
-	assert.NoError(tb, err, "the tree partitions")
-	return units
-}
-
-// unitsOf returns each unit's members of a tree's partition, in
-// partition order.
-func unitsOf(tb assert.TB, tree fstest.MapFS) [][]string {
-	tb.Helper()
-
-	var out [][]string
-	for _, unit := range partitioned(tb, tree) {
-		var members []string
-		for _, ref := range unit {
-			members = append(members, ref.Path)
-		}
-		out = append(out, members)
-	}
-	return out
-}
-
-// sharedOf returns every member's shared inputs of a tree's partition,
-// member by member in partition order.
-func sharedOf(tb assert.TB, tree fstest.MapFS) [][]string {
-	tb.Helper()
-
-	var out [][]string
-	for _, unit := range partitioned(tb, tree) {
-		for _, ref := range unit {
-			out = append(out, ref.Shared)
-		}
-	}
-	return out
-}
-
 // The partition groups a workspace's Rust files into crate targets, so
 // which files share a unit, and in what order, is pinned.
 func TestPartition(t *testing.T) {
@@ -143,4 +96,51 @@ func TestPartition(t *testing.T) {
 				"the build script, the library and the binary in root order")
 		})
 	})
+}
+
+// partitioned partitions a tree's Rust files through the frontend and
+// returns its units.
+func partitioned(tb assert.TB, tree fstest.MapFS) [][]plugin.SourceRef {
+	tb.Helper()
+
+	var claimed []plugin.SourceRef
+	for p := range tree {
+		if strings.HasSuffix(p, rust.Extension) {
+			claimed = append(claimed, plugin.SourceRef{Path: p})
+		}
+	}
+	slices.SortFunc(claimed, func(a, b plugin.SourceRef) int { return strings.Compare(a.Path, b.Path) })
+	units, err := frontend.New(nil).Partition(context.Background(), claimed, treeReader{tree})
+	assert.NoError(tb, err, "the tree partitions")
+	return units
+}
+
+// unitsOf returns each unit's members of a tree's partition, in
+// partition order.
+func unitsOf(tb assert.TB, tree fstest.MapFS) [][]string {
+	tb.Helper()
+
+	var out [][]string
+	for _, unit := range partitioned(tb, tree) {
+		var members []string
+		for _, ref := range unit {
+			members = append(members, ref.Path)
+		}
+		out = append(out, members)
+	}
+	return out
+}
+
+// sharedOf returns every member's shared inputs of a tree's partition,
+// member by member in partition order.
+func sharedOf(tb assert.TB, tree fstest.MapFS) [][]string {
+	tb.Helper()
+
+	var out [][]string
+	for _, unit := range partitioned(tb, tree) {
+		for _, ref := range unit {
+			out = append(out, ref.Shared)
+		}
+	}
+	return out
 }

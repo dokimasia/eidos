@@ -24,48 +24,6 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// fullRegion returns a region with a value in every part: two packages,
-// a directive with a nested argument on two subjects, a stamp of every
-// value type of the fact vocabulary, a link with tiers, a follow and a
-// finding, and a finding of the region's own.
-func fullRegion() *store.Region {
-	s := coretest.Struct(coretest.StorePath, "Store")
-	at := position.Pos{File: "svc/store/unit.go", Line: 3, Col: 1}
-	finding := diag.Diag{
-		Code: diag.Code{Prefix: diag.KernelPrefix, Number: 38}, Severity: diag.SeverityWarning,
-		Pos: at, Msg: "ambiguous", Origin: "fakefront", Related: []position.Pos{at},
-	}
-	return &store.Region{
-		Packages: []*node.Package{coretest.Package(coretest.StorePath, s), coretest.EveryKind(coretest.CachePath)},
-		Directives: map[symbol.Identity][]directive.Raw{
-			s.ID: {{
-				Name: "gen:table", Pos: at, Negated: true, DirectiveShaped: true,
-				Args: []directive.RawArg{{
-					Key: "name", Col: 9,
-					Value: directive.RawValue{Text: "users", Quoted: true, List: []directive.RawValue{{Text: "x"}}},
-				}},
-			}},
-			coretest.PackageID(coretest.StorePath): {{Name: "gen:skip", Pos: at}},
-		},
-		Stamps: map[symbol.Identity][]meta.RawStamp{
-			s.ID: {
-				{Key: "fake.text", Value: "yes", Pos: at, Origin: "fakefront"},
-				{Key: "fake.count", Value: int64(-4), Pos: at, Origin: "fakefront"},
-				{Key: "fake.flag", Value: true, Pos: at, Origin: "fakefront"},
-				{Key: "fake.list", Value: []string{"a", "b"}, Pos: at, Origin: "fakefront"},
-				{Key: "fake.target", Value: s.ID, Pos: at, Origin: "fakefront"},
-			},
-		},
-		Links: []store.Link{{
-			Ref:      2,
-			Tiers:    [][]symbol.Identity{{s.ID}, {coretest.PackageID(coretest.CachePath)}},
-			Followed: []symbol.Identity{s.ID},
-			Findings: []diag.Diag{finding},
-		}},
-		Findings: []diag.Diag{finding},
-	}
-}
-
 // A region crosses runs and workspaces as bytes, so its encoding
 // returns every part whole and refuses every damaged blob.
 func TestRegion(t *testing.T) {
@@ -230,6 +188,48 @@ func BenchmarkRegion(b *testing.B) {
 		assert.NoError(b, err, "every decode succeeds")
 		assert.Length(b, got.Packages, 1, "to the one package")
 	})
+}
+
+// fullRegion returns a region with a value in every part: two packages,
+// a directive with a nested argument on two subjects, a stamp of every
+// value type of the fact vocabulary, a link with tiers, a follow and a
+// finding, and a finding of the region's own.
+func fullRegion() *store.Region {
+	s := coretest.Struct(coretest.StorePath, "Store")
+	at := position.Pos{File: "svc/store/unit.go", Line: 3, Col: 1}
+	finding := diag.Diag{
+		Code: diag.Code{Prefix: diag.KernelPrefix, Number: 38}, Severity: diag.SeverityWarning,
+		Pos: at, Msg: "ambiguous", Origin: "fakefront", Related: []position.Pos{at},
+	}
+	return &store.Region{
+		Packages: []*node.Package{coretest.Package(coretest.StorePath, s), coretest.EveryKind(coretest.CachePath)},
+		Directives: map[symbol.Identity][]directive.Raw{
+			s.ID: {{
+				Name: "gen:table", Pos: at, Negated: true, DirectiveShaped: true,
+				Args: []directive.RawArg{{
+					Key: "name", Col: 9,
+					Value: directive.RawValue{Text: "users", Quoted: true, List: []directive.RawValue{{Text: "x"}}},
+				}},
+			}},
+			coretest.PackageID(coretest.StorePath): {{Name: "gen:skip", Pos: at}},
+		},
+		Stamps: map[symbol.Identity][]meta.RawStamp{
+			s.ID: {
+				{Key: "fake.text", Value: "yes", Pos: at, Origin: "fakefront"},
+				{Key: "fake.count", Value: int64(-4), Pos: at, Origin: "fakefront"},
+				{Key: "fake.flag", Value: true, Pos: at, Origin: "fakefront"},
+				{Key: "fake.list", Value: []string{"a", "b"}, Pos: at, Origin: "fakefront"},
+				{Key: "fake.target", Value: s.ID, Pos: at, Origin: "fakefront"},
+			},
+		},
+		Links: []store.Link{{
+			Ref:      2,
+			Tiers:    [][]symbol.Identity{{s.ID}, {coretest.PackageID(coretest.CachePath)}},
+			Followed: []symbol.Identity{s.ID},
+			Findings: []diag.Diag{finding},
+		}},
+		Findings: []diag.Diag{finding},
+	}
 }
 
 // canonicalDecodeAllocs is the ceiling of one decode of a region of one

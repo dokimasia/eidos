@@ -52,12 +52,6 @@ const (
 	verbatim = "\treturn nil\n"
 )
 
-// stmt is the fixture scaffold's spelling of call(name).
-func stmt(name string) string { return "\t" + name + "()\n" }
-
-// slot spells the slot marker for one named slot.
-func slot(name string) string { return action(render.BuiltinSlot, strconv.Quote(name)) }
-
 // A declaration renders with its whole body or not at all, so the
 // fixed composition order, reference resolution in the emitter's
 // tree and the marker placement of pending slots are contract.
@@ -516,3 +510,9 @@ func TestBody(t *testing.T) {
 		})
 	})
 }
+
+// stmt is the fixture scaffold's spelling of call(name).
+func stmt(name string) string { return "\t" + name + "()\n" }
+
+// slot spells the slot marker for one named slot.
+func slot(name string) string { return action(render.BuiltinSlot, strconv.Quote(name)) }

@@ -22,24 +22,6 @@ const (
 	dotImport       = "d.test/dot"
 )
 
-// importPaths returns the paths of a file's import records, in source
-// order.
-func importPaths(file *node.File) []string {
-	out := make([]string, 0, len(file.Imports))
-	for _, imp := range file.Imports {
-		out = append(out, imp.Path)
-	}
-	return out
-}
-
-// importsAt parses one file at a depth and returns its import paths.
-func importsAt(tb assert.TB, depth plugin.Depth, src string) []string {
-	tb.Helper()
-
-	gb, _ := parsedFindings(tb, nil, depth, src)
-	return importPaths(onlyFile(tb, gb))
-}
-
 // Signature-only loading follows what exported signatures reference,
 // so which imports a signature-only file keeps is pinned.
 func TestPrune(t *testing.T) {
@@ -100,4 +82,22 @@ func TestPrune(t *testing.T) {
 			assert.Empty(t, importsAt(t, plugin.DepthSignatures, src), "an excluded file declares nothing")
 		})
 	})
+}
+
+// importPaths returns the paths of a file's import records, in source
+// order.
+func importPaths(file *node.File) []string {
+	out := make([]string, 0, len(file.Imports))
+	for _, imp := range file.Imports {
+		out = append(out, imp.Path)
+	}
+	return out
+}
+
+// importsAt parses one file at a depth and returns its import paths.
+func importsAt(tb assert.TB, depth plugin.Depth, src string) []string {
+	tb.Helper()
+
+	gb, _ := parsedFindings(tb, nil, depth, src)
+	return importPaths(onlyFile(tb, gb))
 }

@@ -55,6 +55,23 @@ const (
 // emits no statement.
 var errNoStatements = errors.New("workspacetest_test: the fixture spells no statements")
 
+// The suite is the conformance bar for a workspace of several plans, so
+// two plans that generate, export, check and sweep the way the frame
+// promises pass every check.
+func TestSuite(t *testing.T) {
+	t.Parallel()
+
+	t.Run("RunWorkspaceSuite", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes two plans of which the second depends on the first", func(t *testing.T) {
+			t.Parallel()
+
+			workspacetest.RunWorkspaceSuite(t, fixture(t))
+		})
+	})
+}
+
 // naming returns a generator named id that emits, per struct in scope,
 // one struct into the per-package file of the word, under the name that
 // name spells from the subject. A nil name emits nothing.
@@ -167,21 +184,4 @@ func fixture(t *testing.T) workspacetest.Fixture {
 			stubFile: stamped(t, stubFile, stubBody, stubberID),
 		},
 	}
-}
-
-// The suite is the conformance bar for a workspace of several plans, so
-// two plans that generate, export, check and sweep the way the frame
-// promises pass every check.
-func TestSuite(t *testing.T) {
-	t.Parallel()
-
-	t.Run("RunWorkspaceSuite", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("passes two plans of which the second depends on the first", func(t *testing.T) {
-			t.Parallel()
-
-			workspacetest.RunWorkspaceSuite(t, fixture(t))
-		})
-	})
 }

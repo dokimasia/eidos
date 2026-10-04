@@ -29,18 +29,6 @@ const (
 	modulePathAllocs = 8
 )
 
-// goMod writes one go.mod into a fresh module root and returns the
-// root, so a case can read a directive the committed fixture does
-// not hold.
-func goMod(t *testing.T, body string) string {
-	t.Helper()
-
-	root := t.TempDir()
-	assert.NoError(t, os.WriteFile(filepath.Join(root, goModName), []byte(body), 0o600),
-		"the go.mod writes")
-	return root
-}
-
 // A module is found by its go.mod and named by its module directive, so
 // the search and the read are pinned.
 func TestModule(t *testing.T) {
@@ -169,4 +157,16 @@ func BenchmarkModule(b *testing.B) {
 		assert.NoError(b, err, "the go.mod reads")
 		assert.Equal(b, got, "example.test/fixture", "ModulePath returns the module directive")
 	})
+}
+
+// goMod writes one go.mod into a fresh module root and returns the
+// root, so a case can read a directive the committed fixture does
+// not hold.
+func goMod(t *testing.T, body string) string {
+	t.Helper()
+
+	root := t.TempDir()
+	assert.NoError(t, os.WriteFile(filepath.Join(root, goModName), []byte(body), 0o600),
+		"the go.mod writes")
+	return root
 }

@@ -19,18 +19,6 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// recordingView mints a view over the scripted tree with a fresh
-// read set, and returns the set so a case can check the reads.
-func recordingView(tb assert.TB) (rules.View, *store.ReadSet) {
-	tb.Helper()
-
-	_, f := setup(tb)
-	reads := store.NewReadSet()
-	reader, err := f.Graph.Reader(reads, nil)
-	assert.NoError(tb, err, "the graph hands out a reader")
-	return rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys}, reads
-}
-
 // The scripted language's rules are the kernel's own proving
 // ground, so each decision it returns is pinned.
 func TestScripted(t *testing.T) {
@@ -168,4 +156,16 @@ func TestScripted(t *testing.T) {
 			assert.True(t, s.Substitute(same, params, nil) == same, "a list mismatch rewrites nothing")
 		})
 	})
+}
+
+// recordingView mints a view over the scripted tree with a fresh
+// read set, and returns the set so a case can check the reads.
+func recordingView(tb assert.TB) (rules.View, *store.ReadSet) {
+	tb.Helper()
+
+	_, f := setup(tb)
+	reads := store.NewReadSet()
+	reader, err := f.Graph.Reader(reads, nil)
+	assert.NoError(tb, err, "the graph hands out a reader")
+	return rules.View{Decls: reader, Facts: f.Facts, Reads: reads, Kernel: f.Keys}, reads
 }

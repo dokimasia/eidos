@@ -72,51 +72,9 @@ func (r refusing) Write(ctx context.Context, name string, b []byte) error {
 	return r.Mem.Write(ctx, name, b)
 }
 
-// header returns a header anchored at an instant, with the composition
-// the cases share.
-func header(anchor time.Time) state.Header {
-	return state.Header{Composition: sha256.Sum256([]byte("composition")), Anchor: anchor}
-}
-
 // past is an anchor before every blob a memory ledger writes, whose
 // clock counts from the epoch: nothing is old enough to collect.
 var past = time.Unix(0, 0)
-
-// committed writes one commit of puts to the checks table, over a parent
-// opened from the ledger where the ledger has one, and returns the live
-// generation.
-func committed(tb testing.TB, l ledger.Ledger, anchor time.Time, puts ...string) *state.Generation {
-	tb.Helper()
-
-	parent, err := state.Open(tb.Context(), l)
-	if err != nil {
-		parent = nil
-	}
-	c := state.NewCommit(parent, nil)
-	for _, key := range puts {
-		c.Put(state.TableChecks, []byte(key), []byte("row of "+key))
-	}
-	_, err = c.Write(tb.Context(), l, header(anchor), manifest.Manifest{Version: manifest.Version})
-	assert.NoError(tb, err, "the commit writes")
-	g, err := state.Open(tb.Context(), l)
-	assert.NoError(tb, err, "and its generation opens")
-	return g
-}
-
-// blobsUnder returns the names of the ledger's blobs under a prefix.
-func blobsUnder(t *testing.T, l ledger.Ledger, prefix string) []string {
-	t.Helper()
-
-	blobs, err := l.List(t.Context(), "state")
-	assert.NoError(t, err, "the state lists")
-	var out []string
-	for _, b := range blobs {
-		if strings.HasPrefix(b.Name, prefix) {
-			out = append(out, b.Name)
-		}
-	}
-	return out
-}
 
 // A commit is the one write path of the sealed state, so what it makes
 // live, what it leaves, and what it removes are each pinned.
@@ -585,6 +543,48 @@ func BenchmarkCommit(b *testing.B) {
 		assert.NoError(b, err, "the commit writes")
 		assert.NotEqual(b, result.Generation, "", "and makes a generation live")
 	})
+}
+
+// header returns a header anchored at an instant, with the composition
+// the cases share.
+func header(anchor time.Time) state.Header {
+	return state.Header{Composition: sha256.Sum256([]byte("composition")), Anchor: anchor}
+}
+
+// committed writes one commit of puts to the checks table, over a parent
+// opened from the ledger where the ledger has one, and returns the live
+// generation.
+func committed(tb testing.TB, l ledger.Ledger, anchor time.Time, puts ...string) *state.Generation {
+	tb.Helper()
+
+	parent, err := state.Open(tb.Context(), l)
+	if err != nil {
+		parent = nil
+	}
+	c := state.NewCommit(parent, nil)
+	for _, key := range puts {
+		c.Put(state.TableChecks, []byte(key), []byte("row of "+key))
+	}
+	_, err = c.Write(tb.Context(), l, header(anchor), manifest.Manifest{Version: manifest.Version})
+	assert.NoError(tb, err, "the commit writes")
+	g, err := state.Open(tb.Context(), l)
+	assert.NoError(tb, err, "and its generation opens")
+	return g
+}
+
+// blobsUnder returns the names of the ledger's blobs under a prefix.
+func blobsUnder(t *testing.T, l ledger.Ledger, prefix string) []string {
+	t.Helper()
+
+	blobs, err := l.List(t.Context(), "state")
+	assert.NoError(t, err, "the state lists")
+	var out []string
+	for _, b := range blobs {
+		if strings.HasPrefix(b.Name, prefix) {
+			out = append(out, b.Name)
+		}
+	}
+	return out
 }
 
 // parentWithRegion returns a live generation whose one region segment

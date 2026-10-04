@@ -39,15 +39,6 @@ var invalidNames = []struct {
 	{name: "returns ErrInvalid for a name with a backslash", give: `a\b`},
 }
 
-// cancelled returns a context that is already cancelled.
-func cancelled(t *testing.T) context.Context {
-	t.Helper()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-	return ctx
-}
-
 // The state directory belongs to the brand, so two tools built on the
 // kernel never read each other's records.
 func TestLedger(t *testing.T) {
@@ -105,4 +96,13 @@ func BenchmarkLedger(b *testing.B) {
 		}
 		assert.Equal(b, got, ".acme/manifest", "the manifest's directory")
 	})
+}
+
+// cancelled returns a context that is already cancelled.
+func cancelled(t *testing.T) context.Context {
+	t.Helper()
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	return ctx
 }

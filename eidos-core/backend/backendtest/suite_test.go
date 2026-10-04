@@ -109,158 +109,6 @@ const (
 	variantComment = "round"
 )
 
-// call returns the one-line scaffold statement naming n.
-func call(n string) emit.Stmt {
-	return emit.Stmt{Kind: emit.StmtExpr, Value: emit.Expr{Kind: emit.ExprName, Name: n}}
-}
-
-// unit returns one flushed plan unit under the emitting fixture
-// plugin, its word doubling as the family tag the way distinct
-// declared outputs arrive as distinct accumulators.
-func unit(word string, decls ...symbol.Symbol) plugin.Unit {
-	return plugin.Unit{
-		Plugin: fixtureEmitter, Tag: word, Per: plugin.PerPlan, Word: word, Decls: decls,
-	}
-}
-
-// fnOf returns a function declaration with the given body.
-func fnOf(name string, body emit.Body) *emit.Function {
-	f := &emit.Function{
-		Origin: coretest.Struct(coretest.StorePath, name).ID,
-		Name:   name,
-	}
-	f.Body = body
-	return f
-}
-
-// wordNaming spells every unit as its word under the fixture
-// extension.
-func wordNaming(u plugin.Unit) string { return u.Word + fileExt }
-
-// passThrough is the fixture formatter, which returns its input.
-func passThrough(src []byte) ([]byte, error) { return src, nil }
-
-// wellBackend builds the fixture backend through the kit: two
-// kinds, a scaffold for names and returns, and a pass-through
-// formatter.
-func wellBackend(tb assert.TB) plugin.Renderer {
-	tb.Helper()
-
-	r, held := wellBuilder(tb).
-		Coverage(total(nil)).
-		Build().(plugin.Renderer)
-	assert.True(tb, held, "the kit backend renders")
-	return r
-}
-
-// wellBuilder accumulates the fixture backend's declaration, so a
-// test can widen it before Build.
-func wellBuilder(tb assert.TB) *backend.Builder {
-	tb.Helper()
-
-	return backend.New(printerName, stubTarget,
-		plugin.CommentSyntax{Line: []string{lineComment}}).
-		KindTemplates(map[symbol.Kind]string{
-			symbol.KindStruct:   structTpl,
-			symbol.KindFunction: functionTpl,
-		}).
-		Naming(wordNaming).
-		Scaffold(func(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
-			switch s.Kind {
-			case emit.StmtExpr:
-				set.Add(runtimePkg)
-				return []byte("\t" + s.Value.Name + "()\n"), nil
-			case emit.StmtReturn:
-				return []byte("\treturn\n"), nil
-			default:
-				return nil, errors.New("the fixture spells names and returns only")
-			}
-		}).
-		Imports(func(set *render.ImportSet) string {
-			if set.Len() == 0 {
-				return ""
-			}
-			return "import (" + strings.Join(set.Paths(), " ") + ")\n"
-		}).
-		Finalise(passThrough)
-}
-
-// wellFixture returns the valid fixture: a store with every kind
-// the backend spells and a body in each of the four content forms,
-// with the reference's slot content spliced through a
-// marker-placing tree.
-func wellFixture(tb assert.TB) *backendtest.Fixture {
-	tb.Helper()
-
-	refBody := emit.Body{Ref: &emit.TemplateRef{Name: refTemplate}}
-	refBody.Prologue.Append(call(guardCall))
-	e := plugin.NewEmit()
-	for _, u := range []plugin.Unit{
-		unit(stubWord,
-			&emit.Struct{
-				Origin: coretest.Struct(coretest.StorePath, hostStruct).ID,
-				Name:   hostStruct,
-			},
-			fnOf(noopName, emit.Body{}),
-			fnOf(loadName, emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}),
-		),
-		unit(refWord, fnOf(saveName, refBody)),
-		unit(rawWord, fnOf(dumpName, emit.Body{Verbatim: dumpBody})),
-	} {
-		assert.NoError(tb, e.Add(u), "the fixture unit arrives")
-	}
-	return &backendtest.Fixture{
-		Emit:     e,
-		Schedule: []plugin.ID{fixtureEmitter},
-		Trees: map[plugin.ID]fs.FS{
-			fixtureEmitter: fstest.MapFS{
-				refTemplate: &fstest.MapFile{Data: []byte(refSource)},
-			},
-		},
-	}
-}
-
-// wellRendered returns the valid setup: the kit backend over the
-// valid fixture.
-func wellRendered(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	return wellBackend(tb), wellFixture(tb)
-}
-
-// shapeOf returns the sum host of the member fixture: one variant,
-// and the given comment on the sum and on its variant.
-func shapeOf(comment, variant string) *emit.Sum {
-	shape := &emit.Sum{
-		Origin:  coretest.ID(coretest.StorePath, hostSum, symbol.KindSum),
-		Name:    hostSum,
-		Comment: comment,
-	}
-	shape.Variants.Append(&emit.SumVariant{
-		Origin:  coretest.ID(coretest.StorePath, sumVariant, symbol.KindSumVariant),
-		Name:    sumVariant,
-		Comment: variant,
-	})
-	return shape
-}
-
-// refusingRendered is the valid setup with a sum beside the kinds
-// the backend spells, which the backend declares refused, so the
-// suite meets a declared refusal the way it does over the canonical
-// fixture.
-func refusingRendered(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	r, held := wellBuilder(tb).
-		Coverage(total(nil)).
-		RefusedKinds(map[symbol.Kind]string{symbol.KindSum: kindReason}).
-		Build().(plugin.Renderer)
-	assert.True(tb, held, "the refusing backend renders")
-	f := wellFixture(tb)
-	assert.NoError(tb, f.Emit.Add(unit(sumsWord, shapeOf("", ""))), "the refused unit arrives")
-	return r, f
-}
-
 // fake is a renderer the failing cases script: the suite has to
 // catch every way a renderer can cheat the rules.
 type fake struct {
@@ -283,161 +131,11 @@ type covering struct {
 // Coverage implements [render.Coverer] through the declared value.
 func (c *covering) Coverage() render.Coverage { return c.coverage }
 
-// scripted returns a setup handing the fake over a bare fixture.
-func scripted(r func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error)) backendtest.Setup {
-	return func(assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-		return &fake{render: r}, &backendtest.Fixture{Emit: plugin.NewEmit()}
-	}
-}
-
-// hollowSetup hands a renderer over a fixture without a store,
-// which every check fails before it reads anything. The renderer
-// returns a whole file, so what a check fails on is the missing
-// store and nothing further along.
-func hollowSetup(assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	return &fake{render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
-		return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
-	}}, &backendtest.Fixture{}
-}
-
-// hollowBacked hands a kit backend over a fixture without a store,
-// so a check that takes the backend's seams still has nothing to
-// settle.
-func hollowBacked(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	return wellBackend(tb), &backendtest.Fixture{}
-}
-
-// drifting is a lowering that drops its input's provenance: the
-// defect [plugin.Settle] fails the plan on, and reports as no
-// declaration's finding.
-func drifting(s symbol.Symbol) ([]symbol.Symbol, error) {
-	st, isStruct := s.(*emit.Struct)
-	if !isStruct {
-		return nil, nil
-	}
-	return []symbol.Symbol{&emit.Struct{Name: st.Name}}, nil
-}
-
-// driftingSetup hands the kit backend whose lowering drifts over
-// the valid fixture, so a check meets a settle that fails the plan.
-func driftingSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	r, held := wellBuilder(tb).Lower(drifting).Build().(plugin.Renderer)
-	assert.True(tb, held, "the lowering backend renders")
-	return r, wellFixture(tb)
-}
-
-// refusing is a respell whose target spells no struct name: the
-// settle withholds the declaration under a finding and the plan
-// continues, so a check meets a settle that reports without failing.
-func refusing(
-	_, kind symbol.Kind, _ symbol.Visibility, name string,
-) (string, error) {
-	if kind == symbol.KindStruct {
-		return "", errors.New("the fixture target spells no struct name")
-	}
-	return name, nil
-}
-
-// refusedSetup hands the kit backend whose respell refuses a struct
-// name over the valid fixture, so a check meets a settle that
-// reports and withholds a declaration while the plan continues.
-func refusedSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	r, held := wellBuilder(tb).Respell(refusing).Build().(plugin.Renderer)
-	assert.True(tb, held, "the respelling backend renders")
-	return r, wellFixture(tb)
-}
-
-// lowerFirst spells a name with its leading letter lowered, which
-// is what makes the colliding fixture's two fields meet.
-func lowerFirst(
-	_, _ symbol.Kind, _ symbol.Visibility, name string,
-) (string, error) {
-	if name == "" {
-		return name, nil
-	}
-	return strings.ToLower(name[:1]) + name[1:], nil
-}
-
-// memberFixture returns a store with one host per kind with members,
-// each with the members a rendered file has to contain.
-func memberFixture(tb assert.TB) *backendtest.Fixture {
-	tb.Helper()
-
-	row := &emit.Struct{
-		Origin: coretest.ID(coretest.StorePath, hostStruct, symbol.KindStruct),
-		Name:   hostStruct,
-	}
-	row.Fields.Append(&emit.Field{
-		Origin: coretest.ID(coretest.StorePath, structField, symbol.KindField),
-		Name:   structField,
-	})
-	row.Methods.Append(&emit.Method{
-		Origin: coretest.ID(coretest.StorePath, structMethod, symbol.KindMethod),
-		Name:   structMethod,
-	})
-	store := &emit.Interface{
-		Origin: coretest.ID(coretest.StorePath, hostInterface, symbol.KindInterface),
-		Name:   hostInterface,
-	}
-	store.Fields.Append(&emit.Field{
-		Origin: coretest.ID(coretest.StorePath, ifaceField, symbol.KindField),
-		Name:   ifaceField,
-	})
-	store.Methods.Append(&emit.Method{
-		Origin: coretest.ID(coretest.StorePath, ifaceMethod, symbol.KindMethod),
-		Name:   ifaceMethod,
-	})
-	phase := &emit.Enum{
-		Origin: coretest.ID(coretest.StorePath, hostEnum, symbol.KindEnum),
-		Name:   hostEnum,
-	}
-	phase.Variants.Append(&emit.EnumVariant{
-		Origin: coretest.ID(coretest.StorePath, enumVariant, symbol.KindEnumVariant),
-		Name:   enumVariant,
-	})
-
-	e := plugin.NewEmit()
-	assert.NoError(tb, e.Add(unit(hostsWord, row, store, phase, shapeOf("", ""))),
-		"the memberful unit arrives")
-	return &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{fixtureEmitter}}
-}
-
 // collidingField is the second field name of the colliding fixture.
 // It settles to the first one's spelling under a respell that
 // lowers the leading letter, so the settle reports both names and
 // keeps them as emitted.
 const collidingField = "cell"
-
-// collidingFixture returns a store whose struct has two fields one
-// respell cannot tell apart.
-func collidingFixture(tb assert.TB) *backendtest.Fixture {
-	tb.Helper()
-
-	row := &emit.Struct{
-		Origin: coretest.ID(coretest.StorePath, hostStruct, symbol.KindStruct),
-		Name:   hostStruct,
-	}
-	row.Fields.Append(
-		&emit.Field{
-			Origin: coretest.ID(coretest.StorePath, structField, symbol.KindField),
-			Name:   structField,
-		},
-		&emit.Field{
-			Origin: coretest.ID(coretest.StorePath, collidingField, symbol.KindField),
-			Name:   collidingField,
-		},
-	)
-
-	e := plugin.NewEmit()
-	assert.NoError(tb, e.Add(unit(hostsWord, row)), "the colliding unit arrives")
-	return &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{fixtureEmitter}}
-}
 
 // The member lists a host template ranges. A backend spelling them
 // puts every member name in the bytes; one leaving them out drops
@@ -448,86 +146,6 @@ const (
 	methodLines  = "{{range .Methods.Items}}\t{{.Name}}\n{{end}}"
 	variantLines = "{{range .Variants.Items}}\t{{.Name}}\n{{end}}"
 )
-
-// spellsMembers is the kind spelling that places every member name
-// inside its host.
-func spellsMembers() map[symbol.Kind]string {
-	return map[symbol.Kind]string{
-		symbol.KindStruct:    "type {{.Name}} struct {\n" + fieldLines + methodLines + "}\n",
-		symbol.KindInterface: "type {{.Name}} interface {\n" + fieldLines + methodLines + "}\n",
-		symbol.KindEnum:      "type {{.Name}} enum {\n" + variantLines + "}\n",
-		symbol.KindSum:       "type {{.Name}} sum {\n" + variantLines + "}\n",
-	}
-}
-
-// dropsMembers is the kind spelling that ranges no member list.
-func dropsMembers() map[symbol.Kind]string {
-	return map[symbol.Kind]string{
-		symbol.KindStruct:    "type {{.Name}} struct {}\n",
-		symbol.KindInterface: "type {{.Name}} interface {}\n",
-		symbol.KindEnum:      "type {{.Name}} enum {}\n",
-		symbol.KindSum:       "type {{.Name}} sum {}\n",
-	}
-}
-
-// memberBuilder accumulates a backend over the kinds with members,
-// with the given spellings, so one test renders members and another
-// drops them.
-func memberBuilder(tb assert.TB, kinds map[symbol.Kind]string) *backend.Builder {
-	tb.Helper()
-
-	return backend.New(memberName, stubTarget,
-		plugin.CommentSyntax{Line: []string{lineComment}}).
-		KindTemplates(kinds).
-		Naming(wordNaming).
-		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
-			return nil, errors.New("the member fixture states no scaffolding")
-		}).
-		Imports(func(*render.ImportSet) string { return "" }).
-		Finalise(passThrough)
-}
-
-// sumRefusing is the member backend with the sum kind refused, its
-// other hosts spelling every member.
-func sumRefusing(tb assert.TB) *backend.Builder {
-	tb.Helper()
-
-	kinds := spellsMembers()
-	delete(kinds, symbol.KindSum)
-	return memberBuilder(tb, kinds).
-		RefusedKinds(map[symbol.Kind]string{symbol.KindSum: kindReason})
-}
-
-// memberSpelt is the setup whose host templates place every member.
-func memberSpelt(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	r, held := memberBuilder(tb, spellsMembers()).Build().(plugin.Renderer)
-	assert.True(tb, held, "the member backend renders")
-	return r, memberFixture(tb)
-}
-
-// memberDropped is the setup whose host templates place the host
-// name alone, so every member arrives nowhere.
-func memberDropped(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	r, held := memberBuilder(tb, dropsMembers()).Build().(plugin.Renderer)
-	assert.True(tb, held, "the member backend renders")
-	return r, memberFixture(tb)
-}
-
-// memberExcused is the setup that drops its members after a settle
-// already reported them: the two fields collide under the respell,
-// so a finding names both and the check has no drop to report.
-func memberExcused(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	r, held := memberBuilder(tb, dropsMembers()).
-		Respell(lowerFirst).Build().(plugin.Renderer)
-	assert.True(tb, held, "the respelling member backend renders")
-	return r, collidingFixture(tb)
-}
 
 // The declarations of the reference fixture. Each name is one the
 // settle rewrites and something else follows: the field's type
@@ -542,129 +160,6 @@ const (
 	richParam  = "item"
 	richSlot   = "extra"
 )
-
-// richFixture returns a store with every reference the settle
-// follows: a type reference naming a declared type, a member
-// method's body, a named slot, a guard on a parameter, and a call
-// whose callee is absent.
-func richFixture(tb assert.TB) *backendtest.Fixture {
-	tb.Helper()
-
-	body := emit.Body{Stmts: []emit.Stmt{
-		{
-			Kind: emit.StmtGuard,
-			Name: richParam,
-			Then: []emit.Stmt{{Kind: emit.StmtReturn}},
-		},
-		{Kind: emit.StmtExpr, Value: emit.Expr{Kind: emit.ExprCall}},
-	}}
-	body.Prologue.Append(emit.Stmt{
-		Kind: emit.StmtExpr,
-		Value: emit.Expr{
-			Kind: emit.ExprCall,
-			Fn:   &emit.Expr{Kind: emit.ExprName, Name: richFn},
-			Args: []emit.Expr{{Kind: emit.ExprName, Name: richParam}},
-		},
-	})
-	body.Declare(richSlot).Append(call(richFn))
-
-	row := &emit.Struct{
-		Origin: coretest.ID(coretest.StorePath, richStruct, symbol.KindStruct),
-		Name:   richStruct,
-	}
-	row.Fields.Append(&emit.Field{
-		Origin: coretest.ID(coretest.StorePath, richField, symbol.KindField),
-		Name:   richField,
-		Type:   &emit.TypeRef{Spelling: richStruct},
-	})
-	row.Methods.Append(&emit.Method{
-		Origin: coretest.ID(coretest.StorePath, richMethod, symbol.KindMethod),
-		Name:   richMethod,
-		Params: []*emit.Param{{Name: richParam, Type: &emit.TypeRef{Spelling: intType}}},
-		Body:   body,
-	})
-	boot := &emit.Function{
-		Origin: coretest.ID(coretest.StorePath, richFn, symbol.KindFunction),
-		Name:   richFn,
-	}
-
-	e := plugin.NewEmit()
-	assert.NoError(tb, e.Add(unit(richWord, row, boot)),
-		"the reference unit arrives")
-	return &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{fixtureEmitter}}
-}
-
-// richRespelt is the setup whose backend respells every declared
-// name and declares no lowering, so the settled store is compared
-// against a fresh build once every name normalizes.
-func richRespelt(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	r, held := wellBuilder(tb).Respell(upperFirst).Build().(plugin.Renderer)
-	assert.True(tb, held, "the respelling backend renders")
-	return r, richFixture(tb)
-}
-
-// upperFirst spells a name with its leading letter raised, which is
-// a convention the settle applies to every reference that follows a
-// declared name.
-func upperFirst(
-	_, _ symbol.Kind, _ symbol.Visibility, name string,
-) (string, error) {
-	if name == "" {
-		return name, nil
-	}
-	return strings.ToUpper(name[:1]) + name[1:], nil
-}
-
-// duplicating is a lowering that emits a second declaration under
-// its input's origin: a reshaping the declaration comparison would
-// fail, which is why the check compares a lowering backend's unit
-// keys and origins alone.
-func duplicating(s symbol.Symbol) ([]symbol.Symbol, error) {
-	st, isStruct := s.(*emit.Struct)
-	if !isStruct {
-		return nil, nil
-	}
-	return []symbol.Symbol{st, &emit.Struct{Origin: st.Origin, Name: st.Name}}, nil
-}
-
-// total returns a coverage declaring one verdict for every fact,
-// with the given overrides.
-func total(over map[symbol.Fact]render.Verdict) render.Coverage {
-	facts := map[symbol.Fact]render.Verdict{}
-	for _, f := range symbol.Facts() {
-		facts[f] = render.Renders
-	}
-	maps.Copy(facts, over)
-	return render.Coverage{Facts: facts}
-}
-
-// abstractFixture returns the valid fixture with the abstract fact
-// stated on its struct, so a render's coverage guard has a fact to
-// take a stance on.
-func abstractFixture(tb assert.TB) *backendtest.Fixture {
-	tb.Helper()
-
-	f := wellFixture(tb)
-	for u := range f.Emit.Units() {
-		for _, d := range u.Decls {
-			if s, isStruct := d.(*emit.Struct); isStruct {
-				s.Abstract = true
-			}
-		}
-	}
-	return f
-}
-
-// reportsOnce returns a setup whose renderer reports one Error under
-// code at fileA and returns no file.
-func reportsOnce(code diag.Code, msg string) backendtest.Setup {
-	return scripted(func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
-		ctx.Sink.Errorf(code, position.Pos{File: fileA}, ctx.Plugin, "%s", msg)
-		return nil, nil
-	})
-}
 
 // The suite is the contract a backend author tests against: it
 // passes a valid backend and fails each way of cheating.
@@ -1455,5 +950,510 @@ func TestSuite(t *testing.T) {
 
 			backendtest.AssertContinuedRender(t, partial)
 		})
+	})
+}
+
+// call returns the one-line scaffold statement naming n.
+func call(n string) emit.Stmt {
+	return emit.Stmt{Kind: emit.StmtExpr, Value: emit.Expr{Kind: emit.ExprName, Name: n}}
+}
+
+// unit returns one flushed plan unit under the emitting fixture
+// plugin, its word doubling as the family tag the way distinct
+// declared outputs arrive as distinct accumulators.
+func unit(word string, decls ...symbol.Symbol) plugin.Unit {
+	return plugin.Unit{
+		Plugin: fixtureEmitter, Tag: word, Per: plugin.PerPlan, Word: word, Decls: decls,
+	}
+}
+
+// fnOf returns a function declaration with the given body.
+func fnOf(name string, body emit.Body) *emit.Function {
+	f := &emit.Function{
+		Origin: coretest.Struct(coretest.StorePath, name).ID,
+		Name:   name,
+	}
+	f.Body = body
+	return f
+}
+
+// wordNaming spells every unit as its word under the fixture
+// extension.
+func wordNaming(u plugin.Unit) string { return u.Word + fileExt }
+
+// passThrough is the fixture formatter, which returns its input.
+func passThrough(src []byte) ([]byte, error) { return src, nil }
+
+// wellBackend builds the fixture backend through the kit: two
+// kinds, a scaffold for names and returns, and a pass-through
+// formatter.
+func wellBackend(tb assert.TB) plugin.Renderer {
+	tb.Helper()
+
+	r, held := wellBuilder(tb).
+		Coverage(total(nil)).
+		Build().(plugin.Renderer)
+	assert.True(tb, held, "the kit backend renders")
+	return r
+}
+
+// wellBuilder accumulates the fixture backend's declaration, so a
+// test can widen it before Build.
+func wellBuilder(tb assert.TB) *backend.Builder {
+	tb.Helper()
+
+	return backend.New(printerName, stubTarget,
+		plugin.CommentSyntax{Line: []string{lineComment}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct:   structTpl,
+			symbol.KindFunction: functionTpl,
+		}).
+		Naming(wordNaming).
+		Scaffold(func(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
+			switch s.Kind {
+			case emit.StmtExpr:
+				set.Add(runtimePkg)
+				return []byte("\t" + s.Value.Name + "()\n"), nil
+			case emit.StmtReturn:
+				return []byte("\treturn\n"), nil
+			default:
+				return nil, errors.New("the fixture spells names and returns only")
+			}
+		}).
+		Imports(func(set *render.ImportSet) string {
+			if set.Len() == 0 {
+				return ""
+			}
+			return "import (" + strings.Join(set.Paths(), " ") + ")\n"
+		}).
+		Finalise(passThrough)
+}
+
+// wellFixture returns the valid fixture: a store with every kind
+// the backend spells and a body in each of the four content forms,
+// with the reference's slot content spliced through a
+// marker-placing tree.
+func wellFixture(tb assert.TB) *backendtest.Fixture {
+	tb.Helper()
+
+	refBody := emit.Body{Ref: &emit.TemplateRef{Name: refTemplate}}
+	refBody.Prologue.Append(call(guardCall))
+	e := plugin.NewEmit()
+	for _, u := range []plugin.Unit{
+		unit(stubWord,
+			&emit.Struct{
+				Origin: coretest.Struct(coretest.StorePath, hostStruct).ID,
+				Name:   hostStruct,
+			},
+			fnOf(noopName, emit.Body{}),
+			fnOf(loadName, emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}),
+		),
+		unit(refWord, fnOf(saveName, refBody)),
+		unit(rawWord, fnOf(dumpName, emit.Body{Verbatim: dumpBody})),
+	} {
+		assert.NoError(tb, e.Add(u), "the fixture unit arrives")
+	}
+	return &backendtest.Fixture{
+		Emit:     e,
+		Schedule: []plugin.ID{fixtureEmitter},
+		Trees: map[plugin.ID]fs.FS{
+			fixtureEmitter: fstest.MapFS{
+				refTemplate: &fstest.MapFile{Data: []byte(refSource)},
+			},
+		},
+	}
+}
+
+// wellRendered returns the valid setup: the kit backend over the
+// valid fixture.
+func wellRendered(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	return wellBackend(tb), wellFixture(tb)
+}
+
+// shapeOf returns the sum host of the member fixture: one variant,
+// and the given comment on the sum and on its variant.
+func shapeOf(comment, variant string) *emit.Sum {
+	shape := &emit.Sum{
+		Origin:  coretest.ID(coretest.StorePath, hostSum, symbol.KindSum),
+		Name:    hostSum,
+		Comment: comment,
+	}
+	shape.Variants.Append(&emit.SumVariant{
+		Origin:  coretest.ID(coretest.StorePath, sumVariant, symbol.KindSumVariant),
+		Name:    sumVariant,
+		Comment: variant,
+	})
+	return shape
+}
+
+// refusingRendered is the valid setup with a sum beside the kinds
+// the backend spells, which the backend declares refused, so the
+// suite meets a declared refusal the way it does over the canonical
+// fixture.
+func refusingRendered(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := wellBuilder(tb).
+		Coverage(total(nil)).
+		RefusedKinds(map[symbol.Kind]string{symbol.KindSum: kindReason}).
+		Build().(plugin.Renderer)
+	assert.True(tb, held, "the refusing backend renders")
+	f := wellFixture(tb)
+	assert.NoError(tb, f.Emit.Add(unit(sumsWord, shapeOf("", ""))), "the refused unit arrives")
+	return r, f
+}
+
+// scripted returns a setup handing the fake over a bare fixture.
+func scripted(r func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error)) backendtest.Setup {
+	return func(assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+		return &fake{render: r}, &backendtest.Fixture{Emit: plugin.NewEmit()}
+	}
+}
+
+// hollowSetup hands a renderer over a fixture without a store,
+// which every check fails before it reads anything. The renderer
+// returns a whole file, so what a check fails on is the missing
+// store and nothing further along.
+func hollowSetup(assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	return &fake{render: func(*plugin.RenderContext) ([]plugin.RenderedFile, error) {
+		return []plugin.RenderedFile{{Path: fileA, Body: []byte(bodyX)}}, nil
+	}}, &backendtest.Fixture{}
+}
+
+// hollowBacked hands a kit backend over a fixture without a store,
+// so a check that takes the backend's seams still has nothing to
+// settle.
+func hollowBacked(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	return wellBackend(tb), &backendtest.Fixture{}
+}
+
+// drifting is a lowering that drops its input's provenance: the
+// defect [plugin.Settle] fails the plan on, and reports as no
+// declaration's finding.
+func drifting(s symbol.Symbol) ([]symbol.Symbol, error) {
+	st, isStruct := s.(*emit.Struct)
+	if !isStruct {
+		return nil, nil
+	}
+	return []symbol.Symbol{&emit.Struct{Name: st.Name}}, nil
+}
+
+// driftingSetup hands the kit backend whose lowering drifts over
+// the valid fixture, so a check meets a settle that fails the plan.
+func driftingSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := wellBuilder(tb).Lower(drifting).Build().(plugin.Renderer)
+	assert.True(tb, held, "the lowering backend renders")
+	return r, wellFixture(tb)
+}
+
+// refusing is a respell whose target spells no struct name: the
+// settle withholds the declaration under a finding and the plan
+// continues, so a check meets a settle that reports without failing.
+func refusing(
+	_, kind symbol.Kind, _ symbol.Visibility, name string,
+) (string, error) {
+	if kind == symbol.KindStruct {
+		return "", errors.New("the fixture target spells no struct name")
+	}
+	return name, nil
+}
+
+// refusedSetup hands the kit backend whose respell refuses a struct
+// name over the valid fixture, so a check meets a settle that
+// reports and withholds a declaration while the plan continues.
+func refusedSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := wellBuilder(tb).Respell(refusing).Build().(plugin.Renderer)
+	assert.True(tb, held, "the respelling backend renders")
+	return r, wellFixture(tb)
+}
+
+// lowerFirst spells a name with its leading letter lowered, which
+// is what makes the colliding fixture's two fields meet.
+func lowerFirst(
+	_, _ symbol.Kind, _ symbol.Visibility, name string,
+) (string, error) {
+	if name == "" {
+		return name, nil
+	}
+	return strings.ToLower(name[:1]) + name[1:], nil
+}
+
+// memberFixture returns a store with one host per kind with members,
+// each with the members a rendered file has to contain.
+func memberFixture(tb assert.TB) *backendtest.Fixture {
+	tb.Helper()
+
+	row := &emit.Struct{
+		Origin: coretest.ID(coretest.StorePath, hostStruct, symbol.KindStruct),
+		Name:   hostStruct,
+	}
+	row.Fields.Append(&emit.Field{
+		Origin: coretest.ID(coretest.StorePath, structField, symbol.KindField),
+		Name:   structField,
+	})
+	row.Methods.Append(&emit.Method{
+		Origin: coretest.ID(coretest.StorePath, structMethod, symbol.KindMethod),
+		Name:   structMethod,
+	})
+	store := &emit.Interface{
+		Origin: coretest.ID(coretest.StorePath, hostInterface, symbol.KindInterface),
+		Name:   hostInterface,
+	}
+	store.Fields.Append(&emit.Field{
+		Origin: coretest.ID(coretest.StorePath, ifaceField, symbol.KindField),
+		Name:   ifaceField,
+	})
+	store.Methods.Append(&emit.Method{
+		Origin: coretest.ID(coretest.StorePath, ifaceMethod, symbol.KindMethod),
+		Name:   ifaceMethod,
+	})
+	phase := &emit.Enum{
+		Origin: coretest.ID(coretest.StorePath, hostEnum, symbol.KindEnum),
+		Name:   hostEnum,
+	}
+	phase.Variants.Append(&emit.EnumVariant{
+		Origin: coretest.ID(coretest.StorePath, enumVariant, symbol.KindEnumVariant),
+		Name:   enumVariant,
+	})
+
+	e := plugin.NewEmit()
+	assert.NoError(tb, e.Add(unit(hostsWord, row, store, phase, shapeOf("", ""))),
+		"the memberful unit arrives")
+	return &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{fixtureEmitter}}
+}
+
+// collidingFixture returns a store whose struct has two fields one
+// respell cannot tell apart.
+func collidingFixture(tb assert.TB) *backendtest.Fixture {
+	tb.Helper()
+
+	row := &emit.Struct{
+		Origin: coretest.ID(coretest.StorePath, hostStruct, symbol.KindStruct),
+		Name:   hostStruct,
+	}
+	row.Fields.Append(
+		&emit.Field{
+			Origin: coretest.ID(coretest.StorePath, structField, symbol.KindField),
+			Name:   structField,
+		},
+		&emit.Field{
+			Origin: coretest.ID(coretest.StorePath, collidingField, symbol.KindField),
+			Name:   collidingField,
+		},
+	)
+
+	e := plugin.NewEmit()
+	assert.NoError(tb, e.Add(unit(hostsWord, row)), "the colliding unit arrives")
+	return &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{fixtureEmitter}}
+}
+
+// spellsMembers is the kind spelling that places every member name
+// inside its host.
+func spellsMembers() map[symbol.Kind]string {
+	return map[symbol.Kind]string{
+		symbol.KindStruct:    "type {{.Name}} struct {\n" + fieldLines + methodLines + "}\n",
+		symbol.KindInterface: "type {{.Name}} interface {\n" + fieldLines + methodLines + "}\n",
+		symbol.KindEnum:      "type {{.Name}} enum {\n" + variantLines + "}\n",
+		symbol.KindSum:       "type {{.Name}} sum {\n" + variantLines + "}\n",
+	}
+}
+
+// dropsMembers is the kind spelling that ranges no member list.
+func dropsMembers() map[symbol.Kind]string {
+	return map[symbol.Kind]string{
+		symbol.KindStruct:    "type {{.Name}} struct {}\n",
+		symbol.KindInterface: "type {{.Name}} interface {}\n",
+		symbol.KindEnum:      "type {{.Name}} enum {}\n",
+		symbol.KindSum:       "type {{.Name}} sum {}\n",
+	}
+}
+
+// memberBuilder accumulates a backend over the kinds with members,
+// with the given spellings, so one test renders members and another
+// drops them.
+func memberBuilder(tb assert.TB, kinds map[symbol.Kind]string) *backend.Builder {
+	tb.Helper()
+
+	return backend.New(memberName, stubTarget,
+		plugin.CommentSyntax{Line: []string{lineComment}}).
+		KindTemplates(kinds).
+		Naming(wordNaming).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the member fixture states no scaffolding")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(passThrough)
+}
+
+// sumRefusing is the member backend with the sum kind refused, its
+// other hosts spelling every member.
+func sumRefusing(tb assert.TB) *backend.Builder {
+	tb.Helper()
+
+	kinds := spellsMembers()
+	delete(kinds, symbol.KindSum)
+	return memberBuilder(tb, kinds).
+		RefusedKinds(map[symbol.Kind]string{symbol.KindSum: kindReason})
+}
+
+// memberSpelt is the setup whose host templates place every member.
+func memberSpelt(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := memberBuilder(tb, spellsMembers()).Build().(plugin.Renderer)
+	assert.True(tb, held, "the member backend renders")
+	return r, memberFixture(tb)
+}
+
+// memberDropped is the setup whose host templates place the host
+// name alone, so every member arrives nowhere.
+func memberDropped(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := memberBuilder(tb, dropsMembers()).Build().(plugin.Renderer)
+	assert.True(tb, held, "the member backend renders")
+	return r, memberFixture(tb)
+}
+
+// memberExcused is the setup that drops its members after a settle
+// already reported them: the two fields collide under the respell,
+// so a finding names both and the check has no drop to report.
+func memberExcused(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := memberBuilder(tb, dropsMembers()).
+		Respell(lowerFirst).Build().(plugin.Renderer)
+	assert.True(tb, held, "the respelling member backend renders")
+	return r, collidingFixture(tb)
+}
+
+// richFixture returns a store with every reference the settle
+// follows: a type reference naming a declared type, a member
+// method's body, a named slot, a guard on a parameter, and a call
+// whose callee is absent.
+func richFixture(tb assert.TB) *backendtest.Fixture {
+	tb.Helper()
+
+	body := emit.Body{Stmts: []emit.Stmt{
+		{
+			Kind: emit.StmtGuard,
+			Name: richParam,
+			Then: []emit.Stmt{{Kind: emit.StmtReturn}},
+		},
+		{Kind: emit.StmtExpr, Value: emit.Expr{Kind: emit.ExprCall}},
+	}}
+	body.Prologue.Append(emit.Stmt{
+		Kind: emit.StmtExpr,
+		Value: emit.Expr{
+			Kind: emit.ExprCall,
+			Fn:   &emit.Expr{Kind: emit.ExprName, Name: richFn},
+			Args: []emit.Expr{{Kind: emit.ExprName, Name: richParam}},
+		},
+	})
+	body.Declare(richSlot).Append(call(richFn))
+
+	row := &emit.Struct{
+		Origin: coretest.ID(coretest.StorePath, richStruct, symbol.KindStruct),
+		Name:   richStruct,
+	}
+	row.Fields.Append(&emit.Field{
+		Origin: coretest.ID(coretest.StorePath, richField, symbol.KindField),
+		Name:   richField,
+		Type:   &emit.TypeRef{Spelling: richStruct},
+	})
+	row.Methods.Append(&emit.Method{
+		Origin: coretest.ID(coretest.StorePath, richMethod, symbol.KindMethod),
+		Name:   richMethod,
+		Params: []*emit.Param{{Name: richParam, Type: &emit.TypeRef{Spelling: intType}}},
+		Body:   body,
+	})
+	boot := &emit.Function{
+		Origin: coretest.ID(coretest.StorePath, richFn, symbol.KindFunction),
+		Name:   richFn,
+	}
+
+	e := plugin.NewEmit()
+	assert.NoError(tb, e.Add(unit(richWord, row, boot)),
+		"the reference unit arrives")
+	return &backendtest.Fixture{Emit: e, Schedule: []plugin.ID{fixtureEmitter}}
+}
+
+// richRespelt is the setup whose backend respells every declared
+// name and declares no lowering, so the settled store is compared
+// against a fresh build once every name normalizes.
+func richRespelt(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := wellBuilder(tb).Respell(upperFirst).Build().(plugin.Renderer)
+	assert.True(tb, held, "the respelling backend renders")
+	return r, richFixture(tb)
+}
+
+// upperFirst spells a name with its leading letter raised, which is
+// a convention the settle applies to every reference that follows a
+// declared name.
+func upperFirst(
+	_, _ symbol.Kind, _ symbol.Visibility, name string,
+) (string, error) {
+	if name == "" {
+		return name, nil
+	}
+	return strings.ToUpper(name[:1]) + name[1:], nil
+}
+
+// duplicating is a lowering that emits a second declaration under
+// its input's origin: a reshaping the declaration comparison would
+// fail, which is why the check compares a lowering backend's unit
+// keys and origins alone.
+func duplicating(s symbol.Symbol) ([]symbol.Symbol, error) {
+	st, isStruct := s.(*emit.Struct)
+	if !isStruct {
+		return nil, nil
+	}
+	return []symbol.Symbol{st, &emit.Struct{Origin: st.Origin, Name: st.Name}}, nil
+}
+
+// total returns a coverage declaring one verdict for every fact,
+// with the given overrides.
+func total(over map[symbol.Fact]render.Verdict) render.Coverage {
+	facts := map[symbol.Fact]render.Verdict{}
+	for _, f := range symbol.Facts() {
+		facts[f] = render.Renders
+	}
+	maps.Copy(facts, over)
+	return render.Coverage{Facts: facts}
+}
+
+// abstractFixture returns the valid fixture with the abstract fact
+// stated on its struct, so a render's coverage guard has a fact to
+// take a stance on.
+func abstractFixture(tb assert.TB) *backendtest.Fixture {
+	tb.Helper()
+
+	f := wellFixture(tb)
+	for u := range f.Emit.Units() {
+		for _, d := range u.Decls {
+			if s, isStruct := d.(*emit.Struct); isStruct {
+				s.Abstract = true
+			}
+		}
+	}
+	return f
+}
+
+// reportsOnce returns a setup whose renderer reports one Error under
+// code at fileA and returns no file.
+func reportsOnce(code diag.Code, msg string) backendtest.Setup {
+	return scripted(func(ctx *plugin.RenderContext) ([]plugin.RenderedFile, error) {
+		ctx.Sink.Errorf(code, position.Pos{File: fileA}, ctx.Plugin, "%s", msg)
+		return nil, nil
 	})
 }

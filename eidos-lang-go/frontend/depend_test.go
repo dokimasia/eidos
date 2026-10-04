@@ -67,63 +67,9 @@ const (
 	vendoredSource = "package unicode\n\n// Form is the fixture's type.\ntype Form int\n"
 )
 
-// depWorkspace returns the workspace module: its go.mod requires the
-// library, its go.sum records the library's hashes, and its one file
-// imports the library's package.
-func depWorkspace() fstest.MapFS {
-	return fstest.MapFS{
-		appGoMod: {Data: []byte("module " + appModule + "\n\ngo 1.27\n\nrequire " +
-			libModule + " " + libVersion + "\n")},
-		appGoSum: {Data: []byte(libModule + " " + libVersion + " " + libHash + "\n" +
-			libModule + " " + libVersion + goModField + " " + libModHash + "\n")},
-		appFile: {Data: []byte("package app\n\nimport \"" + libPackage + "\"\n\n" +
-			"// App is the workspace's one type.\ntype App struct{ L pkg.Lib }\n")},
-	}
-}
-
 // goModField ends the version field of the go.sum line that hashes a
 // module's go.mod file alone.
 const goModField = "/go.mod"
-
-// depCache returns a module cache that has the library's tree, a test
-// file beside the package's source, and the tree's hash record.
-func depCache() fstest.MapFS {
-	return fstest.MapFS{
-		libDir + "/pkg.go": {Data: []byte(libSource)},
-		libTestFile:        {Data: []byte("package pkg\n")},
-		libZipHash:         {Data: []byte(libHash + "\n")},
-	}
-}
-
-// goRootTree returns a GOROOT source tree with a package that imports
-// a vendored package, and the vendored package.
-func goRootTree() fstest.MapFS {
-	return fstest.MapFS{
-		fmtFile:      {Data: []byte(fmtSource)},
-		vendoredFile: {Data: []byte(vendoredSource)},
-	}
-}
-
-// depStores returns the module cache and the GOROOT tree under the
-// names the Go frontend reads them by.
-func depStores() map[string]fs.FS {
-	return map[string]fs.FS{frontend.ModCacheStore: depCache(), frontend.GoRootStore: goRootTree()}
-}
-
-// without returns the fixture's stores without one of them.
-func without(store string) map[string]fs.FS {
-	stores := depStores()
-	delete(stores, store)
-	return stores
-}
-
-// replacedWorkspace returns the workspace module with the library
-// replaced by a directory inside the workspace.
-func replacedWorkspace() fstest.MapFS {
-	tree := depWorkspace()
-	tree[appGoMod] = &fstest.MapFile{Data: append(tree[appGoMod].Data, "replace "+libModule+" => ./lib\n"...)}
-	return tree
-}
 
 // storeTree is a test workspace with named stores beside it.
 type storeTree struct {
@@ -149,82 +95,6 @@ func (r roundReader) Read(p string) ([]byte, error) { return plugin.ReadFile(r.t
 // ReadDir returns one directory's entries, from the workspace or a
 // store.
 func (r roundReader) ReadDir(p string) ([]fs.DirEntry, error) { return plugin.ReadDir(r.tree, p) }
-
-// runRound runs the Go frontend's first dependency round over a
-// workspace and its stores for the needs given, with every go.mod of
-// the workspace as the round's shared inputs.
-func runRound(
-	tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
-) ([][]plugin.SourceRef, error) {
-	units, _, err := reportedRound(tree, stores, needs...)
-	return units, err
-}
-
-// reportedRound runs the round [runRound] runs and returns the round
-// beside its units, for the cases that read the round's reports.
-func reportedRound(
-	tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
-) ([][]plugin.SourceRef, *plugin.DependencyRound, error) {
-	var goMods []string
-	for p := range tree {
-		if path.Base(p) == appGoMod {
-			goMods = append(goMods, p)
-		}
-	}
-	slices.Sort(goMods)
-	round := &plugin.DependencyRound{Number: 1, Shared: goMods}
-	for _, need := range needs {
-		round.Needs = append(round.Needs, plugin.Need{Path: need})
-	}
-	dependent, is := frontend.New(nil).(plugin.Dependent)
-	if !is {
-		panic("the Go frontend is in the dependent role")
-	}
-	units, err := dependent.Dependencies(context.Background(), round, roundReader{storeTree{tree, stores}})
-	return units, round, err
-}
-
-// unplacedBy runs a round that the case states succeeds and returns
-// the needs it reports placed nowhere.
-func unplacedBy(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) []plugin.Unplaced {
-	tb.Helper()
-
-	_, round, err := reportedRound(tree, stores, needs...)
-	assert.NoError(tb, err, "the round places what it can")
-	return round.Unplaced()
-}
-
-// placed runs a round that the case states succeeds and returns the
-// member paths of each unit.
-func placed(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) [][]string {
-	tb.Helper()
-
-	units, err := runRound(tree, stores, needs...)
-	assert.NoError(tb, err, "the round places its needs")
-	out := make([][]string, len(units))
-	for i, unit := range units {
-		for _, ref := range unit {
-			out[i] = append(out[i], ref.Path)
-		}
-	}
-	return out
-}
-
-// refused runs a round that the case states fails and returns its
-// error's text.
-func refused(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) string {
-	tb.Helper()
-
-	_, err := runRound(tree, stores, needs...)
-	assert.HasError(tb, err, "the round fails")
-	return err.Error()
-}
-
-// cached returns the qualified path of a module cache file.
-func cached(p string) string { return plugin.StorePath(frontend.ModCacheStore, p) }
-
-// inRoot returns the qualified path of a GOROOT source file.
-func inRoot(p string) string { return plugin.StorePath(frontend.GoRootStore, p) }
 
 // The dependency round places what the workspace imports from outside
 // it, so each source, each refusal and the placements that yield
@@ -633,3 +503,133 @@ func TestDepend(t *testing.T) {
 		})
 	})
 }
+
+// depWorkspace returns the workspace module: its go.mod requires the
+// library, its go.sum records the library's hashes, and its one file
+// imports the library's package.
+func depWorkspace() fstest.MapFS {
+	return fstest.MapFS{
+		appGoMod: {Data: []byte("module " + appModule + "\n\ngo 1.27\n\nrequire " +
+			libModule + " " + libVersion + "\n")},
+		appGoSum: {Data: []byte(libModule + " " + libVersion + " " + libHash + "\n" +
+			libModule + " " + libVersion + goModField + " " + libModHash + "\n")},
+		appFile: {Data: []byte("package app\n\nimport \"" + libPackage + "\"\n\n" +
+			"// App is the workspace's one type.\ntype App struct{ L pkg.Lib }\n")},
+	}
+}
+
+// depCache returns a module cache that has the library's tree, a test
+// file beside the package's source, and the tree's hash record.
+func depCache() fstest.MapFS {
+	return fstest.MapFS{
+		libDir + "/pkg.go": {Data: []byte(libSource)},
+		libTestFile:        {Data: []byte("package pkg\n")},
+		libZipHash:         {Data: []byte(libHash + "\n")},
+	}
+}
+
+// goRootTree returns a GOROOT source tree with a package that imports
+// a vendored package, and the vendored package.
+func goRootTree() fstest.MapFS {
+	return fstest.MapFS{
+		fmtFile:      {Data: []byte(fmtSource)},
+		vendoredFile: {Data: []byte(vendoredSource)},
+	}
+}
+
+// depStores returns the module cache and the GOROOT tree under the
+// names the Go frontend reads them by.
+func depStores() map[string]fs.FS {
+	return map[string]fs.FS{frontend.ModCacheStore: depCache(), frontend.GoRootStore: goRootTree()}
+}
+
+// without returns the fixture's stores without one of them.
+func without(store string) map[string]fs.FS {
+	stores := depStores()
+	delete(stores, store)
+	return stores
+}
+
+// replacedWorkspace returns the workspace module with the library
+// replaced by a directory inside the workspace.
+func replacedWorkspace() fstest.MapFS {
+	tree := depWorkspace()
+	tree[appGoMod] = &fstest.MapFile{Data: append(tree[appGoMod].Data, "replace "+libModule+" => ./lib\n"...)}
+	return tree
+}
+
+// runRound runs the Go frontend's first dependency round over a
+// workspace and its stores for the needs given, with every go.mod of
+// the workspace as the round's shared inputs.
+func runRound(
+	tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
+) ([][]plugin.SourceRef, error) {
+	units, _, err := reportedRound(tree, stores, needs...)
+	return units, err
+}
+
+// reportedRound runs the round [runRound] runs and returns the round
+// beside its units, for the cases that read the round's reports.
+func reportedRound(
+	tree fstest.MapFS, stores map[string]fs.FS, needs ...string,
+) ([][]plugin.SourceRef, *plugin.DependencyRound, error) {
+	var goMods []string
+	for p := range tree {
+		if path.Base(p) == appGoMod {
+			goMods = append(goMods, p)
+		}
+	}
+	slices.Sort(goMods)
+	round := &plugin.DependencyRound{Number: 1, Shared: goMods}
+	for _, need := range needs {
+		round.Needs = append(round.Needs, plugin.Need{Path: need})
+	}
+	dependent, is := frontend.New(nil).(plugin.Dependent)
+	if !is {
+		panic("the Go frontend is in the dependent role")
+	}
+	units, err := dependent.Dependencies(context.Background(), round, roundReader{storeTree{tree, stores}})
+	return units, round, err
+}
+
+// unplacedBy runs a round that the case states succeeds and returns
+// the needs it reports placed nowhere.
+func unplacedBy(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) []plugin.Unplaced {
+	tb.Helper()
+
+	_, round, err := reportedRound(tree, stores, needs...)
+	assert.NoError(tb, err, "the round places what it can")
+	return round.Unplaced()
+}
+
+// placed runs a round that the case states succeeds and returns the
+// member paths of each unit.
+func placed(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) [][]string {
+	tb.Helper()
+
+	units, err := runRound(tree, stores, needs...)
+	assert.NoError(tb, err, "the round places its needs")
+	out := make([][]string, len(units))
+	for i, unit := range units {
+		for _, ref := range unit {
+			out[i] = append(out[i], ref.Path)
+		}
+	}
+	return out
+}
+
+// refused runs a round that the case states fails and returns its
+// error's text.
+func refused(tb assert.TB, tree fstest.MapFS, stores map[string]fs.FS, needs ...string) string {
+	tb.Helper()
+
+	_, err := runRound(tree, stores, needs...)
+	assert.HasError(tb, err, "the round fails")
+	return err.Error()
+}
+
+// cached returns the qualified path of a module cache file.
+func cached(p string) string { return plugin.StorePath(frontend.ModCacheStore, p) }
+
+// inRoot returns the qualified path of a GOROOT source file.
+func inRoot(p string) string { return plugin.StorePath(frontend.GoRootStore, p) }

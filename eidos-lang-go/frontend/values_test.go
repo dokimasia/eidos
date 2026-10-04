@@ -16,18 +16,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// stampsOf collects one parse's stamps by key, keyed by the
-// subject-free value order they were recorded in.
-func stampsOf(gb *plugin.GraphBuilder, key string) []any {
-	var out []any
-	for _, s := range gb.StampRecords() {
-		if string(s.Stamp.Key) == key {
-			out = append(out, s.Stamp.Value)
-		}
-	}
-	return out
-}
-
 // Constant evaluation is the package's own scope through the
 // checker's machinery, so the exact values and the refusals to
 // guess are pinned together.
@@ -100,4 +88,16 @@ func TestStampConstValues(t *testing.T) {
 		assert.Equal(t, values, []any{"16"},
 			"a literal stamps the spelling the checker would")
 	})
+}
+
+// stampsOf collects one parse's stamps by key, keyed by the
+// subject-free value order they were recorded in.
+func stampsOf(gb *plugin.GraphBuilder, key string) []any {
+	var out []any
+	for _, s := range gb.StampRecords() {
+		if string(s.Stamp.Key) == key {
+			out = append(out, s.Stamp.Value)
+		}
+	}
+	return out
 }

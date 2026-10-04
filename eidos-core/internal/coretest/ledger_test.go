@@ -27,47 +27,6 @@ const (
 	keptPath  = "kept.go"
 )
 
-// fileEntry returns a well-formed entry for one path under the plan.
-func fileEntry(path string) manifest.Entry {
-	return manifest.Entry{Path: path, Plan: ownPlan, Hash: "sha256:" + strings.Repeat("ab", 32)}
-}
-
-// twoFiles returns a record of two files.
-func twoFiles() manifest.Manifest {
-	return manifest.Manifest{Version: manifest.Version, Files: []manifest.Entry{fileEntry("a.go"), fileEntry("b.go")}}
-}
-
-// onDisk returns the record the state directory under root contains.
-func onDisk(t *testing.T, root string) manifest.Manifest {
-	t.Helper()
-
-	d, err := ledger.OpenDir(root, rewritingBrand)
-	assert.NoError(t, err, "the ledger opens")
-	m, _, err := state.ReadManifest(t.Context(), d)
-	assert.NoError(t, err, "the record reads")
-	return m
-}
-
-// underOther records every entry under the other plan.
-func underOther(_ int, m manifest.Manifest) manifest.Manifest {
-	for i := range m.Files {
-		m.Files[i].Plan = otherPlan
-	}
-	return m
-}
-
-// keeping returns the record with keptPath's entry added where it is
-// missing.
-func keeping(_ int, m manifest.Manifest) manifest.Manifest {
-	for _, e := range m.Files {
-		if e.Path == keptPath {
-			return m
-		}
-	}
-	m.Files = append(m.Files, fileEntry(keptPath))
-	return m
-}
-
 // The rewriting ledger leaves an edited record on disk once a commit
 // ends, whatever documents the commit wrote or removed.
 func TestLedger(t *testing.T) {
@@ -215,4 +174,45 @@ func TestLedger(t *testing.T) {
 			assert.HasError(t, l.Remove(t.Context(), "../x"), "the name is refused")
 		})
 	})
+}
+
+// fileEntry returns a well-formed entry for one path under the plan.
+func fileEntry(path string) manifest.Entry {
+	return manifest.Entry{Path: path, Plan: ownPlan, Hash: "sha256:" + strings.Repeat("ab", 32)}
+}
+
+// twoFiles returns a record of two files.
+func twoFiles() manifest.Manifest {
+	return manifest.Manifest{Version: manifest.Version, Files: []manifest.Entry{fileEntry("a.go"), fileEntry("b.go")}}
+}
+
+// onDisk returns the record the state directory under root contains.
+func onDisk(t *testing.T, root string) manifest.Manifest {
+	t.Helper()
+
+	d, err := ledger.OpenDir(root, rewritingBrand)
+	assert.NoError(t, err, "the ledger opens")
+	m, _, err := state.ReadManifest(t.Context(), d)
+	assert.NoError(t, err, "the record reads")
+	return m
+}
+
+// underOther records every entry under the other plan.
+func underOther(_ int, m manifest.Manifest) manifest.Manifest {
+	for i := range m.Files {
+		m.Files[i].Plan = otherPlan
+	}
+	return m
+}
+
+// keeping returns the record with keptPath's entry added where it is
+// missing.
+func keeping(_ int, m manifest.Manifest) manifest.Manifest {
+	for _, e := range m.Files {
+		if e.Path == keptPath {
+			return m
+		}
+	}
+	m.Files = append(m.Files, fileEntry(keptPath))
+	return m
 }

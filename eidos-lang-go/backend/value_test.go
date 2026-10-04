@@ -28,32 +28,6 @@ const (
 	nowName  = "Now"
 )
 
-// valueRef returns a resolved reference to a struct of one package,
-// spelled the way Go source spells it.
-func valueRef(spelling, pkg, name string) *emit.TypeRef {
-	return &emit.TypeRef{
-		Spelling: spelling,
-		Target:   symbol.Identity{Lang: golang.Lang, Package: pkg, Name: name, Kind: symbol.KindStruct},
-	}
-}
-
-// valueFn returns a callee identity.
-func valueFn(pkg, name string) symbol.Identity {
-	return symbol.Identity{Lang: golang.Lang, Package: pkg, Name: name, Kind: symbol.KindFunction}
-}
-
-// returned runs one value through the Go scaffold as a return in a
-// file of svcPkg, and returns the statement's text beside the file's
-// import set.
-func returned(tb assert.TB, v emit.Value) (string, *render.ImportSet, error) {
-	tb.Helper()
-
-	set := &render.ImportSet{}
-	set.SetHome(svcPkg)
-	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, set)
-	return string(out), set, err
-}
-
 // Every value spelling is pinned byte for byte, for the reason the
 // statement spellings are: the text is spliced into generated bodies,
 // and a drift rewrites files.
@@ -255,4 +229,30 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, string(out), "\twant(got, 42)\n", "a value is an argument like any other")
 		})
 	})
+}
+
+// valueRef returns a resolved reference to a struct of one package,
+// spelled the way Go source spells it.
+func valueRef(spelling, pkg, name string) *emit.TypeRef {
+	return &emit.TypeRef{
+		Spelling: spelling,
+		Target:   symbol.Identity{Lang: golang.Lang, Package: pkg, Name: name, Kind: symbol.KindStruct},
+	}
+}
+
+// valueFn returns a callee identity.
+func valueFn(pkg, name string) symbol.Identity {
+	return symbol.Identity{Lang: golang.Lang, Package: pkg, Name: name, Kind: symbol.KindFunction}
+}
+
+// returned runs one value through the Go scaffold as a return in a
+// file of svcPkg, and returns the statement's text beside the file's
+// import set.
+func returned(tb assert.TB, v emit.Value) (string, *render.ImportSet, error) {
+	tb.Helper()
+
+	set := &render.ImportSet{}
+	set.SetHome(svcPkg)
+	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, set)
+	return string(out), set, err
 }

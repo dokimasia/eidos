@@ -27,23 +27,6 @@ const (
 // once.
 const importsAllocs = 2
 
-// line spells one import line of the block, tab-indented.
-func line(name, path string) string {
-	if name == "" {
-		return "\t" + strconv.Quote(path) + "\n"
-	}
-	return "\t" + name + " " + strconv.Quote(path) + "\n"
-}
-
-// block spells an import block around its lines.
-func block(lines ...string) string {
-	out := "import (\n"
-	for _, l := range lines {
-		out += l
-	}
-	return out + ")\n"
-}
-
 // The import block is pinned byte for byte. The formatter reorders the
 // block and does not reformat it, so the renderer writes it in the
 // layout gofmt leaves.
@@ -145,6 +128,23 @@ func TestImportsAllocs(t *testing.T) {
 // qualifies a name writes.
 func BenchmarkImports(b *testing.B) {
 	benchCalls(b, importsCalls())
+}
+
+// line spells one import line of the block, tab-indented.
+func line(name, path string) string {
+	if name == "" {
+		return "\t" + strconv.Quote(path) + "\n"
+	}
+	return "\t" + name + " " + strconv.Quote(path) + "\n"
+}
+
+// block spells an import block around its lines.
+func block(lines ...string) string {
+	out := "import (\n"
+	for _, l := range lines {
+		out += l
+	}
+	return out + ")\n"
 }
 
 // importsCalls returns a call of Imports over both groups and a named

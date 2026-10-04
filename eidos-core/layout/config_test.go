@@ -26,19 +26,6 @@ const (
 // and grows the list, and no other step allocates.
 const checkAllocs = 12
 
-// sourceFamilies returns generators whose families are all written
-// beside their sources: the families no zero configuration refuses.
-func sourceFamilies() map[plugin.ID][]plugin.Output {
-	all := families()
-	return map[plugin.ID][]plugin.Output{
-		stubgen: all[stubgen][:2],
-		docgen:  all[docgen],
-	}
-}
-
-// fault returns a fault's text under the fixture plan.
-func fault(text string) string { return `layout: plan "services": ` + text }
-
 // A configuration's contradictions are Build faults, so a misspelled
 // generator or tag never waits for a run.
 func TestConfig(t *testing.T) {
@@ -252,6 +239,19 @@ func BenchmarkConfig(b *testing.B) {
 		assert.Empty(b, faults, "Check returns no fault for a valid configuration")
 	})
 }
+
+// sourceFamilies returns generators whose families are all written
+// beside their sources: the families no zero configuration refuses.
+func sourceFamilies() map[plugin.ID][]plugin.Output {
+	all := families()
+	return map[plugin.ID][]plugin.Output{
+		stubgen: all[stubgen][:2],
+		docgen:  all[docgen],
+	}
+}
+
+// fault returns a fault's text under the fixture plan.
+func fault(text string) string { return `layout: plan "services": ` + text }
 
 // refine returns a generator refinement map of one entry.
 func refine(p plugin.ID, r layout.Refinement) map[plugin.ID]layout.Refinement {

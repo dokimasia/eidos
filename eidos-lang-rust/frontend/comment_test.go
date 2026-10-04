@@ -23,14 +23,6 @@ const (
 	directiveName = "gen:table"
 )
 
-// structOf parses the fixture crate whose library root is src and
-// returns the struct of a name its root declares.
-func structOf(tb assert.TB, src, name string) *node.Struct {
-	tb.Helper()
-
-	return named[*node.Struct](tb, declsOf(tb, src), name)
-}
-
 // Comments are where documentation and directives are, so which comment
 // an item takes, and what becomes of one no item takes, is pinned.
 func TestComment(t *testing.T) {
@@ -311,4 +303,12 @@ func TestComment(t *testing.T) {
 			assert.Empty(t, gb.Attachments(), "and attaches nowhere")
 		})
 	})
+}
+
+// structOf parses the fixture crate whose library root is src and
+// returns the struct of a name its root declares.
+func structOf(tb assert.TB, src, name string) *node.Struct {
+	tb.Helper()
+
+	return named[*node.Struct](tb, declsOf(tb, src), name)
 }

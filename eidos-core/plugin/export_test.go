@@ -31,93 +31,6 @@ const (
 // exportPkg is the package the case files declare.
 var exportPkg = symbol.Identity{Lang: "fixture", Package: "svc", Name: "svc", Kind: symbol.KindPackage}
 
-// exportOf settles the units under a backend, which reports nothing,
-// and returns the plan's export over one file containing every unit.
-func exportOf(t *testing.T, b plugin.Backend, units ...plugin.Unit) plugin.ExportDoc {
-	t.Helper()
-
-	e := storeOf(t, units...)
-	coretest.AssertCodes(t, settled(t, e, b))
-	file := plugin.File{Path: exportFile, Pkg: exportPkg, Units: slices.Collect(e.Units())}
-	return plugin.NewExport(exportPlan, []plugin.File{file}, e)
-}
-
-// exported returns the export's one declaration under an emitted name,
-// and fails the case where the export lists none or more than one.
-func exported(t *testing.T, doc plugin.ExportDoc, name string) plugin.ExportedSymbol {
-	t.Helper()
-
-	var found []plugin.ExportedSymbol
-	for _, s := range doc.Symbols {
-		if s.Name == name {
-			found = append(found, s)
-		}
-	}
-	assert.Length(t, found, 1, "the export lists one declaration emitted as "+name)
-	return found[0]
-}
-
-// emittedNames returns the emitted names an export lists, in its
-// order.
-func emittedNames(doc plugin.ExportDoc) []string {
-	out := make([]string, 0, len(doc.Symbols))
-	for _, s := range doc.Symbols {
-		out = append(out, s.Name)
-	}
-	return out
-}
-
-// boxWithItem returns a struct named box whose field is named item.
-func boxWithItem() *emit.Struct {
-	box := &emit.Struct{Origin: settleOrigin("box", symbol.KindStruct), Name: "box"}
-	box.Fields.Append(&emit.Field{
-		Origin: settleOrigin("item", symbol.KindField),
-		Name:   "item",
-		Type:   &emit.TypeRef{Spelling: "int"},
-	})
-	return box
-}
-
-// shapeSum returns a sum named shape over two variants: circle, with the
-// field radius, then square, with the field side.
-func shapeSum() *emit.Sum {
-	circle := &emit.SumVariant{Name: "circle"}
-	circle.Fields.Append(&emit.Field{Name: "radius", Type: &emit.TypeRef{Spelling: "int"}})
-	square := &emit.SumVariant{Name: "square"}
-	square.Fields.Append(&emit.Field{Name: "side", Type: &emit.TypeRef{Spelling: "int"}})
-	shape := &emit.Sum{Origin: settleOrigin("shape", symbol.KindSum), Name: "shape"}
-	shape.Variants.Append(circle, square)
-	return shape
-}
-
-// receiving returns a file-level method named fetch whose receiver names
-// a type spelled host.
-func receiving(host string) *emit.Method {
-	return &emit.Method{
-		Origin:   settleOrigin("fetch", symbol.KindMethod),
-		Name:     "fetch",
-		Receives: &emit.TypeRef{Spelling: host},
-	}
-}
-
-// keyedFiles returns two files that each declare the same n structs,
-// so Find meets a key in more than one file.
-func keyedFiles(n int) []plugin.File {
-	files := make([]plugin.File, 0, 2)
-	for _, path := range []string{exportFile, exportOther} {
-		u := plugin.Unit{Plugin: exportPlugin, Per: plugin.PerSource, Word: "gen", Key: path, Pkg: exportPkg}
-		for i := range n {
-			name := "row" + strconv.Itoa(i)
-			u.Decls = append(u.Decls, &emit.Struct{Origin: settleOrigin(name, symbol.KindStruct), Name: name})
-		}
-		files = append(files, plugin.File{Path: path, Pkg: exportPkg, Units: []plugin.Unit{u}})
-	}
-	return files
-}
-
-// keyed returns the export of the files keyedFiles returns.
-func keyed(n int) plugin.ExportDoc { return plugin.NewExport(exportPlan, keyedFiles(n), nil) }
-
 // An export lists what a plan rendered, keyed the way a dependent
 // knows a declaration before the run, and spelled the way the settle
 // left it.
@@ -346,3 +259,90 @@ func BenchmarkExport(b *testing.B) {
 		}
 	})
 }
+
+// exportOf settles the units under a backend, which reports nothing,
+// and returns the plan's export over one file containing every unit.
+func exportOf(t *testing.T, b plugin.Backend, units ...plugin.Unit) plugin.ExportDoc {
+	t.Helper()
+
+	e := storeOf(t, units...)
+	coretest.AssertCodes(t, settled(t, e, b))
+	file := plugin.File{Path: exportFile, Pkg: exportPkg, Units: slices.Collect(e.Units())}
+	return plugin.NewExport(exportPlan, []plugin.File{file}, e)
+}
+
+// exported returns the export's one declaration under an emitted name,
+// and fails the case where the export lists none or more than one.
+func exported(t *testing.T, doc plugin.ExportDoc, name string) plugin.ExportedSymbol {
+	t.Helper()
+
+	var found []plugin.ExportedSymbol
+	for _, s := range doc.Symbols {
+		if s.Name == name {
+			found = append(found, s)
+		}
+	}
+	assert.Length(t, found, 1, "the export lists one declaration emitted as "+name)
+	return found[0]
+}
+
+// emittedNames returns the emitted names an export lists, in its
+// order.
+func emittedNames(doc plugin.ExportDoc) []string {
+	out := make([]string, 0, len(doc.Symbols))
+	for _, s := range doc.Symbols {
+		out = append(out, s.Name)
+	}
+	return out
+}
+
+// boxWithItem returns a struct named box whose field is named item.
+func boxWithItem() *emit.Struct {
+	box := &emit.Struct{Origin: settleOrigin("box", symbol.KindStruct), Name: "box"}
+	box.Fields.Append(&emit.Field{
+		Origin: settleOrigin("item", symbol.KindField),
+		Name:   "item",
+		Type:   &emit.TypeRef{Spelling: "int"},
+	})
+	return box
+}
+
+// shapeSum returns a sum named shape over two variants: circle, with the
+// field radius, then square, with the field side.
+func shapeSum() *emit.Sum {
+	circle := &emit.SumVariant{Name: "circle"}
+	circle.Fields.Append(&emit.Field{Name: "radius", Type: &emit.TypeRef{Spelling: "int"}})
+	square := &emit.SumVariant{Name: "square"}
+	square.Fields.Append(&emit.Field{Name: "side", Type: &emit.TypeRef{Spelling: "int"}})
+	shape := &emit.Sum{Origin: settleOrigin("shape", symbol.KindSum), Name: "shape"}
+	shape.Variants.Append(circle, square)
+	return shape
+}
+
+// receiving returns a file-level method named fetch whose receiver names
+// a type spelled host.
+func receiving(host string) *emit.Method {
+	return &emit.Method{
+		Origin:   settleOrigin("fetch", symbol.KindMethod),
+		Name:     "fetch",
+		Receives: &emit.TypeRef{Spelling: host},
+	}
+}
+
+// keyedFiles returns two files that each declare the same n structs,
+// so Find meets a key in more than one file.
+func keyedFiles(n int) []plugin.File {
+	files := make([]plugin.File, 0, 2)
+	for _, path := range []string{exportFile, exportOther} {
+		u := plugin.Unit{Plugin: exportPlugin, Per: plugin.PerSource, Word: "gen", Key: path, Pkg: exportPkg}
+		for i := range n {
+			name := "row" + strconv.Itoa(i)
+			u.Decls = append(u.Decls, &emit.Struct{Origin: settleOrigin(name, symbol.KindStruct), Name: name})
+		}
+		files = append(files, plugin.File{Path: path, Pkg: exportPkg, Units: []plugin.Unit{u}})
+	}
+	return files
+}
+
+// keyed returns the export of the files keyedFiles returns.
+func keyed(n int) plugin.ExportDoc { return plugin.NewExport(exportPlan, keyedFiles(n), nil) }

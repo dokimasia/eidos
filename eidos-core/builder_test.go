@@ -51,23 +51,6 @@ type declaring struct {
 	set    func(*eidos.Builder) *eidos.Builder
 }
 
-// emitNothing returns a graph rule whose handler does nothing: the
-// smallest rule a plugin can declare.
-func emitNothing() eidos.Rule {
-	return eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
-		return nil
-	})
-}
-
-// stubSchema returns a schema a plugin registers, for gate
-// fixtures.
-func stubSchema(name directive.Name) directive.Schema {
-	return directive.Schema{
-		Plugin: "stubgen", Name: name,
-		Doc: "a fixture directive",
-	}
-}
-
 // A plugin declaration is a value and Build freezes it: what it
 // panics on, which roles the rules imply, and what the providers
 // return are all contract.
@@ -477,6 +460,23 @@ func BenchmarkBuilder(b *testing.B) {
 		}
 		assert.Equal(b, p.Name(), "bench", "Build returns the declared plugin")
 	})
+}
+
+// emitNothing returns a graph rule whose handler does nothing: the
+// smallest rule a plugin can declare.
+func emitNothing() eidos.Rule {
+	return eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+		return nil
+	})
+}
+
+// stubSchema returns a schema a plugin registers, for gate
+// fixtures.
+func stubSchema(name directive.Name) directive.Schema {
+	return directive.Schema{
+		Plugin: "stubgen", Name: name,
+		Doc: "a fixture directive",
+	}
 }
 
 // declarations returns each method of a declaration, called with a

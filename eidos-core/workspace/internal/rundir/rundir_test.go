@@ -40,26 +40,6 @@ var (
 	otherCurrent = ledger.StateDir(otherBrand) + "/state/CURRENT"
 )
 
-// placed writes content at a slash path under root.
-func placed(t *testing.T, root, path, content string) {
-	t.Helper()
-
-	at := filepath.Join(root, filepath.FromSlash(path))
-	assert.NoError(t, os.MkdirAll(filepath.Dir(at), 0o755), "the file's directory is made")
-	assert.NoError(t, os.WriteFile(at, []byte(content), 0o644), "the file is placed")
-}
-
-// stamped returns a one-line body framed under a brand.
-func stamped(t *testing.T, brand output.Brand, path string) string {
-	t.Helper()
-
-	c, err := output.NewContract(brand, plugin.CommentSyntax{Line: []string{"//"}})
-	assert.NoError(t, err, "the contract builds")
-	b, err := c.Stamp(plugin.RenderedFile{Path: path, Body: []byte("type Row struct{}\n"), Plugins: []plugin.ID{"gen"}})
-	assert.NoError(t, err, "the body stamps")
-	return string(b)
-}
-
 // A conformance suite reads a run's directory through these helpers,
 // so what each returns, and where each stops a check, is contract.
 func TestRundir(t *testing.T) {
@@ -223,4 +203,24 @@ func TestRundir(t *testing.T) {
 			assert.True(t, rec.Failed(), "the check stops")
 		})
 	})
+}
+
+// placed writes content at a slash path under root.
+func placed(t *testing.T, root, path, content string) {
+	t.Helper()
+
+	at := filepath.Join(root, filepath.FromSlash(path))
+	assert.NoError(t, os.MkdirAll(filepath.Dir(at), 0o755), "the file's directory is made")
+	assert.NoError(t, os.WriteFile(at, []byte(content), 0o644), "the file is placed")
+}
+
+// stamped returns a one-line body framed under a brand.
+func stamped(t *testing.T, brand output.Brand, path string) string {
+	t.Helper()
+
+	c, err := output.NewContract(brand, plugin.CommentSyntax{Line: []string{"//"}})
+	assert.NoError(t, err, "the contract builds")
+	b, err := c.Stamp(plugin.RenderedFile{Path: path, Body: []byte("type Row struct{}\n"), Plugins: []plugin.ID{"gen"}})
+	assert.NoError(t, err, "the body stamps")
+	return string(b)
 }

@@ -139,109 +139,6 @@ const (
 	warmLoadAllocs = 194_490 + 10
 )
 
-// stdTree is the happy-path fixture: two packages, one cross-package
-// reference, a directive, a constant, and a dependency package
-// loaded signature-only.
-func stdTree() fstest.MapFS {
-	return fstest.MapFS{
-		modFile: {Data: []byte("mod v1\n")},
-		apiFile: {Data: []byte(
-			"package svc/api\ntype User string\n",
-		)},
-		storeFile: {Data: []byte(
-			"package svc/store\nimport api svc/api\ntype Row api.User int\n+gen:table name=users\nconst rowmax\n",
-		)},
-		depFile: {Data: []byte(
-			"package svc/dep\ntype Dep string\nconst hidden\n",
-		)},
-	}
-}
-
-// config is the standard load configuration over a tree, under the
-// own brand, mutated per case.
-func config(tree fs.FS, mutate ...func(*load.Config)) (load.Config, *diag.Sink) {
-	sink := diag.NewSink()
-	cfg := load.Config{
-		FS:         tree,
-		Frontends:  []plugin.Frontend{frontendtest.NewScripted()},
-		Sink:       sink,
-		Signatures: []string{depPath},
-		Brand:      ownBrand,
-	}
-	for _, m := range mutate {
-		m(&cfg)
-	}
-	return cfg, sink
-}
-
-// with composes exactly these frontends instead of the standard one.
-func with(fronts ...plugin.Frontend) func(*load.Config) {
-	return func(cfg *load.Config) { cfg.Frontends = fronts }
-}
-
-// loadTree drives one load over a tree with the fake frontend and
-// the standard configuration, mutated per test.
-func loadTree(
-	tb assert.TB, tree fs.FS, mutate ...func(*load.Config),
-) (*store.Graph, *load.Report, *diag.Sink) {
-	tb.Helper()
-
-	cfg, sink := config(tree, mutate...)
-	g, report, err := load.Load(context.Background(), cfg)
-	assert.NoError(tb, err, "the load finishes")
-	return g, report, sink
-}
-
-// stamped returns source framed as one brand's output, so a case
-// can put a generated file into a tree.
-func stamped(tb assert.TB, brand output.Brand, source string) []byte {
-	tb.Helper()
-
-	contract, err := output.NewContract(brand, frontendtest.NewScripted().Syntax())
-	assert.NoError(tb, err, "the contract builds over the fixture language's comment syntax")
-	b, err := contract.Stamp(plugin.RenderedFile{
-		Path: "gen.zz", Plugins: []plugin.ID{"gen"}, Body: []byte(source),
-	})
-	assert.NoError(tb, err, "the source stamps")
-	return b
-}
-
-// refuse drives one load the case states must fail and returns the
-// driver's error, so the case asserts on its text.
-func refuse(tb assert.TB, tree fs.FS, mutate ...func(*load.Config)) error {
-	tb.Helper()
-
-	cfg, _ := config(tree, mutate...)
-	_, _, err := load.Load(context.Background(), cfg)
-	assert.HasError(tb, err, "the load fails and seals no graph")
-	return err
-}
-
-// findingOf returns the first finding the sink contains under a
-// code, for a case asserting on a finding's address and message.
-func findingOf(sink *diag.Sink, c diag.Code) (diag.Diag, bool) {
-	for d := range sink.All() {
-		if d.Code == c {
-			return d, true
-		}
-	}
-	return diag.Diag{}, false
-}
-
-// rowID is the standard tree's one struct in svc/store.
-func rowID() symbol.Identity {
-	return symbol.Identity{
-		Lang: frontendtest.ScriptedLang, Package: storePath, Name: rowName, Kind: symbol.KindStruct,
-	}
-}
-
-// twinID is the identity two declarations of the shared tree spell.
-func twinID() symbol.Identity {
-	return symbol.Identity{
-		Lang: frontendtest.ScriptedLang, Package: sharedPath, Name: twinName, Kind: symbol.KindStruct,
-	}
-}
-
 // The driver is the read side's one pipeline, so its phases are
 // pinned end to end over the scripted language.
 func TestLoad(t *testing.T) {
@@ -1087,6 +984,109 @@ func BenchmarkLoad(b *testing.B) {
 		}
 		assert.Equal(b, got, 0, "a cold load decodes nothing from a record")
 	})
+}
+
+// stdTree is the happy-path fixture: two packages, one cross-package
+// reference, a directive, a constant, and a dependency package
+// loaded signature-only.
+func stdTree() fstest.MapFS {
+	return fstest.MapFS{
+		modFile: {Data: []byte("mod v1\n")},
+		apiFile: {Data: []byte(
+			"package svc/api\ntype User string\n",
+		)},
+		storeFile: {Data: []byte(
+			"package svc/store\nimport api svc/api\ntype Row api.User int\n+gen:table name=users\nconst rowmax\n",
+		)},
+		depFile: {Data: []byte(
+			"package svc/dep\ntype Dep string\nconst hidden\n",
+		)},
+	}
+}
+
+// config is the standard load configuration over a tree, under the
+// own brand, mutated per case.
+func config(tree fs.FS, mutate ...func(*load.Config)) (load.Config, *diag.Sink) {
+	sink := diag.NewSink()
+	cfg := load.Config{
+		FS:         tree,
+		Frontends:  []plugin.Frontend{frontendtest.NewScripted()},
+		Sink:       sink,
+		Signatures: []string{depPath},
+		Brand:      ownBrand,
+	}
+	for _, m := range mutate {
+		m(&cfg)
+	}
+	return cfg, sink
+}
+
+// with composes exactly these frontends instead of the standard one.
+func with(fronts ...plugin.Frontend) func(*load.Config) {
+	return func(cfg *load.Config) { cfg.Frontends = fronts }
+}
+
+// loadTree drives one load over a tree with the fake frontend and
+// the standard configuration, mutated per test.
+func loadTree(
+	tb assert.TB, tree fs.FS, mutate ...func(*load.Config),
+) (*store.Graph, *load.Report, *diag.Sink) {
+	tb.Helper()
+
+	cfg, sink := config(tree, mutate...)
+	g, report, err := load.Load(context.Background(), cfg)
+	assert.NoError(tb, err, "the load finishes")
+	return g, report, sink
+}
+
+// stamped returns source framed as one brand's output, so a case
+// can put a generated file into a tree.
+func stamped(tb assert.TB, brand output.Brand, source string) []byte {
+	tb.Helper()
+
+	contract, err := output.NewContract(brand, frontendtest.NewScripted().Syntax())
+	assert.NoError(tb, err, "the contract builds over the fixture language's comment syntax")
+	b, err := contract.Stamp(plugin.RenderedFile{
+		Path: "gen.zz", Plugins: []plugin.ID{"gen"}, Body: []byte(source),
+	})
+	assert.NoError(tb, err, "the source stamps")
+	return b
+}
+
+// refuse drives one load the case states must fail and returns the
+// driver's error, so the case asserts on its text.
+func refuse(tb assert.TB, tree fs.FS, mutate ...func(*load.Config)) error {
+	tb.Helper()
+
+	cfg, _ := config(tree, mutate...)
+	_, _, err := load.Load(context.Background(), cfg)
+	assert.HasError(tb, err, "the load fails and seals no graph")
+	return err
+}
+
+// findingOf returns the first finding the sink contains under a
+// code, for a case asserting on a finding's address and message.
+func findingOf(sink *diag.Sink, c diag.Code) (diag.Diag, bool) {
+	for d := range sink.All() {
+		if d.Code == c {
+			return d, true
+		}
+	}
+	return diag.Diag{}, false
+}
+
+// rowID is the standard tree's one struct in svc/store.
+func rowID() symbol.Identity {
+	return symbol.Identity{
+		Lang: frontendtest.ScriptedLang, Package: storePath, Name: rowName, Kind: symbol.KindStruct,
+	}
+}
+
+// twinID is the identity two declarations of the shared tree spell.
+func twinID() symbol.Identity {
+	return symbol.Identity{
+		Lang: frontendtest.ScriptedLang, Package: sharedPath, Name: twinName, Kind: symbol.KindStruct,
+	}
 }
 
 // encoded renders the identities of every package the graph

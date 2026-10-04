@@ -77,75 +77,6 @@ const (
 	otherShared = "other.mod"
 )
 
-// depTree returns the workspace tree whose one file imports the
-// store's library.
-func depTree() fstest.MapFS {
-	return fstest.MapFS{
-		appFile: {Data: []byte("package " + appPath + "\nimport ext " + libPath +
-			"\ntype " + appName + " ext." + libName + "\n")},
-	}
-}
-
-// depStore returns the store the library, the package it imports and
-// an unused package are in.
-func depStore() fstest.MapFS {
-	return fstest.MapFS{
-		libFile: {Data: []byte("package " + libPath + "\nimport deep " + deepPath +
-			"\ntype " + libName + " deep." + deepName + "\nconst " + hiddenName + "\n")},
-		deepFile:   {Data: []byte("package " + deepPath + "\ntype " + deepName + " string\n")},
-		unusedFile: {Data: []byte("package ext/unused\ntype Unused string\n")},
-	}
-}
-
-// absentTree returns the directory whose three files import a package
-// no store declares, the packages listing the files out of path order.
-func absentTree() fstest.MapFS {
-	return fstest.MapFS{
-		firstFile:  {Data: []byte("package " + onePath + "\nimport x " + absentPath + "\n")},
-		secondFile: {Data: []byte("package " + twoPath + "\nimport x " + absentPath + "\n")},
-		thirdFile:  {Data: []byte("package " + onePath + "\nimport x " + absentPath + "\n")},
-	}
-}
-
-// stores hands the load one store under the scripted dependent's
-// store name.
-func stores(tree fs.FS) func(*load.Config) {
-	return func(cfg *load.Config) {
-		cfg.Stores = map[string]fs.FS{frontendtest.ScriptedStore: tree}
-	}
-}
-
-// member returns the qualified path of a file of the scripted
-// dependent's store.
-func member(path string) string { return plugin.StorePath(frontendtest.ScriptedStore, path) }
-
-// declIn returns the identity of a struct one package declares.
-func declIn(pkg, name string) symbol.Identity {
-	return symbol.Identity{Lang: frontendtest.ScriptedLang, Package: pkg, Name: name, Kind: symbol.KindStruct}
-}
-
-// unitOf returns the report of the unit whose first member is a path.
-func unitOf(tb assert.TB, report *load.Report, first string) load.UnitReport {
-	tb.Helper()
-
-	for _, u := range report.Units {
-		if u.Files[0].Path == first {
-			return u
-		}
-	}
-	tb.Fatalf("no unit of the report opens with %s", first)
-	return load.UnitReport{}
-}
-
-// needPaths returns the paths of a round's needs, in round order.
-func needPaths(round *plugin.DependencyRound) []string {
-	out := make([]string, len(round.Needs))
-	for i, n := range round.Needs {
-		out[i] = n.Path
-	}
-	return out
-}
-
 // The dependency rounds load what the workspace imports and no store
 // file more, so each round's needs, units and keys are pinned.
 func TestDependency(t *testing.T) {
@@ -600,6 +531,75 @@ func TestDependency(t *testing.T) {
 			assert.Contains(t, err.Error(), "dependencies", "the error names the phase")
 		})
 	})
+}
+
+// depTree returns the workspace tree whose one file imports the
+// store's library.
+func depTree() fstest.MapFS {
+	return fstest.MapFS{
+		appFile: {Data: []byte("package " + appPath + "\nimport ext " + libPath +
+			"\ntype " + appName + " ext." + libName + "\n")},
+	}
+}
+
+// depStore returns the store the library, the package it imports and
+// an unused package are in.
+func depStore() fstest.MapFS {
+	return fstest.MapFS{
+		libFile: {Data: []byte("package " + libPath + "\nimport deep " + deepPath +
+			"\ntype " + libName + " deep." + deepName + "\nconst " + hiddenName + "\n")},
+		deepFile:   {Data: []byte("package " + deepPath + "\ntype " + deepName + " string\n")},
+		unusedFile: {Data: []byte("package ext/unused\ntype Unused string\n")},
+	}
+}
+
+// absentTree returns the directory whose three files import a package
+// no store declares, the packages listing the files out of path order.
+func absentTree() fstest.MapFS {
+	return fstest.MapFS{
+		firstFile:  {Data: []byte("package " + onePath + "\nimport x " + absentPath + "\n")},
+		secondFile: {Data: []byte("package " + twoPath + "\nimport x " + absentPath + "\n")},
+		thirdFile:  {Data: []byte("package " + onePath + "\nimport x " + absentPath + "\n")},
+	}
+}
+
+// stores hands the load one store under the scripted dependent's
+// store name.
+func stores(tree fs.FS) func(*load.Config) {
+	return func(cfg *load.Config) {
+		cfg.Stores = map[string]fs.FS{frontendtest.ScriptedStore: tree}
+	}
+}
+
+// member returns the qualified path of a file of the scripted
+// dependent's store.
+func member(path string) string { return plugin.StorePath(frontendtest.ScriptedStore, path) }
+
+// declIn returns the identity of a struct one package declares.
+func declIn(pkg, name string) symbol.Identity {
+	return symbol.Identity{Lang: frontendtest.ScriptedLang, Package: pkg, Name: name, Kind: symbol.KindStruct}
+}
+
+// unitOf returns the report of the unit whose first member is a path.
+func unitOf(tb assert.TB, report *load.Report, first string) load.UnitReport {
+	tb.Helper()
+
+	for _, u := range report.Units {
+		if u.Files[0].Path == first {
+			return u
+		}
+	}
+	tb.Fatalf("no unit of the report opens with %s", first)
+	return load.UnitReport{}
+}
+
+// needPaths returns the paths of a round's needs, in round order.
+func needPaths(round *plugin.DependencyRound) []string {
+	out := make([]string, len(round.Needs))
+	for i, n := range round.Needs {
+		out[i] = n.Path
+	}
+	return out
 }
 
 // errDependencies is what a failing round returns, so a case can

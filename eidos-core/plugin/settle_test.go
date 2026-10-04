@@ -112,95 +112,6 @@ func capitalizing() *respellingOnly {
 	})
 }
 
-// settleOrigin returns a distinct origin identity per name.
-func settleOrigin(name string, k symbol.Kind) symbol.Identity {
-	return symbol.Identity{Lang: "fixture", Package: "svc", Name: name, Kind: k}
-}
-
-// settleUnit returns one unit under the given package path.
-func settleUnit(pkg, key string, decls ...symbol.Symbol) plugin.Unit {
-	return plugin.Unit{
-		Plugin: "gen",
-		Per:    plugin.PerSource,
-		Word:   "gen",
-		Key:    key,
-		Pkg:    symbol.Identity{Package: pkg, Name: "svc", Kind: symbol.KindPackage},
-		Decls:  decls,
-	}
-}
-
-// storeOf returns a store with the units, refusing nothing.
-func storeOf(t *testing.T, units ...plugin.Unit) *plugin.Emit {
-	t.Helper()
-
-	e := plugin.NewEmit()
-	for _, u := range units {
-		assert.NoError(t, e.Add(u), "the unit arrives")
-	}
-	return e
-}
-
-// settled settles a store under a backend without facts and
-// returns the sink the settle reported to.
-func settled(t *testing.T, e *plugin.Emit, b plugin.Backend) *diag.Sink {
-	t.Helper()
-
-	sink := diag.NewSink()
-	assert.NoError(t, plugin.Settle(e, b, nil, sink), "the settle completes")
-	return sink
-}
-
-// messages returns a sink's findings as their message text, in
-// report order. A case about the order findings arrive in compares
-// against this, because the codes alone cannot tell one collision
-// from another.
-func messages(s *diag.Sink) []string {
-	var out []string
-	for d := range s.All() {
-		out = append(out, d.Msg)
-	}
-	return out
-}
-
-// nameFacts returns a fact store whose registry contains the test
-// target's name key, and the key's handle.
-func nameFacts(t *testing.T) (*meta.Facts, meta.Key[string]) {
-	t.Helper()
-
-	r := meta.NewRegistry()
-	name := settleTarget.NameKey()
-	assert.NoError(t, r.ClaimNamespace(name.Namespace()), "the target's namespace claims")
-	key, err := meta.Register[string](r, meta.KeySpec{Name: name, Doc: nameDoc})
-	assert.NoError(t, err, "the name key registers")
-	return meta.NewFacts(r), key
-}
-
-// stampName writes a name on an origin at one authority.
-func stampName(
-	t *testing.T, facts *meta.Facts, key meta.Key[string],
-	origin symbol.Identity, name string, a meta.Authority,
-) {
-	t.Helper()
-
-	err := meta.Stamp(facts, key, name, meta.Claim{Subject: origin, Authority: a, Plugin: stampPlugin})
-	assert.NoError(t, err, "the name stamps")
-}
-
-// overridden settles one struct named row under the capitalizing
-// hook with a name written on its origin at one authority, and
-// returns the settled spelling.
-func overridden(t *testing.T, name string, a meta.Authority) string {
-	t.Helper()
-
-	origin := settleOrigin("row", symbol.KindStruct)
-	row := &emit.Struct{Origin: origin, Name: "row"}
-	facts, key := nameFacts(t)
-	stampName(t, facts, key, origin, name, a)
-	e := storeOf(t, settleUnit("svc", "svc/a.src", row))
-	assert.NoError(t, plugin.Settle(e, capitalizing(), facts, diag.NewSink()), "the settle completes")
-	return row.Name
-}
-
 // respelledStore is the reference-following fixture after its
 // settle: a struct whose field names it and whose method's body
 // reads a local and a parameter, an alias resolved to the struct, a
@@ -221,17 +132,6 @@ type respelledStore struct {
 	keyed     *emit.Variable
 	labeled   *emit.Variable
 	qualified *emit.Variable
-}
-
-// structural returns a structural reference of a form, spelled as
-// written, over elements.
-func structural(form symbol.TypeForm, spelling string, elems ...*emit.TypeRef) *emit.TypeRef {
-	return &emit.TypeRef{Form: form, Spelling: spelling, Elems: elems}
-}
-
-// variableOf returns a variable of svc named name, of the type t.
-func variableOf(name string, t *emit.TypeRef) *emit.Variable {
-	return &emit.Variable{Origin: settleOrigin(name, symbol.KindVariable), Name: name, Type: t}
 }
 
 // settleRespelled builds the reference-following fixture and settles
@@ -321,74 +221,6 @@ func settleRespelled(t *testing.T) respelledStore {
 	}
 }
 
-// settleGuarded builds a callable whose body reads its parameter
-// under a guard and a package constant from its prologue, a declared
-// slot and its epilogue, settles it under a prefixing hook, and
-// returns the callable.
-func settleGuarded(t *testing.T) *emit.Function {
-	t.Helper()
-
-	body := emit.Body{Stmts: []emit.Stmt{{
-		Kind: emit.StmtGuard, Name: "rowCount",
-		Then: []emit.Stmt{{Kind: emit.StmtExpr, Value: emit.Expr{
-			Kind: emit.ExprCall,
-			Args: []emit.Expr{{Kind: emit.ExprName, Name: "rowCount"}},
-		}}},
-	}}}
-	body.Prologue.Append(emit.Stmt{
-		Kind: emit.StmtExpr,
-		Value: emit.Expr{
-			Kind: emit.ExprCall,
-			Fn:   &emit.Expr{Kind: emit.ExprName, Name: "max"},
-		},
-	})
-	body.Declare("checks").Append(emit.Stmt{
-		Kind:  emit.StmtExpr,
-		Value: emit.Expr{Kind: emit.ExprName, Name: "max"},
-	})
-	body.Epilogue.Append(emit.Stmt{
-		Kind:  emit.StmtExpr,
-		Value: emit.Expr{Kind: emit.ExprName, Name: "rowCount"},
-	})
-	load := &emit.Function{
-		Origin: settleOrigin("load", symbol.KindFunction),
-		Name:   "load",
-		Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
-		Body:   body,
-	}
-	limit := &emit.Constant{Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1"}
-	e := storeOf(t, settleUnit("svc", "svc/a.src", load, limit))
-	coretest.AssertCodes(t, settled(t, e, prefixing("p")))
-	return load
-}
-
-// settleReassigned builds a callable that reassigns its parameter
-// and returns it, settles it under a prefixing hook, and returns its
-// body's statements.
-func settleReassigned(t *testing.T) []emit.Stmt {
-	t.Helper()
-
-	load := &emit.Function{
-		Origin: settleOrigin("load", symbol.KindFunction),
-		Name:   "load",
-		Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
-		Body: emit.Body{Stmts: []emit.Stmt{
-			{
-				Kind: emit.StmtAssign, Names: []string{"rowCount"},
-				Value: emit.Expr{
-					Kind: emit.ExprCall,
-					Fn:   &emit.Expr{Kind: emit.ExprName, Name: "clamp"},
-					Args: []emit.Expr{{Kind: emit.ExprName, Name: "rowCount"}},
-				},
-			},
-			{Kind: emit.StmtReturn, Value: emit.Expr{Kind: emit.ExprName, Name: "rowCount"}},
-		}},
-	}
-	e := storeOf(t, settleUnit("svc", "svc/a.src", load))
-	coretest.AssertCodes(t, settled(t, e, prefixing("p")))
-	return load.Body.Stmts
-}
-
 // ambiguousRow returns a hook that settles a struct and a function
 // of one emitted name apart, and the two declarations in two units,
 // so a bare reference to the name matches diverging spellings.
@@ -418,16 +250,6 @@ func protectedRefusing() *respellingOnly {
 		}
 		return name, nil
 	})
-}
-
-// protectedBox returns a struct whose one field is protected.
-func protectedBox() *emit.Struct {
-	box := &emit.Struct{Origin: settleOrigin("box", symbol.KindStruct), Name: "box"}
-	box.Fields.Append(&emit.Field{
-		Name: "item", Visibility: symbol.VisibilityProtected,
-		Type: &emit.TypeRef{Spelling: "int"},
-	})
-	return box
 }
 
 // verbatimLoad returns a function whose verbatim body reads its
@@ -1313,6 +1135,184 @@ func BenchmarkSettle(b *testing.B) {
 			assert.True(b, e.Settled(), "the store is marked settled")
 		})
 	}
+}
+
+// settleOrigin returns a distinct origin identity per name.
+func settleOrigin(name string, k symbol.Kind) symbol.Identity {
+	return symbol.Identity{Lang: "fixture", Package: "svc", Name: name, Kind: k}
+}
+
+// settleUnit returns one unit under the given package path.
+func settleUnit(pkg, key string, decls ...symbol.Symbol) plugin.Unit {
+	return plugin.Unit{
+		Plugin: "gen",
+		Per:    plugin.PerSource,
+		Word:   "gen",
+		Key:    key,
+		Pkg:    symbol.Identity{Package: pkg, Name: "svc", Kind: symbol.KindPackage},
+		Decls:  decls,
+	}
+}
+
+// storeOf returns a store with the units, refusing nothing.
+func storeOf(t *testing.T, units ...plugin.Unit) *plugin.Emit {
+	t.Helper()
+
+	e := plugin.NewEmit()
+	for _, u := range units {
+		assert.NoError(t, e.Add(u), "the unit arrives")
+	}
+	return e
+}
+
+// settled settles a store under a backend without facts and
+// returns the sink the settle reported to.
+func settled(t *testing.T, e *plugin.Emit, b plugin.Backend) *diag.Sink {
+	t.Helper()
+
+	sink := diag.NewSink()
+	assert.NoError(t, plugin.Settle(e, b, nil, sink), "the settle completes")
+	return sink
+}
+
+// messages returns a sink's findings as their message text, in
+// report order. A case about the order findings arrive in compares
+// against this, because the codes alone cannot tell one collision
+// from another.
+func messages(s *diag.Sink) []string {
+	var out []string
+	for d := range s.All() {
+		out = append(out, d.Msg)
+	}
+	return out
+}
+
+// nameFacts returns a fact store whose registry contains the test
+// target's name key, and the key's handle.
+func nameFacts(t *testing.T) (*meta.Facts, meta.Key[string]) {
+	t.Helper()
+
+	r := meta.NewRegistry()
+	name := settleTarget.NameKey()
+	assert.NoError(t, r.ClaimNamespace(name.Namespace()), "the target's namespace claims")
+	key, err := meta.Register[string](r, meta.KeySpec{Name: name, Doc: nameDoc})
+	assert.NoError(t, err, "the name key registers")
+	return meta.NewFacts(r), key
+}
+
+// stampName writes a name on an origin at one authority.
+func stampName(
+	t *testing.T, facts *meta.Facts, key meta.Key[string],
+	origin symbol.Identity, name string, a meta.Authority,
+) {
+	t.Helper()
+
+	err := meta.Stamp(facts, key, name, meta.Claim{Subject: origin, Authority: a, Plugin: stampPlugin})
+	assert.NoError(t, err, "the name stamps")
+}
+
+// overridden settles one struct named row under the capitalizing
+// hook with a name written on its origin at one authority, and
+// returns the settled spelling.
+func overridden(t *testing.T, name string, a meta.Authority) string {
+	t.Helper()
+
+	origin := settleOrigin("row", symbol.KindStruct)
+	row := &emit.Struct{Origin: origin, Name: "row"}
+	facts, key := nameFacts(t)
+	stampName(t, facts, key, origin, name, a)
+	e := storeOf(t, settleUnit("svc", "svc/a.src", row))
+	assert.NoError(t, plugin.Settle(e, capitalizing(), facts, diag.NewSink()), "the settle completes")
+	return row.Name
+}
+
+// structural returns a structural reference of a form, spelled as
+// written, over elements.
+func structural(form symbol.TypeForm, spelling string, elems ...*emit.TypeRef) *emit.TypeRef {
+	return &emit.TypeRef{Form: form, Spelling: spelling, Elems: elems}
+}
+
+// variableOf returns a variable of svc named name, of the type t.
+func variableOf(name string, t *emit.TypeRef) *emit.Variable {
+	return &emit.Variable{Origin: settleOrigin(name, symbol.KindVariable), Name: name, Type: t}
+}
+
+// settleGuarded builds a callable whose body reads its parameter
+// under a guard and a package constant from its prologue, a declared
+// slot and its epilogue, settles it under a prefixing hook, and
+// returns the callable.
+func settleGuarded(t *testing.T) *emit.Function {
+	t.Helper()
+
+	body := emit.Body{Stmts: []emit.Stmt{{
+		Kind: emit.StmtGuard, Name: "rowCount",
+		Then: []emit.Stmt{{Kind: emit.StmtExpr, Value: emit.Expr{
+			Kind: emit.ExprCall,
+			Args: []emit.Expr{{Kind: emit.ExprName, Name: "rowCount"}},
+		}}},
+	}}}
+	body.Prologue.Append(emit.Stmt{
+		Kind: emit.StmtExpr,
+		Value: emit.Expr{
+			Kind: emit.ExprCall,
+			Fn:   &emit.Expr{Kind: emit.ExprName, Name: "max"},
+		},
+	})
+	body.Declare("checks").Append(emit.Stmt{
+		Kind:  emit.StmtExpr,
+		Value: emit.Expr{Kind: emit.ExprName, Name: "max"},
+	})
+	body.Epilogue.Append(emit.Stmt{
+		Kind:  emit.StmtExpr,
+		Value: emit.Expr{Kind: emit.ExprName, Name: "rowCount"},
+	})
+	load := &emit.Function{
+		Origin: settleOrigin("load", symbol.KindFunction),
+		Name:   "load",
+		Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+		Body:   body,
+	}
+	limit := &emit.Constant{Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1"}
+	e := storeOf(t, settleUnit("svc", "svc/a.src", load, limit))
+	coretest.AssertCodes(t, settled(t, e, prefixing("p")))
+	return load
+}
+
+// settleReassigned builds a callable that reassigns its parameter
+// and returns it, settles it under a prefixing hook, and returns its
+// body's statements.
+func settleReassigned(t *testing.T) []emit.Stmt {
+	t.Helper()
+
+	load := &emit.Function{
+		Origin: settleOrigin("load", symbol.KindFunction),
+		Name:   "load",
+		Params: []*emit.Param{{Name: "rowCount", Type: &emit.TypeRef{Spelling: "int"}}},
+		Body: emit.Body{Stmts: []emit.Stmt{
+			{
+				Kind: emit.StmtAssign, Names: []string{"rowCount"},
+				Value: emit.Expr{
+					Kind: emit.ExprCall,
+					Fn:   &emit.Expr{Kind: emit.ExprName, Name: "clamp"},
+					Args: []emit.Expr{{Kind: emit.ExprName, Name: "rowCount"}},
+				},
+			},
+			{Kind: emit.StmtReturn, Value: emit.Expr{Kind: emit.ExprName, Name: "rowCount"}},
+		}},
+	}
+	e := storeOf(t, settleUnit("svc", "svc/a.src", load))
+	coretest.AssertCodes(t, settled(t, e, prefixing("p")))
+	return load.Body.Stmts
+}
+
+// protectedBox returns a struct whose one field is protected.
+func protectedBox() *emit.Struct {
+	box := &emit.Struct{Origin: settleOrigin("box", symbol.KindStruct), Name: "box"}
+	box.Fields.Append(&emit.Field{
+		Name: "item", Visibility: symbol.VisibilityProtected,
+		Type: &emit.TypeRef{Spelling: "int"},
+	})
+	return box
 }
 
 // settleCases returns the backends the allocation check and the

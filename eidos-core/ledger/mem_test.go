@@ -19,15 +19,6 @@ import (
 // manifest directory.
 var listedDocs = []string{docName, "manifest/cd.json", "manifest/ef.json"}
 
-// holding returns a memory ledger that contains one blob.
-func holding(tb testing.TB, name, body string) *ledger.Mem {
-	tb.Helper()
-
-	l := ledger.NewMem()
-	assert.NoError(tb, l.Write(tb.Context(), name, []byte(body)), "the blob is written")
-	return l
-}
-
 // The memory ledger keeps blobs without state on disk: copies in, copies
 // out, and a logical clock that orders every write and touch.
 func TestMem(t *testing.T) {
@@ -441,6 +432,15 @@ func BenchmarkMem(b *testing.B) {
 		}
 		assert.True(b, got > 0, "Writes counts the stores")
 	})
+}
+
+// holding returns a memory ledger that contains one blob.
+func holding(tb testing.TB, name, body string) *ledger.Mem {
+	tb.Helper()
+
+	l := ledger.NewMem()
+	assert.NoError(tb, l.Write(tb.Context(), name, []byte(body)), "the blob is written")
+	return l
 }
 
 // listing returns a memory ledger of the three documents of

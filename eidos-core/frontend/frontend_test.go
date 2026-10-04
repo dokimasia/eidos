@@ -81,72 +81,6 @@ func setters(inner *frontendtest.Scripted) []setter {
 	}
 }
 
-// kitFake lowers the scripted language through the kit, its
-// test-file stamp moved from a parse statement into a classifier,
-// which is the seam under test.
-func kitFake() plugin.Frontend {
-	inner := frontendtest.NewScripted()
-	return frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
-		Version(inner.Ver).
-		Match(inner.Sel...).
-		Units(inner.Partition).
-		Parse(inner.Parse).
-		Classify(markTests).
-		Resolve(inner.Resolve).
-		Options(inner.Opts).
-		Build()
-}
-
-// markTests stamps the test-file key on every parsed file whose
-// path ends in the test suffix.
-func markTests(u *plugin.SourceUnit) error {
-	gb := u.Graph()
-	for _, pkg := range gb.Packages() {
-		for _, f := range pkg.Files {
-			if strings.HasSuffix(f.Path, "_test.zz") {
-				gb.Stamp(f, meta.RawStamp{
-					Key: frontendtest.ScriptedTestKey, Value: classified, Pos: f.Pos,
-				})
-			}
-		}
-	}
-	return nil
-}
-
-// kitTree is the fixture the kit-built frontend loads: two
-// packages, a cross-package reference, a directive statement, a
-// test file for the classifier, and a signature root.
-func kitTree() fstest.MapFS {
-	return fstest.MapFS{
-		"mod.zz": {Data: []byte("mod v1\n")},
-		"svc/api/user.zz": {Data: []byte(
-			"package svc/api\ntype User string\n",
-		)},
-		"svc/store/row.zz": {Data: []byte(
-			"package svc/store\nimport api svc/api\ntype Row api.User int\n+gen:table name=users\n",
-		)},
-		storeTestFile: {Data: []byte(
-			"package svc/store\ntype RowTest string\n",
-		)},
-		"svc/dep/dep.zz": {Data: []byte(
-			"package svc/dep\ntype Dep string\nconst hidden\n",
-		)},
-	}
-}
-
-// loadKit drives one load over the kit tree under the suite's
-// brand with the frontend the case built, and returns the load's
-// own error.
-func loadKit(f plugin.Frontend) (*store.Graph, error) {
-	g, _, err := load.Load(context.Background(), load.Config{
-		FS:        kitTree(),
-		Frontends: []plugin.Frontend{f},
-		Sink:      diag.NewSink(),
-		Brand:     frontendtest.Brand,
-	})
-	return g, err
-}
-
 // The kit lowers a declaration to the frontend role, so the built
 // frontend meets the same conformance bar a hand-rolled one does,
 // and the lowering's own seams are pinned beside it: classifier
@@ -566,6 +500,72 @@ func BenchmarkFrontend(b *testing.B) {
 		_, exports := got.(plugin.Exporter)
 		assert.True(b, exports, "the frontend has every optional role")
 	})
+}
+
+// kitFake lowers the scripted language through the kit, its
+// test-file stamp moved from a parse statement into a classifier,
+// which is the seam under test.
+func kitFake() plugin.Frontend {
+	inner := frontendtest.NewScripted()
+	return frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()).
+		Version(inner.Ver).
+		Match(inner.Sel...).
+		Units(inner.Partition).
+		Parse(inner.Parse).
+		Classify(markTests).
+		Resolve(inner.Resolve).
+		Options(inner.Opts).
+		Build()
+}
+
+// markTests stamps the test-file key on every parsed file whose
+// path ends in the test suffix.
+func markTests(u *plugin.SourceUnit) error {
+	gb := u.Graph()
+	for _, pkg := range gb.Packages() {
+		for _, f := range pkg.Files {
+			if strings.HasSuffix(f.Path, "_test.zz") {
+				gb.Stamp(f, meta.RawStamp{
+					Key: frontendtest.ScriptedTestKey, Value: classified, Pos: f.Pos,
+				})
+			}
+		}
+	}
+	return nil
+}
+
+// kitTree is the fixture the kit-built frontend loads: two
+// packages, a cross-package reference, a directive statement, a
+// test file for the classifier, and a signature root.
+func kitTree() fstest.MapFS {
+	return fstest.MapFS{
+		"mod.zz": {Data: []byte("mod v1\n")},
+		"svc/api/user.zz": {Data: []byte(
+			"package svc/api\ntype User string\n",
+		)},
+		"svc/store/row.zz": {Data: []byte(
+			"package svc/store\nimport api svc/api\ntype Row api.User int\n+gen:table name=users\n",
+		)},
+		storeTestFile: {Data: []byte(
+			"package svc/store\ntype RowTest string\n",
+		)},
+		"svc/dep/dep.zz": {Data: []byte(
+			"package svc/dep\ntype Dep string\nconst hidden\n",
+		)},
+	}
+}
+
+// loadKit drives one load over the kit tree under the suite's
+// brand with the frontend the case built, and returns the load's
+// own error.
+func loadKit(f plugin.Frontend) (*store.Graph, error) {
+	g, _, err := load.Load(context.Background(), load.Config{
+		FS:        kitTree(),
+		Frontends: []plugin.Frontend{f},
+		Sink:      diag.NewSink(),
+		Brand:     frontendtest.Brand,
+	})
+	return g, err
 }
 
 // news returns n new declarations of the kit's frontend.

@@ -17,16 +17,6 @@ import (
 // cases edit.
 const holdFile = "svc/hold/h.zz"
 
-// editedStore returns the standard tree with the store package's file
-// edited, so a warm load parses the store and keeps the rest.
-func editedStore() fstest.MapFS {
-	tree := stdTree()
-	tree[storeFile] = &fstest.MapFile{Data: []byte(
-		"package svc/store\nimport api svc/api\ntype Row api.User string\n+gen:table name=users\nconst rowmax\n",
-	)}
-	return tree
-}
-
 // The resolution step assigns the units a load parses, and looks the
 // declarations of the units it keeps up through their regions, so a
 // parsed reference resolves against kept declarations as against
@@ -81,4 +71,14 @@ func TestKept(t *testing.T) {
 			assert.ErrorIs(t, err, errUnreadable, "the lookup's failure returns after the link")
 		})
 	})
+}
+
+// editedStore returns the standard tree with the store package's file
+// edited, so a warm load parses the store and keeps the rest.
+func editedStore() fstest.MapFS {
+	tree := stdTree()
+	tree[storeFile] = &fstest.MapFile{Data: []byte(
+		"package svc/store\nimport api svc/api\ntype Row api.User string\n+gen:table name=users\nconst rowmax\n",
+	)}
+	return tree
 }

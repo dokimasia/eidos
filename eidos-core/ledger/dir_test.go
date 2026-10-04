@@ -61,31 +61,6 @@ const (
 	dirListAllocs = 34
 )
 
-// opened returns a ledger over a fresh workspace root and the root.
-func opened(tb testing.TB) (*ledger.Dir, string) {
-	tb.Helper()
-
-	root := tb.TempDir()
-	d, err := ledger.OpenDir(root, brand)
-	assert.NoError(tb, err, "the ledger opens")
-	return d, root
-}
-
-// onDisk returns the absolute path of a blob of a workspace root's
-// state directory.
-func onDisk(root, name string) string {
-	return filepath.Join(root, ledger.StateDir(brand), filepath.FromSlash(name))
-}
-
-// written returns a ledger over a fresh root that contains one blob.
-func written(tb testing.TB, name, body string) (*ledger.Dir, string) {
-	tb.Helper()
-
-	d, root := opened(tb)
-	assert.NoError(tb, d.Write(tb.Context(), name, []byte(body)), "the blob is written")
-	return d, root
-}
-
 // The disk ledger stores each blob as a file of the brand's state
 // directory, resolved inside the workspace root, and replaces it through
 // a staging file of its own.
@@ -701,6 +676,31 @@ func BenchmarkDir(b *testing.B) {
 		assert.NoError(b, err, "the blobs list")
 		assert.Length(b, got, 2, "both documents")
 	})
+}
+
+// opened returns a ledger over a fresh workspace root and the root.
+func opened(tb testing.TB) (*ledger.Dir, string) {
+	tb.Helper()
+
+	root := tb.TempDir()
+	d, err := ledger.OpenDir(root, brand)
+	assert.NoError(tb, err, "the ledger opens")
+	return d, root
+}
+
+// onDisk returns the absolute path of a blob of a workspace root's
+// state directory.
+func onDisk(root, name string) string {
+	return filepath.Join(root, ledger.StateDir(brand), filepath.FromSlash(name))
+}
+
+// written returns a ledger over a fresh root that contains one blob.
+func written(tb testing.TB, name, body string) (*ledger.Dir, string) {
+	tb.Helper()
+
+	d, root := opened(tb)
+	assert.NoError(tb, d.Write(tb.Context(), name, []byte(body)), "the blob is written")
+	return d, root
 }
 
 // documented returns a ledger over a fresh root of two documents and a

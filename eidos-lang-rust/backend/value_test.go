@@ -26,36 +26,6 @@ const (
 	weightName  = "Weight"
 )
 
-// valueRef returns a resolved reference to an item of one module.
-func valueRef(spelling, module, name string) *emit.TypeRef {
-	return &emit.TypeRef{
-		Spelling: spelling,
-		Target:   symbol.Identity{Lang: rust.Lang, Package: module, Name: name, Kind: symbol.KindStruct},
-	}
-}
-
-// valueFn returns a callee identity.
-func valueFn(module, name string) symbol.Identity {
-	return symbol.Identity{Lang: rust.Lang, Package: module, Name: name, Kind: symbol.KindFunction}
-}
-
-// integer returns an integer literal.
-func integer(text string) emit.Value { return emit.Literal(emit.LiteralInt, text) }
-
-// float returns a float literal.
-func float(text string) emit.Value { return emit.Literal(emit.LiteralFloat, text) }
-
-// returned runs one value through the scaffold as a return and
-// returns the value's text beside the file's import set.
-func returned(tb assert.TB, v emit.Value) (string, *render.ImportSet, error) {
-	tb.Helper()
-
-	set := &render.ImportSet{}
-	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, set)
-	text := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(string(out)), ";"))
-	return strings.TrimPrefix(text, "return "), set, err
-}
-
 // Every value spelling is pinned, for the reason the statement
 // spellings are: the text is spliced into generated bodies, and a
 // drift rewrites files.
@@ -243,4 +213,34 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, set.Len(), 0, "a literal names no module")
 		})
 	})
+}
+
+// valueRef returns a resolved reference to an item of one module.
+func valueRef(spelling, module, name string) *emit.TypeRef {
+	return &emit.TypeRef{
+		Spelling: spelling,
+		Target:   symbol.Identity{Lang: rust.Lang, Package: module, Name: name, Kind: symbol.KindStruct},
+	}
+}
+
+// valueFn returns a callee identity.
+func valueFn(module, name string) symbol.Identity {
+	return symbol.Identity{Lang: rust.Lang, Package: module, Name: name, Kind: symbol.KindFunction}
+}
+
+// integer returns an integer literal.
+func integer(text string) emit.Value { return emit.Literal(emit.LiteralInt, text) }
+
+// float returns a float literal.
+func float(text string) emit.Value { return emit.Literal(emit.LiteralFloat, text) }
+
+// returned runs one value through the scaffold as a return and
+// returns the value's text beside the file's import set.
+func returned(tb assert.TB, v emit.Value) (string, *render.ImportSet, error) {
+	tb.Helper()
+
+	set := &render.ImportSet{}
+	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, set)
+	text := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(string(out)), ";"))
+	return strings.TrimPrefix(text, "return "), set, err
 }

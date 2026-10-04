@@ -58,18 +58,6 @@ const (
 // owned is the fixture set of one generated file.
 var owned = genfile.Set{ownedPath: []byte(wellFormed)}
 
-// blocked puts a directory where the set's file belongs and
-// returns the root. The parent directory then creates, and the
-// read or the write of the file itself is what fails.
-func blocked(t *testing.T) string {
-	t.Helper()
-
-	root := t.TempDir()
-	assert.NoError(t, os.MkdirAll(filepath.Join(root, ownedDir, ownedName), 0o750),
-		"the blocking directory is created")
-	return root
-}
-
 // The plumbing every generator writes and verifies through: the
 // preamble, the formatted set, the write and the mirror guard.
 func TestGenfile(t *testing.T) {
@@ -472,6 +460,18 @@ func BenchmarkGenfile(b *testing.B) {
 		}
 		assert.NoError(b, err, "the tree matches")
 	})
+}
+
+// blocked puts a directory where the set's file belongs and
+// returns the root. The parent directory then creates, and the
+// read or the write of the file itself is what fails.
+func blocked(t *testing.T) string {
+	t.Helper()
+
+	root := t.TempDir()
+	assert.NoError(t, os.MkdirAll(filepath.Join(root, ownedDir, ownedName), 0o750),
+		"the blocking directory is created")
+	return root
 }
 
 // renderKinds renders one unformatted kinds file under dir.

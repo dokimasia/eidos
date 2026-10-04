@@ -28,19 +28,6 @@ const validSchema = "testdata/valid"
 // fresh processes but one, which counted 291.
 const lowerValidAllocs = 290 + 1
 
-// fieldsOf returns the fixture schema's first kind's fields by name.
-func fieldsOf(t *testing.T) map[string]model.FieldSpec {
-	t.Helper()
-
-	schema, err := model.Lower(validSchema, "")
-	assert.NoError(t, err, "the fixture schema lowers")
-	fields := map[string]model.FieldSpec{}
-	for _, field := range schema.Kinds[0].Fields {
-		fields[field.Name] = field
-	}
-	return fields
-}
-
 // Lowering is where the annotation contract is enforced, so what it
 // returns for a valid schema and what it refuses are contract.
 func TestIR(t *testing.T) {
@@ -416,4 +403,17 @@ func BenchmarkIR(b *testing.B) {
 		}
 		assert.True(b, got, "an untagged field is on the emit model")
 	})
+}
+
+// fieldsOf returns the fixture schema's first kind's fields by name.
+func fieldsOf(t *testing.T) map[string]model.FieldSpec {
+	t.Helper()
+
+	schema, err := model.Lower(validSchema, "")
+	assert.NoError(t, err, "the fixture schema lowers")
+	fields := map[string]model.FieldSpec{}
+	for _, field := range schema.Kinds[0].Fields {
+		fields[field.Name] = field
+	}
+	return fields
 }

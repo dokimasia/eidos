@@ -62,71 +62,6 @@ func (p *probe) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
-// pkgIn returns a package of one language and path whose one file, at
-// each of files, declares one struct named after the file.
-func pkgIn(lang symbol.Lang, pkg string, files ...string) *node.Package {
-	p := &node.Package{ID: symbol.Identity{Lang: lang, Package: pkg, Kind: symbol.KindPackage}}
-	for _, file := range files {
-		name := "S" + path.Base(path.Dir(file))
-		s := &node.Struct{
-			ID:   symbol.Identity{Lang: lang, Package: pkg, Name: name, Kind: symbol.KindStruct},
-			Name: name,
-			Pos:  position.Pos{File: file, Line: 1, Col: 1},
-		}
-		p.Files = append(p.Files, &node.File{
-			ID:    symbol.Identity{Lang: lang, Package: pkg, Name: path.Base(file), Kind: symbol.KindFile},
-			Path:  file,
-			Decls: node.Symbols{s},
-		})
-	}
-	return p
-}
-
-// moduled stamps a package's module fact the way a frontend stamps it,
-// for the run to replay.
-func moduled(t *testing.T, g *store.Graph, p *node.Package, module string) {
-	t.Helper()
-
-	stamp := meta.RawStamp{Key: meta.ModuleKey, Value: module, Origin: "fixture", Pos: position.Pos{File: "go.mod"}}
-	assert.NoError(t, g.AttachStamps(p.ID, []meta.RawStamp{stamp}), "the module fact attaches")
-}
-
-// graphOf returns an unfrozen graph of the packages, with the module
-// facts a stamp map names.
-func graphOf(t *testing.T, modules map[*node.Package]string, pkgs ...*node.Package) *store.Graph {
-	t.Helper()
-
-	g := store.New()
-	for _, p := range pkgs {
-		assert.NoError(t, g.AddPackage(p), "the package is admitted")
-		if module, stamped := modules[p]; stamped {
-			moduled(t, g, p, module)
-		}
-	}
-	return g
-}
-
-// scopedPlanOf returns the plan the scope cases compose: the probe
-// under sources, toward the fixture's target.
-func scopedPlanOf(sources workspace.Sources, p *probe) workspace.Plan {
-	plan := planTo(scopedPlan, "fixture", p)
-	plan.Sources = sources
-	return plan
-}
-
-// admitted runs one plan of the probe under sources over the graph,
-// and returns the package paths its reader returned, sorted.
-func admitted(t *testing.T, sources workspace.Sources, g *store.Graph) []string {
-	t.Helper()
-
-	p := &probe{}
-	w := built(t, workspace.New().Brand(fixtureBrand).Targets("fixture").Rules(native{}).
-		Plans(scopedPlanOf(sources, p)))
-	cleanRun(t, w, g)
-	slices.Sort(p.seen)
-	return p.seen
-}
-
 // A plan's sources decide which packages its generators see: Build
 // checks the fields against the registries, and each run binds them to
 // the graph and its facts.
@@ -289,4 +224,69 @@ func TestSources(t *testing.T) {
 				"the packages a module scope admits")
 		})
 	})
+}
+
+// pkgIn returns a package of one language and path whose one file, at
+// each of files, declares one struct named after the file.
+func pkgIn(lang symbol.Lang, pkg string, files ...string) *node.Package {
+	p := &node.Package{ID: symbol.Identity{Lang: lang, Package: pkg, Kind: symbol.KindPackage}}
+	for _, file := range files {
+		name := "S" + path.Base(path.Dir(file))
+		s := &node.Struct{
+			ID:   symbol.Identity{Lang: lang, Package: pkg, Name: name, Kind: symbol.KindStruct},
+			Name: name,
+			Pos:  position.Pos{File: file, Line: 1, Col: 1},
+		}
+		p.Files = append(p.Files, &node.File{
+			ID:    symbol.Identity{Lang: lang, Package: pkg, Name: path.Base(file), Kind: symbol.KindFile},
+			Path:  file,
+			Decls: node.Symbols{s},
+		})
+	}
+	return p
+}
+
+// moduled stamps a package's module fact the way a frontend stamps it,
+// for the run to replay.
+func moduled(t *testing.T, g *store.Graph, p *node.Package, module string) {
+	t.Helper()
+
+	stamp := meta.RawStamp{Key: meta.ModuleKey, Value: module, Origin: "fixture", Pos: position.Pos{File: "go.mod"}}
+	assert.NoError(t, g.AttachStamps(p.ID, []meta.RawStamp{stamp}), "the module fact attaches")
+}
+
+// graphOf returns an unfrozen graph of the packages, with the module
+// facts a stamp map names.
+func graphOf(t *testing.T, modules map[*node.Package]string, pkgs ...*node.Package) *store.Graph {
+	t.Helper()
+
+	g := store.New()
+	for _, p := range pkgs {
+		assert.NoError(t, g.AddPackage(p), "the package is admitted")
+		if module, stamped := modules[p]; stamped {
+			moduled(t, g, p, module)
+		}
+	}
+	return g
+}
+
+// scopedPlanOf returns the plan the scope cases compose: the probe
+// under sources, toward the fixture's target.
+func scopedPlanOf(sources workspace.Sources, p *probe) workspace.Plan {
+	plan := planTo(scopedPlan, "fixture", p)
+	plan.Sources = sources
+	return plan
+}
+
+// admitted runs one plan of the probe under sources over the graph,
+// and returns the package paths its reader returned, sorted.
+func admitted(t *testing.T, sources workspace.Sources, g *store.Graph) []string {
+	t.Helper()
+
+	p := &probe{}
+	w := built(t, workspace.New().Brand(fixtureBrand).Targets("fixture").Rules(native{}).
+		Plans(scopedPlanOf(sources, p)))
+	cleanRun(t, w, g)
+	slices.Sort(p.seen)
+	return p.seen
 }

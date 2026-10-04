@@ -23,56 +23,6 @@ const (
 	ifaceName = "I"
 )
 
-// classOf parses one exported class body and returns the class.
-func classOf(tb assert.TB, body string) *node.Struct {
-	tb.Helper()
-
-	return named[*node.Struct](tb, declsOf(tb, "export class "+className+" {\n"+body+"}\n"), className)
-}
-
-// ifaceOf parses one exported interface body and returns the interface.
-func ifaceOf(tb assert.TB, body string) *node.Interface {
-	tb.Helper()
-
-	return named[*node.Interface](tb, declsOf(tb, "export interface "+ifaceName+" {\n"+body+"}\n"), ifaceName)
-}
-
-// classBuilt parses one exported class body and returns the unit's
-// builder beside the class, for the cases that read the stamps.
-func classBuilt(tb assert.TB, body string) (*plugin.GraphBuilder, *node.Struct) {
-	tb.Helper()
-
-	gb, _ := parsedSource(tb, "export class "+className+" {\n"+body+"}\n")
-	return gb, named[*node.Struct](tb, fileIn(tb, gb, aPackage).Decls, className)
-}
-
-// ifaceBuilt parses one exported interface body and returns the unit's
-// builder beside the interface, for the cases that read the stamps.
-func ifaceBuilt(tb assert.TB, body string) (*plugin.GraphBuilder, *node.Interface) {
-	tb.Helper()
-
-	gb, _ := parsedSource(tb, "export interface "+ifaceName+" {\n"+body+"}\n")
-	return gb, named[*node.Interface](tb, fileIn(tb, gb, aPackage).Decls, ifaceName)
-}
-
-// methodNames returns the names of methods, in order.
-func methodNames(methods []*node.Method) []string {
-	out := make([]string, 0, len(methods))
-	for _, m := range methods {
-		out = append(out, m.Name)
-	}
-	return out
-}
-
-// fieldNames returns the names of fields, in order.
-func fieldNames(fields []*node.Field) []string {
-	out := make([]string, 0, len(fields))
-	for _, f := range fields {
-		out = append(out, f.Name)
-	}
-	return out
-}
-
 // A member's modifiers each become a fact of the model, so the mapping
 // of every class and interface member is pinned.
 func TestMember(t *testing.T) {
@@ -408,4 +358,54 @@ func TestMember(t *testing.T) {
 				"the model has no member for a callable object")
 		})
 	})
+}
+
+// classOf parses one exported class body and returns the class.
+func classOf(tb assert.TB, body string) *node.Struct {
+	tb.Helper()
+
+	return named[*node.Struct](tb, declsOf(tb, "export class "+className+" {\n"+body+"}\n"), className)
+}
+
+// ifaceOf parses one exported interface body and returns the interface.
+func ifaceOf(tb assert.TB, body string) *node.Interface {
+	tb.Helper()
+
+	return named[*node.Interface](tb, declsOf(tb, "export interface "+ifaceName+" {\n"+body+"}\n"), ifaceName)
+}
+
+// classBuilt parses one exported class body and returns the unit's
+// builder beside the class, for the cases that read the stamps.
+func classBuilt(tb assert.TB, body string) (*plugin.GraphBuilder, *node.Struct) {
+	tb.Helper()
+
+	gb, _ := parsedSource(tb, "export class "+className+" {\n"+body+"}\n")
+	return gb, named[*node.Struct](tb, fileIn(tb, gb, aPackage).Decls, className)
+}
+
+// ifaceBuilt parses one exported interface body and returns the unit's
+// builder beside the interface, for the cases that read the stamps.
+func ifaceBuilt(tb assert.TB, body string) (*plugin.GraphBuilder, *node.Interface) {
+	tb.Helper()
+
+	gb, _ := parsedSource(tb, "export interface "+ifaceName+" {\n"+body+"}\n")
+	return gb, named[*node.Interface](tb, fileIn(tb, gb, aPackage).Decls, ifaceName)
+}
+
+// methodNames returns the names of methods, in order.
+func methodNames(methods []*node.Method) []string {
+	out := make([]string, 0, len(methods))
+	for _, m := range methods {
+		out = append(out, m.Name)
+	}
+	return out
+}
+
+// fieldNames returns the names of fields, in order.
+func fieldNames(fields []*node.Field) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, f.Name)
+	}
+	return out
 }

@@ -97,14 +97,6 @@ func (c *recordingCheck) Check(ctx *plugin.CheckContext) error {
 	return c.err
 }
 
-// keptAndGone returns a composition of two plans writing under a and
-// b: the first run of every case that removes the second plan.
-func keptAndGone(tb assert.TB, root string) *workspace.Workspace {
-	tb.Helper()
-
-	return built(tb, onDisk(tb, root, diskPlan(tb, "kept", centralised("a")), diskPlan(tb, "gone", centralised("b"))))
-}
-
 // Close runs over the plans' records on one goroutine: the collisions
 // between plans, the sweep of the plans the composition no longer
 // declares, the audit of the completeness contracts, and the workspace
@@ -480,4 +472,12 @@ func TestClose(t *testing.T) {
 			assert.Equal(t, log, []plugin.ID{"zeta", "alpha"}, "the order the checks ran in")
 		})
 	})
+}
+
+// keptAndGone returns a composition of two plans writing under a and
+// b: the first run of every case that removes the second plan.
+func keptAndGone(tb assert.TB, root string) *workspace.Workspace {
+	tb.Helper()
+
+	return built(tb, onDisk(tb, root, diskPlan(tb, "kept", centralised("a")), diskPlan(tb, "gone", centralised("b"))))
 }

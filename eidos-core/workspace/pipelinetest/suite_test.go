@@ -68,6 +68,29 @@ const (
 // emits no statement.
 var errNoStatements = errors.New("pipelinetest_test: the fixture spells no statements")
 
+// The suite is the pipeline's conformance bar, so a plan that generates,
+// records and regenerates the files its fixture states passes every
+// check.
+func TestSuite(t *testing.T) {
+	t.Parallel()
+
+	t.Run("RunPipelineSuite", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes a plan that generates its wanted files", func(t *testing.T) {
+			t.Parallel()
+
+			pipelinetest.RunPipelineSuite(t, fixture())
+		})
+
+		t.Run("passes a plan whose load reads a store", func(t *testing.T) {
+			t.Parallel()
+
+			pipelinetest.RunPipelineSuite(t, dependentFixture())
+		})
+	})
+}
+
 // generator returns a generator under a name, running h once per struct
 // in scope and emitting into the gen family.
 func generator(name plugin.ID, h func(*eidos.StructMatch, *eidos.Emitter) error) plugin.Generator {
@@ -178,27 +201,4 @@ func dependentFixture() pipelinetest.Fixture {
 		},
 		Want: map[string][]byte{userGen: []byte(userStamped)},
 	}
-}
-
-// The suite is the pipeline's conformance bar, so a plan that generates,
-// records and regenerates the files its fixture states passes every
-// check.
-func TestSuite(t *testing.T) {
-	t.Parallel()
-
-	t.Run("RunPipelineSuite", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("passes a plan that generates its wanted files", func(t *testing.T) {
-			t.Parallel()
-
-			pipelinetest.RunPipelineSuite(t, fixture())
-		})
-
-		t.Run("passes a plan whose load reads a store", func(t *testing.T) {
-			t.Parallel()
-
-			pipelinetest.RunPipelineSuite(t, dependentFixture())
-		})
-	})
 }

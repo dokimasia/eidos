@@ -16,24 +16,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// parsedUnit lowers one package of several files and returns its
-// files.
-func parsedUnit(tb assert.TB, sources map[string]string) []*node.File {
-	tb.Helper()
-
-	tree := fstest.MapFS{}
-	var refs []plugin.SourceRef
-	for _, path := range []string{"p/a.go", "p/b.go"} {
-		tree[path] = &fstest.MapFile{Data: []byte(sources[path])}
-		refs = append(refs, plugin.SourceRef{Path: path})
-	}
-	f := frontend.New(nil)
-	u := plugin.NewSourceUnit(refs, tree, plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
-	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
-	assert.Length(tb, u.Graph().Packages(), 1, "one package declared")
-	return u.Graph().Packages()[0].Files
-}
-
 // A package's methods fold onto their receiver's declaration across
 // its files, so what folds and what is kept at file level is pinned.
 func TestFold(t *testing.T) {
@@ -91,4 +73,22 @@ func TestFold(t *testing.T) {
 		assert.Length(t, first.Methods, 1, "the first declaration takes the method, as the load keeps the first")
 		assert.Empty(t, second.Methods, "and the duplicate takes none")
 	})
+}
+
+// parsedUnit lowers one package of several files and returns its
+// files.
+func parsedUnit(tb assert.TB, sources map[string]string) []*node.File {
+	tb.Helper()
+
+	tree := fstest.MapFS{}
+	var refs []plugin.SourceRef
+	for _, path := range []string{"p/a.go", "p/b.go"} {
+		tree[path] = &fstest.MapFile{Data: []byte(sources[path])}
+		refs = append(refs, plugin.SourceRef{Path: path})
+	}
+	f := frontend.New(nil)
+	u := plugin.NewSourceUnit(refs, tree, plugin.DepthFull, f.Syntax(), brand, diag.NewSink(), f.Name())
+	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+	assert.Length(tb, u.Graph().Packages(), 1, "one package declared")
+	return u.Graph().Packages()[0].Files
 }

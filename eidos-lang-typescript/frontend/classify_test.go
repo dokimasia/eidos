@@ -16,25 +16,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// testStamps parses one file at a path through the frontend's parse and
-// classifiers, and returns how many test-file stamps it recorded.
-func testStamps(tb assert.TB, path string) int {
-	tb.Helper()
-
-	f := frontend.New()
-	tree := fstest.MapFS{path: {Data: []byte(exportClass)}}
-	u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: path}}, tree, plugin.DepthFull,
-		f.Syntax(), brand, diag.NewSink(), f.Name())
-	assert.NoError(tb, f.Parse(context.Background(), u), "the file parses")
-	n := 0
-	for _, s := range u.Graph().StampRecords() {
-		if s.Stamp.Key == typescript.TestFileKey {
-			n++
-		}
-	}
-	return n
-}
-
 // Whether a file takes part as a test is the consumer's call, so the
 // stamp follows Jest's default match exactly.
 func TestClassify(t *testing.T) {
@@ -63,4 +44,23 @@ func TestClassify(t *testing.T) {
 			})
 		}
 	})
+}
+
+// testStamps parses one file at a path through the frontend's parse and
+// classifiers, and returns how many test-file stamps it recorded.
+func testStamps(tb assert.TB, path string) int {
+	tb.Helper()
+
+	f := frontend.New()
+	tree := fstest.MapFS{path: {Data: []byte(exportClass)}}
+	u := plugin.NewSourceUnit([]plugin.SourceRef{{Path: path}}, tree, plugin.DepthFull,
+		f.Syntax(), brand, diag.NewSink(), f.Name())
+	assert.NoError(tb, f.Parse(context.Background(), u), "the file parses")
+	n := 0
+	for _, s := range u.Graph().StampRecords() {
+		if s.Stamp.Key == typescript.TestFileKey {
+			n++
+		}
+	}
+	return n
 }

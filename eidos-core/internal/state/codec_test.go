@@ -21,15 +21,6 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// stamped returns a region whose one subject has one stamp of a value.
-func stamped(v any) *store.Region {
-	s := coretest.Struct(coretest.StorePath, "Store")
-	return &store.Region{
-		Packages: []*node.Package{coretest.Package(coretest.StorePath, s)},
-		Stamps:   map[symbol.Identity][]meta.RawStamp{s.ID: {{Key: "fake.value", Value: v}}},
-	}
-}
-
 // The record format writes every value the kernel stores, so each type
 // of the fact vocabulary and each finding returns whole from a trip.
 func TestCodec(t *testing.T) {
@@ -114,4 +105,13 @@ func TestCodec(t *testing.T) {
 			})
 		}
 	})
+}
+
+// stamped returns a region whose one subject has one stamp of a value.
+func stamped(v any) *store.Region {
+	s := coretest.Struct(coretest.StorePath, "Store")
+	return &store.Region{
+		Packages: []*node.Package{coretest.Package(coretest.StorePath, s)},
+		Stamps:   map[symbol.Identity][]meta.RawStamp{s.ID: {{Key: "fake.value", Value: v}}},
+	}
 }

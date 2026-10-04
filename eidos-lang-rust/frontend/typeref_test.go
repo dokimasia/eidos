@@ -12,30 +12,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// typeIn parses the fixture crate whose root states a prelude and then
-// a struct H of one field of a type, and returns the field's type.
-func typeIn(tb assert.TB, prelude, typ string) *node.TypeRef {
-	tb.Helper()
-
-	return structOf(tb, prelude+"pub struct H {\n    pub f: "+typ+",\n}\n", "H").Fields[0].Type
-}
-
-// typeOf returns the reference a field of a type lowers to.
-func typeOf(tb assert.TB, typ string) *node.TypeRef {
-	tb.Helper()
-
-	return typeIn(tb, "", typ)
-}
-
-// spellingsOf returns the spellings of references, in order.
-func spellingsOf(refs []*node.TypeRef) []string {
-	out := make([]string, 0, len(refs))
-	for _, r := range refs {
-		out = append(out, r.Spelling)
-	}
-	return out
-}
-
 // A type reference is what the resolution step resolves and what a
 // backend spells, so its spelling, form, children and package are
 // pinned.
@@ -302,4 +278,28 @@ func TestTypeRef(t *testing.T) {
 			})
 		}
 	})
+}
+
+// typeIn parses the fixture crate whose root states a prelude and then
+// a struct H of one field of a type, and returns the field's type.
+func typeIn(tb assert.TB, prelude, typ string) *node.TypeRef {
+	tb.Helper()
+
+	return structOf(tb, prelude+"pub struct H {\n    pub f: "+typ+",\n}\n", "H").Fields[0].Type
+}
+
+// typeOf returns the reference a field of a type lowers to.
+func typeOf(tb assert.TB, typ string) *node.TypeRef {
+	tb.Helper()
+
+	return typeIn(tb, "", typ)
+}
+
+// spellingsOf returns the spellings of references, in order.
+func spellingsOf(refs []*node.TypeRef) []string {
+	out := make([]string, 0, len(refs))
+	for _, r := range refs {
+		out = append(out, r.Spelling)
+	}
+	return out
 }

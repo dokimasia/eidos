@@ -28,44 +28,6 @@ const (
 	runCall = "pkg.Run"
 )
 
-// hosting returns the fixture language with a struct spelling that
-// places its nested types one tab deep.
-func hosting() render.Language {
-	l := language()
-	l.Kinds[symbol.KindStruct] = "type {{.Name}} {\n" +
-		"{{- range .Types.Items}}\n" + action(render.BuiltinNested, strconv.Quote("\t"), ".") +
-		"{{- end}}\n}\n"
-	return l
-}
-
-// hostOf returns a unit of one struct that nests inner.
-func hostOf(inner symbol.Symbol) plugin.Unit {
-	host := &emit.Struct{Name: rowName}
-	host.Types.Append(inner)
-	u := unitOf(emitter, storeKey)
-	u.Decls = append(u.Decls, host)
-	return u
-}
-
-// when returns a template that runs body for the declaration named
-// name alone.
-func when(name, body string) string {
-	return "{{if eq .Name " + strconv.Quote(name) + "}}" + body + "{{end}}"
-}
-
-// failingOn returns a template that fails on the declaration named
-// name, after the given prefix ran, and spells the rest.
-func failingOn(name, prefix, rest string) string {
-	return when(name, prefix+failing) + rest
-}
-
-// refusing returns l refusing the method kind, which [unspelt]'s
-// second declaration takes.
-func refusing(l render.Language) render.Language {
-	l.Refused = map[symbol.Kind]string{symbol.KindMethod: refusalReason}
-	return l
-}
-
 // Declarations render in the order the flush fixed, and a
 // declaration the language cannot spell whole is skipped with the
 // imports it recorded, so the order, the skip and the nested
@@ -371,4 +333,42 @@ func TestDecls(t *testing.T) {
 				"the block adds no indentation of its own")
 		})
 	})
+}
+
+// hosting returns the fixture language with a struct spelling that
+// places its nested types one tab deep.
+func hosting() render.Language {
+	l := language()
+	l.Kinds[symbol.KindStruct] = "type {{.Name}} {\n" +
+		"{{- range .Types.Items}}\n" + action(render.BuiltinNested, strconv.Quote("\t"), ".") +
+		"{{- end}}\n}\n"
+	return l
+}
+
+// hostOf returns a unit of one struct that nests inner.
+func hostOf(inner symbol.Symbol) plugin.Unit {
+	host := &emit.Struct{Name: rowName}
+	host.Types.Append(inner)
+	u := unitOf(emitter, storeKey)
+	u.Decls = append(u.Decls, host)
+	return u
+}
+
+// when returns a template that runs body for the declaration named
+// name alone.
+func when(name, body string) string {
+	return "{{if eq .Name " + strconv.Quote(name) + "}}" + body + "{{end}}"
+}
+
+// failingOn returns a template that fails on the declaration named
+// name, after the given prefix ran, and spells the rest.
+func failingOn(name, prefix, rest string) string {
+	return when(name, prefix+failing) + rest
+}
+
+// refusing returns l refusing the method kind, which [unspelt]'s
+// second declaration takes.
+func refusing(l render.Language) render.Language {
+	l.Refused = map[symbol.Kind]string{symbol.KindMethod: refusalReason}
+	return l
 }

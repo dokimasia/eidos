@@ -30,34 +30,6 @@ const (
 const resolveSource = "package p\n\nimport (\n\t\"example.test/fix/api\"\n\tren \"example.test/fix/other\"\n" +
 	"\t_ \"example.test/fix/blank\"\n\t. \"example.test/fix/flood\"\n)\n\nvar _ = api.User{}\n"
 
-// scopeOf parses one file and returns the frontend with the file's
-// recorded import scope.
-func scopeOf(tb assert.TB, src string) (plugin.Frontend, plugin.ImportScope) {
-	tb.Helper()
-
-	tree := fstest.MapFS{resolveFile: {Data: []byte(src)}}
-	f := frontend.New(nil)
-	u := plugin.NewSourceUnit(
-		[]plugin.SourceRef{{Path: resolveFile}}, tree, plugin.DepthFull,
-		f.Syntax(), brand, diag.NewSink(), f.Name(),
-	)
-	assert.NoError(tb, f.Parse(context.Background(), u), "the file parses")
-	scopes := u.Graph().Scopes()
-	assert.Length(tb, scopes, 1, "one file, one scope")
-	return f, plugin.ImportScope{
-		File: symbol.Identity{
-			Lang: frontend.Lang, Package: resolvePackage, Name: resolveFile, Kind: symbol.KindFile,
-		},
-		Bindings: scopes[0].Bindings,
-	}
-}
-
-// at returns a candidate identity: a package and a name in Go, with
-// no kind.
-func at(pkg, name string) symbol.Identity {
-	return symbol.Identity{Lang: frontend.Lang, Package: pkg, Name: name}
-}
-
 func TestResolve(t *testing.T) {
 	t.Parallel()
 
@@ -113,4 +85,32 @@ func TestResolve(t *testing.T) {
 			assert.Empty(t, f.Resolve(scope, "api.User"), "no import binds the qualifier")
 		})
 	})
+}
+
+// scopeOf parses one file and returns the frontend with the file's
+// recorded import scope.
+func scopeOf(tb assert.TB, src string) (plugin.Frontend, plugin.ImportScope) {
+	tb.Helper()
+
+	tree := fstest.MapFS{resolveFile: {Data: []byte(src)}}
+	f := frontend.New(nil)
+	u := plugin.NewSourceUnit(
+		[]plugin.SourceRef{{Path: resolveFile}}, tree, plugin.DepthFull,
+		f.Syntax(), brand, diag.NewSink(), f.Name(),
+	)
+	assert.NoError(tb, f.Parse(context.Background(), u), "the file parses")
+	scopes := u.Graph().Scopes()
+	assert.Length(tb, scopes, 1, "one file, one scope")
+	return f, plugin.ImportScope{
+		File: symbol.Identity{
+			Lang: frontend.Lang, Package: resolvePackage, Name: resolveFile, Kind: symbol.KindFile,
+		},
+		Bindings: scopes[0].Bindings,
+	}
+}
+
+// at returns a candidate identity: a package and a name in Go, with
+// no kind.
+func at(pkg, name string) symbol.Identity {
+	return symbol.Identity{Lang: frontend.Lang, Package: pkg, Name: name}
 }

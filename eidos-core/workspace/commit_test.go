@@ -96,38 +96,6 @@ func (o *ordering) Commit() ([]output.Written, error) {
 	return o.Sink.Commit()
 }
 
-// dependentOn returns a plan mirroring every struct under dir that
-// depends on deps.
-func dependentOn(tb assert.TB, name, dir string, deps ...string) workspace.Plan {
-	tb.Helper()
-
-	p := diskPlan(tb, name, centralised(dir))
-	p.DependsOn = deps
-	return p
-}
-
-// digestOf returns a file's digest the way a record spells it.
-func digestOf(content string) string {
-	sum := sha256.Sum256([]byte(content))
-	return "sha256:" + hex.EncodeToString(sum[:])
-}
-
-// mtimeOf returns the mtime of a path of the root.
-func mtimeOf(t *testing.T, root, path string) time.Time {
-	t.Helper()
-
-	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(path)))
-	assert.NoError(t, err, "the file stats")
-	return info.ModTime()
-}
-
-// age sets the mtime of a path of the root to aged.
-func age(t *testing.T, root, path string) {
-	t.Helper()
-
-	assert.NoError(t, os.Chtimes(filepath.Join(root, filepath.FromSlash(path)), aged, aged), "the file ages")
-}
-
 // The commit is two-phase: every plan stages, the clean plans commit in
 // dependency order, and the ledger records the merged manifest strictly
 // after the last of them.
@@ -399,4 +367,36 @@ func TestCommit(t *testing.T) {
 			assert.Length(t, explained, 0, "and no FailedDependency explains it")
 		})
 	})
+}
+
+// dependentOn returns a plan mirroring every struct under dir that
+// depends on deps.
+func dependentOn(tb assert.TB, name, dir string, deps ...string) workspace.Plan {
+	tb.Helper()
+
+	p := diskPlan(tb, name, centralised(dir))
+	p.DependsOn = deps
+	return p
+}
+
+// digestOf returns a file's digest the way a record spells it.
+func digestOf(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return "sha256:" + hex.EncodeToString(sum[:])
+}
+
+// mtimeOf returns the mtime of a path of the root.
+func mtimeOf(t *testing.T, root, path string) time.Time {
+	t.Helper()
+
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(path)))
+	assert.NoError(t, err, "the file stats")
+	return info.ModTime()
+}
+
+// age sets the mtime of a path of the root to aged.
+func age(t *testing.T, root, path string) {
+	t.Helper()
+
+	assert.NoError(t, os.Chtimes(filepath.Join(root, filepath.FromSlash(path)), aged, aged), "the file ages")
 }

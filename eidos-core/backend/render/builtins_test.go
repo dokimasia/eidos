@@ -30,15 +30,6 @@ const (
 	auditHead = "audit"
 )
 
-// use spells a use builtin over the given arguments, each quoted.
-func use(args ...string) string {
-	words := []string{render.BuiltinUse}
-	for _, a := range args {
-		words = append(words, strconv.Quote(a))
-	}
-	return action(words...)
-}
-
 // The builtins are the names every template resolves against, so
 // what each records and returns, and that no vocabulary claims one,
 // are contract.
@@ -157,4 +148,13 @@ func TestBuiltins(t *testing.T) {
 				"the declaration is absent from the file")
 		})
 	})
+}
+
+// use spells a use builtin over the given arguments, each quoted.
+func use(args ...string) string {
+	words := []string{render.BuiltinUse}
+	for _, a := range args {
+		words = append(words, strconv.Quote(a))
+	}
+	return action(words...)
 }

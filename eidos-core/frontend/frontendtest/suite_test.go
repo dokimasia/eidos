@@ -85,6 +85,86 @@ const (
 	userName     = "User"
 )
 
+// failingFS is a tree whose named path refuses to open, so a walk
+// or a read that meets it fails for a filesystem's own reason. It
+// implements the one method, leaving Stat, ReadDir and ReadFile to
+// the fallbacks in io/fs, which is what puts every access through
+// the refusal.
+type failingFS struct {
+	tree fstest.MapFS
+	fail string
+}
+
+// Open returns the tree's file, or a refusal for the named path.
+func (f failingFS) Open(name string) (fs.File, error) {
+	if name == f.fail {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
+	}
+	return f.tree.Open(name)
+}
+
+// The suite is the read side's conformance bar, so the scripted
+// language passes it, and the suite skips each check a fixture
+// states nothing for, as a named skip, instead of passing it.
+func TestSuite(t *testing.T) {
+	t.Parallel()
+
+	t.Run("RunFrontendSuite", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes the scripted language through every check", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.RunFrontendSuite(t, setup)
+		})
+
+		t.Run("skips the checks the fixture states nothing for", func(t *testing.T) {
+			t.Parallel()
+
+			// A fixture with no signature root loads nothing shallow
+			// and one with no schema attaches nothing, so a suite that
+			// ran either check here would fail.
+			frontendtest.RunFrontendSuite(t, setupOver(plainFixture()))
+		})
+
+		t.Run("passes the scripted language in the dependent role through every check", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return frontendtest.NewScriptedDependent(), dependentFixture()
+			})
+		})
+
+		t.Run("passes the scripted language in the exporter role through every check", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return frontendtest.NewScriptedExporter(), exporterFixture()
+			})
+		})
+
+		t.Run("skips the dependency check for a fixture without stores", func(t *testing.T) {
+			t.Parallel()
+
+			// The plain fixture imports nothing outside itself, so a
+			// suite that ran the check here would fail it.
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return frontendtest.NewScriptedDependent(), plainFixture()
+			})
+		})
+
+		t.Run("skips the re-export check for a fixture that lists no re-exported declaration", func(t *testing.T) {
+			t.Parallel()
+
+			// The check fails a fixture that lists nothing, so a suite
+			// that ran it here would fail.
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return frontendtest.NewScriptedExporter(), plainFixture()
+			})
+		})
+	})
+}
+
 // depIdentity returns the identity of a declaration in the
 // signature root's package.
 func depIdentity(name string, kind symbol.Kind) symbol.Identity {
@@ -190,84 +270,4 @@ func setupOver(fx *frontendtest.Fixture) frontendtest.Setup {
 	return func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 		return frontendtest.NewScripted(), fx
 	}
-}
-
-// failingFS is a tree whose named path refuses to open, so a walk
-// or a read that meets it fails for a filesystem's own reason. It
-// implements the one method, leaving Stat, ReadDir and ReadFile to
-// the fallbacks in io/fs, which is what puts every access through
-// the refusal.
-type failingFS struct {
-	tree fstest.MapFS
-	fail string
-}
-
-// Open returns the tree's file, or a refusal for the named path.
-func (f failingFS) Open(name string) (fs.File, error) {
-	if name == f.fail {
-		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
-	}
-	return f.tree.Open(name)
-}
-
-// The suite is the read side's conformance bar, so the scripted
-// language passes it, and the suite skips each check a fixture
-// states nothing for, as a named skip, instead of passing it.
-func TestSuite(t *testing.T) {
-	t.Parallel()
-
-	t.Run("RunFrontendSuite", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("passes the scripted language through every check", func(t *testing.T) {
-			t.Parallel()
-
-			frontendtest.RunFrontendSuite(t, setup)
-		})
-
-		t.Run("skips the checks the fixture states nothing for", func(t *testing.T) {
-			t.Parallel()
-
-			// A fixture with no signature root loads nothing shallow
-			// and one with no schema attaches nothing, so a suite that
-			// ran either check here would fail.
-			frontendtest.RunFrontendSuite(t, setupOver(plainFixture()))
-		})
-
-		t.Run("passes the scripted language in the dependent role through every check", func(t *testing.T) {
-			t.Parallel()
-
-			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
-				return frontendtest.NewScriptedDependent(), dependentFixture()
-			})
-		})
-
-		t.Run("passes the scripted language in the exporter role through every check", func(t *testing.T) {
-			t.Parallel()
-
-			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
-				return frontendtest.NewScriptedExporter(), exporterFixture()
-			})
-		})
-
-		t.Run("skips the dependency check for a fixture without stores", func(t *testing.T) {
-			t.Parallel()
-
-			// The plain fixture imports nothing outside itself, so a
-			// suite that ran the check here would fail it.
-			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
-				return frontendtest.NewScriptedDependent(), plainFixture()
-			})
-		})
-
-		t.Run("skips the re-export check for a fixture that lists no re-exported declaration", func(t *testing.T) {
-			t.Parallel()
-
-			// The check fails a fixture that lists nothing, so a suite
-			// that ran it here would fail.
-			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
-				return frontendtest.NewScriptedExporter(), plainFixture()
-			})
-		})
-	})
 }

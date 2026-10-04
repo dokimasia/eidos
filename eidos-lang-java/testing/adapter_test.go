@@ -48,53 +48,6 @@ const (
 	typeErrorSource = "package demo;\n\npublic final class Row {\n    int x = \"text\";\n}\n"
 )
 
-// healthy returns generated output that parses, compiles and whose
-// one test class passes.
-func healthy() toolchain.Generated {
-	return toolchain.Generated{Files: map[string][]byte{
-		readerFile:  []byte(readerSource),
-		rowFile:     []byte(rowSource),
-		plainFile:   []byte(plainSource),
-		rowTestFile: []byte(rowTestSource),
-	}}
-}
-
-// with returns the healthy fixture with one file replaced or added,
-// for a case that breaks one thing.
-func with(path, body string) toolchain.Generated {
-	g := healthy()
-	g.Files[path] = []byte(body)
-	return g
-}
-
-// only returns a fixture with one file, for a case that needs no test
-// class.
-func only(path, body string) toolchain.Generated {
-	return toolchain.Generated{Files: map[string][]byte{path: []byte(body)}}
-}
-
-// adapter is the harness under test.
-func adapter() toolchain.Adapter { return javatesting.New() }
-
-// errText returns an error's text, and empty for no error, so a case
-// asserting on the text fails and does not panic.
-func errText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
-// laidOut lays a fixture out and removes it when the case ends.
-func laidOut(t *testing.T, g toolchain.Generated) string {
-	t.Helper()
-
-	dir, err := adapter().Layout(g)
-	assert.NoError(t, err, "the fixture lays out")
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
-}
-
 // The kernel's assertions drive the adapter, so the project it lays
 // out and the meaning of each result are its contract. The layout
 // needs no toolchain, and every case that runs one skips locally
@@ -361,4 +314,51 @@ func TestAdapter(t *testing.T) {
 				"a broken project returns an error, not false")
 		})
 	})
+}
+
+// healthy returns generated output that parses, compiles and whose
+// one test class passes.
+func healthy() toolchain.Generated {
+	return toolchain.Generated{Files: map[string][]byte{
+		readerFile:  []byte(readerSource),
+		rowFile:     []byte(rowSource),
+		plainFile:   []byte(plainSource),
+		rowTestFile: []byte(rowTestSource),
+	}}
+}
+
+// with returns the healthy fixture with one file replaced or added,
+// for a case that breaks one thing.
+func with(path, body string) toolchain.Generated {
+	g := healthy()
+	g.Files[path] = []byte(body)
+	return g
+}
+
+// only returns a fixture with one file, for a case that needs no test
+// class.
+func only(path, body string) toolchain.Generated {
+	return toolchain.Generated{Files: map[string][]byte{path: []byte(body)}}
+}
+
+// adapter is the harness under test.
+func adapter() toolchain.Adapter { return javatesting.New() }
+
+// errText returns an error's text, and empty for no error, so a case
+// asserting on the text fails and does not panic.
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// laidOut lays a fixture out and removes it when the case ends.
+func laidOut(t *testing.T, g toolchain.Generated) string {
+	t.Helper()
+
+	dir, err := adapter().Layout(g)
+	assert.NoError(t, err, "the fixture lays out")
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

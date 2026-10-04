@@ -38,6 +38,79 @@ func (b fakeBackend) Name() plugin.ID { return b.name }
 // Target returns the target the backend renders.
 func (b fakeBackend) Target() plugin.Target { return b.target }
 
+// A Workspace is the composition's frozen form. Its accessors return
+// what the composition declared and the keys Build registered.
+func TestWorkspace(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Brand", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the composition's brand", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			assert.Equal(t, w.Brand(), fixtureBrand, "the brand is the declared one")
+		})
+	})
+
+	t.Run("Kernel", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the kernel's registered keys", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			assert.False(t, w.Kernel().IsZero(), "the handles name the kernel's keys")
+		})
+	})
+}
+
+// The accessors allocate nothing in the ordinary run, which runs no
+// benchmark.
+func TestWorkspaceZeroAlloc(t *testing.T) {
+	w, err := valid().Build()
+	assert.NoError(t, err, "the fixture composition is valid")
+	assert.MaxAllocs(t, func() {
+		if w.Brand() != fixtureBrand {
+			t.Fatal("Brand returned another brand")
+		}
+	}, 0, "Brand allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if w.Kernel().IsZero() {
+			t.Fatal("Kernel returned the zero keys")
+		}
+	}, 0, "Kernel allocates nothing")
+}
+
+// BenchmarkWorkspace measures the accessors of a built workspace.
+func BenchmarkWorkspace(b *testing.B) {
+	w, err := valid().Build()
+	assert.NoError(b, err, "the fixture composition is valid")
+
+	b.Run("Brand", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got output.Brand
+		for c.Loop() {
+			got = w.Brand()
+		}
+		assert.Equal(b, got, fixtureBrand, "Brand returns the declared brand")
+	})
+
+	b.Run("Kernel", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got meta.KernelKeys
+		for c.Loop() {
+			got = w.Kernel()
+		}
+		assert.False(b, got.IsZero(), "Kernel returns the registered keys")
+	})
+}
+
 // quiet is an annotator handler stamping nothing.
 func quiet(*eidos.StructMatch, *eidos.Stamper) error { return nil }
 
@@ -149,77 +222,4 @@ func units(e *plugin.Emit) []plugin.Unit {
 		out = append(out, u)
 	}
 	return out
-}
-
-// A Workspace is the composition's frozen form. Its accessors return
-// what the composition declared and the keys Build registered.
-func TestWorkspace(t *testing.T) {
-	t.Parallel()
-
-	t.Run("Brand", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("returns the composition's brand", func(t *testing.T) {
-			t.Parallel()
-
-			w, err := valid().Build()
-			assert.NoError(t, err, "the fixture composition is valid")
-			assert.Equal(t, w.Brand(), fixtureBrand, "the brand is the declared one")
-		})
-	})
-
-	t.Run("Kernel", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("returns the kernel's registered keys", func(t *testing.T) {
-			t.Parallel()
-
-			w, err := valid().Build()
-			assert.NoError(t, err, "the fixture composition is valid")
-			assert.False(t, w.Kernel().IsZero(), "the handles name the kernel's keys")
-		})
-	})
-}
-
-// The accessors allocate nothing in the ordinary run, which runs no
-// benchmark.
-func TestWorkspaceZeroAlloc(t *testing.T) {
-	w, err := valid().Build()
-	assert.NoError(t, err, "the fixture composition is valid")
-	assert.MaxAllocs(t, func() {
-		if w.Brand() != fixtureBrand {
-			t.Fatal("Brand returned another brand")
-		}
-	}, 0, "Brand allocates nothing")
-	assert.MaxAllocs(t, func() {
-		if w.Kernel().IsZero() {
-			t.Fatal("Kernel returned the zero keys")
-		}
-	}, 0, "Kernel allocates nothing")
-}
-
-// BenchmarkWorkspace measures the accessors of a built workspace.
-func BenchmarkWorkspace(b *testing.B) {
-	w, err := valid().Build()
-	assert.NoError(b, err, "the fixture composition is valid")
-
-	b.Run("Brand", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got output.Brand
-		for c.Loop() {
-			got = w.Brand()
-		}
-		assert.Equal(b, got, fixtureBrand, "Brand returns the declared brand")
-	})
-
-	b.Run("Kernel", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got meta.KernelKeys
-		for c.Loop() {
-			got = w.Kernel()
-		}
-		assert.False(b, got.IsZero(), "Kernel returns the registered keys")
-	})
 }

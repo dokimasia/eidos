@@ -117,22 +117,6 @@ const (
 	literalAllocs = 6
 )
 
-// pairOf derives a reference's pair and fails unless both derived.
-func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Value, emit.Value) {
-	tb.Helper()
-
-	sample, alternate := gorules.New().SamplesOf(ref, hint, f.view)
-	assert.True(tb, sample.OK(), "the sample derives: "+sample.Refusal.String())
-	assert.True(tb, alternate.OK(), "the alternate derives: "+alternate.Refusal.String())
-	return sample.Value, alternate.Value
-}
-
-// refusalOf returns the refusal of a reference's sample.
-func refusalOf(f *fixture, ref *node.TypeRef) rules.Refusal {
-	sample, _ := gorules.New().SamplesOf(ref, "", f.view)
-	return sample.Refusal
-}
-
 // A generated check writes every value through these three. Each
 // derivation, each refusal and each authored part is pinned here.
 func TestValues(t *testing.T) {
@@ -825,6 +809,22 @@ func TestValuesAllocs(t *testing.T) {
 // every type it writes a value of.
 func BenchmarkValues(b *testing.B) {
 	benchCalls(b, valueCalls(b))
+}
+
+// pairOf derives a reference's pair and fails unless both derived.
+func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Value, emit.Value) {
+	tb.Helper()
+
+	sample, alternate := gorules.New().SamplesOf(ref, hint, f.view)
+	assert.True(tb, sample.OK(), "the sample derives: "+sample.Refusal.String())
+	assert.True(tb, alternate.OK(), "the alternate derives: "+alternate.Refusal.String())
+	return sample.Value, alternate.Value
+}
+
+// refusalOf returns the refusal of a reference's sample.
+func refusalOf(f *fixture, ref *node.TypeRef) rules.Refusal {
+	sample, _ := gorules.New().SamplesOf(ref, "", f.view)
+	return sample.Refusal
 }
 
 // valueCalls returns a call of each value derivation over a builtin

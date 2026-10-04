@@ -90,34 +90,6 @@ func (f failing) Write(ctx context.Context, name string, b []byte) error {
 	return f.Mem.Write(ctx, name, b)
 }
 
-// entry returns a well-formed entry for one path.
-func entry(path string) manifest.Entry {
-	return manifest.Entry{Path: path, Plan: planName, Hash: "sha256:" + strings.Repeat("ab", 32)}
-}
-
-// scaled returns a manifest of files entries, sorted by path.
-func scaled() manifest.Manifest {
-	m := manifest.Manifest{Version: manifest.Version, Workspace: workspaceName}
-	for i := range files {
-		m.Files = append(m.Files, entry(fmt.Sprintf("p%03d/f%d.go", i/10, i%10)))
-	}
-	return m
-}
-
-// recorded returns a memory ledger that contains the documents of m,
-// and their digests.
-func recorded(tb testing.TB, m manifest.Manifest) (*ledger.Mem, state.Digests) {
-	tb.Helper()
-
-	l := ledger.NewMem()
-	digests, err := state.WriteManifest(tb.Context(), l, m, nil)
-	assert.NoError(tb, err, "the record is written")
-	return l, digests
-}
-
-// documentOf returns the ledger name of a path's document.
-func documentOf(path string) string { return "manifest/" + manifest.BucketOf(path) + ".json" }
-
 // The record's documents round-trip through a ledger, and a commit
 // writes only the documents whose entries changed.
 func TestManifest(t *testing.T) {
@@ -383,3 +355,31 @@ func BenchmarkManifest(b *testing.B) {
 		assert.Equal(b, l.Writes(), writes, "and writes nothing")
 	})
 }
+
+// entry returns a well-formed entry for one path.
+func entry(path string) manifest.Entry {
+	return manifest.Entry{Path: path, Plan: planName, Hash: "sha256:" + strings.Repeat("ab", 32)}
+}
+
+// scaled returns a manifest of files entries, sorted by path.
+func scaled() manifest.Manifest {
+	m := manifest.Manifest{Version: manifest.Version, Workspace: workspaceName}
+	for i := range files {
+		m.Files = append(m.Files, entry(fmt.Sprintf("p%03d/f%d.go", i/10, i%10)))
+	}
+	return m
+}
+
+// recorded returns a memory ledger that contains the documents of m,
+// and their digests.
+func recorded(tb testing.TB, m manifest.Manifest) (*ledger.Mem, state.Digests) {
+	tb.Helper()
+
+	l := ledger.NewMem()
+	digests, err := state.WriteManifest(tb.Context(), l, m, nil)
+	assert.NoError(tb, err, "the record is written")
+	return l, digests
+}
+
+// documentOf returns the ledger name of a path's document.
+func documentOf(path string) string { return "manifest/" + manifest.BucketOf(path) + ".json" }

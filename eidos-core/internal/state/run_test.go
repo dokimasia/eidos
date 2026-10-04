@@ -18,22 +18,6 @@ import (
 // about a hundred bytes, so the run spans many 4 KiB blocks.
 const manyRows = 500
 
-// spread commits a table of many rows in one run and returns the live
-// generation.
-func spread(t *testing.T, l ledger.Ledger) *state.Generation {
-	t.Helper()
-
-	c := state.NewCommit(nil, nil)
-	for i := range manyRows {
-		c.Put(state.TableChecks, fmt.Appendf(nil, "key-%04d", i), fmt.Appendf(nil, "%090d", i))
-	}
-	_, err := c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
-	assert.NoError(t, err, "the commit writes")
-	g, err := state.Open(t.Context(), l)
-	assert.NoError(t, err, "and opens")
-	return g
-}
-
 // A run is sorted rows in blocks, each checked by its CRC-32C, so a
 // lookup finds a row in any block and a damaged block refuses to read.
 func TestRun(t *testing.T) {
@@ -131,4 +115,20 @@ func TestRun(t *testing.T) {
 		_, err = g.All(t.Context(), state.TableChecks)
 		assert.ErrorIs(t, err, state.ErrDamaged, "a short segment is damage")
 	})
+}
+
+// spread commits a table of many rows in one run and returns the live
+// generation.
+func spread(t *testing.T, l ledger.Ledger) *state.Generation {
+	t.Helper()
+
+	c := state.NewCommit(nil, nil)
+	for i := range manyRows {
+		c.Put(state.TableChecks, fmt.Appendf(nil, "key-%04d", i), fmt.Appendf(nil, "%090d", i))
+	}
+	_, err := c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
+	assert.NoError(t, err, "the commit writes")
+	g, err := state.Open(t.Context(), l)
+	assert.NoError(t, err, "and opens")
+	return g
 }

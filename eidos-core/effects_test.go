@@ -100,106 +100,6 @@ func (s *interleaved) await(ch <-chan struct{}) {
 	}
 }
 
-// immediately makes every invocation's effects as the invocation runs.
-func immediately(_ int, effects func()) { effects() }
-
-// manySubjects returns a frozen graph of n structs in the store
-// package, named in identity order, each in a file of its own.
-func manySubjects(tb assert.TB, n int) (*store.Graph, []*node.Struct) {
-	tb.Helper()
-
-	structs := make([]*node.Struct, n)
-	decls := make([]symbol.Symbol, n)
-	for i := range structs {
-		s := coretest.Struct(coretest.StorePath, fmt.Sprintf("S%02d", i))
-		s.Pos = position.Pos{File: fmt.Sprintf("s%02d.go", i), Line: 1, Col: 1}
-		structs[i], decls[i] = s, s
-	}
-	g := store.New()
-	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, decls...)),
-		"the fixture package is admitted")
-	g.Freeze()
-	return g, structs
-}
-
-// instanceKey returns a registered int64 key and a fact store built
-// over its registry.
-func instanceKey(tb assert.TB) (meta.Key[int64], *meta.Facts) {
-	tb.Helper()
-
-	reg := meta.NewRegistry()
-	assert.NoError(tb, reg.ClaimNamespace(fixtureNamespace), "the namespace is claimed")
-	key, err := meta.Register[int64](reg, meta.KeySpec{
-		Name: "t.instance", Doc: "names the gating instance that stamped a fixture subject",
-	})
-	assert.NoError(tb, err, "the key registers")
-	return key, meta.NewFacts(reg)
-}
-
-// indexOf returns each struct's index into structs, keyed by identity,
-// which is the struct's place in canonical match order.
-func indexOf(structs []*node.Struct) map[symbol.Identity]int {
-	index := make(map[symbol.Identity]int, len(structs))
-	for i, s := range structs {
-		index[s.ID] = i
-	}
-	return index
-}
-
-// gatedStruct returns a frozen graph of one struct with n raw instances
-// of the gate directive.
-func gatedStruct(tb assert.TB, n int) (*store.Graph, *node.Struct) {
-	tb.Helper()
-
-	alpha := coretest.Struct(coretest.StorePath, "Alpha")
-	g := store.New()
-	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
-		"the fixture package is admitted")
-	raws := make([]directive.Raw, n)
-	for i := range raws {
-		raws[i] = directive.Raw{Name: gateName}
-	}
-	assert.NoError(tb, g.AttachDirectives(alpha.ID, raws), "the gating instances attach")
-	g.Freeze()
-	return g, alpha
-}
-
-// repeated returns the validated table with n instances of a
-// repeatable directive on one subject, in instance order.
-func repeated(subject symbol.Identity, schema directive.Schema, n int) map[symbol.Identity][]directive.Directive {
-	ds := make([]directive.Directive, n)
-	for i := range ds {
-		ds[i] = directive.Directive{Name: schema.Canonical(), Instance: i}
-	}
-	return map[symbol.Identity][]directive.Directive{subject: ds}
-}
-
-// on returns the generator context with its worker count set.
-func on(ctx *plugin.GeneratorContext, workers int) *plugin.GeneratorContext {
-	ctx.Workers = workers
-	return ctx
-}
-
-// fieldNames returns the names of the fields a struct's slot contains,
-// in slot order.
-func fieldNames(s *emit.Struct) []string {
-	names := make([]string, 0, s.Fields.Len())
-	for _, f := range s.Fields.Items() {
-		names = append(names, f.Name)
-	}
-	return names
-}
-
-// messages returns the messages of every finding in a sink, in its
-// order.
-func messages(sink *diag.Sink) []string {
-	var out []string
-	for d := range sink.All() {
-		out = append(out, d.Msg)
-	}
-	return out
-}
-
 // An invocation's placements, slot appends and findings are buffered
 // with it and apply when its phase call's rules have run, in canonical
 // match order, and its stamps rank by that order, so the output does
@@ -442,4 +342,104 @@ func TestEffects(t *testing.T) {
 				assert.Equal(t, got, int64(0), "the first instance's claim outranks the second's, which arrived first")
 			})
 	})
+}
+
+// immediately makes every invocation's effects as the invocation runs.
+func immediately(_ int, effects func()) { effects() }
+
+// manySubjects returns a frozen graph of n structs in the store
+// package, named in identity order, each in a file of its own.
+func manySubjects(tb assert.TB, n int) (*store.Graph, []*node.Struct) {
+	tb.Helper()
+
+	structs := make([]*node.Struct, n)
+	decls := make([]symbol.Symbol, n)
+	for i := range structs {
+		s := coretest.Struct(coretest.StorePath, fmt.Sprintf("S%02d", i))
+		s.Pos = position.Pos{File: fmt.Sprintf("s%02d.go", i), Line: 1, Col: 1}
+		structs[i], decls[i] = s, s
+	}
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, decls...)),
+		"the fixture package is admitted")
+	g.Freeze()
+	return g, structs
+}
+
+// instanceKey returns a registered int64 key and a fact store built
+// over its registry.
+func instanceKey(tb assert.TB) (meta.Key[int64], *meta.Facts) {
+	tb.Helper()
+
+	reg := meta.NewRegistry()
+	assert.NoError(tb, reg.ClaimNamespace(fixtureNamespace), "the namespace is claimed")
+	key, err := meta.Register[int64](reg, meta.KeySpec{
+		Name: "t.instance", Doc: "names the gating instance that stamped a fixture subject",
+	})
+	assert.NoError(tb, err, "the key registers")
+	return key, meta.NewFacts(reg)
+}
+
+// indexOf returns each struct's index into structs, keyed by identity,
+// which is the struct's place in canonical match order.
+func indexOf(structs []*node.Struct) map[symbol.Identity]int {
+	index := make(map[symbol.Identity]int, len(structs))
+	for i, s := range structs {
+		index[s.ID] = i
+	}
+	return index
+}
+
+// gatedStruct returns a frozen graph of one struct with n raw instances
+// of the gate directive.
+func gatedStruct(tb assert.TB, n int) (*store.Graph, *node.Struct) {
+	tb.Helper()
+
+	alpha := coretest.Struct(coretest.StorePath, "Alpha")
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, alpha)),
+		"the fixture package is admitted")
+	raws := make([]directive.Raw, n)
+	for i := range raws {
+		raws[i] = directive.Raw{Name: gateName}
+	}
+	assert.NoError(tb, g.AttachDirectives(alpha.ID, raws), "the gating instances attach")
+	g.Freeze()
+	return g, alpha
+}
+
+// repeated returns the validated table with n instances of a
+// repeatable directive on one subject, in instance order.
+func repeated(subject symbol.Identity, schema directive.Schema, n int) map[symbol.Identity][]directive.Directive {
+	ds := make([]directive.Directive, n)
+	for i := range ds {
+		ds[i] = directive.Directive{Name: schema.Canonical(), Instance: i}
+	}
+	return map[symbol.Identity][]directive.Directive{subject: ds}
+}
+
+// on returns the generator context with its worker count set.
+func on(ctx *plugin.GeneratorContext, workers int) *plugin.GeneratorContext {
+	ctx.Workers = workers
+	return ctx
+}
+
+// fieldNames returns the names of the fields a struct's slot contains,
+// in slot order.
+func fieldNames(s *emit.Struct) []string {
+	names := make([]string, 0, s.Fields.Len())
+	for _, f := range s.Fields.Items() {
+		names = append(names, f.Name)
+	}
+	return names
+}
+
+// messages returns the messages of every finding in a sink, in its
+// order.
+func messages(sink *diag.Sink) []string {
+	var out []string
+	for d := range sink.All() {
+		out = append(out, d.Msg)
+	}
+	return out
 }

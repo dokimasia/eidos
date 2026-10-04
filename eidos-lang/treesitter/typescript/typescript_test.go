@@ -27,17 +27,6 @@ const (
 	interfaceTS = "export interface User {\n  id: string;\n}\n"
 )
 
-// errorsOf parses a source with a grammar and returns how many errors
-// the tree reports.
-func errorsOf(tb testing.TB, g *treesitter.Grammar, file, src string) int {
-	tb.Helper()
-
-	tree, err := g.Parse(context.Background(), file, []byte(src))
-	assert.NoError(tb, err, "the source parses")
-	defer tree.Close()
-	return len(slices.Collect(tree.Errors()))
-}
-
 // The package loads two grammars from one binding, so each is pinned
 // by the source only it parses.
 func TestTypeScript(t *testing.T) {
@@ -87,4 +76,15 @@ func TestTypeScript(t *testing.T) {
 			assert.Equal(t, typescript.TSX.Name(), tsxName, "the name a frontend reports")
 		})
 	})
+}
+
+// errorsOf parses a source with a grammar and returns how many errors
+// the tree reports.
+func errorsOf(tb testing.TB, g *treesitter.Grammar, file, src string) int {
+	tb.Helper()
+
+	tree, err := g.Parse(context.Background(), file, []byte(src))
+	assert.NoError(tb, err, "the source parses")
+	defer tree.Close()
+	return len(slices.Collect(tree.Errors()))
 }

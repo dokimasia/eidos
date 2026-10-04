@@ -19,86 +19,6 @@ import (
 // referencePattern matches the templates of the emitter's tree.
 const referencePattern = "*.tpl"
 
-// fileLevelKinds pins the kinds an emit declaration takes at file
-// level, which the canonical fixture emits one unit of each.
-func fileLevelKinds() []symbol.Kind {
-	return []symbol.Kind{
-		symbol.KindFunction,
-		symbol.KindMethod,
-		symbol.KindEnum,
-		symbol.KindSum,
-		symbol.KindVariable,
-		symbol.KindConstant,
-		symbol.KindStruct,
-		symbol.KindInterface,
-		symbol.KindAlias,
-	}
-}
-
-// unitsOf collects the fixture's units in store order.
-func unitsOf(tb assert.TB, f *backendtest.Fixture) []plugin.Unit {
-	tb.Helper()
-
-	assert.True(tb, f != nil && f.Emit != nil, "the fixture contains a store")
-	var units []plugin.Unit
-	for u := range f.Emit.Units() {
-		units = append(units, u)
-	}
-	return units
-}
-
-// formsIn folds every body form found on the given callables into
-// the set, reading functions and methods alike.
-func formsIn(tb assert.TB, forms map[emit.Form]bool, decls ...symbol.Symbol) {
-	tb.Helper()
-
-	for _, d := range decls {
-		var body emit.Body
-		switch c := d.(type) {
-		case *emit.Function:
-			body = c.Body
-		case *emit.Method:
-			body = c.Body
-		default:
-			continue
-		}
-		form, err := body.Form()
-		assert.NoError(tb, err, "every fixture body states one content form")
-		forms[form] = true
-	}
-}
-
-// assertFlushOrder checks that every unit is in the order a flush
-// leaves: the declarations by origin identity, and the origins
-// sorted and distinct.
-func assertFlushOrder(tb assert.TB, units []plugin.Unit) {
-	tb.Helper()
-
-	for _, u := range units {
-		origins := make([]symbol.Identity, 0, len(u.Decls))
-		for _, d := range u.Decls {
-			id, _ := emit.OriginOf(d)
-			origins = append(origins, id)
-		}
-		assert.True(tb, slices.IsSortedFunc(origins, symbol.Identity.Compare),
-			"the declarations order by origin: "+u.Key)
-		assert.True(tb, slices.IsSortedFunc(u.Origins, symbol.Identity.Compare),
-			"and so do the origins: "+u.Key)
-		assert.Equal(tb, len(slices.Compact(slices.Clone(u.Origins))), len(u.Origins),
-			"each origin once: "+u.Key)
-	}
-}
-
-// everyForm is the set of content forms a covering fixture states.
-func everyForm() map[emit.Form]bool {
-	return map[emit.Form]bool{
-		emit.FormDefault:  true,
-		emit.FormStmts:    true,
-		emit.FormTemplate: true,
-		emit.FormVerbatim: true,
-	}
-}
-
 // The canonical fixture is what every satellite's suite renders, so
 // the kinds it emits, the forms it covers and the order it keeps are
 // contract.
@@ -213,4 +133,84 @@ func TestCanonical(t *testing.T) {
 				"two builds contain the same units in the same order")
 		})
 	})
+}
+
+// fileLevelKinds pins the kinds an emit declaration takes at file
+// level, which the canonical fixture emits one unit of each.
+func fileLevelKinds() []symbol.Kind {
+	return []symbol.Kind{
+		symbol.KindFunction,
+		symbol.KindMethod,
+		symbol.KindEnum,
+		symbol.KindSum,
+		symbol.KindVariable,
+		symbol.KindConstant,
+		symbol.KindStruct,
+		symbol.KindInterface,
+		symbol.KindAlias,
+	}
+}
+
+// unitsOf collects the fixture's units in store order.
+func unitsOf(tb assert.TB, f *backendtest.Fixture) []plugin.Unit {
+	tb.Helper()
+
+	assert.True(tb, f != nil && f.Emit != nil, "the fixture contains a store")
+	var units []plugin.Unit
+	for u := range f.Emit.Units() {
+		units = append(units, u)
+	}
+	return units
+}
+
+// formsIn folds every body form found on the given callables into
+// the set, reading functions and methods alike.
+func formsIn(tb assert.TB, forms map[emit.Form]bool, decls ...symbol.Symbol) {
+	tb.Helper()
+
+	for _, d := range decls {
+		var body emit.Body
+		switch c := d.(type) {
+		case *emit.Function:
+			body = c.Body
+		case *emit.Method:
+			body = c.Body
+		default:
+			continue
+		}
+		form, err := body.Form()
+		assert.NoError(tb, err, "every fixture body states one content form")
+		forms[form] = true
+	}
+}
+
+// assertFlushOrder checks that every unit is in the order a flush
+// leaves: the declarations by origin identity, and the origins
+// sorted and distinct.
+func assertFlushOrder(tb assert.TB, units []plugin.Unit) {
+	tb.Helper()
+
+	for _, u := range units {
+		origins := make([]symbol.Identity, 0, len(u.Decls))
+		for _, d := range u.Decls {
+			id, _ := emit.OriginOf(d)
+			origins = append(origins, id)
+		}
+		assert.True(tb, slices.IsSortedFunc(origins, symbol.Identity.Compare),
+			"the declarations order by origin: "+u.Key)
+		assert.True(tb, slices.IsSortedFunc(u.Origins, symbol.Identity.Compare),
+			"and so do the origins: "+u.Key)
+		assert.Equal(tb, len(slices.Compact(slices.Clone(u.Origins))), len(u.Origins),
+			"each origin once: "+u.Key)
+	}
+}
+
+// everyForm is the set of content forms a covering fixture states.
+func everyForm() map[emit.Form]bool {
+	return map[emit.Form]bool{
+		emit.FormDefault:  true,
+		emit.FormStmts:    true,
+		emit.FormTemplate: true,
+		emit.FormVerbatim: true,
+	}
 }

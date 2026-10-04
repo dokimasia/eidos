@@ -16,41 +16,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// shallowDecls parses the fixture crate whose library root is src at
-// signature depth and returns the declarations of the crate root.
-func shallowDecls(tb assert.TB, src string) node.Symbols {
-	tb.Helper()
-
-	gb, _ := parsedTree(tb, crateTree(map[string]string{libRoot: src}), libRoot, plugin.DepthSignatures, nil)
-	return fileIn(tb, gb, crateName).Decls
-}
-
-// fieldNames returns the names of fields, in order.
-func fieldNames(fields []*node.Field) []string {
-	out := make([]string, 0, len(fields))
-	for _, f := range fields {
-		out = append(out, f.Name)
-	}
-	return out
-}
-
-// paramNames returns the names of parameters, in order.
-func paramNames(params []*node.Param) []string {
-	out := make([]string, 0, len(params))
-	for _, p := range params {
-		out = append(out, p.Name)
-	}
-	return out
-}
-
-// traitOf parses the fixture crate whose root declares a pub trait T of
-// a body and returns the trait.
-func traitOf(tb assert.TB, body string) *node.Interface {
-	tb.Helper()
-
-	return named[*node.Interface](tb, declsOf(tb, "pub trait T {\n"+body+"}\n"), "T")
-}
-
 // Each Rust item lowers to one model kind, so the shape of every kind's
 // declaration is pinned.
 func TestDecl(t *testing.T) {
@@ -595,4 +560,39 @@ func TestDecl(t *testing.T) {
 			assert.Empty(t, shallowDecls(t, "type A = u8;\n"), "the alias is private")
 		})
 	})
+}
+
+// shallowDecls parses the fixture crate whose library root is src at
+// signature depth and returns the declarations of the crate root.
+func shallowDecls(tb assert.TB, src string) node.Symbols {
+	tb.Helper()
+
+	gb, _ := parsedTree(tb, crateTree(map[string]string{libRoot: src}), libRoot, plugin.DepthSignatures, nil)
+	return fileIn(tb, gb, crateName).Decls
+}
+
+// fieldNames returns the names of fields, in order.
+func fieldNames(fields []*node.Field) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, f.Name)
+	}
+	return out
+}
+
+// paramNames returns the names of parameters, in order.
+func paramNames(params []*node.Param) []string {
+	out := make([]string, 0, len(params))
+	for _, p := range params {
+		out = append(out, p.Name)
+	}
+	return out
+}
+
+// traitOf parses the fixture crate whose root declares a pub trait T of
+// a body and returns the trait.
+func traitOf(tb assert.TB, body string) *node.Interface {
+	tb.Helper()
+
+	return named[*node.Interface](tb, declsOf(tb, "pub trait T {\n"+body+"}\n"), "T")
 }

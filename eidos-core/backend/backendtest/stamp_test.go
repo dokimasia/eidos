@@ -13,16 +13,6 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// fixtureContract composes the contract a satellite would ship
-// beside its backend: its own brand and its language's comments.
-func fixtureContract(tb assert.TB) *output.Contract {
-	tb.Helper()
-
-	c, err := output.NewContract("acme", plugin.CommentSyntax{Line: []string{"//"}})
-	assert.NoError(tb, err, "the fixture contract composes")
-	return c
-}
-
 // Stamping is where the render and the output contract meet, and
 // a backend can satisfy each half alone and still fail the join:
 // a body the frame refuses, or a derivation the frame cannot
@@ -111,4 +101,14 @@ func TestAssertStamped(t *testing.T) {
 				"each refusal names the file it read")
 		}
 	})
+}
+
+// fixtureContract composes the contract a satellite would ship
+// beside its backend: its own brand and its language's comments.
+func fixtureContract(tb assert.TB) *output.Contract {
+	tb.Helper()
+
+	c, err := output.NewContract("acme", plugin.CommentSyntax{Line: []string{"//"}})
+	assert.NoError(tb, err, "the fixture contract composes")
+	return c
 }

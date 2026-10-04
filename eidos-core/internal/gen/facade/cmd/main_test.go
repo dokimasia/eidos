@@ -24,36 +24,6 @@ const generateTimeout = 2 * time.Minute
 // generate from.
 const otherModule = "module example.test/other\n\ngo 1.27.0\n"
 
-// wrapper builds the command and returns the binary, so a case can
-// run it from a directory of its choosing the way `go generate`
-// runs it from the package it annotates.
-func wrapper(t *testing.T) string {
-	t.Helper()
-
-	ctx, cancel := context.WithTimeout(t.Context(), generateTimeout)
-	defer cancel()
-
-	bin := filepath.Join(t.TempDir(), "wrapper")
-	build := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
-	out, err := build.CombinedOutput()
-	assert.NoError(t, err, "the wrapper builds: "+string(out))
-	return bin
-}
-
-// runFrom runs the wrapper with dir as its working directory and
-// returns what it wrote and how it exited.
-func runFrom(t *testing.T, bin, dir string) (string, error) {
-	t.Helper()
-
-	ctx, cancel := context.WithTimeout(t.Context(), generateTimeout)
-	defer cancel()
-
-	run := exec.CommandContext(ctx, bin)
-	run.Dir = dir
-	out, err := run.CombinedOutput()
-	return string(out), err
-}
-
 // The wrapper is driven as a process, because that is how anyone
 // runs it: `go generate` executes it. What it generates is
 // [facade.Regenerate], held by that package's own cases; what is
@@ -89,4 +59,34 @@ func TestMain(t *testing.T) {
 		assert.Contains(t, out, "example.test/other",
 			"and the refusal reaches the standard error the caller reads")
 	})
+}
+
+// wrapper builds the command and returns the binary, so a case can
+// run it from a directory of its choosing the way `go generate`
+// runs it from the package it annotates.
+func wrapper(t *testing.T) string {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), generateTimeout)
+	defer cancel()
+
+	bin := filepath.Join(t.TempDir(), "wrapper")
+	build := exec.CommandContext(ctx, "go", "build", "-o", bin, ".")
+	out, err := build.CombinedOutput()
+	assert.NoError(t, err, "the wrapper builds: "+string(out))
+	return bin
+}
+
+// runFrom runs the wrapper with dir as its working directory and
+// returns what it wrote and how it exited.
+func runFrom(t *testing.T, bin, dir string) (string, error) {
+	t.Helper()
+
+	ctx, cancel := context.WithTimeout(t.Context(), generateTimeout)
+	defer cancel()
+
+	run := exec.CommandContext(ctx, bin)
+	run.Dir = dir
+	out, err := run.CombinedOutput()
+	return string(out), err
 }

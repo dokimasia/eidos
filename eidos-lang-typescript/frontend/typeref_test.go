@@ -16,23 +16,6 @@ import (
 // the type it names.
 const aliasName = "T"
 
-// targetOf parses one type alias and returns the type it names.
-func targetOf(tb assert.TB, typ string) *node.TypeRef {
-	tb.Helper()
-
-	return named[*node.Alias](tb, declsOf(tb, "import { Imported } from './lib';\n"+
-		"export type "+aliasName+" = "+typ+";\n"), aliasName).Target
-}
-
-// formsOf returns the forms of a reference's children, in order.
-func formsOf(ref *node.TypeRef) []symbol.TypeForm {
-	out := make([]symbol.TypeForm, 0, len(ref.Elems))
-	for _, e := range ref.Elems {
-		out = append(out, e.Form)
-	}
-	return out
-}
-
 // Each structural form the syntax states is a contract the projection
 // folds, so the form every type lowers to is pinned.
 func TestTyperef(t *testing.T) {
@@ -312,4 +295,21 @@ func TestTyperef(t *testing.T) {
 			assert.Equal(t, ref.Package, "./lib", "and its first name's import is the package")
 		})
 	})
+}
+
+// targetOf parses one type alias and returns the type it names.
+func targetOf(tb assert.TB, typ string) *node.TypeRef {
+	tb.Helper()
+
+	return named[*node.Alias](tb, declsOf(tb, "import { Imported } from './lib';\n"+
+		"export type "+aliasName+" = "+typ+";\n"), aliasName).Target
+}
+
+// formsOf returns the forms of a reference's children, in order.
+func formsOf(ref *node.TypeRef) []symbol.TypeForm {
+	out := make([]symbol.TypeForm, 0, len(ref.Elems))
+	for _, e := range ref.Elems {
+		out = append(out, e.Form)
+	}
+	return out
 }

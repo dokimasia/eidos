@@ -35,48 +35,6 @@ const (
 	qualifiedOut = "java.util.List"
 )
 
-// valueRef returns a resolved reference to a class of one package.
-func valueRef(spelling, pkg, name string) *emit.TypeRef {
-	return &emit.TypeRef{
-		Spelling: spelling,
-		Target:   symbol.Identity{Lang: java.Lang, Package: pkg, Name: name, Kind: symbol.KindStruct},
-	}
-}
-
-// valueFn returns a callee identity whose Owner names its class where
-// owner is set.
-func valueFn(pkg, owner, name string) symbol.Identity {
-	return symbol.Identity{Lang: java.Lang, Package: pkg, Owner: owner, Name: name, Kind: symbol.KindMethod}
-}
-
-// formed returns a structural reference of one form, spelled s.
-func formed(s string, form symbol.TypeForm) *emit.TypeRef {
-	return &emit.TypeRef{Spelling: s, Form: form}
-}
-
-// integer returns an integer literal.
-func integer(text string) emit.Value { return emit.Literal(emit.LiteralInt, text) }
-
-// pairs returns n map entries, each keying an integer to itself.
-func pairs(n int) []emit.ValueField {
-	out := make([]emit.ValueField, 0, n)
-	for i := range n {
-		text := strconv.Itoa(i)
-		out = append(out, emit.KeyedEntry(integer(text), integer(text)))
-	}
-	return out
-}
-
-// returned runs one value through the scaffold as a return and
-// returns the value's text beside the file's import set.
-func returned(tb assert.TB, set *render.ImportSet, v emit.Value) (string, error) {
-	tb.Helper()
-
-	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, set)
-	text := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(string(out)), ";"))
-	return strings.TrimPrefix(text, "return "), err
-}
-
 // Every value spelling is pinned, for the reason the statement
 // spellings are: the text is spliced into generated bodies, and a
 // drift rewrites files.
@@ -324,4 +282,46 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, got, qualifiedOut+".of(2)", "the collection written qualified")
 		})
 	})
+}
+
+// valueRef returns a resolved reference to a class of one package.
+func valueRef(spelling, pkg, name string) *emit.TypeRef {
+	return &emit.TypeRef{
+		Spelling: spelling,
+		Target:   symbol.Identity{Lang: java.Lang, Package: pkg, Name: name, Kind: symbol.KindStruct},
+	}
+}
+
+// valueFn returns a callee identity whose Owner names its class where
+// owner is set.
+func valueFn(pkg, owner, name string) symbol.Identity {
+	return symbol.Identity{Lang: java.Lang, Package: pkg, Owner: owner, Name: name, Kind: symbol.KindMethod}
+}
+
+// formed returns a structural reference of one form, spelled s.
+func formed(s string, form symbol.TypeForm) *emit.TypeRef {
+	return &emit.TypeRef{Spelling: s, Form: form}
+}
+
+// integer returns an integer literal.
+func integer(text string) emit.Value { return emit.Literal(emit.LiteralInt, text) }
+
+// pairs returns n map entries, each keying an integer to itself.
+func pairs(n int) []emit.ValueField {
+	out := make([]emit.ValueField, 0, n)
+	for i := range n {
+		text := strconv.Itoa(i)
+		out = append(out, emit.KeyedEntry(integer(text), integer(text)))
+	}
+	return out
+}
+
+// returned runs one value through the scaffold as a return and
+// returns the value's text beside the file's import set.
+func returned(tb assert.TB, set *render.ImportSet, v emit.Value) (string, error) {
+	tb.Helper()
+
+	out, err := backend.Scaffold(emit.Stmt{Kind: emit.StmtReturn, Value: emit.ValueExpr(v)}, set)
+	text := strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(string(out)), ";"))
+	return strings.TrimPrefix(text, "return "), err
 }

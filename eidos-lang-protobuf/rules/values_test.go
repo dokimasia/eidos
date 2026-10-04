@@ -158,29 +158,6 @@ const (
 	stringLiteralAllocs = 1
 )
 
-// pairOf derives a reference's two values and fails unless both
-// derived.
-func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Value, emit.Value) {
-	tb.Helper()
-
-	sample, alternate := protorules.New().SamplesOf(ref, hint, f.view)
-	assert.True(tb, sample.OK(), "the sample derives: "+sample.Refusal.String())
-	assert.True(tb, alternate.OK(), "the alternate derives: "+alternate.Refusal.String())
-	return sample.Value, alternate.Value
-}
-
-// refusalOf returns the refusal of a reference's sample.
-func refusalOf(f *fixture, ref *node.TypeRef) rules.Refusal {
-	sample, _ := protorules.New().SamplesOf(ref, "", f.view)
-	return sample.Refusal
-}
-
-// enumValue returns an enum number converted to the enum a reference
-// names, at the wire's width.
-func enumValue(ref *node.TypeRef, number string) emit.Value {
-	return emit.Conversion(rules.EmitRef(ref), emit.Number(emit.LiteralInt, number, enumBits))
-}
-
 // The values are what a check generator writes, so each form's
 // sample pair, its zero and the literals a schema's text types to are
 // pinned at the wire's widths.
@@ -755,6 +732,29 @@ func TestValuesAllocs(t *testing.T) {
 // every type it writes a value of.
 func BenchmarkValues(b *testing.B) {
 	benchCalls(b, valueCalls(b))
+}
+
+// pairOf derives a reference's two values and fails unless both
+// derived.
+func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Value, emit.Value) {
+	tb.Helper()
+
+	sample, alternate := protorules.New().SamplesOf(ref, hint, f.view)
+	assert.True(tb, sample.OK(), "the sample derives: "+sample.Refusal.String())
+	assert.True(tb, alternate.OK(), "the alternate derives: "+alternate.Refusal.String())
+	return sample.Value, alternate.Value
+}
+
+// refusalOf returns the refusal of a reference's sample.
+func refusalOf(f *fixture, ref *node.TypeRef) rules.Refusal {
+	sample, _ := protorules.New().SamplesOf(ref, "", f.view)
+	return sample.Refusal
+}
+
+// enumValue returns an enum number converted to the enum a reference
+// names, at the wire's width.
+func enumValue(ref *node.TypeRef, number string) emit.Value {
+	return emit.Conversion(rules.EmitRef(ref), emit.Number(emit.LiteralInt, number, enumBits))
 }
 
 // valueCalls returns a call of each value derivation over a scalar, a

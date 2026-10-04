@@ -21,15 +21,6 @@ import (
 // the trait declares.
 const traitImplItem = "an item of a trait impl"
 
-// methodNames returns the names of methods, in order.
-func methodNames(methods []*node.Method) []string {
-	out := make([]string, 0, len(methods))
-	for _, m := range methods {
-		out = append(out, m.Name)
-	}
-	return out
-}
-
 // An impl block anywhere in a crate adds to a type the crate declares,
 // so where each impl's methods, constants and trait fold, and what
 // becomes of what has no home, is pinned.
@@ -212,4 +203,13 @@ func TestImpl(t *testing.T) {
 				assert.Equal(t, codesOf(found), []diag.Code{frontend.UnmodeledItem}, "the constant has no home")
 			})
 	})
+}
+
+// methodNames returns the names of methods, in order.
+func methodNames(methods []*node.Method) []string {
+	out := make([]string, 0, len(methods))
+	for _, m := range methods {
+		out = append(out, m.Name)
+	}
+	return out
 }

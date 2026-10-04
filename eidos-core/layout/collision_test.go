@@ -15,18 +15,6 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// rowStub returns stubgen's primary unit of row.go with one stub of
-// Row.
-func rowStub() plugin.Unit {
-	return stubOf(rowFile, storePkg, generated(rowID, "RowStub"))
-}
-
-// cacheStub returns stubgen's primary unit of cache.go with one stub
-// of Cache.
-func cacheStub() plugin.Unit {
-	return stubOf(cacheFile, cachePkg, generated(cacheID, "CacheStub"))
-}
-
 // Routed paths that one tree cannot contain refuse the declarations
 // routed to them, and every other file renders.
 func TestCollision(t *testing.T) {
@@ -131,4 +119,16 @@ func TestCollision(t *testing.T) {
 			coretest.AssertCodes(t, sink)
 		})
 	})
+}
+
+// rowStub returns stubgen's primary unit of row.go with one stub of
+// Row.
+func rowStub() plugin.Unit {
+	return stubOf(rowFile, storePkg, generated(rowID, "RowStub"))
+}
+
+// cacheStub returns stubgen's primary unit of cache.go with one stub
+// of Cache.
+func cacheStub() plugin.Unit {
+	return stubOf(cacheFile, cachePkg, generated(cacheID, "CacheStub"))
 }

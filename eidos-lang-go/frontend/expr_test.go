@@ -21,41 +21,6 @@ const (
 	yamlPath = "gopkg.in/yaml.v3"
 )
 
-// fieldsOf parses one file and returns the fields of its first
-// declaration, a struct.
-func fieldsOf(tb assert.TB, src string) []*node.Field {
-	tb.Helper()
-
-	file := onlyFile(tb, parsedFile(tb, nil, plugin.DepthFull, src))
-	return file.Decls[0].(*node.Struct).Fields
-}
-
-// inlineOf parses one file whose first declaration is a struct H of
-// one field of a type, and returns the field's type.
-func inlineOf(tb assert.TB, imports, typ string) *node.TypeRef {
-	tb.Helper()
-
-	return fieldsOf(tb, "package p\n\n"+imports+"type H struct {\n\ta "+typ+"\n}\n")[0].Type
-}
-
-// fieldNames returns the names of fields, in order.
-func fieldNames(fields []*node.Field) []string {
-	out := make([]string, 0, len(fields))
-	for _, f := range fields {
-		out = append(out, f.Name)
-	}
-	return out
-}
-
-// methodNames returns the names of methods, in order.
-func methodNames(methods []*node.Method) []string {
-	out := make([]string, 0, len(methods))
-	for _, m := range methods {
-		out = append(out, m.Name)
-	}
-	return out
-}
-
 // Type expressions keep their verbatim spellings with arguments split
 // for instantiations, and record the import a qualified name names.
 // The reference shapes the corpus depends on are pinned here through
@@ -306,4 +271,39 @@ func TestExpr(t *testing.T) {
 			assert.Equal(t, fields[0].Type.Elems[0].Package, timePath, "the pointer's element names the import")
 		})
 	})
+}
+
+// fieldsOf parses one file and returns the fields of its first
+// declaration, a struct.
+func fieldsOf(tb assert.TB, src string) []*node.Field {
+	tb.Helper()
+
+	file := onlyFile(tb, parsedFile(tb, nil, plugin.DepthFull, src))
+	return file.Decls[0].(*node.Struct).Fields
+}
+
+// inlineOf parses one file whose first declaration is a struct H of
+// one field of a type, and returns the field's type.
+func inlineOf(tb assert.TB, imports, typ string) *node.TypeRef {
+	tb.Helper()
+
+	return fieldsOf(tb, "package p\n\n"+imports+"type H struct {\n\ta "+typ+"\n}\n")[0].Type
+}
+
+// fieldNames returns the names of fields, in order.
+func fieldNames(fields []*node.Field) []string {
+	out := make([]string, 0, len(fields))
+	for _, f := range fields {
+		out = append(out, f.Name)
+	}
+	return out
+}
+
+// methodNames returns the names of methods, in order.
+func methodNames(methods []*node.Method) []string {
+	out := make([]string, 0, len(methods))
+	for _, m := range methods {
+		out = append(out, m.Name)
+	}
+	return out
 }

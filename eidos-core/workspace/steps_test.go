@@ -20,9 +20,6 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// memOutput opens a fresh in-memory sink for every run.
-func memOutput() (output.Sink, error) { return output.NewMem(), nil }
-
 // framing is a backend stating a comment syntax and rendering
 // nothing: what a writing composition refuses at Build.
 type framing struct{ fakeBackend }
@@ -30,24 +27,6 @@ type framing struct{ fakeBackend }
 // Syntax returns the line comment form the fixture frames through.
 func (framing) Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{Line: []string{"//"}}
-}
-
-// runOrdering composes the annotators over the one-struct fixture
-// and runs, so each role's handler runs exactly once, in schedule
-// order.
-func runOrdering(t *testing.T, anns ...plugin.Annotator) {
-	t.Helper()
-
-	w, err := workspace.New().
-		Brand(fixtureBrand).
-		Annotators(anns...).
-		Targets("fixture").
-		Plans(planTo("plan", "fixture", mirror("mirror"))).
-		Build()
-	assert.NoError(t, err, "the ordering fixture composes")
-	g, _ := alpha(t)
-	_, err = w.Run(t.Context(), workspace.Input{Graph: g})
-	assert.NoError(t, err, "the ordering fixture runs")
 }
 
 // nameless is a hand-rolled annotator returning no name. The facade
@@ -102,64 +81,6 @@ func (d *declaring) Provides() []plugin.Capability { return d.provides }
 
 // Requires returns the required labels verbatim.
 func (d *declaring) Requires() []plugin.Capability { return d.requires }
-
-// capable spells one hand-rolled annotator's capability lists
-// inline.
-func capable(name plugin.ID, provides, requires []plugin.Capability) plugin.Annotator {
-	return &declaring{name: name, provides: provides, requires: requires}
-}
-
-// keyed returns an annotator whose key provider runs register.
-func keyed(name plugin.ID, register func(*meta.Registry) error) plugin.Annotator {
-	p, held := eidos.NewPlugin(name).
-		Keys(register).
-		Handle(eidos.OnStruct(quiet)).Build().(plugin.Annotator)
-	if !held {
-		panic("workspace_test: a stamper rule lowers to the annotator role")
-	}
-	return p
-}
-
-// schemad returns a generator declaring s, so the registration step
-// meets a plugin's own schema.
-func schemad(name plugin.ID, s directive.Schema) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
-		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
-		Handle(eidos.Directive(s, eidos.OnEmit(symbol.KindStruct,
-			func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }))).
-		Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
-}
-
-// slotted returns a one-template tree whose template places the
-// slots, the smallest tree the template rules admit.
-func slotted() fstest.MapFS {
-	return fstest.MapFS{"method1.tpl": &fstest.MapFile{Data: []byte("{{slots}}")}}
-}
-
-// styled returns the generator a presentation declaration builds,
-// with one family and a rule that emits nothing.
-func styled(b *eidos.Builder) plugin.Generator {
-	p, held := b.
-		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
-		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })).
-		Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
-}
-
-// sectioned returns a composition with one config section for one
-// plugin's options struct.
-func sectioned(name string, cfg any, section map[string]any) *workspace.Builder {
-	return valid().
-		Plans(planTo("second", "fixture", tuned(plugin.ID(name), cfg))).
-		Config(workspace.Config{Options: map[string]map[string]any{name: section}})
-}
 
 // The steps' output is the schedule, and the schedule is
 // observable twice over: the order handlers run in, and the bucket
@@ -685,4 +606,83 @@ func TestSteps(t *testing.T) {
 			assert.Contains(t, err.Error(), `two plugins return the name "mirror"`, "the error names the plugin")
 		})
 	})
+}
+
+// memOutput opens a fresh in-memory sink for every run.
+func memOutput() (output.Sink, error) { return output.NewMem(), nil }
+
+// runOrdering composes the annotators over the one-struct fixture
+// and runs, so each role's handler runs exactly once, in schedule
+// order.
+func runOrdering(t *testing.T, anns ...plugin.Annotator) {
+	t.Helper()
+
+	w, err := workspace.New().
+		Brand(fixtureBrand).
+		Annotators(anns...).
+		Targets("fixture").
+		Plans(planTo("plan", "fixture", mirror("mirror"))).
+		Build()
+	assert.NoError(t, err, "the ordering fixture composes")
+	g, _ := alpha(t)
+	_, err = w.Run(t.Context(), workspace.Input{Graph: g})
+	assert.NoError(t, err, "the ordering fixture runs")
+}
+
+// capable spells one hand-rolled annotator's capability lists
+// inline.
+func capable(name plugin.ID, provides, requires []plugin.Capability) plugin.Annotator {
+	return &declaring{name: name, provides: provides, requires: requires}
+}
+
+// keyed returns an annotator whose key provider runs register.
+func keyed(name plugin.ID, register func(*meta.Registry) error) plugin.Annotator {
+	p, held := eidos.NewPlugin(name).
+		Keys(register).
+		Handle(eidos.OnStruct(quiet)).Build().(plugin.Annotator)
+	if !held {
+		panic("workspace_test: a stamper rule lowers to the annotator role")
+	}
+	return p
+}
+
+// schemad returns a generator declaring s, so the registration step
+// meets a plugin's own schema.
+func schemad(name plugin.ID, s directive.Schema) plugin.Generator {
+	p, held := eidos.NewPlugin(name).
+		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
+		Handle(eidos.Directive(s, eidos.OnEmit(symbol.KindStruct,
+			func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }))).
+		Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// slotted returns a one-template tree whose template places the
+// slots, the smallest tree the template rules admit.
+func slotted() fstest.MapFS {
+	return fstest.MapFS{"method1.tpl": &fstest.MapFile{Data: []byte("{{slots}}")}}
+}
+
+// styled returns the generator a presentation declaration builds,
+// with one family and a rule that emits nothing.
+func styled(b *eidos.Builder) plugin.Generator {
+	p, held := b.
+		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
+		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error { return nil })).
+		Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// sectioned returns a composition with one config section for one
+// plugin's options struct.
+func sectioned(name string, cfg any, section map[string]any) *workspace.Builder {
+	return valid().
+		Plans(planTo("second", "fixture", tuned(plugin.ID(name), cfg))).
+		Config(workspace.Config{Options: map[string]map[string]any{name: section}})
 }

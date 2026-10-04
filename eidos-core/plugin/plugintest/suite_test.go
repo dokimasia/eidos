@@ -45,50 +45,6 @@ var suiteCode = diag.Code{Prefix: "tst", Number: 2}
 // append into the seeded struct.
 const auditedField = "audited"
 
-// twoStructs returns a fixture with two positioned structs.
-func twoStructs(tb assert.TB) (*plugintest.Fixture, *node.Struct, *node.Struct) {
-	tb.Helper()
-
-	alpha := coretest.Struct(coretest.StorePath, "Alpha")
-	alpha.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
-	beta := coretest.Struct(coretest.StorePath, "Beta")
-	beta.Pos = position.Pos{File: "beta.go", Line: 7, Col: 1}
-	f := plugintest.New(tb)
-	f.Load(tb, coretest.Package(coretest.StorePath, alpha, beta))
-	return f, alpha, beta
-}
-
-// wellBehaved is a dual-role plugin: its annotator half classifies
-// and its generator half emits for the classified subjects, the
-// weave the suite passes.
-func wellBehaved(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
-	tb.Helper()
-
-	f, _, _ := twoStructs(tb)
-	key := plugintest.Key[bool](tb, f, "t.flag", "marks a fixture subject")
-	p := eidos.NewPlugin("suite").
-		Options(&struct {
-			Header string `opt:"header" doc:"the banner every audit opens with"`
-		}{}).
-		Output(plugin.Output{Per: plugin.PerPackage, Word: "audit"}).
-		Handle(
-			eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
-				eidos.Stamp(st, key, true)
-				return nil
-			}),
-			eidos.Where(eidos.HasKey(key),
-				eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-					e.PackageFile().Append(&emit.Struct{
-						Origin: m.Struct.Identity(),
-						Name:   "For" + m.Struct.Name,
-					})
-					return nil
-				})),
-		).
-		Build()
-	return p, f
-}
-
 // spare is a hand-rolled generator: it declares its family and
 // nothing else, so the suite meets a plugin the facade never gave
 // a template surface to.
@@ -97,64 +53,6 @@ type spare struct{ handRolled }
 // Outputs returns the one family the generator declares.
 func (spare) Outputs() []plugin.Output {
 	return []plugin.Output{{Per: plugin.PerPackage, Word: "audit"}}
-}
-
-// bare returns the hand-rolled generator over the fixture.
-func bare(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
-	tb.Helper()
-
-	f, _, _ := twoStructs(tb)
-	return spare{}, f
-}
-
-// quietRule returns a graph rule whose handler emits nothing.
-func quietRule() eidos.Rule {
-	return eidos.OnGraph(func(*eidos.GraphMatch, *eidos.Emitter) error { return nil })
-}
-
-// treeOf returns a one-template tree whose template reads text.
-func treeOf(text string) fs.FS {
-	return fstest.MapFS{templateName: &fstest.MapFile{Data: []byte(text)}}
-}
-
-// fixtureLanguage returns the smallest language the template check
-// can lint against: no shared vocabulary.
-func fixtureLanguage() render.Language {
-	return render.Language{
-		Kinds:    map[symbol.Kind]string{symbol.KindStruct: "type {{.Name}} struct{}\n"},
-		Naming:   func(u plugin.Unit) string { return u.Key },
-		Scaffold: func(emit.Stmt, *render.ImportSet) ([]byte, error) { return nil, nil },
-		Imports:  func(*render.ImportSet) string { return "" },
-		Finalise: func(src []byte) ([]byte, error) { return src, nil },
-	}
-}
-
-// vocalLanguage returns the fixture language with one shared helper,
-// the name an override can replace.
-func vocalLanguage() render.Language {
-	l := fixtureLanguage()
-	l.Funcs = func(*render.ImportSet) template.FuncMap {
-		return template.FuncMap{wordHelper: strings.ToLower}
-	}
-	return l
-}
-
-// treed returns a setup whose plugin declares a tree for the
-// fixture target alone, which is what makes the suite run its
-// template lint.
-func treed(tree fs.FS) plugintest.Setup {
-	return func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
-		tb.Helper()
-
-		f, _, _ := twoStructs(tb)
-		f.Languages = map[plugin.Target]render.Language{fixtureTarget: fixtureLanguage()}
-		p := eidos.NewPlugin("treed").
-			Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
-			For(fixtureTarget, eidos.Templates(tree)).
-			Handle(quietRule()).
-			Build()
-		return p, f
-	}
 }
 
 // rogue is a hand-rolled generator flushing a unit under another
@@ -337,84 +235,9 @@ func (attributed) Generate(ctx *plugin.GeneratorContext) error {
 	return nil
 }
 
-// seeded returns the two-struct fixture with an earlier bucket's unit
-// that contains one struct for alpha.
-func seeded(tb assert.TB) *plugintest.Fixture {
-	tb.Helper()
-
-	f, alpha, _ := twoStructs(tb)
-	f.Seed(tb, plugin.Unit{
-		Plugin: "earlier", Per: plugin.PerSource, Word: "impl", Key: "alpha.go",
-		Decls: []symbol.Symbol{&emit.Struct{Origin: alpha.ID, Name: "ForAlpha"}},
-	})
-	return f
-}
-
-// auditing is a weaver over the seeded struct that appends the audited
-// field into its slot through the Emitter.
-func auditing(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
-	tb.Helper()
-
-	p := eidos.NewPlugin("weaver").
-		Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
-			if s, held := m.Value.(*emit.Struct); held {
-				e.Slot(&s.Fields).Append(&emit.Field{Name: auditedField})
-			}
-			return nil
-		})).
-		Build()
-	return p, seeded(tb)
-}
-
 // woven is how many instances of the weaver's repeatable directive the
 // weaving fixture places on one subject.
 const woven = 16
-
-// weaving is a weaver over an earlier bucket's struct whose origin has
-// many instances of one repeatable directive: every instance appends a
-// field into the one struct's slot through the Emitter.
-func weaving(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
-	tb.Helper()
-
-	f, alpha, _ := twoStructs(tb)
-	schema := directive.Schema{Plugin: "weaver", Name: "audit", Repeatable: true, Doc: "audits the subject"}
-	instances := make([]directive.Directive, woven)
-	for i := range instances {
-		instances[i] = directive.Directive{Name: schema.Canonical(), Instance: i}
-	}
-	f.Validated(tb, alpha.ID, instances...)
-	f.Seed(tb, plugin.Unit{
-		Plugin: "earlier", Per: plugin.PerSource, Word: "impl", Key: "alpha.go",
-		Decls: []symbol.Symbol{&emit.Struct{Origin: alpha.ID, Name: "ForAlpha"}},
-	})
-	p := eidos.NewPlugin("weaver").
-		Handle(eidos.Directive(schema,
-			eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
-				s, held := m.Value.(*emit.Struct)
-				if !held {
-					return nil
-				}
-				e.Slot(&s.Fields).Append(&emit.Field{Name: "audit" + strconv.Itoa(m.Directive().Instance)})
-				return nil
-			}))).
-		Build()
-	return p, f
-}
-
-// reversed returns a fixture with two positioned structs declared in
-// the reverse of their identity order, so the index enumerates them in
-// another order than a selection runs them.
-func reversed(tb assert.TB) *plugintest.Fixture {
-	tb.Helper()
-
-	alpha := coretest.Struct(coretest.StorePath, "Alpha")
-	alpha.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
-	beta := coretest.Struct(coretest.StorePath, "Beta")
-	beta.Pos = position.Pos{File: "beta.go", Line: 7, Col: 1}
-	f := plugintest.New(tb)
-	f.Load(tb, coretest.Package(coretest.StorePath, beta, alpha))
-	return f
-}
 
 // The suite is the contract a plugin author tests against, so it
 // passes a valid plugin and fails each way of cheating, and the
@@ -990,4 +813,181 @@ func TestSuite(t *testing.T) {
 			assert.Contains(t, failure, "input truth", "the check names the rule the mutation broke")
 		})
 	})
+}
+
+// twoStructs returns a fixture with two positioned structs.
+func twoStructs(tb assert.TB) (*plugintest.Fixture, *node.Struct, *node.Struct) {
+	tb.Helper()
+
+	alpha := coretest.Struct(coretest.StorePath, "Alpha")
+	alpha.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
+	beta := coretest.Struct(coretest.StorePath, "Beta")
+	beta.Pos = position.Pos{File: "beta.go", Line: 7, Col: 1}
+	f := plugintest.New(tb)
+	f.Load(tb, coretest.Package(coretest.StorePath, alpha, beta))
+	return f, alpha, beta
+}
+
+// wellBehaved is a dual-role plugin: its annotator half classifies
+// and its generator half emits for the classified subjects, the
+// weave the suite passes.
+func wellBehaved(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+	tb.Helper()
+
+	f, _, _ := twoStructs(tb)
+	key := plugintest.Key[bool](tb, f, "t.flag", "marks a fixture subject")
+	p := eidos.NewPlugin("suite").
+		Options(&struct {
+			Header string `opt:"header" doc:"the banner every audit opens with"`
+		}{}).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "audit"}).
+		Handle(
+			eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+				eidos.Stamp(st, key, true)
+				return nil
+			}),
+			eidos.Where(eidos.HasKey(key),
+				eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+					e.PackageFile().Append(&emit.Struct{
+						Origin: m.Struct.Identity(),
+						Name:   "For" + m.Struct.Name,
+					})
+					return nil
+				})),
+		).
+		Build()
+	return p, f
+}
+
+// bare returns the hand-rolled generator over the fixture.
+func bare(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+	tb.Helper()
+
+	f, _, _ := twoStructs(tb)
+	return spare{}, f
+}
+
+// quietRule returns a graph rule whose handler emits nothing.
+func quietRule() eidos.Rule {
+	return eidos.OnGraph(func(*eidos.GraphMatch, *eidos.Emitter) error { return nil })
+}
+
+// treeOf returns a one-template tree whose template reads text.
+func treeOf(text string) fs.FS {
+	return fstest.MapFS{templateName: &fstest.MapFile{Data: []byte(text)}}
+}
+
+// fixtureLanguage returns the smallest language the template check
+// can lint against: no shared vocabulary.
+func fixtureLanguage() render.Language {
+	return render.Language{
+		Kinds:    map[symbol.Kind]string{symbol.KindStruct: "type {{.Name}} struct{}\n"},
+		Naming:   func(u plugin.Unit) string { return u.Key },
+		Scaffold: func(emit.Stmt, *render.ImportSet) ([]byte, error) { return nil, nil },
+		Imports:  func(*render.ImportSet) string { return "" },
+		Finalise: func(src []byte) ([]byte, error) { return src, nil },
+	}
+}
+
+// vocalLanguage returns the fixture language with one shared helper,
+// the name an override can replace.
+func vocalLanguage() render.Language {
+	l := fixtureLanguage()
+	l.Funcs = func(*render.ImportSet) template.FuncMap {
+		return template.FuncMap{wordHelper: strings.ToLower}
+	}
+	return l
+}
+
+// treed returns a setup whose plugin declares a tree for the
+// fixture target alone, which is what makes the suite run its
+// template lint.
+func treed(tree fs.FS) plugintest.Setup {
+	return func(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+		tb.Helper()
+
+		f, _, _ := twoStructs(tb)
+		f.Languages = map[plugin.Target]render.Language{fixtureTarget: fixtureLanguage()}
+		p := eidos.NewPlugin("treed").
+			Output(plugin.Output{Per: plugin.PerPlan, Word: "out"}).
+			For(fixtureTarget, eidos.Templates(tree)).
+			Handle(quietRule()).
+			Build()
+		return p, f
+	}
+}
+
+// seeded returns the two-struct fixture with an earlier bucket's unit
+// that contains one struct for alpha.
+func seeded(tb assert.TB) *plugintest.Fixture {
+	tb.Helper()
+
+	f, alpha, _ := twoStructs(tb)
+	f.Seed(tb, plugin.Unit{
+		Plugin: "earlier", Per: plugin.PerSource, Word: "impl", Key: "alpha.go",
+		Decls: []symbol.Symbol{&emit.Struct{Origin: alpha.ID, Name: "ForAlpha"}},
+	})
+	return f
+}
+
+// auditing is a weaver over the seeded struct that appends the audited
+// field into its slot through the Emitter.
+func auditing(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+	tb.Helper()
+
+	p := eidos.NewPlugin("weaver").
+		Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+			if s, held := m.Value.(*emit.Struct); held {
+				e.Slot(&s.Fields).Append(&emit.Field{Name: auditedField})
+			}
+			return nil
+		})).
+		Build()
+	return p, seeded(tb)
+}
+
+// weaving is a weaver over an earlier bucket's struct whose origin has
+// many instances of one repeatable directive: every instance appends a
+// field into the one struct's slot through the Emitter.
+func weaving(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
+	tb.Helper()
+
+	f, alpha, _ := twoStructs(tb)
+	schema := directive.Schema{Plugin: "weaver", Name: "audit", Repeatable: true, Doc: "audits the subject"}
+	instances := make([]directive.Directive, woven)
+	for i := range instances {
+		instances[i] = directive.Directive{Name: schema.Canonical(), Instance: i}
+	}
+	f.Validated(tb, alpha.ID, instances...)
+	f.Seed(tb, plugin.Unit{
+		Plugin: "earlier", Per: plugin.PerSource, Word: "impl", Key: "alpha.go",
+		Decls: []symbol.Symbol{&emit.Struct{Origin: alpha.ID, Name: "ForAlpha"}},
+	})
+	p := eidos.NewPlugin("weaver").
+		Handle(eidos.Directive(schema,
+			eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+				s, held := m.Value.(*emit.Struct)
+				if !held {
+					return nil
+				}
+				e.Slot(&s.Fields).Append(&emit.Field{Name: "audit" + strconv.Itoa(m.Directive().Instance)})
+				return nil
+			}))).
+		Build()
+	return p, f
+}
+
+// reversed returns a fixture with two positioned structs declared in
+// the reverse of their identity order, so the index enumerates them in
+// another order than a selection runs them.
+func reversed(tb assert.TB) *plugintest.Fixture {
+	tb.Helper()
+
+	alpha := coretest.Struct(coretest.StorePath, "Alpha")
+	alpha.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
+	beta := coretest.Struct(coretest.StorePath, "Beta")
+	beta.Pos = position.Pos{File: "beta.go", Line: 7, Col: 1}
+	f := plugintest.New(tb)
+	f.Load(tb, coretest.Package(coretest.StorePath, beta, alpha))
+	return f
 }

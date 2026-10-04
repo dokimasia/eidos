@@ -50,14 +50,6 @@ const (
 	bareMirrorAllocs = 2
 )
 
-// methodID returns a fixture method identity.
-func methodID(name string) symbol.Identity {
-	return symbol.Identity{
-		Lang: mirrorLang, Package: mirrorPackage, Name: name,
-		Kind: symbol.KindMethod,
-	}
-}
-
 // Mirror copies a signature once, in the framework, so the copy is
 // contract: every field arrives, spellings copy over verbatim, and
 // the receiver is the target's to state.
@@ -195,6 +187,14 @@ func BenchmarkMirror(b *testing.B) {
 		}
 		assert.Equal(b, got.Receives.Spelling, mirrorHost, "Mirror names the host")
 	})
+}
+
+// methodID returns a fixture method identity.
+func methodID(name string) symbol.Identity {
+	return symbol.Identity{
+		Lang: mirrorLang, Package: mirrorPackage, Name: name,
+		Kind: symbol.KindMethod,
+	}
 }
 
 // getter returns a method of one string parameter and one int return.

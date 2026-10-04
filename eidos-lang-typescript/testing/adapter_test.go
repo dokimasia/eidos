@@ -27,74 +27,6 @@ const (
 	nowhereType = `import("./row").Nowhere`
 )
 
-// healthy returns generated output that parses, type-checks and whose
-// one test module passes.
-func healthy() toolchain.Generated {
-	return toolchain.Generated{Files: map[string][]byte{
-		rowFile: []byte(`// Reader is what a Row satisfies.
-export interface Reader {
-  read(): string;
-}
-
-// Row is a generated record.
-export class Row implements Reader {
-  constructor(public readonly name: string) {}
-
-  read(): string {
-    return this.name;
-  }
-}
-
-// Plain declares no read method.
-export class Plain {
-  constructor(public readonly id: number) {}
-}
-`),
-		rowTestFile: []byte(`import { Row } from "./row";
-
-if (new Row("a").read() !== "a") {
-  throw new Error("read returns the name");
-}
-`),
-	}}
-}
-
-// with returns the healthy fixture with one file replaced or added,
-// for a case that breaks one thing.
-func with(path, body string) toolchain.Generated {
-	g := healthy()
-	g.Files[path] = []byte(body)
-	return g
-}
-
-// only returns a fixture with one file, for a case that needs no test
-// module.
-func only(path, body string) toolchain.Generated {
-	return toolchain.Generated{Files: map[string][]byte{path: []byte(body)}}
-}
-
-// adapter is the harness under test.
-func adapter() toolchain.Adapter { return tstesting.New() }
-
-// errText returns an error's text, and empty for no error, so a case
-// asserting on the text fails and does not panic.
-func errText(err error) string {
-	if err == nil {
-		return ""
-	}
-	return err.Error()
-}
-
-// laidOut lays a fixture out and removes it when the case ends.
-func laidOut(t *testing.T, g toolchain.Generated) string {
-	t.Helper()
-
-	dir, err := adapter().Layout(g)
-	assert.NoError(t, err, "the fixture lays out")
-	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return dir
-}
-
 // The kernel's assertions drive the adapter, so the project it lays
 // out and the meaning of each result are its contract. The layout
 // needs no toolchain, and every case that runs one skips locally
@@ -365,4 +297,72 @@ func TestAdapter(t *testing.T) {
 				"a broken project returns an error, not false")
 		})
 	})
+}
+
+// healthy returns generated output that parses, type-checks and whose
+// one test module passes.
+func healthy() toolchain.Generated {
+	return toolchain.Generated{Files: map[string][]byte{
+		rowFile: []byte(`// Reader is what a Row satisfies.
+export interface Reader {
+  read(): string;
+}
+
+// Row is a generated record.
+export class Row implements Reader {
+  constructor(public readonly name: string) {}
+
+  read(): string {
+    return this.name;
+  }
+}
+
+// Plain declares no read method.
+export class Plain {
+  constructor(public readonly id: number) {}
+}
+`),
+		rowTestFile: []byte(`import { Row } from "./row";
+
+if (new Row("a").read() !== "a") {
+  throw new Error("read returns the name");
+}
+`),
+	}}
+}
+
+// with returns the healthy fixture with one file replaced or added,
+// for a case that breaks one thing.
+func with(path, body string) toolchain.Generated {
+	g := healthy()
+	g.Files[path] = []byte(body)
+	return g
+}
+
+// only returns a fixture with one file, for a case that needs no test
+// module.
+func only(path, body string) toolchain.Generated {
+	return toolchain.Generated{Files: map[string][]byte{path: []byte(body)}}
+}
+
+// adapter is the harness under test.
+func adapter() toolchain.Adapter { return tstesting.New() }
+
+// errText returns an error's text, and empty for no error, so a case
+// asserting on the text fails and does not panic.
+func errText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// laidOut lays a fixture out and removes it when the case ends.
+func laidOut(t *testing.T, g toolchain.Generated) string {
+	t.Helper()
+
+	dir, err := adapter().Layout(g)
+	assert.NoError(t, err, "the fixture lays out")
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
 }

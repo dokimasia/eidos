@@ -114,117 +114,9 @@ type merge struct {
 	set    func(*backend.Builder) *backend.Builder
 }
 
-// kitSyntax returns the comment forms a fixture language declares.
-func kitSyntax() plugin.CommentSyntax {
-	return plugin.CommentSyntax{Line: []string{"//"}}
-}
-
 // kitFile is the fixture's file skeleton, spelling a comment so a
 // declared skeleton is distinguishable from the kit default.
 const kitFile = "// {{.Name}}\n{{imports}}{{decls}}"
-
-// kitStructs and kitCallables split the kind inventory across two
-// declarations, the way a satellite groups its spellings. The struct
-// spelling calls the shared helper, so the vocabulary is exercised
-// too.
-func kitStructs() map[symbol.Kind]string {
-	return map[symbol.Kind]string{
-		symbol.KindStruct: "type {{" + upHelper + " .Name}} struct{}\n",
-	}
-}
-
-func kitCallables() map[symbol.Kind]string {
-	return map[symbol.Kind]string{
-		symbol.KindFunction: "func {{.Name}}() {\n{{body .}}}\n",
-	}
-}
-
-// kitFuncs is the fixture's shared template vocabulary, which binds
-// nothing to the file's import set.
-func kitFuncs(*render.ImportSet) template.FuncMap {
-	return template.FuncMap{upHelper: strings.ToUpper}
-}
-
-// kitBinding is a vocabulary part bound to the file's import set: its
-// helper binds a package under the package's last segment and spells a
-// name through the bound name.
-func kitBinding(set *render.ImportSet) template.FuncMap {
-	return template.FuncMap{qualifyHelper: func(pkg, name string) string {
-		return set.Bind(pkg, path.Base(pkg)) + "." + name
-	}}
-}
-
-// kitNaming spells every unit as its word under a fixture
-// extension.
-func kitNaming(u plugin.Unit) string { return u.Word + kitExt }
-
-// kitScaffold spells the one statement kind the fixture emits,
-// recording an import the way a real printer records what it
-// qualifies with.
-func kitScaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
-	if s.Kind != emit.StmtReturn {
-		return nil, errors.New("the fixture spells returns only")
-	}
-	set.Add(runtimePkg)
-	return []byte("\treturn\n"), nil
-}
-
-// kitImports renders the collected set as a one-line block.
-func kitImports(set *render.ImportSet) string {
-	if set.Len() == 0 {
-		return ""
-	}
-	return "import (" + strings.Join(set.Paths(), " ") + ")\n"
-}
-
-// kitFinalise is the pass-through fixture formatter.
-func kitFinalise(src []byte) ([]byte, error) { return src, nil }
-
-// kitLanguage returns the same language as values, for the
-// hand-built pass the kit's Build must lower to.
-func kitLanguage() render.Language {
-	kinds := kitStructs()
-	maps.Copy(kinds, kitCallables())
-	return render.Language{
-		Kinds: kinds, File: kitFile, Funcs: kitFuncs,
-		Naming: kitNaming, Scaffold: kitScaffold,
-		Imports: kitImports, Finalise: kitFinalise,
-	}
-}
-
-// kitBackend returns the full fixture declaration, ready to Build
-// or to break one piece of.
-func kitBackend(name plugin.ID, target plugin.Target) *backend.Builder {
-	return backend.New(name, target, kitSyntax()).
-		FileTemplate(kitFile).
-		KindTemplates(kitStructs()).
-		KindTemplates(kitCallables()).
-		Funcs(kitFuncs).
-		Naming(kitNaming).
-		Scaffold(kitScaffold).
-		Imports(kitImports).
-		Finalise(kitFinalise)
-}
-
-// kitUnit returns one flushed plan unit of a struct and a function
-// whose body scaffolds a return.
-func kitUnit() plugin.Unit {
-	f := &emit.Function{
-		Origin: coretest.Struct(coretest.StorePath, loadName).ID,
-		Name:   loadName,
-	}
-	f.Body = emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}
-	return plugin.Unit{
-		Plugin: kitEmitter, Per: plugin.PerPlan, Word: kitWord,
-		Decls: []symbol.Symbol{
-			&emit.Struct{
-				Origin: coretest.Struct(coretest.StorePath, rowName).ID,
-				Name:   rowName,
-			},
-			f,
-		},
-	}
-}
 
 // kitBody is the file the full fixture declaration renders: the
 // skeleton's comment, the scaffold's import, the struct through the
@@ -233,110 +125,6 @@ var kitBody = "// " + kitWord + kitExt + "\n" +
 	"import (" + runtimePkg + ")\n" +
 	"type " + strings.ToUpper(rowName) + " struct{}\n" +
 	"func " + loadName + "() {\n\treturn\n}\n"
-
-// kitLower is the fixture's construct lowering: a struct becomes
-// itself and a companion with the same origin, and every other
-// declaration passes through untouched.
-func kitLower(s symbol.Symbol) ([]symbol.Symbol, error) {
-	row, held := s.(*emit.Struct)
-	if !held {
-		return nil, nil
-	}
-	return []symbol.Symbol{row, &emit.Struct{
-		Origin: row.Origin, Name: row.Name + cursorSuffix,
-	}}, nil
-}
-
-// kitRespell is the fixture's name convention: every declared name
-// takes the prefix, whatever its kind.
-func kitRespell(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
-	return respellPrefix + name, nil
-}
-
-// structNames reads the declared names off a lowering's result,
-// which the fixture hook returns as structs alone.
-func structNames(tb assert.TB, decls []symbol.Symbol) []string {
-	tb.Helper()
-
-	out := make([]string, 0, len(decls))
-	for _, d := range decls {
-		s, held := d.(*emit.Struct)
-		assert.True(tb, held, "the fixture lowering returns structs")
-		if !held {
-			continue
-		}
-		out = append(out, s.Name)
-	}
-	return out
-}
-
-// kitStore returns the fixture store, unsettled.
-func kitStore(tb assert.TB) *plugin.Emit {
-	tb.Helper()
-
-	e := plugin.NewEmit()
-	assert.NoError(tb, e.Add(kitUnit()), "the fixture unit is added")
-	return e
-}
-
-// kitUnsettled renders the fixture store through b without
-// settling it first, and returns the render's error.
-func kitUnsettled(tb assert.TB, b plugin.Backend) error {
-	tb.Helper()
-
-	r, held := b.(plugin.Renderer)
-	assert.True(tb, held, "a kit backend renders")
-	_, err := r.Render(&plugin.RenderContext{
-		Emit: kitStore(tb), Sink: diag.NewSink(), Plugin: kitName,
-	})
-	return err
-}
-
-// kitSettled settles the fixture store through b's declared seams
-// and renders it, asserting both steps run clean.
-func kitSettled(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
-	tb.Helper()
-
-	r, held := b.(plugin.Renderer)
-	assert.True(tb, held, "a kit backend renders")
-	e := kitStore(tb)
-	sink := diag.NewSink()
-	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles once")
-	coretest.AssertCodes(tb, sink)
-	files, err := r.Render(&plugin.RenderContext{
-		Emit: e, Files: kitFiles(tb, b, e), Sink: sink, Plugin: kitName,
-	})
-	assert.NoError(tb, err, "the settled store renders")
-	coretest.AssertCodes(tb, sink)
-	return files
-}
-
-// kitRender renders the fixture store through b's renderer role
-// and asserts the pass ran clean.
-func kitRender(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
-	tb.Helper()
-
-	r, held := b.(plugin.Renderer)
-	assert.True(tb, held, "a kit backend renders")
-	e := kitStore(tb)
-	sink := diag.NewSink()
-	files, err := r.Render(&plugin.RenderContext{
-		Emit: e, Files: kitFiles(tb, b, e), Sink: sink, Plugin: kitName,
-	})
-	assert.NoError(tb, err, "the pass renders every file")
-	coretest.AssertCodes(tb, sink)
-	return files
-}
-
-// kitFiles routes the fixture store into files through b's filename
-// half, the way the suite routes a hand-built store.
-func kitFiles(tb assert.TB, b plugin.Backend, e *plugin.Emit) []plugin.File {
-	tb.Helper()
-
-	s, spells := b.(plugin.FileSpeller)
-	assert.True(tb, spells, "a kit backend spells filenames")
-	return backendtest.Files(e, s)
-}
 
 // The backend kit is the write side's authoring builder: the
 // declaration is data, Build lowers it to the render pass, and
@@ -1036,6 +824,218 @@ func BenchmarkBackend(b *testing.B) {
 		_, lowers := got.(plugin.Lowerer)
 		assert.True(b, lowers, "the lowered backend has the construct seam")
 	})
+}
+
+// kitSyntax returns the comment forms a fixture language declares.
+func kitSyntax() plugin.CommentSyntax {
+	return plugin.CommentSyntax{Line: []string{"//"}}
+}
+
+// kitStructs and kitCallables split the kind inventory across two
+// declarations, the way a satellite groups its spellings. The struct
+// spelling calls the shared helper, so the vocabulary is exercised
+// too.
+func kitStructs() map[symbol.Kind]string {
+	return map[symbol.Kind]string{
+		symbol.KindStruct: "type {{" + upHelper + " .Name}} struct{}\n",
+	}
+}
+
+func kitCallables() map[symbol.Kind]string {
+	return map[symbol.Kind]string{
+		symbol.KindFunction: "func {{.Name}}() {\n{{body .}}}\n",
+	}
+}
+
+// kitFuncs is the fixture's shared template vocabulary, which binds
+// nothing to the file's import set.
+func kitFuncs(*render.ImportSet) template.FuncMap {
+	return template.FuncMap{upHelper: strings.ToUpper}
+}
+
+// kitBinding is a vocabulary part bound to the file's import set: its
+// helper binds a package under the package's last segment and spells a
+// name through the bound name.
+func kitBinding(set *render.ImportSet) template.FuncMap {
+	return template.FuncMap{qualifyHelper: func(pkg, name string) string {
+		return set.Bind(pkg, path.Base(pkg)) + "." + name
+	}}
+}
+
+// kitNaming spells every unit as its word under a fixture
+// extension.
+func kitNaming(u plugin.Unit) string { return u.Word + kitExt }
+
+// kitScaffold spells the one statement kind the fixture emits,
+// recording an import the way a real printer records what it
+// qualifies with.
+func kitScaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
+	if s.Kind != emit.StmtReturn {
+		return nil, errors.New("the fixture spells returns only")
+	}
+	set.Add(runtimePkg)
+	return []byte("\treturn\n"), nil
+}
+
+// kitImports renders the collected set as a one-line block.
+func kitImports(set *render.ImportSet) string {
+	if set.Len() == 0 {
+		return ""
+	}
+	return "import (" + strings.Join(set.Paths(), " ") + ")\n"
+}
+
+// kitFinalise is the pass-through fixture formatter.
+func kitFinalise(src []byte) ([]byte, error) { return src, nil }
+
+// kitLanguage returns the same language as values, for the
+// hand-built pass the kit's Build must lower to.
+func kitLanguage() render.Language {
+	kinds := kitStructs()
+	maps.Copy(kinds, kitCallables())
+	return render.Language{
+		Kinds: kinds, File: kitFile, Funcs: kitFuncs,
+		Naming: kitNaming, Scaffold: kitScaffold,
+		Imports: kitImports, Finalise: kitFinalise,
+	}
+}
+
+// kitBackend returns the full fixture declaration, ready to Build
+// or to break one piece of.
+func kitBackend(name plugin.ID, target plugin.Target) *backend.Builder {
+	return backend.New(name, target, kitSyntax()).
+		FileTemplate(kitFile).
+		KindTemplates(kitStructs()).
+		KindTemplates(kitCallables()).
+		Funcs(kitFuncs).
+		Naming(kitNaming).
+		Scaffold(kitScaffold).
+		Imports(kitImports).
+		Finalise(kitFinalise)
+}
+
+// kitUnit returns one flushed plan unit of a struct and a function
+// whose body scaffolds a return.
+func kitUnit() plugin.Unit {
+	f := &emit.Function{
+		Origin: coretest.Struct(coretest.StorePath, loadName).ID,
+		Name:   loadName,
+	}
+	f.Body = emit.Body{Stmts: []emit.Stmt{{Kind: emit.StmtReturn}}}
+	return plugin.Unit{
+		Plugin: kitEmitter, Per: plugin.PerPlan, Word: kitWord,
+		Decls: []symbol.Symbol{
+			&emit.Struct{
+				Origin: coretest.Struct(coretest.StorePath, rowName).ID,
+				Name:   rowName,
+			},
+			f,
+		},
+	}
+}
+
+// kitLower is the fixture's construct lowering: a struct becomes
+// itself and a companion with the same origin, and every other
+// declaration passes through untouched.
+func kitLower(s symbol.Symbol) ([]symbol.Symbol, error) {
+	row, held := s.(*emit.Struct)
+	if !held {
+		return nil, nil
+	}
+	return []symbol.Symbol{row, &emit.Struct{
+		Origin: row.Origin, Name: row.Name + cursorSuffix,
+	}}, nil
+}
+
+// kitRespell is the fixture's name convention: every declared name
+// takes the prefix, whatever its kind.
+func kitRespell(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+	return respellPrefix + name, nil
+}
+
+// structNames reads the declared names off a lowering's result,
+// which the fixture hook returns as structs alone.
+func structNames(tb assert.TB, decls []symbol.Symbol) []string {
+	tb.Helper()
+
+	out := make([]string, 0, len(decls))
+	for _, d := range decls {
+		s, held := d.(*emit.Struct)
+		assert.True(tb, held, "the fixture lowering returns structs")
+		if !held {
+			continue
+		}
+		out = append(out, s.Name)
+	}
+	return out
+}
+
+// kitStore returns the fixture store, unsettled.
+func kitStore(tb assert.TB) *plugin.Emit {
+	tb.Helper()
+
+	e := plugin.NewEmit()
+	assert.NoError(tb, e.Add(kitUnit()), "the fixture unit is added")
+	return e
+}
+
+// kitUnsettled renders the fixture store through b without
+// settling it first, and returns the render's error.
+func kitUnsettled(tb assert.TB, b plugin.Backend) error {
+	tb.Helper()
+
+	r, held := b.(plugin.Renderer)
+	assert.True(tb, held, "a kit backend renders")
+	_, err := r.Render(&plugin.RenderContext{
+		Emit: kitStore(tb), Sink: diag.NewSink(), Plugin: kitName,
+	})
+	return err
+}
+
+// kitSettled settles the fixture store through b's declared seams
+// and renders it, asserting both steps run clean.
+func kitSettled(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
+	tb.Helper()
+
+	r, held := b.(plugin.Renderer)
+	assert.True(tb, held, "a kit backend renders")
+	e := kitStore(tb)
+	sink := diag.NewSink()
+	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles once")
+	coretest.AssertCodes(tb, sink)
+	files, err := r.Render(&plugin.RenderContext{
+		Emit: e, Files: kitFiles(tb, b, e), Sink: sink, Plugin: kitName,
+	})
+	assert.NoError(tb, err, "the settled store renders")
+	coretest.AssertCodes(tb, sink)
+	return files
+}
+
+// kitRender renders the fixture store through b's renderer role
+// and asserts the pass ran clean.
+func kitRender(tb assert.TB, b plugin.Backend) []plugin.RenderedFile {
+	tb.Helper()
+
+	r, held := b.(plugin.Renderer)
+	assert.True(tb, held, "a kit backend renders")
+	e := kitStore(tb)
+	sink := diag.NewSink()
+	files, err := r.Render(&plugin.RenderContext{
+		Emit: e, Files: kitFiles(tb, b, e), Sink: sink, Plugin: kitName,
+	})
+	assert.NoError(tb, err, "the pass renders every file")
+	coretest.AssertCodes(tb, sink)
+	return files
+}
+
+// kitFiles routes the fixture store into files through b's filename
+// half, the way the suite routes a hand-built store.
+func kitFiles(tb assert.TB, b plugin.Backend, e *plugin.Emit) []plugin.File {
+	tb.Helper()
+
+	s, spells := b.(plugin.FileSpeller)
+	assert.True(tb, spells, "a kit backend spells filenames")
+	return backendtest.Files(e, s)
 }
 
 // setters returns every setter that writes one field of a declaration.

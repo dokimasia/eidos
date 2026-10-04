@@ -30,30 +30,6 @@ var registryOutput = plugin.Output{Per: plugin.PerPlan, Word: "registry"}
 // plannerOptions is the options struct the full declaration states.
 type plannerOptions struct{ Redact bool }
 
-// declared builds a plugin stating every provider surface, with opts
-// as its options struct.
-func declared(opts *plannerOptions) plugin.Plugin {
-	return eidos.NewPlugin(plannerPlugin).
-		Version(declaredVersion).
-		Output(registryOutput).
-		Priority(plugin.RoleGenerator, declaredPriority).
-		Provides(providedLabel).
-		Requires(requiredLabel).
-		Options(opts).
-		Handle(emitNothing()).
-		Build()
-}
-
-// capabilities returns the capability surface of the full
-// declaration.
-func capabilities(tb assert.TB) plugin.CapabilityProvider {
-	tb.Helper()
-
-	caps, held := declared(&plannerOptions{}).(plugin.CapabilityProvider)
-	assert.True(tb, held, "the capabilities are returned")
-	return caps
-}
-
 // A built plugin is the lowered declaration: what the providers
 // return is exactly what was declared, so the composition reads
 // truth.
@@ -230,4 +206,28 @@ func TestBuilt(t *testing.T) {
 			assert.Empty(t, tp.Overrides(stubTarget), "no override is declared")
 		})
 	})
+}
+
+// declared builds a plugin stating every provider surface, with opts
+// as its options struct.
+func declared(opts *plannerOptions) plugin.Plugin {
+	return eidos.NewPlugin(plannerPlugin).
+		Version(declaredVersion).
+		Output(registryOutput).
+		Priority(plugin.RoleGenerator, declaredPriority).
+		Provides(providedLabel).
+		Requires(requiredLabel).
+		Options(opts).
+		Handle(emitNothing()).
+		Build()
+}
+
+// capabilities returns the capability surface of the full
+// declaration.
+func capabilities(tb assert.TB) plugin.CapabilityProvider {
+	tb.Helper()
+
+	caps, held := declared(&plannerOptions{}).(plugin.CapabilityProvider)
+	assert.True(tb, held, "the capabilities are returned")
+	return caps
 }

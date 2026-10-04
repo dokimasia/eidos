@@ -28,13 +28,6 @@ var testdataClaim = []string{"**/*.go", "!**/testdata/**"}
 // pattern, and 3 for the growth of the path's segment list.
 const matchAllocs = 6
 
-// claiming returns a frontend claiming exactly these patterns.
-func claiming(patterns ...string) *frontendtest.Scripted {
-	f := frontendtest.NewScripted()
-	f.Sel = patterns
-	return f
-}
-
 // Selection is the file claim, so the glob grammar is pinned: whole
 // paths, segment spanning, negation, order.
 func TestMatch(t *testing.T) {
@@ -151,4 +144,11 @@ func BenchmarkMatch(b *testing.B) {
 		}
 		assert.False(b, got, "the negation excludes the path")
 	})
+}
+
+// claiming returns a frontend claiming exactly these patterns.
+func claiming(patterns ...string) *frontendtest.Scripted {
+	f := frontendtest.NewScripted()
+	f.Sel = patterns
+	return f
 }

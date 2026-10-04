@@ -72,81 +72,6 @@ const (
 	recordLoadAllocs = 89
 )
 
-// scriptedTree returns the two packages the load cases load.
-func scriptedTree() fstest.MapFS {
-	return fstest.MapFS{
-		apiFile:   {Data: []byte("package svc/api\ntype User string\n")},
-		storeFile: {Data: []byte("package svc/store\nimport api svc/api\ntype Row api.User\n")},
-	}
-}
-
-// loaded loads a tree through the scripted frontend, over a prior
-// record where one is set.
-func loaded(tb testing.TB, tree fstest.MapFS, prior load.Prior) *load.Report {
-	tb.Helper()
-
-	_, report, err := load.Load(context.Background(), load.Config{
-		FS:        tree,
-		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
-		Sink:      diag.NewSink(),
-		Brand:     loadBrand,
-		Prior:     prior,
-	})
-	assert.NoError(tb, err, "the tree loads")
-	return report
-}
-
-// recordedLoad commits a load's record over the live generation of a
-// ledger, nil for a ledger without one, and returns the generation the
-// commit made live.
-func recordedLoad(tb testing.TB, l ledger.Ledger, r *load.Report) *state.Generation {
-	tb.Helper()
-
-	parent, err := state.Open(tb.Context(), l)
-	var prior *state.LoadState
-	if err == nil {
-		prior = parent.Load(tb.Context())
-	} else {
-		parent = nil
-	}
-	c := state.NewCommit(parent, nil)
-	assert.NoError(tb, state.RecordLoad(tb.Context(), c, prior, r), "the load records")
-	_, err = c.Write(tb.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
-	assert.NoError(tb, err, "the commit writes")
-	g, err := state.Open(tb.Context(), l)
-	assert.NoError(tb, err, "and its generation opens")
-	return g
-}
-
-// unitsOf returns a generation's unit records.
-func unitsOf(t *testing.T, s *state.LoadState) []load.UnitRecord {
-	t.Helper()
-
-	var out []load.UnitRecord
-	for u, err := range s.Units() {
-		assert.NoError(t, err, "the units read")
-		out = append(out, u)
-	}
-	return out
-}
-
-// filesOf returns a generation's file records.
-func filesOf(t *testing.T, s *state.LoadState) []load.FileRecord {
-	t.Helper()
-
-	var out []load.FileRecord
-	for f, err := range s.Files() {
-		assert.NoError(t, err, "the files read")
-		out = append(out, f)
-	}
-	return out
-}
-
-// userID is the bare identity the store package's reference names.
-func userID() symbol.Identity {
-	return symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/api", Name: "User"}
-}
-
 // A generation's record of the load is what a warm load keeps, so every
 // part of a report returns whole from a commit, and a second commit
 // changes only what the second load changed.
@@ -579,6 +504,81 @@ func BenchmarkLoadState(b *testing.B) {
 		}
 		assert.NoError(b, err, "the load records")
 	})
+}
+
+// scriptedTree returns the two packages the load cases load.
+func scriptedTree() fstest.MapFS {
+	return fstest.MapFS{
+		apiFile:   {Data: []byte("package svc/api\ntype User string\n")},
+		storeFile: {Data: []byte("package svc/store\nimport api svc/api\ntype Row api.User\n")},
+	}
+}
+
+// loaded loads a tree through the scripted frontend, over a prior
+// record where one is set.
+func loaded(tb testing.TB, tree fstest.MapFS, prior load.Prior) *load.Report {
+	tb.Helper()
+
+	_, report, err := load.Load(context.Background(), load.Config{
+		FS:        tree,
+		Frontends: []plugin.Frontend{frontendtest.NewScripted()},
+		Sink:      diag.NewSink(),
+		Brand:     loadBrand,
+		Prior:     prior,
+	})
+	assert.NoError(tb, err, "the tree loads")
+	return report
+}
+
+// recordedLoad commits a load's record over the live generation of a
+// ledger, nil for a ledger without one, and returns the generation the
+// commit made live.
+func recordedLoad(tb testing.TB, l ledger.Ledger, r *load.Report) *state.Generation {
+	tb.Helper()
+
+	parent, err := state.Open(tb.Context(), l)
+	var prior *state.LoadState
+	if err == nil {
+		prior = parent.Load(tb.Context())
+	} else {
+		parent = nil
+	}
+	c := state.NewCommit(parent, nil)
+	assert.NoError(tb, state.RecordLoad(tb.Context(), c, prior, r), "the load records")
+	_, err = c.Write(tb.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
+	assert.NoError(tb, err, "the commit writes")
+	g, err := state.Open(tb.Context(), l)
+	assert.NoError(tb, err, "and its generation opens")
+	return g
+}
+
+// unitsOf returns a generation's unit records.
+func unitsOf(t *testing.T, s *state.LoadState) []load.UnitRecord {
+	t.Helper()
+
+	var out []load.UnitRecord
+	for u, err := range s.Units() {
+		assert.NoError(t, err, "the units read")
+		out = append(out, u)
+	}
+	return out
+}
+
+// filesOf returns a generation's file records.
+func filesOf(t *testing.T, s *state.LoadState) []load.FileRecord {
+	t.Helper()
+
+	var out []load.FileRecord
+	for f, err := range s.Files() {
+		assert.NoError(t, err, "the files read")
+		out = append(out, f)
+	}
+	return out
+}
+
+// userID is the bare identity the store package's reference names.
+func userID() symbol.Identity {
+	return symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/api", Name: "User"}
 }
 
 // loadStates returns n load states over a generation, none of which

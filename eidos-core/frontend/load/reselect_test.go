@@ -20,13 +20,6 @@ const (
 	apiWithUser    = "package svc/api\ntype Account string\ntype User string\n"
 )
 
-// withAPI returns the standard tree with the API file's body replaced.
-func withAPI(body string) fstest.MapFS {
-	tree := stdTree()
-	tree[apiFile] = &fstest.MapFile{Data: []byte(body)}
-	return tree
-}
-
 // A kept unit's references select their targets again from the
 // candidates their record names, so a declaration that appears or
 // disappears moves a kept target as it moves a parsed one.
@@ -111,4 +104,11 @@ func TestReselect(t *testing.T) {
 			assertSameLoad(t, warm, loadOf(t, reverted))
 		})
 	})
+}
+
+// withAPI returns the standard tree with the API file's body replaced.
+func withAPI(body string) fstest.MapFS {
+	tree := stdTree()
+	tree[apiFile] = &fstest.MapFile{Data: []byte(body)}
+	return tree
 }

@@ -28,14 +28,6 @@ var excepted = render.Coverage{
 	},
 }
 
-// covered returns the fixture language declaring one verdict per
-// stated fact the fixture uses, so the guard runs armed.
-func covered(facts map[symbol.Fact]render.Verdict) render.Language {
-	l := language()
-	l.Coverage = render.Coverage{Facts: facts}
-	return l
-}
-
 // The coverage is the feature table as data: verdicts resolve
 // through exceptions then the base, and the render's guard reports
 // what the declaration refuses or misses without withholding the
@@ -230,4 +222,12 @@ func BenchmarkCoverage(b *testing.B) {
 		}
 		assert.True(b, got, "a base map declares the coverage")
 	})
+}
+
+// covered returns the fixture language declaring one verdict per
+// stated fact the fixture uses, so the guard runs armed.
+func covered(facts map[symbol.Fact]render.Verdict) render.Language {
+	l := language()
+	l.Coverage = render.Coverage{Facts: facts}
+	return l
 }

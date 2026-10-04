@@ -75,22 +75,6 @@ const (
 // case tells the value ImportOf returns from the path it receives.
 const importMark = "import:"
 
-// dualTree returns two packages declaring Thing and a holder whose
-// one field spells it through an alias bound to both paths.
-func dualTree(bound ...string) fstest.MapFS {
-	imports := "import dual"
-	for _, path := range bound {
-		imports += " " + path
-	}
-	return fstest.MapFS{
-		"a/left/l.zz":  {Data: []byte("package a/left\ntype Thing string\n")},
-		"a/right/r.zz": {Data: []byte("package a/right\ntype Thing string\n")},
-		"svc/hold/h.zz": {
-			Data: []byte("package svc/hold\n" + imports + "\ntype Holder dual.Thing\n"),
-		},
-	}
-}
-
 // The fold tree: a holder declared in one file, and a method another
 // file of the package folds onto it through an alias that only the
 // second file binds.
@@ -100,17 +84,6 @@ const (
 	foldMethodFile = "svc/fold/b.zz"
 )
 
-// foldTree returns the fold tree and the package the method's alias
-// names.
-func foldTree() fstest.MapFS {
-	return fstest.MapFS{
-		"a/left/l.zz":  {Data: []byte("package " + leftPath + "\ntype " + thingName + " string\n")},
-		foldHolderFile: {Data: []byte("package " + foldPath + "\ntype " + holderName + "\n")},
-		foldMethodFile: {Data: []byte("package " + foldPath + "\nimport dep " + leftPath +
-			"\non " + holderName + "\nmethod Put dep." + thingName + "\n")},
-	}
-}
-
 // The fold tree's variants: the method's file declares another
 // package, the shape of a Rust impl block in another module, and the
 // file name a line directive puts in a position, which no tree has.
@@ -118,15 +91,6 @@ const (
 	elsewherePath = "svc/elsewhere"
 	linedFile     = "gen.y"
 )
-
-// elsewhereTree returns the fold tree with the method's file in
-// another package than the holder's.
-func elsewhereTree() fstest.MapFS {
-	tree := foldTree()
-	tree[foldMethodFile] = &fstest.MapFile{Data: []byte("package " + elsewherePath + "\nimport dep " + leftPath +
-		"\non " + holderName + "\nmethod Put dep." + thingName + "\n")}
-	return tree
-}
 
 // The re-export trees: a barrel package whose files publish other
 // packages, a second barrel whose file publishes the left package,
@@ -140,67 +104,6 @@ const (
 	loopPath   = "svc/loop"
 	loopFile   = "svc/loop/index.zz"
 )
-
-// publishing returns the source of a file of one package that
-// publishes the given packages.
-func publishing(pkg string, published ...string) []byte {
-	return []byte("package " + pkg + "\nimport " + frontendtest.ScriptedPublish + " " +
-		strings.Join(published, " ") + "\n")
-}
-
-// barrelTree returns the dual tree with the holder's alias bound to
-// the barrel package, whose one file publishes the given packages.
-func barrelTree(published ...string) fstest.MapFS {
-	tree := dualTree(barrelPath)
-	tree[barrelFile] = &fstest.MapFile{Data: publishing(barrelPath, published...)}
-	return tree
-}
-
-// localTree returns one file declaring a holder and the type its one
-// field spells.
-func localTree() fstest.MapFS {
-	return fstest.MapFS{
-		localFile: {Data: []byte("package " + localPath + "\ntype " + holderName + " " + thingName +
-			"\ntype " + thingName + " string\n")},
-	}
-}
-
-// splitTree returns one package declaring a holder in one file and
-// the type its one field spells in another.
-func splitTree() fstest.MapFS {
-	return fstest.MapFS{
-		splitFile:  {Data: []byte("package " + splitPath + "\ntype " + holderName + " " + thingName + "\n")},
-		targetFile: {Data: []byte("package " + splitPath + "\ntype " + thingName + " string\n")},
-	}
-}
-
-// holderRef returns the reference the one field of a package's
-// holder spells.
-func holderRef(tb assert.TB, g *store.Graph, path string) *node.TypeRef {
-	tb.Helper()
-
-	holder, found := g.Lookup(symbol.Identity{
-		Lang: frontendtest.ScriptedLang, Package: path, Name: holderName,
-		Kind: symbol.KindStruct,
-	})
-	assert.True(tb, found, "the holder is indexed")
-	return holder.(*node.Struct).Fields[0].Type
-}
-
-// thingIn returns the identity of the Thing one package declares.
-func thingIn(path string) symbol.Identity {
-	return symbol.Identity{
-		Lang: frontendtest.ScriptedLang, Package: path, Name: thingName, Kind: symbol.KindStruct,
-	}
-}
-
-// genDecl returns the identity of one declaration of the generic
-// tree.
-func genDecl(owner, name string, kind symbol.Kind) symbol.Identity {
-	return symbol.Identity{
-		Lang: frontendtest.ScriptedLang, Package: genPath, Owner: owner, Name: name, Kind: kind,
-	}
-}
 
 // The resolution step turns spellings into identities through each
 // language's own bindings, and its degradations are pinned beside
@@ -519,6 +422,103 @@ func TestLink(t *testing.T) {
 			assert.True(t, holderRef(t, g, holdPath).Target.IsZero(), "no file re-exports a type's member")
 		})
 	})
+}
+
+// dualTree returns two packages declaring Thing and a holder whose
+// one field spells it through an alias bound to both paths.
+func dualTree(bound ...string) fstest.MapFS {
+	imports := "import dual"
+	for _, path := range bound {
+		imports += " " + path
+	}
+	return fstest.MapFS{
+		"a/left/l.zz":  {Data: []byte("package a/left\ntype Thing string\n")},
+		"a/right/r.zz": {Data: []byte("package a/right\ntype Thing string\n")},
+		"svc/hold/h.zz": {
+			Data: []byte("package svc/hold\n" + imports + "\ntype Holder dual.Thing\n"),
+		},
+	}
+}
+
+// foldTree returns the fold tree and the package the method's alias
+// names.
+func foldTree() fstest.MapFS {
+	return fstest.MapFS{
+		"a/left/l.zz":  {Data: []byte("package " + leftPath + "\ntype " + thingName + " string\n")},
+		foldHolderFile: {Data: []byte("package " + foldPath + "\ntype " + holderName + "\n")},
+		foldMethodFile: {Data: []byte("package " + foldPath + "\nimport dep " + leftPath +
+			"\non " + holderName + "\nmethod Put dep." + thingName + "\n")},
+	}
+}
+
+// elsewhereTree returns the fold tree with the method's file in
+// another package than the holder's.
+func elsewhereTree() fstest.MapFS {
+	tree := foldTree()
+	tree[foldMethodFile] = &fstest.MapFile{Data: []byte("package " + elsewherePath + "\nimport dep " + leftPath +
+		"\non " + holderName + "\nmethod Put dep." + thingName + "\n")}
+	return tree
+}
+
+// publishing returns the source of a file of one package that
+// publishes the given packages.
+func publishing(pkg string, published ...string) []byte {
+	return []byte("package " + pkg + "\nimport " + frontendtest.ScriptedPublish + " " +
+		strings.Join(published, " ") + "\n")
+}
+
+// barrelTree returns the dual tree with the holder's alias bound to
+// the barrel package, whose one file publishes the given packages.
+func barrelTree(published ...string) fstest.MapFS {
+	tree := dualTree(barrelPath)
+	tree[barrelFile] = &fstest.MapFile{Data: publishing(barrelPath, published...)}
+	return tree
+}
+
+// localTree returns one file declaring a holder and the type its one
+// field spells.
+func localTree() fstest.MapFS {
+	return fstest.MapFS{
+		localFile: {Data: []byte("package " + localPath + "\ntype " + holderName + " " + thingName +
+			"\ntype " + thingName + " string\n")},
+	}
+}
+
+// splitTree returns one package declaring a holder in one file and
+// the type its one field spells in another.
+func splitTree() fstest.MapFS {
+	return fstest.MapFS{
+		splitFile:  {Data: []byte("package " + splitPath + "\ntype " + holderName + " " + thingName + "\n")},
+		targetFile: {Data: []byte("package " + splitPath + "\ntype " + thingName + " string\n")},
+	}
+}
+
+// holderRef returns the reference the one field of a package's
+// holder spells.
+func holderRef(tb assert.TB, g *store.Graph, path string) *node.TypeRef {
+	tb.Helper()
+
+	holder, found := g.Lookup(symbol.Identity{
+		Lang: frontendtest.ScriptedLang, Package: path, Name: holderName,
+		Kind: symbol.KindStruct,
+	})
+	assert.True(tb, found, "the holder is indexed")
+	return holder.(*node.Struct).Fields[0].Type
+}
+
+// thingIn returns the identity of the Thing one package declares.
+func thingIn(path string) symbol.Identity {
+	return symbol.Identity{
+		Lang: frontendtest.ScriptedLang, Package: path, Name: thingName, Kind: symbol.KindStruct,
+	}
+}
+
+// genDecl returns the identity of one declaration of the generic
+// tree.
+func genDecl(owner, name string, kind symbol.Kind) symbol.Identity {
+	return symbol.Identity{
+		Lang: frontendtest.ScriptedLang, Package: genPath, Owner: owner, Name: name, Kind: kind,
+	}
 }
 
 // relined is the scripted language with every method's position

@@ -19,16 +19,6 @@ import (
 // x, the option unix, and the key target_os set to linux.
 var cfgOptions = &frontend.Options{Features: []string{"x"}, Cfg: []string{"unix", "target_os=\"linux\""}}
 
-// loadedUnder reports whether a struct A that a cfg predicate gates
-// loads under the cfg set the evaluation cases state.
-func loadedUnder(tb assert.TB, pred string) bool {
-	tb.Helper()
-
-	src := "#[cfg(" + pred + ")]\npub struct A;\n"
-	gb, _ := parsedTree(tb, crateTree(map[string]string{libRoot: src}), libRoot, plugin.DepthFull, cfgOptions)
-	return len(fileIn(tb, gb, crateName).Decls) == 1
-}
-
 // Attributes are an item's annotations, documentation and cfg gate, so
 // what each attribute lowers to, and how a cfg predicate evaluates, is
 // pinned.
@@ -219,4 +209,14 @@ func TestAttr(t *testing.T) {
 			assert.False(t, loadedUnder(t, "unix, feature = \"x\""), "a cfg attribute takes one predicate")
 		})
 	})
+}
+
+// loadedUnder reports whether a struct A that a cfg predicate gates
+// loads under the cfg set the evaluation cases state.
+func loadedUnder(tb assert.TB, pred string) bool {
+	tb.Helper()
+
+	src := "#[cfg(" + pred + ")]\npub struct A;\n"
+	gb, _ := parsedTree(tb, crateTree(map[string]string{libRoot: src}), libRoot, plugin.DepthFull, cfgOptions)
+	return len(fileIn(tb, gb, crateName).Decls) == 1
 }

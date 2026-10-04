@@ -44,29 +44,6 @@ func (wordSpeller) SplitUnit(u plugin.Unit) []plugin.Unit {
 // FileName returns the unit's word.
 func (wordSpeller) FileName(u plugin.Unit) string { return u.Word + ".txt" }
 
-// routable returns one unit of a plugin under a package, its
-// declarations structs of the given names.
-func routable(p plugin.ID, pkg, word string, names ...string) plugin.Unit {
-	u := plugin.Unit{Plugin: p, Per: plugin.PerPackage, Word: word, Key: pkg, Pkg: coretest.PackageID(pkg)}
-	for _, n := range names {
-		u.Decls = append(u.Decls, &emit.Struct{Origin: coretest.Struct(pkg, n).ID, Name: n})
-	}
-	return u
-}
-
-// paths returns each file's path and the plugins of its units.
-func paths(files []plugin.File) []string {
-	out := make([]string, 0, len(files))
-	for _, f := range files {
-		line := f.Path + ":"
-		for _, u := range f.Units {
-			line += " " + string(u.Plugin)
-		}
-		out = append(out, line)
-	}
-	return out
-}
-
 // A hand-built store routes into files the way a plan routes a store
 // whose packages are at their package paths, so a backend's suite
 // renders what a plan would hand it.
@@ -138,4 +115,27 @@ func TestFiles(t *testing.T) {
 			assert.Equal(t, files[1].Pkg, foreign.Pkg, "the package that sorts second")
 		})
 	})
+}
+
+// routable returns one unit of a plugin under a package, its
+// declarations structs of the given names.
+func routable(p plugin.ID, pkg, word string, names ...string) plugin.Unit {
+	u := plugin.Unit{Plugin: p, Per: plugin.PerPackage, Word: word, Key: pkg, Pkg: coretest.PackageID(pkg)}
+	for _, n := range names {
+		u.Decls = append(u.Decls, &emit.Struct{Origin: coretest.Struct(pkg, n).ID, Name: n})
+	}
+	return u
+}
+
+// paths returns each file's path and the plugins of its units.
+func paths(files []plugin.File) []string {
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		line := f.Path + ":"
+		for _, u := range f.Units {
+			line += " " + string(u.Plugin)
+		}
+		out = append(out, line)
+	}
+	return out
 }

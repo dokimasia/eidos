@@ -17,13 +17,6 @@ import (
 // fnName is the function every signature case declares.
 const fnName = "f"
 
-// functionOf parses one exported function and returns it.
-func functionOf(tb assert.TB, signature string) *node.Function {
-	tb.Helper()
-
-	return named[*node.Function](tb, declsOf(tb, "export function "+fnName+signature+" {}\n"), fnName)
-}
-
 // A signature's parts are each a subject or a reference the
 // resolution step reads, so how a parameter list, a type parameter list
 // and a return type lower is pinned.
@@ -190,4 +183,11 @@ func TestSignature(t *testing.T) {
 				"the predicate is the spelling")
 		})
 	})
+}
+
+// functionOf parses one exported function and returns it.
+func functionOf(tb assert.TB, signature string) *node.Function {
+	tb.Helper()
+
+	return named[*node.Function](tb, declsOf(tb, "export function "+fnName+signature+" {}\n"), fnName)
 }

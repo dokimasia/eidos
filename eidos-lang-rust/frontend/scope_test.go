@@ -21,41 +21,6 @@ const (
 	nPackage  = crateName + "/m/n"
 )
 
-// scopeIn parses the fixture crate whose library root is src and returns
-// the scope the File node of one package recorded.
-func scopeIn(tb assert.TB, src, pkg string) plugin.ImportScope {
-	tb.Helper()
-
-	gb, _ := parsedSource(tb, src)
-	file := fileIn(tb, gb, pkg)
-	for _, rec := range gb.Scopes() {
-		if rec.File == file {
-			return plugin.ImportScope{Bindings: rec.Bindings}
-		}
-	}
-	tb.Fatalf("the File node of %q recorded no scope", pkg)
-	return plugin.ImportScope{}
-}
-
-// id spells one candidate.
-func id(pkg, name string) symbol.Identity {
-	return symbol.Identity{Lang: frontend.Lang, Package: pkg, Name: name}
-}
-
-// resolved resolves a spelling in a scope through the frontend.
-func resolved(scope plugin.ImportScope, spelling string) plugin.Candidates {
-	return frontend.New(nil).Resolve(scope, spelling)
-}
-
-// published returns what a scope's module publishes under a name.
-func published(tb assert.TB, scope plugin.ImportScope, name string) plugin.Candidates {
-	tb.Helper()
-
-	exporter, exports := frontend.New(nil).(plugin.Exporter)
-	assert.True(tb, exports, "the frontend is in the exporter role")
-	return exporter.Exports(scope, name)
-}
-
 // Resolution follows Rust's scope order through the bindings the parse
 // recorded, so the tiers each spelling probes are pinned.
 func TestScope(t *testing.T) {
@@ -296,4 +261,39 @@ func TestScope(t *testing.T) {
 			assert.Equal(t, resolved(scope, "_"), plugin.Candidates{{id(crateName, "_")}}, "_ binds nothing")
 		})
 	})
+}
+
+// scopeIn parses the fixture crate whose library root is src and returns
+// the scope the File node of one package recorded.
+func scopeIn(tb assert.TB, src, pkg string) plugin.ImportScope {
+	tb.Helper()
+
+	gb, _ := parsedSource(tb, src)
+	file := fileIn(tb, gb, pkg)
+	for _, rec := range gb.Scopes() {
+		if rec.File == file {
+			return plugin.ImportScope{Bindings: rec.Bindings}
+		}
+	}
+	tb.Fatalf("the File node of %q recorded no scope", pkg)
+	return plugin.ImportScope{}
+}
+
+// id spells one candidate.
+func id(pkg, name string) symbol.Identity {
+	return symbol.Identity{Lang: frontend.Lang, Package: pkg, Name: name}
+}
+
+// resolved resolves a spelling in a scope through the frontend.
+func resolved(scope plugin.ImportScope, spelling string) plugin.Candidates {
+	return frontend.New(nil).Resolve(scope, spelling)
+}
+
+// published returns what a scope's module publishes under a name.
+func published(tb assert.TB, scope plugin.ImportScope, name string) plugin.Candidates {
+	tb.Helper()
+
+	exporter, exports := frontend.New(nil).(plugin.Exporter)
+	assert.True(tb, exports, "the frontend is in the exporter role")
+	return exporter.Exports(scope, name)
 }

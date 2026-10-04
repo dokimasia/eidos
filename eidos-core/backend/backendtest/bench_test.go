@@ -24,35 +24,6 @@ const firstFunction = "task0"
 // enough that the measurement never decides the outcome.
 var roomy = backendtest.Budget{MaxAllocs: 1 << 40}
 
-// counted wraps a setup with a call counter, so a case can tell a
-// guard that stopped before the fixture was built from one that
-// stopped after.
-func counted(s backendtest.Setup, calls *int) backendtest.Setup {
-	return func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-		*calls++
-		return s(tb)
-	}
-}
-
-// benchRender runs one BenchRender through [testing.Benchmark], so a
-// case reads the guard's effect off the iteration count, because
-// b.Fatal drops its message.
-func benchRender(setup backendtest.Setup, budget backendtest.Budget) testing.BenchmarkResult {
-	return testing.Benchmark(func(b *testing.B) {
-		b.Helper()
-		backendtest.BenchRender(b, setup, budget)
-	})
-}
-
-// benchSettle runs one BenchSettle the way [benchRender] runs its
-// half of the pipeline.
-func benchSettle(setup backendtest.Setup, budget backendtest.Budget) testing.BenchmarkResult {
-	return testing.Benchmark(func(b *testing.B) {
-		b.Helper()
-		backendtest.BenchSettle(b, setup, budget)
-	})
-}
-
 // A benchmark's guards report through b.Fatal, which discards the
 // message and returns a zero result, so every guard case here reads
 // the effect: whether the loop ran at all, and how far the setup got
@@ -311,5 +282,34 @@ func TestBench(t *testing.T) {
 			assert.Equal(t, result.N, 0,
 				"a ceiling over a partial settle measures the wrong thing")
 		})
+	})
+}
+
+// counted wraps a setup with a call counter, so a case can tell a
+// guard that stopped before the fixture was built from one that
+// stopped after.
+func counted(s backendtest.Setup, calls *int) backendtest.Setup {
+	return func(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+		*calls++
+		return s(tb)
+	}
+}
+
+// benchRender runs one BenchRender through [testing.Benchmark], so a
+// case reads the guard's effect off the iteration count, because
+// b.Fatal drops its message.
+func benchRender(setup backendtest.Setup, budget backendtest.Budget) testing.BenchmarkResult {
+	return testing.Benchmark(func(b *testing.B) {
+		b.Helper()
+		backendtest.BenchRender(b, setup, budget)
+	})
+}
+
+// benchSettle runs one BenchSettle the way [benchRender] runs its
+// half of the pipeline.
+func benchSettle(setup backendtest.Setup, budget backendtest.Budget) testing.BenchmarkResult {
+	return testing.Benchmark(func(b *testing.B) {
+		b.Helper()
+		backendtest.BenchSettle(b, setup, budget)
 	})
 }

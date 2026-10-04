@@ -39,31 +39,6 @@ const (
 	replaceSharedAllocs = replaceAllocs + 1
 )
 
-// rooted returns a fresh directory and the root opened over it, closed
-// when the test ends.
-func rooted(tb testing.TB) (string, *os.Root) {
-	tb.Helper()
-
-	dir := tb.TempDir()
-	r, err := os.OpenRoot(dir)
-	assert.NoError(tb, err, "the root opens")
-	tb.Cleanup(func() { _ = r.Close() })
-	return dir, r
-}
-
-// entries returns the names a directory contains.
-func entries(tb testing.TB, dir string) []string {
-	tb.Helper()
-
-	es, err := os.ReadDir(dir)
-	assert.NoError(tb, err, "the directory reads")
-	names := make([]string, 0, len(es))
-	for _, e := range es {
-		names = append(names, e.Name())
-	}
-	return names
-}
-
 // A replacement is atomic per file: the target contains the old bytes
 // or the new ones, and no staging file outlives the call.
 func TestStagefile(t *testing.T) {
@@ -280,4 +255,29 @@ func BenchmarkStagefile(b *testing.B) {
 		assert.NoError(b, err, "every replacement succeeds")
 		assert.Equal(b, entries(b, dir), []string{target}, "and leaves the target alone")
 	})
+}
+
+// rooted returns a fresh directory and the root opened over it, closed
+// when the test ends.
+func rooted(tb testing.TB) (string, *os.Root) {
+	tb.Helper()
+
+	dir := tb.TempDir()
+	r, err := os.OpenRoot(dir)
+	assert.NoError(tb, err, "the root opens")
+	tb.Cleanup(func() { _ = r.Close() })
+	return dir, r
+}
+
+// entries returns the names a directory contains.
+func entries(tb testing.TB, dir string) []string {
+	tb.Helper()
+
+	es, err := os.ReadDir(dir)
+	assert.NoError(tb, err, "the directory reads")
+	names := make([]string, 0, len(es))
+	for _, e := range es {
+		names = append(names, e.Name())
+	}
+	return names
 }

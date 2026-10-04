@@ -120,191 +120,14 @@ func (o *opener) opened() []*output.Mem {
 	return append([]*output.Mem(nil), o.sinks...)
 }
 
-// printer is a kit backend spelling one kind and framing its files
-// through the fixture language's comment syntax, which is what the
-// output contract stamps through.
-func printer(tb assert.TB, target plugin.Target) plugin.Backend {
-	tb.Helper()
-
-	return printerAs(tb, "printer", target, "")
-}
-
-// printerAs is the printer under a name of its own, for a composition
-// of more than one plan. It names every file file, or after its family
-// word where file is empty.
-func printerAs(tb assert.TB, name plugin.ID, target plugin.Target, file string) plugin.Backend {
-	tb.Helper()
-
-	return backend.New(name, target,
-		plugin.CommentSyntax{Line: []string{"//"}}).
-		KindTemplates(map[symbol.Kind]string{
-			symbol.KindStruct: "type {{.Name}} struct{}\n",
-		}).
-		Naming(func(u plugin.Unit) string {
-			if file != "" {
-				return file
-			}
-			return u.Word + ".txt"
-		}).
-		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
-			return nil, errors.New("the fixture spells no statements")
-		}).
-		Imports(func(*render.ImportSet) string { return "" }).
-		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
-		Coverage(render.Coverage{Facts: totalCoverage()}).
-		Build()
-}
-
-// totalCoverage renders every fact, which the fixture's one
-// template kind states none of.
-func totalCoverage() map[symbol.Fact]render.Verdict {
-	out := map[symbol.Fact]render.Verdict{}
-	for _, f := range symbol.Facts() {
-		out[f] = render.Renders
-	}
-	return out
-}
-
 // wordHelper is the shared helper the vocal backend's struct
 // template spells a name through, and the name an override
 // replaces.
 const wordHelper = "word"
 
-// vocal is a kit backend with one shared helper: its struct template
-// spells the name through wordHelper, which returns the name as it
-// is.
-func vocal(tb assert.TB, target plugin.Target) plugin.Backend {
-	tb.Helper()
-
-	return backend.New("vocal", target, plugin.CommentSyntax{Line: []string{"//"}}).
-		KindTemplates(map[symbol.Kind]string{
-			symbol.KindStruct: "type {{" + wordHelper + " .Name}} struct{}\n",
-		}).
-		Funcs(func(*render.ImportSet) template.FuncMap {
-			return template.FuncMap{wordHelper: func(s string) string { return s }}
-		}).
-		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
-		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
-			return nil, errors.New("the fixture spells no statements")
-		}).
-		Imports(func(*render.ImportSet) string { return "" }).
-		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
-		Coverage(render.Coverage{Facts: totalCoverage()}).
-		Build()
-}
-
-// shouting returns a composition whose one plan renders through the
-// vocal backend, with one generator that overrides wordHelper for
-// the given target, into the output open returns.
-func shouting(tb assert.TB, overridden plugin.Target, open func() (output.Sink, error)) *workspace.Workspace {
-	tb.Helper()
-
-	shouter, held := eidos.NewPlugin("shouter").
-		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		For(overridden, eidos.Overrides(template.FuncMap{wordHelper: strings.ToUpper})).
-		Handle(eidos.OnStruct(mirrored)).
-		Build().(plugin.Generator)
-	assert.True(tb, held, "an emitter rule lowers to the generator role")
-	w, err := workspace.New().
-		Brand(fixtureBrand).
-		Annotators(stamper("noter", quiet)).
-		Targets("fixture").
-		Plans(workspace.Plan{
-			Name:       "plan",
-			Generators: []plugin.Generator{shouter},
-			Backend:    vocal(tb, "fixture"),
-		}).
-		Output(open).
-		Build()
-	assert.NoError(tb, err, "the shouting composition composes")
-	return w
-}
-
-// renderedBody runs a composition over the one-struct fixture and
-// returns the one file its one sink committed.
-func renderedBody(t *testing.T, w *workspace.Workspace, o *opener) string {
-	t.Helper()
-
-	g, _ := alpha(t)
-	_, err := w.Run(t.Context(), workspace.Input{Graph: g})
-	assert.NoError(t, err, "the run is clean")
-	files := o.opened()[0].Files()
-	assert.Length(t, files, 1, "the run writes one file")
-	for _, body := range files {
-		return string(body)
-	}
-	return ""
-}
-
-// writing returns a composition whose one plan renders through the
-// printer backend into the output open returns.
-func writing(tb assert.TB, open func() (output.Sink, error)) *workspace.Workspace {
-	tb.Helper()
-
-	w, err := workspace.New().
-		Brand(fixtureBrand).
-		Annotators(stamper("noter", quiet)).
-		Targets("fixture").
-		Plans(workspace.Plan{
-			Name:       "plan",
-			Generators: []plugin.Generator{mirror("mirror")},
-			Backend:    printer(tb, "fixture"),
-		}).
-		Output(open).
-		Build()
-	assert.NoError(tb, err, "the writing composition composes")
-	return w
-}
-
 // alphaFile is the source file the routing fixture declares Alpha in,
 // inside its package's own directory.
 const alphaFile = coretest.StorePath + "/alpha.go"
-
-// routedAlpha returns an unfrozen one-package graph whose one file
-// is in the package's directory, and the struct it declares.
-func routedAlpha(tb assert.TB) (*store.Graph, *node.Struct) {
-	tb.Helper()
-
-	s := coretest.Struct(coretest.StorePath, "Alpha")
-	s.Pos = position.Pos{File: alphaFile, Line: 3, Col: 1}
-	pkg := coretest.Package(coretest.StorePath, s)
-	pkg.Files[0].Path = alphaFile
-	g := store.New()
-	assert.NoError(tb, g.AddPackage(pkg), "the fixture package is admitted")
-	return g, s
-}
-
-// routing returns a composition whose one plan mirrors every struct
-// through the printer backend under the given layout, into the output
-// open returns.
-func routing(tb assert.TB, cfg layout.Config, open func() (output.Sink, error)) *workspace.Workspace {
-	tb.Helper()
-
-	w, err := workspace.New().
-		Brand(fixtureBrand).
-		Annotators(stamper("noter", quiet)).
-		Targets("fixture").
-		Plans(workspace.Plan{
-			Name:       "plan",
-			Generators: []plugin.Generator{mirror("mirror")},
-			Backend:    printer(tb, "fixture"),
-			Layout:     cfg,
-		}).
-		Output(open).
-		Build()
-	assert.NoError(tb, err, "the routing composition composes")
-	return w
-}
-
-// writtenPaths runs a composition over g and returns the paths its one
-// sink committed, sorted.
-func writtenPaths(t *testing.T, w *workspace.Workspace, g *store.Graph, o *opener) []string {
-	t.Helper()
-
-	_, err := w.Run(t.Context(), workspace.Input{Graph: g})
-	assert.NoError(t, err, "the run is clean")
-	return slices.Sorted(maps.Keys(o.opened()[0].Files()))
-}
 
 // The write is the plan's last step: the render's stamped files go to
 // a sink the plan opens for itself, and the report records what each
@@ -479,4 +302,181 @@ func TestWrite(t *testing.T) {
 			assert.Empty(t, o.opened(), "no sink is opened")
 		})
 	})
+}
+
+// printer is a kit backend spelling one kind and framing its files
+// through the fixture language's comment syntax, which is what the
+// output contract stamps through.
+func printer(tb assert.TB, target plugin.Target) plugin.Backend {
+	tb.Helper()
+
+	return printerAs(tb, "printer", target, "")
+}
+
+// printerAs is the printer under a name of its own, for a composition
+// of more than one plan. It names every file file, or after its family
+// word where file is empty.
+func printerAs(tb assert.TB, name plugin.ID, target plugin.Target, file string) plugin.Backend {
+	tb.Helper()
+
+	return backend.New(name, target,
+		plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "type {{.Name}} struct{}\n",
+		}).
+		Naming(func(u plugin.Unit) string {
+			if file != "" {
+				return file
+			}
+			return u.Word + ".txt"
+		}).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
+}
+
+// totalCoverage renders every fact, which the fixture's one
+// template kind states none of.
+func totalCoverage() map[symbol.Fact]render.Verdict {
+	out := map[symbol.Fact]render.Verdict{}
+	for _, f := range symbol.Facts() {
+		out[f] = render.Renders
+	}
+	return out
+}
+
+// vocal is a kit backend with one shared helper: its struct template
+// spells the name through wordHelper, which returns the name as it
+// is.
+func vocal(tb assert.TB, target plugin.Target) plugin.Backend {
+	tb.Helper()
+
+	return backend.New("vocal", target, plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "type {{" + wordHelper + " .Name}} struct{}\n",
+		}).
+		Funcs(func(*render.ImportSet) template.FuncMap {
+			return template.FuncMap{wordHelper: func(s string) string { return s }}
+		}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
+}
+
+// shouting returns a composition whose one plan renders through the
+// vocal backend, with one generator that overrides wordHelper for
+// the given target, into the output open returns.
+func shouting(tb assert.TB, overridden plugin.Target, open func() (output.Sink, error)) *workspace.Workspace {
+	tb.Helper()
+
+	shouter, held := eidos.NewPlugin("shouter").
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		For(overridden, eidos.Overrides(template.FuncMap{wordHelper: strings.ToUpper})).
+		Handle(eidos.OnStruct(mirrored)).
+		Build().(plugin.Generator)
+	assert.True(tb, held, "an emitter rule lowers to the generator role")
+	w, err := workspace.New().
+		Brand(fixtureBrand).
+		Annotators(stamper("noter", quiet)).
+		Targets("fixture").
+		Plans(workspace.Plan{
+			Name:       "plan",
+			Generators: []plugin.Generator{shouter},
+			Backend:    vocal(tb, "fixture"),
+		}).
+		Output(open).
+		Build()
+	assert.NoError(tb, err, "the shouting composition composes")
+	return w
+}
+
+// renderedBody runs a composition over the one-struct fixture and
+// returns the one file its one sink committed.
+func renderedBody(t *testing.T, w *workspace.Workspace, o *opener) string {
+	t.Helper()
+
+	g, _ := alpha(t)
+	_, err := w.Run(t.Context(), workspace.Input{Graph: g})
+	assert.NoError(t, err, "the run is clean")
+	files := o.opened()[0].Files()
+	assert.Length(t, files, 1, "the run writes one file")
+	for _, body := range files {
+		return string(body)
+	}
+	return ""
+}
+
+// writing returns a composition whose one plan renders through the
+// printer backend into the output open returns.
+func writing(tb assert.TB, open func() (output.Sink, error)) *workspace.Workspace {
+	tb.Helper()
+
+	w, err := workspace.New().
+		Brand(fixtureBrand).
+		Annotators(stamper("noter", quiet)).
+		Targets("fixture").
+		Plans(workspace.Plan{
+			Name:       "plan",
+			Generators: []plugin.Generator{mirror("mirror")},
+			Backend:    printer(tb, "fixture"),
+		}).
+		Output(open).
+		Build()
+	assert.NoError(tb, err, "the writing composition composes")
+	return w
+}
+
+// routedAlpha returns an unfrozen one-package graph whose one file
+// is in the package's directory, and the struct it declares.
+func routedAlpha(tb assert.TB) (*store.Graph, *node.Struct) {
+	tb.Helper()
+
+	s := coretest.Struct(coretest.StorePath, "Alpha")
+	s.Pos = position.Pos{File: alphaFile, Line: 3, Col: 1}
+	pkg := coretest.Package(coretest.StorePath, s)
+	pkg.Files[0].Path = alphaFile
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(pkg), "the fixture package is admitted")
+	return g, s
+}
+
+// routing returns a composition whose one plan mirrors every struct
+// through the printer backend under the given layout, into the output
+// open returns.
+func routing(tb assert.TB, cfg layout.Config, open func() (output.Sink, error)) *workspace.Workspace {
+	tb.Helper()
+
+	w, err := workspace.New().
+		Brand(fixtureBrand).
+		Annotators(stamper("noter", quiet)).
+		Targets("fixture").
+		Plans(workspace.Plan{
+			Name:       "plan",
+			Generators: []plugin.Generator{mirror("mirror")},
+			Backend:    printer(tb, "fixture"),
+			Layout:     cfg,
+		}).
+		Output(open).
+		Build()
+	assert.NoError(tb, err, "the routing composition composes")
+	return w
+}
+
+// writtenPaths runs a composition over g and returns the paths its one
+// sink committed, sorted.
+func writtenPaths(t *testing.T, w *workspace.Workspace, g *store.Graph, o *opener) []string {
+	t.Helper()
+
+	_, err := w.Run(t.Context(), workspace.Input{Graph: g})
+	assert.NoError(t, err, "the run is clean")
+	return slices.Sorted(maps.Keys(o.opened()[0].Files()))
 }

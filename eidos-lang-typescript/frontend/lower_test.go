@@ -25,16 +25,6 @@ const (
 	modulePkg    = "lib"
 )
 
-// packagePaths returns the paths of a builder's packages, in first
-// touch order.
-func packagePaths(gb *plugin.GraphBuilder) []string {
-	var out []string
-	for _, p := range gb.Packages() {
-		out = append(out, p.ID.Package)
-	}
-	return out
-}
-
 // The statement walk decides which package each declaration is in and
 // what the module publishes, so its rules are pinned.
 func TestLower(t *testing.T) {
@@ -377,4 +367,14 @@ func TestLower(t *testing.T) {
 			assert.Equal(t, codesOf(found), []diag.Code{frontend.UnaddressedCarrier}, "a statement is no subject")
 		})
 	})
+}
+
+// packagePaths returns the paths of a builder's packages, in first
+// touch order.
+func packagePaths(gb *plugin.GraphBuilder) []string {
+	var out []string
+	for _, p := range gb.Packages() {
+		out = append(out, p.ID.Package)
+	}
+	return out
 }

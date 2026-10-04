@@ -53,52 +53,6 @@ const (
 	getDisc = "string,int"
 )
 
-// overloadTree declares one type with two overloads of one method
-// name, which only their parameter spellings tell apart.
-func overloadTree() fstest.MapFS {
-	return fstest.MapFS{
-		apiFile: {Data: []byte(
-			"package svc/api\ntype User string\nmethod Get string int\nmethod Get\n",
-		)},
-	}
-}
-
-// callableTree declares one type with one method of two parameters.
-func callableTree() fstest.MapFS {
-	return fstest.MapFS{
-		apiFile: {Data: []byte("package svc/api\ntype User string\nmethod Get string int\n")},
-	}
-}
-
-// singular returns the scripted frontend declared as a language that
-// cannot overload.
-func singular() *frontendtest.Scripted {
-	f := frontendtest.NewScripted()
-	f.Overloading = false
-	return f
-}
-
-// getMethod spells the identity of User's Get under a discriminator.
-func getMethod(disc string) symbol.Identity {
-	return symbol.Identity{
-		Lang: frontendtest.ScriptedLang, Package: apiPath, Owner: userName, Name: getName,
-		Kind: symbol.KindMethod, Disc: disc,
-	}
-}
-
-// assigned spells the identity the assignment step gives one
-// declaration of a planted package: the frontend's language, not the
-// language the fixture builder pre-filled.
-func assigned(owner, name string, kind symbol.Kind) symbol.Identity {
-	return symbol.Identity{
-		Lang:    frontendtest.ScriptedLang,
-		Package: coretest.StorePath,
-		Owner:   owner,
-		Name:    name,
-		Kind:    kind,
-	}
-}
-
 // Identities are the join every persistent record keys on, so the
 // canonical shapes the assignment step spells are pinned here.
 func TestAssign(t *testing.T) {
@@ -491,6 +445,52 @@ func TestAssign(t *testing.T) {
 			})
 		}
 	})
+}
+
+// overloadTree declares one type with two overloads of one method
+// name, which only their parameter spellings tell apart.
+func overloadTree() fstest.MapFS {
+	return fstest.MapFS{
+		apiFile: {Data: []byte(
+			"package svc/api\ntype User string\nmethod Get string int\nmethod Get\n",
+		)},
+	}
+}
+
+// callableTree declares one type with one method of two parameters.
+func callableTree() fstest.MapFS {
+	return fstest.MapFS{
+		apiFile: {Data: []byte("package svc/api\ntype User string\nmethod Get string int\n")},
+	}
+}
+
+// singular returns the scripted frontend declared as a language that
+// cannot overload.
+func singular() *frontendtest.Scripted {
+	f := frontendtest.NewScripted()
+	f.Overloading = false
+	return f
+}
+
+// getMethod spells the identity of User's Get under a discriminator.
+func getMethod(disc string) symbol.Identity {
+	return symbol.Identity{
+		Lang: frontendtest.ScriptedLang, Package: apiPath, Owner: userName, Name: getName,
+		Kind: symbol.KindMethod, Disc: disc,
+	}
+}
+
+// assigned spells the identity the assignment step gives one
+// declaration of a planted package: the frontend's language, not the
+// language the fixture builder pre-filled.
+func assigned(owner, name string, kind symbol.Kind) symbol.Identity {
+	return symbol.Identity{
+		Lang:    frontendtest.ScriptedLang,
+		Package: coretest.StorePath,
+		Owner:   owner,
+		Name:    name,
+		Kind:    kind,
+	}
 }
 
 // loadNested drives one load over the edge-shape package.

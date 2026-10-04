@@ -17,13 +17,6 @@ import (
 // fakesDir is the directory the reference cases move RowStub into.
 const fakesDir = "svc/store/fakes"
 
-// referring returns stubgen's primary unit of store.go: StoreStub, with
-// a field of the given type.
-func referring(ref *emit.TypeRef) plugin.Unit {
-	return stubOf(storeFile, storePkg,
-		generated(storeID, "StoreStub", &emit.Field{Name: "row", Type: ref}))
-}
-
 // A bare reference to a declaration routed into another package takes
 // that package, so the target qualifies it.
 func TestReference(t *testing.T) {
@@ -104,4 +97,11 @@ func TestReference(t *testing.T) {
 			coretest.AssertCodes(t, sink, layout.EscapingPath)
 		})
 	})
+}
+
+// referring returns stubgen's primary unit of store.go: StoreStub, with
+// a field of the given type.
+func referring(ref *emit.TypeRef) plugin.Unit {
+	return stubOf(storeFile, storePkg,
+		generated(storeID, "StoreStub", &emit.Field{Name: "row", Type: ref}))
 }

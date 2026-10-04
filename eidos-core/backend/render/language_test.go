@@ -30,46 +30,6 @@ const (
 	memberLines = "{{range .Decls}}\t{{.Name}}\n{{end}}"
 )
 
-// grouped returns the fixture language clustering through c, with
-// the block, first and second group templates declared.
-func grouped(c render.Cluster) render.Language {
-	l := language()
-	l.Cluster = c
-	l.Groups = map[render.GroupName]string{
-		blockGroup:  "types (\n" + memberLines + ")\n",
-		firstGroup:  string(firstGroup) + "(\n" + memberLines + ")\n",
-		secondGroup: string(secondGroup) + "(\n" + memberLines + ")\n",
-	}
-	return l
-}
-
-// structsOnly clusters a unit's structs under the block group and
-// leaves every other declaration a singleton.
-func structsOnly(decls []symbol.Symbol) []render.Clustered {
-	c := render.Clustered{Group: blockGroup}
-	for _, d := range decls {
-		if _, isStruct := d.(*emit.Struct); isStruct {
-			c.Decls = append(c.Decls, d)
-		}
-	}
-	if len(c.Decls) == 0 {
-		return nil
-	}
-	return []render.Clustered{c}
-}
-
-// vanishing is a split that returns no unit for any input.
-func vanishing(plugin.Unit) []plugin.Unit { return nil }
-
-// paths returns the routed paths of rendered files, in order.
-func paths(files []plugin.RenderedFile) []string {
-	out := make([]string, 0, len(files))
-	for _, f := range files {
-		out = append(out, f.Path)
-	}
-	return out
-}
-
 // A language's Naming, Split and Cluster are the hooks a plan's files
 // are named, split and grouped through, so how the pass applies each
 // is contract.
@@ -264,4 +224,44 @@ func TestLanguage(t *testing.T) {
 				"the cluster's declarations render nowhere")
 		})
 	})
+}
+
+// grouped returns the fixture language clustering through c, with
+// the block, first and second group templates declared.
+func grouped(c render.Cluster) render.Language {
+	l := language()
+	l.Cluster = c
+	l.Groups = map[render.GroupName]string{
+		blockGroup:  "types (\n" + memberLines + ")\n",
+		firstGroup:  string(firstGroup) + "(\n" + memberLines + ")\n",
+		secondGroup: string(secondGroup) + "(\n" + memberLines + ")\n",
+	}
+	return l
+}
+
+// structsOnly clusters a unit's structs under the block group and
+// leaves every other declaration a singleton.
+func structsOnly(decls []symbol.Symbol) []render.Clustered {
+	c := render.Clustered{Group: blockGroup}
+	for _, d := range decls {
+		if _, isStruct := d.(*emit.Struct); isStruct {
+			c.Decls = append(c.Decls, d)
+		}
+	}
+	if len(c.Decls) == 0 {
+		return nil
+	}
+	return []render.Clustered{c}
+}
+
+// vanishing is a split that returns no unit for any input.
+func vanishing(plugin.Unit) []plugin.Unit { return nil }
+
+// paths returns the routed paths of rendered files, in order.
+func paths(files []plugin.RenderedFile) []string {
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		out = append(out, f.Path)
+	}
+	return out
 }

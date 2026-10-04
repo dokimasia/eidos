@@ -17,19 +17,6 @@ import (
 // The second module the partition cases claim beside src/a.ts.
 const bFile = "src/b.ts"
 
-// partitioned partitions every file of a tree through the frontend.
-func partitioned(tb assert.TB, tree fstest.MapFS, claimed ...string) [][]plugin.SourceRef {
-	tb.Helper()
-
-	refs := make([]plugin.SourceRef, 0, len(claimed))
-	for _, p := range claimed {
-		refs = append(refs, plugin.SourceRef{Path: p})
-	}
-	units, err := frontend.New().Partition(context.Background(), refs, treeReader{tree})
-	assert.NoError(tb, err, "the tree partitions")
-	return units
-}
-
 // TypeScript scopes a module's names to its file, so a unit is one
 // file, and the chain it declares is what re-keys it.
 func TestPartition(t *testing.T) {
@@ -65,4 +52,17 @@ func TestPartition(t *testing.T) {
 				"a fixed configuration re-keys the file")
 		})
 	})
+}
+
+// partitioned partitions every file of a tree through the frontend.
+func partitioned(tb assert.TB, tree fstest.MapFS, claimed ...string) [][]plugin.SourceRef {
+	tb.Helper()
+
+	refs := make([]plugin.SourceRef, 0, len(claimed))
+	for _, p := range claimed {
+		refs = append(refs, plugin.SourceRef{Path: p})
+	}
+	units, err := frontend.New().Partition(context.Background(), refs, treeReader{tree})
+	assert.NoError(tb, err, "the tree partitions")
+	return units
 }

@@ -81,19 +81,6 @@ func priorOf(report *load.Report) filed {
 	return filed{anchor: report.Anchor, files: report.Files}
 }
 
-// recordOf returns the gate's record of one path.
-func recordOf(tb testing.TB, report *load.Report, path string) load.FileRecord {
-	tb.Helper()
-
-	for _, f := range report.Files {
-		if f.Path == path {
-			return f
-		}
-	}
-	tb.Fatalf("the gate recorded no %s", path)
-	return load.FileRecord{}
-}
-
 // The gate decides what a warm load reads again, so each verdict and
 // each comparison of a stat with a record is pinned.
 func TestGate(t *testing.T) {
@@ -225,4 +212,17 @@ func TestGate(t *testing.T) {
 				"no modification time precedes the zero anchor, so each file the load reads is hashed")
 		})
 	})
+}
+
+// recordOf returns the gate's record of one path.
+func recordOf(tb testing.TB, report *load.Report, path string) load.FileRecord {
+	tb.Helper()
+
+	for _, f := range report.Files {
+		if f.Path == path {
+			return f
+		}
+	}
+	tb.Fatalf("the gate recorded no %s", path)
+	return load.FileRecord{}
 }

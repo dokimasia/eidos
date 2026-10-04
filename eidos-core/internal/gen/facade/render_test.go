@@ -32,47 +32,6 @@ const renamedImport = "package emit\n\nimport (\n" +
 	"\txdep \"example.test/dep\"\n\n\t_ \"example.test/unused\"\n)\n\n" +
 	"// Named takes a renamed import's type.\nfunc Named(v xdep.T) {}\n"
 
-// mini copies the testdata mini kernel into a fresh repository
-// root, so a case can poison one package without touching the
-// committed fixture.
-func mini(tb testing.TB) string {
-	tb.Helper()
-
-	return coretest.CopyTree(tb, filepath.Join("testdata", "mini"))
-}
-
-// poison writes one file into a mini kernel copy.
-func poison(t *testing.T, root, rel, content string) {
-	t.Helper()
-
-	target := filepath.Join(root, "eidos-core", filepath.FromSlash(rel))
-	assert.NoError(t, os.WriteFile(target, []byte(content), 0o644), "the poison writes")
-}
-
-// poisoned generates a mini kernel with one injected file and
-// returns the source of the facade file the injection rendered into.
-func poisoned(t *testing.T, content string) string {
-	t.Helper()
-
-	root := mini(t)
-	poison(t, root, poisonRel, content)
-	set, err := facade.Generate(root)
-	assert.NoError(t, err, "the poisoned mini kernel generates")
-	return string(set[emitPath])
-}
-
-// refused generates a mini kernel with one injected file and
-// returns the refusal it produced.
-func refused(t *testing.T, content string) error {
-	t.Helper()
-
-	root := mini(t)
-	poison(t, root, poisonRel, content)
-	_, err := facade.Generate(root)
-	assert.HasError(t, err, "the injected surface is refused")
-	return err
-}
-
 // Each re-export form the renderer prints is pinned over the mini
 // kernel. The committed fixture contains every form, and each way a
 // surface can defeat re-export is injected and has to refuse at its
@@ -372,4 +331,45 @@ func TestRender(t *testing.T) {
 		assert.Contains(t, err.Error(), "go.dokimi.dev/eidos/core/plugin",
 			"and names the kernel package that re-exported none of itself")
 	})
+}
+
+// mini copies the testdata mini kernel into a fresh repository
+// root, so a case can poison one package without touching the
+// committed fixture.
+func mini(tb testing.TB) string {
+	tb.Helper()
+
+	return coretest.CopyTree(tb, filepath.Join("testdata", "mini"))
+}
+
+// poison writes one file into a mini kernel copy.
+func poison(t *testing.T, root, rel, content string) {
+	t.Helper()
+
+	target := filepath.Join(root, "eidos-core", filepath.FromSlash(rel))
+	assert.NoError(t, os.WriteFile(target, []byte(content), 0o644), "the poison writes")
+}
+
+// poisoned generates a mini kernel with one injected file and
+// returns the source of the facade file the injection rendered into.
+func poisoned(t *testing.T, content string) string {
+	t.Helper()
+
+	root := mini(t)
+	poison(t, root, poisonRel, content)
+	set, err := facade.Generate(root)
+	assert.NoError(t, err, "the poisoned mini kernel generates")
+	return string(set[emitPath])
+}
+
+// refused generates a mini kernel with one injected file and
+// returns the refusal it produced.
+func refused(t *testing.T, content string) error {
+	t.Helper()
+
+	root := mini(t)
+	poison(t, root, poisonRel, content)
+	_, err := facade.Generate(root)
+	assert.HasError(t, err, "the injected surface is refused")
+	return err
 }

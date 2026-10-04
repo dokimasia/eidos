@@ -40,42 +40,6 @@ var (
 	whisper = strings.ToLower
 )
 
-// stubTreeOf returns a one-template tree whose template reads text.
-func stubTreeOf(text string) fstest.MapFS {
-	return fstest.MapFS{stubFile: &fstest.MapFile{Data: []byte(text)}}
-}
-
-// stubTree returns a one-template tree for template declarations.
-func stubTree() fstest.MapFS { return stubTreeOf(pluginText) }
-
-// provider builds the plugin a declaration describes and returns its
-// template surface.
-func provider(tb assert.TB, b *eidos.Builder) plugin.TemplateProvider {
-	tb.Helper()
-
-	tp, held := b.Handle(emitNothing()).Build().(plugin.TemplateProvider)
-	assert.True(tb, held, "the built value returns the template surface")
-	return tp
-}
-
-// readTree returns the fixture template's text from a tree.
-func readTree(tb assert.TB, tree fs.FS) string {
-	tb.Helper()
-
-	src, err := fs.ReadFile(tree, stubFile)
-	assert.NoError(tb, err, "the tree is readable")
-	return string(src)
-}
-
-// toneOf calls the tone helper of fm on toneInput.
-func toneOf(tb assert.TB, fm template.FuncMap) string {
-	tb.Helper()
-
-	tone, held := fm[toneHelper].(func(string) string)
-	assert.True(tb, held, "the tone helper is a string function")
-	return tone(toneInput)
-}
-
 // A target's presentation layers over the plugin-level one, which is
 // what lets one plugin serve every target and specialise a few.
 func TestPresentation(t *testing.T) {
@@ -221,4 +185,40 @@ func BenchmarkPresentation(b *testing.B) {
 				"the option declares a presentation the plugin builds with")
 		})
 	}
+}
+
+// stubTreeOf returns a one-template tree whose template reads text.
+func stubTreeOf(text string) fstest.MapFS {
+	return fstest.MapFS{stubFile: &fstest.MapFile{Data: []byte(text)}}
+}
+
+// stubTree returns a one-template tree for template declarations.
+func stubTree() fstest.MapFS { return stubTreeOf(pluginText) }
+
+// provider builds the plugin a declaration describes and returns its
+// template surface.
+func provider(tb assert.TB, b *eidos.Builder) plugin.TemplateProvider {
+	tb.Helper()
+
+	tp, held := b.Handle(emitNothing()).Build().(plugin.TemplateProvider)
+	assert.True(tb, held, "the built value returns the template surface")
+	return tp
+}
+
+// readTree returns the fixture template's text from a tree.
+func readTree(tb assert.TB, tree fs.FS) string {
+	tb.Helper()
+
+	src, err := fs.ReadFile(tree, stubFile)
+	assert.NoError(tb, err, "the tree is readable")
+	return string(src)
+}
+
+// toneOf calls the tone helper of fm on toneInput.
+func toneOf(tb assert.TB, fm template.FuncMap) string {
+	tb.Helper()
+
+	tone, held := fm[toneHelper].(func(string) string)
+	assert.True(tb, held, "the tone helper is a string function")
+	return tone(toneInput)
 }

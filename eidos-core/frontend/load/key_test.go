@@ -15,24 +15,6 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// keysOf maps each unit's first member onto its key.
-func keysOf(report *load.Report) map[string][]byte {
-	out := make(map[string][]byte, len(report.Units))
-	for _, u := range report.Units {
-		out[u.Files[0].Path] = u.Key
-	}
-	return out
-}
-
-// keyed loads the standard tree, mutated per case, and returns its
-// unit keys.
-func keyed(tb assert.TB, mutate ...func(*load.Config)) map[string][]byte {
-	tb.Helper()
-
-	_, report, _ := loadTree(tb, stdTree(), mutate...)
-	return keysOf(report)
-}
-
 // Every part of the stated fold is exercised: an untouched unit's
 // key is stable, and each folded part changes it alone.
 func TestKeys(t *testing.T) {
@@ -137,4 +119,22 @@ func TestKeys(t *testing.T) {
 			})
 		}
 	})
+}
+
+// keysOf maps each unit's first member onto its key.
+func keysOf(report *load.Report) map[string][]byte {
+	out := make(map[string][]byte, len(report.Units))
+	for _, u := range report.Units {
+		out[u.Files[0].Path] = u.Key
+	}
+	return out
+}
+
+// keyed loads the standard tree, mutated per case, and returns its
+// unit keys.
+func keyed(tb assert.TB, mutate ...func(*load.Config)) map[string][]byte {
+	tb.Helper()
+
+	_, report, _ := loadTree(tb, stdTree(), mutate...)
+	return keysOf(report)
 }

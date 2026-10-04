@@ -22,68 +22,8 @@ const (
 	srcConfig  = "src/tsconfig.json"
 )
 
-// withConfigs returns a tree of src/a.ts and the given configurations.
-func withConfigs(configs map[string]string) fstest.MapFS {
-	tree := fstest.MapFS{aFile: {Data: []byte("import { X } from '" + importSpec + "';\n")}}
-	for p, data := range configs {
-		tree[p] = &fstest.MapFile{Data: []byte(data)}
-	}
-	return tree
-}
-
 // importSpec is the specifier the chain cases' module imports X from.
 const importSpec = "@app/x"
-
-// sharedOf partitions a tree and returns the shared inputs src/a.ts
-// declares.
-func sharedOf(tb assert.TB, tree fstest.MapFS) []string {
-	tb.Helper()
-
-	var claimed []plugin.SourceRef
-	for p := range tree {
-		claimed = append(claimed, plugin.SourceRef{Path: p})
-	}
-	units, err := frontend.New().Partition(context.Background(), claimed, treeReader{tree})
-	assert.NoError(tb, err, "the tree partitions")
-	for _, unit := range units {
-		if unit[0].Path == aFile {
-			return unit[0].Shared
-		}
-	}
-	tb.Fatalf("no unit has %s", aFile)
-	return nil
-}
-
-// importTiers parses src/a.ts in a tree and returns the packages the
-// tiers for its imported X name, without its own package's tier and the
-// global package's.
-func importTiers(tb assert.TB, tree fstest.MapFS) [][]string {
-	tb.Helper()
-
-	gb, _ := parsedTree(tb, tree, aFile, plugin.DepthFull)
-	file := fileIn(tb, gb, aPackage)
-	var scope plugin.ImportScope
-	for _, rec := range gb.Scopes() {
-		if rec.File == file {
-			scope.Bindings = rec.Bindings
-		}
-	}
-	tiers := resolved(scope, probeName)
-	out := make([][]string, 0, len(tiers))
-	for _, tier := range tiers[1 : len(tiers)-1] {
-		out = append(out, packagesOf(tier))
-	}
-	return out
-}
-
-// packagesOf returns the packages of candidates.
-func packagesOf(ids []symbol.Identity) []string {
-	out := make([]string, 0, len(ids))
-	for _, c := range ids {
-		out = append(out, c.Package)
-	}
-	return out
-}
 
 // A file's tsconfig chain is its shared input and states how its bare
 // specifiers resolve, so the chain's reading and the resolution it
@@ -299,4 +239,64 @@ func TestTsconfig(t *testing.T) {
 			assert.Equal(t, importTiers(t, tree)[0], []string{"lib/x"}, "paths follow the baseUrl in effect")
 		})
 	})
+}
+
+// withConfigs returns a tree of src/a.ts and the given configurations.
+func withConfigs(configs map[string]string) fstest.MapFS {
+	tree := fstest.MapFS{aFile: {Data: []byte("import { X } from '" + importSpec + "';\n")}}
+	for p, data := range configs {
+		tree[p] = &fstest.MapFile{Data: []byte(data)}
+	}
+	return tree
+}
+
+// sharedOf partitions a tree and returns the shared inputs src/a.ts
+// declares.
+func sharedOf(tb assert.TB, tree fstest.MapFS) []string {
+	tb.Helper()
+
+	var claimed []plugin.SourceRef
+	for p := range tree {
+		claimed = append(claimed, plugin.SourceRef{Path: p})
+	}
+	units, err := frontend.New().Partition(context.Background(), claimed, treeReader{tree})
+	assert.NoError(tb, err, "the tree partitions")
+	for _, unit := range units {
+		if unit[0].Path == aFile {
+			return unit[0].Shared
+		}
+	}
+	tb.Fatalf("no unit has %s", aFile)
+	return nil
+}
+
+// importTiers parses src/a.ts in a tree and returns the packages the
+// tiers for its imported X name, without its own package's tier and the
+// global package's.
+func importTiers(tb assert.TB, tree fstest.MapFS) [][]string {
+	tb.Helper()
+
+	gb, _ := parsedTree(tb, tree, aFile, plugin.DepthFull)
+	file := fileIn(tb, gb, aPackage)
+	var scope plugin.ImportScope
+	for _, rec := range gb.Scopes() {
+		if rec.File == file {
+			scope.Bindings = rec.Bindings
+		}
+	}
+	tiers := resolved(scope, probeName)
+	out := make([][]string, 0, len(tiers))
+	for _, tier := range tiers[1 : len(tiers)-1] {
+		out = append(out, packagesOf(tier))
+	}
+	return out
+}
+
+// packagesOf returns the packages of candidates.
+func packagesOf(ids []symbol.Identity) []string {
+	out := make([]string, 0, len(ids))
+	for _, c := range ids {
+		out = append(out, c.Package)
+	}
+	return out
 }
