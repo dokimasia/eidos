@@ -16,18 +16,18 @@ import (
 	"go.dokimi.dev/eidos/core/internal/coretest"
 )
 
-// generateTimeout bounds a wrapper run, so a hung generator fails
-// the case rather than the suite.
+// generateTimeout bounds a wrapper run. A generator that hangs fails
+// its own case.
 const generateTimeout = 2 * time.Minute
 
 // otherModule is a go.mod naming a module this wrapper does not
 // generate from.
 const otherModule = "module example.test/other\n\ngo 1.27.0\n"
 
-// The wrapper is driven as a process, because that is how anyone
-// runs it: `go generate` executes it. What it generates is
-// [facade.Regenerate], held by that package's own cases; what is
-// left here is the exit status and the stream a refusal arrives on.
+// The cases run the wrapper as a process, the way `go generate` runs
+// it. The facade package's own cases test what [facade.Regenerate]
+// generates. These cases check the exit status and the stream a
+// refusal is written to.
 func TestMain(t *testing.T) {
 	t.Parallel()
 
@@ -41,7 +41,7 @@ func TestMain(t *testing.T) {
 		root := coretest.CopyTree(t, filepath.Join("..", "testdata", "mini"))
 		out, err := runFrom(t, bin, filepath.Join(root, "eidos-core"))
 		assert.NoError(t, err, "the wrapper regenerates from inside the kernel: "+out)
-		assert.Empty(t, out, "and says nothing, because nothing went wrong")
+		assert.Empty(t, out, "and writes nothing on success")
 		_, err = os.Stat(filepath.Join(root, "eidos-sdk", "facade.gen.go"))
 		assert.NoError(t, err, "and the facade arrives beside the copied kernel")
 	})
@@ -57,7 +57,7 @@ func TestMain(t *testing.T) {
 		assert.HasError(t, err,
 			"a module that is not the kernel is reported, not generated into")
 		assert.Contains(t, out, "example.test/other",
-			"and the refusal reaches the standard error the caller reads")
+			"and the refusal is written to the standard error the caller reads")
 	})
 }
 

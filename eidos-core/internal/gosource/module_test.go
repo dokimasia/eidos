@@ -96,7 +96,7 @@ func TestModule(t *testing.T) {
 
 			root := goMod(t, "go 1.27.0\n")
 			_, err := gosource.ModulePath(root)
-			assert.HasError(t, err, "a go.mod holding no module directive is reported")
+			assert.HasError(t, err, "a go.mod without a module directive is reported")
 			assert.Contains(t, err.Error(), filepath.Join(root, goModName),
 				"naming the file it read to the end")
 			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
@@ -106,7 +106,7 @@ func TestModule(t *testing.T) {
 			t.Parallel()
 
 			_, err := gosource.ModulePath("testdata/empty")
-			assert.HasError(t, err, "a directory holding no go.mod is reported")
+			assert.HasError(t, err, "a directory without a go.mod is reported")
 			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
 		})
 	})
@@ -161,7 +161,7 @@ func BenchmarkModule(b *testing.B) {
 
 // goMod writes one go.mod into a fresh module root and returns the
 // root, so a case can read a directive the committed fixture does
-// not hold.
+// not contain.
 func goMod(t *testing.T, body string) string {
 	t.Helper()
 

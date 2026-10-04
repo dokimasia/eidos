@@ -31,11 +31,10 @@ type matchCase struct {
 }
 
 // Every subject kind's constructor lowers one way: the effect
-// parameter picks the phase, the record carries the kind, and the
+// parameter picks the phase, the record states the kind, and the
 // handler sees the subjects of its kind and nothing else. The
 // fixtures come from the every-kind package, so a kind the lowering
-// grows and the fixture does not is a compile error rather than a
-// case that passes over a rule which never fired.
+// adds without a fixture fails to compile.
 func TestMatches(t *testing.T) {
 	t.Parallel()
 {{- range .Views}}
@@ -51,7 +50,7 @@ func TestMatches(t *testing.T) {
 			cache := coretest.EveryKind(coretest.CachePath)
 			want := coretest.KindCount(symbol.Kind{{.Name}}, store, cache)
 			assert.True(t, want > 1,
-				"the fixture holds more than one {{.Name}}, so one rule meets several")
+				"the fixture contains more than one {{.Name}}, so one rule meets several")
 
 			var subjects []symbol.Identity
 			var handles []*eidos.{{.Name}}Match
@@ -64,39 +63,39 @@ func TestMatches(t *testing.T) {
 				Build(), store, cache)
 
 			assert.Length(t, subjects, want,
-				"the rule fires once per {{.Name}} the graph holds")
+				"the rule runs once per {{.Name}} in the graph")
 			assert.Contains(t, subjects,
 				coretest.EveryKindID(coretest.StorePath, coretest.{{.Name}}Name, symbol.Kind{{.Name}}),
-				"and the match carries the declaration, not only its identity")
+				"and the match contains the declaration, not only its identity")
 			for _, id := range subjects {
 				assert.Equal(t, id.Kind, symbol.Kind{{.Name}},
 					"every subject a rule receives is of its own kind")
 			}
 			for _, m := range handles {
 				assert.True(t, m == handles[0],
-					"one match serves every invocation of the rule, which is what "+
-						"holds an invocation at zero steady-state allocations")
+					"one match serves every invocation of the rule, so an "+
+						"invocation allocates nothing in steady state")
 			}
 		})
 
 		t.Run("passes over a value that is not its kind's type", func(t *testing.T) {
 			t.Parallel()
 
-			fired := false
+			ran := false
 			dispatched(t, eidos.NewPlugin(subjectPlugin).
 				Handle(eidos.On{{.Name}}(func(m *eidos.{{.Name}}Match, e *eidos.Emitter) error {
-					fired = true
+					ran = true
 					return nil
 				})).
 				Build(),
 				coretest.Package(coretest.StorePath, coretest.Foreign(
 					coretest.StorePath, coretest.ForeignName, symbol.Kind{{.Name}})))
-			assert.False(t, fired,
-				"a declaration indexed under the kind that is not this model's "+
-					"type for it never reaches the handler")
+			assert.False(t, ran,
+				"the handler never sees a declaration indexed under the kind "+
+					"that is not this model's type for it")
 		})
 
-		t.Run("an emitter handler declares the generate phase", func(t *testing.T) {
+		t.Run("declares the generate phase for an emitter handler", func(t *testing.T) {
 			t.Parallel()
 
 			emits := eidos.NewPlugin(subjectPlugin).
@@ -110,10 +109,10 @@ func TestMatches(t *testing.T) {
 			assert.True(t, held, "a built plugin declares its gates")
 			assert.Equal(t, subscribed.Subscriptions(), []plugin.Subscription{ {
 				Kind: symbol.Kind{{.Name}}, Phase: plugin.PhaseGenerate,
-			} }, "the record carries the trigger's kind in the generate phase")
+			} }, "the record states the trigger's kind in the generate phase")
 		})
 
-		t.Run("a stamper handler annotates alone", func(t *testing.T) {
+		t.Run("declares the annotate phase alone for a stamper handler", func(t *testing.T) {
 			t.Parallel()
 
 			stamps := eidos.NewPlugin(subjectPlugin).
@@ -154,10 +153,8 @@ func BenchmarkMatches(b *testing.B) {
 	}
 }
 
-// dispatched runs p's generate phase over a graph holding pkgs, and
-// fails the test unless the phase call passes. It is what puts a
-// rule in front of real subjects rather than in front of its own
-// declaration.
+// dispatched runs p's generate phase over a graph of pkgs, and fails
+// the test unless the phase call passes.
 func dispatched(tb assert.TB, p plugin.Plugin, pkgs ...*node.Package) {
 	tb.Helper()
 

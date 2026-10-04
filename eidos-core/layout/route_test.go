@@ -886,7 +886,7 @@ func benchTree(tb testing.TB, packages int) (*store.Graph, *plugin.Emit) {
 
 // benchInput returns the routing input over benchTree's graph and
 // store, with one sink every pass reports into: the input routes clean,
-// so the sink stays empty.
+// so the sink receives no finding.
 func benchInput(tb testing.TB, packages int) layout.Input {
 	tb.Helper()
 

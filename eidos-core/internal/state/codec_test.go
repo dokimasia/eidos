@@ -101,7 +101,7 @@ func TestCodec(t *testing.T) {
 				g, err := state.Open(t.Context(), l)
 				assert.NoError(t, err, "and opens")
 				assert.True(t, g.Header.Anchor.Equal(tt.give), "the anchor returns whole")
-				assert.Equal(t, g.Header.Anchor.IsZero(), tt.give.IsZero(), "the zero instant stays zero")
+				assert.Equal(t, g.Header.Anchor.IsZero(), tt.give.IsZero(), "the zero instant reads back as zero")
 			})
 		}
 	})

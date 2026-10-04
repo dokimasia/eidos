@@ -53,7 +53,7 @@ func TestRun(t *testing.T) {
 			g := spread(t, ledger.NewMem())
 			_, held, err := g.Get(t.Context(), state.TableChecks, []byte("key-0001a"))
 			assert.NoError(t, err, "the lookup reads")
-			assert.False(t, held, "the block holds no such key")
+			assert.False(t, held, "the block contains no such key")
 		})
 	})
 

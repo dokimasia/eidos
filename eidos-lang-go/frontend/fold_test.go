@@ -41,11 +41,11 @@ func TestFold(t *testing.T) {
 			}
 		}
 		assert.NotNil(t, s, "the struct loads")
-		assert.Length(t, s.Methods, 2, "both methods hang on it, whichever file spelled them")
+		assert.Length(t, s.Methods, 2, "the struct lists both methods, whichever file declared them")
 		assert.Equal(t, s.Methods[0].Name, "First", "in file then declaration order")
 		assert.Equal(t, s.Methods[1].Name, "Second", "the pointer receiver folds too")
 		assert.Equal(t, loose, []string{"Weight.String"},
-			"a method on a defined type over a builtin stays at file level, owned by its receiver's name")
+			"a method on a defined type over a builtin is at file level, under its receiver's name")
 	})
 
 	t.Run("folds an enumeration's methods from the package's other files", func(t *testing.T) {

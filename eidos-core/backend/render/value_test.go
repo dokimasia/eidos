@@ -26,7 +26,7 @@ const (
 )
 
 // refuseValueAllocs is one refusal: the formatted message and the
-// error that carries it.
+// error that wraps it.
 const refuseValueAllocs = 2
 
 // A value refusal is classified by its type, so the render reports

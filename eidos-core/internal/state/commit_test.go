@@ -149,7 +149,8 @@ func TestCommit(t *testing.T) {
 				manifest.Manifest{Version: manifest.Version})
 			assert.NoError(t, err, "the empty commit succeeds")
 			assert.Equal(t, l.Writes(), writes, "without a write")
-			assert.Equal(t, result, state.Result{Generation: first.Name}, "and the parent stays live")
+			assert.Equal(t, result, state.Result{Generation: first.Name},
+				"and the parent is still the current generation")
 		})
 
 		t.Run("writes the manifest's documents", func(t *testing.T) {

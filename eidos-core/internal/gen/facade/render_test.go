@@ -62,7 +62,7 @@ func TestRender(t *testing.T) {
 		assert.Contains(t, root, `"go.dokimi.dev/eidos/sdk/symbol"`,
 			"a qualified kernel reference respells to the facade sibling")
 		assert.Contains(t, root, "[go.dokimi.dev/eidos/sdk/symbol.Kind]",
-			"carried documentation respells kernel paths")
+			"copied documentation respells kernel paths")
 
 		sym := string(set["eidos-sdk/symbol/facade.gen.go"])
 		assert.Contains(t, sym, "KindStruct = core.KindStruct",
@@ -74,9 +74,9 @@ func TestRender(t *testing.T) {
 
 		kit := string(set["eidos-sdk/plugintest/facade.gen.go"])
 		assert.Contains(t, kit, `"example.test/dep"`,
-			"an external import carries verbatim")
+			"an external import is copied verbatim")
 		assert.Contains(t, kit, "func Check(d dep.T) {",
-			"and its qualifier stays the source's")
+			"and its qualifier is the source's")
 	})
 
 	t.Run("prints every type expression form", func(t *testing.T) {
@@ -95,17 +95,17 @@ func TestRender(t *testing.T) {
 			"\tfn func(a int, b string) (n int, err error),\n"+
 			"\tempty interface{},\n"+
 			") {\n}\n\n"+
-			"// Two carries two type parameters.\ntype Two[A any, B any] struct{}\n\n"+
+			"// Two has two type parameters.\ntype Two[A any, B any] struct{}\n\n"+
 			"// Use takes an instantiation with two arguments.\nfunc Use(p Two[int, string]) {}\n\n"+
 			"// Tilde constrains by a union of underlying types.\n"+
 			"func Tilde[T interface{ ~int | ~string }](v T) {}\n")
 
 		assert.Contains(t, emit, "fixed [4]int",
-			"a fixed-length array carries its length literal")
+			"a fixed-length array keeps its length literal")
 		assert.Contains(t, emit, "sl []dep.T",
-			"a slice carries its element")
+			"a slice keeps its element type")
 		assert.Contains(t, emit, "m map[string]dep.T",
-			"a map carries its key and its value")
+			"a map keeps its key and value types")
 		assert.Contains(t, emit, "send chan<- int",
 			"a send-only channel keeps its direction")
 		assert.Contains(t, emit, "recv <-chan int",
@@ -115,15 +115,15 @@ func TestRender(t *testing.T) {
 		assert.Contains(t, emit, "paren *int",
 			"a parenthesized type re-exports as the type it wraps")
 		assert.Contains(t, emit, "fn func(a int, b string) (n int, err error)",
-			"a function type carries its parameter and result names")
+			"a function type keeps its parameter and result names")
 		assert.Contains(t, emit, "empty interface{}",
 			"an interface declaring nothing re-exports as itself")
 		assert.Contains(t, emit, "type Two[A any, B any] = core.Two[A, B]",
 			"a two-parameter generic type re-exports as a generic alias")
 		assert.Contains(t, emit, "func Use(p Two[int, string])",
-			"an instantiation with two type arguments carries both")
+			"an instantiation with two type arguments keeps both")
 		assert.Contains(t, emit, "func Tilde[T interface{ ~int | ~string }](v T)",
-			"a constraint interface carries its union of underlying types")
+			"a constraint interface keeps its union of underlying types")
 		assert.Contains(t, emit, "core.Tilde[T](v)",
 			"and the wrapper instantiates explicitly, so inference decides nothing")
 	})
@@ -132,7 +132,7 @@ func TestRender(t *testing.T) {
 		t.Parallel()
 
 		emit := poisoned(t, "package emit\n\n"+
-			"// Unnamed takes positions rather than names.\nfunc Unnamed(int, string) {}\n\n"+
+			"// Unnamed takes parameters without names.\nfunc Unnamed(int, string) {}\n\n"+
 			"// Blank discards both its parameters.\nfunc Blank(_ int, _ string) {}\n\n"+
 			"// Pair returns two results under one type.\nfunc Pair() (a, b int) { return 0, 0 }\n")
 
@@ -161,11 +161,11 @@ func TestRender(t *testing.T) {
 
 		assert.Contains(t, emit, "type (", "a grouped type declaration re-exports as a group")
 		assert.Contains(t, emit, "First = core.First // trailing the type",
-			"an alias carries the type spec's trailing comment")
+			"an alias keeps the type spec's trailing comment")
 		assert.Contains(t, emit, "Second = core.Second",
 			"and the spec beside it re-exports too")
 		assert.Contains(t, emit, "= core.Low // trailing the constant",
-			"a re-declared constant carries the value spec's trailing comment")
+			"a re-declared constant keeps the value spec's trailing comment")
 		assert.Contains(t, emit, "// Low is the low count.",
 			"beside the spec's own documentation")
 	})
@@ -327,7 +327,7 @@ func TestRender(t *testing.T) {
 		poison(t, root, "plugin/plugin.go", "package plugin\n\ntype marker struct{}\n")
 		_, err := facade.Generate(root)
 		assert.HasError(t, err, "an empty facade package proves the list wrong")
-		assert.Contains(t, err.Error(), "re-exports nothing", "the refusal says why")
+		assert.Contains(t, err.Error(), "re-exports nothing", "the refusal states the reason")
 		assert.Contains(t, err.Error(), "go.dokimi.dev/eidos/core/plugin",
 			"and names the kernel package that re-exported none of itself")
 	})

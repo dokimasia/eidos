@@ -51,7 +51,7 @@ const (
 	regenerateAllocs = writeAllocs
 	// verifyAllocs is one Verify of a tree that matches its set of one
 	// file: the sorted paths, the read of the file, and the walk of the
-	// owned directory.
+	// directory the generator writes.
 	verifyAllocs = 22
 )
 
@@ -242,11 +242,11 @@ func TestGenfile(t *testing.T) {
 				"a set path escaping the root is refused")
 		})
 
-		t.Run("returns an error for an owned directory escaping the root", func(t *testing.T) {
+		t.Run("returns an error for a directory outside the root", func(t *testing.T) {
 			t.Parallel()
 
 			err := genfile.Verify(t.TempDir(), genfile.Set{}, []string{"../elsewhere"})
-			assert.HasError(t, err, "an owned directory escaping the root is refused")
+			assert.HasError(t, err, "a directory outside the root is refused")
 		})
 
 		t.Run("returns an error for a file it cannot read", func(t *testing.T) {
@@ -272,7 +272,7 @@ func TestGenfile(t *testing.T) {
 
 			err := genfile.Verify(root, genfile.Set{}, []string{ownedDir})
 			assert.HasError(t, err, "a directory it cannot scan is reported")
-			assert.Contains(t, err.Error(), ownedDir, "naming the owned directory it was scanning")
+			assert.Contains(t, err.Error(), ownedDir, "naming the directory it was scanning")
 			assert.HasPrefix(t, err.Error(), "genfile: ", "under the package prefix")
 		})
 
@@ -306,7 +306,7 @@ func TestGenfile(t *testing.T) {
 			t.Parallel()
 
 			assert.HasError(t, genfile.Verify(t.TempDir(), owned, []string{ownedDir}),
-				"a file the set holds and the tree lacks fails the mirror")
+				"a file the set contains and the tree lacks fails the mirror")
 		})
 
 		t.Run("returns an error for a stray generated file", func(t *testing.T) {
@@ -341,7 +341,7 @@ func TestGenfile(t *testing.T) {
 			assert.NoError(t, os.WriteFile(hand, []byte(wellFormed), 0o600),
 				"the hand-written file arrives")
 			assert.NoError(t, genfile.Verify(root, owned, []string{ownedDir}),
-				"a hand-written file is no stray: the guard owns generated names alone")
+				"a hand-written file is no stray: the guard checks generated names alone")
 		})
 	})
 }
