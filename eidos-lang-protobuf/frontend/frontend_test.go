@@ -5,28 +5,82 @@ package frontend_test
 
 import (
 	"context"
-	"slices"
+	"os"
 	"testing"
-	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
+	"go.dokimi.dev/eidos/sdk/directive"
+	"go.dokimi.dev/eidos/sdk/frontendtest"
 	"go.dokimi.dev/eidos/sdk/plugin"
+	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// unparsedCode pins the code a syntax error reports under: the
-// satellite's prefix, protobuf.CodePrefix, and the first number.
-const unparsedCode = "PROTO-0001"
+// The files the partition cases claim, out of path order.
+const (
+	firstFile  = "a/first.proto"
+	secondFile = "b/second.proto"
+	thirdFile  = "c/third.proto"
+)
 
-// The frontend's contract surface is what the load drives it
-// through, so the identity, the claim and the unit grain are each
-// pinned.
+// The allocations of the frontend's contract surface.
+const (
+	// syntaxAllocs is the comment syntax, which the satellite root
+	// builds.
+	syntaxAllocs = 2
+	// selectionAllocs is the list of patterns.
+	selectionAllocs = 1
+	// partitionAllocs is a partition of any number of files: the sorted
+	// copy and the list of units.
+	partitionAllocs = 2
+)
+
+// allocCall is one call that an allocation test and a benchmark share:
+// its benchmark path, its allocation ceiling, the call, and the check
+// of the result the call leaves.
+type allocCall struct {
+	name   string
+	allocs uint64
+	call   func()
+	check  func(tb assert.TB)
+}
+
+// The load calls the frontend through its contract surface, so the
+// identity, the claim and the unit grain are each pinned.
 func TestFrontend(t *testing.T) {
 	t.Parallel()
 
 	f := protofrontend.New()
+
+	t.Run("New", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a frontend that meets the conformance contract over the schema tree", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+				return protofrontend.New(), &frontendtest.Fixture{
+					Sources: os.DirFS("testdata/schema"),
+					// A schema states no bodies and no unexported names, so
+					// a signature-only root loads what a full one does, and
+					// the fixture lists no dropped identity.
+					Signatures: []string{"dep"},
+					Schemas:    []directive.Schema{tableSchema()},
+					Keys:       protobuf.Keys,
+				}
+			})
+		})
+
+		t.Run("returns a frontend in the importer role", func(t *testing.T) {
+			t.Parallel()
+
+			_, is := f.(plugin.Importer)
+			assert.True(t, is, "a proto import names a file, so the frontend names the import of a declaring file")
+		})
+	})
 
 	t.Run("Name", func(t *testing.T) {
 		t.Parallel()
@@ -45,7 +99,12 @@ func TestFrontend(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, f.Lang(), protobuf.Lang, "every loaded declaration is in the satellite's language")
-			assert.Equal(t, protofrontend.Lang, protobuf.Lang, "the frontend restates it for its own callers")
+		})
+
+		t.Run("returns the language the frontend restates", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, f.Lang(), protofrontend.Lang, "a caller with the frontend reads Lang")
 		})
 	})
 
@@ -94,17 +153,43 @@ func TestFrontend(t *testing.T) {
 	t.Run("Partition", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns one unit per file in path order", func(t *testing.T) {
+		t.Run("returns one unit per file", func(t *testing.T) {
 			t.Parallel()
 
-			units, err := f.Partition(context.Background(), []plugin.SourceRef{
-				{Path: "b/second.proto"}, {Path: "a/first.proto"},
-			}, nil)
+			units, err := f.Partition(context.Background(), unordered(), nil)
 			assert.NoError(t, err, "the grain needs no bytes to settle")
-			assert.Length(t, units, 2, "one file is one unit")
-			assert.Equal(t, units[0][0].Path, "a/first.proto", "the units are sorted, so two runs partition alike")
-			assert.Equal(t, units[1][0].Path, "b/second.proto", "the units are in path order")
-			assert.Empty(t, units[0][0].Shared, "no unit declares a shared input")
+			assert.Equal(t, []int{len(units[0]), len(units[1]), len(units[2])}, []int{1, 1, 1},
+				"a file compiles alone")
+		})
+
+		t.Run("returns the units in path order", func(t *testing.T) {
+			t.Parallel()
+
+			units, _ := f.Partition(context.Background(), unordered(), nil)
+			assert.Equal(t, []string{units[0][0].Path, units[1][0].Path, units[2][0].Path},
+				[]string{firstFile, secondFile, thirdFile}, "two runs over one tree partition alike")
+		})
+
+		t.Run("returns units without a shared input", func(t *testing.T) {
+			t.Parallel()
+
+			units, _ := f.Partition(context.Background(), unordered(), nil)
+			assert.Empty(t, units[0][0].Shared, "no file outside a unit contributes to it")
+		})
+
+		t.Run("returns units without spare capacity", func(t *testing.T) {
+			t.Parallel()
+
+			units, _ := f.Partition(context.Background(), unordered(), nil)
+			assert.Equal(t, cap(units[0]), 1, "an append to a unit copies it, so the next unit stays as it is")
+		})
+
+		t.Run("leaves the claimed files in their order", func(t *testing.T) {
+			t.Parallel()
+
+			files := unordered()
+			_, _ = f.Partition(context.Background(), files, nil)
+			assert.Equal(t, files[0].Path, secondFile, "the partition sorts a copy")
 		})
 
 		t.Run("returns nothing for no files", func(t *testing.T) {
@@ -115,47 +200,132 @@ func TestFrontend(t *testing.T) {
 			assert.Empty(t, units, "there is no unit")
 		})
 	})
+}
 
-	t.Run("Parse", func(t *testing.T) {
-		t.Parallel()
+// The contract surface allocates only the syntax, the patterns and a
+// partition's two lists. The ordinary run, which runs no benchmark,
+// checks those ceilings here.
+func TestFrontendAllocs(t *testing.T) {
+	checkAllocs(t, frontendCalls())
+}
 
-		t.Run("returns the context's error for a cancelled load", func(t *testing.T) {
-			t.Parallel()
+// BenchmarkFrontend measures each method the load calls before it
+// parses.
+func BenchmarkFrontend(b *testing.B) {
+	benchCalls(b, frontendCalls())
+}
 
-			ctx, cancel := context.WithCancel(context.Background())
-			cancel()
-			tree := fstest.MapFS{fixturePath: {Data: []byte("syntax = \"proto3\";\n")}}
-			u := plugin.NewSourceUnit(
-				[]plugin.SourceRef{{Path: fixturePath}}, tree, plugin.DepthFull,
-				f.Syntax(), brand, sinkOf(), f.Name(),
-			)
-			assert.HasError(t, f.Parse(ctx, u), "a cancelled load stops before it parses")
+// frontendCalls returns a call of the constructor and of every method
+// of frontend.go.
+func frontendCalls() []allocCall {
+	f := protofrontend.New()
+	versioned, _ := f.(plugin.Versioned)
+	files := unordered()
+	var (
+		built     plugin.Frontend
+		id        plugin.ID
+		lang      symbol.Lang
+		syntax    plugin.CommentSyntax
+		overloads bool
+		version   string
+		patterns  []string
+		units     [][]plugin.SourceRef
+		err       error
+	)
+	return []allocCall{
+		{
+			name:  "New",
+			call:  func() { built = protofrontend.New() },
+			check: func(tb assert.TB) { assert.Equal(tb, built.Name(), protobuf.Name, "New returns the frontend") },
+		},
+		{
+			name:  "Name",
+			call:  func() { id = f.Name() },
+			check: func(tb assert.TB) { assert.Equal(tb, id, protobuf.Name, "Name returns the satellite's") },
+		},
+		{
+			name:  "Lang",
+			call:  func() { lang = f.Lang() },
+			check: func(tb assert.TB) { assert.Equal(tb, lang, protobuf.Lang, "Lang returns the satellite's") },
+		},
+		{
+			name: "Syntax", allocs: syntaxAllocs,
+			call: func() { syntax = f.Syntax() },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, syntax, protobuf.Syntax(), "Syntax returns the satellite's")
+			},
+		},
+		{
+			name:  "Overloads",
+			call:  func() { overloads = f.Overloads() },
+			check: func(tb assert.TB) { assert.False(tb, overloads, "Overloads reports false") },
+		},
+		{
+			name:  "Version",
+			call:  func() { version = versioned.Version() },
+			check: func(tb assert.TB) { assert.Equal(tb, version, protobuf.Version, "Version returns the satellite's") },
+		},
+		{
+			name: "Selection", allocs: selectionAllocs,
+			call:  func() { patterns = f.Selection() },
+			check: func(tb assert.TB) { assert.Length(tb, patterns, 1, "Selection returns one pattern") },
+		},
+		{
+			name: "Partition", allocs: partitionAllocs,
+			call: func() { units, err = f.Partition(context.Background(), files, nil) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Partition settles")
+				assert.Length(tb, units, 3, "Partition returns one unit per file")
+			},
+		},
+	}
+}
+
+// checkAllocs checks the ceiling of every call in the ordinary run, and
+// the result each call leaves.
+func checkAllocs(t *testing.T, calls []allocCall) {
+	t.Helper()
+
+	for _, c := range calls {
+		msg := c.name + " allocates within its ceiling"
+		assert.MaxAllocs(t, c.call, c.allocs, msg)
+		c.check(t)
+	}
+}
+
+// benchCalls measures every call under the bench contract at its
+// ceiling, one sub-benchmark each. Each call runs once before the
+// contract starts, so what the first call initialises stays out of the
+// count.
+func benchCalls(b *testing.B, calls []allocCall) {
+	b.Helper()
+
+	for _, tt := range calls {
+		b.Run(tt.name, func(b *testing.B) {
+			tt.call()
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
 		})
+	}
+}
 
-		t.Run("returns an error for a file it cannot read", func(t *testing.T) {
-			t.Parallel()
+// unordered returns three claimed files out of path order.
+func unordered() []plugin.SourceRef {
+	return []plugin.SourceRef{{Path: secondFile}, {Path: firstFile}, {Path: thirdFile}}
+}
 
-			u := plugin.NewSourceUnit(
-				[]plugin.SourceRef{{Path: "absent.proto"}}, fstest.MapFS{}, plugin.DepthFull,
-				f.Syntax(), brand, sinkOf(), f.Name(),
-			)
-			assert.HasError(t, f.Parse(context.Background(), u),
-				"a unit whose file is missing from the tree is the load's fault, not the schema's")
-		})
-
-		t.Run("reports a syntax error as PROTO-0001", func(t *testing.T) {
-			t.Parallel()
-
-			tree := fstest.MapFS{fixturePath: {Data: []byte("syntax = \"proto3\";\nmessage {\n")}}
-			sink := sinkOf()
-			u := plugin.NewSourceUnit(
-				[]plugin.SourceRef{{Path: fixturePath}}, tree, plugin.DepthFull,
-				f.Syntax(), brand, sink, f.Name(),
-			)
-			assert.NoError(t, f.Parse(context.Background(), u), "a syntax error is the schema's problem")
-			found := slices.Collect(sink.All())
-			assert.NotEmpty(t, found, "the syntax error reports")
-			assert.Equal(t, found[0].Code.String(), unparsedCode, "under the satellite's prefix and the first number")
-		})
-	})
+// tableSchema is the directive the fixture schema's carrier writes.
+func tableSchema() directive.Schema {
+	return directive.Schema{
+		Plugin: "gen", Name: "table",
+		Params: []directive.ParamSpec{{
+			Key: "name", Type: directive.TypeString, Required: true,
+			Doc: "the table the message maps to",
+		}},
+		Doc: "maps a message onto a table",
+	}
 }

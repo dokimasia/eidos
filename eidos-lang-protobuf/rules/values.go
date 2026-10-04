@@ -6,6 +6,7 @@ package rules
 import (
 	"strconv"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 
 	"go.dokimi.dev/eidos/lang/numeric"
@@ -40,16 +41,18 @@ const (
 )
 
 // SamplesOf returns two values of a type that differ, for a check
-// that must tell one from the other.
+// that must tell one from the other. Each form derives its pair its
+// own way:
 //
-// The pair is derived per form: a scalar's from the wire table at
-// the wire's width, a well-known wrapper's as its scalar's, a
-// repeated field's as a one-element composite differing in the
-// element, a map's as a one-entry composite differing in the key, a
-// message's as a composite setting its first field that yields a
-// pair, a oneof's through its first such variant, and an enum's as
-// its first two declared values with distinct numbers, each the
-// number converted to the enum type.
+//   - A scalar takes the wire table's pair at the wire's width, and a
+//     well-known wrapper takes its scalar's.
+//   - A repeated field takes a one-element composite that differs in
+//     the element.
+//   - A map takes a one-entry composite that differs in the key.
+//   - A message takes a composite that sets its first field with a
+//     pair, and a oneof takes its first such variant.
+//   - An enum takes its first two declared values with distinct
+//     numbers, each number converted to the enum type.
 //
 // The hint names the declaration that has the type and seeds a
 // string's pair, so two string fields of one message do not derive
@@ -61,13 +64,24 @@ const (
 // half no author stated. A map's key is a scalar, which no
 // declaration states a value on.
 //
-// Both halves refuse together. [rules.RefusedUnresolved] means a
-// named type the view does not contain; [rules.RefusedNoLiteral]
-// means the type admits no two distinguishable values, which a
-// message with no usable field, an enum with one number, a stream
-// and a well-known type without a scalar all do;
-// [rules.RefusedDepth] means a self-referential type past the walk's
-// budget.
+// Both halves refuse together, with one of these reasons:
+//
+//   - [rules.RefusedUnresolved]: a named type the view does not
+//     contain.
+//   - [rules.RefusedNoLiteral]: a type without two distinguishable
+//     values. A message with no usable field, an enum with one number,
+//     a stream and a well-known type without a scalar are such types.
+//   - [rules.RefusedDepth]: a self-referential type past the walk's
+//     budget.
+//
+// # Allocation contract
+//
+// A scalar's pair allocates nothing beyond a string's two hinted
+// texts. A message's, a repeated field's and a map's pair allocate the
+// reference to the type, which restates every child of the reference,
+// and the field list of each composite. A map entry allocates its key.
+// An enum's pair allocates the reference and the conversion of each
+// value.
 func (r Rules) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
 	return r.derive(ref, hint, v, 0)
 }
@@ -87,7 +101,12 @@ func (r Rules) derive(
 		return r.derive(child(ref, 0), hint, v, depth+1)
 	case symbol.FormList:
 		sample, alternate := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
-		return element(ref, sample), element(ref, alternate)
+		if !sample.OK() || !alternate.OK() {
+			return rules.RefusedPair(rules.FirstRefusal(sample, alternate))
+		}
+		t := rules.EmitRef(ref)
+		return rules.Of(emit.Composite(t, emit.Element(sample.Value))),
+			rules.Of(emit.Composite(t, emit.Element(alternate.Value)))
 	case symbol.FormMap:
 		key, otherKey := r.derive(child(ref, 0), hint, v, depth+1)
 		value, _ := r.partPair(symbol.Identity{}, child(ref, 1), hint, v, depth+1)
@@ -228,13 +247,24 @@ func enumPair(ref *node.TypeRef, e *node.Enum) (rules.Sample, rules.Sample) {
 // enumNumber returns a variant's declared number, and false for a nil
 // variant, one with no name, and one whose number is no int32. The
 // number is read in any base protobuf writes, a minus sign apart
-// from its digits included.
+// from its digits included. A number written without white space
+// allocates nothing.
 func enumNumber(variant *node.EnumVariant) (int64, bool) {
 	if variant == nil || variant.Name == "" {
 		return 0, false
 	}
-	n, err := strconv.ParseInt(strings.Join(strings.Fields(variant.Value), ""), 0, enumBits)
+	n, err := strconv.ParseInt(strings.Map(dropSpace, variant.Value), 0, enumBits)
 	return n, err == nil
+}
+
+// dropSpace maps a white-space rune to nothing and every other rune to
+// itself, for [strings.Map], which returns a text without white space
+// as it is.
+func dropSpace(r rune) rune {
+	if unicode.IsSpace(r) {
+		return -1
+	}
+	return r
 }
 
 // enumValue returns one enum number as a value of the enum type: the
@@ -256,6 +286,13 @@ func enumValue(t *emit.TypeRef, n int64) emit.Value {
 // It reports false for a stream, for a named type the view does not
 // contain, for an enum declaring no value, and for a spelling the
 // wire table does not list.
+//
+// # Allocation contract
+//
+// A scalar's zero and a message's absence allocate nothing. A repeated
+// or map field's empty composite allocates the reference to its type,
+// which restates every child of the reference. An enum's zero
+// allocates the reference and the conversion.
 func (Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	if ref == nil {
 		return emit.Value{}, false
@@ -336,6 +373,16 @@ func scalarZero(spelling string) (emit.Value, bool) {
 // false. inf and nan are identifiers no literal spells, so they
 // report false too. The file plays no part, because a proto literal
 // reads the same in every scope.
+//
+// # Allocation contract
+//
+// LiteralFor reads a number exactly through [go/constant]. The exact
+// value allocates outside 0 to 255, a minus sign allocates the negated
+// value, and the canonical text allocates outside 0 to 99. A float
+// allocates the big-number arithmetic of its exact value: 17
+// allocations for 2.5 read as a double. A string allocates its
+// unescaped text, and an enum value the reference and the conversion.
+// A truth value and an integer from 0 to 99 allocate nothing.
 func (r Rules) LiteralFor(
 	_ *node.File, ref *node.TypeRef, text string, v rules.View,
 ) (emit.Value, bool) {
@@ -451,14 +498,6 @@ func (lit literal) untyped() (emit.Value, bool) {
 	default:
 		return emit.Value{}, false
 	}
-}
-
-// element places one derived value as a repeated field's single
-// element, passing a refusal through.
-func element(ref *node.TypeRef, s rules.Sample) rules.Sample {
-	return rules.Lift(s, func(v emit.Value) emit.Value {
-		return emit.Composite(rules.EmitRef(ref), emit.Element(v))
-	})
 }
 
 // child returns a structural reference's child, or nil.

@@ -5,7 +5,8 @@ package frontend
 
 import (
 	"context"
-	"sort"
+	"slices"
+	"strings"
 
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/diag"
@@ -97,10 +98,13 @@ var UnaddressedCarrier = diag.MustRegister(protobuf.CodePrefix, diag.CodeSpec{
 // returned error means the load itself failed, such as a unit naming
 // a file the tree does not contain, and it ends the load for every
 // frontend.
+//
+// New allocates nothing: the frontend has no state.
 func New() plugin.Frontend { return protoFrontend{} }
 
 // protoFrontend loads proto schemas. It has no state: units parse in
-// parallel, and each unit's state is on the unit.
+// parallel, and each unit's state is on the unit. Each method states
+// what it allocates.
 type protoFrontend struct{}
 
 // A proto import names a file, so the resolution step asks the
@@ -108,27 +112,29 @@ type protoFrontend struct{}
 var _ plugin.Importer = protoFrontend{}
 
 // Name returns [protobuf.Name], the origin of this frontend's
-// findings and classification stamps.
+// findings and classification stamps. It allocates nothing.
 func (protoFrontend) Name() plugin.ID { return protobuf.Name }
 
 // Lang returns [protobuf.Lang], the language in the identity of
-// every declaration this frontend loads.
+// every declaration this frontend loads. It allocates nothing.
 func (protoFrontend) Lang() symbol.Lang { return protobuf.Lang }
 
 // Syntax returns protobuf's comment forms, which the kit strips
 // documentation with and the directive grammar reads carriers from.
 // They are C's: a line comment, a block comment with its gutter,
-// and the directive convention.
+// and the directive convention. Syntax allocates what
+// [protobuf.Syntax] allocates, two allocations.
 func (protoFrontend) Syntax() plugin.CommentSyntax { return protobuf.Syntax() }
 
 // Overloads reports false: a service declares each RPC once by name,
 // so every method this frontend loads takes the empty discriminator.
+// It allocates nothing.
 func (protoFrontend) Overloads() bool { return false }
 
 // Version returns [protobuf.Version], which every unit key folds.
 // Bumping it invalidates every unit this frontend loaded before, so
 // it changes with what the frontend produces and not with the
-// module's release.
+// module's release. It allocates nothing.
 func (protoFrontend) Version() string { return protobuf.Version }
 
 // Selection claims every file under the workspace whose name ends in
@@ -138,7 +144,8 @@ func (protoFrontend) Version() string { return protobuf.Version }
 // convention a claim could exclude by, so the composition decides
 // through scopes which directories take part. The load drops a
 // claimed file with the workspace's own provenance trailer after
-// selection and before partitioning.
+// selection and before partitioning. Selection allocates the list of
+// patterns, one allocation, which the caller keeps.
 func (protoFrontend) Selection() []string { return []string{"**/*" + protobuf.Extension} }
 
 // Partition returns one unit per file, which is protobuf's own
@@ -152,15 +159,20 @@ func (protoFrontend) Selection() []string { return []string{"**/*" + protobuf.Ex
 // into a unit key.
 //
 // It returns no error: the grain needs no bytes to settle.
+//
+// # Allocation contract
+//
+// Partition allocates the sorted copy of the files and the list of
+// units, two allocations for any number of files: each unit is a
+// one-element window on the sorted copy.
 func (protoFrontend) Partition(
 	_ context.Context, files []plugin.SourceRef, _ plugin.FileReader,
 ) ([][]plugin.SourceRef, error) {
-	units := make([][]plugin.SourceRef, 0, len(files))
-	ordered := make([]plugin.SourceRef, len(files))
-	copy(ordered, files)
-	sort.Slice(ordered, func(i, j int) bool { return ordered[i].Path < ordered[j].Path })
-	for _, f := range ordered {
-		units = append(units, []plugin.SourceRef{f})
+	ordered := slices.Clone(files)
+	slices.SortFunc(ordered, func(a, b plugin.SourceRef) int { return strings.Compare(a.Path, b.Path) })
+	units := make([][]plugin.SourceRef, len(ordered))
+	for i := range ordered {
+		units[i] = ordered[i : i+1 : i+1]
 	}
 	return units, nil
 }

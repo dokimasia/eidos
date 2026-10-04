@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/plugin"
@@ -29,13 +30,19 @@ const (
 	wrapperName   = "google.protobuf.StringValue"
 )
 
-// candidate returns an identity the candidates name, with no kind.
-func candidate(pkg, owner, name string) symbol.Identity {
-	return symbol.Identity{Lang: protobuf.Lang, Package: pkg, Owner: owner, Name: name}
-}
+// The allocations of the candidates of a spelling.
+const (
+	// chainAllocs is a relative spelling inside a message chain of a
+	// package: the joined scope, the list of tiers, and the five tiers
+	// of the two messages, the two namespaces and the root.
+	chainAllocs = 1 + 1 + 5
+	// rootedAllocs is a rooted spelling: the list of tiers and its one
+	// tier.
+	rootedAllocs = 1 + 1
+)
 
-// The name grammar is what the frontend and the rules both resolve
-// through, so its tiers, its splits and its exclusions are pinned.
+// The frontend and the rules both resolve through the name grammar.
+// Its tiers, its splits and its exclusions are pinned.
 func TestNames(t *testing.T) {
 	t.Parallel()
 
@@ -186,5 +193,86 @@ func TestNames(t *testing.T) {
 			assert.Equal(t, got, plugin.Candidates{{candidate("", "", "Row")}},
 				"the unnamed namespace is the root")
 		})
+
+		t.Run("returns the root alone for a rooted spelling without a package", func(t *testing.T) {
+			t.Parallel()
+
+			got := protobuf.Candidates(namesPkg, namesChain, ".Row")
+			assert.Equal(t, got, plugin.Candidates{{candidate("", "", "Row")}},
+				"a leading dot before one segment names a declaration of the root")
+		})
 	})
+}
+
+// The scalar and well-known lookups allocate nothing, and the
+// candidates of a spelling allocate their tiers. The ordinary run,
+// which runs no benchmark, checks those ceilings here.
+func TestNamesAllocs(t *testing.T) {
+	var (
+		is   bool
+		name string
+		got  plugin.Candidates
+	)
+	assert.MaxAllocs(t, func() { is = protobuf.IsScalar("int64") }, 0, "IsScalar allocates nothing")
+	assert.True(t, is, "IsScalar reports int64")
+	assert.MaxAllocs(t, func() { name, is = protobuf.WellKnown(timestampName) }, 0, "WellKnown allocates nothing")
+	assert.True(t, is && name == timestampName, "WellKnown returns Timestamp")
+	assert.MaxAllocs(t, func() { name, is = protobuf.WellKnownImport(timestampName) }, 0,
+		"WellKnownImport allocates nothing")
+	assert.True(t, is && name == timestampFile, "WellKnownImport returns Timestamp's file")
+	assert.MaxAllocs(t, func() { got = protobuf.Candidates(namesPkg, namesChain, "Key") }, chainAllocs,
+		"Candidates allocates the joined scope and the tiers")
+	assert.Length(t, got, 5, "Candidates probes five scopes")
+	assert.MaxAllocs(t, func() { got = protobuf.Candidates(namesPkg, namesChain, ".dep.Target.Inner") },
+		rootedAllocs, "Candidates allocates the one tier of a rooted spelling")
+	assert.Length(t, got, 1, "Candidates probes the rooted path alone")
+}
+
+// BenchmarkNames measures the lookups and the probe the frontend and
+// the rules make for every reference they resolve.
+func BenchmarkNames(b *testing.B) {
+	b.Run("IsScalar", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var is bool
+		for c.Loop() {
+			is = protobuf.IsScalar("int64")
+		}
+		assert.True(b, is, "IsScalar reports int64")
+	})
+
+	b.Run("WellKnown", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var name string
+		for c.Loop() {
+			name, _ = protobuf.WellKnown(timestampName)
+		}
+		assert.Equal(b, name, timestampName, "WellKnown returns Timestamp")
+	})
+
+	b.Run("WellKnownImport", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var file string
+		for c.Loop() {
+			file, _ = protobuf.WellKnownImport(timestampName)
+		}
+		assert.Equal(b, file, timestampFile, "WellKnownImport returns Timestamp's file")
+	})
+
+	b.Run("Candidates", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(chainAllocs)
+		defer c.End()
+		var got plugin.Candidates
+		for c.Loop() {
+			got = protobuf.Candidates(namesPkg, namesChain, "Key")
+		}
+		assert.Length(b, got, 5, "Candidates probes five scopes")
+	})
+}
+
+// candidate returns an identity the candidates name, with no kind.
+func candidate(pkg, owner, name string) symbol.Identity {
+	return symbol.Identity{Lang: protobuf.Lang, Package: pkg, Owner: owner, Name: name}
 }

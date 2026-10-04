@@ -90,6 +90,12 @@ const (
 // keeps its name and a consumer decides what to do. A nil reference
 // returns Opaque too. The view is unread, so the shape depends on
 // the spelling alone.
+//
+// # Allocation contract
+//
+// A wrapper, FieldMask, ListValue and Struct allocate the list of
+// their element shapes, one allocation. Every other spelling
+// allocates nothing.
 func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 	if ref == nil {
 		return rules.Opaque(nil)

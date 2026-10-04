@@ -45,7 +45,7 @@ const Version = "0.3.0"
 // lines open with a star, and the directive convention, so a
 // carrier is written on a line comment the way it is in every other
 // language here. A call returns a fresh value, which the caller may
-// keep.
+// keep: it allocates the two lists.
 func Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{
 		Line:       []string{"//"},

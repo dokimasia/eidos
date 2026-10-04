@@ -29,26 +29,33 @@ var (
 
 // Rules is protobuf's implementation of the source-rules contract.
 //
-// The zero value is ready and is the only value: it has no state, so
-// one value is safe for concurrent use and may be shared across
-// compositions. Every method reads through the [rules.View] it is
-// handed and never caches, so a value belongs to the invocation that
-// asked for it.
+// The zero value is ready and is the only value. Every method reads
+// through the [rules.View] it is handed and caches nothing.
 //
 // It satisfies [rules.EnumRules] and no other optional capability:
 // protobuf states no generics, no promotion, no struct tags and no
 // user-defined equality.
+//
+// # Concurrency
+//
+// Rules has no state, so one value serves every goroutine and every
+// composition.
+//
+// # Allocation contract
+//
+// Each method states what it allocates. A parameter's role, the member
+// policy and a scalar's shape allocate nothing.
 type Rules struct{}
 
-// New returns the protobuf rules, the value a composition
-// registers with [workspace.Builder.Rules].
-//
-// The returned value is [Rules]; a caller needing the enum
-// capability asserts [rules.EnumRules] on it.
+// New returns the protobuf rules as the [rules.SourceRules] a
+// composition registers. The value is [Rules], so a caller that needs
+// the enum capability asserts [rules.EnumRules] on it. It allocates
+// nothing.
 func New() rules.SourceRules { return Rules{} }
 
 // Lang returns [protobuf.Lang], the language a composition keys
 // these rules under and the language of every subject they project.
+// It allocates nothing.
 func (Rules) Lang() symbol.Lang { return protobuf.Lang }
 
 // Members reports that nothing contributes to a type's member set.
@@ -60,8 +67,9 @@ func (Rules) Lang() symbol.Lang { return protobuf.Lang }
 // elsewhere, and the frontend refuses it at the load, so the walk
 // never meets one.
 //
-// The shadowing rule is therefore never applied. It is stated as
-// override so the policy is total and not zero-valued.
+// The walk never applies the shadowing rule. The policy states it as
+// override so the policy is total and not zero-valued. Members
+// allocates nothing.
 func (Rules) Members() rules.MemberPolicy {
 	return rules.MemberPolicy{Shadowing: rules.ShadowOverride}
 }
@@ -69,7 +77,8 @@ func (Rules) Members() rules.MemberPolicy {
 // ParamRole reports [rules.ParamInput] for every parameter.
 //
 // An rpc takes one request message and a schema states no context
-// parameter, so no parameter has another role. The view is unread.
+// parameter, so no parameter has another role. The view is unread,
+// and ParamRole allocates nothing.
 func (Rules) ParamRole(*node.Param, rules.View) rules.ParamRole { return rules.ParamInput }
 
 // ReturnRoles reports one role per return and the error model.
@@ -81,8 +90,10 @@ func (Rules) ParamRole(*node.Param, rules.View) rules.ParamRole { return rules.P
 // inside it, so a generator binding a call reads its transport's
 // convention and not the schema's.
 //
-// The returned slice is one entry per return, allocated per call,
-// and is the caller's to keep.
+// # Allocation contract
+//
+// ReturnRoles allocates the list of roles, one entry per return, which
+// the caller keeps. A callable without returns allocates nothing.
 func (Rules) ReturnRoles(rs []*node.Return, _ rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
 	roles := make([]rules.ReturnRole, len(rs))
 	for i, r := range rs {
@@ -100,6 +111,12 @@ func (Rules) ReturnRoles(rs []*node.Return, _ rules.View) ([]rules.ReturnRole, r
 // Both parts are recased, so a snake-cased schema name joins the
 // same way a Pascal one does: TypeName("check", "row_key") is
 // CheckRowKey.
+//
+// # Allocation contract
+//
+// TypeName allocates the PascalCase of each part that is not already
+// PascalCase, and the joined name: two allocations for a lower-case
+// word and a Pascal base, and three for a snake-cased base.
 func (Rules) TypeName(word, base string) string {
 	return naming.Pascal(word) + naming.Pascal(base)
 }
@@ -124,8 +141,16 @@ func (Rules) TypeName(word, base string) string {
 // subject's namespace, each namespace above it and the root, each
 // scope's first match taken. A leading dot states the whole path and
 // probes nothing outward. Any other kind returns an error, and so
-// does a spelling nothing declares; validation reports it under its
-// own code.
+// does a spelling nothing declares. Validation reports such an error
+// under its own code.
+//
+// # Allocation contract
+//
+// A field and a parameter resolve without allocating. A type and a
+// callable resolve through candidates that allocate as
+// [protobuf.Candidates] states, and the subject's message chain
+// allocates its joined name where the message is nested. Every error
+// allocates itself.
 func (Rules) Resolve(
 	scope rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {
@@ -213,34 +238,32 @@ func rpcNamed(v rules.View, c symbol.Identity) (symbol.Symbol, bool) {
 // the subject, the subject itself where it is a message, and the
 // package alone for a declaration outside every message.
 func scopeOf(subject symbol.Identity, v rules.View) (pkg, chain string) {
-	msg, held := enclosingMessage(subject, v)
-	if !held {
+	msg := enclosingMessage(subject, v)
+	switch {
+	case msg == nil:
 		return subject.Package, ""
+	case msg.ID.Owner == "":
+		return msg.ID.Package, msg.ID.Name
+	default:
+		return msg.ID.Package, msg.ID.Owner + protobuf.NameSep + msg.ID.Name
 	}
-	if msg.Owner == "" {
-		return msg.Package, msg.Name
-	}
-	return msg.Package, msg.Owner + protobuf.NameSep + msg.Name
 }
 
 // enclosingMessage returns the innermost message that contains a
-// subject, the subject itself where it is a message, and false where
-// the view does not contain the subject or no message contains it.
+// subject, the subject itself where it is a message, and nil where the
+// view does not contain the subject or no message contains it.
 //
 // A member finds its message through its hosts: a field through its
 // message or its oneof member, a oneof member through its oneof.
 // A oneof, an enum and a service name their message by their owner
 // chain, which only messages nest.
-func enclosingMessage(subject symbol.Identity, v rules.View) (symbol.Identity, bool) {
+func enclosingMessage(subject symbol.Identity, v rules.View) *node.Struct {
 	id := subject
 	for range hostDepth {
-		sym, held := v.Lookup(id)
-		if !held {
-			return symbol.Identity{}, false
-		}
+		sym, _ := v.Lookup(id)
 		switch d := sym.(type) {
 		case *node.Struct:
-			return d.ID, true
+			return d
 		case *node.Field:
 			id = d.Host
 		case *node.SumVariant:
@@ -253,43 +276,38 @@ func enclosingMessage(subject symbol.Identity, v rules.View) (symbol.Identity, b
 			// The view keys each declaration by its identity, so id is
 			// the declaration's own.
 			if id.Owner == "" {
-				return symbol.Identity{}, false
+				return nil
 			}
 			owner, name := ownerOf(id.Owner)
 			id = symbol.Identity{
 				Lang: id.Lang, Package: id.Package, Owner: owner, Name: name, Kind: symbol.KindStruct,
 			}
 		default:
-			return symbol.Identity{}, false
+			return nil
 		}
 	}
-	return symbol.Identity{}, false
+	return nil
 }
 
 // member resolves a name among the fields of the message a subject
 // belongs to, the members of its oneofs included.
 func member(scope rules.Scope, name string, v rules.View) (symbol.Symbol, error) {
-	msgID, held := enclosingMessage(scope.Subject, v)
-	if !held {
+	msg := enclosingMessage(scope.Subject, v)
+	if msg == nil {
 		if _, known := v.Lookup(scope.Subject); !known {
 			return nil, fmt.Errorf("protobuf: the view does not contain %s", scope.Subject)
 		}
 		return nil, fmt.Errorf("protobuf: %s belongs to no message", scope.Subject)
 	}
-	sym, _ := v.Lookup(msgID)
-	msg, _ := sym.(*node.Struct)
 	if f := fieldNamed(msg, name); f != nil {
 		return f, nil
 	}
-	return nil, fmt.Errorf("protobuf: no field of %s is named %s", msgID, name)
+	return nil, fmt.Errorf("protobuf: no field of %s is named %s", msg.ID, name)
 }
 
 // fieldNamed returns a message's field of one name, a oneof
 // member's field included, and nil where the message declares none.
 func fieldNamed(msg *node.Struct, name string) *node.Field {
-	if msg == nil {
-		return nil
-	}
 	for _, f := range msg.Fields {
 		if f != nil && f.Name == name {
 			return f

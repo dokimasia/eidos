@@ -113,9 +113,14 @@ func scanNumber(text string) (constant.Value, bool, bool) {
 // digits, one or two hexadecimal digits after \x, and a code point
 // in four hexadecimal digits after \u or eight after \U. A literal
 // ends at its own quote and never spans a line.
+//
+// Every escape is at least as long as the bytes it writes, so unquote
+// sizes its builder to the text inside the outer quotes and allocates
+// the content once.
 func unquote(text string) (string, bool) {
-	var b strings.Builder
 	rest := strings.TrimSpace(text)
+	var b strings.Builder
+	b.Grow(max(len(rest)-len(`""`), 0))
 	for rest != "" {
 		quote := rest[0]
 		if quote != '"' && quote != '\'' {

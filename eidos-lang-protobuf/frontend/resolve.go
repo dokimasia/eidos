@@ -31,7 +31,7 @@ type bindings struct {
 // directory boundary where a proto root other than the workspace root
 // places the import. The first such import in source order is
 // returned. A declaring file no import names, which protoc rejects,
-// returns its workspace path.
+// returns its workspace path. ImportOf allocates nothing.
 func (protoFrontend) ImportOf(scope plugin.ImportScope, file string) string {
 	if b, recorded := scope.Bindings.(*bindings); recorded && b != nil {
 		for _, imported := range b.imports {
@@ -62,6 +62,9 @@ const pathSep = "/"
 // the imported ones, so a reference protoc would reject for a
 // missing import resolves here: the read side reports what the graph
 // contains, and validating imports is protoc's.
+//
+// Resolve allocates what [protobuf.Candidates] allocates, and the
+// joined chain of a nested message's scope.
 func (protoFrontend) Resolve(scope plugin.ImportScope, spelling string) plugin.Candidates {
 	pkg := ""
 	if b, recorded := scope.Bindings.(*bindings); recorded && b != nil {
@@ -92,6 +95,10 @@ func chainOf(owner symbol.Identity) string {
 // loaded tree: a test, or a tool auditing how a spelling would
 // resolve. A load never calls it, because the parse records the
 // bindings itself.
+//
+// BindingsFor allocates the record, one allocation. The record keeps
+// the imports' list as it is, so a caller that lists the imports as
+// arguments allocates the list too.
 func BindingsFor(pkg string, imports ...string) any {
 	return &bindings{pkg: pkg, imports: imports}
 }

@@ -36,6 +36,28 @@ enum Mode {
 `
 )
 
+// The schema the refusal cases load: an enum with one number, a oneof
+// whose one member derives nothing, and a message that contains only
+// itself.
+const (
+	refusalsPath   = "svc/refusals.proto"
+	refusalsSource = `syntax = "proto3";
+package svc.store;
+enum Single {
+  SINGLE_ONLY = 0;
+}
+message Hollow {}
+message Holder {
+  oneof pick {
+    Hollow hollow = 1;
+  }
+}
+message Node {
+  Node next = 1;
+}
+`
+)
+
 // The enum type the conversions name, and the width every enum
 // number is stated at.
 const (
@@ -110,6 +132,30 @@ const (
 	authoredValue = "COLOUR_UNSPECIFIED"
 	authoredRow   = "Row{name: 1}"
 	otherRow      = "Row{name: 2}"
+	authoredEmpty = "Empty{}"
+	longText      = "a string past sixteen bytes"
+	longString    = `"` + longText + `"`
+)
+
+// The allocations of a value.
+const (
+	// messageSamplesAllocs is Row's pair: the reference to the message,
+	// the field list of each composite, and the hinted texts of its first
+	// field, a string.
+	messageSamplesAllocs = 1 + 2 + 2
+	// listSamplesAllocs is a repeated string's pair: the reference to the
+	// list with its list of children and its element's reference, the
+	// element list of each composite, and the hinted texts.
+	listSamplesAllocs = 3 + 2 + 2
+	// enumSamplesAllocs is Colour's pair: the reference to the enum, and
+	// the conversion of each value.
+	enumSamplesAllocs = 1 + 2
+	// enumZeroAllocs is Colour's zero: the reference to the enum, and the
+	// conversion.
+	enumZeroAllocs = 1 + 1
+	// stringLiteralAllocs is a string literal's unescaped text, sized
+	// once.
+	stringLiteralAllocs = 1
 )
 
 // pairOf derives a reference's two values and fails unless both
@@ -170,7 +216,7 @@ func TestValues(t *testing.T) {
 				wantAlternate: emit.Number(emit.LiteralFloat, derivedAltFloat, bits32),
 			},
 			{
-				name:          "returns true and false for bool",
+				name:          "returns the sample true beside the alternate false for bool",
 				give:          boolSpelling,
 				wantSample:    emit.Literal(emit.LiteralBool, trueText),
 				wantAlternate: emit.Literal(emit.LiteralBool, falseText),
@@ -241,6 +287,11 @@ func TestValues(t *testing.T) {
 				want: rules.RefusedUnresolved,
 			},
 			{
+				name: "returns RefusedUnresolved for a repeated field of a message the view does not contain",
+				give: composite("repeated Ghost", symbol.FormList, ref(svcPkg, ghostName, symbol.KindStruct)),
+				want: rules.RefusedUnresolved,
+			},
+			{
 				name: "returns RefusedUnresolved for a message the view does not contain",
 				give: ref(svcPkg, ghostName, symbol.KindStruct), want: rules.RefusedUnresolved,
 			},
@@ -249,12 +300,50 @@ func TestValues(t *testing.T) {
 				name: "returns RefusedNoLiteral for a message with nothing it can set",
 				give: ref(svcPkg, emptyName, symbol.KindStruct), want: rules.RefusedNoLiteral,
 			},
+			{
+				name: "returns RefusedNoLiteral for a form protobuf does not write",
+				give: composite("func()", symbol.FormFunc), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for a service",
+				give: ref(svcPkg, "Store", symbol.KindInterface), want: rules.RefusedNoLiteral,
+			},
+			{
+				name: "returns RefusedNoLiteral for a repeated field without an element",
+				give: composite("repeated", symbol.FormList), want: rules.RefusedNoLiteral,
+			},
 		}
 		for _, tt := range refusals {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
 				assert.Equal(t, refusalOf(loaded(t), tt.give), tt.want, "the refusal names its reason")
+			})
+		}
+
+		underived := []struct {
+			name string
+			give *node.TypeRef
+		}{
+			{
+				name: "returns RefusedNoLiteral for an enum with one number",
+				give: ref(svcPkg, "Single", symbol.KindEnum),
+			},
+			{
+				name: "returns RefusedNoLiteral for a oneof whose members derive nothing",
+				give: &node.TypeRef{Spelling: "pick", Target: member(svcPkg, "Holder", "pick", symbol.KindSum)},
+			},
+			{
+				name: "returns RefusedNoLiteral for a message that contains only itself",
+				give: ref(svcPkg, "Node", symbol.KindStruct),
+			},
+		}
+		for _, tt := range underived {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				f := loadedFrom(t, map[string]string{refusalsPath: refusalsSource})
+				assert.Equal(t, refusalOf(f, tt.give), rules.RefusedNoLiteral, "no two values derive")
 			})
 		}
 
@@ -416,6 +505,18 @@ func TestValues(t *testing.T) {
 				"the authored pair depends on no derivation, so no field of Row is an edge")
 		})
 
+		t.Run("returns RefusedNoLiteral for both halves when a repeated element has one value", func(t *testing.T) {
+			t.Parallel()
+
+			f := loaded(t)
+			empty := ref(svcPkg, emptyName, symbol.KindStruct)
+			stamp(t, f, f.Keys.Sample, empty.Target, authoredEmpty)
+			s, a := protorules.New().SamplesOf(composite("repeated Empty", symbol.FormList, empty), "", f.view)
+			assert.Equal(t, [2]rules.Refusal{s.Refusal, a.Refusal},
+				[2]rules.Refusal{rules.RefusedNoLiteral, rules.RefusedNoLiteral},
+				"Empty derives no alternate, so neither half has a value")
+		})
+
 		t.Run("completes an element's unstated half with the derived value", func(t *testing.T) {
 			t.Parallel()
 
@@ -506,6 +607,7 @@ func TestValues(t *testing.T) {
 				give: ref(svcPkg, ghostName, symbol.KindStruct),
 			},
 			{name: "reports false for a stream", give: composite("stream Row", symbol.FormStream)},
+			{name: "reports false for a service", give: ref(svcPkg, "Store", symbol.KindInterface)},
 			{name: "reports false for a nil reference"},
 		}
 		for _, tt := range unplaced {
@@ -552,7 +654,7 @@ func TestValues(t *testing.T) {
 				give: builtin(boolSpelling), giveText: trueText, want: emit.Literal(emit.LiteralBool, trueText),
 			},
 			{
-				name:     "returns the escaped bytes of a string",
+				name:     "returns the bytes octal escapes write for string",
 				give:     builtin(stringSpelling),
 				giveText: `"caf\303\251"`,
 				want:     emit.Literal(emit.LiteralString, "café"),
@@ -566,6 +668,12 @@ func TestValues(t *testing.T) {
 				give:     composite("optional int64", symbol.FormOptional, builtin(int64Spelling)),
 				giveText: "1",
 				want:     emit.Number(emit.LiteralInt, "1", bits64),
+			},
+			{
+				name:     "returns a literal as its own kind for a message the view does not contain",
+				give:     ref(svcPkg, ghostName, symbol.KindStruct),
+				giveText: "1",
+				want:     emit.Literal(emit.LiteralInt, "1"),
 			},
 		}
 		for _, tt := range typed {
@@ -590,6 +698,7 @@ func TestValues(t *testing.T) {
 			{name: "reports false for a number as bool", give: builtin(boolSpelling), giveText: "1"},
 			{name: "reports false for invalid UTF-8 as string", give: builtin(stringSpelling), giveText: `"\xff"`},
 			{name: "reports false for a number as string", give: builtin(stringSpelling), giveText: "7"},
+			{name: "reports false for a number as bytes", give: builtin(bytesSpelling), giveText: "7"},
 			{name: "reports false for a message", give: ref(svcPkg, rowName, symbol.KindStruct), giveText: "1"},
 			{
 				name: "reports false for a repeated field",
@@ -633,6 +742,86 @@ func TestValues(t *testing.T) {
 			})
 		}
 	})
+}
+
+// A scalar's pair, zero and literal allocate nothing, and a composite,
+// an enum value and a string literal allocate their parts. The
+// ordinary run, which runs no benchmark, checks those ceilings here.
+func TestValuesAllocs(t *testing.T) {
+	checkAllocs(t, valueCalls(t))
+}
+
+// BenchmarkValues measures the values a generated check derives for
+// every type it writes a value of.
+func BenchmarkValues(b *testing.B) {
+	benchCalls(b, valueCalls(b))
+}
+
+// valueCalls returns a call of each value derivation over a scalar, a
+// message, a repeated field and an enum, and of LiteralFor over an
+// integer and a string.
+func valueCalls(tb testing.TB) []allocCall {
+	tb.Helper()
+
+	f := loaded(tb)
+	r := protorules.New()
+	scalar, text := builtin(int64Spelling), builtin(stringSpelling)
+	row, colour := ref(svcPkg, rowName, symbol.KindStruct), ref(svcPkg, colourName, symbol.KindEnum)
+	list := composite("repeated string", symbol.FormList, text)
+	var (
+		sample rules.Sample
+		value  emit.Value
+	)
+	return []allocCall{
+		{
+			name:  "SamplesOf",
+			call:  func() { sample, _ = r.SamplesOf(scalar, "", f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, sample.Value.Text, derivedInt, "SamplesOf returns 42") },
+		},
+		{
+			name: "SamplesOf/a message", allocs: messageSamplesAllocs,
+			call:  func() { sample, _ = r.SamplesOf(row, "", f.view) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives Row") },
+		},
+		{
+			name: "SamplesOf/a repeated field", allocs: listSamplesAllocs,
+			call: func() { sample, _ = r.SamplesOf(list, tagHint, f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "SamplesOf derives the list")
+			},
+		},
+		{
+			name: "SamplesOf/an enum", allocs: enumSamplesAllocs,
+			call: func() { sample, _ = r.SamplesOf(colour, "", f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Kind, emit.ValueConversion, "SamplesOf derives Colour")
+			},
+		},
+		{
+			name:  "ZeroValue",
+			call:  func() { value, _ = r.ZeroValue(scalar, f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, value.Text, zeroText, "ZeroValue returns 0") },
+		},
+		{
+			name: "ZeroValue/an enum", allocs: enumZeroAllocs,
+			call: func() { value, _ = r.ZeroValue(colour, f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, value.Kind, emit.ValueConversion, "ZeroValue returns the first value")
+			},
+		},
+		{
+			name:  "LiteralFor",
+			call:  func() { value, _ = r.LiteralFor(nil, scalar, derivedInt, f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, value.Text, derivedInt, "LiteralFor reads 42") },
+		},
+		{
+			name: "LiteralFor/a string", allocs: stringLiteralAllocs,
+			call: func() { value, _ = r.LiteralFor(nil, text, longString, f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, value.Text, longText, "LiteralFor reads the string")
+			},
+		},
+	}
 }
 
 // stamp states one authored text on a subject under a kernel key, at

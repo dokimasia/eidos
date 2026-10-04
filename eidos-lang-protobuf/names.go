@@ -55,14 +55,15 @@ var wellKnown = map[string]string{
 }
 
 // IsScalar reports whether a spelling names one of protobuf's scalar
-// types.
+// types. It allocates nothing.
 func IsScalar(spelling string) bool { return scalars[spelling] }
 
 // WellKnown returns the fully-qualified name a spelling states for a
 // well-known type, with the leading dot removed, and reports whether
 // the spelling names one. A well-known type maps by this name whether
 // or not the workspace loads its declaration, so no reference to one
-// resolves against the graph.
+// resolves against the graph. The name is a part of the spelling, so
+// WellKnown allocates nothing.
 func WellKnown(spelling string) (string, bool) {
 	name, _, known := wellKnownOf(spelling)
 	return name, known
@@ -73,7 +74,7 @@ func WellKnown(spelling string) (string, bool) {
 // google/protobuf/timestamp.proto, and reports whether the spelling
 // names one. The frontend records it as the reference's package,
 // because no reference to a well-known type resolves against the
-// graph.
+// graph. It allocates nothing.
 func WellKnownImport(spelling string) (string, bool) {
 	_, file, known := wellKnownOf(spelling)
 	return file, known
@@ -116,6 +117,15 @@ func wellKnownOf(spelling string) (name, file string, known bool) {
 // not declare the rest. These tiers continue outward past such a
 // scope, so a spelling protoc rejects can resolve here. Every
 // spelling protoc accepts resolves to the declaration protoc binds.
+//
+// # Allocation contract
+//
+// Every package and owner a tier offers is a part of the scope or the
+// spelling, so Candidates allocates the list of tiers and each tier's
+// list of identities. It allocates once more for the scope where both
+// a package and a message chain are stated, and once more per scope
+// for a dotted relative spelling, whose fully-qualified name it joins.
+// A scalar, a well-known type and an empty spelling allocate nothing.
 func Candidates(pkg, chain, spelling string) plugin.Candidates {
 	name := strings.TrimSpace(spelling)
 	if name == "" || IsScalar(name) {
@@ -127,49 +137,62 @@ func Candidates(pkg, chain, spelling string) plugin.Candidates {
 	if qualified, rooted := strings.CutPrefix(name, NameSep); rooted {
 		return plugin.Candidates{splits(qualified)}
 	}
-	within := scopes(pkg, chain)
-	out := make(plugin.Candidates, 0, len(within))
-	for _, scope := range within {
-		out = append(out, splits(joinName(scope, name)))
+	scope := joinName(pkg, chain)
+	out := make(plugin.Candidates, 0, strings.Count(scope, NameSep)+2)
+	for {
+		out = append(out, tier(scope, name))
+		if scope == "" {
+			return out
+		}
+		scope = scope[:max(strings.LastIndex(scope, NameSep), 0)]
 	}
-	return out
 }
 
-// scopes returns the fully-qualified scopes a relative spelling
-// resolves in, innermost first: the message chain inside the
-// package, the package, each namespace above it, and the root, which
-// is the empty scope.
-func scopes(pkg, chain string) []string {
-	scope := joinName(pkg, chain)
-	out := make([]string, 0, strings.Count(scope, NameSep)+2)
-	for scope != "" {
-		out = append(out, scope)
-		at := strings.LastIndex(scope, NameSep)
-		if at < 0 {
-			break
-		}
-		scope = scope[:at]
+// tier returns the identities a relative name could be inside one
+// scope: its fully-qualified name at every split of the qualifier into
+// a package and an owner chain. The qualifier of an undotted name is
+// the scope. A dotted name is joined to the scope first, which
+// allocates the joined name.
+func tier(scope, name string) []symbol.Identity {
+	if strings.Contains(name, NameSep) {
+		return splits(joinName(scope, name))
 	}
-	return append(out, "")
+	return splitsOf(scope, name)
 }
 
 // splits returns the identities one fully-qualified name could be,
 // one per split of its qualifier into a package and an owner chain,
 // the longest package first.
 func splits(qualified string) []symbol.Identity {
-	segments := strings.Split(qualified, NameSep)
-	name := segments[len(segments)-1]
-	qualifier := segments[:len(segments)-1]
-	out := make([]symbol.Identity, 0, len(qualifier)+1)
-	for cut := len(qualifier); cut >= 0; cut-- {
+	qualifier, name, dotted := strings.CutLast(qualified, NameSep)
+	if !dotted {
+		return splitsOf("", qualified)
+	}
+	return splitsOf(qualifier, name)
+}
+
+// splitsOf returns the identities of a name under a dotted qualifier,
+// one per split of the qualifier into a package and an owner chain,
+// the longest package first: the whole qualifier as the package, then
+// each dot from the right, then the whole qualifier as the owner. An
+// empty qualifier has one split. Every package and owner is a part of
+// the qualifier, so the list is the one allocation.
+func splitsOf(qualifier, name string) []symbol.Identity {
+	if qualifier == "" {
+		return []symbol.Identity{{Lang: Lang, Name: name}}
+	}
+	out := make([]symbol.Identity, 0, strings.Count(qualifier, NameSep)+2)
+	out = append(out, symbol.Identity{Lang: Lang, Package: qualifier, Name: name})
+	for cut := len(qualifier); ; {
+		cut = strings.LastIndex(qualifier[:cut], NameSep)
+		if cut < 0 {
+			break
+		}
 		out = append(out, symbol.Identity{
-			Lang:    Lang,
-			Package: strings.Join(qualifier[:cut], NameSep),
-			Owner:   strings.Join(qualifier[cut:], NameSep),
-			Name:    name,
+			Lang: Lang, Package: qualifier[:cut], Owner: qualifier[cut+len(NameSep):], Name: name,
 		})
 	}
-	return out
+	return append(out, symbol.Identity{Lang: Lang, Owner: qualifier, Name: name})
 }
 
 // joinName joins two dotted names, either of which may be empty.

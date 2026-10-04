@@ -4,17 +4,33 @@
 package frontend_test
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	"go.dokimi.dev/eidos/sdk/diag"
+	"go.dokimi.dev/eidos/sdk/frontendtest"
 	"go.dokimi.dev/eidos/sdk/node"
+	"go.dokimi.dev/eidos/sdk/plugin"
 	"go.dokimi.dev/eidos/sdk/symbol"
+)
+
+// The fixture's one file, the package it declares, and the brand
+// its carriers are read under.
+const (
+	fixturePath = "svc/store.proto"
+	fixturePkg  = "svc.store"
+	brand       = string(frontendtest.Brand)
 )
 
 // The syntax errors the cap case writes, and the cap the frontend
@@ -24,6 +40,26 @@ const (
 	syntaxCap    = 10
 	badFieldLine = "message M { string x = ; }\n"
 )
+
+// unparsedCode pins the code a syntax error reports under: the
+// satellite's prefix, protobuf.CodePrefix, and the first number.
+const unparsedCode = "PROTO-0001"
+
+// The canonical scale every layer benches at: 1000 packages of 10 files
+// of 20 declarations, 200k declarations in all.
+const (
+	benchPackages = 1000
+	benchFiles    = 10
+	benchDecls    = 20
+)
+
+// parseAllocs is one parse of the canonical corpus. With the collector
+// off a parse allocates 6,840,016 times: protocompile's syntax trees,
+// about three quarters of them, and the lowering's nodes, stamps and
+// type references. The collections that run during a parse move the
+// count: 20 fresh processes counted 3 to 15 more at one iteration, and
+// the default benchtime averaged 5 fewer. The ceiling allows 32 more.
+const parseAllocs = 6_840_016 + 32
 
 // The files that declare the well-known types the package cases
 // name.
@@ -55,15 +91,6 @@ service Store {
   rpc Ping(google.protobuf.Empty) returns (google.protobuf.Empty);
 }
 `
-
-// formsOf returns the form of each field's type, in field order.
-func formsOf(s *node.Struct) []symbol.TypeForm {
-	out := make([]symbol.TypeForm, 0, len(s.Fields))
-	for _, f := range s.Fields {
-		out = append(out, f.Type.Form)
-	}
-	return out
-}
 
 // The lowering turns protobuf's own shapes into the node model, so
 // each mapping the corpus reads is pinned at the unit level.
@@ -925,5 +952,209 @@ message Req {}
 			assert.Equal(t, groups, 2, "the group in the message and the one in the oneof report")
 			assert.Equal(t, extends, 2, "the extend inside the message and the one beside it report")
 		})
+
+		t.Run("returns the context's error for a cancelled load", func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			f := protofrontend.New()
+			tree := fstest.MapFS{fixturePath: {Data: []byte("syntax = \"proto3\";\n")}}
+			u := plugin.NewSourceUnit(
+				[]plugin.SourceRef{{Path: fixturePath}}, tree, plugin.DepthFull,
+				f.Syntax(), brand, diag.NewSink(), f.Name(),
+			)
+			assert.ErrorIs(t, f.Parse(ctx, u), context.Canceled, "a cancelled load stops before it parses")
+		})
+
+		t.Run("returns an error for a file the tree does not contain", func(t *testing.T) {
+			t.Parallel()
+
+			f := protofrontend.New()
+			u := plugin.NewSourceUnit(
+				[]plugin.SourceRef{{Path: "absent.proto"}}, fstest.MapFS{}, plugin.DepthFull,
+				f.Syntax(), brand, diag.NewSink(), f.Name(),
+			)
+			assert.HasError(t, f.Parse(context.Background(), u),
+				"a unit whose file is missing from the tree is the load's fault, not the schema's")
+		})
+
+		t.Run("reports a syntax error under PROTO-0001", func(t *testing.T) {
+			t.Parallel()
+
+			_, sink := parsed(t, "syntax = \"proto3\";\nmessage {\n")
+			found := slices.Collect(sink.All())
+			assert.NotEmpty(t, found, "the syntax error reports")
+			assert.Equal(t, found[0].Code.String(), unparsedCode, "under the satellite's prefix and the first number")
+		})
 	})
+}
+
+// BenchmarkParse drives the parse at the canonical scale: every unit of
+// the scaled corpus through Parse into a builder of its own, the
+// partition and the comment syntax settled before the loop, so the
+// number measures protocompile's parse and the lowering, and fails
+// above parseAllocs. Only -bench checks the ceiling. One parse takes
+// about 0.41 s on four cores, and the 101 calls of an allocation check
+// would take 41 s.
+func BenchmarkParse(b *testing.B) {
+	tree := scaledProto()
+	f := protofrontend.New()
+	units, err := f.Partition(context.Background(), claimedIn(tree), nil)
+	assert.NoError(b, err, "the corpus partitions")
+	syntax := f.Syntax()
+	c := bench.Start(b).MaxAllocs(parseAllocs)
+	defer c.End()
+	for c.Loop() {
+		for _, unit := range units {
+			u := plugin.NewSourceUnit(unit, tree, plugin.DepthFull, syntax, brand, diag.NewSink(), f.Name())
+			if err = f.Parse(b.Context(), u); err != nil {
+				break
+			}
+		}
+	}
+	assert.NoError(b, err, "the corpus parses")
+}
+
+// parsed lowers one proto source and returns the unit's builder
+// and its sink, so a case reads what loaded and the findings.
+func parsed(tb assert.TB, src string, at ...string) (*plugin.GraphBuilder, *diag.Sink) {
+	tb.Helper()
+
+	filePath := fixturePath
+	if len(at) > 0 {
+		filePath = at[0]
+	}
+	tree := fstest.MapFS{filePath: {Data: []byte(src)}}
+	f := protofrontend.New()
+	sink := diag.NewSink()
+	u := plugin.NewSourceUnit(
+		[]plugin.SourceRef{{Path: filePath}}, tree, plugin.DepthFull,
+		f.Syntax(), brand, sink, f.Name(),
+	)
+	assert.NoError(tb, f.Parse(context.Background(), u), "the unit parses")
+	return u.Graph(), sink
+}
+
+// grammar lowers one schema from testdata and returns the unit's
+// builder and its sink, so a case reads a schema file on disk.
+func grammar(tb assert.TB, name string) (*plugin.GraphBuilder, *diag.Sink) {
+	tb.Helper()
+
+	src, err := os.ReadFile(filepath.Join("testdata", "grammar", name))
+	assert.NoError(tb, err, name+" is on disk")
+	return parsed(tb, string(src), "svc/"+name)
+}
+
+// onlyFile returns the single lowered file.
+func onlyFile(tb assert.TB, gb *plugin.GraphBuilder) *node.File {
+	tb.Helper()
+
+	assert.Length(tb, gb.Packages(), 1, "one package declared")
+	files := gb.Packages()[0].Files
+	assert.Length(tb, files, 1, "one file lowered")
+	return files[0]
+}
+
+// declOf returns the file's declaration of one name, whatever its
+// kind, and fails where the file declares none.
+func declOf(tb assert.TB, f *node.File, name string) symbol.Symbol {
+	tb.Helper()
+
+	for _, decl := range f.Decls {
+		switch d := decl.(type) {
+		case *node.Struct:
+			if d.Name == name {
+				return d
+			}
+		case *node.Enum:
+			if d.Name == name {
+				return d
+			}
+		case *node.Interface:
+			if d.Name == name {
+				return d
+			}
+		}
+	}
+	tb.Fatalf("the file declares no %s", name)
+	return nil
+}
+
+// formsOf returns the form of each field's type, in field order.
+func formsOf(s *node.Struct) []symbol.TypeForm {
+	out := make([]symbol.TypeForm, 0, len(s.Fields))
+	for _, f := range s.Fields {
+		out = append(out, f.Type.Form)
+	}
+	return out
+}
+
+// stampsOn returns the values stamped on one subject under one
+// key, in record order.
+func stampsOn(gb *plugin.GraphBuilder, subject symbol.Symbol, key string) []string {
+	var out []string
+	for _, r := range gb.StampRecords() {
+		if r.Subject == subject && string(r.Stamp.Key) == key {
+			if text, is := r.Stamp.Value.(string); is {
+				out = append(out, text)
+			}
+		}
+	}
+	return out
+}
+
+// codesOf returns the codes a sink collected.
+func codesOf(sink *diag.Sink) []diag.Code {
+	out := []diag.Code{}
+	for d := range sink.All() {
+		out = append(out, d.Code)
+	}
+	return out
+}
+
+// messageOf returns the message of the first finding a sink
+// collected under one code, and the empty string where none was.
+func messageOf(sink *diag.Sink, code diag.Code) string {
+	for d := range sink.All() {
+		if d.Code == code {
+			return d.Msg
+		}
+	}
+	return ""
+}
+
+// scaledProto returns the canonical corpus as proto schemas: a
+// directory per package of files of four messages, whose first field
+// names a message of the package before it, and sixteen enums of one
+// value.
+func scaledProto() fstest.MapFS {
+	tree := fstest.MapFS{}
+	for p := range benchPackages {
+		prev := (p + benchPackages - 1) % benchPackages
+		for f := range benchFiles {
+			var b strings.Builder
+			fmt.Fprintf(&b, "syntax = \"proto3\";\n\npackage p%d;\n\nimport \"p%d/f%d.proto\";\n\n", p, prev, f)
+			for d := range benchDecls {
+				if d < 4 {
+					fmt.Fprintf(&b, "message T%d_%d_%d {\n  p%d.T%d_%d_0 f0 = 1;\n  int64 f1 = 2;\n}\n\n",
+						p, f, d, prev, prev, f)
+				} else {
+					fmt.Fprintf(&b, "enum E%d_%d_%d {\n  E%d_%d_%d_ZERO = 0;\n}\n\n", p, f, d, p, f, d)
+				}
+			}
+			tree[fmt.Sprintf("p%d/f%d.proto", p, f)] = &fstest.MapFile{Data: []byte(b.String())}
+		}
+	}
+	return tree
+}
+
+// claimedIn returns a reference to every file of a tree, the claim the
+// load passes to Partition.
+func claimedIn(tree fstest.MapFS) []plugin.SourceRef {
+	refs := make([]plugin.SourceRef, 0, len(tree))
+	for path := range tree {
+		refs = append(refs, plugin.SourceRef{Path: path})
+	}
+	return refs
 }

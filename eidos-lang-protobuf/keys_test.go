@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	protobuf "go.dokimi.dev/eidos/lang/protobuf"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -22,21 +23,19 @@ const (
 	rivalKey    meta.KeyName = "protobuf.rival"
 )
 
-// every is the satellite's whole key set, which a composition
-// registers as one and a corpus fixture declares as one.
-func every() []meta.KeyName {
-	return []meta.KeyName{
-		protobuf.FieldKey, protobuf.ReservedKey, protobuf.OptionsKey,
-		protobuf.SyntaxKey, protobuf.PackageKey, protobuf.OneofKey,
-		protobuf.StreamKey, protobuf.MapEntryKey, protobuf.FeaturesKey,
-		protobuf.LabelKey, protobuf.JSONNameKey, protobuf.ExtensionsKey,
-		protobuf.ImportKey,
-	}
-}
+// allocRuns is how many calls an allocation check makes: one to warm
+// up and the hundred it counts.
+const allocRuns = 101
 
-// The keys are the boundary a consumer reads the residue through,
-// so their spellings, their value type, the kinds each admits and
-// the namespace claim are pinned.
+// keysAllocs is a registration into a fresh registry: the eleven kind
+// lists of the keys, and fifteen allocations of the registry, its
+// namespace claim and the growth of its spec list, type list and name
+// map to thirteen keys.
+const keysAllocs = 11 + 15
+
+// A consumer reads the residue through these keys. Their spellings,
+// their value type, the kinds each admits and the namespace claim are
+// pinned.
 func TestKeys(t *testing.T) {
 	t.Parallel()
 
@@ -60,6 +59,21 @@ func TestKeys(t *testing.T) {
 			r := meta.NewRegistry()
 			assert.NoError(t, protobuf.Keys(r), "the first registration succeeds")
 			assert.HasError(t, protobuf.Keys(r), "the namespace is claimed once")
+		})
+
+		t.Run("returns an error for a key whose spelling a group took", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			rival := r.For(rivalPlugin)
+			assert.NoError(t, rival.ClaimNamespace(rivalPlugin), "the rival claims its own namespace")
+			_, err := meta.Register[bool](rival, meta.KeySpec{
+				Name: rivalPlugin + ".grouped", Group: meta.GroupName(protobuf.FieldKey), Doc: "a key in a group",
+			})
+			assert.NoError(t, err, "the rival's key registers into a group that spells a protobuf key")
+			err = protobuf.Keys(r)
+			assert.HasError(t, err, "a key and a group share no spelling")
+			assert.Contains(t, err.Error(), string(protobuf.FieldKey), "the error names the key")
 		})
 
 		t.Run("registers every key under the protobuf namespace", func(t *testing.T) {
@@ -111,4 +125,57 @@ func TestKeys(t *testing.T) {
 			}, "features are stamped on every level an edition lets a schema state them")
 		})
 	})
+}
+
+// A registration allocates its kind lists and the registry's growth.
+// The ordinary run, which runs no benchmark, checks that ceiling here,
+// each call into a registry of its own.
+func TestKeysAllocs(t *testing.T) {
+	registries := freshRegistries(allocRuns)
+	next := 0
+	var err error
+	keys := func() {
+		err = protobuf.Keys(registries[next])
+		next++
+	}
+	assert.MaxAllocs(t, keys, keysAllocs, "Keys allocates the kind lists and the registry's growth")
+	assert.NoError(t, err, "Keys registers the vocabulary")
+}
+
+// BenchmarkKeys measures the registration a composition makes once,
+// each into a registry of its own.
+func BenchmarkKeys(b *testing.B) {
+	b.Run("Keys", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(keysAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			var r *meta.Registry
+			c.Excluding(func() { r = meta.NewRegistry() })
+			err = protobuf.Keys(r)
+		}
+		assert.NoError(b, err, "Keys registers the vocabulary")
+	})
+}
+
+// every is the satellite's whole key set, which a composition
+// registers as one and a corpus fixture declares as one.
+func every() []meta.KeyName {
+	return []meta.KeyName{
+		protobuf.FieldKey, protobuf.ReservedKey, protobuf.OptionsKey,
+		protobuf.SyntaxKey, protobuf.PackageKey, protobuf.OneofKey,
+		protobuf.StreamKey, protobuf.MapEntryKey, protobuf.FeaturesKey,
+		protobuf.LabelKey, protobuf.JSONNameKey, protobuf.ExtensionsKey,
+		protobuf.ImportKey,
+	}
+}
+
+// freshRegistries returns n empty registries, one for each counted
+// registration.
+func freshRegistries(n int) []*meta.Registry {
+	out := make([]*meta.Registry, 0, n)
+	for range n {
+		out = append(out, meta.NewRegistry())
+	}
+	return out
 }

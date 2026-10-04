@@ -98,6 +98,12 @@ const (
 // set. It returns the first error a registration reports and
 // registers nothing after it. Calling it twice on one registry is an
 // error, because a namespace is claimed once.
+//
+// # Allocation contract
+//
+// Keys allocates the eleven kind lists of the keys, and the registry
+// allocates its namespace claim and the growth of its lists and maps to
+// thirteen keys: 26 allocations into a fresh registry.
 func Keys(r *meta.Registry) error {
 	if err := r.ClaimNamespace(namespace); err != nil {
 		return err

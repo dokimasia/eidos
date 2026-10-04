@@ -36,11 +36,24 @@ import (
 //
 // A nil enum returns the zero info. The view is unread, because
 // every number is on the declaration.
+//
+// # Allocation contract
+//
+// EnumOf allocates three for an enum of at most eight numbered
+// variants of its own package: the list of variants, and the
+// out-of-range value, which is the enum's reference and the conversion
+// over the number. Each of these allocates more:
+//
+//   - The out-of-range number's text, for a number outside 0 to 99.
+//   - The text of a number written with white space, compacted.
+//   - The list of foreign packages, as it grows.
+//   - The map that finds a duplicate, past eight numbered variants.
 func (Rules) EnumOf(e *node.Enum, _ rules.View) rules.EnumInfo {
 	info := rules.EnumInfo{Form: rules.EnumIdentifier}
 	if e == nil {
 		return info
 	}
+	info.Variants = make([]rules.VariantText, 0, len(e.Variants))
 	seen := map[int64]string{}
 	var smallest, largest int64
 	numbered := false
