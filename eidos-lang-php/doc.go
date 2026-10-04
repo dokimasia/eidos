@@ -25,5 +25,5 @@
 //
 // # Dependency position
 //
-// The package imports nothing. Its test imports the assert module.
+// The package imports nothing.
 package php
