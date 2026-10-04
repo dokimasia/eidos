@@ -33,14 +33,14 @@ const (
 	// a new builder: the list it appends to.
 	listAllocs = 1
 	// buildAllocs is the build of the composition of 64 annotators and 8
-	// plans of 4 generators: 902 allocations for the registries, the
+	// plans of 4 generators: 897 allocations for the registries, the
 	// roster, the capability order, the compiled plans and the
 	// fingerprint. The 8 more are for the runtime's type-assertion
 	// caches. An interface assertion that misses its call site's cache
 	// builds a new cache about once in 1,024 misses, so a run of one
-	// iteration counts some of these builds: 300 fresh processes counted
-	// 0 to 6, 1.1 on average.
-	buildAllocs = 902 + 8
+	// iteration counts some of these builds: 12 fresh processes counted
+	// 0 to 4.
+	buildAllocs = 897 + 8
 )
 
 // mirrorOptions is a valid options struct for the config cases.
@@ -71,6 +71,23 @@ func (r renamed) Name() plugin.ID { return r.name }
 
 // Version returns a fixed version.
 func (renamed) Version() string { return "1" }
+
+// hiddenOptions are options that keep one field out of the canonical
+// encoding.
+type hiddenOptions struct {
+	Tag    string `opt:"tag"    doc:"a field the encoding sees"`
+	Secret string `opt:"secret" doc:"a field the encoding does not see" json:"-"`
+}
+
+// hiding is a versioned frontend whose options hide a field from the
+// canonical encoding.
+type hiding struct{ plugin.Frontend }
+
+// Version returns a fixed version.
+func (hiding) Version() string { return "1" }
+
+// Options returns options that hide a field from the encoding.
+func (hiding) Options() any { return &hiddenOptions{} }
 
 // Build is the one gate every human-typed name passes: it runs
 // every step and collects, so the composition's author reads every
@@ -431,6 +448,13 @@ func TestBuilder(t *testing.T) {
 					return valid().Frontends(renamed{frontendtest.NewScripted(), ""})
 				},
 				markers: []string{"empty name"},
+			},
+			{
+				name: "returns an error naming a frontend whose options hide a field from the encoding",
+				compose: func() *workspace.Builder {
+					return valid().Frontends(hiding{frontendtest.NewScripted()})
+				},
+				markers: []string{strconv.Quote(string(frontendtest.ScriptedID)), "hiddenOptions.Secret"},
 			},
 		}
 		for _, tt := range tests {

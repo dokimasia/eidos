@@ -124,6 +124,28 @@ func frontendFaults(fs []plugin.Frontend) []error {
 	return faults
 }
 
+// frontendOptions is the frontends' share of the configure step: each
+// frontend's options in the canonical encoding that every unit key and
+// the fingerprint fold, in load order, nil for a frontend that declares
+// none and for a nil frontend, which the frontend step reports. A
+// frontend whose options the encoding cannot see whole is a fault.
+func frontendOptions(fs []plugin.Frontend) ([][]byte, []error) {
+	var faults []error
+	out := make([][]byte, len(fs))
+	for i, f := range fs {
+		if f == nil {
+			continue
+		}
+		encoded, err := plugin.EncodeOptions(f)
+		if err != nil {
+			faults = append(faults, fmt.Errorf("workspace: frontend %q: %w", f.Name(), err))
+			continue
+		}
+		out[i] = encoded
+	}
+	return out, faults
+}
+
 // contractsOf returns the registered keys that promise completeness,
 // in registration order: what a run's audit checks.
 func contractsOf(keys *meta.Registry) []contract {

@@ -246,7 +246,3 @@ func (w *Workspace) coldState(sink *diag.Sink, format string, args ...any) {
 	at := position.Pos{File: ledger.StateDir(w.brand) + "/" + currentName}
 	sink.Infof(ColdState, at, diag.PhaseLoad, format, args...)
 }
-
-// composition returns the fingerprint a generation's header records:
-// the SHA-256 of the composition's fold.
-func (w *Workspace) composition() [sha256.Size]byte { return sha256.Sum256(w.fingerprint) }

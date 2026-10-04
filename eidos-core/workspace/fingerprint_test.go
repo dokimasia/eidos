@@ -6,12 +6,18 @@ package workspace_test
 import (
 	"bytes"
 	"crypto/sha256"
+	"io/fs"
 	"testing"
+	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/frontend/frontendtest"
+	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/workspace"
 )
@@ -19,9 +25,27 @@ import (
 // fingerprintAllocs is the copy of the fingerprint a call returns.
 const fingerprintAllocs = 1
 
+// The inputs a fingerprint case changes: another workspace name,
+// frontend version and option, the directory a centralised layout writes
+// under, the file a template tree contains, another brand, the two
+// frontends' names, and the ignored spellings.
+const (
+	otherWorkspace                = "other"
+	otherVersion                  = "2"
+	otherTag                      = "other"
+	genDir                        = "gen"
+	templateFile                  = "struct.tmpl"
+	otherBrand     output.Brand   = "other"
+	firstFrontend  plugin.ID      = "first"
+	secondFrontend plugin.ID      = "second"
+	otherIgnored   directive.Name = "legacy:"
+	ignoredA       directive.Name = "alpha:"
+	ignoredB       directive.Name = "beta:"
+)
+
 // A run reads the sealed state only where the live generation records
 // the composition's fingerprint, so the fingerprint's determinism and
-// its sensitivity to the roster are pinned here.
+// its sensitivity to each input of the composition are pinned here.
 func TestFingerprint(t *testing.T) {
 	t.Parallel()
 
@@ -133,6 +157,95 @@ func TestFingerprint(t *testing.T) {
 			other := edited(t, unchanged, &recordingCheck{name: "stubbed", reads: []string{"bindings"}})
 			assert.False(t, bytes.Equal(one, other), "the plans a check reads run cold")
 		})
+
+		t.Run("returns other bytes for another layout of a plan", func(t *testing.T) {
+			t.Parallel()
+
+			centralised := edited(t, func(p *workspace.Plan) {
+				p.Layout = layout.Config{Policy: layout.PolicyCentralised, Dir: genDir}
+			})
+			assert.False(t, bytes.Equal(edited(t, unchanged), centralised), "a change of layout runs cold")
+		})
+
+		changes := []struct {
+			name    string
+			compose func() *workspace.Builder
+		}{
+			{
+				name:    "returns other bytes for another brand",
+				compose: func() *workspace.Builder { return loading().Brand(otherBrand) },
+			},
+			{
+				name:    "returns other bytes for another workspace name",
+				compose: func() *workspace.Builder { return loading().Workspace(otherWorkspace) },
+			},
+			{
+				name: "returns other bytes for another version of a frontend",
+				compose: func() *workspace.Builder {
+					f := scriptedAs(firstFrontend)
+					f.Ver = otherVersion
+					return valid().Frontends(f, scriptedAs(secondFrontend))
+				},
+			},
+			{
+				name: "returns other bytes for other options of a frontend",
+				compose: func() *workspace.Builder {
+					f := scriptedAs(firstFrontend)
+					f.Opts = &frontendtest.ScriptedOptions{Tag: otherTag}
+					return valid().Frontends(f, scriptedAs(secondFrontend))
+				},
+			},
+			{
+				name: "returns other bytes for another selection of a frontend",
+				compose: func() *workspace.Builder {
+					f := scriptedAs(firstFrontend)
+					f.Sel = f.Sel[:1]
+					return valid().Frontends(f, scriptedAs(secondFrontend))
+				},
+			},
+			{
+				name: "returns other bytes for the frontends in another order",
+				compose: func() *workspace.Builder {
+					return valid().Frontends(scriptedAs(secondFrontend), scriptedAs(firstFrontend))
+				},
+			},
+			{
+				name:    "returns other bytes for another ignored spelling",
+				compose: func() *workspace.Builder { return loading().Ignore(otherIgnored) },
+			},
+		}
+		for _, tt := range changes {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.False(t, bytes.Equal(fingerprinted(t, loading()), fingerprinted(t, tt.compose())),
+					"the changed input runs cold")
+			})
+		}
+
+		t.Run("returns other bytes for one ignored spelling in place of another", func(t *testing.T) {
+			t.Parallel()
+
+			one := fingerprinted(t, valid().Ignore(ignoredA))
+			other := fingerprinted(t, valid().Ignore(ignoredB))
+			assert.False(t, bytes.Equal(one, other), "the spellings fold, not their count")
+		})
+
+		t.Run("returns the same bytes for the ignored spellings in any order", func(t *testing.T) {
+			t.Parallel()
+
+			forward := fingerprinted(t, valid().Ignore(ignoredA, ignoredB))
+			backward := fingerprinted(t, valid().Ignore(ignoredB, ignoredA))
+			assert.True(t, bytes.Equal(forward, backward), "the spellings fold sorted")
+		})
+
+		t.Run("returns the same bytes for another template tree, which each run folds", func(t *testing.T) {
+			t.Parallel()
+
+			one := fingerprinted(t, templatedBuilder(fstest.MapFS{templateFile: {Data: []byte("one")}}))
+			other := fingerprinted(t, templatedBuilder(fstest.MapFS{templateFile: {Data: []byte("other")}}))
+			assert.True(t, bytes.Equal(one, other), "the fingerprint leaves the trees to the run")
+		})
 	})
 }
 
@@ -163,4 +276,47 @@ func BenchmarkFingerprint(b *testing.B) {
 		}
 		assert.Length(b, got, sha256.Size, "Fingerprint returns the digest")
 	})
+}
+
+// fingerprinted returns the fingerprint of the composition a builder
+// builds, and fails the test where it does not compose.
+func fingerprinted(t *testing.T, b *workspace.Builder) []byte {
+	t.Helper()
+
+	return built(t, b).Fingerprint()
+}
+
+// loading returns the valid composition with two scripted frontends, the
+// first and then the second.
+func loading() *workspace.Builder {
+	return valid().Frontends(scriptedAs(firstFrontend), scriptedAs(secondFrontend))
+}
+
+// scriptedAs returns the scripted frontend under a name of its own.
+func scriptedAs(name plugin.ID) *frontendtest.Scripted {
+	f := frontendtest.NewScripted()
+	f.ID = name
+	return f
+}
+
+// templated returns a generator that mirrors every struct in the gen
+// family and declares tree as its template tree for every target.
+func templated(name plugin.ID, tree fs.FS) plugin.Generator {
+	p, held := eidos.NewPlugin(name).
+		Templates(tree).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.OnStruct(mirrored)).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// templatedBuilder returns a composition of one plan whose generator
+// declares tree as its template tree.
+func templatedBuilder(tree fs.FS) *workspace.Builder {
+	return workspace.New().
+		Brand(fixtureBrand).
+		Targets("fixture").
+		Plans(planTo("plan", "fixture", templated("templated", tree)))
 }

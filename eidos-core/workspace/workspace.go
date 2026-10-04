@@ -60,6 +60,10 @@ type Workspace struct {
 	memo Memo
 	// fingerprint is the composition's fold, taken at Build.
 	fingerprint []byte
+	// trees are the template trees the plans render through, which each
+	// run that opens the sealed state folds into the generation's
+	// header as it reads them.
+	trees []templateTree
 }
 
 // contract is one key's completeness promise, with the key it is

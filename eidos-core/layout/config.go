@@ -5,6 +5,8 @@ package layout
 
 import (
 	"cmp"
+	"encoding"
+	"encoding/binary"
 	"fmt"
 	"io/fs"
 	"maps"
@@ -60,6 +62,15 @@ func (r Refinement) check(plan, scope string) []error {
 	return faults
 }
 
+// appendBinary appends the refinement's policy, directory and filename
+// to b, each string behind its length, and returns the extended buffer.
+// It allocates only where b lacks the room.
+func (r Refinement) appendBinary(b []byte) []byte {
+	b = append(b, byte(r.Policy))
+	b = appendString(b, r.Dir)
+	return appendString(b, r.File)
+}
+
 // resolved is one family's routing configuration after the
 // refinements: the family's own, then the generator's, then the
 // plan's, field by field.
@@ -91,6 +102,8 @@ type Config struct {
 	// precedence over Plugins field by field.
 	Families map[Family]Refinement
 }
+
+var _ encoding.BinaryAppender = Config{}
 
 // Check validates the configuration against the families each
 // generator of a plan declares, keyed by generator, and returns one
@@ -135,6 +148,53 @@ func (c Config) Check(plan string, outputs map[plugin.ID][]plugin.Output) []erro
 		faults = append(faults, c.checkGenerator(plan, p, outputs[p])...)
 	}
 	return faults
+}
+
+// AppendBinary implements [encoding.BinaryAppender]: it appends the
+// configuration's canonical encoding to b and returns the extended
+// buffer. The encoding spells the policy, the directory and the import
+// base, then each generator refinement in generator order and each
+// family refinement in family order, every string behind its length and
+// every map behind its count. Two configurations append equal bytes
+// exactly where their fields are equal, so a composition folds the
+// encoding into its fingerprint. The error is always nil.
+//
+// # Allocation contract
+//
+// AppendBinary sorts the keys of each refinement map in a list of their
+// own. A list of up to 32 bytes stays on the stack, so the generator
+// keys allocate once beyond two generators, and the family keys once
+// beyond one family. AppendBinary also grows b where b lacks the room.
+func (c Config) AppendBinary(b []byte) ([]byte, error) {
+	b = append(b, byte(c.Policy))
+	b = appendString(b, c.Dir)
+	b = appendString(b, c.ImportBase)
+	b = binary.AppendUvarint(b, uint64(len(c.Plugins)))
+	if len(c.Plugins) > 0 {
+		generators := make([]plugin.ID, 0, len(c.Plugins))
+		for p := range c.Plugins {
+			generators = append(generators, p)
+		}
+		slices.Sort(generators)
+		for _, p := range generators {
+			b = appendString(b, string(p))
+			b = c.Plugins[p].appendBinary(b)
+		}
+	}
+	b = binary.AppendUvarint(b, uint64(len(c.Families)))
+	if len(c.Families) > 0 {
+		families := make([]Family, 0, len(c.Families))
+		for f := range c.Families {
+			families = append(families, f)
+		}
+		slices.SortFunc(families, Family.compare)
+		for _, f := range families {
+			b = appendString(b, string(f.Plugin))
+			b = appendString(b, f.Tag)
+			b = c.Families[f].appendBinary(b)
+		}
+	}
+	return b, nil
 }
 
 // checkGenerator validates the routing each declared family of one
@@ -188,4 +248,11 @@ func directory(dir string) bool {
 // filename reports whether a configured filename is one path element.
 func filename(name string) bool {
 	return fs.ValidPath(name) && name != "." && !strings.ContainsAny(name, `/\`)
+}
+
+// appendString appends s behind its length, an unsigned varint, and
+// returns the extended buffer. It allocates only where b lacks the room.
+func appendString(b []byte, s string) []byte {
+	b = binary.AppendUvarint(b, uint64(len(s)))
+	return append(b, s...)
 }

@@ -107,7 +107,9 @@ func (b *Builder) Brand(brand output.Brand) *Builder {
 // load order. Build refuses a nil frontend, a frontend without a
 // declared version, because every unit key folds the version, an
 // empty name, a name another frontend of the composition already has,
-// and a frontend named after a kernel phase. A language's frontend and
+// a frontend named after a kernel phase, and a frontend whose options
+// the canonical encoding cannot see whole, because the fingerprint and
+// every unit key fold every option. A language's frontend and
 // backend may share the language's name, as the Go satellite's both
 // report under golang. A first call allocates the list of frontends, and
 // a later call allocates only to grow it.
@@ -268,7 +270,7 @@ func (b *Builder) Memo(m Memo) *Builder {
 // Build allocates in proportion to the composition: the registries, the
 // roster, the capability order, the compiled plans and checks, the
 // workspace and the fingerprint. A composition of 64 annotators and 8
-// plans of 4 generators allocates 902 times.
+// plans of 4 generators allocates 897 times.
 func (b *Builder) Build() (*Workspace, error) {
 	faults := b.brandFaults()
 	if b.workers < 0 {
@@ -283,6 +285,8 @@ func (b *Builder) Build() (*Workspace, error) {
 		))
 	}
 	faults = append(faults, frontendFaults(b.frontends)...)
+	fronts, ferr := frontendOptions(b.frontends)
+	faults = append(faults, ferr...)
 	roster, byName, afaults := b.assemble()
 	faults = append(faults, afaults...)
 	reg, rerr := b.register(roster)
@@ -320,7 +324,8 @@ func (b *Builder) Build() (*Workspace, error) {
 		workers:     b.workers,
 		brand:       b.brand,
 		memo:        b.memo,
-		fingerprint: fingerprintOf(ann, plans, checks, options),
+		fingerprint: b.fingerprint(ann, plans, checks, options, fronts),
+		trees:       templateTrees(plans),
 	}, nil
 }
 

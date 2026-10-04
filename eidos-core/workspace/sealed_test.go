@@ -8,6 +8,7 @@ import (
 	"crypto/sha256"
 	"errors"
 	"io/fs"
+	"os"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -23,7 +24,7 @@ import (
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
-// The ledger names the cases read and break: the sealed state's
+// The cases read and break these ledger paths: the sealed state's
 // directory, its pointer to the live generation, the directory of its
 // segments, and one manifest document.
 const (
@@ -36,6 +37,13 @@ const (
 // sealedSource is the source file of the tree the sealed-state cases
 // load.
 const sealedSource = "svc/store/row.zz"
+
+// The bytes of the template file a generator's tree contains, before and
+// after an edit.
+const (
+	firstTemplate  = "{{.Name}}\n"
+	editedTemplate = "{{.Name}} edited\n"
+)
 
 // anotherBuild is the path of the executable a forged generation states
 // it was written by.
@@ -58,6 +66,45 @@ func (b blind) Read(ctx context.Context, name string) ([]byte, error) {
 		return nil, errStateRead
 	}
 	return b.Mem.Read(ctx, name)
+}
+
+// unreadable is a template tree that lists its template file and fails
+// to read it: a tree the run cannot fold whole into the generation's
+// header.
+type unreadable struct{ fstest.MapFS }
+
+// Open returns an error wrapping fs.ErrPermission for the template file,
+// and opens every other name of the map.
+func (u unreadable) Open(name string) (fs.File, error) {
+	if name == templateFile {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrPermission}
+	}
+	return u.MapFS.Open(name)
+}
+
+// ReadFile returns an error wrapping fs.ErrPermission for the template
+// file, and reads every other name of the map.
+func (u unreadable) ReadFile(name string) ([]byte, error) {
+	if name == templateFile {
+		return nil, &fs.PathError{Op: "read", Path: name, Err: fs.ErrPermission}
+	}
+	return u.MapFS.ReadFile(name)
+}
+
+// counting is a template tree that counts the reads of its files, for a
+// case that pins how often a run reads a tree. It is not safe for
+// concurrent use.
+type counting struct {
+	fstest.MapFS
+
+	reads int
+}
+
+// ReadFile adds one to the count of reads and returns the map's bytes
+// for name.
+func (c *counting) ReadFile(name string) ([]byte, error) {
+	c.reads++
+	return c.MapFS.ReadFile(name)
 }
 
 // The sealed state is what a run over a tree compares the tree with, so
@@ -178,6 +225,83 @@ func TestSealed(t *testing.T) {
 			assert.Contains(t, cold[0].Msg, "executable changed", "the executable is the cause")
 		})
 
+		t.Run("reports ColdState after an edit to a template a plan renders through", func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			place(t, dir, templateFile, firstTemplate)
+			w := built(t, sealingOf(t, ledger.NewMem(), "plan", templated("mirror", os.DirFS(dir))))
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			place(t, dir, templateFile, editedTemplate)
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			assert.True(t, report.Stats.Cold, "the run ignores the generation")
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states why")
+			assert.Contains(t, cold[0].Msg, "composition changed", "the composition is the cause")
+		})
+
+		t.Run("reads the generation over template trees the last run read", func(t *testing.T) {
+			t.Parallel()
+
+			dir := t.TempDir()
+			place(t, dir, templateFile, firstTemplate)
+			w := built(t, sealingOf(t, ledger.NewMem(), "plan", templated("mirror", os.DirFS(dir))))
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			assert.False(t, report.Stats.Cold, "the second run is warm")
+			assert.Length(t, findings(report.Sink, workspace.ColdState), 0, "and reports no ColdState")
+		})
+
+		t.Run("reads the generation over a template file that does not read", func(t *testing.T) {
+			t.Parallel()
+
+			tree := unreadable{fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}}
+			w := built(t, sealingOf(t, ledger.NewMem(), "plan", templated("mirror", tree)))
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			assert.False(t, report.Stats.Cold, "the error folds alike in both runs")
+		})
+
+		t.Run("reads the generation of the same composition with its plans in another order", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			first := sealedPlan(t, "first",
+				templated("first-mirror", fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}))
+			second := sealedPlan(t, "second",
+				templated("second-mirror", fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}))
+			sealedRun(t, built(t, sealingPlans(mem, first, second)), workspace.Input{Tree: sealedTree()})
+			report := sealedRun(t, built(t, sealingPlans(mem, second, first)), workspace.Input{Tree: sealedTree()})
+			assert.False(t, report.Stats.Cold, "the trees fold in the order of their generators")
+		})
+
+		t.Run("reports ColdState after an edit to a template of a second plan", func(t *testing.T) {
+			t.Parallel()
+
+			edited := fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}
+			first := sealedPlan(t, "first",
+				templated("first-mirror", fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}))
+			second := sealedPlan(t, "second", templated("second-mirror", edited))
+			w := built(t, sealingPlans(ledger.NewMem(), first, second))
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			edited[templateFile] = &fstest.MapFile{Data: []byte(editedTemplate)}
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states why")
+			assert.Contains(t, cold[0].Msg, "composition changed", "the composition is the cause")
+		})
+
+		t.Run("reads a template once for two plans that share its generator", func(t *testing.T) {
+			t.Parallel()
+
+			tree := &counting{MapFS: fstest.MapFS{templateFile: {Data: []byte(firstTemplate)}}}
+			shared := templated("shared", tree)
+			first, second := sealedPlan(t, "first", shared), sealedPlan(t, "second", shared)
+			w := built(t, sealingPlans(ledger.NewMem(), first, second))
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			assert.Equal(t, tree.reads, 1, "the run folds the shared tree once")
+		})
+
 		t.Run("reports ColdState at CURRENT for a CURRENT that names no generation", func(t *testing.T) {
 			t.Parallel()
 
@@ -259,18 +383,46 @@ func sealing(tb assert.TB, l ledger.Ledger, plan string) *workspace.Workspace {
 func sealingBuilder(tb assert.TB, l ledger.Ledger, plan string) *workspace.Builder {
 	tb.Helper()
 
+	return sealingOf(tb, l, plan, mirror("mirror"))
+}
+
+// sealingOf returns the builder of a composition over the scripted
+// frontend that records into a ledger and renders one plan of a name,
+// whose one generator is gen, into memory.
+func sealingOf(tb assert.TB, l ledger.Ledger, plan string, gen plugin.Generator) *workspace.Builder {
+	tb.Helper()
+
+	return sealingPlans(l, workspace.Plan{
+		Name:       plan,
+		Generators: []plugin.Generator{gen},
+		Backend:    printer(tb, "fixture"),
+	})
+}
+
+// sealingPlans returns the builder of a composition over the scripted
+// frontend that records into a ledger and renders the plans into memory.
+func sealingPlans(l ledger.Ledger, plans ...workspace.Plan) *workspace.Builder {
 	return workspace.New().
 		Brand(fixtureBrand).
 		Frontends(frontendtest.NewScripted()).
 		Annotators(stamper("noter", quiet)).
 		Targets("fixture").
-		Plans(workspace.Plan{
-			Name:       plan,
-			Generators: []plugin.Generator{mirror("mirror")},
-			Backend:    printer(tb, "fixture"),
-		}).
+		Plans(plans...).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
 		Ledger(func() (ledger.Ledger, error) { return l, nil })
+}
+
+// sealedPlan returns a plan of a name whose one generator is gen. A
+// printer named after the plan renders every unit into a file named after
+// the plan, so two plans of one composition never write to one path.
+func sealedPlan(tb assert.TB, name string, gen plugin.Generator) workspace.Plan {
+	tb.Helper()
+
+	return workspace.Plan{
+		Name:       name,
+		Generators: []plugin.Generator{gen},
+		Backend:    printerAs(tb, plugin.ID(name)+"-printer", "fixture", name+".txt"),
+	}
 }
 
 // sealedRun runs a composition and fails the test where the run is not

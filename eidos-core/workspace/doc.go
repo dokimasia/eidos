@@ -82,8 +82,9 @@
 // whose inputs are unchanged from the generation, whose region the
 // graph decodes on first read.
 //
-// Each generation records the SHA-256 of [Workspace.Fingerprint] and
-// the digest of the executable that wrote it. A generation of another
+// Each generation records the SHA-256 of [Workspace.Fingerprint] and of
+// the template trees the plans render through, as the run reads them,
+// and the digest of the executable that wrote it. A generation of another
 // composition or another executable, and one that does not open, is
 // reported under [ColdState], and the run runs cold. A run that meets a
 // damaged record or region discards what it derived before any plan
