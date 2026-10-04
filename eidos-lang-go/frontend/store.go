@@ -75,7 +75,7 @@ const (
 )
 
 // Stores returns the module cache and the standard library as the
-// stores a load hands the Go frontend, under [ModCacheStore] and
+// stores the load passes to the Go frontend, under [ModCacheStore] and
 // [GoRootStore], rooted where the go command finds them. It reads the
 // environment through getenv, which is os.Getenv outside a test, and
 // runs no tool.
@@ -92,6 +92,13 @@ const (
 //
 // Stores returns an error naming the variable to set for a root it
 // cannot resolve.
+//
+// # Allocation contract
+//
+// Stores allocates the map of stores, each root as a file system and
+// the standard library's path: five allocations where the environment
+// names both roots. A go env file allocates eight more: five to read
+// the file, its text, and the map of its variables.
 func Stores(getenv func(string) string) (map[string]fs.FS, error) {
 	env := goEnv{getenv: getenv, file: readEnvFile(getenv)}
 	modCache, err := env.modCache()

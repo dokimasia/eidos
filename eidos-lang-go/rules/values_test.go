@@ -94,6 +94,29 @@ const (
 	otherRow       = "Row{ID: 2}"
 )
 
+// The allocations of a value.
+const (
+	// structSamplesAllocs is a struct's pair: the reference to the type,
+	// and the field list of each composite.
+	structSamplesAllocs = 1 + 2
+	// sliceSamplesAllocs is a []string's pair: the reference to the slice
+	// with its list of children and its element's reference, the element
+	// list of each composite, and the hinted texts.
+	sliceSamplesAllocs = 3 + 2 + 2
+	// mapSamplesAllocs is a map[string]int's pair: the reference to the
+	// map with its list of children and its two children's references, the
+	// entry list and the key of each composite, and the hinted texts of
+	// the keys.
+	mapSamplesAllocs = 4 + 2 + 2 + 2
+	// structZeroAllocs is a struct's zero value: the reference to the
+	// type of the empty composite.
+	structZeroAllocs = 1
+	// literalAllocs is a decimal integer read against int: the scanner's
+	// file set and file, the token and spelling lists, the constant,
+	// and the decimal text.
+	literalAllocs = 6
+)
+
 // pairOf derives a reference's pair and fails unless both derived.
 func pairOf(tb assert.TB, f *fixture, ref *node.TypeRef, hint string) (emit.Value, emit.Value) {
 	tb.Helper()
@@ -110,7 +133,7 @@ func refusalOf(f *fixture, ref *node.TypeRef) rules.Refusal {
 	return sample.Refusal
 }
 
-// A generated check writes every value through these three, so each
+// A generated check writes every value through these three. Each
 // derivation, each refusal and each authored part is pinned here.
 func TestValues(t *testing.T) {
 	t.Parallel()
@@ -126,7 +149,7 @@ func TestValues(t *testing.T) {
 			wantAlternate emit.Value
 		}{
 			{
-				name:          "returns 42 and 7 for int",
+				name:          "returns the sample 42 beside the alternate 7 for int",
 				give:          intSpelling,
 				wantSample:    emit.Literal(emit.LiteralInt, derivedInt),
 				wantAlternate: emit.Literal(emit.LiteralInt, derivedAltInt),
@@ -156,7 +179,7 @@ func TestValues(t *testing.T) {
 				wantAlternate: emit.Number(emit.LiteralInt, derivedAltSmall, bits8),
 			},
 			{
-				name:          "returns true and false for bool",
+				name:          "returns the sample true beside the alternate false for bool",
 				give:          boolSpelling,
 				wantSample:    emit.Literal(emit.LiteralBool, trueText),
 				wantAlternate: emit.Literal(emit.LiteralBool, falseText),
@@ -789,6 +812,78 @@ func TestValues(t *testing.T) {
 			})
 		}
 	})
+}
+
+// A builtin's pair and zero allocate nothing, a struct's the reference
+// to its type and its composites, and a literal its reading. The
+// ordinary run, which runs no benchmark, checks those ceilings here.
+func TestValuesAllocs(t *testing.T) {
+	checkAllocs(t, valueCalls(t))
+}
+
+// BenchmarkValues measures the values a generated check derives for
+// every type it writes a value of.
+func BenchmarkValues(b *testing.B) {
+	benchCalls(b, valueCalls(b))
+}
+
+// valueCalls returns a call of each value derivation over a builtin
+// and over the fixture's Row, and of LiteralFor over a decimal integer.
+func valueCalls(tb testing.TB) []allocCall {
+	tb.Helper()
+
+	f := loaded(tb)
+	r := gorules.New()
+	scalar, row := builtin(intSpelling), ref(fxPath, rowType, symbol.KindStruct)
+	slice := composite("[]string", symbol.FormList, builtin(stringSpelling))
+	m := composite("map[string]int", symbol.FormMap, builtin(stringSpelling), builtin(intSpelling))
+	var (
+		sample rules.Sample
+		value  emit.Value
+	)
+	return []allocCall{
+		{
+			name:  "SamplesOf",
+			call:  func() { sample, _ = r.SamplesOf(scalar, "", f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, sample.Value.Text, derivedInt, "SamplesOf returns 42") },
+		},
+		{
+			name: "SamplesOf/a struct", allocs: structSamplesAllocs,
+			call:  func() { sample, _ = r.SamplesOf(row, "", f.view) },
+			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives Row") },
+		},
+		{
+			name: "SamplesOf/a slice", allocs: sliceSamplesAllocs,
+			call: func() { sample, _ = r.SamplesOf(slice, tagHint, f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "SamplesOf derives the slice")
+			},
+		},
+		{
+			name: "SamplesOf/a map", allocs: mapSamplesAllocs,
+			call: func() { sample, _ = r.SamplesOf(m, keyHint, f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "SamplesOf derives the map")
+			},
+		},
+		{
+			name:  "ZeroValue",
+			call:  func() { value, _ = r.ZeroValue(scalar, f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, value.Text, zeroText, "ZeroValue returns 0") },
+		},
+		{
+			name: "ZeroValue/a struct", allocs: structZeroAllocs,
+			call: func() { value, _ = r.ZeroValue(row, f.view) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, value.Kind, emit.ValueComposite, "ZeroValue returns the empty composite")
+			},
+		},
+		{
+			name: "LiteralFor", allocs: literalAllocs,
+			call:  func() { value, _ = r.LiteralFor(f.file, scalar, "42", f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, value.Text, "42", "LiteralFor reads 42") },
+		},
+	}
 }
 
 // stampWeight states a sample and an alternate on the fixture's

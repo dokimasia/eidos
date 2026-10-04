@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/meta"
@@ -19,9 +20,19 @@ const (
 	rivalKey    meta.KeyName = "golang.rival"
 )
 
-// One namespace claim serves both stamping roles, so the
-// registration round is pinned: every key resolves, the handles
-// come back typed, and a second claim fails.
+// allocRuns is how many calls an allocation check makes: one to warm
+// up and the hundred it counts.
+const allocRuns = 101
+
+// registerAllocs is a registration into a fresh registry: the eleven
+// kind lists of the keys, and seventeen allocations of the registry,
+// its namespace claim and the growth of its spec list, type list and
+// name map to sixteen keys.
+const registerAllocs = 11 + 17
+
+// One namespace claim serves both stamping roles. The registration is
+// pinned: every key resolves, the handles return typed, and a second
+// claim fails.
 func TestKeys(t *testing.T) {
 	t.Parallel()
 
@@ -59,6 +70,21 @@ func TestKeys(t *testing.T) {
 			assert.False(t, handles.Comparable.IsZero(), "the comparable handle names its key")
 		})
 
+		t.Run("returns an error for a key whose spelling a group took", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			rival := r.For(rivalPlugin)
+			assert.NoError(t, rival.ClaimNamespace(rivalPlugin), "the rival claims its own namespace")
+			_, err := meta.Register[bool](rival, meta.KeySpec{
+				Name: rivalPlugin + ".grouped", Group: meta.GroupName(golang.TestFileKey), Doc: "a key in a group",
+			})
+			assert.NoError(t, err, "the rival's key registers into a group that spells a golang key")
+			_, err = golang.Register(r)
+			assert.HasError(t, err, "a key and a group share no spelling")
+			assert.Contains(t, err.Error(), string(golang.TestFileKey), "the error names the key")
+		})
+
 		t.Run("claims the namespace for the handle's registrant", func(t *testing.T) {
 			t.Parallel()
 
@@ -83,4 +109,71 @@ func TestKeys(t *testing.T) {
 			assert.HasError(t, golang.Keys(r), "the namespace is claimed once")
 		})
 	})
+}
+
+// A registration allocates its kind lists and the registry's growth.
+// The ordinary run, which runs no benchmark, checks that ceiling here,
+// each call into a registry of its own.
+func TestKeysAllocs(t *testing.T) {
+	registries := freshRegistries(2 * allocRuns)
+	next := 0
+	var (
+		handles golang.Handles
+		err     error
+	)
+	keys := func() {
+		err = golang.Keys(registries[next])
+		next++
+	}
+	register := func() {
+		handles, err = golang.Register(registries[next])
+		next++
+	}
+	assert.MaxAllocs(t, keys, registerAllocs, "Keys allocates the kind lists and the registry's growth")
+	assert.NoError(t, err, "Keys registers the vocabulary")
+	assert.MaxAllocs(t, register, registerAllocs, "Register allocates the kind lists and the registry's growth")
+	assert.NoError(t, err, "Register registers the vocabulary")
+	assert.False(t, handles.Comparable.IsZero(), "Register returns the handles")
+}
+
+// BenchmarkKeys measures the registration a composition makes once,
+// each into a registry of its own.
+func BenchmarkKeys(b *testing.B) {
+	b.Run("Keys", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(registerAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			var r *meta.Registry
+			c.Excluding(func() { r = meta.NewRegistry() })
+			err = golang.Keys(r)
+		}
+		assert.NoError(b, err, "Keys registers the vocabulary")
+	})
+
+	b.Run("Register", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(registerAllocs)
+		defer c.End()
+		var (
+			handles golang.Handles
+			err     error
+		)
+		for c.Loop() {
+			var r *meta.Registry
+			c.Excluding(func() { r = meta.NewRegistry() })
+			handles, err = golang.Register(r)
+		}
+		assert.NoError(b, err, "Register registers the vocabulary")
+		assert.False(b, handles.Comparable.IsZero(), "Register returns the handles")
+	})
+}
+
+// freshRegistries returns n empty registries, one for each counted
+// registration.
+func freshRegistries(n int) []*meta.Registry {
+	out := make([]*meta.Registry, 0, n)
+	for range n {
+		out = append(out, meta.NewRegistry())
+	}
+	return out
 }

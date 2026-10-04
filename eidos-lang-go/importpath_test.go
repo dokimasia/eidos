@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 )
@@ -14,9 +15,13 @@ import (
 // The fixture module.
 const acmeModule = "example.com/acme"
 
-// A directory's import path is the one the go command gives it, so the
-// frontend that loads a package and the backend that writes into one
-// agree on the path.
+// joinedAllocs is the import path of a directory below its module's
+// root: the joined path.
+const joinedAllocs = 1
+
+// The frontend that loads a package and the backend that writes into
+// one agree on the path the go command gives a directory. Each way a
+// directory relates to its module is pinned.
 func TestImportPath(t *testing.T) {
 	t.Parallel()
 
@@ -59,4 +64,42 @@ func TestImportPath(t *testing.T) {
 			})
 		}
 	})
+}
+
+// ImportPath returns a module's root without allocating, and allocates
+// the joined path of a directory below it. The ordinary run, which
+// runs no benchmark, checks those ceilings here.
+func TestImportPathAllocs(t *testing.T) {
+	var got string
+	assert.MaxAllocs(t, func() { got = golang.ImportPath(acmeModule, "svc", "svc") }, 0,
+		"ImportPath allocates nothing for the module's root")
+	assert.Equal(t, got, acmeModule, "ImportPath returns the module path")
+	assert.MaxAllocs(t, func() { got = golang.ImportPath(acmeModule, "svc", "svc/store") }, joinedAllocs,
+		"ImportPath allocates the joined path")
+	assert.Equal(t, got, acmeModule+"/store", "ImportPath joins the path")
+}
+
+// BenchmarkImportPath measures the import path the frontend and the
+// backends derive once per directory.
+func BenchmarkImportPath(b *testing.B) {
+	paths := []struct {
+		name   string
+		dir    string
+		allocs uint64
+		want   string
+	}{
+		{name: "ImportPath", dir: "svc/store", allocs: joinedAllocs, want: acmeModule + "/store"},
+		{name: "ImportPath/the module's root", dir: "svc", want: acmeModule},
+	}
+	for _, tt := range paths {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = golang.ImportPath(acmeModule, "svc", tt.dir)
+			}
+			assert.Equal(b, got, tt.want, "ImportPath returns the import path")
+		})
+	}
 }

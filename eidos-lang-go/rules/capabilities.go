@@ -5,6 +5,7 @@ package rules
 
 import (
 	"reflect"
+	"slices"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -34,11 +35,13 @@ const (
 )
 
 // SentinelName spells the error value a base names under Go's
-// convention: Err followed by the base in PascalCase.
+// convention: Err followed by the base in PascalCase. It allocates the
+// base's case conversion and the joined name, two allocations.
 func (Rules) SentinelName(base string) string { return sentinelPrefix + naming.Pascal(base) }
 
 // IsSentinelName reports whether an identifier follows the
-// convention: the Err prefix followed by an upper-case rune.
+// convention: the Err prefix followed by an upper-case rune. It
+// allocates nothing.
 func (Rules) IsSentinelName(ident string) bool {
 	rest, prefixed := strings.CutPrefix(ident, sentinelPrefix)
 	if !prefixed || rest == "" {
@@ -49,7 +52,8 @@ func (Rules) IsSentinelName(ident string) bool {
 }
 
 // Tag reads one key of a field's struct tag, under Go's
-// key:"value" convention, and reports whether the key is present.
+// key:"value" convention, and reports whether the key is present. It
+// allocates nothing for a value without escapes.
 func (Rules) Tag(f *node.Field, key string) (string, bool) {
 	if f == nil {
 		return "", false
@@ -63,7 +67,9 @@ func (Rules) Tag(f *node.Field, key string) (string, bool) {
 // methods, no embeds and no supertypes and whose type set, where the
 // frontend stamped one, names int in every element. The bound's
 // declaration is read where the view contains one, and its spelling
-// otherwise. Every other bound is authored or nothing.
+// otherwise. Every other bound is authored or nothing. It allocates the
+// witness, one allocation, and what the type-set fact's read allocates
+// for an interface bound.
 func (r Rules) Derive(p *node.TypeParam, v rules.View) (*node.TypeRef, bool) {
 	if p == nil {
 		return nil, false
@@ -145,14 +151,21 @@ func (Rules) typeSetKey(v rules.View) (meta.Key[[]string], bool) {
 // Substitute restates a reference with type arguments bound: a
 // named reference spelling a parameter becomes the argument at the
 // parameter's position, and a structural or instantiated reference
-// restates its children and arguments. A reference naming no
-// parameter is returned as it is.
+// restates its children and arguments. It copies what it rewrites, and
+// returns a reference naming no parameter as it is, its children
+// included.
+//
+// # Allocation contract
+//
+// Substitute allocates the copy of each reference on the path to a
+// parameter it binds, with the list that holds it, and nothing for a
+// reference that names no parameter or for an empty parameter list.
 func (r Rules) Substitute(
 	ref *node.TypeRef,
 	params []*node.TypeParam,
 	args []*node.TypeRef,
 ) *node.TypeRef {
-	if ref == nil || len(params) != len(args) {
+	if ref == nil || len(params) == 0 || len(params) != len(args) {
 		return ref
 	}
 	if ref.Form == symbol.FormNamed && len(ref.Args) == 0 {
@@ -163,46 +176,61 @@ func (r Rules) Substitute(
 			}
 		}
 	}
-	if len(ref.Elems) == 0 && len(ref.Args) == 0 {
+	elems, elemsBound := r.substituteAll(ref.Elems, params, args)
+	bound, argsBound := r.substituteAll(ref.Args, params, args)
+	if !elemsBound && !argsBound {
 		return ref
 	}
 	c := *ref
-	c.Elems = r.substituteAll(ref.Elems, params, args)
-	c.Args = r.substituteAll(ref.Args, params, args)
+	c.Elems, c.Args = elems, bound
 	return &c
 }
 
-// substituteAll restates a list of references.
+// substituteAll restates a list of references, and reports whether
+// any of them names a parameter. A list naming none is returned as it
+// is, and the first restated reference copies the list.
 func (r Rules) substituteAll(
 	refs []*node.TypeRef,
 	params []*node.TypeParam,
 	args []*node.TypeRef,
-) []*node.TypeRef {
-	if len(refs) == 0 {
-		return nil
+) ([]*node.TypeRef, bool) {
+	var out []*node.TypeRef
+	for i, ref := range refs {
+		restated := r.Substitute(ref, params, args)
+		if restated != ref && out == nil {
+			out = slices.Clone(refs)
+		}
+		if out != nil {
+			out[i] = restated
+		}
 	}
-	out := make([]*node.TypeRef, 0, len(refs))
-	for _, ref := range refs {
-		out = append(out, r.Substitute(ref, params, args))
+	if out == nil {
+		return refs, false
 	}
-	return out
+	return out, true
 }
 
 // Reified reports that Go erases type arguments at run time: a
 // generic value has no reflection of its parameters a generator
-// could read.
+// could read. It allocates nothing.
 func (Rules) Reified() bool { return false }
 
 // Settable returns the fields a constructor in another package can
 // set: the exported fields, promotion through embedding included,
 // in the member walk's order, with the walk's gaps. A struct the
 // walk does not recognize returns an empty set.
+//
+// # Allocation contract
+//
+// Settable allocates the binding the member walk runs on, what the
+// walk allocates, and the list of settable fields sized to the walk's
+// members: four allocations for a struct that embeds one type.
 func (r Rules) Settable(s *node.Struct, v rules.View) rules.MemberSet {
 	set, is := rules.NewBound(r, v, nil).MembersOf(s)
 	if !is {
 		return rules.MemberSet{}
 	}
-	out := rules.MemberSet{Gaps: set.Gaps}
+	out := rules.MemberSet{Gaps: set.Gaps, Members: make([]rules.Member, 0, len(set.Members))}
 	for _, m := range set.Members {
 		f, isField := m.Symbol.(*node.Field)
 		if isField && exported(f.Name) {
@@ -223,6 +251,12 @@ func (r Rules) Settable(s *node.Struct, v rules.View) rules.MemberSet {
 // and an inline struct are unprovable, because the model has no
 // declaration for either, so each reports false. The references
 // that break comparability are returned as the problems.
+//
+// # Allocation contract
+//
+// Comparable allocates the problem list as it grows, and the restated
+// fields of an instantiated generic type. A type that compares
+// allocates nothing.
 func (r Rules) Comparable(ref *node.TypeRef, v rules.View) (bool, []*node.TypeRef) {
 	var problems []*node.TypeRef
 	ok := r.comparable(ref, v, map[symbol.Identity]bool{}, &problems)
@@ -264,7 +298,7 @@ func (r Rules) comparable(
 		return false
 	}
 	if visiting[ref.Target] {
-		return true // on the path already: the outer walk settles it
+		return true // on the path already: the outer walk decides it
 	}
 	visiting[ref.Target] = true
 	sym, held := v.Lookup(ref.Target)

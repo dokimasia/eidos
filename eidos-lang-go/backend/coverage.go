@@ -19,6 +19,10 @@ import (
 // appended error return. A field's initializer refuses where a
 // variable's renders, because Go declares no field defaults, and a
 // parameter's annotations refuse, because Go has no syntax for them.
+//
+// Coverage builds the table on every call, which the caller keeps: the
+// fact map's four allocations, and the exception map's two with its two
+// kinds' two each, ten allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{

@@ -14,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
-// The import fixture: a standard library package imported for its
+// The import cases name a standard library package imported for its
 // side effects, and a module path imported under an alias.
 const (
 	sqlPkg    = "database/sql"
@@ -22,6 +22,10 @@ const (
 	sdkAlias  = "eidos"
 	assertPkg = "go.dokimi.dev/assert"
 )
+
+// importsAllocs is a block: the sorted entries, and the block sized
+// once.
+const importsAllocs = 2
 
 // line spells one import line of the block, tab-indented.
 func line(name, path string) string {
@@ -40,9 +44,9 @@ func block(lines ...string) string {
 	return out + ")\n"
 }
 
-// The import block is pinned byte for byte: it is the one part of
-// the file the formatter reorders and does not reformat, so the
-// renderer hands it over already in gofmt's shape.
+// The import block is pinned byte for byte. The formatter reorders the
+// block and does not reformat it, so the renderer writes it in the
+// layout gofmt leaves.
 func TestImports(t *testing.T) {
 	t.Parallel()
 
@@ -99,6 +103,17 @@ func TestImports(t *testing.T) {
 				"Go refuses one package imported twice under one name")
 		})
 
+		t.Run("writes a shared line once where another name of its path sorts between", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			set.Add(storePkg)
+			set.AddNamed(storePkg, aliasName)
+			set.Bind(storePkg, storeName)
+			assert.Equal(t, backend.Imports(&set), block(line("", storePkg), line(aliasName, storePkg)),
+				"the bare line once, beside the aliased one")
+		})
+
 		t.Run("writes each path once in sorted order", func(t *testing.T) {
 			t.Parallel()
 
@@ -117,4 +132,42 @@ func TestImports(t *testing.T) {
 			assert.Equal(t, backend.Imports(&set), "", "gofmt leaves no empty block either")
 		})
 	})
+}
+
+// A block allocates its sorted entries and itself, and an empty set
+// nothing. The ordinary run, which runs no benchmark, checks those
+// ceilings here.
+func TestImportsAllocs(t *testing.T) {
+	checkAllocs(t, importsCalls())
+}
+
+// BenchmarkImports measures the block every rendered file that
+// qualifies a name writes.
+func BenchmarkImports(b *testing.B) {
+	benchCalls(b, importsCalls())
+}
+
+// importsCalls returns a call of Imports over both groups and a named
+// entry, and over an empty set.
+func importsCalls() []allocCall {
+	var full, empty render.ImportSet
+	full.Add(contextPkg)
+	full.Add(assertPkg)
+	full.AddNamed(sdkPkg, sdkAlias)
+	var out string
+	return []allocCall{
+		{
+			name: "Imports", allocs: importsAllocs,
+			call: func() { out = backend.Imports(&full) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, out, block(line("", contextPkg), "\n", line("", assertPkg), line(sdkAlias, sdkPkg)),
+					"Imports writes both groups")
+			},
+		},
+		{
+			name:  "Imports/an empty set",
+			call:  func() { out = backend.Imports(&empty) },
+			check: func(tb assert.TB) { assert.Equal(tb, out, "", "Imports writes no block") },
+		},
+	}
 }

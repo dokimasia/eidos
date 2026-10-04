@@ -41,6 +41,14 @@ var typeKinds = []symbol.Kind{
 // package the view does not contain to a stand-in naming the import
 // path. A spelling that is not a Go name, bare or qualified, refuses:
 // []Row names no declaration, and probing Row would name another type.
+//
+// # Allocation contract
+//
+// A resolution through the probe allocates the scope of the subject's
+// file and the list of candidates: four allocations for a file without
+// a dot import. A member resolution allocates the binding the member
+// walk runs on and what the walk allocates. A stand-in and a refusal
+// allocate themselves.
 func (r Rules) Resolve(
 	scope rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
 ) (symbol.Symbol, error) {

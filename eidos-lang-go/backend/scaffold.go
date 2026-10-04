@@ -32,6 +32,12 @@ var grammar = scaffold.Grammar{
 // each spelling records into the set. A statement or a value Go has
 // no form for returns an error, and the render skips that
 // declaration and keeps the file.
+//
+// Scaffold allocates what [scaffold.Scaffold] allocates: the buffer a
+// statement writes into, one allocation for a statement of up to 64
+// bytes, and the spelling of each value it contains. An assignment of
+// more than one name allocates the comma-joined names, and a guard
+// allocates its nil comparison.
 func Scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
 	return scaffold.Scaffold(grammar, s, target{set: set})
 }

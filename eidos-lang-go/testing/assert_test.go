@@ -14,37 +14,33 @@ import (
 
 // Vet is the Go-only assertion: what it passes and what it reports
 // are contract for every generator the harness checks.
-func TestAssertVets(t *testing.T) {
+func TestAssert(t *testing.T) {
 	t.Parallel()
 
-	t.Run("refuses a fixture carrying no output", func(t *testing.T) {
+	t.Run("AssertVets", func(t *testing.T) {
 		t.Parallel()
 
-		var r recorder
-		gotesting.AssertVets(&r, adapter(), toolchain.Generated{})
-		assert.True(t, r.says("carries no generated output"),
-			"a vet over nothing passes while proving nothing")
-	})
-
-	t.Run("runs go vet over the generated output", func(t *testing.T) {
-		t.Parallel()
-
-		var probe recorder
-		if !toolchain.Require(&probe, adapter()) {
-			t.Skip("the Go toolchain is absent, so vet is skipped here and required in CI: " +
-				probe.skipped)
-		}
-
-		t.Run("passes output vet accepts", func(t *testing.T) {
+		t.Run("fails a fixture carrying no output", func(t *testing.T) {
 			t.Parallel()
+
+			var r recorder
+			gotesting.AssertVets(&r, adapter(), toolchain.Generated{})
+			assert.True(t, r.says("carries no generated output"),
+				"a vet over nothing passes while proving nothing")
+		})
+
+		t.Run("passes output that vets clean", func(t *testing.T) {
+			t.Parallel()
+			requireGo(t)
 
 			var r recorder
 			gotesting.AssertVets(&r, adapter(), healthy())
 			assert.False(t, r.failed(), "the healthy output vets clean")
 		})
 
-		t.Run("reports what compiles and is still wrong", func(t *testing.T) {
+		t.Run("fails compiling output that go vet reports on", func(t *testing.T) {
 			t.Parallel()
+			requireGo(t)
 
 			var r recorder
 			gotesting.AssertVets(&r, adapter(), only(rowFile,

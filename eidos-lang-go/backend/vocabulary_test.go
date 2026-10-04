@@ -5,6 +5,7 @@ package backend_test
 
 import (
 	"testing"
+	"text/template"
 
 	"go.dokimi.dev/assert"
 
@@ -15,8 +16,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The spelling fixture: the packages a reference names, the names
-// their imports bind, and the declarations the references name.
+// The spelling cases name packages, the names their imports bind, and
+// the declarations the references name.
 const (
 	// storePkg is a package whose import binds storeName, and
 	// legacyPkg a second package whose last element is storeName too.
@@ -42,53 +43,49 @@ const (
 	protoLang symbol.Lang = "protobuf"
 )
 
-// ref returns an unresolved reference spelled s.
-func ref(s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s} }
+// The declarations and spellings the allocation cases name.
+const (
+	intType           = "int"
+	comparableBound   = "comparable"
+	contextName       = "ctx"
+	contextType       = "Context"
+	idName            = "id"
+	readerName        = "Reader"
+	rowDoc            = "Row is one record."
+	generateDirective = "go:generate"
+)
 
-// imported returns a reference to name in pkg, spelled through the
-// qualifier the source file bound.
-func imported(qualifier, pkg, name string) *emit.TypeRef {
-	return &emit.TypeRef{Spelling: qualifier + "." + name, Package: pkg}
-}
+// generateArgs are the arguments of the generate directive the cases
+// write.
+var generateArgs = []string{"stringer", "-type=Colour"}
 
-// aliased is the reference to rowName a source file spelled through
-// aliasName.
-func aliased() *emit.TypeRef { return imported(aliasName, storePkg, rowName) }
-
-// composite returns a structural reference over children.
-func composite(form symbol.TypeForm, spelling string, children ...*emit.TypeRef) *emit.TypeRef {
-	return &emit.TypeRef{Form: form, Spelling: spelling, Elems: children}
-}
-
-// fnType returns a function type over its parameters then its
-// results, the results beginning at split.
-func fnType(spelling string, split int, children ...*emit.TypeRef) *emit.TypeRef {
-	f := composite(symbol.FormFunc, spelling, children...)
-	f.Split = split
-	return f
-}
-
-// sizedArray returns an array of four aliased rows.
-func sizedArray() *emit.TypeRef {
-	array := composite(symbol.FormArray, "[4]st.Row", aliased())
-	array.Length = 4
-	return array
-}
-
-// speller returns a speller over a fresh set, and the set.
-func speller() (backend.Speller, *render.ImportSet) {
-	set := &render.ImportSet{}
-	return backend.NewSpeller(set), set
-}
-
-// spelled spells one reference and asserts it spells.
-func spelled(tb assert.TB, s backend.Speller, t *emit.TypeRef) string {
-	tb.Helper()
-
-	out, err := s.Spell(t)
-	assert.NoError(tb, err, "the reference spells")
-	return out
-}
+// The allocations of the vocabulary.
+const (
+	// qualifiedAllocs is a qualified name: the name behind its bound
+	// qualifier.
+	qualifiedAllocs = 1
+	// typeParamsAllocs is two parameters: each parameter's spelling, the
+	// joined list, and its brackets.
+	typeParamsAllocs = 2 + 1 + 1
+	// paramsAllocs is a context and an int: the qualified type, each
+	// parameter's spelling, and the joined list.
+	paramsAllocs = 1 + 2 + 1
+	// partsAllocs is three ints: each parameter's spelling, the list of
+	// parts, which Go places on the heap past two, and the joined list.
+	partsAllocs = 3 + 1 + 1
+	// resultsAllocs is a qualified row and an error: the qualified type,
+	// the joined list, and its parentheses.
+	resultsAllocs = 1 + 1 + 1
+	// varTypeAllocs is a variable's type behind its space.
+	varTypeAllocs = 1
+	// funcsAllocs is the vocabulary of a file: the map of twelve helpers,
+	// four allocations, and the speller's six bound helpers.
+	funcsAllocs = 4 + 6
+	// docsAllocs is a docblock, sized once.
+	docsAllocs = 1
+	// directivesAllocs is the directive lines, sized once.
+	directivesAllocs = 1
+)
 
 // The vocabulary is what every kind template spells through, so
 // each helper's output is pinned byte for byte, and every import a
@@ -637,7 +634,7 @@ func TestVocabulary(t *testing.T) {
 			return got
 		}
 
-		t.Run("writes a declared receiver's name and type", func(t *testing.T) {
+		t.Run("writes a declared receiver's name before its type", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, receiver(t, &emit.Method{Receiver: &emit.Param{Name: "s", Type: ref("*Store")}}),
@@ -802,6 +799,27 @@ func TestVocabulary(t *testing.T) {
 				give:    &emit.Alias{Name: "ID", Visibility: symbol.VisibilityProtected},
 				wantErr: true,
 			},
+			{
+				name:    "returns an error for an async method",
+				give:    &emit.Method{Name: loadName, Receives: ref(rowName), Async: true},
+				wantErr: true,
+			},
+			{
+				name:    "returns an error for an abstract method",
+				give:    &emit.Method{Name: loadName, Receives: ref(rowName), Abstract: true},
+				wantErr: true,
+			},
+			{
+				name:    "returns an error for a method's default body",
+				give:    &emit.Method{Name: loadName, Receives: ref(rowName), HasDefault: true},
+				wantErr: true,
+			},
+			{
+				name:    "returns an error for a type-level field",
+				give:    &emit.Field{Name: idName, Level: symbol.LevelType},
+				wantErr: true,
+			},
+			{name: "writes nothing for a sum", give: &emit.Sum{Name: shapeName}},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -860,6 +878,25 @@ func TestVocabulary(t *testing.T) {
 
 			assert.Equal(t, backend.Directives(symbol.Annotations{{Name: "go:fix"}}, "\t"), "\t//go:fix\n",
 				"at the member's depth")
+		})
+
+		t.Run("writes every argument space-joined behind the name", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, backend.Directives(symbol.Annotations{{Name: generateDirective, Args: generateArgs}}),
+				"//go:generate stringer -type=Colour\n", "two arguments in order")
+		})
+	})
+
+	t.Run("NewSpeller", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a speller that binds into the given set", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			spelled(t, backend.NewSpeller(&set), imported(timePkg, timePkg, "Duration"))
+			assert.Equal(t, set.Paths(), []string{timePkg}, "the import is the set's")
 		})
 	})
 
@@ -923,4 +960,148 @@ func TestVocabulary(t *testing.T) {
 			})
 		}
 	})
+}
+
+// A guard and a bare name allocate nothing, and a spelling allocates
+// the text it writes. The ordinary run, which runs no benchmark,
+// checks those ceilings here.
+func TestVocabularyAllocs(t *testing.T) {
+	checkAllocs(t, vocabularyCalls())
+}
+
+// BenchmarkVocabulary measures each helper a kind template calls per
+// declaration, and the vocabulary the render binds per file.
+func BenchmarkVocabulary(b *testing.B) {
+	benchCalls(b, vocabularyCalls())
+}
+
+// vocabularyCalls returns a call of every function and method of
+// vocabulary.go.
+func vocabularyCalls() []allocCall {
+	s, set := speller()
+	bare, qualified := ref(intType), imported(storeName, storePkg, rowName)
+	doc := []string{rowDoc}
+	params := []*emit.TypeParam{{Name: keyParam, Bounds: []*emit.TypeRef{ref(comparableBound)}}, {Name: valueParam}}
+	args := []*emit.Param{
+		{Name: contextName, Type: imported(contextPkg, contextPkg, contextType)}, {Name: idName, Type: ref(intType)},
+	}
+	three := []*emit.Param{{Name: idName, Type: bare}, {Name: countName, Type: bare}, {Name: contextName, Type: bare}}
+	results := []*emit.Return{{Type: qualified}, {Type: ref(errorType)}}
+	method := &emit.Method{Name: getName, Receives: ref(rowName)}
+	variable := &emit.Variable{Name: countName, Type: ref(intType)}
+	row := &emit.Struct{Name: rowName}
+	signature := &emit.Method{Name: getName, Abstract: true}
+	embed := &emit.Embed{Ref: ref(readerName)}
+	annotations := symbol.Annotations{{Name: generateDirective, Args: generateArgs}}
+	pkg := symbol.Identity{Package: storePkg, Name: storeName}
+	var (
+		spellerOut backend.Speller
+		out        string
+		err        error
+		funcs      template.FuncMap
+	)
+	spells := func(want string) func(tb assert.TB) {
+		return func(tb assert.TB) {
+			assert.NoError(tb, err, "the helper spells")
+			assert.Equal(tb, out, want, "the helper writes the Go spelling")
+		}
+	}
+	return []allocCall{
+		{
+			name: "NewSpeller", call: func() { spellerOut = backend.NewSpeller(set) },
+			check: func(tb assert.TB) { assert.Equal(tb, spellerOut, s, "NewSpeller returns the set's speller") },
+		},
+		{name: "Spell", call: func() { out, err = s.Spell(bare) }, check: spells(intType)},
+		{
+			name: "Spell/a qualified name", allocs: qualifiedAllocs,
+			call: func() { out, err = s.Spell(qualified) }, check: spells(qualifiedRow),
+		},
+		{
+			name: "TypeParams", allocs: typeParamsAllocs,
+			call: func() { out, err = s.TypeParams(params) }, check: spells("[K comparable, V any]"),
+		},
+		{
+			name: "Params", allocs: paramsAllocs,
+			call: func() { out, err = s.Params(args) }, check: spells("ctx context.Context, id int"),
+		},
+		{
+			name: "Params/three parameters", allocs: partsAllocs,
+			call: func() { out, err = s.Params(three) }, check: spells("id int, count int, ctx int"),
+		},
+		{
+			name: "Results", allocs: resultsAllocs,
+			call: func() { out, err = s.Results(results) }, check: spells(" (store.Row, error)"),
+		},
+		{name: "Receiver", call: func() { out, err = s.Receiver(method) }, check: spells(rowName)},
+		{
+			name: "VarType", allocs: varTypeAllocs,
+			call: func() { out, err = s.VarType(variable) }, check: spells(" int"),
+		},
+		{
+			name: "Funcs", allocs: funcsAllocs,
+			call:  func() { funcs = backend.Funcs(set) },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 12, "Funcs returns the twelve helpers") },
+		},
+		{
+			name: "Docs", allocs: docsAllocs,
+			call: func() { out = backend.Docs(doc) }, check: spells("// " + rowDoc + "\n"),
+		},
+		{name: "Package", call: func() { out, err = backend.Package(pkg) }, check: spells(storeName)},
+		{name: "Guard", call: func() { out, err = backend.Guard(row) }, check: spells("")},
+		{name: "SigGuard", call: func() { out, err = backend.SigGuard(signature) }, check: spells("")},
+		{name: "EmbedGuard", call: func() { out, err = backend.EmbedGuard(embed) }, check: spells("")},
+		{
+			name: "Directives", allocs: directivesAllocs,
+			call:  func() { out = backend.Directives(annotations) },
+			check: spells("//go:generate stringer -type=Colour\n"),
+		},
+	}
+}
+
+// ref returns an unresolved reference spelled s.
+func ref(s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s} }
+
+// imported returns a reference to name in pkg, spelled through the
+// qualifier the source file bound.
+func imported(qualifier, pkg, name string) *emit.TypeRef {
+	return &emit.TypeRef{Spelling: qualifier + "." + name, Package: pkg}
+}
+
+// aliased is the reference to rowName a source file spelled through
+// aliasName.
+func aliased() *emit.TypeRef { return imported(aliasName, storePkg, rowName) }
+
+// composite returns a structural reference over children.
+func composite(form symbol.TypeForm, spelling string, children ...*emit.TypeRef) *emit.TypeRef {
+	return &emit.TypeRef{Form: form, Spelling: spelling, Elems: children}
+}
+
+// fnType returns a function type over its parameters then its
+// results, the results beginning at split.
+func fnType(spelling string, split int, children ...*emit.TypeRef) *emit.TypeRef {
+	f := composite(symbol.FormFunc, spelling, children...)
+	f.Split = split
+	return f
+}
+
+// sizedArray returns an array of four aliased rows.
+func sizedArray() *emit.TypeRef {
+	array := composite(symbol.FormArray, "[4]st.Row", aliased())
+	array.Length = 4
+	return array
+}
+
+// speller returns a speller over a fresh set, and the set.
+func speller() (backend.Speller, *render.ImportSet) {
+	set := &render.ImportSet{}
+	return backend.NewSpeller(set), set
+}
+
+// spelled spells one reference and asserts it spells.
+func spelled(tb assert.TB, s backend.Speller, t *emit.TypeRef) string {
+	tb.Helper()
+
+	out, err := s.Spell(t)
+	assert.NoError(tb, err, "the reference spells")
+	return out
 }

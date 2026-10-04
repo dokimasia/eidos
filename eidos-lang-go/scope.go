@@ -36,7 +36,8 @@ const qualifierMark = "."
 const shapeMarks = "[({ \t~|"
 
 // shapeKeywords are the composite keywords a stripped spelling can
-// be, each naming a shape no single declaration declares.
+// be, each naming a composite type that no single declaration
+// declares.
 var shapeKeywords = []string{"map", "func", "chan", "struct", "interface"}
 
 // Scope is what one Go file's imports bind: the import path each
@@ -47,7 +48,14 @@ var shapeKeywords = []string{"map", "func", "chan", "struct", "interface"}
 // the frontend's reference lowering resolve a spelling through it. The
 // zero Scope binds nothing.
 //
+// # Concurrency
+//
 // A Scope is immutable after [NewScope] and safe for concurrent use.
+//
+// # Allocation contract
+//
+// [Scope.Import] allocates nothing, and [Scope.Candidates] allocates
+// the list it returns.
 type Scope struct {
 	named map[string]string
 	dots  []string
@@ -61,8 +69,15 @@ type Scope struct {
 // file's scope, and a blank import binds nothing. A nil record is
 // skipped. Two imports that bind one qualifier leave the later one
 // bound, a file Go refuses to compile.
+//
+// # Allocation contract
+//
+// NewScope sizes the map of qualifiers and the list of unaliased
+// imports to the file's imports, and grows the list of dot imports as
+// it meets them. A file without a dot import costs the map, two
+// allocations up to eight imports, and the list, one.
 func NewScope(imports []*node.Import) Scope {
-	s := Scope{named: map[string]string{}}
+	s := Scope{named: make(map[string]string, len(imports)), all: make([]string, 0, len(imports))}
 	for _, imp := range imports {
 		if imp == nil {
 			continue
@@ -84,7 +99,7 @@ func NewScope(imports []*node.Import) Scope {
 }
 
 // Import returns the import path a qualifier binds, and false for a
-// qualifier no import binds.
+// qualifier no import binds. It allocates nothing.
 func (s Scope) Import(qualifier string) (string, bool) {
 	path, bound := s.named[qualifier]
 	return path, bound
@@ -106,6 +121,11 @@ func (s Scope) Import(qualifier string) (string, bool) {
 // each dot-imported package in source order. A predeclared type, a
 // composite such as a map, a func, a chan or an inline body, and a
 // constraint term return no candidate.
+//
+// # Allocation contract
+//
+// Candidates allocates the list it returns, sized once, one allocation,
+// and nothing for a spelling without a candidate.
 func (s Scope) Candidates(pkg, spelling string) []symbol.Identity {
 	core := stripped(spelling)
 	if core == "" || Predeclared(core) {
@@ -115,17 +135,23 @@ func (s Scope) Candidates(pkg, spelling string) []symbol.Identity {
 		if path, bound := s.named[qualifier]; bound {
 			return []symbol.Identity{{Lang: Lang, Package: path, Name: name}}
 		}
-		var out []symbol.Identity
+		if len(s.all) == 0 {
+			return nil
+		}
+		out := make([]symbol.Identity, 0, len(s.all))
 		for _, path := range s.all {
 			out = append(out, symbol.Identity{Lang: Lang, Package: path, Name: name})
 		}
 		return out
 	}
-	out := []symbol.Identity{{Lang: Lang, Package: pkg, Name: core}}
+	dots := 0
 	if exported(core) {
-		for _, path := range s.dots {
-			out = append(out, symbol.Identity{Lang: Lang, Package: path, Name: core})
-		}
+		dots = len(s.dots)
+	}
+	out := make([]symbol.Identity, 0, 1+dots)
+	out = append(out, symbol.Identity{Lang: Lang, Package: pkg, Name: core})
+	for _, path := range s.dots[:dots] {
+		out = append(out, symbol.Identity{Lang: Lang, Package: path, Name: core})
 	}
 	return out
 }

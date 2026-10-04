@@ -40,6 +40,15 @@ const iotaName = "iota"
 // consume their fact, so a second settle changes nothing.
 // Everything else passes through unchanged, a sum included, which
 // the backend declares refused.
+//
+// # Allocation contract
+//
+// A declaration that passes through allocates nothing. An enum
+// allocates the list of outputs, the defined type and its target, and
+// per variant the constant, its type and its joined name's two. A
+// callable that announces failures allocates the error return, its
+// type and the grown list of returns, and a struct allocates the
+// receiver of each method it fills. A refusal allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	switch d := s.(type) {
 	case *emit.Enum:

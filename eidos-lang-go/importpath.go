@@ -24,6 +24,8 @@ const TestSuffix = "_test"
 // for a module path that is empty, which is how a tree without go.mod
 // loads. root is the workspace-relative directory the module is
 // declared in, "." for the tree's root, and dir is root or below it.
+// It allocates the joined path of a directory below the root, one
+// allocation, and nothing otherwise.
 func ImportPath(module, root, dir string) string {
 	switch {
 	case module == "":

@@ -13,28 +13,93 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// coverageAllocs is the coverage table: the fact map's four, and the
+// exception map's two with its two kinds' two each.
+const coverageAllocs = 4 + 2 + 2*2
+
 // The suite checks the declaration total and the rendered findings
-// against it, and this test pins the cells that distinguish Go.
+// against the table, and these cases pin the cells that distinguish Go.
 func TestCoverage(t *testing.T) {
 	t.Parallel()
 
-	c := backend.Coverage()
-	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactFinal), render.Holds,
-		"final holds: nothing subclasses")
-	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactImplements), render.Holds,
-		"implements holds: satisfaction is structural")
-	assert.Equal(t, c.Of(symbol.KindField, symbol.FactTag), render.Renders,
-		"the field tag is Go's own idiom")
-	assert.Equal(t, c.Of(symbol.KindMethod, symbol.FactThrows), render.Renders,
-		"an announced failure lowers into the error return")
-	assert.Equal(t, c.Of(symbol.KindInterface, symbol.FactSealed), render.Refuses,
-		"nothing seals")
-	assert.Equal(t, c.Of(symbol.KindField, symbol.FactValue), render.Refuses,
-		"a field's initializer refuses")
-	assert.Equal(t, c.Of(symbol.KindVariable, symbol.FactValue), render.Renders,
-		"where a variable's renders")
-	assert.Equal(t, c.Of(symbol.KindParam, symbol.FactAnnotations), render.Refuses,
-		"a parameter's annotations refuse, because Go has no syntax for them")
-	assert.Equal(t, c.Of(symbol.KindFunction, symbol.FactAnnotations), render.Renders,
-		"where a declaration's render as directive lines")
+	t.Run("Coverage", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			kind symbol.Kind
+			fact symbol.Fact
+			want render.Verdict
+		}{
+			{
+				name: "returns Holds for a struct's final",
+				kind: symbol.KindStruct, fact: symbol.FactFinal, want: render.Holds,
+			},
+			{
+				name: "returns Holds for a struct's implements",
+				kind: symbol.KindStruct, fact: symbol.FactImplements, want: render.Holds,
+			},
+			{
+				name: "returns Renders for a field's tag",
+				kind: symbol.KindField, fact: symbol.FactTag, want: render.Renders,
+			},
+			{
+				name: "returns Renders for a method's throws",
+				kind: symbol.KindMethod, fact: symbol.FactThrows, want: render.Renders,
+			},
+			{
+				name: "returns Refuses for a sealed interface",
+				kind: symbol.KindInterface, fact: symbol.FactSealed, want: render.Refuses,
+			},
+			{
+				name: "returns Refuses for a field's initializer",
+				kind: symbol.KindField, fact: symbol.FactValue, want: render.Refuses,
+			},
+			{
+				name: "returns Renders for a variable's initializer",
+				kind: symbol.KindVariable, fact: symbol.FactValue, want: render.Renders,
+			},
+			{
+				name: "returns Refuses for a parameter's annotations",
+				kind: symbol.KindParam, fact: symbol.FactAnnotations, want: render.Refuses,
+			},
+			{
+				name: "returns Renders for a function's annotations",
+				kind: symbol.KindFunction, fact: symbol.FactAnnotations, want: render.Renders,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want, "the verdict")
+			})
+		}
+	})
+}
+
+// The table allocates its maps. The ordinary run, which runs no
+// benchmark, checks that ceiling here.
+func TestCoverageAllocs(t *testing.T) {
+	checkAllocs(t, coverageCalls())
+}
+
+// BenchmarkCoverage measures the table the backend reads once per
+// build.
+func BenchmarkCoverage(b *testing.B) {
+	benchCalls(b, coverageCalls())
+}
+
+// coverageCalls returns a call of Coverage.
+func coverageCalls() []allocCall {
+	var c render.Coverage
+	return []allocCall{
+		{
+			name: "Coverage", allocs: coverageAllocs,
+			call: func() { c = backend.Coverage() },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, c.Of(symbol.KindStruct, symbol.FactFinal), render.Holds, "Coverage returns Go's table")
+			},
+		},
+	}
 }

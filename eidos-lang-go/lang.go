@@ -42,7 +42,8 @@ const FrontendVersion = "0.8.0"
 // frontend strips comments with them, and the output contract
 // writes the generated-file frame through them. Directives is true,
 // because the go:build family is Go's own convention, the open
-// tool:name shape gofmt preserves.
+// tool:name form gofmt preserves. It allocates the two lists, so no
+// caller shares another's.
 func Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{
 		Line:       []string{"//"},

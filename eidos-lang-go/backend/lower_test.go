@@ -8,14 +8,15 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/go/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The lowering's pins: the type an enum lowers over, and the return
-// an announced failure lowers into with the names it takes.
+// The cases pin the type an enum lowers over, and the return an
+// announced failure lowers into with the names it takes.
 const (
 	underlyingType = "int"
 	errorType      = "error"
@@ -23,9 +24,8 @@ const (
 	nextErrorName  = "err1"
 )
 
-// The lowering's fixture: an enum and its variants, a generic host
-// and its methods, and the callables and failure types a throw
-// states.
+// The cases lower an enum and its variants, a generic host and its
+// methods, and the callables and failure types a throw states.
 const (
 	phaseName     = "phase"
 	openName      = "open"
@@ -57,53 +57,21 @@ const (
 	phaseClosed = "phaseClosed"
 )
 
-// enumOf returns an enum whose variants state the given values, in
-// order.
-func enumOf(values ...string) *emit.Enum {
-	e := &emit.Enum{Name: phaseName}
-	for i, v := range values {
-		e.Variants.Append(&emit.EnumVariant{Name: openName + strconv.Itoa(i), Value: v})
-	}
-	return e
-}
-
-// constantValues lowers an enum and returns its constants' values in
-// variant order.
-func constantValues(tb assert.TB, e *emit.Enum) []string {
-	tb.Helper()
-
-	out, err := backend.Lower(e)
-	assert.NoError(tb, err, "the enum lowers")
-	var got []string
-	for _, d := range out[1:] {
-		c, isConstant := d.(*emit.Constant)
-		assert.True(tb, isConstant, "a variant lowers to a constant")
-		if isConstant {
-			got = append(got, c.Value)
-		}
-	}
-	return got
-}
-
-// thrower returns a function announcing the given failures beside
-// the given results.
-func thrower(returns []*emit.Return, failures ...string) *emit.Function {
-	f := &emit.Function{Name: fetchName, Returns: returns}
-	for _, name := range failures {
-		f.Throws = append(f.Throws, &emit.TypeRef{Spelling: name})
-	}
-	return f
-}
-
-// lowered lowers a declaration the lowering rewrites in place.
-func lowered(tb assert.TB, s symbol.Symbol) symbol.Symbol {
-	tb.Helper()
-
-	out, err := backend.Lower(s)
-	assert.NoError(tb, err, "the declaration lowers")
-	assert.Length(tb, out, 0, "in place: a nil list keeps the declaration")
-	return s
-}
+// The allocations of a lowering.
+const (
+	// enumLowerAllocs is an enum of three variants without values: the
+	// list of outputs, the defined type and its target, and per variant
+	// the constant, its type, and its joined name's two.
+	enumLowerAllocs = 1 + 2 + 3*4
+	// throwsAllocs is a function announcing one failure: the error
+	// return, its type, and the grown list of returns.
+	throwsAllocs = 1 + 1 + 1
+	// receiveAllocs is a struct of two methods: each method's receiver.
+	receiveAllocs = 2
+	// allocRuns is the calls assert.MaxAllocs makes: one to warm up and
+	// one hundred it counts.
+	allocRuns = 101
+)
 
 // The lowering is Go's declared idiom for the constructs it states
 // in other declarations, so each reshaping is pinned.
@@ -200,6 +168,22 @@ func TestLower(t *testing.T) {
 			_, err := backend.Lower(e)
 			assert.HasError(t, err, "a constant group has no members")
 		})
+
+		overloads := []struct {
+			name string
+			give symbol.Symbol
+		}{
+			{name: "returns an error for a struct declaring one method twice", give: hostOf(getName, getName)},
+			{name: "returns an error for an interface declaring one method twice", give: interfaceOf(getName, getName)},
+		}
+		for _, tt := range overloads {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := backend.Lower(tt.give)
+				assert.HasError(t, err, "Go overloads nothing")
+			})
+		}
 
 		t.Run("restates a generic struct's parameters on each method's receiver", func(t *testing.T) {
 			t.Parallel()
@@ -321,4 +305,157 @@ func TestLower(t *testing.T) {
 			})
 		}
 	})
+}
+
+// A declaration Go states as it is allocates nothing, and a reshaping
+// allocates the declarations and the references it adds. A lowering in
+// place consumes its fact, so each counted call lowers a fresh
+// declaration. The ordinary run, which runs no benchmark, checks those
+// ceilings here.
+func TestLowerAllocs(t *testing.T) {
+	checkAllocs(t, lowerCalls())
+
+	fns, next := make([]*emit.Function, allocRuns), 0
+	for i := range fns {
+		fns[i] = thrower(nil, overflowType)
+	}
+	assert.MaxAllocs(t, func() {
+		_, _ = backend.Lower(fns[next])
+		next++
+	}, throwsAllocs, "Lower appends the error return within its ceiling")
+
+	hosts, next := make([]*emit.Struct, allocRuns), 0
+	for i := range hosts {
+		hosts[i] = hostOf(getName, putName)
+	}
+	assert.MaxAllocs(t, func() {
+		_, _ = backend.Lower(hosts[next])
+		next++
+	}, receiveAllocs, "Lower fills the receivers within its ceiling")
+}
+
+// BenchmarkLower measures the lowering the settle runs over every
+// declaration, a fresh declaration built outside the count for each
+// lowering in place.
+func BenchmarkLower(b *testing.B) {
+	benchCalls(b, lowerCalls())
+
+	b.Run("Lower/a function that throws", func(b *testing.B) {
+		f := thrower(nil, overflowType)
+		c := bench.Start(b).MaxAllocs(throwsAllocs)
+		defer c.End()
+		for c.Loop() {
+			_, _ = backend.Lower(f)
+			c.Excluding(func() { f = thrower(nil, overflowType) })
+		}
+		lowered(b, f)
+		assert.Length(b, f.Returns, 1, "Lower appends the error return")
+	})
+
+	b.Run("Lower/a struct", func(b *testing.B) {
+		host := hostOf(getName, putName)
+		c := bench.Start(b).MaxAllocs(receiveAllocs)
+		defer c.End()
+		for c.Loop() {
+			_, _ = backend.Lower(host)
+			c.Excluding(func() { host = hostOf(getName, putName) })
+		}
+		lowered(b, host)
+		assert.NotNil(b, host.Methods.Items()[0].Receives, "Lower fills the receiver")
+	})
+}
+
+// lowerCalls returns a call of Lower over a declaration Go states as
+// it is, and over an enum.
+func lowerCalls() []allocCall {
+	constant := &emit.Constant{Name: countName, Value: closedValue}
+	phase := enumOf("", "", "")
+	var (
+		out []symbol.Symbol
+		err error
+	)
+	return []allocCall{
+		{
+			name: "Lower",
+			call: func() { out, err = backend.Lower(constant) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Lower passes the constant")
+				assert.Length(tb, out, 0, "Lower keeps the constant in place")
+			},
+		},
+		{
+			name: "Lower/an enum", allocs: enumLowerAllocs,
+			call: func() { out, err = backend.Lower(phase) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Lower reshapes the enum")
+				assert.Length(tb, out, 4, "Lower returns the type and three constants")
+			},
+		},
+	}
+}
+
+// enumOf returns an enum whose variants state the given values, in
+// order.
+func enumOf(values ...string) *emit.Enum {
+	e := &emit.Enum{Name: phaseName}
+	for i, v := range values {
+		e.Variants.Append(&emit.EnumVariant{Name: openName + strconv.Itoa(i), Value: v})
+	}
+	return e
+}
+
+// hostOf returns a struct of svcPkg whose methods state no receiver.
+func hostOf(methods ...string) *emit.Struct {
+	host := structOf(boxName)
+	for _, name := range methods {
+		host.Methods.Append(&emit.Method{Name: name})
+	}
+	return host
+}
+
+// interfaceOf returns an interface declaring the named methods.
+func interfaceOf(methods ...string) *emit.Interface {
+	i := &emit.Interface{Name: boxName}
+	for _, name := range methods {
+		i.Methods.Append(&emit.Method{Name: name})
+	}
+	return i
+}
+
+// constantValues lowers an enum and returns its constants' values in
+// variant order.
+func constantValues(tb assert.TB, e *emit.Enum) []string {
+	tb.Helper()
+
+	out, err := backend.Lower(e)
+	assert.NoError(tb, err, "the enum lowers")
+	var got []string
+	for _, d := range out[1:] {
+		c, isConstant := d.(*emit.Constant)
+		assert.True(tb, isConstant, "a variant lowers to a constant")
+		if isConstant {
+			got = append(got, c.Value)
+		}
+	}
+	return got
+}
+
+// thrower returns a function announcing the given failures beside
+// the given results.
+func thrower(returns []*emit.Return, failures ...string) *emit.Function {
+	f := &emit.Function{Name: fetchName, Returns: returns}
+	for _, name := range failures {
+		f.Throws = append(f.Throws, &emit.TypeRef{Spelling: name})
+	}
+	return f
+}
+
+// lowered lowers a declaration the lowering rewrites in place.
+func lowered(tb assert.TB, s symbol.Symbol) symbol.Symbol {
+	tb.Helper()
+
+	out, err := backend.Lower(s)
+	assert.NoError(tb, err, "the declaration lowers")
+	assert.Length(tb, out, 0, "in place: a nil list keeps the declaration")
+	return s
 }

@@ -74,7 +74,8 @@ func nameOf(ref *node.TypeRef) typeName {
 // well-known registry, and every other reference, any, error and
 // comparable included, as Opaque. A predeclared spelling classifies
 // only where no import qualifies it, and the two time types by the
-// package their import names and their name, under any alias.
+// package their import names and their name, under any alias. It
+// allocates nothing.
 func (Rules) Builtin(ref *node.TypeRef, _ rules.View) rules.TypeShape {
 	if ref == nil {
 		return rules.Opaque(nil)

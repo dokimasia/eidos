@@ -17,6 +17,12 @@ import (
 
 // New builds the Go annotator: the graph-proven facts, stamped at
 // plugin authority under the language's identity.
+//
+// # Allocation contract
+//
+// New allocates its four handlers, the proof they share, the handles
+// they stamp under and the key registration, seven allocations, and
+// the kit's 24 that build the plugin: 31 allocations.
 func New() plugin.Annotator {
 	var h golang.Handles
 	stampType := func(m matched, st *sdk.Stamper) {

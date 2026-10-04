@@ -71,6 +71,12 @@ var Keys = golang.Keys
 
 // New builds the Go frontend through the kit. A nil options value
 // loads with no build tags satisfied.
+//
+// # Allocation contract
+//
+// New allocates the frontend's state and its three hooks, the syntax,
+// two allocations, and the kit's four: ten allocations, and eleven
+// with the empty options that nil options take.
 func New(opts *Options) plugin.Frontend {
 	if opts == nil {
 		opts = &Options{}

@@ -14,7 +14,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The capability fixture: the sentinel a base spells, the struct tag
+// The capability cases read the sentinel a base spells, the struct tag
 // the fixture's Tagged.Name declares, key by key, and the spellings a
 // substitution binds.
 const (
@@ -41,69 +41,30 @@ const (
 	timeSpelling = "time.Time"
 )
 
-// capability returns the Go rules as the optional interface C, and
-// stops the test where they do not implement it.
-func capability[C any](tb assert.TB) C {
-	tb.Helper()
+// The allocations of the capabilities.
+const (
+	// sentinelAllocs is a sentinel's name: the base in Pascal case, and
+	// the prefix joined onto it.
+	sentinelAllocs = 2
+	// witnessAllocs is a derived witness: the reference to int.
+	witnessAllocs = 1
+	// substituteAllocs is a list of a bound parameter: the copy of the
+	// argument, the copy of the list's element list, and the copy of
+	// the list.
+	substituteAllocs = 3
+	// settableAllocs is the settable set of a struct that embeds one
+	// type: the binding the member walk runs on, the walk's member list,
+	// the path into the embed, and the list of settable fields.
+	settableAllocs = 4
+	// comparableAllocs is Row, whose slice, map, time.Time and
+	// time.Duration fields break comparability: the problem list as it
+	// grows to the four.
+	comparableAllocs = 3
+)
 
-	c, is := gorules.New().(C)
-	assert.True(tb, is, "the Go rules implement the capability")
-	return c
-}
-
-// paramsOf returns the type parameters of a generic struct the
-// fixture declares.
-func paramsOf(tb assert.TB, f *fixture, host string) []*node.TypeParam {
-	tb.Helper()
-
-	s, is := f.decl(tb, id(fxPath, host, symbol.KindStruct)).(*node.Struct)
-	assert.True(tb, is, host+" is a struct")
-	return s.TypeParams
-}
-
-// settable returns the set Settable returns for a struct the fixture
-// declares.
-func settable(tb assert.TB, host string) rules.MemberSet {
-	tb.Helper()
-
-	f := loaded(tb)
-	s, is := f.decl(tb, id(fxPath, host, symbol.KindStruct)).(*node.Struct)
-	assert.True(tb, is, host+" is a struct")
-	return capability[rules.PromotionRules](tb).Settable(s, f.view)
-}
-
-// settableNames returns the names of the fields Settable returns for
-// a struct the fixture declares, in the order it returns them.
-func settableNames(tb assert.TB, host string) []string {
-	tb.Helper()
-
-	var names []string
-	for _, m := range settable(tb, host).Members {
-		field, isField := m.Symbol.(*node.Field)
-		assert.True(tb, isField, "a settable member is a field")
-		names = append(names, field.Name)
-	}
-	return names
-}
-
-// boxOf returns a reference to the fixture's Box instantiated with
-// arg, and to Box without arguments for a nil arg.
-func boxOf(arg *node.TypeRef) *node.TypeRef {
-	box := ref(fxPath, "Box", symbol.KindStruct)
-	if arg != nil {
-		box.Args = []*node.TypeRef{arg}
-	}
-	return box
-}
-
-// listOfParam returns a list of Box's type parameter.
-func listOfParam() *node.TypeRef {
-	return composite("[]"+paramName, symbol.FormList, &node.TypeRef{Spelling: paramName})
-}
-
-// The capabilities are the optional interfaces the kernel asserts
-// the Go rules against, so each method is pinned through the
-// interface that declares it.
+// The kernel asserts the Go rules against the optional capability
+// interfaces. Each method is pinned through the interface that
+// declares it.
 func TestCapabilities(t *testing.T) {
 	t.Parallel()
 
@@ -458,4 +419,153 @@ func TestCapabilities(t *testing.T) {
 			assert.Equal(t, problems[0].Form, symbol.FormList, "the slice the argument binds")
 		})
 	})
+}
+
+// Each capability allocates what it returns and the working state its
+// walk needs. The ordinary run, which runs no benchmark, checks those
+// ceilings here.
+func TestCapabilitiesAllocs(t *testing.T) {
+	checkAllocs(t, capabilityCalls(t))
+}
+
+// BenchmarkCapabilities measures each capability the kernel calls
+// through its optional interfaces.
+func BenchmarkCapabilities(b *testing.B) {
+	benchCalls(b, capabilityCalls(b))
+}
+
+// capabilityCalls returns a call of every capability over the fixture
+// tree.
+func capabilityCalls(tb testing.TB) []allocCall {
+	tb.Helper()
+
+	f := loaded(tb)
+	errs, tags := capability[rules.ErrorValueRules](tb), capability[rules.TagRules](tb)
+	generics, promotion := capability[rules.GenericsRules](tb), capability[rules.PromotionRules](tb)
+	equality := capability[rules.EqualityRules](tb)
+	tagged, box := f.field(tb, "Tagged", "Name"), paramsOf(tb, f, "Box")
+	derived, _ := f.decl(tb, id(fxPath, "Derived", symbol.KindStruct)).(*node.Struct)
+	list, plain, args := listOfParam(), builtin(witness), []*node.TypeRef{builtin(argSpelling)}
+	row, base := ref(fxPath, "Row", symbol.KindStruct), ref(fxPath, "Base", symbol.KindStruct)
+	var (
+		text     string
+		reported bool
+		got      *node.TypeRef
+		set      rules.MemberSet
+		problems []*node.TypeRef
+	)
+	return []allocCall{
+		{
+			name: "SentinelName", allocs: sentinelAllocs,
+			call:  func() { text = errs.SentinelName(sentinelBase) },
+			check: func(tb assert.TB) { assert.Equal(tb, text, sentinel, "SentinelName spells the sentinel") },
+		},
+		{
+			name:  "IsSentinelName",
+			call:  func() { reported = errs.IsSentinelName(sentinel) },
+			check: func(tb assert.TB) { assert.True(tb, reported, "IsSentinelName reports the sentinel") },
+		},
+		{
+			name:  "Tag",
+			call:  func() { text, _ = tags.Tag(tagged, jsonKey) },
+			check: func(tb assert.TB) { assert.Equal(tb, text, jsonTag, "Tag returns the json value") },
+		},
+		{
+			name: "Derive", allocs: witnessAllocs,
+			call:  func() { got, _ = generics.Derive(box[0], f.view) },
+			check: func(tb assert.TB) { assert.Equal(tb, got.Spelling, witness, "Derive returns int") },
+		},
+		{
+			name: "Substitute", allocs: substituteAllocs,
+			call: func() { got = generics.Substitute(list, box, args) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, got.Elems[0].Spelling, argSpelling, "Substitute binds the argument")
+			},
+		},
+		{
+			name:  "Substitute/a reference that names no parameter",
+			call:  func() { got = generics.Substitute(plain, box, args) },
+			check: func(tb assert.TB) { assert.True(tb, got == plain, "Substitute returns the reference as it is") },
+		},
+		{
+			name:  "Reified",
+			call:  func() { reported = generics.Reified() },
+			check: func(tb assert.TB) { assert.False(tb, reported, "Reified reports erasure") },
+		},
+		{
+			name: "Settable", allocs: settableAllocs,
+			call:  func() { set = promotion.Settable(derived, f.view) },
+			check: func(tb assert.TB) { assert.Length(tb, set.Members, 2, "Settable returns Name and Kind") },
+		},
+		{
+			name: "Comparable", allocs: comparableAllocs,
+			call:  func() { reported, problems = equality.Comparable(row, f.view) },
+			check: func(tb assert.TB) { assert.True(tb, !reported && len(problems) == 4, "Comparable finds all four") },
+		},
+		{
+			name:  "Comparable/a struct that compares",
+			call:  func() { reported, problems = equality.Comparable(base, f.view) },
+			check: func(tb assert.TB) { assert.True(tb, reported && len(problems) == 0, "Comparable reports Base") },
+		},
+	}
+}
+
+// capability returns the Go rules as the optional interface C, and
+// stops the test where they do not implement it.
+func capability[C any](tb assert.TB) C {
+	tb.Helper()
+
+	c, is := gorules.New().(C)
+	assert.True(tb, is, "the Go rules implement the capability")
+	return c
+}
+
+// paramsOf returns the type parameters of a generic struct the
+// fixture declares.
+func paramsOf(tb assert.TB, f *fixture, host string) []*node.TypeParam {
+	tb.Helper()
+
+	s, is := f.decl(tb, id(fxPath, host, symbol.KindStruct)).(*node.Struct)
+	assert.True(tb, is, host+" is a struct")
+	return s.TypeParams
+}
+
+// settable returns the set Settable returns for a struct the fixture
+// declares.
+func settable(tb assert.TB, host string) rules.MemberSet {
+	tb.Helper()
+
+	f := loaded(tb)
+	s, is := f.decl(tb, id(fxPath, host, symbol.KindStruct)).(*node.Struct)
+	assert.True(tb, is, host+" is a struct")
+	return capability[rules.PromotionRules](tb).Settable(s, f.view)
+}
+
+// settableNames returns the names of the fields Settable returns for
+// a struct the fixture declares, in the order it returns them.
+func settableNames(tb assert.TB, host string) []string {
+	tb.Helper()
+
+	var names []string
+	for _, m := range settable(tb, host).Members {
+		field, isField := m.Symbol.(*node.Field)
+		assert.True(tb, isField, "a settable member is a field")
+		names = append(names, field.Name)
+	}
+	return names
+}
+
+// boxOf returns a reference to the fixture's Box instantiated with
+// arg, and to Box without arguments for a nil arg.
+func boxOf(arg *node.TypeRef) *node.TypeRef {
+	box := ref(fxPath, "Box", symbol.KindStruct)
+	if arg != nil {
+		box.Args = []*node.TypeRef{arg}
+	}
+	return box
+}
+
+// listOfParam returns a list of Box's type parameter.
+func listOfParam() *node.TypeRef {
+	return composite("[]"+paramName, symbol.FormList, &node.TypeRef{Spelling: paramName})
 }

@@ -23,9 +23,9 @@ const (
 	foreignPkg  = "example.test/p"
 )
 
-// Builtin classifies what the resolution step left without a target,
-// so every spelling it maps and every type it reads through an
-// import's package are pinned.
+// Builtin classifies what the resolution step left without a target.
+// Every spelling it maps, and every type it reads through an import's
+// package, is pinned.
 func TestBuiltin(t *testing.T) {
 	t.Parallel()
 
@@ -179,4 +179,38 @@ func TestBuiltin(t *testing.T) {
 			assert.Equal(t, s.Form, symbol.FormBytes, "the one rule beyond structure applies to Go's spelling")
 		})
 	})
+}
+
+// A classification reads the reference and allocates nothing. The
+// ordinary run, which runs no benchmark, checks that here.
+func TestBuiltinZeroAlloc(t *testing.T) {
+	checkAllocs(t, builtinCalls())
+}
+
+// BenchmarkBuiltin measures the classification the kernel makes for
+// every reference the resolution step left without a target.
+func BenchmarkBuiltin(b *testing.B) {
+	benchCalls(b, builtinCalls())
+}
+
+// builtinCalls returns a call of Builtin over a scalar and over a
+// well-known type.
+func builtinCalls() []allocCall {
+	r := gorules.New()
+	scalar, when := builtin("int"), builtin("time.Time")
+	var shape rules.TypeShape
+	return []allocCall{
+		{
+			name:  "Builtin",
+			call:  func() { shape = r.Builtin(scalar, rules.View{}) },
+			check: func(tb assert.TB) { assert.Equal(tb, shape.Class, rules.ScalarInt, "Builtin classifies int") },
+		},
+		{
+			name: "Builtin/a well-known type",
+			call: func() { shape = r.Builtin(when, rules.View{}) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, shape.Ref, rules.WellKnownTimestamp, "Builtin maps time.Time")
+			},
+		},
+	}
 }

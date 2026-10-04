@@ -32,14 +32,28 @@ var (
 	iterSeq2    = typeName{pkg: golang.IterPackage, name: golang.IterSeq2}
 )
 
-// Rules is the Go language's rules value. It has no state, so one
-// value serves every goroutine.
+// contributions is the one list a Go type's members arrive through.
+// Every policy shares it, and the kernel's walk only reads it, so a
+// policy allocates nothing.
+var contributions = []rules.Contribution{rules.ContributesEmbeds}
+
+// Rules is the Go language's rules value.
+//
+// # Concurrency
+//
+// Rules has no state, so one value serves every goroutine.
+//
+// # Allocation contract
+//
+// Each method states what it allocates. The classifications of a
+// signature's parameters, a member policy and a builtin allocate
+// nothing.
 type Rules struct{}
 
-// New returns the Go rules.
+// New returns the Go rules. It allocates nothing.
 func New() rules.SourceRules { return Rules{} }
 
-// Lang returns the language the rules apply to.
+// Lang returns the language the rules apply to. It allocates nothing.
 func (Rules) Lang() symbol.Lang { return golang.Lang }
 
 // Members walks embedded fields under promotion, to the kernel's
@@ -47,10 +61,11 @@ func (Rules) Lang() symbol.Lang { return golang.Lang }
 // embedded type's members promote unless a shallower one shadows
 // them, two at one depth cancelling both. A struct's embedded field
 // is itself a member, named by its type's bare name, so it shadows
-// a deeper member of that name.
+// a deeper member of that name. Every policy shares one contribution
+// list, so Members allocates nothing.
 func (Rules) Members() rules.MemberPolicy {
 	return rules.MemberPolicy{
-		Contributes:     []rules.Contribution{rules.ContributesEmbeds},
+		Contributes:     contributions,
 		Shadowing:       rules.ShadowPromote,
 		EmbedsAreFields: true,
 	}
@@ -60,7 +75,7 @@ func (Rules) Members() rules.MemberPolicy {
 // and every other as input. Go states the context first by
 // convention, and a context anywhere in the list reads as one. The
 // package the reference's import names and the name decide, so an
-// aliased import of context classifies too.
+// aliased import of context classifies too. It allocates nothing.
 func (Rules) ParamRole(p *node.Param, _ rules.View) rules.ParamRole {
 	if p != nil && p.Type != nil && nameOf(p.Type) == contextType {
 		return rules.ParamContext
@@ -73,7 +88,7 @@ func (Rules) ParamRole(p *node.Param, _ rules.View) rules.ParamRole {
 // of two returns of type bool is the ok flag, an iter.Seq or
 // iter.Seq2 return is a stream, under any alias of the import, and
 // the rest are values. A callable without an error return reports no
-// error model.
+// error model. It allocates the list of roles, one allocation.
 func (Rules) ReturnRoles(rs []*node.Return, _ rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
 	roles := make([]rules.ReturnRole, len(rs))
 	model := rules.ErrorsNone
@@ -97,7 +112,9 @@ func (Rules) ReturnRoles(rs []*node.Return, _ rules.View) ([]rules.ReturnRole, r
 // TypeName joins a generator's word onto an author's name the way
 // Go spells a derived type: PascalCase, keeping the base's export
 // by its first rune, so "check" on Row is CheckRow and on row is
-// checkRow.
+// checkRow. It allocates the word's case conversion and the joined
+// name, two allocations, and one more where an unexported base
+// converts.
 func (Rules) TypeName(word, base string) string {
 	if exported(base) {
 		return naming.Pascal(word) + base

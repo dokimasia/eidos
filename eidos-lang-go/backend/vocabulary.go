@@ -73,20 +73,34 @@ const (
 	sendChan = "chan<- "
 	chanWord = "chan "
 	funcOpen = "func("
+	// directiveMark opens a directive comment line.
+	directiveMark = "//"
 )
 
 // Speller spells type references for one file. Every package a
 // spelling names is bound in the file's import set, under the name
 // the import path assumes or a numbered one where another import or
 // a declaration of the file takes that name, and the spelling
-// qualifies through the bound name. A Speller is not safe for
-// concurrent use, because its set is not.
+// qualifies through the bound name.
+//
+// # Concurrency
+//
+// A Speller is not safe for concurrent use, because its set is not.
+//
+// # Allocation contract
+//
+// Each method allocates the text it writes and nothing else, so a
+// builtin, a bare name and a reference spelled as written allocate
+// nothing. Binding a package's import for the first time allocates in
+// the set. A method that joins more than two parts also allocates its
+// list of parts, because Go places a list of at most two strings on
+// the stack.
 type Speller struct {
 	set *render.ImportSet
 }
 
 // NewSpeller returns the speller for the file whose import set is
-// set. The set is not nil.
+// set. The set is not nil. It allocates nothing.
 func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 
 // Spell writes a type reference and binds the import of every
@@ -116,6 +130,11 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 // another package, whose imports the model does not record, and a
 // structural reference to restate that the structure does not
 // determine, which is an array whose length is an expression.
+//
+// Spell allocates nothing for a builtin or a reference spelled as
+// written. A qualified name allocates the name behind its qualifier,
+// and a restated or instantiated reference allocates its text. A
+// refusal allocates its error.
 func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	if t == nil || t.Spelling == "" {
 		return Anonymous, nil
@@ -131,6 +150,10 @@ func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 // The formatter settles that interface's layout. Variance, defaults
 // and value parameters return an error, because Go's parameters
 // state none of the three.
+//
+// TypeParams allocates each parameter's spelling, the joined list and
+// its brackets, and what each bound's spelling allocates: four
+// allocations for two parameters of builtin bounds.
 func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -154,7 +177,9 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	return "[" + strings.Join(parts, ", ") + "]", nil
 }
 
-// Params writes a parameter list, variadic marker included.
+// Params writes a parameter list, variadic marker included. It
+// allocates each named parameter's spelling and the joined list, and
+// what each type's spelling allocates.
 func (s Speller) Params(ps []*emit.Param) (string, error) {
 	parts := make([]string, 0, len(ps))
 	for _, p := range ps {
@@ -169,7 +194,9 @@ func (s Speller) Params(ps []*emit.Param) (string, error) {
 
 // Results writes a result list: nothing, one bare type, or a
 // parenthesised list, which is how Go spells each case. A single
-// named result still parenthesises, because Go requires it.
+// named result still parenthesises, because Go requires it. It
+// allocates the list it writes, the joined list of several results
+// beside it, and what each type's spelling allocates.
 func (s Speller) Results(rs []*emit.Return) (string, error) {
 	if len(rs) == 0 {
 		return "", nil
@@ -194,7 +221,8 @@ func (s Speller) Results(rs []*emit.Return) (string, error) {
 
 // Receiver writes a method's receiver. A method declared outside
 // the type it attaches to spells the type alone, which Go accepts,
-// because a receiver no body reads needs no name.
+// because a receiver no body reads needs no name. It allocates what the
+// receiver's spelling allocates, and nothing for a bare type.
 func (s Speller) Receiver(m *emit.Method) (string, error) {
 	switch {
 	case m.Receiver != nil:
@@ -209,7 +237,8 @@ func (s Speller) Receiver(m *emit.Method) (string, error) {
 // VarType writes a variable's type slot: the spelled type behind a
 // space, nothing where an initializer lets Go infer, and an error
 // where the declaration states neither, because `var x` alone
-// declares nothing Go accepts.
+// declares nothing Go accepts. It allocates the type behind its space,
+// and what the type's spelling allocates.
 func (s Speller) VarType(v *emit.Variable) (string, error) {
 	switch {
 	case v.Type != nil:
@@ -342,7 +371,9 @@ func (s Speller) param(p *emit.Param) (string, error) {
 // Funcs returns the shared template vocabulary the kind templates
 // call, bound to one file's import set: every reference a helper
 // spells binds its package's import there. A consumer composing a
-// variant backend registers it beside its own additions.
+// variant backend registers it beside its own additions. Funcs
+// allocates the map of twelve helpers, four allocations, and the
+// speller's six bound helpers.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
@@ -364,7 +395,8 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 // Docs writes a declaration's documentation as line comments,
 // each prefixed with the given indentation, so a member's doc
 // is at its member's depth. Called with no prefix it writes at
-// the top level.
+// the top level. It allocates what [textfmt.LineDocs] allocates: the
+// lines, sized once, and nothing for no lines.
 func Docs(lines []string, prefix ...string) string {
 	return textfmt.LineDocs(lines, "// ", prefix...)
 }
@@ -376,6 +408,7 @@ func Docs(lines []string, prefix ...string) string {
 // package returns an error, and the render withholds the file. The
 // layout routes a file without a package where no Go module contains
 // the file's directory and the plan states no import base for it.
+// Package allocates nothing, and a refusal allocates its error.
 func Package(id symbol.Identity) (string, error) {
 	switch {
 	case id.Name != "":
@@ -395,7 +428,8 @@ func Package(id symbol.Identity) (string, error) {
 // immutable variable, a constant without a value, and every
 // visibility beyond the exported and package scopes the name's case
 // spells. A final struct or method passes, because nothing
-// subclasses in Go.
+// subclasses in Go. Guard allocates nothing for a declaration it
+// passes, and a refusal allocates its error.
 func Guard(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -459,7 +493,9 @@ func Guard(d symbol.Symbol) (string, error) {
 // because nothing overrides in Go. A body is refused, because the
 // signature cannot place it, and so are type parameters, because Go
 // gives an interface method none. Everything else an interface
-// method could state is refused the way [Guard] refuses it.
+// method could state is refused the way [Guard] refuses it. SigGuard
+// allocates nothing for a signature it passes, and a refusal allocates
+// its error.
 func SigGuard(m *emit.Method) (string, error) {
 	switch {
 	case !m.Body.IsZero():
@@ -482,7 +518,9 @@ func SigGuard(m *emit.Method) (string, error) {
 }
 
 // EmbedGuard writes nothing and refuses what an interface's embed
-// states nowhere: a tag, which Go gives a struct field alone.
+// states nowhere: a tag, which Go gives a struct field alone. It
+// allocates nothing for an embed it passes, and a refusal allocates its
+// error.
 func EmbedGuard(e *emit.Embed) (string, error) {
 	if e.Tag != "" {
 		name := ""
@@ -502,6 +540,9 @@ func EmbedGuard(e *emit.Embed) (string, error) {
 // verbatim, and the generator is responsible for an undocumented
 // name. A name outside the tool:name shape and the legacy space
 // forms reads back as documentation on the frontend side.
+//
+// Directives sizes the lines once and allocates them, one allocation,
+// and nothing for a declaration without annotations.
 func Directives(as symbol.Annotations, indent ...string) string {
 	if len(as) == 0 {
 		return ""
@@ -510,11 +551,22 @@ func Directives(as symbol.Annotations, indent ...string) string {
 	if len(indent) > 0 {
 		prefix = indent[0]
 	}
-	var b strings.Builder
+	size := 0
 	for _, a := range as {
-		b.WriteString(prefix + "//" + a.Name)
-		if len(a.Args) > 0 {
-			b.WriteString(" " + strings.Join(a.Args, " "))
+		size += len(prefix) + len(directiveMark) + len(a.Name) + len("\n")
+		for _, arg := range a.Args {
+			size += len(" ") + len(arg)
+		}
+	}
+	var b strings.Builder
+	b.Grow(size)
+	for _, a := range as {
+		b.WriteString(prefix)
+		b.WriteString(directiveMark)
+		b.WriteString(a.Name)
+		for _, arg := range a.Args {
+			b.WriteString(" ")
+			b.WriteString(arg)
 		}
 		b.WriteString("\n")
 	}

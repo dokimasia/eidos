@@ -43,6 +43,12 @@ const treeRoot = "."
 // directory outside every module and outside the import base's
 // directory derives no package, and Package returns an error naming
 // the directory.
+//
+// # Allocation contract
+//
+// Package returns a resident's package without allocating, and
+// allocates the import path it derives for a directory without one,
+// one allocation. A refusal allocates its error.
 func Package(p plugin.Placement) (symbol.Identity, error) {
 	if strings.HasSuffix(p.Path, testFile) {
 		for _, r := range p.Residents {

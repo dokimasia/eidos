@@ -72,6 +72,12 @@ const platformWidth = 0
 // struct's field take the values an author stated for them first,
 // read through [rules.View.Authored]. The derivation completes each
 // half no author stated.
+//
+// # Allocation contract
+//
+// A builtin's pair allocates nothing beyond a string's hinted text. A
+// composite's pair allocates the reference to its type and each
+// composite's list, and a conversion its wrapped value.
 func (r Rules) SamplesOf(
 	ref *node.TypeRef,
 	hint string,
@@ -99,15 +105,17 @@ func (r Rules) derive(
 		return addressed(sample), addressed(alternate)
 	case symbol.FormList, symbol.FormArray:
 		sample, alternate := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
-		return rules.Lift(sample, elements(ref)), rules.Lift(alternate, elements(ref))
+		t := rules.EmitRef(ref)
+		return rules.Lift(sample, elements(t)), rules.Lift(alternate, elements(t))
 	case symbol.FormMap:
 		key, otherKey := r.partPair(symbol.Identity{}, child(ref, 0), hint, v, depth+1)
 		value, _ := r.partPair(symbol.Identity{}, child(ref, 1), hint, v, depth+1)
 		if !key.OK() || !otherKey.OK() || !value.OK() {
 			return rules.RefusedPair(rules.FirstRefusal(key, otherKey, value))
 		}
-		return rules.Of(entry(ref, key.Value, value.Value)),
-			rules.Of(entry(ref, otherKey.Value, value.Value))
+		t := rules.EmitRef(ref)
+		return rules.Of(emit.Composite(t, emit.KeyedEntry(key.Value, value.Value))),
+			rules.Of(emit.Composite(t, emit.KeyedEntry(otherKey.Value, value.Value)))
 	case symbol.FormNamed:
 		if ref.Target.IsZero() {
 			return r.builtinPair(ref, hint)
@@ -294,7 +302,9 @@ func (r Rules) enumZero(e *node.Enum, v rules.View) (emit.Value, bool) {
 // the builtin zeros at the builtin's width, a conversion of the
 // underlying zero for a defined type and for an enumeration whose
 // variants' values name its underlying type, and false for a
-// spelling the rules cannot place.
+// spelling the rules cannot place. A builtin's zero allocates nothing,
+// and a composite or a conversion allocates the reference to its type
+// and its wrapped value.
 func (r Rules) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
 	if ref == nil {
 		return emit.Value{}, false
@@ -382,6 +392,12 @@ func (r Rules) builtinZero(ref *node.TypeRef) (emit.Value, bool) {
 // number states the builtin's width. A value type takes no nil. Any
 // other text is no literal. The file plays no part, because a Go
 // literal reads the same in every scope.
+//
+// # Allocation contract
+//
+// LiteralFor allocates Go's scanner state, the file set and the file,
+// the lists of the tokens it scans, the constant and the canonical
+// text: six allocations for a decimal integer.
 func (r Rules) LiteralFor(
 	_ *node.File,
 	ref *node.TypeRef,
@@ -538,18 +554,12 @@ func converted(t *emit.TypeRef) func(emit.Value) emit.Value {
 	return func(inner emit.Value) emit.Value { return emit.Conversion(t, inner) }
 }
 
-// elements returns the wrap placing one value as a slice's or an
-// array's one element.
-func elements(ref *node.TypeRef) func(emit.Value) emit.Value {
-	t := rules.EmitRef(ref)
+// elements returns the wrap placing one value as the one element of a
+// slice or an array of a type.
+func elements(t *emit.TypeRef) func(emit.Value) emit.Value {
 	return func(inner emit.Value) emit.Value {
 		return emit.Composite(t, emit.Element(inner))
 	}
-}
-
-// entry returns a map composite with one keyed entry.
-func entry(ref *node.TypeRef, key, value emit.Value) emit.Value {
-	return emit.Composite(rules.EmitRef(ref), emit.KeyedEntry(key, value))
 }
 
 // child returns a structural reference's child, or nil.

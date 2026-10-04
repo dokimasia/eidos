@@ -18,6 +18,9 @@ import (
 // finalise through go/format, so a file that does not parse is
 // withheld and reported instead of written, and the bytes that
 // remain are the bytes gofmt leaves.
+//
+// New allocates the kit's build, chiefly the parse of the file template
+// and the seven kind templates: 1,574 allocations.
 func New() plugin.Backend {
 	return backend.New(golang.Name, golang.Target, golang.Syntax()).
 		Version(golang.Version).

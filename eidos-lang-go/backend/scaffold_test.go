@@ -13,18 +13,23 @@ import (
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
-// nameOf returns the expression naming n.
-func nameOf(n string) emit.Expr { return emit.Expr{Kind: emit.ExprName, Name: n} }
+// The names the allocation cases spell: the result a call binds, and
+// the function that returns it.
+const (
+	resultName = "res"
+	nextName   = "next"
+)
 
-// callOf returns the expression calling fn with the named arguments.
-func callOf(fn string, args ...string) emit.Expr {
-	f := nameOf(fn)
-	e := emit.Expr{Kind: emit.ExprCall, Fn: &f}
-	for _, a := range args {
-		e.Args = append(e.Args, nameOf(a))
-	}
-	return e
-}
+// The allocations of a statement.
+const (
+	// scaffoldAllocs is one statement: the buffer it writes into.
+	scaffoldAllocs = 1
+	// guardAllocs is a guard: the buffer, and the nil comparison.
+	guardAllocs = scaffoldAllocs + 1
+	// tupleAllocs is an assignment of two names: the buffer, and the
+	// comma-joined names.
+	tupleAllocs = scaffoldAllocs + 1
+)
 
 // Every spelling is pinned byte for byte: scaffold output is
 // spliced into generated bodies, so a drift here rewrites files.
@@ -113,4 +118,70 @@ func TestScaffold(t *testing.T) {
 			})
 		}
 	})
+}
+
+// A statement allocates the buffer it writes into. A guard and an
+// assignment of more than one name allocate the text the grammar
+// spells. The ordinary run, which runs no benchmark, checks those
+// ceilings here.
+func TestScaffoldAllocs(t *testing.T) {
+	checkAllocs(t, scaffoldCalls())
+}
+
+// BenchmarkScaffold measures the spelling of one statement of a
+// generated body.
+func BenchmarkScaffold(b *testing.B) {
+	benchCalls(b, scaffoldCalls())
+}
+
+// scaffoldCalls returns a call of Scaffold over a return of a call, a
+// guard, and a declaring assignment of two names.
+func scaffoldCalls() []allocCall {
+	stmt := emit.Stmt{Kind: emit.StmtReturn, Value: callOf(loadName, contextName)}
+	guard := emit.Stmt{
+		Kind: emit.StmtGuard, Name: errorName, Then: []emit.Stmt{{Kind: emit.StmtReturn, Value: nameOf(errorName)}},
+	}
+	tuple := emit.Stmt{
+		Kind: emit.StmtAssign, Names: []string{resultName, errorName}, Value: callOf(nextName), Declare: true,
+	}
+	var set render.ImportSet
+	var (
+		out []byte
+		err error
+	)
+	spells := func(want string) func(tb assert.TB) {
+		return func(tb assert.TB) {
+			assert.NoError(tb, err, "Scaffold spells the statement")
+			assert.Equal(tb, string(out), want, "Scaffold writes the Go spelling")
+		}
+	}
+	return []allocCall{
+		{
+			name: "Scaffold", allocs: scaffoldAllocs,
+			call: func() { out, err = backend.Scaffold(stmt, &set) }, check: spells("\treturn load(ctx)\n"),
+		},
+		{
+			name:   "Scaffold/a guard",
+			allocs: guardAllocs,
+			call:   func() { out, err = backend.Scaffold(guard, &set) },
+			check:  spells("\tif err != nil {\n\t\treturn err\n\t}\n"),
+		},
+		{
+			name: "Scaffold/an assignment of two names", allocs: tupleAllocs,
+			call: func() { out, err = backend.Scaffold(tuple, &set) }, check: spells("\tres, err := next()\n"),
+		},
+	}
+}
+
+// nameOf returns the expression naming n.
+func nameOf(n string) emit.Expr { return emit.Expr{Kind: emit.ExprName, Name: n} }
+
+// callOf returns the expression calling fn with the named arguments.
+func callOf(fn string, args ...string) emit.Expr {
+	f := nameOf(fn)
+	e := emit.Expr{Kind: emit.ExprCall, Fn: &f}
+	for _, a := range args {
+		e.Args = append(e.Args, nameOf(a))
+	}
+	return e
 }

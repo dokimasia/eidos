@@ -7,14 +7,15 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The receiver fixture: the hosts a method receives, and the names
-// its signature takes.
+// The hosts a fixture method receives, and the names its signature
+// takes.
 const (
 	storeHost  = "Store"
 	cacheHost  = "Cache"
@@ -32,18 +33,13 @@ const (
 	boxPointer   = "*Box[T]"
 )
 
-// receiving returns a method that receives host, with parameters
-// of the given names.
-func receiving(host string, params ...string) *emit.Method {
-	m := &emit.Method{Name: putMethod, Receives: &emit.TypeRef{Spelling: host}}
-	for _, name := range params {
-		m.Params = append(m.Params, &emit.Param{Name: name, Type: &emit.TypeRef{Spelling: sessionTy}})
-	}
-	return m
-}
+// receiverAllocs is a pointer receiver named by the host's first
+// letter: the receiver, its pointer reference, the reference's
+// spelling, its element list and the copy of the received reference.
+const receiverAllocs = 5
 
 // A Go stub declares its methods on a pointer, and the receiver's name
-// must not collide with the signature's, so both are contract.
+// must not collide with a name of the signature. Both are pinned.
 func TestReceiver(t *testing.T) {
 	t.Parallel()
 
@@ -64,7 +60,7 @@ func TestReceiver(t *testing.T) {
 				give: receiving(storeHost, sessionArg), want: "st",
 			},
 			{
-				name: "names the receiver recv past a result and a type parameter",
+				name: "names the receiver recv where its signature takes the short names",
 				give: &emit.Method{
 					Name:       putMethod,
 					Receives:   &emit.TypeRef{Spelling: storeHost},
@@ -80,6 +76,14 @@ func TestReceiver(t *testing.T) {
 			{
 				name: "names the receiver by the host's first character",
 				give: receiving(umlautHost), want: "ü",
+			},
+			{
+				name: "names the receiver by the first two characters of a host outside ASCII",
+				give: receiving(umlautHost, "ü"), want: "üb",
+			},
+			{
+				name: "names the receiver recv past the one letter of a one-letter host",
+				give: receiving("X", "x"), want: "recv",
 			},
 		}
 		for _, tt := range names {
@@ -144,4 +148,40 @@ func TestReceiver(t *testing.T) {
 			assert.True(t, golang.PointerReceiver(m) == m, "the call chains after Mirror")
 		})
 	})
+}
+
+// A pointer receiver allocates its nodes, and no name for a host whose
+// first letter is ASCII. The ordinary run, which runs no benchmark,
+// checks that ceiling here.
+func TestReceiverAllocs(t *testing.T) {
+	m := receiving(storeHost)
+	var got *emit.Method
+	assert.MaxAllocs(t, func() { got = golang.PointerReceiver(m) }, receiverAllocs,
+		"PointerReceiver allocates the receiver's nodes")
+	assert.Equal(t, got.Receiver.Name, "s", "PointerReceiver names the receiver")
+}
+
+// BenchmarkReceiver measures the receiver a plugin states once per stub
+// method.
+func BenchmarkReceiver(b *testing.B) {
+	b.Run("PointerReceiver", func(b *testing.B) {
+		m := receiving(storeHost)
+		c := bench.Start(b).MaxAllocs(receiverAllocs)
+		defer c.End()
+		var got *emit.Method
+		for c.Loop() {
+			got = golang.PointerReceiver(m)
+		}
+		assert.Equal(b, got.Receiver.Type.Spelling, storePointer, "PointerReceiver points at the host")
+	})
+}
+
+// receiving returns a method that receives host, with parameters
+// of the given names.
+func receiving(host string, params ...string) *emit.Method {
+	m := &emit.Method{Name: putMethod, Receives: &emit.TypeRef{Spelling: host}}
+	for _, name := range params {
+		m.Params = append(m.Params, &emit.Param{Name: name, Type: &emit.TypeRef{Spelling: sessionTy}})
+	}
+	return m
 }

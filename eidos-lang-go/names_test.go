@@ -8,15 +8,24 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/sdk/node"
 )
 
-// The frontend's resolution and the rules' resolution both read
-// these names, so each rule is pinned against its authority: the
-// universe scope for the predeclared types, and goimports' assumed
-// name for an import path.
+// nameCall is one name rule's call and the check of its result, which
+// the allocation test and the benchmark share.
+type nameCall struct {
+	name  string
+	call  func()
+	check func(tb assert.TB)
+}
+
+// The frontend's resolution and the rules' resolution both read these
+// names. Each rule is pinned against its authority: the universe scope
+// for the predeclared types, and goimports' assumed name for an import
+// path.
 func TestNames(t *testing.T) {
 	t.Parallel()
 
@@ -179,4 +188,71 @@ func TestNames(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Every name rule reads the universe scope or slices its input, and
+// allocates nothing. The ordinary run, which runs no benchmark, checks
+// that here.
+func TestNamesZeroAlloc(t *testing.T) {
+	for _, c := range nameCalls() {
+		msg := c.name + " allocates nothing"
+		assert.MaxAllocs(t, c.call, 0, msg)
+		c.check(t)
+	}
+}
+
+// BenchmarkNames measures the name rules the frontend and the rules
+// read for every reference they resolve.
+func BenchmarkNames(b *testing.B) {
+	for _, tt := range nameCalls() {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
+		})
+	}
+}
+
+// nameCalls returns a call of every name rule.
+func nameCalls() []nameCall {
+	imp := &node.Import{Path: "gopkg.in/yaml.v3"}
+	var (
+		is   bool
+		name string
+	)
+	return []nameCall{
+		{
+			name:  "Predeclared",
+			call:  func() { is = golang.Predeclared("int") },
+			check: func(tb assert.TB) { assert.True(tb, is, "Predeclared reports int") },
+		},
+		{
+			name:  "Basic",
+			call:  func() { is = golang.Basic("int") },
+			check: func(tb assert.TB) { assert.True(tb, is, "Basic reports int") },
+		},
+		{
+			name:  "Ordered",
+			call:  func() { is = golang.Ordered("int") },
+			check: func(tb assert.TB) { assert.True(tb, is, "Ordered reports int") },
+		},
+		{
+			name:  "AssumedName",
+			call:  func() { name = golang.AssumedName("github.com/golang-jwt/jwt/v5") },
+			check: func(tb assert.TB) { assert.Equal(tb, name, "jwt", "AssumedName returns jwt") },
+		},
+		{
+			name:  "Unqualified",
+			call:  func() { name = golang.Unqualified("time.Duration") },
+			check: func(tb assert.TB) { assert.Equal(tb, name, "Duration", "Unqualified returns Duration") },
+		},
+		{
+			name:  "ImportName",
+			call:  func() { name, is = golang.ImportName(imp) },
+			check: func(tb assert.TB) { assert.True(tb, is && name == "yaml", "ImportName returns yaml") },
+		},
+	}
 }

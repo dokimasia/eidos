@@ -7,14 +7,26 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/go/spell"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The spelling is total over the units a plan admits, and every case
-// is pinned: files are addressed by name, so a drift here orphans
-// previously generated files.
+// The allocations of a filename.
+const (
+	// filenameAllocs is a per-source unit's filename: the list of its
+	// parts, their join, and the name with its extension.
+	filenameAllocs = 3
+	// testFilenameAllocs is a per-package unit's filename in an external
+	// test package: the list of its parts, the name with the test
+	// suffix, and the name with its extension.
+	testFilenameAllocs = 3
+)
+
+// Files are addressed by name, so a change of spelling orphans the files
+// an earlier run wrote. Every spelling of a unit a plan admits is
+// pinned.
 func TestFilename(t *testing.T) {
 	t.Parallel()
 
@@ -27,8 +39,8 @@ func TestFilename(t *testing.T) {
 			want string
 		}{
 			{
-				name: "returns the stem and the word of a per-source unit",
-				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "stub"},
+				name: "joins the stem to the word of a per-source unit",
+				give: storeUnit(),
 				want: "store_stub.go",
 			},
 			{
@@ -53,7 +65,7 @@ func TestFilename(t *testing.T) {
 			},
 			{
 				name: "returns a test file for a per-package unit of an external test package",
-				give: plugin.Unit{Per: plugin.PerPackage, Key: testPath, Word: "stub", Pkg: origin(testPath)},
+				give: externalTestUnit(),
 				want: "stub_test.go",
 			},
 			{
@@ -93,4 +105,58 @@ func TestFilename(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Filename allocates its parts, their join and the name. The ordinary
+// run, which runs no benchmark, checks that ceiling here.
+func TestFilenameAllocs(t *testing.T) {
+	source, test := storeUnit(), externalTestUnit()
+	var got string
+	assert.MaxAllocs(t, func() { got = spell.Filename(source) }, filenameAllocs,
+		"Filename allocates the parts, their join and the name")
+	assert.Equal(t, got, "store_stub.go", "Filename spells the unit")
+	assert.MaxAllocs(t, func() { got = spell.Filename(test) }, testFilenameAllocs,
+		"Filename allocates the parts, the test suffix and the name")
+	assert.Equal(t, got, "stub_test.go", "Filename spells the test file")
+}
+
+// BenchmarkFilename measures the filename a backend spells once per
+// unit.
+func BenchmarkFilename(b *testing.B) {
+	units := []struct {
+		name   string
+		give   plugin.Unit
+		allocs uint64
+		want   string
+	}{
+		{name: "Filename", give: storeUnit(), allocs: filenameAllocs, want: "store_stub.go"},
+		{
+			name:   "Filename/a unit of an external test package",
+			give:   externalTestUnit(),
+			allocs: testFilenameAllocs,
+			want:   "stub_test.go",
+		},
+	}
+	for _, tt := range units {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = spell.Filename(tt.give)
+			}
+			assert.Equal(b, got, tt.want, "Filename spells the unit")
+		})
+	}
+}
+
+// storeUnit returns the stub family's unit of svc/store.go.
+func storeUnit() plugin.Unit {
+	return plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "stub"}
+}
+
+// externalTestUnit returns the stub family's unit of the store
+// directory's external test package.
+func externalTestUnit() plugin.Unit {
+	return plugin.Unit{Per: plugin.PerPackage, Key: testPath, Word: "stub", Pkg: origin(testPath)}
 }

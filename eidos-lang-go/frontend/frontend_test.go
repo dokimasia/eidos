@@ -9,6 +9,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/frontend"
@@ -19,31 +20,6 @@ import (
 	"go.dokimi.dev/eidos/sdk/rulestest"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
-
-// goTree is the whole-contract fixture: a module root, two
-// packages, a cross-package reference, a carrier, a test file, a
-// signature root and a file that does not parse.
-func goTree() fstest.MapFS {
-	return fstest.MapFS{
-		"go.mod": {Data: []byte("module example.test/fix\n")},
-		"api/user.go": {Data: []byte(
-			"package api\n\n// User is one account.\ntype User struct{ name string }\n",
-		)},
-		"store/row.go": {Data: []byte(
-			"package store\n\nimport \"example.test/fix/api\"\n\n" +
-				"// Row is one record.\n//+fixture:gen:table name=rows\n" +
-				"type Row struct {\n\towner api.User\n\tcount int\n}\n\n" +
-				"func (r *Row) Get(n int) int { return r.count + n }\n",
-		)},
-		"store/row_test.go": {Data: []byte(
-			"package store\n\nfunc probe() {}\n",
-		)},
-		"dep/dep.go": {Data: []byte(
-			"package dep\n\ntype Dep struct{}\n\nconst hidden = 1\n",
-		)},
-		"bad/oops.go": {Data: []byte("package bad\n\nfunc ({ nope\n")},
-	}
-}
 
 // The signature root, its package and its one unexported
 // declaration, which a signature-only load drops.
@@ -57,34 +33,44 @@ const (
 // satellite's prefix, golang.CodePrefix, and the first number.
 const unparsedCode = "GOLANG-0001"
 
-// setup is the suite's entry over the whole-contract fixture.
-func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
-	return frontend.New(nil), &frontendtest.Fixture{
-		Sources:    goTree(),
-		Signatures: []string{depRoot},
-		Dropped: []symbol.Identity{
-			{Lang: frontend.Lang, Package: depPackage, Name: hiddenName, Kind: symbol.KindConstant},
-		},
-		Schemas: frontendtest.ScriptedSchemas(),
-		Keys:    frontend.Keys,
-	}
+// newAllocs is the frontend New returns for nil options: the empty
+// options, the frontend's state and its three hooks, the syntax's two,
+// and the kit's four.
+const newAllocs = 1 + 1 + 3 + 2 + 4
+
+// allocCall is one call that an allocation test and a benchmark share:
+// its benchmark path, its allocation ceiling, the call, and the check
+// of the result the call leaves.
+type allocCall struct {
+	name   string
+	allocs uint64
+	call   func()
+	check  func(tb assert.TB)
 }
+
+// treeReader is the partition's recorded door over a test tree.
+type treeReader struct {
+	tree fstest.MapFS
+}
+
+// Read returns one file's bytes.
+func (r treeReader) Read(path string) ([]byte, error) { return r.tree.ReadFile(path) }
 
 // The frontend runs the conformance suite every frontend runs, over
 // real Go source.
-func TestNew(t *testing.T) {
+func TestFrontend(t *testing.T) {
 	t.Parallel()
 
 	t.Run("New", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("passes the conformance suite", func(t *testing.T) {
+		t.Run("returns a frontend that passes the conformance suite", func(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.RunFrontendSuite(t, setup)
 		})
 
-		t.Run("passes the conformance suite with its stores", func(t *testing.T) {
+		t.Run("returns a frontend that passes the conformance suite with its stores", func(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.RunFrontendSuite(t, func(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
@@ -103,7 +89,7 @@ func TestNew(t *testing.T) {
 			assert.True(t, dependent, "Go sources import packages outside the workspace")
 		})
 
-		t.Run("parses past a file with a syntax error", func(t *testing.T) {
+		t.Run("returns a frontend that parses past a syntax error", func(t *testing.T) {
 			t.Parallel()
 
 			f := frontend.New(nil)
@@ -156,7 +142,7 @@ func TestNew(t *testing.T) {
 			}, "owner.go imports api, and row.go, where the struct is declared, does not")
 		})
 
-		t.Run("claims no vendor tree", func(t *testing.T) {
+		t.Run("returns a frontend that claims no vendor tree", func(t *testing.T) {
 			t.Parallel()
 
 			fx := rulestest.Loaded(t, frontend.New(nil), fstest.MapFS{
@@ -174,6 +160,100 @@ func TestNew(t *testing.T) {
 				"a vendored copy of a dependency does not load")
 		})
 	})
+}
+
+// The construction allocates the frontend the kit builds. The ordinary
+// run, which runs no benchmark, checks that ceiling here.
+func TestFrontendAllocs(t *testing.T) {
+	checkAllocs(t, frontendCalls())
+}
+
+// BenchmarkFrontend measures the construction a composition makes once
+// per load.
+func BenchmarkFrontend(b *testing.B) {
+	benchCalls(b, frontendCalls())
+}
+
+// frontendCalls returns a call of New with nil options.
+func frontendCalls() []allocCall {
+	var f plugin.Frontend
+	return []allocCall{
+		{
+			name: "New", allocs: newAllocs,
+			call:  func() { f = frontend.New(nil) },
+			check: func(tb assert.TB) { assert.Equal(tb, f.Name(), golang.Name, "New returns the Go frontend") },
+		},
+	}
+}
+
+// checkAllocs checks the ceiling of every call in the ordinary run, and
+// the result each call leaves.
+func checkAllocs(t *testing.T, calls []allocCall) {
+	t.Helper()
+
+	for _, c := range calls {
+		msg := c.name + " allocates within its ceiling"
+		assert.MaxAllocs(t, c.call, c.allocs, msg)
+		c.check(t)
+	}
+}
+
+// benchCalls measures every call under the bench contract at its
+// ceiling, one sub-benchmark each. Each call runs once before the
+// contract starts, so what the first call initialises stays out of the
+// count.
+func benchCalls(b *testing.B, calls []allocCall) {
+	b.Helper()
+
+	for _, tt := range calls {
+		b.Run(tt.name, func(b *testing.B) {
+			tt.call()
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
+		})
+	}
+}
+
+// goTree is the whole-contract fixture: a module root, two
+// packages, a cross-package reference, a carrier, a test file, a
+// signature root and a file that does not parse.
+func goTree() fstest.MapFS {
+	return fstest.MapFS{
+		"go.mod": {Data: []byte("module example.test/fix\n")},
+		"api/user.go": {Data: []byte(
+			"package api\n\n// User is one account.\ntype User struct{ name string }\n",
+		)},
+		"store/row.go": {Data: []byte(
+			"package store\n\nimport \"example.test/fix/api\"\n\n" +
+				"// Row is one record.\n//+fixture:gen:table name=rows\n" +
+				"type Row struct {\n\towner api.User\n\tcount int\n}\n\n" +
+				"func (r *Row) Get(n int) int { return r.count + n }\n",
+		)},
+		"store/row_test.go": {Data: []byte(
+			"package store\n\nfunc probe() {}\n",
+		)},
+		"dep/dep.go": {Data: []byte(
+			"package dep\n\ntype Dep struct{}\n\nconst hidden = 1\n",
+		)},
+		"bad/oops.go": {Data: []byte("package bad\n\nfunc ({ nope\n")},
+	}
+}
+
+// setup is the suite's entry over the whole-contract fixture.
+func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
+	return frontend.New(nil), &frontendtest.Fixture{
+		Sources:    goTree(),
+		Signatures: []string{depRoot},
+		Dropped: []symbol.Identity{
+			{Lang: frontend.Lang, Package: depPackage, Name: hiddenName, Kind: symbol.KindConstant},
+		},
+		Schemas: frontendtest.ScriptedSchemas(),
+		Keys:    frontend.Keys,
+	}
 }
 
 // unitOf partitions a tree and returns the unit with one file,
@@ -202,11 +282,3 @@ func unitOf(
 	tb.Fatalf("no unit contains %s", member)
 	return nil
 }
-
-// treeReader is the partition's recorded door over a test tree.
-type treeReader struct {
-	tree fstest.MapFS
-}
-
-// Read returns one file's bytes.
-func (r treeReader) Read(path string) ([]byte, error) { return r.tree.ReadFile(path) }

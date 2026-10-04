@@ -22,11 +22,19 @@ import (
 // two variants' values share, the out-of-range value one past the
 // largest integer value, and the foreign packages those declaring
 // a variant outside the type's own.
+//
+// # Allocation contract
+//
+// EnumOf allocates the variant list sized to the enumeration, and the
+// out-of-range value where a variant has a stamped integer: the
+// reference to the type and the converted integer. A foreign package
+// grows its own list.
 func (r Rules) EnumOf(e *node.Enum, v rules.View) rules.EnumInfo {
 	info := rules.EnumInfo{Form: rules.EnumIdentifier}
 	if e == nil {
 		return info
 	}
+	info.Variants = make([]rules.VariantText, 0, len(e.Variants))
 	key, keyed := r.constKey(v)
 	seen := map[string]string{}
 	var largest int64

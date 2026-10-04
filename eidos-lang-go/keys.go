@@ -53,7 +53,7 @@ const (
 	UnderlyingKey meta.KeyName = "golang.underlyingKind"
 
 	// IterSeqKey and IterSeq2Key mark a callable whose first
-	// result is the iterator shape of that arity.
+	// result is the iterator type of that arity.
 	IterSeqKey  meta.KeyName = "golang.iterSeq"
 	IterSeq2Key meta.KeyName = "golang.iterSeq2"
 
@@ -85,8 +85,8 @@ type Handles struct {
 	Comparable        meta.Key[bool]
 }
 
-// Keys registers every golang key, in the shape a composition and
-// a corpus fixture declare them.
+// Keys registers every golang key, in the form a composition and a
+// corpus fixture declare them. It allocates what [Register] allocates.
 func Keys(r *meta.Registry) error {
 	_, err := Register(r)
 	return err
@@ -95,6 +95,16 @@ func Keys(r *meta.Registry) error {
 // Register claims the golang namespace for the handle's registrant,
 // registers every golang key through the same handle, and returns
 // the annotator's handles.
+//
+// Error modes: the namespace another registrant claimed, a sealed
+// registry, and a key whose spelling a group took. Each is the
+// registry's error, returned as it is.
+//
+// # Allocation contract
+//
+// Register allocates the eleven kind lists of the keys, and the
+// registry allocates its namespace claim and the growth of its lists
+// and maps to sixteen keys: 28 allocations into a fresh registry.
 func Register(r *meta.Registry) (Handles, error) {
 	var h Handles
 	if err := r.ClaimNamespace(namespace); err != nil {

@@ -17,8 +17,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The builtin stubs' output: the marker each stubbed builtin writes,
-// so a template's own bytes are distinguishable from the pass's.
+// Each stubbed builtin writes a marker, so a template's own bytes are
+// distinguishable from the pass's.
 const (
 	bodyStub    = "\tbody()\n"
 	importsStub = "IMPORTS\n"
@@ -26,48 +26,9 @@ const (
 	nestedStub  = "NESTED "
 )
 
-// execute runs one template over one declaration the way the render
-// pass does, the builtins stubbed to markers, and returns the output
-// beside the file's import set.
-func execute(t *testing.T, src string, data any) (string, *render.ImportSet) {
-	t.Helper()
-
-	set := &render.ImportSet{}
-	var b strings.Builder
-	assert.NoError(t, parsed(t, src, set).Execute(&b, data), "the template executes")
-	return b.String(), set
-}
-
-// executed returns what [execute] writes.
-func executed(t *testing.T, src string, data any) string {
-	t.Helper()
-
-	out, _ := execute(t, src, data)
-	return out
-}
-
-// parsed parses one template against the backend's vocabulary bound to
-// set, the builtins stubbed.
-func parsed(t *testing.T, src string, set *render.ImportSet) *template.Template {
-	t.Helper()
-
-	tmpl, err := template.New("kind").
-		Funcs(backend.Funcs(set)).
-		Funcs(template.FuncMap{
-			render.BuiltinBody:    func(any) string { return bodyStub },
-			render.BuiltinUse:     func(string) string { return "" },
-			render.BuiltinImports: func() string { return importsStub },
-			render.BuiltinDecls:   func() string { return declsStub },
-			render.BuiltinSlots:   func() string { return "" },
-			render.BuiltinSlot:    func(string) string { return "" },
-			render.BuiltinNested: func(indent string, s symbol.Symbol) string {
-				return indent + nestedStub + s.Kind().String()
-			},
-		}).
-		Parse(src)
-	assert.NoError(t, err, "the template parses")
-	return tmpl
-}
+// templateMapAllocs is a map of kinds onto templates or reasons: the
+// map and its one group.
+const templateMapAllocs = 2
 
 // Each kind template is pinned byte for byte over a declaration
 // exercising its whole shape, member docblocks included.
@@ -419,4 +380,76 @@ func TestTemplates(t *testing.T) {
 			}
 		})
 	})
+}
+
+// Each map allocates itself. The ordinary run, which runs no benchmark,
+// checks those ceilings here.
+func TestTemplatesAllocs(t *testing.T) {
+	checkAllocs(t, templatesCalls())
+}
+
+// BenchmarkTemplates measures the maps the backend reads once per
+// build.
+func BenchmarkTemplates(b *testing.B) {
+	benchCalls(b, templatesCalls())
+}
+
+// templatesCalls returns a call of KindTemplates and of RefusedKinds.
+func templatesCalls() []allocCall {
+	var kinds map[symbol.Kind]string
+	return []allocCall{
+		{
+			name: "KindTemplates", allocs: templateMapAllocs,
+			call:  func() { kinds = backend.KindTemplates() },
+			check: func(tb assert.TB) { assert.Length(tb, kinds, 7, "KindTemplates returns seven templates") },
+		},
+		{
+			name: "RefusedKinds", allocs: templateMapAllocs,
+			call:  func() { kinds = backend.RefusedKinds() },
+			check: func(tb assert.TB) { assert.Length(tb, kinds, 1, "RefusedKinds returns the sum") },
+		},
+	}
+}
+
+// execute runs one template over one declaration the way the render
+// pass does, the builtins stubbed to markers, and returns the output
+// beside the file's import set.
+func execute(t *testing.T, src string, data any) (string, *render.ImportSet) {
+	t.Helper()
+
+	set := &render.ImportSet{}
+	var b strings.Builder
+	assert.NoError(t, parsed(t, src, set).Execute(&b, data), "the template executes")
+	return b.String(), set
+}
+
+// executed returns what [execute] writes.
+func executed(t *testing.T, src string, data any) string {
+	t.Helper()
+
+	out, _ := execute(t, src, data)
+	return out
+}
+
+// parsed parses one template against the backend's vocabulary bound to
+// set, the builtins stubbed.
+func parsed(t *testing.T, src string, set *render.ImportSet) *template.Template {
+	t.Helper()
+
+	tmpl, err := template.New("kind").
+		Funcs(backend.Funcs(set)).
+		Funcs(template.FuncMap{
+			render.BuiltinBody:    func(any) string { return bodyStub },
+			render.BuiltinUse:     func(string) string { return "" },
+			render.BuiltinImports: func() string { return importsStub },
+			render.BuiltinDecls:   func() string { return declsStub },
+			render.BuiltinSlots:   func() string { return "" },
+			render.BuiltinSlot:    func(string) string { return "" },
+			render.BuiltinNested: func(indent string, s symbol.Symbol) string {
+				return indent + nestedStub + s.Kind().String()
+			},
+		}).
+		Parse(src)
+	assert.NoError(t, err, "the template parses")
+	return tmpl
 }

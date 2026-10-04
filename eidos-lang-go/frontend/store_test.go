@@ -31,55 +31,24 @@ const (
 	goEnvOff    = "off"
 )
 
-// envOf returns a getenv over a fixed set of variables.
-func envOf(vars map[string]string) func(string) string {
-	return func(key string) string { return vars[key] }
-}
+// The roots the allocation cases name. Stores reads no directory where
+// the environment names both roots, so neither has to exist.
+const (
+	cacheRoot = "/cache"
+	goRoot    = "/goroot"
+)
 
-// markedDir creates a directory under a test's temporary directory with
-// the marker file in it, the marker's content naming the directory.
-func markedDir(tb testing.TB, parts ...string) string {
-	tb.Helper()
-
-	dir := filepath.Join(append([]string{tb.TempDir()}, parts...)...)
-	assert.NoError(tb, os.MkdirAll(dir, 0o755), "the fixture directory is created")
-	assert.NoError(tb, os.WriteFile(filepath.Join(dir, markerFile), []byte(dir), 0o644), "the marker is written")
-	return dir
-}
-
-// goRootDir creates a GOROOT under a test's temporary directory: a
-// bin/go file, src/runtime, and the marker in src.
-func goRootDir(tb testing.TB) string {
-	tb.Helper()
-
-	root := tb.TempDir()
-	src := filepath.Join(root, "src")
-	assert.NoError(tb, os.MkdirAll(filepath.Join(src, "runtime"), 0o755), "src/runtime is created")
-	assert.NoError(tb, os.WriteFile(filepath.Join(src, markerFile), []byte(src), 0o644), "the marker is written")
-	assert.NoError(tb, os.MkdirAll(filepath.Join(root, "bin"), 0o755), "bin is created")
-	assert.NoError(tb, os.WriteFile(filepath.Join(root, "bin", "go"), nil, 0o755), "the go binary is created")
-	return root
-}
-
-// envFileOf writes a go env file under a test's temporary directory and
-// returns its path.
-func envFileOf(tb testing.TB, lines ...string) string {
-	tb.Helper()
-
-	file := filepath.Join(tb.TempDir(), "env")
-	assert.NoError(tb, os.WriteFile(file, []byte(strings.Join(lines, "\n")+"\n"), 0o644), "the env file is written")
-	return file
-}
-
-// rootOf returns the directory a store is rooted at, read off the
-// marker the fixture wrote there.
-func rootOf(tb testing.TB, stores map[string]fs.FS, name string) string {
-	tb.Helper()
-
-	b, err := fs.ReadFile(stores[name], markerFile)
-	assert.NoError(tb, err, "the store is rooted at a marked directory")
-	return string(b)
-}
+// The allocations of the stores.
+const (
+	// storesAllocs is the stores of an environment that names both roots:
+	// the map, each root as a file system, and the standard library's
+	// path.
+	storesAllocs = 2 + 2 + 1
+	// envFileAllocs is the stores of a go env file that names both roots:
+	// the open file and its path, its status and its contents, the file's
+	// text and the map of its variables, and the stores.
+	envFileAllocs = 2 + 1 + 1 + 1 + 3 + storesAllocs
+)
 
 // The stores are the only door to bytes outside the workspace, and
 // their roots follow the go command's own rules, so each rule is
@@ -260,12 +229,8 @@ func TestStore(t *testing.T) {
 			assert.HasError(t, err, "a dangling link names no binary")
 			assert.Contains(t, err.Error(), varGoRoot, "the error names the variable to set")
 		})
-	})
 
-	t.Run("readEnvFile", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("reads nothing for GOENV=off", func(t *testing.T) {
+		t.Run("ignores the go env file for GOENV=off", func(t *testing.T) {
 			t.Parallel()
 
 			config := t.TempDir()
@@ -278,7 +243,7 @@ func TestStore(t *testing.T) {
 			assert.HasError(t, err, "the env file is off, and nothing else roots the module cache")
 		})
 
-		t.Run("reads go/env under XDG_CONFIG_HOME", func(t *testing.T) {
+		t.Run("reads the go env file under XDG_CONFIG_HOME", func(t *testing.T) {
 			t.Parallel()
 
 			modCache := markedDir(t)
@@ -291,7 +256,7 @@ func TestStore(t *testing.T) {
 			assert.Equal(t, rootOf(t, stores, frontend.ModCacheStore), modCache, "the configuration directory's file")
 		})
 
-		t.Run("reads go/env under .config in the home directory", func(t *testing.T) {
+		t.Run("reads the go env file under .config in the home directory", func(t *testing.T) {
 			t.Parallel()
 
 			modCache := markedDir(t)
@@ -304,7 +269,7 @@ func TestStore(t *testing.T) {
 			assert.Equal(t, rootOf(t, stores, frontend.ModCacheStore), modCache, "the default configuration directory")
 		})
 
-		t.Run("reads nothing under a relative XDG_CONFIG_HOME", func(t *testing.T) {
+		t.Run("ignores the go env file under a relative XDG_CONFIG_HOME", func(t *testing.T) {
 			t.Parallel()
 
 			home := t.TempDir()
@@ -322,7 +287,7 @@ func TestStore(t *testing.T) {
 				"a relative XDG_CONFIG_HOME names no configuration directory, not even .config under HOME")
 		})
 
-		t.Run("leaves out a line without a value", func(t *testing.T) {
+		t.Run("ignores a go env file line without a value", func(t *testing.T) {
 			t.Parallel()
 
 			modCache := markedDir(t)
@@ -333,4 +298,98 @@ func TestStore(t *testing.T) {
 			assert.Equal(t, rootOf(t, stores, frontend.ModCacheStore), modCache, "the line with = decides")
 		})
 	})
+}
+
+// The stores allocate the map and its two roots, and a go env file
+// allocates its read. The ordinary run, which runs no benchmark, checks
+// those ceilings here.
+func TestStoreAllocs(t *testing.T) {
+	checkAllocs(t, storeCalls(t))
+}
+
+// BenchmarkStore measures the resolution a load makes once, before it
+// reads any dependency unit.
+func BenchmarkStore(b *testing.B) {
+	benchCalls(b, storeCalls(b))
+}
+
+// storeCalls returns a call of Stores over an environment that names
+// both roots, and over a go env file that names them.
+func storeCalls(tb testing.TB) []allocCall {
+	tb.Helper()
+
+	env := envOf(map[string]string{varModCache: cacheRoot, varGoRoot: goRoot, varGoEnv: goEnvOff})
+	fileEnv := envOf(map[string]string{
+		varGoEnv: envFileOf(tb, varModCache+"="+cacheRoot, varGoRoot+"="+goRoot),
+	})
+	var (
+		stores map[string]fs.FS
+		err    error
+	)
+	check := func(tb assert.TB) {
+		assert.NoError(tb, err, "Stores resolves both roots")
+		assert.Length(tb, stores, 2, "Stores returns the module cache and the standard library")
+	}
+	return []allocCall{
+		{
+			name: "Stores", allocs: storesAllocs,
+			call:  func() { stores, err = frontend.Stores(env) },
+			check: check,
+		},
+		{
+			name: "Stores/the go env file", allocs: envFileAllocs,
+			call:  func() { stores, err = frontend.Stores(fileEnv) },
+			check: check,
+		},
+	}
+}
+
+// envOf returns a getenv over a fixed set of variables.
+func envOf(vars map[string]string) func(string) string {
+	return func(key string) string { return vars[key] }
+}
+
+// markedDir creates a directory under a test's temporary directory with
+// the marker file in it, the marker's content naming the directory.
+func markedDir(tb testing.TB, parts ...string) string {
+	tb.Helper()
+
+	dir := filepath.Join(append([]string{tb.TempDir()}, parts...)...)
+	assert.NoError(tb, os.MkdirAll(dir, 0o755), "the fixture directory is created")
+	assert.NoError(tb, os.WriteFile(filepath.Join(dir, markerFile), []byte(dir), 0o644), "the marker is written")
+	return dir
+}
+
+// goRootDir creates a GOROOT under a test's temporary directory: a
+// bin/go file, src/runtime, and the marker in src.
+func goRootDir(tb testing.TB) string {
+	tb.Helper()
+
+	root := tb.TempDir()
+	src := filepath.Join(root, "src")
+	assert.NoError(tb, os.MkdirAll(filepath.Join(src, "runtime"), 0o755), "src/runtime is created")
+	assert.NoError(tb, os.WriteFile(filepath.Join(src, markerFile), []byte(src), 0o644), "the marker is written")
+	assert.NoError(tb, os.MkdirAll(filepath.Join(root, "bin"), 0o755), "bin is created")
+	assert.NoError(tb, os.WriteFile(filepath.Join(root, "bin", "go"), nil, 0o755), "the go binary is created")
+	return root
+}
+
+// envFileOf writes a go env file under a test's temporary directory and
+// returns its path.
+func envFileOf(tb testing.TB, lines ...string) string {
+	tb.Helper()
+
+	file := filepath.Join(tb.TempDir(), "env")
+	assert.NoError(tb, os.WriteFile(file, []byte(strings.Join(lines, "\n")+"\n"), 0o644), "the env file is written")
+	return file
+}
+
+// rootOf returns the directory a store is rooted at, read off the
+// marker the fixture wrote there.
+func rootOf(tb testing.TB, stores map[string]fs.FS, name string) string {
+	tb.Helper()
+
+	b, err := fs.ReadFile(stores[name], markerFile)
+	assert.NoError(tb, err, "the store is rooted at a marked directory")
+	return string(b)
 }

@@ -23,13 +23,18 @@ const refusalPrefix = string(golang.Lang) + ": "
 // visibility a matter of case: a public or unstated scope exports
 // through Pascal case, a package scope is unexported through camel
 // case, and the initialisms the [naming.Default] caser recognises
-// keep their shape, so httpRow exports as HTTPRow. Parameters and
+// keep their case, so httpRow exports as HTTPRow. Parameters and
 // results spell camel whatever the scope, because their case states
 // no visibility, and a type parameter keeps its spelling, whose
 // single-capital convention is near universal. The blank identifier
 // is kept as it is. A protected, private or internal scope refuses,
 // because no case spells it, and so does a spelling that is no Go
 // identifier: empty, led by a digit, or a keyword.
+//
+// # Allocation contract
+//
+// Name allocates a converted spelling, one allocation, and nothing for
+// a name the convention spells as it is. A refusal allocates its error.
 func Name(_, kind symbol.Kind, v symbol.Visibility, name string) (string, error) {
 	if name == blank {
 		return name, nil

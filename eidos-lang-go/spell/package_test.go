@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	golang "go.dokimi.dev/eidos/lang/go"
 	"go.dokimi.dev/eidos/lang/go/spell"
@@ -26,30 +27,12 @@ const (
 	testName = "store" + golang.TestSuffix
 )
 
-// declared returns the package a loaded directory's files declare.
-func declared(importPath, name string) symbol.Identity {
-	return symbol.Identity{Lang: golang.Lang, Package: importPath, Name: name, Kind: symbol.KindPackage}
-}
+// derivedAllocs is the package of a directory no loaded package
+// declares: its import path.
+const derivedAllocs = 1
 
-// origin returns a unit's package, an identity without a clause name.
-func origin(importPath string) symbol.Identity {
-	return symbol.Identity{Lang: golang.Lang, Package: importPath, Kind: symbol.KindPackage}
-}
-
-// acme returns the module at the tree's root.
-func acme() plugin.Module { return plugin.Module{Lang: golang.Lang, Path: acmeModule, Root: "."} }
-
-// storeResidents returns the store directory's files: the package's
-// source and a file of its external test package.
-func storeResidents() []plugin.Resident {
-	return []plugin.Resident{
-		{File: "svc/store/store.go", Pkg: declared(storePath, "store")},
-		{File: "svc/store/store_test.go", Pkg: declared(testPath, testName)},
-	}
-}
-
-// A Go file declares its directory's package, so a routed file joins
-// the package the frontend loads from that directory.
+// A Go file declares its directory's package. A routed file joins the
+// package the frontend loads from that directory.
 func TestPackage(t *testing.T) {
 	t.Parallel()
 
@@ -63,10 +46,7 @@ func TestPackage(t *testing.T) {
 		}{
 			{
 				name: "returns the package the directory's non-test file declares",
-				give: plugin.Placement{
-					Path:      "svc/store/store_stub.go",
-					Residents: []plugin.Resident{{File: "svc/store/store.go", Pkg: declared(storePath, "store")}},
-				},
+				give: residentPlacement(),
 				want: declared(storePath, "store"),
 			},
 			{
@@ -138,10 +118,7 @@ func TestPackage(t *testing.T) {
 			},
 			{
 				name: "returns the innermost module's import path",
-				give: plugin.Placement{
-					Path:    "svc/gen/stub.go",
-					Modules: []plugin.Module{{Lang: golang.Lang, Path: svcModule, Root: "svc"}, acme()},
-				},
+				give: modulePlacement(),
 				want: declared(svcModule+"/gen", "gen"),
 			},
 			{
@@ -197,4 +174,98 @@ func TestPackage(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Package returns a resident's package without allocating, and
+// allocates the import path it derives for a directory without one.
+// The ordinary run, which runs no benchmark, checks those ceilings
+// here.
+func TestPackageAllocs(t *testing.T) {
+	resident, module := residentPlacement(), modulePlacement()
+	var (
+		got symbol.Identity
+		err error
+	)
+	assert.MaxAllocs(t, func() { got, err = spell.Package(resident) }, 0,
+		"Package allocates nothing for a resident's package")
+	assert.NoError(t, err, "Package derives the resident's package")
+	assert.Equal(t, got, declared(storePath, "store"), "Package returns the resident's package")
+	assert.MaxAllocs(t, func() { got, err = spell.Package(module) }, derivedAllocs,
+		"Package allocates the derived import path")
+	assert.NoError(t, err, "Package derives the module's package")
+	assert.Equal(t, got, declared(svcModule+"/gen", "gen"), "Package returns the derived package")
+}
+
+// BenchmarkPackage measures the package a backend names once per routed
+// file.
+func BenchmarkPackage(b *testing.B) {
+	placements := []struct {
+		name   string
+		give   plugin.Placement
+		allocs uint64
+		want   symbol.Identity
+	}{
+		{name: "Package", give: residentPlacement(), want: declared(storePath, "store")},
+		{
+			name:   "Package/a directory without a Go package",
+			give:   modulePlacement(),
+			allocs: derivedAllocs,
+			want:   declared(svcModule+"/gen", "gen"),
+		},
+	}
+	for _, tt := range placements {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var (
+				got symbol.Identity
+				err error
+			)
+			for c.Loop() {
+				got, err = spell.Package(tt.give)
+			}
+			assert.NoError(b, err, "Package derives the package")
+			assert.Equal(b, got, tt.want, "Package returns the package")
+		})
+	}
+}
+
+// declared returns the package a loaded directory's files declare.
+func declared(importPath, name string) symbol.Identity {
+	return symbol.Identity{Lang: golang.Lang, Package: importPath, Name: name, Kind: symbol.KindPackage}
+}
+
+// origin returns a unit's package, an identity without a clause name.
+func origin(importPath string) symbol.Identity {
+	return symbol.Identity{Lang: golang.Lang, Package: importPath, Kind: symbol.KindPackage}
+}
+
+// acme returns the module at the tree's root.
+func acme() plugin.Module { return plugin.Module{Lang: golang.Lang, Path: acmeModule, Root: "."} }
+
+// storeResidents returns the store directory's files: the package's
+// source and a file of its external test package.
+func storeResidents() []plugin.Resident {
+	return []plugin.Resident{
+		{File: "svc/store/store.go", Pkg: declared(storePath, "store")},
+		{File: "svc/store/store_test.go", Pkg: declared(testPath, testName)},
+	}
+}
+
+// residentPlacement returns a stub file routed into the store
+// directory, whose source declares the package.
+func residentPlacement() plugin.Placement {
+	return plugin.Placement{
+		Path:      "svc/store/store_stub.go",
+		Residents: []plugin.Resident{{File: "svc/store/store.go", Pkg: declared(storePath, "store")}},
+	}
+}
+
+// modulePlacement returns a stub file routed into a directory of the svc
+// module without a Go package, inside the module at the tree's root.
+func modulePlacement() plugin.Placement {
+	return plugin.Placement{
+		Path:    "svc/gen/stub.go",
+		Modules: []plugin.Module{{Lang: golang.Lang, Path: svcModule, Root: "svc"}, acme()},
+	}
 }

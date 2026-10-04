@@ -24,6 +24,21 @@ const yamlPath = "gopkg.in/yaml.v3"
 // return: the language's identity.
 const refusalPrefix = string(golang.Lang) + ": "
 
+// The allocations of a resolution.
+const (
+	// probeAllocs is a resolution through the probe of the subject's
+	// file, whose four imports bind no dot import: the file's scope,
+	// three allocations, and the list of candidates.
+	probeAllocs = 3 + 1
+	// memberAllocs is a resolution among the members of the subject's
+	// type: the binding the member walk runs on, and the walk's member
+	// list.
+	memberAllocs = 2
+)
+
+// A directive names a declaration by a spelling, and the Go rules
+// resolve it the way Go scopes the spelling. Every resolution kind, and
+// every spelling that names nothing, is pinned.
 func TestResolve(t *testing.T) {
 	t.Parallel()
 
@@ -264,4 +279,49 @@ func TestResolve(t *testing.T) {
 			assert.Equal(t, got.(*node.Param).Name, "id", "the parameter named id")
 		})
 	})
+}
+
+// A resolution allocates the scope of the subject's file and the
+// candidates it probes, or the member walk it reads. The ordinary run,
+// which runs no benchmark, checks those ceilings here.
+func TestResolveAllocs(t *testing.T) {
+	checkAllocs(t, resolveCalls(t))
+}
+
+// BenchmarkResolve measures the resolution the kernel makes for every
+// spelling a directive names.
+func BenchmarkResolve(b *testing.B) {
+	benchCalls(b, resolveCalls(b))
+}
+
+// resolveCalls returns a call of Resolve through the probe and through
+// the member walk.
+func resolveCalls(tb testing.TB) []allocCall {
+	tb.Helper()
+
+	f := loaded(tb)
+	r := gorules.New()
+	scope := f.scope(id(fxPath, "Row", symbol.KindStruct))
+	var (
+		got symbol.Symbol
+		err error
+	)
+	return []allocCall{
+		{
+			name: "Resolve", allocs: probeAllocs,
+			call: func() { got, err = r.Resolve(scope, "Find", directive.ResolveCallableInScope, f.view) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Resolve finds Find")
+				assert.Equal(tb, got.Kind(), symbol.KindFunction, "Resolve returns the function")
+			},
+		},
+		{
+			name: "Resolve/a member of the subject's type", allocs: memberAllocs,
+			call: func() { got, err = r.Resolve(scope, "ID", directive.ResolveValueField, f.view) },
+			check: func(tb assert.TB) {
+				assert.NoError(tb, err, "Resolve finds ID")
+				assert.Equal(tb, got.Kind(), symbol.KindField, "Resolve returns the field")
+			},
+		},
+	}
 }
