@@ -23,28 +23,26 @@
 // from it, so totality covers every capability the model has had. The
 // same expectations run over every language's tree. A contract defect
 // then shows in the language the others do not share, while the
-// contract can still change. The whole-composition acceptance runs and
-// the end-to-end corpus benchmark belong in this module. Go's
-// end-to-end fixtures run through the Go backend:
+// contract can still change.
 //
-//   - the kernel's pipeline suite, over a stub generator and an audit
-//     weaver;
-//   - the kernel's workspace suite, over a plan scoped to svc that
-//     doubles its interfaces and a plan scoped to admin that aliases
-//     each double through the first plan's export;
-//   - a scoped plan whose reader finds nothing outside its sources, a
-//     workspace check that reads the doubles' record, and two
-//     workspaces over sibling roots of one repository.
+// # Languages
+//
+// Each language's entry is a package under lang, at its satellite's
+// import path below conformance: the entry of go.dokimi.dev/eidos/lang/java
+// is go.dokimi.dev/eidos/conformance/lang/java. The packages are lang/go,
+// lang/java, lang/protobuf, lang/rust and lang/typescript. Each declares
+// its language's corpus entry, and its tests run [Run] over the tree
+// under its testdata. lang/go also declares Go's whole-composition
+// fixtures, and its tests run the kernel's pipeline and workspace suites
+// over them and benchmark a load of this repository.
 //
 // # Dependency position
 //
 // conformance imports the kernel's two read-side kits,
 // core/frontend/frontendtest and core/rules/rulestest, beside
 // core/rules, core/store, core/node, core/directive, core/meta,
-// core/plugin, core/symbol and the assert module. Its tests import the
-// language satellites whose frontends exist. Go's end-to-end fixtures
-// also import the Go backend, core/workspace, core/ledger,
-// core/manifest and the kernel's pipeline and workspace kits,
-// core/workspace/pipelinetest and core/workspace/workspacetest. No
-// module imports conformance.
+// core/plugin, core/symbol and the assert module. Its tests import
+// conformance/lang/go and the Go satellite's root and frontend, for the
+// level checks over Go's corpus. The packages under lang import
+// conformance and their satellites. No module imports conformance.
 package conformance

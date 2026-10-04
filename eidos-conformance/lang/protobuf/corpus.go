@@ -1,43 +1,37 @@
 // Copyright ThesmOS B.V. 2026
 // SPDX-License-Identifier: Apache-2.0
 
-package conformance_test
+package protobuf
 
 import (
-	"os"
+	"io/fs"
 	"strings"
-	"testing"
 
 	"go.dokimi.dev/eidos/conformance"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
-	protobuf "go.dokimi.dev/eidos/lang/protobuf"
+	protolang "go.dokimi.dev/eidos/lang/protobuf"
 	protofrontend "go.dokimi.dev/eidos/lang/protobuf/frontend"
 	protorules "go.dokimi.dev/eidos/lang/protobuf/rules"
 )
 
-// protoPackage derives the namespace a feature's declarations load
-// under. A protobuf namespace is the dotted name the file's package
-// statement declares, not the file's directory, so the satellite
-// joins the parts with dots where the corpus convention uses
-// slashes.
-func protoPackage(featureID, sub string) string {
-	parts := []string{featureDir, featureID}
-	if sub != "" {
-		parts = append(parts, sub)
-	}
-	return strings.Join(parts, ".")
-}
+// The directory the corpus convention places features under, which the
+// namespace derivation starts from, the separator a namespace joins its
+// parts with, and the corpus's signature root.
+const (
+	featureDir    = "f"
+	namespaceSep  = "."
+	signatureRoot = "f/cross_package_ref/dep"
+)
 
-// protobuf is read-only and a schema language: it spells records,
-// namespaces, services and closed value sets, and states nothing
-// for a method on a record, an overload, a standalone constant or
-// a test file. Each of those rows is refused, and none is omitted.
-func TestProtobuf(t *testing.T) {
-	t.Parallel()
-
-	conformance.Run(t, conformance.Corpus{
+// Corpus returns protobuf's entry over tree. protobuf is read-only and a
+// schema language: it spells records, namespaces, services and closed
+// value sets, and states nothing for a method on a record, an overload,
+// a standalone constant or a test file. Each of those rows is refused,
+// and none is omitted.
+func Corpus(tree fs.FS) conformance.Corpus {
+	return conformance.Corpus{
 		Frontend: protofrontend.New(),
-		Sources:  os.DirFS("testdata/proto"),
+		Sources:  tree,
 		Coverage: conformance.Coverage{
 			"struct_fields":     conformance.Projects,
 			"cross_package_ref": conformance.Projects,
@@ -62,10 +56,22 @@ func TestProtobuf(t *testing.T) {
 		// A schema states no bodies, so a signature-only root loads
 		// the same declarations as a full one, and the corpus lists
 		// no dropped identity.
-		Signatures: []string{"f/cross_package_ref/dep"},
+		Signatures: []string{signatureRoot},
 		Schemas:    frontendtest.ScriptedSchemas(),
-		Keys:       protobuf.Keys,
+		Keys:       protolang.Keys,
 		Rules:      protorules.New(),
-		PackageOf:  protoPackage,
-	})
+		PackageOf:  packageOf,
+	}
+}
+
+// packageOf derives the namespace a feature's declarations load under.
+// A protobuf namespace is the dotted name the file's package statement
+// declares, not the file's directory, so the entry joins the parts with
+// dots where the corpus convention uses slashes.
+func packageOf(featureID, sub string) string {
+	parts := []string{featureDir, featureID}
+	if sub != "" {
+		parts = append(parts, sub)
+	}
+	return strings.Join(parts, namespaceSep)
 }
