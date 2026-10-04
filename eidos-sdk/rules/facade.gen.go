@@ -22,32 +22,50 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Bound is the kernel's walks and one language's decisions over
-// one invocation's view. A handler obtains one from its match. It
-// memoises [Bound.TypeOf] per reference and nothing else, for the
-// life of the invocation.
+// Bound is the kernel's walks and one language's decisions over one
+// invocation's view. A handler obtains one from its match. It memoises
+// [Bound.TypeOf] per reference and nothing else, for the life of the
+// invocation.
 //
-// A Bound is not safe for concurrent use, because the view it
-// records into is not.
+// Use the Bound that [NewBound] returns. The zero Bound has no rules,
+// and a method that calls the language's rules panics on it.
+//
+// # Concurrency
+//
+// A Bound is not safe for concurrent use, because the view it records
+// into and the memo it folds into are not.
+//
+// # Allocation contract
+//
+// [NewBound] allocates the memo, one allocation. The memo stores each
+// [TypeShape] out of line, because a shape is 200 bytes and a Go map
+// stores a value above 128 bytes in an allocation of its own. Each
+// method states what it allocates.
 type Bound = core.Bound
 
-// NewBound binds a language's rules to a view. forLang returns
-// another language's rules for a contributor or a target declared
-// in it. A nil forLang gives every other language [Absent], and nil
-// rules bind [Absent] for the zero language.
+// NewBound binds a language's rules to a view. forLang returns another
+// language's rules for a contributor or a target declared in it. A nil
+// forLang gives every other language [Absent], and nil rules bind
+// [Absent] for the zero language.
+//
+// # Allocation contract
+//
+// NewBound allocates the memo, one allocation.
 func NewBound(source SourceRules, view View, forLang func(symbol.Lang) SourceRules) Bound {
 	return core.NewBound(source, view, forLang)
 }
 
-// Callable is the normalized view of a function or a method: what
-// a shape detector reads, and the only thing it may.
+// Callable is the normalized view of a function or a method: what a
+// shape detector reads, and the only thing it may. [Bound.CallableOf]
+// returns it. Params is nil for a signature without parameters, and
+// Returns for one without returns.
 type Callable = core.Callable
 
-// ParamView is one parameter: its name, its reference, the role
-// the language gave it, and whether it collects the rest. It
-// carries the reference and no shape: a consumer that needs the
-// shape asks the bound [Bound.TypeOf], which memoises, so a
-// detector computes the shapes it reads and no others.
+// ParamView is one parameter: its name, its reference, the role the
+// language gave it, and whether it collects the rest. It contains the
+// reference and no shape. A consumer that needs the shape asks
+// [Bound.TypeOf], which memoises, so a detector folds only the shapes it
+// reads.
 type ParamView = core.ParamView
 
 // ReturnView is one return: its name where the language names
@@ -60,13 +78,22 @@ type ReturnView = core.ReturnView
 // passing as a language with no members.
 var AbsentRules = core.AbsentRules
 
-// SourceRules is what every language returns. Implementing it is
-// what makes a language a language on the read side.
+// SourceRules is the read-side contract of one language: the decisions
+// inside the kernel's walks, what a spelling names in a scope, the
+// values of a type, and the naming join. A language the composition
+// registers rules for implements it.
 //
-// A value is safe for concurrent use, because the run calls it from
-// parallel plans and from parallel validations. It keeps no state of
-// its own, and every method that reads takes the [View] it reads
-// through.
+// # Concurrency
+//
+// An implementation is safe for concurrent use, because the run calls
+// it from parallel plans and from parallel validations. It keeps no
+// state of its own, and every method that reads takes the [View] it
+// reads through.
+//
+// # Allocation contract
+//
+// The kernel sets no ceiling on an implementation. A projection that
+// calls a method allocates what the method allocates, and states so.
 type SourceRules = core.SourceRules
 
 // Scope is where a spelling is read: the subject the spelling is
@@ -159,34 +186,53 @@ type MemberPolicy = core.MemberPolicy
 
 // Registry maps each language to its [SourceRules].
 //
-// A Registry is not safe for concurrent use while it registers,
-// which the composition does on one goroutine. It is read-only
-// afterwards and safe to read from every plan.
+// The zero Registry looks up and lists no language, and
+// [Registry.Register] panics on it. Build one with [NewRegistry].
+//
+// # Concurrency
+//
+// A Registry is not safe for concurrent use while it registers, which
+// the composition does on one goroutine. It is read-only afterwards and
+// safe to read from every plan.
+//
+// # Allocation contract
+//
+// [NewRegistry] allocates the registry and its map, two allocations.
+// The first registration allocates the map's first group, and a later
+// one allocates only as the map grows. A lookup of a registered language
+// allocates nothing.
 type Registry = core.Registry
 
-// NewRegistry returns an empty registry.
+// NewRegistry returns an empty registry. It allocates the registry and
+// its map, two allocations.
 func NewRegistry() *Registry {
 	return core.NewRegistry()
 }
 
-// Absent returns the rules of a language the composition
-// registered none for: a member policy contributing nothing, every
-// parameter an input and every return a value under no error
-// model, Opaque for every builtin, a failing Resolve, and values
-// that refuse with [RefusedNoRules]. The refusal is a value, so a
-// generator's OK gate works without a nil check.
+// Absent returns the rules of a language the composition registered
+// none for: a member policy contributing nothing, every parameter an
+// input and every return a value under no error model, Opaque for every
+// builtin, a failing Resolve, and values that refuse with
+// [RefusedNoRules]. The refusal is a value, so a generator's OK gate
+// works without a nil check. The rules satisfy no optional capability.
+//
+// # Allocation contract
+//
+// Absent allocates the value the interface contains, one allocation.
 func Absent(lang symbol.Lang) SourceRules {
 	return core.Absent(lang)
 }
 
-// IsAbsent reports whether a value is the one [Absent] returns.
+// IsAbsent reports whether rules are the value [Absent] returns. It
+// reports false for nil, and allocates nothing.
 func IsAbsent(r SourceRules) bool {
 	return core.IsAbsent(r)
 }
 
 // MemberSet is a type's effective members: its own and what arrives
 // through its contributors, with provenance per member and a gap
-// for every contributor that yielded nothing.
+// for every contributor that yielded nothing. Each call of
+// [Bound.MembersOf] returns lists of its own.
 type MemberSet = core.MemberSet
 
 // Member is one effective member and where it came from.
@@ -196,8 +242,8 @@ type Member = core.Member
 type GapReason = core.GapReason
 
 const (
-	// GapUnresolved is a contributor whose reference carries no
-	// target, or one the view does not hold.
+	// GapUnresolved is a contributor whose reference has no target, or
+	// a target the view does not contain.
 	GapUnresolved = core.GapUnresolved
 	// GapNotMembered is a contributor that is not a type with
 	// members.
@@ -205,8 +251,8 @@ const (
 	// GapCyclic is a contributor already on the path, or one past
 	// the depth budget.
 	GapCyclic = core.GapCyclic
-	// GapGeneric is a contributor carrying type arguments the walk
-	// could not bind.
+	// GapGeneric is a contributor with type arguments the walk could
+	// not bind.
 	GapGeneric = core.GapGeneric
 	// GapConflict is two arrivals of one name on an interface with
 	// different signatures.
@@ -238,8 +284,8 @@ type EnumInfo = core.EnumInfo
 // a string literal, quoted by the language that spells it.
 type VariantText = core.VariantText
 
-// ErrorValueRules names error values: paired inverses, so the two
-// can never drift.
+// ErrorValueRules names error values. Its two methods are inverses, so
+// a name and its recognition cannot disagree.
 type ErrorValueRules = core.ErrorValueRules
 
 // TagRules reads a language's per-field tags.
@@ -249,7 +295,7 @@ type TagRules = core.TagRules
 type GenericsRules = core.GenericsRules
 
 // PropertyRules computes the properties view: getters paired with
-// setters. A projection, never a change to the model.
+// setters. Computing the view leaves the model unchanged.
 type PropertyRules = core.PropertyRules
 
 // Property is one computed property.
@@ -299,37 +345,49 @@ const (
 	ScalarFloat = core.ScalarFloat
 )
 
-// TypeShape is the canonical shape of a type: the hub every
-// cross-language conversion turns on. Form names its structure
-// from the one closed enum, the structural forms with their
-// children folded and the leaves classified.
+// TypeShape is the canonical shape of a type, which every conversion
+// between languages reads. Form names its structure from the one closed
+// enum: a structural form contains its children folded, and a leaf form
+// is classified.
+//
+// # Allocation contract
+//
+// A TypeShape is a value of 200 bytes. The constructors return it by
+// value, and allocate only the list of arguments a reference keeps.
 type TypeShape = core.TypeShape
 
 // Opaque returns the shape of a reference the projection cannot
-// classify: representable, not projectable, with its spelling.
+// classify: [symbol.FormOpaque] with the reference's spelling, and
+// without a spelling for a nil reference. A backend spells the type and
+// derives nothing from it. Opaque allocates nothing.
 func Opaque(ref *node.TypeRef) TypeShape {
 	return core.Opaque(ref)
 }
 
-// Scalar returns a number shape of a class and width.
+// Scalar returns a number shape of a class and a width in bits, 0 for
+// the platform width. It allocates nothing.
 func Scalar(spelling string, class ScalarClass, bits int) TypeShape {
 	return core.Scalar(spelling, class, bits)
 }
 
-// Leaf returns a childless leaf shape: Bool, Text or Bytes.
+// Leaf returns a childless leaf shape: Bool, Text or Bytes. It
+// allocates nothing.
 func Leaf(form symbol.TypeForm, spelling string) TypeShape {
 	return core.Leaf(form, spelling)
 }
 
-// Reference returns the shape of a reference to a declaration.
+// Reference returns the shape of a reference to a declaration, with its
+// type arguments in order. The shape keeps args as its Args, so a call
+// with arguments allocates their list at the call site, one allocation.
+// A call without arguments allocates nothing.
 func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape {
 	return core.Reference(spelling, id, args...)
 }
 
-// The well-known types: blessed reference identities a language's
-// Builtin maps its own spelling onto, so a Go time.Time and a proto
-// Timestamp project to one shape. The registry contains these two,
-// and growing it only adds entries.
+// A language's Builtin maps its own spelling of a well-known type onto
+// one of these blessed reference identities, so a Go time.Time and a
+// proto Timestamp project to one shape. The registry contains these
+// two, and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = core.WellKnownTimestamp
@@ -338,47 +396,54 @@ var (
 )
 
 // IsWellKnown reports whether an identity is one the registry
-// blesses.
+// blesses. It allocates nothing.
 func IsWellKnown(id symbol.Identity) bool {
 	return core.IsWellKnown(id)
 }
 
 // Sample is one value of a type a generated check writes, or the
 // reason none could be derived.
+//
+// # Allocation contract
+//
+// The constructors and combinators of a Sample return it by value and
+// allocate nothing of their own.
 type Sample = core.Sample
 
-// Of returns a sample with a value.
+// Of returns a sample with a value. It allocates nothing.
 func Of(v emit.Value) Sample {
 	return core.Of(v)
 }
 
-// Refused returns a sample with a refusal and no value.
+// Refused returns a sample with a refusal and no value. It allocates
+// nothing.
 func Refused(why Refusal) Sample {
 	return core.Refused(why)
 }
 
-// Pair returns a literal sample and its alternate, both of one
-// kind.
+// Pair returns a literal sample and its alternate, both of one kind.
+// It allocates nothing.
 func Pair(k emit.LiteralKind, sample, alternate string) (Sample, Sample) {
 	return core.Pair(k, sample, alternate)
 }
 
 // NumberPair returns a numeric sample and its alternate, both of one
 // kind and written for a number type of one width in bits, as
-// [emit.Number] states it.
+// [emit.Number] states it. It allocates nothing.
 func NumberPair(k emit.LiteralKind, sample, alternate string, bits int) (Sample, Sample) {
 	return core.NumberPair(k, sample, alternate, bits)
 }
 
 // RefusedPair returns one refusal as both halves, for a type that
-// admits no pair.
+// admits no pair. It allocates nothing.
 func RefusedPair(why Refusal) (Sample, Sample) {
 	return core.RefusedPair(why)
 }
 
 // Lift returns a derived sample with its value wrapped, such as an
 // element placed in a composite. A sample without a value returns
-// unchanged, so the wrapped part keeps its reason.
+// unchanged, so the wrapped part keeps its reason. It allocates what
+// wrap allocates.
 func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 	return core.Lift(s, wrap)
 }
@@ -389,7 +454,7 @@ func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 // value differs from the stated half, the other derived value where
 // that one differs, and a [RefusedNoLiteral] refusal where neither
 // does. The pair is then two distinct values. With no half stated,
-// the derived pair returns as it is.
+// the derived pair returns as it is. It allocates nothing.
 func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Sample) {
 	return core.Complete(sample, alternate, derived, derivedAlternate)
 }
@@ -419,8 +484,10 @@ const (
 )
 
 // FirstRefusal returns the first refusal among samples, and
-// [RefusedNoLiteral] where none states one. A value built from
-// several derived parts refuses with it when a part has no value.
+// [RefusedNoLiteral] where none states one. A value built from derived
+// parts refuses with it when a part has no value. FirstRefusal keeps no
+// sample, so the caller's list of arguments does not escape, and a call
+// allocates nothing.
 func FirstRefusal(samples ...Sample) Refusal {
 	return core.FirstRefusal(samples...)
 }
@@ -428,20 +495,39 @@ func FirstRefusal(samples ...Sample) Refusal {
 // EmitRef restates a node reference in the emit model, structure,
 // arguments, target and package included, so a value's Type is what
 // a backend spells and imports. A nil reference returns nil.
+//
+// # Allocation contract
+//
+// EmitRef allocates each restated reference, and the list of children
+// and the list of arguments of each that has them. A reference without
+// children or arguments allocates one.
 func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 	return core.EmitRef(ref)
 }
 
-// View is what a projection reads through: the invocation's
-// tracked declaration reader, the run's arbitrated facts and the
-// read set both record into, and the kernel's own keys for the
-// authored values the walks read first. The workspace mints one
-// per invocation. The zero View reads nothing. A projection handed
-// one refuses, because a read of an untracked graph records no edge.
+// View is what a projection reads through: the invocation's tracked
+// declaration reader, the run's arbitrated facts and the read set both
+// record into, and the kernel's own keys for the authored values the
+// walks read first. The workspace builds one per invocation.
+//
+// The zero View reads nothing. A read of an untracked graph would record
+// no edge, so a projection handed the zero View refuses.
+//
+// # Concurrency
+//
+// A View is not safe for concurrent use. The read set it records into is
+// not.
+//
+// # Allocation contract
+//
+// A read allocates only to record a new edge in the read set.
+// [View.Authored] states what it allocates to lift a stated value.
 type View = core.View
 
-// Fact returns the value arbitration selects for a subject and a
-// key, recorded. A view without facts, or a zero key, reads nothing.
+// Fact returns the value arbitration selects for a subject and a key,
+// and records the read where the view has a read set. A view without
+// facts, a zero key and a zero subject read nothing. It allocates what
+// the read set allocates to record a new edge.
 func Fact[T meta.FactValue](v View, id symbol.Identity, k meta.Key[T]) (T, bool) {
 	return core.Fact[T](v, id, k)
 }

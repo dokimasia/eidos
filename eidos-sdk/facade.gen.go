@@ -33,10 +33,23 @@ import (
 // Builder accumulates a plugin's declaration. Everything on it is
 // data; only the handlers inside rules, the key registrations and
 // the template helpers are functions. Build freezes it, and a
-// Builder is not reused afterwards.
+// Builder is not reused afterwards. Every method returns the builder.
+//
+// # Concurrency
+//
+// A Builder is not safe for concurrent use. A plugin's constructor
+// declares it on one goroutine.
+//
+// # Allocation contract
+//
+// [NewPlugin] allocates the builder and its map of priorities. A method
+// that appends to a list of the declaration allocates the list on its
+// first call and grows it on a later one, and a method that sets one
+// value allocates nothing. [Builder.Build] states what it allocates.
 type Builder = core.Builder
 
-// NewPlugin starts a plugin declaration.
+// NewPlugin starts a plugin declaration. It allocates the builder and
+// its map of priorities, two allocations.
 func NewPlugin(name plugin.ID) *Builder {
 	return core.NewPlugin(name)
 }
@@ -68,6 +81,19 @@ type Tag = core.Tag
 // invocations one after another or on several workers. A handler sees
 // the plan's store and the slots as they were when its phase call
 // began.
+//
+// # Concurrency
+//
+// An Emitter belongs to one invocation and is valid during its handler
+// call. A handler does not share it with another goroutine.
+//
+// # Allocation contract
+//
+// The phase call's buffers and the invocation's handles are pooled, so
+// an accessor, an append and a slot view allocate nothing per
+// invocation once the call's state is warm. What a call's effects leave
+// in the store allocates when they apply: the units, their lists of
+// declarations and origins, and the slots' values.
 type Emitter = core.Emitter
 
 // Out is one accumulator seen from one match. The handle records the
@@ -221,15 +247,17 @@ type Matcher = core.Matcher
 // Fact returns the value of k on the subject whose claim ranks first,
 // recording the read at (subject, key) into the invocation's read set,
 // a miss included. On an emit match the subject is the origin. A graph
-// match has no subject, so Fact returns false and records nothing.
+// match has no subject, so Fact returns false and records nothing. The
+// lane's read set keeps its storage across invocations, so a read
+// allocates nothing once the set has grown.
 func Fact[T meta.FactValue](m Matcher, k meta.Key[T]) (T, bool) {
 	return core.Fact[T](m, k)
 }
 
 // FactOf returns the value of k on another declaration whose claim
-// ranks first, recorded the same way: reading a sibling's stamped facts is the sanctioned
-// channel between plugins. A zero identity returns false and
-// records nothing.
+// ranks first, recorded the same way: reading a sibling's stamped
+// facts is the sanctioned channel between plugins. A zero identity
+// returns false and records nothing. It allocates as [Fact] does.
 func FactOf[T meta.FactValue](m Matcher, id symbol.Identity, k meta.Key[T]) (T, bool) {
 	return core.FactOf[T](m, id, k)
 }
@@ -246,6 +274,13 @@ func FactOf[T meta.FactValue](m Matcher, id symbol.Identity, k meta.Key[T]) (T, 
 // a Go stub states a pointer receiver through the Go satellite's
 // helper, and Rust spells self. Imports are collected at render as a
 // side effect of spelling types, so Mirror infers none.
+//
+// # Allocation contract
+//
+// Mirror allocates the method and its receiving type, and for each
+// list of the signature that has entries the list, each entry and each
+// entry's restated type. A method of one parameter and one return
+// allocates eight times.
 func Mirror(host string, m *node.Method) *emit.Method {
 	return core.Mirror(host, m)
 }
@@ -259,6 +294,7 @@ type TargetOption = core.TargetOption
 // Templates declares a target's template tree: the tree the
 // target's plans resolve this plugin's template references in, in
 // place of the plugin-level tree. A nil tree panics at Build.
+// Templates returns the option by value and allocates nothing.
 func Templates(tree fs.FS) TargetOption {
 	return core.Templates(tree)
 }
@@ -266,7 +302,8 @@ func Templates(tree fs.FS) TargetOption {
 // Funcs declares helpers for a target's plans, layered over the
 // plugin-level helpers: a name declared at both levels takes this
 // function in that target's plans. A nil map, and a function
-// text/template refuses, panic at Build.
+// text/template refuses, panic at Build. Funcs returns the option by
+// value and allocates nothing.
 func Funcs(fm template.FuncMap) TargetOption {
 	return core.Funcs(fm)
 }
@@ -278,7 +315,8 @@ func Funcs(fm template.FuncMap) TargetOption {
 // included. A name the shared vocabulary lacks fails the template
 // lint, and where two plugins override one name, the one later in
 // the schedule takes effect. A nil map, and a function
-// text/template refuses, panic at Build.
+// text/template refuses, panic at Build. Overrides returns the option
+// by value and allocates nothing.
 func Overrides(fm template.FuncMap) TargetOption {
 	return core.Overrides(fm)
 }
@@ -296,9 +334,10 @@ type Rule = core.Rule
 
 // Directive gates rules on a validated directive and carries the
 // schema for registration. One wrapper may gate many rules and the
-// schema registers once; a name carried by two wrappers is refused
-// at Build, so one wrapper gates them all. On an emit-triggered
-// rule the gate is the origin's instance.
+// schema registers once; a name two wrappers carry is refused at
+// Build, so one wrapper gates them all. On an emit-triggered rule the
+// gate is the origin's instance. Directive allocates the copy of the
+// schema and the list of rules, two allocations.
 func Directive(s directive.Schema, rules ...Rule) Rule {
 	return core.Directive(s, rules...)
 }
@@ -310,7 +349,7 @@ func Directive(s directive.Schema, rules ...Rule) Rule {
 // panics on a name [directive.Kernel] does not return, because a
 // plugin gates on its own directive through [Directive]. A rule
 // under it runs once per validated instance like one under
-// [Directive].
+// [Directive]. Gated allocates the list of rules, one allocation.
 func Gated(name directive.Name, rules ...Rule) Rule {
 	return core.Gated(name, rules...)
 }
@@ -318,6 +357,8 @@ func Gated(name directive.Name, rules ...Rule) Rule {
 // Where gates rules on stamped facts. Wrappers compose and
 // predicates conjoin; a disjunction is two rules. On an
 // emit-triggered rule the predicate evaluates against the origin.
+// Where allocates the list of predicates and the list of rules, two
+// allocations.
 func Where(p Pred, rules ...Rule) Rule {
 	return core.Where(p, rules...)
 }
@@ -334,7 +375,8 @@ type Pred = core.Pred
 // subscription record carries it as data. A handle a composition
 // assigns later is still zero at this point and the gate would
 // watch nothing, so Build panics on it: a handler may read such a
-// handle through its closure, a gate may not.
+// handle through its closure, a gate may not. HasKey allocates the
+// test's closure over the key, one allocation.
 func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 	return core.HasKey[T](k)
 }
@@ -343,7 +385,10 @@ func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 // value has no equality gate.
 type Equatable = core.Equatable
 
-// KeyEquals admits a subject whose winning value for k equals v.
+// KeyEquals admits a subject on which the value arbitration selects
+// for k equals v. The key is read when the gate is declared, as
+// [HasKey] states. KeyEquals allocates the test's closure over the key
+// and the value, one allocation.
 func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 	return core.KeyEquals[T](k, v)
 }
@@ -364,6 +409,17 @@ type Stamper = core.Stamper
 // claim's derivation. A write the fact store refuses reports an Error
 // at the subject's position under [RefusedStamp], and the phase
 // continues.
+//
+// # Allocation contract
+//
+// Stamp allocates what the fact store keeps for the claim, and the
+// invocation's derivation where the read set grew since the last
+// stamp. A second key on a subject with a claim allocates three times:
+// the subject's map of keys with its first group, and the claim's
+// state. A first claim on a subject allocates its bag, its boxed
+// identity and an entry of the store's map of subjects, whose trie
+// grows by nodes the subjects' hashes decide. The key's index grows as
+// it gains members.
 func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
 	core.Stamp[T](st, k, v)
 }
@@ -373,7 +429,8 @@ func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
 // matches on their own where a directive on the subject states
 // something about them. The envelope is the subject's. An identity
 // the subject does not declare is refused under [RefusedStamp] at the
-// subject's position, and the phase continues.
+// subject's position, and the phase continues. StampOn allocates as
+// [Stamp] does, and a refusal allocates the finding's message.
 func StampOn[T meta.FactValue](st *Stamper, owned symbol.Identity, k meta.Key[T], v T) {
 	core.StampOn[T](st, owned, k, v)
 }
@@ -388,7 +445,8 @@ type GraphMatch = core.GraphMatch
 // for logic that genuinely spans subjects. It takes the Emitter
 // only. A stamper writes to its subject's bag and a graph rule
 // names no subject; an annotator that wants facts on many
-// declarations subscribes to their kinds.
+// declarations subscribes to their kinds. OnGraph allocates the rule's
+// leaf and its invocation's closure over the handler, two allocations.
 func OnGraph(h func(*GraphMatch, *Emitter) error) Rule {
 	return core.OnGraph(h)
 }
@@ -404,7 +462,8 @@ type EmitMatch = core.EmitMatch
 // per plan and plans run in parallel, so a fact stamped from the emit
 // side would be visible to one plan, and sibling plans would never
 // read it. A fact about generated output is a fact on its origin,
-// stamped during Annotate.
+// stamped during Annotate. OnEmit allocates the rule's leaf and its
+// invocation's closure over the handler, two allocations.
 func OnEmit(k symbol.Kind, h func(*EmitMatch, *Emitter) error) Rule {
 	return core.OnEmit(k, h)
 }

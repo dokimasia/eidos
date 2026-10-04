@@ -71,48 +71,96 @@ type FactRef = core.FactRef
 // identity, and the phase continues.
 var RefusedStamp = core.RefusedStamp
 
-// Facts is the run's stamped facts: one bag per subject.
+// Facts is the run's stamped facts: one bag per subject, keyed by the
+// subject's identity in a [sync.Map].
 //
-// Facts is safe for concurrent use. Writes to one subject serialize
-// on that subject's bag lock, and readers of the bag share it. A
-// write that changes whether a fact is present also takes the fact
-// index's lock, which is one lock for the store. Rank decides every
-// winner, so a parallel run returns what a serial one does, whatever
-// order the writes arrived.
+// # Concurrency
+//
+// Facts is safe for concurrent use. Writes to one subject serialize on
+// that subject's bag lock, and readers of the bag share it. A write that
+// changes whether a fact is present also takes the fact index's lock,
+// which is one lock for the store. Rank decides every winner, so a
+// parallel run returns what a serial one does, whatever order the writes
+// arrived in.
+//
+// # Allocation contract
+//
+// A read allocates nothing, except the copy of a list value. A write
+// allocates what the store keeps: a subject's bag on its first claim,
+// the boxed value of each new claim, and the containers that grow with
+// the claims. Each method states its count. In a store [Restore]
+// returned, the first touch of a subject also allocates the bag and the
+// claims the source restores into it.
 type Facts = core.Facts
 
 // NewFacts returns an empty fact store reading specs from r.
-// Registration completes before the first write; the store
-// snapshots what it needs and never locks the registry.
+// Registration completes before the first write. The store copies the
+// group and the kind restriction of every key r registered, and never
+// locks r.
+//
+// # Allocation contract
+//
+// NewFacts allocates twice: the store, and its table of the keys'
+// groups and kind restrictions.
 func NewFacts(r *Registry) *Facts {
 	return core.NewFacts(r)
 }
 
 // Stamp records one claim of v under k.
 //
-// It refuses a zero key, a subject kind the key does not admit, and
-// a false boolean — absence is the negative, so false is never
-// stamped and deletion remains load-bearing. A claim identical to one
-// already kept, same rank source and equal value, changes nothing.
-// Values compare per vocabulary term; slices compare element-wise
-// and are copied in.
+// A claim identical to one the store keeps, from the same rank source
+// with an equal value, changes nothing. Values compare per vocabulary
+// term, and a list compares element-wise. The store keeps a copy of a
+// list, so the caller may reuse its slice.
+//
+// Error modes:
+//   - a key nothing registered;
+//   - a subject kind the key does not admit;
+//   - a false boolean. Absence is the negative, so a fact turns false
+//     only through a drop or a withdrawal;
+//   - a second value from a rank source that already claimed the fact,
+//     because rank cannot order the two.
+//
+// # Allocation contract
+//
+// An identical re-stamp allocates nothing. A new claim allocates its
+// boxed value: one allocation for a string or an identity, two for a
+// list and its copy, and none for a boolean or an integer below 256,
+// which Go boxes without allocating. A subject's first claim also
+// allocates the bag, the boxed identity and the [sync.Map] entry, three
+// allocations, and the map's trie nodes where two hashes share a
+// prefix: 0.38 per subject on average at 200,000 subjects. The first
+// claim on a second key of a subject allocates the bag's key map and
+// the key's state. A claim from a second rank source allocates the
+// fact's claim slice, which grows by doubling. A claim that turns a fact
+// present adds the subject to the key's index, whose map grows by
+// doubling.
 func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
 	return core.Stamp[T](f, k, v, c)
 }
 
 // Get returns the winning value, untracked, and false where the
-// winner is a drop or nothing was stamped. Slice values are copied
-// out, so a caller cannot write into a bag.
+// winner is a drop or nothing was stamped. A list is copied out, so a
+// caller cannot write into a bag.
+//
+// # Allocation contract
+//
+// Get allocates nothing for a scalar value and two allocations for a
+// list: the copy and its box.
 func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 	return core.Get[T](f, id, k)
 }
 
-// Fact returns what [Get] does and records the read at
-// (subject, key) into rec. A miss records too: the reader asked, so
-// it runs again when the fact appears. A subject of a kind the key
-// does not admit reads absent and records nothing, because [Stamp]
-// refuses every claim on it. It is the read every plugin makes; Get
-// is the kernel's own untracked path.
+// Fact returns what [Get] does and records the read at (subject, key)
+// into rec. It records a miss as well, so the reader runs again when the
+// fact appears. A subject of a kind the key does not admit reads absent
+// and records nothing, because [Stamp] refuses every claim on it. Every
+// plugin reads through Fact. [Get] is the kernel's untracked path.
+//
+// # Allocation contract
+//
+// Fact allocates what [Get] does, and what rec allocates to record the
+// read.
 func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T, bool) {
 	return core.Fact[T](f, rec, id, k)
 }
@@ -168,6 +216,15 @@ type KernelKeys = core.KernelKeys
 // handle it is given. It refuses, with the registry's own errors, a
 // namespace already claimed and a key already registered, which is
 // what a composition registering it twice reads.
+//
+// # Allocation contract
+//
+// Kernel allocates what the registry keeps of its five keys, 14
+// allocations in an empty registry:
+//   - the first entries of the namespace map and of the name map;
+//   - the four kind lists;
+//   - the spec and type lists, each growing to five entries in four
+//     allocations.
 func Kernel(r *Registry) (KernelKeys, error) {
 	return core.Kernel(r)
 }
@@ -224,6 +281,11 @@ type Registry = core.Registry
 
 // NewRegistry returns an empty registry and the composition's handle
 // on it.
+//
+// # Allocation contract
+//
+// NewRegistry allocates five times: the handle, the registrations every
+// handle shares, and their three maps.
 func NewRegistry() *Registry {
 	return core.NewRegistry()
 }
@@ -250,6 +312,14 @@ type Completeness = core.Completeness
 //
 // It returns an error rather than panicking because composition
 // collects every fault in one pass.
+//
+// # Allocation contract
+//
+// Register allocates what the registry keeps: the growth of the spec
+// list, the type list and the name map, and for a key in a group the
+// growth of the group map and of the group's member list. The first key
+// of a registry allocates three times outside a group and five times in
+// one.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	return core.Register[T](r, s)
 }
@@ -259,7 +329,7 @@ func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 // rules reading what its frontend stamped, without the handle
 // registration returned. It returns false for a spelling nothing
 // registered, and for one registered under another value type, so
-// a handle that exists reads what was written.
+// a handle that exists reads what was written. It allocates nothing.
 func Lookup[T FactValue](r *Registry, name KeyName) (Key[T], bool) {
 	return core.Lookup[T](r, name)
 }
@@ -283,7 +353,13 @@ type StoredClaim = core.StoredClaim
 //
 // A failure of the source is not returned by the read that met it: the
 // bag reads as empty, and [Facts.Damaged] returns the failure, so the
-// run discards what it derived and runs cold.
+// run discards what it derived and runs cold. The source is not asked
+// for the presence of a key nothing registered.
+//
+// # Allocation contract
+//
+// Restore allocates what [NewFacts] does and the function that loads a
+// key's recorded presence: three allocations.
 func Restore(r *Registry, src BagSource) *Facts {
 	return core.Restore(r, src)
 }
@@ -292,5 +368,5 @@ func Restore(r *Registry, src BagSource) *Facts {
 // a pre-claim that crossed a phase as data, the way a raw
 // directive does. The name resolves through the registry when the
 // stamp applies, because a typed handle is valid in one composition
-// only and a record outlives it.
+// only and a record crosses compositions.
 type RawStamp = core.RawStamp

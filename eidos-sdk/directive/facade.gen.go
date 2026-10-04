@@ -125,6 +125,11 @@ type RawValue = core.RawValue
 // ending in a backslash joins the next, marker already stripped,
 // with a single space. The rule is grammar, so it is defined here
 // once and in no frontend.
+//
+// # Allocation contract
+//
+// Join returns a part of the line without allocating for one line, and
+// allocates the joined payload once for more.
 func Join(lines []string) string {
 	return core.Join(lines)
 }
@@ -136,6 +141,12 @@ func Join(lines []string) string {
 // A payload outside the grammar returns an error with the byte
 // offset where reading stopped. The caller converts the offset to a
 // file position. Parse never panics, whatever the bytes.
+//
+// # Allocation contract
+//
+// The name, the keys and the unquoted values are parts of the payload.
+// Parse allocates the instance's arguments once, each list's elements
+// once, and each quoted value with an escape once.
 func Parse(payload string) (Raw, error) {
 	return core.Parse(payload)
 }
@@ -351,6 +362,16 @@ type Resolver = core.Resolver
 // concurrent use, and the resolver is called from every goroutine.
 // Validate refuses an unsealed registry outright, because that is a
 // defect in the composition, not in a carrier.
+//
+// # Allocation contract
+//
+// Validate allocates what it returns: the slice of instances, and per
+// instance its params map with the map's one group, each param's value,
+// which the map stores apart from the group because a [Value] is larger
+// than 128 bytes, the positional arguments, and each list. A subject
+// with more than four instances, and an instance with more than eight
+// params, grow the working storage onto the heap. A finding allocates
+// what the sink does.
 func Validate(subject symbol.Identity, ds []Raw, r *Registry, keys *meta.Registry, resolve Resolver, sink *diag.Sink) []Directive {
 	return core.Validate(subject, ds, r, keys, resolve, sink)
 }

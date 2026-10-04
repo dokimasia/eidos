@@ -35,6 +35,11 @@ type Budget = core.Budget
 // fails when the allocations per iteration exceed the budget. The
 // fixture builds once outside the loop, and every iteration binds a
 // fresh view.
+//
+// One pass runs before the contract counts, at the call sites the
+// loop measures, so the count excludes what a process builds on the
+// first projection: the runtime's type-assertion caches and the
+// lazily built state of the language's rules.
 func BenchRules(b *testing.B, setup Setup, budget Budget) {
 	core.BenchRules(b, setup, budget)
 }

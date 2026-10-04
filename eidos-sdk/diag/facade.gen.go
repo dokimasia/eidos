@@ -126,6 +126,8 @@ const (
 
 // Sink collects the findings of one run.
 //
+// # Concurrency
+//
 // A Sink is safe for concurrent use: frontends, and annotators under
 // the parallelism opt-in, report while running alongside each other.
 //
@@ -135,9 +137,15 @@ const (
 // within one origin, so two schedulings of one parallel run agree
 // on it however the origins interleaved. Ordering for output belongs
 // to the run, which sorts by position.
+//
+// # Allocation contract
+//
+// The sink keeps every finding in one slice, which grows by doubling.
+// A report allocates only to grow it, and a formatted report also
+// allocates its message. An enumeration allocates its snapshot.
 type Sink = core.Sink
 
-// NewSink returns a sink holding nothing.
+// NewSink returns an empty sink.
 func NewSink() *Sink {
 	return core.NewSink()
 }

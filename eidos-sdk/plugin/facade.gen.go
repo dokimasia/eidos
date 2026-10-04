@@ -117,7 +117,8 @@ type Unit = core.Unit
 // the index it is being read from.
 type Emit = core.Emit
 
-// NewEmit returns an empty emit store.
+// NewEmit returns an empty emit store. It allocates three times: the
+// store, its set of accumulator keys and its map of kinds.
 func NewEmit() *Emit {
 	return core.NewEmit()
 }
@@ -294,6 +295,12 @@ type Index = core.Index
 // position order, as validation returned them. The index keeps the
 // map, and the caller does not mutate it after handing it over. A
 // nil scope admits everything.
+//
+// # Allocation contract
+//
+// NewIndex allocates the index. A run with a skip adds the skip table,
+// and a scope adds the set of packages it admits, each sized by what it
+// contains.
 func NewIndex(g *store.Graph, f *meta.Facts, validated map[symbol.Identity][]directive.Directive, sc store.Scope) (*Index, error) {
 	return core.NewIndex(g, f, validated, sc)
 }
@@ -398,6 +405,12 @@ type Journal = core.Journal
 // no options. The composition runs it before populating; the
 // conformance suite runs it as a check, so a plugin failing at
 // composition fails in its own tests first.
+//
+// # Allocation contract
+//
+// ValidateOptions allocates the set of claimed keys, the reflection of
+// each field and the errors it returns. It allocates nothing for a
+// plugin without the surface.
 func ValidateOptions(p Plugin) []error {
 	return core.ValidateOptions(p)
 }
@@ -411,6 +424,13 @@ func ValidateOptions(p Plugin) []error {
 // refuses. A type that marshals itself is taken as it encodes.
 // Every option is inside the encoding, so a changed option always
 // changes the key.
+//
+// # Allocation contract
+//
+// EncodeOptions allocates the set of seen types, the reflection of each
+// field, the encoded bytes, and what encoding/json allocates for its
+// state where its pool is empty. It allocates nothing for a plugin
+// without the surface.
 func EncodeOptions(p Plugin) ([]byte, error) {
 	return core.EncodeOptions(p)
 }
@@ -691,6 +711,14 @@ type Respeller = core.Respeller
 // as written. A returned error is a defect in the backend's own
 // hooks, a lowering that drops its input's origin, and fails the
 // whole plan, not one declaration.
+//
+// # Allocation contract
+//
+// A backend without a lowering hook and a respell hook settles the
+// store without allocating, because nothing in it changes. Otherwise
+// Settle rebuilds the store's per-kind index, one list per unit and
+// kind, and a respell hook adds the plan of every declared name and the
+// tables the references follow, each sized once to the store.
 func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 	return core.Settle(e, b, facts, sink)
 }
@@ -705,7 +733,7 @@ var ErrStoreAbsent = core.ErrStoreAbsent
 // store's name, "://", and the slash path inside the store, as in
 // "gomod://golang.org/x/mod@v0.41.0/modfile/rule.go". No workspace path
 // is a qualified path, because [fs.ValidPath] refuses the empty element
-// that "//" spells.
+// that "//" spells. StorePath allocates the joined path, one allocation.
 func StorePath(store, path string) string {
 	return core.StorePath(store, path)
 }
@@ -713,13 +741,14 @@ func StorePath(store, path string) string {
 // CutStorePath splits a qualified path into its store and the path
 // inside the store, and reports false for a workspace path. The root
 // of a store is the qualified path with nothing after the separator.
+// It allocates nothing, because both parts share the path's bytes.
 func CutStorePath(qualified string) (store, path string, ok bool) {
 	return core.CutStorePath(qualified)
 }
 
 // ValidStoreName reports whether a name can name a store: it is not
 // empty, and it contains neither the colon nor the slash that a
-// qualified path separates on.
+// qualified path separates on. It allocates nothing.
 func ValidStoreName(name string) bool {
 	return core.ValidStoreName(name)
 }
@@ -733,19 +762,27 @@ type StoreFS = core.StoreFS
 // tree itself, and a qualified path from the store it names, which the
 // tree provides as a [StoreFS]. A qualified path whose store the tree
 // does not provide returns an error wrapping [ErrStoreAbsent].
+//
+// # Allocation contract
+//
+// ReadFile allocates what [fs.ReadFile] allocates in the tree or the
+// store, and nothing of its own where the store exists.
 func ReadFile(fsys fs.FS, path string) ([]byte, error) {
 	return core.ReadFile(fsys, path)
 }
 
 // ReadDir returns one directory's entries sorted by name, and resolves
 // a qualified path the way [ReadFile] does. The root of a store is its
-// qualified path with nothing after the separator.
+// qualified path with nothing after the separator. It allocates what
+// [fs.ReadDir] allocates, and nothing of its own where the store
+// exists.
 func ReadDir(fsys fs.FS, path string) ([]fs.DirEntry, error) {
 	return core.ReadDir(fsys, path)
 }
 
 // Stat returns the stat of one file, and resolves a qualified path the
-// way [ReadFile] does.
+// way [ReadFile] does. It allocates what [fs.Stat] allocates, and
+// nothing of its own where the store exists.
 func Stat(fsys fs.FS, path string) (fs.FileInfo, error) {
 	return core.Stat(fsys, path)
 }
@@ -796,9 +833,9 @@ type CommentBlock = core.CommentBlock
 
 // SourceUnit is one frontend compilation unit under parse: the only
 // surface a Parse call touches. Bytes enter through Read alone,
-// jailed to the unit's files and their declared shared inputs,
-// and every accepted read folds into the unit's fingerprint, so a
-// frontend cannot depend on bytes the cache does not know about.
+// jailed to the unit's files and their declared shared inputs. The
+// load keys the unit by the digests of those files, so a frontend
+// that reads around Read depends on bytes the key does not cover.
 type SourceUnit = core.SourceUnit
 
 // NewSourceUnit assembles a unit for the load driver and the
@@ -831,7 +868,8 @@ type CommentParts = core.CommentParts
 // are the kit's one cross-language convention, so a directive is
 // spelled the same way in every language's comments, and two tools
 // built on the kernel and run in one repository read only their own
-// carriers.
+// carriers. It allocates nothing, because the mark and the payload
+// share the line's bytes.
 func CutCarrier(line, brand string) (mark, payload string, ok bool) {
 	return core.CutCarrier(line, brand)
 }

@@ -49,8 +49,18 @@ type Provenance = core.Provenance
 // proves ownership and integrity. Every frame line is spelled
 // through the language's own comment form.
 //
+// # Concurrency
+//
 // A Contract is immutable after [NewContract] and safe for
 // concurrent use.
+//
+// # Allocation contract
+//
+// [Contract.Stamp] allocates the bytes it returns. [Contract.Verify]
+// and [Read] allocate the record they return: the trailer line and the
+// frame's lines, each copied into one string that the record's values
+// are parts of, and the record's lists of plugins and of sources. Read
+// allocates nothing for bytes whose final line contains no trailer key.
 type Contract = core.Contract
 
 // NewContract composes the stamp for one target.
@@ -60,6 +70,12 @@ type Contract = core.Contract
 // comments has no place for the frame. The line form is
 // preferred where a language has both: one line comment per frame
 // line reads in every editor and diffs one line per change.
+//
+// # Allocation contract
+//
+// NewContract allocates the contract and its opener, and for a block
+// form its closer: two allocations for a line form, three for a block
+// form.
 func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error) {
 	return core.NewContract(b, s)
 }
@@ -97,6 +113,18 @@ func HasTrailerKey(tail []byte) bool {
 // edited since it was stamped are refused, naming the path, and
 // remain as they are. A staged removal deletes only the brand's
 // intact output, and leaves any other file in place.
+//
+// # Concurrency
+//
+// A Disk belongs to one goroutine, as every [Sink] does.
+//
+// # Allocation contract
+//
+// A Disk stages as [Mem] does. A read of a path through the root
+// allocates seven times: the path's split, its spelling for the system
+// call, the open file's name and its two structures, its status and its
+// bytes. A read of a path without a file allocates the split, the
+// spelling and the error. Each method states what it reads and writes.
 type Disk = core.Disk
 
 // NewDisk opens a sink over an existing directory that writes as
@@ -105,6 +133,11 @@ type Disk = core.Disk
 // it cannot open, because a sink over nothing writes nowhere.
 //
 // Commit and Discard close the root. The sink serves one staging.
+//
+// # Allocation contract
+//
+// NewDisk allocates four times: the sink, the root's two structures,
+// and the root path's spelling for the system call.
 func NewDisk(root string, brand Brand) (*Disk, error) {
 	return core.NewDisk(root, brand)
 }
@@ -114,9 +147,21 @@ func NewDisk(root string, brand Brand) (*Disk, error) {
 // the same staging rule as the disk sink: nothing is readable
 // until the commit. Its destination starts empty, so every file it
 // commits is created and every staged removal finds nothing.
+//
+// The zero Mem is an empty sink, ready to use.
+//
+// # Concurrency
+//
+// A Mem belongs to one goroutine, as every [Sink] does.
+//
+// # Allocation contract
+//
+// A Mem keeps what it stages and allocates as its maps grow. Preparing
+// and committing allocate the sorted path list, the list returned and
+// one digest per staged file. Each method states its count.
 type Mem = core.Mem
 
-// NewMem opens a sink over memory.
+// NewMem opens a sink over memory. It allocates the sink alone.
 func NewMem() *Mem {
 	return core.NewMem()
 }
@@ -180,12 +225,27 @@ type Sink = core.Sink
 // Tee stages one set of files into several sinks at once: a disk
 // sink beside a memory sink is how a run writes and reports the
 // same bytes.
+//
+// # Concurrency
+//
+// A Tee belongs to one goroutine, as every [Sink] does, and calls its
+// sinks one after another in the order [NewTee] received them.
+//
+// # Allocation contract
+//
+// A Tee allocates what its sinks allocate, and a copy of the first
+// sink's list from Prepare and from Commit. Each method states its
+// count.
 type Tee = core.Tee
 
 // NewTee fans out to first and every sink after it. The first is
 // the one of record: its Prepare and its Commit return what the
 // caller reads, because the verdicts and the actions are one
 // destination's answer and not a merged one.
+//
+// # Allocation contract
+//
+// NewTee allocates twice: the Tee and its list of sinks.
 func NewTee(first Sink, rest ...Sink) *Tee {
 	return core.NewTee(first, rest...)
 }

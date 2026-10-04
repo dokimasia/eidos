@@ -58,7 +58,8 @@ import (
 // and each index.
 type Graph = core.Graph
 
-// New returns an unfrozen graph that contains nothing.
+// New returns an unfrozen graph that contains nothing. It allocates the
+// graph, one allocation.
 func New() *Graph {
 	return core.New()
 }
@@ -120,7 +121,9 @@ type Reader = core.Reader
 // entries. An entry keeps the set's edges and not the order they
 // arrived in, which no enumeration of a set returns either.
 //
-// The zero ReadLog is empty and ready to record.
+// The zero ReadLog is empty and ready to record. [ReadLog.Reset] empties
+// a log and keeps its storage, so a dispatcher reuses one log across
+// phase calls.
 //
 // # Concurrency
 //
@@ -129,9 +132,10 @@ type Reader = core.Reader
 //
 // # Allocation contract
 //
-// Append allocates only to grow the log's slices, and Load only to grow
-// the set's maps past the largest entry the set held since its
-// creation.
+// Append allocates only to grow the log's slices past the largest use
+// since the log's creation, and Load only to grow the set's maps past
+// the largest entry the set held since its creation. Reset allocates
+// nothing.
 type ReadLog = core.ReadLog
 
 // ReadSet is what one derived artifact read.
@@ -156,11 +160,13 @@ type ReadLog = core.ReadLog
 //
 // Each grain allocates its map on its first edge, and the map grows as
 // edges arrive. [ReadSet.Reset] keeps every map, so a set reused across
-// invocations allocates only to grow. Each enumeration allocates the
-// sorted slice it returns.
+// invocations allocates only to grow. A range over an enumeration sorts
+// the grain's edges into one new list when the range starts, and
+// allocates nothing for a grain without an edge.
 type ReadSet = core.ReadSet
 
-// NewReadSet returns a read set with no edges.
+// NewReadSet returns a read set with no edges. It allocates the set,
+// one allocation.
 func NewReadSet() *ReadSet {
 	return core.NewReadSet()
 }
