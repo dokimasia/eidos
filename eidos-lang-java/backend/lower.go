@@ -30,6 +30,15 @@ import (
 // because a variant class would owe bodies the model does not
 // state. A payload entry without a name refuses, because a field has
 // one. Everything else passes through unchanged.
+//
+// # Allocation contract
+//
+// A declaration that passes through allocates nothing. A sum allocates
+// the list of permits and per variant its reference and its joined
+// name's two, the list of outputs and the principal, and per variant its
+// class, its joined name's two, its implements list and reference, the
+// copy of its type parameters, and its field list where it has fields. A
+// refusal allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	if err := fileLevel(s); err != nil {
 		return nil, err

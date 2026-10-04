@@ -59,5 +59,6 @@ const (
 	AccMandated Access = 0x8000
 )
 
-// Has reports whether the set has every flag of another set.
+// Has reports whether the set has every flag of another set. It
+// allocates nothing.
 func (a Access) Has(flags Access) bool { return a&flags == flags }

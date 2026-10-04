@@ -117,19 +117,39 @@ type Type struct {
 }
 
 // Keyword returns the keyword that names a base type in source, as int
-// names I, and empty for a type of another kind.
+// names I, and empty for a type of another kind. It allocates nothing.
 func (t Type) Keyword() string { return keywords[t.Base] }
 
 // BinaryName returns the binary name in internal form of the class a
 // class type denotes: its names joined by $, without their type
 // arguments, as §4.7.9.1 maps a class type signature to its class. It
 // returns empty for a type of another kind.
+//
+// # Allocation contract
+//
+// BinaryName returns a top-level class's name without allocating, and
+// writes a nested class's names into one buffer sized to the result,
+// one allocation.
 func (t Type) BinaryName() string {
-	names := make([]string, 0, len(t.Class))
-	for _, n := range t.Class {
-		names = append(names, n.Name)
+	switch len(t.Class) {
+	case 0:
+		return ""
+	case 1:
+		return t.Class[0].Name
 	}
-	return strings.Join(names, binarySeparator)
+	n := len(binarySeparator) * (len(t.Class) - 1)
+	for _, c := range t.Class {
+		n += len(c.Name)
+	}
+	var b strings.Builder
+	b.Grow(n)
+	for i, c := range t.Class {
+		if i > 0 {
+			b.WriteString(binarySeparator)
+		}
+		b.WriteString(c.Name)
+	}
+	return b.String()
 }
 
 // ClassName is one name of a class type, with the type arguments the

@@ -41,7 +41,8 @@ const FrontendVersion = "0.1.0"
 // Syntax returns Java's comment forms, declared once and shared: the
 // line form, the block form, and the doc-block form with the star
 // gutter Javadoc continuation lines use. The output contract writes
-// the generated-file header through them.
+// the generated-file header through them. It allocates the two lists,
+// so no caller shares another's.
 func Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{
 		Line: []string{"//"},

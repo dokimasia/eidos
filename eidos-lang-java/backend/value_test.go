@@ -18,8 +18,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The value fixture: the packages the values name, and the class a
-// static callee belongs to.
+// The value cases name the packages the values reference, the class a
+// static callee belongs to, and the collections the factories build.
 const (
 	unitsPkg     = "example/units"
 	utilPkg      = "example/util"
@@ -129,6 +129,12 @@ func TestValue(t *testing.T) {
 				name: "writes a record without components as a constructor call",
 				give: emit.Composite(valueRef(rowName, storePkg, rowName)),
 				want: "new Row()",
+			},
+			{
+				name: "writes a record's components as the constructor's arguments in order",
+				give: emit.Composite(valueRef(rowName, storePkg, rowName),
+					emit.Element(integer("1")), emit.Element(integer("2"))),
+				want: "new Row(1, 2)",
 			},
 			{
 				name: "writes a list through the collection factory",
@@ -259,20 +265,43 @@ func TestValue(t *testing.T) {
 			assert.Equal(t, set.Len(), 0, "a literal names no package")
 		})
 
-		t.Run("imports the classes of a callee's owner and a factory", func(t *testing.T) {
+		t.Run("imports the file-level class of a nested callee's owner", func(t *testing.T) {
 			t.Parallel()
 
 			var set render.ImportSet
-			_, err := returned(t, &set, emit.Call(valueFn(utilPkg, rowsClass+".Inner", makeName),
-				emit.Composite(formed(listFactory, symbol.FormList), emit.Element(integer("2"))),
-				emit.Composite(formed(mapFactory, symbol.FormMap), emit.KeyedEntry(integer("1"), integer("2")))))
+			_, err := returned(t, &set, emit.Call(valueFn(utilPkg, rowsClass+".Inner", makeName)))
 			assert.NoError(t, err, "the value spells")
-			assert.Equal(t, set.Entries(), []render.Entry{
-				{Path: utilPkg, Name: rowsClass},
-				{Path: collections, Name: listClass},
-				{Path: collections, Name: "Map"},
-			}, "a nested owner through its file-level class")
+			assert.Equal(t, set.Entries(), []render.Entry{{Path: utilPkg, Name: rowsClass}},
+				"a nested owner through its file-level class")
 		})
+
+		factories := []struct {
+			name string
+			give emit.Value
+			want string
+		}{
+			{
+				name: "imports the collection class of a list's factory",
+				give: emit.Composite(formed(listFactory, symbol.FormList), emit.Element(integer("2"))),
+				want: listClass,
+			},
+			{
+				name: "imports the collection class of a map's factory",
+				give: emit.Composite(formed(mapFactory, symbol.FormMap), emit.KeyedEntry(integer("1"), integer("2"))),
+				want: "Map",
+			},
+		}
+		for _, tt := range factories {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				var set render.ImportSet
+				_, err := returned(t, &set, tt.give)
+				assert.NoError(t, err, "the value spells")
+				assert.Equal(t, set.Entries(), []render.Entry{{Path: collections, Name: tt.want}},
+					"the factory's class")
+			})
+		}
 
 		t.Run("writes the qualified call of a class whose simple name the file reserves", func(t *testing.T) {
 			t.Parallel()

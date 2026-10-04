@@ -26,6 +26,10 @@ import (
 //     its initializer. One without an initializer refuses through its
 //     keyword helper, because a Java interface declares constants
 //     alone.
+//
+// Coverage builds the table on every call, which the caller keeps: the
+// fact map's four allocations, and the exception map's two with its
+// four kinds' two each, 14 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{

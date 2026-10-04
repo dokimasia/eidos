@@ -17,10 +17,16 @@ import (
 // together under the original key, where the render reports each
 // under the kind the backend refuses. Each split unit's provenance
 // narrows to its own type's origin.
+//
+// # Allocation contract
+//
+// Split allocates the list of units, each type's list of its origin,
+// and the list of the declarations of other kinds. Each split unit's
+// declaration list is a one-element window on the original unit's.
 func Split(u plugin.Unit) []plugin.Unit {
 	out := make([]plugin.Unit, 0, len(u.Decls))
 	var rest []symbol.Symbol
-	for _, d := range u.Decls {
+	for i, d := range u.Decls {
 		switch d.(type) {
 		case *emit.Struct, *emit.Interface, *emit.Enum:
 		default:
@@ -28,7 +34,7 @@ func Split(u plugin.Unit) []plugin.Unit {
 			continue
 		}
 		su := u
-		su.Decls = []symbol.Symbol{d}
+		su.Decls = u.Decls[i : i+1 : i+1]
 		su.Origins = originsOf(d)
 		out = append(out, su)
 	}

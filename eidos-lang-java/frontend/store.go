@@ -52,9 +52,9 @@ const (
 )
 
 // Stores returns ct.sym, the Maven local repository and Gradle's module
-// cache as the stores a load hands the Java frontend, under [JDKStore],
-// [MavenStore] and [GradleStore]. It reads the environment through
-// getenv, which is os.Getenv outside a test, and runs no tool.
+// cache as the stores the load passes to the Java frontend, under
+// [JDKStore], [MavenStore] and [GradleStore]. It reads the environment
+// through getenv, which is os.Getenv outside a test, and runs no tool.
 //
 // ct.sym is lib/ct.sym under JAVA_HOME, read into memory whole, because a
 // store has no Close that would release an open file. The local
@@ -65,6 +65,13 @@ const (
 // Stores returns an error naming the variable to set for a root it
 // cannot resolve, and an error for a ct.sym that does not read or open
 // as a ZIP file.
+//
+// # Allocation contract
+//
+// Stores allocates ct.sym's contents and the ZIP index over them, which
+// grows with the entries, the four paths it joins, and the map of
+// stores with its two directory roots: 27 allocations for a ct.sym of
+// one entry, and one fewer where GRADLE_USER_HOME is set.
 func Stores(getenv func(string) string) (map[string]fs.FS, error) {
 	javaHome := getenv(envJavaHome)
 	if javaHome == "" {

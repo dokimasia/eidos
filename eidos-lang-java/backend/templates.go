@@ -95,7 +95,9 @@ const EnumTemplate = "{{docs .Doc}}{{annotate .Annotations}}" +
 
 // KindTemplates maps each emit kind to the template that spells
 // it. A file-level kind absent from the map is one the lowering
-// reshapes, as it does a sum, or one [RefusedKinds] refuses.
+// reshapes, as it does a sum, or one [RefusedKinds] refuses. It builds
+// the map on every call, which the caller keeps: the map and its one
+// group, two allocations.
 func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,
@@ -107,7 +109,9 @@ func KindTemplates() map[symbol.Kind]string {
 // RefusedKinds maps each emit kind Java declares no spelling for at
 // file level to the reason, which the render reports beside every
 // declaration of the kind it skips. Each is a member of a type in
-// Java, so a generator states it inside a class.
+// Java, so a generator states it inside a class. It builds the map on
+// every call, which the caller keeps: the map and its one group, two
+// allocations.
 func RefusedKinds() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindFunction: "Java declares every function as a method inside a class",

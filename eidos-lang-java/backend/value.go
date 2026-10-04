@@ -5,7 +5,6 @@ package backend
 
 import (
 	"errors"
-	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -45,6 +44,9 @@ const (
 	// float and long.
 	floatWidth = 32
 	longWidth  = 64
+	// octalPad holds the zeros that pad an octal escape's digits to
+	// three, the width Java reads.
+	octalPad = "000"
 )
 
 // leaves is Java's spelling of the literal leaves: a number spells
@@ -213,7 +215,8 @@ func number(v emit.Value) (string, error) {
 // \n \f \r, every other control character as an octal escape, and
 // everything else as itself. No \u escape is written, because Java
 // decodes one before it reads the literal, and a decoded line break
-// ends the string.
+// ends the string. It sizes its buffer for the string and its quotes,
+// one allocation, and an escape grows it once more.
 func quoteString(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 2)
@@ -236,7 +239,11 @@ func quoteString(s string) string {
 			b.WriteString(`\r`)
 		default:
 			if r < ' ' || r == 0x7f {
-				fmt.Fprintf(&b, `\%03o`, r)
+				var scratch [len(octalPad)]byte
+				digits := strconv.AppendUint(scratch[:0], uint64(r), 8)
+				b.WriteByte('\\')
+				b.WriteString(octalPad[len(digits):])
+				b.Write(digits)
 				continue
 			}
 			b.WriteRune(r)

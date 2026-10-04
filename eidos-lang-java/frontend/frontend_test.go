@@ -10,6 +10,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	java "go.dokimi.dev/eidos/lang/java"
 	"go.dokimi.dev/eidos/lang/java/frontend"
@@ -35,15 +36,30 @@ const unparsedCode = "JAVA-0001"
 // release is the Java release the options cases build a frontend for.
 const release = 21
 
+// newAllocs is the frontend New returns for nil options: the empty
+// options, the frontend's state with its vocabulary and two hooks, the
+// version, the syntax's two, and the kit's four.
+const newAllocs = 1 + 4 + 1 + 2 + 4
+
+// allocCall is one call that an allocation test and a benchmark share:
+// its benchmark path, its allocation ceiling, the call, and the check
+// of the result the call leaves.
+type allocCall struct {
+	name   string
+	allocs uint64
+	call   func()
+	check  func(tb assert.TB)
+}
+
 // The frontend runs the conformance suite every frontend runs, over real
 // Java source.
-func TestNew(t *testing.T) {
+func TestFrontend(t *testing.T) {
 	t.Parallel()
 
 	t.Run("New", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("passes the conformance suite", func(t *testing.T) {
+		t.Run("returns a frontend that passes the conformance suite", func(t *testing.T) {
 			t.Parallel()
 
 			frontendtest.RunFrontendSuite(t, setup)
@@ -93,6 +109,62 @@ func TestNew(t *testing.T) {
 			assert.Equal(t, found[0].Code.String(), unparsedCode, "under the satellite's prefix and the first number")
 		})
 	})
+}
+
+// The construction allocates the frontend the kit builds. The ordinary
+// run, which runs no benchmark, checks that ceiling here.
+func TestFrontendAllocs(t *testing.T) {
+	checkAllocs(t, frontendCalls())
+}
+
+// BenchmarkFrontend measures the construction a composition makes once
+// per load.
+func BenchmarkFrontend(b *testing.B) {
+	benchCalls(b, frontendCalls())
+}
+
+// frontendCalls returns a call of New with nil options.
+func frontendCalls() []allocCall {
+	var f plugin.Frontend
+	return []allocCall{
+		{
+			name: "New", allocs: newAllocs,
+			call:  func() { f = frontend.New(nil) },
+			check: func(tb assert.TB) { assert.Equal(tb, f.Name(), java.Name, "New returns the Java frontend") },
+		},
+	}
+}
+
+// checkAllocs checks the ceiling of every call in the ordinary run, and
+// the result each call leaves.
+func checkAllocs(t *testing.T, calls []allocCall) {
+	t.Helper()
+
+	for _, c := range calls {
+		msg := c.name + " allocates within its ceiling"
+		assert.MaxAllocs(t, c.call, c.allocs, msg)
+		c.check(t)
+	}
+}
+
+// benchCalls measures every call under the bench contract at its
+// ceiling, one sub-benchmark each. Each call runs once before the
+// contract starts, so what the first call initialises stays out of the
+// count.
+func benchCalls(b *testing.B, calls []allocCall) {
+	b.Helper()
+
+	for _, tt := range calls {
+		b.Run(tt.name, func(b *testing.B) {
+			tt.call()
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
+		})
+	}
 }
 
 // setup is the suite's entry over the whole-contract fixture, with a

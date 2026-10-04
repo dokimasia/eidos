@@ -90,6 +90,13 @@ type javaFrontend struct {
 // reads the newest release and no library. It declares that the
 // language overloads, so a callable's discriminator spells its
 // parameters' types, and its version folds the grammar's.
+//
+// # Allocation contract
+//
+// New allocates the frontend's state with its vocabulary and two
+// hooks, the version, the syntax, two allocations, and the kit's four:
+// eleven allocations, and twelve with the empty options that nil
+// options take.
 func New(opts *Options) plugin.Frontend {
 	if opts == nil {
 		opts = &Options{}

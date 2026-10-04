@@ -13,28 +13,95 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
+// coverageAllocs is the coverage table: the fact map's four, and the
+// exception map's two with its four kinds' two each.
+const coverageAllocs = 4 + 2 + 4*2
+
 // The suite checks the declaration total and the rendered findings
-// against it, and this twin pins the cells that distinguish Java.
+// against the table, and these cases pin the cells that distinguish
+// Java.
 func TestCoverage(t *testing.T) {
 	t.Parallel()
 
-	c := backend.Coverage()
-	assert.Equal(t, c.Of(symbol.KindMethod, symbol.FactThrows), render.Renders,
-		"the throws clause is Java's own")
-	assert.Equal(t, c.Of(symbol.KindMethod, symbol.FactMultiReturn), render.Refuses,
-		"a callable returns one value")
-	assert.Equal(t, c.Of(symbol.KindEnumVariant, symbol.FactValue), render.Refuses,
-		"a valued constant takes the constructor form")
-	assert.Equal(t, c.Of(symbol.KindEnum, symbol.FactMethods), render.Renders,
-		"an enum declares behaviour")
-	assert.Equal(t, c.Of(symbol.KindSum, symbol.FactMethods), render.Refuses,
-		"where a sum's variant classes would owe bodies")
-	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactTypes), render.Renders,
-		"nested types render at member depth")
-	assert.Equal(t, c.Of(symbol.KindInterface, symbol.FactSealed), render.Renders,
-		"sealing is Java's own")
-	assert.Equal(t, c.Of(symbol.KindStruct, symbol.FactLevel), render.Renders,
-		"a member class spells static, and the lowering refuses it at file scope")
-	assert.Equal(t, c.Of(symbol.KindInterface, symbol.FactProperties), render.Renders,
-		"an interface's properties render as its constants")
+	t.Run("Coverage", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			kind symbol.Kind
+			fact symbol.Fact
+			want render.Verdict
+		}{
+			{
+				name: "returns Renders for a method's throws",
+				kind: symbol.KindMethod, fact: symbol.FactThrows, want: render.Renders,
+			},
+			{
+				name: "returns Refuses for a method's several results",
+				kind: symbol.KindMethod, fact: symbol.FactMultiReturn, want: render.Refuses,
+			},
+			{
+				name: "returns Refuses for an enum constant's value",
+				kind: symbol.KindEnumVariant, fact: symbol.FactValue, want: render.Refuses,
+			},
+			{
+				name: "returns Renders for an enum's methods",
+				kind: symbol.KindEnum, fact: symbol.FactMethods, want: render.Renders,
+			},
+			{
+				name: "returns Refuses for a sum's methods",
+				kind: symbol.KindSum, fact: symbol.FactMethods, want: render.Refuses,
+			},
+			{
+				name: "returns Renders for a class's nested types",
+				kind: symbol.KindStruct, fact: symbol.FactTypes, want: render.Renders,
+			},
+			{
+				name: "returns Renders for a sealed interface",
+				kind: symbol.KindInterface, fact: symbol.FactSealed, want: render.Renders,
+			},
+			{
+				name: "returns Renders for a class's level",
+				kind: symbol.KindStruct, fact: symbol.FactLevel, want: render.Renders,
+			},
+			{
+				name: "returns Renders for an interface's properties",
+				kind: symbol.KindInterface, fact: symbol.FactProperties, want: render.Renders,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, backend.Coverage().Of(tt.kind, tt.fact), tt.want, "the verdict")
+			})
+		}
+	})
+}
+
+// The table allocates its maps. The ordinary run, which runs no
+// benchmark, checks that ceiling here.
+func TestCoverageAllocs(t *testing.T) {
+	checkAllocs(t, coverageCalls())
+}
+
+// BenchmarkCoverage measures the table the backend reads once per
+// build.
+func BenchmarkCoverage(b *testing.B) {
+	benchCalls(b, coverageCalls())
+}
+
+// coverageCalls returns a call of Coverage.
+func coverageCalls() []allocCall {
+	var c render.Coverage
+	return []allocCall{
+		{
+			name: "Coverage", allocs: coverageAllocs,
+			call: func() { c = backend.Coverage() },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, c.Of(symbol.KindMethod, symbol.FactThrows), render.Renders,
+					"Coverage returns Java's table")
+			},
+		},
+	}
 }

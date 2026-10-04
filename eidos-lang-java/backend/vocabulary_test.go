@@ -5,6 +5,7 @@ package backend_test
 
 import (
 	"testing"
+	"text/template"
 
 	"go.dokimi.dev/assert"
 
@@ -15,8 +16,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The spelling fixture: the packages a reference imports from and the
-// classes it names.
+// The spelling cases name the packages a reference imports from and
+// the classes it names.
 const (
 	// storePkg and legacyPkg both declare rowName.
 	storePkg  = "svc/store"
@@ -28,48 +29,44 @@ const (
 	innerName    = "Inner"
 )
 
-// ref returns an unresolved reference spelled s.
-func ref(s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s} }
+// The declarations and spellings the allocation cases name.
+const (
+	intType            = "int"
+	stringType         = "String"
+	comparableType     = "Comparable"
+	keyParam           = "K"
+	valueParam         = "V"
+	idName             = "id"
+	nameParam          = "name"
+	getName            = "get"
+	ioException        = "IOException"
+	redConstant        = "RED"
+	rowDoc             = "Row is one record."
+	overrideAnnotation = "Override"
+)
 
-// refs returns an unresolved reference per spelling, in order.
-func refs(spellings ...string) []*emit.TypeRef {
-	out := make([]*emit.TypeRef, 0, len(spellings))
-	for _, s := range spellings {
-		out = append(out, ref(s))
-	}
-	return out
-}
-
-// imported returns a reference to a class of pkg, spelled s.
-func imported(pkg, s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s, Package: pkg} }
-
-// speller returns a speller over a fresh set, and the set.
-func speller() (backend.Speller, *render.ImportSet) {
-	set := &render.ImportSet{}
-	return backend.NewSpeller(set), set
-}
-
-// spelled spells one reference and asserts it spells.
-func spelled(tb assert.TB, s backend.Speller, t *emit.TypeRef) string {
-	tb.Helper()
-
-	out, err := s.Spell(t)
-	assert.NoError(tb, err, "the reference spells")
-	return out
-}
-
-// unspellable binds rowName of storePkg on s and returns an array of
-// legacyPkg's rowName, which s refuses: the element is written
-// qualified, and a composite's spelling does not follow from its
-// structure.
-func unspellable(tb assert.TB, s backend.Speller) *emit.TypeRef {
-	tb.Helper()
-
-	spelled(tb, s, imported(storePkg, rowName))
-	return &emit.TypeRef{
-		Form: symbol.FormArray, Spelling: "Row[]", Elems: []*emit.TypeRef{imported(legacyPkg, rowName)},
-	}
-}
+// The allocations of the vocabulary.
+const (
+	// typeParamsAllocs is a bounded and an unbounded parameter: the
+	// bounded one's spelling, the joined list, and its brackets.
+	typeParamsAllocs = 1 + 1 + 1
+	// paramsAllocs is two parameters: each one's spelling, and the joined
+	// list.
+	paramsAllocs = 2 + 1
+	// clauseAllocs is one clause behind its keyword.
+	clauseAllocs = 1
+	// funcsAllocs is the vocabulary of a file: the map of sixteen helpers,
+	// four allocations, and the speller's six bound helpers.
+	funcsAllocs = 4 + 6
+	// textAllocs is a docblock, an annotation or a package statement,
+	// sized once.
+	textAllocs = 1
+	// joinedKeywordAllocs is a keyword joined behind the access keyword.
+	joinedKeywordAllocs = 1
+	// twoJoinedKeywordAllocs is two keywords joined behind the access
+	// keyword, one join each.
+	twoJoinedKeywordAllocs = 2
+)
 
 // The vocabulary is what the kind templates spell through, so each
 // helper's output is pinned byte for byte, and every import a
@@ -423,6 +420,11 @@ func TestVocabulary(t *testing.T) {
 				give:    &emit.Struct{Name: rowName, Visibility: symbol.VisibilityInternal},
 				wantErr: true,
 			},
+			{
+				name:    "returns an error for an interface's internal scope",
+				give:    &emit.Interface{Name: "Shape", Visibility: symbol.VisibilityInternal},
+				wantErr: true,
+			},
 			{name: "returns an error for an alias", give: &emit.Alias{Name: "Id"}, wantErr: true},
 		}
 		for _, tt := range tests {
@@ -546,6 +548,13 @@ func TestVocabulary(t *testing.T) {
 			assert.NoError(t, err, "the keyword spells")
 			assert.Equal(t, got, "protected ", "the access alone")
 		})
+
+		t.Run("returns an error for an internal scope", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.FieldMods(&emit.Field{Name: idName, Visibility: symbol.VisibilityInternal})
+			assert.HasError(t, err, "no access keyword spells the scope")
+		})
 	})
 
 	t.Run("MethodMods", func(t *testing.T) {
@@ -568,6 +577,14 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, got, "public abstract ", "a signature")
 		})
 
+		t.Run("writes access before final", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.MethodMods(&emit.Method{Name: getName, Final: true})
+			assert.NoError(t, err, "the keywords spell")
+			assert.Equal(t, got, "public final ", "Java's order")
+		})
+
 		tests := []struct {
 			name string
 			give *emit.Method
@@ -577,6 +594,10 @@ func TestVocabulary(t *testing.T) {
 			{
 				name: "returns an error for an abstract method with a body",
 				give: &emit.Method{Name: "load", Abstract: true, Body: emit.Body{Verbatim: "return 1;"}},
+			},
+			{
+				name: "returns an error for an internal scope",
+				give: &emit.Method{Name: getName, Visibility: symbol.VisibilityInternal},
 			},
 		}
 		for _, tt := range tests {
@@ -616,6 +637,26 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, got, "static ", "which excludes default")
 		})
 
+		t.Run("writes private for a private method with a body", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.SigMods(
+				&emit.Method{Name: getName, Visibility: symbol.VisibilityPrivate, HasDefault: true},
+			)
+			assert.NoError(t, err, "the method spells")
+			assert.Equal(t, got, "private ", "javac rejects private beside default")
+		})
+
+		t.Run("writes private static for a private type-level method with a body", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.SigMods(&emit.Method{
+				Name: getName, Visibility: symbol.VisibilityPrivate, Level: symbol.LevelType, HasDefault: true,
+			})
+			assert.NoError(t, err, "the method spells")
+			assert.Equal(t, got, "private static ", "access before static")
+		})
+
 		tests := []struct {
 			name string
 			give *emit.Method
@@ -624,6 +665,20 @@ func TestVocabulary(t *testing.T) {
 			{
 				name: "returns an error for a body without a default",
 				give: &emit.Method{Name: "load", Body: emit.Body{Verbatim: "return 1;"}},
+			},
+			{name: "returns an error for a final marker", give: &emit.Method{Name: getName, Final: true}},
+			{name: "returns an error for an async method", give: &emit.Method{Name: getName, Async: true}},
+			{
+				name: "returns an error for a protected scope",
+				give: &emit.Method{Name: getName, Visibility: symbol.VisibilityProtected},
+			},
+			{
+				name: "returns an error for a private method without a body",
+				give: &emit.Method{Name: getName, Visibility: symbol.VisibilityPrivate},
+			},
+			{
+				name: "returns an error for a static method without a body",
+				give: &emit.Method{Name: getName, Level: symbol.LevelType},
 			},
 		}
 		for _, tt := range tests {
@@ -746,6 +801,10 @@ func TestVocabulary(t *testing.T) {
 				give: &emit.Interface{Name: "Store", Embeds: []*emit.Embed{{Ref: ref(baseName)}}},
 			},
 			{
+				name: "returns an error for a class's embed",
+				give: &emit.Struct{Name: rowName, Embeds: []*emit.Embed{{Ref: ref(baseName)}}},
+			},
+			{
 				name: "returns an error for a sealed class without permits",
 				give: &emit.Struct{Name: "Shape", Sealed: true},
 			},
@@ -813,4 +872,194 @@ func TestVocabulary(t *testing.T) {
 			}, "    "), "    @Deprecated\n    @SuppressWarnings(\"unchecked\")\n", "the arguments verbatim")
 		})
 	})
+
+	t.Run("NewSpeller", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a speller that imports into the given set", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			spelled(t, backend.NewSpeller(&set), imported(storePkg, rowName))
+			assert.Equal(t, set.Paths(), []string{storePkg}, "the import is the set's")
+		})
+	})
+
+	t.Run("EnumVariantName", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a constant's name", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := backend.EnumVariantName(&emit.EnumVariant{Name: redConstant})
+			assert.NoError(t, err, "a constant without a value spells")
+			assert.Equal(t, got, redConstant, "the name alone")
+		})
+
+		t.Run("returns an error for a constant with a value", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.EnumVariantName(&emit.EnumVariant{Name: redConstant, Value: "1"})
+			assert.HasError(t, err, "a valued constant takes the constructor form the templates do not spell")
+		})
+	})
+}
+
+// A keyword helper that writes one keyword or none, a guard and a name
+// spelled as written allocate nothing, and every other helper allocates
+// the text it writes. The ordinary run, which runs no benchmark, checks
+// those ceilings here.
+func TestVocabularyAllocs(t *testing.T) {
+	checkAllocs(t, vocabularyCalls())
+}
+
+// BenchmarkVocabulary measures each helper a kind template calls per
+// declaration, and the vocabulary the render binds per file.
+func BenchmarkVocabulary(b *testing.B) {
+	benchCalls(b, vocabularyCalls())
+}
+
+// vocabularyCalls returns a call of every function and method of
+// vocabulary.go.
+func vocabularyCalls() []allocCall {
+	s, set := speller()
+	bare, row := ref(intType), imported(storePkg, rowName)
+	params := []*emit.TypeParam{{Name: keyParam, Bounds: refs(comparableType)}, {Name: valueParam}}
+	args := []*emit.Param{{Name: idName, Type: bare}, {Name: nameParam, Type: ref(stringType)}}
+	result := []*emit.Return{{Type: bare}}
+	heir := &emit.Struct{Name: rowName, Extends: refs(baseName)}
+	failures := refs(ioException)
+	doc := []string{rowDoc}
+	pkg := symbol.Identity{Package: storePkg}
+	final := &emit.Struct{Name: rowName, Final: true}
+	member := &emit.Struct{Name: innerName}
+	constant := &emit.EnumVariant{Name: redConstant}
+	staticFinal := &emit.Field{Name: idName, Level: symbol.LevelType, Mutability: symbol.MutabilityImmutable}
+	interfaceField := &emit.Field{Name: limitName, Value: limitValue}
+	staticMethod := &emit.Method{Name: getName, Level: symbol.LevelType}
+	defaultMethod := &emit.Method{Name: getName, HasDefault: true, Body: emit.Body{Verbatim: "return 1;"}}
+	privateStatic := &emit.Method{
+		Name: getName, Visibility: symbol.VisibilityPrivate, Level: symbol.LevelType, HasDefault: true,
+	}
+	annotations := symbol.Annotations{{Name: overrideAnnotation}}
+	var (
+		spellerOut backend.Speller
+		out        string
+		err        error
+		funcs      template.FuncMap
+	)
+	spells := func(want string) func(tb assert.TB) {
+		return func(tb assert.TB) {
+			assert.NoError(tb, err, "the helper spells")
+			assert.Equal(tb, out, want, "the helper writes the Java spelling")
+		}
+	}
+	return []allocCall{
+		{
+			name: "NewSpeller", call: func() { spellerOut = backend.NewSpeller(set) },
+			check: func(tb assert.TB) { assert.Equal(tb, spellerOut, s, "NewSpeller returns the set's speller") },
+		},
+		{name: "Spell", call: func() { out, err = s.Spell(bare) }, check: spells(intType)},
+		{name: "Spell/an imported class", call: func() { out, err = s.Spell(row) }, check: spells(rowName)},
+		{
+			name: "TypeParams", allocs: typeParamsAllocs,
+			call: func() { out, err = s.TypeParams(params) }, check: spells("<K extends Comparable, V>"),
+		},
+		{
+			name: "Params", allocs: paramsAllocs,
+			call: func() { out, err = s.Params(args) }, check: spells("int id, String name"),
+		},
+		{name: "Results", call: func() { out, err = s.Results(result) }, check: spells(intType)},
+		{
+			name: "Heritage", allocs: clauseAllocs,
+			call: func() { out, err = s.Heritage(heir) }, check: spells(" extends Base"),
+		},
+		{
+			name: "Throws", allocs: clauseAllocs,
+			call: func() { out, err = s.Throws(failures) }, check: spells(" throws IOException"),
+		},
+		{
+			name: "Funcs", allocs: funcsAllocs,
+			call:  func() { funcs = backend.Funcs(set) },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 16, "Funcs returns the sixteen helpers") },
+		},
+		{
+			name: "Docs", allocs: textAllocs,
+			call: func() { out = backend.Docs(doc) }, check: spells("/**\n * " + rowDoc + "\n */\n"),
+		},
+		{
+			name: "PackageClause", allocs: textAllocs,
+			call: func() { out = backend.PackageClause(pkg) }, check: spells("package svc.store;\n\n"),
+		},
+		{
+			name: "TypeMods", allocs: joinedKeywordAllocs,
+			call: func() { out, err = backend.TypeMods(final) }, check: spells("public final "),
+		},
+		{name: "MemberType", call: func() { out, err = backend.MemberType(member) }, check: spells("")},
+		{
+			name: "EnumVariantName",
+			call: func() { out, err = backend.EnumVariantName(constant) }, check: spells(redConstant),
+		},
+		{
+			name: "FieldMods", allocs: twoJoinedKeywordAllocs,
+			call: func() { out, err = backend.FieldMods(staticFinal) }, check: spells("public static final "),
+		},
+		{name: "ConstantMods", call: func() { out, err = backend.ConstantMods(interfaceField) }, check: spells("")},
+		{
+			name: "MethodMods", allocs: joinedKeywordAllocs,
+			call: func() { out, err = backend.MethodMods(staticMethod) }, check: spells("public static "),
+		},
+		{name: "SigMods", call: func() { out, err = backend.SigMods(defaultMethod) }, check: spells("default ")},
+		{
+			name: "SigMods/a private static method", allocs: joinedKeywordAllocs,
+			call: func() { out, err = backend.SigMods(privateStatic) }, check: spells("private static "),
+		},
+		{
+			name: "Annotate", allocs: textAllocs,
+			call: func() { out = backend.Annotate(annotations) }, check: spells("@Override\n"),
+		},
+	}
+}
+
+// ref returns an unresolved reference spelled s.
+func ref(s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s} }
+
+// refs returns an unresolved reference per spelling, in order.
+func refs(spellings ...string) []*emit.TypeRef {
+	out := make([]*emit.TypeRef, 0, len(spellings))
+	for _, s := range spellings {
+		out = append(out, ref(s))
+	}
+	return out
+}
+
+// imported returns a reference to a class of pkg, spelled s.
+func imported(pkg, s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s, Package: pkg} }
+
+// speller returns a speller over a fresh set, and the set.
+func speller() (backend.Speller, *render.ImportSet) {
+	set := &render.ImportSet{}
+	return backend.NewSpeller(set), set
+}
+
+// spelled spells one reference and asserts it spells.
+func spelled(tb assert.TB, s backend.Speller, t *emit.TypeRef) string {
+	tb.Helper()
+
+	out, err := s.Spell(t)
+	assert.NoError(tb, err, "the reference spells")
+	return out
+}
+
+// unspellable binds rowName of storePkg on s and returns an array of
+// legacyPkg's rowName, which s refuses: the element is written
+// qualified, and a composite's spelling does not follow from its
+// structure.
+func unspellable(tb assert.TB, s backend.Speller) *emit.TypeRef {
+	tb.Helper()
+
+	spelled(tb, s, imported(storePkg, rowName))
+	return &emit.TypeRef{
+		Form: symbol.FormArray, Spelling: "Row[]", Elems: []*emit.TypeRef{imported(legacyPkg, rowName)},
+	}
 }

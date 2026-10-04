@@ -77,9 +77,12 @@ const (
 // bytes with one byte left.
 const shortAttribute = "1 bytes are left where 2 are read"
 
-// parseAllocs is the ceiling on the allocations of one pass over the
-// fixture library's 27 class files, over the 1,767 it measures.
-const parseAllocs = 1850
+// parseAllocs is one pass over the fixture library's 27 class files,
+// 1,767 in every run with the collector on and off, about 65 a class
+// file: the strings each constant pool decodes, the types each
+// descriptor and signature parses into, and the lists of each class's
+// members, attributes and annotations.
+const parseAllocs = 1_767
 
 // The attribute names the assembler writes, which pin the names the
 // reader decodes (§4.7).
@@ -231,7 +234,7 @@ func TestClass(t *testing.T) {
 			assert.Equal(t, fixture(t, boxFile).Interfaces, []string{holderName, cloneable}, "both")
 		})
 
-		t.Run("decodes every field of a class, the private ones included", func(t *testing.T) {
+		t.Run("decodes every field of a class including the private ones", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, fieldNames(fixture(t, boxFile)), []string{
@@ -663,6 +666,22 @@ func TestClass(t *testing.T) {
 	})
 }
 
+// One pass of the reader over the fixture library allocates within
+// parseAllocs in the ordinary run, which runs no benchmark. The check
+// runs alone, because AllocsPerRun refuses to run beside parallel tests.
+func TestClassAllocs(t *testing.T) {
+	files := libraryFiles(t)
+	var err error
+	assert.MaxAllocs(t, func() {
+		for _, data := range files {
+			if _, err = classfile.Parse(data); err != nil {
+				return
+			}
+		}
+	}, parseAllocs, "Parse allocates within its ceiling over the fixture library")
+	assert.NoError(t, err, "every fixture decodes")
+}
+
 // FuzzParse checks that no input panics the reader: every input decodes
 // to a class or returns an error that wraps ErrMalformed, never both.
 func FuzzParse(f *testing.F) {
@@ -692,14 +711,7 @@ func FuzzParse(f *testing.F) {
 // fixture library, which javac wrote, and fails above parseAllocs.
 func BenchmarkClass(b *testing.B) {
 	b.Run("Parse", func(b *testing.B) {
-		entries, err := os.ReadDir(classesDir)
-		if err != nil {
-			b.Fatal(err)
-		}
-		files := make([][]byte, 0, len(entries))
-		for _, e := range entries {
-			files = append(files, fixtureBytes(b, classesDir, strings.TrimSuffix(e.Name(), classExt)))
-		}
+		files := libraryFiles(b)
 		c := bench.Start(b).MaxAllocs(parseAllocs)
 		defer c.End()
 		for c.Loop() {
@@ -727,6 +739,19 @@ func parsedFile(tb assert.TB, dir, name string) *classfile.Class {
 	c, err := classfile.Parse(fixtureBytes(tb, dir, name))
 	assert.NoError(tb, err, "the fixture decodes")
 	return c
+}
+
+// libraryFiles returns every class file of the fixture library.
+func libraryFiles(tb assert.TB) [][]byte {
+	tb.Helper()
+
+	entries, err := os.ReadDir(classesDir)
+	assert.NoError(tb, err, "the fixture library is on disk")
+	files := make([][]byte, 0, len(entries))
+	for _, e := range entries {
+		files = append(files, fixtureBytes(tb, classesDir, strings.TrimSuffix(e.Name(), classExt)))
+	}
+	return files
 }
 
 // fixtureBytes returns one class file of a fixture directory.

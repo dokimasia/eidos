@@ -5,6 +5,7 @@ package backend
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"text/template"
 
@@ -71,6 +72,18 @@ const (
 	listSep  = ", "
 )
 
+// The package statement's keyword and its end, and the separator of a
+// package path's segments, which Java writes as a dot.
+const (
+	packageKeyword = "package "
+	packageEnd     = ";\n\n"
+	pathSep        = "/"
+)
+
+// unnamedParam is the name an unnamed parameter takes, behind its
+// position in the list.
+const unnamedParam = "arg"
+
 // refusalPrefix opens every refusal the backend returns: the
 // language's identity, as every backend's refusals open.
 const refusalPrefix = string(java.Lang) + ": "
@@ -81,14 +94,25 @@ const refusalPrefix = string(java.Lang) + ": "
 // another import or a declaration of the file takes it, the way
 // javac reads the two. The package is the reference's target's where
 // the target is a Java declaration, and the one the reference records
-// where it has no target. A Speller is not safe for concurrent use,
-// because its set is not.
+// where it has no target.
+//
+// # Concurrency
+//
+// A Speller is not safe for concurrent use, because its set is not.
+//
+// # Allocation contract
+//
+// Each method allocates the text it writes and nothing else, so a
+// builtin and a class imported under its simple name allocate nothing.
+// Claiming a class's name for the first time allocates in the set. A
+// method that joins more than two parts also allocates its list of
+// parts, because Go places a list of at most two strings on the stack.
 type Speller struct {
 	set *render.ImportSet
 }
 
 // NewSpeller returns the speller for the file whose import set is
-// set. The set is not nil.
+// set. The set is not nil. It allocates nothing.
 func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 
 // Spell writes a type reference and imports the class it names. The
@@ -99,6 +123,10 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 // keeps its written spelling, and Spell returns an error where a class
 // inside it is written fully qualified, because Java's composite
 // spelling does not follow from its structure.
+//
+// Spell allocates nothing for a builtin or a class it imports under its
+// simple name. A fully qualified class and an argument list allocate
+// their text, and a refusal allocates its error.
 func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	out, err := spellref.SpellWith(t, argsOpener, argsCloser, Anonymous, s.qualify)
 	if err != nil {
@@ -112,6 +140,9 @@ func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 // ampersands behind extends. Variance, defaults and value
 // parameters refuse, because Java's variance is a use-site wildcard
 // and its parameters take no default and no value.
+//
+// TypeParams allocates each bounded parameter's spelling, the joined
+// list and its brackets, and what each bound's spelling allocates.
 func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	if len(ps) == 0 {
 		return "", nil
@@ -140,13 +171,15 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	return argsOpener + strings.Join(parts, ", ") + argsCloser, nil
 }
 
-// Params writes a parameter list, the variadic marker included.
+// Params writes a parameter list, the variadic marker included. It
+// allocates each parameter's spelling and the joined list, and what each
+// type's spelling allocates.
 func (s Speller) Params(ps []*emit.Param) (string, error) {
 	parts := make([]string, 0, len(ps))
 	for i, p := range ps {
 		name := p.Name
 		if name == "" {
-			name = fmt.Sprintf("arg%d", i)
+			name = unnamedParam + strconv.Itoa(i)
 		}
 		spelling, err := s.Spell(p.Type)
 		if err != nil {
@@ -162,7 +195,9 @@ func (s Speller) Params(ps []*emit.Param) (string, error) {
 
 // Results writes the return type: void for none, the type for
 // one, and an error for several, because a Java callable returns
-// one value and a second arrives thrown, not returned.
+// one value and a second arrives thrown, not returned. It allocates
+// what the type's spelling allocates, and the type joined to its
+// trailing comment where one is stated.
 func (s Speller) Results(rs []*emit.Return) (string, error) {
 	switch len(rs) {
 	case 0:
@@ -187,7 +222,8 @@ func (s Speller) Results(rs []*emit.Return) (string, error) {
 // one, and an embed refuses on either, because nothing promotes
 // members. The permits clause and the sealed keyword go together:
 // javac rejects a sealed type in a file of its own without the
-// clause, and the clause on a type that is not sealed.
+// clause, and the clause on a type that is not sealed. It allocates the
+// clauses it writes, and what each type's spelling allocates.
 func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -243,7 +279,8 @@ func (s Speller) Heritage(d symbol.Symbol) (string, error) {
 
 // Throws writes a callable's throws clause: the declared failure
 // types comma-joined behind the keyword, or nothing where none
-// are stated.
+// are stated. It allocates the clause, the joined list of several
+// types, and what each type's spelling allocates.
 func (s Speller) Throws(ts []*emit.TypeRef) (string, error) {
 	if len(ts) == 0 {
 		return "", nil
@@ -309,7 +346,9 @@ func (s Speller) joined(ts []*emit.TypeRef, sep string) (string, error) {
 
 // Funcs returns the shared template vocabulary the kind templates
 // call, bound to one file's import set: every class a helper names
-// from another package is imported there.
+// from another package is imported there. Funcs allocates the map of
+// sixteen helpers, four allocations, and the speller's six bound
+// helpers.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
@@ -334,7 +373,8 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 
 // Docs writes a declaration's documentation as a Javadoc block,
 // each line prefixed with the given indentation, so a member's
-// doc is at its member's depth.
+// doc is at its member's depth. It allocates what [textfmt.BlockDocs]
+// allocates: the block, sized once, and nothing for no lines.
 func Docs(lines []string, prefix ...string) string {
 	if len(lines) == 0 {
 		return ""
@@ -345,12 +385,24 @@ func Docs(lines []string, prefix ...string) string {
 // PackageClause writes the package statement from the identity's
 // package path, dots for slashes, followed by a blank line. An
 // identity naming no package spells nothing, which is the default
-// package.
+// package. It sizes the statement once and allocates it, one
+// allocation, and nothing for the default package.
 func PackageClause(id symbol.Identity) string {
 	if id.Package == "" {
 		return ""
 	}
-	return "package " + javaPackage(id.Package) + ";\n\n"
+	var b strings.Builder
+	b.Grow(len(packageKeyword) + len(id.Package) + len(packageEnd))
+	b.WriteString(packageKeyword)
+	for i := range len(id.Package) {
+		if c := id.Package[i]; c == pathSep[0] {
+			b.WriteString(memberSep)
+		} else {
+			b.WriteByte(c)
+		}
+	}
+	b.WriteString(packageEnd)
+	return b.String()
 }
 
 // TypeMods writes a type's keywords in Java's stated order: access,
@@ -360,7 +412,9 @@ func PackageClause(id symbol.Identity) string {
 // both file-level and member types: the lowering refuses a file-level
 // type stating what only a member type can spell. A class both
 // abstract and final refuses, and so does one both final and
-// sealed, because javac rejects either pair.
+// sealed, because javac rejects either pair. TypeMods allocates one
+// join per keyword it writes behind the access keyword, and a refusal
+// allocates its error.
 func TypeMods(d symbol.Symbol) (string, error) {
 	switch t := d.(type) {
 	case *emit.Struct:
@@ -406,7 +460,8 @@ func TypeMods(d symbol.Symbol) (string, error) {
 // MemberType writes nothing and refuses what an interface's member
 // type states that Java cannot spell there: a private, protected or
 // package scope, because every member type of an interface is
-// public.
+// public. It allocates nothing for a type it passes, and a refusal
+// allocates its error.
 func MemberType(s symbol.Symbol) (string, error) {
 	var name string
 	var v symbol.Visibility
@@ -429,7 +484,8 @@ func MemberType(s symbol.Symbol) (string, error) {
 
 // EnumVariantName writes one enum constant's spelling: the name
 // alone. A stated value refuses, because a valued constant takes
-// the constructor form these templates do not spell.
+// the constructor form these templates do not spell. It allocates
+// nothing, and a refusal allocates its error.
 func EnumVariantName(v *emit.EnumVariant) (string, error) {
 	if v.Value != "" {
 		return "", refuse("an enum constant spells its name alone, and %s states a value", v.Name)
@@ -439,7 +495,8 @@ func EnumVariantName(v *emit.EnumVariant) (string, error) {
 
 // FieldMods writes a field's keywords, in Java's stated order:
 // access, static for a type-level field, final for an immutable
-// one.
+// one. It allocates one join per keyword it writes behind the access
+// keyword, and a refusal allocates its error.
 func FieldMods(f *emit.Field) (string, error) {
 	part, err := access(f.Visibility, f.Name)
 	if err != nil {
@@ -459,7 +516,8 @@ func FieldMods(f *emit.Field) (string, error) {
 // final constant. A field without an initializer refuses, because a
 // constant takes its value where it is declared, and so do a scope
 // other than public and a mutable field, because Java spells
-// neither on an interface field.
+// neither on an interface field. It allocates nothing, and a refusal
+// allocates its error.
 func ConstantMods(f *emit.Field) (string, error) {
 	switch {
 	case f.Value == "":
@@ -476,7 +534,9 @@ func ConstantMods(f *emit.Field) (string, error) {
 // order: access, static, abstract, final. An asynchronous method
 // refuses, because Java marks no signature asynchronous, and a
 // default refuses outside an interface. An abstract method with a
-// body refuses, because an abstract method is a signature.
+// body refuses, because an abstract method is a signature. MethodMods
+// allocates one join per keyword it writes behind the access keyword,
+// and a refusal allocates its error.
 func MethodMods(m *emit.Method) (string, error) {
 	switch {
 	case m.Abstract && !m.Body.IsZero():
@@ -504,11 +564,16 @@ func MethodMods(m *emit.Method) (string, error) {
 
 // SigMods writes an interface method's keywords: nothing for the
 // implicitly public signature, private where stated, static for a
-// type-level method, and default for one with a default body at
-// instance level. An abstract method passes, because an interface
-// signature is abstract by shape. A body without a default refuses,
-// because the template places only a default body, and final,
-// override and asynchrony refuse.
+// type-level method, and default for a public method with a default
+// body at instance level. A private or a static method places its body
+// the way a default does, and javac rejects either without a body, so
+// such a method without a default body refuses. An abstract method
+// passes, because an interface signature is abstract by shape. A body
+// without a default refuses, because the template places only a
+// default body, and final, override and asynchrony refuse. SigMods
+// allocates the keywords of a private static method, one allocation,
+// and nothing for every other signature. A refusal allocates its
+// error.
 func SigMods(m *emit.Method) (string, error) {
 	switch {
 	case !m.HasDefault && !m.Body.IsZero():
@@ -531,11 +596,15 @@ func SigMods(m *emit.Method) (string, error) {
 		return "", refuse("an interface method is public or private, and %s states another scope",
 			m.Name)
 	}
+	private := m.Visibility == symbol.VisibilityPrivate
 	switch {
+	case !m.HasDefault && (private || m.Level == symbol.LevelType):
+		return "", refuse("a private or a static interface method states its body, and %s states none",
+			m.Name)
 	case m.Level == symbol.LevelType:
 		part += "static "
-	case m.HasDefault:
-		part += "default "
+	case !private && m.HasDefault:
+		part = "default "
 	}
 	return part, nil
 }
@@ -543,14 +612,15 @@ func SigMods(m *emit.Method) (string, error) {
 // Annotate writes a declaration's annotation lines, one per
 // annotation, each prefixed with the given indentation: the name
 // behind its marker, and the argument spellings verbatim in
-// parentheses where any are stated.
+// parentheses where any are stated. It allocates what [textfmt.Marked]
+// allocates: the lines, sized once, and nothing for no annotations.
 func Annotate(a symbol.Annotations, prefix ...string) string {
 	return textfmt.Marked(a, "@", "", prefix...)
 }
 
 // javaPackage spells a package path the way Java writes it: dots for
 // slashes.
-func javaPackage(path string) string { return strings.ReplaceAll(path, "/", memberSep) }
+func javaPackage(path string) string { return strings.ReplaceAll(path, pathSep, memberSep) }
 
 // access writes a member's or a member type's access keyword. An
 // unstated scope spells public, because a generated API exists to be

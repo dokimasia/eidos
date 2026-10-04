@@ -8,9 +8,14 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/java/frontend/classfile"
 )
+
+// nestedNameAllocs is a nested class's binary name, written into one
+// buffer.
+const nestedNameAllocs = 1
 
 // The type names the signature cases decode, the opening and closing of
 // a parameterized List, and the descriptors of two interfaces and an
@@ -27,8 +32,8 @@ const (
 	ioExceptionDesc = "Ljava/io/IOException;"
 )
 
-// Signatures are the grammar every generic declaration is read through,
-// so each production, and each way a signature breaks it, is pinned.
+// Every generic declaration is read through the signature grammar. Each
+// production, and each way a signature breaks it, is pinned.
 func TestSignature(t *testing.T) {
 	t.Parallel()
 
@@ -71,9 +76,14 @@ func TestSignature(t *testing.T) {
 		t.Run("joins a class type's names with $", func(t *testing.T) {
 			t.Parallel()
 
-			names := []classfile.ClassName{{Name: mapName}, {Name: "Entry"}}
-			typ := classfile.Type{Kind: classfile.KindClass, Class: names}
-			assert.Equal(t, typ.BinaryName(), mapName+"$Entry", "Map.Entry's binary name")
+			assert.Equal(t, mapEntry().BinaryName(), mapName+"$Entry", "Map.Entry's binary name")
+		})
+
+		t.Run("returns a top-level class's name", func(t *testing.T) {
+			t.Parallel()
+
+			typ := classfile.Type{Kind: classfile.KindClass, Class: []classfile.ClassName{{Name: mapName}}}
+			assert.Equal(t, typ.BinaryName(), mapName, "Map's binary name")
 		})
 
 		t.Run("returns no binary name for a type variable", func(t *testing.T) {
@@ -324,6 +334,65 @@ func TestSignature(t *testing.T) {
 			})
 		}
 	})
+}
+
+// A keyword and a top-level class's name allocate nothing, and a nested
+// class's name its buffer. The ordinary run, which runs no benchmark,
+// checks those ceilings here.
+func TestSignatureAllocs(t *testing.T) {
+	base := classfile.Type{Kind: classfile.KindBase, Base: 'I'}
+	top := classfile.Type{Kind: classfile.KindClass, Class: []classfile.ClassName{{Name: mapName}}}
+	nested := mapEntry()
+	var got string
+	assert.MaxAllocs(t, func() { got = base.Keyword() }, 0, "Keyword allocates nothing")
+	assert.Equal(t, got, "int", "Keyword returns int")
+	assert.MaxAllocs(t, func() { got = top.BinaryName() }, 0, "BinaryName allocates nothing for a top-level class")
+	assert.Equal(t, got, mapName, "BinaryName returns the class's name")
+	assert.MaxAllocs(t, func() { got = nested.BinaryName() }, nestedNameAllocs,
+		"BinaryName allocates the joined name of a nested class")
+	assert.Equal(t, got, mapName+"$Entry", "BinaryName joins the names")
+}
+
+// BenchmarkSignature measures the keyword and binary-name lookups the
+// frontend makes for every type a signature names.
+func BenchmarkSignature(b *testing.B) {
+	b.Run("Keyword", func(b *testing.B) {
+		typ := classfile.Type{Kind: classfile.KindBase, Base: 'I'}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = typ.Keyword()
+		}
+		assert.Equal(b, got, "int", "Keyword returns int")
+	})
+
+	b.Run("BinaryName", func(b *testing.B) {
+		typ := classfile.Type{Kind: classfile.KindClass, Class: []classfile.ClassName{{Name: mapName}}}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = typ.BinaryName()
+		}
+		assert.Equal(b, got, mapName, "BinaryName returns the class's name")
+	})
+
+	b.Run("BinaryName/a nested class", func(b *testing.B) {
+		typ := mapEntry()
+		c := bench.Start(b).MaxAllocs(nestedNameAllocs)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = typ.BinaryName()
+		}
+		assert.Equal(b, got, mapName+"$Entry", "BinaryName joins the names")
+	})
+}
+
+// mapEntry returns the class type Map.Entry.
+func mapEntry() classfile.Type {
+	return classfile.Type{Kind: classfile.KindClass, Class: []classfile.ClassName{{Name: mapName}, {Name: "Entry"}}}
 }
 
 // fieldSignature returns the signature of a Box field of a name.

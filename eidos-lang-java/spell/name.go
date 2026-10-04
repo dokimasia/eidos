@@ -10,17 +10,26 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// Name spells one declared name in Java's convention: types take
-// Pascal case, enum constants and file-level constants take
-// screaming snake case, and so does a field inside an interface,
-// because Java reads it as a constant; everything else callable or
-// bound takes camel case, and a type parameter keeps its spelling,
-// whose single-capital convention is near universal. Visibility
-// never changes a spelling, because Java scopes through keywords.
-// Two shapes refuse: a name outside the identifier shape, because
-// a convention must not respell what a consumer matches by string,
-// and a spelling landing on a reserved word, which Java cannot
-// escape.
+// Name spells one declared name in Java's convention:
+//
+//   - A type takes Pascal case.
+//   - An enum constant, a file-level constant and a field inside an
+//     interface take screaming snake case, because Java reads such a
+//     field as a constant.
+//   - A type parameter keeps its spelling, whose single-capital
+//     convention is near universal.
+//   - Everything else callable or bound takes camel case.
+//
+// Visibility never changes a spelling, because Java scopes through
+// keywords. Name returns an error for a name that is no identifier,
+// because a convention must not respell what a consumer matches by
+// string. It returns an error for a spelling that is a reserved word
+// too, which Java cannot escape.
+//
+// # Allocation contract
+//
+// Name allocates a converted spelling, one allocation, and nothing for
+// a name the convention spells as it is. A refusal allocates its error.
 func Name(host, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 	if !naming.IsIdentifier(name) {
 		return "", fmt.Errorf(

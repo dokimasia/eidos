@@ -12,7 +12,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
-// The import fixture: a class-qualified path, the package Java
+// The import cases name a class-qualified path, the package Java
 // imports into every file, and a class of it.
 const (
 	storeClassPath = "svc/api/Store"
@@ -22,6 +22,10 @@ const (
 	apiPkg         = "svc/api"
 	storeClass     = "Store"
 )
+
+// importsAllocs is a block: the sorted entries, and the statements
+// sized once.
+const importsAllocs = 2
 
 // The import block is pinned byte for byte.
 func TestImports(t *testing.T) {
@@ -40,7 +44,7 @@ func TestImports(t *testing.T) {
 				"dots for slashes and a blank line after the block")
 		})
 
-		t.Run("writes a named entry and its bare twin once", func(t *testing.T) {
+		t.Run("writes one statement for a named entry with a bare twin", func(t *testing.T) {
 			t.Parallel()
 
 			var set render.ImportSet
@@ -68,4 +72,41 @@ func TestImports(t *testing.T) {
 			assert.Equal(t, backend.Imports(&set), "", "no block")
 		})
 	})
+}
+
+// A block allocates its sorted entries and its statements, and an
+// empty set nothing. The ordinary run, which runs no benchmark, checks
+// those ceilings here.
+func TestImportsAllocs(t *testing.T) {
+	checkAllocs(t, importsCalls())
+}
+
+// BenchmarkImports measures the block every rendered file that imports
+// a class writes.
+func BenchmarkImports(b *testing.B) {
+	benchCalls(b, importsCalls())
+}
+
+// importsCalls returns a call of Imports over two classes, and over an
+// empty set.
+func importsCalls() []allocCall {
+	var full, empty render.ImportSet
+	full.Add(storeClassPath)
+	full.Add(listClassPath)
+	var out string
+	return []allocCall{
+		{
+			name: "Imports", allocs: importsAllocs,
+			call: func() { out = backend.Imports(&full) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, out, "import java.util.List;\nimport svc.api.Store;\n\n",
+					"Imports writes both statements")
+			},
+		},
+		{
+			name:  "Imports/an empty set",
+			call:  func() { out = backend.Imports(&empty) },
+			check: func(tb assert.TB) { assert.Equal(tb, out, "", "Imports writes no block") },
+		},
+	}
 }

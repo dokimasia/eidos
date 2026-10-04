@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/java/spell"
 	"go.dokimi.dev/eidos/sdk/emit"
@@ -14,9 +15,20 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The naming is total over the units a plan admits, and every
-// spelling is pinned: Java names a file after the public type it
-// declares, so a drift here renames types, not just files.
+// The allocations of a filename.
+const (
+	// typeFilenameAllocs is a lone type's filename: the name with its
+	// extension.
+	typeFilenameAllocs = 1
+	// partsFilenameAllocs is a per-source unit's fallback filename: the
+	// list of its parts, their join, their Pascal-case conversion, and
+	// the name with its extension.
+	partsFilenameAllocs = 4
+)
+
+// Java names a file after the public type it declares, so a change of
+// spelling renames a type as well as a file. Every spelling of a unit a
+// plan admits is pinned.
 func TestFilename(t *testing.T) {
 	t.Parallel()
 
@@ -29,11 +41,8 @@ func TestFilename(t *testing.T) {
 			want string
 		}{
 			{
-				name: "returns a lone struct's name whatever the key and word spell",
-				give: plugin.Unit{
-					Per: plugin.PerSource, Key: "svc/types.src", Word: "gen",
-					Decls: []symbol.Symbol{&emit.Struct{Name: "Row"}},
-				},
+				name: "names the file after a lone struct",
+				give: rowUnit(),
 				want: "Row.java",
 			},
 			{
@@ -45,8 +54,24 @@ func TestFilename(t *testing.T) {
 				want: "Phase.java",
 			},
 			{
-				name: "returns the stem and the word of a per-source unit as one type name",
-				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "stub"},
+				name: "returns a lone interface's name",
+				give: plugin.Unit{
+					Per: plugin.PerSource, Key: "svc/types.src", Word: "gen",
+					Decls: []symbol.Symbol{&emit.Interface{Name: "Store"}},
+				},
+				want: "Store.java",
+			},
+			{
+				name: "joins the stem to the word of a unit whose lone declaration is no type",
+				give: plugin.Unit{
+					Per: plugin.PerSource, Key: "svc/store.go", Word: "stub",
+					Decls: []symbol.Symbol{&emit.Function{Name: "open"}},
+				},
+				want: "StoreStub.java",
+			},
+			{
+				name: "joins the stem to the word of a per-source unit as one type name",
+				give: storeUnit(),
 				want: "StoreStub.java",
 			},
 			{
@@ -83,4 +108,60 @@ func TestFilename(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Filename allocates a lone type's name with its extension, and the
+// fallback its parts, their join and their conversion too. The ordinary
+// run, which runs no benchmark, checks those ceilings here.
+func TestFilenameAllocs(t *testing.T) {
+	typed, parts := rowUnit(), storeUnit()
+	var got string
+	assert.MaxAllocs(t, func() { got = spell.Filename(typed) }, typeFilenameAllocs,
+		"Filename allocates the type's name with its extension")
+	assert.Equal(t, got, "Row.java", "Filename spells the type")
+	assert.MaxAllocs(t, func() { got = spell.Filename(parts) }, partsFilenameAllocs,
+		"Filename allocates the parts, their join, their conversion and the name")
+	assert.Equal(t, got, "StoreStub.java", "Filename spells the parts")
+}
+
+// BenchmarkFilename measures the filename a backend spells once per
+// unit.
+func BenchmarkFilename(b *testing.B) {
+	units := []struct {
+		name   string
+		give   plugin.Unit
+		allocs uint64
+		want   string
+	}{
+		{name: "Filename", give: rowUnit(), allocs: typeFilenameAllocs, want: "Row.java"},
+		{
+			name: "Filename/a unit without a lone type", give: storeUnit(),
+			allocs: partsFilenameAllocs, want: "StoreStub.java",
+		},
+	}
+	for _, tt := range units {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = spell.Filename(tt.give)
+			}
+			assert.Equal(b, got, tt.want, "Filename spells the unit")
+		})
+	}
+}
+
+// rowUnit returns a unit that declares the struct Row alone.
+func rowUnit() plugin.Unit {
+	return plugin.Unit{
+		Per: plugin.PerSource, Key: "svc/types.src", Word: "gen",
+		Decls: []symbol.Symbol{&emit.Struct{Name: "Row"}},
+	}
+}
+
+// storeUnit returns the stub family's unit of svc/store.go, which
+// declares no lone type.
+func storeUnit() plugin.Unit {
+	return plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "stub"}
 }

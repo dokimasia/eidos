@@ -16,8 +16,8 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The builtin stubs' output: the marker each stubbed builtin writes,
-// so a template's own bytes are distinguishable from the pass's.
+// Each stubbed builtin writes a marker, so a template's own bytes are
+// distinguishable from the pass's.
 const (
 	bodyStub    = "        body();\n"
 	importsStub = "IMPORTS\n"
@@ -25,51 +25,9 @@ const (
 	nestedStub  = "NESTED "
 )
 
-// run runs one template over one declaration the way the render pass
-// does, the builtins stubbed, and returns the text or the refusal
-// beside the file's import set.
-func run(t *testing.T, src string, data any) (string, *render.ImportSet, error) {
-	t.Helper()
-
-	set := &render.ImportSet{}
-	tmpl, err := template.New("kind").
-		Funcs(backend.Funcs(set)).
-		Funcs(template.FuncMap{
-			render.BuiltinBody:    func(any) string { return bodyStub },
-			render.BuiltinUse:     func(string) string { return "" },
-			render.BuiltinImports: func() string { return importsStub },
-			render.BuiltinDecls:   func() string { return declsStub },
-			render.BuiltinSlots:   func() string { return "" },
-			render.BuiltinSlot:    func(string) string { return "" },
-			render.BuiltinNested: func(indent string, s symbol.Symbol) string {
-				return indent + nestedStub + s.Kind().String()
-			},
-		}).
-		Parse(src)
-	assert.NoError(t, err, "the template parses")
-	var b strings.Builder
-	err = tmpl.Execute(&b, data)
-	return b.String(), set, err
-}
-
-// execute runs one template over one declaration and asserts it
-// executes.
-func execute(t *testing.T, src string, data any) string {
-	t.Helper()
-
-	got, _, err := run(t, src, data)
-	assert.NoError(t, err, "the template executes")
-	return got
-}
-
-// refused runs one template over one declaration and returns the
-// refusal.
-func refused(t *testing.T, src string, data any) error {
-	t.Helper()
-
-	_, _, err := run(t, src, data)
-	return err
-}
+// templateMapAllocs is a map of kinds onto templates or reasons: the
+// map and its one group.
+const templateMapAllocs = 2
 
 // The inventory is three templates by design, and each is pinned
 // byte for byte, as is the refusal that keeps the return model
@@ -405,4 +363,79 @@ func TestTemplates(t *testing.T) {
 			}
 		})
 	})
+}
+
+// Each map allocates itself. The ordinary run, which runs no benchmark,
+// checks those ceilings here.
+func TestTemplatesAllocs(t *testing.T) {
+	checkAllocs(t, templatesCalls())
+}
+
+// BenchmarkTemplates measures the maps the backend reads once per
+// build.
+func BenchmarkTemplates(b *testing.B) {
+	benchCalls(b, templatesCalls())
+}
+
+// templatesCalls returns a call of KindTemplates and of RefusedKinds.
+func templatesCalls() []allocCall {
+	var kinds map[symbol.Kind]string
+	return []allocCall{
+		{
+			name: "KindTemplates", allocs: templateMapAllocs,
+			call:  func() { kinds = backend.KindTemplates() },
+			check: func(tb assert.TB) { assert.Length(tb, kinds, 3, "KindTemplates returns three templates") },
+		},
+		{
+			name: "RefusedKinds", allocs: templateMapAllocs,
+			call:  func() { kinds = backend.RefusedKinds() },
+			check: func(tb assert.TB) { assert.Length(tb, kinds, 5, "RefusedKinds returns five kinds") },
+		},
+	}
+}
+
+// run runs one template over one declaration the way the render pass
+// does, the builtins stubbed, and returns the text or the refusal
+// beside the file's import set.
+func run(t *testing.T, src string, data any) (string, *render.ImportSet, error) {
+	t.Helper()
+
+	set := &render.ImportSet{}
+	tmpl, err := template.New("kind").
+		Funcs(backend.Funcs(set)).
+		Funcs(template.FuncMap{
+			render.BuiltinBody:    func(any) string { return bodyStub },
+			render.BuiltinUse:     func(string) string { return "" },
+			render.BuiltinImports: func() string { return importsStub },
+			render.BuiltinDecls:   func() string { return declsStub },
+			render.BuiltinSlots:   func() string { return "" },
+			render.BuiltinSlot:    func(string) string { return "" },
+			render.BuiltinNested: func(indent string, s symbol.Symbol) string {
+				return indent + nestedStub + s.Kind().String()
+			},
+		}).
+		Parse(src)
+	assert.NoError(t, err, "the template parses")
+	var b strings.Builder
+	err = tmpl.Execute(&b, data)
+	return b.String(), set, err
+}
+
+// execute runs one template over one declaration and asserts it
+// executes.
+func execute(t *testing.T, src string, data any) string {
+	t.Helper()
+
+	got, _, err := run(t, src, data)
+	assert.NoError(t, err, "the template executes")
+	return got
+}
+
+// refused runs one template over one declaration and returns the
+// refusal.
+func refused(t *testing.T, src string, data any) error {
+	t.Helper()
+
+	_, _, err := run(t, src, data)
+	return err
 }

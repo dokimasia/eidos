@@ -41,6 +41,24 @@ const fileMode = 0o644
 // dirMode is the mode the store cases create their directories with.
 const dirMode = 0o755
 
+// The homes the allocation cases name. Stores reads no directory under
+// either, so neither has to exist.
+const (
+	userHome   = "/home"
+	gradleHome = "/gradle"
+)
+
+// The allocations of the stores.
+const (
+	// storesAllocs is the stores over a ct.sym of one entry: the file's
+	// read, its reader and its ZIP index, the four paths Stores joins, and
+	// the map with its two directory roots.
+	storesAllocs = 5 + 1 + 13 + 4 + 2 + 2
+	// gradleStoresAllocs is the stores where GRADLE_USER_HOME names
+	// Gradle's home, which joins one path fewer.
+	gradleStoresAllocs = storesAllocs - 1
+)
+
 // Stores resolves each store's root from the environment, so the
 // variable each root comes from, the defaults and the refusals are
 // pinned over temporary trees, and the JDK's own ct.sym is loaded where
@@ -139,6 +157,48 @@ func TestStore(t *testing.T) {
 			assert.Empty(t, named[*node.Struct](t, machineLang(t), objectClass).Extends, "Object extends nothing")
 		})
 	})
+}
+
+// The stores allocate ct.sym's read and index, the paths and the map.
+// The ordinary run, which runs no benchmark, checks those ceilings here.
+func TestStoreAllocs(t *testing.T) {
+	checkAllocs(t, storeCalls(t))
+}
+
+// BenchmarkStore measures the resolution a load makes once, before it
+// reads any dependency unit.
+func BenchmarkStore(b *testing.B) {
+	benchCalls(b, storeCalls(b))
+}
+
+// storeCalls returns a call of Stores over a ct.sym of one entry, with
+// Gradle's home by default and named.
+func storeCalls(tb testing.TB) []allocCall {
+	tb.Helper()
+
+	jdk := jdkHome(tb)
+	byDefault := env(map[string]string{envJavaHome: jdk, envHome: userHome})
+	named := env(map[string]string{envJavaHome: jdk, envHome: userHome, envGradleHome: gradleHome})
+	var (
+		stores map[string]fs.FS
+		err    error
+	)
+	check := func(tb assert.TB) {
+		assert.NoError(tb, err, "Stores resolves every root")
+		assert.Length(tb, stores, 3, "Stores returns ct.sym, the Maven repository and Gradle's cache")
+	}
+	return []allocCall{
+		{
+			name: "Stores", allocs: storesAllocs,
+			call:  func() { stores, err = frontend.Stores(byDefault) },
+			check: check,
+		},
+		{
+			name: "Stores/a Gradle home", allocs: gradleStoresAllocs,
+			call:  func() { stores, err = frontend.Stores(named) },
+			check: check,
+		},
+	}
 }
 
 // machineLang returns the declarations of java.lang that the first round
