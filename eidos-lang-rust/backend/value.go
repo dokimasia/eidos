@@ -4,7 +4,7 @@
 package backend
 
 import (
-	"fmt"
+	"strconv"
 	"strings"
 
 	rust "go.dokimi.dev/eidos/lang/rust"
@@ -30,6 +30,11 @@ const (
 	// emptyBraces closes a struct literal that names no field, which
 	// Rust accepts for every struct that has no field.
 	emptyBraces = " {}"
+	// unicodeOpen opens the braced Unicode escape of a control
+	// character, and unicodeDigits is the most hex digits a Unicode
+	// scalar value takes.
+	unicodeOpen   = `\u{`
+	unicodeDigits = 6
 )
 
 // leaves is Rust's spelling of the literal leaves: a number spells
@@ -169,7 +174,8 @@ func number(v emit.Value) (string, error) {
 // quoteString spells a string literal in Rust's grammar: the
 // backslash, the double quote and the named escapes \n \r \t \0,
 // every other control character as a braced Unicode escape, and
-// everything else as itself.
+// everything else as itself. It sizes its buffer for the string and
+// its quotes, one allocation, and an escape grows it once more.
 func quoteString(s string) string {
 	var b strings.Builder
 	b.Grow(len(s) + 2)
@@ -190,7 +196,10 @@ func quoteString(s string) string {
 			b.WriteString(`\0`)
 		default:
 			if r < ' ' || r == 0x7f {
-				fmt.Fprintf(&b, `\u{%x}`, r)
+				var scratch [unicodeDigits]byte
+				b.WriteString(unicodeOpen)
+				b.Write(strconv.AppendUint(scratch[:0], uint64(r), 16))
+				b.WriteByte('}')
 				continue
 			}
 			b.WriteRune(r)

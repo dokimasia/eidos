@@ -101,6 +101,13 @@ type rustFrontend struct {
 // loads with no feature enabled and no cfg option set. It implements
 // the exporter role, so a reference through a pub use resolves to the
 // declaration it publishes, and its version folds the grammar's.
+//
+// # Allocation contract
+//
+// New allocates the frontend's state with its vocabulary and its parse
+// hook, the version, the syntax, two allocations, and the kit's three:
+// nine allocations, and ten with the empty options that nil options
+// take.
 func New(opts *Options) plugin.Frontend {
 	if opts == nil {
 		opts = &Options{}

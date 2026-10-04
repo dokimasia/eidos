@@ -28,6 +28,10 @@ import (
 //   - A type parameter's default renders on a type definition. On a
 //     function, a method and an associated type it refuses through
 //     the parameter-list helper, because Rust takes none there.
+//
+// Coverage builds the table on every call, which the caller keeps: the
+// fact map's four allocations, and the exception map's two with its six
+// kinds' two each, 18 allocations.
 func Coverage() render.Coverage {
 	return render.Coverage{
 		Facts: map[symbol.Fact]render.Verdict{

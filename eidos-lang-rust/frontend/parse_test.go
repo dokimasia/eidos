@@ -27,9 +27,9 @@ import (
 // brand is the brand every fixture unit reads its carriers under.
 const brand = string(frontendtest.Brand)
 
-// The fixture crate: its manifest, which names the package with a
-// hyphen, the crate name Cargo spells from it, its library root, and
-// the directory a nested copy of it is in.
+// The fixture crate's manifest names the package with a hyphen. Beside
+// it are the crate name Cargo spells from it, the library root, and the
+// directory a nested copy of the crate is in.
 const (
 	manifestPath = "Cargo.toml"
 	manifestSrc  = "[package]\nname = \"demo-crate\"\n"
@@ -48,9 +48,13 @@ const (
 	benchDecls    = 20
 )
 
-// parseAllocs is the ceiling on the allocations of one parse of the
-// canonical corpus, over the 2,509,005 it measures.
-const parseAllocs = 2_600_000
+// parseAllocs is one parse of the canonical corpus. With the collector
+// off a parse allocates 2,381,003 times: the lowering's nodes, texts,
+// stamps and type references, the manifests' reads, and one tree handle
+// per file. Tree-sitter builds its trees in C memory, which the count
+// does not see. The collections that run during a parse add more: 10
+// fresh processes counted up to 10 more. The ceiling allows 32 more.
+const parseAllocs = 2_381_003 + 32
 
 // treeReader is the partition's recorded door over a test tree.
 type treeReader struct {
@@ -162,7 +166,7 @@ func TestParse(t *testing.T) {
 			named[*node.Struct](t, fileIn(t, gb, crateName+"/x").Decls, "A")
 		})
 
-		t.Run("reports ExcludedFile for the file and the members of a module a cfg predicate keeps out",
+		t.Run("reports ExcludedFile for every file of a module a cfg predicate keeps out",
 			func(t *testing.T) {
 				t.Parallel()
 
@@ -414,7 +418,9 @@ func TestParse(t *testing.T) {
 // the scaled corpus through Parse into a builder of its own, the
 // partition run once before the loop, so the number measures the
 // tree-sitter parse and the lowering alone, and fails above
-// parseAllocs.
+// parseAllocs. Only -bench checks the ceiling. One parse takes about
+// 1.7 s on four cores, and the 101 calls of an allocation check would
+// take nearly three minutes.
 func BenchmarkParse(b *testing.B) {
 	tree := scaledRust()
 	f := frontend.New(nil)

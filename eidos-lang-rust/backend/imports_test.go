@@ -12,12 +12,16 @@ import (
 	"go.dokimi.dev/eidos/sdk/render"
 )
 
-// The use fixture: a standard library module and an item of it.
+// The use cases name a standard library module and an item of it.
 const (
 	collectionsModule = "std/collections"
 	hashMapName       = "HashMap"
 	svcModule         = "svc/store"
 )
+
+// importsAllocs is a block: the sorted entries, and the statements
+// sized once.
+const importsAllocs = 2
 
 // The use block is pinned byte for byte.
 func TestImports(t *testing.T) {
@@ -62,4 +66,40 @@ func TestImports(t *testing.T) {
 			assert.Equal(t, backend.Imports(&set), "", "no block")
 		})
 	})
+}
+
+// A block allocates its sorted entries and its statements, and an
+// empty set nothing. The ordinary run, which runs no benchmark, checks
+// those ceilings here.
+func TestImportsAllocs(t *testing.T) {
+	checkAllocs(t, importsCalls())
+}
+
+// BenchmarkImports measures the block every rendered file that uses an
+// item writes.
+func BenchmarkImports(b *testing.B) {
+	benchCalls(b, importsCalls())
+}
+
+// importsCalls returns a call of Imports over two modules, and over an
+// empty set.
+func importsCalls() []allocCall {
+	var full, empty render.ImportSet
+	full.Add(svcModule)
+	full.Add(collectionsModule)
+	var out string
+	return []allocCall{
+		{
+			name: "Imports", allocs: importsAllocs,
+			call: func() { out = backend.Imports(&full) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, out, "use std::collections;\nuse svc::store;\n\n", "Imports writes both uses")
+			},
+		},
+		{
+			name:  "Imports/an empty set",
+			call:  func() { out = backend.Imports(&empty) },
+			check: func(tb assert.TB) { assert.Equal(tb, out, "", "Imports writes no block") },
+		},
+	}
 }

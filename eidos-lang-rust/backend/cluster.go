@@ -28,7 +28,9 @@ const ImplTemplate = "impl{{binder (index .Decls 0).Receives}}" +
 	"{{results .Returns}} {\n{{body .}}    }{{with .Comment}} // {{.}}{{end}}\n" +
 	"{{- end}}\n}\n"
 
-// Groups returns the group templates the cluster selects.
+// Groups returns the group templates the cluster selects. It builds
+// the map on every call, which the caller keeps: the map and the one
+// table of slots that stores the template, two allocations.
 func Groups() map[render.GroupName]string {
 	return map[render.GroupName]string{ImplGroup: ImplTemplate}
 }
@@ -41,6 +43,14 @@ func Groups() map[render.GroupName]string {
 // blocks. A method attaching to no type is left unassigned, and
 // the lowering refuses such a method before any render.
 // Everything that is not a method is left a singleton.
+//
+// # Allocation contract
+//
+// Cluster allocates the key of each instantiated receiver, the list of
+// blocks as it grows, and each block's list of methods as it grows: six
+// allocations for two methods of one type beside a method of an
+// instantiated type. The index of receiver types is on the stack for up
+// to eight types, and allocates a table on the heap above that.
 func Cluster(decls []symbol.Symbol) []render.Clustered {
 	byType := map[string]int{}
 	var out []render.Clustered

@@ -9,6 +9,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	rust "go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/frontend"
@@ -35,6 +36,143 @@ const (
 	unparsedCode = "RUST-0001"
 	targetClaim  = "!**/target/**"
 )
+
+// newAllocs is the frontend New returns for nil options: the empty
+// options, the frontend's state with its vocabulary and its parse hook,
+// the version, the syntax's two, and the kit's three.
+const newAllocs = 1 + 3 + 1 + 2 + 3
+
+// allocCall is one call that an allocation test and a benchmark share:
+// its benchmark path, its allocation ceiling, the call, and the check
+// of the result the call leaves.
+type allocCall struct {
+	name   string
+	allocs uint64
+	call   func()
+	check  func(tb assert.TB)
+}
+
+// The frontend runs the conformance suite every frontend runs, over real
+// Rust source.
+func TestFrontend(t *testing.T) {
+	t.Parallel()
+
+	t.Run("New", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a frontend that passes the conformance suite", func(t *testing.T) {
+			t.Parallel()
+
+			frontendtest.RunFrontendSuite(t, setup)
+		})
+
+		t.Run("returns a frontend in the exporter role", func(t *testing.T) {
+			t.Parallel()
+
+			_, exports := frontend.New(nil).(plugin.Exporter)
+			assert.True(t, exports, "a Rust module publishes the names its use declarations bind")
+		})
+
+		t.Run("returns a frontend whose language cannot overload", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, frontend.New(nil).Overloads(), "every Rust callable takes the empty discriminator")
+		})
+
+		t.Run("returns a version that folds the frontend's version", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, strings.HasPrefix(versionOf(t), rust.FrontendVersion),
+				"a graph change bumps what the unit keys fold")
+		})
+
+		t.Run("returns a version that folds the grammar's version", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, strings.HasSuffix(versionOf(t), rustgrammar.Grammar.Version()),
+				"a grammar upgrade bumps what the unit keys fold")
+		})
+
+		t.Run("returns a frontend whose options are the ones it was built with", func(t *testing.T) {
+			t.Parallel()
+
+			opts := &frontend.Options{Features: []string{"x"}}
+			op, provides := frontend.New(opts).(plugin.OptionsProvider)
+			assert.True(t, provides, "the frontend declares its configuration")
+			assert.Equal(t, op.Options(), any(opts), "so every unit key folds the cfg set")
+		})
+
+		t.Run("returns a frontend that reports a syntax error as RUST-0001", func(t *testing.T) {
+			t.Parallel()
+
+			_, found := parsedSource(t, "pub struct {\n")
+			assert.NotEmpty(t, found, "the syntax error reports")
+			assert.Equal(t, found[0].Code.String(), unparsedCode, "under the satellite's prefix and the first number")
+		})
+
+		t.Run("returns a frontend that claims no file under a target directory", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Contains(t, frontend.New(nil).Selection(), targetClaim, "Cargo's build output is not source")
+		})
+	})
+}
+
+// The construction allocates the frontend the kit builds. The ordinary
+// run, which runs no benchmark, checks that ceiling here.
+func TestFrontendAllocs(t *testing.T) {
+	checkAllocs(t, frontendCalls())
+}
+
+// BenchmarkFrontend measures the construction a composition makes once
+// per load.
+func BenchmarkFrontend(b *testing.B) {
+	benchCalls(b, frontendCalls())
+}
+
+// frontendCalls returns a call of New with nil options.
+func frontendCalls() []allocCall {
+	var f plugin.Frontend
+	return []allocCall{
+		{
+			name: "New", allocs: newAllocs,
+			call:  func() { f = frontend.New(nil) },
+			check: func(tb assert.TB) { assert.Equal(tb, f.Name(), rust.Name, "New returns the Rust frontend") },
+		},
+	}
+}
+
+// checkAllocs checks the ceiling of every call in the ordinary run, and
+// the result each call leaves.
+func checkAllocs(t *testing.T, calls []allocCall) {
+	t.Helper()
+
+	for _, c := range calls {
+		msg := c.name + " allocates within its ceiling"
+		assert.MaxAllocs(t, c.call, c.allocs, msg)
+		c.check(t)
+	}
+}
+
+// benchCalls measures every call under the bench contract at its
+// ceiling, one sub-benchmark each. Each call runs once before the
+// contract starts, so what the first call initialises stays out of the
+// count.
+func benchCalls(b *testing.B, calls []allocCall) {
+	b.Helper()
+
+	for _, tt := range calls {
+		b.Run(tt.name, func(b *testing.B) {
+			tt.call()
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
+		})
+	}
+}
 
 // rustTree is the whole-contract fixture: a crate whose modules
 // reference each other, a carrier, an integration test, a signature
@@ -75,65 +213,11 @@ func setup(assert.TB) (plugin.Frontend, *frontendtest.Fixture) {
 	}
 }
 
-// The frontend runs the conformance suite every frontend runs, over real
-// Rust source.
-func TestNew(t *testing.T) {
-	t.Parallel()
+// versionOf returns the version of a frontend built without options.
+func versionOf(tb assert.TB) string {
+	tb.Helper()
 
-	t.Run("New", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("passes the conformance suite", func(t *testing.T) {
-			t.Parallel()
-
-			frontendtest.RunFrontendSuite(t, setup)
-		})
-
-		t.Run("returns a frontend in the exporter role", func(t *testing.T) {
-			t.Parallel()
-
-			_, exports := frontend.New(nil).(plugin.Exporter)
-			assert.True(t, exports, "a Rust module publishes the names its use declarations bind")
-		})
-
-		t.Run("returns a frontend whose language cannot overload", func(t *testing.T) {
-			t.Parallel()
-
-			assert.False(t, frontend.New(nil).Overloads(), "every Rust callable takes the empty discriminator")
-		})
-
-		t.Run("returns a version that folds the frontend's and the grammar's", func(t *testing.T) {
-			t.Parallel()
-
-			v, versioned := frontend.New(nil).(plugin.Versioned)
-			assert.True(t, versioned, "the frontend states a version")
-			assert.True(t, strings.HasPrefix(v.Version(), rust.FrontendVersion),
-				"a graph change bumps what the unit keys fold")
-			assert.True(t, strings.HasSuffix(v.Version(), rustgrammar.Grammar.Version()),
-				"and so does a grammar upgrade")
-		})
-
-		t.Run("returns a frontend whose options are the ones it was built with", func(t *testing.T) {
-			t.Parallel()
-
-			opts := &frontend.Options{Features: []string{"x"}}
-			op, provides := frontend.New(opts).(plugin.OptionsProvider)
-			assert.True(t, provides, "the frontend declares its configuration")
-			assert.Equal(t, op.Options(), any(opts), "so every unit key folds the cfg set")
-		})
-
-		t.Run("returns a frontend that reports a syntax error as RUST-0001", func(t *testing.T) {
-			t.Parallel()
-
-			_, found := parsedSource(t, "pub struct {\n")
-			assert.NotEmpty(t, found, "the syntax error reports")
-			assert.Equal(t, found[0].Code.String(), unparsedCode, "under the satellite's prefix and the first number")
-		})
-
-		t.Run("returns a frontend that claims no file under a target directory", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Contains(t, frontend.New(nil).Selection(), targetClaim, "Cargo's build output is not source")
-		})
-	})
+	v, versioned := frontend.New(nil).(plugin.Versioned)
+	assert.True(tb, versioned, "the frontend states a version")
+	return v.Version()
 }

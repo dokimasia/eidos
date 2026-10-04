@@ -27,6 +27,11 @@ const modFile = "mod" + rust.Extension
 // apart from a file module. A directory without a Rust file belongs to
 // no module the load knows, and Package returns an error naming the
 // directory.
+//
+// # Allocation contract
+//
+// Package allocates the module path it joins, one allocation. A
+// refusal allocates its error.
 func Package(p plugin.Placement) (symbol.Identity, error) {
 	dir := path.Dir(p.Path)
 	parent, found := directoryModule(p)

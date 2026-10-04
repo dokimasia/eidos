@@ -12,7 +12,9 @@ import (
 // through [textfmt.ImportLines]: double colons for slashes, in the
 // set's path order, a blank line after the block. A named entry uses
 // path::Name, a renamed item path::Item as Name, and a bare entry
-// uses the module itself.
+// uses the module itself. Imports allocates the sorted entries and what
+// [textfmt.ImportLines] allocates, two allocations, and nothing for an
+// empty set.
 func Imports(set *render.ImportSet) string {
 	return textfmt.ImportLines(set.Entries(), "use", "::")
 }

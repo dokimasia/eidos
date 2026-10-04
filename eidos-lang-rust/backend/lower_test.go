@@ -7,23 +7,23 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/rust/backend"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The lowering's pins: the wrapper a failure folds into, the unit
-// type a callable without a result wraps, and the prefix every
-// refusal states.
+// The cases pin the wrapper a failure folds into, the unit type a
+// callable without a result wraps, and the prefix every refusal states.
 const (
 	resultType   = "Result"
 	unitType     = "()"
 	refusalScope = "rust: "
 )
 
-// The lowering's fixture: the callables it rewrites, the types they
-// state, and the failures they announce.
+// The cases lower these callables, the types they state, and the
+// failures they announce.
 const (
 	fetchName    = "fetch"
 	closeName    = "close"
@@ -38,24 +38,16 @@ const (
 	rowComment   = "the row"
 )
 
-// thrower returns a function announcing the given failures beside
-// the given results.
-func thrower(returns []*emit.Return, failures ...string) *emit.Function {
-	f := &emit.Function{Name: fetchName, Returns: returns}
-	for _, name := range failures {
-		f.Throws = append(f.Throws, &emit.TypeRef{Spelling: name})
-	}
-	return f
-}
-
-// lowered lowers a declaration the lowering rewrites in place.
-func lowered(tb assert.TB, s symbol.Symbol) {
-	tb.Helper()
-
-	out, err := backend.Lower(s)
-	assert.NoError(tb, err, "the declaration lowers")
-	assert.Length(tb, out, 0, "in place: a nil list keeps the declaration")
-}
+// The allocations of a lowering.
+const (
+	// wrapAllocs is a function of one result announcing one failure: the
+	// folded return, its Result reference, its two arguments, and its list
+	// of one.
+	wrapAllocs = 1 + 1 + 1 + 1
+	// allocRuns is the calls assert.MaxAllocs makes: one to warm up and
+	// one hundred it counts.
+	allocRuns = 101
+)
 
 // The lowering folds an announced failure into the Result return,
 // refuses what a result cannot state, and passes everything else
@@ -80,7 +72,7 @@ func TestLower(t *testing.T) {
 			lowered(t, &emit.Method{Name: trackName, Receives: &emit.TypeRef{Spelling: rowType}})
 		})
 
-		t.Run("folds a function's result and failure into one Result return", func(t *testing.T) {
+		t.Run("folds a function's result with its failure into one Result return", func(t *testing.T) {
 			t.Parallel()
 
 			valued := &emit.TypeRef{Spelling: rowType}
@@ -155,6 +147,26 @@ func TestLower(t *testing.T) {
 				name: "returns an error for a file-level method whose receiver spells no type",
 				give: &emit.Method{Name: trackName, Receives: &emit.TypeRef{}},
 			},
+			{
+				name: "returns an error for a method announcing two failures",
+				give: &emit.Method{Name: trackName, Receives: &emit.TypeRef{Spelling: rowType}, Throws: twoFailures()},
+			},
+			{
+				name: "returns an error for a struct declaring one method twice",
+				give: structOf(&emit.Method{Name: trackName}, &emit.Method{Name: trackName}),
+			},
+			{
+				name: "returns an error for a struct whose method announces two failures",
+				give: structOf(&emit.Method{Name: closeName, Throws: twoFailures()}),
+			},
+			{
+				name: "returns an error for a trait declaring one method twice",
+				give: traitOf(&emit.Method{Name: trackName}, &emit.Method{Name: trackName}),
+			},
+			{
+				name: "returns an error for a trait whose method announces two failures",
+				give: traitOf(&emit.Method{Name: closeName, Throws: twoFailures()}),
+			},
 		}
 		for _, tt := range refusals {
 			t.Run(tt.name, func(t *testing.T) {
@@ -173,4 +185,97 @@ func TestLower(t *testing.T) {
 			assert.HasPrefix(t, err.Error(), refusalScope, "naming the target that refused")
 		})
 	})
+}
+
+// A declaration Rust states as it is allocates nothing, and a fold
+// allocates the Result return. A fold consumes its failure, so each
+// counted call lowers a fresh function. The ordinary run, which runs no
+// benchmark, checks those ceilings here.
+func TestLowerAllocs(t *testing.T) {
+	constant := &emit.Constant{Name: storeName, Type: &emit.TypeRef{Spelling: countType}, Value: "8"}
+	assert.MaxAllocs(t, func() { _, _ = backend.Lower(constant) }, 0, "Lower passes the constant within its ceiling")
+
+	fns, next := make([]*emit.Function, allocRuns), 0
+	for i := range fns {
+		fns[i] = valuedThrower()
+	}
+	assert.MaxAllocs(t, func() {
+		_, _ = backend.Lower(fns[next])
+		next++
+	}, wrapAllocs, "Lower folds the failure within its ceiling")
+}
+
+// BenchmarkLower measures the lowering the settle runs over every
+// declaration, a fresh function built outside the count for each fold.
+func BenchmarkLower(b *testing.B) {
+	b.Run("Lower", func(b *testing.B) {
+		constant := &emit.Constant{Name: storeName, Type: &emit.TypeRef{Spelling: countType}, Value: "8"}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var (
+			out []symbol.Symbol
+			err error
+		)
+		for c.Loop() {
+			out, err = backend.Lower(constant)
+		}
+		assert.NoError(b, err, "Lower passes the constant")
+		assert.Length(b, out, 0, "Lower keeps the constant in place")
+	})
+
+	b.Run("Lower/a function that throws", func(b *testing.B) {
+		f := valuedThrower()
+		c := bench.Start(b).MaxAllocs(wrapAllocs)
+		defer c.End()
+		for c.Loop() {
+			_, _ = backend.Lower(f)
+			c.Excluding(func() { f = valuedThrower() })
+		}
+		lowered(b, f)
+		assert.Equal(b, f.Returns[0].Type.Spelling, resultType, "Lower folds the failure into a Result")
+	})
+}
+
+// thrower returns a function announcing the given failures beside
+// the given results.
+func thrower(returns []*emit.Return, failures ...string) *emit.Function {
+	f := &emit.Function{Name: fetchName, Returns: returns}
+	for _, name := range failures {
+		f.Throws = append(f.Throws, &emit.TypeRef{Spelling: name})
+	}
+	return f
+}
+
+// valuedThrower returns a function of one row result announcing one
+// failure.
+func valuedThrower() *emit.Function {
+	return thrower([]*emit.Return{{Type: &emit.TypeRef{Spelling: rowType}}}, fetchError)
+}
+
+// twoFailures returns the two failures a result cannot fold.
+func twoFailures() []*emit.TypeRef {
+	return []*emit.TypeRef{{Spelling: notFoundType}, {Spelling: timeoutType}}
+}
+
+// structOf returns a struct declaring the given methods.
+func structOf(methods ...*emit.Method) *emit.Struct {
+	s := &emit.Struct{Name: storeName}
+	s.Methods.Append(methods...)
+	return s
+}
+
+// traitOf returns a trait declaring the given methods.
+func traitOf(methods ...*emit.Method) *emit.Interface {
+	i := &emit.Interface{Name: storeName}
+	i.Methods.Append(methods...)
+	return i
+}
+
+// lowered lowers a declaration the lowering rewrites in place.
+func lowered(tb assert.TB, s symbol.Symbol) {
+	tb.Helper()
+
+	out, err := backend.Lower(s)
+	assert.NoError(tb, err, "the declaration lowers")
+	assert.Length(tb, out, 0, "in place: a nil list keeps the declaration")
 }

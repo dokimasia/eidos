@@ -7,14 +7,20 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/rust/spell"
 	"go.dokimi.dev/eidos/sdk/plugin"
 )
 
-// The naming is total over the units a plan admits, and every
-// spelling is pinned: a Rust filename is a module name, so a drift
-// here breaks every mod declaration that names it.
+// filenameAllocs is a per-source unit's filename whose parts are snake
+// case already: the list of its parts, their join, and the name with
+// its extension.
+const filenameAllocs = 3
+
+// A Rust filename is a module name, so a change of spelling breaks every
+// mod declaration that names it. Every spelling of a unit a plan admits
+// is pinned.
 func TestFilename(t *testing.T) {
 	t.Parallel()
 
@@ -27,12 +33,12 @@ func TestFilename(t *testing.T) {
 			want string
 		}{
 			{
-				name: "returns the stem and the word of a per-source unit",
-				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "stub"},
+				name: "joins the stem to the word of a per-source unit",
+				give: storeUnit(),
 				want: "store_stub.rs",
 			},
 			{
-				name: "returns a pascal stem in snake case",
+				name: "returns a Pascal-case stem in snake case",
 				give: plugin.Unit{Per: plugin.PerSource, Key: "svc/UserStore.java", Word: "stub"},
 				want: "user_store_stub.rs",
 			},
@@ -65,4 +71,34 @@ func TestFilename(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Filename allocates its parts, their join and the name. The ordinary
+// run, which runs no benchmark, checks that ceiling here.
+func TestFilenameAllocs(t *testing.T) {
+	unit := storeUnit()
+	var got string
+	assert.MaxAllocs(t, func() { got = spell.Filename(unit) }, filenameAllocs,
+		"Filename allocates the parts, their join and the name")
+	assert.Equal(t, got, "store_stub.rs", "Filename spells the unit")
+}
+
+// BenchmarkFilename measures the filename a backend spells once per
+// unit.
+func BenchmarkFilename(b *testing.B) {
+	b.Run("Filename", func(b *testing.B) {
+		unit := storeUnit()
+		c := bench.Start(b).MaxAllocs(filenameAllocs)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = spell.Filename(unit)
+		}
+		assert.Equal(b, got, "store_stub.rs", "Filename spells the unit")
+	})
+}
+
+// storeUnit returns the stub family's unit of svc/store.go.
+func storeUnit() plugin.Unit {
+	return plugin.Unit{Per: plugin.PerSource, Key: "svc/store.go", Word: "stub"}
 }

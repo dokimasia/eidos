@@ -7,87 +7,167 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/rust/spell"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The convention is what the settle spells every declared name
-// through, so each mapping is pinned byte for byte.
+// The allocations of a name.
+const (
+	// conversionAllocs is a name the convention converts: the converted
+	// spelling.
+	conversionAllocs = 1
+	// rawAllocs is a keyword's raw form: r# before the spelling.
+	rawAllocs = 1
+)
+
+// The settle spells every declared name through the convention. Each
+// mapping is pinned byte for byte.
 func TestName(t *testing.T) {
 	t.Parallel()
 
-	t.Run("types take Pascal and callables take snake", func(t *testing.T) {
+	t.Run("Name", func(t *testing.T) {
 		t.Parallel()
 
-		got, err := spell.Name(symbol.KindInvalid, symbol.KindStruct,
-			symbol.VisibilityUnknown, "httpRow")
-		assert.NoError(t, err, "a struct name spells")
-		assert.Equal(t, got, "HTTPRow", "Pascal, the initialism kept whole")
+		tests := []struct {
+			name string
+			host symbol.Kind
+			kind symbol.Kind
+			vis  symbol.Visibility
+			give string
+			want string
+		}{
+			{
+				name: "returns the Pascal-case spelling of a struct name",
+				kind: symbol.KindStruct, vis: symbol.VisibilityUnknown, give: "httpRow", want: "HTTPRow",
+			},
+			{
+				name: "returns the snake-case spelling of a method of any scope",
+				host: symbol.KindStruct, kind: symbol.KindMethod, vis: symbol.VisibilityInternal,
+				give: "FetchRow", want: "fetch_row",
+			},
+			{
+				name: "returns the snake-case spelling of a parameter",
+				host: symbol.KindFunction, kind: symbol.KindParam, vis: symbol.VisibilityUnknown,
+				give: "rowCount", want: "row_count",
+			},
+			{
+				name: "returns the screaming-snake spelling of a constant",
+				kind: symbol.KindConstant, vis: symbol.VisibilityUnknown, give: "maxRows", want: "MAX_ROWS",
+			},
+			{
+				name: "returns the Pascal-case spelling of a variant",
+				kind: symbol.KindSumVariant, vis: symbol.VisibilityUnknown, give: "rowOpen", want: "RowOpen",
+			},
+			{
+				name: "returns a type parameter's spelling unchanged",
+				host: symbol.KindStruct, kind: symbol.KindTypeParam, vis: symbol.VisibilityUnknown,
+				give: "N", want: "N",
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-		got, err = spell.Name(symbol.KindStruct, symbol.KindMethod,
-			symbol.VisibilityInternal, "FetchRow")
-		assert.NoError(t, err, "a method spells whatever its scope")
-		assert.Equal(t, got, "fetch_row", "snake, because pub states the scope")
-
-		got, err = spell.Name(symbol.KindFunction, symbol.KindParam,
-			symbol.VisibilityUnknown, "rowCount")
-		assert.NoError(t, err, "a parameter spells")
-		assert.Equal(t, got, "row_count", "snake too")
-	})
-
-	t.Run("escapes keywords raw and refuses what raw cannot express", func(t *testing.T) {
-		t.Parallel()
-
-		got, err := spell.Name(symbol.KindStruct, symbol.KindField,
-			symbol.VisibilityPublic, "type")
-		assert.NoError(t, err, "a keyword field takes the raw form")
-		assert.Equal(t, got, "r#type", "spelled r#type")
-
-		for _, reserved := range []string{"box", "try", "gen", "yield", "abstract"} {
-			got, err = spell.Name(symbol.KindStruct, symbol.KindField,
-				symbol.VisibilityPublic, reserved)
-			assert.NoError(t, err, "a reserved keyword takes the raw form too: "+reserved)
-			assert.Equal(t, got, "r#"+reserved, "spelled raw")
+				got, err := spell.Name(tt.host, tt.kind, tt.vis, tt.give)
+				assert.NoError(t, err, "the name spells")
+				assert.Equal(t, got, tt.want, "the spelling")
+			})
 		}
 
-		_, err = spell.Name(symbol.KindStruct, symbol.KindField,
-			symbol.VisibilityPublic, "self")
-		assert.HasError(t, err, "rustc rejects r#self, so the spelling refuses")
+		for _, keyword := range []string{"type", "box", "try", "gen", "yield", "abstract"} {
+			t.Run("returns the raw form of the keyword "+keyword, func(t *testing.T) {
+				t.Parallel()
 
-		_, err = spell.Name(symbol.KindStruct, symbol.KindTypeParam,
-			symbol.VisibilityUnknown, "_")
-		assert.HasError(t, err, "rustc rejects r#_ too")
+				got, err := spell.Name(symbol.KindStruct, symbol.KindField, symbol.VisibilityPublic, keyword)
+				assert.NoError(t, err, "a keyword takes the raw form")
+				assert.Equal(t, got, "r#"+keyword, "the spelling behind r#")
+			})
+		}
 
-		_, err = spell.Name(symbol.KindStruct, symbol.KindField,
-			symbol.VisibilityPublic, "content-type")
-		assert.HasError(t, err, "a convention must not respell a wire name")
+		refusals := []struct {
+			name string
+			kind symbol.Kind
+			give string
+		}{
+			{name: "returns an error for a keyword the raw form cannot express", kind: symbol.KindField, give: "self"},
+			{name: "returns an error for a blank type parameter", kind: symbol.KindTypeParam, give: "_"},
+			{
+				name: "returns an error for a wire name outside the identifier shape",
+				kind: symbol.KindField,
+				give: "content-type",
+			},
+			{
+				name: "returns an error for a name whose snake-case spelling is empty",
+				kind: symbol.KindFunction,
+				give: "__",
+			},
+		}
+		for _, tt := range refusals {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				_, err := spell.Name(symbol.KindStruct, tt.kind, symbol.VisibilityPublic, tt.give)
+				assert.HasError(t, err, "Rust declares no such name")
+				assert.Contains(t, err.Error(), tt.give, "the error names the name")
+			})
+		}
 	})
+}
 
-	t.Run("refuses a name whose spelling comes out empty", func(t *testing.T) {
-		t.Parallel()
+// Name allocates a converted spelling and a raw form, and nothing for a
+// name the convention spells as it is. The ordinary run, which runs no
+// benchmark, checks those ceilings here.
+func TestNameAllocs(t *testing.T) {
+	var (
+		got string
+		err error
+	)
+	assert.MaxAllocs(t, func() {
+		got, err = spell.Name(symbol.KindInvalid, symbol.KindStruct, symbol.VisibilityPublic, "httpRow")
+	}, conversionAllocs, "Name allocates the converted spelling")
+	assert.NoError(t, err, "Name spells the name")
+	assert.Equal(t, got, "HTTPRow", "Name converts the name")
+	assert.MaxAllocs(t, func() {
+		got, err = spell.Name(symbol.KindStruct, symbol.KindField, symbol.VisibilityPublic, "type")
+	}, rawAllocs, "Name allocates the raw form")
+	assert.NoError(t, err, "Name spells the keyword")
+	assert.Equal(t, got, "r#type", "Name returns the raw form")
+	assert.MaxAllocs(t, func() {
+		got, err = spell.Name(symbol.KindInvalid, symbol.KindStruct, symbol.VisibilityPublic, "Row")
+	}, 0, "Name allocates nothing for a name in its style")
+	assert.NoError(t, err, "Name spells the styled name")
+	assert.Equal(t, got, "Row", "Name returns the styled name")
+}
 
-		_, err := spell.Name(symbol.KindInvalid, symbol.KindFunction,
-			symbol.VisibilityUnknown, "__")
-		assert.HasError(t, err, "snake case spells __ as nothing")
-	})
-
-	t.Run("constants take screaming snake and type parameters keep theirs", func(t *testing.T) {
-		t.Parallel()
-
-		got, err := spell.Name(symbol.KindInvalid, symbol.KindConstant,
-			symbol.VisibilityUnknown, "maxRows")
-		assert.NoError(t, err, "a constant spells")
-		assert.Equal(t, got, "MAX_ROWS", "screaming snake")
-
-		got, err = spell.Name(symbol.KindInvalid, symbol.KindSumVariant,
-			symbol.VisibilityUnknown, "rowOpen")
-		assert.NoError(t, err, "a variant spells")
-		assert.Equal(t, got, "RowOpen", "Pascal")
-
-		got, err = spell.Name(symbol.KindStruct, symbol.KindTypeParam,
-			symbol.VisibilityUnknown, "N")
-		assert.NoError(t, err, "a type parameter spells")
-		assert.Equal(t, got, "N", "as itself, so a const parameter keeps its case")
-	})
+// BenchmarkName measures the spelling the settle makes for every
+// declared name.
+func BenchmarkName(b *testing.B) {
+	names := []struct {
+		name   string
+		kind   symbol.Kind
+		give   string
+		allocs uint64
+		want   string
+	}{
+		{name: "Name", kind: symbol.KindStruct, give: "httpRow", allocs: conversionAllocs, want: "HTTPRow"},
+		{name: "Name/a name in its style", kind: symbol.KindStruct, give: "HTTPRow", want: "HTTPRow"},
+		{name: "Name/a keyword", kind: symbol.KindField, give: "type", allocs: rawAllocs, want: "r#type"},
+	}
+	for _, tt := range names {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var (
+				got string
+				err error
+			)
+			for c.Loop() {
+				got, err = spell.Name(symbol.KindStruct, tt.kind, symbol.VisibilityPublic, tt.give)
+			}
+			assert.NoError(b, err, "Name spells the name")
+			assert.Equal(b, got, tt.want, "Name returns the spelling")
+		})
+	}
 }

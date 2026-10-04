@@ -17,12 +17,17 @@ import (
 // case. Visibility never changes a spelling, because Rust scopes
 // through pub.
 //
-// A name outside the identifier shape is refused, because a
-// convention must not respell what a consumer matches by string, and
-// so is a name whose spelling comes out empty, such as "_" in snake
-// case. A spelling that is a strict or reserved keyword takes Rust's
+// A name that is no identifier is refused, because a convention must
+// not respell what a consumer matches by string, and so is a name whose
+// spelling comes out empty, such as "_" in snake case. A spelling that is a strict or reserved keyword takes Rust's
 // raw form, r#name, except the keywords the raw form cannot express,
 // which are refused.
+//
+// # Allocation contract
+//
+// Name allocates a converted spelling and a raw form, one allocation
+// each, and nothing for a name the convention spells as it is. A
+// refusal allocates its error.
 func Name(_, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
 	if !naming.IsIdentifier(name) {
 		return "", fmt.Errorf(

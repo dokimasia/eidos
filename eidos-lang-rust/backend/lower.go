@@ -32,6 +32,13 @@ const (
 // place changes what the callable returns. A file-level method
 // attaching to no type refuses, because Rust renders a method inside
 // the impl block of the type it attaches to.
+//
+// # Allocation contract
+//
+// A declaration that passes through allocates nothing. A fold allocates
+// the folded return, its Result reference, the list of its two
+// arguments and the list of one return, and the unit type for a
+// callable without a result. A refusal allocates its error.
 func Lower(s symbol.Symbol) ([]symbol.Symbol, error) {
 	switch d := s.(type) {
 	case *emit.Function:
@@ -101,12 +108,14 @@ func wrapped(
 		return nil, refuse("a result wraps one value, and %s returns %d beside a throw",
 			name, len(returns))
 	}
-	value := &emit.TypeRef{Spelling: unitType}
 	out := &emit.Return{}
-	if len(returns) == 1 {
-		if returns[0].Type == nil {
-			return nil, refuse("a result wraps a stated type, and %s returns one that states none", name)
-		}
+	var value *emit.TypeRef
+	switch {
+	case len(returns) == 0:
+		value = &emit.TypeRef{Spelling: unitType}
+	case returns[0].Type == nil:
+		return nil, refuse("a result wraps a stated type, and %s returns one that states none", name)
+	default:
 		value = returns[0].Type
 		out.Name, out.Comment = returns[0].Name, returns[0].Comment
 	}

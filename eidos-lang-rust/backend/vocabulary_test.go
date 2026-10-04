@@ -5,6 +5,7 @@ package backend_test
 
 import (
 	"testing"
+	"text/template"
 
 	"go.dokimi.dev/assert"
 
@@ -15,7 +16,7 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The spelling fixture: the modules a reference uses items from and
+// The spelling cases name the modules a reference uses items from and
 // the items it names.
 const (
 	// storeModule and legacyModule both declare rowName.
@@ -28,52 +29,64 @@ const (
 	keyPath = "::Key"
 )
 
-// ref returns an unresolved reference spelled s.
-func ref(s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s} }
+// The declarations, the spellings and the keyword the allocation cases
+// name.
+const (
+	u32Type    = "u32"
+	stringType = "String"
+	limitName  = "LIMIT"
+	keyParam   = "K"
+	valueParam = "V"
+	eqTrait    = "Eq"
+	hashTrait  = "Hash"
+	cloneTrait = "Clone"
+	sendTrait  = "Send"
+	debugTrait = "Debug"
+	storeTrait = "Store"
+	itemAlias  = "Item"
+	idAlias    = "Id"
+	idName     = "id"
+	nameParam  = "name"
+	getName    = "get"
+	putName    = "put"
+	loadName   = "load"
+	phaseName  = "Phase"
+	shapeName  = "Shape"
+	deriveAttr = "derive"
+	rowDoc     = "Row is one record."
+	pubKeyword = "pub "
+)
 
-// generic returns the instantiation of a bare name.
-func generic(name string, args ...*emit.TypeRef) *emit.TypeRef {
-	return &emit.TypeRef{Spelling: name, Args: args}
-}
-
-// paramRef returns a reference to the type parameter name, targeted
-// at the parameter the way Link targets one.
-func paramRef(name string) *emit.TypeRef {
-	return &emit.TypeRef{
-		Spelling: name,
-		Target:   symbol.Identity{Lang: rust.Lang, Package: storeModule, Name: name, Kind: symbol.KindTypeParam},
-	}
-}
-
-// imported returns a reference to an item of module, spelled s.
-func imported(module, s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s, Package: module} }
-
-// speller returns a speller over a fresh set, and the set.
-func speller() (backend.Speller, *render.ImportSet) {
-	set := &render.ImportSet{}
-	return backend.NewSpeller(set), set
-}
-
-// variantOf returns a variant with one payload entry.
-func variantOf(f *emit.Field) *emit.SumVariant {
-	v := &emit.SumVariant{Name: "Write"}
-	v.Fields.Append(f)
-	return v
-}
-
-// must returns a check over a helper's spelling and error. The check
-// fails the test where the helper returns an error, and returns the
-// spelling otherwise.
-func must(tb assert.TB) func(string, error) string {
-	tb.Helper()
-
-	return func(got string, err error) string {
-		tb.Helper()
-
-		assert.NoError(tb, err, "the helper spells")
-		return got
-	}
-}
+// The allocations of the vocabulary.
+const (
+	// paramListAllocs is a parameter of two bounds and an unbounded one:
+	// the joined bounds, the bounded parameter's spelling, the joined
+	// list, and its brackets.
+	paramListAllocs = 1 + 1 + 1 + 1
+	// textAllocs is one spelling, sized once or joined once.
+	textAllocs = 1
+	// payloadAllocs is a payload of one named entry: the entry's spelling,
+	// and the payload in braces.
+	payloadAllocs = 1 + 1
+	// supertraitsAllocs is two supertraits: the joined bounds, and the
+	// bounds behind their colon.
+	supertraitsAllocs = 1 + 1
+	// paramsAllocs is two parameters: each one's spelling, and the joined
+	// list.
+	paramsAllocs = 2 + 1
+	// partsAllocs is three parameters: each one's spelling, the list of
+	// parts, which Go places on the heap past two, and the joined list.
+	partsAllocs = 3 + 1 + 1
+	// selfParamsAllocs is a method of two parameters: the parameter list,
+	// and the receiver joined before it.
+	selfParamsAllocs = paramsAllocs + 1
+	// funcsAllocs is the vocabulary of a file: the map of twenty-four
+	// helpers, four allocations, and the speller's eleven bound helpers.
+	funcsAllocs = 4 + 11
+	// typeNamesAllocs is two parameter names: the joined list, and its
+	// brackets.
+	typeNamesAllocs = 1 + 1
+)
 
 // The vocabulary is what every kind template spells through, so
 // each helper's output is pinned byte for byte, and every use a
@@ -558,6 +571,13 @@ func TestVocabulary(t *testing.T) {
 			assert.Equal(t, must(t)(backend.FnMods(&emit.Function{Name: "load", Async: true})), "pub async ",
 				"the keywords")
 		})
+
+		t.Run("returns an error for a type scope", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.FnMods(&emit.Function{Name: loadName, Visibility: symbol.VisibilityPrivate})
+			assert.HasError(t, err, "Rust scopes by module")
+		})
 	})
 
 	t.Run("TraitFn", func(t *testing.T) {
@@ -665,6 +685,10 @@ func TestVocabulary(t *testing.T) {
 			{name: "returns an error for an abstract method", give: &emit.Method{Name: "load", Abstract: true}},
 			{name: "returns an error for a default body", give: &emit.Method{Name: "load", HasDefault: true}},
 			{name: "returns an error for an override marker", give: &emit.Method{Name: "load", Override: true}},
+			{
+				name: "returns an error for a type scope",
+				give: &emit.Method{Name: loadName, Visibility: symbol.VisibilityPrivate},
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -947,4 +971,247 @@ func TestVocabulary(t *testing.T) {
 			}, "    "), "    #[derive(Debug, Clone)]\n    #[non_exhaustive]\n", "the arguments verbatim")
 		})
 	})
+
+	t.Run("NewSpeller", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a speller that records its uses in the given set", func(t *testing.T) {
+			t.Parallel()
+
+			var set render.ImportSet
+			must(t)(backend.NewSpeller(&set).Spell(imported(storeModule, rowName)))
+			assert.Equal(t, set.Paths(), []string{storeModule}, "the use is the set's")
+		})
+	})
+
+	t.Run("EnumMods", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the enum's visibility", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, must(t)(backend.EnumMods(&emit.Enum{Name: phaseName})), pubKeyword, "pub alone")
+		})
+
+		t.Run("returns an error for an enum with fields", func(t *testing.T) {
+			t.Parallel()
+
+			e := &emit.Enum{Name: phaseName}
+			e.Fields.Append(&emit.Field{Name: "id", Type: ref(u32Type)})
+			_, err := backend.EnumMods(e)
+			assert.HasError(t, err, "Rust puts state in variants")
+		})
+
+		t.Run("returns an error for an enum with methods", func(t *testing.T) {
+			t.Parallel()
+
+			e := &emit.Enum{Name: phaseName}
+			e.Methods.Append(&emit.Method{Name: "next"})
+			_, err := backend.EnumMods(e)
+			assert.HasError(t, err, "Rust puts behaviour in impl blocks")
+		})
+	})
+
+	t.Run("AliasMods", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the alias's visibility", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, must(t)(backend.AliasMods(&emit.Alias{Name: idAlias})), pubKeyword, "pub alone")
+		})
+
+		t.Run("returns an error for a defined type", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := backend.AliasMods(&emit.Alias{Name: idAlias, Defined: true})
+			assert.HasError(t, err, "a Rust alias is transparent")
+		})
+	})
+}
+
+// A keyword helper, a guard and a name spelled as written allocate
+// nothing, and every other helper allocates the text it writes. The
+// ordinary run, which runs no benchmark, checks those ceilings here.
+func TestVocabularyAllocs(t *testing.T) {
+	checkAllocs(t, vocabularyCalls())
+}
+
+// BenchmarkVocabulary measures each helper a kind template calls per
+// declaration, and the vocabulary the render binds per file.
+func BenchmarkVocabulary(b *testing.B) {
+	benchCalls(b, vocabularyCalls())
+}
+
+// vocabularyCalls returns a call of every function and method of
+// vocabulary.go.
+func vocabularyCalls() []allocCall {
+	s, set := speller()
+	bare, row := ref(u32Type), imported(storeModule, rowName)
+	constant := &emit.Constant{Name: limitName, Type: bare, Value: "8"}
+	params := []*emit.TypeParam{
+		{Name: keyParam, Bounds: []*emit.TypeRef{ref(eqTrait), ref(hashTrait)}},
+		{Name: valueParam},
+	}
+	assoc := &emit.Alias{Name: itemAlias}
+	payload := variantOf(&emit.Field{Name: idName, Type: bare})
+	trait := &emit.Interface{Name: storeTrait, Extends: []*emit.TypeRef{ref(cloneTrait), ref(sendTrait)}}
+	args := []*emit.Param{{Name: idName, Type: bare}, {Name: nameParam, Type: ref(stringType)}}
+	three := []*emit.Param{{Name: idName, Type: bare}, {Name: nameParam, Type: bare}, {Name: loadName, Type: bare}}
+	method := &emit.Method{Name: putName, Params: args}
+	result := []*emit.Return{{Type: bare}}
+	doc := []string{rowDoc}
+	box := generic(boxName, paramRef(itemParam))
+	async := &emit.Function{Name: loadName, Async: true}
+	annotations := symbol.Annotations{{Name: deriveAttr, Args: []string{debugTrait}}}
+	structDecl, enumDecl := &emit.Struct{Name: rowName}, &emit.Enum{Name: phaseName}
+	sumDecl, aliasDecl := &emit.Sum{Name: shapeName}, &emit.Alias{Name: idAlias}
+	traitMethod, implMethod := &emit.Method{Name: getName}, &emit.Method{Name: getName}
+	asyncMethod := &emit.Method{Name: getName, Async: true}
+	field := &emit.Field{Name: idName}
+	var (
+		spellerOut backend.Speller
+		out        string
+		err        error
+		funcs      template.FuncMap
+	)
+	spells := func(want string) func(tb assert.TB) {
+		return func(tb assert.TB) {
+			assert.NoError(tb, err, "the helper spells")
+			assert.Equal(tb, out, want, "the helper writes the Rust spelling")
+		}
+	}
+	return []allocCall{
+		{
+			name: "NewSpeller", call: func() { spellerOut = backend.NewSpeller(set) },
+			check: func(tb assert.TB) { assert.Equal(tb, spellerOut, s, "NewSpeller returns the set's speller") },
+		},
+		{name: "Spell", call: func() { out, err = s.Spell(bare) }, check: spells(u32Type)},
+		{name: "Spell/a used item", call: func() { out, err = s.Spell(row) }, check: spells(rowName)},
+		{name: "ConstType", call: func() { out, err = s.ConstType(constant) }, check: spells(u32Type)},
+		{
+			name: "TypeParams", allocs: paramListAllocs,
+			call: func() { out, err = s.TypeParams(params) }, check: spells("<K: Eq + Hash, V>"),
+		},
+		{
+			name: "ImplParams", allocs: paramListAllocs,
+			call: func() { out, err = s.ImplParams(params) }, check: spells("<K: Eq + Hash, V>"),
+		},
+		{
+			name: "FnParams", allocs: paramListAllocs,
+			call: func() { out, err = s.FnParams(params) }, check: spells("<K: Eq + Hash, V>"),
+		},
+		{
+			name: "AssocType", allocs: textAllocs,
+			call: func() { out, err = s.AssocType(assoc) }, check: spells("type Item;"),
+		},
+		{
+			name: "SumPayload", allocs: payloadAllocs,
+			call: func() { out, err = s.SumPayload(payload) }, check: spells(" { id: u32 }"),
+		},
+		{
+			name: "Supertraits", allocs: supertraitsAllocs,
+			call: func() { out, err = s.Supertraits(trait) }, check: spells(": Clone + Send"),
+		},
+		{
+			name: "SelfParams", allocs: selfParamsAllocs,
+			call: func() { out, err = s.SelfParams(method) }, check: spells("&self, id: u32, name: String"),
+		},
+		{
+			name: "Params", allocs: paramsAllocs,
+			call: func() { out, err = s.Params(args) }, check: spells("id: u32, name: String"),
+		},
+		{
+			name: "Params/three parameters", allocs: partsAllocs,
+			call: func() { out, err = s.Params(three) }, check: spells("id: u32, name: u32, load: u32"),
+		},
+		{
+			name: "Results", allocs: textAllocs,
+			call: func() { out, err = s.Results(result) }, check: spells(" -> u32"),
+		},
+		{
+			name: "Funcs", allocs: funcsAllocs,
+			call:  func() { funcs = backend.Funcs(set) },
+			check: func(tb assert.TB) { assert.Length(tb, funcs, 24, "Funcs returns the twenty-four helpers") },
+		},
+		{
+			name: "Docs", allocs: textAllocs,
+			call: func() { out = backend.Docs(doc) }, check: spells("/// " + rowDoc + "\n"),
+		},
+		{
+			name: "TypeNames", allocs: typeNamesAllocs,
+			call: func() { out = backend.TypeNames(params) }, check: spells("<K, V>"),
+		},
+		{name: "Binder", allocs: textAllocs, call: func() { out, err = backend.Binder(box) }, check: spells("<T>")},
+		{
+			name: "Vis", call: func() { out, err = backend.Vis(symbol.VisibilityPublic, rowName) },
+			check: spells(pubKeyword),
+		},
+		{name: "StructMods", call: func() { out, err = backend.StructMods(structDecl) }, check: spells(pubKeyword)},
+		{name: "EnumMods", call: func() { out, err = backend.EnumMods(enumDecl) }, check: spells(pubKeyword)},
+		{name: "SumMods", call: func() { out, err = backend.SumMods(sumDecl) }, check: spells(pubKeyword)},
+		{name: "AliasMods", call: func() { out, err = backend.AliasMods(aliasDecl) }, check: spells(pubKeyword)},
+		{
+			name: "FnMods", allocs: textAllocs,
+			call: func() { out, err = backend.FnMods(async) }, check: spells("pub async "),
+		},
+		{name: "TraitFn", call: func() { out, err = backend.TraitFn(traitMethod) }, check: spells("")},
+		{name: "ImplFn", call: func() { out, err = backend.ImplFn(implMethod) }, check: spells(pubKeyword)},
+		{
+			name: "ImplFn/an async method", allocs: textAllocs,
+			call: func() { out, err = backend.ImplFn(asyncMethod) }, check: spells("pub async "),
+		},
+		{name: "FieldMods", call: func() { out, err = backend.FieldMods(field) }, check: spells(pubKeyword)},
+		{
+			name: "Attrs", allocs: textAllocs,
+			call: func() { out = backend.Attrs(annotations) }, check: spells("#[derive(Debug)]\n"),
+		},
+	}
+}
+
+// ref returns an unresolved reference spelled s.
+func ref(s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s} }
+
+// generic returns the instantiation of a bare name.
+func generic(name string, args ...*emit.TypeRef) *emit.TypeRef {
+	return &emit.TypeRef{Spelling: name, Args: args}
+}
+
+// paramRef returns a reference to the type parameter name, targeted
+// at the parameter the way Link targets one.
+func paramRef(name string) *emit.TypeRef {
+	return &emit.TypeRef{
+		Spelling: name,
+		Target:   symbol.Identity{Lang: rust.Lang, Package: storeModule, Name: name, Kind: symbol.KindTypeParam},
+	}
+}
+
+// imported returns a reference to an item of module, spelled s.
+func imported(module, s string) *emit.TypeRef { return &emit.TypeRef{Spelling: s, Package: module} }
+
+// speller returns a speller over a fresh set, and the set.
+func speller() (backend.Speller, *render.ImportSet) {
+	set := &render.ImportSet{}
+	return backend.NewSpeller(set), set
+}
+
+// variantOf returns a variant with one payload entry.
+func variantOf(f *emit.Field) *emit.SumVariant {
+	v := &emit.SumVariant{Name: "Write"}
+	v.Fields.Append(f)
+	return v
+}
+
+// must returns a check over a helper's spelling and error. The check
+// fails the test where the helper returns an error, and returns the
+// spelling otherwise.
+func must(tb assert.TB) func(string, error) string {
+	tb.Helper()
+
+	return func(got string, err error) string {
+		tb.Helper()
+
+		assert.NoError(tb, err, "the helper spells")
+		return got
+	}
 }

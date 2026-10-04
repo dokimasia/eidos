@@ -37,8 +37,14 @@ const (
 )
 
 // Keys claims the rust namespace and registers every rust key, in the
-// shape a composition and a corpus fixture declare them. It returns
+// form a composition and a corpus fixture declare them. It returns
 // the claim's error, or every registration's error joined.
+//
+// # Allocation contract
+//
+// Keys allocates the three kind lists of the keys, and the registry
+// allocates its namespace claim and the growth of its lists and maps to
+// five keys: 13 allocations into a fresh registry.
 func Keys(r *meta.Registry) error {
 	if err := r.ClaimNamespace(namespace); err != nil {
 		return err

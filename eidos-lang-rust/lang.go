@@ -43,7 +43,8 @@ const FrontendVersion = "0.3.0"
 // forms, the plain block form, and the outer and inner doc block
 // forms, whose continuation lines may open with a star gutter. The
 // output contract writes the generated-file header through the line
-// form, and the frontend strips every form.
+// form, and the frontend strips every form. It allocates the two
+// lists, so no caller shares another's.
 func Syntax() plugin.CommentSyntax {
 	return plugin.CommentSyntax{
 		Line: []string{"//", "///", "//!"},

@@ -20,42 +20,23 @@ import (
 // method.
 const implBodyStub = "        return;\n"
 
-// methodOn returns a method attached to a type by reference, the
-// shape a Rust impl gathers.
-func methodOn(receives *emit.TypeRef, name string, stmts ...emit.Stmt) *emit.Method {
-	m := &emit.Method{Name: name, Receives: receives}
-	m.Body = emit.Body{Stmts: stmts}
-	return m
-}
+// The generic type and its parameter the cluster cases name.
+const (
+	boxName   = "Box"
+	itemParam = "T"
+)
 
-// renderImpl runs the impl template over one cluster, the body
-// builtin stubbed to a return, and returns the text or the refusal
-// beside the file's import set.
-func renderImpl(t *testing.T, decls ...symbol.Symbol) (string, *render.ImportSet, error) {
-	t.Helper()
-
-	set := &render.ImportSet{}
-	tmpl, err := template.New("impl").
-		Funcs(backend.Funcs(set)).
-		Funcs(template.FuncMap{
-			render.BuiltinBody: func(any) string { return implBodyStub },
-		}).
-		Parse(backend.Groups()[backend.ImplGroup])
-	assert.NoError(t, err, "the template parses")
-	var b strings.Builder
-	err = tmpl.Execute(&b, render.Clustered{Group: backend.ImplGroup, Decls: decls})
-	return b.String(), set, err
-}
-
-// implOf runs the impl template over one cluster and asserts it
-// executes.
-func implOf(t *testing.T, decls ...symbol.Symbol) string {
-	t.Helper()
-
-	got, _, err := renderImpl(t, decls...)
-	assert.NoError(t, err, "the template executes")
-	return got
-}
+// The allocations of a cluster and of the group map.
+const (
+	// clusterAllocs is two methods of one type, a method of an
+	// instantiated type and a struct: the instantiated receiver's key,
+	// the list of blocks as it grows to two, and each block's list of
+	// methods as it grows, two and one.
+	clusterAllocs = 1 + 2 + 2 + 1
+	// groupsAllocs is the map and the one table of slots that stores the
+	// template.
+	groupsAllocs = 2
+)
 
 // Rust renders a method only inside an impl block, so the cluster is
 // what makes the method kind renderable at all.
@@ -183,4 +164,79 @@ func TestCluster(t *testing.T) {
 			assert.HasError(t, err, "Rust takes a default on a type definition alone")
 		})
 	})
+}
+
+// A cluster allocates its blocks, and the group map allocates itself.
+// The ordinary run, which runs no benchmark, checks those ceilings
+// here.
+func TestClusterAllocs(t *testing.T) {
+	checkAllocs(t, clusterCalls())
+}
+
+// BenchmarkCluster measures the gathering the render runs over every
+// unit, and the group map the backend reads once per build.
+func BenchmarkCluster(b *testing.B) {
+	benchCalls(b, clusterCalls())
+}
+
+// clusterCalls returns a call of Cluster over two methods of one type,
+// a method of an instantiated type and a struct, and of Groups.
+func clusterCalls() []allocCall {
+	decls := []symbol.Symbol{
+		methodOn(ref(rowName), "get"), methodOn(ref(rowName), "put"),
+		methodOn(generic(boxName, paramRef(itemParam)), "take"), &emit.Struct{Name: rowName},
+	}
+	var (
+		clusters []render.Clustered
+		groups   map[render.GroupName]string
+	)
+	return []allocCall{
+		{
+			name: "Cluster", allocs: clusterAllocs,
+			call:  func() { clusters = backend.Cluster(decls) },
+			check: func(tb assert.TB) { assert.Length(tb, clusters, 2, "Cluster opens a block per type") },
+		},
+		{
+			name: "Groups", allocs: groupsAllocs,
+			call:  func() { groups = backend.Groups() },
+			check: func(tb assert.TB) { assert.Length(tb, groups, 1, "Groups returns the impl group") },
+		},
+	}
+}
+
+// methodOn returns a method attached to a type by reference, the
+// shape a Rust impl gathers.
+func methodOn(receives *emit.TypeRef, name string, stmts ...emit.Stmt) *emit.Method {
+	m := &emit.Method{Name: name, Receives: receives}
+	m.Body = emit.Body{Stmts: stmts}
+	return m
+}
+
+// renderImpl runs the impl template over one cluster, the body
+// builtin stubbed to a return, and returns the text or the refusal
+// beside the file's import set.
+func renderImpl(t *testing.T, decls ...symbol.Symbol) (string, *render.ImportSet, error) {
+	t.Helper()
+
+	set := &render.ImportSet{}
+	tmpl, err := template.New("impl").
+		Funcs(backend.Funcs(set)).
+		Funcs(template.FuncMap{
+			render.BuiltinBody: func(any) string { return implBodyStub },
+		}).
+		Parse(backend.Groups()[backend.ImplGroup])
+	assert.NoError(t, err, "the template parses")
+	var b strings.Builder
+	err = tmpl.Execute(&b, render.Clustered{Group: backend.ImplGroup, Decls: decls})
+	return b.String(), set, err
+}
+
+// implOf runs the impl template over one cluster and asserts it
+// executes.
+func implOf(t *testing.T, decls ...symbol.Symbol) string {
+	t.Helper()
+
+	got, _, err := renderImpl(t, decls...)
+	assert.NoError(t, err, "the template executes")
+	return got
 }

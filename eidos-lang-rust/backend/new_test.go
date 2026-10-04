@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	rust "go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/backend"
@@ -36,78 +37,33 @@ const (
 	settledDouble = "StubRow"
 )
 
-// declared returns a struct of the unit's module named name.
-func declared(name string) *emit.Struct {
-	return &emit.Struct{
-		Origin: symbol.Identity{Lang: rust.Lang, Package: unitModule, Name: name, Kind: symbol.KindStruct},
-		Name:   name,
-	}
-}
+// The allocations of a build and of the scaled corpus.
+const (
+	// newAllocs is a build of the backend, chiefly the parse of the file
+	// template, the seven kind templates and the impl template.
+	newAllocs = 1_884
+	// renderAllocs is one render of the scaled corpus, nearly all of its
+	// allocations in text/template's execution and its reflective calls.
+	// The count varies between processes: 13 fresh processes, three of
+	// them with the collector off, counted 10,856,704 to 10,856,852. The
+	// ceiling allows 256 above the lowest.
+	renderAllocs = 10_856_704 + 256
+	// settleAllocs is one settle of the scaled corpus: the respelling of
+	// every name, about three quarters of its allocations, the rewrite of
+	// references and the reindex. The count varies between processes: 13
+	// fresh processes, three of them with the collector off, counted
+	// 550,017 to 550,026. The ceiling allows 32 above the lowest.
+	settleAllocs = 550_017 + 32
+)
 
-// setup builds the backend over the kernel's canonical fixture,
-// which emits every file-level kind: the backend spells each, the
-// method through the impl cluster, and refuses the variable.
-func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	r, held := backend.New().(plugin.Renderer)
-	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.CanonicalFixture(tb)
-}
-
-// benchSetup builds the backend over the suite's scaled corpus,
-// without the kinds the backend refuses.
-func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
-	tb.Helper()
-
-	r, held := backend.New().(plugin.Renderer)
-	assert.True(tb, held, "the built backend renders")
-	return r, backendtest.ScaledFixture(tb, backend.RefusedKinds())
-}
-
-// rendered settles one unit of declarations through the backend and
-// renders it, and returns the file beside the run's findings.
-func rendered(tb assert.TB, decls ...symbol.Symbol) (string, *diag.Sink) {
-	tb.Helper()
-
-	b := backend.New()
-	e := plugin.NewEmit()
-	assert.NoError(tb, e.Add(plugin.Unit{
-		Plugin: unitWord, Per: plugin.PerSource, Word: unitWord, Key: unitKey,
-		Pkg:   symbol.Identity{Lang: rust.Lang, Package: unitModule, Kind: symbol.KindPackage},
-		Decls: decls,
-	}), "the unit is added")
-	sink := diag.NewSink()
-	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles")
-	r, held := b.(plugin.Renderer)
-	assert.True(tb, held, "the built backend renders")
-	s, spells := b.(plugin.FileSpeller)
-	assert.True(tb, spells, "the built backend spells filenames")
-	files, err := r.Render(&plugin.RenderContext{
-		Emit: e, Files: backendtest.Files(e, s), Sink: sink, Plugin: rust.Name,
-	})
-	assert.NoError(tb, err, "the pass renders every file")
-	if len(files) == 0 {
-		return "", sink
-	}
-	return string(files[0].Body), sink
-}
-
-// BenchmarkNew measures the composed backend over the suite's
-// scaled corpus: the real templates, the impl clustering and the
-// shared normalizer, under the allocation ceiling pinned from
-// measurement with headroom.
-func BenchmarkNew(b *testing.B) {
-	backendtest.BenchRender(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 11_500_000})
-}
-
-// BenchmarkSettle measures the settle over the suite's scaled
-// corpus, the corpus build excluded from the measurement, under
-// its own ceiling pinned from measurement with headroom.
-func BenchmarkSettle(b *testing.B) {
-	backendtest.BenchSettle(b, benchSetup,
-		backendtest.Budget{MaxAllocs: 1_120_000})
+// allocCall is one call that an allocation test and a benchmark share:
+// its benchmark path, its allocation ceiling, the call, and the check
+// of the result the call leaves.
+type allocCall struct {
+	name   string
+	allocs uint64
+	call   func()
+	check  func(tb assert.TB)
 }
 
 // The backend is the module's write half: the kernel suite runs the
@@ -194,4 +150,130 @@ func TestNew(t *testing.T) {
 				"the borrow names the settled struct, its lifetime as written")
 		})
 	})
+}
+
+// The build allocates the kit's backend. The ordinary run, which runs
+// no benchmark, checks that ceiling here.
+func TestNewAllocs(t *testing.T) {
+	checkAllocs(t, newCalls())
+}
+
+// BenchmarkNew measures the build of the backend, and the composed
+// backend's settle and render of the suite's scaled corpus: the real
+// templates, the impl clustering and the shared normalizer. The settle
+// leaves the corpus build out of its count. Only -bench checks the two
+// corpus ceilings. No count of [assert.MaxAllocs] leaves the corpus
+// build out, as the settle's count does, and one render takes about
+// 0.3 s on four cores, so an allocation check's 101 calls would take
+// half a minute.
+func BenchmarkNew(b *testing.B) {
+	benchCalls(b, newCalls())
+
+	b.Run("New/the render of the scaled corpus", func(b *testing.B) {
+		backendtest.BenchRender(b, benchSetup, backendtest.Budget{MaxAllocs: renderAllocs})
+	})
+	b.Run("New/the settle of the scaled corpus", func(b *testing.B) {
+		backendtest.BenchSettle(b, benchSetup, backendtest.Budget{MaxAllocs: settleAllocs})
+	})
+}
+
+// newCalls returns a call of New.
+func newCalls() []allocCall {
+	var b plugin.Backend
+	return []allocCall{
+		{
+			name: "New", allocs: newAllocs,
+			call:  func() { b = backend.New() },
+			check: func(tb assert.TB) { assert.Equal(tb, b.Name(), rust.Name, "New returns the Rust backend") },
+		},
+	}
+}
+
+// checkAllocs checks the ceiling of every call in the ordinary run, and
+// the result each call leaves.
+func checkAllocs(t *testing.T, calls []allocCall) {
+	t.Helper()
+
+	for _, c := range calls {
+		msg := c.name + " allocates within its ceiling"
+		assert.MaxAllocs(t, c.call, c.allocs, msg)
+		c.check(t)
+	}
+}
+
+// benchCalls measures every call under the bench contract at its
+// ceiling, one sub-benchmark each. Each call runs once before the
+// contract starts, so what the first call initialises stays out of the
+// count.
+func benchCalls(b *testing.B, calls []allocCall) {
+	b.Helper()
+
+	for _, tt := range calls {
+		b.Run(tt.name, func(b *testing.B) {
+			tt.call()
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
+		})
+	}
+}
+
+// setup builds the backend over the kernel's canonical fixture,
+// which emits every file-level kind: the backend spells each, the
+// method through the impl cluster, and refuses the variable.
+func setup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := backend.New().(plugin.Renderer)
+	assert.True(tb, held, "the built backend renders")
+	return r, backendtest.CanonicalFixture(tb)
+}
+
+// benchSetup builds the backend over the suite's scaled corpus,
+// without the kinds the backend refuses.
+func benchSetup(tb assert.TB) (plugin.Renderer, *backendtest.Fixture) {
+	tb.Helper()
+
+	r, held := backend.New().(plugin.Renderer)
+	assert.True(tb, held, "the built backend renders")
+	return r, backendtest.ScaledFixture(tb, backend.RefusedKinds())
+}
+
+// rendered settles one unit of declarations through the backend and
+// renders it, and returns the file beside the run's findings.
+func rendered(tb assert.TB, decls ...symbol.Symbol) (string, *diag.Sink) {
+	tb.Helper()
+
+	b := backend.New()
+	e := plugin.NewEmit()
+	assert.NoError(tb, e.Add(plugin.Unit{
+		Plugin: unitWord, Per: plugin.PerSource, Word: unitWord, Key: unitKey,
+		Pkg:   symbol.Identity{Lang: rust.Lang, Package: unitModule, Kind: symbol.KindPackage},
+		Decls: decls,
+	}), "the unit is added")
+	sink := diag.NewSink()
+	assert.NoError(tb, plugin.Settle(e, b, nil, sink), "the plan settles")
+	r, held := b.(plugin.Renderer)
+	assert.True(tb, held, "the built backend renders")
+	s, spells := b.(plugin.FileSpeller)
+	assert.True(tb, spells, "the built backend spells filenames")
+	files, err := r.Render(&plugin.RenderContext{
+		Emit: e, Files: backendtest.Files(e, s), Sink: sink, Plugin: rust.Name,
+	})
+	assert.NoError(tb, err, "the pass renders every file")
+	if len(files) == 0 {
+		return "", sink
+	}
+	return string(files[0].Body), sink
+}
+
+// declared returns a struct of the unit's module named name.
+func declared(name string) *emit.Struct {
+	return &emit.Struct{
+		Origin: symbol.Identity{Lang: rust.Lang, Package: unitModule, Name: name, Kind: symbol.KindStruct},
+		Name:   name,
+	}
 }

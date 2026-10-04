@@ -109,7 +109,8 @@ const (
 // KindTemplates maps each emit kind to the template that spells
 // it. A file-level kind absent from the map is one the cluster
 // spells through a group template, as it does a method, or one
-// [RefusedKinds] refuses.
+// [RefusedKinds] refuses. It builds the map on every call, which the
+// caller keeps: the map and its one group, two allocations.
 func KindTemplates() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindStruct:    StructTemplate,
@@ -124,7 +125,8 @@ func KindTemplates() map[symbol.Kind]string {
 
 // RefusedKinds maps each emit kind Rust declares no spelling for at
 // module level to the reason, which the render reports beside every
-// declaration of the kind it skips.
+// declaration of the kind it skips. It builds the map on every call,
+// which the caller keeps: the map and its one group, two allocations.
 func RefusedKinds() map[symbol.Kind]string {
 	return map[symbol.Kind]string{
 		symbol.KindVariable: "Rust declares a module-level binding as a static, whose initializer is constant",

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	rust "go.dokimi.dev/eidos/lang/rust"
 	"go.dokimi.dev/eidos/lang/rust/spell"
@@ -14,17 +15,14 @@ import (
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// module returns the package of a loaded Rust module.
-func module(path string) symbol.Identity {
-	return symbol.Identity{Lang: rust.Lang, Package: path, Kind: symbol.KindPackage}
-}
+// stubPath is the routed file every case names the module of.
+const stubPath = "acme/src/store_stub.rs"
 
-// crate returns a Rust crate the load resolved, declared in a directory.
-func crate(name, dir string) plugin.Module {
-	return plugin.Module{Lang: rust.Lang, Path: name, Root: dir}
-}
+// moduleAllocs is a file's module: the directory's module joined with
+// the file's stem.
+const moduleAllocs = 1
 
-// A Rust file is a module of the module its directory belongs to, so a
+// A Rust file is a module of the module its directory belongs to. A
 // routed file's package joins that module with the file's stem.
 func TestPackage(t *testing.T) {
 	t.Parallel()
@@ -87,13 +85,9 @@ func TestPackage(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				got, err := spell.Package(plugin.Placement{
-					Path: "acme/src/store_stub.rs", Residents: tt.give, Modules: tt.modules,
-				})
+				got, err := spell.Package(plugin.Placement{Path: stubPath, Residents: tt.give, Modules: tt.modules})
 				assert.NoError(t, err, "the module derives")
-				assert.Equal(t, got, symbol.Identity{
-					Lang: rust.Lang, Package: tt.want, Name: "store_stub", Kind: symbol.KindPackage,
-				}, "the file's module")
+				assert.Equal(t, got, stubModule(tt.want), "the file's module")
 			})
 		}
 
@@ -114,9 +108,66 @@ func TestPackage(t *testing.T) {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
 
-				_, err := spell.Package(plugin.Placement{Path: "acme/src/store_stub.rs", Residents: tt.give})
+				_, err := spell.Package(plugin.Placement{Path: stubPath, Residents: tt.give})
 				assert.HasError(t, err, "no module derives")
 			})
 		}
 	})
+}
+
+// Package allocates the module path it joins in the ordinary run, which
+// runs no benchmark.
+func TestPackageAllocs(t *testing.T) {
+	placement := modPlacement()
+	var (
+		got symbol.Identity
+		err error
+	)
+	assert.MaxAllocs(t, func() { got, err = spell.Package(placement) }, moduleAllocs,
+		"Package allocates the joined module path")
+	assert.NoError(t, err, "Package derives the module")
+	assert.Equal(t, got, stubModule("acme/svc/store_stub"), "Package returns the file's module")
+}
+
+// BenchmarkPackage measures the module a backend names once per routed
+// file.
+func BenchmarkPackage(b *testing.B) {
+	b.Run("Package", func(b *testing.B) {
+		placement := modPlacement()
+		c := bench.Start(b).MaxAllocs(moduleAllocs)
+		defer c.End()
+		var (
+			got symbol.Identity
+			err error
+		)
+		for c.Loop() {
+			got, err = spell.Package(placement)
+		}
+		assert.NoError(b, err, "Package derives the module")
+		assert.Equal(b, got, stubModule("acme/svc/store_stub"), "Package returns the file's module")
+	})
+}
+
+// module returns the package of a loaded Rust module.
+func module(path string) symbol.Identity {
+	return symbol.Identity{Lang: rust.Lang, Package: path, Kind: symbol.KindPackage}
+}
+
+// crate returns a Rust crate the load resolved, declared in a directory.
+func crate(name, dir string) plugin.Module {
+	return plugin.Module{Lang: rust.Lang, Path: name, Root: dir}
+}
+
+// stubModule returns the module of the routed file under a path.
+func stubModule(path string) symbol.Identity {
+	return symbol.Identity{Lang: rust.Lang, Package: path, Name: "store_stub", Kind: symbol.KindPackage}
+}
+
+// modPlacement returns the routed file in a directory whose mod.rs
+// declares acme/svc.
+func modPlacement() plugin.Placement {
+	return plugin.Placement{
+		Path:      stubPath,
+		Residents: []plugin.Resident{{File: "acme/src/mod.rs", Pkg: module("acme/svc")}},
+	}
 }

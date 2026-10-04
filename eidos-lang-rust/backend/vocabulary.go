@@ -74,9 +74,9 @@ const (
 	FuncConstType = "consttype"
 )
 
-// The receiver spellings: the name every receiver binds, the
-// shorthand forms of a borrowed receiver, the prefix of the typed
-// form, and the three receiver types the shorthand forms abbreviate.
+// Every receiver binds selfName. A borrowed receiver spells in one of
+// two shorthand forms, any other receiver type behind the prefix of the
+// typed form, and the shorthand forms abbreviate three receiver types.
 const (
 	selfName       = "self"
 	receiverRef    = "&self"
@@ -87,9 +87,9 @@ const (
 	selfMutType    = "&mut Self"
 )
 
-// The punctuation the vocabulary writes: the brackets of an argument
-// list, the unit type the shared speller writes for no result, and
-// the discard pattern an unnamed parameter binds.
+// The vocabulary writes an argument list in angle brackets, the unit
+// type where the shared speller states no result, and the discard
+// pattern an unnamed parameter binds.
 const (
 	genericsOpener = "<"
 	genericsCloser = ">"
@@ -126,14 +126,27 @@ var builtinTypes = map[string]bool{
 // declaration of the file takes that name, and the spelling names it
 // through the bound name. The module is the reference's target's
 // where the target is a Rust declaration, and the one the reference
-// records where it has no target. A Speller is not safe for
-// concurrent use, because its set is not.
+// records where it has no target.
+//
+// # Concurrency
+//
+// A Speller is not safe for concurrent use, because its set is not.
+//
+// # Allocation contract
+//
+// Each method allocates the text it writes and nothing else, so a name
+// spelled as written and an item whose use is bound allocate nothing.
+// Binding an item's use for the first time allocates in the set. A
+// method that joins more than two parts also allocates its list of
+// parts, because Go places a list of at most two strings on the stack.
+// A trailing comment allocates its block comment and the part it ends.
+// A refusal allocates its error.
 type Speller struct {
 	set *render.ImportSet
 }
 
 // NewSpeller returns the speller for the file whose import set is
-// set. The set is not nil.
+// set. The set is not nil. It allocates nothing.
 func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 
 // Spell writes a type reference and uses the item it names: the
@@ -146,6 +159,12 @@ func NewSpeller(set *render.ImportSet) Speller { return Speller{set: set} }
 // written spelling, and Spell returns an error where an item inside
 // it is used under another name, because Rust's composite spelling
 // does not follow from its structure.
+//
+// Spell allocates nothing for a name spelled as written, a used item
+// and a structural reference. A reference with arguments writes into
+// one buffer, one allocation where every bound name is as long as its
+// written spelling. A path inside a used item allocates the path behind
+// the bound name.
 func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 	if !complete(t) {
 		return "", refuse(unstatedType)
@@ -160,7 +179,8 @@ func (s Speller) Spell(t *emit.TypeRef) (string, error) {
 // ConstType writes a constant's stated type. It refuses a constant
 // without a type, because rustc requires the annotation and no
 // formatter catches its absence, and a constant without a value,
-// because const X: T = ; declares nothing.
+// because const X: T = ; declares nothing. It allocates what
+// [Speller.Spell] allocates for the type.
 func (s Speller) ConstType(c *emit.Constant) (string, error) {
 	switch {
 	case c.Type == nil || c.Type.Spelling == "":
@@ -177,6 +197,12 @@ func (s Speller) ConstType(c *emit.Constant) (string, error) {
 // and a value parameter in the const form with its value's type.
 // Variance refuses, because Rust infers it from use and a
 // declaration states none.
+//
+// TypeParams allocates one spelling for each clause a parameter
+// states, which is its bounds, its default or its value type, and the
+// joined bounds of more than one. It allocates the joined list and its
+// brackets, and what each type's spelling allocates: four allocations
+// for a parameter of two bounds beside an unbounded one.
 func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 	return s.typeParams(ps, definitionPosition)
 }
@@ -184,14 +210,16 @@ func (s Speller) TypeParams(ps []*emit.TypeParam) (string, error) {
 // ImplParams writes an impl block's parameter list: a type
 // definition's parameters with their bounds and without their
 // defaults, because the definition states the defaults and rustc
-// refuses one on an impl.
+// refuses one on an impl. It allocates what [Speller.TypeParams]
+// allocates for the list without its defaults.
 func (s Speller) ImplParams(ps []*emit.TypeParam) (string, error) {
 	return s.typeParams(ps, implPosition)
 }
 
 // FnParams writes a function's, a method's or an associated type's
 // parameter list. A stated default refuses, because Rust takes a
-// default on a type definition's parameter alone.
+// default on a type definition's parameter alone. It allocates what
+// [Speller.TypeParams] allocates.
 func (s Speller) FnParams(ps []*emit.TypeParam) (string, error) {
 	return s.typeParams(ps, callablePosition)
 }
@@ -204,6 +232,8 @@ func (s Speller) FnParams(ps []*emit.TypeParam) (string, error) {
 // visibility refuses, because a trait item takes the trait's
 // visibility, and so does a target or definedness, because an alias
 // with a target is a default the stable language does not take.
+// AssocType allocates the declaration, one allocation, and what its
+// parameter list allocates.
 func (s Speller) AssocType(d symbol.Symbol) (string, error) {
 	a, is := d.(*emit.Alias)
 	if !is {
@@ -232,6 +262,11 @@ func (s Speller) AssocType(d symbol.Symbol) (string, error) {
 // types in parentheses for a tuple variant. A payload mixing
 // named and unnamed entries refuses, and so does an entry stating
 // anything an inline spelling cannot express.
+//
+// SumPayload allocates the spelling of each named entry, the joined
+// entries of more than one, and the payload in its delimiters, with
+// what each type's spelling allocates: two allocations for one named
+// entry, one for one unnamed entry, and nothing for an empty payload.
 func (s Speller) SumPayload(v *emit.SumVariant) (string, error) {
 	fields := v.Fields.Items()
 	if len(fields) == 0 {
@@ -266,7 +301,10 @@ func (s Speller) SumPayload(v *emit.SumVariant) (string, error) {
 // Supertraits writes a trait's supertrait bounds behind a colon,
 // joined by plus signs, or nothing where none are stated. An
 // embed refuses, because a trait widens through supertraits
-// alone.
+// alone. Supertraits allocates the joined bounds of more than one and
+// the bounds behind their colon, with what each bound's spelling
+// allocates: two allocations for two supertraits, one for one, and
+// nothing for none.
 func (s Speller) Supertraits(i *emit.Interface) (string, error) {
 	if len(i.Embeds) > 0 {
 		return "", refuse("a trait widens through supertraits alone, and %s states embeds", i.Name)
@@ -290,6 +328,11 @@ func (s Speller) Supertraits(i *emit.Interface) (string, error) {
 // &self where it states none, and the parameters alone for an
 // associated function at type level, which refuses a stated
 // receiver.
+//
+// SelfParams allocates what [Speller.Params] allocates, and the
+// receiver joined before the parameters: four allocations for two
+// parameters, and nothing for the shared borrow alone. A receiver in
+// the typed form allocates its spelling.
 func (s Speller) SelfParams(m *emit.Method) (string, error) {
 	params, err := s.Params(m.Params)
 	if err != nil {
@@ -315,7 +358,10 @@ func (s Speller) SelfParams(m *emit.Method) (string, error) {
 
 // Params writes a parameter list. An unnamed parameter binds to
 // the discard pattern, which is the spelling Rust accepts, and a
-// parameter that states no type refuses.
+// parameter that states no type refuses. Params allocates each
+// parameter's spelling and the joined list of more than one, with what
+// each type's spelling allocates: three allocations for two
+// parameters, and nothing for none.
 func (s Speller) Params(ps []*emit.Param) (string, error) {
 	parts := make([]string, 0, len(ps))
 	for _, p := range ps {
@@ -335,6 +381,10 @@ func (s Speller) Params(ps []*emit.Param) (string, error) {
 // Results writes a return annotation: nothing for none, the type
 // for one, and a tuple for several, which is how Rust returns
 // more than one value. A result that states no type refuses.
+// Results allocates the annotation it writes and the joined tuple of
+// more than one result, with what each type's spelling allocates: one
+// allocation for one result, two for a tuple of two, and nothing for
+// none.
 func (s Speller) Results(rs []*emit.Return) (string, error) {
 	parts := make([]string, 0, len(rs))
 	for _, r := range rs {
@@ -478,7 +528,8 @@ const (
 
 // Funcs returns the shared template vocabulary the kind templates
 // call, bound to one file's import set: every item a helper names from
-// another module is used there.
+// another module is used there. Funcs allocates the map of twenty-four
+// helpers, four allocations, and the speller's eleven bound helpers.
 func Funcs(set *render.ImportSet) template.FuncMap {
 	s := NewSpeller(set)
 	return template.FuncMap{
@@ -511,7 +562,9 @@ func Funcs(set *render.ImportSet) template.FuncMap {
 
 // Docs writes a declaration's documentation as outer doc
 // comments, each line prefixed with the given indentation, so a
-// member's doc is at its member's depth.
+// member's doc is at its member's depth. It allocates what
+// [textfmt.LineDocs] allocates: the lines, sized once, and nothing for
+// no lines.
 func Docs(lines []string, prefix ...string) string {
 	return textfmt.LineDocs(lines, "/// ", prefix...)
 }
@@ -519,6 +572,11 @@ func Docs(lines []string, prefix ...string) string {
 // TypeNames writes a parameter list's names alone, the form an
 // impl block's target repeats: the impl's own parameter list states
 // the bounds, and the target names the type they apply to.
+//
+// TypeNames allocates the joined names and the list in its brackets:
+// two allocations for two parameters, one for one, and nothing for
+// none. More than two names also allocate their list, because Go
+// places a list of at most two strings on the stack.
 func TypeNames(ps []*emit.TypeParam) string {
 	if len(ps) == 0 {
 		return ""
@@ -542,6 +600,11 @@ func TypeNames(ps []*emit.TypeParam) string {
 // Box<T>, and a method on Wrapper<String> opens impl
 // Wrapper<String>. The methods state the bounds, the way Rust
 // practice bounds functions and not type definitions.
+//
+// Binder allocates the binder it writes, one allocation for one bound
+// parameter, and nothing for a receiver that binds none. More than one
+// bound parameter also allocates the joined names, and more than two
+// their list. A refusal allocates its error.
 func Binder(t *emit.TypeRef) (string, error) {
 	if t == nil || len(t.Args) == 0 {
 		return "", nil
@@ -565,7 +628,9 @@ func Binder(t *emit.TypeRef) (string, error) {
 // unstated, because a generated API is consumed, pub(crate) for
 // internal, nothing for package scope, which is Rust's
 // module-private default. Private and protected refuse: Rust
-// scopes by module, never by type or by subclass.
+// scopes by module, never by type or by subclass. Vis returns a
+// constant spelling and allocates nothing, and a refusal allocates its
+// error.
 func Vis(v symbol.Visibility, name string) (string, error) {
 	switch v {
 	case symbol.VisibilityUnknown, symbol.VisibilityPublic:
@@ -584,6 +649,7 @@ func Vis(v symbol.Visibility, name string) (string, error) {
 // abstract struct refuses, because every Rust struct can be made. A
 // final struct passes, because nothing subclasses. Supertypes and
 // embeds refuse, because a struct neither inherits nor promotes.
+// StructMods allocates nothing, and a refusal allocates its error.
 func StructMods(s *emit.Struct) (string, error) {
 	switch {
 	case s.Abstract:
@@ -596,7 +662,8 @@ func StructMods(s *emit.Struct) (string, error) {
 
 // EnumMods writes an enum's keywords: its visibility alone. An
 // enum with fields or methods refuses, because Rust puts state in
-// variants and behaviour in impl blocks.
+// variants and behaviour in impl blocks. EnumMods allocates nothing,
+// and a refusal allocates its error.
 func EnumMods(e *emit.Enum) (string, error) {
 	if e.Fields.Len() > 0 || e.Methods.Len() > 0 {
 		return "", refuse("an enum has variants alone, and %s states members", e.Name)
@@ -606,7 +673,8 @@ func EnumMods(e *emit.Enum) (string, error) {
 
 // SumMods writes a data enum's keywords: its visibility alone. A
 // sum with methods refuses, because Rust puts behaviour in impl
-// blocks.
+// blocks. SumMods allocates nothing, and a refusal allocates its
+// error.
 func SumMods(s *emit.Sum) (string, error) {
 	if s.Methods.Len() > 0 {
 		return "", refuse("a data enum has variants alone, and %s states methods", s.Name)
@@ -616,6 +684,7 @@ func SumMods(s *emit.Sum) (string, error) {
 
 // AliasMods writes a type alias's keywords: its visibility alone.
 // A defined type refuses, because a Rust alias is transparent.
+// AliasMods allocates nothing, and a refusal allocates its error.
 func AliasMods(a *emit.Alias) (string, error) {
 	if a.Defined {
 		return "", refuse("an alias is transparent, and %s states a defined type", a.Name)
@@ -624,7 +693,9 @@ func AliasMods(a *emit.Alias) (string, error) {
 }
 
 // FnMods writes a free function's keywords: its visibility, then
-// async where the declaration states it.
+// async where the declaration states it. FnMods allocates the keywords
+// of an async function, one allocation, and nothing otherwise. A
+// refusal allocates its error.
 func FnMods(f *emit.Function) (string, error) {
 	part, err := Vis(f.Visibility, f.Name)
 	if err != nil {
@@ -643,7 +714,8 @@ func FnMods(f *emit.Function) (string, error) {
 // such a method refuses, because the signature cannot place it.
 // Final refuses, because every implementation may override a trait
 // method, and override refuses, because a trait method overrides
-// nothing.
+// nothing. TraitFn allocates nothing, and a refusal allocates its
+// error.
 func TraitFn(m *emit.Method) (string, error) {
 	switch {
 	case !m.HasDefault && !m.Body.IsZero():
@@ -666,7 +738,9 @@ func TraitFn(m *emit.Method) (string, error) {
 // async where stated. Abstract and default refuse, because an impl
 // method states its body outright, and override refuses, because an
 // inherent method overrides nothing. Final passes, because nothing
-// overrides an inherent method.
+// overrides an inherent method. ImplFn allocates the keywords of an
+// async method, one allocation, and nothing otherwise. A refusal
+// allocates its error.
 func ImplFn(m *emit.Method) (string, error) {
 	switch {
 	case m.Abstract:
@@ -690,7 +764,8 @@ func ImplFn(m *emit.Method) (string, error) {
 // type-level field refuses, because Rust declares statics outside
 // types. An immutable field refuses, because mutability follows the
 // binding of the struct value. An initializer refuses, because a
-// struct declares no field defaults.
+// struct declares no field defaults. FieldMods allocates nothing, and a
+// refusal allocates its error.
 func FieldMods(f *emit.Field) (string, error) {
 	switch {
 	case f.Level == symbol.LevelType:
@@ -707,7 +782,8 @@ func FieldMods(f *emit.Field) (string, error) {
 // Attrs writes a declaration's attribute lines, one per
 // annotation, each prefixed with the given indentation: the name
 // in an outer attribute, its argument spellings verbatim in
-// parentheses where any are stated.
+// parentheses where any are stated. It allocates what [textfmt.Marked]
+// allocates: the lines, sized once, and nothing for no annotations.
 func Attrs(a symbol.Annotations, prefix ...string) string {
 	return textfmt.Marked(a, "#[", "]", prefix...)
 }
