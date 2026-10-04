@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
+	"path/filepath"
 	"runtime"
 	"slices"
 	"strconv"
@@ -43,6 +44,7 @@ import (
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
+	"go.dokimi.dev/eidos/core/workspace/workspacetest"
 )
 
 // runCode is a code for the run fixtures' findings.
@@ -113,6 +115,65 @@ const (
 	// pipelineBrand is the brand the pipeline's composition declares
 	// and stamps its files under.
 	pipelineBrand output.Brand = "e2e"
+	// pipelineMarkedPrefix opens the name of every struct the annotator
+	// marks, pipelineRefPrefix the referencing ones among them, and
+	// pipelineMarkPrefix the others. pipelinePlainPrefix opens the name of
+	// every unmarked struct.
+	pipelineMarkedPrefix = "m"
+	pipelineRefPrefix    = "mr"
+	pipelineMarkPrefix   = "mk"
+	pipelinePlainPrefix  = "pl"
+	// pipelineScript is the file that spells a corpus package in the
+	// scripted language, in the package's own directory.
+	pipelineScript = "unit.zz"
+	// pipelineStructs is the number of structs of one corpus package.
+	pipelineStructs = pipelineRefs + pipelineMarked + pipelineUnmarked
+	// corpusFields is the number of fields of a struct of the corpus's
+	// tree before an edit widens it.
+	corpusFields = 2
+)
+
+// The documentation each reader of the edge corpus writes on its mirror:
+// what it read of another package through its edge kind.
+const (
+	lookupDoc     = "%s of the next package has %d fields"
+	factDoc       = "%s of the next package is %d fields wide"
+	membershipDoc = "the scope declares %d structs"
+	packageDoc    = "the package after the next declares %d fields"
+)
+
+// The package and the structs of the edge corpus, the pipeline corpus's
+// tree that the warm checks edit. In each package, the first four
+// referencing structs read another package through one edge kind each.
+// The mirror of each of them documents what the struct read. Each edit
+// changes the package edgeEdited. The struct that reads the edited
+// declaration is in a file that no other edge kind of the edit changes.
+const (
+	// edgeEdited is the index of the package each edit changes.
+	edgeEdited = 7
+	// edgeLookup looks up edgeLookedUp of the next package.
+	edgeLookup   = "mr0"
+	edgeLookedUp = "mk0"
+	// edgeFact reads the width the annotator stamps on edgeMeasured of
+	// the next package.
+	edgeFact     = "mr1"
+	edgeMeasured = "mk1"
+	// edgeMembership counts the structs of its scope, in the first
+	// package alone.
+	edgeMembership = "mr2"
+	// edgePackage sums the fields of the package after the next one,
+	// which it reads whole.
+	edgePackage = "mr3"
+	// edgeWidened is a plain struct only the package reader reads,
+	// edgeLast the last plain struct of a package, and edgeAppended the
+	// struct an edit declares after it. edgeRemoved is a plain struct the
+	// stubs plan stubs, as it stubs every plain struct whose name ends in
+	// edgeStubbed.
+	edgeWidened  = "pl7"
+	edgeLast     = "pl179"
+	edgeAppended = "pl180"
+	edgeRemoved  = "pl10"
+	edgeStubbed  = "0"
 )
 
 // The ceilings of [BenchmarkRun]. Each cold ceiling covers one run whose
@@ -258,11 +319,23 @@ func (native) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.V
 // TypeName returns the scripted rules' type name.
 func (native) TypeName(word, base string) string { return rulestest.Scripted().TypeName(word, base) }
 
+// corpusKeys are the handles of the two keys the measuring annotator
+// registers. The mark selects a struct for mirroring, and the width
+// counts the struct's fields. Each Build sets both handles, and the
+// readers plan's generator reads them through the pointer after the
+// Build of its run.
+type corpusKeys struct {
+	mark  meta.Key[bool]
+	width meta.Key[int64]
+}
+
 // Run is the frame: it loads or takes a graph, seals it, validates the
 // directives, applies the drops, annotates, and runs each plan through
 // its generators, its settle, its render and its commit. The cases pin
 // which inputs stop the frame, which findings fail the run, and what
-// the report records.
+// the report records. A warm run after an edit that a generator reads
+// through one edge kind leaves what a cold run over the edited tree
+// leaves, for each edge kind.
 func TestRun(t *testing.T) {
 	t.Parallel()
 
@@ -1035,6 +1108,54 @@ func TestRun(t *testing.T) {
 			serial := pipelineHashes(t, pipelineWorkspace(t, pipelineTestPackages, oneWorker))
 			assert.Equal(t, parallel, serial, "the hashes do not depend on the worker count")
 		})
+
+		edits := []struct {
+			name   string
+			edit   func(root string) error
+			reader int
+			want   string
+		}{
+			{
+				name:   "matches a cold run after an edit to a declaration a generator looks up",
+				edit:   corpusEdit(edgeEdited, corpusLine(edgeLookedUp), widenedLine(edgeLookedUp)),
+				reader: edgeEdited - 1,
+				want:   fmt.Sprintf(lookupDoc, edgeLookedUp, corpusFields+1),
+			},
+			{
+				name:   "matches a cold run after an edit to a fact a generator reads of another declaration",
+				edit:   corpusEdit(edgeEdited, corpusLine(edgeMeasured), widenedLine(edgeMeasured)),
+				reader: edgeEdited - 1,
+				want:   fmt.Sprintf(factDoc, edgeMeasured, corpusFields+1),
+			},
+			{
+				name:   "matches a cold run after a struct appears in the scope a generator enumerates",
+				edit:   corpusEdit(edgeEdited, corpusLine(edgeLast), corpusLine(edgeLast)+corpusLine(edgeAppended)),
+				reader: 0,
+				want:   fmt.Sprintf(membershipDoc, pipelineTestPackages*pipelineStructs+1),
+			},
+			{
+				name:   "matches a cold run after an edit to a member of a package a generator reads whole",
+				edit:   corpusEdit(edgeEdited, corpusLine(edgeWidened), widenedLine(edgeWidened)),
+				reader: edgeEdited - 2,
+				want:   fmt.Sprintf(packageDoc, pipelineStructs*corpusFields+1),
+			},
+			{
+				name:   "matches a cold run after a struct another plan stubs disappears",
+				edit:   corpusEdit(edgeEdited, corpusLine(edgeRemoved), ""),
+				reader: edgeEdited - 2,
+				want:   fmt.Sprintf(packageDoc, (pipelineStructs-1)*corpusFields),
+			},
+		}
+		for _, tt := range edits {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				warm := t.TempDir()
+				workspacetest.AssertWarmEdited(t, edgeFixture(tt.edit), warm, t.TempDir())
+				assert.Contains(t, read(t, warm, pipelinePath(tt.reader)+"/gen.txt"), tt.want,
+					"the struct that reads the edited declaration documents the edit")
+			})
+		}
 	})
 }
 
@@ -1380,15 +1501,15 @@ func pipelineCorpus(n int) []*node.Package {
 	pkgs := make([]*node.Package, n)
 	for p := range pkgs {
 		path := pipelinePath(p)
-		decls := make([]symbol.Symbol, 0, pipelineRefs+pipelineMarked+pipelineUnmarked)
+		decls := make([]symbol.Symbol, 0, pipelineStructs)
 		for i := range pipelineRefs {
-			decls = append(decls, coretest.Struct(path, "mr"+strconv.Itoa(i)))
+			decls = append(decls, coretest.Struct(path, pipelineRefPrefix+strconv.Itoa(i)))
 		}
 		for i := range pipelineMarked {
-			decls = append(decls, coretest.Struct(path, "mk"+strconv.Itoa(i)))
+			decls = append(decls, coretest.Struct(path, pipelineMarkPrefix+strconv.Itoa(i)))
 		}
 		for i := range pipelineUnmarked {
-			decls = append(decls, coretest.Struct(path, "pl"+strconv.Itoa(i)))
+			decls = append(decls, coretest.Struct(path, pipelinePlainPrefix+strconv.Itoa(i)))
 		}
 		pkg := coretest.Package(path, decls...)
 		pkg.Files[0].Path = path + "/" + coretest.UnitFile
@@ -1418,7 +1539,7 @@ func pipelineWorkspace(tb assert.TB, n, workers int) *workspace.Workspace {
 			return err
 		}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
-			if strings.HasPrefix(m.Struct.Name, "m") {
+			if strings.HasPrefix(m.Struct.Name, pipelineMarkedPrefix) {
 				eidos.Stamp(st, mark, true)
 			}
 			return nil
@@ -1435,7 +1556,7 @@ func pipelineWorkspace(tb assert.TB, n, workers int) *workspace.Workspace {
 				Origin: m.Struct.Identity(),
 				Name:   "for" + m.Struct.Name,
 			}
-			if strings.HasPrefix(m.Struct.Name, "mr") {
+			if strings.HasPrefix(m.Struct.Name, pipelineRefPrefix) {
 				// The next package's first plain mark, referenced
 				// resolved, so the settle follows the name across
 				// packages once the respell moves it.
@@ -1522,6 +1643,222 @@ func pipelineHashes(t *testing.T, w *workspace.Workspace) map[string]string {
 		out[c.Path] = c.Hash
 	}
 	return out
+}
+
+// pipelineTree returns the first n packages of the pipeline corpus
+// spelled in the scripted language: per package, one file in the
+// package's own directory that declares each struct with two fields.
+func pipelineTree(n int) fstest.MapFS {
+	tree := fstest.MapFS{}
+	for p, pkg := range pipelineCorpus(n) {
+		var b strings.Builder
+		b.WriteString("package " + pipelinePath(p) + "\n")
+		for _, d := range pkg.Files[0].Decls {
+			b.WriteString(corpusLine(d.(*node.Struct).Name))
+		}
+		tree[pipelinePath(p)+"/"+pipelineScript] = &fstest.MapFile{Data: []byte(b.String())}
+	}
+	return tree
+}
+
+// corpusLine returns the scripted line that declares a corpus struct
+// with its two fields.
+func corpusLine(name string) string { return "type " + name + " int string\n" }
+
+// widenedLine returns the scripted line that declares a corpus struct
+// with a third field.
+func widenedLine(name string) string { return "type " + name + " int string bool\n" }
+
+// corpusEdit returns an edit that replaces the line from of the corpus
+// package p's file under root with to, the way a person edits a source
+// file. The edit returns the error of a file that does not read or
+// write, and an error for a file without the line.
+func corpusEdit(p int, from, to string) func(root string) error {
+	return func(root string) error {
+		path := filepath.Join(root, filepath.FromSlash(pipelinePath(p)+"/"+pipelineScript))
+		b, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		if !strings.Contains(string(b), from) {
+			return fmt.Errorf("workspace_test: %s declares no line %q", path, from)
+		}
+		return os.WriteFile(path, []byte(strings.Replace(string(b), from, to, 1)), 0o644)
+	}
+}
+
+// edgeFixture returns the warm check's fixture over the tests' share of
+// the pipeline corpus's tree: the measuring annotator, a readers plan
+// that mirrors every marked struct and documents what the referencing
+// structs read through each edge kind, a stubs plan that stubs every
+// tenth plain struct, and the edit. Every plan and every composition
+// reads the keys the fixture's one corpusKeys records.
+func edgeFixture(edit func(root string) error) workspacetest.Fixture {
+	keys := &corpusKeys{}
+	return workspacetest.Fixture{
+		Tree: pipelineTree(pipelineTestPackages),
+		Compose: func(root string) *workspace.Builder {
+			return workspace.New().
+				Brand(fixtureBrand).
+				Frontends(frontendtest.NewScripted()).
+				Annotators(measuring(keys)).
+				Targets("fixture").
+				Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) }).
+				Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
+		},
+		Plans: func() []workspace.Plan {
+			return []workspace.Plan{
+				{
+					Name:       "readers",
+					Generators: []plugin.Generator{reading(keys, pipelineTestPackages)},
+					Backend:    documenting("readers-printer"),
+				},
+				{
+					Name:       "stubs",
+					Generators: []plugin.Generator{stubbing()},
+					Backend:    documenting("stubs-printer"),
+				},
+			}
+		},
+		Edit: edit,
+	}
+}
+
+// measuring returns the annotator that registers the corpus's keys into
+// keys, and stamps the mark and the width on every struct whose name
+// opens with the marked prefix.
+func measuring(keys *corpusKeys) plugin.Annotator {
+	p, held := eidos.NewPlugin("measurer").
+		Keys(func(r *meta.Registry) error {
+			if err := r.ClaimNamespace("e2e"); err != nil {
+				return err
+			}
+			mark, err := meta.Register[bool](r, meta.KeySpec{
+				Name: "e2e.mark", Doc: "marks a corpus subject for mirroring",
+			})
+			if err != nil {
+				return err
+			}
+			width, err := meta.Register[int64](r, meta.KeySpec{
+				Name: "e2e.width", Doc: "counts the fields of a marked corpus subject",
+			})
+			keys.mark, keys.width = mark, width
+			return err
+		}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+			if strings.HasPrefix(m.Struct.Name, pipelineMarkedPrefix) {
+				eidos.Stamp(st, keys.mark, true)
+				eidos.Stamp(st, keys.width, int64(len(m.Struct.Fields)))
+			}
+			return nil
+		})).Build().(plugin.Annotator)
+	if !held {
+		panic("workspace_test: a stamper rule lowers to the annotator role")
+	}
+	return p
+}
+
+// reading returns the readers plan's generator over a corpus of n
+// packages: per marked struct, a mirror in the gen family, documented
+// with what the struct reads of another package through its edge kind.
+func reading(keys *corpusKeys, n int) plugin.Generator {
+	return generator("reader", func(m *eidos.StructMatch, e *eidos.Emitter) error {
+		if _, marked := eidos.Fact(m, keys.mark); !marked {
+			return nil
+		}
+		p, err := strconv.Atoi(strings.TrimPrefix(m.Struct.Identity().Package, pipelinePathPrefix))
+		if err != nil {
+			return err
+		}
+		e.PackageFile().Append(&emit.Struct{
+			Origin: m.Struct.Identity(),
+			Name:   "for" + m.Struct.Name,
+			Doc:    edgeRead(m, keys, p, n),
+		})
+		return nil
+	})
+}
+
+// edgeRead returns what a referencing struct of the package with index
+// p reads of another package of a corpus of n packages through its edge
+// kind, as a line of documentation, and nothing for any other struct.
+func edgeRead(m *eidos.StructMatch, keys *corpusKeys, p, n int) []string {
+	other := func(q int, name string) symbol.Identity {
+		id := m.Struct.Identity()
+		id.Package, id.Name = pipelinePath(q%n), name
+		return id
+	}
+	switch {
+	case m.Struct.Name == edgeLookup:
+		s, _ := m.Reader().Lookup(other(p+1, edgeLookedUp))
+		return []string{fmt.Sprintf(lookupDoc, edgeLookedUp, fieldCount(s))}
+	case m.Struct.Name == edgeFact:
+		w, _ := eidos.FactOf(m, other(p+1, edgeMeasured), keys.width)
+		return []string{fmt.Sprintf(factDoc, edgeMeasured, w)}
+	case m.Struct.Name == edgeMembership && p == 0:
+		count := 0
+		for range m.Reader().ByKind(symbol.KindStruct) {
+			count++
+		}
+		return []string{fmt.Sprintf(membershipDoc, count)}
+	case m.Struct.Name == edgePackage:
+		sum := 0
+		if pkg, found := m.Reader().PackageOf(other(p+2, edgeLookedUp)); found {
+			for _, f := range pkg.Files {
+				for _, d := range f.Decls {
+					sum += fieldCount(d)
+				}
+			}
+		}
+		return []string{fmt.Sprintf(packageDoc, sum)}
+	}
+	return nil
+}
+
+// fieldCount returns the number of a struct's fields, and zero for any
+// other declaration and for none.
+func fieldCount(s symbol.Symbol) int {
+	if st, is := s.(*node.Struct); is {
+		return len(st.Fields)
+	}
+	return 0
+}
+
+// stubbing returns the stubs plan's generator: per plain struct whose
+// name ends in edgeStubbed, a stub in the stub family.
+func stubbing() plugin.Generator {
+	p, held := eidos.NewPlugin("stubber").
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "stub"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			name := m.Struct.Name
+			if strings.HasPrefix(name, pipelinePlainPrefix) && strings.HasSuffix(name, edgeStubbed) {
+				e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: name + "Stub"})
+			}
+			return nil
+		})).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// documenting is a kit backend under a name of its own that spells a
+// struct as one line behind its documentation, so what a generator
+// documents shows in the rendered bytes. It names every file after its
+// family word.
+func documenting(name plugin.ID) plugin.Backend {
+	return backend.New(name, "fixture", plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "{{range .Doc}}// {{.}}\n{{end}}type {{.Name}} struct{}\n",
+		}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
 }
 
 // benchRun measures w's runs over a fresh graph of pkgs against a

@@ -127,24 +127,14 @@ func AssertIsolated(tb assert.TB, f Fixture, root string) {
 func AssertExported(tb assert.TB, f Fixture, root string) {
 	tb.Helper()
 
-	plans := plansOf(tb, f)
+	names := planNames(plansOf(tb, f))
 	copied(tb, f, root)
-	names := make([]string, 0, len(plans))
-	for _, p := range plans {
-		names = append(names, p.Name)
-	}
-	p := &probe{}
-	probing := workspace.Plan{
-		Name: probePlan, DependsOn: names, Generators: []plugin.Generator{p}, Backend: plans[0].Backend,
-	}
-	w := built(tb, f, root, append(plans, probing), nil)
-	_, err := ran(f, w, root)
-	assert.NoError(tb, err, "the fixture's plans and the probe run clean")
-	assert.Equal(tb, slices.Sorted(maps.Keys(p.got)), slices.Sorted(slices.Values(names)),
+	run := probed(tb, f, root, false)
+	assert.Equal(tb, slices.Sorted(maps.Keys(run.exports)), slices.Sorted(slices.Values(names)),
 		"the probe reads the export of each plan it depends on")
-	record := rundir.Record(tb, root, w.Brand())
+	record := rundir.Record(tb, root, run.brand)
 	for _, name := range names {
-		exportedIn(tb, p.got[name], entriesOf(record, name))
+		exportedIn(tb, run.exports[name], entriesOf(record, name))
 	}
 }
 
@@ -278,6 +268,51 @@ func AssertChecked(tb assert.TB, f Fixture, root string) {
 	assert.Equal(tb, read.Export.Plan, plans[0].Name, "the check reads the plan's export")
 }
 
+// AssertWarmEdited runs the fixture's plans cold in warm, an empty
+// directory, applies the fixture's edit there and runs the plans again,
+// warm. It copies the tree into cold, an empty directory, applies the
+// edit and runs the plans cold. Every run composes a probe plan that
+// depends on each of the fixture's plans, and returns no error, so every
+// plan commits in each.
+//
+// It checks that the edit changes a file the first plan generates, and
+// that the run after the edit reads the sealed state. It then checks
+// that the warm run and the cold run leave the same files outside the
+// state directory, record the same entries, report the same findings and
+// hand the probe the same exports. The rest of the state directory is
+// each run's own record: the sealed state lists what the run read, and a
+// disk ledger names the workspace of each manifest document after its
+// directory.
+func AssertWarmEdited(tb assert.TB, f Fixture, warm, cold string) {
+	tb.Helper()
+
+	if f.Edit == nil {
+		tb.Fatalf("the fixture states no edit")
+	}
+	first := plansOf(tb, f)[0].Name
+	copied(tb, f, warm)
+	before := probed(tb, f, warm, false)
+	planned := entriesOf(rundir.Record(tb, warm, before.brand), first)
+	assert.NoError(tb, f.Edit(warm), "the fixture's edit applies in the warm directory")
+	after := probed(tb, f, warm, false)
+	record := rundir.Record(tb, warm, after.brand)
+	if sameEntries(entriesOf(record, first), planned) {
+		tb.Fatalf("the fixture's edit leaves the files of plan %q unchanged", first)
+	}
+	assert.False(tb, after.report.Stats.Cold, "the run after the edit reads the sealed state")
+
+	copied(tb, f, cold)
+	assert.NoError(tb, f.Edit(cold), "the fixture's edit applies in the cold directory")
+	fresh := probed(tb, f, cold, true)
+	assert.Equal(tb, outside(tb, warm, after.brand), outside(tb, cold, fresh.brand),
+		"the warm run leaves the cold run's files outside the state directory")
+	assert.Equal(tb, record.Files, rundir.Record(tb, cold, fresh.brand).Files,
+		"the warm run records the cold run's entries")
+	assert.Equal(tb, slices.Collect(after.report.Sink.All()), slices.Collect(fresh.report.Sink.All()),
+		"the warm run reports the cold run's findings")
+	assert.Equal(tb, after.exports, fresh.exports, "the warm run hands the probe the cold run's exports")
+}
+
 // exportedIn checks one plan's export against the plan's record entries:
 // every exported declaration is in a recorded file, under one of the
 // file's plugins and, at file level, from one of its sources, and every
@@ -372,6 +407,25 @@ func entriesOf(m manifest.Manifest, plan string) []manifest.Entry {
 func sameEntries(a, b []manifest.Entry) bool {
 	return manifest.Manifest{Version: manifest.Version, Files: a}.
 		Equal(manifest.Manifest{Version: manifest.Version, Files: b})
+}
+
+// outside returns the text of every file under root outside the brand's
+// state directory, keyed by its slash-separated path relative to root:
+// the tree's sources and the files the plans generate.
+func outside(tb assert.TB, root string, brand output.Brand) map[string]string {
+	tb.Helper()
+
+	state := ledger.StateDir(brand) + "/"
+	out := map[string]string{}
+	for _, path := range rundir.Files(tb, root) {
+		if strings.HasPrefix(path, state) {
+			continue
+		}
+		b, err := os.ReadFile(rundir.Path(root, path))
+		assert.NoError(tb, err, "a file of the run's directory reads")
+		out[path] = string(b)
+	}
+	return out
 }
 
 // firstOrigin returns the first origin of a plan's emit store, in the

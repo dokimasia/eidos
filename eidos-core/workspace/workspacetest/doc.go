@@ -5,7 +5,8 @@
 // against the workspace frame, over a source tree on disk.
 //
 // A [Fixture] states a tree, the stores its load reads, a composition
-// without its plans, the plans, and every file the plans generate.
+// without its plans, the plans, every file the plans generate, and an
+// edit of the tree.
 // [RunWorkspaceSuite] runs every check in a parallel subtest over
 // temporary directories of its own. Each check composes from the
 // fixture's builder and adds what it needs, so the caller supplies a
@@ -28,6 +29,11 @@
 //     reports at its severity.
 //   - [AssertChecked]: a workspace check that reads a failed plan does
 //     not run, and one that reads a clean plan reads its records.
+//
+// [AssertWarmEdited] checks the warm path over the fixture's
+// [Fixture.Edit]: a warm run after the edit leaves the files, the record
+// entries, the findings and the exports that a cold run over the edited
+// tree leaves.
 //
 // Every check takes the assert module's TB role, so the kernel's tests
 // run each one against compositions it must reject.

@@ -6,6 +6,7 @@ package workspacetest_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"slices"
@@ -16,6 +17,9 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/ledger"
@@ -41,12 +45,28 @@ const (
 	otherDeclaration           = "Other"
 )
 
+// The sealed state's directory inside the brand's state directory, which
+// one fixture's edit removes, the ordinal of the cold run among the runs
+// over one fixture, and the generator that reports the run it runs in.
+// AssertWarmEdited runs twice in its warm directory before the cold run.
+const (
+	stateDir           = "state"
+	coldRun            = 3
+	noterID  plugin.ID = "noter"
+)
+
 // otherSource is the canonical identity of a declaration the tree does
 // not declare, which a rewriting ledger records as every file's source.
 var otherSource = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: rowPkg, Name: otherDeclaration}.String()
 
 // errLocked is what the locked ledger's open returns.
 var errLocked = errors.New("workspacetest_test: the state directory is locked")
+
+// runCode is the code the run-counting generators report under.
+var runCode = diag.MustRegister(diag.Prefix("WSWARM"), diag.CodeSpec{
+	Number:  1,
+	Meaning: "a warm-check fixture reports the run its generator runs in",
+})
 
 // The checks exist to catch compositions that break the workspace
 // frame, so the broken ones are composed and each check's own failure is
@@ -347,6 +367,91 @@ func TestChecks(t *testing.T) {
 			assert.Contains(t, msg, "as its commit recorded them", "the rejection names the record that differs")
 		})
 	})
+
+	t.Run("AssertWarmEdited", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("passes the fixture's warm run after its edit", func(t *testing.T) {
+			t.Parallel()
+
+			workspacetest.AssertWarmEdited(t, fixture(t), t.TempDir(), t.TempDir())
+		})
+
+		t.Run("rejects a fixture that states no edit", func(t *testing.T) {
+			t.Parallel()
+
+			uneditable := fixture(t)
+			uneditable.Edit = nil
+			warm, cold := t.TempDir(), t.TempDir()
+			msg := assert.Rejects(t, "a fixture with nothing to change", func(tb assert.TB) {
+				workspacetest.AssertWarmEdited(tb, uneditable, warm, cold)
+			})
+			assert.Contains(t, msg, "no edit", "the rejection names what the fixture owes")
+		})
+
+		t.Run("rejects an edit that leaves the first plan's files unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			idempotent := fixture(t)
+			idempotent.Edit = func(root string) error { return writeRow(root, rowSource) }
+			warm, cold := t.TempDir(), t.TempDir()
+			msg := assert.Rejects(t, "an edit that writes the source as it was", func(tb assert.TB) {
+				workspacetest.AssertWarmEdited(tb, idempotent, warm, cold)
+			})
+			assert.Contains(t, msg, "unchanged", "the rejection names the edit that changes nothing")
+		})
+
+		t.Run("rejects a warm run that ignores the sealed state", func(t *testing.T) {
+			t.Parallel()
+
+			forgetful := fixture(t)
+			forgetful.Edit = func(root string) error {
+				if err := os.RemoveAll(filepath.Join(root, ledger.StateDir(fixtureBrand), stateDir)); err != nil {
+					return err
+				}
+				return writeRow(root, rowEdited)
+			}
+			warm, cold := t.TempDir(), t.TempDir()
+			msg := assert.Rejects(t, "an edit that also removes the sealed state", func(tb assert.TB) {
+				workspacetest.AssertWarmEdited(tb, forgetful, warm, cold)
+			})
+			assert.Contains(t, msg, "reads the sealed state", "the rejection names the run that ran cold")
+		})
+
+		rejections := []struct {
+			name    string
+			fixture func(*testing.T) workspacetest.Fixture
+			want    string
+		}{
+			{
+				name: "rejects a warm run whose files differ from the cold run's", fixture: renamedPerRun,
+				want: "the cold run's files",
+			},
+			{
+				name: "rejects a warm run whose entries differ from the cold run's", fixture: recordedOtherCold,
+				want: "the cold run's entries",
+			},
+			{
+				name: "rejects a warm run whose findings differ from the cold run's", fixture: notedPerRun,
+				want: "the cold run's findings",
+			},
+			{
+				name: "rejects a warm run whose exports differ from the cold run's", fixture: packagedPerRun,
+				want: "the cold run's exports",
+			},
+		}
+		for _, tt := range rejections {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				warm, cold := t.TempDir(), t.TempDir()
+				msg := assert.Rejects(t, "a run that tells the warm run from the cold one", func(tb assert.TB) {
+					workspacetest.AssertWarmEdited(tb, tt.fixture(t), warm, cold)
+				})
+				assert.Contains(t, msg, tt.want, "the rejection names what the two runs disagree on")
+			})
+		}
+	})
 }
 
 // idleFirst returns the fixture with the idle plan first, so its first
@@ -408,4 +513,94 @@ func forgetting(plan string) coretest.Edit {
 // byPath orders two entries by path, the order a record keeps.
 func byPath(a, b manifest.Entry) int {
 	return strings.Compare(a.Path, b.Path)
+}
+
+// writeRow writes Row's source file under root.
+func writeRow(root, source string) error {
+	return os.WriteFile(filepath.Join(root, filepath.FromSlash(rowFile)), []byte(source), 0o644)
+}
+
+// renamedPerRun returns the fixture whose first plan names its struct
+// after the number of runs its generator ran in, so no two runs generate
+// the same file or export the same name.
+func renamedPerRun(t *testing.T) workspacetest.Fixture {
+	t.Helper()
+
+	f := fixture(t)
+	var runs atomic.Int64
+	f.Plans = func() []workspace.Plan {
+		counting := planOf(mirrorsPlan, naming(mirrorID, genWord, func(m *eidos.StructMatch) *emit.Struct {
+			return &emit.Struct{Origin: m.Struct.Identity(), Name: fmt.Sprintf("For%s%d", m.Struct.Name, runs.Add(1))}
+		}))
+		return []workspace.Plan{counting, stubs()}
+	}
+	return f
+}
+
+// notedPerRun returns the fixture whose first plan also reports an Info
+// that names the number of runs its generator ran in, so no two runs
+// report the same findings and every run generates the same files.
+func notedPerRun(t *testing.T) workspacetest.Fixture {
+	t.Helper()
+
+	f := fixture(t)
+	var runs atomic.Int64
+	f.Plans = func() []workspace.Plan {
+		first := mirrors()
+		first.Generators = append(slices.Clip(first.Generators), counting(noterID, func(m *eidos.StructMatch) {
+			m.Infof(runCode, "run %d", runs.Add(1))
+		}))
+		return []workspace.Plan{first, stubs()}
+	}
+	return f
+}
+
+// recordedOtherCold returns the fixture whose ledger records the cold
+// run's entries under another plan, so the two runs leave the same files
+// and record different entries.
+func recordedOtherCold(t *testing.T) workspacetest.Fixture {
+	t.Helper()
+
+	return rewritten(t, func(run int, m manifest.Manifest) manifest.Manifest {
+		if run == coldRun {
+			return underOther(run, m)
+		}
+		return m
+	})
+}
+
+// packagedPerRun returns the fixture whose first plan's backend names
+// the package of each file it routes after the number of files it routed,
+// so the two runs leave the same files and export different packages.
+func packagedPerRun(t *testing.T) workspacetest.Fixture {
+	t.Helper()
+
+	f := fixture(t)
+	var routed atomic.Int64
+	f.Plans = func() []workspace.Plan {
+		first := mirrors()
+		first.Backend = printing(plugin.ID(mirrorsPlan + "-printer")).
+			Packages(func(at plugin.Placement) (symbol.Identity, error) {
+				pkg := at.Origin
+				pkg.Name = fmt.Sprintf("routed%d", routed.Add(1))
+				return pkg, nil
+			}).
+			Build()
+		return []workspace.Plan{first, stubs()}
+	}
+	return f
+}
+
+// counting returns a generator named id that calls report once per struct
+// in scope and emits nothing.
+func counting(id plugin.ID, report func(*eidos.StructMatch)) plugin.Generator {
+	p, held := eidos.NewPlugin(id).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+			report(m)
+			return nil
+		})).Build().(plugin.Generator)
+	if !held {
+		panic("workspacetest_test: an emitter rule lowers to the generator role")
+	}
+	return p
 }

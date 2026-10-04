@@ -5,6 +5,9 @@ package workspacetest_test
 
 import (
 	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 
@@ -39,15 +42,17 @@ const (
 	stubWord                    = "stub"
 )
 
-// The fixture's tree, which declares Row, and the files the two plans
+// The fixture's tree, which declares Row, the source the fixture's edit
+// writes, which gives Row a third field, and the files the two plans
 // generate beside Row's source.
 const (
 	rowFile   = "svc/store/row.zz"
 	rowSource = "package svc/store\ntype Row int string\n"
+	rowEdited = "package svc/store\ntype Row int string bool\n"
 	rowPkg    = "svc/store"
 	genFile   = "svc/store/gen.txt"
 	stubFile  = "svc/store/stub.txt"
-	genBody   = "type ForRow struct{}\n"
+	genBody   = "// Row has 2 fields.\ntype ForRow struct{}\n"
 	stubBody  = "type RowStub struct{}\n"
 )
 
@@ -73,14 +78,14 @@ func TestSuite(t *testing.T) {
 }
 
 // naming returns a generator named id that emits, per struct in scope,
-// one struct into the per-package file of the word, under the name that
-// name spells from the subject. A nil name emits nothing.
-func naming(id plugin.ID, word string, name func(*eidos.StructMatch) string) plugin.Generator {
+// the struct that shape returns for the subject into the per-package
+// file of the word. A nil shape emits nothing.
+func naming(id plugin.ID, word string, shape func(*eidos.StructMatch) *emit.Struct) plugin.Generator {
 	p, held := eidos.NewPlugin(id).
 		Output(plugin.Output{Per: plugin.PerPackage, Word: word}).
 		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-			if name != nil {
-				e.PackageFile().Append(&emit.Struct{Origin: m.Struct.Identity(), Name: name(m)})
+			if shape != nil {
+				e.PackageFile().Append(shape(m))
 			}
 			return nil
 		})).Build().(plugin.Generator)
@@ -90,18 +95,23 @@ func naming(id plugin.ID, word string, name func(*eidos.StructMatch) string) plu
 	return p
 }
 
-// printer returns a backend under a name that spells a struct as one
-// line and names every file after its family word, framed through a
-// line comment.
-func printer(name plugin.ID) plugin.Backend {
+// printer returns the backend [printing] builds.
+func printer(name plugin.ID) plugin.Backend { return printing(name).Build() }
+
+// printing returns the builder of a backend under a name that spells a
+// struct as one line behind its documentation and names every file
+// after its family word, framed through a line comment, for a case that
+// adds to it.
+func printing(name plugin.ID) *backend.Builder {
 	return backend.New(name, fixtureTarget, plugin.CommentSyntax{Line: []string{"//"}}).
-		KindTemplates(map[symbol.Kind]string{symbol.KindStruct: "type {{.Name}} struct{}\n"}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "{{range .Doc}}// {{.}}\n{{end}}type {{.Name}} struct{}\n",
+		}).
 		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
 		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) { return nil, errNoStatements }).
 		Imports(func(*render.ImportSet) string { return "" }).
 		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
-		Coverage(render.Coverage{Facts: everyFact()}).
-		Build()
+		Coverage(render.Coverage{Facts: everyFact()})
 }
 
 // everyFact renders every fact, which the printer's one template states
@@ -125,18 +135,24 @@ func planOf(name string, gen plugin.Generator, deps ...string) workspace.Plan {
 	}
 }
 
-// mirrors returns the plan that emits ForRow for Row.
+// mirrors returns the plan that emits ForRow for Row, documented with
+// the number of Row's fields, so a new field changes the plan's file and
+// leaves its export unchanged.
 func mirrors() workspace.Plan {
-	return planOf(mirrorsPlan, naming(mirrorID, genWord, func(m *eidos.StructMatch) string {
-		return "For" + m.Struct.Name
+	return planOf(mirrorsPlan, naming(mirrorID, genWord, func(m *eidos.StructMatch) *emit.Struct {
+		return &emit.Struct{
+			Origin: m.Struct.Identity(),
+			Name:   "For" + m.Struct.Name,
+			Doc:    []string{fmt.Sprintf("%s has %d fields.", m.Struct.Name, len(m.Struct.Fields))},
+		}
 	}))
 }
 
 // stubs returns the plan that emits RowStub for Row and depends on
 // mirrors.
 func stubs() workspace.Plan {
-	return planOf(stubsPlan, naming(stubberID, stubWord, func(m *eidos.StructMatch) string {
-		return m.Struct.Name + "Stub"
+	return planOf(stubsPlan, naming(stubberID, stubWord, func(m *eidos.StructMatch) *emit.Struct {
+		return &emit.Struct{Origin: m.Struct.Identity(), Name: m.Struct.Name + "Stub"}
 	}), mirrorsPlan)
 }
 
@@ -171,7 +187,8 @@ func stamped(t *testing.T, path, body string, p plugin.ID) []byte {
 }
 
 // fixture returns the fixture: Row's source, the composition without
-// its plans, the two plans, and the two files they generate.
+// its plans, the two plans, the two files they generate, and the edit
+// that gives Row a third field.
 func fixture(t *testing.T) workspacetest.Fixture {
 	t.Helper()
 
@@ -182,6 +199,9 @@ func fixture(t *testing.T) workspacetest.Fixture {
 		Want: map[string][]byte{
 			genFile:  stamped(t, genFile, genBody, mirrorID),
 			stubFile: stamped(t, stubFile, stubBody, stubberID),
+		},
+		Edit: func(root string) error {
+			return os.WriteFile(filepath.Join(root, filepath.FromSlash(rowFile)), []byte(rowEdited), 0o644)
 		},
 	}
 }

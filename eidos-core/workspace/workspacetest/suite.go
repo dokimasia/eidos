@@ -7,11 +7,13 @@ import (
 	"context"
 	"io/fs"
 	"os"
+	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
 
 	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -39,8 +41,8 @@ var failureCode = diag.MustRegister(diag.Prefix("WSTEST"), diag.CodeSpec{
 })
 
 // Fixture is a multi-plan case: a source tree, the stores its load
-// reads, the composition without its plans, the plans, and every file
-// the plans generate.
+// reads, the composition without its plans, the plans, every file the
+// plans generate, and an edit of the tree.
 type Fixture struct {
 	// Tree is the source tree. A check copies it into each directory it
 	// runs the fixture in.
@@ -67,6 +69,11 @@ type Fixture struct {
 	// Want is every file the plans generate, frame included, keyed by
 	// its workspace-relative, slash-separated path.
 	Want map[string][]byte
+	// Edit changes one declaration of the tree at root that the first
+	// plan generates from, the way a person edits a source file: the
+	// first plan's output changes, and its export does not. A warm check
+	// applies it between a cold run and a warm one.
+	Edit func(root string) error
 }
 
 // RunWorkspaceSuite checks the fixture against the workspace frame:
@@ -115,9 +122,20 @@ func (g failure) Generate(ctx *plugin.GeneratorContext) error {
 }
 
 // probe is a generator that records the exports its context hands over
-// and emits nothing: the dependent the export check composes.
+// and emits nothing: the dependent the export checks compose.
 type probe struct {
 	got map[string]plugin.ExportDoc
+}
+
+// withProbe returns the plans followed by a probe plan that depends on
+// each of them and renders through the first plan's backend, and the
+// probe that records the exports the probe plan reads.
+func withProbe(plans []workspace.Plan) ([]workspace.Plan, *probe) {
+	p := &probe{}
+	probing := workspace.Plan{
+		Name: probePlan, DependsOn: planNames(plans), Generators: []plugin.Generator{p}, Backend: plans[0].Backend,
+	}
+	return append(slices.Clip(plans), probing), p
 }
 
 // Name returns the probe's name.
@@ -127,6 +145,29 @@ func (*probe) Name() plugin.ID { return probeID }
 func (p *probe) Generate(ctx *plugin.GeneratorContext) error {
 	p.got = ctx.Exports
 	return nil
+}
+
+// probeRun is one run of the fixture's plans beside a probe plan that
+// depends on each of them: the run's report, the exports the probe read,
+// and the brand the composition declares.
+type probeRun struct {
+	report  *workspace.Report
+	exports map[string]plugin.ExportDoc
+	brand   output.Brand
+}
+
+// probed runs the fixture's plans beside a probe plan that depends on
+// each of them over the tree at root, and ignores the sealed state where
+// cold is set. It stops the check where the composition does not build,
+// and fails it where the run returns an error.
+func probed(tb assert.TB, f Fixture, root string, cold bool) probeRun {
+	tb.Helper()
+
+	plans, p := withProbe(plansOf(tb, f))
+	w := built(tb, f, root, plans, nil)
+	report, err := w.Run(context.Background(), workspace.Input{Tree: os.DirFS(root), Stores: f.Stores, Cold: cold})
+	assert.NoError(tb, err, "the fixture's plans and the probe run clean")
+	return probeRun{report: report, exports: p.got, brand: w.Brand()}
 }
 
 // check is a workspace check that reads the plans it names and records
@@ -174,6 +215,15 @@ func plansOf(tb assert.TB, f Fixture) []workspace.Plan {
 		tb.Fatalf("the suite checks at least two plans, and the fixture states %d", len(plans))
 	}
 	return plans
+}
+
+// planNames returns the names of the plans, in their order.
+func planNames(plans []workspace.Plan) []string {
+	names := make([]string, 0, len(plans))
+	for _, p := range plans {
+		names = append(names, p.Name)
+	}
+	return names
 }
 
 // composed returns the fixture's composition over root with the plans,
