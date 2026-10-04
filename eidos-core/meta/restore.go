@@ -42,18 +42,28 @@ type StoredClaim struct {
 //
 // A failure of the source is not returned by the read that met it: the
 // bag reads as empty, and [Facts.Damaged] returns the failure, so the
-// run discards what it derived and runs cold.
+// run discards what it derived and runs cold. The source is not asked
+// for the presence of a key nothing registered.
+//
+// # Allocation contract
+//
+// Restore allocates what [NewFacts] does and the function that loads a
+// key's recorded presence: three allocations.
 func Restore(r *Registry, src BagSource) *Facts {
 	f := NewFacts(r)
 	f.source = src
-	f.index = newFactIndex(func(k KeyID) []symbol.Identity {
-		ids, err := src.Present(f.nameOf[k])
+	f.index.recorded = func(k KeyID) []symbol.Identity {
+		name, registered := r.nameOf(k)
+		if !registered {
+			return nil
+		}
+		ids, err := src.Present(name)
 		if err != nil {
-			f.damaged(fmt.Errorf("meta: restore the presence of %s: %w", f.nameOf[k], err))
+			f.damaged(fmt.Errorf("meta: restore the presence of %s: %w", name, err))
 			return nil
 		}
 		return ids
-	})
+	}
 	return f
 }
 
@@ -73,8 +83,7 @@ func (f *Facts) restoreBag(id symbol.Identity, b *bag) {
 		entry := stored{claim: sc.Claim, value: cloneValue(sc.Value), drop: sc.Drop, restored: true}
 		if sc.Group != "" {
 			entry.drop = true
-			state := b.group(sc.Group)
-			state.claims = append(state.claims, entry)
+			b.group(sc.Group).add(entry)
 			continue
 		}
 		k, registered := f.registry.Resolve(sc.Key)
@@ -87,8 +96,7 @@ func (f *Facts) restoreBag(id symbol.Identity, b *bag) {
 				id, sc.Key, f.registry.typeOf(k), sc.Value))
 			continue
 		}
-		state := b.key(k)
-		state.claims = append(state.claims, entry)
+		b.key(k).add(entry)
 	}
 	if b.hasFirst {
 		b.first.rewin()

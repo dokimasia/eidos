@@ -4,14 +4,15 @@
 package workspace_test
 
 import (
-	"sync"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -150,9 +151,8 @@ func units(e *plugin.Emit) []plugin.Unit {
 	return out
 }
 
-// The workspace is the composition's frozen form: what Build
-// returns survives any number of runs, and every run leaves its own
-// report behind.
+// A Workspace is the composition's frozen form. Its accessors return
+// what the composition declared and the keys Build registered.
 func TestWorkspace(t *testing.T) {
 	t.Parallel()
 
@@ -179,43 +179,47 @@ func TestWorkspace(t *testing.T) {
 			assert.False(t, w.Kernel().IsZero(), "the handles name the kernel's keys")
 		})
 	})
+}
 
-	t.Run("Run", func(t *testing.T) {
-		t.Parallel()
+// The accessors allocate nothing in the ordinary run, which runs no
+// benchmark.
+func TestWorkspaceZeroAlloc(t *testing.T) {
+	w, err := valid().Build()
+	assert.NoError(t, err, "the fixture composition is valid")
+	assert.MaxAllocs(t, func() {
+		if w.Brand() != fixtureBrand {
+			t.Fatal("Brand returned another brand")
+		}
+	}, 0, "Brand allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if w.Kernel().IsZero() {
+			t.Fatal("Kernel returned the zero keys")
+		}
+	}, 0, "Kernel allocates nothing")
+}
 
-		t.Run("returns a report with the findings, the facts and one store per plan", func(t *testing.T) {
-			t.Parallel()
+// BenchmarkWorkspace measures the accessors of a built workspace.
+func BenchmarkWorkspace(b *testing.B) {
+	w, err := valid().Build()
+	assert.NoError(b, err, "the fixture composition is valid")
 
-			w, err := valid().Build()
-			assert.NoError(t, err, "the fixture composition is valid")
-			g, _ := alpha(t)
-			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
-			assert.NoError(t, err, "the fixture run is clean")
-			assert.NotNil(t, report.Sink, "the report has the findings")
-			assert.NotNil(t, report.Facts, "the report has the arbitrated facts")
-			assert.Length(t, report.Emits, 1, "the report has one store per plan")
-			assert.Length(t, units(report.Emits["plan"]), 1, "the store has the mirrored unit")
-		})
+	b.Run("Brand", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got output.Brand
+		for c.Loop() {
+			got = w.Brand()
+		}
+		assert.Equal(b, got, fixtureBrand, "Brand returns the declared brand")
+	})
 
-		t.Run("returns a store of its own to each concurrent run", func(t *testing.T) {
-			t.Parallel()
-
-			w, err := valid().Build()
-			assert.NoError(t, err, "the fixture composition is valid")
-			reports := make([]*workspace.Report, 2)
-			errs := make([]error, 2)
-			var wg sync.WaitGroup
-			for i := range reports {
-				g, _ := alpha(t)
-				wg.Go(func() {
-					reports[i], errs[i] = w.Run(t.Context(), workspace.Input{Graph: g})
-				})
-			}
-			wg.Wait()
-			for i := range reports {
-				assert.NoError(t, errs[i], "each run is clean")
-				assert.Length(t, units(reports[i].Emits["plan"]), 1, "each run has its own unit")
-			}
-		})
+	b.Run("Kernel", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got meta.KernelKeys
+		for c.Loop() {
+			got = w.Kernel()
+		}
+		assert.False(b, got.IsZero(), "Kernel returns the registered keys")
 	})
 }

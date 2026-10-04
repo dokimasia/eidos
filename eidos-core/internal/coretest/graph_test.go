@@ -28,14 +28,24 @@ func TestGraph(t *testing.T) {
 				"the fixture graph arrives sealed, or every read would return nothing")
 		})
 
-		t.Run("holds the packages it was given", func(t *testing.T) {
+		t.Run("contains the packages it was given", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath, decl))
 
 			_, held := g.Lookup(decl.Identity())
-			assert.True(t, held, "the fixture graph holds what it was given")
+			assert.True(t, held, "the fixture graph contains what it was given")
+		})
+
+		t.Run("fails a fixture that would not load", func(t *testing.T) {
+			t.Parallel()
+
+			pkg := coretest.Package(coretest.StorePath)
+			got := assert.Rejects(t, "a duplicate package fails the fixture",
+				func(tb assert.TB) { coretest.Frozen(tb, pkg, pkg) })
+			assert.Contains(t, got, "fixture",
+				"and fails for the reason the helper is about")
 		})
 	})
 
@@ -60,7 +70,7 @@ func TestGraph(t *testing.T) {
 				"the fixture records no reads of its own")
 		})
 
-		t.Run("carries the scope it was given", func(t *testing.T) {
+		t.Run("reads within the scope it was given", func(t *testing.T) {
 			t.Parallel()
 
 			hidden := coretest.Struct(coretest.CachePath, "Cache")
@@ -71,6 +81,14 @@ func TestGraph(t *testing.T) {
 
 			assert.Length(t, slices.Collect(r.ByKind(symbol.KindStruct)), 1,
 				"the fixture carries the scope it was given")
+		})
+
+		t.Run("fails a fixture that Frozen fails", func(t *testing.T) {
+			t.Parallel()
+
+			pkg := coretest.Package(coretest.StorePath)
+			assert.Rejects(t, "the reader fixture carries the load check",
+				func(tb assert.TB) { coretest.Reading(tb, nil, pkg, pkg) })
 		})
 	})
 }

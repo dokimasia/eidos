@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/emit"
 )
@@ -24,18 +25,25 @@ const (
 	functionName = "Handler"
 )
 
-// delegate returns the one-statement scaffold the body tests
-// reuse: return f(ctx).
-func delegate() emit.Stmt {
-	return emit.Stmt{
-		Kind: emit.StmtReturn,
-		Value: emit.Expr{
-			Kind: emit.ExprCall,
-			Fn:   &emit.Expr{Kind: emit.ExprName, Name: "f"},
-			Args: []emit.Expr{{Kind: emit.ExprName, Name: "ctx"}},
-		},
-	}
-}
+// The allocations of the body's operations that allocate.
+const (
+	// declareAllocs is a first declaration on an empty body: the named
+	// slot and the body's list of slots.
+	declareAllocs = 2
+	// encodeAllocs is the encoding of a method whose body has a
+	// prologue statement and a scaffold statement: four boxed slot values
+	// the encoder passes to the slots' MarshalJSON, one value the encoder
+	// allocates by reflection, the encoder's copy of its output and of
+	// the slot's own encoding, the slot's encoding, and the spliced
+	// result.
+	encodeAllocs = 9
+	// encodeStateAllocs is the encoder's state, which it takes from a
+	// pool per processor. A collection, or a move of the goroutine to
+	// another processor, leaves the pool empty, and the next encoding
+	// allocates the state again: 11 allocations in one of 40 runs of
+	// one iteration. The mean over many encodings rounds it away.
+	encodeStateAllocs = 2
+)
 
 // A body is the composition point rendering reads: the standard
 // slots, the owner's declared ones, and exactly one content form.
@@ -194,6 +202,29 @@ func TestBody(t *testing.T) {
 		}
 	})
 
+	t.Run("Form.String", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give emit.Form
+			want string
+		}{
+			{name: "returns default for the default form", give: emit.FormDefault, want: "default"},
+			{name: "returns scaffolding for statements", give: emit.FormStmts, want: "scaffolding"},
+			{name: "returns template for a template reference", give: emit.FormTemplate, want: "template"},
+			{name: "returns verbatim for verbatim text", give: emit.FormVerbatim, want: "verbatim"},
+			{name: "returns the number of a form nothing declares", give: emit.Form(9), want: "9"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling the lint check names")
+			})
+		}
+	})
+
 	t.Run("IsZero", func(t *testing.T) {
 		t.Parallel()
 
@@ -280,43 +311,164 @@ func TestBody(t *testing.T) {
 	})
 }
 
-// BenchmarkBody measures the per-callable operations the render
-// pass runs once per body, and the codec the conformance checks
-// run per encoded declaration.
+// The questions the render pass asks of a body allocate nothing, a
+// declaration allocates its slot, and the codec allocates what its
+// encoder does. The check runs alone, because AllocsPerRun counts every
+// goroutine's allocations and refuses to run beside parallel tests.
+func TestBodyAllocs(t *testing.T) {
+	body := scaffold()
+	body.Declare(checksSlot)
+	assert.MaxAllocs(t, func() {
+		if form, err := body.Form(); err != nil || form != emit.FormStmts {
+			t.Fatal("the scaffold body returned another form")
+		}
+	}, 0, "Form allocates nothing for a body with one form")
+	form := emit.FormTemplate
+	assert.MaxAllocs(t, func() {
+		if form.String() != "template" {
+			t.Fatal("String spelled another form")
+		}
+	}, 0, "String allocates nothing for a declared form")
+	assert.MaxAllocs(t, func() {
+		if body.IsZero() {
+			t.Fatal("the scaffold body reported empty")
+		}
+	}, 0, "IsZero allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if _, declared := body.Slot(checksSlot); !declared {
+			t.Fatal("the declared slot was not found")
+		}
+	}, 0, "Slot allocates nothing")
+	assert.MaxAllocs(t, func() { body.Declare(checksSlot) }, 0, "Declare allocates nothing for a declared name")
+	assert.MaxAllocs(t, func() {
+		var fresh emit.Body
+		fresh.Declare(checksSlot)
+	}, declareAllocs, "Declare allocates the slot and the list of slots on an empty body")
+
+	m := &emit.Method{Name: methodName, Body: scaffold()}
+	assert.MaxAllocs(t, func() {
+		if _, err := emit.EncodeJSON(m); err != nil {
+			t.Fatalf("EncodeJSON: unexpected error: %v", err)
+		}
+	}, encodeAllocs, "EncodeJSON allocates what the encoder does and the spliced result")
+}
+
+// BenchmarkBody measures the per-callable operations the render pass
+// runs once per body, and the codec the conformance checks run per
+// encoded declaration.
 func BenchmarkBody(b *testing.B) {
-	b.Run("the form question", func(b *testing.B) {
-		b.ReportAllocs()
+	b.Run("Form", func(b *testing.B) {
+		body := scaffold()
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var (
+			form emit.Form
+			err  error
+		)
+		for c.Loop() {
+			form, err = body.Form()
+		}
+		assert.NoError(b, err, "the scaffold body has one form")
+		assert.Equal(b, form, emit.FormStmts, "the scaffolding form")
+	})
+
+	b.Run("Form.String", func(b *testing.B) {
+		form := emit.FormTemplate
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = form.String()
+		}
+		assert.Equal(b, got, "template", "String spells FormTemplate")
+	})
+
+	b.Run("IsZero", func(b *testing.B) {
+		body := scaffold()
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		zero := true
+		for c.Loop() {
+			zero = body.IsZero()
+		}
+		assert.False(b, zero, "the scaffold body has content")
+	})
+
+	b.Run("Slot", func(b *testing.B) {
+		body := scaffold()
+		body.Declare(checksSlot)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		declared := false
+		for c.Loop() {
+			_, declared = body.Slot(checksSlot)
+		}
+		assert.True(b, declared, "the declared slot is found")
+	})
+
+	b.Run("Declare/a new name", func(b *testing.B) {
 		var body emit.Body
-		body.Stmts = []emit.Stmt{delegate()}
-		for b.Loop() {
-			form, err := body.Form()
-			if err != nil || form != emit.FormStmts {
-				b.Fatal("the scaffold body returns its form")
-			}
+		empty := func() { body = emit.Body{} }
+		c := bench.Start(b).MaxAllocs(declareAllocs)
+		defer c.End()
+		for c.Loop() {
+			c.Excluding(empty)
+			body.Declare(checksSlot)
 		}
+		assert.Length(b, body.Slots, 1, "the declaration adds its slot")
 	})
 
-	b.Run("build the delegate scaffold", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			var body emit.Body
-			body.Prologue.Append(delegate())
-			body.Stmts = []emit.Stmt{delegate()}
-			if body.IsZero() {
-				b.Fatal("the scaffold body has content")
-			}
+	b.Run("Declare/a declared name", func(b *testing.B) {
+		body := scaffold()
+		body.Declare(checksSlot)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			body.Declare(checksSlot)
 		}
+		assert.Length(b, body.Slots, 1, "the declaration returns the existing slot")
 	})
 
-	b.Run("encode a bodied method", func(b *testing.B) {
-		b.ReportAllocs()
-		m := &emit.Method{Name: methodName}
-		m.Body.Prologue.Append(delegate())
-		m.Body.Stmts = []emit.Stmt{delegate()}
-		for b.Loop() {
-			if _, err := emit.EncodeJSON(m); err != nil {
-				b.Fatalf("EncodeJSON: unexpected error: %v", err)
-			}
+	b.Run("EncodeJSON", func(b *testing.B) {
+		m := &emit.Method{Name: methodName, Body: scaffold()}
+		// The harness collects garbage before this run, which empties the
+		// encoder's pool of encoding state. One encoding before the
+		// contract counts pools the state again.
+		if _, err := emit.EncodeJSON(m); err != nil {
+			b.Fatalf("EncodeJSON: unexpected error: %v", err)
 		}
+		c := bench.Start(b).MaxAllocs(encodeAllocs + encodeStateAllocs)
+		defer c.End()
+		var (
+			encoded []byte
+			err     error
+		)
+		for c.Loop() {
+			encoded, err = emit.EncodeJSON(m)
+		}
+		assert.NoError(b, err, "the bodied method encodes")
+		assert.Contains(b, string(encoded), `"body"`, "with its body")
 	})
+}
+
+// delegate returns the one-statement scaffold the body tests
+// reuse: return f(ctx).
+func delegate() emit.Stmt {
+	return emit.Stmt{
+		Kind: emit.StmtReturn,
+		Value: emit.Expr{
+			Kind: emit.ExprCall,
+			Fn:   &emit.Expr{Kind: emit.ExprName, Name: "f"},
+			Args: []emit.Expr{{Kind: emit.ExprName, Name: "ctx"}},
+		},
+	}
+}
+
+// scaffold returns a body whose prologue and scaffolding are each the
+// delegate statement.
+func scaffold() emit.Body {
+	var body emit.Body
+	body.Prologue.Append(delegate())
+	body.Stmts = []emit.Stmt{delegate()}
+	return body
 }

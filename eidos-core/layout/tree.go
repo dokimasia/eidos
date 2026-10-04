@@ -20,17 +20,44 @@ import (
 // package's Name is the name its files declare it under, and each
 // directory's residents are sorted by file, then package. A file of a
 // dependency store is absent.
+//
+// Residents counts each directory's files before it places any, so
+// every directory's residents share one backing array. Each
+// directory's slice is capped at its own residents, so an append to
+// it copies the slice and leaves the next directory's intact.
+//
+// # Allocation contract
+//
+// Residents allocates the map it returns and the backing array. Past
+// eight directories it also allocates the map that counts each
+// directory's files: 3 allocations for four directories, and 27 for
+// 1,000 directories.
 func Residents(g *store.Graph) map[string][]plugin.Resident {
-	out := map[string][]plugin.Resident{}
+	counts := map[string]int{}
+	total := 0
+	for p := range g.Packages() {
+		for _, f := range p.Files {
+			if f != nil && workspaceFile(f.Path) {
+				counts[path.Dir(f.Path)]++
+				total++
+			}
+		}
+	}
+	all := make([]plugin.Resident, total)
+	out := make(map[string][]plugin.Resident, len(counts))
+	start := 0
+	for dir, n := range counts {
+		out[dir] = all[start : start : start+n]
+		start += n
+	}
 	for p := range g.Packages() {
 		pkg := p.ID
 		pkg.Name = p.Name
 		for _, f := range p.Files {
-			if f == nil || !workspaceFile(f.Path) {
-				continue
+			if f != nil && workspaceFile(f.Path) {
+				dir := path.Dir(f.Path)
+				out[dir] = append(out[dir], plugin.Resident{File: f.Path, Pkg: pkg})
 			}
-			dir := path.Dir(f.Path)
-			out[dir] = append(out[dir], plugin.Resident{File: f.Path, Pkg: pkg})
 		}
 	}
 	for _, rs := range out {
@@ -46,21 +73,28 @@ func Residents(g *store.Graph) map[string][]plugin.Resident {
 // module whose root is below another's precedes it, and modules at one
 // depth sort by root, then language, then path. A package without both
 // facts declares no module, and a module rooted in a dependency store
-// contains no workspace directory and is absent.
+// contains no workspace directory and is absent. A tree without a
+// module returns nil.
+//
+// # Allocation contract
+//
+// Modules allocates the list it returns. Past eight modules it also
+// allocates the set that removes duplicates: 1 allocation for up to
+// eight modules, and none for a tree without a module.
 func Modules(g *store.Graph, facts *meta.Facts, k meta.KernelKeys) []plugin.Module {
 	seen := map[plugin.Module]struct{}{}
-	var out []plugin.Module
 	for p := range g.Packages() {
 		module, named := meta.Get(facts, p.ID, k.Module)
 		root, rooted := meta.Get(facts, p.ID, k.ModuleRoot)
-		if !named || !rooted || !workspaceFile(root) {
-			continue
+		if named && rooted && workspaceFile(root) {
+			seen[plugin.Module{Lang: p.ID.Lang, Path: module, Root: root}] = struct{}{}
 		}
-		m := plugin.Module{Lang: p.ID.Lang, Path: module, Root: root}
-		if _, listed := seen[m]; listed {
-			continue
-		}
-		seen[m] = struct{}{}
+	}
+	if len(seen) == 0 {
+		return nil
+	}
+	out := make([]plugin.Module, 0, len(seen))
+	for m := range seen {
 		out = append(out, m)
 	}
 	slices.SortFunc(out, func(a, b plugin.Module) int {

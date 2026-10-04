@@ -204,6 +204,12 @@ func BenchmarkRegion(b *testing.B) {
 
 	b.Run("AppendRegion", func(b *testing.B) {
 		dst := make([]byte, 0, 2*len(blob))
+		// The harness collects garbage before this run and runs it on a
+		// goroutine of its own, so the pool can miss the scratch of the
+		// parent's encoding. One encoding before the contract counts pools
+		// the scratch again.
+		_, err = state.AppendRegion(dst[:0], r)
+		assert.NoError(b, err, "the encoding before the measurement succeeds")
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
 		var got []byte

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/directive"
 )
@@ -23,8 +24,7 @@ func TestSchema(t *testing.T) {
 		t.Run("returns the prefixed spelling of a plugin's schema", func(t *testing.T) {
 			t.Parallel()
 
-			s := directive.Schema{Plugin: "mockgen", Name: "stub"}
-			assert.Equal(t, s.Canonical(), directive.Name("mockgen:stub"), "the spelling has the prefix")
+			assert.Equal(t, pluginSchema().Canonical(), directive.Name("mockgen:stub"), "the spelling has the prefix")
 		})
 
 		t.Run("returns the bare spelling of a kernel schema", func(t *testing.T) {
@@ -150,4 +150,64 @@ func TestSchema(t *testing.T) {
 			assert.NotEqual(t, directive.ReservedOut, directive.ReservedTag, "the keys differ")
 		})
 	})
+}
+
+// A declared kind spells without allocating, a plugin schema's canonical
+// spelling allocates the prefixed name, and a kernel schema's allocates
+// nothing, in the ordinary run, which runs no benchmark.
+func TestSchemaAllocs(t *testing.T) {
+	kind := directive.ResolveTypeInScope
+	var spelled string
+	assert.MaxAllocs(t, func() { spelled = kind.String() }, 0, "String allocates nothing for a declared kind")
+	assert.Equal(t, spelled, "a type in scope", "String spells ResolveTypeInScope")
+	plugin, kernel := pluginSchema(), directive.Schema{Name: directive.KernelMeta}
+	var name directive.Name
+	assert.MaxAllocs(t, func() { name = plugin.Canonical() }, 1,
+		"Canonical allocates a plugin schema's prefixed spelling")
+	assert.Equal(t, name, directive.Name("mockgen:stub"), "Canonical prefixes the plugin")
+	assert.MaxAllocs(t, func() { name = kernel.Canonical() }, 0, "Canonical allocates nothing for a kernel schema")
+	assert.Equal(t, name, directive.KernelMeta, "Canonical leaves a kernel name bare")
+}
+
+// BenchmarkSchema measures a resolution kind's spelling and a schema's
+// canonical spelling.
+func BenchmarkSchema(b *testing.B) {
+	b.Run("ResolutionKind.String", func(b *testing.B) {
+		kind := directive.ResolveTypeInScope
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = kind.String()
+		}
+		assert.Equal(b, got, "a type in scope", "String spells ResolveTypeInScope")
+	})
+
+	b.Run("Canonical", func(b *testing.B) {
+		s := pluginSchema()
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got directive.Name
+		for c.Loop() {
+			got = s.Canonical()
+		}
+		assert.Equal(b, got, directive.Name("mockgen:stub"), "Canonical prefixes the plugin")
+	})
+
+	b.Run("Canonical/a kernel schema", func(b *testing.B) {
+		s := directive.Schema{Name: directive.KernelMeta}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got directive.Name
+		for c.Loop() {
+			got = s.Canonical()
+		}
+		assert.Equal(b, got, directive.KernelMeta, "Canonical leaves a kernel name bare")
+	})
+}
+
+// pluginSchema returns the stub schema of the mockgen plugin, whose
+// canonical spelling is prefixed.
+func pluginSchema() directive.Schema {
+	return directive.Schema{Plugin: "mockgen", Name: "stub"}
 }

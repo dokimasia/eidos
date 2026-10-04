@@ -16,6 +16,13 @@ type FunctionMatch struct {
 	Function *node.Function
 }
 
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released FunctionMatch values under.
+func (m *FunctionMatch) unbind() any {
+	*m = FunctionMatch{}
+	return (*FunctionMatch)(nil)
+}
+
 // OnFunction fires the handler once per subject of its kind in
 // scope, or once per gating instance under a Directive wrapper.
 // The effect parameter picks the role: an Emitter generates, a
@@ -40,6 +47,13 @@ func OnFunction[E Effect](h func(*FunctionMatch, E) error) Rule {
 type MethodMatch struct {
 	match
 	Method *node.Method
+}
+
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released MethodMatch values under.
+func (m *MethodMatch) unbind() any {
+	*m = MethodMatch{}
+	return (*MethodMatch)(nil)
 }
 
 // OnMethod fires the handler once per subject of its kind in
@@ -68,6 +82,13 @@ type ParamMatch struct {
 	Param *node.Param
 }
 
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released ParamMatch values under.
+func (m *ParamMatch) unbind() any {
+	*m = ParamMatch{}
+	return (*ParamMatch)(nil)
+}
+
 // OnParam fires the handler once per subject of its kind in
 // scope, or once per gating instance under a Directive wrapper.
 // The effect parameter picks the role: an Emitter generates, a
@@ -92,6 +113,13 @@ func OnParam[E Effect](h func(*ParamMatch, E) error) Rule {
 type ReturnMatch struct {
 	match
 	Return *node.Return
+}
+
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released ReturnMatch values under.
+func (m *ReturnMatch) unbind() any {
+	*m = ReturnMatch{}
+	return (*ReturnMatch)(nil)
 }
 
 // OnReturn fires the handler once per subject of its kind in
@@ -120,6 +148,13 @@ type EnumMatch struct {
 	Enum *node.Enum
 }
 
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released EnumMatch values under.
+func (m *EnumMatch) unbind() any {
+	*m = EnumMatch{}
+	return (*EnumMatch)(nil)
+}
+
 // OnEnum fires the handler once per subject of its kind in
 // scope, or once per gating instance under a Directive wrapper.
 // The effect parameter picks the role: an Emitter generates, a
@@ -144,6 +179,13 @@ func OnEnum[E Effect](h func(*EnumMatch, E) error) Rule {
 type SumMatch struct {
 	match
 	Sum *node.Sum
+}
+
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released SumMatch values under.
+func (m *SumMatch) unbind() any {
+	*m = SumMatch{}
+	return (*SumMatch)(nil)
 }
 
 // OnSum fires the handler once per subject of its kind in
@@ -172,6 +214,13 @@ type FieldMatch struct {
 	Field *node.Field
 }
 
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released FieldMatch values under.
+func (m *FieldMatch) unbind() any {
+	*m = FieldMatch{}
+	return (*FieldMatch)(nil)
+}
+
 // OnField fires the handler once per subject of its kind in
 // scope, or once per gating instance under a Directive wrapper.
 // The effect parameter picks the role: an Emitter generates, a
@@ -196,6 +245,13 @@ func OnField[E Effect](h func(*FieldMatch, E) error) Rule {
 type VariableMatch struct {
 	match
 	Variable *node.Variable
+}
+
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released VariableMatch values under.
+func (m *VariableMatch) unbind() any {
+	*m = VariableMatch{}
+	return (*VariableMatch)(nil)
 }
 
 // OnVariable fires the handler once per subject of its kind in
@@ -224,6 +280,13 @@ type ConstantMatch struct {
 	Constant *node.Constant
 }
 
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released ConstantMatch values under.
+func (m *ConstantMatch) unbind() any {
+	*m = ConstantMatch{}
+	return (*ConstantMatch)(nil)
+}
+
 // OnConstant fires the handler once per subject of its kind in
 // scope, or once per gating instance under a Directive wrapper.
 // The effect parameter picks the role: an Emitter generates, a
@@ -248,6 +311,13 @@ func OnConstant[E Effect](h func(*ConstantMatch, E) error) Rule {
 type StructMatch struct {
 	match
 	Struct *node.Struct
+}
+
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released StructMatch values under.
+func (m *StructMatch) unbind() any {
+	*m = StructMatch{}
+	return (*StructMatch)(nil)
 }
 
 // OnStruct fires the handler once per subject of its kind in
@@ -276,6 +346,13 @@ type InterfaceMatch struct {
 	Interface *node.Interface
 }
 
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released InterfaceMatch values under.
+func (m *InterfaceMatch) unbind() any {
+	*m = InterfaceMatch{}
+	return (*InterfaceMatch)(nil)
+}
+
 // OnInterface fires the handler once per subject of its kind in
 // scope, or once per gating instance under a Directive wrapper.
 // The effect parameter picks the role: an Emitter generates, a
@@ -300,6 +377,13 @@ func OnInterface[E Effect](h func(*InterfaceMatch, E) error) Rule {
 type AliasMatch struct {
 	match
 	Alias *node.Alias
+}
+
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released AliasMatch values under.
+func (m *AliasMatch) unbind() any {
+	*m = AliasMatch{}
+	return (*AliasMatch)(nil)
 }
 
 // OnAlias fires the handler once per subject of its kind in

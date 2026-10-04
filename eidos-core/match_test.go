@@ -21,6 +21,23 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
+// The allocations of a phase call over the invocation fixture whose
+// handler calls one method of the match once per invocation. A method
+// without a constant allocates nothing per call.
+const (
+	// readerAllocs is the call's tracked reader, which the lane mints on
+	// the call's first tracked read.
+	readerAllocs = 1
+	// bindAllocs is a call whose invocations each bind the rules: each
+	// binding's memo, and once per call the tracked reader and the
+	// match's resolver of other languages.
+	bindAllocs = invocationStructs + 2
+	// reportAllocs is a call whose invocations each report one finding:
+	// each finding's message, and the sink's list of findings, which
+	// grows eight times to contain 100.
+	reportAllocs = invocationStructs + 8
+)
+
 // The match's fact reads are the sanctioned channel between
 // plugins, so what they return and what they refuse are contract.
 func TestMatch(t *testing.T) {
@@ -306,6 +323,131 @@ func TestMatch(t *testing.T) {
 			assert.Equal(t, warned, 2, "the two named languages warn once each, and the zero language never")
 		})
 	})
+}
+
+// Each method of a match allocates nothing per invocation beyond what
+// it returns or reports, in the ordinary run, which runs no benchmark.
+// The check runs alone, because AllocsPerRun counts every goroutine's
+// allocations and refuses to run beside parallel tests.
+func TestMatchAllocs(t *testing.T) {
+	checkPhaseAllocs(t, matchMethodCases(t))
+}
+
+// BenchmarkMatch measures a phase call over the invocation fixture for
+// each method of a match and each fact read, called once per
+// invocation.
+func BenchmarkMatch(b *testing.B) {
+	benchPhases(b, matchMethodCases(b))
+}
+
+// matchMethodCases returns a phase call over the invocation fixture for
+// each method of a match and each fact read, called once per
+// invocation. Each handler checks what the method returned on the
+// invocation, so a call that measured another path fails.
+func matchMethodCases(tb assert.TB) []phaseCase {
+	tb.Helper()
+
+	fresh, key, structs := invocationContexts(tb, false)
+	sibling := structs[0].ID
+	at := position.Pos{File: "carrier.go", Line: 1, Col: 1}
+	visiting := func(h func(*eidos.StructMatch) bool) plugin.Generator {
+		return generatorOf(tb, eidos.NewPlugin(contextPlugin).
+			Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+				if !h(m) {
+					tb.Fatalf("the method returned another value on %s", m.Struct.Name)
+				}
+				return nil
+			})).
+			Build())
+	}
+	quiet := func(assert.TB, *plugin.GeneratorContext) {}
+	findings := func(tb assert.TB, ctx *plugin.GeneratorContext) {
+		assert.Length(tb, slices.Collect(ctx.Sink.All()), invocationStructs, "each invocation reports one finding")
+	}
+	return []phaseCase{
+		{name: "Fact", fresh: fresh, check: quiet, gen: visiting(func(m *eidos.StructMatch) bool {
+			flagged, _ := eidos.Fact(m, key)
+			return flagged
+		})},
+		{name: "FactOf", fresh: fresh, check: quiet, gen: visiting(func(m *eidos.StructMatch) bool {
+			flagged, _ := eidos.FactOf(m, sibling, key)
+			return flagged
+		})},
+		{
+			name:   "Reader",
+			allocs: readerAllocs,
+			fresh:  fresh,
+			check:  quiet,
+			gen: visiting(func(m *eidos.StructMatch) bool {
+				return m.Reader() != nil
+			}),
+		},
+		{name: "Lang", fresh: fresh, check: quiet, gen: visiting(func(m *eidos.StructMatch) bool {
+			return m.Lang() == coretest.Lang
+		})},
+		{name: "Rules", allocs: bindAllocs, fresh: fresh, check: quiet, gen: visiting(func(m *eidos.StructMatch) bool {
+			return m.Rules().Lang() == coretest.Lang
+		})},
+		{
+			name:   "RulesFor",
+			allocs: bindAllocs,
+			fresh:  fresh,
+			check:  quiet,
+			gen: visiting(func(m *eidos.StructMatch) bool {
+				return m.RulesFor(coretest.Lang).Lang() == coretest.Lang
+			}),
+		},
+		{name: "Directive", fresh: fresh, check: quiet, gen: visiting(func(m *eidos.StructMatch) bool {
+			return m.Directive() == nil
+		})},
+		{name: "Kernel", fresh: fresh, check: quiet, gen: visiting(func(m *eidos.StructMatch) bool {
+			return m.Kernel().IsZero()
+		})},
+		{name: "Export", fresh: fresh, check: quiet, gen: visiting(func(m *eidos.StructMatch) bool {
+			_, held := m.Export(exportingPlan)
+			return held
+		})},
+		{
+			name:   "Errorf",
+			allocs: reportAllocs,
+			fresh:  fresh,
+			check:  findings,
+			gen: visiting(func(m *eidos.StructMatch) bool {
+				m.Errorf(reported, "the subject is refused")
+				return true
+			}),
+		},
+		{
+			name:   "Warnf",
+			allocs: reportAllocs,
+			fresh:  fresh,
+			check:  findings,
+			gen: visiting(func(m *eidos.StructMatch) bool {
+				m.Warnf(reported, "the subject is noted")
+				return true
+			}),
+		},
+		{
+			name:   "Infof",
+			allocs: reportAllocs,
+			fresh:  fresh,
+			check:  findings,
+			gen: visiting(func(m *eidos.StructMatch) bool {
+				m.Infof(reported, "the subject was visited")
+				return true
+			}),
+		},
+		{
+			name:   "ErrorfAt",
+			allocs: reportAllocs,
+			fresh:  fresh,
+			check:  findings,
+			gen: visiting(func(m *eidos.StructMatch) bool {
+				m.ErrorfAt(reported, at, "the carrier is refused")
+				return true
+			}),
+		},
+	}
 }
 
 // reportingPlugin is who the reporting cases report as.

@@ -20,7 +20,9 @@ type KeyName string
 const namespaceSep = "."
 
 // Namespace returns the segment before the first dot: the namespace
-// a registrant claims before it registers the key.
+// a registrant claims before it registers the key. A name without a dot
+// is its own namespace. Namespace allocates nothing, because the
+// segment shares the name's bytes.
 func (n KeyName) Namespace() string {
 	ns, _, _ := strings.Cut(string(n), namespaceSep)
 	return ns
@@ -57,13 +59,15 @@ type Key[T FactValue] struct {
 	name KeyName
 }
 
-// Name returns the key's boundary spelling.
+// Name returns the key's boundary spelling, empty for the zero Key. It
+// allocates nothing.
 func (k Key[T]) Name() KeyName { return k.name }
 
-// ID returns the key's dense id.
+// ID returns the key's dense id, zero for the zero Key. It allocates
+// nothing.
 func (k Key[T]) ID() KeyID { return k.id }
 
-// IsZero reports whether the key names nothing.
+// IsZero reports whether the key names nothing. It allocates nothing.
 func (k Key[T]) IsZero() bool { return k.id == 0 }
 
 // GroupName names a fact group: a bundle a writer declares, such as

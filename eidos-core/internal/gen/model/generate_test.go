@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/gen/model"
 	"go.dokimi.dev/eidos/core/internal/genfile"
@@ -88,33 +89,23 @@ const (
 	generatedSymbolFile = "mode" + genfile.GeneratedSuffix
 )
 
-// moduleRoot returns the kernel's module root, which every case
-// here generates against.
-func moduleRoot(tb assert.TB) string {
-	tb.Helper()
-
-	root, err := gosource.ModuleRoot(".")
-	assert.NoError(tb, err, "the kernel's module root resolves")
-	return root
-}
-
-// schemaModule writes one schema into a fresh module root and
-// returns the root, so a case can generate from a schema form the
-// kernel's own schema does not contain.
-func schemaModule(t *testing.T, schema string) string {
-	t.Helper()
-
-	root := t.TempDir()
-	dir := filepath.Join(root, filepath.FromSlash(model.SchemaDir))
-	assert.NoError(t, os.MkdirAll(dir, 0o750), "the schema directory is created")
-	assert.NoError(t,
-		os.WriteFile(filepath.Join(root, "go.mod"), []byte(schemaGoMod), 0o600),
-		"the module's go.mod writes")
-	assert.NoError(t,
-		os.WriteFile(filepath.Join(dir, "schema.go"), []byte(schemaMarker+schema), 0o600),
-		"the schema writes")
-	return root
-}
+// The ceilings of a generation, each measured over 24 fresh processes
+// after one generation, and allowing eight standard deviations above
+// the mean.
+const (
+	// generateAllocs is one generation over the kernel's own schema, the
+	// lowering, every template's execution and every file's formatting:
+	// 2,383,823 on average with a standard deviation of 51.
+	generateAllocs = 2_383_823 + 8*51
+	// generateOneKindAllocs is one generation over a schema of one walked
+	// kind: the same templates over a smaller model, 55,768 on average
+	// with a standard deviation of 6.
+	generateOneKindAllocs = 55_768 + 8*6
+	// regenerateOneKindAllocs is one regeneration over the same schema:
+	// the generation and the write of each file, 55,956 on average with
+	// a standard deviation of 5.
+	regenerateOneKindAllocs = 55_956 + 8*5
+)
 
 // symbolModule is one module a fingerprint case generates from: the
 // schema, the symbol package's hand-written source, and a generated
@@ -145,26 +136,6 @@ func (m symbolModule) write(t *testing.T) string {
 		assert.NoError(t, os.WriteFile(path, []byte(content), 0o600), "the module file writes: "+path)
 	}
 	return root
-}
-
-// fingerprintIn returns the value of the fingerprint a generated set
-// declares.
-func fingerprintIn(tb assert.TB, set genfile.Set) string {
-	tb.Helper()
-
-	_, rest, found := strings.Cut(string(set[fingerprintFile]), fingerprintDecl)
-	assert.True(tb, found, "the fingerprint file declares the constant")
-	value, _, _ := strings.Cut(rest, "\"")
-	return value
-}
-
-// fingerprintFor generates a module and returns its fingerprint.
-func fingerprintFor(t *testing.T, m symbolModule) string {
-	t.Helper()
-
-	set, err := model.Generate(m.write(t))
-	assert.NoError(t, err, "the module generates")
-	return fingerprintIn(t, set)
 }
 
 // The generator's output set, its bytes across runs, its fingerprint
@@ -357,7 +328,7 @@ func TestGenerate(t *testing.T) {
 				"the Kind and Fact constants the first run wrote leave the fingerprint as it was")
 		})
 
-		t.Run("writes nothing when one file refuses", func(t *testing.T) {
+		t.Run("writes nothing when one file fails to render", func(t *testing.T) {
 			t.Parallel()
 
 			root := schemaModule(t, "// Thing counts.\ntype Thing struct {\n"+
@@ -370,18 +341,115 @@ func TestGenerate(t *testing.T) {
 	})
 }
 
-// BenchmarkGenerate measures one whole generation over the kernel's
-// own schema: the lowering, every template's execution and every
-// file's formatting, which the go:generate wrapper and each mirror
-// guard run.
-func BenchmarkGenerate(b *testing.B) {
-	root := moduleRoot(b)
-	b.ReportAllocs()
-	for b.Loop() {
+// A generation and a regeneration of a schema of one kind allocate
+// within their ceilings in the ordinary run, which runs no benchmark.
+// The kernel's own generation takes too long to repeat 101 times, so
+// only [BenchmarkGenerate] checks its ceiling. The check runs alone,
+// because AllocsPerRun counts every goroutine's allocations and refuses
+// to run beside parallel tests.
+func TestGenerateAllocs(t *testing.T) {
+	root := schemaModule(t, reachSchema)
+	assert.MaxAllocs(t, func() {
 		if _, err := model.Generate(root); err != nil {
-			b.Fatalf("Generate: unexpected error: %v", err)
+			t.Fatalf("Generate: unexpected error: %v", err)
 		}
+	}, generateOneKindAllocs, "Generate allocates the lowering, the rendering and the formatting")
+	dir := filepath.Join(root, model.SchemaDir)
+	assert.MaxAllocs(t, func() {
+		if err := model.Regenerate(dir); err != nil {
+			t.Fatalf("Regenerate: unexpected error: %v", err)
+		}
+	}, regenerateOneKindAllocs, "Regenerate allocates the generation and the writes")
+}
+
+// BenchmarkGenerate measures one whole generation over the kernel's
+// own schema and over a schema of one kind, and a regeneration of the
+// one kind: the lowering, every template's execution and every file's
+// formatting, which the go:generate wrapper and each mirror guard run.
+// Each case runs once before the measurement.
+func BenchmarkGenerate(b *testing.B) {
+	generations := []struct {
+		name   string
+		root   string
+		allocs uint64
+	}{
+		{name: "Generate/the kernel's own schema", root: moduleRoot(b), allocs: generateAllocs},
+		{name: "Generate/a schema of one kind", root: schemaModule(b, reachSchema), allocs: generateOneKindAllocs},
 	}
+	for _, tt := range generations {
+		b.Run(tt.name, func(b *testing.B) {
+			_, err := model.Generate(tt.root)
+			assert.NoError(b, err, "the schema generates before the measurement")
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var set genfile.Set
+			for c.Loop() {
+				set, err = model.Generate(tt.root)
+			}
+			assert.NoError(b, err, "the schema generates")
+			assert.NotEmpty(b, set, "every output")
+		})
+	}
+
+	b.Run("Regenerate/a schema of one kind", func(b *testing.B) {
+		dir := filepath.Join(schemaModule(b, reachSchema), model.SchemaDir)
+		err := model.Regenerate(dir)
+		assert.NoError(b, err, "the schema regenerates before the measurement")
+		c := bench.Start(b).MaxAllocs(regenerateOneKindAllocs)
+		defer c.End()
+		for c.Loop() {
+			err = model.Regenerate(dir)
+		}
+		assert.NoError(b, err, "the schema regenerates")
+	})
+}
+
+// moduleRoot returns the kernel's module root, which every case
+// here generates against.
+func moduleRoot(tb assert.TB) string {
+	tb.Helper()
+
+	root, err := gosource.ModuleRoot(".")
+	assert.NoError(tb, err, "the kernel's module root resolves")
+	return root
+}
+
+// schemaModule writes one schema into a fresh module root and
+// returns the root, so a case can generate from a schema form the
+// kernel's own schema does not contain.
+func schemaModule(tb testing.TB, schema string) string {
+	tb.Helper()
+
+	root := tb.TempDir()
+	dir := filepath.Join(root, filepath.FromSlash(model.SchemaDir))
+	assert.NoError(tb, os.MkdirAll(dir, 0o750), "the schema directory is created")
+	assert.NoError(tb,
+		os.WriteFile(filepath.Join(root, "go.mod"), []byte(schemaGoMod), 0o600),
+		"the module's go.mod writes")
+	assert.NoError(tb,
+		os.WriteFile(filepath.Join(dir, "schema.go"), []byte(schemaMarker+schema), 0o600),
+		"the schema writes")
+	return root
+}
+
+// fingerprintIn returns the value of the fingerprint a generated set
+// declares.
+func fingerprintIn(tb assert.TB, set genfile.Set) string {
+	tb.Helper()
+
+	_, rest, found := strings.Cut(string(set[fingerprintFile]), fingerprintDecl)
+	assert.True(tb, found, "the fingerprint file declares the constant")
+	value, _, _ := strings.Cut(rest, "\"")
+	return value
+}
+
+// fingerprintFor generates a module and returns its fingerprint.
+func fingerprintFor(t *testing.T, m symbolModule) string {
+	t.Helper()
+
+	set, err := model.Generate(m.write(t))
+	assert.NoError(t, err, "the module generates")
+	return fingerprintIn(t, set)
 }
 
 // generatedFiles lists every generated file under root, which is

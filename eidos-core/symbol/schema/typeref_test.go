@@ -13,70 +13,106 @@ import (
 	"go.dokimi.dev/eidos/core/symbol/schema"
 )
 
+// The type machinery is pinned field by field: none of it is a subject,
+// the walk stays a tree, a value parameter states its own type and
+// default, and the tags follow the shared vocabulary.
 func TestTyperef(t *testing.T) {
 	t.Parallel()
 
-	t.Run("no type machinery is a subject a rule matches", func(t *testing.T) {
+	t.Run("marks no type machinery as a subject", func(t *testing.T) {
 		t.Parallel()
 
 		// A reference, a parameter and an embed are parts of a
-		// declaration, reached by walking the declaration that holds
+		// declaration, reached by walking the declaration that contains
 		// them.
 		assertSubjects(t, "typeref.go")
 	})
 
-	t.Run("a resolved target is named, not walked", func(t *testing.T) {
+	t.Run("declares a resolved target as an identity", func(t *testing.T) {
 		t.Parallel()
 
-		// Following a target would make the walk cyclic. An identity
-		// can be stored, compared and carried across runs; a pointer
-		// cannot, and reaching the target goes through a tracked read.
-		reference := reflect.TypeFor[schema.TypeRef]()
-		target, held := reference.FieldByName("Target")
-		assert.True(t, held, "a reference carries what it resolves to")
+		// An identity can be stored, compared and kept across runs, and a
+		// pointer cannot. Reaching the target goes through a tracked read.
+		target, held := reflect.TypeFor[schema.TypeRef]().FieldByName("Target")
+		assert.True(t, held, "a reference states what it resolves to")
 		assert.Equal(t, target.Type.String(), reflect.TypeFor[symbol.Identity]().String(),
 			"as an identity rather than a pointer")
-		assert.False(t, annotation(t, reference, "Target").walk,
-			"and the walk does not follow it, which is what keeps it a tree")
-
-		assert.True(t, annotation(t, reference, "Args").walk,
-			"the type arguments sit inside the reference, so the walk descends")
 	})
 
-	t.Run("an embed names its host without walking to it", func(t *testing.T) {
+	t.Run("leaves a resolved target out of the walk", func(t *testing.T) {
 		t.Parallel()
 
-		embed := reflect.TypeFor[schema.Embed]()
-		host, held := embed.FieldByName("Host")
-		assert.True(t, held, "an embed names the declaration it sits in")
+		// Following a target would make the walk cyclic.
+		assert.False(t, annotation(t, reflect.TypeFor[schema.TypeRef](), "Target").walk,
+			"the walk does not follow the target, which keeps it a tree")
+	})
+
+	t.Run("walks a reference's type arguments", func(t *testing.T) {
+		t.Parallel()
+
+		assert.True(t, annotation(t, reflect.TypeFor[schema.TypeRef](), "Args").walk,
+			"the type arguments are inside the reference, so the walk descends")
+	})
+
+	t.Run("declares an embed's host as an identity", func(t *testing.T) {
+		t.Parallel()
+
+		host, held := reflect.TypeFor[schema.Embed]().FieldByName("Host")
+		assert.True(t, held, "an embed names the declaration that contains it")
 		assert.Equal(t, host.Type.String(), reflect.TypeFor[symbol.Identity]().String(),
 			"as an identity")
-		assert.False(t, annotation(t, embed, "Host").walk,
-			"and the back-pointer is not an edge the walk follows")
-		assert.True(t, annotation(t, embed, "Ref").walk,
-			"the embedded type is, because the embed contains it")
 	})
 
-	t.Run("a value parameter carries a type and a default of its own", func(t *testing.T) {
+	t.Run("leaves an embed's host out of the walk", func(t *testing.T) {
 		t.Parallel()
 
-		// Rust writes "<const N: usize>", where the parameter's
-		// argument is a value. Both fields stay empty for an ordinary
-		// type parameter.
-		parameter := reflect.TypeFor[schema.TypeParam]()
-		typ, held := parameter.FieldByName("Type")
-		assert.True(t, held, "a const parameter carries the value's type")
+		assert.False(t, annotation(t, reflect.TypeFor[schema.Embed](), "Host").walk,
+			"the back-pointer is not an edge the walk follows")
+	})
+
+	t.Run("walks an embed's embedded type", func(t *testing.T) {
+		t.Parallel()
+
+		assert.True(t, annotation(t, reflect.TypeFor[schema.Embed](), "Ref").walk,
+			"the embed contains the embedded type, so the walk descends")
+	})
+
+	t.Run("declares a value parameter's type as a reference that can be absent", func(t *testing.T) {
+		t.Parallel()
+
+		// Rust writes "<const N: usize>", where the parameter's argument
+		// is a value. The field is empty for an ordinary type parameter.
+		typ, held := reflect.TypeFor[schema.TypeParam]().FieldByName("Type")
+		assert.True(t, held, "a const parameter states the value's type")
 		assert.Equal(t, typ.Type.String(), reflect.TypeFor[*schema.TypeRef]().String(),
 			"as a reference that is absent for an ordinary type parameter")
+	})
 
-		value, held := parameter.FieldByName("DefaultValue")
-		assert.True(t, held, "and its default spelling")
+	t.Run("declares a value parameter's default as source text", func(t *testing.T) {
+		t.Parallel()
+
+		value, held := reflect.TypeFor[schema.TypeParam]().FieldByName("DefaultValue")
+		assert.True(t, held, "a const parameter states its default spelling")
 		assert.Equal(t, value.Type.String(), reflect.TypeFor[string]().String(),
-			"as source text, which is a different question from a default type argument")
+			"as source text, apart from a default type argument")
+	})
 
-		fallback, held := parameter.FieldByName("Default")
-		assert.True(t, held, "the default type argument is that other question")
+	t.Run("declares a default type argument as a reference", func(t *testing.T) {
+		t.Parallel()
+
+		fallback, held := reflect.TypeFor[schema.TypeParam]().FieldByName("Default")
+		assert.True(t, held, "a type parameter states its default type argument")
 		assert.Equal(t, fallback.Type.String(), reflect.TypeFor[*schema.TypeRef]().String(),
-			"and is a reference, nil where the language has no such form")
+			"as a reference, nil where the language has no such form")
+	})
+
+	t.Run("annotates every field from the vocabulary", func(t *testing.T) {
+		t.Parallel()
+		assertAnnotations(t, familyOf(t, "typeref.go"))
+	})
+
+	t.Run("gives every recurring field one meaning", func(t *testing.T) {
+		t.Parallel()
+		assertConventions(t, familyOf(t, "typeref.go"))
 	})
 }

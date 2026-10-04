@@ -10,16 +10,21 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/ledger"
 )
 
+// listedDocs are the documents the listing fixtures write under the
+// manifest directory.
+var listedDocs = []string{docName, "manifest/cd.json", "manifest/ef.json"}
+
 // holding returns a memory ledger that contains one blob.
-func holding(t *testing.T, name, body string) *ledger.Mem {
-	t.Helper()
+func holding(tb testing.TB, name, body string) *ledger.Mem {
+	tb.Helper()
 
 	l := ledger.NewMem()
-	assert.NoError(t, l.Write(t.Context(), name, []byte(body)), "the blob is written")
+	assert.NoError(tb, l.Write(tb.Context(), name, []byte(body)), "the blob is written")
 	return l
 }
 
@@ -265,7 +270,7 @@ func TestMem(t *testing.T) {
 			assert.Equal(t, ledger.NewMem().Writes(), 0, "nothing was written")
 		})
 
-		t.Run("counts each write and put", func(t *testing.T) {
+		t.Run("counts no write for a touch", func(t *testing.T) {
 			t.Parallel()
 
 			l := holding(t, docName, docBody)
@@ -274,4 +279,178 @@ func TestMem(t *testing.T) {
 			assert.Equal(t, l.Writes(), 2, "a touch is no write")
 		})
 	})
+}
+
+// The memory ledger copies what it stores and what it returns, and its
+// other calls allocate nothing, in the ordinary run, which runs no
+// benchmark. A write replaces a blob stored before. The check runs
+// alone, because AllocsPerRun counts every goroutine's allocations and
+// refuses to run beside parallel tests.
+func TestMemAllocs(t *testing.T) {
+	ctx, body, p := t.Context(), []byte(docBody), make([]byte, 5)
+	var l *ledger.Mem
+	assert.MaxAllocs(t, func() { l = ledger.NewMem() }, 2, "NewMem allocates the ledger and its map")
+	l = listing(t)
+	assert.MaxAllocs(t, func() {
+		if _, err := l.Read(ctx, docName); err != nil {
+			t.Fatalf("Read: unexpected error: %v", err)
+		}
+	}, 1, "Read allocates the copy it returns")
+	assert.MaxAllocs(t, func() {
+		if _, err := l.ReadAt(ctx, docName, p, 4); err != nil {
+			t.Fatalf("ReadAt: unexpected error: %v", err)
+		}
+	}, 0, "ReadAt allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if err := l.Write(ctx, docName, body); err != nil {
+			t.Fatalf("Write: unexpected error: %v", err)
+		}
+	}, 1, "Write allocates the copy it stores")
+	assert.MaxAllocs(t, func() {
+		if err := l.Put(ctx, docName, body); err != nil {
+			t.Fatalf("Put: unexpected error: %v", err)
+		}
+	}, 1, "Put allocates the copy it stores")
+	assert.MaxAllocs(t, func() {
+		if err := l.Touch(ctx, docName); err != nil {
+			t.Fatalf("Touch: unexpected error: %v", err)
+		}
+	}, 0, "Touch allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if err := l.Remove(ctx, segName); err != nil {
+			t.Fatalf("Remove: unexpected error: %v", err)
+		}
+	}, 0, "Remove allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if listed, err := l.List(ctx, "manifest"); err != nil || len(listed) != len(listedDocs) {
+			t.Fatalf("List: blobs %d, error %v", len(listed), err)
+		}
+	}, 3, "List allocates the growth of its list")
+	assert.MaxAllocs(t, func() {
+		if l.Writes() == 0 {
+			t.Fatal("Writes counted nothing")
+		}
+	}, 0, "Writes allocates nothing")
+}
+
+// BenchmarkMem measures each call of the memory ledger over the three
+// documents of [listing].
+func BenchmarkMem(b *testing.B) {
+	body, l := []byte(docBody), listing(b)
+
+	b.Run("NewMem", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(2)
+		defer c.End()
+		var got *ledger.Mem
+		for c.Loop() {
+			got = ledger.NewMem()
+		}
+		assert.Equal(b, got.Writes(), 0, "a new ledger stored nothing")
+	})
+
+	b.Run("Read", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var (
+			got []byte
+			err error
+		)
+		for c.Loop() {
+			got, err = l.Read(b.Context(), docName)
+		}
+		assert.NoError(b, err, "the blob reads")
+		assert.Equal(b, string(got), docBody, "Read returns the blob")
+	})
+
+	b.Run("ReadAt", func(b *testing.B) {
+		p := make([]byte, 5)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var (
+			n   int
+			err error
+		)
+		for c.Loop() {
+			n, err = l.ReadAt(b.Context(), docName, p, 4)
+		}
+		assert.NoError(b, err, "the range reads")
+		assert.Equal(b, string(p[:n]), "first", "ReadAt copies the bytes at the offset")
+	})
+
+	b.Run("Write/a blob stored before", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = l.Write(b.Context(), docName, body)
+		}
+		assert.NoError(b, err, "the blob is written")
+	})
+
+	b.Run("Put/a blob stored before", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = l.Put(b.Context(), docName, body)
+		}
+		assert.NoError(b, err, "the blob is put")
+	})
+
+	b.Run("Touch", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = l.Touch(b.Context(), docName)
+		}
+		assert.NoError(b, err, "the blob is touched")
+	})
+
+	b.Run("Remove/a stored blob", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			c.Excluding(func() { err = l.Write(b.Context(), segName, body) })
+			err = l.Remove(b.Context(), segName)
+		}
+		assert.NoError(b, err, "the blob is removed")
+	})
+
+	b.Run("List/a directory of three blobs", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(3)
+		defer c.End()
+		var (
+			got []ledger.Blob
+			err error
+		)
+		for c.Loop() {
+			got, err = l.List(b.Context(), "manifest")
+		}
+		assert.NoError(b, err, "the blobs list")
+		assert.Length(b, got, len(listedDocs), "every document")
+	})
+
+	b.Run("Writes", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got int
+		for c.Loop() {
+			got = l.Writes()
+		}
+		assert.True(b, got > 0, "Writes counts the stores")
+	})
+}
+
+// listing returns a memory ledger of the three documents of
+// [listedDocs] and the segment blob.
+func listing(tb testing.TB) *ledger.Mem {
+	tb.Helper()
+
+	l := holding(tb, segName, docBody)
+	for _, name := range listedDocs {
+		assert.NoError(tb, l.Write(tb.Context(), name, []byte(docBody)), "the document is written")
+	}
+	return l
 }

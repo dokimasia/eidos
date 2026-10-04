@@ -9,6 +9,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/plugin"
 )
@@ -36,15 +37,13 @@ func (t storeTree) Store(name string) (fs.FS, bool) {
 	return s, held
 }
 
-// withCache returns a workspace tree with one file and a module-cache
-// store with one file.
-func withCache() storeTree {
-	return storeTree{
-		MapFS: fstest.MapFS{workspaceFile: {Data: []byte("package svc\n")}},
-		stores: map[string]fs.FS{
-			cacheStore: fstest.MapFS{cacheFile: {Data: []byte("package lib\n")}},
-		},
-	}
+// storeRead is one read through the store helpers beside the read of
+// the tree or the store it resolves to, which the helper adds nothing
+// to.
+type storeRead struct {
+	name  string
+	own   func() error
+	plain func() error
 }
 
 // Qualified paths address a file inside a named store, and the read
@@ -55,7 +54,7 @@ func TestStore(t *testing.T) {
 	t.Run("StorePath", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the store, the separator and the path inside the store", func(t *testing.T) {
+		t.Run("returns the store-qualified spelling of a path", func(t *testing.T) {
 			t.Parallel()
 
 			assert.Equal(t, plugin.StorePath(cacheStore, cacheFile), qualifiedFile, "the qualified spelling")
@@ -73,7 +72,7 @@ func TestStore(t *testing.T) {
 			wantOK    bool
 		}{
 			{
-				name: "returns the store and the path of a qualified path",
+				name: "returns the parts of a qualified path",
 				give: qualifiedFile, wantStore: cacheStore, wantPath: cacheFile, wantOK: true,
 			},
 			{
@@ -221,4 +220,137 @@ func TestStore(t *testing.T) {
 			assert.ErrorIs(t, err, fs.ErrNotExist, "nothing is at the path")
 		})
 	})
+}
+
+// The qualified spelling allocates its joined path, the split and the
+// check allocate nothing, and a read through a helper allocates what the
+// read of the tree or the store allocates, in the ordinary run, which
+// runs no benchmark. The check runs alone, because AllocsPerRun counts
+// every goroutine's allocations and refuses to run beside parallel
+// tests.
+func TestStoreAllocs(t *testing.T) {
+	var spelled string
+	assert.MaxAllocs(t, func() { spelled = plugin.StorePath(cacheStore, cacheFile) }, 1,
+		"StorePath allocates the joined path")
+	assert.Equal(t, spelled, qualifiedFile, "StorePath returns the qualified path")
+
+	var store string
+	assert.MaxAllocs(t, func() { store, _, _ = plugin.CutStorePath(qualifiedFile) }, 0,
+		"CutStorePath allocates nothing")
+	assert.Equal(t, store, cacheStore, "CutStorePath returns the store")
+
+	valid := false
+	assert.MaxAllocs(t, func() { valid = plugin.ValidStoreName(cacheStore) }, 0, "ValidStoreName allocates nothing")
+	assert.True(t, valid, "ValidStoreName reports true for a plain name")
+
+	for _, tt := range storeReads(t) {
+		assert.MaxAllocs(t, func() {
+			if err := tt.own(); err != nil {
+				t.Fatalf("%s: unexpected error: %v", tt.name, err)
+			}
+		}, plainAllocs(t, tt), tt.name+" allocates what the read of its tree allocates")
+	}
+}
+
+// BenchmarkStore measures the qualified spelling, its split and its
+// check, and each read helper over a workspace path and a qualified
+// one, against what the read of the tree or the store allocates.
+func BenchmarkStore(b *testing.B) {
+	b.Run("StorePath", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = plugin.StorePath(cacheStore, cacheFile)
+		}
+		assert.Equal(b, got, qualifiedFile, "StorePath returns the qualified path")
+	})
+
+	b.Run("CutStorePath", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var store string
+		for c.Loop() {
+			store, _, _ = plugin.CutStorePath(qualifiedFile)
+		}
+		assert.Equal(b, store, cacheStore, "CutStorePath returns the store")
+	})
+
+	b.Run("ValidStoreName", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		valid := false
+		for c.Loop() {
+			valid = plugin.ValidStoreName(cacheStore)
+		}
+		assert.True(b, valid, "ValidStoreName reports true for a plain name")
+	})
+
+	for _, tt := range storeReads(b) {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(plainAllocs(b, tt))
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = tt.own()
+			}
+			assert.NoError(b, err, "the read succeeds")
+		})
+	}
+}
+
+// withCache returns a workspace tree with one file and a module-cache
+// store with one file.
+func withCache() storeTree {
+	return storeTree{
+		MapFS: fstest.MapFS{workspaceFile: {Data: []byte("package svc\n")}},
+		stores: map[string]fs.FS{
+			cacheStore: fstest.MapFS{cacheFile: {Data: []byte("package lib\n")}},
+		},
+	}
+}
+
+// storeReads returns every read helper over a workspace path and a
+// qualified path, each beside the read it resolves to. The tree is an
+// interface value made once, so no read counts its conversion.
+func storeReads(tb assert.TB) []storeRead {
+	tb.Helper()
+
+	tree := withCache()
+	cache := tree.stores[cacheStore]
+	var fsys fs.FS = tree
+	return []storeRead{
+		{
+			name:  "ReadFile/a workspace file",
+			own:   func() error { _, err := plugin.ReadFile(fsys, workspaceFile); return err },
+			plain: func() error { _, err := fs.ReadFile(fsys, workspaceFile); return err },
+		},
+		{
+			name:  "ReadFile/a store file",
+			own:   func() error { _, err := plugin.ReadFile(fsys, qualifiedFile); return err },
+			plain: func() error { _, err := fs.ReadFile(cache, cacheFile); return err },
+		},
+		{
+			name:  "ReadDir/a store root",
+			own:   func() error { _, err := plugin.ReadDir(fsys, cacheRoot); return err },
+			plain: func() error { _, err := fs.ReadDir(cache, "."); return err },
+		},
+		{
+			name:  "Stat/a store file",
+			own:   func() error { _, err := plugin.Stat(fsys, qualifiedFile); return err },
+			plain: func() error { _, err := fs.Stat(cache, cacheFile); return err },
+		},
+	}
+}
+
+// plainAllocs returns what the read a helper resolves to allocates: the
+// ceiling of the helper's own read, which adds nothing to it.
+func plainAllocs(tb assert.TB, r storeRead) uint64 {
+	tb.Helper()
+
+	return uint64(testing.AllocsPerRun(100, func() {
+		if err := r.plain(); err != nil {
+			tb.Fatalf("%s: the read of the tree failed: %v", r.name, err)
+		}
+	}))
 }

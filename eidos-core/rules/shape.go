@@ -22,7 +22,8 @@ const (
 	ScalarFloat
 )
 
-// String returns the class's spelling.
+// String returns the class's spelling, and the decimal number of an
+// undeclared class. It allocates nothing for a declared class.
 func (c ScalarClass) String() string {
 	switch c {
 	case ScalarInt:
@@ -36,10 +37,15 @@ func (c ScalarClass) String() string {
 	}
 }
 
-// TypeShape is the canonical shape of a type: the hub every
-// cross-language conversion turns on. Form names its structure
-// from the one closed enum, the structural forms with their
-// children folded and the leaves classified.
+// TypeShape is the canonical shape of a type, which every conversion
+// between languages reads. Form names its structure from the one closed
+// enum: a structural form contains its children folded, and a leaf form
+// is classified.
+//
+// # Allocation contract
+//
+// A TypeShape is a value of 200 bytes. The constructors return it by
+// value, and allocate only the list of arguments a reference keeps.
 type TypeShape struct {
 	Form     symbol.TypeForm
 	Spelling string          // the source spelling, on every form
@@ -55,7 +61,9 @@ type TypeShape struct {
 }
 
 // Opaque returns the shape of a reference the projection cannot
-// classify: representable, not projectable, with its spelling.
+// classify: [symbol.FormOpaque] with the reference's spelling, and
+// without a spelling for a nil reference. A backend spells the type and
+// derives nothing from it. Opaque allocates nothing.
 func Opaque(ref *node.TypeRef) TypeShape {
 	s := TypeShape{Form: symbol.FormOpaque}
 	if ref != nil {
@@ -64,25 +72,30 @@ func Opaque(ref *node.TypeRef) TypeShape {
 	return s
 }
 
-// Scalar returns a number shape of a class and width.
+// Scalar returns a number shape of a class and a width in bits, 0 for
+// the platform width. It allocates nothing.
 func Scalar(spelling string, class ScalarClass, bits int) TypeShape {
 	return TypeShape{Form: symbol.FormScalar, Spelling: spelling, Class: class, Bits: bits}
 }
 
-// Leaf returns a childless leaf shape: Bool, Text or Bytes.
+// Leaf returns a childless leaf shape: Bool, Text or Bytes. It
+// allocates nothing.
 func Leaf(form symbol.TypeForm, spelling string) TypeShape {
 	return TypeShape{Form: form, Spelling: spelling}
 }
 
-// Reference returns the shape of a reference to a declaration.
+// Reference returns the shape of a reference to a declaration, with its
+// type arguments in order. The shape keeps args as its Args, so a call
+// with arguments allocates their list at the call site, one allocation.
+// A call without arguments allocates nothing.
 func Reference(spelling string, id symbol.Identity, args ...TypeShape) TypeShape {
 	return TypeShape{Form: symbol.FormReference, Spelling: spelling, Ref: id, Args: args}
 }
 
-// The well-known types: blessed reference identities a language's
-// Builtin maps its own spelling onto, so a Go time.Time and a proto
-// Timestamp project to one shape. The registry contains these two,
-// and growing it only adds entries.
+// A language's Builtin maps its own spelling of a well-known type onto
+// one of these blessed reference identities, so a Go time.Time and a
+// proto Timestamp project to one shape. The registry contains these
+// two, and growing it only adds entries.
 var (
 	// WellKnownTimestamp is a point in time.
 	WellKnownTimestamp = wellKnown("timestamp")
@@ -90,20 +103,20 @@ var (
 	WellKnownDuration = wellKnown("duration")
 )
 
-// The well-known registry's own language and package, which no
-// frontend declares, so nothing collides with them.
+// No frontend declares the registry's own language and package, so no
+// declaration's identity collides with a well-known one.
 const (
 	wellKnownLang    symbol.Lang = "gen"
 	wellKnownPackage string      = "wellknown"
 )
 
-// wellKnown mints one registry identity.
+// wellKnown returns the registry's identity of a name.
 func wellKnown(name string) symbol.Identity {
 	return symbol.Identity{Lang: wellKnownLang, Package: wellKnownPackage, Name: name, Kind: symbol.KindAlias}
 }
 
 // IsWellKnown reports whether an identity is one the registry
-// blesses.
+// blesses. It allocates nothing.
 func IsWellKnown(id symbol.Identity) bool {
 	return id == WellKnownTimestamp || id == WellKnownDuration
 }
@@ -113,7 +126,8 @@ func IsWellKnown(id symbol.Identity) bool {
 // parameter folds to Opaque, a named reference with a target the
 // view contains classifies by the declaration it names, and a named
 // reference without a target goes to the language's Builtin. It is
-// total and never panics.
+// total and never panics. A reference in the memo returns its shape and
+// allocates nothing. A first fold allocates as [Bound.TypeOf] states.
 func (b Bound) typeOf(ref *node.TypeRef) TypeShape {
 	if ref == nil {
 		return Opaque(nil)
@@ -130,9 +144,16 @@ func (b Bound) typeOf(ref *node.TypeRef) TypeShape {
 	return s
 }
 
-// fold computes one reference's shape.
+// fold computes one reference's shape. A structural shape allocates the
+// list of its children, and Bytes allocates none.
 func (b Bound) fold(ref *node.TypeRef) TypeShape {
 	if ref.Form.Structural() && ref.Form != symbol.FormNamed {
+		if ref.Form == symbol.FormList && len(ref.Elems) == 1 && isByte(b.typeOf(ref.Elems[0])) {
+			// A list of eight-bit unsigned scalars folds to Bytes, the
+			// one rule beyond structure, so Go's []byte, Java's byte[]
+			// and Rust's Vec<u8> project alike.
+			return TypeShape{Form: symbol.FormBytes, Spelling: ref.Spelling}
+		}
 		s := TypeShape{
 			Form: ref.Form, Spelling: ref.Spelling,
 			Length: ref.Length, Split: ref.Split, Variance: ref.Variance,
@@ -142,12 +163,6 @@ func (b Bound) fold(ref *node.TypeRef) TypeShape {
 			for _, child := range ref.Elems {
 				s.Elems = append(s.Elems, b.typeOf(child))
 			}
-		}
-		if s.Form == symbol.FormList && len(s.Elems) == 1 && isByte(s.Elems[0]) {
-			// The one rule beyond structure: a list of eight-bit
-			// unsigned scalars is Bytes, so Go's []byte, Java's
-			// byte[] and Rust's Vec<u8> project alike.
-			return TypeShape{Form: symbol.FormBytes, Spelling: ref.Spelling}
 		}
 		return s
 	}

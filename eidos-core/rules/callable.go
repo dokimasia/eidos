@@ -8,21 +8,23 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Callable is the normalized view of a function or a method: what
-// a shape detector reads, and the only thing it may.
+// Callable is the normalized view of a function or a method: what a
+// shape detector reads, and the only thing it may. [Bound.CallableOf]
+// returns it. Params is nil for a signature without parameters, and
+// Returns for one without returns.
 type Callable struct {
-	Receiver *ParamView // nil for a free function or a type-level member
-	Params   []ParamView
-	Returns  []ReturnView
-	Errors   ErrorModel
-	Async    bool
+	Receiver *ParamView   // nil for a free function or a type-level member
+	Params   []ParamView  // in declaration order, without nil entries
+	Returns  []ReturnView // in declaration order, without nil entries
+	Errors   ErrorModel   // the failure channel the language names
+	Async    bool         // whether the callable is asynchronous
 }
 
-// ParamView is one parameter: its name, its reference, the role
-// the language gave it, and whether it collects the rest. It
-// carries the reference and no shape: a consumer that needs the
-// shape asks the bound [Bound.TypeOf], which memoises, so a
-// detector computes the shapes it reads and no others.
+// ParamView is one parameter: its name, its reference, the role the
+// language gave it, and whether it collects the rest. It contains the
+// reference and no shape. A consumer that needs the shape asks
+// [Bound.TypeOf], which memoises, so a detector folds only the shapes it
+// reads.
 type ParamView struct {
 	Name     string
 	Ref      *node.TypeRef
@@ -38,9 +40,9 @@ type ReturnView struct {
 	Role ReturnRole
 }
 
-// callableOf maps a function or a method into the view, asking
-// the language for the roles. It reports false for any other
-// kind.
+// callableOf maps a function or a method into the view, and asks the
+// language for the roles. It reports false for any other symbol, nil
+// included.
 func (b Bound) callableOf(sym symbol.Symbol) (Callable, bool) {
 	switch d := sym.(type) {
 	case *node.Function:
@@ -52,7 +54,11 @@ func (b Bound) callableOf(sym symbol.Symbol) (Callable, bool) {
 	}
 }
 
-// callable assembles the view from the signature's parts.
+// callable assembles the view from the signature's parts. It skips a
+// nil parameter and a nil return, and gives a return the language left
+// without a role [ReturnValue]. It allocates the receiver's view at
+// instance level, and the parameter list and the return list where the
+// signature has entries.
 func (b Bound) callable(
 	receiver *node.Param, level symbol.Level, params []*node.Param, returns []*node.Return, async bool,
 ) Callable {

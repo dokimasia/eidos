@@ -120,6 +120,51 @@ func (o *opener) opened() []*output.Mem {
 	return append([]*output.Mem(nil), o.sinks...)
 }
 
+// printer is a kit backend spelling one kind and framing its files
+// through the fixture language's comment syntax, which is what the
+// output contract stamps through.
+func printer(tb assert.TB, target plugin.Target) plugin.Backend {
+	tb.Helper()
+
+	return printerAs(tb, "printer", target, "")
+}
+
+// printerAs is the printer under a name of its own, for a composition
+// of more than one plan. It names every file file, or after its family
+// word where file is empty.
+func printerAs(tb assert.TB, name plugin.ID, target plugin.Target, file string) plugin.Backend {
+	tb.Helper()
+
+	return backend.New(name, target,
+		plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "type {{.Name}} struct{}\n",
+		}).
+		Naming(func(u plugin.Unit) string {
+			if file != "" {
+				return file
+			}
+			return u.Word + ".txt"
+		}).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return nil, errors.New("the fixture spells no statements")
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Build()
+}
+
+// totalCoverage renders every fact, which the fixture's one
+// template kind states none of.
+func totalCoverage() map[symbol.Fact]render.Verdict {
+	out := map[symbol.Fact]render.Verdict{}
+	for _, f := range symbol.Facts() {
+		out[f] = render.Renders
+	}
+	return out
+}
+
 // wordHelper is the shared helper the vocal backend's struct
 // template spells a name through, and the name an override
 // replaces.
@@ -359,7 +404,7 @@ func TestWrite(t *testing.T) {
 			assert.ErrorIs(t, err, errNoDevice, "the open's error fails the run")
 		})
 
-		t.Run("returns an error for an open function that returns (nil, nil)", func(t *testing.T) {
+		t.Run("returns an error for an open function that returns two nils", func(t *testing.T) {
 			t.Parallel()
 
 			w := writing(t, func() (output.Sink, error) { return nil, nil })
@@ -416,7 +461,7 @@ func TestWrite(t *testing.T) {
 				[]string{"out/" + coretest.StorePath + "/gen.txt"}, "the source directory under the output directory")
 		})
 
-		t.Run("opens no sink for a run whose layout refuses a declaration", func(t *testing.T) {
+		t.Run("opens no sink for a run whose layout rejects a declaration", func(t *testing.T) {
 			t.Parallel()
 
 			var o opener

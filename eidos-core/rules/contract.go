@@ -6,6 +6,7 @@ package rules
 import (
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 
 	"go.dokimi.dev/eidos/core/directive"
@@ -14,18 +15,27 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// SourceRules is what every language returns. Implementing it is
-// what makes a language a language on the read side.
+// SourceRules is the read-side contract of one language: the decisions
+// inside the kernel's walks, what a spelling names in a scope, the
+// values of a type, and the naming join. A language the composition
+// registers rules for implements it.
 //
-// A value is safe for concurrent use, because the run calls it from
-// parallel plans and from parallel validations. It keeps no state of
-// its own, and every method that reads takes the [View] it reads
-// through.
+// # Concurrency
+//
+// An implementation is safe for concurrent use, because the run calls
+// it from parallel plans and from parallel validations. It keeps no
+// state of its own, and every method that reads takes the [View] it
+// reads through.
+//
+// # Allocation contract
+//
+// The kernel sets no ceiling on an implementation. A projection that
+// calls a method allocates what the method allocates, and states so.
 type SourceRules interface {
-	// Lang names the language the rules apply to.
+	// Lang returns the language the rules apply to.
 	Lang() symbol.Lang
 
-	// Members states how this language's member walk proceeds.
+	// Members returns the policy of the language's member walk.
 	Members() MemberPolicy
 
 	// ParamRole classifies one parameter of a callable.
@@ -88,7 +98,8 @@ const (
 	ParamContext
 )
 
-// String returns the role's spelling.
+// String returns the role's spelling, and the decimal number of an
+// undeclared role. It allocates nothing for a declared role.
 func (r ParamRole) String() string {
 	switch r {
 	case ParamInput:
@@ -115,7 +126,8 @@ const (
 	ReturnError
 )
 
-// String returns the role's spelling.
+// String returns the role's spelling, and the decimal number of an
+// undeclared role. It allocates nothing for a declared role.
 func (r ReturnRole) String() string {
 	switch r {
 	case ReturnValue:
@@ -148,7 +160,8 @@ const (
 	ErrorsRaised
 )
 
-// String returns the model's spelling.
+// String returns the model's spelling, and the decimal number of an
+// undeclared model. It allocates nothing for a declared model.
 func (m ErrorModel) String() string {
 	switch m {
 	case ErrorsNone:
@@ -178,7 +191,9 @@ const (
 	ContributesImplements
 )
 
-// String returns the contribution's spelling.
+// String returns the contribution's spelling, and the decimal number of
+// an undeclared contribution. It allocates nothing for a declared
+// contribution.
 func (c Contribution) String() string {
 	switch c {
 	case ContributesEmbeds:
@@ -212,7 +227,8 @@ const (
 	ShadowLinearise
 )
 
-// String returns the rule's spelling.
+// String returns the rule's spelling, and the decimal number of an
+// undeclared rule. It allocates nothing for a declared rule.
 func (s Shadowing) String() string {
 	switch s {
 	case ShadowPromote:
@@ -256,38 +272,60 @@ type MemberPolicy struct {
 
 // Registry maps each language to its [SourceRules].
 //
-// A Registry is not safe for concurrent use while it registers,
-// which the composition does on one goroutine. It is read-only
-// afterwards and safe to read from every plan.
+// The zero Registry looks up and lists no language, and
+// [Registry.Register] panics on it. Build one with [NewRegistry].
+//
+// # Concurrency
+//
+// A Registry is not safe for concurrent use while it registers, which
+// the composition does on one goroutine. It is read-only afterwards and
+// safe to read from every plan.
+//
+// # Allocation contract
+//
+// [NewRegistry] allocates the registry and its map, two allocations.
+// The first registration allocates the map's first group, and a later
+// one allocates only as the map grows. A lookup of a registered language
+// allocates nothing.
 type Registry struct {
-	byLang map[symbol.Lang]SourceRules
+	byLang map[symbol.Lang]SourceRules // the rules of each registered language
 }
 
-// NewRegistry returns an empty registry.
+// NewRegistry returns an empty registry. It allocates the registry and
+// its map, two allocations.
 func NewRegistry() *Registry {
 	return &Registry{byLang: map[symbol.Lang]SourceRules{}}
 }
 
-// Register records one language's rules. It refuses a nil value, a
-// value declaring the zero language, and a second value for one
-// language.
+// Register records one language's rules.
+//
+// Error modes: a plain error for nil rules, for rules that declare the
+// zero language, and for a second value of one language. Only a defect
+// of the composition produces any of them.
+//
+// # Allocation contract
+//
+// The first registration allocates the map's first group, one
+// allocation. A later one allocates only as the map grows.
 func (r *Registry) Register(rules SourceRules) error {
 	if rules == nil {
-		return errors.New("rules: a nil value returns for no language")
+		return errors.New("rules: register nil rules")
 	}
 	lang := rules.Lang()
 	if lang == "" {
-		return errors.New("rules: a value declaring the zero language returns for none")
+		return errors.New("rules: register rules of the zero language")
 	}
 	if _, taken := r.byLang[lang]; taken {
-		return fmt.Errorf("rules: %s registers its rules twice", lang)
+		return fmt.Errorf("rules: register %s twice", lang)
 	}
 	r.byLang[lang] = rules
 	return nil
 }
 
-// For returns the rules registered for a language, and the
-// [Absent] value with false where none registered.
+// For returns the rules registered for a language and true, and the
+// [Absent] rules and false where none registered. It allocates nothing
+// for a registered language, and the absent rules, one allocation, for
+// another.
 func (r *Registry) For(lang symbol.Lang) (SourceRules, bool) {
 	if held, registered := r.byLang[lang]; registered {
 		return held, true
@@ -295,34 +333,39 @@ func (r *Registry) For(lang symbol.Lang) (SourceRules, bool) {
 	return Absent(lang), false
 }
 
-// Languages returns every registered language, sorted by spelling,
-// so a listing is stable.
+// Languages returns every registered language, sorted by spelling, so a
+// listing is stable. It allocates the list, one allocation.
 func (r *Registry) Languages() []symbol.Lang {
 	out := make([]symbol.Lang, 0, len(r.byLang))
 	for lang := range r.byLang {
 		out = append(out, lang)
 	}
-	sortLangs(out)
+	slices.Sort(out)
 	return out
 }
 
-// Absent returns the rules of a language the composition
-// registered none for: a member policy contributing nothing, every
-// parameter an input and every return a value under no error
-// model, Opaque for every builtin, a failing Resolve, and values
-// that refuse with [RefusedNoRules]. The refusal is a value, so a
-// generator's OK gate works without a nil check.
+// Absent returns the rules of a language the composition registered
+// none for: a member policy contributing nothing, every parameter an
+// input and every return a value under no error model, Opaque for every
+// builtin, a failing Resolve, and values that refuse with
+// [RefusedNoRules]. The refusal is a value, so a generator's OK gate
+// works without a nil check. The rules satisfy no optional capability.
+//
+// # Allocation contract
+//
+// Absent allocates the value the interface contains, one allocation.
 func Absent(lang symbol.Lang) SourceRules { return absent{lang: lang} }
 
-// IsAbsent reports whether a value is the one [Absent] returns.
+// IsAbsent reports whether rules are the value [Absent] returns. It
+// reports false for nil, and allocates nothing.
 func IsAbsent(r SourceRules) bool {
 	_, is := r.(absent)
 	return is
 }
 
-// absent is the refusing implementation.
+// absent is the implementation [Absent] returns.
 type absent struct {
-	lang symbol.Lang
+	lang symbol.Lang // the language the composition registered no rules for
 }
 
 // Lang returns the language the value was minted for.
@@ -337,7 +380,7 @@ func (absent) ParamRole(*node.Param, View) ParamRole {
 }
 
 // ReturnRoles classifies every return as a value under no error
-// model.
+// model. It allocates the list of roles.
 func (absent) ReturnRoles(rs []*node.Return, _ View) ([]ReturnRole, ErrorModel) {
 	return make([]ReturnRole, len(rs)), ErrorsNone
 }

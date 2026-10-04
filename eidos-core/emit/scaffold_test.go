@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/emit"
 )
@@ -63,27 +64,16 @@ func TestScaffold(t *testing.T) {
 		}
 	})
 
-	t.Run("Form.String", func(t *testing.T) {
+	t.Run("ValueExpr", func(t *testing.T) {
 		t.Parallel()
 
-		tests := []struct {
-			name string
-			give emit.Form
-			want string
-		}{
-			{name: "returns default for the default form", give: emit.FormDefault, want: "default"},
-			{name: "returns scaffolding for statements", give: emit.FormStmts, want: "scaffolding"},
-			{name: "returns template for a template reference", give: emit.FormTemplate, want: "template"},
-			{name: "returns verbatim for verbatim text", give: emit.FormVerbatim, want: "verbatim"},
-			{name: "returns the number of a form nothing declares", give: emit.Form(9), want: "9"},
-		}
-		for _, tt := range tests {
-			t.Run(tt.name, func(t *testing.T) {
-				t.Parallel()
+		t.Run("returns a value expression over the value", func(t *testing.T) {
+			t.Parallel()
 
-				assert.Equal(t, tt.give.String(), tt.want, "the spelling the lint check names")
-			})
-		}
+			got := emit.ValueExpr(forty())
+			assert.Equal(t, got.Kind, emit.ExprValue, "the expression is a value")
+			assert.Equal(t, *got.Val, forty(), "over the value given")
+		})
 	})
 
 	t.Run("json.Marshal", func(t *testing.T) {
@@ -119,5 +109,62 @@ func TestScaffold(t *testing.T) {
 			assert.NoError(t, json.Unmarshal(encoded, &decoded), "the guard decodes")
 			assert.Equal(t, decoded, guard, "the round trip returns the value")
 		})
+	})
+}
+
+// The kinds spell without allocating, and a value expression allocates
+// the value it points at, in the ordinary run, which runs no benchmark.
+func TestScaffoldAllocs(t *testing.T) {
+	stmt, expr := emit.StmtGuard, emit.ExprCall
+	assert.MaxAllocs(t, func() {
+		if stmt.String() != "guard" {
+			t.Fatal("String spelled another statement kind")
+		}
+	}, 0, "StmtKind.String allocates nothing for a declared kind")
+	assert.MaxAllocs(t, func() {
+		if expr.String() != "call" {
+			t.Fatal("String spelled another expression kind")
+		}
+	}, 0, "ExprKind.String allocates nothing for a declared kind")
+	value := forty()
+	var got emit.Expr
+	assert.MaxAllocs(t, func() { got = emit.ValueExpr(value) }, 1, "ValueExpr allocates the value it points at")
+	assert.Equal(t, *got.Val, value, "ValueExpr points at the value given")
+}
+
+// BenchmarkScaffold measures the kinds' spellings, which faults and
+// lint findings name, and a value expression's construction.
+func BenchmarkScaffold(b *testing.B) {
+	b.Run("StmtKind.String", func(b *testing.B) {
+		stmt := emit.StmtGuard
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = stmt.String()
+		}
+		assert.Equal(b, got, "guard", "String spells StmtGuard")
+	})
+
+	b.Run("ExprKind.String", func(b *testing.B) {
+		expr := emit.ExprCall
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = expr.String()
+		}
+		assert.Equal(b, got, "call", "String spells ExprCall")
+	})
+
+	b.Run("ValueExpr", func(b *testing.B) {
+		value := forty()
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got emit.Expr
+		for c.Loop() {
+			got = emit.ValueExpr(value)
+		}
+		assert.Equal(b, *got.Val, value, "ValueExpr points at the value given")
 	})
 }

@@ -67,6 +67,11 @@ type pending struct {
 // accumulators the lanes' effects apply into when every rule has run.
 // It runs on the calling goroutine, and its lanes write none of its
 // fields.
+//
+// The state outlives its call in [calls]. [newPhaseCall] binds a
+// released state to a call, and [phaseCall.release] empties it again.
+// Every buffer keeps its storage, so a run's consecutive phase calls,
+// one plugin's after another's, grow the buffers once.
 type phaseCall struct {
 	b       *built
 	index   *plugin.Index
@@ -123,39 +128,116 @@ type phaseCall struct {
 	// already warned about, so the warning comes once per plugin and
 	// language.
 	reported map[symbol.Lang]bool
+	// order, delivered and keys are the delivery's buffers: the records
+	// in canonical match order, the set each record's reads load into,
+	// and the matches of one candidate.
+	order     []entry
+	delivered *store.ReadSet
+	keys      []plugin.MatchKey
+	// cursors are the merge's position in each lane's effects.
+	cursors []int
+	// seen contains the subjects a directive-gated rule's enumeration
+	// visited, under any of the directive's spellings.
+	seen map[symbol.Identity]struct{}
+	// accKeys are the flush's accumulator keys, and spare contains the
+	// accumulators of earlier calls, each empty and ready for a key.
+	accKeys []accKey
+	spare   []*accumulator
 }
 
-// newPhaseCall binds one phase call. A worker count below two runs
-// every rule sequentially, on one lane.
+// calls contains the released state of finished phase calls, for the
+// next phase call of any plugin. A run calls its annotators, and each
+// plan's generators, one after another, so each call takes the state
+// that the call before it released an instant earlier.
+var calls = sync.Pool{New: func() any { return new(phaseCall) }}
+
+// newPhaseCall binds a released phase-call state to one call. A worker
+// count below two runs every rule sequentially, on one lane. Each lane's
+// scratch is sized to the plugin's rules, and every slot is empty.
+//
+// # Allocation contract
+//
+// A state that a call released allocates nothing here, unless the
+// plugin has more rules than the lane's scratch holds. A new state
+// allocates itself and its first lane's scratch.
 func newPhaseCall(
 	b *built, ix *plugin.Index, facts *meta.Facts, sink *diag.Sink, em *plugin.Emit,
 	id plugin.ID, bucket int, rs *rules.Registry, kernel meta.KernelKeys, workers int,
 ) *phaseCall {
-	c := &phaseCall{
-		b:        b,
-		index:    ix,
-		facts:    facts,
-		sink:     sink,
-		emit:     em,
-		plugin:   id,
-		bucket:   bucket,
-		rules:    rs,
-		kernel:   kernel,
-		workers:  workers,
-		collects: workers > 1,
+	c, _ := calls.Get().(*phaseCall)
+	c.b, c.index, c.facts, c.sink, c.emit = b, ix, facts, sink, em
+	c.plugin, c.bucket, c.rules, c.kernel, c.workers = id, bucket, rs, kernel, workers
+	c.collects = workers > 1
+	if len(c.lanes) == 0 {
+		c.first = runState{phaseCall: c, fx: effects{lastHost: -1}}
+		c.one[0] = &c.first
+		c.lanes = c.one[:]
 	}
-	c.first = runState{phaseCall: c, scratch: make([]any, len(b.rules)), fx: effects{lastHost: -1}}
-	c.one[0] = &c.first
-	c.lanes = c.one[:]
+	for _, ln := range c.lanes {
+		ln.scratch = slices.Grow(ln.scratch[:0], len(b.rules))[:len(b.rules)]
+	}
 	return c
 }
 
+// release empties the call's state and returns it to [calls]. Every
+// buffer keeps its storage, and every element that refers into the run,
+// a declaration, an identity, an emit value, a finding or a match, is
+// zeroed, so a released state retains nothing of the run that used it.
+// Each lane keeps the matches its invocations used, unbound, for the
+// lane's next call. Every handle the call gave out, an [Out], a
+// [SlotView], a match and the read set a journal received, is invalid
+// from here on.
+func (c *phaseCall) release() {
+	for _, ln := range c.lanes {
+		ln.reset()
+	}
+	for _, acc := range c.accs {
+		clear(acc.places)
+		*acc = accumulator{places: acc.places[:0]}
+		c.spare = append(c.spare, acc)
+	}
+	clear(c.accs)
+	clear(c.units)
+	clear(c.hosts)
+	clear(c.findings)
+	clear(c.pending)
+	clear(c.order)
+	clear(c.keys)
+	clear(c.accKeys)
+	clear(c.reported)
+	clear(c.seen)
+	c.selection.reset()
+	if c.delivered != nil {
+		c.delivered.Reset()
+	}
+	*c = phaseCall{
+		units:     c.units[:0],
+		hosts:     c.hosts[:0],
+		findings:  c.findings[:0],
+		pending:   c.pending[:0],
+		first:     c.first,
+		one:       c.one,
+		lanes:     c.lanes,
+		accs:      c.accs,
+		reported:  c.reported,
+		selection: c.selection,
+		order:     c.order[:0],
+		delivered: c.delivered,
+		keys:      c.keys[:0],
+		cursors:   c.cursors,
+		seen:      c.seen,
+		accKeys:   c.accKeys[:0],
+		spare:     c.spare,
+	}
+	calls.Put(c)
+}
+
 // runState is one lane of a phase call: what invocations on one
-// goroutine run with. A lane has reusable matches, a handle pool, the
-// languages it already warned about and an effect buffer of its own,
-// and reads the phase call's shared state through the embedded
-// pointer. Invocations on one lane run one after another, in
-// increasing sequence.
+// goroutine run with. A lane has reusable matches, a handle pool, a read
+// set, the languages it already warned about and an effect buffer of
+// its own, and reads the phase call's shared state through the embedded
+// pointer. Invocations on one lane run one after another, in increasing
+// sequence.
 type runState struct {
 	*phaseCall
 	// scratch is one reusable match per rule, indexed by ordinal.
@@ -182,9 +264,17 @@ type runState struct {
 	// goroutine.
 	panicked  int
 	recovered any
-	// reading is the read set the running invocation's match records
-	// into, nil until the match has one.
+	// reads is the read set every invocation on the lane records into,
+	// one invocation after another, and reader the call's tracked
+	// handle over it. Each is created on first use, and the set resets
+	// as each invocation binds its match. reading is reads once the
+	// running invocation's match records into it, and nil before.
+	reads   *store.ReadSet
+	reader  *store.Reader
 	reading *store.ReadSet
+	// spare contains the matches the lane's earlier calls used, unbound,
+	// under the key their type's unbind returns.
+	spare map[any][]Matcher
 	// records are the lane's journaled invocations, in increasing
 	// sequence. log keeps their reads, readExports and stamped are the
 	// buffers their export and claim ranges index, and matched contains
@@ -209,6 +299,72 @@ func (c *phaseCall) lane(i int) *runState {
 		})
 	}
 	return c.lanes[i]
+}
+
+// reset empties the lane for its next phase call. It unbinds each match
+// the call used and keeps it among the lane's spare matches, and it
+// empties every buffer and keeps its storage. The tracked handle bound
+// the call's index, so the lane drops it.
+func (rs *runState) reset() {
+	for _, s := range rs.scratch {
+		m, held := s.(Matcher)
+		if !held {
+			continue
+		}
+		key := m.unbind()
+		if rs.spare == nil {
+			rs.spare = map[any][]Matcher{}
+		}
+		rs.spare[key] = append(rs.spare[key], m)
+	}
+	clear(rs.scratch)
+	clear(rs.warned)
+	rs.fx.reset()
+	if rs.reads != nil {
+		rs.reads.Reset()
+	}
+	rs.log.Reset()
+	clear(rs.records)
+	clear(rs.readExports)
+	clear(rs.stamped)
+	clear(rs.matched)
+	*rs = runState{
+		phaseCall:   rs.phaseCall,
+		scratch:     rs.scratch,
+		warned:      rs.warned,
+		fx:          rs.fx,
+		reads:       rs.reads,
+		spare:       rs.spare,
+		records:     rs.records[:0],
+		log:         rs.log,
+		readExports: rs.readExports[:0],
+		stamped:     rs.stamped[:0],
+		matched:     rs.matched[:0],
+	}
+}
+
+// readSet returns the lane's read set, created on the lane's first read.
+func (rs *runState) readSet() *store.ReadSet {
+	if rs.reads == nil {
+		rs.reads = store.NewReadSet()
+	}
+	return rs.reads
+}
+
+// readerOf returns the call's tracked handle over the lane's read set,
+// minted on the call's first tracked read on the lane.
+func (rs *runState) readerOf(reads *store.ReadSet) *store.Reader {
+	if rs.reader == nil {
+		reader, err := rs.index.Reader(reads)
+		if err != nil {
+			// The index refused an unfrozen graph at its own
+			// construction, so a failed mint is a defect in the
+			// dispatch plumbing, not a run condition.
+			panic("eidos: minting a reader over the routing surface failed: " + err.Error())
+		}
+		rs.reader = reader
+	}
+	return rs.reader
 }
 
 // emitterFor returns the effect handle bound to one invocation,
@@ -425,20 +581,29 @@ func (c *phaseCall) enumerateEmit(fr *flatRule) {
 }
 
 // enumerateDirective visits the carriers of the rule's gating
-// directive, under every spelling it recognises.
+// directive, under every spelling it recognises, each carrier once. The
+// index lists a carrier once per spelling, so the call's seen set
+// contains the carriers of every spelling but the last, which the later
+// spellings skip, and a directive of one spelling records none.
 func (c *phaseCall) enumerateDirective(fr *flatRule) {
-	seen := map[symbol.Identity]struct{}{}
-	for _, spelled := range spellingsOf(fr) {
+	if c.seen == nil {
+		c.seen = map[symbol.Identity]struct{}{}
+	}
+	clear(c.seen)
+	for i, spelled := range fr.spellings {
+		later := i < len(fr.spellings)-1
 		for s := range c.index.ByDirective(spelled) {
 			decl, names := s.(node.Declaration)
 			if !names || decl.Kind() != fr.kind {
 				continue
 			}
 			id := decl.Identity()
-			if _, dup := seen[id]; dup {
+			if _, dup := c.seen[id]; dup {
 				continue
 			}
-			seen[id] = struct{}{}
+			if later {
+				c.seen[id] = struct{}{}
+			}
 			if !c.admits(fr, id) {
 				continue
 			}
@@ -533,16 +698,6 @@ func (c *phaseCall) positionOf(id symbol.Identity) position.Pos {
 		return position.Pos{}
 	}
 	return s.Position()
-}
-
-// spellingsOf returns the spellings a rule's gating directive may
-// be indexed under: the canonical one, and the bare one where a
-// schema's differ. A kernel gate has one spelling.
-func spellingsOf(fr *flatRule) []directive.Name {
-	if fr.schema == nil || fr.gate == fr.schema.Name {
-		return []directive.Name{fr.gate}
-	}
-	return []directive.Name{fr.gate, fr.schema.Name}
 }
 
 // gates reports whether a validated instance gates a rule: an instance

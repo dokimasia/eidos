@@ -8,16 +8,39 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/layout"
+	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
+)
+
+// The allocations of a builder's methods, which TestBuilderAllocs checks
+// in the ordinary run and BenchmarkBuilder in a benchmark run.
+const (
+	// newBuilderAllocs is the builder.
+	newBuilderAllocs = 1
+	// listAllocs is the first call of a method that registers values on
+	// a new builder: the list it appends to.
+	listAllocs = 1
+	// buildAllocs is the build of the composition of 64 annotators and 8
+	// plans of 4 generators: 902 allocations for the registries, the
+	// roster, the capability order, the compiled plans and the
+	// fingerprint. The 8 more are for the runtime's type-assertion
+	// caches. An interface assertion that misses its call site's cache
+	// builds a new cache about once in 1,024 misses, so a run of one
+	// iteration counts some of these builds: 300 fresh processes counted
+	// 0 to 6, 1.1 on average.
+	buildAllocs = 902 + 8
 )
 
 // mirrorOptions is a valid options struct for the config cases.
@@ -25,38 +48,12 @@ type mirrorOptions struct {
 	Depth int `opt:"depth" doc:"how deep the mirror walks"`
 }
 
-// tuned returns a generator declaring cfg as its options struct.
-func tuned(name plugin.ID, cfg any) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
-		Options(cfg).
-		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
-			return nil
-		})).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
-}
-
-// needy returns a generator whose directive schema requires a name
-// nothing registers.
-func needy() plugin.Generator {
-	p, held := eidos.NewPlugin("needy").
-		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
-		Handle(eidos.Directive(
-			directive.Schema{
-				Plugin: "needy", Name: "gate",
-				Requires: []directive.Name{"ghost"},
-				Doc:      "a fixture directive requiring a ghost",
-			},
-			eidos.OnEmit(symbol.KindStruct,
-				func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }),
-		)).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
+// setter is one method of a builder that registers or sets a value,
+// called with a fixture value, and whether it appends to a list.
+type setter struct {
+	name string
+	set  func(*workspace.Builder) *workspace.Builder
+	list bool
 }
 
 // unversioned is a frontend that declares no version: the embedded
@@ -80,6 +77,31 @@ func (renamed) Version() string { return "1" }
 // fault at once.
 func TestBuilder(t *testing.T) {
 	t.Parallel()
+
+	t.Run("New", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a builder that declares no brand", func(t *testing.T) {
+			t.Parallel()
+
+			_, err := workspace.New().Build()
+			assert.HasError(t, err, "an empty composition does not build")
+			assert.Contains(t, err.Error(), "declares no brand", "the builder starts without a brand")
+		})
+	})
+
+	for _, tt := range setters(t) {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("returns its builder", func(t *testing.T) {
+				t.Parallel()
+
+				b := workspace.New()
+				assert.True(t, tt.set(b) == b, "a composition chains its calls on one builder")
+			})
+		})
+	}
 
 	t.Run("Build", func(t *testing.T) {
 		t.Parallel()
@@ -206,7 +228,7 @@ func TestBuilder(t *testing.T) {
 				markers: []string{"key registration", "nil"},
 			},
 			{
-				name: "returns an error naming a name a schema requires and nothing registers",
+				name: "returns an error naming a required name nothing registers",
 				compose: func() *workspace.Builder {
 					return valid().Plans(planTo("second", "fixture", needy()))
 				},
@@ -457,14 +479,159 @@ func TestBuilder(t *testing.T) {
 	})
 }
 
-// BenchmarkBuild runs the steps over a composition of 105
-// plugins: 64 annotators forming one capability chain inside one
-// priority, and 8 plans of 4 generators each behind their
-// backends. The plugin values build once, and the loop measures
-// the steps.
-func BenchmarkBuild(b *testing.B) {
-	b.ReportAllocs()
+// Each method of a builder allocates within its ceiling in the ordinary
+// run, which runs no benchmark. A registration and a build each take a
+// builder composed before the count, because a registration's first call
+// allocates the list it appends to. The check runs alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestBuilderAllocs(t *testing.T) {
+	var built *workspace.Builder
+	assert.MaxAllocs(t, func() { built = workspace.New() }, newBuilderAllocs, "New allocates the builder")
+	assert.NotNil(t, built, "New returns the builder")
 
+	for _, tt := range setters(t) {
+		msg := tt.name + " allocates the list of a new builder"
+		if !tt.list {
+			b := workspace.New()
+			msg = tt.name + " allocates nothing"
+			assert.MaxAllocs(t, func() { tt.set(b) }, 0, msg)
+			continue
+		}
+		fresh, at := builders(allocRuns, workspace.New), 0
+		assert.MaxAllocs(t, func() {
+			tt.set(fresh[at])
+			at++
+		}, listAllocs, msg)
+	}
+
+	composed, at := builders(allocRuns, composition()), 0
+	assert.MaxAllocs(t, func() {
+		if _, err := composed[at].Build(); err != nil {
+			t.Fatalf("Build: unexpected error: %v", err)
+		}
+		at++
+	}, buildAllocs, "Build allocates the registries, the plans and the fingerprint")
+}
+
+// BenchmarkBuilder measures a builder's construction, each registration
+// on a new builder, each setter, and the steps over the composition of
+// 64 annotators and 8 plans of 4 generators. The plugin values build
+// once, and the loop measures the steps.
+func BenchmarkBuilder(b *testing.B) {
+	b.Run("New", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(newBuilderAllocs)
+		defer c.End()
+		var got *workspace.Builder
+		for c.Loop() {
+			got = workspace.New()
+		}
+		assert.NotNil(b, got, "New returns the builder")
+	})
+
+	for _, tt := range setters(b) {
+		b.Run(tt.name, func(b *testing.B) {
+			ceiling := uint64(0)
+			if tt.list {
+				ceiling = listAllocs
+			}
+			c := bench.Start(b).MaxAllocs(ceiling)
+			defer c.End()
+			builder := workspace.New()
+			var got *workspace.Builder
+			for c.Loop() {
+				if tt.list {
+					c.Excluding(func() { builder = workspace.New() })
+				}
+				got = tt.set(builder)
+			}
+			assert.True(b, got == builder, "the method returns its builder")
+		})
+	}
+
+	b.Run("Build", func(b *testing.B) {
+		compose := composition()
+		_, err := compose().Build()
+		assert.NoError(b, err, "the composition builds before the measurement")
+		c := bench.Start(b).MaxAllocs(buildAllocs)
+		defer c.End()
+		var (
+			builder *workspace.Builder
+			w       *workspace.Workspace
+		)
+		for c.Loop() {
+			c.Excluding(func() { builder = compose() })
+			w, err = builder.Build()
+		}
+		assert.NoError(b, err, "the composition builds")
+		assert.NotNil(b, w, "to its workspace")
+	})
+}
+
+// setters returns each method of a builder that registers or sets a
+// value, called with a fixture value built once.
+func setters(tb assert.TB) []setter {
+	tb.Helper()
+
+	var (
+		frontend  plugin.Frontend       = frontendtest.NewScripted()
+		annotator                       = stamper("noter", quiet)
+		plan                            = planTo("plan", "fixture", mirror("mirror"))
+		check     plugin.WorkspaceCheck = &recordingCheck{name: "stubbed"}
+		source    rules.SourceRules     = native{}
+	)
+	open := func() (output.Sink, error) { return output.NewMem(), nil }
+	ledgerOpen := func() (ledger.Ledger, error) { return ledger.NewMem(), nil }
+	register := func(*meta.Registry) error { return nil }
+	return []setter{
+		{name: "Brand", set: func(b *workspace.Builder) *workspace.Builder { return b.Brand(fixtureBrand) }},
+		{name: "Frontends", list: true, set: func(b *workspace.Builder) *workspace.Builder {
+			return b.Frontends(frontend)
+		}},
+		{name: "Annotators", list: true, set: func(b *workspace.Builder) *workspace.Builder {
+			return b.Annotators(annotator)
+		}},
+		{name: "Plans", list: true, set: func(b *workspace.Builder) *workspace.Builder { return b.Plans(plan) }},
+		{name: "Checks", list: true, set: func(b *workspace.Builder) *workspace.Builder { return b.Checks(check) }},
+		{name: "Output", set: func(b *workspace.Builder) *workspace.Builder { return b.Output(open) }},
+		{name: "Ledger", set: func(b *workspace.Builder) *workspace.Builder { return b.Ledger(ledgerOpen) }},
+		{
+			name: "Workspace",
+			set:  func(b *workspace.Builder) *workspace.Builder { return b.Workspace(string(fixtureBrand)) },
+		},
+		{name: "Parallel", set: func(b *workspace.Builder) *workspace.Builder { return b.Parallel(4) }},
+		{
+			name: "Targets",
+			list: true,
+			set:  func(b *workspace.Builder) *workspace.Builder { return b.Targets("fixture") },
+		},
+		{name: "Keys", list: true, set: func(b *workspace.Builder) *workspace.Builder { return b.Keys(register) }},
+		{name: "Rules", list: true, set: func(b *workspace.Builder) *workspace.Builder { return b.Rules(source) }},
+		{name: "Config", set: func(b *workspace.Builder) *workspace.Builder { return b.Config(workspace.Config{}) }},
+		{name: "Ignore", list: true, set: func(b *workspace.Builder) *workspace.Builder {
+			return b.Ignore(directive.Name("legacy:"))
+		}},
+		{name: "Memo", set: func(b *workspace.Builder) *workspace.Builder {
+			return b.Memo(workspace.Memo{Limit: memoLimit})
+		}},
+	}
+}
+
+// builders returns n builders that compose returns, built before a
+// count, so each counted call takes a builder of its own.
+func builders(n int, compose func() *workspace.Builder) []*workspace.Builder {
+	out := make([]*workspace.Builder, n)
+	for i := range out {
+		out[i] = compose()
+	}
+	return out
+}
+
+// composition returns a function that composes 105 plugins on a new
+// builder: 64 annotators forming one capability chain inside one
+// priority, and 8 plans of 4 generators each behind their backends.
+// Every builder it returns shares the plugin values, which build once.
+func composition() func() *workspace.Builder {
 	const roles, planned, width = 64, 8, 4
 	var order []plugin.ID
 	anns := make([]plugin.Annotator, 0, roles)
@@ -487,19 +654,41 @@ func BenchmarkBuild(b *testing.B) {
 		}
 		plans = append(plans, planTo(name, "fixture", gens...))
 	}
-
-	for b.Loop() {
-		w, err := workspace.New().
-			Brand(fixtureBrand).
-			Annotators(anns...).
-			Targets("fixture").
-			Plans(plans...).
-			Build()
-		if err != nil {
-			b.Fatalf("Build: unexpected error: %v", err)
-		}
-		if w == nil {
-			b.Fatal("Build must return the workspace")
-		}
+	return func() *workspace.Builder {
+		return workspace.New().Brand(fixtureBrand).Annotators(anns...).Targets("fixture").Plans(plans...)
 	}
+}
+
+// tuned returns a generator declaring cfg as its options struct.
+func tuned(name plugin.ID, cfg any) plugin.Generator {
+	p, held := eidos.NewPlugin(name).
+		Options(cfg).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
+			return nil
+		})).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// needy returns a generator whose directive schema requires a name
+// nothing registers.
+func needy() plugin.Generator {
+	p, held := eidos.NewPlugin("needy").
+		Output(plugin.Output{Per: plugin.PerSource, Word: "gen"}).
+		Handle(eidos.Directive(
+			directive.Schema{
+				Plugin: "needy", Name: "gate",
+				Requires: []directive.Name{"ghost"},
+				Doc:      "a fixture directive requiring a ghost",
+			},
+			eidos.OnEmit(symbol.KindStruct,
+				func(*eidos.EmitMatch, *eidos.Emitter) error { return nil }),
+		)).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
 }

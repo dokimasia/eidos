@@ -24,12 +24,13 @@ var ErrStoreAbsent = errors.New("plugin: no such store")
 // store's name, "://", and the slash path inside the store, as in
 // "gomod://golang.org/x/mod@v0.41.0/modfile/rule.go". No workspace path
 // is a qualified path, because [fs.ValidPath] refuses the empty element
-// that "//" spells.
+// that "//" spells. StorePath allocates the joined path, one allocation.
 func StorePath(store, path string) string { return store + storeSep + path }
 
 // CutStorePath splits a qualified path into its store and the path
 // inside the store, and reports false for a workspace path. The root
 // of a store is the qualified path with nothing after the separator.
+// It allocates nothing, because both parts share the path's bytes.
 func CutStorePath(qualified string) (store, path string, ok bool) {
 	store, path, ok = strings.Cut(qualified, storeSep)
 	if !ok || !ValidStoreName(store) {
@@ -40,7 +41,7 @@ func CutStorePath(qualified string) (store, path string, ok bool) {
 
 // ValidStoreName reports whether a name can name a store: it is not
 // empty, and it contains neither the colon nor the slash that a
-// qualified path separates on.
+// qualified path separates on. It allocates nothing.
 func ValidStoreName(name string) bool {
 	return name != "" && !strings.ContainsAny(name, ":/")
 }
@@ -60,6 +61,11 @@ type StoreFS interface {
 // tree itself, and a qualified path from the store it names, which the
 // tree provides as a [StoreFS]. A qualified path whose store the tree
 // does not provide returns an error wrapping [ErrStoreAbsent].
+//
+// # Allocation contract
+//
+// ReadFile allocates what [fs.ReadFile] allocates in the tree or the
+// store, and nothing of its own where the store exists.
 func ReadFile(fsys fs.FS, path string) ([]byte, error) {
 	tree, inner, err := treeOf(fsys, path)
 	if err != nil {
@@ -70,7 +76,9 @@ func ReadFile(fsys fs.FS, path string) ([]byte, error) {
 
 // ReadDir returns one directory's entries sorted by name, and resolves
 // a qualified path the way [ReadFile] does. The root of a store is its
-// qualified path with nothing after the separator.
+// qualified path with nothing after the separator. It allocates what
+// [fs.ReadDir] allocates, and nothing of its own where the store
+// exists.
 func ReadDir(fsys fs.FS, path string) ([]fs.DirEntry, error) {
 	tree, inner, err := treeOf(fsys, path)
 	if err != nil {
@@ -80,7 +88,8 @@ func ReadDir(fsys fs.FS, path string) ([]fs.DirEntry, error) {
 }
 
 // Stat returns the stat of one file, and resolves a qualified path the
-// way [ReadFile] does.
+// way [ReadFile] does. It allocates what [fs.Stat] allocates, and
+// nothing of its own where the store exists.
 func Stat(fsys fs.FS, path string) (fs.FileInfo, error) {
 	tree, inner, err := treeOf(fsys, path)
 	if err != nil {

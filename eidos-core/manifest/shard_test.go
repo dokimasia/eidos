@@ -21,49 +21,39 @@ import (
 // "svc/store_stub.go" begins with the byte 0xea.
 const stubBucket = "ea"
 
-// inBucket returns the first n paths of the form svc/fNNNN.go that
-// belong to a bucket, in path order.
-func inBucket(t *testing.T, bucket string, n int) []string {
-	t.Helper()
+// benchShards is the number of documents the canonical record of
+// benchFiles entries splits into: one per byte, every one filled.
+const benchShards = 256
 
-	var out []string
-	for i := 0; len(out) < n; i++ {
-		if i == 100_000 {
-			t.Fatalf("no %d paths of bucket %s among the first 100,000", n, bucket)
-		}
-		if p := fmt.Sprintf("svc/f%04d.go", i); manifest.BucketOf(p) == bucket {
-			out = append(out, p)
-		}
-	}
-	return out
-}
-
-// shard returns the well-formed document of the given entries, which
-// share stubBucket.
-func shard(files ...manifest.Entry) manifest.Shard {
-	return manifest.Shard{Version: manifest.Version, Workspace: workspaceName, Bucket: stubBucket, Files: files}
-}
-
-// changed returns stubPath's entry with one change applied.
-func changed(change func(*manifest.Entry)) manifest.Entry {
-	e := entry(stubPath)
-	change(&e)
-	return e
-}
-
-// versioned returns the empty document stating a version.
-func versioned(v int) manifest.Shard {
-	s := shard()
-	s.Version = v
-	return s
-}
-
-// bucketed returns the empty document naming a bucket.
-func bucketed(bucket string) manifest.Shard {
-	s := shard()
-	s.Bucket = bucket
-	return s
-}
+// The allocations of the canonical record's documents, which
+// TestShardAllocs checks in the ordinary run and BenchmarkShard in a
+// benchmark run.
+const (
+	// splitAllocs is one split of the canonical record: the list of each
+	// entry's bucket, one list of entries per bucket, and the documents.
+	splitAllocs = 1 + benchShards + 1
+	// joinAllocs is one join of the documents: the joined list of
+	// entries.
+	joinAllocs = 1
+	// encodeAllocs is one encoding of every document. Each document
+	// allocates six times: the document handed to the encoder, the copied
+	// list of entries, the options SetEscapeHTML joins, and the buffer
+	// with its two growths. That is 1,536 with the collector off. A
+	// collection empties the JSON encoder's pools, and the calls after it
+	// allocate their values again: ten fresh processes with the default
+	// collector counted up to 56 more. The ceiling allows 64 more.
+	encodeAllocs = 6*benchShards + 64
+	// decodeAllocs is one decoding of every document. Each entry, with
+	// its two plugins and one source, allocates four times: its path and
+	// the growths of its lists of plugins and sources. The documents
+	// allocate 2,320 times, about nine each: the document, its bucket and
+	// the growths of its list of entries. That is 42,320 with the
+	// collector off. A collection empties the JSON decoder's pooled state,
+	// and the next call allocates it again: ten fresh processes with the
+	// default collector counted up to 15 more. The ceiling allows 16
+	// more.
+	decodeAllocs = 4*benchFiles + 2_320 + 16
+)
 
 // The record's documents are versioned public API: each is one bucket of
 // the record, its bytes are canonical, it reads back what it wrote, and
@@ -206,7 +196,7 @@ func TestShard(t *testing.T) {
 			assert.Contains(t, string(empty), `"files": []`, "the files are an empty list")
 		})
 
-		t.Run("returns equal bytes for a nil list and an empty one", func(t *testing.T) {
+		t.Run("returns the bytes of an empty list for a nil list", func(t *testing.T) {
 			t.Parallel()
 
 			nilFiles, err := manifest.EncodeShard(shard())
@@ -354,28 +344,55 @@ func TestShard(t *testing.T) {
 	})
 }
 
-// The bucket a path belongs to is computed on every split and every
-// check, and costs no allocation for the paths of a canonical tree. The
-// check runs alone, because AllocsPerRun refuses to run beside
-// parallel tests.
-func TestShardZeroAlloc(t *testing.T) {
+// The bucket a path belongs to costs no allocation, and the split, the
+// join and the codec of the canonical record's documents allocate within
+// their ceilings, in the ordinary run, which runs no benchmark. The
+// check runs alone, because AllocsPerRun refuses to run beside parallel
+// tests.
+func TestShardAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() {
 		if manifest.BucketOf(stubPath) != stubBucket {
 			t.Fatal("BucketOf names another bucket")
 		}
 	}, 0, "BucketOf allocates nothing")
+
+	m := scaled()
+	var shards []manifest.Shard
+	assert.MaxAllocs(t, func() { shards = manifest.Split(m) }, splitAllocs,
+		"Split allocates the buckets, one list per bucket and the documents")
+	assert.Length(t, shards, benchShards, "Split fills every bucket")
+
+	var joined manifest.Manifest
+	var err error
+	assert.MaxAllocs(t, func() { joined, err = manifest.Join(shards) }, joinAllocs,
+		"Join allocates the joined list")
+	assert.NoError(t, err, "the documents join")
+	assert.Length(t, joined.Files, benchFiles, "Join returns every entry")
+
+	encoded := make([][]byte, len(shards))
+	assert.MaxAllocs(t, func() {
+		for i, s := range shards {
+			encoded[i], err = manifest.EncodeShard(s)
+		}
+	}, encodeAllocs, "EncodeShard allocates six times per document")
+	assert.NoError(t, err, "every document encodes")
+
+	var decoded manifest.Shard
+	assert.MaxAllocs(t, func() {
+		for _, e := range encoded {
+			decoded, err = manifest.DecodeShard(e)
+		}
+	}, decodeAllocs, "DecodeShard allocates four times per entry")
+	assert.NoError(t, err, "every document decodes")
+	assert.Equal(t, decoded.Bucket, shards[len(shards)-1].Bucket, "the last document reads back")
 }
 
 // BenchmarkShard measures the documents of the canonical record of
 // 10,000 generated files: naming one path's bucket, splitting the record,
 // joining its documents, and encoding and decoding every document, each
-// under its allocation ceiling. BucketOf allocates nothing. Split
-// allocates 258 times: the bucket of each entry, one list per bucket and
-// the documents. Join allocates the joined list once. Encoding all 256
-// documents measures 1,818 allocations, about seven a document, under a
-// ceiling of 2,048 for the JSON encoder's pooled state, which a
-// collection empties. Decoding them measures 42,325, about four an
-// entry, under a ceiling of 44,000.
+// under its allocation ceiling. The encode and the decode run once before
+// their contracts start, so the JSON codec's pooled state is in place in
+// the sub-benchmark's own goroutine.
 func BenchmarkShard(b *testing.B) {
 	m := scaled()
 	shards := manifest.Split(m)
@@ -400,7 +417,7 @@ func BenchmarkShard(b *testing.B) {
 	})
 
 	b.Run("Split", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(258)
+		c := bench.Start(b).MaxAllocs(splitAllocs)
 		defer c.End()
 		var got []manifest.Shard
 		for c.Loop() {
@@ -412,7 +429,7 @@ func BenchmarkShard(b *testing.B) {
 	})
 
 	b.Run("Join", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(1)
+		c := bench.Start(b).MaxAllocs(joinAllocs)
 		defer c.End()
 		var got manifest.Manifest
 		var err error
@@ -425,14 +442,18 @@ func BenchmarkShard(b *testing.B) {
 	})
 
 	b.Run("EncodeShard", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(2_048)
-		defer c.End()
 		var got []byte
 		var err error
-		for c.Loop() {
+		encodeAll := func() {
 			for _, s := range shards {
 				got, err = manifest.EncodeShard(s)
 			}
+		}
+		encodeAll()
+		c := bench.Start(b).MaxAllocs(encodeAllocs)
+		defer c.End()
+		for c.Loop() {
+			encodeAll()
 		}
 		if err != nil || len(got) == 0 {
 			b.Fatalf("EncodeShard returned %d bytes and %v", len(got), err)
@@ -440,17 +461,65 @@ func BenchmarkShard(b *testing.B) {
 	})
 
 	b.Run("DecodeShard", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(44_000)
-		defer c.End()
 		var got manifest.Shard
 		var err error
-		for c.Loop() {
+		decodeAll := func() {
 			for _, e := range encoded {
 				got, err = manifest.DecodeShard(e)
 			}
+		}
+		decodeAll()
+		c := bench.Start(b).MaxAllocs(decodeAllocs)
+		defer c.End()
+		for c.Loop() {
+			decodeAll()
 		}
 		if err != nil || got.Bucket == "" {
 			b.Fatalf("DecodeShard returned bucket %q and %v", got.Bucket, err)
 		}
 	})
+}
+
+// inBucket returns the first n paths of the form svc/fNNNN.go that
+// belong to a bucket, in path order.
+func inBucket(t *testing.T, bucket string, n int) []string {
+	t.Helper()
+
+	var out []string
+	for i := 0; len(out) < n; i++ {
+		if i == 100_000 {
+			t.Fatalf("no %d paths of bucket %s among the first 100,000", n, bucket)
+		}
+		if p := fmt.Sprintf("svc/f%04d.go", i); manifest.BucketOf(p) == bucket {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// shard returns the well-formed document of the given entries, which
+// share stubBucket.
+func shard(files ...manifest.Entry) manifest.Shard {
+	return manifest.Shard{Version: manifest.Version, Workspace: workspaceName, Bucket: stubBucket, Files: files}
+}
+
+// changed returns stubPath's entry with one change applied.
+func changed(change func(*manifest.Entry)) manifest.Entry {
+	e := entry(stubPath)
+	change(&e)
+	return e
+}
+
+// versioned returns the empty document stating a version.
+func versioned(v int) manifest.Shard {
+	s := shard()
+	s.Version = v
+	return s
+}
+
+// bucketed returns the empty document naming a bucket.
+func bucketed(bucket string) manifest.Shard {
+	s := shard()
+	s.Bucket = bucket
+	return s
 }

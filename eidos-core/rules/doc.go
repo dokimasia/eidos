@@ -5,7 +5,7 @@
 // the questions every generator asks of a declaration, and the
 // contract each language returns them through.
 //
-// The kernel owns the three walks every language would otherwise
+// The kernel implements the three walks every language would otherwise
 // repeat. [Bound.CallableOf] maps a callable's signature into a
 // [Callable] and asks the language for the roles. [Bound.TypeOf]
 // folds a reference's structure into a [TypeShape] and asks the
@@ -14,19 +14,26 @@
 // provenance per member and a [Gap] for every contributor it could
 // not follow. A language returns [SourceRules]: the decisions
 // inside those walks, what a spelling names in a scope, the values
-// of a type, and the naming join. The optional capabilities,
-// [EnumRules] and the rest, are declared by satisfying an interface
-// and found by asserting on [Bound.Source].
+// of a type, and the naming join.
+//
+// # Optional capabilities
+//
+// A language declares an optional capability, [EnumRules] and the rest,
+// by satisfying its interface on the [SourceRules] value, and a consumer
+// finds it by asserting on [Bound.Source]. A consumer whose assertion
+// fails reports once and generates nothing for that language, so no
+// projection depends on a default nobody chose. A capability's methods
+// follow the concurrency rule of [SourceRules].
 //
 // # Refusal
 //
-// Nothing here guesses. A value that could not be derived is a
-// [Sample] whose [Refusal] says why, a member the walk could not
-// reach is a Gap with its reason, and a reference the language
-// cannot classify folds to [symbol.FormOpaque] with its spelling.
-// A language the composition registered nothing for is
-// [Absent]: every walk over it contributes nothing and every value
-// refuses with [RefusedNoRules].
+// No projection substitutes a default for a value it cannot derive. A
+// value that could not be derived is a [Sample] whose [Refusal] states
+// why, a member the walk could not reach is a Gap with its reason, and
+// a reference the language cannot classify folds to
+// [symbol.FormOpaque] with its spelling. A language the composition
+// registered nothing for is [Absent]: every walk over it contributes
+// nothing and every value refuses with [RefusedNoRules].
 //
 // # Reads
 //
@@ -36,7 +43,7 @@
 // with [RefusedNoView] rather than reading an untracked graph.
 // Two calls with one view over one graph return equal values, and
 // a [SourceRules] value is safe for concurrent use because it
-// holds nothing of its own.
+// keeps no state of its own.
 //
 // # Dependency position
 //

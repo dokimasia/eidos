@@ -19,7 +19,19 @@ import (
 // Builder accumulates a plugin's declaration. Everything on it is
 // data; only the handlers inside rules, the key registrations and
 // the template helpers are functions. Build freezes it, and a
-// Builder is not reused afterwards.
+// Builder is not reused afterwards. Every method returns the builder.
+//
+// # Concurrency
+//
+// A Builder is not safe for concurrent use. A plugin's constructor
+// declares it on one goroutine.
+//
+// # Allocation contract
+//
+// [NewPlugin] allocates the builder and its map of priorities. A method
+// that appends to a list of the declaration allocates the list on its
+// first call and grows it on a later one, and a method that sets one
+// value allocates nothing. [Builder.Build] states what it allocates.
 type Builder struct {
 	name     plugin.ID
 	version  string
@@ -41,39 +53,46 @@ type targetLayer struct {
 	opts   []TargetOption
 }
 
-// NewPlugin starts a plugin declaration.
+// NewPlugin starts a plugin declaration. It allocates the builder and
+// its map of priorities, two allocations.
 func NewPlugin(name plugin.ID) *Builder {
 	return &Builder{name: name, priority: map[plugin.Role]int{}}
 }
 
 // Version sets the version the composition fingerprint folds in:
-// bump it with any change to what the plugin produces.
+// bump it with any change to what the plugin produces. It allocates
+// nothing.
 func (b *Builder) Version(v string) *Builder {
 	b.version = v
 	return b
 }
 
 // Output declares one file family; repeatable, one declaration per
-// family.
+// family. A first call allocates the list of families, and a later
+// call allocates only to grow it.
 func (b *Builder) Output(o plugin.Output) *Builder {
 	b.outputs = append(b.outputs, o)
 	return b
 }
 
-// Priority sets one role's priority.
+// Priority sets one role's priority. A first call allocates the first
+// group of the map of priorities.
 func (b *Builder) Priority(r plugin.Role, p int) *Builder {
 	b.priority[r] = p
 	return b
 }
 
-// Provides declares the capability labels this plugin stands
-// behind.
+// Provides declares the capability labels this plugin provides to the
+// plugins that require them. A first call allocates the list of labels,
+// and a later call allocates only to grow it.
 func (b *Builder) Provides(caps ...plugin.Capability) *Builder {
 	b.provides = append(b.provides, caps...)
 	return b
 }
 
-// Requires declares the capabilities this plugin runs after.
+// Requires declares the capabilities this plugin runs after. A first
+// call allocates the list of labels, and a later call allocates only to
+// grow it.
 func (b *Builder) Requires(caps ...plugin.Capability) *Builder {
 	b.requires = append(b.requires, caps...)
 	return b
@@ -81,7 +100,7 @@ func (b *Builder) Requires(caps ...plugin.Capability) *Builder {
 
 // Options declares the plugin's tagged options struct: a pointer
 // whose constructed values are the defaults. The composition
-// populates it; Build only carries it.
+// populates it; Build only carries it. Options allocates nothing.
 func (b *Builder) Options(cfg any) *Builder {
 	b.options = cfg
 	return b
@@ -90,7 +109,9 @@ func (b *Builder) Options(cfg any) *Builder {
 // Keys declares the registration the plugin performs at
 // composition: claim the namespace, register the keys, keep the
 // typed handles. The built value returns it through
-// [plugin.KeyProvider]; repeated declarations run in order.
+// [plugin.KeyProvider]; repeated declarations run in order. A first
+// call allocates the list of registrations, and a later call allocates
+// only to grow it.
 func (b *Builder) Keys(register func(r *meta.Registry) error) *Builder {
 	b.keys = append(b.keys, register)
 	return b
@@ -100,7 +121,9 @@ func (b *Builder) Keys(register func(r *meta.Registry) error) *Builder {
 // plan resolves this plugin's template references in, for every
 // target without a tree of its own under [Builder.For]. The built
 // value returns it through [plugin.TemplateProvider]. A nil tree,
-// and a second plugin-level tree, panic at Build.
+// and a second plugin-level tree, panic at Build. A first call of
+// Templates or [Builder.Funcs] allocates the list of plugin-level
+// options, and a later call allocates only to grow it.
 func (b *Builder) Templates(tree fs.FS) *Builder {
 	b.defaults = append(b.defaults, Templates(tree))
 	return b
@@ -112,7 +135,9 @@ func (b *Builder) Templates(tree fs.FS) *Builder {
 // and a function text/template refuses panic at Build. A helper
 // that works on a type takes the spelling the shared vocabulary
 // returns in the template, because the vocabulary records the
-// file's imports as it spells.
+// file's imports as it spells. A first call of Funcs or
+// [Builder.Templates] allocates the list of plugin-level options, and a
+// later call allocates only to grow it.
 func (b *Builder) Funcs(fm template.FuncMap) *Builder {
 	b.defaults = append(b.defaults, Funcs(fm))
 	return b
@@ -125,13 +150,15 @@ func (b *Builder) Funcs(fm template.FuncMap) *Builder {
 // trees through For alone serves those targets alone, and a
 // composition refuses a plan of any other target at Build. The zero
 // target, a target declared twice and a For without options panic
-// at Build.
+// at Build. Each call copies its options, one allocation, and a first
+// call allocates the list of targets.
 func (b *Builder) For(t plugin.Target, opts ...TargetOption) *Builder {
 	b.layers = append(b.layers, targetLayer{target: t, opts: slices.Clone(opts)})
 	return b
 }
 
-// Handle registers rules, in declaration order.
+// Handle registers rules, in declaration order. A first call allocates
+// the list of rules, and a later call allocates only to grow it.
 func (b *Builder) Handle(rules ...Rule) *Builder {
 	b.rules = append(b.rules, rules...)
 	return b
@@ -160,6 +187,14 @@ func (b *Builder) Handle(rules ...Rule) *Builder {
 // constructor and panics on the first Build in any test, before a
 // run exists; composition faults remain collected errors where the
 // workspace composes.
+//
+// # Allocation contract
+//
+// Build allocates in proportion to the declaration: the table of output
+// families, the lowered rules and the predicates each inherits, the
+// built value with its copies of the declared lists, the subscriptions,
+// and the role wrapper. A declaration of one family, a graph rule and
+// two emit rules under one fact gate allocates 13 times.
 func (b *Builder) Build() plugin.Plugin {
 	if b.name == "" {
 		panic("eidos: NewPlugin with an empty name")
@@ -281,14 +316,15 @@ func flatten(
 				" gates a graph rule, which has no subject to gate on")
 		}
 		*out = append(*out, flatRule{
-			ordinal: plugin.RuleID(len(*out)),
-			kind:    r.leaf.kind,
-			phase:   r.leaf.phase,
-			graph:   r.leaf.graph,
-			schema:  sch,
-			gate:    on,
-			preds:   held,
-			invoke:  r.leaf.invoke,
+			ordinal:   plugin.RuleID(len(*out)),
+			kind:      r.leaf.kind,
+			phase:     r.leaf.phase,
+			graph:     r.leaf.graph,
+			schema:    sch,
+			gate:      on,
+			spellings: spellingsOf(sch, on),
+			preds:     held,
+			invoke:    r.leaf.invoke,
 		})
 	}
 }
@@ -304,9 +340,27 @@ type flatRule struct {
 	// gate is the canonical spelling of the directive the rule is
 	// gated on, its own schema's or the one a Gated wrapper names,
 	// and empty on a rule no directive gates.
-	gate   directive.Name
-	preds  []Pred
-	invoke func(inv invocation) error
+	gate directive.Name
+	// spellings are the spellings the gating directive may be indexed
+	// under, which the dispatch enumerates, and nil on a rule no
+	// directive gates.
+	spellings []directive.Name
+	preds     []Pred
+	invoke    func(inv invocation) error
+}
+
+// spellingsOf returns the spellings a gating directive may be indexed
+// under: the canonical one, and the bare one where a schema's differ. A
+// kernel gate has one spelling, and a rule no directive gates has none.
+func spellingsOf(schema *directive.Schema, gate directive.Name) []directive.Name {
+	switch {
+	case gate == "":
+		return nil
+	case schema == nil || gate == schema.Name:
+		return []directive.Name{gate}
+	default:
+		return []directive.Name{gate, schema.Name}
+	}
 }
 
 // kernelDirective reports whether name is the canonical spelling

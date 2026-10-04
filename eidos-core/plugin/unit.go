@@ -4,10 +4,7 @@
 package plugin
 
 import (
-	"crypto/sha256"
-	"encoding/binary"
 	"fmt"
-	"hash"
 	"io/fs"
 	"strings"
 
@@ -30,21 +27,20 @@ const (
 
 // SourceUnit is one frontend compilation unit under parse: the only
 // surface a Parse call touches. Bytes enter through Read alone,
-// jailed to the unit's files and their declared shared inputs,
-// and every accepted read folds into the unit's fingerprint, so a
-// frontend cannot depend on bytes the cache does not know about.
+// jailed to the unit's files and their declared shared inputs. The
+// load keys the unit by the digests of those files, so a frontend
+// that reads around Read depends on bytes the key does not cover.
 type SourceUnit struct {
 	files   []SourceRef
 	allowed map[string]bool
 	fsys    fs.FS
 	depth   Depth
 	syntax  CommentSyntax
-	// marks are what open a carrier line under the load's brand.
-	marks  carrierMarks
+	// brand is what a carrier line's mark spells under the load.
+	brand  string
 	sink   *diag.Sink
 	origin diag.Origin
 	graph  *GraphBuilder
-	reads  hash.Hash
 }
 
 // NewSourceUnit assembles a unit for the load driver and the
@@ -62,22 +58,11 @@ func NewSourceUnit(
 		panic("plugin: a unit without a brand cannot tell a carrier from a comment")
 	}
 	allowed := make(map[string]bool, len(files)*2)
-	reads := sha256.New()
 	for _, f := range files {
 		allowed[f.Path] = true
-		// The roster seeds the fold before any read: the member
-		// paths, their order and their shared inputs shape the
-		// graph whether or not the parse reads every one, so a
-		// member added, dropped or reordered re-keys the unit even
-		// under a frontend that reads lazily.
-		reads.Write([]byte(f.Path))
-		reads.Write([]byte{0})
 		for _, s := range f.Shared {
 			allowed[s] = true
-			reads.Write([]byte(s))
-			reads.Write([]byte{0})
 		}
-		reads.Write([]byte{0})
 	}
 	return &SourceUnit{
 		files:   files,
@@ -85,11 +70,10 @@ func NewSourceUnit(
 		fsys:    fsys,
 		depth:   depth,
 		syntax:  syntax,
-		marks:   marksOf(brand),
+		brand:   brand,
 		sink:    sink,
 		origin:  origin,
 		graph:   newGraphBuilder(),
-		reads:   reads,
 	}
 }
 
@@ -100,8 +84,7 @@ func (u *SourceUnit) Files() []SourceRef { return u.files }
 // path outside the unit's files and their declared shared inputs
 // refuses, naming the path. A qualified path reads from the store it
 // names, through the unit's tree as a [StoreFS], the way [ReadFile]
-// resolves it. Every accepted read folds path and content into the
-// unit's fingerprint, each behind its length.
+// resolves it.
 func (u *SourceUnit) Read(path string) ([]byte, error) {
 	if !u.allowed[path] {
 		return nil, fmt.Errorf(
@@ -112,16 +95,7 @@ func (u *SourceUnit) Read(path string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("plugin: read %s: %w", path, err)
 	}
-	fold(u.reads, []byte(path))
-	fold(u.reads, b)
 	return b, nil
-}
-
-// fold writes one field into a fingerprint behind its length, so
-// no byte inside a field can pass for the boundary of the next.
-func fold(h hash.Hash, field []byte) {
-	h.Write(binary.AppendUvarint(nil, uint64(len(field))))
-	h.Write(field)
 }
 
 // Depth returns how deep this unit loads. Parse observes it on the
@@ -207,7 +181,7 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 		line := lines[i]
 		lineAt := at
 		lineAt.Line += i
-		mark, payload, carried := u.marks.cut(line.text)
+		mark, payload, carried := cutCarrier(line.text, u.brand)
 		switch {
 		case carried:
 			shaped := u.directiveShaped(line)
@@ -216,7 +190,7 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 					u.Errorf(ContinuedCarrier, lineAt,
 						"%q continues onto the next line, and a formatter may move a carrier in this "+
 							"form away from its continuation: write it as %q",
-						mark+payload, u.marks.set()+payload)
+						mark+payload, carrierSet+u.brand+carrierClose+payload)
 					continue
 				}
 				span := []string{payload}
@@ -238,6 +212,11 @@ func (u *SourceUnit) Comment(raw string, at position.Pos) CommentParts {
 			}
 			parts.Annotations = append(parts.Annotations, annotation)
 		default:
+			if parts.Docs == nil {
+				// The lines left bound the documentation, so the list is
+				// allocated once.
+				parts.Docs = make([]string, 0, len(lines)-i)
+			}
 			parts.Docs = append(parts.Docs, line.text)
 		}
 	}
@@ -307,14 +286,6 @@ func (u *SourceUnit) Infof(c diag.Code, at position.Pos, format string, a ...any
 	u.sink.Infof(c, at, u.origin, format, a...)
 }
 
-// ReadSum returns the fold of the unit's roster and every read the
-// unit accepted, in read order: the reads' half of the unit key,
-// seeded with the member paths and shared inputs at construction
-// so the roster itself cannot escape it. The driver folds the
-// rest, the partition reads, the depth, the versions and the
-// configuration, and the load report records the finished key.
-func (u *SourceUnit) ReadSum() []byte { return u.reads.Sum(nil) }
-
 // directiveShaped reports whether a comment line has the
 // tool-directive shape: the syntax declares the convention, the
 // marker is adjacent, and the text reads tool:name.
@@ -338,13 +309,12 @@ type commentLine struct {
 // tolerated after either. The longest form that matches decides,
 // because one language's markers can begin with each other, as Rust's
 // //, /// and //! do, and the shorter marker would leave the rest of
-// the longer one in the text.
+// the longer one in the text. It allocates the returned list alone.
 func commentLines(raw string, syntax CommentSyntax) []commentLine {
 	if b, enclosed := enclosingBlock(raw, syntax.Blocks); enclosed {
 		body := strings.TrimSuffix(strings.TrimPrefix(raw, b.Open), b.Close)
-		lines := strings.Split(body, "\n")
-		out := make([]commentLine, 0, len(lines))
-		for _, line := range lines {
+		out := make([]commentLine, 0, strings.Count(body, "\n")+1)
+		for line := range strings.SplitSeq(body, "\n") {
 			trimmed := strings.TrimSpace(line)
 			if b.Gutter != "" {
 				trimmed = strings.TrimPrefix(trimmed, b.Gutter)
@@ -354,9 +324,8 @@ func commentLines(raw string, syntax CommentSyntax) []commentLine {
 		}
 		return out
 	}
-	lines := strings.Split(raw, "\n")
-	out := make([]commentLine, 0, len(lines))
-	for _, line := range lines {
+	out := make([]commentLine, 0, strings.Count(raw, "\n")+1)
+	for line := range strings.SplitSeq(raw, "\n") {
 		trimmed := strings.TrimSpace(line)
 		adjacent := false
 		if marker := longestPrefix(trimmed, syntax.Line); marker != "" {
@@ -396,42 +365,40 @@ func longestPrefix(line string, markers []string) string {
 	return best
 }
 
-// carrierMarks are the three marks a carrier opens with under one
-// brand, negated first, then the explicit set form, then the bare
-// set form, which is the order a line is tried in.
-type carrierMarks [3]string
-
-// marksOf composes a brand's three marks once, so reading a comment
-// line composes no string.
-func marksOf(brand string) carrierMarks {
-	return carrierMarks{
-		carrierNegated + brand + carrierClose,
-		carrierSet + brand + carrierClose,
-		brand + carrierClose,
+// cutCarrier splits a clean comment line into its carrier mark under a
+// brand and the payload that follows. It tries the negated mark, then
+// the explicit set mark, then the bare set mark, and reports false for
+// a line that opens with none of them, and for a mark followed by
+// anything but a letter, so a bare mark never reads as authored intent.
+// The mark is the line's own leading bytes, so the cut allocates
+// nothing.
+func cutCarrier(line, brand string) (mark, payload string, ok bool) {
+	// Both signs are one byte.
+	if line != "" && (line[0] == carrierNegated[0] || line[0] == carrierSet[0]) {
+		if mark, payload, ok = cutMark(line, 1, brand); ok {
+			return mark, payload, true
+		}
 	}
+	return cutMark(line, 0, brand)
 }
 
-// cut splits a clean comment line into its carrier mark and
-// payload. It reports false for a line that opens with no mark, and
-// for a mark followed by anything but a letter, so a bare mark never
-// reads as authored intent.
-func (m carrierMarks) cut(line string) (mark, payload string, ok bool) {
-	for _, candidate := range m {
-		rest, marked := strings.CutPrefix(line, candidate)
-		if !marked || rest == "" {
-			continue
-		}
-		c := rest[0]
-		if ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') {
-			return candidate, rest, true
-		}
+// cutMark splits a line whose bytes after the first sign bytes are the
+// brand, the closing colon and a letter, at the letter. It reports
+// false for any other line.
+func cutMark(line string, sign int, brand string) (mark, payload string, ok bool) {
+	rest, branded := strings.CutPrefix(line[sign:], brand)
+	if !branded {
+		return "", "", false
+	}
+	rest, closed := strings.CutPrefix(rest, carrierClose)
+	if !closed || rest == "" {
+		return "", "", false
+	}
+	if c := rest[0]; ('a' <= c && c <= 'z') || ('A' <= c && c <= 'Z') {
+		return line[:len(line)-len(rest)], rest, true
 	}
 	return "", "", false
 }
-
-// set returns the set mark, +brand:, whose plus sign keeps a
-// carrier line out of the tool-directive shape.
-func (m carrierMarks) set() string { return m[1] }
 
 // CutCarrier splits a clean comment line into the carrier mark it
 // opens with under a brand and the payload that follows, the way
@@ -441,9 +408,10 @@ func (m carrierMarks) set() string { return m[1] }
 // are the kit's one cross-language convention, so a directive is
 // spelled the same way in every language's comments, and two tools
 // built on the kernel and run in one repository read only their own
-// carriers.
+// carriers. It allocates nothing, because the mark and the payload
+// share the line's bytes.
 func CutCarrier(line, brand string) (mark, payload string, ok bool) {
-	return marksOf(brand).cut(line)
+	return cutCarrier(line, brand)
 }
 
 // legacyDirective reports whether a line opens with one of the

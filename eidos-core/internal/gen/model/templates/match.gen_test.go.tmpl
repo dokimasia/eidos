@@ -3,6 +3,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
@@ -15,6 +16,19 @@ import (
 
 // subjectPlugin is the identity every plugin here declares under.
 const subjectPlugin = "subjects"
+
+// matchAllocs is one constructor call: the rule's leaf, and the
+// closure that binds the handler to the subject's kind.
+const matchAllocs = 2
+
+// matchCase is one measured call of a constructor: the
+// sub-benchmark's name, the call, and the check on the rule the last
+// call returned.
+type matchCase struct {
+	name  string
+	call  func()
+	check func(testing.TB)
+}
 
 // dispatched runs p's generate phase over a graph holding pkgs, and
 // fails the test unless the phase call passes. It is what puts a
@@ -48,7 +62,7 @@ func TestMatches(t *testing.T) {
 	t.Run("On{{.Name}}", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -133,4 +147,52 @@ func TestMatches(t *testing.T) {
 	})
 {{- end}}
 {{- end}}
+}
+
+// The constructors allocate within their ceiling in the ordinary run,
+// which runs no benchmark.
+func TestMatchesAllocs(t *testing.T) {
+	for _, tt := range matchCases() {
+		assert.MaxAllocs(t, tt.call, matchAllocs, tt.name+" allocates the rule")
+		tt.check(t)
+	}
+}
+
+// BenchmarkMatches measures every subject kind's constructor.
+func BenchmarkMatches(b *testing.B) {
+	for _, tt := range matchCases() {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(matchAllocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
+		})
+	}
+}
+
+// matchCases returns one case for every subject kind's constructor,
+// each over a handler built once.
+func matchCases() []matchCase {
+	var cases []matchCase
+{{- range .Views}}
+{{- if .Subject}}
+	{
+		handler := func(*eidos.{{.Name}}Match, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "On{{.Name}}",
+			call: func() { rule = eidos.On{{.Name}}(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "On{{.Name}} returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.Kind{{.Name}},
+					"the rule triggers on its kind")
+			},
+		})
+	}
+{{- end}}
+{{- end}}
+	return cases
 }

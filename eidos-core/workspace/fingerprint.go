@@ -15,15 +15,19 @@ import (
 
 // Fingerprint returns the composition's fingerprint: every
 // scheduled annotator and generator with its version and canonical
-// options, each plan's name, sources, dependencies and backend, and
-// each workspace check with the plans it reads, folded in sorted
-// order. A load takes it as its plugin-set, so two compositions never
-// share unit keys and a composition change re-keys every unit, a
-// change of a plan's scope included. What a plugin declares beyond its
-// identity — keys, schemas, templates — is covered by its version
-// under the bump-on-any-change rule, so the fingerprint needs no
-// registry walk. The fingerprint is taken at Build, over the options
-// as the config left them, and every call returns a fresh copy.
+// options, each plan's name, sources, dependencies, generators and
+// backend, and each workspace check with the plans it reads, folded in
+// sorted order.
+//
+// Each generation of the sealed state records the SHA-256 of the
+// fingerprint. A run over a generation that records another one ignores
+// the generation, reports [ColdState] and runs cold, so a change of a
+// plan's scope also runs cold. What a plugin declares beyond its
+// identity, such as its keys, schemas and templates, is covered by its
+// version under the bump-on-any-change rule, so the fold walks no
+// registry. The fingerprint is taken at Build, over the options as the
+// configuration left them. It is a SHA-256 digest, and every call
+// returns a fresh copy, one allocation.
 func (w *Workspace) Fingerprint() []byte { return slices.Clone(w.fingerprint) }
 
 // fingerprintOf folds the composition's scheduled plugins, plans and

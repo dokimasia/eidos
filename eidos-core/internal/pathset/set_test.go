@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/pathset"
 )
@@ -159,4 +160,82 @@ func TestSet(t *testing.T) {
 			})
 		}
 	})
+}
+
+// A lowercase path is its own folded spelling, so the checks over one
+// allocate nothing in the ordinary run, which runs no benchmark. A
+// path with a capital allocates its folded copy.
+func TestSetAllocs(t *testing.T) {
+	s := filled()
+	assert.MaxAllocs(t, func() {
+		if clash, _ := s.Clash(storeTest); clash != pathset.ClashNone {
+			t.Fatalf("Clash reported %s for a sibling", clash)
+		}
+	}, 0, "Clash allocates nothing for a lowercase path")
+	assert.MaxAllocs(t, func() {
+		if clash, _ := s.Clash("svc/Store.go"); clash != pathset.ClashCase {
+			t.Fatalf("Clash reported %s for a path in another case", clash)
+		}
+	}, 1, "Clash allocates the folded spelling of a path with a capital")
+	assert.MaxAllocs(t, func() { s.Add(storeFile) }, 0, "Add allocates nothing for a path the set contains")
+	assert.MaxAllocs(t, func() {
+		if pathset.ClashFile.String() == "" {
+			t.Fatal("String returned nothing")
+		}
+	}, 0, "String allocates nothing for a declared clash")
+}
+
+// BenchmarkSet measures the checks a layout runs for every file it
+// routes, over a set of the fixture's paths.
+func BenchmarkSet(b *testing.B) {
+	s := filled()
+
+	b.Run("Set.Clash/a lowercase path that fits", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got pathset.Clash
+		for c.Loop() {
+			got, _ = s.Clash(storeTest)
+		}
+		assert.Equal(b, got, pathset.ClashNone, "Clash reports a sibling as fitting")
+	})
+
+	b.Run("Set.Clash/a path that differs only in case", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got pathset.Clash
+		for c.Loop() {
+			got, _ = s.Clash("svc/Store.go")
+		}
+		assert.Equal(b, got, pathset.ClashCase, "Clash reports the case clash")
+	})
+
+	b.Run("Set.Add/a path the set contains", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			s.Add(storeFile)
+		}
+		clash, _ := s.Clash(storeFile)
+		assert.Equal(b, clash, pathset.ClashNone, "Add keeps the one spelling")
+	})
+
+	b.Run("Clash.String", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = pathset.ClashFile.String()
+		}
+		assert.Equal(b, got, "file", "String spells the clash")
+	})
+}
+
+// filled returns a set of the fixture's store and generated paths.
+func filled() *pathset.Set {
+	var s pathset.Set
+	for _, p := range []string{storeFile, genFile, "a/b/c.go"} {
+		s.Add(p)
+	}
+	return &s
 }

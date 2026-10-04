@@ -47,7 +47,8 @@ const (
 
 // String returns the role's spelling. Faults and stats name roles,
 // so a consumer matching on the spelling matches on API. A role
-// nothing declares returns its number rather than a name.
+// nothing declares returns its number rather than a name. String
+// allocates nothing for a declared role.
 func (r Role) String() string {
 	switch r {
 	case RoleAnnotator:

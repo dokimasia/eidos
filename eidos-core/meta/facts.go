@@ -12,32 +12,49 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// Facts is the run's stamped facts: one bag per subject.
+// keyEntry is what a read consults of one key's spec: its fact group
+// and its kind restriction.
+type keyEntry struct {
+	group GroupName
+	kinds []symbol.Kind
+}
+
+// Facts is the run's stamped facts: one bag per subject, keyed by the
+// subject's identity in a [sync.Map].
 //
-// Facts is safe for concurrent use. Writes to one subject serialize
-// on that subject's bag lock, and readers of the bag share it. A
-// write that changes whether a fact is present also takes the fact
-// index's lock, which is one lock for the store. Rank decides every
-// winner, so a parallel run returns what a serial one does, whatever
-// order the writes arrived.
+// # Concurrency
+//
+// Facts is safe for concurrent use. Writes to one subject serialize on
+// that subject's bag lock, and readers of the bag share it. A write that
+// changes whether a fact is present also takes the fact index's lock,
+// which is one lock for the store. Rank decides every winner, so a
+// parallel run returns what a serial one does, whatever order the writes
+// arrived in.
+//
+// # Allocation contract
+//
+// A read allocates nothing, except the copy of a list value. A write
+// allocates what the store keeps: a subject's bag on its first claim,
+// the boxed value of each new claim, and the containers that grow with
+// the claims. Each method states its count. In a store [Restore]
+// returned, the first touch of a subject also allocates the bag and the
+// claims the source restores into it.
 type Facts struct {
 	registry *Registry
-	// groupOf, kindsOf and nameOf are each key's group, kind
-	// restriction and name by id, precomputed from the registry so a
-	// read consults one slice entry and copies no spec. Registration
-	// completes before the first write, which is what makes the
-	// snapshot safe.
-	groupOf []GroupName
-	kindsOf [][]symbol.Kind
-	nameOf  []KeyName
+	// keys is each key's group and kind restriction by id, copied from
+	// the registry so a read consults one entry and copies no spec.
+	// Registration completes before the first write, which is what makes
+	// the copy safe.
+	keys []keyEntry
 	// bags contains each subject's bag. Writers mostly write disjoint
 	// subjects, which is what keeps two bags from contending on one
 	// lock.
 	bags sync.Map
-	// index returns ByKey; bags feed it presence transitions under
-	// their own write lock, so two racing writes on one subject
-	// cannot record their transitions out of order.
-	index *factIndex
+	// index enumerates [Facts.ByKey]. Each bag records its presence
+	// transitions into it under the bag's write lock, so two racing
+	// writes on one subject cannot record their transitions out of
+	// order.
+	index factIndex
 	// source restores each bag's recorded claims on first use, nil for
 	// a store NewFacts returned.
 	source BagSource
@@ -48,28 +65,51 @@ type Facts struct {
 }
 
 // NewFacts returns an empty fact store reading specs from r.
-// Registration completes before the first write; the store
-// snapshots what it needs and never locks the registry.
+// Registration completes before the first write. The store copies the
+// group and the kind restriction of every key r registered, and never
+// locks r.
+//
+// # Allocation contract
+//
+// NewFacts allocates twice: the store, and its table of the keys'
+// groups and kind restrictions.
 func NewFacts(r *Registry) *Facts {
-	groupOf := make([]GroupName, len(r.specs)+1)
-	kindsOf := make([][]symbol.Kind, len(r.specs)+1)
-	nameOf := make([]KeyName, len(r.specs)+1)
+	keys := make([]keyEntry, len(r.specs)+1)
 	for i, spec := range r.specs {
-		groupOf[i+1] = spec.Group
-		kindsOf[i+1] = spec.Kinds
-		nameOf[i+1] = spec.Name
+		keys[i+1] = keyEntry{group: spec.Group, kinds: spec.Kinds}
 	}
-	return &Facts{registry: r, groupOf: groupOf, kindsOf: kindsOf, nameOf: nameOf, index: newFactIndex(nil)}
+	return &Facts{registry: r, keys: keys}
 }
 
 // Stamp records one claim of v under k.
 //
-// It refuses a zero key, a subject kind the key does not admit, and
-// a false boolean — absence is the negative, so false is never
-// stamped and deletion remains load-bearing. A claim identical to one
-// already kept, same rank source and equal value, changes nothing.
-// Values compare per vocabulary term; slices compare element-wise
-// and are copied in.
+// A claim identical to one the store keeps, from the same rank source
+// with an equal value, changes nothing. Values compare per vocabulary
+// term, and a list compares element-wise. The store keeps a copy of a
+// list, so the caller may reuse its slice.
+//
+// Error modes:
+//   - a key nothing registered;
+//   - a subject kind the key does not admit;
+//   - a false boolean. Absence is the negative, so a fact turns false
+//     only through a drop or a withdrawal;
+//   - a second value from a rank source that already claimed the fact,
+//     because rank cannot order the two.
+//
+// # Allocation contract
+//
+// An identical re-stamp allocates nothing. A new claim allocates its
+// boxed value: one allocation for a string or an identity, two for a
+// list and its copy, and none for a boolean or an integer below 256,
+// which Go boxes without allocating. A subject's first claim also
+// allocates the bag, the boxed identity and the [sync.Map] entry, three
+// allocations, and the map's trie nodes where two hashes share a
+// prefix: 0.38 per subject on average at 200,000 subjects. The first
+// claim on a second key of a subject allocates the bag's key map and
+// the key's state. A claim from a second rank source allocates the
+// fact's claim slice, which grows by doubling. A claim that turns a fact
+// present adds the subject to the key's index, whose map grows by
+// doubling.
 func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
 	spec, err := f.spec(k.ID())
 	if err != nil {
@@ -78,11 +118,27 @@ func Stamp[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
 	if err := admitClaim(spec, k.Name(), any(v), c); err != nil {
 		return err
 	}
-	return f.write(c.Subject, k.ID(), k.Name(), stored{claim: c, value: cloneValue(any(v))})
+	return stampValue(f, k, v, c)
+}
+
+// stampValue admits one typed claim under its subject's bag lock. A
+// claim the state keeps from the same rank source with an equal value
+// returns before the value is boxed, so an identical re-stamp allocates
+// nothing.
+func stampValue[T FactValue](f *Facts, k Key[T], v T, c Claim) error {
+	b := f.bag(c.Subject)
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	state := b.key(k.ID())
+	if held, kept := state.from(c); kept && !held.drop && equalValue(held.value, any(v)) {
+		return nil
+	}
+	return f.admitLocked(b, c.Subject, k.ID(), k.Name(), state, stored{claim: c, value: cloneValue(any(v))})
 }
 
 // Registry returns the registry the store was created over: what
-// a reader resolves a key by name against.
+// a reader resolves a key by name against. It allocates nothing.
 func (f *Facts) Registry() *Registry { return f.registry }
 
 // DropKey claims the fact's absence.
@@ -90,6 +146,14 @@ func (f *Facts) Registry() *Registry { return f.registry }
 // A drop is a claim like any other and ranks like one, so a
 // directive-authority drop ranks above a plugin stamp whenever the stamp
 // arrives, and below a manual write.
+//
+// Error modes: a key nothing registered, and a stamp from the same rank
+// source on the fact.
+//
+// # Allocation contract
+//
+// An identical re-drop allocates nothing. A new drop allocates what a
+// new claim of [Stamp] does, without a boxed value.
 func (f *Facts) DropKey(k KeyID, c Claim) error {
 	spec, err := f.spec(k)
 	if err != nil {
@@ -101,8 +165,16 @@ func (f *Facts) DropKey(k KeyID, c Claim) error {
 // DropGroup claims absence for every member of g, including members
 // whose stamps arrive after the drop: the tombstone covers the group,
 // so arbitration finds it whichever member is read.
+//
+// Error modes: a group nothing registered into.
+//
+// # Allocation contract
+//
+// An identical re-drop allocates nothing. A new drop allocates the bag's
+// group map and the group's state on the subject's first group drop, and
+// what a new claim of [Stamp] does to the bag and the index otherwise.
 func (f *Facts) DropGroup(g GroupName, c Claim) error {
-	members := slices.Collect(f.registry.Group(g))
+	members := f.registry.groups[g]
 	if len(members) == 0 {
 		return fmt.Errorf("meta: group %q holds no keys: nothing registered into it", g)
 	}
@@ -129,11 +201,19 @@ func (f *Facts) DropGroup(g GroupName, c Claim) error {
 //
 // Error modes: a key nothing registered. Withdrawing a claim the store
 // does not contain is not an error.
+//
+// # Allocation contract
+//
+// Withdraw allocates nothing, except where the withdrawal turns a fact
+// present and its index's map grows.
 func (f *Facts) Withdraw(k KeyID, c Claim) error {
 	if _, err := f.spec(k); err != nil {
 		return err
 	}
-	b := f.bag(c.Subject)
+	b, held := f.peek(c.Subject)
+	if !held {
+		return nil
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -148,12 +228,20 @@ func (f *Facts) Withdraw(k KeyID, c Claim) error {
 //
 // Error modes: a group nothing registered into. Withdrawing a drop the
 // store does not contain is not an error.
+//
+// # Allocation contract
+//
+// WithdrawGroup allocates nothing, except where the withdrawal turns a
+// member present and its index's map grows.
 func (f *Facts) WithdrawGroup(g GroupName, c Claim) error {
-	members := slices.Collect(f.registry.Group(g))
+	members := f.registry.groups[g]
 	if len(members) == 0 {
 		return fmt.Errorf("meta: group %q holds no keys: nothing registered into it", g)
 	}
-	b := f.bag(c.Subject)
+	b, held := f.peek(c.Subject)
+	if !held {
+		return nil
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -167,7 +255,7 @@ func (f *Facts) WithdrawGroup(g GroupName, c Claim) error {
 // [Restore] returned met, and nil where every read of it succeeded or
 // the store restores nothing. A bag the source failed to restore reads
 // as empty, so a run that finds Damaged set after a phase discards what
-// it derived and runs cold.
+// it derived and runs cold. It allocates nothing.
 func (f *Facts) Damaged() error {
 	f.damageMu.Lock()
 	defer f.damageMu.Unlock()
@@ -175,8 +263,13 @@ func (f *Facts) Damaged() error {
 }
 
 // Get returns the winning value, untracked, and false where the
-// winner is a drop or nothing was stamped. Slice values are copied
-// out, so a caller cannot write into a bag.
+// winner is a drop or nothing was stamped. A list is copied out, so a
+// caller cannot write into a bag.
+//
+// # Allocation contract
+//
+// Get allocates nothing for a scalar value and two allocations for a
+// list: the copy and its box.
 func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 	var zero T
 	value, held := f.lookup(id, k.ID())
@@ -190,12 +283,16 @@ func Get[T FactValue](f *Facts, id symbol.Identity, k Key[T]) (T, bool) {
 	return typed, true
 }
 
-// Fact returns what [Get] does and records the read at
-// (subject, key) into rec. A miss records too: the reader asked, so
-// it runs again when the fact appears. A subject of a kind the key
-// does not admit reads absent and records nothing, because [Stamp]
-// refuses every claim on it. It is the read every plugin makes; Get
-// is the kernel's own untracked path.
+// Fact returns what [Get] does and records the read at (subject, key)
+// into rec. It records a miss as well, so the reader runs again when the
+// fact appears. A subject of a kind the key does not admit reads absent
+// and records nothing, because [Stamp] refuses every claim on it. Every
+// plugin reads through Fact. [Get] is the kernel's untracked path.
+//
+// # Allocation contract
+//
+// Fact allocates what [Get] does, and what rec allocates to record the
+// read.
 func Fact[T FactValue](f *Facts, rec Recorder, id symbol.Identity, k Key[T]) (T, bool) {
 	if !f.admits(k.ID(), id.Kind) {
 		var zero T
@@ -212,12 +309,28 @@ type Recorder interface {
 	RecordFact(subject symbol.Identity, key KeyName)
 }
 
-// ByKey enumerates the subjects on which k presently reads present,
-// in identity order. The index is maintained at stamp time, which
-// is what lets a fact-gated rule visit its matches and not the whole
-// graph.
+// ByKey enumerates the subjects on which k reads present when the range
+// starts, in identity order. The index is maintained at stamp time,
+// which is what lets a fact-gated rule visit its matches and not the
+// whole graph.
+//
+// # Allocation contract
+//
+// The first enumeration after a presence transition sorts the key's
+// subjects into a new slice. Every other enumeration allocates nothing,
+// because the returned function inlines into the range.
 func (f *Facts) ByKey(k KeyID) iter.Seq[symbol.Identity] {
-	return slices.Values(f.index.enumerate(k))
+	return func(yield func(symbol.Identity) bool) { f.eachWithKey(k, yield) }
+}
+
+// eachWithKey yields the subjects on which k reads present, in identity
+// order, from the index's snapshot. It stops when yield returns false.
+func (f *Facts) eachWithKey(k KeyID, yield func(symbol.Identity) bool) {
+	for _, id := range f.index.enumerate(k) {
+		if !yield(id) {
+			return
+		}
+	}
 }
 
 // recordMembers records the presence of every member of a group on one
@@ -238,7 +351,7 @@ func (f *Facts) damaged(err error) {
 	}
 }
 
-// spec returns a key's spec or the refusal naming what was wrong.
+// spec returns a key's spec, or an error for a key nothing registered.
 func (f *Facts) spec(k KeyID) (KeySpec, error) {
 	spec, known := f.registry.Spec(k)
 	if !known {
@@ -247,23 +360,24 @@ func (f *Facts) spec(k KeyID) (KeySpec, error) {
 	return spec, nil
 }
 
-// group returns a key's fact group without copying its spec, which
-// is what keeps the read path off the registry.
+// group returns a key's fact group from the table, without reading the
+// registry or copying a spec. A key the table does not contain has no
+// group.
 func (f *Facts) group(k KeyID) GroupName {
-	if int(k) >= len(f.groupOf) {
+	if int(k) >= len(f.keys) {
 		return ""
 	}
-	return f.groupOf[k]
+	return f.keys[k].group
 }
 
 // admits reports whether a key's kind restriction admits a subject's
-// kind, from the snapshot. A key the snapshot does not contain admits
-// every kind, so its read records and [Get] reads it absent.
+// kind, from the table. A key the table does not contain admits every
+// kind, so its read records and [Get] reads it absent.
 func (f *Facts) admits(k KeyID, kind symbol.Kind) bool {
-	if int(k) >= len(f.kindsOf) {
+	if int(k) >= len(f.keys) {
 		return true
 	}
-	return kindAdmitted(f.kindsOf[k], kind)
+	return kindAdmitted(f.keys[k].kinds, kind)
 }
 
 // bag returns the subject's bag, creating it on first touch: the
@@ -306,7 +420,16 @@ func (f *Facts) write(id symbol.Identity, k KeyID, keyName KeyName, entry stored
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	changed, err := b.key(k).admit(entry)
+	return f.admitLocked(b, id, k, keyName, b.key(k), entry)
+}
+
+// admitLocked admits one stored claim into the state of (subject, key)
+// in b and maintains the index through the presence transition. The
+// caller has locked b.mu.
+func (f *Facts) admitLocked(
+	b *bag, id symbol.Identity, k KeyID, keyName KeyName, state *factState, entry stored,
+) error {
+	changed, err := state.admit(entry)
 	if err != nil {
 		return fmt.Errorf("meta: %s on %s %w", keyName, id, err)
 	}

@@ -11,8 +11,16 @@ import (
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
 
+// facadeFile is one file the generator writes for a curated package:
+// its re-exports, or the spec that pins them.
+type facadeFile struct {
+	ps   *PackageSurface
+	spec bool
+}
+
 // Generate renders the whole facade module from the kernel
-// checkout under repoRoot.
+// checkout under repoRoot: each curated package's re-exports, and the
+// spec beside them.
 //
 // It returns the output in memory, keyed by repository-relative
 // slash path, and writes nothing. A caller puts it on disk with
@@ -28,9 +36,17 @@ func Generate(repoRoot string) (genfile.Set, error) {
 	}
 
 	cur := curated()
-	return genfile.Render(surfaces, func(ps *PackageSurface) (string, []byte, error) {
-		src, err := render(ps, cur)
-		return path.Join(FacadeDir, ps.FacadeRel(), FileName), src, err
+	files := make([]facadeFile, 0, 2*len(surfaces))
+	for _, ps := range surfaces {
+		files = append(files, facadeFile{ps: ps}, facadeFile{ps: ps, spec: true})
+	}
+	return genfile.Render(files, func(f facadeFile) (string, []byte, error) {
+		if f.spec {
+			src, err := renderSpec(f.ps)
+			return path.Join(FacadeDir, f.ps.FacadeRel(), TestFileName), src, err
+		}
+		src, err := render(f.ps, cur)
+		return path.Join(FacadeDir, f.ps.FacadeRel(), FileName), src, err
 	})
 }
 

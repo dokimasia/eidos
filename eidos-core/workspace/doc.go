@@ -7,22 +7,22 @@
 //
 // [Builder] collects the composition: the brand, the frontends,
 // annotators, plans, workspace checks, target names, metadata key
-// registrations, ignored directive spellings, the output, the ledger,
-// the workspace's name, the worker count and the config.
-// [Builder.Build] runs its validation steps in one pass: the brand, the
-// worker count, the frontends, the roster, the registries with the
-// kernel's own keys and schemas registered first and every registry
-// sealed, the lowering into priority buckets, the options and their
-// canonical encoding, the plans and their compiled schedule, with every
-// generator that declares templates serving its plan's target, each
-// plan's [Sources] and dependencies, the plans' dependency order, the
-// plans each check reads, and, where the composition declares output,
-// the output contract each plan writes through. Every step runs even
-// when an earlier one found faults. Build returns either the
-// [Workspace] or one error joining everything found, so the
-// composition's author reads every fault at once. A Build that succeeds
-// has resolved every human-typed name in the composition. Nothing after
-// it fails on a name.
+// registrations, language rules, ignored directive spellings, the
+// output, the ledger, the parse memo, the workspace's name, the worker
+// count and the config. [Builder.Build] runs its validation steps in one
+// pass: the brand, the worker count, the memo's limit, the frontends,
+// the roster, the registries with the kernel's own keys and schemas
+// registered first and every registry sealed, the lowering into
+// priority buckets, the options and their canonical encoding, the plans
+// and their compiled schedule, with every generator that declares
+// templates serving its plan's target, each plan's [Sources] and
+// dependencies, the plans' dependency order, the plans each check
+// reads, and, where the composition declares output, the output
+// contract each plan writes through. Every step runs even when an
+// earlier one found faults. Build returns either the [Workspace] or one
+// error joining everything found, so the composition's author reads
+// every fault at once. A Build that succeeds has resolved every
+// human-typed name in the composition. Nothing after it fails on a name.
 //
 // # Plans that share a workspace
 //
@@ -55,9 +55,9 @@
 // # The run
 //
 // [Workspace.Run] takes one [Input] through the frame. It reads the
-// previous record from the composition's ledger, then loads the input's
-// tree with the composition's frontends under its brand and
-// fingerprint, or seals the graph the caller handed over. Per-subject
+// previous record and the sealed state from the composition's ledger,
+// then loads the input's tree with the composition's frontends under
+// its brand, or seals the graph the caller handed over. Per-subject
 // directive validation, the stamp replay, the kernel meta drops and
 // the annotate schedule in bucket order follow. The plans then run in
 // parallel: each generates, settles, routes, renders and stamps over
@@ -71,6 +71,41 @@
 // Build, and every mutable structure a run touches, its sink included,
 // is created per call.
 //
+// # The sealed state
+//
+// A run over a tree, with a ledger, records the next generation of the
+// sealed state strictly after the last commit: the record of its load,
+// with each file's stat and digest and each unit's region, and the
+// manifest documents that changed. The next run compares the tree with
+// the live generation. The gate stats every file and hashes each file
+// the record does not prove unchanged, and the load takes every unit
+// whose inputs are unchanged from the generation, whose region the
+// graph decodes on first read.
+//
+// Each generation records the SHA-256 of [Workspace.Fingerprint] and
+// the digest of the executable that wrote it. A generation of another
+// composition or another executable, and one that does not open, is
+// reported under [ColdState], and the run runs cold. A run that meets a
+// damaged record or region discards what it derived before any plan
+// commits. It then reports [ColdState] and runs again cold. [Input.Cold]
+// ignores the sealed state and reports nothing for it. A dry run, a run
+// over a caller's graph, a run whose previous record does not read and
+// a run that cannot read its executable do not write a generation.
+//
+// [Builder.Memo] keeps a parse memo: the region of every unit a run
+// parsed, stored under the unit's key and the executable's digest. The
+// memo's entries are in a ledger of its own, or under memo/ in the
+// composition's ledger. A load restores a changed unit from the memo
+// where the memo has the unit's key, and parses it otherwise. The
+// commit removes the entries with the oldest modification times once
+// the memo exceeds its limit.
+//
+// [Report.Stats] counts what the run executed: the files the gate
+// statted and hashed, the units the load parsed, restored, kept and
+// parsed again to link, the regions the run decoded, the subjects it
+// validated, the files the plans rendered, the checks it called, and the
+// generation and the bytes the commit wrote.
+//
 // # The output
 //
 // A composition declaring output through [Builder.Output] takes the
@@ -83,14 +118,15 @@
 // the outputs of plans the composition no longer declares are swept,
 // every metadata completeness contract is audited, and the workspace
 // checks run. The plans commit in dependency order, composition order
-// between plans without one, and the sweep after them. The ledger records the
-// merged manifest strictly after the last commit, and only where a
-// plan or the sweep committed. A stale output is removed
-// only where it is the brand's intact output, and one edited since its
-// stamp or without the brand's frame remains under [KeptOutput]. A dry
-// run, [Input.Dry], runs every phase and commits and records nothing. A
-// composition declaring no output stops after the settle, and its
-// plans' emit stores are the run's whole product.
+// between plans without one, and the sweep after them. A run that does
+// not write a generation records the merged manifest only where a plan
+// or the sweep committed. It records the manifest strictly after the
+// last commit. A stale
+// output is removed only where it is the brand's intact output, and one
+// edited since its stamp or without the brand's frame remains under
+// [KeptOutput]. A dry run, [Input.Dry], runs every phase and commits and
+// records nothing. A composition declaring no output stops after the
+// settle, and its plans' emit stores are the run's whole product.
 //
 // # Failure semantics
 //
@@ -105,9 +141,10 @@
 // workspace check's included, commits nothing at all. Findings
 // arrive in the report's sink, and any Error among them classifies the
 // run under [ErrRunFailed]. A previous record that does not read is
-// [UnreadableRecord], and the run removes nothing. A cancelled context
-// stops the run between units of work. A commit runs to its end once
-// begun. A cancellation observed before a plan's commit skips that
+// [UnreadableRecord], and the run removes nothing. A ledger that fails
+// to read or write the sealed state is a returned error. A cancelled
+// context stops the run between units of work. A commit runs to its end
+// once begun. A cancellation observed before a plan's commit skips that
 // commit and the commit of every plan after it. The report states each
 // plan's [PlanStatus]. Nothing here panics.
 //

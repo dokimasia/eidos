@@ -17,41 +17,48 @@ const aliasDepth = 8
 
 // Sample is one value of a type a generated check writes, or the
 // reason none could be derived.
+//
+// # Allocation contract
+//
+// The constructors and combinators of a Sample return it by value and
+// allocate nothing of their own.
 type Sample struct {
-	Value   emit.Value
-	Refusal Refusal
+	Value   emit.Value // the derived value; zero for a refused sample
+	Refusal Refusal    // why no value derived; RefusedNone for a sample with a value
 }
 
 // OK reports whether the sample has a derived value: no refusal,
-// and a value with a kind.
+// and a value with a kind. It allocates nothing.
 func (s Sample) OK() bool { return s.Refusal == RefusedNone && !s.Value.IsZero() }
 
-// Of returns a sample with a value.
+// Of returns a sample with a value. It allocates nothing.
 func Of(v emit.Value) Sample { return Sample{Value: v} }
 
-// Refused returns a sample with a refusal and no value.
+// Refused returns a sample with a refusal and no value. It allocates
+// nothing.
 func Refused(why Refusal) Sample { return Sample{Refusal: why} }
 
-// Pair returns a literal sample and its alternate, both of one
-// kind.
+// Pair returns a literal sample and its alternate, both of one kind.
+// It allocates nothing.
 func Pair(k emit.LiteralKind, sample, alternate string) (Sample, Sample) {
 	return Of(emit.Literal(k, sample)), Of(emit.Literal(k, alternate))
 }
 
 // NumberPair returns a numeric sample and its alternate, both of one
 // kind and written for a number type of one width in bits, as
-// [emit.Number] states it.
+// [emit.Number] states it. It allocates nothing.
 func NumberPair(k emit.LiteralKind, sample, alternate string, bits int) (Sample, Sample) {
 	return Of(emit.Number(k, sample, bits)), Of(emit.Number(k, alternate, bits))
 }
 
 // RefusedPair returns one refusal as both halves, for a type that
-// admits no pair.
+// admits no pair. It allocates nothing.
 func RefusedPair(why Refusal) (Sample, Sample) { return Refused(why), Refused(why) }
 
 // Lift returns a derived sample with its value wrapped, such as an
 // element placed in a composite. A sample without a value returns
-// unchanged, so the wrapped part keeps its reason.
+// unchanged, so the wrapped part keeps its reason. It allocates what
+// wrap allocates.
 func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 	if !s.OK() {
 		return s
@@ -65,7 +72,7 @@ func Lift(s Sample, wrap func(emit.Value) emit.Value) Sample {
 // value differs from the stated half, the other derived value where
 // that one differs, and a [RefusedNoLiteral] refusal where neither
 // does. The pair is then two distinct values. With no half stated,
-// the derived pair returns as it is.
+// the derived pair returns as it is. It allocates nothing.
 func Complete(sample, alternate, derived, derivedAlternate Sample) (Sample, Sample) {
 	switch {
 	case sample.OK() && alternate.OK():
@@ -118,8 +125,10 @@ const (
 )
 
 // FirstRefusal returns the first refusal among samples, and
-// [RefusedNoLiteral] where none states one. A value built from
-// several derived parts refuses with it when a part has no value.
+// [RefusedNoLiteral] where none states one. A value built from derived
+// parts refuses with it when a part has no value. FirstRefusal keeps no
+// sample, so the caller's list of arguments does not escape, and a call
+// allocates nothing.
 func FirstRefusal(samples ...Sample) Refusal {
 	for _, s := range samples {
 		if s.Refusal != RefusedNone {
@@ -129,7 +138,8 @@ func FirstRefusal(samples ...Sample) Refusal {
 	return RefusedNoLiteral
 }
 
-// String returns the refusal's spelling.
+// String returns the refusal's spelling, and the decimal number of an
+// undeclared refusal. It allocates nothing for a declared refusal.
 func (r Refusal) String() string {
 	switch r {
 	case RefusedNone:
@@ -159,6 +169,12 @@ func sameLiteral(a, b emit.Value) bool {
 // EmitRef restates a node reference in the emit model, structure,
 // arguments, target and package included, so a value's Type is what
 // a backend spells and imports. A nil reference returns nil.
+//
+// # Allocation contract
+//
+// EmitRef allocates each restated reference, and the list of children
+// and the list of arguments of each that has them. A reference without
+// children or arguments allocates one.
 func EmitRef(ref *node.TypeRef) *emit.TypeRef {
 	if ref == nil {
 		return nil
@@ -204,10 +220,10 @@ func (b Bound) samplesOf(subject symbol.Identity, ref *node.TypeRef, hint string
 
 // valueShape returns the shape an authored value of a type lifts by.
 // It is the fold's shape, with a reference to an alias followed to
-// the type the alias names. A defined type therefore takes the
-// literals of the type it is defined over, and an alias without a
-// target folds to Opaque. A chain longer than aliasDepth returns the
-// shape it stopped at.
+// the type the alias names. A defined type takes the literals of the
+// type it is defined over, and an alias without a target folds to
+// Opaque. A chain longer than aliasDepth returns the shape it stopped
+// at.
 func (b Bound) valueShape(ref *node.TypeRef) TypeShape {
 	shape := b.typeOf(ref)
 	for range aliasDepth {
@@ -260,7 +276,8 @@ func (b Bound) witnesses(params []*node.TypeParam) []*node.TypeRef {
 // the workspace, keeps its package beside the name and no target, so
 // a backend imports it and the language's builtin table classifies
 // it by both. A builtin has neither. The lookup records a read, so a
-// declaration arriving later changes what the witness is.
+// declaration arriving later changes what the witness is. It allocates
+// the reference.
 func (b Bound) witnessRef(id symbol.Identity) *node.TypeRef {
 	ref := &node.TypeRef{Spelling: id.Name}
 	if id.Package == "" {

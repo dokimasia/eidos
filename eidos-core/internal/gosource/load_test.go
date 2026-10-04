@@ -4,12 +4,15 @@
 package gosource_test
 
 import (
+	"go/ast"
 	"go/token"
+	"go/types"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/gosource"
 )
@@ -21,23 +24,38 @@ const (
 	brokenSource = "package p\n\nfunc F(\n"
 )
 
+// libDir is the fixture module's package without imports, as a
+// directory the tests read.
+const libDir = "testdata/mod/lib"
+
+// The ceilings of a load over the fixture's lib package, each into a
+// new file set.
+const (
+	// parseDirAllocs is one parse of the package's one hand-written
+	// file into a new file set: the set, the directory's entries, and
+	// the file's syntax tree with its comments.
+	parseDirAllocs = 59
+	// loadAllocs is one load of the package from its hand-written file:
+	// a new file set, the importer, the parse, and the type-check.
+	loadAllocs = 117
+)
+
+// The loader reads a package's files in name order and type-checks them
+// against the module, so the files it reads and the errors it returns
+// are pinned.
 func TestLoad(t *testing.T) {
 	t.Parallel()
 
 	t.Run("ParseDir", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("skips generated and test files", func(t *testing.T) {
+		t.Run("reads the hand-written files alone", func(t *testing.T) {
 			t.Parallel()
 
 			fset := token.NewFileSet()
-			files, err := gosource.ParseDir(fset, "testdata/mod/lib", gosource.HandWritten)
+			files, err := gosource.ParseDir(fset, libDir, gosource.HandWritten)
 			assert.NoError(t, err, "the fixture directory parses")
-			var got []string
-			for _, f := range files {
-				got = append(got, filepath.Base(fset.Position(f.Pos()).Filename))
-			}
-			assert.Equal(t, got, []string{"lib.go"},
+			assert.Equal(t, names(fset, files), []string{"lib.go"},
 				"hand-written mode skips generated and test files")
 		})
 
@@ -45,13 +63,9 @@ func TestLoad(t *testing.T) {
 			t.Parallel()
 
 			fset := token.NewFileSet()
-			files, err := gosource.ParseDir(fset, "testdata/mod/lib", gosource.Complete)
+			files, err := gosource.ParseDir(fset, libDir, gosource.Complete)
 			assert.NoError(t, err, "the fixture directory parses")
-			var got []string
-			for _, f := range files {
-				got = append(got, filepath.Base(fset.Position(f.Pos()).Filename))
-			}
-			assert.Equal(t, got, []string{"lib.gen.go", "lib.go"},
+			assert.Equal(t, names(fset, files), []string{"lib.gen.go", "lib.go"},
 				"complete mode reads generated files too")
 		})
 
@@ -61,22 +75,18 @@ func TestLoad(t *testing.T) {
 			fset := token.NewFileSet()
 			files, err := gosource.ParseDir(fset, "testdata/mod/app", gosource.HandWritten)
 			assert.NoError(t, err, "the fixture directory parses")
-			var got []string
-			for _, f := range files {
-				got = append(got, filepath.Base(fset.Position(f.Pos()).Filename))
-			}
-			assert.Equal(t, got, []string{"app.go", "uses_stdlib.go"},
+			assert.Equal(t, names(fset, files), []string{"app.go", "uses_stdlib.go"},
 				"files read in name order, so two runs agree")
 		})
 
-		t.Run("reports a directory holding no hand-written file", func(t *testing.T) {
+		t.Run("returns an error for a directory without a hand-written file", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := gosource.ParseDir(token.NewFileSet(), "testdata/empty", gosource.HandWritten)
 			assert.HasError(t, err, "a directory holding no readable file is reported")
 		})
 
-		t.Run("reports a file it cannot parse", func(t *testing.T) {
+		t.Run("returns an error for a file it cannot parse", func(t *testing.T) {
 			t.Parallel()
 
 			dir := t.TempDir()
@@ -89,7 +99,7 @@ func TestLoad(t *testing.T) {
 			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
 		})
 
-		t.Run("reports a directory it cannot read", func(t *testing.T) {
+		t.Run("returns an error for a directory it cannot read", func(t *testing.T) {
 			t.Parallel()
 
 			_, err := gosource.ParseDir(token.NewFileSet(), "testdata/nonexistent", gosource.HandWritten)
@@ -104,10 +114,8 @@ func TestLoad(t *testing.T) {
 		t.Run("type-checks a package against its module-local imports", func(t *testing.T) {
 			t.Parallel()
 
-			modRoot, err := filepath.Abs("testdata/mod")
-			assert.NoError(t, err, "the module root resolves")
 			pkg, files, err := gosource.Load(
-				token.NewFileSet(), "testdata/mod/app", "example.test/fixture/app", modRoot,
+				token.NewFileSet(), "testdata/mod/app", "example.test/fixture/app", fixtureRoot(t),
 				gosource.HandWritten,
 			)
 			assert.NoError(t, err, "the fixture package loads")
@@ -118,21 +126,16 @@ func TestLoad(t *testing.T) {
 				"and its stdlib imports resolve")
 		})
 
-		t.Run("does not resolve generated declarations", func(t *testing.T) {
+		t.Run("returns a package without the generated declarations", func(t *testing.T) {
 			t.Parallel()
 
-			modRoot, err := filepath.Abs("testdata/mod")
-			assert.NoError(t, err, "the module root resolves")
-			pkg, _, err := gosource.Load(
-				token.NewFileSet(), "testdata/mod/lib", "example.test/fixture/lib", modRoot,
-				gosource.HandWritten,
-			)
+			pkg, _, err := gosource.Load(token.NewFileSet(), libDir, libPath, fixtureRoot(t), gosource.HandWritten)
 			assert.NoError(t, err, "the fixture package loads")
 			assert.Nil(t, pkg.Scope().Lookup("Generated"),
 				"hand-written mode does not resolve what the generator produced")
 		})
 
-		t.Run("reports a package that does not type-check", func(t *testing.T) {
+		t.Run("returns an error for a package that does not type-check", func(t *testing.T) {
 			t.Parallel()
 
 			_, _, err := gosource.Load(
@@ -160,10 +163,8 @@ func TestLoad(t *testing.T) {
 		t.Run("resolves one import path to one package across nested loads", func(t *testing.T) {
 			t.Parallel()
 
-			modRoot, err := filepath.Abs("testdata/mod")
-			assert.NoError(t, err, "the module root resolves")
 			pkg, _, err := gosource.Load(
-				token.NewFileSet(), "testdata/mod/caller", "example.test/fixture/caller", modRoot,
+				token.NewFileSet(), "testdata/mod/caller", "example.test/fixture/caller", fixtureRoot(t),
 				gosource.HandWritten,
 			)
 			assert.NoError(t, err,
@@ -172,13 +173,11 @@ func TestLoad(t *testing.T) {
 			assert.NotNil(t, pkg.Scope().Lookup("Now"), "and the caller type-checks whole")
 		})
 
-		t.Run("refuses an import cycle through the module's packages", func(t *testing.T) {
+		t.Run("returns an error for an import cycle through the module's packages", func(t *testing.T) {
 			t.Parallel()
 
-			modRoot, err := filepath.Abs("testdata/mod")
-			assert.NoError(t, err, "the module root resolves")
-			_, _, err = gosource.Load(
-				token.NewFileSet(), "testdata/mod/cycle/a", "example.test/fixture/cycle/a", modRoot,
+			_, _, err := gosource.Load(
+				token.NewFileSet(), "testdata/mod/cycle/a", "example.test/fixture/cycle/a", fixtureRoot(t),
 				gosource.HandWritten,
 			)
 			assert.HasError(t, err, "a cycle refuses rather than recursing")
@@ -187,7 +186,7 @@ func TestLoad(t *testing.T) {
 			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
 		})
 
-		t.Run("reports a module root it cannot resolve imports against", func(t *testing.T) {
+		t.Run("returns an error for a module root without a go.mod", func(t *testing.T) {
 			t.Parallel()
 
 			_, _, err := gosource.Load(
@@ -199,4 +198,64 @@ func TestLoad(t *testing.T) {
 			assert.HasPrefix(t, err.Error(), "gosource: ", "under the package prefix")
 		})
 	})
+}
+
+// A parse and a load of the fixture's lib package allocate within their
+// ceilings in the ordinary run, which runs no benchmark. The check runs
+// alone, because AllocsPerRun counts every goroutine's allocations and
+// refuses to run beside parallel tests.
+func TestLoadAllocs(t *testing.T) {
+	modRoot := fixtureRoot(t)
+	assert.MaxAllocs(t, func() {
+		if _, err := gosource.ParseDir(token.NewFileSet(), libDir, gosource.HandWritten); err != nil {
+			t.Fatalf("ParseDir: unexpected error: %v", err)
+		}
+	}, parseDirAllocs, "ParseDir allocates the entries and the syntax tree")
+	assert.MaxAllocs(t, func() {
+		if _, _, err := gosource.Load(token.NewFileSet(), libDir, libPath, modRoot, gosource.HandWritten); err != nil {
+			t.Fatalf("Load: unexpected error: %v", err)
+		}
+	}, loadAllocs, "Load allocates the importer, the parse and the type-check")
+}
+
+// BenchmarkLoad measures a parse and a load of the fixture's package
+// without imports, each into a new file set.
+func BenchmarkLoad(b *testing.B) {
+	b.Run("ParseDir/a directory of one hand-written file", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(parseDirAllocs)
+		defer c.End()
+		var (
+			files []*ast.File
+			err   error
+		)
+		for c.Loop() {
+			files, err = gosource.ParseDir(token.NewFileSet(), libDir, gosource.HandWritten)
+		}
+		assert.NoError(b, err, "the directory parses")
+		assert.Length(b, files, 1, "into its one hand-written file")
+	})
+
+	b.Run("Load/a package without imports", func(b *testing.B) {
+		modRoot := fixtureRoot(b)
+		c := bench.Start(b).MaxAllocs(loadAllocs)
+		defer c.End()
+		var (
+			pkg *types.Package
+			err error
+		)
+		for c.Loop() {
+			pkg, _, err = gosource.Load(token.NewFileSet(), libDir, libPath, modRoot, gosource.HandWritten)
+		}
+		assert.NoError(b, err, "the package loads")
+		assert.NotNil(b, pkg.Scope().Lookup("Value"), "with its declarations type-checked")
+	})
+}
+
+// names returns the base names of the parsed files, in their order.
+func names(fset *token.FileSet, files []*ast.File) []string {
+	out := make([]string, 0, len(files))
+	for _, f := range files {
+		out = append(out, filepath.Base(fset.Position(f.Pos()).Filename))
+	}
+	return out
 }

@@ -47,13 +47,13 @@ type registrations struct {
 	namespaces map[string]string
 	// byName resolves a boundary spelling to its dense id.
 	byName map[KeyName]KeyID
-	// specs holds every registered spec; KeyID n lives at index
-	// n-1, so the zero id resolves to nothing.
+	// specs contains every registered spec. KeyID n is at index n-1,
+	// so the zero id resolves to nothing.
 	specs []KeySpec
 	// types records each key's value type beside its spec, so a
 	// lookup by name hands out a handle of the registered type only.
 	types []reflect.Type
-	// groups holds each group's members in registration order.
+	// groups contains each group's members in registration order.
 	groups map[GroupName][]KeyID
 	// sealed is set by [Registry.Seal]. ClaimNamespace and Register
 	// refuse once it is set.
@@ -62,6 +62,11 @@ type registrations struct {
 
 // NewRegistry returns an empty registry and the composition's handle
 // on it.
+//
+// # Allocation contract
+//
+// NewRegistry allocates five times: the handle, the registrations every
+// handle shares, and their three maps.
 func NewRegistry() *Registry {
 	return &Registry{registrations: &registrations{
 		namespaces: map[string]string{},
@@ -73,7 +78,7 @@ func NewRegistry() *Registry {
 // For returns a handle on the same registrations bound to one
 // registrant: the name its claims record, and the name its
 // registrations must match. The empty name returns the composition's
-// handle.
+// handle. For allocates the handle, one allocation.
 func (r *Registry) For(registrant string) *Registry {
 	return &Registry{registrations: r.registrations, registrant: registrant}
 }
@@ -112,6 +117,14 @@ type Completeness struct {
 // Every key registers into a claimed namespace, so a typo in a key's
 // namespace fails at registration and never reads as a new
 // namespace.
+//
+// Error modes: a claim after [Registry.Seal], the empty namespace, and
+// a namespace another claim took.
+//
+// # Allocation contract
+//
+// ClaimNamespace allocates only where the namespace map grows. The
+// registry's first claim allocates once.
 func (r *Registry) ClaimNamespace(ns string) error {
 	if r.sealed {
 		return fmt.Errorf("meta: namespace %q is claimed after the seal: registration ends there", ns)
@@ -142,6 +155,14 @@ func (r *Registry) ClaimNamespace(ns string) error {
 //
 // It returns an error rather than panicking because composition
 // collects every fault in one pass.
+//
+// # Allocation contract
+//
+// Register allocates what the registry keeps: the growth of the spec
+// list, the type list and the name map, and for a key in a group the
+// growth of the group map and of the group's member list. The first key
+// of a registry allocates three times outside a group and five times in
+// one.
 func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 	if r.sealed {
 		return Key[T]{}, fmt.Errorf("meta: key %q registers after the seal: registration ends there", s.Name)
@@ -197,7 +218,7 @@ func Register[T FactValue](r *Registry, s KeySpec) (Key[T], error) {
 // rules reading what its frontend stamped, without the handle
 // registration returned. It returns false for a spelling nothing
 // registered, and for one registered under another value type, so
-// a handle that exists reads what was written.
+// a handle that exists reads what was written. It allocates nothing.
 func Lookup[T FactValue](r *Registry, name KeyName) (Key[T], bool) {
 	id, held := r.byName[name]
 	if !held || r.types[id-1] != reflect.TypeFor[T]() {
@@ -207,14 +228,15 @@ func Lookup[T FactValue](r *Registry, name KeyName) (Key[T], bool) {
 }
 
 // Resolve returns the id a boundary spelling names, and false for a
-// spelling nothing registered.
+// spelling nothing registered. It allocates nothing.
 func (r *Registry) Resolve(name KeyName) (KeyID, bool) {
 	id, known := r.byName[name]
 	return id, known
 }
 
 // Spec returns a registered key's spec, and false for an id nothing
-// was assigned.
+// was assigned. The spec's kind lists are the registry's own, so a
+// caller reads them and never writes them. It allocates nothing.
 func (r *Registry) Spec(id KeyID) (KeySpec, bool) {
 	if id == 0 || int(id) > len(r.specs) {
 		return KeySpec{}, false
@@ -222,13 +244,15 @@ func (r *Registry) Spec(id KeyID) (KeySpec, bool) {
 	return r.specs[id-1], true
 }
 
-// Group returns a group's member keys, in registration order.
+// Group returns a group's member keys, in registration order. A range
+// over the result allocates nothing.
 func (r *Registry) Group(g GroupName) iter.Seq[KeyID] {
 	return slices.Values(r.groups[g])
 }
 
 // Keys returns every registered key's spelling, in registration
-// order: what a candidate-naming refusal enumerates.
+// order: what a candidate-naming refusal enumerates. A range over the
+// result allocates nothing.
 func (r *Registry) Keys() iter.Seq[KeyName] {
 	return func(yield func(KeyName) bool) {
 		for _, spec := range r.specs {
@@ -241,7 +265,8 @@ func (r *Registry) Keys() iter.Seq[KeyName] {
 
 // Seal ends registration: a namespace or key arriving after it is
 // refused. The workspace seals once every plugin and the
-// composition registered, before any fact store is built.
+// composition registered, before any fact store is built. Sealing a
+// sealed registry changes nothing. Seal allocates nothing.
 func (r *Registry) Seal() { r.sealed = true }
 
 // typeOf returns the value type a key registered with, nil for an
@@ -251,6 +276,15 @@ func (r *Registry) typeOf(id KeyID) reflect.Type {
 		return nil
 	}
 	return r.types[id-1]
+}
+
+// nameOf returns a key's boundary spelling without copying its spec,
+// and false for an id nothing was assigned.
+func (r *Registry) nameOf(id KeyID) (KeyName, bool) {
+	if id == 0 || int(id) > len(r.specs) {
+		return "", false
+	}
+	return r.specs[id-1].Name, true
 }
 
 // registrantName spells a registrant for a message: its quoted name,

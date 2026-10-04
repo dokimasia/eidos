@@ -10,14 +10,9 @@ import (
 	"go.dokimi.dev/eidos/core/node"
 )
 
-// The optional capabilities. A language declares one by satisfying
-// the interface on its [SourceRules] value, and a consumer finds it
-// by asserting on [Bound.Source]. A consumer that asserts and is
-// refused reports once and generates nothing for that language, so
-// no projection rests on a default nobody chose.
-
 // EnumRules projects an enumeration.
 type EnumRules interface {
+	// EnumOf returns what the language states about one enumeration.
 	EnumOf(e *node.Enum, v View) EnumInfo
 }
 
@@ -33,7 +28,8 @@ const (
 	EnumValue
 )
 
-// String returns the form's spelling.
+// String returns the form's spelling, and the decimal number of an
+// undeclared form. It allocates nothing for a declared form.
 func (f EnumForm) String() string {
 	switch f {
 	case EnumIdentifier:
@@ -58,19 +54,25 @@ type EnumInfo struct {
 // VariantText is one variant's identifier and its textual form as
 // a string literal, quoted by the language that spells it.
 type VariantText struct {
-	Name string
-	Text emit.Value
+	Name string     // the variant's identifier
+	Text emit.Value // the variant's textual form, a string literal
 }
 
-// ErrorValueRules names error values: paired inverses, so the two
-// can never drift.
+// ErrorValueRules names error values. Its two methods are inverses, so
+// a name and its recognition cannot disagree.
 type ErrorValueRules interface {
+	// SentinelName returns the name of the error value a generator
+	// derives from a base name.
 	SentinelName(base string) string
+	// IsSentinelName reports whether an identifier is a name
+	// SentinelName returns.
 	IsSentinelName(ident string) bool
 }
 
 // TagRules reads a language's per-field tags.
 type TagRules interface {
+	// Tag returns a field's tag value under a key, and reports false
+	// where the field has no tag under it.
 	Tag(f *node.Field, key string) (string, bool)
 }
 
@@ -85,36 +87,40 @@ type GenericsRules interface {
 	// reference unchanged where it names no parameter.
 	Substitute(ref *node.TypeRef, params []*node.TypeParam, args []*node.TypeRef) *node.TypeRef
 	// Reified reports whether the language keeps type arguments at
-	// runtime; a Java backend lowers differently under erasure.
+	// runtime. A Java backend lowers differently under erasure.
 	Reified() bool
 }
 
 // PropertyRules computes the properties view: getters paired with
-// setters. A projection, never a change to the model.
+// setters. Computing the view leaves the model unchanged.
 type PropertyRules interface {
+	// Properties returns the computed properties of a struct.
 	Properties(s *node.Struct, v View) []Property
 }
 
 // Property is one computed property.
 type Property struct {
-	Name   string
-	Type   *node.TypeRef
-	Getter *node.Method
-	Setter *node.Method // nil for a read-only property
+	Name   string        // the property's name
+	Type   *node.TypeRef // the type the getter returns
+	Getter *node.Method  // the method that reads the property
+	Setter *node.Method  // nil for a read-only property
 }
 
 // ConstructRules returns the constructors of a type.
 type ConstructRules interface {
+	// Constructors returns the callables that construct a struct.
 	Constructors(s *node.Struct, v View) []Callable
 }
 
 // ThrowsRules returns the failure types a callable declares.
 type ThrowsRules interface {
+	// Throws returns the failure types a callable declares.
 	Throws(c Callable) []*node.TypeRef
 }
 
 // OwnershipRules returns how a parameter is passed.
 type OwnershipRules interface {
+	// Ownership returns how a parameter is passed.
 	Ownership(p ParamView) Ownership
 }
 
@@ -130,7 +136,8 @@ const (
 	OwnBorrowMut
 )
 
-// String returns the ownership's spelling.
+// String returns the ownership's spelling, and the decimal number of an
+// undeclared ownership. It allocates nothing for a declared ownership.
 func (o Ownership) String() string {
 	switch o {
 	case OwnByValue:
@@ -150,11 +157,15 @@ func (o Ownership) String() string {
 // generator building a constructor over a set with gaps reports it
 // incomplete and does not write a partial builder.
 type PromotionRules interface {
+	// Settable returns the members of a struct that a constructor in
+	// another package can set.
 	Settable(s *node.Struct, v View) MemberSet
 }
 
 // EqualityRules reports whether a type works where the language
 // demands equality, and which member references break it.
 type EqualityRules interface {
+	// Comparable reports whether a type supports the language's
+	// equality, and returns the member references that break it.
 	Comparable(ref *node.TypeRef, v View) (ok bool, problems []*node.TypeRef)
 }

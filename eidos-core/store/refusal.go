@@ -43,7 +43,8 @@ type RefusedError struct {
 	Msg string
 }
 
-// Error renders the refusal as its code and its reason.
+// Error renders the refusal as its code and its reason. It allocates
+// twice: the code's spelling and the joined text.
 func (r *RefusedError) Error() string {
 	return "store: " + r.Code.String() + ": " + r.Msg
 }

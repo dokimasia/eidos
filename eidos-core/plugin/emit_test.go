@@ -16,54 +16,36 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// structID returns the identity a resolved struct of that name has,
-// for origins the fixtures below derive from.
-func structID(name string) symbol.Identity {
-	return symbol.Identity{
-		Lang:    coretest.Lang,
-		Package: coretest.StorePath,
-		Name:    name,
-		Kind:    symbol.KindStruct,
-	}
-}
+// The shape of the units the benchmarks add: how many a store holds
+// before the measured add, and the structs and methods of each.
+const (
+	benchUnits   = 100
+	benchStructs = 10
+	benchMethods = 5
+)
 
-// unit returns a minimal valid unit for one plugin and key.
-func unit(p, key string) plugin.Unit {
-	return plugin.Unit{
-		Plugin: plugin.ID(p),
-		Per:    plugin.PerSource,
-		Word:   "stub",
-		Key:    key,
-		Pkg:    coretest.PackageID(coretest.StorePath),
-	}
-}
-
-// hosting returns a unit that contains one origined struct with one
-// origined method in its slot.
-func hosting(p, key, structName string) plugin.Unit {
-	s := &emit.Struct{Origin: structID(structName), Name: structName}
-	s.Methods.Append(&emit.Method{Origin: structID(structName), Name: "Get"})
-	u := unit(p, key)
-	u.Decls = []symbol.Symbol{s}
-	u.Origins = []symbol.Identity{structID(structName)}
-	return u
-}
-
-// methodOf returns the method in the slot of a hosting unit's struct.
-func methodOf(u plugin.Unit) symbol.Symbol {
-	s, _ := u.Decls[0].(*emit.Struct)
-	return s.Methods.Items()[0]
-}
-
-// contributorsOf returns the contributors of every unit of a store, in
-// Units order.
-func contributorsOf(e *plugin.Emit) [][]plugin.ID {
-	var out [][]plugin.ID
-	for u := range e.Units() {
-		out = append(out, u.Contributors)
-	}
-	return out
-}
+// The allocations of a store, of an add and of a contribution.
+const (
+	// newEmitAllocs is an empty store: the store, its set of accumulator
+	// keys and its map of kinds.
+	newEmitAllocs = 3
+	// firstContributeAllocs is the first contribution to a store of one
+	// hosting unit: the map from each indexed declaration to its unit,
+	// with its first group, and the unit's list of contributors.
+	firstContributeAllocs = 3
+	// firstAddAllocs is the first unit of an empty store: the first
+	// group of the set of accumulator keys and the key, which the set
+	// stores apart because a reference is larger than 128 bytes, the
+	// list of units, the first group of the map of kinds, and for each of
+	// the unit's two kinds the kind's map of units with its first group
+	// and the unit's declarations of the kind.
+	firstAddAllocs = 2 + 1 + 1 + 2*3
+	// laterAddAllocs is a unit of a store that has its kinds: the
+	// accumulator's key, and the unit's declarations of each of its two
+	// kinds. The containers grow by doubling, which the mean rounds
+	// down.
+	laterAddAllocs = 1 + 2
+)
 
 // The emit store is one plan's accumulated output: its refusals keep
 // a phase call's flush honest, its enumeration order is total so two
@@ -145,6 +127,38 @@ func TestEmit(t *testing.T) {
 		})
 	})
 
+	t.Run("NewEmit", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a store without a unit", func(t *testing.T) {
+			t.Parallel()
+
+			var got int
+			for range plugin.NewEmit().Units() {
+				got++
+			}
+			assert.Equal(t, got, 0, "nothing has arrived")
+		})
+	})
+
+	t.Run("Settled", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports false before the settle", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, plugin.NewEmit().Settled(), "a new store has not settled")
+		})
+
+		t.Run("reports true after the settle", func(t *testing.T) {
+			t.Parallel()
+
+			e := plugin.NewEmit()
+			assert.NoError(t, plugin.Settle(e, nil, nil, nil), "a store without a backend settles")
+			assert.True(t, e.Settled(), "the settle marks the store")
+		})
+	})
+
 	t.Run("Add", func(t *testing.T) {
 		t.Parallel()
 
@@ -164,7 +178,7 @@ func TestEmit(t *testing.T) {
 				"the unit comes back as it was added")
 		})
 
-		t.Run("refuses a second unit under one accumulator", func(t *testing.T) {
+		t.Run("returns an error for a second unit under one accumulator", func(t *testing.T) {
 			t.Parallel()
 
 			e := plugin.NewEmit()
@@ -180,7 +194,7 @@ func TestEmit(t *testing.T) {
 			assert.Equal(t, got, 1, "the refused unit did not arrive")
 		})
 
-		t.Run("admits one key under two plugins", func(t *testing.T) {
+		t.Run("records one key under two plugins", func(t *testing.T) {
 			t.Parallel()
 
 			e := plugin.NewEmit()
@@ -190,7 +204,7 @@ func TestEmit(t *testing.T) {
 				"two plugins may contribute to one cardinality key")
 		})
 
-		t.Run("admits one key under two packages", func(t *testing.T) {
+		t.Run("records one key under two packages", func(t *testing.T) {
 			t.Parallel()
 
 			e := plugin.NewEmit()
@@ -203,7 +217,7 @@ func TestEmit(t *testing.T) {
 				"a second language spelling the one package path is a second namespace")
 		})
 
-		t.Run("refuses a zero cardinality", func(t *testing.T) {
+		t.Run("returns an error for a zero cardinality", func(t *testing.T) {
 			t.Parallel()
 
 			u := unit("stubgen", "svc/store/unit.go")
@@ -212,7 +226,7 @@ func TestEmit(t *testing.T) {
 				"a unit without a cardinality addresses nothing")
 		})
 
-		t.Run("refuses an empty word", func(t *testing.T) {
+		t.Run("returns an error for an empty word", func(t *testing.T) {
 			t.Parallel()
 
 			u := unit("stubgen", "svc/store/unit.go")
@@ -221,7 +235,7 @@ func TestEmit(t *testing.T) {
 				"a family without a word cannot be routed")
 		})
 
-		t.Run("refuses a plan unit naming a key", func(t *testing.T) {
+		t.Run("returns an error for a plan unit naming a key", func(t *testing.T) {
 			t.Parallel()
 
 			u := unit("stubgen", "svc/store/unit.go")
@@ -230,7 +244,7 @@ func TestEmit(t *testing.T) {
 				"a plan has one output, so a keyed plan unit is a defect")
 		})
 
-		t.Run("refuses a nil declaration", func(t *testing.T) {
+		t.Run("returns an error for a nil declaration", func(t *testing.T) {
 			t.Parallel()
 
 			u := unit("stubgen", "svc/store/unit.go")
@@ -312,7 +326,7 @@ func TestEmit(t *testing.T) {
 	t.Run("Ref", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns a root's unit and place", func(t *testing.T) {
+		t.Run("returns a root's place in its unit", func(t *testing.T) {
 			t.Parallel()
 
 			e := plugin.NewEmit()
@@ -522,10 +536,11 @@ func TestEmit(t *testing.T) {
 }
 
 // A reference lookup over a walked store allocates nothing, because a
-// journaled phase call resolves one for every emit-phase invocation.
-// The checks run alone, because AllocsPerRun counts every goroutine's
-// allocations and refuses to run beside parallel tests.
-func TestEmitZeroAlloc(t *testing.T) {
+// journaled phase call resolves one for every emit-phase invocation, and
+// an add allocates what the store keeps. The checks run alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestEmitAllocs(t *testing.T) {
 	e := plugin.NewEmit()
 	u := hosting("stubgen", "a.go", "Store")
 	assert.NoError(t, e.Add(u), "the hosting unit arrives")
@@ -541,76 +556,142 @@ func TestEmitZeroAlloc(t *testing.T) {
 			t.Fatal("Unit.Ref returns another key")
 		}
 	}, 0, "Unit.Ref allocates nothing")
-}
-
-// benchUnit returns one unit containing structs of methods, the tree
-// Add walks and indexes.
-func benchUnit(p, key string, structs, methods int) plugin.Unit {
-	decls := make([]symbol.Symbol, 0, structs)
-	for i := range structs {
-		name := "Struct" + strconv.Itoa(i)
-		s := &emit.Struct{Origin: structID(name), Name: name}
-		for m := range methods {
-			s.Methods.Append(&emit.Method{
-				Origin: structID(name), Name: "Method" + strconv.Itoa(m),
-			})
+	assert.MaxAllocs(t, func() {
+		if !e.Contribute(host, "audit") {
+			t.Fatal("Contribute misses the walked method")
 		}
-		decls = append(decls, s)
+	}, 0, "Contribute allocates nothing for a contributor the unit names")
+
+	added := benchUnits
+	later := addedUnits(t, benchUnits)
+	units := benchUnitsOf(benchUnits + allocRuns)
+	assert.MaxAllocs(t, func() {
+		if err := later.Add(units[added]); err != nil {
+			t.Fatalf("Add: unexpected error: %v", err)
+		}
+		added++
+	}, laterAddAllocs, "Add allocates the key and the declarations of each kind of a later unit")
+
+	var built *plugin.Emit
+	assert.MaxAllocs(t, func() { built = plugin.NewEmit() }, newEmitAllocs,
+		"NewEmit allocates the store and its two maps")
+	assert.False(t, built.Settled(), "NewEmit returns an unsettled store")
+
+	empty := make([]*plugin.Emit, allocRuns)
+	for i := range empty {
+		empty[i] = plugin.NewEmit()
 	}
-	u := unit(p, key)
-	u.Decls = decls
-	return u
+	at := 0
+	assert.MaxAllocs(t, func() {
+		if err := empty[at].Add(units[0]); err != nil {
+			t.Fatalf("Add: unexpected error: %v", err)
+		}
+		at++
+	}, firstAddAllocs, "Add allocates the entries of the first unit of a store")
+
+	hosted := make([]*plugin.Emit, allocRuns)
+	for i := range hosted {
+		hosted[i] = plugin.NewEmit()
+		assert.NoError(t, hosted[i].Add(u), "the hosting unit arrives")
+	}
+	at = 0
+	assert.MaxAllocs(t, func() {
+		if !hosted[at].Contribute(host, "audit") {
+			t.Fatal("Contribute misses the hosted method")
+		}
+		at++
+	}, firstContributeAllocs, "Contribute allocates the map of hosts and the contributor of a first contribution")
+
+	settled := false
+	assert.MaxAllocs(t, func() { settled = e.Settled() }, 0, "Settled allocates nothing")
+	assert.False(t, settled, "Settled reports false before the settle")
+	assert.MaxAllocs(t, func() {
+		if u.FileKey() != "a.go" || plugin.PerSource.String() != "per-source" {
+			t.Fatal("the unit's key or the cardinality's spelling read back wrong")
+		}
+	}, 0, "FileKey and String allocate nothing")
 }
 
+// BenchmarkEmit measures the emit store: the adds a phase call's flush
+// makes, and the enumerations an emit-triggered rule and the settle
+// make over a plan's output.
 func BenchmarkEmit(b *testing.B) {
-	b.Run("Add", func(b *testing.B) {
-		b.ReportAllocs()
-		u := benchUnit("stubgen", "a.go", 100, 5)
-		for b.Loop() {
-			if err := plugin.NewEmit().Add(u); err != nil {
-				b.Fatalf("Add: unexpected error: %v", err)
-			}
+	units := benchUnitsOf(benchUnits * 10)
+
+	b.Run("Add/the first unit of a store", func(b *testing.B) {
+		var e *plugin.Emit
+		empty := func() { e = plugin.NewEmit() }
+		c := bench.Start(b).MaxAllocs(firstAddAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			c.Excluding(empty)
+			err = e.Add(units[0])
 		}
+		assert.NoError(b, err, "the unit is added")
+	})
+
+	b.Run("Add/a later unit", func(b *testing.B) {
+		var (
+			e    *plugin.Emit
+			next int
+		)
+		fill := func() {
+			e, next = addedUnits(b, benchUnits), benchUnits
+		}
+		fill()
+		c := bench.Start(b).MaxAllocs(laterAddAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			if next == len(units) {
+				c.Excluding(fill)
+			}
+			err = e.Add(units[next])
+			next++
+		}
+		assert.NoError(b, err, "the unit is added")
 	})
 
 	b.Run("ByKind", func(b *testing.B) {
-		b.ReportAllocs()
 		e := plugin.NewEmit()
 		const units, methods = 100, 20
 		for i := range units {
-			if err := e.Add(benchUnit("stubgen", "unit"+strconv.Itoa(i)+".go", 1, methods)); err != nil {
-				b.Fatalf("Add: unexpected error: %v", err)
-			}
+			assert.NoError(b, e.Add(benchUnit("stubgen", "unit"+strconv.Itoa(i)+".go", 1, methods)),
+				"every unit is added")
 		}
-		for b.Loop() {
-			var n int
+		for range e.ByKind(symbol.KindMethod) { // the first enumeration orders the store
+		}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		n := 0
+		for c.Loop() {
+			n = 0
 			for range e.ByKind(symbol.KindMethod) {
 				n++
 			}
-			if n != units*methods {
-				b.Fatalf("ByKind yielded %d methods", n)
-			}
 		}
+		assert.Equal(b, n, units*methods, "ByKind yields every method")
 	})
 
 	b.Run("Units", func(b *testing.B) {
-		b.ReportAllocs()
 		e := plugin.NewEmit()
 		const units = 1_000
 		for i := range units {
-			if err := e.Add(unit("stubgen", "unit"+strconv.Itoa(i)+".go")); err != nil {
-				b.Fatalf("Add: unexpected error: %v", err)
-			}
+			assert.NoError(b, e.Add(unit("stubgen", "unit"+strconv.Itoa(i)+".go")), "every unit is added")
 		}
-		for b.Loop() {
-			var n int
+		for range e.Units() { // the first enumeration orders the store
+		}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		n := 0
+		for c.Loop() {
+			n = 0
 			for range e.Units() {
 				n++
 			}
-			if n != units {
-				b.Fatalf("Units yielded %d units", n)
-			}
 		}
+		assert.Equal(b, n, units, "Units yields every unit")
 	})
 
 	b.Run("Ref", func(b *testing.B) {
@@ -648,4 +729,171 @@ func BenchmarkEmit(b *testing.B) {
 			b.Fatalf("Unit.Ref returns key %q", got.Key)
 		}
 	})
+
+	b.Run("String", func(b *testing.B) {
+		per := plugin.PerPackage
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = per.String()
+		}
+		assert.Equal(b, got, "per-package", "String spells PerPackage")
+	})
+
+	b.Run("FileKey", func(b *testing.B) {
+		u := unit("stubgen", "a.go")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = u.FileKey()
+		}
+		assert.Equal(b, got, "a.go", "FileKey returns a per-source unit's path")
+	})
+
+	b.Run("NewEmit", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(newEmitAllocs)
+		defer c.End()
+		var e *plugin.Emit
+		for c.Loop() {
+			e = plugin.NewEmit()
+		}
+		assert.False(b, e.Settled(), "NewEmit returns an unsettled store")
+	})
+
+	b.Run("Settled", func(b *testing.B) {
+		e := plugin.NewEmit()
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		settled := true
+		for c.Loop() {
+			settled = e.Settled()
+		}
+		assert.False(b, settled, "Settled reports false before the settle")
+	})
+
+	b.Run("Contribute/a contributor the unit names", func(b *testing.B) {
+		e := plugin.NewEmit()
+		u := hosting("stubgen", "a.go", "Store")
+		assert.NoError(b, e.Add(u), "the hosting unit arrives")
+		host := methodOf(u)
+		e.Contribute(host, "audit")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			held = e.Contribute(host, "audit")
+		}
+		assert.True(b, held, "the store contains the host")
+	})
+
+	b.Run("Contribute/the first contribution to a store", func(b *testing.B) {
+		u := hosting("stubgen", "a.go", "Store")
+		host := methodOf(u)
+		var e *plugin.Emit
+		fresh := func() {
+			e = plugin.NewEmit()
+			assert.NoError(b, e.Add(u), "the hosting unit arrives")
+		}
+		c := bench.Start(b).MaxAllocs(firstContributeAllocs)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			c.Excluding(fresh)
+			held = e.Contribute(host, "audit")
+		}
+		assert.True(b, held, "the store contains the host")
+	})
+}
+
+// structID returns the identity a resolved struct of that name has,
+// for origins the fixtures below derive from.
+func structID(name string) symbol.Identity {
+	return symbol.Identity{
+		Lang:    coretest.Lang,
+		Package: coretest.StorePath,
+		Name:    name,
+		Kind:    symbol.KindStruct,
+	}
+}
+
+// unit returns a minimal valid unit for one plugin and key.
+func unit(p, key string) plugin.Unit {
+	return plugin.Unit{
+		Plugin: plugin.ID(p),
+		Per:    plugin.PerSource,
+		Word:   "stub",
+		Key:    key,
+		Pkg:    coretest.PackageID(coretest.StorePath),
+	}
+}
+
+// hosting returns a unit that contains one origined struct with one
+// origined method in its slot.
+func hosting(p, key, structName string) plugin.Unit {
+	s := &emit.Struct{Origin: structID(structName), Name: structName}
+	s.Methods.Append(&emit.Method{Origin: structID(structName), Name: "Get"})
+	u := unit(p, key)
+	u.Decls = []symbol.Symbol{s}
+	u.Origins = []symbol.Identity{structID(structName)}
+	return u
+}
+
+// methodOf returns the method in the slot of a hosting unit's struct.
+func methodOf(u plugin.Unit) symbol.Symbol {
+	s, _ := u.Decls[0].(*emit.Struct)
+	return s.Methods.Items()[0]
+}
+
+// contributorsOf returns the contributors of every unit of a store, in
+// Units order.
+func contributorsOf(e *plugin.Emit) [][]plugin.ID {
+	var out [][]plugin.ID
+	for u := range e.Units() {
+		out = append(out, u.Contributors)
+	}
+	return out
+}
+
+// benchUnit returns one unit containing structs of methods, the tree
+// Add walks and indexes.
+func benchUnit(p, key string, structs, methods int) plugin.Unit {
+	decls := make([]symbol.Symbol, 0, structs)
+	for i := range structs {
+		name := "Struct" + strconv.Itoa(i)
+		s := &emit.Struct{Origin: structID(name), Name: name}
+		for m := range methods {
+			s.Methods.Append(&emit.Method{
+				Origin: structID(name), Name: "Method" + strconv.Itoa(m),
+			})
+		}
+		decls = append(decls, s)
+	}
+	u := unit(p, key)
+	u.Decls = decls
+	return u
+}
+
+// benchUnitsOf returns n units of the stubgen plugin, each under a key
+// of its own and with the tree of benchStructs structs of benchMethods
+// methods.
+func benchUnitsOf(n int) []plugin.Unit {
+	out := make([]plugin.Unit, 0, n)
+	for i := range n {
+		out = append(out, benchUnit("stubgen", "unit"+strconv.Itoa(i)+".go", benchStructs, benchMethods))
+	}
+	return out
+}
+
+// addedUnits returns a store with the first n units of [benchUnitsOf]
+// added.
+func addedUnits(tb assert.TB, n int) *plugin.Emit {
+	tb.Helper()
+
+	e := plugin.NewEmit()
+	for _, u := range benchUnitsOf(n) {
+		assert.NoError(tb, e.Add(u), "every unit is added")
+	}
+	return e
 }

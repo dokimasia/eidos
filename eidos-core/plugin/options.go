@@ -18,6 +18,12 @@ import (
 // no options. The composition runs it before populating; the
 // conformance suite runs it as a check, so a plugin failing at
 // composition fails in its own tests first.
+//
+// # Allocation contract
+//
+// ValidateOptions allocates the set of claimed keys, the reflection of
+// each field and the errors it returns. It allocates nothing for a
+// plugin without the surface.
 func ValidateOptions(p Plugin) []error {
 	op, held := p.(OptionsProvider)
 	if !held {
@@ -85,6 +91,13 @@ func ValidateOptions(p Plugin) []error {
 // refuses. A type that marshals itself is taken as it encodes.
 // Every option is inside the encoding, so a changed option always
 // changes the key.
+//
+// # Allocation contract
+//
+// EncodeOptions allocates the set of seen types, the reflection of each
+// field, the encoded bytes, and what encoding/json allocates for its
+// state where its pool is empty. It allocates nothing for a plugin
+// without the surface.
 func EncodeOptions(p Plugin) ([]byte, error) {
 	op, held := p.(OptionsProvider)
 	if !held {

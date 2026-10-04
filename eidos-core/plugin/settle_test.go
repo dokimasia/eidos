@@ -5,10 +5,12 @@ package plugin_test
 
 import (
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -31,6 +33,19 @@ const (
 const (
 	nameDoc      = "a declaration's name in the test target"
 	overrideName = "Record"
+)
+
+// The store the allocation check and the benchmark settle, and the
+// allocations of one settle of it through a respell hook that keeps
+// every name.
+const (
+	// settleUnits is the number of units the store has.
+	settleUnits = 100
+	// keepingSettleAllocs is the per-kind index rebuilt, a list for each
+	// unit and kind and the kinds' maps as they grow, 224 allocations,
+	// and the plan of the names with the tables the references follow,
+	// each sized once to the store, 19 allocations.
+	keepingSettleAllocs = 224 + 19
 )
 
 // hookless is the backend without hooks: a name and a target, and
@@ -536,7 +551,7 @@ func TestSettle(t *testing.T) {
 			assert.False(t, kept.Async, "the lowering rewrote the declaration in place")
 		})
 
-		t.Run("reports RefusedConstruct for a construct the lowering refuses", func(t *testing.T) {
+		t.Run("reports RefusedConstruct for a construct that fails to lower", func(t *testing.T) {
 			t.Parallel()
 
 			e := storeOf(t, settleUnit("svc", "svc/a.src",
@@ -544,7 +559,7 @@ func TestSettle(t *testing.T) {
 			coretest.AssertCodes(t, settled(t, e, lowering(refuseSum)), plugin.RefusedConstruct)
 		})
 
-		t.Run("withholds a construct the lowering refuses", func(t *testing.T) {
+		t.Run("withholds a construct that fails to lower", func(t *testing.T) {
 			t.Parallel()
 
 			e := storeOf(t, settleUnit("svc", "svc/a.src",
@@ -684,7 +699,7 @@ func TestSettle(t *testing.T) {
 				"both names are the emitted ones")
 		})
 
-		t.Run("orders collision findings by scope and then by settled spelling", func(t *testing.T) {
+		t.Run("orders collision findings by scope before settled spelling", func(t *testing.T) {
 			t.Parallel()
 
 			settles := map[string]string{
@@ -790,14 +805,14 @@ func TestSettle(t *testing.T) {
 			assert.Equal(t, holder.Type.Spelling, "row", "the reference is left as written")
 		})
 
-		t.Run("reports RefusedName for a name the hook refuses", func(t *testing.T) {
+		t.Run("reports RefusedName for a name that fails to respell", func(t *testing.T) {
 			t.Parallel()
 
 			e := storeOf(t, settleUnit("svc", "svc/a.src", protectedBox()))
 			coretest.AssertCodes(t, settled(t, e, protectedRefusing()), plugin.RefusedName)
 		})
 
-		t.Run("withholds a declaration whose name the hook refuses", func(t *testing.T) {
+		t.Run("withholds a declaration whose name fails to respell", func(t *testing.T) {
 			t.Parallel()
 
 			keep := &emit.Constant{Origin: settleOrigin("max", symbol.KindConstant), Name: "max", Value: "1"}
@@ -995,7 +1010,7 @@ func TestSettle(t *testing.T) {
 				"the body reads its own parameter, not the withheld neighbour's renames")
 		})
 
-		t.Run("positions collision and ambiguity findings at their unit", func(t *testing.T) {
+		t.Run("positions each naming finding at its unit", func(t *testing.T) {
 			t.Parallel()
 
 			b := respelling(func(host, kind symbol.Kind, _ symbol.Visibility, name string) (string, error) {
@@ -1178,7 +1193,7 @@ func TestSettle(t *testing.T) {
 			assert.Equal(t, row.Name, "Row", "a declaration without an origin renders no source declaration")
 		})
 
-		t.Run("ignores an override whose origin name the hook refuses", func(t *testing.T) {
+		t.Run("ignores an override whose origin name fails to respell", func(t *testing.T) {
 			t.Parallel()
 
 			origin := settleOrigin("_row", symbol.KindStruct)
@@ -1238,7 +1253,7 @@ func TestSettle(t *testing.T) {
 			assert.Equal(t, holder.Type.Spelling, overrideName, "the reference follows the override")
 		})
 
-		t.Run("withholds a declaration whose name the hook refuses despite an override", func(t *testing.T) {
+		t.Run("withholds a declaration whose name fails to respell despite an override", func(t *testing.T) {
 			t.Parallel()
 
 			box := protectedBox()
@@ -1252,6 +1267,101 @@ func TestSettle(t *testing.T) {
 			coretest.AssertCodes(t, sink, plugin.RefusedName)
 		})
 	})
+}
+
+// A settle allocates nothing for a backend without hooks, and the
+// rebuilt index with the plan of the names for a respell hook, in the
+// ordinary run, which runs no benchmark. Each counted settle takes a
+// store of its own, built before the count. The check runs alone,
+// because AllocsPerRun counts every goroutine's allocations and refuses
+// to run beside parallel tests.
+func TestSettleAllocs(t *testing.T) {
+	for _, tt := range settleCases() {
+		stores := make([]*plugin.Emit, allocRuns)
+		for i := range stores {
+			stores[i] = settleStore(t)
+		}
+		sink, at := diag.NewSink(), 0
+		assert.MaxAllocs(t, func() {
+			if err := plugin.Settle(stores[at], tt.backend, nil, sink); err != nil {
+				t.Fatalf("Settle: unexpected error: %v", err)
+			}
+			at++
+		}, tt.allocs, "Settle through "+tt.name+" allocates what it rebuilds")
+		assert.Empty(t, messages(sink), "the settle reports nothing")
+	}
+}
+
+// BenchmarkSettle measures one plan's settle over a store of a hundred
+// units, each settle on a store built outside the measurement.
+func BenchmarkSettle(b *testing.B) {
+	for _, tt := range settleCases() {
+		b.Run("Settle/"+tt.name, func(b *testing.B) {
+			var (
+				e    *plugin.Emit
+				sink *diag.Sink
+			)
+			fresh := func() { e, sink = settleStore(b), diag.NewSink() }
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				err = plugin.Settle(e, tt.backend, nil, sink)
+			}
+			assert.NoError(b, err, "the store settles")
+			assert.True(b, e.Settled(), "the store is marked settled")
+		})
+	}
+}
+
+// settleCases returns the backends the allocation check and the
+// benchmark settle through, with the allocations of one settle of
+// [settleStore].
+func settleCases() []struct {
+	name    string
+	backend plugin.Backend
+	allocs  uint64
+} {
+	return []struct {
+		name    string
+		backend plugin.Backend
+		allocs  uint64
+	}{
+		{name: "a backend without hooks", backend: &hookless{name: "printer"}, allocs: 0},
+		{name: "a respell hook that keeps every name", backend: keeping(), allocs: keepingSettleAllocs},
+	}
+}
+
+// keeping returns a backend whose respell hook keeps every name, so a
+// settle measures the kernel's work and none of the hook's.
+func keeping() *respellingOnly {
+	return respelling(func(_, _ symbol.Kind, _ symbol.Visibility, n string) (string, error) {
+		return n, nil
+	})
+}
+
+// settleStore returns a store of settleUnits units in one package, each
+// of two structs of three methods with names of their own.
+func settleStore(tb assert.TB) *plugin.Emit {
+	tb.Helper()
+
+	e := plugin.NewEmit()
+	for i := range settleUnits {
+		decls := make([]symbol.Symbol, 0, 2)
+		for j := range 2 {
+			name := "Row" + strconv.Itoa(i) + "_" + strconv.Itoa(j)
+			s := &emit.Struct{Origin: structID(name), Name: name}
+			for m := range 3 {
+				s.Methods.Append(&emit.Method{Origin: structID(name), Name: "Method" + strconv.Itoa(m)})
+			}
+			decls = append(decls, s)
+		}
+		u := unit("stubgen", "unit"+strconv.Itoa(i)+".go")
+		u.Decls = decls
+		assert.NoError(tb, e.Add(u), "the unit arrives")
+	}
+	return e
 }
 
 // splitAlias lowers an alias into a struct and a constant, both of

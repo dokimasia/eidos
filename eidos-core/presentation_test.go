@@ -12,14 +12,15 @@ import (
 	"text/template"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/plugin"
 )
 
-// The presentation fixture's names: the plugin, the targets its
-// declarations name, its helpers, the template its trees contain
-// and the text each tree's template reads.
+// The presentation cases declare a plugin, the targets its
+// declarations name, its helpers, the template its trees contain and
+// the text each tree's template reads.
 const (
 	styledPlugin plugin.ID     = "styled"
 	stubTarget   plugin.Target = "stub"
@@ -182,4 +183,42 @@ func TestPresentation(t *testing.T) {
 			assert.Empty(t, tp.Overrides(otherTarget), "the other target replaces nothing")
 		})
 	})
+}
+
+// Each option constructor returns its option by value without
+// allocating, in the ordinary run, which runs no benchmark.
+func TestPresentationZeroAlloc(t *testing.T) {
+	tree, fm := stubTree(), template.FuncMap{toneHelper: shout}
+	var opt eidos.TargetOption
+	assert.MaxAllocs(t, func() { opt = eidos.Templates(tree) }, 0, "Templates allocates nothing")
+	assert.MaxAllocs(t, func() { opt = eidos.Funcs(fm) }, 0, "Funcs allocates nothing")
+	assert.MaxAllocs(t, func() { opt = eidos.Overrides(fm) }, 0, "Overrides allocates nothing")
+	tp := provider(t, eidos.NewPlugin(styledPlugin).For(stubTarget, opt))
+	assert.Equal(t, tp.Overrides(stubTarget), []string{toneHelper}, "Overrides returns the option")
+}
+
+// BenchmarkPresentation measures each option constructor, which a
+// plugin's constructor calls once per declaration.
+func BenchmarkPresentation(b *testing.B) {
+	tree, fm := stubTree(), template.FuncMap{toneHelper: shout}
+	options := []struct {
+		name  string
+		build func() eidos.TargetOption
+	}{
+		{name: "Templates", build: func() eidos.TargetOption { return eidos.Templates(tree) }},
+		{name: "Funcs", build: func() eidos.TargetOption { return eidos.Funcs(fm) }},
+		{name: "Overrides", build: func() eidos.TargetOption { return eidos.Overrides(fm) }},
+	}
+	for _, tt := range options {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var opt eidos.TargetOption
+			for c.Loop() {
+				opt = tt.build()
+			}
+			assert.NotNil(b, provider(b, eidos.NewPlugin(styledPlugin).For(stubTarget, opt)),
+				"the option declares a presentation the plugin builds with")
+		})
+	}
 }

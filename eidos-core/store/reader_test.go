@@ -5,9 +5,11 @@ package store_test
 
 import (
 	"slices"
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -15,17 +17,6 @@ import (
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
-
-// recorded reports whether the read set contains a declaration edge on
-// id.
-func recorded(reads *store.ReadSet, id symbol.Identity) bool {
-	return slices.Contains(slices.Collect(reads.Identities()), id)
-}
-
-// took reports whether the read set contains a package edge on id.
-func took(reads *store.ReadSet, id symbol.Identity) bool {
-	return slices.Contains(slices.Collect(reads.Packages()), id)
-}
 
 // The reader is the only path a plugin's read takes: it filters by
 // scope and records what it returned.
@@ -35,17 +26,25 @@ func TestReader(t *testing.T) {
 	t.Run("Lookup", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the declaration and records it", func(t *testing.T) {
+		t.Run("returns the declaration itself", func(t *testing.T) {
+			t.Parallel()
+
+			want := coretest.Struct(coretest.StorePath, "Store")
+			r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, want))
+
+			got, held := r.Lookup(want.ID)
+			assert.True(t, held, "Lookup returns the declaration")
+			assert.True(t, got == symbol.Symbol(want), "the very declaration, not a copy")
+		})
+
+		t.Run("records the declaration edge", func(t *testing.T) {
 			t.Parallel()
 
 			want := coretest.Struct(coretest.StorePath, "Store")
 			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, want))
 
-			got, held := r.Lookup(want.ID)
-			assert.True(t, held, "Lookup returns a held declaration")
-			assert.True(t, got == symbol.Symbol(want), "the very declaration, not a copy")
-			assert.True(t, recorded(reads, want.ID),
-				"and records the edge invalidation follows")
+			r.Lookup(want.ID)
+			assert.True(t, recorded(reads, want.ID), "the edge invalidation follows")
 		})
 
 		t.Run("records a package edge for a package's own identity", func(t *testing.T) {
@@ -61,19 +60,19 @@ func TestReader(t *testing.T) {
 			assert.False(t, recorded(reads, pkg.ID), "in place of a declaration edge")
 		})
 
-		t.Run("records an identity the graph does not hold", func(t *testing.T) {
+		t.Run("records an identity the graph does not contain", func(t *testing.T) {
 			t.Parallel()
 
 			absent := coretest.Struct(coretest.StorePath, "Absent").ID
 			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath))
 
 			_, held := r.Lookup(absent)
-			assert.False(t, held, "an unheld identity returns nothing")
+			assert.False(t, held, "an identity the graph does not contain returns nothing")
 			assert.True(t, recorded(reads, absent),
-				"and still records: the reader runs again when it appears")
+				"and still records, so the reader runs again when it appears")
 		})
 
-		t.Run("neither returns nor records a declaration outside scope", func(t *testing.T) {
+		t.Run("records no edge for a declaration outside scope", func(t *testing.T) {
 			t.Parallel()
 
 			hidden := coretest.Struct(coretest.CachePath, "Cache")
@@ -83,7 +82,7 @@ func TestReader(t *testing.T) {
 			_, held := r.Lookup(hidden.ID)
 			assert.False(t, held, "a declaration outside scope is not returned")
 			assert.False(t, recorded(reads, hidden.ID),
-				"and not recorded: a change the reader could never see must not re-run it")
+				"and not recorded: a change the reader could never see must not run it again")
 		})
 	})
 
@@ -114,7 +113,7 @@ func TestReader(t *testing.T) {
 					"when the first declaration of that kind arrives")
 		})
 
-		t.Run("records only the declarations the caller reached", func(t *testing.T) {
+		t.Run("records only the declarations the caller ranged over", func(t *testing.T) {
 			t.Parallel()
 
 			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath,
@@ -124,7 +123,7 @@ func TestReader(t *testing.T) {
 				break
 			}
 			assert.Length(t, slices.Collect(reads.Identities()), 1,
-				"a stopped enumeration records what the caller reached, not the set")
+				"a stopped enumeration records what the caller ranged over, not the set")
 		})
 
 		t.Run("skips a declaration outside scope", func(t *testing.T) {
@@ -139,6 +138,17 @@ func TestReader(t *testing.T) {
 				[]string{"Store"}, "the enumeration skips a declaration outside scope")
 			assert.False(t, recorded(reads, hidden.ID),
 				"and does not record it either")
+		})
+
+		t.Run("returns the declarations of every package under a nil scope", func(t *testing.T) {
+			t.Parallel()
+
+			r, _ := coretest.Reading(t, nil,
+				coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store")),
+				coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")))
+
+			assert.Length(t, slices.Collect(r.ByKind(symbol.KindStruct)), 2,
+				"a nil scope admits every package")
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
@@ -196,7 +206,7 @@ func TestReader(t *testing.T) {
 			}
 			assert.Equal(t, seen, 1, "the enumeration stops when the range stops")
 			assert.Length(t, slices.Collect(reads.Identities()), 1,
-				"and records what the caller reached, not the set")
+				"and records what the caller ranged over, not the set")
 		})
 
 		t.Run("asks the scope once per package", func(t *testing.T) {
@@ -213,7 +223,7 @@ func TestReader(t *testing.T) {
 				"and the cache package")
 			for i, decl := range []*node.Struct{store1, store2, cache1, cache2} {
 				assert.NoError(t, g.AttachDirectives(decl.ID, []directive.Raw{stubAt(i + 1)}),
-					"each declaration carries the directive")
+					"each declaration has the directive")
 			}
 			g.Freeze()
 			scope, asked := counting(coretest.StorePath)
@@ -229,14 +239,14 @@ func TestReader(t *testing.T) {
 	t.Run("PackageOf", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the package holding a declaration", func(t *testing.T) {
+		t.Run("returns the package that contains a declaration", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
 			r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
 
 			got, held := r.PackageOf(decl.ID)
-			assert.True(t, held, "PackageOf returns the holding package")
+			assert.True(t, held, "PackageOf returns the package that contains the declaration")
 			assert.Equal(t, got.ID, coretest.PackageID(coretest.StorePath),
 				"the one the declaration's identity names")
 		})
@@ -255,30 +265,30 @@ func TestReader(t *testing.T) {
 				"and no declaration edge")
 		})
 
-		t.Run("returns false for a package nothing holds", func(t *testing.T) {
+		t.Run("reports false for a package the graph does not contain", func(t *testing.T) {
 			t.Parallel()
 
 			r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath))
 			_, held := r.PackageOf(coretest.Struct(coretest.CachePath, "Cache").ID)
-			assert.False(t, held, "a package nothing holds returns nothing")
+			assert.False(t, held, "a package the graph does not contain returns nothing")
 		})
 
-		t.Run("returns the package the identity names, not the file that carried it", func(t *testing.T) {
+		t.Run("reports false for an identity naming a package the graph does not contain", func(t *testing.T) {
 			t.Parallel()
 
 			// A declaration whose identity names an unloaded package is
-			// malformed input from a frontend; the holder is derived
-			// from the identity, so it returns nothing, and not the
+			// malformed input from a frontend. The package derives from
+			// the identity, so PackageOf returns nothing, and not the
 			// package of the file the declaration is in.
 			stray := coretest.Struct(coretest.CachePath, "Stray")
 			r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, stray))
 
 			_, held := r.PackageOf(stray.ID)
 			assert.False(t, held,
-				"the holder derives from the identity, not from the file that carried it")
+				"the package derives from the identity, not from the file the declaration is in")
 		})
 
-		t.Run("neither returns nor records outside scope", func(t *testing.T) {
+		t.Run("records no edge for a package outside scope", func(t *testing.T) {
 			t.Parallel()
 
 			hidden := coretest.Struct(coretest.CachePath, "Cache")
@@ -290,21 +300,182 @@ func TestReader(t *testing.T) {
 			assert.Equal(t, reads.Len(), 0, "and not recorded")
 		})
 	})
+}
 
-	t.Run("Scope", func(t *testing.T) {
-		t.Parallel()
+// A tracked read or enumeration into a set that recorded it before
+// allocates nothing, under a scope as without one. The check runs alone,
+// because AllocsPerRun counts every goroutine's allocations and refuses
+// to run beside parallel tests.
+func TestReaderZeroAlloc(t *testing.T) {
+	decl := coretest.Struct(coretest.StorePath, "Store")
+	r, _ := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decl))
+	r.Lookup(decl.ID)
+	r.PackageOf(decl.ID)
+	assert.MaxAllocs(t, func() {
+		if _, held := r.Lookup(decl.ID); !held {
+			t.Fatal("Lookup missed the declaration")
+		}
+	}, 0, "Lookup allocates nothing for an edge the set recorded")
+	assert.MaxAllocs(t, func() {
+		if _, held := r.PackageOf(decl.ID); !held {
+			t.Fatal("PackageOf missed the package")
+		}
+	}, 0, "PackageOf allocates nothing for an edge the set recorded")
+	assert.MaxAllocs(t, func() {
+		n := 0
+		for range r.ByKind(symbol.KindStruct) {
+			n++
+		}
+		if n != 1 {
+			t.Fatal("ByKind enumerated another number of structs")
+		}
+	}, 0, "ByKind allocates nothing for edges the set recorded")
 
-		t.Run("a nil scope admits every package", func(t *testing.T) {
-			t.Parallel()
+	scoped, _ := coretest.Reading(t, onlyPackage(coretest.StorePath),
+		coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store")),
+		coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")))
+	assert.MaxAllocs(t, func() {
+		n := 0
+		for range scoped.ByKind(symbol.KindStruct) {
+			n++
+		}
+		if n != 1 {
+			t.Fatal("ByKind enumerated another number of admitted structs")
+		}
+	}, 0, "ByKind allocates nothing under a scope for edges the set recorded")
 
-			r, _ := coretest.Reading(t, nil,
-				coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store")),
-				coretest.Package(coretest.CachePath, coretest.Struct(coretest.CachePath, "Cache")))
+	carriers := directed(t, 2)
+	for range carriers.ByDirective("stub") { // the first range records the edges
+	}
+	assert.MaxAllocs(t, func() {
+		n := 0
+		for range carriers.ByDirective("stub") {
+			n++
+		}
+		if n != 2 {
+			t.Fatal("ByDirective enumerated another number of carriers")
+		}
+	}, 0, "ByDirective allocates nothing for edges the set recorded")
+}
 
-			assert.Length(t, slices.Collect(r.ByKind(symbol.KindStruct)), 2,
-				"a nil scope admits every package")
-		})
+// BenchmarkReader measures the tracked reads at the canonical scale: a
+// tracked read costs an untracked one plus the bookkeeping, which every
+// read a plugin makes costs. Each case reads once before the measurement,
+// so the set has its edges and the measured reads record into storage it
+// grew.
+func BenchmarkReader(b *testing.B) {
+	const packages, files, decls = benchPackages, benchFiles, benchDecls
+	pkgs := coretest.Workspace(packages, files, decls)
+	id := coretest.Struct(coretest.StorePath+"/0", "Decl0_0").Identity()
+
+	b.Run("Lookup", func(b *testing.B) {
+		r, _ := coretest.Reading(b, nil, pkgs...)
+		r.Lookup(id)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			_, held = r.Lookup(id)
+		}
+		assert.True(b, held, "Lookup returns the declaration")
 	})
+
+	b.Run("PackageOf", func(b *testing.B) {
+		r, _ := coretest.Reading(b, nil, pkgs...)
+		r.PackageOf(id)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			_, held = r.PackageOf(id)
+		}
+		assert.True(b, held, "PackageOf returns the package")
+	})
+
+	b.Run("ByKind", func(b *testing.B) {
+		r, _ := coretest.Reading(b, nil, pkgs...)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		seen := 0
+		// The first pass runs before the contract counts, at the call site
+		// it measures. It grows the read set, and the runtime builds the
+		// site's 48-byte cache for converting a declaration to a symbol. A
+		// pass at any other call site builds a cache of its own.
+		for first := true; first || c.Loop(); first = false {
+			seen = 0
+			for range r.ByKind(symbol.KindStruct) {
+				seen++
+			}
+		}
+		assert.Equal(b, seen, packages*files*decls, "ByKind returns every struct")
+	})
+
+	b.Run("ByKind/under a scope", func(b *testing.B) {
+		admitted := coretest.StorePath + "/0"
+		r, _ := coretest.Reading(b, onlyPackage(admitted), pkgs...)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		seen := 0
+		// The first pass grows the read set and builds the call site's
+		// conversion cache before the contract counts, as in ByKind.
+		for first := true; first || c.Loop(); first = false {
+			seen = 0
+			for range r.ByKind(symbol.KindStruct) {
+				seen++
+			}
+		}
+		assert.Equal(b, seen, files*decls, "ByKind returns the admitted package's structs")
+	})
+
+	b.Run("ByDirective", func(b *testing.B) {
+		const carriers = 20_000
+		r := directed(b, carriers)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		seen := 0
+		// The first pass grows the read set and builds the call site's
+		// conversion cache before the contract counts, as in ByKind.
+		for first := true; first || c.Loop(); first = false {
+			seen = 0
+			for range r.ByDirective("stub") {
+				seen++
+			}
+		}
+		assert.Equal(b, seen, carriers, "ByDirective returns every carrier")
+	})
+}
+
+// directed returns a reader over a frozen graph of one package of n
+// structs, each with one stub directive.
+func directed(tb assert.TB, n int) *store.Reader {
+	tb.Helper()
+
+	decls := make([]symbol.Symbol, 0, n)
+	for i := range n {
+		decls = append(decls, coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i)))
+	}
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, decls...)), "the package loads")
+	for i, decl := range decls {
+		named, _ := decl.(node.Declaration)
+		assert.NoError(tb, g.AttachDirectives(named.Identity(), []directive.Raw{stubAt(i + 1)}),
+			"the directive attaches")
+	}
+	g.Freeze()
+	r, err := g.Reader(store.NewReadSet(), nil)
+	assert.NoError(tb, err, "the frozen graph hands out a reader")
+	return r
+}
+
+// recorded reports whether the read set contains a declaration edge on
+// id.
+func recorded(reads *store.ReadSet, id symbol.Identity) bool {
+	return slices.Contains(slices.Collect(reads.Identities()), id)
+}
+
+// took reports whether the read set contains a package edge on id.
+func took(reads *store.ReadSet, id symbol.Identity) bool {
+	return slices.Contains(slices.Collect(reads.Packages()), id)
 }
 
 // onlyPackage returns a scope admitting one package path.
@@ -320,51 +491,4 @@ func counting(path string) (store.Scope, *int) {
 		asked++
 		return pkg.Package == path
 	}, &asked
-}
-
-// A tracked read costs an untracked one plus the bookkeeping. What
-// these measure is that difference, which every read a plugin makes
-// costs.
-func BenchmarkReader(b *testing.B) {
-	const packages, files, decls = benchPackages, benchFiles, benchDecls
-
-	b.Run("Lookup", func(b *testing.B) {
-		b.ReportAllocs()
-		r, _ := coretest.Reading(b, nil, coretest.Workspace(packages, files, decls)...)
-		id := coretest.Struct(coretest.StorePath+"/0", "Decl0_0").Identity()
-
-		for b.Loop() {
-			if _, held := r.Lookup(id); !held {
-				b.Fatalf("Lookup(%v) = false, want the declaration", id)
-			}
-		}
-	})
-
-	b.Run("ByKind", func(b *testing.B) {
-		b.ReportAllocs()
-		r, _ := coretest.Reading(b, nil, coretest.Workspace(packages, files, decls)...)
-
-		for b.Loop() {
-			seen := 0
-			for range r.ByKind(symbol.KindStruct) {
-				seen++
-			}
-			if seen != packages*files*decls {
-				b.Fatalf("ByKind returned %d declarations, want %d", seen, packages*files*decls)
-			}
-		}
-	})
-
-	b.Run("ByKind under a scope", func(b *testing.B) {
-		b.ReportAllocs()
-		admitted := coretest.StorePath + "/0"
-		r, _ := coretest.Reading(b,
-			func(pkg symbol.Identity) bool { return pkg.Package == admitted },
-			coretest.Workspace(packages, files, decls)...)
-
-		for b.Loop() {
-			for range r.ByKind(symbol.KindStruct) { // ranging is what records the edge
-			}
-		}
-	})
 }

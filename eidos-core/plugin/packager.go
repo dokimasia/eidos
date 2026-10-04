@@ -28,23 +28,30 @@ type Module struct {
 
 // Contains reports whether a workspace-relative directory is the
 // module's root or below it. The tree's root contains every
-// directory.
+// directory. It allocates nothing.
 func (m Module) Contains(dir string) bool {
-	return m.Root == rootDir || dir == m.Root || strings.HasPrefix(dir, m.Root+"/")
+	if m.Root == rootDir {
+		return true
+	}
+	rest, under := strings.CutPrefix(dir, m.Root)
+	return under && (rest == "" || rest[0] == '/')
 }
 
 // Rel returns a directory's path relative to the module's root, and
 // "." for the root itself. The directory is one [Module.Contains]
-// reports true for.
+// reports true for, and any other directory returns unchanged. It
+// allocates nothing, because the result shares the directory's bytes.
 func (m Module) Rel(dir string) string {
 	switch {
 	case dir == m.Root:
 		return rootDir
 	case m.Root == rootDir:
 		return dir
-	default:
-		return strings.TrimPrefix(dir, m.Root+"/")
 	}
+	if rest, under := strings.CutPrefix(dir, m.Root); under && rest != "" && rest[0] == '/' {
+		return rest[1:]
+	}
+	return dir
 }
 
 // Resident is one source file the load placed in a directory, with
@@ -79,7 +86,7 @@ type Placement struct {
 
 // ModuleOf returns the innermost module of a language whose root
 // contains a directory, and false where no module of the language
-// contains it.
+// contains it. It allocates nothing.
 func (p Placement) ModuleOf(lang symbol.Lang, dir string) (Module, bool) {
 	for _, m := range p.Modules {
 		if m.Lang == lang && m.Contains(dir) {

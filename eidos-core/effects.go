@@ -5,6 +5,7 @@ package eidos
 
 import (
 	"math"
+	"slices"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
@@ -102,9 +103,10 @@ type finding struct {
 }
 
 // slotApplier is a lane's typed buffer of slot appends, applied one
-// append call at a time.
+// append call at a time, and emptied for the lane's next phase call.
 type slotApplier interface {
 	apply(at int)
+	reset()
 }
 
 // slotAppend is one buffered append call: the slot, and the range of
@@ -125,6 +127,14 @@ type slotBuffer[T any] struct {
 func (b *slotBuffer[T]) apply(at int) {
 	a := b.appends[at]
 	a.slot.Append(b.values[a.from:a.to]...)
+}
+
+// reset empties the buffer and keeps its storage. It zeroes the values
+// and the slots it held, so the buffer retains nothing of the run.
+func (b *slotBuffer[T]) reset() {
+	clear(b.values)
+	clear(b.appends)
+	b.values, b.appends = b.values[:0], b.appends[:0]
 }
 
 // touch buffers an accessor call and returns its index, which the
@@ -161,6 +171,31 @@ func (fx *effects) contribute(seq int, host symbol.Symbol) {
 	fx.lastHost = seq
 	fx.stream = append(fx.stream, effect{seq: seq, at: len(fx.hosts), kind: effectHost})
 	fx.hosts = append(fx.hosts, host)
+}
+
+// reset empties the lane's effects for its next phase call and keeps
+// the storage of every buffer, the typed slot buffers included. It
+// zeroes each element that refers into the run.
+func (fx *effects) reset() {
+	clear(fx.touches)
+	clear(fx.decls)
+	clear(fx.slotted)
+	clear(fx.found)
+	clear(fx.hosts)
+	for _, buf := range fx.slots {
+		buf.reset()
+	}
+	*fx = effects{
+		stream:   fx.stream[:0],
+		touches:  fx.touches[:0],
+		places:   fx.places[:0],
+		decls:    fx.decls[:0],
+		slotted:  fx.slotted[:0],
+		found:    fx.found[:0],
+		hosts:    fx.hosts[:0],
+		slots:    fx.slots,
+		lastHost: -1,
+	}
 }
 
 // appendSlot buffers one append call's values for one slot, in order.
@@ -217,9 +252,11 @@ func (c *phaseCall) reportThrough(seq int) {
 }
 
 // merge visits every lane's effects with a sequence up to through, in
-// canonical order.
+// canonical order. The cursors are the call's own buffer.
 func (c *phaseCall) merge(through int, visit func(*runState, effect)) {
-	cursors := make([]int, len(c.lanes))
+	c.cursors = slices.Grow(c.cursors[:0], len(c.lanes))[:len(c.lanes)]
+	cursors := c.cursors
+	clear(cursors)
 	for {
 		best, lowest := -1, 0
 		for i, ln := range c.lanes {

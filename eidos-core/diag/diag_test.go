@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/position"
@@ -73,17 +74,19 @@ func TestDiag(t *testing.T) {
 			name  string
 			other diag.Diag
 		}{
-			{name: "the position decides first", other: later(func(d *diag.Diag) {
+			{name: "orders by the position first", other: later(func(d *diag.Diag) {
 				d.Pos.Line, d.Code.Number, d.Msg = 6, 1, "a"
 			})},
-			{name: "then the code's prefix", other: later(func(d *diag.Diag) {
+			{name: "orders by the code's prefix after the position", other: later(func(d *diag.Diag) {
 				d.Code.Prefix, d.Code.Number = "GOLANG", 1
 			})},
-			{name: "then the code's number", other: later(func(d *diag.Diag) {
+			{name: "orders by the code's number after the prefix", other: later(func(d *diag.Diag) {
 				d.Code.Number, d.Msg = 8, "a"
 			})},
-			{name: "then the message", other: later(func(d *diag.Diag) { d.Msg = "n" })},
-			{name: "then the origin", other: later(func(d *diag.Diag) { d.Origin = "generate" })},
+			{name: "orders by the message after the code", other: later(func(d *diag.Diag) { d.Msg = "n" })},
+			{name: "orders by the origin after the message", other: later(func(d *diag.Diag) {
+				d.Origin = "generate"
+			})},
 		}
 		for _, tt := range cases {
 			t.Run(tt.name, func(t *testing.T) {
@@ -111,7 +114,7 @@ func TestDiag(t *testing.T) {
 	t.Run("Related", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("carries the secondary positions in order", func(t *testing.T) {
+		t.Run("keeps the secondary positions in order", func(t *testing.T) {
 			t.Parallel()
 
 			twin := position.Pos{File: "svc/store.go", Line: 41, Col: 2}
@@ -128,4 +131,45 @@ func TestDiag(t *testing.T) {
 				"Related carries the secondary positions in order")
 		})
 	})
+}
+
+// A comparison allocates nothing in the ordinary run, which runs no
+// benchmark.
+func TestDiagZeroAlloc(t *testing.T) {
+	first, second := ordered()
+	assert.MaxAllocs(t, func() {
+		if first.Compare(second) >= 0 {
+			t.Fatal("Compare ordered the earlier finding after the later one")
+		}
+	}, 0, "Compare allocates nothing")
+}
+
+// BenchmarkDiag measures the canonical order of two findings that
+// differ in their message alone, so the comparison reads every key up
+// to the message.
+func BenchmarkDiag(b *testing.B) {
+	b.Run("Compare", func(b *testing.B) {
+		first, second := ordered()
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got int
+		for c.Loop() {
+			got = first.Compare(second)
+		}
+		assert.Equal(b, got, -1, "the earlier message sorts first")
+	})
+}
+
+// ordered returns two findings that differ in their message alone, the
+// first sorting before the second.
+func ordered() (diag.Diag, diag.Diag) {
+	first := diag.Diag{
+		Code:   diag.Code{Prefix: diag.KernelPrefix, Number: 7},
+		Pos:    position.Pos{File: "svc/store.go", Line: 5, Col: 1},
+		Msg:    "Store is declared twice",
+		Origin: diag.PhaseLink,
+	}
+	second := first
+	second.Msg = "Store is spelled twice"
+	return first, second
 }

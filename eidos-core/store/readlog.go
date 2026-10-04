@@ -18,7 +18,9 @@ import (
 // entries. An entry keeps the set's edges and not the order they
 // arrived in, which no enumeration of a set returns either.
 //
-// The zero ReadLog is empty and ready to record.
+// The zero ReadLog is empty and ready to record. [ReadLog.Reset] empties
+// a log and keeps its storage, so a dispatcher reuses one log across
+// phase calls.
 //
 // # Concurrency
 //
@@ -27,9 +29,10 @@ import (
 //
 // # Allocation contract
 //
-// Append allocates only to grow the log's slices, and Load only to grow
-// the set's maps past the largest entry the set held since its
-// creation.
+// Append allocates only to grow the log's slices past the largest use
+// since the log's creation, and Load only to grow the set's maps past
+// the largest entry the set held since its creation. Reset allocates
+// nothing.
 type ReadLog struct {
 	identities []symbol.Identity
 	packages   []symbol.Identity
@@ -100,4 +103,22 @@ func (l *ReadLog) Load(i int, s *ReadSet) {
 	for _, n := range l.directives[start.directives:end.directives] {
 		s.recordDirective(n)
 	}
+}
+
+// Reset empties the log and keeps the storage of its slices, so the
+// next entries append without allocating until they outgrow an earlier
+// use. It zeroes the identities, keys and spellings the log held, so a
+// log kept for reuse retains no string of the graph that recorded them.
+// It cannot fail.
+func (l *ReadLog) Reset() {
+	clear(l.identities)
+	clear(l.packages)
+	clear(l.facts)
+	clear(l.directives)
+	l.identities = l.identities[:0]
+	l.packages = l.packages[:0]
+	l.kinds = l.kinds[:0]
+	l.facts = l.facts[:0]
+	l.directives = l.directives[:0]
+	l.ends = l.ends[:0]
 }

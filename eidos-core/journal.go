@@ -199,13 +199,16 @@ func (c *phaseCall) keyHosts() {
 //
 // # Allocation contract
 //
-// The delivery allocates the order of the records, one read set, and
-// the buffer the candidates' matches pass through.
+// The order of the records, the read set each record's reads load into
+// and the buffer a candidate's matches pass through are the call's own
+// buffers. Each allocates only to grow past the largest delivery of an
+// earlier call that used the same state.
 func (c *phaseCall) deliver() {
 	if c.journal == nil {
 		return
 	}
-	all := make([]entry, c.seq)
+	c.order = slices.Grow(c.order[:0], c.seq)[:c.seq]
+	all := c.order
 	for _, ln := range c.lanes {
 		for i := range ln.records {
 			r := &ln.records[i]
@@ -222,7 +225,10 @@ func (c *phaseCall) deliver() {
 		}
 		start = end
 	}
-	reads := store.NewReadSet()
+	if c.delivered == nil {
+		c.delivered = store.NewReadSet()
+	}
+	reads := c.delivered
 	for _, e := range all {
 		inv := plugin.Invocation{
 			Match:    e.ln.keyOf(e.r),
@@ -243,7 +249,7 @@ func (c *phaseCall) deliver() {
 	}
 	s := &c.selection
 	slices.SortStableFunc(s.evaluated, func(a, b evaluatedMatch) int { return cmp.Compare(a.candidate, b.candidate) })
-	var keys []plugin.MatchKey
+	keys := c.keys
 	from := 0
 	for j, id := range s.candidates {
 		if j > 0 && id == s.candidates[j-1] {
@@ -256,4 +262,5 @@ func (c *phaseCall) deliver() {
 		}
 		c.journal.Evaluated(id, keys)
 	}
+	c.keys = keys
 }

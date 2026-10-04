@@ -38,6 +38,17 @@ var (
 // SHA-256 begins with the shard's byte, sorted by path. A commit
 // rewrites only the documents whose entries changed, so a run's
 // rewrite of the record follows its edit and not the record's size.
+//
+// # Concurrency
+//
+// The functions of this package read the Shard they are passed and
+// never write it or its entries, so goroutines can share a Shard that
+// none of them writes.
+//
+// # Allocation contract
+//
+// A Shard's storage is its list of entries, which [Split] and
+// [DecodeShard] allocate. A copy of a Shard shares that list.
 type Shard struct {
 	Version   int    `json:"version"`
 	Workspace string `json:"workspace"`
@@ -49,6 +60,11 @@ type Shard struct {
 
 // BucketOf returns the bucket a path's entry belongs to: the first byte
 // of the SHA-256 of the path, as two lowercase hex digits.
+//
+// # Allocation contract
+//
+// BucketOf allocates nothing. The spellings of the 256 buckets are built
+// once, when the package initializes.
 func BucketOf(path string) string {
 	sum := sha256.Sum256([]byte(path))
 	return buckets[sum[0]]
@@ -57,8 +73,13 @@ func BucketOf(path string) string {
 // Split returns a manifest's documents, one for each bucket that contains
 // a file, sorted by bucket. Each document names the manifest's version
 // and workspace, and lists its entries in the manifest's order, so a
-// manifest sorted by path splits into documents sorted by path. It
-// allocates one list per bucket it fills, sized exactly.
+// manifest sorted by path splits into documents sorted by path.
+//
+// # Allocation contract
+//
+// Split allocates the list of each entry's bucket, one list of entries
+// per bucket it fills, sized exactly, and the list of documents: 258
+// allocations for a manifest that fills all 256 buckets.
 func Split(m Manifest) []Shard {
 	at := make([]uint8, len(m.Files))
 	var counts [256]int
@@ -94,6 +115,11 @@ func Split(m Manifest) []Shard {
 // Error modes: each wraps [ErrUnsupported]. Join refuses a document that
 // breaks the format's invariants, two documents of one bucket, and two
 // documents that name different workspaces.
+//
+// # Allocation contract
+//
+// Join allocates the joined list of entries, one allocation, and
+// nothing for documents without an entry. A refusal allocates its error.
 func Join(shards []Shard) (Manifest, error) {
 	m := Manifest{Version: Version}
 	var seen [256]bool
@@ -132,6 +158,16 @@ func Join(shards []Shard) (Manifest, error) {
 //
 // Error modes: EncodeShard refuses a document that breaks the format's
 // invariants, naming the first entry that breaks one.
+//
+// # Allocation contract
+//
+// EncodeShard allocates the copy of the file list, the document it
+// hands the JSON encoder by pointer, the options that leave HTML
+// characters unescaped, and the output buffer with its growths: six
+// allocations for a document of 40 entries, whose buffer grows twice.
+// The JSON encoder takes its state from a pool, which a collection
+// empties, so the first call after a collection allocates that state
+// again.
 func EncodeShard(s Shard) ([]byte, error) {
 	if err := checkShard(s); err != nil {
 		return nil, fmt.Errorf("manifest: encode: %w", err)
@@ -151,7 +187,7 @@ func EncodeShard(s Shard) ([]byte, error) {
 	enc := json.NewEncoder(&buf)
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", indent)
-	if err := enc.Encode(out); err != nil {
+	if err := enc.Encode(&out); err != nil {
 		return nil, fmt.Errorf("manifest: encode: %w", err)
 	}
 	return buf.Bytes(), nil
@@ -163,6 +199,18 @@ func EncodeShard(s Shard) ([]byte, error) {
 // Error modes: each wraps [ErrUnsupported]: another version, bytes that
 // are not a JSON object of the format, and a document that breaks the
 // format's invariants.
+//
+// # Allocation contract
+//
+// DecodeShard allocates each entry's path and the growths of its lists
+// of plugins and sources: four allocations for an entry of two plugins
+// and one source. Per document it allocates the document, its bucket and
+// the growths of the list of entries, about nine allocations for a
+// document of 40 entries. The JSON decoder returns a repeated string,
+// such as a plan's name, from its string cache without an allocation.
+// It takes its state, the cache included, from a pool, which a
+// collection empties, so the first call after a collection allocates
+// that state again.
 func DecodeShard(b []byte) (Shard, error) {
 	var s Shard
 	if err := json.Unmarshal(b, &s); err != nil {

@@ -62,9 +62,9 @@ type evaluation struct {
 	matches []plugin.MatchKey
 }
 
-// recorder is a journal that keeps what a phase call hands it. It lists
-// each invocation's read set while Invoked runs, because the set is the
-// call's own only until Invoked returns.
+// recorder is a journal that keeps what a phase call hands it. It copies
+// each invocation's slices and lists its read set while Invoked runs,
+// because both are the call's own only until Invoked returns.
 type recorder struct {
 	invoked   []journaled
 	evaluated []evaluation
@@ -72,9 +72,15 @@ type recorder struct {
 	calls []string
 }
 
-// Invoked keeps one invocation, with its read set's edges listed.
+// Invoked keeps one invocation, with its slices copied and its read
+// set's edges listed.
 func (r *recorder) Invoked(inv plugin.Invocation) {
 	j := journaled{Invocation: inv, read: inv.Reads != nil}
+	j.Exports = slices.Clone(inv.Exports)
+	j.Units = slices.Clone(inv.Units)
+	j.Hosts = slices.Clone(inv.Hosts)
+	j.Claimed = slices.Clone(inv.Claimed)
+	j.Findings = slices.Clone(inv.Findings)
 	if inv.Reads != nil {
 		j.identities = slices.Collect(inv.Reads.Identities())
 		for id, key := range inv.Reads.Facts() {
@@ -698,14 +704,10 @@ func TestJournal(t *testing.T) {
 
 // BenchmarkJournal measures a journaled phase call over the 200,000
 // structs of the bench workspace, each invocation reading one fact. The
-// iteration and the call allocate eight values: the context, the emit
-// store, the sink, the call's state, its first lane's matches, the
-// match, the delivery's order and its read set. The other 106 grow by
-// append the records and the read log's facts and ends, the three
-// slices with an entry for every invocation, at about thirty-five
-// growth steps each. The ceiling is one higher: the garbage collections
-// during a call of 365 MB count one allocation the call does not make,
-// and the count is 114 on every iteration with GOGC=off.
+// call allocates nothing: its records, its read log and the delivery's
+// buffers are the state an earlier call released, which the call before
+// the measurement grew. The context, the emit store and the sink that
+// each iteration hands the call are built outside the measurement.
 func BenchmarkJournal(b *testing.B) {
 	const packages, files, decls = 1_000, 10, 20
 	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
@@ -727,23 +729,27 @@ func BenchmarkJournal(b *testing.B) {
 			b.Fatal("the bench plugin must generate")
 		}
 		count := &tally{}
-		generate := func() {
+		var ctx *plugin.GeneratorContext
+		fresh := func() {
 			count.invoked = 0
-			ctx := &plugin.GeneratorContext{
+			ctx = &plugin.GeneratorContext{
 				Index: ix, Facts: facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(),
 				Plugin: "bench", Bucket: 1, Journal: count,
 			}
+		}
+		// The first call builds the graph's index of the kind and grows
+		// the state the measured calls take.
+		fresh()
+		if err := gen.Generate(ctx); err != nil {
+			b.Fatalf("Generate: unexpected error: %v", err)
+		}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			c.Excluding(fresh)
 			if err := gen.Generate(ctx); err != nil {
 				b.Fatalf("Generate: unexpected error: %v", err)
 			}
-		}
-		// The first call builds the graph's index of the kind, which no
-		// later call allocates again.
-		generate()
-		c := bench.Start(b).MaxAllocs(115)
-		defer c.End()
-		for c.Loop() {
-			generate()
 		}
 		if count.invoked != packages*files*decls {
 			b.Fatalf("the journal received %d invocations", count.invoked)

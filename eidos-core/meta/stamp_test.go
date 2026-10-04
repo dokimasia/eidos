@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -17,52 +18,12 @@ import (
 // under.
 const fakeNamespace = "fake"
 
-// stampFixture returns a store with one registered bool key and
-// its typed handle, so the raw path is checked against the typed
-// reads that consume it.
-func stampFixture(tb assert.TB) (*meta.Facts, meta.Key[bool]) {
-	tb.Helper()
-
-	r := meta.NewRegistry()
-	assert.NoError(tb, r.ClaimNamespace(fakeNamespace), "the namespace is claimed")
-	key, err := meta.Register[bool](r, meta.KeySpec{
-		Name:  "fake.testFile",
-		Kinds: []symbol.Kind{symbol.KindFile},
-		Doc:   "marks a file the language's own convention calls a test",
-	})
-	assert.NoError(tb, err, "the key registers")
-	return meta.NewFacts(r), key
-}
-
-// subjectFile is the fixture's one stamped subject.
-func subjectFile() symbol.Identity {
-	return symbol.Identity{
-		Lang: "fake", Package: "svc", Name: "svc/a_test.zz", Kind: symbol.KindFile,
-	}
-}
-
-// plugAt returns a plugin-authority claim on the fixture subject at one
-// instance of its order.
-func plugAt(instance int) meta.Claim {
-	return meta.Claim{
-		Subject:   subjectFile(),
-		Authority: meta.AuthorityPlugin,
-		Plugin:    "fakefront",
-		Order:     meta.Order{Subject: subjectFile(), Instance: instance},
-	}
-}
-
-// termKey registers one key of value type T and returns its handle,
-// so a case naming several vocabulary terms states each one once.
-func termKey[T meta.FactValue](tb assert.TB, r *meta.Registry, name meta.KeyName) meta.Key[T] {
-	tb.Helper()
-
-	key, err := meta.Register[T](r, meta.KeySpec{
-		Name: name, Doc: "a fixture key for one term of the value vocabulary",
-	})
-	assert.NoError(tb, err, "the fixture key registers")
-	return key
-}
+// rawFirstClaimAllocs is a raw stamp's first claim on a new subject:
+// the bag, the boxed identity and the sync.Map entry. The value arrives
+// boxed. The trie nodes sync.Map adds where two hashes share a prefix
+// average below 0.4 per subject, which the mean over a check's calls
+// rounds down.
+const rawFirstClaimAllocs = 3
 
 // The raw path is the classification stamp's: a pre-claim that
 // crossed a phase as data, checked the way a typed write is.
@@ -141,7 +102,7 @@ func TestStamp(t *testing.T) {
 			assert.Empty(t, slices.Collect(f.ByKey(key.ID())), "the index lists no subject")
 		})
 
-		t.Run("loses to a directive-authority drop applied before it", func(t *testing.T) {
+		t.Run("ranks below an earlier directive drop", func(t *testing.T) {
 			t.Parallel()
 
 			f, key := stampFixture(t)
@@ -204,4 +165,135 @@ func TestStamp(t *testing.T) {
 			})
 		}
 	})
+}
+
+// A raw stamp allocates what the store keeps of a first claim, and
+// nothing for an identical re-stamp, in the ordinary run, which runs no
+// benchmark. Each counted first claim is on a subject of its own. The
+// check runs alone, because AllocsPerRun counts every goroutine's
+// allocations and refuses to run beside parallel tests.
+func TestStampAllocs(t *testing.T) {
+	_, f, _, _ := fixture(t)
+	raw := meta.RawStamp{Key: "shape.role", Value: "writer"}
+	assert.NoError(t, f.StampRaw(raw, on(sibling, "shape", 0)),
+		"a claim outside the counted subjects creates the store's map and index")
+	claims := firstClaims(allocRuns)
+
+	at := 0
+	assert.MaxAllocs(t, func() {
+		if err := f.StampRaw(raw, claims[at]); err != nil {
+			t.Fatalf("StampRaw: unexpected error: %v", err)
+		}
+		at++
+	}, rawFirstClaimAllocs, "StampRaw allocates the bag, the boxed identity and the map entry of a first claim")
+
+	assert.MaxAllocs(t, func() {
+		if err := f.StampRaw(raw, claims[0]); err != nil {
+			t.Fatalf("StampRaw: unexpected error: %v", err)
+		}
+	}, 0, "StampRaw allocates nothing for an identical re-stamp")
+}
+
+// BenchmarkStamp measures the raw stamps a frontend's classification
+// makes: a first claim on each of 200,000 subjects, the store built
+// again outside the measurement when the subjects run out, and an
+// identical re-stamp.
+func BenchmarkStamp(b *testing.B) {
+	raw := meta.RawStamp{Key: "shape.role", Value: "writer"}
+
+	b.Run("StampRaw/a first claim on a new subject", func(b *testing.B) {
+		claims := firstClaims(benchSubjects)
+		var (
+			f    *meta.Facts
+			next int
+		)
+		build := func() {
+			_, f, _, _ = fixture(b)
+			assert.NoError(b, f.StampRaw(raw, on(sibling, "shape", 0)),
+				"a claim outside the subjects creates the store's map and index")
+			next = 0
+		}
+		build()
+		c := bench.Start(b).MaxAllocs(rawFirstClaimAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			if next == len(claims) {
+				c.Excluding(build)
+			}
+			err = f.StampRaw(raw, claims[next])
+			next++
+		}
+		assert.NoError(b, err, "every first claim is admitted")
+	})
+
+	b.Run("StampRaw/an identical re-stamp", func(b *testing.B) {
+		_, f, _, _ := fixture(b)
+		claim := by("shape", 1)
+		assert.NoError(b, f.StampRaw(raw, claim), "the first stamp is admitted")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = f.StampRaw(raw, claim)
+		}
+		assert.NoError(b, err, "the re-stamp is accepted")
+	})
+}
+
+// stampFixture returns a store with one registered bool key and
+// its typed handle, so the raw path is checked against the typed
+// reads that consume it.
+func stampFixture(tb assert.TB) (*meta.Facts, meta.Key[bool]) {
+	tb.Helper()
+
+	r := meta.NewRegistry()
+	assert.NoError(tb, r.ClaimNamespace(fakeNamespace), "the namespace is claimed")
+	key, err := meta.Register[bool](r, meta.KeySpec{
+		Name:  "fake.testFile",
+		Kinds: []symbol.Kind{symbol.KindFile},
+		Doc:   "marks a file the language's own convention calls a test",
+	})
+	assert.NoError(tb, err, "the key registers")
+	return meta.NewFacts(r), key
+}
+
+// subjectFile is the fixture's one stamped subject.
+func subjectFile() symbol.Identity {
+	return symbol.Identity{
+		Lang: "fake", Package: "svc", Name: "svc/a_test.zz", Kind: symbol.KindFile,
+	}
+}
+
+// plugAt returns a plugin-authority claim on the fixture subject at one
+// instance of its order.
+func plugAt(instance int) meta.Claim {
+	return meta.Claim{
+		Subject:   subjectFile(),
+		Authority: meta.AuthorityPlugin,
+		Plugin:    "fakefront",
+		Order:     meta.Order{Subject: subjectFile(), Instance: instance},
+	}
+}
+
+// termKey registers one key of value type T and returns its handle,
+// so a case naming several vocabulary terms states each one once.
+func termKey[T meta.FactValue](tb assert.TB, r *meta.Registry, name meta.KeyName) meta.Key[T] {
+	tb.Helper()
+
+	key, err := meta.Register[T](r, meta.KeySpec{
+		Name: name, Doc: "a fixture key for one term of the value vocabulary",
+	})
+	assert.NoError(tb, err, "the fixture key registers")
+	return key
+}
+
+// firstClaims returns a claim of the shape plugin on each of n distinct
+// struct subjects, at the subject's index.
+func firstClaims(n int) []meta.Claim {
+	out := make([]meta.Claim, 0, n)
+	for i, id := range benchIdentities(n) {
+		out = append(out, on(id, "shape", i))
+	}
+	return out
 }

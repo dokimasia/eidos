@@ -10,7 +10,9 @@
 // function per exported symbol, each carrying the original's
 // documentation with kernel import paths respelt to facade paths.
 // The facade defines nothing of its own, so the kernel stays the
-// single home of every definition.
+// single home of every definition. Beside each package's
+// re-exports, Generate renders a black-box spec that pins every
+// non-generic re-export to its kernel counterpart.
 //
 // Emission works on syntax alone. The curated surface spells
 // types from the assert module in the conformance kits, and a

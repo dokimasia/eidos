@@ -25,13 +25,20 @@ const (
 // needs a name with no facade spelling.
 const unexportedType = "\ntype row struct{}\n"
 
+// renamedImport is a package that imports one package under a name of
+// its own, beside a blank import, and spells the renamed one in a
+// signature.
+const renamedImport = "package emit\n\nimport (\n" +
+	"\txdep \"example.test/dep\"\n\n\t_ \"example.test/unused\"\n)\n\n" +
+	"// Named takes a renamed import's type.\nfunc Named(v xdep.T) {}\n"
+
 // mini copies the testdata mini kernel into a fresh repository
 // root, so a case can poison one package without touching the
 // committed fixture.
-func mini(t *testing.T) string {
-	t.Helper()
+func mini(tb testing.TB) string {
+	tb.Helper()
 
-	return coretest.CopyTree(t, filepath.Join("testdata", "mini"))
+	return coretest.CopyTree(tb, filepath.Join("testdata", "mini"))
 }
 
 // poison writes one file into a mini kernel copy.
@@ -182,7 +189,7 @@ func TestRender(t *testing.T) {
 			"results grouped under one type keep their names")
 	})
 
-	t.Run("re-exports a grouped declaration and its trailing comments", func(t *testing.T) {
+	t.Run("re-exports a grouped declaration with its trailing comments", func(t *testing.T) {
 		t.Parallel()
 
 		emit := poisoned(t, "package emit\n\n"+
@@ -223,22 +230,24 @@ func TestRender(t *testing.T) {
 			"a trailing comment respells the same way, its closing slash kept")
 	})
 
-	t.Run("keeps an import's name and drops a blank import", func(t *testing.T) {
+	t.Run("keeps a renamed import's name", func(t *testing.T) {
 		t.Parallel()
 
-		emit := poisoned(t, "package emit\n\nimport (\n"+
-			"\txdep \"example.test/dep\"\n\n\t_ \"example.test/unused\"\n)\n\n"+
-			"// Named takes a renamed import's type.\nfunc Named(v xdep.T) {}\n")
-
+		emit := poisoned(t, renamedImport)
 		assert.Contains(t, emit, "xdep \"example.test/dep\"",
 			"an import the kernel renamed keeps its name in the facade")
 		assert.Contains(t, emit, "func Named(v xdep.T)",
 			"so the qualifier the signature spells still resolves")
-		assert.NotContains(t, emit, "example.test/unused",
+	})
+
+	t.Run("drops a blank import", func(t *testing.T) {
+		t.Parallel()
+
+		assert.NotContains(t, poisoned(t, renamedImport), "example.test/unused",
 			"a blank import names nothing a signature can spell, so the facade drops it")
 	})
 
-	t.Run("refuses what re-export cannot print", func(t *testing.T) {
+	t.Run("returns an error for what re-export cannot print", func(t *testing.T) {
 		t.Parallel()
 
 		tests := []struct {
@@ -352,7 +361,7 @@ func TestRender(t *testing.T) {
 		}
 	})
 
-	t.Run("refuses a surface re-exporting nothing", func(t *testing.T) {
+	t.Run("returns an error for a surface re-exporting nothing", func(t *testing.T) {
 		t.Parallel()
 
 		root := mini(t)

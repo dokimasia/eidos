@@ -21,6 +21,13 @@ import (
 // a Go stub states a pointer receiver through the Go satellite's
 // helper, and Rust spells self. Imports are collected at render as a
 // side effect of spelling types, so Mirror infers none.
+//
+// # Allocation contract
+//
+// Mirror allocates the method and its receiving type, and for each
+// list of the signature that has entries the list, each entry and each
+// entry's restated type. A method of one parameter and one return
+// allocates eight times.
 func Mirror(host string, m *node.Method) *emit.Method {
 	var typeParams []*emit.TypeParam
 	for _, tp := range m.TypeParams {

@@ -22,15 +22,22 @@ type stored struct {
 // factState is every claim on one (subject, key) or (subject,
 // group), with the winner cached at write time so a read is one
 // lookup.
+//
+// The first claim is stored in one, which claims points into until a
+// second claim arrives, so a fact with one claimant costs no slice of
+// its own. A state is therefore never copied once it keeps a claim: a
+// bag holds its first state in place and every other state through a
+// pointer.
 type factState struct {
 	claims []stored
 	// winner indexes claims; -1 while nothing claimed.
 	winner int
+	one    [1]stored
 }
 
-// bag is one subject's facts. Writes and arbitration serialize on
-// the write lock; reads share it, so the write-free generate phase
-// reads one bag in parallel.
+// bag is one subject's facts. Writes and arbitration serialize on the
+// write lock. Reads share it, so the write-free generate phase reads one
+// bag in parallel.
 type bag struct {
 	mu sync.RWMutex
 	// restore runs once, before the first read, write or withdrawal of
@@ -112,20 +119,18 @@ func (b *bag) group(g GroupName) *factState {
 	return state
 }
 
-// admit appends one claim and re-ranks the winner. An identical
-// claim, same rank source and equal value, changes nothing; a claim
-// from the same source carrying a different value is an error,
-// because rank could not order the two and arrival would.
+// admit appends one claim and re-ranks the winner, and reports whether
+// it appended. An identical claim, from the same rank source with an
+// equal value, changes nothing. A claim from the same source with
+// another value is an error, because rank could not order the two and
+// arrival would.
 //
 // The dedupe scan is linear in the claims already kept, which the
 // channel's design bounds to a few claimants per fact: every write
 // is a registered plugin, a directive or a manual override, not an
 // open set.
 func (s *factState) admit(entry stored) (bool, error) {
-	for _, held := range s.claims {
-		if !held.claim.sameRankSource(entry.claim) {
-			continue
-		}
+	if held, kept := s.from(entry.claim); kept {
 		if held.drop == entry.drop && equalValue(held.value, entry.value) {
 			return false, nil
 		}
@@ -133,11 +138,33 @@ func (s *factState) admit(entry stored) (bool, error) {
 			"claims twice from one source with two values: rank cannot order them",
 		)
 	}
-	s.claims = append(s.claims, entry)
+	s.add(entry)
 	if s.winner < 0 || entry.claim.outranks(s.claims[s.winner].claim) {
 		s.winner = len(s.claims) - 1
 	}
 	return true, nil
+}
+
+// from returns the kept claim with c's rank source, and false where
+// the state keeps none. A source has one claim at most, because admit
+// refuses a second.
+func (s *factState) from(c Claim) (*stored, bool) {
+	for i := range s.claims {
+		if s.claims[i].claim.sameRankSource(c) {
+			return &s.claims[i], true
+		}
+	}
+	return nil, false
+}
+
+// add appends one claim without ranking it: into the state's own
+// storage where it keeps no claim yet, and into a slice of its own
+// from the second claim on.
+func (s *factState) add(entry stored) {
+	if s.claims == nil {
+		s.claims = s.one[:0]
+	}
+	s.claims = append(s.claims, entry)
 }
 
 // withdraw removes the claim that has c's rank source and ranks the

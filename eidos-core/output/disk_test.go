@@ -4,6 +4,7 @@
 package output_test
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,6 +14,7 @@ import (
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -31,96 +33,43 @@ const (
 	storeFile  = "store.go"
 )
 
+// The allocations of the disk sink over one file, which TestDiskAllocs
+// checks in the ordinary run and BenchmarkDisk in a benchmark run.
+const (
+	// newDiskAllocs is the sink, the root's two structures and the root
+	// path's spelling for the system call.
+	newDiskAllocs = 4
+	// readFileAllocs is a read of a file through the root: the path's
+	// split, its spelling for the system call, the open file's name and
+	// its two structures, its status and its bytes.
+	readFileAllocs = 7
+	// readNothingAllocs is a read of a path without a file: the split, the
+	// spelling and the error.
+	readNothingAllocs = 3
+	// prepareSameAllocs is the preparation of one staged file over a file
+	// with the staged bytes: the path list, the list of changes, the
+	// digest and the read.
+	prepareSameAllocs = 3 + readFileAllocs
+	// prepareNothingAllocs is the preparation of one staged file over a
+	// path without a file.
+	prepareNothingAllocs = 3 + readNothingAllocs
+	// commitSameAllocs is the commit of one staged file over a file with
+	// the staged bytes: the path list, the list of records, the read and
+	// the digest.
+	commitSameAllocs = 3 + readFileAllocs
+	// commitUpdateAllocs is the commit of one staged file over the brand's
+	// intact output of other bytes: what commitSameAllocs counts, the
+	// record of the file's verification, two allocations for a frame
+	// without derivation lines, and twelve for the staging file. The
+	// twelve are its name, its open, and the rename's two splits, two
+	// spellings and read of the target's status.
+	commitUpdateAllocs = commitSameAllocs + 2 + 12
+)
+
 // past is the mtime the unchanged check pins against: a fixed
 // instant, so the assertion is exact whatever granularity the
 // filesystem keeps.
 var past = time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
-
-// disk opens a sink over root under the fixture brand, failing the
-// test where it cannot.
-func disk(t *testing.T, root string) output.Sink {
-	t.Helper()
-
-	d, err := output.NewDisk(root, diskBrand)
-	assert.NoError(t, err, "the root opens")
-	return d
-}
-
-// committed stages one file and commits it, returning the record.
-func committed(t *testing.T, root, path, body string) output.Written {
-	t.Helper()
-
-	s := disk(t, root)
-	assert.NoError(t, s.Write(path, []byte(body)), "the file stages")
-	got, err := s.Commit()
-	assert.NoError(t, err, "the commit succeeds")
-	assert.Length(t, got, 1, "one staged file is one record")
-	return got[0]
-}
-
-// stampedAs returns body stamped as one brand's output.
-func stampedAs(t *testing.T, brand output.Brand, body string) string {
-	t.Helper()
-
-	out, err := contract(t, brand, goSyntax()).Stamp(plugin.RenderedFile{Body: []byte(body)})
-	assert.NoError(t, err, "the body stamps")
-	return string(out)
-}
-
-// placed writes content at root/name outside the sink, the way a
-// person or another tool leaves a file.
-func placed(t *testing.T, root, name, content string) string {
-	t.Helper()
-
-	at := filepath.Join(root, name)
-	assert.NoError(t, os.WriteFile(at, []byte(content), 0o644), "the fixture places the file")
-	return at
-}
-
-// drifted returns the brand's output of firstBody with its body edited
-// after the stamp, the trailer left as it was.
-func drifted(t *testing.T) string {
-	t.Helper()
-
-	return strings.Replace(stampedAs(t, diskBrand, firstBody), "package svc", "package edited", 1)
-}
-
-// prepared stages one write or one removal of storeFile over a root
-// whose storeFile contains existing, where existing is not empty, and
-// returns the one change Prepare reports.
-func prepared(t *testing.T, existing string, staged *string) output.Change {
-	t.Helper()
-
-	root := t.TempDir()
-	if existing != "" {
-		placed(t, root, storeFile, existing)
-	}
-	s := disk(t, root)
-	if staged != nil {
-		assert.NoError(t, s.Write(storeFile, []byte(*staged)), "the file stages")
-	} else {
-		assert.NoError(t, s.Delete(storeFile), "the removal stages")
-	}
-	got, err := s.Prepare()
-	assert.NoError(t, err, "the staging prepares")
-	assert.Length(t, got, 1, "one staged path is one change")
-	return got[0]
-}
-
-// refusedOverwrite commits a stamped body over an existing file and
-// returns the file's bytes afterwards and the commit's error.
-func refusedOverwrite(t *testing.T, existing string) (string, error) {
-	t.Helper()
-
-	root := t.TempDir()
-	at := placed(t, root, storeFile, existing)
-	s := disk(t, root)
-	assert.NoError(t, s.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
-	_, err := s.Commit()
-	got, readErr := os.ReadFile(at)
-	assert.NoError(t, readErr, "the file reads")
-	return string(got), err
-}
 
 // The disk sink is where determinism meets the filesystem: bytes
 // appear whole or not at all, unchanged files are not touched, a
@@ -375,7 +324,7 @@ func TestDisk(t *testing.T) {
 			})
 		}
 
-		t.Run("leaves a file it refuses to overwrite as it is", func(t *testing.T) {
+		t.Run("keeps the bytes of a file a failed commit leaves", func(t *testing.T) {
 			t.Parallel()
 
 			got, err := refusedOverwrite(t, firstBody)
@@ -383,7 +332,7 @@ func TestDisk(t *testing.T) {
 			assert.Equal(t, got, firstBody, "the file has its own bytes")
 		})
 
-		t.Run("returns an error for a file edited between the preparation and the commit", func(t *testing.T) {
+		t.Run("returns an error for a file edited after the preparation", func(t *testing.T) {
 			t.Parallel()
 
 			root := t.TempDir()
@@ -614,4 +563,334 @@ func TestDisk(t *testing.T) {
 			assert.ErrorIs(t, s.Discard(), output.ErrFinished, "the commit closed the root")
 		})
 	})
+}
+
+// Each method of the disk sink allocates what it stages, reads and
+// writes in the ordinary run, which runs no benchmark. Each call that
+// consumes its sink takes a sink of its own, opened before the count. The
+// check runs alone, because AllocsPerRun counts every goroutine's
+// allocations and refuses to run beside parallel tests.
+func TestDiskAllocs(t *testing.T) {
+	root := t.TempDir()
+	same := []byte(stampedAs(t, diskBrand, firstBody))
+	other := []byte(stampedAs(t, diskBrand, secondBody))
+	placed(t, root, storeFile, string(same))
+
+	built := make([]*output.Disk, 0, allocRuns)
+	assert.MaxAllocs(t, func() {
+		d, err := output.NewDisk(root, diskBrand)
+		if err != nil {
+			t.Fatalf("NewDisk: unexpected error: %v", err)
+		}
+		built = append(built, d)
+	}, newDiskAllocs, "NewDisk allocates the sink and its root")
+	discardAll(t, built)
+
+	at, empty := 0, disks(t, root, nil)
+	assert.MaxAllocs(t, func() {
+		if err := empty[at].Write(storeFile, same); err != nil {
+			t.Fatalf("Write: unexpected error: %v", err)
+		}
+		at++
+	}, firstWriteAllocs, "Write allocates the staging's maps on the first write")
+
+	at, empty = 0, disks(t, root, nil)
+	assert.MaxAllocs(t, func() {
+		if err := empty[at].Delete(storeFile); err != nil {
+			t.Fatalf("Delete: unexpected error: %v", err)
+		}
+		at++
+	}, firstDeleteAllocs, "Delete allocates the removal set on the first removal")
+
+	at, sames := 0, disks(t, root, same)
+	assert.MaxAllocs(t, func() {
+		if _, err := sames[at].Prepare(); err != nil {
+			t.Fatalf("Prepare: unexpected error: %v", err)
+		}
+		at++
+	}, prepareSameAllocs, "Prepare allocates the path list, the changes, the digest and the read")
+
+	at, absent := 0, disks(t, t.TempDir(), same)
+	assert.MaxAllocs(t, func() {
+		if _, err := absent[at].Prepare(); err != nil {
+			t.Fatalf("Prepare: unexpected error: %v", err)
+		}
+		at++
+	}, prepareNothingAllocs, "Prepare allocates the read of a path without a file")
+
+	at, sames = 0, disks(t, root, same)
+	assert.MaxAllocs(t, func() {
+		if _, err := sames[at].Commit(); err != nil {
+			t.Fatalf("Commit: unexpected error: %v", err)
+		}
+		at++
+	}, commitSameAllocs, "Commit allocates the path list, the records, the read and the digest")
+
+	at, updates := 0, alternating(t, root, other, same)
+	assert.MaxAllocs(t, func() {
+		if _, err := updates[at].Commit(); err != nil {
+			t.Fatalf("Commit: unexpected error: %v", err)
+		}
+		at++
+	}, commitUpdateAllocs, "Commit allocates the verification and the staging file of an update")
+
+	at, sames = 0, disks(t, root, same)
+	assert.MaxAllocs(t, func() {
+		if err := sames[at].Discard(); err != nil {
+			t.Fatalf("Discard: unexpected error: %v", err)
+		}
+		at++
+	}, 0, "Discard allocates nothing")
+}
+
+// BenchmarkDisk measures each method of the disk sink over one file of
+// the brand's, each call that consumes its sink on a sink opened outside
+// the measurement.
+func BenchmarkDisk(b *testing.B) {
+	root, nothing := b.TempDir(), b.TempDir()
+	same := []byte(stampedAs(b, diskBrand, firstBody))
+	other := []byte(stampedAs(b, diskBrand, secondBody))
+	placed(b, root, storeFile, string(same))
+
+	b.Run("NewDisk", func(b *testing.B) {
+		var d *output.Disk
+		discard := func() { discarded(b, d) }
+		c := bench.Start(b).MaxAllocs(newDiskAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			c.Excluding(discard)
+			d, err = output.NewDisk(root, diskBrand)
+		}
+		assert.NoError(b, err, "the root opens")
+		discard()
+	})
+
+	stagings := []struct {
+		name   string
+		root   string
+		body   []byte
+		allocs uint64
+		call   func(*output.Disk) error
+	}{
+		{
+			name: "Write/the first file of a staging", root: root, allocs: firstWriteAllocs,
+			call: func(d *output.Disk) error { return d.Write(storeFile, same) },
+		},
+		{
+			name: "Delete/the first removal of a staging", root: root, allocs: firstDeleteAllocs,
+			call: func(d *output.Disk) error { return d.Delete(storeFile) },
+		},
+		{
+			name: "Prepare/a file with the staged bytes", root: root, body: same, allocs: prepareSameAllocs,
+			call: func(d *output.Disk) error { _, err := d.Prepare(); return err },
+		},
+		{
+			name: "Prepare/a path without a file", root: nothing, body: same, allocs: prepareNothingAllocs,
+			call: func(d *output.Disk) error { _, err := d.Prepare(); return err },
+		},
+		{
+			name: "Commit/a file with the staged bytes", root: root, body: same, allocs: commitSameAllocs,
+			call: func(d *output.Disk) error { _, err := d.Commit(); return err },
+		},
+		{
+			name: "Discard/a staging of one file", root: root, body: same, allocs: 0,
+			call: (*output.Disk).Discard,
+		},
+	}
+	for _, tt := range stagings {
+		b.Run(tt.name, func(b *testing.B) {
+			var d *output.Disk
+			fresh := func() {
+				discarded(b, d)
+				d = opened(b, tt.root, tt.body)
+			}
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				err = tt.call(d)
+			}
+			assert.NoError(b, err, "the call succeeds")
+			discarded(b, d)
+		})
+	}
+
+	// The root's file has same, and next persists across the runs of the
+	// sub-benchmark, so every commit stages the body the file lacks.
+	bodies, next := [2][]byte{other, same}, 0
+	b.Run("Commit/an update of the brand's file", func(b *testing.B) {
+		var d *output.Disk
+		fresh := func() {
+			d = opened(b, root, bodies[next%2])
+			next++
+		}
+		c := bench.Start(b).MaxAllocs(commitUpdateAllocs)
+		defer c.End()
+		var (
+			got []output.Written
+			err error
+		)
+		for c.Loop() {
+			c.Excluding(fresh)
+			got, err = d.Commit()
+		}
+		assert.NoError(b, err, "the update commits")
+		assert.Equal(b, got[0].Action, output.ActionUpdated, "the commit updates the file")
+	})
+}
+
+// disk opens a sink over root under the fixture brand, failing the
+// test where it cannot.
+func disk(t *testing.T, root string) output.Sink {
+	t.Helper()
+
+	d, err := output.NewDisk(root, diskBrand)
+	assert.NoError(t, err, "the root opens")
+	return d
+}
+
+// committed stages one file and commits it, returning the record.
+func committed(t *testing.T, root, path, body string) output.Written {
+	t.Helper()
+
+	s := disk(t, root)
+	assert.NoError(t, s.Write(path, []byte(body)), "the file stages")
+	got, err := s.Commit()
+	assert.NoError(t, err, "the commit succeeds")
+	assert.Length(t, got, 1, "one staged file is one record")
+	return got[0]
+}
+
+// stampedAs returns body stamped as one brand's output.
+func stampedAs(tb assert.TB, brand output.Brand, body string) string {
+	tb.Helper()
+
+	out, err := contract(tb, brand, goSyntax()).Stamp(plugin.RenderedFile{Body: []byte(body)})
+	assert.NoError(tb, err, "the body stamps")
+	return string(out)
+}
+
+// placed writes content at root/name outside the sink, the way a
+// person or another tool leaves a file.
+func placed(tb assert.TB, root, name, content string) string {
+	tb.Helper()
+
+	at := filepath.Join(root, name)
+	assert.NoError(tb, os.WriteFile(at, []byte(content), 0o644), "the fixture places the file")
+	return at
+}
+
+// drifted returns the brand's output of firstBody with its body edited
+// after the stamp, the trailer left as it was.
+func drifted(t *testing.T) string {
+	t.Helper()
+
+	return strings.Replace(stampedAs(t, diskBrand, firstBody), "package svc", "package edited", 1)
+}
+
+// prepared stages one write or one removal of storeFile over a root
+// whose storeFile contains existing, where existing is not empty, and
+// returns the one change Prepare reports.
+func prepared(t *testing.T, existing string, staged *string) output.Change {
+	t.Helper()
+
+	root := t.TempDir()
+	if existing != "" {
+		placed(t, root, storeFile, existing)
+	}
+	s := disk(t, root)
+	if staged != nil {
+		assert.NoError(t, s.Write(storeFile, []byte(*staged)), "the file stages")
+	} else {
+		assert.NoError(t, s.Delete(storeFile), "the removal stages")
+	}
+	got, err := s.Prepare()
+	assert.NoError(t, err, "the staging prepares")
+	assert.Length(t, got, 1, "one staged path is one change")
+	return got[0]
+}
+
+// refusedOverwrite commits a stamped body over an existing file and
+// returns the file's bytes afterwards and the commit's error.
+func refusedOverwrite(t *testing.T, existing string) (string, error) {
+	t.Helper()
+
+	root := t.TempDir()
+	at := placed(t, root, storeFile, existing)
+	s := disk(t, root)
+	assert.NoError(t, s.Write(storeFile, []byte(stampedAs(t, diskBrand, secondBody))), "the file stages")
+	_, err := s.Commit()
+	got, readErr := os.ReadFile(at)
+	assert.NoError(t, readErr, "the file reads")
+	return string(got), err
+}
+
+// opened opens a disk sink over root with body staged at storeFile, or
+// with nothing staged for a nil body.
+func opened(tb assert.TB, root string, body []byte) *output.Disk {
+	tb.Helper()
+
+	d, err := output.NewDisk(root, diskBrand)
+	assert.NoError(tb, err, "the root opens")
+	if body != nil {
+		assert.NoError(tb, d.Write(storeFile, body), "the file stages")
+	}
+	return d
+}
+
+// discarded closes a sink a benchmark opened, where it opened one and
+// no call finished it.
+func discarded(tb assert.TB, d *output.Disk) {
+	tb.Helper()
+
+	if d == nil {
+		return
+	}
+	if err := d.Discard(); err != nil && !errors.Is(err, output.ErrFinished) {
+		tb.Fatalf("Discard: unexpected error: %v", err)
+	}
+}
+
+// disks returns allocRuns sinks opened over root, each with body staged
+// at storeFile, or with nothing staged for a nil body: one sink for each
+// call of an allocation check that consumes its sink. The test discards
+// every sink no call finished.
+func disks(t *testing.T, root string, body []byte) []*output.Disk {
+	t.Helper()
+
+	out := make([]*output.Disk, allocRuns)
+	for i := range out {
+		out[i] = opened(t, root, body)
+	}
+	t.Cleanup(func() { discardAll(t, out) })
+	return out
+}
+
+// alternating returns allocRuns sinks opened over root, staging first
+// and second in turn, so each commit in order updates the file the one
+// before it wrote.
+func alternating(t *testing.T, root string, first, second []byte) []*output.Disk {
+	t.Helper()
+
+	out := make([]*output.Disk, allocRuns)
+	for i := range out {
+		body := first
+		if i%2 == 1 {
+			body = second
+		}
+		out[i] = opened(t, root, body)
+	}
+	t.Cleanup(func() { discardAll(t, out) })
+	return out
+}
+
+// discardAll closes every sink of a check that no call finished.
+func discardAll(tb assert.TB, sinks []*output.Disk) {
+	tb.Helper()
+
+	for _, d := range sinks {
+		discarded(tb, d)
+	}
 }

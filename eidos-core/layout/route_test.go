@@ -76,6 +76,26 @@ const (
 	regDirective  directive.Name = "pkggen:reg"
 )
 
+// The canonical scale every layer benches at: per-package files of
+// per-file declarations.
+const (
+	benchPackages = 1_000
+	benchFiles    = 10
+	benchDecls    = 20
+)
+
+// The ceilings of one routing pass, the same in each of 8 runs. Each
+// routed file allocates three times, its path, the target's filename
+// and the target's split, and no declaration allocates.
+const (
+	// routeAllocs is one pass over the canonical corpus: 30,000 for its
+	// 10,000 files, and 177 for the pass's tables.
+	routeAllocs = 30_177
+	// routeOneAllocs is one pass over one package: 30 for its 10 files,
+	// and 21 for the pass's tables.
+	routeOneAllocs = 51
+)
+
 // The fixture's source declarations, one struct per source file.
 var (
 	storeID = coretest.ID(storePkg, "Store", symbol.KindStruct)
@@ -784,22 +804,61 @@ func TestRoute(t *testing.T) {
 	})
 }
 
-// The benchmark's scale: per-package files of per-file declarations.
-const (
-	benchPackages = 1_000
-	benchFiles    = 10
-	benchDecls    = 20
-)
+// Route allocates within its ceiling over one package of the canonical
+// shape in the ordinary run, which runs no benchmark.
+func TestRouteAllocs(t *testing.T) {
+	in := benchInput(t, 1)
+	var (
+		files []plugin.File
+		err   error
+	)
+	assert.MaxAllocs(t, func() { files, err = layout.Route(in) }, routeOneAllocs,
+		"Route allocates each file's path, filename and split, and the pass's tables")
+	assert.NoError(t, err, "the input routes")
+	assert.Length(t, files, benchFiles, "to one file per source file")
+}
 
-// benchInput returns the routing input of the canonical scale: one
-// per-source unit per source file, each declaration deriving from a
-// source struct, every file beside its source.
-func benchInput(b *testing.B) layout.Input {
+// BenchmarkRoute measures one plan's routing: per-source units beside
+// their sources, each file's package named by the target. No
+// declaration allocates.
+func BenchmarkRoute(b *testing.B) {
+	b.Run("Route/the canonical corpus of 200,000 declarations", func(b *testing.B) {
+		benchRoute(b, benchPackages, routeAllocs)
+	})
+
+	b.Run("Route/one package of 200 declarations", func(b *testing.B) {
+		benchRoute(b, 1, routeOneAllocs)
+	})
+}
+
+// benchRoute measures Route over an input of the given number of
+// packages against a ceiling of allocs per pass.
+func benchRoute(b *testing.B, packages int, allocs uint64) {
 	b.Helper()
+
+	in := benchInput(b, packages)
+	c := bench.Start(b).MaxAllocs(allocs)
+	defer c.End()
+	var (
+		files []plugin.File
+		err   error
+	)
+	for c.Loop() {
+		files, err = layout.Route(in)
+	}
+	assert.NoError(b, err, "the input routes")
+	assert.Length(b, files, packages*benchFiles, "to one file per source file")
+}
+
+// benchTree returns a frozen graph of the given number of packages of
+// the canonical shape, and the settled emit store of one per-source
+// unit per source file, each declaration deriving from a source struct.
+func benchTree(tb testing.TB, packages int) (*store.Graph, *plugin.Emit) {
+	tb.Helper()
 
 	g := store.New()
 	e := plugin.NewEmit()
-	for i := range benchPackages {
+	for i := range packages {
 		pkg := storePkg + strconv.Itoa(i)
 		p := &node.Package{ID: coretest.PackageID(pkg), Path: strings.Split(pkg, "/"), Name: path.Base(pkg)}
 		for f := range benchFiles {
@@ -816,48 +875,26 @@ func benchInput(b *testing.B) layout.Input {
 				Path:  file,
 				Decls: decls,
 			})
-			if err := e.Add(stubOf(file, pkg, emitted...)); err != nil {
-				b.Fatalf("Add: unexpected error: %v", err)
-			}
+			assert.NoError(tb, e.Add(stubOf(file, pkg, emitted...)), "the unit adds")
 		}
-		if err := g.AddPackage(p); err != nil {
-			b.Fatalf("AddPackage: unexpected error: %v", err)
-		}
+		assert.NoError(tb, g.AddPackage(p), "the package is admitted")
 	}
 	g.Freeze()
-	ix, err := plugin.NewIndex(g, meta.NewFacts(meta.NewRegistry()), nil, nil)
-	if err != nil {
-		b.Fatalf("NewIndex: unexpected error: %v", err)
-	}
-	if err := plugin.Settle(e, nil, nil, diag.NewSink()); err != nil {
-		b.Fatalf("Settle: unexpected error: %v", err)
-	}
-	return layout.Input{
-		Emit: e, Outputs: families(), Speller: lean{}, Packager: directories{}, Index: ix,
-	}
+	assert.NoError(tb, plugin.Settle(e, nil, nil, diag.NewSink()), "the store settles")
+	return g, e
 }
 
-// BenchmarkRoute measures one plan's routing at the canonical scale:
-// 1000 packages of 10 source files of 20 declarations, 200k
-// declarations routed beside their sources into 10k files, each
-// file's package named by the target. 30,179 allocations were
-// measured: per file one path, the target's one filename and the
-// target's one split, 30,000 in all, and 179 for the pass's tables.
-// No declaration allocates. The ceiling is 31,000.
-func BenchmarkRoute(b *testing.B) {
-	in := benchInput(b)
-	c := bench.Start(b).MaxAllocs(31_000)
-	defer c.End()
-	var files []plugin.File
-	for c.Loop() {
-		in.Sink = diag.NewSink()
-		var err error
-		files, err = layout.Route(in)
-		if err != nil {
-			b.Fatalf("Route: unexpected error: %v", err)
-		}
-	}
-	if len(files) != benchPackages*benchFiles {
-		b.Fatalf("Route returned %d files", len(files))
+// benchInput returns the routing input over benchTree's graph and
+// store, with one sink every pass reports into: the input routes clean,
+// so the sink stays empty.
+func benchInput(tb testing.TB, packages int) layout.Input {
+	tb.Helper()
+
+	g, e := benchTree(tb, packages)
+	ix, err := plugin.NewIndex(g, meta.NewFacts(meta.NewRegistry()), nil, nil)
+	assert.NoError(tb, err, "the index builds")
+	return layout.Input{
+		Emit: e, Outputs: families(), Speller: lean{}, Packager: directories{}, Index: ix,
+		Sink: diag.NewSink(),
 	}
 }

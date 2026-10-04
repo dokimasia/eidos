@@ -103,7 +103,7 @@ func TestStringTable(t *testing.T) {
 	t.Run("AppendBinary", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("appends the count and then each string's length and bytes", func(t *testing.T) {
+		t.Run("appends the count before each string's length-prefixed bytes", func(t *testing.T) {
 			t.Parallel()
 
 			var table node.StringTable
@@ -129,7 +129,7 @@ func TestStringTable(t *testing.T) {
 			assert.Equal(t, []string{first, second}, []string{"ab", "c"}, "with its strings in number order")
 		})
 
-		t.Run("returns the bytes it read and leaves the rest", func(t *testing.T) {
+		t.Run("returns the count of the bytes it read", func(t *testing.T) {
 			t.Parallel()
 
 			_, read, err := node.DecodeStringTable(append(tableBytes, 7, 7))
@@ -161,10 +161,10 @@ func TestStringTable(t *testing.T) {
 }
 
 // TestStringTableAllocs checks the allocation contract: a read and a
-// repeat allocate nothing, an encoding into a buffer with room
-// allocates nothing, and a decode allocates the table, its list and one
-// string. The check runs alone, because AllocsPerRun refuses to run
-// beside parallel tests.
+// repeat allocate nothing, a reset table refills without allocating,
+// an encoding into a buffer with room allocates nothing, and a decode
+// allocates the table, its list and one string. The check runs alone,
+// because AllocsPerRun refuses to run beside parallel tests.
 func TestStringTableAllocs(t *testing.T) {
 	var table node.StringTable
 	table.Add("ab")
@@ -182,6 +182,17 @@ func TestStringTableAllocs(t *testing.T) {
 		}
 	}, 0, "At allocates nothing")
 	assert.MaxAllocs(t, func() {
+		if table.Len() != 2 {
+			t.Fatal("Len miscounted the table")
+		}
+	}, 0, "Len allocates nothing")
+	var reused node.StringTable
+	assert.MaxAllocs(t, func() {
+		reused.Reset()
+		reused.Add("ab")
+		reused.Add("c")
+	}, 0, "a table refilled after Reset allocates nothing")
+	assert.MaxAllocs(t, func() {
 		if got, _ := table.AppendBinary(dst[:0]); len(got) != len(tableBytes) {
 			t.Fatal("AppendBinary wrote another table")
 		}
@@ -194,8 +205,8 @@ func TestStringTableAllocs(t *testing.T) {
 }
 
 // BenchmarkStringTable measures the table's operations under their
-// allocation ceilings: a repeat, a read, an encoding into a buffer
-// with room, and a decode.
+// allocation ceilings: a repeat, a read, a count, a reset and refill,
+// an encoding into a buffer with room, and a decode.
 func BenchmarkStringTable(b *testing.B) {
 	var table node.StringTable
 	table.Add("ab")
@@ -223,6 +234,28 @@ func BenchmarkStringTable(b *testing.B) {
 		if got != "c" {
 			b.Fatalf("At(2) returned %q", got)
 		}
+	})
+
+	b.Run("Len", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got int
+		for c.Loop() {
+			got = table.Len()
+		}
+		assert.Equal(b, got, 2, "Len counts both strings")
+	})
+
+	b.Run("Reset/a table of two strings refilled", func(b *testing.B) {
+		var reused node.StringTable
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			reused.Reset()
+			reused.Add("ab")
+			reused.Add("c")
+		}
+		assert.Equal(b, reused.Len(), 2, "the refilled table contains both strings")
 	})
 
 	b.Run("AppendBinary", func(b *testing.B) {

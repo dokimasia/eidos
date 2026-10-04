@@ -111,11 +111,39 @@ func TestReadLog(t *testing.T) {
 			assert.Panics(t, func() { log.Load(1, store.NewReadSet()) }, "the log has one entry")
 		})
 	})
+
+	t.Run("Reset", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns index zero for the next entry", func(t *testing.T) {
+			t.Parallel()
+
+			var log store.ReadLog
+			log.Append(everyGrain(t))
+			log.Append(everyGrain(t))
+			log.Reset()
+			assert.Equal(t, log.Append(store.NewReadSet()), 0, "the entries count from zero again")
+		})
+
+		t.Run("loads the edges of the entry appended after it", func(t *testing.T) {
+			t.Parallel()
+
+			var log store.ReadLog
+			log.Append(everyGrain(t))
+			log.Reset()
+			at := log.Append(store.NewReadSet())
+			loaded := everyGrain(t)
+			log.Load(at, loaded)
+			assert.Equal(t, grainsOf(loaded), grainsOf(store.NewReadSet()),
+				"no edge of the entry before the reset loads")
+		})
+	})
 }
 
 // Loading an entry into a set that once had as many edges allocates
 // nothing, which is what lets a journal hand each record through one
-// set. The check runs alone, because AllocsPerRun counts every
+// set, and a log reset and filled again allocates nothing within its
+// earlier use. The check runs alone, because AllocsPerRun counts every
 // goroutine's allocations and refuses to run beside parallel tests.
 func TestReadLogZeroAlloc(t *testing.T) {
 	reads := everyGrain(t)
@@ -129,25 +157,49 @@ func TestReadLogZeroAlloc(t *testing.T) {
 			t.Fatal("Load records another number of edges")
 		}
 	}, 0, "Load allocates nothing into a set that held the entry")
+	assert.MaxAllocs(t, func() {
+		log.Reset()
+		if log.Append(reads) != 0 {
+			t.Fatal("Append after Reset returns another index than zero")
+		}
+	}, 0, "Reset and Append allocate nothing within the log's earlier use")
 }
 
 // BenchmarkReadLog measures a set of five edges, one of each grain,
-// entering the log and loading back into one set.
+// entering the log, loading back into one set, and leaving the log at a
+// reset. Each measured call works within storage an earlier entry grew,
+// the way a dispatcher reuses its log.
 func BenchmarkReadLog(b *testing.B) {
 	reads := everyGrain(b)
 
 	b.Run("Append", func(b *testing.B) {
 		var log store.ReadLog
-		// The log's slices grow by doubling, which amortizes to below one
-		// allocation per entry.
-		c := bench.Start(b).MaxAllocs(1)
+		log.Append(reads)
+		reset := log.Reset
+		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
-		var got int
+		got := -1
 		for c.Loop() {
+			c.Excluding(reset)
 			got = log.Append(reads)
 		}
-		if got < 0 {
+		if got != 0 {
 			b.Fatalf("Append returns entry %d", got)
+		}
+	})
+
+	b.Run("Reset", func(b *testing.B) {
+		var log store.ReadLog
+		log.Append(reads)
+		fill := func() { log.Append(reads) }
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			c.Excluding(fill)
+			log.Reset()
+		}
+		if got := log.Append(reads); got != 0 {
+			b.Fatalf("the reset log appends entry %d", got)
 		}
 	})
 

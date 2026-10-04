@@ -8,19 +8,23 @@ import (
 	"strings"
 )
 
-// The packages the generator writes into.
+// The packages the generator writes into. Each package's generated
+// tests declare its black-box twin.
 const (
 	// SymbolPackage is the package of the Kind and Fact constants.
-	SymbolPackage = "symbol"
+	SymbolPackage     = "symbol"
+	SymbolTestPackage = "symbol_test"
 
 	// RootPackage is the authoring surface the match constructors
-	// arrive in, and RootTestPackage its black-box twin.
+	// arrive in.
 	RootPackage     = "eidos"
 	RootTestPackage = "eidos_test"
 	// NodePackage is the model a frontend produces.
-	NodePackage = "node"
+	NodePackage     = "node"
+	NodeTestPackage = "node_test"
 	// EmitPackage is the model a generator produces.
-	EmitPackage = "emit"
+	EmitPackage     = "emit"
+	EmitTestPackage = "emit_test"
 )
 
 // The qualifiers a generated model file names other packages'

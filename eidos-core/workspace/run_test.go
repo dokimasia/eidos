@@ -4,16 +4,24 @@
 package workspace_test
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
 	"io/fs"
+	"os"
+	"runtime"
 	"slices"
+	"strconv"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/fstest"
+	"text/template"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/backend"
@@ -51,50 +59,108 @@ const (
 	optOutName     directive.Name = "mirror:stub"
 )
 
-// rawMeta returns a positioned raw instance of the kernel meta
-// directive dropping ref.
-func rawMeta(ref string, line int) directive.Raw {
-	return directive.Raw{
-		Name: "meta",
-		Args: []directive.RawArg{{Key: "drop", Value: directive.RawValue{Text: ref}}},
-		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
-	}
+// The sizes of the parallel run fixtures: structs in one package, and
+// the instances of the weaver's repeatable directive on one struct.
+const (
+	parallelSubjects  = 64
+	parallelInstances = 32
+)
+
+// The worker counts the runs hand their phase calls: sequential
+// dispatch, four workers and eight workers.
+const (
+	oneWorker    = 1
+	fourWorkers  = 4
+	eightWorkers = 8
+)
+
+// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
+// warm the function, and the 100 it counts.
+const allocRuns = 101
+
+// mirroredCapability is what the providing mirror declares and the
+// weaver requires, which puts the weaver in the later bucket.
+const mirroredCapability plugin.Capability = "mirrored"
+
+// auditSchema is the weaver's repeatable directive: each instance on a
+// subject adds one field to the subject's mirrored struct.
+var auditSchema = directive.Schema{
+	Plugin: "weaver", Name: "audit", Repeatable: true,
+	Doc: "adds one audited field to the mirrored struct",
 }
 
-// rawBareMeta returns a positioned meta instance without a drop:
-// the schema admits one, and the drop pass has to pass over it.
-func rawBareMeta(line int) directive.Raw {
-	return directive.Raw{
-		Name: "meta",
-		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
-	}
-}
+// The pipeline corpus at the canonical scale: two hundred structs per
+// package, of which ten in a hundred have the mark the annotator
+// stamps, and three of those ten reference a struct in the next
+// package, so the settle follows resolved references across packages.
+// The names encode the roles, which keeps the corpus deterministic
+// without a seed. The corpus has no raw directives.
+const (
+	// pipelinePackages is the benchmark's package count: 200,000
+	// structs.
+	pipelinePackages = 1_000
+	// pipelineTestPackages is the share of the corpus the tests run.
+	pipelineTestPackages = 50
+	// pipelineRefs, pipelineMarked and pipelineUnmarked split one
+	// package's structs by role: marked with a cross-package
+	// reference, marked, and unmarked.
+	pipelineRefs     = 6
+	pipelineMarked   = 14
+	pipelineUnmarked = 180
+	// pipelinePathPrefix is the path of every corpus package, before
+	// the package's index.
+	pipelinePathPrefix = "example.com/e2e/pkg"
+	// pipelineBrand is the brand the pipeline's composition declares
+	// and stamps its files under.
+	pipelineBrand output.Brand = "e2e"
+)
 
-// rawDiag returns a positioned kernel diag instance, which is a
-// validated directive the drop pass is not about.
-func rawDiag(code string, line int) directive.Raw {
-	return directive.Raw{
-		Name: "diag",
-		Args: []directive.RawArg{{Key: "off", Value: directive.RawValue{Text: code}}},
-		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
-	}
-}
-
-// generatorAt returns a facade-built generator placed by priority,
-// running h once per struct in scope: two of them in one plan run
-// in the order their priorities fix.
-func generatorAt(
-	name plugin.ID, pri int, h func(*eidos.StructMatch, *eidos.Emitter) error,
-) plugin.Generator {
-	p, held := eidos.NewPlugin(name).
-		Priority(plugin.RoleGenerator, pri).
-		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.OnStruct(h)).Build().(plugin.Generator)
-	if !held {
-		panic("workspace_test: an emitter rule lowers to the generator role")
-	}
-	return p
-}
+// The ceilings of [BenchmarkRun]. Each cold ceiling covers one run whose
+// pooled state the collector emptied before the run began.
+const (
+	// coldRunAllocs is one run over the canonical workspace of 200,000
+	// declarations, 1,092,396 on average with a standard deviation of 108
+	// over 24 fresh processes. The fact store allocates three times for
+	// each subject's first claim, 600,000 in all, and sync.Map adds about
+	// 75,600 trie nodes at random where the hashes of the subjects share
+	// a prefix. The mirror allocates twice for each struct, and the phase
+	// calls, the emit store and the seal allocate about 16,000 times. The
+	// ceiling allows eight standard deviations above the mean.
+	coldRunAllocs = 1_092_396 + 8*108
+	// oneRunAllocs is one run over one declaration: 126 for the frame's
+	// own structures, among them the seal, the fact store, the emit store
+	// and the phase calls' state. The 8 more are for the runtime's
+	// allocations for the plan's goroutine, for the sudogs whose central
+	// cache the collector cleared, and for its type-assertion caches. A
+	// fresh process at one iteration counts them: 200 fresh processes
+	// counted 0 to 5.
+	oneRunAllocs = 126 + 8
+	// warmRunAllocs is one run over one declaration in a process whose
+	// pools already hold the phase calls' state: 103 in each of 12 runs.
+	// The seal allocates 24 of them, the plan's generate, settle and
+	// commit 21, and the annotation's stamp 13. The fact store, the
+	// index, the read set, the sink, the frame's goroutines and the
+	// report allocate the rest.
+	warmRunAllocs = 103
+	// pipelineAllocs is one cold run of the pipeline over 200,000
+	// declarations on one worker, 440,305 on average with a standard
+	// deviation of 40 over 24 fresh processes. A memory profile
+	// attributes about 211,000 to the render, where text/template's
+	// reflection executes the struct template once for each of the
+	// 20,000 mirrors. The annotation's stamps allocate about 67,000: two
+	// for each of the 20,000 marked subjects, and the sync.Map trie
+	// nodes. The generate phase allocates about 66,000, the settle's
+	// respell about 27,000 and the write about 25,000. The rest are tiny
+	// allocations, such as the mirrors' names, which the profiler
+	// samples only in part. The ceiling allows eight standard deviations
+	// above the mean.
+	pipelineAllocs = 440_305 + 8*40
+	// parallelPipelineAllocs is the same run on four workers, 441,320 on
+	// average with a standard deviation of 46 over 24 fresh processes.
+	// The parallel phase calls add about 1,000 allocations for their
+	// goroutines and for their lanes' effect buffers.
+	parallelPipelineAllocs = 441_320 + 8*46
+)
 
 // dropping is a backend whose lowering hook returns a declaration
 // without an origin: the defect the settle refuses, and the one way
@@ -106,111 +172,137 @@ func (dropping) Lower(symbol.Symbol) ([]symbol.Symbol, error) {
 	return []symbol.Symbol{&emit.Struct{Name: "made"}}, nil
 }
 
-// flagged returns a composition whose annotator registers and
-// stamps shape.flag through its own key provider, and whose
-// generator mirrors the subjects the flag reads present on. The
-// key handle arrives when Build runs the steps. The handlers read
-// it through their closures, which is the seam under test.
-func flagged() (*workspace.Builder, *meta.Key[bool]) {
-	var flag meta.Key[bool]
-	shape, _ := eidos.NewPlugin("shape").
-		Keys(func(r *meta.Registry) error {
-			if err := r.ClaimNamespace("shape"); err != nil {
-				return err
-			}
-			k, err := meta.Register[bool](r, meta.KeySpec{
-				Name: "shape.flag", Group: flagGroup, Doc: "marks a fixture subject",
-			})
-			flag = k
-			return err
-		}).
-		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
-			eidos.Stamp(st, flag, true)
-			return nil
-		})).Build().(plugin.Annotator)
-	flagMirror, _ := eidos.NewPlugin("mirror").
-		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-			if _, held := eidos.Fact(m, flag); !held {
-				return nil
-			}
-			return mirrored(m, e)
-		})).Build().(plugin.Generator)
-	b := workspace.New().
-		Brand(fixtureBrand).
-		Annotators(shape).
-		Targets("fixture").
-		Plans(workspace.Plan{
-			Name:       "plan",
-			Generators: []plugin.Generator{flagMirror},
-			Backend:    fakeBackend{name: "printer", target: "fixture"},
-		})
-	return b, &flag
+// annotateSeen is a hand-rolled annotator that records the worker
+// count its phase call hands it.
+type annotateSeen struct{ seen *atomic.Int64 }
+
+// Name returns the annotator's name.
+func (annotateSeen) Name() plugin.ID { return "annotate-seen" }
+
+// Annotate records the call's worker count.
+func (a annotateSeen) Annotate(ctx *plugin.AnnotatorContext) error {
+	a.seen.Store(int64(ctx.Workers))
+	return nil
 }
 
-// keyedRun builds the flagged composition and runs it over the
-// one-struct fixture after attach adds its directives.
-func keyedRun(
-	t *testing.T, attach func(*store.Graph, symbol.Identity),
-) (*workspace.Report, symbol.Identity, meta.Key[bool], error) {
-	t.Helper()
+// generateSeen is a hand-rolled generator that records the worker
+// count its phase call hands it.
+type generateSeen struct{ seen *atomic.Int64 }
 
-	b, flag := flagged()
-	w, err := b.Build()
-	assert.NoError(t, err, "the keyed composition composes")
-	g, s := alpha(t)
-	if attach != nil {
-		attach(g, s.Identity())
+// Name returns the generator's name.
+func (generateSeen) Name() plugin.ID { return "generate-seen" }
+
+// Generate records the call's worker count.
+func (g generateSeen) Generate(ctx *plugin.GeneratorContext) error {
+	g.seen.Store(int64(ctx.Workers))
+	return nil
+}
+
+// native is the scripted rules registered under the fixture's
+// language, resolving a name as a struct in the fixture package and
+// recording the scope it was asked from.
+type native struct {
+	scope *rules.Scope
+}
+
+// Lang returns the fixture's language.
+func (native) Lang() symbol.Lang { return coretest.Lang }
+
+// Members returns the scripted rules' member policy.
+func (native) Members() rules.MemberPolicy { return rulestest.Scripted().Members() }
+
+// ParamRole returns the scripted rules' role for a parameter.
+func (native) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
+	return rulestest.Scripted().ParamRole(p, v)
+}
+
+// ReturnRoles returns the scripted rules' roles for the returns.
+func (native) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
+	return rulestest.Scripted().ReturnRoles(rs, v)
+}
+
+// Builtin returns the scripted rules' shape for a builtin.
+func (native) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
+	return rulestest.Scripted().Builtin(ref, v)
+}
+
+// Resolve returns the fixture package's struct named name, and
+// records the scope it was asked from.
+func (n native) Resolve(
+	scope rules.Scope, name string, _ directive.ResolutionKind, v rules.View,
+) (symbol.Symbol, error) {
+	if n.scope != nil {
+		*n.scope = scope
 	}
-	report, err := w.Run(t.Context(), workspace.Input{Graph: g})
-	return report, s.Identity(), *flag, err
+	if sym, held := v.Lookup(coretest.ID(coretest.StorePath, name, symbol.KindStruct)); held {
+		return sym, nil
+	}
+	return nil, fmt.Errorf("nothing in %s is named %s", coretest.StorePath, name)
 }
 
-// optingOut returns a composition whose mirror generator declares
-// the stub directive, negatable or not, and mirrors every struct.
-func optingOut(negatable bool) *workspace.Builder {
-	mirrorer, _ := eidos.NewPlugin(negatingPlugin).
-		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
-		Handle(
-			eidos.OnStruct(mirrored),
-			eidos.Directive(directive.Schema{
-				Plugin: string(negatingPlugin), Name: "stub", Negatable: negatable,
-				Doc: "a fixture directive a subject negates to opt out",
-			}, eidos.OnEmit(symbol.KindStruct,
-				func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })),
-		).Build().(plugin.Generator)
-	return workspace.New().
-		Brand(fixtureBrand).
-		Targets("fixture").
-		Plans(planTo("plan", "fixture", mirrorer))
+// SamplesOf returns the scripted rules' samples.
+func (native) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+	return rulestest.Scripted().SamplesOf(ref, hint, v)
 }
 
-// pair returns an unfrozen one-package graph with two positioned
-// structs, the second negating the mirror's stub directive.
-func pair(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
-	tb.Helper()
-
-	first := coretest.Struct(coretest.StorePath, "Alpha")
-	first.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
-	second := coretest.Struct(coretest.StorePath, "Beta")
-	second.Pos = position.Pos{File: "beta.go", Line: 7, Col: 1}
-	g := store.New()
-	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, first, second)),
-		"the fixture package is admitted")
-	assert.NoError(tb, g.AttachDirectives(second.Identity(), []directive.Raw{{
-		Name: optOutName, Negated: true, Pos: position.Pos{File: "beta.go", Line: 6, Col: 1},
-	}}), "the negated instance attaches before the seal")
-	return g, first, second
+// ZeroValue returns the scripted rules' zero value.
+func (native) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
+	return rulestest.Scripted().ZeroValue(ref, v)
 }
 
-// Run is the frame: seal, validate, drop, annotate, generate. What
-// stops it, what merely fails it, and what it leaves behind are all
-// contract.
+// LiteralFor returns the scripted rules' literal for text.
+func (native) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
+	return rulestest.Scripted().LiteralFor(f, ref, text, v)
+}
+
+// TypeName returns the scripted rules' type name.
+func (native) TypeName(word, base string) string { return rulestest.Scripted().TypeName(word, base) }
+
+// Run is the frame: it loads or takes a graph, seals it, validates the
+// directives, applies the drops, annotates, and runs each plan through
+// its generators, its settle, its render and its commit. The cases pin
+// which inputs stop the frame, which findings fail the run, and what
+// the report records.
 func TestRun(t *testing.T) {
 	t.Parallel()
 
 	t.Run("Run", func(t *testing.T) {
 		t.Parallel()
+
+		t.Run("returns a report with one emit store per plan", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			g, _ := alpha(t)
+			report, err := w.Run(t.Context(), workspace.Input{Graph: g})
+			assert.NoError(t, err, "the fixture run is clean")
+			assert.NotNil(t, report.Sink, "the report has the findings")
+			assert.NotNil(t, report.Facts, "the report has the arbitrated facts")
+			assert.Length(t, report.Emits, 1, "the report has one store per plan")
+			assert.Length(t, units(report.Emits["plan"]), 1, "the store has the mirrored unit")
+		})
+
+		t.Run("returns a store of its own to each concurrent run", func(t *testing.T) {
+			t.Parallel()
+
+			w, err := valid().Build()
+			assert.NoError(t, err, "the fixture composition is valid")
+			reports := make([]*workspace.Report, 2)
+			errs := make([]error, 2)
+			var wg sync.WaitGroup
+			for i := range reports {
+				g, _ := alpha(t)
+				wg.Go(func() {
+					reports[i], errs[i] = w.Run(t.Context(), workspace.Input{Graph: g})
+				})
+			}
+			wg.Wait()
+			for i := range reports {
+				assert.NoError(t, errs[i], "each run is clean")
+				assert.Length(t, units(reports[i].Emits["plan"]), 1, "each run has its own unit")
+			}
+		})
 
 		t.Run("runs a graph the load already sealed", func(t *testing.T) {
 			t.Parallel()
@@ -224,7 +316,42 @@ func TestRun(t *testing.T) {
 			assert.NotNil(t, report, "the frame runs whole")
 		})
 
-		t.Run("returns an error for an input without a tree or a graph", func(t *testing.T) {
+		t.Run("writes the file a loaded tree's plan renders", func(t *testing.T) {
+			t.Parallel()
+
+			var o opener
+			w, err := workspace.New().
+				Brand(fixtureBrand).
+				Frontends(frontendtest.NewScripted()).
+				Annotators(stamper("noter", quiet)).
+				Targets("fixture").
+				Plans(workspace.Plan{
+					Name:       "plan",
+					Generators: []plugin.Generator{mirror("mirror")},
+					Backend:    printer(t, "fixture"),
+				}).
+				Output(o.open).
+				Build()
+			assert.NoError(t, err, "the loading composition composes")
+			tree := fstest.MapFS{
+				"svc/store/row.zz": {Data: []byte("package svc/store\ntype Row int string\n")},
+			}
+			run, err := w.Run(t.Context(), workspace.Input{Tree: tree})
+			assert.NoError(t, err, "the run loads the tree and writes")
+			assert.Length(t, run.Load.Units, 1, "one unit is parsed")
+			changes := run.Plans[0].Changes
+			assert.Length(t, changes, 1, "the run writes the rendered file")
+			assert.Equal(t, changes[0].Path, "svc/store/gen.txt",
+				"the path is the package's directory and the target's filename")
+			assert.Equal(t, changes[0].Action, output.ActionCreated, "the file is new")
+
+			stamped := o.opened()[0].Files()[changes[0].Path]
+			p, framed := output.Read(stamped)
+			assert.True(t, framed, "the file has a frame")
+			assert.Equal(t, p.Brand, w.Brand(), "the frame claims the composition's brand")
+		})
+
+		t.Run("returns an error for the zero Input", func(t *testing.T) {
 			t.Parallel()
 
 			w, err := valid().Build()
@@ -234,7 +361,7 @@ func TestRun(t *testing.T) {
 			assert.Nil(t, report, "nothing ran")
 		})
 
-		t.Run("returns an error for an input with both a tree and a graph", func(t *testing.T) {
+		t.Run("returns an error for an Input that sets both of its sources", func(t *testing.T) {
 			t.Parallel()
 
 			w, err := valid().Build()
@@ -609,7 +736,7 @@ func TestRun(t *testing.T) {
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanFailed, "no plan runs")
 		})
 
-		t.Run("returns an error for a ledger open function that returns (nil, nil)", func(t *testing.T) {
+		t.Run("returns an error for a ledger open function that returns two nils", func(t *testing.T) {
 			t.Parallel()
 
 			w := built(t, onDisk(t, t.TempDir(), diskPlan(t, "plan", layout.Config{})).
@@ -629,7 +756,7 @@ func TestRun(t *testing.T) {
 			assert.Contains(t, err.Error(), "no frontend", "the error names the fault")
 		})
 
-		t.Run("returns the load's error for a store the load refuses", func(t *testing.T) {
+		t.Run("returns the load's error for a store it cannot load", func(t *testing.T) {
 			t.Parallel()
 
 			w, err := valid().Frontends(frontendtest.NewScripted()).Build()
@@ -858,7 +985,7 @@ func TestRun(t *testing.T) {
 			t.Parallel()
 
 			registry := func() plugin.Generator { return generator("registry", mirrored) }
-			serial := parallelFiles(t, 1, crowded(t, parallelSubjects, 0), registry())
+			serial := parallelFiles(t, oneWorker, crowded(t, parallelSubjects, 0), registry())
 			parallel := parallelFiles(t, eightWorkers, crowded(t, parallelSubjects, 0), registry())
 			assert.Length(t, serial, 1, "the package's matches assemble one file")
 			assert.Equal(t, parallel, serial, "the file does not depend on the worker count")
@@ -868,7 +995,7 @@ func TestRun(t *testing.T) {
 			func(t *testing.T) {
 				t.Parallel()
 
-				serial := parallelFiles(t, 1, crowded(t, 1, parallelInstances), providing(), weaverOf())
+				serial := parallelFiles(t, oneWorker, crowded(t, 1, parallelInstances), providing(), weaverOf())
 				parallel := parallelFiles(t, eightWorkers, crowded(t, 1, parallelInstances), providing(), weaverOf())
 				assert.Length(t, serial, 1, "the woven struct renders in one file")
 				for _, body := range serial {
@@ -881,7 +1008,7 @@ func TestRun(t *testing.T) {
 			t.Parallel()
 
 			mirror, weaver := providing(), weaverOf()
-			files := parallelFiles(t, 1, crowded(t, 1, 1), mirror, weaver)
+			files := parallelFiles(t, oneWorker, crowded(t, 1, 1), mirror, weaver)
 			assert.Length(t, files, 1, "the woven struct renders in one file")
 			for _, body := range files {
 				record, framed := output.Read([]byte(body))
@@ -890,53 +1017,249 @@ func TestRun(t *testing.T) {
 					"the frame names the emitter and the weaver")
 			}
 		})
+
+		t.Run("writes the bytes of its first run on a second run over the same corpus", func(t *testing.T) {
+			t.Parallel()
+
+			w := pipelineWorkspace(t, pipelineTestPackages, oneWorker)
+			first := pipelineHashes(t, w)
+			second := pipelineHashes(t, w)
+			assert.Length(t, first, pipelineTestPackages, "one file per package commits")
+			assert.Equal(t, second, first, "nothing the first run leaves behind changes the second")
+		})
+
+		t.Run("writes on four workers the bytes one worker writes for the pipeline corpus", func(t *testing.T) {
+			t.Parallel()
+
+			parallel := pipelineHashes(t, pipelineWorkspace(t, pipelineTestPackages, fourWorkers))
+			serial := pipelineHashes(t, pipelineWorkspace(t, pipelineTestPackages, oneWorker))
+			assert.Equal(t, parallel, serial, "the hashes do not depend on the worker count")
+		})
 	})
 }
 
-// The sizes of the parallel run fixtures: structs in one package, the
-// instances of the weaver's repeatable directive on one struct, and the
-// worker count the parallel runs take.
-const (
-	parallelSubjects  = 64
-	parallelInstances = 32
-	eightWorkers      = 8
-)
-
-// mirroredCapability is what the providing mirror declares and the
-// weaver requires, which puts the weaver in the later bucket.
-const mirroredCapability plugin.Capability = "mirrored"
-
-// annotateSeen is a hand-rolled annotator that records the worker
-// count its phase call hands it.
-type annotateSeen struct{ seen *atomic.Int64 }
-
-// Name returns the annotator's name.
-func (annotateSeen) Name() plugin.ID { return "annotate-seen" }
-
-// Annotate records the call's worker count.
-func (a annotateSeen) Annotate(ctx *plugin.AnnotatorContext) error {
-	a.seen.Store(int64(ctx.Workers))
-	return nil
+// A warm run over one declaration allocates within its ceiling in the
+// ordinary run, which runs no benchmark. Each call takes a graph loaded
+// before the count, because a run seals the graph it is given. The cold
+// ceilings empty the pools before each run, which no count of
+// [assert.MaxAllocs] can leave out, so only the benchmark checks them.
+func TestRunAllocs(t *testing.T) {
+	builder, _ := flagged()
+	w, err := builder.Build()
+	assert.NoError(t, err, "the flagged composition composes")
+	one := []*node.Package{coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Alpha"))}
+	graphs := make([]*store.Graph, allocRuns)
+	for i := range graphs {
+		graphs[i] = loaded(t, one)
+	}
+	at := 0
+	assert.MaxAllocs(t, func() {
+		if _, err := w.Run(t.Context(), workspace.Input{Graph: graphs[at]}); err != nil {
+			t.Fatalf("Run: unexpected error: %v", err)
+		}
+		at++
+	}, warmRunAllocs, "a warm run over one declaration allocates the frame's own structures")
 }
 
-// generateSeen is a hand-rolled generator that records the worker
-// count its phase call hands it.
-type generateSeen struct{ seen *atomic.Int64 }
+// BenchmarkRun takes the frame over graphs it seals. Each iteration
+// loads a fresh graph, because the seal is Run's own, and the load is
+// outside the measurement. The cold cases also empty the pools that
+// hold the phase calls' state, so each iteration counts what the first
+// run of a process allocates.
+//
+// The flagged composition has one annotator stamping every struct
+// through its own key provider, and one plan mirroring the flagged
+// subjects toward a backend that renders nothing. The pipeline
+// composition runs every stage the kernel implements: annotate,
+// generate, settle, layout, render, stamp and commit into a memory
+// sink. Its cases reset the process's peak resident set before they
+// start and report it beside the counts, so the metric covers the case
+// alone.
+func BenchmarkRun(b *testing.B) {
+	builder, _ := flagged()
+	w, err := builder.Build()
+	assert.NoError(b, err, "the flagged composition composes")
+	one := []*node.Package{coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Alpha"))}
 
-// Name returns the generator's name.
-func (generateSeen) Name() plugin.ID { return "generate-seen" }
+	b.Run("Run/a cold run over 200,000 declarations", func(b *testing.B) {
+		benchRun(b, w, coretest.Workspace(1_000, 10, 20), emptyPools, coldRunAllocs)
+	})
 
-// Generate records the call's worker count.
-func (g generateSeen) Generate(ctx *plugin.GeneratorContext) error {
-	g.seen.Store(int64(ctx.Workers))
-	return nil
+	b.Run("Run/a cold run over one declaration", func(b *testing.B) {
+		benchRun(b, w, one, emptyPools, oneRunAllocs)
+	})
+
+	b.Run("Run/a warm run over one declaration", func(b *testing.B) {
+		benchRun(b, w, one, func() {}, warmRunAllocs)
+	})
+
+	b.Run("Run/a cold run of the pipeline over 200,000 declarations on one worker", func(b *testing.B) {
+		resetPeakRSS()
+		report := benchRun(b, pipelineWorkspace(b, pipelinePackages, oneWorker),
+			pipelineCorpus(pipelinePackages), emptyPools, pipelineAllocs)
+		assert.Length(b, report.Plans[0].Changes, pipelinePackages, "the run commits one file per package")
+		reportPeakRSS(b)
+	})
+
+	b.Run("Run/a cold run of the pipeline over 200,000 declarations on four workers", func(b *testing.B) {
+		resetPeakRSS()
+		report := benchRun(b, pipelineWorkspace(b, pipelinePackages, fourWorkers),
+			pipelineCorpus(pipelinePackages), emptyPools, parallelPipelineAllocs)
+		assert.Length(b, report.Plans[0].Changes, pipelinePackages, "the run commits one file per package")
+		reportPeakRSS(b)
+	})
 }
 
-// auditSchema is the weaver's repeatable directive: each instance on a
-// subject adds one field to the subject's mirrored struct.
-var auditSchema = directive.Schema{
-	Plugin: "weaver", Name: "audit", Repeatable: true,
-	Doc: "adds one audited field to the mirrored struct",
+// rawMeta returns a positioned raw instance of the kernel meta
+// directive dropping ref.
+func rawMeta(ref string, line int) directive.Raw {
+	return directive.Raw{
+		Name: "meta",
+		Args: []directive.RawArg{{Key: "drop", Value: directive.RawValue{Text: ref}}},
+		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+	}
+}
+
+// rawBareMeta returns a positioned meta instance without a drop:
+// the schema admits one, and the drop pass has to pass over it.
+func rawBareMeta(line int) directive.Raw {
+	return directive.Raw{
+		Name: "meta",
+		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+	}
+}
+
+// rawDiag returns a positioned kernel diag instance, which is a
+// validated directive the drop pass is not about.
+func rawDiag(code string, line int) directive.Raw {
+	return directive.Raw{
+		Name: "diag",
+		Args: []directive.RawArg{{Key: "off", Value: directive.RawValue{Text: code}}},
+		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+	}
+}
+
+// rawRef returns a positioned raw instance of the fixture ref
+// directive pointing at name.
+func rawRef(name string, line int) directive.Raw {
+	return directive.Raw{
+		Name: "refy:ref",
+		Args: []directive.RawArg{{Key: "to", Value: directive.RawValue{Text: name}}},
+		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+	}
+}
+
+// generatorAt returns a facade-built generator placed by priority,
+// running h once per struct in scope: two of them in one plan run
+// in the order their priorities fix.
+func generatorAt(
+	name plugin.ID, pri int, h func(*eidos.StructMatch, *eidos.Emitter) error,
+) plugin.Generator {
+	p, held := eidos.NewPlugin(name).
+		Priority(plugin.RoleGenerator, pri).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.OnStruct(h)).Build().(plugin.Generator)
+	if !held {
+		panic("workspace_test: an emitter rule lowers to the generator role")
+	}
+	return p
+}
+
+// flagged returns a composition whose annotator registers and
+// stamps shape.flag through its own key provider, and whose
+// generator mirrors the subjects the flag reads present on. The
+// key handle arrives when Build runs the steps. The handlers read
+// it through their closures, which is the seam under test.
+func flagged() (*workspace.Builder, *meta.Key[bool]) {
+	var flag meta.Key[bool]
+	shape, _ := eidos.NewPlugin("shape").
+		Keys(func(r *meta.Registry) error {
+			if err := r.ClaimNamespace("shape"); err != nil {
+				return err
+			}
+			k, err := meta.Register[bool](r, meta.KeySpec{
+				Name: "shape.flag", Group: flagGroup, Doc: "marks a fixture subject",
+			})
+			flag = k
+			return err
+		}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+			eidos.Stamp(st, flag, true)
+			return nil
+		})).Build().(plugin.Annotator)
+	flagMirror, _ := eidos.NewPlugin("mirror").
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			if _, held := eidos.Fact(m, flag); !held {
+				return nil
+			}
+			return mirrored(m, e)
+		})).Build().(plugin.Generator)
+	b := workspace.New().
+		Brand(fixtureBrand).
+		Annotators(shape).
+		Targets("fixture").
+		Plans(workspace.Plan{
+			Name:       "plan",
+			Generators: []plugin.Generator{flagMirror},
+			Backend:    fakeBackend{name: "printer", target: "fixture"},
+		})
+	return b, &flag
+}
+
+// keyedRun builds the flagged composition and runs it over the
+// one-struct fixture after attach adds its directives.
+func keyedRun(
+	t *testing.T, attach func(*store.Graph, symbol.Identity),
+) (*workspace.Report, symbol.Identity, meta.Key[bool], error) {
+	t.Helper()
+
+	b, flag := flagged()
+	w, err := b.Build()
+	assert.NoError(t, err, "the keyed composition composes")
+	g, s := alpha(t)
+	if attach != nil {
+		attach(g, s.Identity())
+	}
+	report, err := w.Run(t.Context(), workspace.Input{Graph: g})
+	return report, s.Identity(), *flag, err
+}
+
+// optingOut returns a composition whose mirror generator declares
+// the stub directive, negatable or not, and mirrors every struct.
+func optingOut(negatable bool) *workspace.Builder {
+	mirrorer, _ := eidos.NewPlugin(negatingPlugin).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(
+			eidos.OnStruct(mirrored),
+			eidos.Directive(directive.Schema{
+				Plugin: string(negatingPlugin), Name: "stub", Negatable: negatable,
+				Doc: "a fixture directive a subject negates to opt out",
+			}, eidos.OnEmit(symbol.KindStruct,
+				func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })),
+		).Build().(plugin.Generator)
+	return workspace.New().
+		Brand(fixtureBrand).
+		Targets("fixture").
+		Plans(planTo("plan", "fixture", mirrorer))
+}
+
+// pair returns an unfrozen one-package graph with two positioned
+// structs, the second negating the mirror's stub directive.
+func pair(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
+	tb.Helper()
+
+	first := coretest.Struct(coretest.StorePath, "Alpha")
+	first.Pos = position.Pos{File: "alpha.go", Line: 3, Col: 1}
+	second := coretest.Struct(coretest.StorePath, "Beta")
+	second.Pos = position.Pos{File: "beta.go", Line: 7, Col: 1}
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, first, second)),
+		"the fixture package is admitted")
+	assert.NoError(tb, g.AttachDirectives(second.Identity(), []directive.Raw{{
+		Name: optOutName, Negated: true, Pos: position.Pos{File: "beta.go", Line: 6, Col: 1},
+	}}), "the negated instance attaches before the seal")
+	return g, first, second
 }
 
 // crowded returns an unfrozen graph declaring n structs in one file of
@@ -1047,121 +1370,252 @@ func parallelFiles(t *testing.T, workers int, g *store.Graph, gens ...plugin.Gen
 	return out
 }
 
-// BenchmarkRun takes the frame over the canonical workspace: 1000
-// packages of 10 files of 20 declarations, one annotator stamping
-// every struct through its own key provider, one plan mirroring
-// the flagged subjects. Each iteration loads a fresh graph,
-// because the seal is Run's own, so the number is a cold run with
-// the load included.
-func BenchmarkRun(b *testing.B) {
-	const packages, files, decls = 1_000, 10, 20
-	pkgs := coretest.Workspace(packages, files, decls)
-	builder, _ := flagged()
-	w, err := builder.Build()
+// pipelinePath returns the path of the corpus package with index p.
+func pipelinePath(p int) string { return pipelinePathPrefix + strconv.Itoa(p) }
+
+// pipelineCorpus returns the first n packages of the pipeline corpus.
+// Each package declares its structs in one file inside the package's
+// own directory, so the package's generated file routes beside it.
+func pipelineCorpus(n int) []*node.Package {
+	pkgs := make([]*node.Package, n)
+	for p := range pkgs {
+		path := pipelinePath(p)
+		decls := make([]symbol.Symbol, 0, pipelineRefs+pipelineMarked+pipelineUnmarked)
+		for i := range pipelineRefs {
+			decls = append(decls, coretest.Struct(path, "mr"+strconv.Itoa(i)))
+		}
+		for i := range pipelineMarked {
+			decls = append(decls, coretest.Struct(path, "mk"+strconv.Itoa(i)))
+		}
+		for i := range pipelineUnmarked {
+			decls = append(decls, coretest.Struct(path, "pl"+strconv.Itoa(i)))
+		}
+		pkg := coretest.Package(path, decls...)
+		pkg.Files[0].Path = path + "/" + coretest.UnitFile
+		pkgs[p] = pkg
+	}
+	return pkgs
+}
+
+// pipelineWorkspace composes the pipeline over a corpus of n packages
+// on the given workers: an annotator that stamps the mark, a generator
+// that mirrors the marked structs with the corpus's share of
+// cross-package references, the pipeline backend, and an output that
+// opens a fresh memory sink for each run.
+func pipelineWorkspace(tb assert.TB, n, workers int) *workspace.Workspace {
+	tb.Helper()
+
+	var mark meta.Key[bool]
+	marker, held := eidos.NewPlugin("marker").
+		Keys(func(r *meta.Registry) error {
+			if err := r.ClaimNamespace("e2e"); err != nil {
+				return err
+			}
+			k, err := meta.Register[bool](r, meta.KeySpec{
+				Name: "e2e.mark", Doc: "marks a corpus subject for mirroring",
+			})
+			mark = k
+			return err
+		}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
+			if strings.HasPrefix(m.Struct.Name, "m") {
+				eidos.Stamp(st, mark, true)
+			}
+			return nil
+		})).Build().(plugin.Annotator)
+	assert.True(tb, held, "the annotator half composes")
+
+	mirrorer, held := eidos.NewPlugin("mirror").
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			if _, marked := eidos.Fact(m, mark); !marked {
+				return nil
+			}
+			out := &emit.Struct{
+				Origin: m.Struct.Identity(),
+				Name:   "for" + m.Struct.Name,
+			}
+			if strings.HasPrefix(m.Struct.Name, "mr") {
+				// The next package's first plain mark, referenced
+				// resolved, so the settle follows the name across
+				// packages once the respell moves it.
+				p := packageIndex(tb, m.Struct.Identity().Package)
+				target := coretest.Struct(pipelinePath((p+1)%n), "mk0")
+				out.Fields.Append(&emit.Field{
+					Name: "peer",
+					Type: &emit.TypeRef{Target: target.ID, Spelling: "formk0"},
+				})
+			}
+			e.PackageFile().Append(out)
+			return nil
+		})).Build().(plugin.Generator)
+	assert.True(tb, held, "the generator half composes")
+
+	w, err := workspace.New().
+		Brand(pipelineBrand).
+		Annotators(marker).
+		Targets("fixture").
+		Parallel(workers).
+		Plans(workspace.Plan{
+			Name:       "plan",
+			Generators: []plugin.Generator{mirrorer},
+			Backend:    pipelineBackend(),
+		}).
+		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
+		Build()
+	assert.NoError(tb, err, "the composition validates")
+	return w
+}
+
+// packageIndex returns the corpus index at the end of a package path.
+func packageIndex(tb assert.TB, path string) int {
+	tb.Helper()
+
+	p, err := strconv.Atoi(strings.TrimPrefix(path, pipelinePathPrefix))
+	assert.NoError(tb, err, "a corpus path ends in its index")
+	return p
+}
+
+// pipelineBackend builds the pipeline's backend: one struct spelling,
+// an upper-first respell so the settle rewrites every name and follows
+// every reference, and a coverage that renders every fact so the guard
+// walks each declaration.
+func pipelineBackend() plugin.Backend {
+	return backend.New("printer", "fixture",
+		plugin.CommentSyntax{Line: []string{"//"}}).
+		KindTemplates(map[symbol.Kind]string{
+			symbol.KindStruct: "type {{.Name}} {\n" +
+				"{{- range .Fields.Items}}\n\t{{.Name}} {{spell .Type}}\n{{- end}}\n}\n",
+		}).
+		Funcs(func(*render.ImportSet) template.FuncMap {
+			return template.FuncMap{
+				"spell": func(t *emit.TypeRef) string {
+					if t == nil {
+						return ""
+					}
+					return t.Spelling
+				},
+			}
+		}).
+		Coverage(render.Coverage{Facts: totalCoverage()}).
+		Respell(func(_, _ symbol.Kind, _ symbol.Visibility, name string) (string, error) {
+			return strings.ToUpper(name[:1]) + name[1:], nil
+		}).
+		Naming(func(u plugin.Unit) string { return u.Word + ".txt" }).
+		Scaffold(func(emit.Stmt, *render.ImportSet) ([]byte, error) {
+			return []byte("\tnoop()\n"), nil
+		}).
+		Imports(func(*render.ImportSet) string { return "" }).
+		Finalise(func(src []byte) ([]byte, error) { return src, nil }).
+		Build()
+}
+
+// pipelineHashes runs w over a fresh graph of the tests' share of the
+// corpus, and returns the hashes of the files the run committed, by
+// path.
+func pipelineHashes(t *testing.T, w *workspace.Workspace) map[string]string {
+	t.Helper()
+
+	report := cleanRun(t, w, loaded(t, pipelineCorpus(pipelineTestPackages)))
+	out := map[string]string{}
+	for _, c := range report.Plans[0].Changes {
+		out[c.Path] = c.Hash
+	}
+	return out
+}
+
+// benchRun measures w's runs over a fresh graph of pkgs against a
+// ceiling of allocs per run, and returns the last run's report. One run
+// before the measurement builds what a process builds once. Each
+// iteration loads its graph and calls reset outside the measurement.
+func benchRun(
+	b *testing.B, w *workspace.Workspace, pkgs []*node.Package, reset func(), allocs uint64,
+) *workspace.Report {
+	b.Helper()
+
+	_, err := w.Run(b.Context(), workspace.Input{Graph: loaded(b, pkgs)})
+	assert.NoError(b, err, "the run before the measurement is clean")
+	c := bench.Start(b).MaxAllocs(allocs)
+	defer c.End()
+	var report *workspace.Report
+	for c.Loop() {
+		var g *store.Graph
+		c.Excluding(func() {
+			g = loaded(b, pkgs)
+			reset()
+		})
+		report, err = w.Run(b.Context(), workspace.Input{Graph: g})
+	}
+	assert.NoError(b, err, "the run is clean")
+	assert.Length(b, report.Emits, 1, "the plan's store is in the report")
+	return report
+}
+
+// loaded returns an unsealed graph that admits every package of pkgs.
+func loaded(tb assert.TB, pkgs []*node.Package) *store.Graph {
+	tb.Helper()
+
+	g := store.New()
+	for _, p := range pkgs {
+		assert.NoError(tb, g.AddPackage(p), "the fixture package is admitted")
+	}
+	return g
+}
+
+// emptyPools empties every sync.Pool of the process. The first
+// collection moves each pool's values to the pool's victim cache, and
+// the second drops the victims.
+func emptyPools() {
+	runtime.GC()
+	runtime.GC()
+}
+
+// resetPeakRSS sets the process's peak resident set to its current
+// resident set, which Linux does when 5 is written to
+// /proc/self/clear_refs. Where the file does not exist, it does
+// nothing.
+func resetPeakRSS() {
+	f, err := os.OpenFile("/proc/self/clear_refs", os.O_WRONLY, 0)
 	if err != nil {
-		b.Fatalf("Build: unexpected error: %v", err)
+		return
 	}
+	defer f.Close()
+	_, _ = f.WriteString("5")
+}
 
-	b.Run("cold run over 200k declarations", func(b *testing.B) {
-		b.ReportAllocs()
-		for b.Loop() {
-			g := store.New()
-			for _, p := range pkgs {
-				if err := g.AddPackage(p); err != nil {
-					b.Fatalf("AddPackage: unexpected error: %v", err)
-				}
-			}
-			report, err := w.Run(b.Context(), workspace.Input{Graph: g})
-			if err != nil {
-				b.Fatalf("Run: unexpected error: %v", err)
-			}
-			if len(report.Emits) != 1 {
-				b.Fatal("the plan store must arrive")
-			}
+// reportPeakRSS reports the process's peak resident set in megabytes as
+// the peak-RSS-MB metric, and nothing where the platform does not
+// expose it.
+func reportPeakRSS(b *testing.B) {
+	b.Helper()
+
+	if rss := peakRSS(); rss > 0 {
+		b.ReportMetric(float64(rss)/(1<<20), "peak-RSS-MB")
+	}
+}
+
+// peakRSS returns the process's peak resident set in bytes, which Linux
+// reports as VmHWM in /proc/self/status. It returns zero where the file
+// does not exist or does not contain the value.
+func peakRSS() uint64 {
+	f, err := os.Open("/proc/self/status")
+	if err != nil {
+		return 0
+	}
+	defer f.Close()
+	scan := bufio.NewScanner(f)
+	for scan.Scan() {
+		line := scan.Text()
+		if !strings.HasPrefix(line, "VmHWM:") {
+			continue
 		}
-	})
-
-	b.Run("frame overhead over one declaration", func(b *testing.B) {
-		b.ReportAllocs()
-		one := coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Alpha"))
-		for b.Loop() {
-			g := store.New()
-			if err := g.AddPackage(one); err != nil {
-				b.Fatalf("AddPackage: unexpected error: %v", err)
-			}
-			if _, err := w.Run(b.Context(), workspace.Input{Graph: g}); err != nil {
-				b.Fatalf("Run: unexpected error: %v", err)
-			}
+		kb, err := strconv.ParseUint(strings.TrimSuffix(
+			strings.TrimSpace(strings.TrimPrefix(line, "VmHWM:")), " kB",
+		), 10, 64)
+		if err != nil {
+			return 0
 		}
-	})
-}
-
-// rawRef returns a positioned raw instance of the fixture ref
-// directive pointing at name.
-func rawRef(name string, line int) directive.Raw {
-	return directive.Raw{
-		Name: "refy:ref",
-		Args: []directive.RawArg{{Key: "to", Value: directive.RawValue{Text: name}}},
-		Pos:  position.Pos{File: "alpha.go", Line: line, Col: 1},
+		return kb * 1024
 	}
+	return 0
 }
-
-// native is the scripted rules registered under the fixture's
-// language, resolving a name as a struct in the fixture package and
-// recording the scope it was asked from.
-type native struct {
-	scope *rules.Scope
-}
-
-// Lang returns the fixture's language.
-func (native) Lang() symbol.Lang { return coretest.Lang }
-
-// Members returns the scripted rules' member policy.
-func (native) Members() rules.MemberPolicy { return rulestest.Scripted().Members() }
-
-// ParamRole returns the scripted rules' role for a parameter.
-func (native) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
-	return rulestest.Scripted().ParamRole(p, v)
-}
-
-// ReturnRoles returns the scripted rules' roles for the returns.
-func (native) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
-	return rulestest.Scripted().ReturnRoles(rs, v)
-}
-
-// Builtin returns the scripted rules' shape for a builtin.
-func (native) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
-	return rulestest.Scripted().Builtin(ref, v)
-}
-
-// Resolve returns the fixture package's struct named name, and
-// records the scope it was asked from.
-func (n native) Resolve(
-	scope rules.Scope, name string, _ directive.ResolutionKind, v rules.View,
-) (symbol.Symbol, error) {
-	if n.scope != nil {
-		*n.scope = scope
-	}
-	if sym, held := v.Lookup(coretest.ID(coretest.StorePath, name, symbol.KindStruct)); held {
-		return sym, nil
-	}
-	return nil, fmt.Errorf("nothing in %s is named %s", coretest.StorePath, name)
-}
-
-// SamplesOf returns the scripted rules' samples.
-func (native) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
-	return rulestest.Scripted().SamplesOf(ref, hint, v)
-}
-
-// ZeroValue returns the scripted rules' zero value.
-func (native) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
-	return rulestest.Scripted().ZeroValue(ref, v)
-}
-
-// LiteralFor returns the scripted rules' literal for text.
-func (native) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
-	return rulestest.Scripted().LiteralFor(f, ref, text, v)
-}
-
-// TypeName returns the scripted rules' type name.
-func (native) TypeName(word, base string) string { return rulestest.Scripted().TypeName(word, base) }

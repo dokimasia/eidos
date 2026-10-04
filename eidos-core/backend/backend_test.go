@@ -14,6 +14,7 @@ import (
 	"text/template"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/backend"
 	"go.dokimi.dev/eidos/core/backend/backendtest"
@@ -67,6 +68,51 @@ const (
 	// refuses.
 	kitReason = "the fixture language declares no such construct"
 )
+
+// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
+// warm the function, and the 100 it counts.
+const allocRuns = 101
+
+// The ceilings of a declaration's steps.
+const (
+	// newAllocs is one new declaration: the builder, the kind, refusal
+	// and group maps of its language, and its helper set.
+	newAllocs = 5
+	// mergeAllocs is one KindTemplates, RefusedKinds or Groups of one
+	// entry into a new declaration: 4 for the entry's sorted keys, which
+	// slices.Sorted over maps.Keys builds, and the first group of the map
+	// the entry merges into.
+	mergeAllocs = 5
+	// funcsAllocs is one Funcs of the fixture's vocabulary into a new
+	// declaration: the import set the kit hands the part, 2 for the
+	// vocabulary the part returns, 4 for the helper names' sorted list,
+	// the helper set's first group, and the list of parts.
+	funcsAllocs = 9
+	// buildAllocs is one Build of the fixture declaration. Most of them
+	// are text/template's: the parse trees of the file skeleton and the
+	// two kind templates, and the function maps of the render's builtins
+	// it binds each template to. The composed pass and the lowered
+	// backend make the rest.
+	buildAllocs = 167
+	// buildSeamsAllocs is one Build of the fixture declaration with both
+	// settle seams: Build's, and the backend that composes the seams.
+	buildSeamsAllocs = buildAllocs + 1
+)
+
+// setter is one field setter of a declaration, called through a
+// function made before any measurement.
+type setter struct {
+	name string
+	set  func(*backend.Builder) *backend.Builder
+}
+
+// merge is one method that merges entries into a declaration, with the
+// ceiling of one entry merged into a new declaration.
+type merge struct {
+	name   string
+	allocs uint64
+	set    func(*backend.Builder) *backend.Builder
+}
 
 // kitSyntax returns the comment forms a fixture language declares.
 func kitSyntax() plugin.CommentSyntax {
@@ -453,14 +499,14 @@ func TestBackend(t *testing.T) {
 				Build()
 		}
 
-		t.Run("returns a backend with the construct seam for a lowering and a respell", func(t *testing.T) {
+		t.Run("returns a backend with the construct seam for a lowering", func(t *testing.T) {
 			t.Parallel()
 
 			_, lowers := settling().(plugin.Lowerer)
 			assert.True(t, lowers, "the construct seam is declared")
 		})
 
-		t.Run("returns a backend with the name seam for a lowering and a respell", func(t *testing.T) {
+		t.Run("returns a backend with the name seam for a respell", func(t *testing.T) {
 			t.Parallel()
 
 			_, respells := settling().(plugin.Respeller)
@@ -570,7 +616,7 @@ func TestBackend(t *testing.T) {
 				want: "refuses the " + symbol.KindEnum.String() + " kind twice",
 			},
 			{
-				name: "panics at Build for a kind both spelt and refused",
+				name: "panics at Build for a refused kind the templates spell",
 				build: func() {
 					kitBackend(kitName, kitTarget).
 						RefusedKinds(map[symbol.Kind]string{symbol.KindStruct: kitReason}).
@@ -882,4 +928,181 @@ func TestBackend(t *testing.T) {
 			}, "every declared name renders through the convention")
 		})
 	})
+}
+
+// A declaration allocates its builder, each merge of a map, each
+// vocabulary part and the lowered backend within their ceilings, and
+// its setters allocate nothing, in the ordinary run, which runs no
+// benchmark. A merge and a Build each take a declaration built before
+// the count, because each changes or freezes the declaration it is
+// called on. The check runs alone, because AllocsPerRun counts every
+// goroutine's allocations and refuses to run beside parallel tests.
+func TestBackendAllocs(t *testing.T) {
+	syntax := kitSyntax()
+	var b *backend.Builder
+	assert.MaxAllocs(t, func() { b = backend.New(kitName, kitTarget, syntax) }, newAllocs,
+		"New allocates the builder and its maps")
+	for _, tt := range setters() {
+		var got *backend.Builder
+		assert.MaxAllocs(t, func() { got = tt.set(b) }, 0, tt.name+" allocates nothing")
+		assert.True(t, got == b, tt.name+" returns its builder")
+	}
+	for _, tt := range merges() {
+		fresh, at := news(allocRuns), 0
+		assert.MaxAllocs(t, func() {
+			tt.set(fresh[at])
+			at++
+		}, tt.allocs, tt.name+" allocates the sorted keys and the entry")
+	}
+	whole, at := declarations(allocRuns, false), 0
+	assert.MaxAllocs(t, func() {
+		whole[at].Build()
+		at++
+	}, buildAllocs, "Build allocates the parsed templates and the lowered backend")
+	settling, at := declarations(allocRuns, true), 0
+	assert.MaxAllocs(t, func() {
+		settling[at].Build()
+		at++
+	}, buildSeamsAllocs, "Build allocates the composition of both seams besides")
+}
+
+// BenchmarkBackend measures each step of a declaration: the builder,
+// the setters, a merge of each map, a vocabulary part, and the lowering.
+func BenchmarkBackend(b *testing.B) {
+	syntax := kitSyntax()
+
+	b.Run("New", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(newAllocs)
+		defer c.End()
+		var got *backend.Builder
+		for c.Loop() {
+			got = backend.New(kitName, kitTarget, syntax)
+		}
+		assert.NotNil(b, got, "New returns a builder")
+	})
+
+	for _, tt := range setters() {
+		b.Run(tt.name, func(b *testing.B) {
+			builder := backend.New(kitName, kitTarget, syntax)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got *backend.Builder
+			for c.Loop() {
+				got = tt.set(builder)
+			}
+			assert.True(b, got == builder, tt.name+" returns its builder")
+		})
+	}
+
+	for _, tt := range merges() {
+		b.Run(tt.name+"/one entry into a new declaration", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var builder *backend.Builder
+			for c.Loop() {
+				c.Excluding(func() { builder = backend.New(kitName, kitTarget, syntax) })
+				tt.set(builder)
+			}
+			assert.NotNil(b, builder, tt.name+" merges into the declaration")
+		})
+	}
+
+	b.Run("Build/the fixture declaration", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(buildAllocs)
+		defer c.End()
+		var (
+			builder *backend.Builder
+			got     plugin.Backend
+		)
+		for c.Loop() {
+			c.Excluding(func() { builder = declarations(1, false)[0] })
+			got = builder.Build()
+		}
+		_, renders := got.(plugin.Renderer)
+		assert.True(b, renders, "the lowered backend renders")
+	})
+
+	b.Run("Build/the fixture declaration with both seams", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(buildSeamsAllocs)
+		defer c.End()
+		var (
+			builder *backend.Builder
+			got     plugin.Backend
+		)
+		for c.Loop() {
+			c.Excluding(func() { builder = declarations(1, true)[0] })
+			got = builder.Build()
+		}
+		_, lowers := got.(plugin.Lowerer)
+		assert.True(b, lowers, "the lowered backend has the construct seam")
+	})
+}
+
+// setters returns every setter that writes one field of a declaration.
+func setters() []setter {
+	split := render.Split(func(u plugin.Unit) []plugin.Unit { return []plugin.Unit{u} })
+	rule := plugin.PackageRule(func(p plugin.Placement) (symbol.Identity, error) { return p.Origin, nil })
+	cluster := render.Cluster(func([]symbol.Symbol) []render.Clustered { return nil })
+	return []setter{
+		{name: "Version", set: func(b *backend.Builder) *backend.Builder { return b.Version(kitVersion) }},
+		{name: "FileTemplate", set: func(b *backend.Builder) *backend.Builder { return b.FileTemplate(kitFile) }},
+		{name: "Scaffold", set: func(b *backend.Builder) *backend.Builder { return b.Scaffold(kitScaffold) }},
+		{name: "Naming", set: func(b *backend.Builder) *backend.Builder { return b.Naming(kitNaming) }},
+		{name: "Split", set: func(b *backend.Builder) *backend.Builder { return b.Split(split) }},
+		{name: "Packages", set: func(b *backend.Builder) *backend.Builder { return b.Packages(rule) }},
+		{name: "Cluster", set: func(b *backend.Builder) *backend.Builder { return b.Cluster(cluster) }},
+		{name: "Imports", set: func(b *backend.Builder) *backend.Builder { return b.Imports(kitImports) }},
+		{name: "Finalise", set: func(b *backend.Builder) *backend.Builder { return b.Finalise(kitFinalise) }},
+		{name: "Coverage", set: func(b *backend.Builder) *backend.Builder { return b.Coverage(render.Coverage{}) }},
+		{name: "Lower", set: func(b *backend.Builder) *backend.Builder { return b.Lower(kitLower) }},
+		{name: "Respell", set: func(b *backend.Builder) *backend.Builder { return b.Respell(kitRespell) }},
+	}
+}
+
+// merges returns every method that merges entries into a declaration,
+// each with one entry and its ceiling.
+func merges() []merge {
+	kinds := kitStructs()
+	refused := map[symbol.Kind]string{symbol.KindSum: kitReason}
+	groups := map[render.GroupName]string{blockGroup: "{{range .}}{{.}}{{end}}"}
+	return []merge{
+		{
+			name: "KindTemplates", allocs: mergeAllocs,
+			set: func(b *backend.Builder) *backend.Builder { return b.KindTemplates(kinds) },
+		},
+		{
+			name: "RefusedKinds", allocs: mergeAllocs,
+			set: func(b *backend.Builder) *backend.Builder { return b.RefusedKinds(refused) },
+		},
+		{
+			name: "Groups", allocs: mergeAllocs,
+			set: func(b *backend.Builder) *backend.Builder { return b.Groups(groups) },
+		},
+		{
+			name: "Funcs", allocs: funcsAllocs,
+			set: func(b *backend.Builder) *backend.Builder { return b.Funcs(kitFuncs) },
+		},
+	}
+}
+
+// news returns n new declarations of the fixture backend.
+func news(n int) []*backend.Builder {
+	out := make([]*backend.Builder, n)
+	for i := range out {
+		out[i] = backend.New(kitName, kitTarget, kitSyntax())
+	}
+	return out
+}
+
+// declarations returns n whole fixture declarations, each with both
+// settle seams where seams is set.
+func declarations(n int, seams bool) []*backend.Builder {
+	out := make([]*backend.Builder, n)
+	for i := range out {
+		out[i] = kitBackend(kitName, kitTarget)
+		if seams {
+			out[i].Lower(kitLower).Respell(kitRespell)
+		}
+	}
+	return out
 }

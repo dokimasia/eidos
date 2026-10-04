@@ -4,12 +4,13 @@
 package plugin_test
 
 import (
-	"bytes"
+	"io/fs"
 	"strconv"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -88,6 +89,73 @@ const (
 
 // continuedAt is the line the refusal cases open their comment on.
 var continuedAt = position.Pos{File: "svc/store/row.go", Line: 4}
+
+// The comments the allocation checks and the benchmarks take apart:
+// three lines of documentation, and documentation above a carrier.
+const (
+	docComment     = "// Row is one row.\n// It has fields.\n// It has a key."
+	carrierComment = "// Row is one row.\n//fixture:table name=rows"
+)
+
+// The allocations of the source unit's methods, which
+// TestSourceUnitAllocs checks in the ordinary run and
+// BenchmarkSourceUnit in a benchmark run.
+const (
+	// newSourceUnitAllocs is a unit of one file with one shared input:
+	// the unit, its set of readable paths with the set's storage, and the
+	// graph builder with its map of packages.
+	newSourceUnitAllocs = 5
+	// commentAllocs is a comment of documentation lines: the list of its
+	// lines and the list of its documentation.
+	commentAllocs = 2
+	// carrierCommentAllocs is a comment with a carrier: what
+	// commentAllocs counts and the list of carriers.
+	carrierCommentAllocs = commentAllocs + 1
+	// docAllocs is a comment's documentation: the list of its lines and
+	// the list of its documentation.
+	docAllocs = 2
+	// docLinesAllocs is the filtered list of clean lines.
+	docLinesAllocs = 1
+	// reportAllocs is one finding: its formatted message.
+	reportAllocs = 1
+	// attachCarriersAllocs is a unit's first attached carrier: the
+	// parsed instance's parameters and the list of attachments.
+	attachCarriersAllocs = 2
+	// firstPackageAllocs is a unit's first package: the path's segments,
+	// the package, the map's first group and the list of paths.
+	firstPackageAllocs = 4
+	// packagesAllocs is the list of packages.
+	packagesAllocs = 1
+	// firstRecordAllocs is a unit's first record of a scope, an
+	// attachment or a stamp: the list of records.
+	firstRecordAllocs = 1
+)
+
+// The fixtures the allocation checks and the benchmarks read and record:
+// the position a comment opens at, and the subject, file, instance and
+// stamp a builder records.
+var (
+	commentAt     = position.Pos{File: "svc/store/row.go", Line: 1}
+	recordSubject = &node.Struct{Name: "Row"}
+	recordFile    = &node.File{Path: "svc/store/row.go"}
+	recordRaw     = directive.Raw{Name: tableName}
+	recordStamp   = meta.RawStamp{Key: "fake.testFile", Value: true}
+)
+
+// unitReport is one reporting method of the unit: its name, a call that
+// reports one finding through it, and the severity it reports at.
+type unitReport struct {
+	method string
+	report func(*plugin.SourceUnit)
+	want   diag.Severity
+}
+
+// unitRecord is one method that records into a builder: its name and a
+// call of it.
+type unitRecord struct {
+	method string
+	record func(*plugin.GraphBuilder)
+}
 
 // unitTree is the fixture tree: the unit's member, its shared
 // module file, and a file outside the unit.
@@ -259,83 +327,6 @@ func TestSourceUnit(t *testing.T) {
 				assert.Equal(t, u.Depth(), tt.give, "the depth is the constructed one")
 			})
 		}
-	})
-
-	t.Run("ReadSum", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("folds nothing for a read that returns an error", func(t *testing.T) {
-			t.Parallel()
-
-			u := unitOver([]plugin.SourceRef{{Path: "svc/store/absent.go"}}, plugin.DepthFull, goSyntax())
-			before := u.ReadSum()
-			_, err := u.Read("svc/store/absent.go")
-			assert.HasError(t, err, "the read fails")
-			assert.True(t, bytes.Equal(u.ReadSum(), before), "the sum is unchanged")
-		})
-
-		t.Run("changes after an accepted read", func(t *testing.T) {
-			t.Parallel()
-
-			before := unitOf(t, unitTree()).ReadSum()
-			u := unitOf(t, unitTree())
-			_, err := u.Read("svc/store/row.go")
-			assert.NoError(t, err, "the read succeeds")
-			assert.False(t, bytes.Equal(before, u.ReadSum()), "the sum changes")
-		})
-
-		t.Run("returns one sum for the same reads", func(t *testing.T) {
-			t.Parallel()
-
-			u, twin := unitOf(t, unitTree()), unitOf(t, unitTree())
-			for _, unit := range []*plugin.SourceUnit{u, twin} {
-				_, err := unit.Read("svc/store/row.go")
-				assert.NoError(t, err, "the read succeeds")
-			}
-			assert.True(t, bytes.Equal(u.ReadSum(), twin.ReadSum()), "the sums are equal")
-		})
-
-		t.Run("distinguishes one packed read from two split reads", func(t *testing.T) {
-			t.Parallel()
-
-			// The packed member's bytes spell the split unit's first
-			// content, then its second read's path and content, joined
-			// by NUL.
-			packed := unitOf(t, fstest.MapFS{
-				"svc/store/row.go": {Data: []byte("p\x00go.mod\x00r")},
-				"go.mod":           {Data: []byte("module svc\n")},
-			})
-			_, err := packed.Read("svc/store/row.go")
-			assert.NoError(t, err, "the packed member reads")
-
-			split := unitOf(t, fstest.MapFS{
-				"svc/store/row.go": {Data: []byte("p")},
-				"go.mod":           {Data: []byte("r")},
-			})
-			for _, path := range []string{"svc/store/row.go", "go.mod"} {
-				_, err := split.Read(path)
-				assert.NoError(t, err, "each split read succeeds")
-			}
-			assert.False(t, bytes.Equal(packed.ReadSum(), split.ReadSum()), "the sums differ")
-		})
-
-		t.Run("returns distinct sums for a member no parse read", func(t *testing.T) {
-			t.Parallel()
-
-			one := unitOver([]plugin.SourceRef{{Path: "svc/store/row.go"}}, plugin.DepthFull, goSyntax())
-			wider := unitOver([]plugin.SourceRef{{Path: "svc/store/row.go"}, {Path: "svc/other/x.go"}},
-				plugin.DepthFull, goSyntax())
-			assert.False(t, bytes.Equal(one.ReadSum(), wider.ReadSum()), "the sums differ")
-		})
-
-		t.Run("returns distinct sums for a declared shared input", func(t *testing.T) {
-			t.Parallel()
-
-			one := unitOver([]plugin.SourceRef{{Path: "svc/store/row.go"}}, plugin.DepthFull, goSyntax())
-			shared := unitOver([]plugin.SourceRef{{Path: "svc/store/row.go", Shared: []string{"go.mod"}}},
-				plugin.DepthFull, goSyntax())
-			assert.False(t, bytes.Equal(one.ReadSum(), shared.ReadSum()), "the sums differ")
-		})
 	})
 
 	t.Run("Comment", func(t *testing.T) {
@@ -861,6 +852,36 @@ func TestSourceUnit(t *testing.T) {
 		})
 	})
 
+	t.Run("Graph", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns one builder for every call", func(t *testing.T) {
+			t.Parallel()
+
+			u := unitOf(t, unitTree())
+			first, second := u.Graph(), u.Graph()
+			assert.True(t, first == second, "the unit has one write handle")
+		})
+	})
+
+	for _, tt := range unitReports() {
+		t.Run(tt.method, func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("reports the finding under the frontend's origin", func(t *testing.T) {
+				t.Parallel()
+
+				u, sink := reporting(t, unitTree())
+				tt.report(u)
+				got := reported(sink)
+				assert.Length(t, got, 1, "one finding arrives")
+				assert.Equal(t, got[0].Severity, tt.want, "at the method's severity")
+				assert.Equal(t, got[0].Origin, frontendOrigin, "under the frontend's origin")
+				assert.Equal(t, got[0].Msg, "a fault", "with the formatted message")
+			})
+		})
+	}
+
 	t.Run("Package", func(t *testing.T) {
 		t.Parallel()
 
@@ -1022,4 +1043,406 @@ func TestSourceUnit(t *testing.T) {
 			assert.Panics(t, func() { gb.Rehome(replacement, nil) }, "a nil destination is a frontend defect")
 		})
 	})
+}
+
+// Each method of the source unit allocates what it returns or keeps in
+// the ordinary run, which runs no benchmark. Each call that records into
+// its unit takes a unit of its own, built before the count. The check
+// runs alone, because AllocsPerRun counts every goroutine's allocations
+// and refuses to run beside parallel tests.
+func TestSourceUnitAllocs(t *testing.T) {
+	refs, tree, syntax, sink := []plugin.SourceRef{unitFile()}, unitTree(), goSyntax(), diag.NewSink()
+	var built *plugin.SourceUnit
+	assert.MaxAllocs(t, func() {
+		built = plugin.NewSourceUnit(refs, tree, plugin.DepthFull, syntax, unitBrand, sink, frontendOrigin)
+	}, newSourceUnitAllocs, "NewSourceUnit allocates the unit, its readable paths and its graph builder")
+	assert.Equal(t, built.Depth(), plugin.DepthFull, "NewSourceUnit returns a unit at the given depth")
+
+	u := unitOf(t, unitTree())
+	var parts plugin.CommentParts
+	assert.MaxAllocs(t, func() { parts = u.Comment(docComment, commentAt) }, commentAllocs,
+		"Comment allocates its lines and the documentation")
+	assert.Length(t, parts.Docs, 3, "Comment returns the three documentation lines")
+	assert.MaxAllocs(t, func() { parts = u.Comment(carrierComment, commentAt) }, carrierCommentAllocs,
+		"Comment allocates the list of carriers beside the documentation")
+	assert.Length(t, parts.Carriers, 1, "Comment returns the carrier")
+
+	var lines []string
+	assert.MaxAllocs(
+		t,
+		func() { lines = u.Doc(docComment) },
+		docAllocs,
+		"Doc allocates its lines and the documentation",
+	)
+	assert.Length(t, lines, 3, "Doc returns the three documentation lines")
+	clean := []string{"Clean.", "go:generate x"}
+	assert.MaxAllocs(t, func() { lines = u.DocLines(clean) }, docLinesAllocs, "DocLines allocates the filtered list")
+	assert.Length(t, lines, 1, "DocLines drops the directive line")
+
+	held := false
+	line := setMark + tablePayload
+	assert.MaxAllocs(t, func() { _, _, held = plugin.CutCarrier(line, unitBrand) }, 0, "CutCarrier allocates nothing")
+	assert.True(t, held, "CutCarrier reads the set mark")
+	negated := plugin.Carrier{Mark: negatedMark, Payload: tablePayload}
+	assert.MaxAllocs(t, func() { held = negated.Negated() }, 0, "Negated allocates nothing")
+	assert.True(t, held, "Negated reports true for the negated mark")
+	assert.MaxAllocs(t, func() {
+		if len(u.Files()) != 1 || u.Depth() != plugin.DepthFull || u.Graph() == nil {
+			t.Fatal("the unit's members, depth or builder read back wrong")
+		}
+	}, 0, "Files, Depth and Graph allocate nothing")
+
+	read := unitRead(u)
+	assert.MaxAllocs(t, func() {
+		if err := read.own(); err != nil {
+			t.Fatalf("Read: unexpected error: %v", err)
+		}
+	}, plainAllocs(t, read), "Read allocates what the read of its tree allocates")
+	for _, tt := range unitReports() {
+		assert.MaxAllocs(t, func() { tt.report(u) }, reportAllocs, tt.method+" allocates the finding's message")
+	}
+
+	carriers := []plugin.Carrier{{Mark: bareMark, Payload: tablePayload, Pos: carrierAt}}
+	next, fresh := 0, freshUnits(t)
+	assert.MaxAllocs(t, func() {
+		fresh[next].AttachCarriers(recordSubject, carriers, unitCode)
+		next++
+	}, attachCarriersAllocs, "AttachCarriers allocates the parsed instance and the list of attachments")
+
+	next, fresh = 0, freshUnits(t)
+	assert.MaxAllocs(t, func() {
+		fresh[next].Graph().Package("svc/store")
+		next++
+	}, firstPackageAllocs, "Package allocates a unit's first package")
+	gb := fresh[0].Graph()
+	assert.MaxAllocs(
+		t,
+		func() { gb.Package("svc/store") },
+		0,
+		"Package allocates nothing for a package it returned before",
+	)
+	var pkgs []*node.Package
+	assert.MaxAllocs(t, func() { pkgs = gb.Packages() }, packagesAllocs, "Packages allocates the list")
+	assert.Length(t, pkgs, 1, "Packages returns the one package")
+
+	for _, tt := range unitRecords() {
+		next, fresh = 0, freshUnits(t)
+		assert.MaxAllocs(t, func() {
+			tt.record(fresh[next].Graph())
+			next++
+		}, firstRecordAllocs, tt.method+" allocates a unit's list of its records")
+	}
+	full := recorded(t)
+	replacement := &node.Struct{Name: "Row"}
+	assert.MaxAllocs(t, func() { full.Rehome(recordSubject, replacement) }, 0, "Rehome allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if len(full.Scopes()) != 1 || len(full.Attachments()) != 1 || len(full.StampRecords()) != 1 {
+			t.Fatal("the builder's records read back wrong")
+		}
+	}, 0, "Scopes, Attachments and StampRecords allocate nothing")
+}
+
+// BenchmarkSourceUnit measures what a frontend's parse calls on its
+// unit: the unit's construction, the comment pipeline once per comment,
+// the reads, the reports and the records, each call that records into
+// its unit on a unit built outside the measurement.
+func BenchmarkSourceUnit(b *testing.B) {
+	b.Run("NewSourceUnit", func(b *testing.B) {
+		refs, tree, syntax, sink := []plugin.SourceRef{unitFile()}, unitTree(), goSyntax(), diag.NewSink()
+		c := bench.Start(b).MaxAllocs(newSourceUnitAllocs)
+		defer c.End()
+		var u *plugin.SourceUnit
+		for c.Loop() {
+			u = plugin.NewSourceUnit(refs, tree, plugin.DepthFull, syntax, unitBrand, sink, frontendOrigin)
+		}
+		assert.Length(b, u.Files(), 1, "NewSourceUnit returns a unit of the one member")
+	})
+
+	u := unitOf(b, unitTree())
+	comments := []struct {
+		name   string
+		raw    string
+		allocs uint64
+	}{
+		{name: "Comment/three lines of documentation", raw: docComment, allocs: commentAllocs},
+		{name: "Comment/documentation above a carrier", raw: carrierComment, allocs: carrierCommentAllocs},
+	}
+	for _, tt := range comments {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var parts plugin.CommentParts
+			for c.Loop() {
+				parts = u.Comment(tt.raw, commentAt)
+			}
+			assert.NotEmpty(b, parts.Docs, "Comment returns the documentation")
+		})
+	}
+
+	b.Run("Doc", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(docAllocs)
+		defer c.End()
+		var lines []string
+		for c.Loop() {
+			lines = u.Doc(docComment)
+		}
+		assert.Length(b, lines, 3, "Doc returns the three documentation lines")
+	})
+
+	b.Run("DocLines", func(b *testing.B) {
+		clean := []string{"Clean.", "go:generate x"}
+		c := bench.Start(b).MaxAllocs(docLinesAllocs)
+		defer c.End()
+		var lines []string
+		for c.Loop() {
+			lines = u.DocLines(clean)
+		}
+		assert.Length(b, lines, 1, "DocLines drops the directive line")
+	})
+
+	b.Run("CutCarrier", func(b *testing.B) {
+		line := setMark + tablePayload
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			_, _, held = plugin.CutCarrier(line, unitBrand)
+		}
+		assert.True(b, held, "CutCarrier reads the set mark")
+	})
+
+	b.Run("Negated", func(b *testing.B) {
+		negated := plugin.Carrier{Mark: negatedMark, Payload: tablePayload}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			held = negated.Negated()
+		}
+		assert.True(b, held, "Negated reports true for the negated mark")
+	})
+
+	b.Run("Files", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got []plugin.SourceRef
+		for c.Loop() {
+			got = u.Files()
+		}
+		assert.Length(b, got, 1, "Files returns the one member")
+	})
+
+	b.Run("Depth", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got plugin.Depth
+		for c.Loop() {
+			got = u.Depth()
+		}
+		assert.Equal(b, got, plugin.DepthFull, "Depth returns the unit's depth")
+	})
+
+	b.Run("Graph", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got *plugin.GraphBuilder
+		for c.Loop() {
+			got = u.Graph()
+		}
+		assert.True(b, got == u.Graph(), "Graph returns the unit's builder")
+	})
+
+	b.Run("Read", func(b *testing.B) {
+		read := unitRead(u)
+		c := bench.Start(b).MaxAllocs(plainAllocs(b, read))
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = read.own()
+		}
+		assert.NoError(b, err, "the member reads")
+	})
+
+	for _, tt := range unitReports() {
+		b.Run(tt.method, func(b *testing.B) {
+			reporter := unitOf(b, unitTree())
+			c := bench.Start(b).MaxAllocs(reportAllocs)
+			defer c.End()
+			for c.Loop() {
+				tt.report(reporter)
+			}
+		})
+	}
+
+	b.Run("AttachCarriers/a unit's first carrier", func(b *testing.B) {
+		carriers := []plugin.Carrier{{Mark: bareMark, Payload: tablePayload, Pos: carrierAt}}
+		var unit *plugin.SourceUnit
+		fresh := func() { unit = unitOf(b, unitTree()) }
+		c := bench.Start(b).MaxAllocs(attachCarriersAllocs)
+		defer c.End()
+		for c.Loop() {
+			c.Excluding(fresh)
+			unit.AttachCarriers(recordSubject, carriers, unitCode)
+		}
+		assert.Length(b, unit.Graph().Attachments(), 1, "the carrier is attached")
+	})
+
+	b.Run("Package/a unit's first package", func(b *testing.B) {
+		var gb *plugin.GraphBuilder
+		fresh := func() { gb = unitOf(b, unitTree()).Graph() }
+		c := bench.Start(b).MaxAllocs(firstPackageAllocs)
+		defer c.End()
+		var pkg *node.Package
+		for c.Loop() {
+			c.Excluding(fresh)
+			pkg = gb.Package("svc/store")
+		}
+		assert.Equal(b, pkg.Path, []string{"svc", "store"}, "Package returns the path's package")
+	})
+
+	b.Run("Package/a package returned before", func(b *testing.B) {
+		gb := unitOf(b, unitTree()).Graph()
+		first := gb.Package("svc/store")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var pkg *node.Package
+		for c.Loop() {
+			pkg = gb.Package("svc/store")
+		}
+		assert.True(b, pkg == first, "Package returns the first package")
+	})
+
+	b.Run("Packages", func(b *testing.B) {
+		gb := unitOf(b, unitTree()).Graph()
+		gb.Package("svc/store")
+		c := bench.Start(b).MaxAllocs(packagesAllocs)
+		defer c.End()
+		var pkgs []*node.Package
+		for c.Loop() {
+			pkgs = gb.Packages()
+		}
+		assert.Length(b, pkgs, 1, "Packages returns the one package")
+	})
+
+	for _, tt := range unitRecords() {
+		b.Run(tt.method+"/a unit's first record", func(b *testing.B) {
+			var gb *plugin.GraphBuilder
+			fresh := func() { gb = unitOf(b, unitTree()).Graph() }
+			c := bench.Start(b).MaxAllocs(firstRecordAllocs)
+			defer c.End()
+			for c.Loop() {
+				c.Excluding(fresh)
+				tt.record(gb)
+			}
+		})
+	}
+
+	full := recorded(b)
+
+	b.Run("Rehome", func(b *testing.B) {
+		other := &node.Struct{Name: "Row"}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		from, to := symbol.Symbol(recordSubject), symbol.Symbol(other)
+		for c.Loop() {
+			full.Rehome(from, to)
+			from, to = to, from
+		}
+		assert.Length(b, full.Attachments(), 1, "the attachment remains one")
+	})
+
+	b.Run("Scopes", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got []plugin.ScopeRecord
+		for c.Loop() {
+			got = full.Scopes()
+		}
+		assert.Length(b, got, 1, "Scopes returns the record")
+	})
+
+	b.Run("Attachments", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got []plugin.Attachment
+		for c.Loop() {
+			got = full.Attachments()
+		}
+		assert.Length(b, got, 1, "Attachments returns the record")
+	})
+
+	b.Run("StampRecords", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got []plugin.StampRecord
+		for c.Loop() {
+			got = full.StampRecords()
+		}
+		assert.Length(b, got, 1, "StampRecords returns the record")
+	})
+}
+
+// unitReports returns each reporting method of the unit, writing one
+// finding with an argument at the fixture's carrier line, with the
+// severity it reports at.
+func unitReports() []unitReport {
+	return []unitReport{
+		{
+			method: "Errorf", want: diag.SeverityError,
+			report: func(u *plugin.SourceUnit) { u.Errorf(unitCode, carrierAt, "a %s", "fault") },
+		},
+		{
+			method: "Warnf", want: diag.SeverityWarning,
+			report: func(u *plugin.SourceUnit) { u.Warnf(unitCode, carrierAt, "a %s", "fault") },
+		},
+		{
+			method: "Infof", want: diag.SeverityInfo,
+			report: func(u *plugin.SourceUnit) { u.Infof(unitCode, carrierAt, "a %s", "fault") },
+		},
+	}
+}
+
+// unitRecords returns one call of each method that records into a
+// builder, each on the record fixtures.
+func unitRecords() []unitRecord {
+	return []unitRecord{
+		{method: "Scope", record: func(gb *plugin.GraphBuilder) { gb.Scope(recordFile, nil) }},
+		{method: "Attach", record: func(gb *plugin.GraphBuilder) { gb.Attach(recordSubject, recordRaw) }},
+		{method: "Stamp", record: func(gb *plugin.GraphBuilder) { gb.Stamp(recordFile, recordStamp) }},
+	}
+}
+
+// recorded returns a builder with one record of each kind.
+func recorded(tb assert.TB) *plugin.GraphBuilder {
+	tb.Helper()
+
+	gb := unitOf(tb, unitTree()).Graph()
+	for _, r := range unitRecords() {
+		r.record(gb)
+	}
+	return gb
+}
+
+// unitRead returns the read of the unit's member beside the read of an
+// equal tree, which the unit's door adds nothing to.
+func unitRead(u *plugin.SourceUnit) storeRead {
+	var tree fs.FS = unitTree()
+	member := unitFile().Path
+	return storeRead{
+		name:  "Read",
+		own:   func() error { _, err := u.Read(member); return err },
+		plain: func() error { _, err := fs.ReadFile(tree, member); return err },
+	}
+}
+
+// freshUnits returns allocRuns units over the fixture tree: one for each
+// call of an allocation check that records into its unit.
+func freshUnits(t *testing.T) []*plugin.SourceUnit {
+	t.Helper()
+
+	out := make([]*plugin.SourceUnit, allocRuns)
+	for i := range out {
+		out[i] = unitOf(t, unitTree())
+	}
+	return out
 }

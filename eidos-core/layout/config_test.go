@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/layout"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -18,6 +19,12 @@ const (
 	planName           = "services"
 	ghost    plugin.ID = "ghost"
 )
+
+// checkAllocs is one check of a valid configuration over the fixture's
+// generators, the same in each of 4 runs. Check sorts each map's keys
+// through slices.Sorted over maps.Keys, which allocates the iterator
+// and grows the list, and no other step allocates.
+const checkAllocs = 12
 
 // sourceFamilies returns generators whose families are all written
 // beside their sources: the families no zero configuration refuses.
@@ -186,7 +193,7 @@ func TestConfig(t *testing.T) {
 				},
 			},
 			{
-				name: "returns the faults of the plan, the refinements and the families in order",
+				name: "returns every fault in configuration order",
 				give: layout.Config{
 					Policy:  layout.Policy(7),
 					Plugins: refine(ghost, layout.Refinement{}),
@@ -218,6 +225,31 @@ func TestConfig(t *testing.T) {
 				assert.Equal(t, got, want, "the faults")
 			})
 		}
+	})
+}
+
+// A valid configuration checks within its ceiling in the ordinary run,
+// which runs no benchmark.
+func TestConfigAllocs(t *testing.T) {
+	cfg, outputs := layout.Config{Dir: genDir}, families()
+	var faults []error
+	assert.MaxAllocs(t, func() { faults = cfg.Check(planName, outputs) }, checkAllocs,
+		"Check allocates the sorted generators")
+	assert.Empty(t, faults, "Check returns no fault for a valid configuration")
+}
+
+// BenchmarkConfig measures the check a Build runs over each plan's
+// configuration.
+func BenchmarkConfig(b *testing.B) {
+	b.Run("Config.Check/a valid configuration", func(b *testing.B) {
+		cfg, outputs := layout.Config{Dir: genDir}, families()
+		c := bench.Start(b).MaxAllocs(checkAllocs)
+		defer c.End()
+		var faults []error
+		for c.Loop() {
+			faults = cfg.Check(planName, outputs)
+		}
+		assert.Empty(b, faults, "Check returns no fault for a valid configuration")
 	})
 }
 

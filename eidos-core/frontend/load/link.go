@@ -157,8 +157,11 @@ type linker struct {
 	following map[followKey]bool
 	followed  []symbol.Identity
 	reached   []symbol.Identity
-	ix        *index
-	sink      *diag.Sink
+	// hits is the buffer the selection of one reference collects its
+	// first tier's declarations in, which every selection reuses.
+	hits []symbol.Identity
+	ix   *index
+	sink *diag.Sink
 }
 
 // under resolves the references directly inside one declaration,
@@ -243,7 +246,7 @@ func (w *linker) resolve(ref *node.TypeRef, f plugin.Frontend, scope plugin.Impo
 		return
 	}
 	w.followed, w.reached = nil, nil
-	hits := w.firstTier(tiers)
+	hits := w.selected(tiers)
 	record := store.Link{Tiers: tiers, Followed: w.followed, Reached: w.reached}
 	if len(hits) > 0 {
 		ref.Target = hits[0]
@@ -263,12 +266,25 @@ func (w *linker) resolve(ref *node.TypeRef, f plugin.Frontend, scope plugin.Impo
 	w.unit.resolved[ref] = record
 }
 
+// selected returns the declarations of the first tier that names any,
+// collected in the linker's buffer, which the next selection overwrites.
+// It allocates only where the buffer lacks the room for them, and keeps
+// the grown buffer.
+func (w *linker) selected(tiers plugin.Candidates) []symbol.Identity {
+	hits := w.firstTier(w.hits[:0], tiers)
+	if cap(hits) > cap(w.hits) {
+		w.hits = hits[:0]
+	}
+	return hits
+}
+
 // firstTier returns the declarations of the first tier that names
 // any, in candidate order and without repeats, and nothing when no
-// tier does.
-func (w *linker) firstTier(tiers plugin.Candidates) []symbol.Identity {
+// tier does. It collects them in dst, which is empty, and allocates
+// only where dst lacks the room for them.
+func (w *linker) firstTier(dst []symbol.Identity, tiers plugin.Candidates) []symbol.Identity {
 	for _, tier := range tiers {
-		var hits []symbol.Identity
+		hits := dst
 		for _, c := range tier {
 			for _, full := range w.hitsOf(c) {
 				if !slices.Contains(hits, full) {
@@ -307,7 +323,7 @@ func (w *linker) hitsOf(c symbol.Identity) []symbol.Identity {
 	w.followed = append(w.followed, bareOf(c))
 	for _, e := range files {
 		scope := plugin.ImportScope{File: e.scope.file.ID, Bindings: e.scope.bindings}
-		if hits := w.firstTier(e.exporter.Exports(scope, c.Name)); len(hits) > 0 {
+		if hits := w.firstTier(nil, e.exporter.Exports(scope, c.Name)); len(hits) > 0 {
 			return hits
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/meta"
@@ -20,17 +21,25 @@ import (
 // records declaration reads and fact reads into one place.
 var _ meta.Recorder = (*store.ReadSet)(nil)
 
-// enumerate ranges every kind through the reader, which is what
-// records a set-membership edge for each.
-func enumerate(r *store.Reader, kinds ...symbol.Kind) {
-	for _, kind := range kinds {
-		for range r.ByKind(kind) { // ranging is what records the edge
-		}
-	}
+// The allocations of a read set and of a range over one of its
+// enumerations, which TestReadSetAllocs checks in the ordinary run and
+// BenchmarkReadSet in a benchmark run.
+const (
+	// newReadSetAllocs is the set.
+	newReadSetAllocs = 1
+	// enumerationAllocs is the sorted list of a grain's edges.
+	enumerationAllocs = 1
+)
+
+// enumeration is one enumeration of a read set: its name and a count
+// of the edges a range over it yields.
+type enumeration struct {
+	name  string
+	count func() int
 }
 
 // A read set is what one derived artifact read. Its grain is the
-// contract: edges deduplicate, and both grains count.
+// contract: edges deduplicate, and every grain counts.
 func TestReadSet(t *testing.T) {
 	t.Parallel()
 
@@ -41,7 +50,7 @@ func TestReadSet(t *testing.T) {
 			t.Parallel()
 
 			assert.Empty(t, slices.Collect(store.NewReadSet().Identities()),
-				"a set that read nothing holds nothing")
+				"a set that read nothing returns no edge")
 		})
 
 		t.Run("records one edge for a declaration read twice", func(t *testing.T) {
@@ -156,30 +165,22 @@ func TestReadSet(t *testing.T) {
 	t.Run("Reset", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("drops every grain and keeps recording", func(t *testing.T) {
+		t.Run("drops every grain", func(t *testing.T) {
 			t.Parallel()
 
-			s := store.NewReadSet()
-			id := coretest.Struct(coretest.StorePath, "Store").ID
-			g := coretest.Frozen(t, coretest.Package(coretest.StorePath,
-				coretest.Struct(coretest.StorePath, "Store")))
-			r, err := g.Reader(s, nil)
-			assert.NoError(t, err, "the tracked handle mints")
-			r.Lookup(id)
-			r.PackageOf(id)
-			for range r.ByKind(symbol.KindStruct) {
-				break
-			}
-			for range r.ByDirective("stub") {
-				break
-			}
-			s.RecordFact(id, "shape.role")
+			s := everyGrain(t)
 			assert.Equal(t, s.Len(), 5, "all five grains recorded")
-
 			s.Reset()
-			assert.Equal(t, s.Len(), 0, "a reset set holds no edges")
-			s.RecordFact(id, "shape.role")
-			assert.Equal(t, s.Len(), 1, "and records again after the reset")
+			assert.Equal(t, s.Len(), 0, "a reset set has no edge")
+		})
+
+		t.Run("records an edge after the reset", func(t *testing.T) {
+			t.Parallel()
+
+			s := everyGrain(t)
+			s.Reset()
+			s.RecordFact(coretest.Struct(coretest.StorePath, "Store").ID, "shape.role")
+			assert.Equal(t, s.Len(), 1, "the set records again")
 		})
 	})
 
@@ -193,10 +194,10 @@ func TestReadSet(t *testing.T) {
 			for range store.NewReadSet().Facts() {
 				count++
 			}
-			assert.Equal(t, count, 0, "a set that read no facts holds none")
+			assert.Equal(t, count, 0, "a set that read no fact returns none")
 		})
 
-		t.Run("records at (subject, key) and deduplicates", func(t *testing.T) {
+		t.Run("returns each key of a subject once in key order", func(t *testing.T) {
 			t.Parallel()
 
 			s := store.NewReadSet()
@@ -212,7 +213,7 @@ func TestReadSet(t *testing.T) {
 				got = append(got, key)
 			}
 			assert.Equal(t, got, []meta.KeyName{"shape.comparable", "shape.role"},
-				"edges deduplicate and return in subject then key order")
+				"a key read three times records one edge, after the key that sorts first")
 		})
 
 		t.Run("returns one order however the reads arrived", func(t *testing.T) {
@@ -254,6 +255,71 @@ func TestReadSet(t *testing.T) {
 		})
 	})
 
+	t.Run("AppendPointReads", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns nothing for a set that read nothing", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, store.NewReadSet().AppendPointReads(nil), "a set that read nothing has no point read")
+		})
+
+		t.Run("returns the point reads in identity order", func(t *testing.T) {
+			t.Parallel()
+
+			alpha, omega := coretest.Struct(coretest.StorePath, "Alpha"), coretest.Struct(coretest.StorePath, "Omega")
+			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, alpha, omega))
+			r.Lookup(omega.ID)
+			r.PackageOf(alpha.ID)
+			r.Lookup(alpha.ID)
+
+			want := []meta.Read{
+				{Subject: alpha.ID},
+				{Subject: omega.ID},
+				{Subject: coretest.PackageID(coretest.StorePath)},
+			}
+			slices.SortFunc(want, func(a, b meta.Read) int { return a.Subject.Compare(b.Subject) })
+			assert.Equal(t, reads.AppendPointReads(nil), want, "each identity reads once, in identity order")
+		})
+
+		t.Run("returns the facts after the declarations", func(t *testing.T) {
+			t.Parallel()
+
+			alpha, omega := coretest.Struct(coretest.StorePath, "Alpha"), coretest.Struct(coretest.StorePath, "Omega")
+			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, alpha, omega))
+			reads.RecordFact(omega.ID, "shape.role")
+			reads.RecordFact(alpha.ID, "shape.role")
+			reads.RecordFact(alpha.ID, "shape.comparable")
+			r.Lookup(omega.ID)
+
+			assert.Equal(t, reads.AppendPointReads(nil), []meta.Read{
+				{Subject: omega.ID},
+				{Subject: alpha.ID, Key: "shape.comparable"},
+				{Subject: alpha.ID, Key: "shape.role"},
+				{Subject: omega.ID, Key: "shape.role"},
+			}, "the facts follow in subject then key order")
+		})
+
+		t.Run("leaves out the membership edges", func(t *testing.T) {
+			t.Parallel()
+
+			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath))
+			enumerate(r, symbol.KindStruct)
+
+			assert.Empty(t, reads.AppendPointReads(nil), "an enumeration by kind is no point read")
+		})
+
+		t.Run("appends after the elements of dst", func(t *testing.T) {
+			t.Parallel()
+
+			reads := everyGrain(t)
+			first := meta.Read{Subject: coretest.PackageID(coretest.CachePath)}
+			got := reads.AppendPointReads([]meta.Read{first})
+			assert.Equal(t, got[0], first, "the element of dst comes first")
+			assert.Equal(t, got[1:], reads.AppendPointReads(nil), "the point reads follow it")
+		})
+	})
+
 	t.Run("Len", func(t *testing.T) {
 		t.Parallel()
 
@@ -280,4 +346,179 @@ func TestReadSet(t *testing.T) {
 			assert.Equal(t, reads.Len(), 5, "Len counts every grain")
 		})
 	})
+}
+
+// A derivation allocates its one slice, and a set reused across
+// invocations records within the storage an earlier invocation grew. The
+// check runs alone, because AllocsPerRun counts every goroutine's
+// allocations and refuses to run beside parallel tests.
+func TestReadSetAllocs(t *testing.T) {
+	reads := everyGrain(t)
+	room := make([]meta.Read, 0, reads.Len())
+	assert.MaxAllocs(t, func() {
+		if len(reads.AppendPointReads(room)) != 3 {
+			t.Fatal("AppendPointReads returned another number of reads")
+		}
+	}, 0, "AppendPointReads allocates nothing into a slice with room")
+	assert.MaxAllocs(t, func() {
+		if len(reads.AppendPointReads(nil)) != 3 {
+			t.Fatal("AppendPointReads returned another number of reads")
+		}
+	}, 1, "AppendPointReads allocates one slice into nil")
+
+	for _, tt := range enumerations(reads) {
+		assert.MaxAllocs(t, func() {
+			if tt.count() != 1 {
+				t.Fatalf("%s enumerated another number of edges", tt.name)
+			}
+		}, enumerationAllocs, "a range over "+tt.name+" allocates the sorted list of edges")
+	}
+
+	var built *store.ReadSet
+	assert.MaxAllocs(t, func() { built = store.NewReadSet() }, newReadSetAllocs, "NewReadSet allocates the set")
+	assert.Equal(t, built.Len(), 0, "NewReadSet returns a set without an edge")
+
+	id := coretest.Struct(coretest.StorePath, "Store").ID
+	assert.MaxAllocs(t, func() {
+		reads.Reset()
+		reads.RecordFact(id, "shape.role")
+		if reads.Len() != 1 {
+			t.Fatal("the reset set records another number of edges")
+		}
+	}, 0, "Reset and RecordFact allocate nothing within the set's earlier use")
+}
+
+// BenchmarkReadSet measures a set of five edges, one of each grain: the
+// derivation a stamp records from it, and the reuse of the set by the
+// next invocation.
+func BenchmarkReadSet(b *testing.B) {
+	reads := everyGrain(b)
+	id := coretest.Struct(coretest.StorePath, "Store").ID
+
+	b.Run("AppendPointReads/into a slice with room", func(b *testing.B) {
+		room := make([]meta.Read, 0, reads.Len())
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got []meta.Read
+		for c.Loop() {
+			got = reads.AppendPointReads(room)
+		}
+		assert.Length(b, got, 3, "AppendPointReads returns the declaration, package and fact reads")
+	})
+
+	b.Run("AppendPointReads/into nil", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got []meta.Read
+		for c.Loop() {
+			got = reads.AppendPointReads(nil)
+		}
+		assert.Length(b, got, 3, "AppendPointReads returns the declaration, package and fact reads")
+	})
+
+	b.Run("RecordFact", func(b *testing.B) {
+		s := store.NewReadSet()
+		s.RecordFact(id, "shape.role")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			s.RecordFact(id, "shape.role")
+		}
+		assert.Equal(b, s.Len(), 1, "RecordFact records one edge")
+	})
+
+	b.Run("Reset", func(b *testing.B) {
+		s := everyGrain(b)
+		fill := func() { s.RecordFact(id, "shape.role") }
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			c.Excluding(fill)
+			s.Reset()
+		}
+		assert.Equal(b, s.Len(), 0, "Reset drops every edge")
+	})
+
+	b.Run("Len", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		n := 0
+		for c.Loop() {
+			n = reads.Len()
+		}
+		assert.Equal(b, n, 5, "Len counts every grain")
+	})
+
+	b.Run("NewReadSet", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(newReadSetAllocs)
+		defer c.End()
+		var s *store.ReadSet
+		for c.Loop() {
+			s = store.NewReadSet()
+		}
+		assert.Equal(b, s.Len(), 0, "NewReadSet returns a set without an edge")
+	})
+
+	for _, tt := range enumerations(reads) {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(enumerationAllocs)
+			defer c.End()
+			n := 0
+			for c.Loop() {
+				n = tt.count()
+			}
+			assert.Equal(b, n, 1, "the enumeration returns the grain's one edge")
+		})
+	}
+}
+
+// enumerations returns a count of every enumeration of a read set, each
+// a range over the enumeration.
+func enumerations(s *store.ReadSet) []enumeration {
+	return []enumeration{
+		{name: "Identities", count: func() int {
+			n := 0
+			for range s.Identities() {
+				n++
+			}
+			return n
+		}},
+		{name: "Packages", count: func() int {
+			n := 0
+			for range s.Packages() {
+				n++
+			}
+			return n
+		}},
+		{name: "Kinds", count: func() int {
+			n := 0
+			for range s.Kinds() {
+				n++
+			}
+			return n
+		}},
+		{name: "Facts", count: func() int {
+			n := 0
+			for range s.Facts() {
+				n++
+			}
+			return n
+		}},
+		{name: "Directives", count: func() int {
+			n := 0
+			for range s.Directives() {
+				n++
+			}
+			return n
+		}},
+	}
+}
+
+// enumerate ranges every kind through the reader, which is what
+// records a set-membership edge for each.
+func enumerate(r *store.Reader, kinds ...symbol.Kind) {
+	for _, kind := range kinds {
+		for range r.ByKind(kind) { // ranging is what records the edge
+		}
+	}
 }

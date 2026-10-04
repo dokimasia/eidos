@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/backend/render"
 )
@@ -26,6 +27,20 @@ const (
 	// rowName2 is the name rowName takes with the first suffix.
 	rowName2 = rowName + "2"
 )
+
+// The size of [filledSet]: four entries over three paths.
+const (
+	filledEntries = 4
+	filledPaths   = 3
+)
+
+// importWrite is one write a file's spellings make into its set, with
+// the ceiling of the write after a Reset.
+type importWrite struct {
+	name   string
+	allocs uint64
+	write  func(*render.ImportSet)
+}
 
 // The set is the one meeting point between spelling and the import
 // block: per file, deduplicated, sorted, and the one place local
@@ -495,4 +510,158 @@ func TestImportSet(t *testing.T) {
 				"the next file declares its own names")
 		})
 	})
+}
+
+// A set the pass reuses across files records and binds without
+// allocating once its storage has grown, a suffixed name allocates its
+// spelling, and the lists allocate what they return, in the ordinary
+// run, which runs no benchmark. Each write runs after a Reset, as the
+// pass runs it for each file. The check runs alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestImportSetAllocs(t *testing.T) {
+	s := grownSet()
+	for _, tt := range importWrites() {
+		assert.MaxAllocs(t, func() {
+			s.Reset()
+			tt.write(s)
+		}, tt.allocs, tt.name+" allocates within its ceiling after a Reset")
+	}
+	full := filledSet()
+	assert.MaxAllocs(t, func() {
+		if full.Home() != storePkg {
+			t.Fatal("Home returned another package")
+		}
+	}, 0, "Home allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if len(full.Paths()) != filledPaths {
+			t.Fatal("Paths missed a path")
+		}
+	}, 1, "Paths allocates the list it returns")
+	assert.MaxAllocs(t, func() {
+		if len(full.Entries()) != filledEntries {
+			t.Fatal("Entries missed an entry")
+		}
+	}, 1, "Entries allocates the list it returns")
+	assert.MaxAllocs(t, func() {
+		if full.Len() != filledPaths {
+			t.Fatal("Len miscounted the paths")
+		}
+	}, 0, "Len allocates nothing for up to eight entries")
+}
+
+// BenchmarkImportSet measures each write into a set the pass reuses,
+// after the Reset the pass runs between files, and the reads an import
+// renderer makes once per file.
+func BenchmarkImportSet(b *testing.B) {
+	for _, tt := range importWrites() {
+		b.Run(tt.name, func(b *testing.B) {
+			s := grownSet()
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				s.Reset()
+				tt.write(s)
+			}
+			assert.True(b, s.Len() <= 2, tt.name+" records at most two paths")
+		})
+	}
+
+	full := filledSet()
+
+	b.Run("Home", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = full.Home()
+		}
+		assert.Equal(b, got, storePkg, "Home returns the file's own package")
+	})
+
+	b.Run("Paths", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got []string
+		for c.Loop() {
+			got = full.Paths()
+		}
+		assert.Length(b, got, filledPaths, "Paths returns every distinct path")
+	})
+
+	b.Run("Entries", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got []render.Entry
+		for c.Loop() {
+			got = full.Entries()
+		}
+		assert.Length(b, got, filledEntries, "Entries returns every entry")
+	})
+
+	b.Run("Len", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got int
+		for c.Loop() {
+			got = full.Len()
+		}
+		assert.Equal(b, got, filledPaths, "Len counts the distinct paths")
+	})
+}
+
+// importWrites returns every write a file's spellings make into its set,
+// each with its ceiling in a set whose storage has grown.
+func importWrites() []importWrite {
+	return []importWrite{
+		{name: "SetHome", write: func(s *render.ImportSet) { s.SetHome(storePkg) }},
+		{name: "Reserve", write: func(s *render.ImportSet) { s.Reserve(rowName) }},
+		{name: "Bind", write: func(s *render.ImportSet) { s.Bind(storePkg, storeLocal) }},
+		{
+			name: "Bind/a name another package binds", allocs: 1,
+			write: func(s *render.ImportSet) {
+				s.Bind(storePkg, storeLocal)
+				s.Bind(legacyPkg, storeLocal)
+			},
+		},
+		{name: "BindItem", write: func(s *render.ImportSet) { s.BindItem(storePkg, rowName, false) }},
+		{name: "Claim", write: func(s *render.ImportSet) { s.Claim(storePkg, rowName) }},
+		{name: "Add", write: func(s *render.ImportSet) { s.Add(storePkg) }},
+		{name: "AddNamed", write: func(s *render.ImportSet) { s.AddNamed(storePkg, rowName) }},
+		{name: "AddType", write: func(s *render.ImportSet) { s.AddType(storePkg, rowName) }},
+		{
+			name: "Reset/a set of two entries",
+			write: func(s *render.ImportSet) {
+				s.Add(sidePkg)
+				s.Bind(auditPkg, storeLocal)
+			},
+		},
+	}
+}
+
+// grownSet returns a set that recorded every kind of write once, so its
+// maps and journal have the storage a Reset keeps.
+func grownSet() *render.ImportSet {
+	s := &render.ImportSet{}
+	s.Reserve(storeName)
+	s.Bind(storePkg, storeLocal)
+	s.Bind(legacyPkg, storeLocal)
+	s.BindItem(auditPkg, rowName, false)
+	s.Claim(sidePkg, storeName+"s")
+	s.Add(sidePkg)
+	s.AddNamed(auditPkg, rowName2)
+	s.AddType(auditPkg, storeName)
+	return s
+}
+
+// filledSet returns a set for the file of storePkg holding
+// [filledEntries] entries over [filledPaths] paths.
+func filledSet() *render.ImportSet {
+	s := &render.ImportSet{}
+	s.SetHome(storePkg)
+	s.Add(sidePkg)
+	s.AddNamed(auditPkg, rowName)
+	s.AddType(auditPkg, storeName)
+	s.Bind(legacyPkg, storeLocal)
+	return s
 }

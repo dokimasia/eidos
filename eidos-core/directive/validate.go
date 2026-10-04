@@ -5,7 +5,6 @@ package directive
 
 import (
 	"fmt"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -55,6 +54,16 @@ type Resolver func(subject symbol.Identity, name string, kind ResolutionKind) (s
 // concurrent use, and the resolver is called from every goroutine.
 // Validate refuses an unsealed registry outright, because that is a
 // defect in the composition, not in a carrier.
+//
+// # Allocation contract
+//
+// Validate allocates what it returns: the slice of instances, and per
+// instance its params map with the map's one group, each param's value,
+// which the map stores apart from the group because a [Value] is larger
+// than 128 bytes, the positional arguments, and each list. A subject
+// with more than four instances, and an instance with more than eight
+// params, grow the working storage onto the heap. A finding allocates
+// what the sink does.
 func Validate(
 	subject symbol.Identity, ds []Raw,
 	r *Registry, keys *meta.Registry, resolve Resolver, sink *diag.Sink,
@@ -69,13 +78,20 @@ func Validate(
 		return nil
 	}
 
-	ordered := slices.Clone(ds)
-	slices.SortFunc(ordered, func(a, b Raw) int { return a.Pos.Compare(b.Pos) })
+	// The store seals a subject's instances in position order, so a
+	// copy is made only for a caller that passes them out of order.
+	ordered := ds
+	if !slices.IsSortedFunc(ds, comparePos) {
+		ordered = slices.Clone(ds)
+		slices.SortFunc(ordered, comparePos)
+	}
 
 	// Type each instance alone, keeping its schema for the
 	// subject-wide checks below. A typed instance's Name is its
-	// schema's canonical spelling.
-	typed := make([]checked, 0, len(ordered))
+	// schema's canonical spelling. A subject has few instances, so
+	// they type into storage on the stack.
+	var scratch [typedScratch]checked
+	typed := scratch[:0]
 	for _, raw := range ordered {
 		if instance, schema, ok := v.instance(raw); ok {
 			typed = append(typed, checked{instance: instance, schema: schema, shaped: raw.DirectiveShaped})
@@ -85,38 +101,33 @@ func Validate(
 	// The subject-wide checks: polarity and repeatability, then the
 	// constraints between directives. A failing instance drops, and
 	// the survivors number per schema in position order. Every loop
-	// runs in position order, so the findings arrive in one order.
-	// present indexes the instances that set a directive, and negated
-	// the instances that negate one.
-	present := map[Name][]int{}
-	negated := map[Name][]int{}
-	var seen []Name
+	// runs in position order, so the findings arrive in one order. A
+	// directive's instances are checked at its first instance, those
+	// that set it apart from those that negate it.
+	var setsScratch, negationsScratch [typedScratch]int
+	dropped := make([]bool, len(typed))
 	for i, c := range typed {
 		canonical := c.instance.Name
-		if len(present[canonical]) == 0 && len(negated[canonical]) == 0 {
-			seen = append(seen, canonical)
-		}
-		if c.instance.Negated {
-			negated[canonical] = append(negated[canonical], i)
+		if slices.ContainsFunc(typed[:i], func(earlier checked) bool { return earlier.instance.Name == canonical }) {
 			continue
 		}
-		present[canonical] = append(present[canonical], i)
-	}
-	dropped := make([]bool, len(typed))
-	for _, canonical := range seen {
-		sets, negations := present[canonical], negated[canonical]
+		sets := instancesOf(setsScratch[:0], typed, canonical, false)
+		negations := instancesOf(negationsScratch[:0], typed, canonical, true)
 		if len(sets) > 0 && len(negations) > 0 {
 			first := typed[sets[0]].instance.Pos
 			for _, i := range negations {
 				v.reportRelated(diag.SeverityError, Conflict, typed[i].instance.Pos, first,
 					"%s is set and negated on %s", canonical, subject)
 			}
-			for _, i := range slices.Concat(sets, negations) {
+			for _, i := range sets {
+				dropped[i] = true
+			}
+			for _, i := range negations {
 				dropped[i] = true
 			}
 			continue
 		}
-		for _, indexes := range [][]int{sets, negations} {
+		for _, indexes := range [2][]int{sets, negations} {
 			if len(indexes) < 2 {
 				continue
 			}
@@ -143,7 +154,7 @@ func Validate(
 		}
 		constraints := v.registry.constraintsOf(c.instance.Name)
 		for _, target := range constraints.requires {
-			if _, held := present[target]; !held {
+			if len(instancesOf(setsScratch[:0], typed, target, false)) == 0 {
 				v.report(RequirementUnmet, c.instance.Pos,
 					"%s requires %s, which %s does not have",
 					c.instance.Name, target, subject)
@@ -151,7 +162,7 @@ func Validate(
 			}
 		}
 		for _, target := range constraints.conflicts {
-			for _, other := range present[target] {
+			for _, other := range instancesOf(setsScratch[:0], typed, target, false) {
 				dropped[i] = true
 				dropped[other] = true
 				pair := [2]int{min(i, other), max(i, other)}
@@ -181,12 +192,33 @@ func Validate(
 	return out
 }
 
+// typedScratch is how many instances of one subject, and how many
+// instances of one directive on it, validation keeps on the stack. A
+// subject with more grows onto the heap.
+const typedScratch = 4
+
+// paramScratch is how many params of one instance validation orders on
+// the stack. An instance with more grows onto the heap.
+const paramScratch = 8
+
 // checked pairs a typed instance with the schema that typed it, and
 // with whether its carrier line has the tool-directive shape.
 type checked struct {
 	instance Directive
 	schema   Schema
 	shaped   bool
+}
+
+// instancesOf appends to dst the indexes of the typed instances of the
+// canonical name that negate it, or that set it where negated is false,
+// in position order.
+func instancesOf(dst []int, typed []checked, canonical Name, negated bool) []int {
+	for i, c := range typed {
+		if c.instance.Name == canonical && c.instance.Negated == negated {
+			dst = append(dst, i)
+		}
+	}
+	return dst
 }
 
 // validator keeps the registries and the sink for one subject's
@@ -339,7 +371,13 @@ func (v *validator) instance(raw Raw) (Directive, Schema, bool) {
 			"%s demands a role, one of %s", d.Name, strings.Join(schema.Roles, ", "))
 		ok = false
 	}
-	for _, key := range slices.Sorted(maps.Keys(d.Params)) {
+	var keysScratch [paramScratch]ParamKey
+	keys := keysScratch[:0]
+	for key := range d.Params {
+		keys = append(keys, key)
+	}
+	slices.Sort(keys)
+	for _, key := range keys {
 		spec, declared := findParam(schema, key)
 		if !declared && schema.Open != nil && key != ReservedOut && key != ReservedTag {
 			spec, declared = *schema.Open, true
@@ -525,6 +563,9 @@ func nameList(names []Name) string {
 	}
 	return strings.Join(out, ", ")
 }
+
+// comparePos orders two raw instances by their carrier positions.
+func comparePos(a, b Raw) int { return a.Pos.Compare(b.Pos) }
 
 // rawSpelling returns a raw value's spelling for a refusal.
 func rawSpelling(v RawValue) string {

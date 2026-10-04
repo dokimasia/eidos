@@ -33,7 +33,8 @@ const (
 
 // String returns the phase's spelling. Subscription records reach
 // stats and faults, so the spelling is API. A phase nothing
-// declares returns its number rather than a name.
+// declares returns its number rather than a name. String allocates
+// nothing for a declared phase.
 func (p Phase) String() string {
 	switch p {
 	case PhaseAnnotate:

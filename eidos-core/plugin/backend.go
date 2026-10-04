@@ -18,7 +18,8 @@ type Target string
 // NameKey returns the key a declaration's name override in the
 // target is stamped under: the target's spelling followed by .name,
 // so the golang target reads golang.name. The settle reads it on a
-// declaration's origin, see [Settle].
+// declaration's origin, see [Settle]. NameKey allocates the joined
+// spelling, one allocation.
 func (t Target) NameKey() meta.KeyName {
 	return meta.KeyName(string(t) + nameKeySuffix)
 }

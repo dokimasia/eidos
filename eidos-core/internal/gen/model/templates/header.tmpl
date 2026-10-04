@@ -1,2 +1,5 @@
 {{define "header"}}{{.Header}}package {{.Package}}
 {{end}}
+{{- define "model"}}
+	. "go.dokimi.dev/eidos/core/{{.Model}}"
+{{- end}}

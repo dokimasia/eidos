@@ -5,6 +5,7 @@ package directive
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"unicode/utf8"
 
@@ -121,23 +122,48 @@ type RawValue struct {
 // ending in a backslash joins the next, marker already stripped,
 // with a single space. The rule is grammar, so it is defined here
 // once and in no frontend.
+//
+// # Allocation contract
+//
+// Join returns a part of the line without allocating for one line, and
+// allocates the joined payload once for more.
 func Join(lines []string) string {
-	parts := make([]string, 0, len(lines))
-	for i, line := range lines {
-		trimmed, continued := strings.CutSuffix(line, Continuation)
-		if continued {
-			// The join is exactly one space, whatever blanks precede
-			// the marker.
-			trimmed = strings.TrimRight(trimmed, " \t")
-		}
-		if i > 0 {
-			// The next line's leading blanks are dropped too.
-			trimmed = strings.TrimLeft(trimmed, " \t")
-		}
-		parts = append(parts, trimmed)
+	if len(lines) == 1 {
+		return folded(0, lines[0])
 	}
-	return strings.Join(parts, joinSep)
+	n := len(joinSep) * max(len(lines)-1, 0)
+	for i, line := range lines {
+		n += len(folded(i, line))
+	}
+	var out strings.Builder
+	out.Grow(n)
+	for i, line := range lines {
+		if i > 0 {
+			out.WriteString(joinSep)
+		}
+		out.WriteString(folded(i, line))
+	}
+	return out.String()
 }
+
+// folded returns line i of a continued payload as [Join] joins it: the
+// continuation marker and the blanks before it cut, and a later line's
+// leading blanks cut too, so the join is exactly one space.
+func folded(i int, line string) string {
+	trimmed, continued := strings.CutSuffix(line, Continuation)
+	if continued {
+		trimmed = strings.TrimRight(trimmed, " \t")
+	}
+	if i > 0 {
+		trimmed = strings.TrimLeft(trimmed, " \t")
+	}
+	return trimmed
+}
+
+// argScratch is how many arguments of one payload, and how many
+// elements of one list, the parser collects on the stack before it
+// copies them out. A payload with more grows onto the heap.
+const argScratch = 8
 
 // Parse reads one payload against the pinned grammar. The payload
 // is the text after the carrier marker, one logical line with
@@ -146,6 +172,12 @@ func Join(lines []string) string {
 // A payload outside the grammar returns an error with the byte
 // offset where reading stopped. The caller converts the offset to a
 // file position. Parse never panics, whatever the bytes.
+//
+// # Allocation contract
+//
+// The name, the keys and the unquoted values are parts of the payload.
+// Parse allocates the instance's arguments once, each list's elements
+// once, and each quoted value with an escape once.
 func Parse(payload string) (Raw, error) {
 	p := &parser{payload: payload}
 	p.skipSpace()
@@ -159,23 +191,26 @@ func Parse(payload string) (Raw, error) {
 	// Whitespace separates the name from each argument and each
 	// argument from the next. A token that stops at any other byte
 	// is refused.
-	for {
-		if p.done() {
-			return raw, nil
-		}
+	var scratch [argScratch]RawArg
+	args := scratch[:0]
+	for !p.done() {
 		if !p.blank() {
 			return Raw{}, p.fail("an argument follows whitespace, and %q does not", string(p.peek()))
 		}
 		p.skipSpace()
 		if p.done() {
-			return raw, nil
+			break
 		}
 		arg, err := p.arg()
 		if err != nil {
 			return Raw{}, err
 		}
-		raw.Args = append(raw.Args, arg)
+		args = append(args, arg)
 	}
+	if len(args) > 0 {
+		raw.Args = slices.Clone(args)
+	}
+	return raw, nil
 }
 
 // parser reads one payload left to right. at is the next unread
@@ -216,8 +251,10 @@ func (p *parser) fail(format string, args ...any) error {
 }
 
 // name reads the directive name: an identifier, optionally
-// prefixed by another and a colon.
+// prefixed by another and a colon. The name is the part of the
+// payload it was read from.
 func (p *parser) name() (Name, error) {
+	start := p.at
 	first, err := p.ident("a directive name")
 	if err != nil {
 		return "", err
@@ -226,11 +263,10 @@ func (p *parser) name() (Name, error) {
 		return Name(first), nil
 	}
 	p.at++
-	second, err := p.ident("a directive name after its plugin prefix")
-	if err != nil {
+	if _, err := p.ident("a directive name after its plugin prefix"); err != nil {
 		return "", err
 	}
-	return Name(first + string(prefixSep) + second), nil
+	return Name(p.payload[start:p.at]), nil
 }
 
 // ident reads one identifier: a letter, then letters, digits,
@@ -295,20 +331,21 @@ func (p *parser) value() (RawValue, error) {
 
 // list reads a bracketed, comma-separated value list. Whitespace
 // may follow a comma and nothing else, as the pinned grammar reads.
+// The elements collect on the stack and copy out once.
 func (p *parser) list() (RawValue, error) {
 	p.at++ // consume '['
-	out := RawValue{List: []RawValue{}}
-
 	if p.peek() == listClose {
 		p.at++
-		return out, nil
+		return RawValue{List: []RawValue{}}, nil
 	}
+	var scratch [argScratch]RawValue
+	elements := scratch[:0]
 	for {
 		element, err := p.value()
 		if err != nil {
 			return RawValue{}, err
 		}
-		out.List = append(out.List, element)
+		elements = append(elements, element)
 
 		switch p.peek() {
 		case listSep:
@@ -316,7 +353,7 @@ func (p *parser) list() (RawValue, error) {
 			p.skipSpace()
 		case listClose:
 			p.at++
-			return out, nil
+			return RawValue{List: slices.Clone(elements)}, nil
 		default:
 			return RawValue{}, p.fail("a list element ends with %q or %q",
 				string(listSep), string(listClose))
@@ -324,10 +361,32 @@ func (p *parser) list() (RawValue, error) {
 	}
 }
 
-// quoted reads a double-quoted string, resolving the four escapes.
+// quoted reads a double-quoted string, resolving the four escapes. A
+// value without an escape is the part of the payload between its
+// quotes.
 func (p *parser) quoted() (RawValue, error) {
 	p.at++ // consume the opening quote
+	start := p.at
+	for !p.done() {
+		switch p.peek() {
+		case quote:
+			text := p.payload[start:p.at]
+			p.at++
+			return RawValue{Text: text, Quoted: true}, nil
+		case escape:
+			return p.escaped(start)
+		}
+		p.at++
+	}
+	return RawValue{}, p.fail("a quoted value is unterminated")
+}
+
+// escaped reads the rest of a quoted value from its first escape, the
+// value having started at start, and resolves the escapes into a string
+// of its own.
+func (p *parser) escaped(start int) (RawValue, error) {
 	var out strings.Builder
+	out.WriteString(p.payload[start:p.at])
 	for {
 		if p.done() {
 			return RawValue{}, p.fail("a quoted value is unterminated")

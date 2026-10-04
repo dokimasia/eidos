@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -64,5 +65,31 @@ func TestBackend(t *testing.T) {
 			assert.Equal(t, plugin.Target("golang").NameKey(), golangNameKey,
 				"the key a Go name override is stamped under")
 		})
+	})
+}
+
+// A target's name key allocates its joined spelling alone in the
+// ordinary run, which runs no benchmark. The check runs alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestBackendAllocs(t *testing.T) {
+	target := plugin.Target("golang")
+	var got meta.KeyName
+	assert.MaxAllocs(t, func() { got = target.NameKey() }, 1, "NameKey allocates the joined spelling")
+	assert.Equal(t, got, golangNameKey, "NameKey returns the golang target's key")
+}
+
+// BenchmarkBackend measures the spelling of a target's name key, which
+// a settle makes once per plan.
+func BenchmarkBackend(b *testing.B) {
+	b.Run("NameKey", func(b *testing.B) {
+		target := plugin.Target("golang")
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got meta.KeyName
+		for c.Loop() {
+			got = target.NameKey()
+		}
+		assert.Equal(b, got, golangNameKey, "NameKey returns the golang target's key")
 	})
 }

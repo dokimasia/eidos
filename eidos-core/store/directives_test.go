@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -18,14 +19,28 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// stubAt returns a raw stub instance positioned at line.
-func stubAt(line int) directive.Raw {
-	return directive.Raw{
-		Name: "stub",
-		Pos:  position.Pos{File: "svc/store/unit.go", Line: line, Col: 1},
-	}
-}
+// attachBatch is how many subjects one iteration of the attachment
+// benchmark attaches an instance to, in a graph of its own.
+const attachBatch = 1_000
 
+// attachOneAllocs is a subject's first attachment: the pending entry,
+// the boxed identity, the sync.Map entry and the copy of the instances.
+// The trie nodes sync.Map adds where two hashes share a prefix average
+// below 0.4 per subject, which the mean over a check's calls rounds
+// down.
+const attachOneAllocs = 4
+
+// attachAllocs is one iteration of the attachment benchmark: what
+// attachOneAllocs counts for each subject, then the map's root, and the
+// trie nodes sync.Map adds at random where two hashes share a prefix,
+// 360 on average with a standard deviation of 10 for 1,000 subjects. The
+// ceiling allows 440 trie nodes, eight standard deviations above the
+// mean.
+const attachAllocs = attachBatch*attachOneAllocs + 1 + 440
+
+// Raw directives are the first raw attachment class: they attach during
+// the parallel load, seal into one order, and index by spelling for the
+// dispatcher, so their order and their reads are contract.
 func TestDirectives(t *testing.T) {
 	t.Parallel()
 
@@ -47,7 +62,7 @@ func TestDirectives(t *testing.T) {
 				"the subject's instances are readable after the seal")
 		})
 
-		t.Run("refuses a zero subject", func(t *testing.T) {
+		t.Run("returns an error for a zero subject", func(t *testing.T) {
 			t.Parallel()
 
 			g := store.New()
@@ -55,7 +70,7 @@ func TestDirectives(t *testing.T) {
 				"a directive on nothing indexes nowhere")
 		})
 
-		t.Run("refuses an attachment to a sealed graph", func(t *testing.T) {
+		t.Run("returns FrozenWrite for an attachment to a sealed graph", func(t *testing.T) {
 			t.Parallel()
 
 			f := newSplit()
@@ -64,7 +79,7 @@ func TestDirectives(t *testing.T) {
 			assertRefused(t, err, store.FrozenWrite)
 		})
 
-		t.Run("refuses no instances at all", func(t *testing.T) {
+		t.Run("returns an error for no instances", func(t *testing.T) {
 			t.Parallel()
 
 			g := store.New()
@@ -73,7 +88,7 @@ func TestDirectives(t *testing.T) {
 				"attaching nothing is a defect, not a load")
 		})
 
-		t.Run("refuses an attachment after Freeze", func(t *testing.T) {
+		t.Run("returns FrozenWrite for an attachment after Freeze", func(t *testing.T) {
 			t.Parallel()
 
 			g := coretest.Frozen(t)
@@ -86,7 +101,7 @@ func TestDirectives(t *testing.T) {
 	t.Run("ByDirective", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("enumerates carrying declarations in identity order", func(t *testing.T) {
+		t.Run("enumerates the declarations with the directive in identity order", func(t *testing.T) {
 			t.Parallel()
 
 			store1 := coretest.Struct(coretest.StorePath, "Store")
@@ -106,12 +121,12 @@ func TestDirectives(t *testing.T) {
 				"the index returns carriers alone, in identity order")
 		})
 
-		t.Run("returns nothing for a spelling nothing carries", func(t *testing.T) {
+		t.Run("returns nothing for a spelling no declaration has", func(t *testing.T) {
 			t.Parallel()
 
 			g := coretest.Frozen(t, coretest.Package(coretest.StorePath))
 			assert.Empty(t, slices.Collect(g.ByDirective("stub")),
-				"an uncarried spelling enumerates nothing")
+				"a spelling no declaration has enumerates nothing")
 		})
 
 		t.Run("does not index a dangling subject", func(t *testing.T) {
@@ -122,11 +137,11 @@ func TestDirectives(t *testing.T) {
 			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath)),
 				"the package loads")
 			assert.NoError(t, g.AttachDirectives(ghost.ID, []directive.Raw{stubAt(1)}),
-				"the dangling attachment is admitted; validation reports it")
+				"the dangling attachment is admitted, and validation reports it")
 			g.Freeze()
 
 			assert.Empty(t, slices.Collect(g.ByDirective("stub")),
-				"but a subject the graph does not hold is no dispatch match")
+				"but a subject the graph does not contain is no dispatch match")
 		})
 
 		t.Run("stops when the range stops", func(t *testing.T) {
@@ -191,7 +206,7 @@ func TestDirectives(t *testing.T) {
 	t.Run("Directives", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("walks every attachment in identity order, dangling included", func(t *testing.T) {
+		t.Run("walks every attachment in identity order including a dangling one", func(t *testing.T) {
 			t.Parallel()
 
 			held := coretest.Struct(coretest.StorePath, "Store")
@@ -208,7 +223,7 @@ func TestDirectives(t *testing.T) {
 			var subjects []symbol.Identity
 			for id, ds := range g.Directives() {
 				subjects = append(subjects, id)
-				assert.NotEmpty(t, ds, "every walked subject carries instances")
+				assert.NotEmpty(t, ds, "every walked subject has instances")
 			}
 			assert.Equal(t, subjects, []symbol.Identity{ghost.ID, held.ID},
 				"the walk is the validator's: every attachment, dangling included, "+
@@ -240,7 +255,7 @@ func TestDirectives(t *testing.T) {
 	t.Run("Reader", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("ByDirective records the membership grain and what was reached", func(t *testing.T) {
+		t.Run("returns a reader that records a directive enumeration", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
@@ -262,7 +277,7 @@ func TestDirectives(t *testing.T) {
 				"and a per-identity edge for what the caller reached")
 		})
 
-		t.Run("neither returns nor records outside scope", func(t *testing.T) {
+		t.Run("returns a reader that records nothing outside scope", func(t *testing.T) {
 			t.Parallel()
 
 			hidden := coretest.Struct(coretest.CachePath, "Cache")
@@ -281,12 +296,8 @@ func TestDirectives(t *testing.T) {
 				"a declaration outside scope is not returned")
 			assert.False(t, recorded(reads, hidden.ID), "and not recorded")
 		})
-	})
 
-	t.Run("ReadSet", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("Len counts the fourth grain and edges deduplicate", func(t *testing.T) {
+		t.Run("returns a reader that records one membership edge for three enumerations", func(t *testing.T) {
 			t.Parallel()
 
 			decl := coretest.Struct(coretest.StorePath, "Store")
@@ -312,55 +323,139 @@ func TestDirectives(t *testing.T) {
 	})
 }
 
-// The directive side scales with carriers: attachment during the
-// parallel load, one index pass at the seal, and enumeration per
-// gated rule.
+// A subject's first attachment allocates what the graph keeps of it,
+// and the validator's reads of the sealed instances allocate nothing, in
+// the ordinary run, which runs no benchmark. Each counted attachment is
+// on a subject of its own. The check runs alone, because AllocsPerRun
+// counts every goroutine's allocations and refuses to run beside
+// parallel tests.
+func TestDirectivesAllocs(t *testing.T) {
+	g := store.New()
+	ids := make([]symbol.Identity, 0, allocRuns)
+	for i := range allocRuns {
+		ids = append(ids, coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i)).ID)
+	}
+	raws, at := []directive.Raw{stubAt(1)}, 0
+	assert.MaxAllocs(t, func() {
+		if err := g.AttachDirectives(ids[at], raws); err != nil {
+			t.Fatalf("AttachDirectives: unexpected error: %v", err)
+		}
+		at++
+	}, attachOneAllocs, "AttachDirectives allocates what the graph keeps of a subject's first attachment")
+
+	g.Freeze()
+	var got []directive.Raw
+	assert.MaxAllocs(t, func() { got = g.DirectivesOf(ids[0]) }, 0, "DirectivesOf allocates nothing")
+	assert.Length(t, got, 1, "DirectivesOf returns the subject's instance")
+	assert.MaxAllocs(t, func() {
+		n := 0
+		for range g.Directives() {
+			n++
+		}
+		if n != allocRuns {
+			t.Fatal("Directives enumerated another number of subjects")
+		}
+	}, 0, "a range over Directives allocates nothing")
+}
+
+// BenchmarkDirectives measures the directive side, which scales with the
+// declarations that have directives: attachment during the parallel
+// load, the enumeration each gated rule makes, and the validator's
+// reads.
 func BenchmarkDirectives(b *testing.B) {
 	// The scale: a tenth of the subjects have one directive, which
 	// is a directive-heavy workspace.
 	const carriers = 20_000
 
-	b.Run("AttachDirectives", func(b *testing.B) {
-		b.ReportAllocs()
-
-		g := store.New()
-		next := 0
-		for b.Loop() {
-			id := coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(next))
-			if err := g.AttachDirectives(id.ID, []directive.Raw{stubAt(next + 1)}); err != nil {
-				b.Fatalf("AttachDirectives: unexpected error: %v", err)
-			}
-			next++
+	b.Run("AttachDirectives/a first attachment on each of a thousand subjects", func(b *testing.B) {
+		ids := make([]symbol.Identity, 0, attachBatch)
+		raws := make([][]directive.Raw, 0, attachBatch)
+		for i := range attachBatch {
+			ids = append(ids, coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i)).ID)
+			raws = append(raws, []directive.Raw{stubAt(i + 1)})
 		}
+		var g *store.Graph
+		fresh := func() { g = store.New() }
+		c := bench.Start(b).MaxAllocs(attachAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			c.Excluding(fresh)
+			for i, id := range ids {
+				if err = g.AttachDirectives(id, raws[i]); err != nil {
+					break
+				}
+			}
+		}
+		assert.NoError(b, err, "every attachment is admitted")
 	})
 
 	b.Run("ByDirective", func(b *testing.B) {
-		b.ReportAllocs()
-
 		decls := make([]symbol.Symbol, 0, carriers)
 		for i := range carriers {
 			decls = append(decls, coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i)))
 		}
 		g := store.New()
-		if err := g.AddPackage(coretest.Package(coretest.StorePath, decls...)); err != nil {
-			b.Fatalf("AddPackage: unexpected error: %v", err)
-		}
+		assert.NoError(b, g.AddPackage(coretest.Package(coretest.StorePath, decls...)), "the package loads")
 		for i, decl := range decls {
 			named, _ := decl.(node.Declaration)
-			if err := g.AttachDirectives(named.Identity(), []directive.Raw{stubAt(i + 1)}); err != nil {
-				b.Fatalf("AttachDirectives: unexpected error: %v", err)
-			}
+			assert.NoError(b, g.AttachDirectives(named.Identity(), []directive.Raw{stubAt(i + 1)}),
+				"the directive attaches")
 		}
 		g.Freeze()
-
-		for b.Loop() {
-			seen := 0
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		seen := 0
+		// The first pass runs before the contract counts, at the call site
+		// it measures, where the runtime builds the site's 48-byte cache
+		// for converting a declaration to a symbol. A pass at any other
+		// call site builds a cache of its own.
+		for first := true; first || c.Loop(); first = false {
+			seen = 0
 			for range g.ByDirective("stub") {
 				seen++
 			}
-			if seen != carriers {
-				b.Fatalf("ByDirective returned %d carriers, want %d", seen, carriers)
+		}
+		assert.Equal(b, seen, carriers, "ByDirective returns every declaration with the directive")
+	})
+
+	g := store.New()
+	ids := make([]symbol.Identity, 0, attachBatch)
+	for i := range attachBatch {
+		id := coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i)).ID
+		ids = append(ids, id)
+		assert.NoError(b, g.AttachDirectives(id, []directive.Raw{stubAt(i + 1)}), "the directive attaches")
+	}
+	g.Freeze()
+
+	b.Run("DirectivesOf", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got []directive.Raw
+		for c.Loop() {
+			got = g.DirectivesOf(ids[0])
+		}
+		assert.Length(b, got, 1, "DirectivesOf returns the subject's instance")
+	})
+
+	b.Run("Directives", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		seen := 0
+		for c.Loop() {
+			seen = 0
+			for range g.Directives() {
+				seen++
 			}
 		}
+		assert.Equal(b, seen, attachBatch, "Directives returns every subject with instances")
 	})
+}
+
+// stubAt returns a raw stub instance positioned at line.
+func stubAt(line int) directive.Raw {
+	return directive.Raw{
+		Name: "stub",
+		Pos:  position.Pos{File: "svc/store/unit.go", Line: line, Col: 1},
+	}
 }

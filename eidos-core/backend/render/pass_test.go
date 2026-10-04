@@ -6,10 +6,13 @@ package render_test
 import (
 	"errors"
 	"io/fs"
+	"path"
 	"runtime"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/fstest"
+	"text/template"
 	"time"
 
 	"go.dokimi.dev/assert"
@@ -23,6 +26,65 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// The fixture's names, which every spec of the package renders with:
+// the pass, the plugin that emits, the routing key it emits under, the
+// file the naming spells for that key, and the declarations the cases
+// render.
+const (
+	// passName is the identity every fixture pass composes under.
+	passName plugin.ID = "printer"
+	// emitter is the plugin a fixture unit comes from.
+	emitter plugin.ID = "gen"
+	// storeKey is the routing key a fixture unit emits under.
+	storeKey = "store.go"
+	// storeFile is the filename [stubNaming] spells for storeKey.
+	storeFile = "store_stub.txt"
+	// alphaName and betaName name the fixture's structs.
+	alphaName = "Alpha"
+	betaName  = "Beta"
+	// handleName names the fixture's callables.
+	handleName = "Handle"
+	// blockGroup names the group template a fixture cluster selects.
+	blockGroup render.GroupName = "block"
+	// missingField is a field no fixture value has, so failing, the
+	// template that reads it, fails at execute time.
+	missingField = "Missing"
+	failing      = "{{." + missingField + "}}"
+	// refusalReason is the reason a fixture language states for a
+	// kind it refuses.
+	refusalReason = "the fixture language declares no such construct"
+)
+
+// The binding fixture: a helper that qualifies a name through the
+// file's import set, the packages it qualifies with, and the name the
+// first package binds.
+const (
+	// qualifyHelper, itemHelper and claimHelper are the vocabulary
+	// helpers [qualifying] declares.
+	qualifyHelper = "qualify"
+	itemHelper    = "item"
+	claimHelper   = "claim"
+	// storePkg and legacyPkg are two packages whose last segment is
+	// storeLocal, so the second to bind takes a suffix.
+	storePkg  = "svc/store"
+	legacyPkg = "legacy/store"
+	// storeLocal is the name storePkg binds when no other binding
+	// takes it.
+	storeLocal = "store"
+	// rowName is the declaration a qualified spelling names.
+	rowName = "Row"
+)
+
+// The fixture language's spellings: a struct, and a function that
+// places its body.
+const (
+	structTpl   = "type {{.Name}} struct{}\n"
+	functionTpl = "func {{.Name}}() {\n{{body .}}}\n"
+)
+
+// refName is the template every reference-form fixture body names.
+const refName = "method1.tpl"
 
 // The pass's fixture: the packages, keys, plugins and declarations
 // the cases route and render.
@@ -141,7 +203,7 @@ func TestPass(t *testing.T) {
 			want string
 		}{
 			{
-				name: "returns an error for a kind the language spells and refuses",
+				name: "returns an error for a refused kind the language spells",
 				give: map[symbol.Kind]string{symbol.KindStruct: refusalReason},
 				want: "spells and refuses the " + symbol.KindStruct.String() + " kind",
 			},
@@ -286,7 +348,7 @@ func TestPass(t *testing.T) {
 			assert.NotEqual(t, files[0].Pkg, files[1].Pkg, "two packages")
 		})
 
-		t.Run("renders the routed files and no other", func(t *testing.T) {
+		t.Run("renders the routed files alone", func(t *testing.T) {
 			t.Parallel()
 
 			p, err := render.New(passName, language())
@@ -577,6 +639,45 @@ const (
 	benchFunc      = "F"
 )
 
+// The ceilings of [BenchmarkPass]. The canonical-scale renders were
+// measured over 24 fresh processes, and each ceiling allows eight
+// standard deviations above the mean: the render's worker goroutines
+// and their frames allocate as the runtime schedules them.
+const (
+	// newPassAllocs is one composition of the fixture language. Most of
+	// them are text/template's parse trees of the default file skeleton
+	// and the two kind templates, and the function maps of the render's
+	// builtins each template binds.
+	newPassAllocs = 143
+	// refusedKindsAllocs is one copy of a refusal map of one entry: the
+	// map and its group.
+	refusedKindsAllocs = 2
+	// renderOneAllocs is one Render of one file of one struct: 24 for
+	// the clone of the parsed templates that binds them to the file's
+	// import set, about 22 for the worker, its frame and its import set,
+	// and about 23 for the file: the template's run through reflection,
+	// its buffers and the rendered bytes.
+	renderOneAllocs = 69
+	// renderStructsAllocs is one render of 1,000 files of 200 structs:
+	// 613,293 on average with a standard deviation of 6. Each struct's
+	// template run through reflection allocates 3, and each file about
+	// 13 for its buffers, its import set and its bytes.
+	renderStructsAllocs = 613_293 + 8*6
+	// renderBindingAllocs is the same render with every struct binding
+	// one import through the vocabulary: 1,815,374 on average with a
+	// standard deviation of 14. A binding of a package bound before
+	// allocates nothing, and the 6 more each struct allocates are the
+	// helper's own string join and text/template's reflective call,
+	// which every helper call costs.
+	renderBindingAllocs = 1_815_374 + 8*14
+	// renderReferencesAllocs is one render of 1,000 files of 200
+	// functions whose bodies each reference one template in the
+	// emitting plugin's tree: 3,213,480 on average with a standard
+	// deviation of 16, about 16 for each function's parsed reference
+	// template and the body it places.
+	renderReferencesAllocs = 3_213_480 + 8*16
+)
+
 // benchStore returns an emit store of [benchPackages] per-package
 // units, each of [benchDecls] declarations that decl builds from a
 // package path and a name.
@@ -625,50 +726,454 @@ func benchRender(b *testing.B, p *render.Pass, e *plugin.Emit, trees map[plugin.
 	}
 }
 
-// BenchmarkPass measures the procedure at the canonical scale: 1000
-// per-package files of 200 declarations, 200k template executions,
-// through a pass-through formatter, so the number is the pass and
-// the engine, not a real language's spelling.
+// The pass's methods allocate within their ceilings in the ordinary
+// run, which runs no benchmark: a composition, a refusal map's copy, a
+// filename, a unit's split, and a render of one file. The renders at
+// the canonical scale take too long to repeat 101 times, so only
+// [BenchmarkPass] checks their ceilings. The check runs alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestPassAllocs(t *testing.T) {
+	l := language()
+	var p *render.Pass
+	assert.MaxAllocs(t, func() {
+		var err error
+		if p, err = render.New(passName, l); err != nil {
+			t.Fatalf("New: unexpected error: %v", err)
+		}
+	}, newPassAllocs, "New allocates the parsed templates and the pass")
+	assert.MaxAllocs(t, func() {
+		if p.Coverage().Declared() {
+			t.Fatal("Coverage declared a verdict the language does not")
+		}
+	}, 0, "Coverage allocates nothing")
+	refusing := refusingPass(t)
+	assert.MaxAllocs(t, func() {
+		if len(refusing.RefusedKinds()) != 1 {
+			t.Fatal("RefusedKinds missed the refusal")
+		}
+	}, refusedKindsAllocs, "RefusedKinds allocates the copy it returns")
+	u := unitOf(emitter, storeKey, alphaName)
+	assert.MaxAllocs(t, func() {
+		if p.FileName(u) != storeFile {
+			t.Fatal("FileName spelled another file")
+		}
+	}, 1, "FileName allocates the spelled name")
+	assert.MaxAllocs(t, func() {
+		if len(p.SplitUnit(u)) != 1 {
+			t.Fatal("SplitUnit split an unsplit unit")
+		}
+	}, 1, "SplitUnit allocates the list of the whole unit")
+	ctx := renderOne(t, p)
+	assert.MaxAllocs(t, func() {
+		if files, err := p.Render(ctx); err != nil || len(files) != 1 {
+			t.Fatalf("Render: files %d, error %v", len(files), err)
+		}
+	}, renderOneAllocs, "Render allocates the call's frame and the file")
+}
+
+// BenchmarkPass measures the pass's methods, and the render at the
+// canonical scale: 1000 per-package files of 200 declarations, 200k
+// template executions, through a pass-through formatter, so the number
+// is the pass and the engine, not a real language's spelling. Every
+// render runs over a store and files routed before the measurement.
 func BenchmarkPass(b *testing.B) {
-	e := benchStore(b, structDecl, benchStruct)
-	p, err := render.New(passName, language())
-	if err != nil {
-		b.Fatalf("New: unexpected error: %v", err)
-	}
-	benchRender(b, p, e, nil, 680_000)
+	b.Run("New", func(b *testing.B) {
+		l := language()
+		c := bench.Start(b).MaxAllocs(newPassAllocs)
+		defer c.End()
+		var (
+			p   *render.Pass
+			err error
+		)
+		for c.Loop() {
+			p, err = render.New(passName, l)
+		}
+		assert.NoError(b, err, "the language composes")
+		assert.NotNil(b, p, "New returns the pass")
+	})
+
+	b.Run("Coverage", func(b *testing.B) {
+		p := composedPass(b)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got render.Coverage
+		for c.Loop() {
+			got = p.Coverage()
+		}
+		assert.False(b, got.Declared(), "the fixture language declares no coverage")
+	})
+
+	b.Run("RefusedKinds", func(b *testing.B) {
+		p := refusingPass(b)
+		c := bench.Start(b).MaxAllocs(refusedKindsAllocs)
+		defer c.End()
+		var got map[symbol.Kind]string
+		for c.Loop() {
+			got = p.RefusedKinds()
+		}
+		assert.Length(b, got, 1, "RefusedKinds returns the one refusal")
+	})
+
+	b.Run("FileName", func(b *testing.B) {
+		p, u := composedPass(b), unitOf(emitter, storeKey, alphaName)
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = p.FileName(u)
+		}
+		assert.Equal(b, got, storeFile, "FileName spells the unit's file")
+	})
+
+	b.Run("SplitUnit", func(b *testing.B) {
+		p, u := composedPass(b), unitOf(emitter, storeKey, alphaName)
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got []plugin.Unit
+		for c.Loop() {
+			got = p.SplitUnit(u)
+		}
+		assert.Length(b, got, 1, "an unsplit unit files whole")
+	})
+
+	b.Run("Render/one file of one struct", func(b *testing.B) {
+		p := composedPass(b)
+		ctx := renderOne(b, p)
+		c := bench.Start(b).MaxAllocs(renderOneAllocs)
+		defer c.End()
+		var (
+			files []plugin.RenderedFile
+			err   error
+		)
+		for c.Loop() {
+			files, err = p.Render(ctx)
+		}
+		assert.NoError(b, err, "the file renders")
+		assert.Length(b, files, 1, "one file")
+	})
+
+	b.Run("Render/1,000 files of 200 structs", func(b *testing.B) {
+		e := benchStore(b, structDecl, benchStruct)
+		benchRender(b, composedPass(b), e, nil, renderStructsAllocs)
+	})
+
+	b.Run("Render/1,000 files of 200 structs binding one import each", func(b *testing.B) {
+		e := benchStore(b, structDecl, benchStruct)
+		l := binding()
+		l.Kinds[symbol.KindStruct] = qualifiedStruct
+		p, err := render.New(passName, l)
+		assert.NoError(b, err, "the binding language composes")
+		benchRender(b, p, e, nil, renderBindingAllocs)
+	})
+
+	b.Run("Render/1,000 files of 200 functions with referenced bodies", func(b *testing.B) {
+		e := benchStore(b, func(path, name string) symbol.Symbol {
+			f := &emit.Function{Origin: coretest.Struct(path, name).ID, Name: name}
+			f.Body = refBody()
+			return f
+		}, benchFunc)
+		benchRender(b, composedPass(b), e, refTree("\tref()\n"+action(render.BuiltinSlots)), renderReferencesAllocs)
+	})
 }
 
-// BenchmarkPassBinding measures the same scale with every declaration
-// binding one import through the vocabulary, so the number is the
-// per-reference cost of the file's name assignment. A binding of a
-// package bound before allocates nothing. The six allocations each
-// declaration adds over [BenchmarkPass] are the helper's own string
-// join and text/template's reflective call, which every helper call
-// costs: 1.82M allocations were measured, and the ceiling is 1.9M.
-func BenchmarkPassBinding(b *testing.B) {
-	e := benchStore(b, structDecl, benchStruct)
-	l := binding()
-	l.Kinds[symbol.KindStruct] = qualifiedStruct
+// composedPass returns the pass over the fixture language.
+func composedPass(tb assert.TB) *render.Pass {
+	tb.Helper()
+
+	p, err := render.New(passName, language())
+	assert.NoError(tb, err, "the language composes")
+	return p
+}
+
+// refusingPass returns the pass over the fixture language refusing the
+// enum kind.
+func refusingPass(tb assert.TB) *render.Pass {
+	tb.Helper()
+
+	l := language()
+	l.Refused = map[symbol.Kind]string{symbol.KindEnum: refusalReason}
 	p, err := render.New(passName, l)
-	if err != nil {
-		b.Fatalf("New: unexpected error: %v", err)
-	}
-	benchRender(b, p, e, nil, 1_900_000)
+	assert.NoError(tb, err, "the refusing language composes")
+	return p
 }
 
-// BenchmarkPassReferences measures the body-claiming path at the
-// same scale: 1000 files of 200 functions, each body a reference to
-// one template in the emitting plugin's tree, so every declaration
-// executes a parsed reference template.
-func BenchmarkPassReferences(b *testing.B) {
-	e := benchStore(b, func(path, name string) symbol.Symbol {
-		f := &emit.Function{Origin: coretest.Struct(path, name).ID, Name: name}
-		f.Body = refBody()
-		return f
-	}, benchFunc)
-	p, err := render.New(passName, language())
-	if err != nil {
-		b.Fatalf("New: unexpected error: %v", err)
+// renderOne returns the render context of one unit of one struct,
+// routed through p, after one render that builds what a process builds
+// once.
+func renderOne(tb assert.TB, p *render.Pass) *plugin.RenderContext {
+	tb.Helper()
+
+	e := seeded(tb, unitOf(emitter, storeKey, alphaName))
+	ctx := &plugin.RenderContext{Emit: e, Files: backendtest.Files(e, p), Sink: diag.NewSink(), Plugin: passName}
+	_, err := p.Render(ctx)
+	assert.NoError(tb, err, "the file renders before the measurement")
+	return ctx
+}
+
+// stubNaming spells every unit as word, key stem and a fixture
+// extension: the shape a target's naming returns.
+func stubNaming(u plugin.Unit) string {
+	stem := strings.TrimSuffix(path.Base(u.Key), ".go")
+	if stem == "." {
+		stem = "plan"
 	}
-	benchRender(b, p, e, refTree("\tref()\n"+action(render.BuiltinSlots)), 3_500_000)
+	return stem + "_" + u.Word + ".txt"
+}
+
+// language returns the smallest valid language: a struct
+// spelling, a callable spelling that places its body, a scaffold
+// printer for names and returns, and a pass-through formatter.
+func language() render.Language {
+	return render.Language{
+		Kinds: map[symbol.Kind]string{
+			symbol.KindStruct:   structTpl,
+			symbol.KindFunction: functionTpl,
+		},
+		Naming:   stubNaming,
+		Scaffold: scaffold,
+		Imports:  pathImports,
+		Finalise: func(src []byte) ([]byte, error) { return src, nil },
+	}
+}
+
+// pathImports renders the set's paths on one line, and nothing for an
+// empty set.
+func pathImports(set *render.ImportSet) string {
+	if set.Len() == 0 {
+		return ""
+	}
+	return "import (" + strings.Join(set.Paths(), " ") + ")\n"
+}
+
+// action spells one template action over the given words, so a
+// fixture template names a builtin or a helper through its constant.
+func action(words ...string) string {
+	return "{{" + strings.Join(words, " ") + "}}"
+}
+
+// helpers returns a vocabulary that binds nothing to the file's
+// import set: every file calls the same functions.
+func helpers(fm template.FuncMap) func(*render.ImportSet) template.FuncMap {
+	return func(*render.ImportSet) template.FuncMap { return fm }
+}
+
+// qualifying is a vocabulary bound to the file's import set, the way a
+// backend's speller is:
+//
+//   - qualify binds a package under the package's last segment and
+//     spells a name through the bound name, or bare where the package
+//     is the file's own.
+//   - item imports one declaration and spells the name it binds.
+//   - claim claims one declaration's simple name and spells the name,
+//     or the path and the name where another binding takes it.
+func qualifying(set *render.ImportSet) template.FuncMap {
+	return template.FuncMap{
+		qualifyHelper: func(pkg, name string) string {
+			local := set.Bind(pkg, path.Base(pkg))
+			if local == "" {
+				return name
+			}
+			return local + "." + name
+		},
+		itemHelper: func(pkg, name string) string {
+			return set.BindItem(pkg, name, false)
+		},
+		claimHelper: func(pkg, name string) string {
+			if set.Claim(pkg, name) {
+				return name
+			}
+			return pkg + "." + name
+		},
+	}
+}
+
+// binding returns the fixture language with the [qualifying]
+// vocabulary and an import block that writes every entry on a line
+// of its own, the bound name beside the path.
+func binding() render.Language {
+	l := language()
+	l.Funcs = qualifying
+	l.Imports = namedImports
+	return l
+}
+
+// namedImports renders every entry on a line of its own, the bound
+// name beside the path, so a case reads which name each import binds.
+func namedImports(set *render.ImportSet) string {
+	var b strings.Builder
+	for _, e := range set.Entries() {
+		b.WriteString("use " + e.Path + " as " + e.Name + "\n")
+	}
+	return b.String()
+}
+
+// scaffold spells the two statement kinds the fixtures use: a bare
+// name evaluated for effect, and a return. A dotted name records
+// its head as an import, the way a real printer records what it
+// qualifies with.
+func scaffold(s emit.Stmt, set *render.ImportSet) ([]byte, error) {
+	switch s.Kind {
+	case emit.StmtExpr:
+		if s.Value.Kind == emit.ExprValue {
+			return nil, render.RefuseValue("fixture", "the fixture spells no value")
+		}
+		if head, _, qualified := strings.Cut(s.Value.Name, "."); qualified {
+			set.Add(head)
+		}
+		return []byte("\t" + s.Value.Name + "()\n"), nil
+	case emit.StmtReturn:
+		return []byte("\treturn\n"), nil
+	default:
+		return nil, errors.New("the fixture spells names and returns only")
+	}
+}
+
+// unspellable returns a statement whose value the fixture language
+// has no form for.
+func unspellable() emit.Stmt {
+	return emit.Stmt{
+		Kind:  emit.StmtExpr,
+		Value: emit.ValueExpr(emit.Literal(emit.LiteralInt, "1")),
+	}
+}
+
+// call returns the one-line scaffold statement naming n.
+func call(n string) emit.Stmt {
+	return emit.Stmt{Kind: emit.StmtExpr, Value: emit.Expr{Kind: emit.ExprName, Name: n}}
+}
+
+// fn returns a per-source unit containing one function whose body is
+// body.
+func fn(key, name string, body emit.Body) plugin.Unit {
+	u := unitOf(emitter, key)
+	f := &emit.Function{
+		Origin: coretest.Struct(coretest.StorePath, name).ID,
+		Name:   name,
+	}
+	f.Body = body
+	u.Decls = append(u.Decls, f)
+	return u
+}
+
+// besideAlpha returns u with the struct alphaName before its
+// declarations, so a case that skips a declaration of u still has a
+// file to read.
+func besideAlpha(u plugin.Unit) plugin.Unit {
+	u.Decls = append([]symbol.Symbol{unitOf(emitter, u.Key, alphaName).Decls[0]}, u.Decls...)
+	return u
+}
+
+// unitOf returns one flushed unit of structs with the given names.
+func unitOf(p plugin.ID, key string, names ...string) plugin.Unit {
+	decls := make([]symbol.Symbol, 0, len(names))
+	for _, n := range names {
+		decls = append(decls, &emit.Struct{
+			Origin: coretest.Struct(coretest.StorePath, n).ID,
+			Name:   n,
+		})
+	}
+	return plugin.Unit{
+		Plugin: p, Tag: "", Per: plugin.PerSource,
+		Word: "stub", Key: key, Decls: decls,
+	}
+}
+
+// seeded returns an emit store containing the given units.
+func seeded(tb assert.TB, units ...plugin.Unit) *plugin.Emit {
+	tb.Helper()
+
+	e := plugin.NewEmit()
+	for _, u := range units {
+		assert.NoError(tb, e.Add(u), "the fixture unit is added")
+	}
+	return e
+}
+
+// runPass builds the pass over the language and renders the store,
+// routed into files through the pass's own filename half.
+func runPass(
+	tb assert.TB, l render.Language, e *plugin.Emit,
+) ([]plugin.RenderedFile, *diag.Sink) {
+	tb.Helper()
+
+	p, err := render.New(passName, l)
+	assert.NoError(tb, err, "the language composes")
+	sink := diag.NewSink()
+	files, err := p.Render(&plugin.RenderContext{
+		Emit: e, Files: backendtest.Files(e, p), Sink: sink, Plugin: passName,
+	})
+	assert.NoError(tb, err, "the pass renders every file")
+	return files, sink
+}
+
+// refTree returns the emitting plugin's tree containing src under
+// [refName].
+func refTree(src string) map[plugin.ID]fs.FS {
+	return map[plugin.ID]fs.FS{
+		emitter: fstest.MapFS{refName: &fstest.MapFile{Data: []byte(src)}},
+	}
+}
+
+// refBody returns a body referencing [refName] and nothing else, so
+// a case adds only the slots it tests.
+func refBody() emit.Body {
+	return emit.Body{Ref: &emit.TemplateRef{Name: refName}}
+}
+
+// refused returns a statement the fixture's scaffold cannot spell:
+// the printer failure an error path needs.
+func refused() emit.Stmt {
+	return emit.Stmt{Kind: emit.StmtGuard, Name: "err"}
+}
+
+// method returns a per-source unit containing one method whose body
+// is body, the second callable kind the body builtin takes.
+func method(key, name string, body emit.Body) plugin.Unit {
+	u := unitOf(emitter, key)
+	m := &emit.Method{
+		Origin: coretest.Method(coretest.StorePath, coretest.StructName, name).ID,
+		Name:   name,
+	}
+	m.Body = body
+	u.Decls = append(u.Decls, m)
+	return u
+}
+
+// renderRef renders one function whose body is b through the
+// language l, with trees as the emitting plugin's template trees, and
+// returns the file's bytes beside the run's findings. An empty result
+// means the file was withheld.
+func renderRef(
+	tb assert.TB, l render.Language, trees map[plugin.ID]fs.FS, b emit.Body,
+) (string, *diag.Sink) {
+	tb.Helper()
+
+	p, err := render.New(passName, l)
+	assert.NoError(tb, err, "the language composes")
+	sink := diag.NewSink()
+	e := seeded(tb, fn(storeKey, handleName, b))
+	files, err := p.Render(&plugin.RenderContext{
+		Emit: e, Files: backendtest.Files(e, p),
+		Trees: trees, Sink: sink, Plugin: passName,
+	})
+	assert.NoError(tb, err, "the pass renders every file")
+	if len(files) == 0 {
+		return "", sink
+	}
+	return string(files[0].Body), sink
+}
+
+// reported returns the message of the first finding under code,
+// which is what a case asserting the wording reads.
+func reported(tb assert.TB, sink *diag.Sink, code diag.Code) string {
+	tb.Helper()
+
+	coretest.AssertReports(tb, sink, code)
+	for d := range sink.All() {
+		if d.Code == code {
+			return d.Msg
+		}
+	}
+	return ""
 }

@@ -15,6 +15,8 @@ import (
 
 // Sink collects the findings of one run.
 //
+// # Concurrency
+//
 // A Sink is safe for concurrent use: frontends, and annotators under
 // the parallelism opt-in, report while running alongside each other.
 //
@@ -24,13 +26,19 @@ import (
 // within one origin, so two schedulings of one parallel run agree
 // on it however the origins interleaved. Ordering for output belongs
 // to the run, which sorts by position.
+//
+// # Allocation contract
+//
+// The sink keeps every finding in one slice, which grows by doubling.
+// A report allocates only to grow it, and a formatted report also
+// allocates its message. An enumeration allocates its snapshot.
 type Sink struct {
 	mu     sync.Mutex
 	found  []Diag
 	failed bool
 }
 
-// NewSink returns a sink holding nothing.
+// NewSink returns an empty sink.
 func NewSink() *Sink { return &Sink{} }
 
 // Report attaches one finding.
@@ -71,10 +79,18 @@ func (s *Sink) Failed() bool {
 
 // All returns every finding, in the order the type documents.
 //
-// The findings are snapshotted when All is called, so an iteration
-// runs alongside further reports and returns what the sink held at
-// the call.
+// The range takes a snapshot of the findings when it starts, so an
+// iteration runs alongside further reports and returns what the sink
+// contained when the range started. The snapshot is one allocation, and
+// the returned function inlines into the range, which allocates nothing
+// else.
 func (s *Sink) All() iter.Seq[Diag] {
+	return func(yield func(Diag) bool) { s.each(yield) }
+}
+
+// each yields a snapshot of the findings in the order [Sink.All]
+// documents, and stops when yield returns false.
+func (s *Sink) each(yield func(Diag) bool) {
 	s.mu.Lock()
 	found := slices.Clone(s.found)
 	s.mu.Unlock()
@@ -82,7 +98,11 @@ func (s *Sink) All() iter.Seq[Diag] {
 	slices.SortStableFunc(found, func(a, b Diag) int {
 		return cmp.Compare(a.Origin, b.Origin)
 	})
-	return slices.Values(found)
+	for _, d := range found {
+		if !yield(d) {
+			return
+		}
+	}
 }
 
 // reportf assembles one finding at the given severity, so that a

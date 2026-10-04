@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/gen/model"
 	"go.dokimi.dev/eidos/core/internal/gosource"
@@ -21,6 +22,11 @@ const wantKinds = 22
 // validSchema is the fixture schema every contract case departs
 // from.
 const validSchema = "testdata/valid"
+
+// lowerValidAllocs is one lowering of the fixture schema: its parse,
+// its type-check and the schema of its two kinds, 290 in each of 24
+// fresh processes but one, which counted 291.
+const lowerValidAllocs = 290 + 1
 
 // fieldsOf returns the fixture schema's first kind's fields by name.
 func fieldsOf(t *testing.T) map[string]model.FieldSpec {
@@ -72,7 +78,7 @@ func TestIR(t *testing.T) {
 			assert.False(t, pos.Side.OnEmit(), "and not on emit")
 		})
 
-		t.Run("returns a walked slot's accessor and element", func(t *testing.T) {
+		t.Run("reads every property of a walked slot", func(t *testing.T) {
 			t.Parallel()
 
 			parts := fieldsOf(t)["Parts"]
@@ -310,5 +316,104 @@ func TestIR(t *testing.T) {
 				assert.HasPrefix(t, err.Error(), "model: ", "under the package prefix")
 			})
 		}
+	})
+
+	t.Run("OnNode", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give model.Side
+			want bool
+		}{
+			{name: "reports true for a node-tagged field", give: model.SideNode, want: true},
+			{name: "reports true for an untagged field", give: model.SideBoth, want: true},
+			{name: "reports false for an emit-tagged field", give: model.SideEmit, want: false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.OnNode(), tt.want, "whether the field is on the node model")
+			})
+		}
+	})
+
+	t.Run("OnEmit", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give model.Side
+			want bool
+		}{
+			{name: "reports true for an emit-tagged field", give: model.SideEmit, want: true},
+			{name: "reports true for an untagged field", give: model.SideBoth, want: true},
+			{name: "reports false for a node-tagged field", give: model.SideNode, want: false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.OnEmit(), tt.want, "whether the field is on the emit model")
+			})
+		}
+	})
+}
+
+// A lowering of the fixture schema allocates within its ceiling, and a
+// side's questions allocate nothing, in the ordinary run, which runs no
+// benchmark. The check runs alone, because AllocsPerRun counts every
+// goroutine's allocations and refuses to run beside parallel tests.
+func TestIRAllocs(t *testing.T) {
+	assert.MaxAllocs(t, func() {
+		if _, err := model.Lower(validSchema, ""); err != nil {
+			t.Fatalf("Lower: unexpected error: %v", err)
+		}
+	}, lowerValidAllocs, "Lower allocates the parse, the type-check and the schema")
+	side := model.SideBoth
+	assert.MaxAllocs(t, func() {
+		if !side.OnNode() || !side.OnEmit() {
+			t.Fatal("an untagged field missed a model")
+		}
+	}, 0, "OnNode and OnEmit allocate nothing")
+}
+
+// BenchmarkIR measures a lowering of the fixture schema after one
+// lowering, and a side's questions.
+func BenchmarkIR(b *testing.B) {
+	b.Run("Lower/the fixture schema", func(b *testing.B) {
+		_, err := model.Lower(validSchema, "")
+		assert.NoError(b, err, "the schema lowers before the measurement")
+		c := bench.Start(b).MaxAllocs(lowerValidAllocs)
+		defer c.End()
+		var schema model.Schema
+		for c.Loop() {
+			schema, err = model.Lower(validSchema, "")
+		}
+		assert.NoError(b, err, "the schema lowers")
+		assert.Length(b, schema.Kinds, 2, "into its two kinds")
+	})
+
+	side := model.SideBoth
+
+	b.Run("Side.OnNode", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = side.OnNode()
+		}
+		assert.True(b, got, "an untagged field is on the node model")
+	})
+
+	b.Run("Side.OnEmit", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = side.OnEmit()
+		}
+		assert.True(b, got, "an untagged field is on the emit model")
 	})
 }

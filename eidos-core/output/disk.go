@@ -34,6 +34,18 @@ const (
 // edited since it was stamped are refused, naming the path, and
 // remain as they are. A staged removal deletes only the brand's
 // intact output, and leaves any other file in place.
+//
+// # Concurrency
+//
+// A Disk belongs to one goroutine, as every [Sink] does.
+//
+// # Allocation contract
+//
+// A Disk stages as [Mem] does. A read of a path through the root
+// allocates seven times: the path's split, its spelling for the system
+// call, the open file's name and its two structures, its status and its
+// bytes. A read of a path without a file allocates the split, the
+// spelling and the error. Each method states what it reads and writes.
 type Disk struct {
 	staging
 	root  *os.Root
@@ -48,6 +60,11 @@ var _ Sink = (*Disk)(nil)
 // it cannot open, because a sink over nothing writes nowhere.
 //
 // Commit and Discard close the root. The sink serves one staging.
+//
+// # Allocation contract
+//
+// NewDisk allocates four times: the sink, the root's two structures,
+// and the root path's spelling for the system call.
 func NewDisk(root string, brand Brand) (*Disk, error) {
 	if !brand.Valid() {
 		return nil, fmt.Errorf(
@@ -63,16 +80,41 @@ func NewDisk(root string, brand Brand) (*Disk, error) {
 }
 
 // Write stages one file. Nothing is written to the tree until Commit.
+// It keeps body without copying it, so the caller leaves body unchanged
+// until the commit.
+//
+// Error modes are the ones [Sink.Write] lists.
+//
+// # Allocation contract
+//
+// Write allocates what [Mem.Write] does.
 func (d *Disk) Write(path string, body []byte) error { return d.stage(path, body) }
 
 // Delete stages the removal of one file. Nothing leaves the tree
 // until Commit.
+//
+// Error modes are the ones [Sink.Delete] lists.
+//
+// # Allocation contract
+//
+// Delete allocates what [Mem.Delete] does: twice for the sink's first
+// removal.
 func (d *Disk) Delete(path string) error { return d.remove(path) }
 
 // Prepare reads every staged path once, in path order, and reports
 // what it contains and the action Commit takes on it. A path that is a
 // directory is foreign. It writes nothing, and it returns an error for
 // a path it cannot read, such as one a symlink leads out of the root.
+//
+// Error modes: a path it cannot read, a second preparation, and
+// [ErrFinished] after Commit or Discard.
+//
+// # Allocation contract
+//
+// Prepare allocates the sorted path list, the list of changes, one
+// digest per staged file, and the read of every path. A file whose bytes
+// differ from the staged ones adds the record [Read] allocates for its
+// frame.
 func (d *Disk) Prepare() ([]Change, error) {
 	if err := d.prepare(); err != nil {
 		return nil, err
@@ -101,6 +143,17 @@ func (d *Disk) Prepare() ([]Change, error) {
 // sees the old file or the new one and never half of either. A
 // removal deletes the brand's intact output and leaves any other file.
 // A path that fails is one error and the rest still commit.
+//
+// Error modes: a file the brand cannot prove it wrote, a path it cannot
+// read, write or remove, each joined into the returned error, and
+// [ErrFinished] after Commit or Discard.
+//
+// # Allocation contract
+//
+// Commit allocates the sorted path list, the list of records, one
+// digest per staged file, and the read of every path. A file it
+// overwrites adds the record [Read] allocates for its frame, and twelve
+// allocations for its staging file: the name, the open and the rename.
 func (d *Disk) Commit() ([]Written, error) {
 	if err := d.finish(); err != nil {
 		return nil, err
@@ -128,7 +181,10 @@ func (d *Disk) Commit() ([]Written, error) {
 	return records, errors.Join(faults...)
 }
 
-// Discard drops the staging and closes the root.
+// Discard drops the staging and closes the root. It allocates nothing.
+//
+// Error modes: a root that fails to close, and [ErrFinished] after
+// Commit or Discard.
 func (d *Disk) Discard() error {
 	if err := d.finish(); err != nil {
 		return err
@@ -206,7 +262,7 @@ func ownership(existing []byte, brand Brand) Found {
 	switch {
 	case !held || f.record.Brand != brand:
 		return FoundForeign
-	case digest(f.body) != f.record.Hash:
+	case !attests(f.body, f.record.Hash):
 		return FoundDrifted
 	default:
 		return FoundIntact

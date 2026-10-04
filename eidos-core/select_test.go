@@ -80,7 +80,7 @@ func TestSelect(t *testing.T) {
 			assert.Empty(t, got, "a gone subject has no match")
 		})
 
-		t.Run("runs no listed match the subject's opt-out refuses", func(t *testing.T) {
+		t.Run("runs no listed match the subject opts out of", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, beta := fixtureGraph(t)
@@ -90,7 +90,7 @@ func TestSelect(t *testing.T) {
 			assert.Equal(t, got, []string{"Beta"}, "the opted-out subject does not run")
 		})
 
-		t.Run("runs no listed match the predicate refuses", func(t *testing.T) {
+		t.Run("runs no listed match the predicate rejects", func(t *testing.T) {
 			t.Parallel()
 
 			g, alpha, beta := fixtureGraph(t)
@@ -116,7 +116,7 @@ func TestSelect(t *testing.T) {
 			assert.Empty(t, got, "an ungated rule's one match has instance zero")
 		})
 
-		t.Run("runs a listed instance the subject carries", func(t *testing.T) {
+		t.Run("runs a listed instance of the subject", func(t *testing.T) {
 			t.Parallel()
 
 			got := selectedInstances(t, func(subject symbol.Identity) *plugin.Selection {
@@ -418,11 +418,11 @@ func TestSelect(t *testing.T) {
 
 // BenchmarkSelect measures a selected phase call over the 200,000
 // structs of the bench workspace: the cost of a warm run's call that
-// runs one match, which enumerates no index. Each iteration allocates
-// its context, its emit store and its sink, five allocations, and the
-// call allocates its state, its first lane's matches and the match it
-// runs, three more. A candidate's match costs one more, the buffer of
-// the matches it has.
+// runs one match, which enumerates no index. The call allocates
+// nothing: it takes the state, the match and the candidate's buffer of
+// matches that the call before the measurement released. The context,
+// the emit store and the sink that each iteration hands the call are
+// built outside the measurement.
 func BenchmarkSelect(b *testing.B) {
 	const packages, files, decls = 1_000, 10, 20
 	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
@@ -443,17 +443,25 @@ func BenchmarkSelect(b *testing.B) {
 	if !ok {
 		b.Fatal("the bench plugin must generate")
 	}
-	run := func(b *testing.B, sel *plugin.Selection, ceiling uint64) {
+	run := func(b *testing.B, sel *plugin.Selection) {
 		b.Helper()
 
-		c := bench.Start(b).MaxAllocs(ceiling)
-		defer c.End()
-		for c.Loop() {
+		var ctx *plugin.GeneratorContext
+		fresh := func() {
 			visited = 0
-			ctx := &plugin.GeneratorContext{
+			ctx = &plugin.GeneratorContext{
 				Index: ix, Facts: facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(),
 				Plugin: "bench", Bucket: 1, Select: sel,
 			}
+		}
+		fresh()
+		if err := gen.Generate(ctx); err != nil {
+			b.Fatalf("Generate: unexpected error: %v", err)
+		}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			c.Excluding(fresh)
 			if err := gen.Generate(ctx); err != nil {
 				b.Fatalf("Generate: unexpected error: %v", err)
 			}
@@ -464,11 +472,11 @@ func BenchmarkSelect(b *testing.B) {
 	}
 
 	b.Run("Generate a listed match", func(b *testing.B) {
-		run(b, &plugin.Selection{Matches: []plugin.MatchKey{{Plugin: "bench", Subject: subject}}}, 8)
+		run(b, &plugin.Selection{Matches: []plugin.MatchKey{{Plugin: "bench", Subject: subject}}})
 	})
 
 	b.Run("Generate a candidate", func(b *testing.B) {
-		run(b, &plugin.Selection{Candidates: []symbol.Identity{subject}}, 9)
+		run(b, &plugin.Selection{Candidates: []symbol.Identity{subject}})
 	})
 }
 

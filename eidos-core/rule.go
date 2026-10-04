@@ -74,9 +74,10 @@ type leaf struct {
 
 // Directive gates rules on a validated directive and carries the
 // schema for registration. One wrapper may gate many rules and the
-// schema registers once; a name carried by two wrappers is refused
-// at Build, so one wrapper gates them all. On an emit-triggered
-// rule the gate is the origin's instance.
+// schema registers once; a name two wrappers carry is refused at
+// Build, so one wrapper gates them all. On an emit-triggered rule the
+// gate is the origin's instance. Directive allocates the copy of the
+// schema and the list of rules, two allocations.
 func Directive(s directive.Schema, rules ...Rule) Rule {
 	return Rule{schema: &s, children: rules}
 }
@@ -88,7 +89,7 @@ func Directive(s directive.Schema, rules ...Rule) Rule {
 // panics on a name [directive.Kernel] does not return, because a
 // plugin gates on its own directive through [Directive]. A rule
 // under it runs once per validated instance like one under
-// [Directive].
+// [Directive]. Gated allocates the list of rules, one allocation.
 func Gated(name directive.Name, rules ...Rule) Rule {
 	return Rule{gate: name, gated: true, children: rules}
 }
@@ -96,6 +97,8 @@ func Gated(name directive.Name, rules ...Rule) Rule {
 // Where gates rules on stamped facts. Wrappers compose and
 // predicates conjoin; a disjunction is two rules. On an
 // emit-triggered rule the predicate evaluates against the origin.
+// Where allocates the list of predicates and the list of rules, two
+// allocations.
 func Where(p Pred, rules ...Rule) Rule {
 	return Rule{preds: []Pred{p}, children: rules}
 }
@@ -116,7 +119,8 @@ type Pred struct {
 // subscription record carries it as data. A handle a composition
 // assigns later is still zero at this point and the gate would
 // watch nothing, so Build panics on it: a handler may read such a
-// handle through its closure, a gate may not.
+// handle through its closure, a gate may not. HasKey allocates the
+// test's closure over the key, one allocation.
 func HasKey[T meta.FactValue](k meta.Key[T]) Pred {
 	return Pred{
 		id:   k.ID(),
@@ -135,7 +139,10 @@ type Equatable interface {
 	comparable
 }
 
-// KeyEquals admits a subject whose winning value for k equals v.
+// KeyEquals admits a subject on which the value arbitration selects
+// for k equals v. The key is read when the gate is declared, as
+// [HasKey] states. KeyEquals allocates the test's closure over the key
+// and the value, one allocation.
 func KeyEquals[T Equatable](k meta.Key[T], v T) Pred {
 	return Pred{
 		id:   k.ID(),

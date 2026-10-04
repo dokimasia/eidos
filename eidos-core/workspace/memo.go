@@ -28,13 +28,6 @@ type Memo struct {
 	Open func() (ledger.Ledger, error)
 }
 
-// Memo configures the parse memo. The zero Memo, the default, keeps
-// none. Build refuses a negative limit.
-func (b *Builder) Memo(m Memo) *Builder {
-	b.memo = m
-	return b
-}
-
 // blindMemo is the memo of a cold run: it restores nothing, and records
 // what the load parsed for the commit to write.
 type blindMemo struct {

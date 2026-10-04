@@ -116,24 +116,34 @@ type Respeller interface {
 // as written. A returned error is a defect in the backend's own
 // hooks, a lowering that drops its input's origin, and fails the
 // whole plan, not one declaration.
+//
+// # Allocation contract
+//
+// A backend without a lowering hook and a respell hook settles the
+// store without allocating, because nothing in it changes. Otherwise
+// Settle rebuilds the store's per-kind index, one list per unit and
+// kind, and a respell hook adds the plan of every declared name and the
+// tables the references follow, each sized once to the store.
 func Settle(e *Emit, b Backend, facts *meta.Facts, sink *diag.Sink) error {
 	if e == nil || e.settled {
 		return nil
 	}
-	if b == nil {
+	l, lowers := b.(Lowerer)
+	r, respells := b.(Respeller)
+	if !lowers && !respells {
 		e.settled = true
 		return nil
 	}
 	by := b.Name()
 
-	if l, held := b.(Lowerer); held {
+	if lowers {
 		if err := lowerAll(e, l, by, sink); err != nil {
 			// A store abandoned mid-lowering is not settled, so the
 			// flag remains down and Settled reports false.
 			return err
 		}
 	}
-	if r, held := b.(Respeller); held {
+	if respells {
 		respellAll(e, r, overridesFor(facts, b.Target()), by, sink)
 	}
 	e.reindex()

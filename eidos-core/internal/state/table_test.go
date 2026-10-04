@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
@@ -81,5 +82,28 @@ func TestTable(t *testing.T) {
 				{Key: []byte("beta"), Value: []byte("newer")},
 			}, "each key once, the newer run deciding")
 		})
+	})
+}
+
+// A declared table spells without allocating in the ordinary run, which
+// runs no benchmark.
+func TestTableZeroAlloc(t *testing.T) {
+	table := state.TableChecks
+	var got string
+	assert.MaxAllocs(t, func() { got = table.String() }, 0, "String allocates nothing for a declared table")
+	assert.Equal(t, got, "checks", "String spells TableChecks")
+}
+
+// BenchmarkTable measures the spelling of a declared table.
+func BenchmarkTable(b *testing.B) {
+	b.Run("String", func(b *testing.B) {
+		table := state.TableChecks
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = table.String()
+		}
+		assert.Equal(b, got, "checks", "String spells TableChecks")
 	})
 }

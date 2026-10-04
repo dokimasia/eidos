@@ -43,6 +43,11 @@ type output struct {
 	// Side is the model the file belongs to, empty for a file that
 	// belongs to neither.
 	Side string
+	// Model is the package a black-box test file checks and imports
+	// under the dot, so the test spells the package's declarations
+	// the way the package does. It is empty for a file of production
+	// code, and for a test file that qualifies what it imports.
+	Model string
 }
 
 // outputs lists every file the generator writes. [Generate] keys
@@ -53,42 +58,75 @@ type output struct {
 // guard reports it.
 var outputs = []output{
 	{Path: "emit/symbols.gen.go", Template: "symbols.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
-	{Path: "emit/symbols.gen_test.go", Template: "symbols.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{
+		Path: "emit/symbols.gen_test.go", Template: "symbols.gen_test.go.tmpl",
+		Package: EmitTestPackage, Side: EmitPackage, Model: EmitPackage,
+	},
 	{Path: "emit/kinds.gen.go", Template: "kinds.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
-	{Path: "emit/kinds.gen_test.go", Template: "kinds.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{
+		Path: "emit/kinds.gen_test.go", Template: "kinds.gen_test.go.tmpl",
+		Package: EmitTestPackage, Side: EmitPackage, Model: EmitPackage,
+	},
 	{Path: "emit/slots.gen.go", Template: "slots.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
 	{
 		Path: "emit/slots.gen_test.go", Template: "slots.gen_test.go.tmpl",
-		Package: EmitPackage, Side: EmitPackage,
+		Package: EmitTestPackage, Side: EmitPackage, Model: EmitPackage,
 	},
 	{Path: "emit/names.gen.go", Template: "names.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
-	{Path: "emit/names.gen_test.go", Template: "names.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{
+		Path: "emit/names.gen_test.go", Template: "names.gen_test.go.tmpl",
+		Package: EmitTestPackage, Side: EmitPackage, Model: EmitPackage,
+	},
 	{Path: "emit/walk.gen.go", Template: "walk.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
-	{Path: "emit/walk.gen_test.go", Template: "walk.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{
+		Path: "emit/walk.gen_test.go", Template: "walk.gen_test.go.tmpl",
+		Package: EmitTestPackage, Side: EmitPackage, Model: EmitPackage,
+	},
 	{Path: "match.gen.go", Template: "match.gen.go.tmpl", Package: RootPackage, Side: NodePackage},
 	{Path: "match.gen_test.go", Template: "match.gen_test.go.tmpl", Package: RootTestPackage, Side: NodePackage},
 	{Path: "node/symbols.gen.go", Template: "symbols.gen.go.tmpl", Package: NodePackage, Side: NodePackage},
-	{Path: "node/symbols.gen_test.go", Template: "symbols.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
+	{
+		Path: "node/symbols.gen_test.go", Template: "symbols.gen_test.go.tmpl",
+		Package: NodeTestPackage, Side: NodePackage, Model: NodePackage,
+	},
 	{Path: "node/kinds.gen.go", Template: "kinds.gen.go.tmpl", Package: NodePackage, Side: NodePackage},
-	{Path: "node/kinds.gen_test.go", Template: "kinds.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
+	{
+		Path: "node/kinds.gen_test.go", Template: "kinds.gen_test.go.tmpl",
+		Package: NodeTestPackage, Side: NodePackage, Model: NodePackage,
+	},
 	{Path: "node/walk.gen.go", Template: "walk.gen.go.tmpl", Package: NodePackage, Side: NodePackage},
-	{Path: "node/walk.gen_test.go", Template: "walk.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
+	{
+		Path: "node/walk.gen_test.go", Template: "walk.gen_test.go.tmpl",
+		Package: NodeTestPackage, Side: NodePackage, Model: NodePackage,
+	},
 	{Path: "node/codec.gen.go", Template: "codec.gen.go.tmpl", Package: NodePackage, Side: NodePackage},
-	{Path: "node/codec.gen_test.go", Template: "codec.gen_test.go.tmpl", Package: NodePackage, Side: NodePackage},
+	{
+		Path: "node/codec.gen_test.go", Template: "codec.gen_test.go.tmpl",
+		Package: NodeTestPackage, Side: NodePackage, Model: NodePackage,
+	},
 	{
 		Path: "node/fingerprint.gen.go", Template: "fingerprint.gen.go.tmpl",
 		Package: NodePackage, Side: NodePackage,
 	},
 	{
 		Path: "node/fingerprint.gen_test.go", Template: "fingerprint.gen_test.go.tmpl",
-		Package: NodePackage, Side: NodePackage,
+		Package: NodeTestPackage, Side: NodePackage, Model: NodePackage,
 	},
 	{Path: "symbol/kind.gen.go", Template: "kind.gen.go.tmpl", Package: SymbolPackage},
-	{Path: "symbol/kind.gen_test.go", Template: "kind.gen_test.go.tmpl", Package: SymbolPackage},
+	{
+		Path: "symbol/kind.gen_test.go", Template: "kind.gen_test.go.tmpl",
+		Package: SymbolTestPackage, Model: SymbolPackage,
+	},
 	{Path: "symbol/fact.gen.go", Template: "fact.gen.go.tmpl", Package: SymbolPackage},
-	{Path: "symbol/fact.gen_test.go", Template: "fact.gen_test.go.tmpl", Package: SymbolPackage},
+	{
+		Path: "symbol/fact.gen_test.go", Template: "fact.gen_test.go.tmpl",
+		Package: SymbolTestPackage, Model: SymbolPackage,
+	},
 	{Path: "emit/facts.gen.go", Template: "facts.gen.go.tmpl", Package: EmitPackage, Side: EmitPackage},
-	{Path: "emit/facts.gen_test.go", Template: "facts.gen_test.go.tmpl", Package: EmitPackage, Side: EmitPackage},
+	{
+		Path: "emit/facts.gen_test.go", Template: "facts.gen_test.go.tmpl",
+		Package: EmitTestPackage, Side: EmitPackage, Model: EmitPackage,
+	},
 }
 
 // OwnedDirs are the directories the generator writes into. The
@@ -103,6 +141,9 @@ type data struct {
 	Header string
 	// Package is the Go package the file declares.
 	Package string
+	// Model is the package a black-box test file checks and imports
+	// under the dot, empty for every other file.
+	Model string
 	// Kinds are the lowered kinds in schema order, independent of
 	// any model side.
 	Kinds []KindSpec
@@ -268,6 +309,15 @@ func newRenderer(schema Schema) (*renderer, error) {
 			}
 			return nil
 		},
+		// memberMethods returns the Membered interface's method names,
+		// which the generated tests group their member cases under.
+		"memberMethods": func() []string {
+			names := make([]string, 0, len(memberMethods))
+			for _, m := range memberMethods {
+				names = append(names, m.Method)
+			}
+			return names
+		},
 	}).ParseFS(templates, path.Join(templateDir, templateGlob))
 	if err != nil {
 		return nil, fmt.Errorf("model: parse the templates: %w", err)
@@ -294,6 +344,7 @@ func (r *renderer) render(out output) ([]byte, error) {
 	err := r.templates.ExecuteTemplate(&buf, out.Template, data{
 		Header:      genfile.Header(generatorName),
 		Package:     out.Package,
+		Model:       out.Model,
 		Kinds:       r.kinds,
 		Views:       views,
 		NeedsSymbol: slotsUseSymbol(views),

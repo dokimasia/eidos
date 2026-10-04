@@ -23,6 +23,11 @@ import (
 // [Graph.Freeze] and over a graph [Sealed] returned. A zero subject and
 // an empty attachment return a plain error, because only a defect
 // produces either.
+//
+// # Allocation contract
+//
+// A subject's first stamps allocate what a first attachment of
+// [Graph.AttachDirectives] does: four allocations.
 func (g *Graph) AttachStamps(subject symbol.Identity, ss []meta.RawStamp) error {
 	return attach(g, &g.stamps, subject, ss, "stamps")
 }

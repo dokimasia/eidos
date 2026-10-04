@@ -7,6 +7,7 @@ import (
 	"cmp"
 	"fmt"
 	"iter"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +15,11 @@ import (
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// kindSlots spans every value of a [symbol.Kind]: the kind is a uint8,
+// so an array this long counts by kind without depending on the
+// generated kind count.
+const kindSlots = math.MaxUint8 + 1
 
 // Cardinality is how many outputs a family produces. The zero
 // value addresses nothing: every declared family states its
@@ -31,7 +37,8 @@ const (
 
 // String returns the cardinality's spelling in a diagnostic:
 // per-source, per-package or per-plan. A cardinality outside the three
-// returns its number.
+// returns its number. String allocates nothing for a declared
+// cardinality.
 func (c Cardinality) String() string {
 	switch c {
 	case PerSource:
@@ -101,7 +108,8 @@ type Unit struct {
 // from: the source path of a per-source unit, and the empty string for
 // a per-package or per-plan unit, whose filename joins its family word
 // and tag alone. A target's filename spelling reads the stem through
-// it, so no target spells a package path into a filename.
+// it, so no target spells a package path into a filename. It allocates
+// nothing.
 func (u Unit) FileKey() string {
 	if u.Per != PerSource {
 		return ""
@@ -155,7 +163,8 @@ type Emit struct {
 	emitted map[symbol.Symbol]string
 }
 
-// NewEmit returns an empty emit store.
+// NewEmit returns an empty emit store. It allocates three times: the
+// store, its set of accumulator keys and its map of kinds.
 func NewEmit() *Emit {
 	return &Emit{
 		held:   map[UnitRef]struct{}{},
@@ -166,7 +175,8 @@ func NewEmit() *Emit {
 // Settled reports whether the store passed through [Settle]. A
 // renderer whose backend declares a lowering seam refuses an
 // unsettled store, so a composition that skips the settle fails at
-// the first render instead of writing the wrong bytes.
+// the first render instead of writing the wrong bytes. It allocates
+// nothing.
 func (e *Emit) Settled() bool { return e.settled }
 
 // Add records one unit and indexes its tree.
@@ -221,9 +231,23 @@ func (e *Emit) Add(u Unit) error {
 // a host the per-kind index does not list, which is a declaration
 // without an origin or one no unit contains. The unit's own plugin is
 // not recorded, and a plugin is recorded once.
+//
+// # Allocation contract
+//
+// The first contribution after a unit arrived allocates the map from
+// each indexed declaration to its unit, sized to the declarations, so
+// it does not grow while it fills. A contribution that records a plugin
+// new to its unit grows the unit's list of contributors, and any other
+// contribution allocates nothing.
 func (e *Emit) Contribute(host symbol.Symbol, p ID) bool {
 	if e.holders == nil {
-		e.holders = map[symbol.Symbol]int{}
+		indexed := 0
+		for _, per := range e.byKind {
+			for _, decls := range per {
+				indexed += len(decls)
+			}
+		}
+		e.holders = make(map[symbol.Symbol]int, indexed)
 		for _, per := range e.byKind {
 			for at, decls := range per {
 				for _, d := range decls {
@@ -317,22 +341,44 @@ func (e *Emit) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	}
 }
 
-// index walks one unit's declarations into the per-kind index.
+// index walks one unit's declarations into the per-kind index. A first
+// walk counts the indexed declarations of each kind, so the unit's list
+// of each kind is allocated once, at its final length.
 func (e *Emit) index(at int, decls []symbol.Symbol) {
+	var counts [kindSlots]int
 	for _, d := range decls {
 		for s := range emit.All(d) {
-			origin, carries := emit.OriginOf(s)
-			if !carries || origin.IsZero() {
-				continue
+			if indexed(s) {
+				counts[s.Kind()]++
 			}
-			per := e.byKind[s.Kind()]
-			if per == nil {
-				per = map[int][]symbol.Symbol{}
-				e.byKind[s.Kind()] = per
-			}
-			per[at] = append(per[at], s)
 		}
 	}
+	for _, d := range decls {
+		for s := range emit.All(d) {
+			if !indexed(s) {
+				continue
+			}
+			k := s.Kind()
+			per := e.byKind[k]
+			if per == nil {
+				per = map[int][]symbol.Symbol{}
+				e.byKind[k] = per
+			}
+			list := per[at]
+			if list == nil {
+				list = make([]symbol.Symbol, 0, counts[k])
+			}
+			per[at] = append(list, s)
+		}
+	}
+}
+
+// indexed reports whether the per-kind index lists a declaration: one
+// that carries a nonzero origin, the one thing every emit trigger
+// resolves through.
+func indexed(s symbol.Symbol) bool {
+	origin, carries := emit.OriginOf(s)
+	return carries && !origin.IsZero()
 }
 
 // reindex rebuilds the per-kind index over the settled units, so a

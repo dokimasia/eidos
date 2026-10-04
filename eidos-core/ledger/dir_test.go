@@ -9,10 +9,12 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/ledger"
 )
@@ -20,13 +22,52 @@ import (
 // past is the mtime a fixture sets on a blob, so a touch moves the time.
 var past = time.Date(2020, time.January, 1, 0, 0, 0, 0, time.UTC)
 
-// opened returns a ledger over a fresh workspace root and the root.
-func opened(t *testing.T) (*ledger.Dir, string) {
-	t.Helper()
+// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
+// warm the function, and the 100 it counts.
+const allocRuns = 101
 
-	root := t.TempDir()
+// The ceilings of the disk ledger's calls over a state directory of two
+// documents. Every call other than an open opens the root, resolves the
+// name inside it and closes it.
+const (
+	// openDirAllocs is one open: the absolute path, the root's stat, the
+	// state directory's name, and the ledger.
+	openDirAllocs = 4
+	// openAtAllocs is one open of a directory: the absolute path, its
+	// stat, and the ledger.
+	openAtAllocs = 3
+	// dirReadAllocs is one read: the root, the name's path, the file it
+	// opens with its stat, and the bytes it reads.
+	dirReadAllocs = 15
+	// dirReadAtAllocs is one read of a range: the root, the name's path,
+	// and the file it opens.
+	dirReadAtAllocs = 13
+	// dirWriteAllocs is one durable replacement: the root, the name's
+	// path, the staging file's name, write, sync and rename, and the sync
+	// of the file's directory.
+	dirWriteAllocs = 41
+	// dirPutAllocs is one replacement without a sync: the root, the
+	// name's path, and the staging file's name, write and rename.
+	dirPutAllocs = 34
+	// dirTouchAllocs is one touch: the root, the name's path, and the
+	// change of the file's times.
+	dirTouchAllocs = 13
+	// dirRemoveAllocs is one removal of a blob whose name has four
+	// elements: the root, the name's path, and the removal, which the
+	// root resolves one element at a time.
+	dirRemoveAllocs = 13
+	// dirListAllocs is one listing of the manifest's directory: the root,
+	// the walk of the directory, and a blob for each of its two files.
+	dirListAllocs = 34
+)
+
+// opened returns a ledger over a fresh workspace root and the root.
+func opened(tb testing.TB) (*ledger.Dir, string) {
+	tb.Helper()
+
+	root := tb.TempDir()
 	d, err := ledger.OpenDir(root, brand)
-	assert.NoError(t, err, "the ledger opens")
+	assert.NoError(tb, err, "the ledger opens")
 	return d, root
 }
 
@@ -37,11 +78,11 @@ func onDisk(root, name string) string {
 }
 
 // written returns a ledger over a fresh root that contains one blob.
-func written(t *testing.T, name, body string) (*ledger.Dir, string) {
-	t.Helper()
+func written(tb testing.TB, name, body string) (*ledger.Dir, string) {
+	tb.Helper()
 
-	d, root := opened(t)
-	assert.NoError(t, d.Write(t.Context(), name, []byte(body)), "the blob is written")
+	d, root := opened(tb)
+	assert.NoError(tb, d.Write(tb.Context(), name, []byte(body)), "the blob is written")
 	return d, root
 }
 
@@ -241,7 +282,7 @@ func TestDir(t *testing.T) {
 	t.Run("Write", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("creates the state directory and the blob's directories", func(t *testing.T) {
+		t.Run("creates the directories down to the blob", func(t *testing.T) {
 			t.Parallel()
 
 			_, root := written(t, segName, docBody)
@@ -464,4 +505,212 @@ func TestDir(t *testing.T) {
 			assert.ErrorIs(t, err, fs.ErrInvalid, "the name is refused")
 		})
 	})
+}
+
+// The disk ledger's calls allocate within their ceilings in the ordinary
+// run, which runs no benchmark. Each removal removes a blob of its own,
+// written before the count. The check runs alone, because AllocsPerRun
+// counts every goroutine's allocations and refuses to run beside
+// parallel tests.
+func TestDirAllocs(t *testing.T) {
+	ctx, body, p := t.Context(), []byte(docBody), make([]byte, 5)
+	d, root := documented(t)
+	assert.MaxAllocs(t, func() {
+		if _, err := ledger.OpenDir(root, brand); err != nil {
+			t.Fatalf("OpenDir: unexpected error: %v", err)
+		}
+	}, openDirAllocs, "OpenDir allocates the path and the ledger")
+	assert.MaxAllocs(t, func() {
+		if _, err := ledger.OpenAt(root); err != nil {
+			t.Fatalf("OpenAt: unexpected error: %v", err)
+		}
+	}, openAtAllocs, "OpenAt allocates the path and the ledger")
+	assert.MaxAllocs(t, func() {
+		if d.Workspace() == "" {
+			t.Fatal("Workspace returned no name")
+		}
+	}, 0, "Workspace allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if _, err := d.Read(ctx, docName); err != nil {
+			t.Fatalf("Read: unexpected error: %v", err)
+		}
+	}, dirReadAllocs, "Read allocates the root, the file and the bytes")
+	assert.MaxAllocs(t, func() {
+		if _, err := d.ReadAt(ctx, docName, p, 4); err != nil {
+			t.Fatalf("ReadAt: unexpected error: %v", err)
+		}
+	}, dirReadAtAllocs, "ReadAt allocates the root and the file")
+	assert.MaxAllocs(t, func() {
+		if err := d.Write(ctx, docName, body); err != nil {
+			t.Fatalf("Write: unexpected error: %v", err)
+		}
+	}, dirWriteAllocs, "Write allocates the root and the staged, synced file")
+	assert.MaxAllocs(t, func() {
+		if err := d.Put(ctx, docName, body); err != nil {
+			t.Fatalf("Put: unexpected error: %v", err)
+		}
+	}, dirPutAllocs, "Put allocates the root and the staged file")
+	assert.MaxAllocs(t, func() {
+		if err := d.Touch(ctx, docName); err != nil {
+			t.Fatalf("Touch: unexpected error: %v", err)
+		}
+	}, dirTouchAllocs, "Touch allocates the root and the times' change")
+	assert.MaxAllocs(t, func() {
+		if listed, err := d.List(ctx, "manifest"); err != nil || len(listed) != 2 {
+			t.Fatalf("List: blobs %d, error %v", len(listed), err)
+		}
+	}, dirListAllocs, "List allocates the root, the walk and the blobs")
+	stored := make([]string, allocRuns)
+	for i := range stored {
+		stored[i] = "state/seg/rm/" + strconv.Itoa(i)
+		assert.NoError(t, d.Put(ctx, stored[i], body), "the blob is put")
+	}
+	at := 0
+	assert.MaxAllocs(t, func() {
+		if err := d.Remove(ctx, stored[at]); err != nil {
+			t.Fatalf("Remove: unexpected error: %v", err)
+		}
+		at++
+	}, dirRemoveAllocs, "Remove allocates the root and the removal")
+}
+
+// BenchmarkDir measures each call of the disk ledger over a state
+// directory of two documents.
+func BenchmarkDir(b *testing.B) {
+	body := []byte(docBody)
+	d, root := documented(b)
+
+	b.Run("OpenDir", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(openDirAllocs)
+		defer c.End()
+		var (
+			got *ledger.Dir
+			err error
+		)
+		for c.Loop() {
+			got, err = ledger.OpenDir(root, brand)
+		}
+		assert.NoError(b, err, "the ledger opens")
+		assert.Equal(b, got.Workspace(), filepath.Base(root), "over the workspace root")
+	})
+
+	b.Run("OpenAt", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(openAtAllocs)
+		defer c.End()
+		var (
+			got *ledger.Dir
+			err error
+		)
+		for c.Loop() {
+			got, err = ledger.OpenAt(root)
+		}
+		assert.NoError(b, err, "the directory opens")
+		assert.Equal(b, got.Workspace(), "", "as no workspace")
+	})
+
+	b.Run("Workspace", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = d.Workspace()
+		}
+		assert.Equal(b, got, filepath.Base(root), "the root's base name")
+	})
+
+	b.Run("Read", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(dirReadAllocs)
+		defer c.End()
+		var (
+			got []byte
+			err error
+		)
+		for c.Loop() {
+			got, err = d.Read(b.Context(), docName)
+		}
+		assert.NoError(b, err, "the blob reads")
+		assert.Equal(b, string(got), docBody, "Read returns the blob")
+	})
+
+	b.Run("ReadAt", func(b *testing.B) {
+		p := make([]byte, 5)
+		c := bench.Start(b).MaxAllocs(dirReadAtAllocs)
+		defer c.End()
+		var (
+			n   int
+			err error
+		)
+		for c.Loop() {
+			n, err = d.ReadAt(b.Context(), docName, p, 4)
+		}
+		assert.NoError(b, err, "the range reads")
+		assert.Equal(b, string(p[:n]), "first", "ReadAt copies the bytes at the offset")
+	})
+
+	b.Run("Write/a blob stored before", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(dirWriteAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = d.Write(b.Context(), docName, body)
+		}
+		assert.NoError(b, err, "the blob is written")
+	})
+
+	b.Run("Put/a blob stored before", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(dirPutAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = d.Put(b.Context(), docName, body)
+		}
+		assert.NoError(b, err, "the blob is put")
+	})
+
+	b.Run("Touch", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(dirTouchAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = d.Touch(b.Context(), docName)
+		}
+		assert.NoError(b, err, "the blob is touched")
+	})
+
+	b.Run("Remove/a stored blob", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(dirRemoveAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			c.Excluding(func() { err = d.Put(b.Context(), segName, body) })
+			err = d.Remove(b.Context(), segName)
+		}
+		assert.NoError(b, err, "the blob is removed")
+	})
+
+	b.Run("List/a directory of two blobs", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(dirListAllocs)
+		defer c.End()
+		var (
+			got []ledger.Blob
+			err error
+		)
+		for c.Loop() {
+			got, err = d.List(b.Context(), "manifest")
+		}
+		assert.NoError(b, err, "the blobs list")
+		assert.Length(b, got, 2, "both documents")
+	})
+}
+
+// documented returns a ledger over a fresh root of two documents and a
+// segment, and the root.
+func documented(tb testing.TB) (*ledger.Dir, string) {
+	tb.Helper()
+
+	d, root := written(tb, docName, docBody)
+	for _, name := range []string{"manifest/cd.json", segName} {
+		assert.NoError(tb, d.Write(tb.Context(), name, []byte(docBody)), "the blob is written")
+	}
+	return d, root
 }

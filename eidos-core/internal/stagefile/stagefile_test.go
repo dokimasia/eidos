@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/stagefile"
 )
@@ -25,24 +26,37 @@ const (
 	mode   = fs.FileMode(0o600)
 )
 
+// The ceilings of one replacement. os.Root spends all but the staging
+// name's: it splits each path it resolves, copies each name into the
+// bytes a system call takes, and allocates the file it opens.
+const (
+	// replaceAllocs is one Replace: the staging name, and 11 that
+	// os.Root spends opening the staging file and renaming it over the
+	// target.
+	replaceAllocs = 12
+	// replaceSharedAllocs is one ReplaceShared: Replace's, and the
+	// random staging name's digits.
+	replaceSharedAllocs = replaceAllocs + 1
+)
+
 // rooted returns a fresh directory and the root opened over it, closed
 // when the test ends.
-func rooted(t *testing.T) (string, *os.Root) {
-	t.Helper()
+func rooted(tb testing.TB) (string, *os.Root) {
+	tb.Helper()
 
-	dir := t.TempDir()
+	dir := tb.TempDir()
 	r, err := os.OpenRoot(dir)
-	assert.NoError(t, err, "the root opens")
-	t.Cleanup(func() { _ = r.Close() })
+	assert.NoError(tb, err, "the root opens")
+	tb.Cleanup(func() { _ = r.Close() })
 	return dir, r
 }
 
 // entries returns the names a directory contains.
-func entries(t *testing.T, dir string) []string {
-	t.Helper()
+func entries(tb testing.TB, dir string) []string {
+	tb.Helper()
 
 	es, err := os.ReadDir(dir)
-	assert.NoError(t, err, "the directory reads")
+	assert.NoError(tb, err, "the directory reads")
 	names := make([]string, 0, len(es))
 	for _, e := range es {
 		names = append(names, e.Name())
@@ -218,5 +232,52 @@ func TestStagefile(t *testing.T) {
 			assert.HasError(t, stagefile.ReplaceShared(r, "../"+target, []byte(body), mode, stagefile.Synced),
 				"the root jails the write")
 		})
+	})
+}
+
+// A replacement allocates within its ceiling in the ordinary run,
+// which runs no benchmark.
+func TestStagefileAllocs(t *testing.T) {
+	_, r := rooted(t)
+	data := []byte(body)
+	assert.MaxAllocs(t, func() {
+		if err := stagefile.Replace(r, target, data, mode); err != nil {
+			t.Fatalf("Replace: unexpected error: %v", err)
+		}
+	}, replaceAllocs, "Replace allocates the staging name and the file")
+	assert.MaxAllocs(t, func() {
+		if err := stagefile.ReplaceShared(r, target, data, mode, stagefile.Unsynced); err != nil {
+			t.Fatalf("ReplaceShared: unexpected error: %v", err)
+		}
+	}, replaceSharedAllocs, "ReplaceShared allocates the random staging name and the file")
+}
+
+// BenchmarkStagefile measures one replacement of an existing target in
+// a temporary directory.
+func BenchmarkStagefile(b *testing.B) {
+	data := []byte(body)
+
+	b.Run("Replace", func(b *testing.B) {
+		dir, r := rooted(b)
+		c := bench.Start(b).MaxAllocs(replaceAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = stagefile.Replace(r, target, data, mode)
+		}
+		assert.NoError(b, err, "every replacement succeeds")
+		assert.Equal(b, entries(b, dir), []string{target}, "and leaves the target alone")
+	})
+
+	b.Run("ReplaceShared", func(b *testing.B) {
+		dir, r := rooted(b)
+		c := bench.Start(b).MaxAllocs(replaceSharedAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = stagefile.ReplaceShared(r, target, data, mode, stagefile.Unsynced)
+		}
+		assert.NoError(b, err, "every replacement succeeds")
+		assert.Equal(b, entries(b, dir), []string{target}, "and leaves the target alone")
 	})
 }

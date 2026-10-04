@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -48,6 +49,30 @@ const (
 	cycleName  = "Cycle"  // an alias of Loop
 	loopName   = "Loop"   // an alias of Cycle
 )
+
+// authoredAllocs is the lift of a value an author stated on the
+// declaration that has a text type: the binding's memo of folded shapes,
+// its first group, and the shape it stores out of line.
+const authoredAllocs = 3
+
+// widths classifies the sized spellings the way a language with
+// number widths does, and defers every other spelling to the rules
+// it wraps.
+type widths struct {
+	rules.SourceRules
+}
+
+// Builtin classifies int64 and float32 at their widths.
+func (w widths) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
+	switch ref.Spelling {
+	case int64Spelling:
+		return rules.Scalar(ref.Spelling, rules.ScalarInt, int64Bits)
+	case float32Spelling:
+		return rules.Scalar(ref.Spelling, rules.ScalarFloat, float32Bits)
+	default:
+		return w.SourceRules.Builtin(ref, v)
+	}
+}
 
 // The view is the one door a projection reads through, so what it
 // returns, what it records and how it lifts an authored value are
@@ -338,22 +363,79 @@ func TestView(t *testing.T) {
 	})
 }
 
-// widths classifies the sized spellings the way a language with
-// number widths does, and defers every other spelling to the rules
-// it wraps.
-type widths struct {
-	rules.SourceRules
+// Each read of a view allocates what it lifts, in the ordinary run,
+// which runs no benchmark. The check runs alone, because AllocsPerRun
+// counts every goroutine's allocations and refuses to run beside
+// parallel tests.
+func TestViewAllocs(t *testing.T) {
+	for _, tt := range viewCalls(t) {
+		msg := tt.name + " allocates what it lifts"
+		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
+	}
 }
 
-// Builtin classifies int64 and float32 at their widths.
-func (w widths) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
-	switch ref.Spelling {
-	case int64Spelling:
-		return rules.Scalar(ref.Spelling, rules.ScalarInt, int64Bits)
-	case float32Spelling:
-		return rules.Scalar(ref.Spelling, rules.ScalarFloat, float32Bits)
-	default:
-		return w.SourceRules.Builtin(ref, v)
+// BenchmarkView measures each read a projection makes through a view:
+// the check for the zero view, a declaration, its package, the values an
+// author stated or did not state, and a fact.
+func BenchmarkView(b *testing.B) {
+	for _, tt := range viewCalls(b) {
+		b.Run(tt.name, func(b *testing.B) {
+			tt.call()
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+		})
+	}
+}
+
+// viewCalls returns one call of each read of a view over the walk
+// fixture, with what the call allocates. Row's name field states a
+// sample, and its count field states none. Each call checks what it
+// returned, so a call that measured another path fails.
+func viewCalls(tb assert.TB) []allocCall {
+	tb.Helper()
+
+	v, _, facts := viewOver(tb, coretest.Frozen(tb, hierarchy()))
+	source := scripted()
+	row := coretest.ID(svcPath, rowName, symbol.KindStruct)
+	pkg := coretest.PackageID(svcPath)
+	stated, unstated := rowField(nameField), rowField(countField)
+	stamp(tb, facts, v.Kernel.Sample, stated, authoredText)
+	assert.NoError(tb, meta.Stamp(facts, v.Kernel.Module, modulePath, meta.Claim{Subject: pkg}), "a fact stamps")
+	strRef, intRef := builtin(strSpelling), builtin(intSpelling)
+	return []allocCall{
+		{name: "IsZero", call: func() {
+			if v.IsZero() {
+				tb.Fatalf("IsZero reported true for a minted view")
+			}
+		}},
+		{name: "Lookup", call: func() {
+			if _, held := v.Lookup(row); !held {
+				tb.Fatalf("Lookup missed the fixture's struct")
+			}
+		}},
+		{name: "PackageOf", call: func() {
+			if _, held := v.PackageOf(row); !held {
+				tb.Fatalf("PackageOf missed the fixture's package")
+			}
+		}},
+		{name: "Authored/a type without a stated value", call: func() {
+			if sample, _ := v.Authored(source, unstated, intRef); !sample.Value.IsZero() {
+				tb.Fatalf("Authored returned a value nobody stated")
+			}
+		}},
+		{name: "Authored/a stated value", allocs: authoredAllocs, call: func() {
+			if sample, _ := v.Authored(source, stated, strRef); sample.Value.Text != authoredText {
+				tb.Fatalf("Authored returned another value")
+			}
+		}},
+		{name: "Fact", call: func() {
+			if got, _ := rules.Fact(v, pkg, v.Kernel.Module); got != modulePath {
+				tb.Fatalf("Fact returned another value")
+			}
+		}},
 	}
 }
 

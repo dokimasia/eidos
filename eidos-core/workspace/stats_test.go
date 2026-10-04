@@ -10,8 +10,11 @@ import (
 
 	"go.dokimi.dev/assert"
 
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/ledger"
+	"go.dokimi.dev/eidos/core/store"
+	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
@@ -106,6 +109,65 @@ func TestStats(t *testing.T) {
 			sealedRun(t, w, workspace.Input{Tree: statsTree()})
 			report := sealedRun(t, w, workspace.Input{Tree: statsTree()})
 			assert.True(t, report.Stats.Decoded > 0, "the run's phases read the kept units' regions")
+		})
+
+		t.Run("counts the subjects whose directives the run validated", func(t *testing.T) {
+			t.Parallel()
+
+			report, _, _, err := keyedRun(t, func(g *store.Graph, s symbol.Identity) {
+				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawDiag("tst-0007", 4)}),
+					"the struct's instance attaches before the seal")
+				assert.NoError(t, g.AttachDirectives(coretest.PackageID(coretest.StorePath),
+					[]directive.Raw{rawBareMeta(9)}), "the package's instance attaches before the seal")
+			})
+			assert.NoError(t, err, "the run is clean")
+			assert.Equal(t, report.Stats.Validated, 2, "the struct and its package")
+		})
+
+		t.Run("counts no subject the graph does not contain", func(t *testing.T) {
+			t.Parallel()
+
+			report, _, _, err := keyedRun(t, func(g *store.Graph, s symbol.Identity) {
+				assert.NoError(t, g.AttachDirectives(s, []directive.Raw{rawDiag("tst-0007", 4)}),
+					"the struct's instance attaches before the seal")
+				ghost := coretest.Struct("example.com/elsewhere", "Ghost")
+				assert.NoError(t, g.AttachDirectives(ghost.Identity(), []directive.Raw{rawBareMeta(9)}),
+					"the dangling instance attaches before the seal")
+			})
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the dangling subject fails the run")
+			assert.Equal(t, report.Stats.Validated, 1, "the struct alone")
+		})
+
+		t.Run("counts the files the plans rendered", func(t *testing.T) {
+			t.Parallel()
+
+			report := sealedRun(t, sealing(t, ledger.NewMem(), "plan"), workspace.Input{Tree: statsTree()})
+			assert.NotEmpty(t, report.Manifest.Files, "the plan renders files")
+			assert.Equal(t, report.Stats.Rendered, len(report.Manifest.Files),
+				"a clean cold run records every file it rendered")
+		})
+
+		t.Run("counts the workspace checks the run called", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, sealingBuilder(t, ledger.NewMem(), "plan").Checks(
+				&recordingCheck{name: "first", reads: []string{"plan"}},
+				&recordingCheck{name: "second", reads: []string{"plan"}},
+			))
+			report := sealedRun(t, w, workspace.Input{Tree: statsTree()})
+			assert.Equal(t, report.Stats.Checked, 2, "both checks run")
+		})
+
+		t.Run("counts no check that reads a failed plan", func(t *testing.T) {
+			t.Parallel()
+
+			w := built(t, onDisk(t, t.TempDir(), failing(t, "plan"), diskPlan(t, "fine", centralised("fine"))).Checks(
+				&recordingCheck{name: "blocked", reads: []string{"plan"}},
+				&recordingCheck{name: "called", reads: []string{"fine"}},
+			))
+			report, err := runOver(t, w, routedIn(t, coretest.StorePath))
+			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the failing plan fails the run")
+			assert.Equal(t, report.Stats.Checked, 1, "the check over the clean plan alone")
 		})
 
 		t.Run("counts the bytes the commit wrote", func(t *testing.T) {

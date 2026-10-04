@@ -128,7 +128,7 @@ func (w *linker) reselect(u *unit, r *store.Region) (bool, error) {
 		}
 		ref := refs[link.Ref]
 		w.followed, w.reached = nil, nil
-		hits := w.firstTier(plugin.Candidates(link.Tiers))
+		hits := w.selected(plugin.Candidates(link.Tiers))
 		var target symbol.Identity
 		if len(hits) > 0 {
 			target = hits[0]

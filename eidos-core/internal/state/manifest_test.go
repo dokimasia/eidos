@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
@@ -27,6 +28,25 @@ const (
 
 // errDevice is the refusal a failing ledger returns.
 var errDevice = errors.New("the device is gone")
+
+// The ceilings of the record's read and write over a record of 1,000
+// files, each with the JSON codec's state pooled by an earlier call.
+const (
+	// readManifestAllocs is one read: the listing, each document's read
+	// and decode, and the joined manifest. Three fresh processes with the
+	// collector off counted 2,560 each.
+	readManifestAllocs = 2_560
+	// writeManifestAllocs is one write of a manifest equal to the record:
+	// each document's encoding and digest, compared with the record's,
+	// and nothing written. Three fresh processes with the collector off
+	// counted 1,791 each.
+	writeManifestAllocs = 1_791
+	// manifestStateAllocs is the JSON codec's state, which it takes from a
+	// pool per processor. A collection empties the pool, and 75 of 100
+	// runs of one iteration wrote the equal manifest with 9 allocations
+	// more. Each ceiling allows it once.
+	manifestStateAllocs = 9
+)
 
 // failing is a memory ledger that refuses one operation: a list, a read,
 // a write of one name, or every unsynced write.
@@ -86,12 +106,12 @@ func scaled() manifest.Manifest {
 
 // recorded returns a memory ledger that contains the documents of m,
 // and their digests.
-func recorded(t *testing.T, m manifest.Manifest) (*ledger.Mem, state.Digests) {
-	t.Helper()
+func recorded(tb testing.TB, m manifest.Manifest) (*ledger.Mem, state.Digests) {
+	tb.Helper()
 
 	l := ledger.NewMem()
-	digests, err := state.WriteManifest(t.Context(), l, m, nil)
-	assert.NoError(t, err, "the record is written")
+	digests, err := state.WriteManifest(tb.Context(), l, m, nil)
+	assert.NoError(tb, err, "the record is written")
 	return l, digests
 }
 
@@ -279,14 +299,22 @@ func TestManifest(t *testing.T) {
 			assert.Equal(t, l.Writes(), 0, "and nothing is written")
 		})
 
-		t.Run("returns every document's error and still writes the others", func(t *testing.T) {
+		t.Run("returns the error of a document that fails to write", func(t *testing.T) {
 			t.Parallel()
 
 			m := scaled()
-			broken := documentOf(m.Files[0].Path)
-			l := failing{Mem: ledger.NewMem(), writeAt: broken}
+			l := failing{Mem: ledger.NewMem(), writeAt: documentOf(m.Files[0].Path)}
 			_, err := state.WriteManifest(t.Context(), l, m, nil)
 			assert.ErrorIs(t, err, errDevice, "the failed write is returned")
+		})
+
+		t.Run("writes every other document beside one that fails", func(t *testing.T) {
+			t.Parallel()
+
+			m := scaled()
+			l := failing{Mem: ledger.NewMem(), writeAt: documentOf(m.Files[0].Path)}
+			_, err := state.WriteManifest(t.Context(), l, m, nil)
+			assert.HasError(t, err, "the failed write is returned")
 			assert.Equal(t, l.Writes(), len(manifest.Split(m))-1, "every other document is written")
 		})
 
@@ -298,5 +326,60 @@ func TestManifest(t *testing.T) {
 			assert.ErrorIs(t, err, errDevice, "the list's refusal")
 			assert.Equal(t, l.Writes(), 0, "and nothing is written")
 		})
+	})
+}
+
+// A read and an unchanged write of the record allocate within their
+// ceilings in the ordinary run, which runs no benchmark. The check runs
+// alone, because AllocsPerRun counts every goroutine's allocations and
+// refuses to run beside parallel tests.
+func TestManifestAllocs(t *testing.T) {
+	m := scaled()
+	l, digests := recorded(t, m)
+	assert.MaxAllocs(t, func() {
+		if _, _, err := state.ReadManifest(t.Context(), l); err != nil {
+			t.Fatalf("ReadManifest: unexpected error: %v", err)
+		}
+	}, readManifestAllocs+manifestStateAllocs, "ReadManifest allocates each document's read and decode")
+	assert.MaxAllocs(t, func() {
+		if _, err := state.WriteManifest(t.Context(), l, m, digests); err != nil {
+			t.Fatalf("WriteManifest: unexpected error: %v", err)
+		}
+	}, writeManifestAllocs+manifestStateAllocs, "WriteManifest allocates each document's encoding and digest")
+}
+
+// BenchmarkManifest measures a read of a record of 1,000 files, and a
+// write of a manifest equal to it, which a run without changes makes.
+// Each case runs once before the measurement.
+func BenchmarkManifest(b *testing.B) {
+	m := scaled()
+	l, digests := recorded(b, m)
+
+	b.Run("ReadManifest/a record of 1,000 files", func(b *testing.B) {
+		_, _, err := state.ReadManifest(b.Context(), l)
+		assert.NoError(b, err, "the record reads before the measurement")
+		c := bench.Start(b).MaxAllocs(readManifestAllocs + manifestStateAllocs)
+		defer c.End()
+		var got manifest.Manifest
+		for c.Loop() {
+			got, _, err = state.ReadManifest(b.Context(), l)
+		}
+		assert.NoError(b, err, "the record reads")
+		assert.Length(b, got.Files, files, "with every file")
+	})
+
+	b.Run("WriteManifest/a manifest equal to the record", func(b *testing.B) {
+		_, err := state.WriteManifest(b.Context(), l, m, digests)
+		assert.NoError(b, err, "the record writes before the measurement")
+		writes := l.Writes()
+		c := bench.Start(b).MaxAllocs(writeManifestAllocs + manifestStateAllocs)
+		defer c.End()
+		var got state.Digests
+		for c.Loop() {
+			got, err = state.WriteManifest(b.Context(), l, m, digests)
+		}
+		assert.NoError(b, err, "the record writes")
+		assert.Equal(b, got, digests, "WriteManifest returns the recorded digests")
+		assert.Equal(b, l.Writes(), writes, "and writes nothing")
 	})
 }

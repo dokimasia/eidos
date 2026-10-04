@@ -4,41 +4,16 @@
 package rules_test
 
 import (
-	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/symbol"
 )
-
-// names lists a set's member names in order.
-func names(set rules.MemberSet) []string {
-	out := make([]string, 0, len(set.Members))
-	for _, m := range set.Members {
-		switch d := m.Symbol.(type) {
-		case *node.Field:
-			out = append(out, d.Name)
-		case *node.Method:
-			out = append(out, d.Name)
-		case *node.Embed:
-			out = append(out, d.ID.Name)
-		}
-	}
-	return out
-}
-
-// reasons lists a set's gap reasons in order.
-func reasons(set rules.MemberSet) []rules.GapReason {
-	out := make([]rules.GapReason, 0, len(set.Gaps))
-	for _, g := range set.Gaps {
-		out = append(out, g.Reason)
-	}
-	return out
-}
 
 // The walk is the kernel's and the shadowing is the language's, so
 // each rule, each gap and the provenance are pinned here.
@@ -53,13 +28,13 @@ func TestMembers(t *testing.T) {
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			derived, held := b.View().Lookup(coretest.ID(svcPath, derivedName, symbol.KindStruct))
-			assert.True(t, held, "the fixture holds the embedding struct")
+			assert.True(t, held, "the fixture declares the embedding struct")
 			set, is := b.MembersOf(derived)
 			assert.True(t, is, "a struct walks")
 			assert.Equal(t, names(set), []string{"name", "id", "ID"},
 				"the declared member first, then the promoted ones in the contributor's order")
 			assert.True(t, set.Complete(), "every contributor yielded")
-			assert.Equal(t, set.Members[0].Depth, 0, "a declared member sits at depth zero")
+			assert.Equal(t, set.Members[0].Depth, 0, "a declared member is at depth zero")
 			assert.Empty(t, set.Members[0].Through, "through nothing")
 			assert.Equal(t, set.Members[1].Depth, 1, "a promoted one at depth one")
 			base := coretest.ID(svcPath, baseName, symbol.KindStruct)
@@ -126,36 +101,42 @@ func TestMembers(t *testing.T) {
 				assert.Equal(t, names(set), tc.want, tc.rule.String()+" settles as the language states")
 				if tc.rule != rules.ShadowMerge {
 					assert.Equal(t, set.Members[0].Owner, coretest.ID(svcPath, "Left", symbol.KindStruct),
-						"the first arrival wins")
+						"the first arrival takes the name")
 				}
 			}
 		})
 
-		t.Run("takes the nearest arrival under override and linearise", func(t *testing.T) {
-			t.Parallel()
+		nearest := []struct {
+			name string
+			rule rules.Shadowing
+		}{
+			{name: "takes the nearest arrival under ShadowOverride", rule: rules.ShadowOverride},
+			{name: "takes the nearest arrival under ShadowLinearise", rule: rules.ShadowLinearise},
+		}
+		for _, tt := range nearest {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			grand := coretest.Struct(svcPath, "Grand")
-			grand.Methods = []*node.Method{method(svcPath, "Grand", "Run")}
-			left := coretest.Struct(svcPath, "Left")
-			left.Extends = []*node.TypeRef{named(svcPath, "Grand", symbol.KindStruct)}
-			right := coretest.Struct(svcPath, "Right")
-			right.Methods = []*node.Method{method(svcPath, "Right", "Run")}
-			both := coretest.Struct(svcPath, "Both")
-			both.Extends = []*node.TypeRef{
-				named(svcPath, "Left", symbol.KindStruct), named(svcPath, "Right", symbol.KindStruct),
-			}
-			g := coretest.Frozen(t, coretest.Package(svcPath, grand, left, right, both))
-			for _, rule := range []rules.Shadowing{rules.ShadowOverride, rules.ShadowLinearise} {
-				v, _, _ := viewOver(t, g)
+				grand := coretest.Struct(svcPath, "Grand")
+				grand.Methods = []*node.Method{method(svcPath, "Grand", "Run")}
+				left := coretest.Struct(svcPath, "Left")
+				left.Extends = []*node.TypeRef{named(svcPath, "Grand", symbol.KindStruct)}
+				right := coretest.Struct(svcPath, "Right")
+				right.Methods = []*node.Method{method(svcPath, "Right", "Run")}
+				both := coretest.Struct(svcPath, "Both")
+				both.Extends = []*node.TypeRef{
+					named(svcPath, "Left", symbol.KindStruct), named(svcPath, "Right", symbol.KindStruct),
+				}
+				v, _, _ := viewOver(t, coretest.Frozen(t, coretest.Package(svcPath, grand, left, right, both)))
 				b := rules.NewBound(policy{scripted(), rules.MemberPolicy{
-					Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: rule,
+					Contributes: []rules.Contribution{rules.ContributesExtends}, Shadowing: tt.rule,
 				}}, v, nil)
 				set, _ := b.MembersOf(both)
-				assert.Equal(t, names(set), []string{"Run"}, rule.String()+" keeps one Run")
+				assert.Equal(t, names(set), []string{"Run"}, "one Run remains")
 				assert.Equal(t, set.Members[0].Owner, right.ID,
-					rule.String()+" takes Right's, one level up, over Grand's, which the walk reaches first")
-			}
-		})
+					"Right's Run, one level up, over Grand's, which the walk meets first")
+			})
+		}
 
 		t.Run("keeps an inherited overload beside a declared one under override", func(t *testing.T) {
 			t.Parallel()
@@ -229,7 +210,7 @@ func TestMembers(t *testing.T) {
 			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapCyclic}, "and the budget reports as a cycle")
 		})
 
-		t.Run("binds a generic contributor's arguments or reports it", func(t *testing.T) {
+		t.Run("binds a generic contributor's arguments", func(t *testing.T) {
 			t.Parallel()
 
 			box := coretest.Struct(svcPath, "Box")
@@ -278,7 +259,7 @@ func TestMembers(t *testing.T) {
 			assert.Equal(t, innerRef.Args[0].Spelling, "T", "and the graph's own reference is unchanged")
 		})
 
-		t.Run("records an embedded field and selects it over a deeper name", func(t *testing.T) {
+		t.Run("selects an embedded field over a deeper name", func(t *testing.T) {
 			t.Parallel()
 
 			leaf := coretest.Struct(svcPath, "Leaf")
@@ -354,41 +335,49 @@ func TestMembers(t *testing.T) {
 				"and the contributor the second signature arrived by")
 		})
 
-		t.Run("compares signatures by target and variadic kind", func(t *testing.T) {
-			t.Parallel()
+		// reading declares an interface whose Read takes one parameter
+		// spelled Buf, naming a package's Buf and collecting as variadic
+		// states.
+		reading := func(host, pkg string, variadic symbol.Variadic) *node.Interface {
+			i := iface(svcPath, host)
+			m := coretest.Method(svcPath, host, "Read")
+			m.Params = []*node.Param{{
+				Name: "p", Type: named(pkg, "Buf", symbol.KindStruct), Variadic: variadic,
+			}}
+			i.Methods = []*node.Method{m}
+			return i
+		}
+		signatures := []struct {
+			name     string
+			pkg      string
+			variadic symbol.Variadic
+		}{
+			{
+				name: "reports GapConflict for parameters of one spelling that name two targets",
+				pkg:  depPath, variadic: symbol.VariadicNone,
+			},
+			{
+				name: "reports GapConflict for parameters of one spelling with two variadic kinds",
+				pkg:  svcPath, variadic: symbol.VariadicPositional,
+			},
+		}
+		for _, tt := range signatures {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			// Each pair of interfaces spells one Read(Buf) alike and
-			// differs in what the parameter names or how it collects.
-			reading := func(host, pkg string, variadic symbol.Variadic) *node.Interface {
-				i := iface(svcPath, host)
-				m := coretest.Method(svcPath, host, "Read")
-				m.Params = []*node.Param{{
-					Name: "p", Type: named(pkg, "Buf", symbol.KindStruct), Variadic: variadic,
-				}}
-				i.Methods = []*node.Method{m}
-				return i
-			}
-			local := reading("Local", svcPath, symbol.VariadicNone)
-			foreign := reading("Foreign", depPath, symbol.VariadicNone)
-			spread := reading("Spread", svcPath, symbol.VariadicPositional)
-			byPackage := iface(svcPath, "ByPackage")
-			byPackage.Embeds = []*node.Embed{
-				{Ref: named(svcPath, "Local", symbol.KindInterface)},
-				{Ref: named(svcPath, "Foreign", symbol.KindInterface)},
-			}
-			byVariadic := iface(svcPath, "ByVariadic")
-			byVariadic.Embeds = []*node.Embed{
-				{Ref: named(svcPath, "Local", symbol.KindInterface)},
-				{Ref: named(svcPath, "Spread", symbol.KindInterface)},
-			}
-			b, _, _ := boundOver(t, coretest.Frozen(t,
-				coretest.Package(svcPath, local, foreign, spread, byPackage, byVariadic)))
-			for _, host := range []*node.Interface{byPackage, byVariadic} {
+				host := iface(svcPath, "Host")
+				host.Embeds = []*node.Embed{
+					{Ref: named(svcPath, "Local", symbol.KindInterface)},
+					{Ref: named(svcPath, "Second", symbol.KindInterface)},
+				}
+				local := reading("Local", svcPath, symbol.VariadicNone)
+				second := reading("Second", tt.pkg, tt.variadic)
+				b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, local, second, host)))
 				set, _ := b.MembersOf(host)
 				assert.Equal(t, reasons(set), []rules.GapReason{rules.GapConflict},
-					host.Name+": one spelling naming two signatures conflicts")
-			}
-		})
+					"one spelling of two signatures conflicts")
+			})
+		}
 
 		t.Run("compares a structural parameter by its elements", func(t *testing.T) {
 			t.Parallel()
@@ -445,7 +434,7 @@ func TestMembers(t *testing.T) {
 			want  []rules.GapReason
 		}{
 			{
-				name:  "folds two inline parameters of one spelling and one target into one member",
+				name:  "folds two inline parameters of one spelling over one target into one member",
 				field: "b", pkg: svcPath, want: []rules.GapReason{},
 			},
 			{
@@ -520,7 +509,7 @@ func TestMembers(t *testing.T) {
 			set, _ := b.MembersOf(deep)
 			assert.Equal(t, reasons(set), []rules.GapReason{rules.GapConflict},
 				"Other's Read conflicts with Reader's two contributors down")
-			assert.Equal(t, set.Gaps[0].Host, mid.ID, "the gap names Mid, whose list holds Other")
+			assert.Equal(t, set.Gaps[0].Host, mid.ID, "the gap names Mid, whose list contains Other")
 			assert.Equal(t, set.Gaps[0].Contributor, mid.Embeds[0].Ref, "and Mid's reference to it")
 		})
 
@@ -592,17 +581,15 @@ func TestMembers(t *testing.T) {
 			assert.Equal(t, names(set), []string{"id"}, "and its declared members arrive under it")
 		})
 
-		t.Run("refuses a symbol that is not a type", func(t *testing.T) {
+		t.Run("reports false for a symbol that is not a type", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			_, is := b.MembersOf(coretest.Function(svcPath, "F"))
 			assert.False(t, is, "a function has no members")
-			assert.Equal(t, rules.GapConflict.String(), "conflict", "a reason spells")
-			assert.Equal(t, rules.GapReason(9).String(), "9", "and an undeclared one numbers")
 		})
 
-		t.Run("counts depth from the host and lets a lone deep member through", func(t *testing.T) {
+		t.Run("counts depth from the host", func(t *testing.T) {
 			t.Parallel()
 
 			var decls []symbol.Symbol
@@ -629,7 +616,7 @@ func TestMembers(t *testing.T) {
 			assert.Equal(t, set.Members[1].Depth, 3, "three embeds down")
 		})
 
-		t.Run("cancels two promotions at one depth and keeps a declared member over them", func(t *testing.T) {
+		t.Run("keeps a declared member over two promotions at one depth", func(t *testing.T) {
 			t.Parallel()
 
 			left := coretest.Struct(svcPath, "Left")
@@ -644,10 +631,44 @@ func TestMembers(t *testing.T) {
 			host.Embeds = []*node.Embed{embedding(svcPath, "Left"), embedding(svcPath, "Right")}
 			b, _, _ := boundOver(t, coretest.Frozen(t, coretest.Package(svcPath, left, right, host)))
 			set, _ := b.MembersOf(host)
-			assert.Equal(t, names(set), []string{"own"}, "two arrivals at one depth cancel; the declared member stands")
-			assert.Length(t, set.Members, 1, "and stands once")
+			assert.Equal(t, names(set), []string{"own"},
+				"two arrivals at one depth cancel, and the declared member remains")
+			assert.Length(t, set.Members, 1, "once")
 			assert.Equal(t, set.Members[0].Owner, host.ID, "as the host's own")
 			assert.True(t, set.Complete(), "a cancellation is the rule, not a gap")
+		})
+
+		t.Run("returns gaps that a later call leaves unchanged", func(t *testing.T) {
+			t.Parallel()
+
+			host := coretest.Struct(svcPath, "Host")
+			host.Embeds = []*node.Embed{{Ref: named(svcPath, "Missing", symbol.KindStruct)}}
+			other := coretest.Struct(svcPath, "Other")
+			other.Embeds = []*node.Embed{{Ref: builtin("Elsewhere")}, embedding(svcPath, baseName)}
+			pkg := coretest.Package(svcPath, host, other, coretest.Struct(svcPath, baseName))
+			b, _, _ := boundOver(t, coretest.Frozen(t, pkg))
+			first, _ := b.MembersOf(host)
+			for range 8 {
+				b.MembersOf(other)
+			}
+			assert.Equal(t, reasons(first), []rules.GapReason{rules.GapUnresolved},
+				"the first call's gaps are its own, whatever the calls after it found")
+			assert.Equal(t, first.Gaps[0].Host, host.ID, "and name its host")
+		})
+
+		t.Run("returns no member of the call before", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			derived, _ := b.View().Lookup(coretest.ID(svcPath, derivedName, symbol.KindStruct))
+			lone := coretest.Struct(svcPath, "Lone")
+			for range 8 {
+				b.MembersOf(derived)
+				set, is := b.MembersOf(lone)
+				assert.True(t, is, "a struct walks")
+				assert.Empty(t, set.Members, "a struct without members has none of the call before")
+				assert.True(t, set.Complete(), "and no gap of it")
+			}
 		})
 
 		t.Run("keeps an interface's fields arriving twice as two candidates", func(t *testing.T) {
@@ -668,35 +689,126 @@ func TestMembers(t *testing.T) {
 			assert.True(t, set.Complete(), "without a conflict, because neither states a signature")
 		})
 
-		t.Run("reports a typed nil as no type", func(t *testing.T) {
+		t.Run("reports false for a typed nil", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			for _, sym := range []symbol.Symbol{(*node.Struct)(nil), (*node.Interface)(nil), (*node.Enum)(nil), (*node.Sum)(nil), nil} {
 				_, is := b.MembersOf(sym)
-				assert.False(t, is, "nothing has no members, and the walk never panics")
+				assert.False(t, is, "a nil declaration has no members")
 			}
 		})
 	})
+
+	t.Run("MemberSet.Complete", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give rules.MemberSet
+			want bool
+		}{
+			{name: "reports true for a set without a gap", give: rules.MemberSet{}, want: true},
+			{
+				name: "reports false for a set with a gap",
+				give: rules.MemberSet{Gaps: []rules.Gap{{Reason: rules.GapCyclic}}},
+				want: false,
+			},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.Complete(), tt.want, "Complete reports whether every contributor yielded")
+			})
+		}
+	})
+
+	t.Run("GapReason.String", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give rules.GapReason
+			want string
+		}{
+			{name: "returns unresolved for GapUnresolved", give: rules.GapUnresolved, want: "unresolved"},
+			{name: "returns not-membered for GapNotMembered", give: rules.GapNotMembered, want: "not-membered"},
+			{name: "returns cyclic for GapCyclic", give: rules.GapCyclic, want: "cyclic"},
+			{name: "returns generic for GapGeneric", give: rules.GapGeneric, want: "generic"},
+			{name: "returns conflict for GapConflict", give: rules.GapConflict, want: "conflict"},
+			{name: "returns the number of an undeclared reason", give: rules.GapReason(9), want: "9"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
+			})
+		}
+	})
 }
 
-// A promoted method set is the walk's common case: a struct
-// embedding a type whose methods arrive once each.
-func BenchmarkMembers(b *testing.B) {
-	const methods = 20
-	base := coretest.Struct(svcPath, baseName)
-	for i := range methods {
-		base.Methods = append(base.Methods, method(svcPath, baseName, "M"+strconv.Itoa(i)))
-	}
-	derived := coretest.Struct(svcPath, derivedName)
-	derived.Embeds = []*node.Embed{embedding(svcPath, baseName)}
-	bound, _, _ := boundOver(b, coretest.Frozen(b, coretest.Package(svcPath, base, derived)))
+// A set reports its completeness, and a declared reason spells, without
+// allocating in the ordinary run, which runs no benchmark.
+func TestMembersZeroAlloc(t *testing.T) {
+	set, reason := rules.MemberSet{Gaps: []rules.Gap{{Reason: rules.GapCyclic}}}, rules.GapConflict
+	var complete bool
+	assert.MaxAllocs(t, func() { complete = set.Complete() }, 0, "MemberSet.Complete allocates nothing")
+	assert.False(t, complete, "MemberSet.Complete reports false for a set with a gap")
+	var got string
+	assert.MaxAllocs(t, func() { got = reason.String() }, 0, "GapReason.String allocates nothing for a declared reason")
+	assert.Equal(t, got, "conflict", "GapReason.String spells GapConflict")
+}
 
-	b.ReportAllocs()
-	for b.Loop() {
-		set, _ := bound.MembersOf(derived)
-		if len(set.Members) != methods {
-			b.Fatalf("MembersOf returned %d members, want %d", len(set.Members), methods)
+// BenchmarkMembers measures the completeness of a member set, which a
+// generator checks once per walk, and the spelling of a gap reason,
+// which a finding prints once per gap.
+func BenchmarkMembers(b *testing.B) {
+	b.Run("MemberSet.Complete", func(b *testing.B) {
+		set := rules.MemberSet{Gaps: []rules.Gap{{Reason: rules.GapCyclic}}}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		complete := true
+		for c.Loop() {
+			complete = set.Complete()
+		}
+		assert.False(b, complete, "MemberSet.Complete reports false for a set with a gap")
+	})
+
+	b.Run("GapReason.String", func(b *testing.B) {
+		reason := rules.GapConflict
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = reason.String()
+		}
+		assert.Equal(b, got, "conflict", "GapReason.String spells GapConflict")
+	})
+}
+
+// names lists a set's member names in order.
+func names(set rules.MemberSet) []string {
+	out := make([]string, 0, len(set.Members))
+	for _, m := range set.Members {
+		switch d := m.Symbol.(type) {
+		case *node.Field:
+			out = append(out, d.Name)
+		case *node.Method:
+			out = append(out, d.Name)
+		case *node.Embed:
+			out = append(out, d.ID.Name)
 		}
 	}
+	return out
+}
+
+// reasons lists a set's gap reasons in order.
+func reasons(set rules.MemberSet) []rules.GapReason {
+	out := make([]rules.GapReason, 0, len(set.Gaps))
+	for _, g := range set.Gaps {
+		out = append(out, g.Reason)
+	}
+	return out
 }

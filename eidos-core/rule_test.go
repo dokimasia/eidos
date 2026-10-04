@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
@@ -20,14 +21,36 @@ import (
 // register under.
 const fixtureNamespace = "t"
 
-// subscriptionsOf builds the plugin and returns its gate records.
-func subscriptionsOf(tb assert.TB, rules ...eidos.Rule) []plugin.Subscription {
-	tb.Helper()
+// The two values the equality gate tells apart. The cases need a
+// string key: the fact store refuses a false bool, because absence
+// is the negative, so a bool key cannot have two values to compare.
+const (
+	wantedRank = "first"
+	otherRank  = "second"
+)
 
-	p := eidos.NewPlugin("t").Handle(rules...).Build()
-	subscribed, ok := p.(plugin.Subscribed)
-	assert.True(tb, ok, "a built plugin declares its gates as data")
-	return subscribed.Subscriptions()
+// The allocations of the scoping wrappers and the predicates.
+const (
+	// directiveAllocs is a directive wrapper: the copy of its schema and
+	// its list of rules.
+	directiveAllocs = 2
+	// gatedAllocs is a kernel gate: its list of rules.
+	gatedAllocs = 1
+	// whereAllocs is a fact gate: its list of predicates and its list of
+	// rules.
+	whereAllocs = 2
+	// predAllocs is a predicate: its test's closure over the key.
+	predAllocs = 1
+)
+
+// ruleCall is one construction of a wrapper or a predicate, named as
+// its benchmark is, what it allocates, and a check of what the last
+// construction built.
+type ruleCall struct {
+	name   string
+	allocs uint64
+	call   func()
+	check  func(tb assert.TB)
 }
 
 // A rule's gates lower to subscription records, which is the whole
@@ -41,28 +64,10 @@ func TestRule(t *testing.T) {
 			func(m *eidos.EmitMatch, e *eidos.Emitter) error { return nil })
 	}
 
-	t.Run("Subscriptions", func(t *testing.T) {
+	t.Run("Directive", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns an ungated record for a graph rule", func(t *testing.T) {
-			t.Parallel()
-
-			got := subscriptionsOf(t, emitNothing())
-			assert.Equal(t, got, []plugin.Subscription{{
-				Rule: 0, Phase: plugin.PhaseGenerate,
-			}}, "zero gate fields spell ungated, and a graph rule has no kind")
-		})
-
-		t.Run("returns a record in the emit phase for an emit rule", func(t *testing.T) {
-			t.Parallel()
-
-			got := subscriptionsOf(t, onEmit())
-			assert.Equal(t, got, []plugin.Subscription{{
-				Rule: 0, Kind: symbol.KindStruct, Phase: plugin.PhaseEmit,
-			}}, "the record is in the emit phase")
-		})
-
-		t.Run("returns the canonical name for a directive gate", func(t *testing.T) {
+		t.Run("returns a rule gated on the schema's canonical spelling", func(t *testing.T) {
 			t.Parallel()
 
 			got := subscriptionsOf(t,
@@ -73,8 +78,12 @@ func TestRule(t *testing.T) {
 				Phase:     plugin.PhaseEmit,
 			}}, "the record names the canonical spelling")
 		})
+	})
 
-		t.Run("returns the bare name for a kernel gate", func(t *testing.T) {
+	t.Run("Gated", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a rule gated on the kernel directive's bare name", func(t *testing.T) {
 			t.Parallel()
 
 			got := subscriptionsOf(t, eidos.Gated(directive.KernelSample, onEmit()))
@@ -84,8 +93,12 @@ func TestRule(t *testing.T) {
 				Phase:     plugin.PhaseEmit,
 			}}, "a kernel directive's canonical spelling is its bare name")
 		})
+	})
 
-		t.Run("returns the key for a fact gate", func(t *testing.T) {
+	t.Run("Where", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a rule gated on the predicate's key", func(t *testing.T) {
 			t.Parallel()
 
 			key, _ := boolKey(t)
@@ -96,7 +109,7 @@ func TestRule(t *testing.T) {
 			}}, "the gate tuple is what dirtiness routes through")
 		})
 
-		t.Run("returns one record per key for two fact gates on one rule", func(t *testing.T) {
+		t.Run("returns a rule gated on the key of each nested wrapper", func(t *testing.T) {
 			t.Parallel()
 
 			reg := meta.NewRegistry()
@@ -119,7 +132,7 @@ func TestRule(t *testing.T) {
 			assert.Equal(t, got[1].FactKey, second.ID(), "the second record has the inner key")
 		})
 
-		t.Run("returns one record per rule under a shared wrapper", func(t *testing.T) {
+		t.Run("returns one gated rule per rule it wraps", func(t *testing.T) {
 			t.Parallel()
 
 			key, _ := boolKey(t)
@@ -133,6 +146,23 @@ func TestRule(t *testing.T) {
 			assert.Equal(t, got[1].Rule, plugin.RuleID(1), "the ordinals follow declaration order")
 			assert.Equal(t, got[1].Kind, symbol.KindMethod, "each record has its own trigger's kind")
 			assert.Equal(t, got[1].FactKey, key.ID(), "each record has the shared wrapper's gate")
+		})
+	})
+
+	t.Run("HasKey", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("visits only a subject on which the key reads present", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			key, facts := boolKey(t)
+			assert.NoError(t,
+				meta.Stamp(facts, key, true, meta.Claim{Subject: alpha.ID}),
+				"one subject is flagged")
+
+			visited := gatedVisits(t, g, facts, eidos.HasKey(key))
+			assert.Equal(t, visited, []symbol.Identity{alpha.ID}, "the unflagged subject is not visited")
 		})
 	})
 
@@ -184,13 +214,80 @@ func TestRule(t *testing.T) {
 	})
 }
 
-// The two values the equality gate tells apart. The cases need a
-// string key: the fact store refuses a false bool, because absence
-// is the negative, so a bool key cannot have two values to compare.
-const (
-	wantedRank = "first"
-	otherRank  = "second"
-)
+// Each wrapper allocates its lists, and each predicate its test, in the
+// ordinary run, which runs no benchmark. The check runs alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestRuleAllocs(t *testing.T) {
+	for _, tt := range ruleCalls(t) {
+		msg := tt.name + " allocates its rule"
+		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
+		tt.check(t)
+	}
+}
+
+// BenchmarkRule measures each scoping wrapper around one rule and each
+// predicate's construction: what a plugin's constructor declares once.
+func BenchmarkRule(b *testing.B) {
+	for _, tt := range ruleCalls(b) {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
+		})
+	}
+}
+
+// ruleCalls returns one construction of each wrapper around one emit
+// rule, and of each predicate, with a check of the record the last
+// construction lowers to.
+func ruleCalls(tb assert.TB) []ruleCall {
+	tb.Helper()
+
+	leaf := eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })
+	schema := stubSchema("stub")
+	flag, _ := boolKey(tb)
+	rank, _ := rankKey(tb)
+	pred := eidos.HasKey(flag)
+	var (
+		rule eidos.Rule
+		p    eidos.Pred
+	)
+	gatedOn := func(name directive.Name) func(assert.TB) {
+		return func(tb assert.TB) {
+			assert.Equal(tb, subscriptionsOf(tb, rule)[0].Directive, name, "the rule is gated on the directive")
+		}
+	}
+	keyed := func(id meta.KeyID) func(assert.TB) {
+		return func(tb assert.TB) {
+			assert.Equal(tb, subscriptionsOf(tb, eidos.Where(p, leaf))[0].FactKey, id, "the predicate gates on the key")
+		}
+	}
+	return []ruleCall{
+		{
+			name: "Directive", allocs: directiveAllocs, check: gatedOn(schema.Canonical()),
+			call: func() { rule = eidos.Directive(schema, leaf) },
+		},
+		{
+			name: "Gated", allocs: gatedAllocs, check: gatedOn(directive.KernelSample),
+			call: func() { rule = eidos.Gated(directive.KernelSample, leaf) },
+		},
+		{
+			name: "Where", allocs: whereAllocs, call: func() { rule = eidos.Where(pred, leaf) },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, subscriptionsOf(tb, rule)[0].FactKey, flag.ID(), "the rule is gated on the key")
+			},
+		},
+		{name: "HasKey", allocs: predAllocs, check: keyed(flag.ID()), call: func() { p = eidos.HasKey(flag) }},
+		{
+			name: "KeyEquals", allocs: predAllocs, check: keyed(rank.ID()),
+			call: func() { p = eidos.KeyEquals(rank, wantedRank) },
+		},
+	}
+}
 
 // rankKey returns a registered string key and the fact store it was
 // registered in.
@@ -204,6 +301,16 @@ func rankKey(tb assert.TB) (meta.Key[string], *meta.Facts) {
 	})
 	assert.NoError(tb, err, "the key registers")
 	return key, meta.NewFacts(reg)
+}
+
+// subscriptionsOf builds the plugin and returns its gate records.
+func subscriptionsOf(tb assert.TB, rules ...eidos.Rule) []plugin.Subscription {
+	tb.Helper()
+
+	p := eidos.NewPlugin("t").Handle(rules...).Build()
+	subscribed, ok := p.(plugin.Subscribed)
+	assert.True(tb, ok, "a built plugin declares its gates as data")
+	return subscribed.Subscriptions()
 }
 
 // gatedVisits returns the subjects a struct rule under pred visited,

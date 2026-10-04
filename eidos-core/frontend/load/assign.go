@@ -37,6 +37,10 @@ type index struct {
 	dropped map[symbol.Symbol]symbol.Identity
 	files   map[symbol.Identity]string
 	kept    *keptIndex
+	// assigned contains every targetable identity the load assigned, in
+	// identity order once [index.group] has sorted it. Each list in
+	// byBare is a run of it.
+	assigned []symbol.Identity
 }
 
 // lookup returns the declarations a candidate names, in identity order:
@@ -69,10 +73,30 @@ func (ix *index) file(id symbol.Identity) string {
 	return ix.kept.file(id)
 }
 
-// add records one assigned identity under its bare spelling.
+// add records one assigned identity, which [index.group] lists under its
+// bare spelling.
 func (ix *index) add(full symbol.Identity) {
-	bare := bareOf(full)
-	ix.byBare[bare] = append(ix.byBare[bare], full)
+	ix.assigned = append(ix.assigned, full)
+}
+
+// group sorts the assigned identities and lists each bare spelling's
+// run of them in byBare, in identity order. Identity order compares the
+// fields a bare spelling keeps first, so the identities of one spelling
+// are adjacent. Each run is capped at its end, so an append to one
+// copies it and leaves its neighbour intact. The lists share the array
+// of the assigned identities, so group allocates only for the map's
+// entries.
+func (ix *index) group() {
+	slices.SortFunc(ix.assigned, symbol.Identity.Compare)
+	for start := 0; start < len(ix.assigned); {
+		bare := bareOf(ix.assigned[start])
+		end := start + 1
+		for end < len(ix.assigned) && bareOf(ix.assigned[end]) == bare {
+			end++
+		}
+		ix.byBare[bare] = ix.assigned[start:end:end]
+		start = end
+	}
 }
 
 // bareOf strips an identity to what a resolver can spell.
@@ -127,9 +151,7 @@ func assign(packages []*spliced, sink *diag.Sink) *index {
 			a.file(f)
 		}
 	}
-	for _, bucket := range ix.byBare {
-		slices.SortFunc(bucket, symbol.Identity.Compare)
-	}
+	ix.group()
 	return ix
 }
 
@@ -228,21 +250,32 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		id := a.derive(x, owner, x.Name, symbol.KindStruct, "")
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
-		a.typeParams(childOwner(owner, x.Name), id, dropping, x.TypeParams)
-		a.members(childOwner(owner, x.Name), id, dropping, x.Fields, x.Methods, x.Types, x.Embeds)
+		inner := childOwner(owner, x.Name)
+		a.typeParams(inner, id, dropping, x.TypeParams)
+		a.members(inner, id, dropping, x.Fields)
+		a.members(inner, id, dropping, x.Methods)
+		a.members(inner, id, dropping, x.Types)
+		a.members(inner, id, dropping, x.Embeds)
 
 	case *node.Interface:
 		id := a.derive(x, owner, x.Name, symbol.KindInterface, "")
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
-		a.typeParams(childOwner(owner, x.Name), id, dropping, x.TypeParams)
-		a.members(childOwner(owner, x.Name), id, dropping, x.Fields, x.Methods, x.Types, x.Embeds)
+		inner := childOwner(owner, x.Name)
+		a.typeParams(inner, id, dropping, x.TypeParams)
+		a.members(inner, id, dropping, x.Fields)
+		a.members(inner, id, dropping, x.Methods)
+		a.members(inner, id, dropping, x.Types)
+		a.members(inner, id, dropping, x.Embeds)
 
 	case *node.Enum:
 		id := a.derive(x, owner, x.Name, symbol.KindEnum, "")
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
-		a.members(childOwner(owner, x.Name), id, dropping, x.Variants, x.Fields, x.Methods, nil)
+		inner := childOwner(owner, x.Name)
+		a.members(inner, id, dropping, x.Variants)
+		a.members(inner, id, dropping, x.Fields)
+		a.members(inner, id, dropping, x.Methods)
 
 	case *node.EnumVariant:
 		id := a.derive(x, owner, x.Name, symbol.KindEnumVariant, "")
@@ -253,15 +286,17 @@ func (a *assigner) decl(s symbol.Symbol, owner string, host symbol.Identity, dro
 		id := a.derive(x, owner, x.Name, symbol.KindSum, "")
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
-		a.typeParams(childOwner(owner, x.Name), id, dropping, x.TypeParams)
-		a.members(childOwner(owner, x.Name), id, dropping, x.Variants, x.Methods, nil, nil)
+		inner := childOwner(owner, x.Name)
+		a.typeParams(inner, id, dropping, x.TypeParams)
+		a.members(inner, id, dropping, x.Variants)
+		a.members(inner, id, dropping, x.Methods)
 
 	case *node.SumVariant:
 		id := a.derive(x, owner, x.Name, symbol.KindSumVariant, "")
 		var dropping bool
 		x.ID, dropping = a.claim(x, id, x.Pos, drop)
 		x.Host = host
-		a.members(childOwner(owner, x.Name), id, dropping, x.Fields, nil, nil, nil)
+		a.members(childOwner(owner, x.Name), id, dropping, x.Fields)
 
 	case *node.Field:
 		x.Host = host
@@ -376,40 +411,13 @@ func positional(name string, i int) string {
 // return's name.
 const positionalPrefix = "#"
 
-// members descends into up to four member lists, in order.
-func (a *assigner) members(
-	owner string, host symbol.Identity, drop bool, lists ...any,
-) {
-	for _, list := range lists {
-		switch typed := list.(type) {
-		case nil:
-		case []*node.Field:
-			for _, m := range typed {
-				a.decl(m, owner, host, drop)
-			}
-		case []*node.Method:
-			for _, m := range typed {
-				a.decl(m, owner, host, drop)
-			}
-		case []*node.EnumVariant:
-			for _, m := range typed {
-				a.decl(m, owner, host, drop)
-			}
-		case []*node.SumVariant:
-			for _, m := range typed {
-				a.decl(m, owner, host, drop)
-			}
-		case []*node.Embed:
-			for _, m := range typed {
-				a.decl(m, owner, host, drop)
-			}
-		case node.Symbols:
-			for _, m := range typed {
-				a.decl(m, owner, host, drop)
-			}
-		default:
-			panic(fmt.Sprintf("load: a %T member list is not part of the model", list))
-		}
+// members assigns one member list of a declaration, in order, under the
+// declaration's owner chain and identity. A declaration passes its lists
+// one call each, in the order the model lists them, and a call allocates
+// nothing of its own.
+func (a *assigner) members[S symbol.Symbol](owner string, host symbol.Identity, drop bool, list []S) {
+	for _, m := range list {
+		a.decl(m, owner, host, drop)
 	}
 }
 

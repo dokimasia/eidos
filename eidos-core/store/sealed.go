@@ -18,7 +18,7 @@ import (
 
 // errNoRegion is the damage a [Source] causes when it decodes a region
 // to nothing without an error.
-var errNoRegion = errors.New("the source decoded the region to nothing")
+var errNoRegion = errors.New("store: the source decoded the region to nothing")
 
 // sealedIndex is a sealed graph's regions and the indexes it builds
 // over them on first use. A read decodes the regions it needs and no

@@ -3,53 +3,52 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
+	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/position"
 	"go.dokimi.dev/eidos/core/symbol"
+{{- template "model" .}}
 )
+
+// The shape of the package the allocation cases encode: 10 files of
+// 20 declarations, one package of the canonical corpus.
+const (
+	codecFiles = 10
+	codecDecls = 20
+)
+
+// codecDecodeAllocs is the ceiling of one decode of that package: the
+// package and its path, its file list and its 10 files, each file's
+// declaration list, and its 200 structs.
+const codecDecodeAllocs = 1 + 1 + 1 + codecFiles + codecFiles + codecFiles*codecDecls
 
 // foreignSymbol is a symbol from outside the model, the one value the
 // binary codec refuses to write.
 type foreignSymbol struct{}
 
-func (foreignSymbol) Kind() symbol.Kind      { return symbol.Kind{{(index .Views 0).Name}} }
+// Kind returns the first kind of the model, which the codec reads
+// before it refuses the value's type.
+func (foreignSymbol) Kind() symbol.Kind { return symbol.Kind{{(index .Views 0).Name}} }
+
+// Position returns the zero position.
 func (foreignSymbol) Position() position.Pos { return position.Pos{} }
-func (foreignSymbol) Docs() []string         { return nil }
 
-// populated returns a subject of every kind with a value in every field
-// the binary codec writes, and one child in every field of children.
-func populated() []symbol.Symbol {
-	var out []symbol.Symbol
-{{- range .Views}}
-	{
-		subject := &{{.Name}}{}
-{{- range .Populate}}
-		{{.}}
-{{- end}}
-{{- range .Children}}
-		{{.}}
-{{- end}}
-		out = append(out, subject)
-	}
-{{- end}}
-	return out
+// Docs returns nil.
+func (foreignSymbol) Docs() []string { return nil }
+
+// codecCase is one measured call of the binary codec: the
+// sub-benchmark's name, its allocation ceiling, the call, and the
+// check on what the last call returned.
+type codecCase struct {
+	name   string
+	allocs uint64
+	call   func()
+	check  func(testing.TB)
 }
 
-// tableTrip encodes s against a fresh table and returns the encoding,
-// with the table as its own encoding decodes.
-func tableTrip(tb testing.TB, s symbol.Symbol) ([]byte, *StringTable) {
-	tb.Helper()
-
-	table := &StringTable{}
-	encoded, err := AppendBinary(nil, s, table)
-	assert.NoError(tb, err, "a symbol of the model encodes")
-	tableBytes, err := table.AppendBinary(nil)
-	assert.NoError(tb, err, "its table encodes")
-	decoded, read, err := DecodeStringTable(tableBytes)
-	assert.NoError(tb, err, "and decodes")
-	assert.Equal(tb, read, len(tableBytes), "whole")
-	return encoded, decoded
-}
-
+// The binary codec writes every kind and every field the model
+// declares, refuses what the model does not declare, and reads back
+// what it wrote.
 func TestCodec(t *testing.T) {
 	t.Parallel()
 
@@ -82,7 +81,7 @@ func TestCodec(t *testing.T) {
 
 			_, err := AppendBinary(nil, foreignSymbol{}, nil)
 			assert.HasError(t, err, "a foreign symbol has no encoding")
-			assert.HasPrefix(t, err.Error(), "{{.Package}}: encode ", "under the package prefix")
+			assert.HasPrefix(t, err.Error(), "{{.Model}}: encode ", "under the package prefix")
 		})
 {{- range .Views}}
 {{- $kind := .Name}}
@@ -145,4 +144,103 @@ func TestCodec(t *testing.T) {
 			}
 		})
 	})
+}
+
+// The binary codec's allocation contract holds in the ordinary run,
+// which runs no benchmark: an encoding with a reused table and buffer
+// allocates nothing, and a decode allocates each declaration and each
+// list once.
+func TestCodecAllocs(t *testing.T) {
+	for _, tt := range codecCases(t) {
+		assert.MaxAllocs(t, tt.call, tt.allocs, tt.name+" allocates within its ceiling")
+		tt.check(t)
+	}
+}
+
+// BenchmarkCodec measures the binary codec the sealed state writes and
+// reads back, over one package of the canonical corpus.
+func BenchmarkCodec(b *testing.B) {
+	for _, tt := range codecCases(b) {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
+		})
+	}
+}
+
+// codecCases returns the codec's calls over one package of the
+// canonical shape, encoded once before the cases run.
+func codecCases(tb testing.TB) []codecCase {
+	tb.Helper()
+
+	pkg := coretest.Workspace(1, codecFiles, codecDecls)[0]
+	var table StringTable
+	buf, encodeErr := AppendBinary(nil, pkg, &table)
+	assert.NoError(tb, encodeErr, "the package encodes")
+	encoded, decodeTable := tableTrip(tb, pkg)
+	var (
+		decoded   symbol.Symbol
+		decodeErr error
+	)
+	return []codecCase{
+		{
+			name: "AppendBinary/one package with reused storage",
+			call: func() {
+				table.Reset()
+				buf, encodeErr = AppendBinary(buf[:0], pkg, &table)
+			},
+			check: func(tb testing.TB) {
+				assert.NoError(tb, encodeErr, "every encoding succeeds")
+				assert.NotEmpty(tb, buf, "to the package's bytes")
+			},
+		},
+		{
+			name:   "DecodeBinary/one package",
+			allocs: codecDecodeAllocs,
+			call:   func() { decoded, _, decodeErr = DecodeBinary(encoded, decodeTable) },
+			check: func(tb testing.TB) {
+				assert.NoError(tb, decodeErr, "every decode succeeds")
+				assert.Equal(tb, decoded.Kind(), symbol.KindPackage, "to the package")
+			},
+		},
+	}
+}
+
+// populated returns a subject of every kind with a value in every field
+// the binary codec writes, and one child in every field of children.
+func populated() []symbol.Symbol {
+	var out []symbol.Symbol
+{{- range .Views}}
+	{
+		subject := &{{.Name}}{}
+{{- range .Populate}}
+		{{.}}
+{{- end}}
+{{- range .Children}}
+		{{.}}
+{{- end}}
+		out = append(out, subject)
+	}
+{{- end}}
+	return out
+}
+
+// tableTrip encodes s against a fresh table and returns the encoding,
+// with the table as its own encoding decodes.
+func tableTrip(tb testing.TB, s symbol.Symbol) ([]byte, *StringTable) {
+	tb.Helper()
+
+	table := &StringTable{}
+	encoded, err := AppendBinary(nil, s, table)
+	assert.NoError(tb, err, "a symbol of the model encodes")
+	tableBytes, err := table.AppendBinary(nil)
+	assert.NoError(tb, err, "its table encodes")
+	decoded, read, err := DecodeStringTable(tableBytes)
+	assert.NoError(tb, err, "and decodes")
+	assert.Equal(tb, read, len(tableBytes), "whole")
+	return encoded, decoded
 }

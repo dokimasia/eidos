@@ -4,8 +4,6 @@
 package rules
 
 import (
-	"slices"
-
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
@@ -13,24 +11,36 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// View is what a projection reads through: the invocation's
-// tracked declaration reader, the run's arbitrated facts and the
-// read set both record into, and the kernel's own keys for the
-// authored values the walks read first. The workspace mints one
-// per invocation. The zero View reads nothing. A projection handed
-// one refuses, because a read of an untracked graph records no edge.
+// View is what a projection reads through: the invocation's tracked
+// declaration reader, the run's arbitrated facts and the read set both
+// record into, and the kernel's own keys for the authored values the
+// walks read first. The workspace builds one per invocation.
+//
+// The zero View reads nothing. A read of an untracked graph would record
+// no edge, so a projection handed the zero View refuses.
+//
+// # Concurrency
+//
+// A View is not safe for concurrent use. The read set it records into is
+// not.
+//
+// # Allocation contract
+//
+// A read allocates only to record a new edge in the read set.
+// [View.Authored] states what it allocates to lift a stated value.
 type View struct {
-	Decls  *store.Reader
-	Facts  *meta.Facts
-	Reads  meta.Recorder
-	Kernel meta.KernelKeys
+	Decls  *store.Reader   // the tracked declaration reader; nil in the zero View
+	Facts  *meta.Facts     // the run's arbitrated facts; nil reads no fact
+	Reads  meta.Recorder   // the read set a fact read records into; nil reads untracked
+	Kernel meta.KernelKeys // the kernel's keys for authored values
 }
 
-// IsZero reports whether the view reads nothing.
+// IsZero reports whether the view reads nothing. It allocates nothing.
 func (v View) IsZero() bool { return v.Decls == nil }
 
-// Lookup returns one declaration by identity, recorded. The zero
-// view returns nothing.
+// Lookup returns one declaration by identity, and records the read. The
+// zero view and the zero identity return nothing. It allocates what the
+// read set allocates to record a new edge.
 func (v View) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 	if v.Decls == nil || id.IsZero() {
 		return nil, false
@@ -38,7 +48,9 @@ func (v View) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 	return v.Decls.Lookup(id)
 }
 
-// PackageOf returns the package a declaration is in, recorded.
+// PackageOf returns the package a declaration is in, and records the
+// read. The zero view and the zero identity return nothing. It allocates
+// what the read set allocates to record a new edge.
 func (v View) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	if v.Decls == nil || id.IsZero() {
 		return nil, false
@@ -67,6 +79,13 @@ func (v View) PackageOf(id symbol.Identity) (*node.Package, bool) {
 // language to derive. A language's composite walk reads the values
 // of each element here before it derives the element. The type
 // folds only where a half is stated.
+//
+// # Allocation contract
+//
+// Authored allocates nothing where no declaration states a value. A
+// stated value allocates the fold of its type in a binding of its own:
+// the binding's memo, the memo's first group and the shape, three
+// allocations for a builtin type, and the children of a structural one.
 func (v View) Authored(src SourceRules, subject symbol.Identity, ref *node.TypeRef) (Sample, Sample) {
 	var target symbol.Identity
 	if ref != nil {
@@ -101,8 +120,10 @@ func (v View) stated(k meta.Key[string], subject, target symbol.Identity) (strin
 	return "", "", false
 }
 
-// Fact returns the value arbitration selects for a subject and a
-// key, recorded. A view without facts, or a zero key, reads nothing.
+// Fact returns the value arbitration selects for a subject and a key,
+// and records the read where the view has a read set. A view without
+// facts, a zero key and a zero subject read nothing. It allocates what
+// the read set allocates to record a new edge.
 func Fact[T meta.FactValue](v View, id symbol.Identity, k meta.Key[T]) (T, bool) {
 	var zero T
 	if v.Facts == nil || k.IsZero() || id.IsZero() {
@@ -132,9 +153,4 @@ func authoredValue(lang symbol.Lang, shape TypeShape, text string) emit.Value {
 	default:
 		return emit.Raw(lang, text)
 	}
-}
-
-// sortLangs orders languages by spelling.
-func sortLangs(langs []symbol.Lang) {
-	slices.Sort(langs)
 }

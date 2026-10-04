@@ -25,10 +25,14 @@ const (
 	// repository root.
 	FacadeDir = "eidos-sdk"
 
-	// FileName is the one generated file each facade package
-	// holds: the package's whole re-exported surface, its package
+	// FileName is the generated source each facade package
+	// contains: the package's whole re-exported surface, its package
 	// documentation included.
 	FileName = "facade.gen.go"
+
+	// TestFileName is the generated spec beside it, which pins every
+	// re-export to its kernel counterpart.
+	TestFileName = "facade.gen_test.go"
 )
 
 // counterpartAlias is the import name every facade file binds its

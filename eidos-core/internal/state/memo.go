@@ -218,13 +218,17 @@ func (m *Memo) read(ctx context.Context, name string) int64 {
 }
 
 // name returns the ledger name of a unit's entry: the hex SHA-256 of the
-// unit's key and the executable's digest, under its first byte.
+// unit's key and the executable's digest, under its first byte. It
+// allocates the name alone for a key of up to 32 bytes.
 func (m *Memo) name(key []byte) string {
-	h := sha256.New()
-	h.Write(key)
-	h.Write(m.exe[:])
-	digest := hex.EncodeToString(h.Sum(nil))
-	return memoDir + "/" + digest[:2] + "/" + digest
+	var in [2 * sha256.Size]byte
+	digest := sha256.Sum256(append(append(in[:0], key...), m.exe[:]...))
+	var buf [len(memoDir) + 1 + 2 + 1 + 2*sha256.Size]byte
+	name := append(buf[:0], memoDir+"/"...)
+	name = hex.AppendEncode(name, digest[:1])
+	name = append(name, '/')
+	name = hex.AppendEncode(name, digest[:])
+	return string(name)
 }
 
 // entryName reports whether a ledger name is an entry of the memo, and

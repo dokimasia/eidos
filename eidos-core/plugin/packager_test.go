@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/plugin"
@@ -23,6 +24,11 @@ const (
 	nestedRoot   = "tools"
 	// otherLang is a language no fixture package is in.
 	otherLang symbol.Lang = "other"
+	// deepRoot is a module root longer than the 32 bytes the compiler
+	// joins a string into on the stack, and deepDir a directory below
+	// it.
+	deepRoot = "services/payments/internal/tools"
+	deepDir  = deepRoot + "/gen"
 )
 
 // placed is a fixture target that names every file's package after
@@ -33,15 +39,6 @@ type placed struct {
 
 // PackageAt returns the origin's package.
 func (placed) PackageAt(p plugin.Placement) (symbol.Identity, error) { return p.Origin, nil }
-
-// placement returns a placement over the fixture's modules, innermost
-// root first.
-func placement() plugin.Placement {
-	return plugin.Placement{Modules: []plugin.Module{
-		{Lang: coretest.Lang, Path: nestedModule, Root: nestedRoot},
-		{Lang: coretest.Lang, Path: rootModule, Root: "."},
-	}}
-}
 
 // A package rule reads the modules and the residents the run
 // derived, and the module arithmetic is the kernel's, so every target
@@ -97,6 +94,12 @@ func TestPackager(t *testing.T) {
 				want: "svc/store",
 			},
 			{name: "returns a dot for the tree's root under the tree's root", root: ".", dir: ".", want: "."},
+			{
+				name: "returns a sibling sharing the root's prefix unchanged",
+				root: nestedRoot,
+				dir:  "toolsmith",
+				want: "toolsmith",
+			},
 		}
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
@@ -158,4 +161,79 @@ func TestPackager(t *testing.T) {
 			assert.False(t, names, "the package surface is opt-in")
 		})
 	})
+}
+
+// The module arithmetic allocates nothing in the ordinary run, which
+// runs no benchmark, for a root longer than the compiler joins on the
+// stack.
+func TestPackagerZeroAlloc(t *testing.T) {
+	m, dir := deepModule(), deepDir
+	held := false
+	assert.MaxAllocs(t, func() { held = m.Contains(dir) }, 0, "Contains allocates nothing")
+	assert.True(t, held, "Contains reports true for a directory below the root")
+
+	var rel string
+	assert.MaxAllocs(t, func() { rel = m.Rel(dir) }, 0, "Rel allocates nothing")
+	assert.Equal(t, rel, "gen", "Rel returns the directory below the root")
+
+	p := plugin.Placement{Modules: []plugin.Module{m}}
+	var found plugin.Module
+	assert.MaxAllocs(t, func() { found, _ = p.ModuleOf(coretest.Lang, dir) }, 0, "ModuleOf allocates nothing")
+	assert.Equal(t, found.Path, rootModule, "ModuleOf returns the module")
+}
+
+// BenchmarkPackager measures the module arithmetic a package rule runs
+// once per routed file, over a root longer than the compiler joins on
+// the stack.
+func BenchmarkPackager(b *testing.B) {
+	m, dir := deepModule(), deepDir
+
+	b.Run("Contains", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			held = m.Contains(dir)
+		}
+		assert.True(b, held, "Contains reports true for a directory below the root")
+	})
+
+	b.Run("Rel", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var rel string
+		for c.Loop() {
+			rel = m.Rel(dir)
+		}
+		assert.Equal(b, rel, "gen", "Rel returns the directory below the root")
+	})
+
+	b.Run("ModuleOf", func(b *testing.B) {
+		p := plugin.Placement{Modules: []plugin.Module{
+			{Lang: otherLang, Path: nestedModule, Root: nestedRoot},
+			m,
+		}}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var found plugin.Module
+		for c.Loop() {
+			found, _ = p.ModuleOf(coretest.Lang, dir)
+		}
+		assert.Equal(b, found.Path, rootModule, "ModuleOf returns the module")
+	})
+}
+
+// placement returns a placement over the fixture's modules, innermost
+// root first.
+func placement() plugin.Placement {
+	return plugin.Placement{Modules: []plugin.Module{
+		{Lang: coretest.Lang, Path: nestedModule, Root: nestedRoot},
+		{Lang: coretest.Lang, Path: rootModule, Root: "."},
+	}}
+}
+
+// deepModule returns a module whose root is longer than the 32 bytes
+// the compiler joins a string into on the stack.
+func deepModule() plugin.Module {
+	return plugin.Module{Lang: coretest.Lang, Path: rootModule, Root: deepRoot}
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/meta"
@@ -21,6 +22,7 @@ type gated struct {
 	subs []plugin.Subscription
 }
 
+// Subscriptions returns the fixture's gates.
 func (p gated) Subscriptions() []plugin.Subscription { return p.subs }
 
 // A subscription is one gate tuple as data: what a rule watches is
@@ -29,24 +31,7 @@ func (p gated) Subscriptions() []plugin.Subscription { return p.subs }
 func TestSubscription(t *testing.T) {
 	t.Parallel()
 
-	t.Run("Subscribed", func(t *testing.T) {
-		t.Parallel()
-
-		want := []plugin.Subscription{{
-			Rule:      1,
-			Kind:      symbol.KindInterface,
-			Directive: directive.Name("stubgen:stub"),
-			Phase:     plugin.PhaseGenerate,
-		}}
-		var p plugin.Subscribed = gated{
-			name: "stubgen",
-			subs: want,
-		}
-		assert.Equal(t, p.Subscriptions(), want,
-			"the engine reads gates as data, never by running a handler")
-	})
-
-	t.Run("zero gate fields mean ungated", func(t *testing.T) {
+	t.Run("zero value", func(t *testing.T) {
 		t.Parallel()
 
 		bare := plugin.Subscription{Rule: 0, Phase: plugin.PhaseAnnotate}
@@ -58,7 +43,25 @@ func TestSubscription(t *testing.T) {
 			"a zero fact key is an ungated rule")
 	})
 
-	t.Run("Phase/String", func(t *testing.T) {
+	t.Run("Subscriptions", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the gates a plugin declares", func(t *testing.T) {
+			t.Parallel()
+
+			want := []plugin.Subscription{{
+				Rule:      1,
+				Kind:      symbol.KindInterface,
+				Directive: directive.Name("stubgen:stub"),
+				Phase:     plugin.PhaseGenerate,
+			}}
+			var p plugin.Subscribed = gated{name: "stubgen", subs: want}
+			assert.Equal(t, p.Subscriptions(), want,
+				"the engine reads gates as data, never by running a handler")
+		})
+	})
+
+	t.Run("String", func(t *testing.T) {
 		t.Parallel()
 
 		tests := []struct {
@@ -66,16 +69,16 @@ func TestSubscription(t *testing.T) {
 			phase plugin.Phase
 			want  string
 		}{
-			{name: "annotate", phase: plugin.PhaseAnnotate, want: "annotate"},
-			{name: "generate", phase: plugin.PhaseGenerate, want: "generate"},
-			{name: "emit", phase: plugin.PhaseEmit, want: "emit"},
+			{name: "returns annotate for PhaseAnnotate", phase: plugin.PhaseAnnotate, want: "annotate"},
+			{name: "returns generate for PhaseGenerate", phase: plugin.PhaseGenerate, want: "generate"},
+			{name: "returns emit for PhaseEmit", phase: plugin.PhaseEmit, want: "emit"},
 			{
-				name:  "names a phase nothing declares by its number",
+				name:  "returns the number of a phase nothing declares",
 				phase: plugin.PhaseEmit + 1,
 				want:  "Phase(4)",
 			},
 			{
-				name:  "the zero phase names no phase",
+				name:  "returns the number of the zero phase",
 				phase: 0,
 				want:  "Phase(0)",
 			},
@@ -83,9 +86,34 @@ func TestSubscription(t *testing.T) {
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
 				t.Parallel()
+
 				assert.Equal(t, tt.phase.String(), tt.want,
 					"a subscription record spells its phase for stats and faults")
 			})
 		}
+	})
+}
+
+// A declared phase spells without allocating in the ordinary run,
+// which runs no benchmark.
+func TestSubscriptionZeroAlloc(t *testing.T) {
+	phase := plugin.PhaseEmit
+	var got string
+	assert.MaxAllocs(t, func() { got = phase.String() }, 0, "String allocates nothing for a declared phase")
+	assert.Equal(t, got, "emit", "String spells PhaseEmit")
+}
+
+// BenchmarkSubscription measures the spelling of a declared phase,
+// which a stats record and a fault name.
+func BenchmarkSubscription(b *testing.B) {
+	b.Run("String", func(b *testing.B) {
+		phase := plugin.PhaseEmit
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = phase.String()
+		}
+		assert.Equal(b, got, "emit", "String spells PhaseEmit")
 	})
 }

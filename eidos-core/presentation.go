@@ -27,6 +27,7 @@ type TargetOption struct {
 // Templates declares a target's template tree: the tree the
 // target's plans resolve this plugin's template references in, in
 // place of the plugin-level tree. A nil tree panics at Build.
+// Templates returns the option by value and allocates nothing.
 func Templates(tree fs.FS) TargetOption {
 	return TargetOption{kind: optionTemplates, tree: tree}
 }
@@ -34,7 +35,8 @@ func Templates(tree fs.FS) TargetOption {
 // Funcs declares helpers for a target's plans, layered over the
 // plugin-level helpers: a name declared at both levels takes this
 // function in that target's plans. A nil map, and a function
-// text/template refuses, panic at Build.
+// text/template refuses, panic at Build. Funcs returns the option by
+// value and allocates nothing.
 func Funcs(fm template.FuncMap) TargetOption {
 	return TargetOption{kind: optionFuncs, funcs: fm}
 }
@@ -46,7 +48,8 @@ func Funcs(fm template.FuncMap) TargetOption {
 // included. A name the shared vocabulary lacks fails the template
 // lint, and where two plugins override one name, the one later in
 // the schedule takes effect. A nil map, and a function
-// text/template refuses, panic at Build.
+// text/template refuses, panic at Build. Overrides returns the option
+// by value and allocates nothing.
 func Overrides(fm template.FuncMap) TargetOption {
 	return TargetOption{kind: optionOverrides, funcs: fm}
 }

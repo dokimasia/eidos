@@ -3,9 +3,144 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/symbol"
+{{- template "model" .}}
 )
+
+// factsStated is how many facts the every-kind subjects state: each
+// fact of each kind, set once.
+const factsStated = 0{{range .Views}}{{range .Facts}} + 1{{end}}{{end}}
+
+// factsKinds is how many kinds state a fact of their own.
+const factsKinds = 0{{range .Views}}{{if .Facts}} + 1{{end}}{{end}}
+
+// kindFactsAllocs is one build of the kinds' fact table: one slice for
+// each kind that states a fact, and 4 for the map that holds them,
+// measured at 17 kinds.
+const kindFactsAllocs = factsKinds + 4
+
+// Every stated fact arrives through the traversal: nothing from a
+// zero declaration, each fact alone when its field alone is set,
+// and a member's fact under its host. Every descent field is filled
+// in turn, because each is its own recursion in the traversal.
+func TestFacts(t *testing.T) {
+	t.Parallel()
+
+	t.Run("Facts", func(t *testing.T) {
+		t.Parallel()
+{{- range .Views}}
+{{- $v := .}}
+{{- if or .Facts .FactWalked}}
+
+		t.Run("calls f for each stated fact of kind {{.Name}}", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, none := stated(&{{.Name}}{})
+			assert.Length(t, none, 0, "a zero declaration states nothing")
+{{- range .Facts}}
+			{
+				subject := &{{$v.Name}}{}
+				{{.Set}}
+				hosts, kinds, facts := stated(subject)
+				assert.Length(t, facts, 1, "the stated fact alone arrives")
+				assert.Equal(t, kinds[0], symbol.Kind{{$v.Name}}, "under its kind")
+				assert.Equal(t, facts[0], symbol.Fact{{.Fact}}, "as itself")
+				assert.True(t, hosts[0] == nil, "the top level has no host")
+			}
+{{- end}}
+{{- range .FactChildren}}
+			{
+				// stated in {{$v.Name}}.{{.Field}}
+				subject := &{{$v.Name}}{}
+				{{- range .Stmts}}
+				{{.}}
+				{{- end}}
+				hosts, kinds, facts := stated(subject)
+				assert.Length(t, facts, 1, "the child's fact arrives")
+				assert.Equal(t, kinds[0], symbol.Kind{{.Kind}}, "under the child's kind")
+				assert.Equal(t, facts[0], symbol.Fact{{.Fact}}, "as itself")
+				assert.True(t, hosts[0] == symbol.Symbol(subject),
+					"a member's host is its enclosing declaration")
+			}
+{{- end}}
+		})
+{{- end}}
+{{- end}}
+
+		t.Run("calls f for nothing in a nil symbol", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, none := stated(nil)
+			assert.Length(t, none, 0, "nothing to walk is not a fault")
+		})
+	})
+
+	t.Run("KindFacts", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns each kind's own stated facts", func(t *testing.T) {
+			t.Parallel()
+
+			table := KindFacts()
+			assert.Length(t, table, factsKinds, "every kind that states a fact has an entry")
+{{- range .Views}}
+{{- if .Facts}}
+			assert.Length(t, table[symbol.Kind{{.Name}}], {{len .Facts}},
+				"the {{.Name}} facts in schema order")
+{{- end}}
+{{- end}}
+		})
+	})
+}
+
+// Facts allocates nothing and KindFacts allocates its table in the
+// ordinary run, which runs no benchmark.
+func TestFactsAllocs(t *testing.T) {
+	subjects := factsSubjects()
+	var count int
+	counted := countFacts(&count)
+	assert.MaxAllocs(t, func() {
+		count = 0
+		for _, s := range subjects {
+			Facts(s, counted)
+		}
+	}, 0, "Facts allocates nothing")
+	assert.Equal(t, count, factsStated, "Facts calls f for every stated fact")
+	var table map[symbol.Kind][]symbol.Fact
+	assert.MaxAllocs(t, func() { table = KindFacts() }, kindFactsAllocs, "KindFacts allocates its table")
+	assert.Length(t, table, factsKinds, "KindFacts returns every kind that states a fact")
+}
+
+// BenchmarkFacts measures the facts traversal over every kind that
+// states a fact, and the build of the kinds' fact table.
+func BenchmarkFacts(b *testing.B) {
+	b.Run("Facts/every kind stating each of its facts", func(b *testing.B) {
+		subjects := factsSubjects()
+		var count int
+		counted := countFacts(&count)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			count = 0
+			for _, s := range subjects {
+				Facts(s, counted)
+			}
+		}
+		assert.Equal(b, count, factsStated, "Facts calls f for every stated fact")
+	})
+
+	b.Run("KindFacts", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(kindFactsAllocs)
+		defer c.End()
+		var table map[symbol.Kind][]symbol.Fact
+		for c.Loop() {
+			table = KindFacts()
+		}
+		assert.Length(b, table, factsKinds, "KindFacts returns every kind that states a fact")
+	})
+}
 
 // stated collects one subject's stated facts.
 func stated(s symbol.Symbol) (hosts []symbol.Symbol, kinds []symbol.Kind, facts []symbol.Fact) {
@@ -17,67 +152,26 @@ func stated(s symbol.Symbol) (hosts []symbol.Symbol, kinds []symbol.Kind, facts 
 	return hosts, kinds, facts
 }
 
-// Every stated fact arrives through the traversal: nothing from a
-// zero declaration, each fact alone when its field alone is set,
-// and a member's fact under its host. Every descent field is filled
-// in turn, because each is its own recursion in the traversal.
-func TestFacts(t *testing.T) {
-	t.Parallel()
-{{- range .Views}}
-{{- $v := .}}
-{{- if or .Facts .FactWalked}}
+// countFacts returns a facts callback that counts each call into
+// count.
+func countFacts(count *int) func(host symbol.Symbol, kind symbol.Kind, fact symbol.Fact) {
+	return func(symbol.Symbol, symbol.Kind, symbol.Fact) { *count++ }
+}
 
-	t.Run("{{.Name}}", func(t *testing.T) {
-		t.Parallel()
-
-		_, _, none := stated(&{{.Name}}{})
-		assert.Length(t, none, 0, "a zero declaration states nothing")
-{{- range .Facts}}
-		{
-			subject := &{{$v.Name}}{}
-			{{.Set}}
-			hosts, kinds, facts := stated(subject)
-			assert.Length(t, facts, 1, "the stated fact alone arrives")
-			assert.Equal(t, kinds[0], symbol.Kind{{$v.Name}}, "under its kind")
-			assert.Equal(t, facts[0], symbol.Fact{{.Fact}}, "as itself")
-			assert.True(t, hosts[0] == nil, "the top level has no host")
-		}
-{{- end}}
-{{- range .FactChildren}}
-		{
-			// stated in {{$v.Name}}.{{.Field}}
-			subject := &{{$v.Name}}{}
-			{{- range .Stmts}}
-			{{.}}
-			{{- end}}
-			hosts, kinds, facts := stated(subject)
-			assert.Length(t, facts, 1, "the child's fact arrives")
-			assert.Equal(t, kinds[0], symbol.Kind{{.Kind}}, "under the child's kind")
-			assert.Equal(t, facts[0], symbol.Fact{{.Fact}}, "as itself")
-			assert.True(t, hosts[0] == symbol.Symbol(subject),
-				"a member's host is its enclosing declaration")
-		}
-{{- end}}
-	})
-{{- end}}
-{{- end}}
-
-	t.Run("a nil symbol walks nothing", func(t *testing.T) {
-		t.Parallel()
-
-		_, _, none := stated(nil)
-		assert.Length(t, none, 0, "nothing to walk is not a fault")
-	})
-
-	t.Run("KindFacts states each kind's own surface", func(t *testing.T) {
-		t.Parallel()
-
-		table := KindFacts()
+// factsSubjects returns a subject of every kind that states a fact,
+// each stating every one of its facts.
+func factsSubjects() []symbol.Symbol {
+	var out []symbol.Symbol
 {{- range .Views}}
 {{- if .Facts}}
-		assert.Length(t, table[symbol.Kind{{.Name}}], {{len .Facts}},
-			"the {{.Name}} facts in schema order")
+	{
+		subject := &{{.Name}}{}
+{{- range .Facts}}
+		{{.Set}}
+{{- end}}
+		out = append(out, subject)
+	}
 {{- end}}
 {{- end}}
-	})
+	return out
 }

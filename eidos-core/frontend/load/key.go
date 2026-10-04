@@ -6,77 +6,88 @@ package load
 import (
 	"crypto/sha256"
 	"encoding/binary"
-	"hash"
 
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/output"
 )
 
-// unitKey folds one unit's key, by value, in the stated order: the
-// number of members, then each member's path and digest, its number of
-// shared inputs, and each shared input's path and digest, in roster
-// order; then the fold of the door that returned the unit, the depth,
-// the frontend's name, language and declared version, the frontend's
-// options in their canonical encoding, the composition's brand, and the
-// node model's fingerprint.
+// unitKey returns the key of the unit whose fold [appendFold] returned:
+// the SHA-256 digest of the fold. The key is its one allocation.
+func unitKey(fold []byte) []byte {
+	sum := sha256.Sum256(fold)
+	return sum[:]
+}
+
+// appendFold appends one unit's fold to dst, by value, in the stated
+// order, and returns the extended buffer: the number of members, then
+// each member's path and digest, its number of shared inputs, and each
+// shared input's path and digest, in roster order; then the fold of the
+// door that returned the unit, the depth, the frontend's name, language
+// and declared version, the frontend's options in their canonical
+// encoding, the composition's brand, and the node model's fingerprint.
 //
-// The key is computed from the gate's digests before the parse, and the
-// unit's one door refuses every path outside its members and their
-// shared inputs, so the key covers every byte the parse can read. The
-// name and language fold because both shape every identity the unit
-// produces, and the brand because its marks decide which comment lines
-// are carriers. The version's bump-on-any-graph-change rule covers the
-// comment syntax. Each part is length-prefixed and every list counted,
-// so two rosters cannot trade bytes and collide.
+// The fold is computed from the gate's digests before the parse. The
+// unit's one door refuses a path outside its members and their shared
+// inputs, so the key covers each byte the parse can read. The name and
+// language fold because both shape the identities the unit produces,
+// and the brand because a parse reads a comment line as a carrier by
+// the brand's marks. The version's bump-on-any-graph-change rule covers
+// the comment syntax. Each part is length-prefixed and each list
+// counted, so two rosters cannot trade bytes and collide.
+//
+// appendFold allocates only where dst lacks the room for the fold.
 //
 // Error modes: the error of a member or a shared input whose digest
 // the gate cannot compute, because the file does not read.
-func unitKey(u *unit, g *gate, brand output.Brand) ([]byte, error) {
-	h := sha256.New()
-	part(h, binary.AppendUvarint(nil, uint64(len(u.files))))
+func appendFold(dst []byte, u *unit, g *gate, brand output.Brand) ([]byte, error) {
+	dst = appendCount(dst, len(u.files))
 	for _, ref := range u.files {
-		if err := partFile(h, g, ref.Path); err != nil {
-			return nil, err
+		var err error
+		if dst, err = appendFile(dst, g, ref.Path); err != nil {
+			return dst, err
 		}
-		part(h, binary.AppendUvarint(nil, uint64(len(ref.Shared))))
+		dst = appendCount(dst, len(ref.Shared))
 		for _, shared := range ref.Shared {
-			if err := partFile(h, g, shared); err != nil {
-				return nil, err
+			if dst, err = appendFile(dst, g, shared); err != nil {
+				return dst, err
 			}
 		}
 	}
-	part(h, u.door)
-	part(h, []byte{byte(u.depth)})
-	part(h, []byte(u.frontend.Name()))
-	part(h, []byte(u.frontend.Lang()))
-	part(h, []byte(u.version))
-	part(h, u.config)
-	part(h, []byte(brand))
-	part(h, []byte(node.ModelFingerprint))
-	return h.Sum(nil), nil
+	dst = appendPart(dst, u.door)
+	dst = appendPart(dst, []byte{byte(u.depth)})
+	dst = appendPart(dst, u.frontend.Name())
+	dst = appendPart(dst, u.frontend.Lang())
+	dst = appendPart(dst, u.version)
+	dst = appendPart(dst, u.config)
+	dst = appendPart(dst, brand)
+	return appendPart(dst, node.ModelFingerprint), nil
 }
 
-// partFile folds one file's path and the digest of its bytes, and an
-// empty part in place of the digest for a path no file is at, so a
-// shared input that appears re-keys every unit that declares it.
-func partFile(h hash.Hash, g *gate, path string) error {
+// appendFile appends one file's path and the digest of its bytes. A path
+// no file is at takes an empty part in place of the digest, so a shared
+// input that appears later changes the keys of the units that declare
+// it.
+func appendFile(dst []byte, g *gate, path string) ([]byte, error) {
 	digest, present, err := g.digest(path)
 	if err != nil {
-		return err
+		return dst, err
 	}
-	part(h, []byte(path))
+	dst = appendPart(dst, path)
 	if !present {
-		part(h, nil)
-		return nil
+		return appendPart(dst, []byte(nil)), nil
 	}
-	part(h, digest[:])
-	return nil
+	return appendPart(dst, digest[:]), nil
 }
 
-// part writes one field into a key behind its length.
-func part(h hash.Hash, b []byte) {
-	var n [8]byte
-	binary.LittleEndian.PutUint64(n[:], uint64(len(b)))
-	h.Write(n[:])
-	h.Write(b)
+// appendCount appends a list's length as a part: its unsigned varint.
+func appendCount(dst []byte, n int) []byte {
+	var count [binary.MaxVarintLen64]byte
+	return appendPart(dst, count[:binary.PutUvarint(count[:], uint64(n))])
+}
+
+// appendPart appends one field behind its length, eight bytes in little
+// endian order.
+func appendPart[B ~string | ~[]byte](dst []byte, b B) []byte {
+	dst = binary.LittleEndian.AppendUint64(dst, uint64(len(b)))
+	return append(dst, b...)
 }

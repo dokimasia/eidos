@@ -3,6 +3,8 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
+{{- template "model" .}}
 )
 
 // kindNamings pairs every kind with the name it returns, which is
@@ -17,6 +19,8 @@ var kindNamings = []struct {
 {{- end}}
 }
 
+// A kind crosses a boundary that carries names, so String and
+// ParseKind are each other's inverse for every kind.
 func TestKind(t *testing.T) {
 	t.Parallel()
 
@@ -24,14 +28,15 @@ func TestKind(t *testing.T) {
 		t.Parallel()
 
 		for _, tt := range kindNamings {
-			t.Run(tt.want, func(t *testing.T) {
+			t.Run("returns "+tt.want+" for its kind", func(t *testing.T) {
 				t.Parallel()
+
 				assert.Equal(t, tt.kind.String(), tt.want,
 					"the kind spells its schema name")
 			})
 		}
 
-		t.Run("names are unique", func(t *testing.T) {
+		t.Run("returns a distinct name for every kind", func(t *testing.T) {
 			t.Parallel()
 
 			seen := make(map[string]struct{}, len(kindNamings))
@@ -42,7 +47,7 @@ func TestKind(t *testing.T) {
 				"every kind returns its own name")
 		})
 
-		t.Run("a value outside the set returns a placeholder", func(t *testing.T) {
+		t.Run("returns a placeholder for a value outside the set", func(t *testing.T) {
 			t.Parallel()
 
 			// The first value past the set is the one the bound
@@ -68,13 +73,9 @@ func TestKind(t *testing.T) {
 				if tt.kind == KindInvalid {
 					continue
 				}
-				t.Run(tt.want, func(t *testing.T) {
-					t.Parallel()
-
-					got, known := ParseKind(tt.want)
-					assert.True(t, known, "a name a kind carries parses")
-					assert.Equal(t, got, tt.kind, "to the kind that carries it")
-				})
+				got, known := ParseKind(tt.want)
+				assert.True(t, known, "the name "+tt.want+" parses")
+				assert.Equal(t, got, tt.kind, "to the kind that carries it")
 			}
 		})
 
@@ -93,47 +94,100 @@ func TestKind(t *testing.T) {
 			}
 		})
 
-		t.Run("returns KindInvalid when it refuses", func(t *testing.T) {
+		t.Run("returns KindInvalid for a name no kind has", func(t *testing.T) {
 			t.Parallel()
 
 			// A caller that drops the boolean must not receive a
 			// usable kind, so the refusal returns the zero value
 			// rather than whatever the lookup left behind.
 			got, known := ParseKind("Nonexistent")
-			assert.False(t, known, "a name no kind carries is refused")
+			assert.False(t, known, "a name no kind has is unknown")
 			assert.Equal(t, got, KindInvalid,
-				"and a caller that drops the boolean holds no usable kind")
+				"and a caller that drops the boolean gets no usable kind")
 		})
 
-		t.Run("refuses a name no kind claims", func(t *testing.T) {
-			t.Parallel()
+		// A kind's name is its Go type name, matched exactly: nothing
+		// trims, folds case or accepts a near miss.
+		tests := []struct {
+			name string
+			give string
+		}{
+			{name: "reports false for the empty name", give: ""},
+			{name: "reports false for a name no kind has", give: "Nonexistent"},
+			{name: "reports false for the lowered spelling", give: "struct"},
+			{name: "reports false for the upper spelling", give: "STRUCT"},
+			{name: "reports false for a leading space", give: " Struct"},
+			{name: "reports false for a trailing space", give: "Struct "},
+			{name: "reports false for a trailing newline", give: "Struct\n"},
+			{name: "reports false for the placeholder String writes for a non-kind", give: "Invalid"},
+			{name: "reports false for the placeholder String writes outside the set", give: "Kind(0)"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			// A kind's name is its Go type name, matched exactly:
-			// nothing trims, folds case or accepts a near miss.
-			tests := []struct {
-				name string
-				why  string
-			}{
-				{name: "", why: "the empty name"},
-				{name: "Nonexistent", why: "a name no kind carries"},
-				{name: "struct", why: "the lowered spelling"},
-				{name: "STRUCT", why: "the upper spelling"},
-				{name: " Struct", why: "a leading space"},
-				{name: "Struct ", why: "a trailing space"},
-				{name: "Struct\n", why: "a trailing newline"},
-				{name: "Invalid", why: "the placeholder String stands in for a non-kind"},
-				{name: "Kind(0)", why: "the placeholder String stands in outside the set"},
-			}
-			for _, tt := range tests {
-				t.Run(tt.why, func(t *testing.T) {
-					t.Parallel()
-
-					_, known := ParseKind(tt.name)
-					assert.False(t, known,
-						"a name is matched exactly: nothing trims, folds case "+
-							"or accepts a near miss")
-				})
-			}
-		})
+				_, known := ParseKind(tt.give)
+				assert.False(t, known, "a name is matched exactly")
+			})
+		}
 	})
+}
+
+// String and ParseKind allocate nothing in the ordinary run, which
+// runs no benchmark.
+func TestKindZeroAlloc(t *testing.T) {
+	var spelled int
+	assert.MaxAllocs(t, func() { spelled = spellEveryKind() }, 0, "String allocates nothing")
+	assert.Equal(t, spelled, len(kindNamings), "String spells every kind")
+	var parsed int
+	assert.MaxAllocs(t, func() { parsed = parseEveryKind() }, 0, "ParseKind allocates nothing")
+	assert.Equal(t, parsed, len(kindNamings)-1, "ParseKind reads every kind back")
+}
+
+// BenchmarkKind measures the spelling of every kind and the parse of
+// every kind's name.
+func BenchmarkKind(b *testing.B) {
+	b.Run("String/every kind", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var spelled int
+		for c.Loop() {
+			spelled = spellEveryKind()
+		}
+		assert.Equal(b, spelled, len(kindNamings), "String spells every kind")
+	})
+
+	b.Run("ParseKind/every kind's name", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var parsed int
+		for c.Loop() {
+			parsed = parseEveryKind()
+		}
+		assert.Equal(b, parsed, len(kindNamings)-1, "ParseKind reads every kind back")
+	})
+}
+
+// spellEveryKind spells every kind, and returns how many spellings
+// were not empty.
+func spellEveryKind() int {
+	spelled := 0
+	for _, tt := range kindNamings {
+		if tt.kind.String() != "" {
+			spelled++
+		}
+	}
+	return spelled
+}
+
+// parseEveryKind parses every kind's name, and returns how many parsed
+// to the kind that carries it.
+func parseEveryKind() int {
+	parsed := 0
+	for _, tt := range kindNamings {
+		if got, known := ParseKind(tt.want); known && got == tt.kind {
+			parsed++
+		}
+	}
+	return parsed
 }

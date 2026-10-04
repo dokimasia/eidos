@@ -55,7 +55,8 @@ type KernelKeys struct {
 	Witness    Key[symbol.Identity]
 }
 
-// IsZero reports whether the handles name nothing.
+// IsZero reports whether the handles name nothing. It allocates
+// nothing.
 func (k KernelKeys) IsZero() bool { return k.Module.IsZero() }
 
 // sampled lists the kinds an authored value may be stamped on: every
@@ -73,6 +74,15 @@ func sampled() []symbol.Kind {
 // handle it is given. It refuses, with the registry's own errors, a
 // namespace already claimed and a key already registered, which is
 // what a composition registering it twice reads.
+//
+// # Allocation contract
+//
+// Kernel allocates what the registry keeps of its five keys, 14
+// allocations in an empty registry:
+//   - the first entries of the namespace map and of the name map;
+//   - the four kind lists;
+//   - the spec and type lists, each growing to five entries in four
+//     allocations.
 func Kernel(r *Registry) (KernelKeys, error) {
 	var k KernelKeys
 	r = r.For(KernelOwner)

@@ -111,10 +111,12 @@ func (b *built) Subscriptions() []plugin.Subscription { return b.subs }
 // reports the buffered findings in canonical match order and hands the
 // context's journal its records. The stamps arrive in the fact store as
 // they are made, because the store ranks claims by their rule, subject
-// and instance and not by their arrival.
+// and instance and not by their arrival. The call's state returns to
+// the shared pool when the call returns, whatever it returns.
 func annotate(b *built, ctx *plugin.AnnotatorContext) error {
 	c := newPhaseCall(b, ctx.Index, ctx.Facts, ctx.Sink, nil, ctx.Plugin, ctx.Bucket, ctx.Rules, ctx.Kernel,
 		ctx.Workers)
+	defer c.release()
 	c.journal = ctx.Journal
 	c.restrict(ctx.Select)
 	if err := c.run(plugin.PhaseAnnotate); err != nil {
@@ -132,10 +134,13 @@ func annotate(b *built, ctx *plugin.AnnotatorContext) error {
 // accumulators into the plan's store after every rule ran, which keeps
 // a plugin's own emit invisible to its own emit rules. It hands the
 // context's journal its records once the flush has added the units.
-// Every handler reads the context's exports through its match.
+// Every handler reads the context's exports through its match. The
+// call's state returns to the shared pool when the call returns,
+// whatever it returns.
 func generate(b *built, ctx *plugin.GeneratorContext) error {
 	c := newPhaseCall(b, ctx.Index, ctx.Facts, ctx.Sink, ctx.Emit, ctx.Plugin, ctx.Bucket, ctx.Rules, ctx.Kernel,
 		ctx.Workers)
+	defer c.release()
 	c.exports = ctx.Exports
 	c.journal = ctx.Journal
 	c.restrict(ctx.Select)

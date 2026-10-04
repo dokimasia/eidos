@@ -4,10 +4,12 @@
 package eidos_test
 
 import (
+	"slices"
 	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/emit"
@@ -25,6 +27,45 @@ const refPlugin plugin.ID = "referrer"
 const (
 	refTemplate = "method1.tpl"
 	refPayload  = "payload"
+)
+
+// The tags of the invocation fixture's families beside its primary
+// per-source family.
+const (
+	packageTag eidos.Tag = "pkg"
+	planTag    eidos.Tag = "plan"
+)
+
+// The allocations of a phase call over the invocation fixture whose
+// handler calls one method of the emitter, its handle or its slot view
+// once per invocation. A phase call's state is pooled, so an accessor,
+// an append and a slot view allocate nothing per invocation, and a call
+// allocates what its effects leave in the store.
+const (
+	// unitAllocs is a call whose invocations touch one accumulator: the
+	// store's acceptance of the one unit, which has no declarations, so
+	// the first group of the store's set of keys, the key, and its list
+	// of units.
+	unitAllocs = 3
+	// appendAllocs is a call whose invocations append one declaration
+	// each to one accumulator: the unit, its list of declarations and
+	// its list of origins. The declaration has no origin, so the store
+	// indexes nothing.
+	appendAllocs = unitAllocs + 2
+	// refAllocs is a call whose invocations take one template reference
+	// each, which a body keeps.
+	refAllocs = invocationStructs
+	// orderAllocs is an emit-phase call: the order of the store's units,
+	// which the rule's enumeration sorts once.
+	orderAllocs = 1
+	// slotAppendAllocs is an emit-phase call whose invocations append one
+	// value each into a slot of a value the store contains: each host's
+	// slot, the store's map from its declarations to their units, which
+	// allocates four times at its final size, and the unit's list of
+	// contributors.
+	slotAppendAllocs = orderAllocs + invocationStructs + 4 + 1
+	// joinNameAllocs is the joined name of a word and a base.
+	joinNameAllocs = 1
 )
 
 // referenced returns the reference a graph handler of refPlugin asks
@@ -338,7 +379,7 @@ func TestEmitter(t *testing.T) {
 	t.Run("PackageFile", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("keys one accumulator per language and package path", func(t *testing.T) {
+		t.Run("keys one accumulator per package path of each language", func(t *testing.T) {
 			t.Parallel()
 
 			const otherLang symbol.Lang = "other"
@@ -476,4 +517,148 @@ func TestEmitter(t *testing.T) {
 				"the zero view has no invocation to buffer with")
 		})
 	})
+}
+
+// Each method of the emitter, its handle and its slot view allocates
+// nothing per invocation in the ordinary run, which runs no benchmark,
+// and a phase call allocates what its effects leave in the store. A
+// name join allocates the name. The check runs alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestEmitterAllocs(t *testing.T) {
+	checkPhaseAllocs(t, emitterCases(t))
+
+	e := &eidos.Emitter{}
+	var joined string
+	assert.MaxAllocs(t, func() { joined = e.JoinName("stub", "store") }, joinNameAllocs,
+		"JoinName allocates the joined name")
+	assert.Equal(t, joined, "storeStub", "JoinName joins the word after the base")
+	assert.MaxAllocs(t, func() { joined = e.JoinName("", "store") }, 0,
+		"JoinName allocates nothing for an empty word")
+	assert.Equal(t, joined, "store", "JoinName returns the base for an empty word")
+}
+
+// BenchmarkEmitter measures a phase call over the invocation fixture
+// for each method of the emitter, its handle and its slot view, each
+// called once per invocation, and the join of a name.
+func BenchmarkEmitter(b *testing.B) {
+	benchPhases(b, emitterCases(b))
+
+	e := &eidos.Emitter{}
+	b.Run("JoinName", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(joinNameAllocs)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = e.JoinName("stub", "store")
+		}
+		assert.Equal(b, got, "storeStub", "JoinName joins the word after the base")
+	})
+
+	b.Run("JoinName/an empty word", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = e.JoinName("", "store")
+		}
+		assert.Equal(b, got, "store", "JoinName returns the base for an empty word")
+	})
+}
+
+// emitterCases returns a phase call over the invocation fixture for each
+// method of the emitter, its handle and its slot view, each called once
+// per invocation. The plugin declares a family at each cardinality.
+func emitterCases(tb assert.TB) []phaseCase {
+	tb.Helper()
+
+	fresh, _, _ := invocationContexts(tb, false)
+	seeded, _, _ := invocationContexts(tb, true)
+	families := func(h func(*eidos.StructMatch, *eidos.Emitter)) plugin.Generator {
+		return generatorOf(tb, eidos.NewPlugin(contextPlugin).
+			Output(plugin.Output{Per: plugin.PerSource, Word: "impl"}).
+			Output(plugin.Output{Tag: string(packageTag), Per: plugin.PerPackage, Word: "pkg"}).
+			Output(plugin.Output{Tag: string(planTag), Per: plugin.PerPlan, Word: "plan"}).
+			Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+				h(m, e)
+				return nil
+			})).
+			Build())
+	}
+	weaver := func(h func(*emit.Struct, *eidos.Emitter)) plugin.Generator {
+		return generatorOf(tb, eidos.NewPlugin(contextPlugin).
+			Handle(eidos.OnEmit(symbol.KindStruct, func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+				s, held := m.Value.(*emit.Struct)
+				if !held {
+					tb.Fatalf("the struct rule received a %T", m.Value)
+				}
+				h(s, e)
+				return nil
+			})).
+			Build())
+	}
+	oneUnit := func(per plugin.Cardinality, decls int) func(assert.TB, *plugin.GeneratorContext) {
+		return func(tb assert.TB, ctx *plugin.GeneratorContext) {
+			units := slices.Collect(ctx.Emit.Units())
+			assert.Length(tb, units, 1, "the call flushes one unit")
+			assert.Equal(tb, units[0].Per, per, "at the family's cardinality")
+			assert.Length(tb, units[0].Decls, decls, "with the call's appends")
+		}
+	}
+	unchanged := func(tb assert.TB, ctx *plugin.GeneratorContext) {
+		assert.Length(tb, slices.Collect(ctx.Emit.Units()), 1, "the seeded unit alone remains")
+	}
+
+	declaration := &emit.Struct{Name: "Appended"}
+	var ref *emit.TemplateRef
+	field := &emit.Field{Name: "audited"}
+	return []phaseCase{
+		{
+			name: "File", allocs: unitAllocs, fresh: fresh, check: oneUnit(plugin.PerSource, 0),
+			gen: families(func(_ *eidos.StructMatch, e *eidos.Emitter) { e.File() }),
+		},
+		{
+			name: "PackageFile", allocs: unitAllocs, fresh: fresh, check: oneUnit(plugin.PerPackage, 0),
+			gen: families(func(_ *eidos.StructMatch, e *eidos.Emitter) { e.PackageFile(packageTag) }),
+		},
+		{
+			name: "PlanFile", allocs: unitAllocs, fresh: fresh, check: oneUnit(plugin.PerPlan, 0),
+			gen: families(func(_ *eidos.StructMatch, e *eidos.Emitter) { e.PlanFile(planTag) }),
+		},
+		{
+			name: "Out.Append", allocs: appendAllocs, fresh: fresh,
+			check: oneUnit(plugin.PerSource, invocationStructs),
+			gen:   families(func(_ *eidos.StructMatch, e *eidos.Emitter) { e.File().Append(declaration) }),
+		},
+		{
+			name: "Ref", allocs: refAllocs, fresh: fresh,
+			gen: families(func(_ *eidos.StructMatch, e *eidos.Emitter) { ref = e.Ref(refTemplate, refPayload) }),
+			check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
+				assert.Equal(tb, ref.Owner, ctx.Plugin, "the reference names the plugin the call runs as")
+			},
+		},
+		{
+			name: "Slot", allocs: orderAllocs, fresh: seeded, check: unchanged,
+			gen: weaver(func(s *emit.Struct, e *eidos.Emitter) { e.Slot(&s.Fields) }),
+		},
+		{
+			name: "SlotView.Append", allocs: slotAppendAllocs, fresh: seeded,
+			gen: weaver(func(s *emit.Struct, e *eidos.Emitter) { e.Slot(&s.Fields).Append(field) }),
+			check: func(tb assert.TB, ctx *plugin.GeneratorContext) {
+				for u := range ctx.Emit.Units() {
+					assert.Equal(
+						tb,
+						u.Contributors,
+						[]plugin.ID{ctx.Plugin},
+						"the weaver contributes to the seeded unit",
+					)
+					for _, d := range u.Decls {
+						s, held := d.(*emit.Struct)
+						assert.True(tb, held, "the seeded unit has structs")
+						assert.Equal(tb, fieldNames(s), []string{field.Name}, "each host has the appended field")
+					}
+				}
+			},
+		},
+	}
 }

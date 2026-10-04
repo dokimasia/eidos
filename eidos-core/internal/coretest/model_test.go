@@ -32,7 +32,7 @@ func TestModel(t *testing.T) {
 	t.Run("Struct", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("carries the identity the resolution step would assign", func(t *testing.T) {
+		t.Run("returns the identity the resolution step would assign", func(t *testing.T) {
 			t.Parallel()
 
 			got := coretest.Struct(coretest.StorePath, "Store")
@@ -41,7 +41,7 @@ func TestModel(t *testing.T) {
 				Package: coretest.StorePath,
 				Name:    "Store",
 				Kind:    symbol.KindStruct,
-			}, "the fixture carries the identity the resolution step would assign")
+			}, "the fixture states the identity the resolution step would assign")
 		})
 
 		t.Run("separates two declarations in one package", func(t *testing.T) {
@@ -57,7 +57,7 @@ func TestModel(t *testing.T) {
 	t.Run("Package", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("holds the declarations it was given", func(t *testing.T) {
+		t.Run("contains the declarations it was given", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.Struct(coretest.StorePath, "Store")
@@ -71,15 +71,21 @@ func TestModel(t *testing.T) {
 				"the traversal reaches the declaration the fixture was given")
 		})
 
-		t.Run("names itself and its file", func(t *testing.T) {
+		t.Run("names itself", func(t *testing.T) {
 			t.Parallel()
 
 			pkg := coretest.Package(coretest.StorePath)
 			assert.Equal(t, pkg.ID, coretest.PackageID(coretest.StorePath),
 				"the fixture names itself")
-			assert.Length(t, pkg.Files, 1, "holds one file")
+		})
+
+		t.Run("names its one file", func(t *testing.T) {
+			t.Parallel()
+
+			pkg := coretest.Package(coretest.StorePath)
+			assert.Length(t, pkg.Files, 1, "the fixture contains one file")
 			assert.Equal(t, pkg.Files[0].ID, coretest.FileID(coretest.StorePath),
-				"which names itself too")
+				"the file names itself")
 		})
 
 		t.Run("separates two packages", func(t *testing.T) {
@@ -94,24 +100,30 @@ func TestModel(t *testing.T) {
 	t.Run("Workspace", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the packages and declarations it was asked for", func(t *testing.T) {
+		t.Run("returns the packages it was asked for", func(t *testing.T) {
+			t.Parallel()
+
+			const packages, files, decls = 3, 2, 4
+			assert.Length(t, coretest.Workspace(packages, files, decls), packages,
+				"Workspace returns the packages asked for")
+		})
+
+		t.Run("returns the declarations it was asked for in each package", func(t *testing.T) {
 			t.Parallel()
 
 			const packages, files, decls = 3, 2, 4
 			got := coretest.Workspace(packages, files, decls)
-			assert.Length(t, got, packages, "Workspace returns the packages asked for")
-
-			held := 0
+			structs := 0
 			for decl := range node.Declarations(got[0]) {
 				if decl.Kind() == symbol.KindStruct {
-					held++
+					structs++
 				}
 			}
-			assert.Equal(t, held, files*decls,
-				"and every package holds files times decls declarations")
+			assert.Equal(t, structs, files*decls,
+				"every package contains files times decls declarations")
 		})
 
-		t.Run("separates every package and declaration it built", func(t *testing.T) {
+		t.Run("builds a distinct identity for every declaration", func(t *testing.T) {
 			t.Parallel()
 
 			const packages, files, decls = 4, 2, 4
@@ -154,6 +166,15 @@ func TestModel(t *testing.T) {
 
 			assert.Empty(t, coretest.Names(t, nil),
 				"a traversal that yielded nothing names nothing")
+		})
+
+		t.Run("fails a symbol that names no declaration", func(t *testing.T) {
+			t.Parallel()
+
+			got := assert.Rejects(t, "a foreign symbol fails the read-back",
+				func(tb assert.TB) { coretest.Names(tb, []symbol.Symbol{foreign{}}) })
+			assert.Contains(t, got, "names a declaration",
+				"and says what the traversal was supposed to yield")
 		})
 	})
 }

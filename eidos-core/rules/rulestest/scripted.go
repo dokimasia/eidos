@@ -44,10 +44,15 @@ type scripted struct{}
 // Lang returns the scripted language.
 func (scripted) Lang() symbol.Lang { return frontendtest.ScriptedLang }
 
+// scriptedContributions is the one list the scripted language's members
+// arrive through. Every policy shares it, and the walk only reads it, so
+// a policy allocates nothing.
+var scriptedContributions = []rules.Contribution{rules.ContributesEmbeds}
+
 // Members walks embeds under promotion.
 func (scripted) Members() rules.MemberPolicy {
 	return rules.MemberPolicy{
-		Contributes: []rules.Contribution{rules.ContributesEmbeds},
+		Contributes: scriptedContributions,
 		Shadowing:   rules.ShadowPromote,
 	}
 }

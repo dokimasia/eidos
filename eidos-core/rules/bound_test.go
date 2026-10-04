@@ -4,57 +4,610 @@
 package rules_test
 
 import (
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
+	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/rules"
 	"go.dokimi.dev/eidos/core/rules/rulestest"
+	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The bound is what a handler holds, so its defaults and the calls
-// that pass straight through to the language are pinned here.
+// The fixture's package and the names it declares, which every spec of
+// the package builds on.
+const (
+	svcPath     = "svc"
+	depPath     = "dep"
+	rowName     = "Row"
+	baseName    = "Base"
+	derivedName = "Derived"
+	storeName   = "Store"
+	intSpelling = "int"
+	strSpelling = "string"
+	// nameField and countField are Row's two fields: a string and an
+	// int.
+	nameField  = "name"
+	countField = "count"
+)
+
+// promotedMethods is how many methods the base of [promoted] declares.
+const promotedMethods = 20
+
+// The allocations of the methods of a binding over the walk fixture,
+// which TestBoundAllocs checks in the ordinary run and BenchmarkBound in
+// a benchmark run. A method without a constant allocates nothing.
+const (
+	// newBoundAllocs is the memo of folded shapes.
+	newBoundAllocs = 1
+	// callableAllocs is the projection of a method with one parameter
+	// and one return: the parameter list, the return list, and the list
+	// of return roles the scripted language classifies.
+	callableAllocs = 3
+	// foldAllocs is the first fold of a builtin reference: the memo's
+	// first group, and the shape the memo stores out of line, because a
+	// TypeShape is larger than the map stores in place.
+	foldAllocs = 2
+	// foldBytesAllocs is the first fold of a list of bytes: the memo's
+	// first group, and the shapes of the element and of the list. Bytes
+	// has no list of children.
+	foldBytesAllocs = 3
+	// membersAllocs is a member walk of a struct that embeds one type:
+	// the members it returns, and the path of the one contributor it
+	// descends into. The walk's working storage is a pooled walk's.
+	membersAllocs = 2
+	// typeNameAllocs is the joined name.
+	typeNameAllocs = 1
+	// witnessesAllocs is the list of one parameter's witness, and the
+	// reference the scripted language derives.
+	witnessesAllocs = 2
+)
+
+// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
+// warm the function, and the 100 it counts.
+const allocRuns = 101
+
+// native is the scripted rules under the fixture's language, so a
+// contributor in the fixture walks under the scripted policy. A
+// foreign language gets the absent policy. It keeps the scripted
+// generics capability.
+type native struct {
+	rules.SourceRules
+	rules.GenericsRules
+}
+
+// Lang returns the fixture's language.
+func (native) Lang() symbol.Lang { return coretest.Lang }
+
+// policy overrides the scripted language's member policy, so a
+// case exercises one shadowing rule or contribution list.
+type policy struct {
+	rules.SourceRules
+	members rules.MemberPolicy
+}
+
+// Members returns the overriding policy.
+func (p policy) Members() rules.MemberPolicy { return p.members }
+
+// fixedSamples overrides the scripted language's samples with one
+// fixed pair, so a case controls what the language derives.
+type fixedSamples struct {
+	rules.SourceRules
+	sample, alternate rules.Sample
+}
+
+// SamplesOf returns the fixed pair.
+func (f fixedSamples) SamplesOf(*node.TypeRef, string, rules.View) (rules.Sample, rules.Sample) {
+	return f.sample, f.alternate
+}
+
+// otherLang is the scripted rules under the name of a language the
+// fixture declares nothing in, so a case reads the fixture's
+// declarations through rules that are not their own.
+type otherLang struct {
+	rules.SourceRules
+}
+
+// Lang returns the other language.
+func (otherLang) Lang() symbol.Lang { return "other" }
+
+// nongeneric hides the scripted language's generics capability. It
+// forwards every method of the contract by name, because embedding
+// the rules would promote the capability too.
+type nongeneric struct {
+	inner rules.SourceRules
+}
+
+// Lang returns the inner rules' language.
+func (n nongeneric) Lang() symbol.Lang { return n.inner.Lang() }
+
+// Members returns the inner rules' member policy.
+func (n nongeneric) Members() rules.MemberPolicy { return n.inner.Members() }
+
+// ParamRole returns the inner rules' role for a parameter.
+func (n nongeneric) ParamRole(p *node.Param, v rules.View) rules.ParamRole {
+	return n.inner.ParamRole(p, v)
+}
+
+// ReturnRoles returns the inner rules' roles for the returns.
+func (n nongeneric) ReturnRoles(rs []*node.Return, v rules.View) ([]rules.ReturnRole, rules.ErrorModel) {
+	return n.inner.ReturnRoles(rs, v)
+}
+
+// Builtin returns the inner rules' shape for a spelling.
+func (n nongeneric) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
+	return n.inner.Builtin(ref, v)
+}
+
+// Resolve returns the inner rules' resolution of a spelling.
+func (n nongeneric) Resolve(
+	s rules.Scope, name string, kind directive.ResolutionKind, v rules.View,
+) (symbol.Symbol, error) {
+	return n.inner.Resolve(s, name, kind, v)
+}
+
+// SamplesOf returns the inner rules' pair for a type.
+func (n nongeneric) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+	return n.inner.SamplesOf(ref, hint, v)
+}
+
+// ZeroValue returns the inner rules' zero for a type.
+func (n nongeneric) ZeroValue(ref *node.TypeRef, v rules.View) (emit.Value, bool) {
+	return n.inner.ZeroValue(ref, v)
+}
+
+// LiteralFor returns the inner rules' value for a text.
+func (n nongeneric) LiteralFor(f *node.File, ref *node.TypeRef, text string, v rules.View) (emit.Value, bool) {
+	return n.inner.LiteralFor(f, ref, text, v)
+}
+
+// TypeName returns the inner rules' join of a word onto a base.
+func (n nongeneric) TypeName(word, base string) string { return n.inner.TypeName(word, base) }
+
+// allocCall is one call of a function or a method, named as its
+// benchmark is, and the allocations the call makes.
+type allocCall struct {
+	name   string
+	allocs uint64
+	call   func()
+}
+
+// A handler calls the binding's methods, so the binding's defaults and
+// the calls it passes to the language are pinned here.
 func TestBound(t *testing.T) {
 	t.Parallel()
 
 	t.Run("NewBound", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("stands in the absent value for a missing source", func(t *testing.T) {
+		t.Run("binds the absent rules for nil rules", func(t *testing.T) {
 			t.Parallel()
 
 			b := rules.NewBound(nil, rules.View{}, nil)
 			assert.True(t, rules.IsAbsent(b.Source()), "no source is the absent one")
 			assert.Equal(t, b.Lang(), symbol.Lang(""), "for the zero language")
-			assert.True(t, b.View().IsZero(), "over the view it was given")
 		})
 	})
 
-	t.Run("passes through", func(t *testing.T) {
+	t.Run("Source", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("the language's own returns, refusing on the zero view", func(t *testing.T) {
+		t.Run("returns the rules the binding was made with", func(t *testing.T) {
+			t.Parallel()
+
+			source := rulestest.Scripted()
+			assert.Equal(t, rules.NewBound(source, rules.View{}, nil).Source(), source, "the binding's own rules")
+		})
+	})
+
+	t.Run("View", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the view the binding reads through", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			assert.False(t, b.View().IsZero(), "the view the fixture minted")
+		})
+	})
+
+	t.Run("Lang", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the rules' language", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			assert.Equal(t, b.Lang(), coretest.Lang, "the fixture's language")
+		})
+	})
+
+	t.Run("ZeroValue", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the language's zero of a type", func(t *testing.T) {
 			t.Parallel()
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			zero, held := b.ZeroValue(builtin(intSpelling))
 			assert.True(t, held, "a zero derives")
 			assert.Equal(t, zero, emit.Literal(emit.LiteralInt, "0"), "as the language spells it")
+		})
+
+		t.Run("reports false for the zero view", func(t *testing.T) {
+			t.Parallel()
+
+			_, held := rules.NewBound(rulestest.Scripted(), rules.View{}, nil).ZeroValue(builtin(intSpelling))
+			assert.False(t, held, "no view, no zero")
+		})
+
+		t.Run("reports false for a nil reference", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			_, held := b.ZeroValue(nil)
+			assert.False(t, held, "no reference, no zero")
+		})
+	})
+
+	t.Run("LiteralFor", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the language's value of a text", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			lit, held := b.LiteralFor(nil, builtin(strSpelling), "x")
 			assert.True(t, held, "a literal derives")
 			assert.Equal(t, lit, emit.Literal(emit.LiteralString, "x"), "as text")
-			assert.Equal(t, b.TypeName("Builder", "Row"), "RowBuilder", "the join is the language's")
+		})
 
-			none := rules.NewBound(rulestest.Scripted(), rules.View{}, nil)
-			_, held = none.ZeroValue(builtin(intSpelling))
-			assert.False(t, held, "no view, no zero")
-			_, held = none.LiteralFor(nil, builtin(strSpelling), "x")
-			assert.False(t, held, "and no literal")
-			_, held = b.ZeroValue(nil)
-			assert.False(t, held, "nor for no reference")
+		t.Run("reports false for the zero view", func(t *testing.T) {
+			t.Parallel()
+
+			_, held := rules.NewBound(rulestest.Scripted(), rules.View{}, nil).
+				LiteralFor(nil, builtin(strSpelling), "x")
+			assert.False(t, held, "no view, no literal")
 		})
 	})
+
+	t.Run("TypeName", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the language's join of a word onto a base", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			assert.Equal(t, b.TypeName("Builder", "Row"), "RowBuilder", "the join is the language's")
+		})
+	})
+}
+
+// Each method of the binding allocates what it returns or what the
+// language allocates, in the ordinary run, which runs no benchmark. A
+// first fold takes a binding built before the count, because a fold
+// fills the memo it reads. The check runs alone, because AllocsPerRun
+// counts every goroutine's allocations and refuses to run beside
+// parallel tests.
+func TestBoundAllocs(t *testing.T) {
+	for _, tt := range boundCalls(t) {
+		msg := tt.name + " allocates what it returns"
+		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
+	}
+
+	v, ref, bytes := viewOnly(t), builtin(intSpelling), byteList()
+	fresh := make([]rules.Bound, allocRuns)
+	for i := range fresh {
+		fresh[i] = rules.NewBound(scripted(), v, nil)
+	}
+	at := 0
+	assert.MaxAllocs(t, func() {
+		if fresh[at].TypeOf(ref).Form != symbol.FormScalar {
+			t.Fatal("TypeOf folded int to another form")
+		}
+		at++
+	}, foldAllocs, "TypeOf allocates the memo's group and the shape for a first fold")
+
+	for i := range fresh {
+		fresh[i] = rules.NewBound(bytesLang{scripted()}, v, nil)
+	}
+	at = 0
+	assert.MaxAllocs(t, func() {
+		if fresh[at].TypeOf(bytes).Form != symbol.FormBytes {
+			t.Fatal("TypeOf folded a list of bytes to another form")
+		}
+		at++
+	}, foldBytesAllocs, "TypeOf allocates the memo's group and two shapes for a first fold of a list of bytes")
+}
+
+// BenchmarkBound measures each method of a binding over the walk
+// fixture, which a handler calls once per match, and the first fold of a
+// reference.
+func BenchmarkBound(b *testing.B) {
+	for _, tt := range boundCalls(b) {
+		b.Run(tt.name, func(b *testing.B) {
+			tt.call()
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+		})
+	}
+
+	b.Run("TypeOf/a reference new to the binding", func(b *testing.B) {
+		source, v, ref := scripted(), viewOnly(b), builtin(intSpelling)
+		c := bench.Start(b).MaxAllocs(foldAllocs)
+		defer c.End()
+		var (
+			bound rules.Bound
+			shape rules.TypeShape
+		)
+		for c.Loop() {
+			c.Excluding(func() { bound = rules.NewBound(source, v, nil) })
+			shape = bound.TypeOf(ref)
+		}
+		assert.Equal(b, shape.Form, symbol.FormScalar, "TypeOf folds int to a scalar")
+	})
+
+	b.Run("TypeOf/a list of bytes new to the binding", func(b *testing.B) {
+		var source rules.SourceRules = bytesLang{scripted()}
+		v, ref := viewOnly(b), byteList()
+		c := bench.Start(b).MaxAllocs(foldBytesAllocs)
+		defer c.End()
+		var (
+			bound rules.Bound
+			shape rules.TypeShape
+		)
+		for c.Loop() {
+			c.Excluding(func() { bound = rules.NewBound(source, v, nil) })
+			shape = bound.TypeOf(ref)
+		}
+		assert.Equal(b, shape.Form, symbol.FormBytes, "TypeOf folds a list of bytes to Bytes")
+	})
+}
+
+// boundCalls returns one call of each method of a binding over the walk
+// fixture, with what the call allocates. Each call checks what it
+// returned, so a call that measured a refusal fails. The binding has
+// folded the reference TypeOf reads, and MembersOf walks the struct
+// [promoted] returns.
+func boundCalls(tb assert.TB) []allocCall {
+	tb.Helper()
+
+	b, _, _ := boundOver(tb, coretest.Frozen(tb, hierarchy()))
+	promoting, embedder := promoted(tb, rules.ShadowPromote)
+	overriding, extender := promoted(tb, rules.ShadowOverride)
+	source, view := scripted(), b.View()
+	intRef, strRef := builtin(intSpelling), builtin(strSpelling)
+	b.TypeOf(intRef)
+	get := method(svcPath, rowName, "Get")
+	count := rowField(countField)
+	params := []*node.TypeParam{{ID: coretest.MemberID(svcPath, "Box", "T", symbol.KindTypeParam), Name: "T"}}
+	return []allocCall{
+		{name: "NewBound", allocs: newBoundAllocs, call: func() {
+			if rules.NewBound(source, view, nil).Lang() != coretest.Lang {
+				tb.Fatalf("NewBound bound another language")
+			}
+		}},
+		{name: "Source", call: func() {
+			if rules.IsAbsent(b.Source()) {
+				tb.Fatalf("Source returned the absent rules")
+			}
+		}},
+		{name: "View", call: func() {
+			if b.View().IsZero() {
+				tb.Fatalf("View returned the zero view")
+			}
+		}},
+		{name: "Lang", call: func() {
+			if b.Lang() != coretest.Lang {
+				tb.Fatalf("Lang returned another language")
+			}
+		}},
+		{name: "CallableOf", allocs: callableAllocs, call: func() {
+			if c, held := b.CallableOf(get); !held || len(c.Params) != 1 {
+				tb.Fatalf("CallableOf projected another signature")
+			}
+		}},
+		{name: "TypeOf/a reference the binding folded", call: func() {
+			if b.TypeOf(intRef).Form != symbol.FormScalar {
+				tb.Fatalf("TypeOf folded int to another form")
+			}
+		}},
+		{name: "MembersOf/under ShadowPromote", allocs: membersAllocs, call: func() {
+			if set, _ := promoting.MembersOf(embedder); len(set.Members) != promotedMethods {
+				tb.Fatalf("MembersOf returned another number of members")
+			}
+		}},
+		{name: "MembersOf/under ShadowOverride", allocs: membersAllocs, call: func() {
+			if set, _ := overriding.MembersOf(extender); len(set.Members) != promotedMethods {
+				tb.Fatalf("MembersOf returned another number of members")
+			}
+		}},
+		{name: "SamplesOf", call: func() {
+			if sample, _ := b.SamplesOf(count, intRef, countField); !sample.OK() {
+				tb.Fatalf("SamplesOf derived no sample")
+			}
+		}},
+		{name: "ZeroValue", call: func() {
+			if _, held := b.ZeroValue(intRef); !held {
+				tb.Fatalf("ZeroValue derived no zero")
+			}
+		}},
+		{name: "LiteralFor", call: func() {
+			if _, held := b.LiteralFor(nil, strRef, "x"); !held {
+				tb.Fatalf("LiteralFor derived no literal")
+			}
+		}},
+		{name: "TypeName", allocs: typeNameAllocs, call: func() {
+			if b.TypeName("Builder", rowName) != "RowBuilder" {
+				tb.Fatalf("TypeName joined another name")
+			}
+		}},
+		{name: "Witnesses", allocs: witnessesAllocs, call: func() {
+			if len(b.Witnesses(params)) != 1 {
+				tb.Fatalf("Witnesses derived another number of references")
+			}
+		}},
+	}
+}
+
+// promoted returns a binding under a shadowing rule over a struct whose
+// one contributor declares [promotedMethods] methods, and the struct.
+// Under ShadowOverride the struct extends the contributor, and under
+// every other rule it embeds it.
+func promoted(tb assert.TB, rule rules.Shadowing) (rules.Bound, *node.Struct) {
+	tb.Helper()
+
+	base := coretest.Struct(svcPath, baseName)
+	for i := range promotedMethods {
+		base.Methods = append(base.Methods, method(svcPath, baseName, "M"+strconv.Itoa(i)))
+	}
+	derived := coretest.Struct(svcPath, derivedName)
+	contribution := rules.ContributesEmbeds
+	if rule == rules.ShadowOverride {
+		contribution = rules.ContributesExtends
+		derived.Extends = []*node.TypeRef{named(svcPath, baseName, symbol.KindStruct)}
+	} else {
+		derived.Embeds = []*node.Embed{embedding(svcPath, baseName)}
+	}
+	v, _, _ := viewOver(tb, coretest.Frozen(tb, coretest.Package(svcPath, base, derived)))
+	source := policy{scripted(), rules.MemberPolicy{Contributes: []rules.Contribution{contribution}, Shadowing: rule}}
+	return rules.NewBound(source, v, nil), derived
+}
+
+// byteList returns a list of the eight-bit unsigned scalar [bytesLang]
+// classifies.
+func byteList() *node.TypeRef {
+	return &node.TypeRef{Spelling: "[]byte", Form: symbol.FormList, Elems: []*node.TypeRef{builtin("byte")}}
+}
+
+// viewOver returns a view over a frozen graph with a fresh read set and
+// the kernel's keys registered, and the set and the facts, so a case can
+// stamp and read.
+func viewOver(tb assert.TB, g *store.Graph) (rules.View, *store.ReadSet, *meta.Facts) {
+	tb.Helper()
+
+	reads := store.NewReadSet()
+	reader, err := g.Reader(reads, nil)
+	assert.NoError(tb, err, "the sealed graph hands out a reader")
+	registry := meta.NewRegistry()
+	keys, err := meta.Kernel(registry)
+	assert.NoError(tb, err, "the kernel keys register")
+	facts := meta.NewFacts(registry)
+	return rules.View{Decls: reader, Facts: facts, Reads: reads, Kernel: keys}, reads, facts
+}
+
+// viewOnly returns a view over the walk fixture.
+func viewOnly(tb assert.TB) rules.View {
+	tb.Helper()
+
+	v, _, _ := viewOver(tb, coretest.Frozen(tb, hierarchy()))
+	return v
+}
+
+// boundOver binds the fixture's rules to a view over the graph.
+func boundOver(tb assert.TB, g *store.Graph) (rules.Bound, *store.ReadSet, *meta.Facts) {
+	tb.Helper()
+
+	v, reads, facts := viewOver(tb, g)
+	return rules.NewBound(scripted(), v, nil), reads, facts
+}
+
+// scripted returns the scripted rules bound to the fixture's
+// language.
+func scripted() rules.SourceRules {
+	s := rulestest.Scripted()
+	return native{SourceRules: s, GenericsRules: s.(rules.GenericsRules)}
+}
+
+// named returns a resolved reference to a declaration in the
+// fixture's language.
+func named(path, name string, kind symbol.Kind) *node.TypeRef {
+	return &node.TypeRef{Spelling: name, Target: coretest.ID(path, name, kind)}
+}
+
+// builtin returns a reference the resolution step left without a
+// target.
+func builtin(spelling string) *node.TypeRef { return &node.TypeRef{Spelling: spelling} }
+
+// field returns a typed field on a host.
+func field(path, host, name string, typ *node.TypeRef) *node.Field {
+	f := coretest.Field(path, host, name)
+	f.Type = typ
+	return f
+}
+
+// method returns a method on a host with one int parameter and one
+// string result.
+func method(path, host, name string) *node.Method {
+	m := coretest.Method(path, host, name)
+	m.Params = []*node.Param{{Name: "n", Type: builtin(intSpelling)}}
+	m.Returns = []*node.Return{{Type: builtin(strSpelling)}}
+	return m
+}
+
+// embedding returns an embed of a resolved struct.
+func embedding(path, name string) *node.Embed {
+	return &node.Embed{Ref: named(path, name, symbol.KindStruct)}
+}
+
+// embedOf returns an embed of a resolved declaration of any kind.
+func embedOf(path, name string, kind symbol.Kind) *node.Embed {
+	return &node.Embed{Ref: named(path, name, kind)}
+}
+
+// namedEmbed returns an embed of a resolved declaration with the
+// identity the load assigns it: the embedded type's bare name under
+// the host.
+func namedEmbed(path, host, name string, kind symbol.Kind) *node.Embed {
+	e := embedOf(path, name, kind)
+	e.ID = symbol.Identity{Lang: coretest.Lang, Package: path, Owner: host, Name: name, Kind: symbol.KindEmbed}
+	return e
+}
+
+// iface returns an interface without members.
+func iface(path, name string) *node.Interface {
+	return &node.Interface{ID: coretest.ID(path, name, symbol.KindInterface), Name: name}
+}
+
+// hierarchy builds the walk fixture: Base with a field and a method,
+// Derived embedding Base and declaring a field of its own, Row with
+// two builtin fields, and Store, an interface with one method.
+func hierarchy() *node.Package {
+	base := coretest.Struct(svcPath, baseName)
+	base.Fields = []*node.Field{field(svcPath, baseName, "id", builtin(intSpelling))}
+	base.Methods = []*node.Method{method(svcPath, baseName, "ID")}
+	derived := coretest.Struct(svcPath, derivedName)
+	derived.Embeds = []*node.Embed{embedding(svcPath, baseName)}
+	derived.Fields = []*node.Field{field(svcPath, derivedName, "name", builtin(strSpelling))}
+	row := coretest.Struct(svcPath, rowName)
+	row.Fields = []*node.Field{
+		field(svcPath, rowName, nameField, builtin(strSpelling)),
+		field(svcPath, rowName, countField, builtin(intSpelling)),
+	}
+	iface := coretest.Interface(svcPath, storeName)
+	iface.Methods = []*node.Method{method(svcPath, storeName, "Get")}
+	return coretest.Package(svcPath, base, derived, row, iface)
+}
+
+// rowField returns the identity of one of Row's fields.
+func rowField(name string) symbol.Identity {
+	return coretest.MemberID(svcPath, rowName, name, symbol.KindField)
+}
+
+// stamp states one authored text on a subject under a kernel key,
+// the way the sample annotator stamps it.
+func stamp(tb assert.TB, facts *meta.Facts, k meta.Key[string], subject symbol.Identity, text string) {
+	tb.Helper()
+
+	assert.NoError(tb, meta.Stamp(facts, k, text, meta.Claim{Subject: subject}), "the author states a value")
 }

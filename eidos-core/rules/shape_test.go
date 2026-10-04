@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/node"
@@ -19,10 +20,48 @@ import (
 // paramName is the type parameter the fold cases reference.
 const paramName = "T"
 
-// The fold is the kernel's: every structural form folds with its
-// children, a type parameter folds opaque, a resolved name
-// classifies by its declaration, and an unresolved one goes to the
-// language.
+// The spellings the shape constructors are driven with.
+const (
+	int32Spelling = "int32"
+	int32Bits     = 32
+	timeSpelling  = "time.Time"
+	unknownName   = "Unknown"
+)
+
+// referenceArgsAllocs is a reference with one type argument: the list of
+// arguments, which the shape keeps.
+const referenceArgsAllocs = 1
+
+// bytesLang classifies "byte" as the eight-bit unsigned scalar, the
+// way a language with the spelling does.
+type bytesLang struct {
+	rules.SourceRules
+}
+
+// Builtin classifies byte and defers the rest.
+func (b bytesLang) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
+	if ref.Spelling == "byte" {
+		return rules.Scalar(ref.Spelling, rules.ScalarUint, 8)
+	}
+	return b.SourceRules.Builtin(ref, v)
+}
+
+// counting counts how often the language's Builtin is asked.
+type counting struct {
+	rules.SourceRules
+	asked int
+}
+
+// Builtin counts the call and returns the wrapped rules' shape.
+func (c *counting) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
+	c.asked++
+	return c.SourceRules.Builtin(ref, v)
+}
+
+// The kernel folds every structural form with its children and folds a
+// type parameter to opaque. It classifies a resolved name by its
+// declaration and sends an unresolved one to the language, whose
+// Builtin returns through the constructors.
 func TestShape(t *testing.T) {
 	t.Parallel()
 
@@ -123,9 +162,15 @@ func TestShape(t *testing.T) {
 
 			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
 			assert.Equal(t, b.TypeOf(builtin(intSpelling)).Form, symbol.FormScalar, "a builtin classifies")
-			assert.Equal(t, b.TypeOf(builtin("Unknown")).Form, symbol.FormOpaque, "an unknown spelling is opaque")
-			assert.Equal(t, b.TypeOf(builtin("Unknown")).Spelling, "Unknown", "with its spelling")
-			assert.Equal(t, b.TypeOf(nil).Form, symbol.FormOpaque, "and nil is opaque too")
+			assert.Equal(t, b.TypeOf(builtin(unknownName)).Form, symbol.FormOpaque, "an unknown spelling is opaque")
+			assert.Equal(t, b.TypeOf(builtin(unknownName)).Spelling, unknownName, "with its spelling")
+		})
+
+		t.Run("folds a nil reference to opaque", func(t *testing.T) {
+			t.Parallel()
+
+			b, _, _ := boundOver(t, coretest.Frozen(t, hierarchy()))
+			assert.Equal(t, b.TypeOf(nil), rules.Opaque(nil), "nil is opaque without a spelling")
 		})
 
 		t.Run("treats a target outside the scope as opaque", func(t *testing.T) {
@@ -172,57 +217,235 @@ func TestShape(t *testing.T) {
 		})
 	})
 
-	t.Run("constructors", func(t *testing.T) {
+	t.Run("Opaque", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("build the leaves and the well-known references", func(t *testing.T) {
+		t.Run("returns FormOpaque with the reference's spelling", func(t *testing.T) {
 			t.Parallel()
 
-			assert.Equal(t, rules.Scalar("int32", rules.ScalarInt, 32),
-				rules.TypeShape{Form: symbol.FormScalar, Spelling: "int32", Class: rules.ScalarInt, Bits: 32},
-				"a scalar")
-			assert.Equal(t, rules.Leaf(symbol.FormBool, "bool").Form, symbol.FormBool, "a leaf")
-			ref := rules.Reference("time.Time", rules.WellKnownTimestamp)
-			assert.Equal(t, ref.Ref, rules.WellKnownTimestamp, "a well-known reference")
-			assert.True(t, rules.IsWellKnown(rules.WellKnownDuration), "which the registry blesses")
-			assert.False(t, rules.IsWellKnown(coretest.ID(svcPath, rowName, symbol.KindStruct)),
-				"and an ordinary identity is not")
-			assert.Equal(t, rules.Opaque(nil).Spelling, "", "opaque of nothing spells nothing")
-			assert.Equal(t, rules.ScalarFloat.String(), "float", "a class spells")
-			assert.Equal(t, rules.ScalarClass(9).String(), "9", "and an undeclared one numbers")
+			assert.Equal(t, rules.Opaque(builtin(unknownName)),
+				rules.TypeShape{Form: symbol.FormOpaque, Spelling: unknownName}, "the spelling is kept")
 		})
+
+		t.Run("returns FormOpaque without a spelling for a nil reference", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, rules.Opaque(nil), rules.TypeShape{Form: symbol.FormOpaque}, "nothing spells nothing")
+		})
+	})
+
+	t.Run("Scalar", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns FormScalar of a class at a width", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(
+				t,
+				rules.Scalar(int32Spelling, rules.ScalarInt, int32Bits),
+				rules.TypeShape{
+					Form:     symbol.FormScalar,
+					Spelling: int32Spelling,
+					Class:    rules.ScalarInt,
+					Bits:     int32Bits,
+				},
+				"a 32-bit signed integer",
+			)
+		})
+	})
+
+	t.Run("Leaf", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a shape of the form without children", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, rules.Leaf(symbol.FormBool, boolSpelling),
+				rules.TypeShape{Form: symbol.FormBool, Spelling: boolSpelling}, "a boolean leaf")
+		})
+	})
+
+	t.Run("Reference", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns FormReference to an identity", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, rules.Reference(timeSpelling, rules.WellKnownTimestamp),
+				rules.TypeShape{Form: symbol.FormReference, Spelling: timeSpelling, Ref: rules.WellKnownTimestamp},
+				"a reference without arguments")
+		})
+
+		t.Run("returns the type arguments in order", func(t *testing.T) {
+			t.Parallel()
+
+			first, second := rules.Leaf(symbol.FormText, strSpelling), rules.Scalar(intSpelling, rules.ScalarInt, 0)
+			row := coretest.ID(svcPath, rowName, symbol.KindStruct)
+			assert.Equal(t, rules.Reference(rowName, row, first, second).Args, []rules.TypeShape{first, second},
+				"the arguments follow the reference")
+		})
+	})
+
+	t.Run("IsWellKnown", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give symbol.Identity
+			want bool
+		}{
+			{name: "reports true for WellKnownTimestamp", give: rules.WellKnownTimestamp, want: true},
+			{name: "reports true for WellKnownDuration", give: rules.WellKnownDuration, want: true},
+			{
+				name: "reports false for a declaration",
+				give: coretest.ID(svcPath, rowName, symbol.KindStruct),
+				want: false,
+			},
+			{name: "reports false for the zero identity", give: symbol.Identity{}, want: false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(
+					t,
+					rules.IsWellKnown(tt.give),
+					tt.want,
+					"IsWellKnown reports whether the registry blesses it",
+				)
+			})
+		}
+	})
+
+	t.Run("ScalarClass.String", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give rules.ScalarClass
+			want string
+		}{
+			{name: "returns int for ScalarInt", give: rules.ScalarInt, want: "int"},
+			{name: "returns uint for ScalarUint", give: rules.ScalarUint, want: "uint"},
+			{name: "returns float for ScalarFloat", give: rules.ScalarFloat, want: "float"},
+			{name: "returns the number of the zero class", give: rules.ScalarClass(0), want: "0"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
+			})
+		}
 	})
 }
 
-// bytesLang classifies "byte" as the eight-bit unsigned scalar, the
-// way a language with the spelling does.
-type bytesLang struct {
-	rules.SourceRules
+// Each constructor returns its shape by value, and allocates only the
+// list of type arguments a reference keeps, in the ordinary run, which
+// runs no benchmark. The check runs alone, because AllocsPerRun counts
+// every goroutine's allocations and refuses to run beside parallel
+// tests.
+func TestShapeAllocs(t *testing.T) {
+	ref, arg := builtin(unknownName), rules.Scalar(intSpelling, rules.ScalarInt, 0)
+	class, id := rules.ScalarFloat, coretest.ID(svcPath, rowName, symbol.KindStruct)
+	var shape rules.TypeShape
+	assert.MaxAllocs(t, func() { shape = rules.Opaque(ref) }, 0, "Opaque allocates nothing")
+	assert.Equal(t, shape.Spelling, unknownName, "Opaque keeps the spelling")
+	assert.MaxAllocs(t, func() { shape = rules.Scalar(int32Spelling, rules.ScalarInt, int32Bits) }, 0,
+		"Scalar allocates nothing")
+	assert.Equal(t, shape.Bits, int32Bits, "Scalar keeps the width")
+	assert.MaxAllocs(t, func() { shape = rules.Leaf(symbol.FormBool, boolSpelling) }, 0, "Leaf allocates nothing")
+	assert.Equal(t, shape.Form, symbol.FormBool, "Leaf keeps the form")
+	assert.MaxAllocs(t, func() { shape = rules.Reference(timeSpelling, rules.WellKnownTimestamp) }, 0,
+		"Reference allocates nothing without arguments")
+	assert.Equal(t, shape.Ref, rules.WellKnownTimestamp, "Reference keeps the identity")
+	assert.MaxAllocs(t, func() { shape = rules.Reference(rowName, id, arg) }, referenceArgsAllocs,
+		"Reference allocates the list of its arguments")
+	assert.Length(t, shape.Args, 1, "Reference keeps the argument")
+
+	var got bool
+	assert.MaxAllocs(t, func() { got = rules.IsWellKnown(rules.WellKnownDuration) }, 0,
+		"IsWellKnown allocates nothing")
+	assert.True(t, got, "IsWellKnown reports true for WellKnownDuration")
+	var spelled string
+	assert.MaxAllocs(t, func() { spelled = class.String() }, 0,
+		"ScalarClass.String allocates nothing for a declared class")
+	assert.Equal(t, spelled, "float", "ScalarClass.String spells ScalarFloat")
 }
 
-// Builtin classifies byte and defers the rest.
-func (b bytesLang) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
-	if ref.Spelling == "byte" {
-		return rules.Scalar(ref.Spelling, rules.ScalarUint, 8)
-	}
-	return b.SourceRules.Builtin(ref, v)
-}
+// BenchmarkShape measures each constructor a language's Builtin returns
+// through, the registry check, and the spelling of a scalar class.
+func BenchmarkShape(b *testing.B) {
+	b.Run("Opaque", func(b *testing.B) {
+		ref := builtin(unknownName)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got rules.TypeShape
+		for c.Loop() {
+			got = rules.Opaque(ref)
+		}
+		assert.Equal(b, got.Spelling, unknownName, "Opaque keeps the spelling")
+	})
 
-// viewOnly mints a view over the walk fixture.
-func viewOnly(tb assert.TB) rules.View {
-	tb.Helper()
+	b.Run("Scalar", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got rules.TypeShape
+		for c.Loop() {
+			got = rules.Scalar(int32Spelling, rules.ScalarInt, int32Bits)
+		}
+		assert.Equal(b, got.Bits, int32Bits, "Scalar keeps the width")
+	})
 
-	v, _, _ := viewOver(tb, coretest.Frozen(tb, hierarchy()))
-	return v
-}
+	b.Run("Leaf", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got rules.TypeShape
+		for c.Loop() {
+			got = rules.Leaf(symbol.FormBool, boolSpelling)
+		}
+		assert.Equal(b, got.Form, symbol.FormBool, "Leaf keeps the form")
+	})
 
-// counting counts how often the language's Builtin is asked.
-type counting struct {
-	rules.SourceRules
-	asked int
-}
+	b.Run("Reference", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got rules.TypeShape
+		for c.Loop() {
+			got = rules.Reference(timeSpelling, rules.WellKnownTimestamp)
+		}
+		assert.Equal(b, got.Ref, rules.WellKnownTimestamp, "Reference keeps the identity")
+	})
 
-func (c *counting) Builtin(ref *node.TypeRef, v rules.View) rules.TypeShape {
-	c.asked++
-	return c.SourceRules.Builtin(ref, v)
+	b.Run("Reference/with a type argument", func(b *testing.B) {
+		id, arg := coretest.ID(svcPath, rowName, symbol.KindStruct), rules.Scalar(intSpelling, rules.ScalarInt, 0)
+		c := bench.Start(b).MaxAllocs(referenceArgsAllocs)
+		defer c.End()
+		var got rules.TypeShape
+		for c.Loop() {
+			got = rules.Reference(rowName, id, arg)
+		}
+		assert.Length(b, got.Args, 1, "Reference keeps the argument")
+	})
+
+	b.Run("IsWellKnown", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		got := false
+		for c.Loop() {
+			got = rules.IsWellKnown(rules.WellKnownDuration)
+		}
+		assert.True(b, got, "IsWellKnown reports true for WellKnownDuration")
+	})
+
+	b.Run("ScalarClass.String", func(b *testing.B) {
+		class := rules.ScalarFloat
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = class.String()
+		}
+		assert.Equal(b, got, "float", "ScalarClass.String spells ScalarFloat")
+	})
 }

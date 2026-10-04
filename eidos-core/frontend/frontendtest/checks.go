@@ -6,6 +6,9 @@ package frontendtest
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"hash"
 	"io/fs"
 	"iter"
 	"maps"
@@ -338,10 +341,10 @@ func AssertJailedReads(tb assert.TB, setup Setup) {
 
 // doorFolds parses every unit a load reported again, each through a
 // fresh unit of its own over the tree and its stores, and returns each
-// unit's door fold by its first member: the fold of the unit's roster
-// and of every read its parse made through the unit. A parse that read
-// its members around the door folds the roster alone, so its fold does
-// not move when the members' bytes do.
+// unit's door fold by its first member: the fold of every read its
+// parse made through the unit. A parse that read its members around
+// the door folds none of their bytes, so its fold does not move when
+// the members' bytes do.
 func doorFolds(
 	tb assert.TB, f plugin.Frontend, report *load.Report, sources fs.FS, stores map[string]fs.FS,
 ) map[string][]byte {
@@ -359,13 +362,63 @@ func tryDoorFolds(
 	tree := fixtureTree{FS: sources, stores: stores}
 	out := make(map[string][]byte, len(report.Units))
 	for _, u := range report.Units {
-		src := plugin.NewSourceUnit(u.Files, tree, u.Depth, f.Syntax(), string(Brand), diag.NewSink(), f.Name())
+		door := &foldingTree{tree: tree, sum: sha256.New()}
+		src := plugin.NewSourceUnit(u.Files, door, u.Depth, f.Syntax(), string(Brand), diag.NewSink(), f.Name())
 		if err := f.Parse(context.Background(), src); err != nil {
 			return nil, err
 		}
-		out[u.Files[0].Path] = src.ReadSum()
+		out[u.Files[0].Path] = door.sum.Sum(nil)
 	}
 	return out, nil
+}
+
+// foldingTree is the tree a unit reads through in the door check: a
+// tree with its stores, folding the path and the bytes of every file
+// read whole through it, in read order, each behind its length, so no
+// byte of one field can pass for the boundary of the next. A unit
+// reads its files whole through [plugin.ReadFile], which resolves a
+// qualified path through Store, and a store's reads fold into the same
+// sum.
+type foldingTree struct {
+	tree fs.FS
+	sum  hash.Hash
+}
+
+// Open opens a file of the tree. A unit reads a file's bytes through
+// ReadFile, so Open folds nothing.
+func (t *foldingTree) Open(name string) (fs.File, error) { return t.tree.Open(name) }
+
+// ReadFile returns one file's bytes and folds its path and its bytes.
+// A failed read returns the tree's error and folds nothing.
+func (t *foldingTree) ReadFile(name string) ([]byte, error) {
+	b, err := fs.ReadFile(t.tree, name)
+	if err != nil {
+		return nil, err
+	}
+	foldField(t.sum, []byte(name))
+	foldField(t.sum, b)
+	return b, nil
+}
+
+// Store returns one of the tree's stores, folding its reads into the
+// same sum, and false for a store the tree does not provide.
+func (t *foldingTree) Store(name string) (fs.FS, bool) {
+	stores, provides := t.tree.(plugin.StoreFS)
+	if !provides {
+		return nil, false
+	}
+	store, held := stores.Store(name)
+	if !held {
+		return nil, false
+	}
+	return &foldingTree{tree: store, sum: t.sum}, true
+}
+
+// foldField writes one field into a sum behind its length.
+func foldField(h hash.Hash, field []byte) {
+	var size [binary.MaxVarintLen64]byte
+	h.Write(binary.AppendUvarint(size[:0], uint64(len(field))))
+	h.Write(field)
 }
 
 // workspaceOnly keeps the entries of the units the partition returned,

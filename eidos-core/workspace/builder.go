@@ -54,9 +54,21 @@ type Plan struct {
 	Layout layout.Config
 }
 
-// Builder collects a composition. Every method appends or sets data.
-// Nothing validates until [Builder.Build] runs the steps, which lets
-// one error join every fault.
+// Builder collects a composition. Every method appends or sets data and
+// returns the builder. Nothing validates until [Builder.Build] runs the
+// steps, which lets one error join every fault.
+//
+// # Concurrency
+//
+// A Builder is not safe for concurrent use. A composition builds on one
+// goroutine.
+//
+// # Allocation contract
+//
+// [New] allocates the builder. A method that registers values appends
+// them to a list of the builder: its first call allocates the list, and
+// a later call allocates only to grow it. A method that sets one value
+// allocates nothing. [Builder.Build] states what it allocates.
 type Builder struct {
 	frontends  []plugin.Frontend
 	annotators []plugin.Annotator
@@ -75,7 +87,8 @@ type Builder struct {
 	memo       Memo
 }
 
-// New returns an empty builder.
+// New returns an empty builder. It allocates the builder, one
+// allocation.
 func New() *Builder {
 	return &Builder{}
 }
@@ -84,7 +97,7 @@ func New() *Builder {
 // name the source's carriers open with, the name every stamped
 // file's trailer claims ownership under, and the name a load
 // refuses the workspace's own outputs by. It is a lowercase letter,
-// then lowercase letters, digits and hyphens.
+// then lowercase letters, digits and hyphens. Brand allocates nothing.
 func (b *Builder) Brand(brand output.Brand) *Builder {
 	b.brand = brand
 	return b
@@ -96,19 +109,23 @@ func (b *Builder) Brand(brand output.Brand) *Builder {
 // empty name, a name another frontend of the composition already has,
 // and a frontend named after a kernel phase. A language's frontend and
 // backend may share the language's name, as the Go satellite's both
-// report under golang.
+// report under golang. A first call allocates the list of frontends, and
+// a later call allocates only to grow it.
 func (b *Builder) Frontends(fs ...plugin.Frontend) *Builder {
 	b.frontends = append(b.frontends, fs...)
 	return b
 }
 
-// Annotators registers the read side's stamping plugins.
+// Annotators registers the read side's stamping plugins. A first call
+// allocates the list of annotators, and a later call allocates only to
+// grow it.
 func (b *Builder) Annotators(as ...plugin.Annotator) *Builder {
 	b.annotators = append(b.annotators, as...)
 	return b
 }
 
-// Plans registers the write sides.
+// Plans registers the write sides. A first call allocates the list of
+// plans, and a later call allocates only to grow it.
 func (b *Builder) Plans(ps ...Plan) *Builder {
 	b.plans = append(b.plans, ps...)
 	return b
@@ -119,7 +136,8 @@ func (b *Builder) Plans(ps ...Plan) *Builder {
 // of the composition has, and a check that reads a plan the
 // composition does not declare or names one plan twice. A check takes
 // options, keys and capabilities the way any plugin of the composition
-// does.
+// does. A first call allocates the list of checks, and a later call
+// allocates only to grow it.
 func (b *Builder) Checks(cs ...plugin.WorkspaceCheck) *Builder {
 	b.checks = append(b.checks, cs...)
 	return b
@@ -136,7 +154,8 @@ func (b *Builder) Checks(cs ...plugin.WorkspaceCheck) *Builder {
 //
 // A composition declaring no output stops after the settle, and its
 // plans' emit stores are the run's whole product: a composition
-// that computes what it would write, and writes nothing.
+// that computes what it would write, and writes nothing. Output
+// allocates nothing.
 func (b *Builder) Output(open func() (output.Sink, error)) *Builder {
 	b.open = open
 	return b
@@ -146,7 +165,8 @@ func (b *Builder) Output(open func() (output.Sink, error)) *Builder {
 // writes its own: open returns a fresh ledger, and every run of a
 // composition declaring output calls it once before it loads. A
 // composition declaring no ledger runs as if no run had ever
-// committed: it removes nothing, and records nothing.
+// committed: it removes nothing, and records nothing. Ledger allocates
+// nothing.
 func (b *Builder) Ledger(open func() (ledger.Ledger, error)) *Builder {
 	b.ledger = open
 	return b
@@ -154,7 +174,7 @@ func (b *Builder) Ledger(open func() (ledger.Ledger, error)) *Builder {
 
 // Workspace names the workspace in its manifest. Empty leaves the name
 // to the ledger, and the disk ledger records the base name of the
-// workspace root.
+// workspace root. Workspace allocates nothing.
 func (b *Builder) Workspace(id string) *Builder {
 	b.id = id
 	return b
@@ -166,14 +186,17 @@ func (b *Builder) Workspace(id string) *Builder {
 // a negative count. The output does not depend on the count: the
 // placements, slot appends and findings of a phase call apply in
 // canonical match order, and the fact store ranks stamps by that
-// order. Plans run in parallel whatever the count.
+// order. Plans run in parallel whatever the count. Parallel allocates
+// nothing.
 func (b *Builder) Parallel(workers int) *Builder {
 	b.workers = workers
 	return b
 }
 
 // Targets declares the target names this composition recognises,
-// which is what a plan's backend resolves against.
+// which is what a plan's backend resolves against. A first call
+// allocates the list of targets, and a later call allocates only to
+// grow it.
 func (b *Builder) Targets(ts ...plugin.Target) *Builder {
 	b.targets = append(b.targets, ts...)
 	return b
@@ -182,7 +205,8 @@ func (b *Builder) Targets(ts ...plugin.Target) *Builder {
 // Keys registers the composition's own metadata keys, beyond what the
 // plugins' own providers register: a consumer's keys, a fixture's.
 // The registrations run at Build, in declaration order, through the
-// composition's handle on the registry.
+// composition's handle on the registry. A first call allocates the list
+// of registrations, and a later call allocates only to grow it.
 func (b *Builder) Keys(register ...func(r *meta.Registry) error) *Builder {
 	b.keys = append(b.keys, register...)
 	return b
@@ -191,13 +215,16 @@ func (b *Builder) Keys(register ...func(r *meta.Registry) error) *Builder {
 // Rules registers the language rules the kernel's walks run
 // under, one value per language. A run binds a subject's rules by
 // its language, and a language none registered for binds the absent
-// rules and warns. Two values for one language are a Build fault.
+// rules and warns. Two values for one language are a Build fault. A
+// first call allocates the list of rules, and a later call allocates
+// only to grow it.
 func (b *Builder) Rules(rs ...rules.SourceRules) *Builder {
 	b.rules = append(b.rules, rs...)
 	return b
 }
 
-// Config hands over the values options populate from.
+// Config hands over the values options populate from. It allocates
+// nothing.
 func (b *Builder) Config(c Config) *Builder {
 	b.config = c
 	return b
@@ -208,10 +235,18 @@ func (b *Builder) Config(c Config) *Builder {
 // plugin the composition does not include. A full name ignores one
 // directive. A plugin prefix ending in its colon, "legacy:",
 // ignores every directive under it. A spelling a registered schema
-// claims is a Build fault, because silencing a registered directive
-// would hide its validation.
+// claims is a Build fault, because an ignored registered directive
+// would skip its validation. A first call allocates the list of
+// spellings, and a later call allocates only to grow it.
 func (b *Builder) Ignore(names ...directive.Name) *Builder {
 	b.ignored = append(b.ignored, names...)
+	return b
+}
+
+// Memo configures the parse memo. The zero Memo, the default, keeps
+// none. Build refuses a negative limit. Memo allocates nothing.
+func (b *Builder) Memo(m Memo) *Builder {
+	b.memo = m
 	return b
 }
 
@@ -227,6 +262,13 @@ func (b *Builder) Ignore(names ...directive.Name) *Builder {
 // workspace: building one instance into two workspaces leaves both
 // reading the second one's values. The fingerprint is taken at
 // Build, over the values the config left.
+//
+// # Allocation contract
+//
+// Build allocates in proportion to the composition: the registries, the
+// roster, the capability order, the compiled plans and checks, the
+// workspace and the fingerprint. A composition of 64 annotators and 8
+// plans of 4 generators allocates 902 times.
 func (b *Builder) Build() (*Workspace, error) {
 	faults := b.brandFaults()
 	if b.workers < 0 {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
@@ -21,6 +22,8 @@ import (
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/rules"
+	"go.dokimi.dev/eidos/core/rules/rulestest"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -48,6 +51,11 @@ const (
 // case instead of hanging it.
 const failureWait = 5 * time.Second
 
+// reuses is how many rounds a reuse case alternates its two phase calls:
+// enough that the later call takes the state the earlier one released in
+// some round, whatever the parallel cases beside it take from the pool.
+const reuses = 8
+
 // boolKey returns a registered bool key and a fact store built over
 // its registry.
 func boolKey(tb assert.TB) (meta.Key[bool], *meta.Facts) {
@@ -73,9 +81,177 @@ const (
 	otherPlugin   plugin.ID = "audit"
 )
 
-// emitHandler is the handler shape every struct-triggered emitter
-// rule takes, so a case can vary the rule and keep the handler.
+// invocationStructs is how many structs the invocation fixture
+// declares. They are in one file of one package, so a phase call over
+// them touches one accumulator per family, however many invocations
+// touch it.
+const invocationStructs = 100
+
+// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
+// warm the function, and the 100 it counts.
+const allocRuns = 101
+
+// emitHandler is the signature of a struct-triggered emitter rule's
+// handler, so a case can vary the rule and keep the handler.
 type emitHandler = func(m *eidos.StructMatch, e *eidos.Emitter) error
+
+// phaseCase is one generate phase call of a plugin over the invocation
+// fixture, named as its benchmark is, and what the call allocates.
+// fresh returns a context of the call's own, so a call keeps its units
+// and findings apart from the calls before it, and check reads what the
+// call left in its context.
+type phaseCase struct {
+	name   string
+	allocs uint64
+	gen    plugin.Generator
+	fresh  func() *plugin.GeneratorContext
+	check  func(tb assert.TB, ctx *plugin.GeneratorContext)
+}
+
+// The plugins the dispatch benchmarks run: one whose rules visit
+// without a gate or behind a fact gate, and one whose rule a directive
+// gates.
+const (
+	benchPlugin plugin.ID = "bench"
+	gatePlugin  plugin.ID = "stubgen"
+)
+
+// The workspace TestDispatchAllocs routes over: allocPackages packages
+// of allocFiles files, each file declaring allocDecls structs.
+const (
+	allocPackages = 10
+	allocFiles    = 2
+	allocDecls    = 4
+)
+
+// dispatchRun is a generate phase call that the dispatch benchmarks and
+// TestDispatchAllocs repeat into one context: the generator, the context
+// a first call warmed, the count of the subjects the rule visited, and
+// the count one call visits.
+type dispatchRun struct {
+	gen     plugin.Generator
+	ctx     *plugin.GeneratorContext
+	visited *int
+	want    int
+}
+
+// emitRun returns the call of an emit rule over units of perUnit
+// values, whose origins g declares.
+func emitRun(tb assert.TB, g *store.Graph, units, perUnit int) dispatchRun {
+	tb.Helper()
+
+	_, facts := boolKey(tb)
+	visited := 0
+	p := eidos.NewPlugin(benchPlugin).
+		Handle(eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error {
+			visited++
+			return nil
+		})).
+		Build()
+	r := dispatchRun{
+		gen:     generatorOf(tb, p),
+		ctx:     dispatchContext(tb, g, facts, nil, benchEmitStore(tb, units, perUnit), benchPlugin),
+		visited: &visited,
+		want:    units * perUnit,
+	}
+	r.generate(tb)
+	return r
+}
+
+// factGatedRun returns the call of an emit rule behind a fact gate over
+// units of perUnit values, a multiple of ten units, whose origins g
+// declares. It stamps the fact on one origin of every tenth unit.
+func factGatedRun(tb assert.TB, g *store.Graph, units, perUnit int) dispatchRun {
+	tb.Helper()
+
+	key, facts := boolKey(tb)
+	for u := 0; u < units; u += 10 {
+		origin := coretest.Struct(coretest.StorePath+"/"+strconv.Itoa(u), "Decl0_0").ID
+		assert.NoError(tb, meta.Stamp(facts, key, true, meta.Claim{Subject: origin}), "the origin is stamped")
+	}
+	visited := 0
+	p := eidos.NewPlugin(benchPlugin).
+		Handle(eidos.Where(eidos.HasKey(key),
+			eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error {
+				visited++
+				return nil
+			}))).
+		Build()
+	r := dispatchRun{
+		gen:     generatorOf(tb, p),
+		ctx:     dispatchContext(tb, g, facts, nil, benchEmitStore(tb, units, perUnit), benchPlugin),
+		visited: &visited,
+		want:    units / 10,
+	}
+	r.generate(tb)
+	return r
+}
+
+// bareRun returns the call of a bare struct rule over g, which declares
+// structs structs.
+func bareRun(tb assert.TB, g *store.Graph, structs int) dispatchRun {
+	tb.Helper()
+
+	_, facts := boolKey(tb)
+	visited := 0
+	p := eidos.NewPlugin(benchPlugin).
+		Handle(eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
+			visited++
+			return nil
+		})).
+		Build()
+	r := dispatchRun{
+		gen:     generatorOf(tb, p),
+		ctx:     dispatchContext(tb, g, facts, nil, plugin.NewEmit(), benchPlugin),
+		visited: &visited,
+		want:    structs,
+	}
+	r.generate(tb)
+	return r
+}
+
+// directiveGatedRun returns the call of a directive-gated struct rule
+// over a workspace of packages packages, each declaring decls structs
+// with the gate's directive attached.
+func directiveGatedRun(tb assert.TB, packages, decls int) dispatchRun {
+	tb.Helper()
+
+	schema := stubSchema(gateName)
+	g, validated := gatedWorkspace(tb, schema.Canonical(), packages, 1, decls)
+	_, facts := boolKey(tb)
+	visited := 0
+	p := eidos.NewPlugin(gatePlugin).
+		Handle(eidos.Directive(schema, eidos.OnStruct(func(*eidos.StructMatch, *eidos.Emitter) error {
+			visited++
+			return nil
+		}))).
+		Build()
+	r := dispatchRun{
+		gen:     generatorOf(tb, p),
+		ctx:     dispatchContext(tb, g, facts, validated, plugin.NewEmit(), gatePlugin),
+		visited: &visited,
+		want:    packages * decls,
+	}
+	r.generate(tb)
+	return r
+}
+
+// generate resets the count of visited subjects and runs the phase call
+// once, failing on its error.
+func (r dispatchRun) generate(tb assert.TB) {
+	*r.visited = 0
+	if err := r.gen.Generate(r.ctx); err != nil {
+		tb.Fatalf("Generate: unexpected error: %v", err)
+	}
+}
+
+// check fails unless the last call visited every subject the rule routes
+// to.
+func (r dispatchRun) check(tb assert.TB) {
+	tb.Helper()
+
+	assert.Equal(tb, *r.visited, r.want, "the rule visits every subject it routes to")
+}
 
 // fixtureGraph returns a frozen graph that contains two positioned
 // structs in the store package.
@@ -212,7 +388,7 @@ func TestDispatch(t *testing.T) {
 			assert.Length(t, units[0].Origins, 0, "a graph match has no subject to record")
 		})
 
-		t.Run("returns a handler error wrapped with the plugin and the rule", func(t *testing.T) {
+		t.Run("wraps a handler's error with the plugin's rule", func(t *testing.T) {
 			t.Parallel()
 
 			g, _, _ := fixtureGraph(t)
@@ -341,6 +517,121 @@ func TestDispatch(t *testing.T) {
 			got := assert.Panics(t, func() { _ = generatorOf(t, p).Generate(ctx) },
 				"the panic propagates to the caller")
 			assert.Equal(t, got, any(errFirst), "with the handler's own value")
+		})
+
+		t.Run("records no unit of the call before", func(t *testing.T) {
+			t.Parallel()
+
+			for range reuses {
+				touchRun(t)
+				rec, _, _ := lookupRun(t)
+				for _, j := range rec.invoked {
+					assert.Empty(t, j.Units, "no record names a unit the earlier call touched")
+				}
+			}
+		})
+
+		t.Run("records no read of the call before", func(t *testing.T) {
+			t.Parallel()
+
+			for range reuses {
+				readingRun(t, oneWorker, manyStructs)
+				rec, _, _ := lookupRun(t)
+				assert.False(t, rec.invoked[1].read, "the second subject read nothing")
+			}
+		})
+
+		t.Run("reads the graph of its own call through a reader", func(t *testing.T) {
+			t.Parallel()
+
+			gamma := coretest.Struct(coretest.CachePath, "Gamma")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.CachePath, gamma)),
+				"the second graph's package is admitted")
+			g.Freeze()
+			_, facts := boolKey(t)
+			for range reuses {
+				lookupRun(t)
+				found := false
+				p := eidos.NewPlugin(contextPlugin).
+					Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+						_, found = m.Reader().Lookup(gamma.ID)
+						return nil
+					})).
+					Build()
+				assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
+				assert.True(t, found, "the reader reads this call's graph and not the earlier call's")
+			}
+		})
+
+		t.Run("runs every rule of a plugin with more rules than the call before", func(t *testing.T) {
+			t.Parallel()
+
+			for range reuses {
+				lookupRun(t)
+				g, _, _ := fixtureGraph(t)
+				_, facts := boolKey(t)
+				p := eidos.NewPlugin(contextPlugin).
+					Handle(
+						eidos.OnStruct(nothing[*eidos.Emitter]),
+						eidos.OnStruct(nothing[*eidos.Emitter]),
+						eidos.OnStruct(nothing[*eidos.Emitter]),
+					).
+					Build()
+				rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
+				assert.Length(t, rec.invoked, 6, "three rules each match two subjects")
+			}
+		})
+
+		t.Run("runs every match after a call under a selection", func(t *testing.T) {
+			t.Parallel()
+
+			g, alpha, _ := fixtureGraph(t)
+			_, facts := boolKey(t)
+			for range reuses {
+				selectedNames(t, g, nil, &plugin.Selection{Candidates: []symbol.Identity{alpha.ID}})
+				p, visited := visitingStructs(contextPlugin, eidos.OnStruct[*eidos.Emitter])
+				assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)), "the phase call passes")
+				assert.Equal(t, *visited, []string{"Alpha", "Beta"}, "a call without a selection visits both subjects")
+			}
+		})
+
+		t.Run("assembles a package's accumulator after a call that failed", func(t *testing.T) {
+			t.Parallel()
+
+			for range reuses {
+				_, err := failAt(t, eightWorkers)
+				assert.ErrorIs(t, err, errFirst, "the earlier call fails")
+				units := registry(t, oneWorker)
+				assert.Length(t, units, 1, "the next call assembles one unit")
+				assert.Length(t, units[0].Decls, manyStructs, "of every match it ran")
+			}
+		})
+
+		t.Run("reports nothing of a call that panicked", func(t *testing.T) {
+			t.Parallel()
+
+			g, structs := manySubjects(t, manyStructs)
+			_, facts := boolKey(t)
+			panicking := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnStruct(func(m *eidos.StructMatch, _ *eidos.Emitter) error {
+					m.Warnf(testCode, "%s", m.Struct.Name)
+					if m.Struct.ID == structs[firstFailure].ID {
+						panic(errFirst)
+					}
+					return nil
+				})).
+				Build()
+			for range reuses {
+				assert.Panics(t, func() {
+					_ = generatorOf(t, panicking).Generate(on(genContext(t, g, facts, nil), eightWorkers))
+				}, "the earlier call panics")
+				ctx := genContext(t, g, facts, nil)
+				p, visited := visitingStructs(contextPlugin, eidos.OnStruct[*eidos.Emitter])
+				assert.NoError(t, generatorOf(t, p).Generate(ctx), "the phase call passes")
+				assert.Length(t, *visited, manyStructs, "the next call visits every subject")
+				assert.Empty(t, messages(ctx.Sink), "and reports no finding of the call that panicked")
+			}
 		})
 
 		// Each indexed path resolves its subjects differently, so each
@@ -776,6 +1067,35 @@ func TestDispatch(t *testing.T) {
 			assert.Equal(t, instances, []int{0, 1}, "the instances run in source order")
 		})
 
+		t.Run("runs a directive-gated rule once on a subject that writes both spellings", func(t *testing.T) {
+			t.Parallel()
+
+			schema := stubSchema(gateName)
+			canonical := schema.Canonical()
+			alpha := coretest.Struct(coretest.StorePath, "Alpha")
+			beta := coretest.Struct(coretest.StorePath, "Beta")
+			g := store.New()
+			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, alpha, beta)),
+				"the fixture package is admitted")
+			assert.NoError(t, g.AttachDirectives(alpha.ID, []directive.Raw{{Name: canonical}, {Name: gateName}}),
+				"the first subject writes both spellings")
+			assert.NoError(t, g.AttachDirectives(beta.ID, []directive.Raw{{Name: gateName}}),
+				"the second subject writes the bare spelling")
+			g.Freeze()
+			validated := map[symbol.Identity][]directive.Directive{
+				alpha.ID: {{Name: canonical, Instance: 0}},
+				beta.ID:  {{Name: canonical, Instance: 0}},
+			}
+			_, facts := boolKey(t)
+
+			p, visited := visitingStructs("stubgen", func(h emitHandler) eidos.Rule {
+				return eidos.Directive(schema, eidos.OnStruct(h))
+			})
+			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, validated)),
+				"the phase call passes")
+			assert.Equal(t, *visited, []string{"Alpha", "Beta"}, "each carrier runs once, whatever spellings it writes")
+		})
+
 		t.Run("runs a directive-gated rule for its own directive alone", func(t *testing.T) {
 			t.Parallel()
 
@@ -1048,6 +1368,30 @@ func TestDispatch(t *testing.T) {
 	})
 }
 
+// A generate phase call allocates nothing of its own on the routes a run
+// takes: an emit rule, a fact gate, a bare rule and a directive gate,
+// each into a context a call before the count warmed. The ordinary run,
+// which runs no benchmark, checks the benchmarks' zero ceilings here,
+// over a workspace of 80 structs. The check runs alone, because
+// AllocsPerRun refuses to run beside parallel tests.
+func TestDispatchAllocs(t *testing.T) {
+	g := coretest.Frozen(t, coretest.Workspace(allocPackages, allocFiles, allocDecls)...)
+	runs := []struct {
+		name string
+		run  dispatchRun
+	}{
+		{name: "an emit rule", run: emitRun(t, g, allocPackages, allocDecls)},
+		{name: "a fact-gated emit rule", run: factGatedRun(t, g, allocPackages, allocDecls)},
+		{name: "a bare rule", run: bareRun(t, g, allocPackages*allocFiles*allocDecls)},
+		{name: "a directive-gated rule", run: directiveGatedRun(t, allocPackages, allocDecls)},
+	}
+	for _, tt := range runs {
+		msg := "Generate allocates nothing for " + tt.name
+		assert.MaxAllocs(t, func() { tt.run.generate(t) }, 0, msg)
+		tt.run.check(t)
+	}
+}
+
 // benchEmitStore seeds units of origined structs whose origins the
 // graph contains, so the dispatch path performs its position lookups.
 func benchEmitStore(tb assert.TB, units, perUnit int) *plugin.Emit {
@@ -1099,90 +1443,38 @@ func gatedWorkspace(
 	return g, validated
 }
 
+// BenchmarkDispatch measures generate-phase calls on the emit side of
+// the canonical workspace: an emit rule over 20,000 values, a fact gate
+// on their origins, and the flush of 10,000 declarations a graph rule
+// places. A call allocates nothing of its own, because it takes the
+// state the call before the measurement released, and TestDispatchAllocs
+// checks that zero ceiling in the ordinary run. The flush's ceiling is
+// the store's acceptance of the one unit, which the flush case
+// decomposes. Only -bench checks it, because the case leaves each fresh
+// context out of its count, which no count of [assert.MaxAllocs] leaves
+// out.
 func BenchmarkDispatch(b *testing.B) {
 	const packages, files, decls = 1_000, 10, 20
 	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
 
 	b.Run("emit rule over 20k values", func(b *testing.B) {
-		b.ReportAllocs()
-		_, facts := boolKey(b)
-		const units, perUnit = 1_000, 20
-		ix, err := plugin.NewIndex(g, facts, nil, nil)
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
-		}
-		ctx := &plugin.GeneratorContext{
-			Index: ix, Facts: facts, Emit: benchEmitStore(b, units, perUnit),
-			Sink: diag.NewSink(), Plugin: "bench", Bucket: 1,
-		}
-		var visited int
-		p := eidos.NewPlugin("bench").
-			Handle(eidos.OnEmit(symbol.KindStruct,
-				func(m *eidos.EmitMatch, e *eidos.Emitter) error {
-					visited++
-					return nil
-				})).
-			Build()
-		gen, ok := p.(plugin.Generator)
-		if !ok {
-			b.Fatal("the bench plugin must generate")
-		}
-		for b.Loop() {
-			visited = 0
-			if err := gen.Generate(ctx); err != nil {
-				b.Fatalf("Generate: unexpected error: %v", err)
-			}
-			if visited != units*perUnit {
-				b.Fatalf("visited %d values", visited)
-			}
-		}
+		benchDispatch(b, emitRun(b, g, packages, decls))
 	})
 
-	b.Run("fact-gated emit rule, one origin in ten", func(b *testing.B) {
-		b.ReportAllocs()
-		key, facts := boolKey(b)
-		const units, perUnit = 1_000, 20
-		for u := 0; u < units; u += 10 {
-			path := coretest.StorePath + "/" + strconv.Itoa(u)
-			origin := coretest.Struct(path, "Decl0_0").ID
-			if err := meta.Stamp(facts, key, true, meta.Claim{Subject: origin}); err != nil {
-				b.Fatalf("Stamp: unexpected error: %v", err)
-			}
-		}
-		ix, err := plugin.NewIndex(g, facts, nil, nil)
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
-		}
-		ctx := &plugin.GeneratorContext{
-			Index: ix, Facts: facts, Emit: benchEmitStore(b, units, perUnit),
-			Sink: diag.NewSink(), Plugin: "bench", Bucket: 1,
-		}
-		var visited int
-		p := eidos.NewPlugin("bench").
-			Handle(eidos.Where(eidos.HasKey(key),
-				eidos.OnEmit(symbol.KindStruct,
-					func(m *eidos.EmitMatch, e *eidos.Emitter) error {
-						visited++
-						return nil
-					}))).
-			Build()
-		gen, ok := p.(plugin.Generator)
-		if !ok {
-			b.Fatal("the bench plugin must generate")
-		}
-		for b.Loop() {
-			visited = 0
-			if err := gen.Generate(ctx); err != nil {
-				b.Fatalf("Generate: unexpected error: %v", err)
-			}
-			if visited != units/10 {
-				b.Fatalf("visited %d values", visited)
-			}
-		}
+	b.Run("fact-gated emit rule over one origin in ten", func(b *testing.B) {
+		benchDispatch(b, factGatedRun(b, g, packages, decls))
 	})
+
+	// flushAllocs is the ceiling of a call that flushes one unit into an
+	// empty store. The flush allocates the unit's declarations, and a
+	// graph rule's placements name no origin, so the unit lists none. The
+	// store's acceptance of the unit makes seven: two for the first entry
+	// of its set of unit references and one for its list of units, then
+	// the kind's entry in its map of kinds, the kind's map of units with
+	// its first entry, and the unit's list of the kind.
+	const flushAllocs = 8
 
 	b.Run("flush of 10k placed declarations", func(b *testing.B) {
-		b.ReportAllocs()
 		_, facts := boolKey(b)
 		ix, err := plugin.NewIndex(g, facts, nil, nil)
 		if err != nil {
@@ -1196,7 +1488,7 @@ func BenchmarkDispatch(b *testing.B) {
 				Name:   "Gen" + strconv.Itoa(i),
 			}
 		}
-		p := eidos.NewPlugin("bench").
+		p := eidos.NewPlugin(benchPlugin).
 			Output(plugin.Output{Per: plugin.PerPlan, Word: "registry"}).
 			Handle(eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
 				e.PlanFile().Append(payload...)
@@ -1207,135 +1499,76 @@ func BenchmarkDispatch(b *testing.B) {
 		if !ok {
 			b.Fatal("the bench plugin must generate")
 		}
-		for b.Loop() {
-			ctx := &plugin.GeneratorContext{
+		var ctx *plugin.GeneratorContext
+		fresh := func() {
+			ctx = &plugin.GeneratorContext{
 				Index: ix, Facts: facts, Emit: plugin.NewEmit(),
-				Sink: diag.NewSink(), Plugin: "bench", Bucket: 1,
+				Sink: diag.NewSink(), Plugin: benchPlugin, Bucket: 1,
 			}
+		}
+		fresh()
+		if err := gen.Generate(ctx); err != nil {
+			b.Fatalf("Generate: unexpected error: %v", err)
+		}
+		c := bench.Start(b).MaxAllocs(flushAllocs)
+		defer c.End()
+		for c.Loop() {
+			c.Excluding(fresh)
 			if err := gen.Generate(ctx); err != nil {
 				b.Fatalf("Generate: unexpected error: %v", err)
 			}
 		}
+		units := slices.Collect(ctx.Emit.Units())
+		if len(units) != 1 || len(units[0].Decls) != placed {
+			b.Fatalf("the flush added %d units", len(units))
+		}
 	})
 }
 
-func BenchmarkBuild(b *testing.B) {
-	b.ReportAllocs()
-	key, _ := boolKey(b)
-	for b.Loop() {
-		p := eidos.NewPlugin("bench").
-			Output(plugin.Output{Per: plugin.PerPlan, Word: "registry"}).
-			Handle(
-				eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
-					return nil
-				}),
-				eidos.Where(eidos.HasKey(key),
-					eidos.OnEmit(symbol.KindStruct,
-						func(m *eidos.EmitMatch, e *eidos.Emitter) error {
-							return nil
-						}),
-					eidos.OnEmit(symbol.KindMethod,
-						func(m *eidos.EmitMatch, e *eidos.Emitter) error {
-							return nil
-						}),
-				),
-			).
-			Build()
-		if p.Name() != "bench" {
-			b.Fatal("the declaration must build")
-		}
-	}
-}
-
+// BenchmarkNodeDispatch measures phase calls on the node side of the
+// canonical workspace: a bare rule over 200,000 structs, a
+// directive-gated rule over 20,000, and annotate calls that stamp facts
+// on every struct into an empty store. A phase call allocates nothing of
+// its own, because it takes the state the call before the measurement
+// released, and TestDispatchAllocs checks that zero ceiling in the
+// ordinary run. The annotate cases measure the fact store's claims,
+// which the store keeps, and each case's ceiling decomposes them. Only
+// -bench checks those ceilings, because each case leaves its fresh fact
+// store out of its count.
 func BenchmarkNodeDispatch(b *testing.B) {
 	const packages, files, decls = 1_000, 10, 20
 	g := coretest.Frozen(b, coretest.Workspace(packages, files, decls)...)
 
+	// The annotate cases' ceilings. Each subject's first claim allocates
+	// its bag, the boxed identity and the sync.Map entry, and a boolean
+	// boxes without allocating. A subject's second and third keys
+	// allocate the bag's key map with its first group, and a state each.
+	// The three reads before the stamps make one derivation, which the
+	// three claims share. Each key's index allocates 1,047 times as its
+	// map grows to 200,000 members, and the store's sync.Map allocates its
+	// root. sync.Map also adds trie nodes at random where two hashes share
+	// a prefix: 75,426 on average with a standard deviation of 148 over 40
+	// runs of 200,000 insertions. Each ceiling allows 76,610 trie nodes,
+	// eight standard deviations above the mean.
+	const (
+		annotateSubjects    = packages * files * decls
+		annotateIndex       = 1_047
+		annotateTrie        = 76_610
+		annotateOneAllocs   = 3*annotateSubjects + annotateIndex + 1 + annotateTrie
+		annotateThreeAllocs = 8*annotateSubjects + 3*annotateIndex + 1 + annotateTrie
+	)
+
 	b.Run("bare rule over 200k structs", func(b *testing.B) {
-		b.ReportAllocs()
-		_, facts := boolKey(b)
-		ix, err := plugin.NewIndex(g, facts, nil, nil)
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
-		}
-		ctx := &plugin.GeneratorContext{
-			Index: ix, Facts: facts, Emit: plugin.NewEmit(),
-			Sink: diag.NewSink(), Plugin: "bench", Bucket: 1,
-		}
-		var visited int
-		p := eidos.NewPlugin("bench").
-			Handle(eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-				visited++
-				return nil
-			})).
-			Build()
-		gen, ok := p.(plugin.Generator)
-		if !ok {
-			b.Fatal("the bench plugin must generate")
-		}
-		for b.Loop() {
-			visited = 0
-			if err := gen.Generate(ctx); err != nil {
-				b.Fatalf("Generate: unexpected error: %v", err)
-			}
-			if visited != packages*files*decls {
-				b.Fatalf("visited %d subjects", visited)
-			}
-		}
+		benchDispatch(b, bareRun(b, g, packages*files*decls))
 	})
 
 	b.Run("directive-gated rule over 20k subjects", func(b *testing.B) {
-		b.ReportAllocs()
-		const gatedSubjects = 1_000 * 20
-		schema := stubSchema(gateName)
-		gated, validated := gatedWorkspace(b, schema.Canonical(), 1_000, 1, 20)
-		_, facts := boolKey(b)
-		ix, err := plugin.NewIndex(gated, facts, validated, nil)
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
-		}
-		ctx := &plugin.GeneratorContext{
-			Index: ix, Facts: facts, Emit: plugin.NewEmit(),
-			Sink: diag.NewSink(), Plugin: "stubgen", Bucket: 1,
-		}
-		var visited int
-		p := eidos.NewPlugin("stubgen").
-			Handle(eidos.Directive(schema,
-				eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
-					visited++
-					return nil
-				}))).
-			Build()
-		gen, ok := p.(plugin.Generator)
-		if !ok {
-			b.Fatal("the bench plugin must generate")
-		}
-		for b.Loop() {
-			visited = 0
-			if err := gen.Generate(ctx); err != nil {
-				b.Fatalf("Generate: unexpected error: %v", err)
-			}
-			if visited != gatedSubjects {
-				b.Fatalf("visited %d subjects", visited)
-			}
-		}
+		benchDispatch(b, directiveGatedRun(b, packages, decls))
 	})
 
 	b.Run("annotate stamps three facts after three reads per subject", func(b *testing.B) {
-		b.ReportAllocs()
-		reg := meta.NewRegistry()
-		if err := reg.ClaimNamespace(fixtureNamespace); err != nil {
-			b.Fatalf("ClaimNamespace: unexpected error: %v", err)
-		}
-		var keys []meta.Key[bool]
-		for _, name := range []meta.KeyName{"t.first", "t.second", "t.third"} {
-			key, err := meta.Register[bool](reg, meta.KeySpec{Name: name, Doc: "marks a bench subject"})
-			if err != nil {
-				b.Fatalf("Register: unexpected error: %v", err)
-			}
-			keys = append(keys, key)
-		}
-		p := eidos.NewPlugin("bench").
+		reg, keys := annotateKeys(b, "t.first", "t.second", "t.third")
+		p := eidos.NewPlugin(benchPlugin).
 			Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
 				for _, key := range keys {
 					eidos.Fact(m, key)
@@ -1346,67 +1579,198 @@ func BenchmarkNodeDispatch(b *testing.B) {
 				return nil
 			})).
 			Build()
-		ann, ok := p.(plugin.Annotator)
-		if !ok {
-			b.Fatal("the bench plugin must annotate")
+		ann := annotatorOf(b, p)
+		var ctx *plugin.AnnotatorContext
+		fresh := func() { ctx = annotateContext(b, g, reg) }
+		fresh()
+		assert.NoError(b, ann.Annotate(ctx), "the call before the measurement passes")
+		c := bench.Start(b).MaxAllocs(annotateThreeAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			c.Excluding(fresh)
+			err = ann.Annotate(ctx)
 		}
-		for b.Loop() {
-			facts := meta.NewFacts(reg)
-			ix, err := plugin.NewIndex(g, facts, nil, nil)
-			if err != nil {
-				b.Fatalf("NewIndex: unexpected error: %v", err)
-			}
-			ctx := &plugin.AnnotatorContext{
-				Index: ix, Facts: facts, Sink: diag.NewSink(),
-				Plugin: "bench", Bucket: 1,
-			}
-			if err := ann.Annotate(ctx); err != nil {
-				b.Fatalf("Annotate: unexpected error: %v", err)
-			}
-			if ctx.Sink.Failed() {
-				b.Fatal("no stamp may be refused")
-			}
-		}
+		assert.NoError(b, err, "the annotate call passes")
+		assert.False(b, ctx.Sink.Failed(), "no stamp is refused")
 	})
 
 	b.Run("annotate stamps 200k subjects", func(b *testing.B) {
-		b.ReportAllocs()
-		reg := meta.NewRegistry()
-		if err := reg.ClaimNamespace(fixtureNamespace); err != nil {
-			b.Fatalf("ClaimNamespace: unexpected error: %v", err)
-		}
-		benchKey, err := meta.Register[bool](reg, meta.KeySpec{
-			Name: "t.flag", Doc: "marks a bench subject",
-		})
-		if err != nil {
-			b.Fatalf("Register: unexpected error: %v", err)
-		}
-		p := eidos.NewPlugin("bench").
+		reg, keys := annotateKeys(b, "t.flag")
+		p := eidos.NewPlugin(benchPlugin).
 			Handle(eidos.OnStruct(func(m *eidos.StructMatch, st *eidos.Stamper) error {
-				eidos.Stamp(st, benchKey, true)
+				eidos.Stamp(st, keys[0], true)
 				return nil
 			})).
 			Build()
-		ann, ok := p.(plugin.Annotator)
-		if !ok {
-			b.Fatal("the bench plugin must annotate")
+		ann := annotatorOf(b, p)
+		var ctx *plugin.AnnotatorContext
+		fresh := func() { ctx = annotateContext(b, g, reg) }
+		fresh()
+		assert.NoError(b, ann.Annotate(ctx), "the call before the measurement passes")
+		c := bench.Start(b).MaxAllocs(annotateOneAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			c.Excluding(fresh)
+			err = ann.Annotate(ctx)
 		}
-		for b.Loop() {
-			facts := meta.NewFacts(reg)
-			ix, err := plugin.NewIndex(g, facts, nil, nil)
-			if err != nil {
-				b.Fatalf("NewIndex: unexpected error: %v", err)
-			}
-			ctx := &plugin.AnnotatorContext{
-				Index: ix, Facts: facts, Sink: diag.NewSink(),
-				Plugin: "bench", Bucket: 1,
-			}
-			if err := ann.Annotate(ctx); err != nil {
-				b.Fatalf("Annotate: unexpected error: %v", err)
-			}
-			if ctx.Sink.Failed() {
-				b.Fatal("no stamp may be refused")
-			}
-		}
+		assert.NoError(b, err, "the annotate call passes")
+		assert.False(b, ctx.Sink.Failed(), "no stamp is refused")
 	})
+}
+
+// annotateKeys returns a registry with one boolean key registered under
+// each name, and the keys in the order of the names.
+func annotateKeys(tb assert.TB, names ...meta.KeyName) (*meta.Registry, []meta.Key[bool]) {
+	tb.Helper()
+
+	reg := meta.NewRegistry()
+	assert.NoError(tb, reg.ClaimNamespace(fixtureNamespace), "the namespace is claimed")
+	keys := make([]meta.Key[bool], 0, len(names))
+	for _, name := range names {
+		key, err := meta.Register[bool](reg, meta.KeySpec{Name: name, Doc: "marks a bench subject"})
+		assert.NoError(tb, err, "the key registers")
+		keys = append(keys, key)
+	}
+	return reg, keys
+}
+
+// annotateContext returns an annotator context over g with an empty
+// fact store over reg.
+func annotateContext(tb assert.TB, g *store.Graph, reg *meta.Registry) *plugin.AnnotatorContext {
+	tb.Helper()
+
+	facts := meta.NewFacts(reg)
+	ix, err := plugin.NewIndex(g, facts, nil, nil)
+	assert.NoError(tb, err, "the routing surface builds")
+	return annContext(tb, facts, ix)
+}
+
+// invocationGraph returns a frozen graph of the invocation fixture's
+// structs, without positions, in one file of the store package, and
+// the structs.
+func invocationGraph(tb assert.TB) (*store.Graph, []*node.Struct) {
+	tb.Helper()
+
+	structs := make([]*node.Struct, 0, invocationStructs)
+	decls := make([]symbol.Symbol, 0, invocationStructs)
+	for i := range invocationStructs {
+		s := coretest.Struct(coretest.StorePath, "Subject"+strconv.Itoa(i))
+		structs = append(structs, s)
+		decls = append(decls, s)
+	}
+	return coretest.Frozen(tb, coretest.Package(coretest.StorePath, decls...)), structs
+}
+
+// invocationContexts returns a function that returns a generator
+// context over the invocation fixture with an empty sink, the flag key,
+// and the fixture's structs. Every struct reads the flag present, the
+// fixture's language has rules, and the context reads the export of
+// exportingPlan. Where seeded is true, the emit store contains one
+// earlier unit of one emit struct per subject, which an emit rule
+// visits, and an empty store otherwise.
+func invocationContexts(
+	tb assert.TB, seeded bool,
+) (func() *plugin.GeneratorContext, meta.Key[bool], []*node.Struct) {
+	tb.Helper()
+
+	g, structs := invocationGraph(tb)
+	key, facts := boolKey(tb)
+	for _, s := range structs {
+		assert.NoError(tb, meta.Stamp(facts, key, true, meta.Claim{Subject: s.ID}), "the subject is flagged")
+	}
+	ix, err := plugin.NewIndex(g, facts, nil, nil)
+	assert.NoError(tb, err, "the routing surface builds")
+	registry := rules.NewRegistry()
+	assert.NoError(tb, registry.Register(fixtureLanguage{rulestest.Scripted()}), "the fixture language registers")
+	exports := map[string]plugin.ExportDoc{exportingPlan: {Plan: exportingPlan}}
+	fresh := func() *plugin.GeneratorContext {
+		ctx := &plugin.GeneratorContext{
+			Index: ix, Facts: facts, Emit: plugin.NewEmit(), Sink: diag.NewSink(),
+			Plugin: contextPlugin, Bucket: 2, Rules: registry, Exports: exports,
+		}
+		if seeded {
+			values := make([]symbol.Symbol, 0, len(structs))
+			for _, s := range structs {
+				values = append(values, emitted(s))
+			}
+			seed(tb, ctx, values...)
+		}
+		return ctx
+	}
+	return fresh, key, structs
+}
+
+// checkPhaseAllocs checks each case's ceiling in the ordinary run, which
+// runs no benchmark. Each counted call takes a context built before the
+// count, because a call leaves its units and findings in its context.
+// The count's first call warms the pooled state of a phase call.
+func checkPhaseAllocs(t *testing.T, cases []phaseCase) {
+	t.Helper()
+
+	for _, tt := range cases {
+		contexts := make([]*plugin.GeneratorContext, allocRuns)
+		for i := range contexts {
+			contexts[i] = tt.fresh()
+		}
+		at := 0
+		msg := tt.name + " allocates within its ceiling over the invocation fixture"
+		assert.MaxAllocs(t, func() {
+			if err := tt.gen.Generate(contexts[at]); err != nil {
+				t.Fatalf("Generate: unexpected error: %v", err)
+			}
+			at++
+		}, tt.allocs, msg)
+		tt.check(t, contexts[allocRuns-1])
+	}
+}
+
+// benchPhases measures each case's phase call under its ceiling. Each
+// call takes a fresh context outside the measurement, and a call before
+// the measurement warms the pooled state of a phase call.
+func benchPhases(b *testing.B, cases []phaseCase) {
+	b.Helper()
+
+	for _, tt := range cases {
+		b.Run(tt.name, func(b *testing.B) {
+			ctx := tt.fresh()
+			assert.NoError(b, tt.gen.Generate(ctx), "the call before the measurement passes")
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(func() { ctx = tt.fresh() })
+				err = tt.gen.Generate(ctx)
+			}
+			assert.NoError(b, err, "the phase call passes")
+			tt.check(b, ctx)
+		})
+	}
+}
+
+// benchDispatch measures a run's phase call under a zero ceiling, each
+// call into the context the run's first call warmed.
+func benchDispatch(b *testing.B, r dispatchRun) {
+	b.Helper()
+
+	c := bench.Start(b).MaxAllocs(0)
+	defer c.End()
+	for c.Loop() {
+		r.generate(b)
+	}
+	r.check(b)
+}
+
+// dispatchContext returns a generator context over g in the first
+// bucket, running as name, with its own sink and the emit store e.
+func dispatchContext(
+	tb assert.TB, g *store.Graph, facts *meta.Facts,
+	validated map[symbol.Identity][]directive.Directive, e *plugin.Emit, name plugin.ID,
+) *plugin.GeneratorContext {
+	tb.Helper()
+
+	ix, err := plugin.NewIndex(g, facts, validated, nil)
+	assert.NoError(tb, err, "the routing surface builds")
+	return &plugin.GeneratorContext{Index: ix, Facts: facts, Emit: e, Sink: diag.NewSink(), Plugin: name, Bucket: 1}
 }

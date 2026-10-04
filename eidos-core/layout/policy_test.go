@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/layout"
 )
@@ -62,5 +63,43 @@ func TestPolicy(t *testing.T) {
 				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
 			})
 		}
+	})
+}
+
+// A declared policy's checks allocate nothing in the ordinary run,
+// which runs no benchmark.
+func TestPolicyZeroAlloc(t *testing.T) {
+	assert.MaxAllocs(t, func() {
+		if !layout.PolicyCentralised.Valid() {
+			t.Fatal("Valid refused a declared policy")
+		}
+	}, 0, "Valid allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if layout.PolicyCentralised.String() == "" {
+			t.Fatal("String returned nothing")
+		}
+	}, 0, "String allocates nothing for a declared policy")
+}
+
+// BenchmarkPolicy measures a declared policy's checks.
+func BenchmarkPolicy(b *testing.B) {
+	b.Run("Valid", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = layout.PolicyCentralised.Valid()
+		}
+		assert.True(b, got, "Valid admits a declared policy")
+	})
+
+	b.Run("String", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = layout.PolicyCentralised.String()
+		}
+		assert.Equal(b, got, "centralised", "String spells the policy")
 	})
 }

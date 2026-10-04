@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/backend/render"
 	"go.dokimi.dev/eidos/core/emit"
@@ -23,6 +24,10 @@ const (
 	refusalFormat = "no spelling for %s"
 	refusedValue  = "a nil map"
 )
+
+// refuseValueAllocs is one refusal: the formatted message and the
+// error that carries it.
+const refuseValueAllocs = 2
 
 // valueUnit returns a unit of one struct and one function whose body
 // states s, so a skipped function leaves the struct to render.
@@ -89,5 +94,44 @@ func TestValue(t *testing.T) {
 			_, sink := runPass(t, language(), seeded(t, valueUnit(refused())))
 			coretest.AssertCodes(t, sink, render.RefusedTemplate)
 		})
+	})
+}
+
+// A refusal allocates its message and its error, and its text allocates
+// the joined string, in the ordinary run, which runs no benchmark.
+func TestValueAllocs(t *testing.T) {
+	var err error
+	assert.MaxAllocs(t, func() { err = render.RefuseValue(refusingLang, refusalFormat, refusedValue) },
+		refuseValueAllocs, "RefuseValue allocates the formatted message and the error")
+	refusal, is := errors.AsType[*render.ValueError](err)
+	assert.True(t, is, "RefuseValue returns a ValueError")
+	var text string
+	assert.MaxAllocs(t, func() { text = refusal.Error() }, 1, "Error allocates the joined text")
+	assert.HasPrefix(t, text, refusingLang+": ", "Error names the target first")
+}
+
+// BenchmarkValue measures a scaffold's refusal of a value and the
+// refusal's text, which the render reports under UnspeltValue.
+func BenchmarkValue(b *testing.B) {
+	b.Run("RefuseValue", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(refuseValueAllocs)
+		defer c.End()
+		var err error
+		for c.Loop() {
+			err = render.RefuseValue(refusingLang, refusalFormat, refusedValue)
+		}
+		_, is := errors.AsType[*render.ValueError](err)
+		assert.True(b, is, "RefuseValue returns a ValueError")
+	})
+
+	b.Run("ValueError.Error", func(b *testing.B) {
+		refusal := &render.ValueError{Lang: refusingLang, Msg: refusedValue}
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = refusal.Error()
+		}
+		assert.Equal(b, got, refusingLang+": "+refusedValue, "Error joins the target and the message")
 	})
 }

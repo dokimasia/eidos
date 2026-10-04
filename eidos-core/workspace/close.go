@@ -197,10 +197,11 @@ func (w *Workspace) audit(g *store.Graph, facts *meta.Facts, loaded *load.Report
 // run reports one FailedDependency for it at the failed plan's cause,
 // where the plan has one. A check's findings arrive in the run's sink
 // in the order it reported them. A check's returned error stops the
-// step and returns, wrapped with the check's name.
+// step and returns, wrapped with the check's name. Every check it
+// calls counts into stats.
 func (w *Workspace) check(
 	g *store.Graph, facts *meta.Facts, table map[symbol.Identity][]directive.Directive,
-	runs []*planRun, sink *diag.Sink,
+	runs []*planRun, sink *diag.Sink, stats *Stats,
 ) (bool, error) {
 	if len(w.checks) == 0 {
 		return false, nil
@@ -229,6 +230,7 @@ func (w *Workspace) check(
 			return failed, fmt.Errorf("workspace: %w", err)
 		}
 		local := diag.NewSink()
+		stats.Checked++
 		err = c.run.Check(&plugin.CheckContext{
 			Index:  ix,
 			Reader: reader,

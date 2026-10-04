@@ -72,7 +72,9 @@ const (
 	PlanPrepared PlanStatus = 4
 )
 
-// String spells the status for a report.
+// String returns the status's spelling for a report, and the status's
+// number in the form PlanStatus(n) for an undeclared status. It
+// allocates nothing for a declared status.
 func (s PlanStatus) String() string {
 	switch s {
 	case PlanCommitted:

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/workspace"
 )
@@ -37,5 +38,30 @@ func TestReport(t *testing.T) {
 				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
 			})
 		}
+	})
+}
+
+// A declared status spells without allocating in the ordinary run,
+// which runs no benchmark.
+func TestReportZeroAlloc(t *testing.T) {
+	status := workspace.PlanCommitted
+	var got string
+	assert.MaxAllocs(t, func() { got = status.String() }, 0,
+		"PlanStatus.String allocates nothing for a declared status")
+	assert.Equal(t, got, "committed", "PlanStatus.String spells PlanCommitted")
+}
+
+// BenchmarkReport measures the spelling of a plan's status, which a
+// report prints once per plan.
+func BenchmarkReport(b *testing.B) {
+	b.Run("PlanStatus.String", func(b *testing.B) {
+		status := workspace.PlanCommitted
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = status.String()
+		}
+		assert.Equal(b, got, "committed", "PlanStatus.String spells PlanCommitted")
 	})
 }

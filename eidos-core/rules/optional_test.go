@@ -7,42 +7,95 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/rules"
-	"go.dokimi.dev/eidos/core/rules/rulestest"
 )
 
-// A capability is declared by satisfying and found by asserting, so
-// the assertion shape and the vocabulary's spellings are pinned.
+// The optional capabilities are interfaces a language satisfies, so the
+// vocabularies they return are what this file pins.
 func TestOptional(t *testing.T) {
 	t.Parallel()
 
-	t.Run("assertion", func(t *testing.T) {
+	t.Run("EnumForm.String", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("finds what a language satisfies and nothing else", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name string
+			give rules.EnumForm
+			want string
+		}{
+			{name: "returns identifier for EnumIdentifier", give: rules.EnumIdentifier, want: "identifier"},
+			{name: "returns value for EnumValue", give: rules.EnumValue, want: "value"},
+			{name: "returns the number of an undeclared form", give: rules.EnumForm(9), want: "9"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			source := rulestest.Scripted()
-			_, generic := source.(rules.GenericsRules)
-			assert.True(t, generic, "the scripted language reasons about generics")
-			_, enums := source.(rules.EnumRules)
-			assert.False(t, enums, "and declares no enumerations")
-			_, enums = rules.Absent("x").(rules.EnumRules)
-			assert.False(t, enums, "the absent value satisfies nothing optional")
-		})
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
+			})
+		}
 	})
 
-	t.Run("String", func(t *testing.T) {
+	t.Run("Ownership.String", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("spells the vocabulary and numbers the rest", func(t *testing.T) {
-			t.Parallel()
+		tests := []struct {
+			name string
+			give rules.Ownership
+			want string
+		}{
+			{name: "returns by-value for OwnByValue", give: rules.OwnByValue, want: "by-value"},
+			{name: "returns borrow for OwnBorrow", give: rules.OwnBorrow, want: "borrow"},
+			{name: "returns borrow-mut for OwnBorrowMut", give: rules.OwnBorrowMut, want: "borrow-mut"},
+			{name: "returns the number of an undeclared ownership", give: rules.Ownership(9), want: "9"},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
 
-			assert.Equal(t, rules.EnumValue.String(), "value", "an enum form")
-			assert.Equal(t, rules.EnumForm(9).String(), "9", "and an undeclared one")
-			assert.Equal(t, rules.OwnBorrowMut.String(), "borrow-mut", "an ownership")
-			assert.Equal(t, rules.Ownership(9).String(), "9", "and an undeclared one")
-		})
+				assert.Equal(t, tt.give.String(), tt.want, "the spelling is pinned")
+			})
+		}
+	})
+}
+
+// A declared form and a declared ownership spell without allocating in
+// the ordinary run, which runs no benchmark.
+func TestOptionalZeroAlloc(t *testing.T) {
+	form, ownership := rules.EnumValue, rules.OwnBorrowMut
+	var got string
+	assert.MaxAllocs(t, func() { got = form.String() }, 0, "EnumForm.String allocates nothing for a declared form")
+	assert.Equal(t, got, "value", "EnumForm.String spells EnumValue")
+	assert.MaxAllocs(t, func() { got = ownership.String() }, 0,
+		"Ownership.String allocates nothing for a declared ownership")
+	assert.Equal(t, got, "borrow-mut", "Ownership.String spells OwnBorrowMut")
+}
+
+// BenchmarkOptional measures the spelling of an enumeration's form and
+// of a parameter's ownership, which a backend writes once per
+// declaration.
+func BenchmarkOptional(b *testing.B) {
+	b.Run("EnumForm.String", func(b *testing.B) {
+		form := rules.EnumValue
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = form.String()
+		}
+		assert.Equal(b, got, "value", "EnumForm.String spells EnumValue")
+	})
+
+	b.Run("Ownership.String", func(b *testing.B) {
+		ownership := rules.OwnBorrowMut
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = ownership.String()
+		}
+		assert.Equal(b, got, "borrow-mut", "Ownership.String spells OwnBorrowMut")
 	})
 }

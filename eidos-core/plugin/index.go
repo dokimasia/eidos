@@ -65,6 +65,12 @@ type skipEntry struct {
 // position order, as validation returned them. The index keeps the
 // map, and the caller does not mutate it after handing it over. A
 // nil scope admits everything.
+//
+// # Allocation contract
+//
+// NewIndex allocates the index. A run with a skip adds the skip table,
+// and a scope adds the set of packages it admits, each sized by what it
+// contains.
 func NewIndex(
 	g *store.Graph, f *meta.Facts,
 	validated map[symbol.Identity][]directive.Directive,
@@ -117,11 +123,12 @@ func admittedOf(g *store.Graph, sc store.Scope) map[pkgKey]struct{} {
 // a map of only the subjects that opt out of something. The table
 // combines the kernel skip directive with every negated instance: a
 // negated instance opts its subject out of the plugin that
-// registered its schema, as skip plugin=<that plugin> does.
+// registered its schema, as skip plugin=<that plugin> does. A run
+// without a skip has a nil table and allocates none.
 func skipsOf(
 	validated map[symbol.Identity][]directive.Directive,
 ) map[symbol.Identity]skipEntry {
-	skips := map[symbol.Identity]skipEntry{}
+	var skips map[symbol.Identity]skipEntry
 	for id, ds := range validated {
 		for _, d := range ds {
 			var plugin ID
@@ -130,15 +137,22 @@ func skipsOf(
 				plugin = ID(d.Name.Plugin())
 			case d.Name == directive.KernelSkip:
 				v, narrowed := d.Param(directive.SkipPlugin)
-				if !narrowed {
-					entry := skips[id]
-					entry.all = true
-					skips[id] = entry
-					continue
+				if narrowed {
+					plugin = ID(v.Str)
+					break
 				}
-				plugin = ID(v.Str)
+				if skips == nil {
+					skips = map[symbol.Identity]skipEntry{}
+				}
+				entry := skips[id]
+				entry.all = true
+				skips[id] = entry
+				continue
 			default:
 				continue
+			}
+			if skips == nil {
+				skips = map[symbol.Identity]skipEntry{}
 			}
 			entry := skips[id]
 			if entry.plugins == nil {
@@ -153,36 +167,39 @@ func skipsOf(
 
 // ByKind enumerates the declarations of one kind under the scope,
 // in the graph's own order, untracked.
+//
+// # Allocation contract
+//
+// A range over the enumeration allocates nothing: the enumeration is a
+// call of a method that takes the loop's body, which does not keep it.
 func (ix *Index) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
-	return ix.filtered(ix.graph.ByKind(k))
+	return func(yield func(symbol.Symbol) bool) { ix.eachOfKind(k, yield) }
 }
 
 // ByDirective enumerates the declarations with a directive of one
 // spelling under the scope, in identity order, untracked. The
 // store's index is keyed by the name as written, so the dispatcher
 // queries each spelling a schema recognises.
+//
+// # Allocation contract
+//
+// A range over the enumeration allocates nothing, as one over
+// [Index.ByKind] does.
 func (ix *Index) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
-	return ix.filtered(ix.graph.ByDirective(n))
+	return func(yield func(symbol.Symbol) bool) { ix.eachWithDirective(n, yield) }
 }
 
 // ByFactKey enumerates the subjects on which a key reads present,
 // under the scope, in identity order, untracked. The fact store
 // maintains the index at stamp time, so a fact-gated rule visits its
 // matches, not the whole graph.
+//
+// # Allocation contract
+//
+// A range over the enumeration allocates nothing, as one over
+// [Index.ByKind] does.
 func (ix *Index) ByFactKey(id meta.KeyID) iter.Seq[symbol.Identity] {
-	if ix.admitted == nil {
-		return ix.facts.ByKey(id)
-	}
-	return func(yield func(symbol.Identity) bool) {
-		for subject := range ix.facts.ByKey(id) {
-			if !ix.admits(subject) {
-				continue
-			}
-			if !yield(subject) {
-				return
-			}
-		}
-	}
+	return func(yield func(symbol.Identity) bool) { ix.eachWithKey(id, yield) }
 }
 
 // Lookup returns one declaration under the scope, untracked: how a
@@ -199,7 +216,7 @@ func (ix *Index) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 // order, and nil for a subject with none. This is the gate's read,
 // not a plugin's: a handler is handed only the one instance that
 // caused its call. The returned slice is the table's own storage.
-// Do not mutate it.
+// Do not mutate it. It allocates nothing.
 func (ix *Index) DirectivesOf(id symbol.Identity) []directive.Directive {
 	return ix.validated[id]
 }
@@ -238,7 +255,8 @@ func (ix *Index) PackageOf(id symbol.Identity) (*node.Package, bool) {
 // Reader mints a tracked handle under the index's scope, recording
 // into reads: how dispatch gives each handler invocation its own
 // read grain, and how a hand-rolled plugin's phase call gets its
-// one.
+// one. It allocates the handle, one allocation, and returns the
+// graph's error for a nil read set.
 func (ix *Index) Reader(reads *store.ReadSet) (*store.Reader, error) {
 	return ix.graph.Reader(reads, ix.scope)
 }
@@ -253,35 +271,69 @@ func (ix *Index) admits(id symbol.Identity) bool {
 	return held
 }
 
-// filtered narrows an enumeration of the graph's declarations to the
-// scope. A nil scope returns the enumeration untouched, so the
-// common case costs nothing. Under a scope, the verdict is cached
-// per package run: the graph's indexes group declarations by
-// package, so consecutive candidates usually share one answer.
-func (ix *Index) filtered(seq iter.Seq[symbol.Symbol]) iter.Seq[symbol.Symbol] {
-	if ix.admitted == nil {
-		return seq
-	}
-	return func(yield func(symbol.Symbol) bool) {
-		var last pkgKey
-		var admitted, cached bool
-		for s := range seq {
-			decl, names := s.(node.Declaration)
-			if !names {
-				continue
-			}
-			id := decl.Identity()
-			key := pkgKey{lang: id.Lang, pkg: id.Package}
-			if !cached || key != last {
-				_, admitted = ix.admitted[key]
-				last, cached = key, true
-			}
-			if !admitted {
-				continue
-			}
-			if !yield(s) {
-				return
-			}
+// eachOfKind calls yield with each declaration of one kind under the
+// scope, in the graph's order, until yield returns false. It ranges
+// over the graph's enumeration in place, so the compiler inlines it,
+// and it does not keep yield.
+func (ix *Index) eachOfKind(k symbol.Kind, yield func(symbol.Symbol) bool) {
+	var run packageRun
+	for s := range ix.graph.ByKind(k) {
+		if run.admits(ix, s) && !yield(s) {
+			return
 		}
 	}
+}
+
+// eachWithDirective calls yield with each declaration with a directive
+// of one spelling under the scope, in identity order, until yield
+// returns false, as [Index.eachOfKind] does.
+func (ix *Index) eachWithDirective(n directive.Name, yield func(symbol.Symbol) bool) {
+	var run packageRun
+	for s := range ix.graph.ByDirective(n) {
+		if run.admits(ix, s) && !yield(s) {
+			return
+		}
+	}
+}
+
+// eachWithKey calls yield with each subject on which a key reads
+// present under the scope, in identity order, until yield returns
+// false, as [Index.eachOfKind] does.
+func (ix *Index) eachWithKey(id meta.KeyID, yield func(symbol.Identity) bool) {
+	for subject := range ix.facts.ByKey(id) {
+		if ix.admits(subject) && !yield(subject) {
+			return
+		}
+	}
+}
+
+// packageRun is the scope's verdict on the package of the last
+// declaration an enumeration admitted or refused. The graph's indexes
+// group declarations by package, so consecutive candidates usually
+// share one verdict, and the scope's set is probed once per run of a
+// package. The zero packageRun has no verdict.
+type packageRun struct {
+	last     pkgKey
+	admitted bool
+	cached   bool
+}
+
+// admits reports whether the index's scope admits a declaration of an
+// enumeration, and refuses a symbol without an identity under a
+// scope. A nil scope admits every symbol without a probe.
+func (r *packageRun) admits(ix *Index, s symbol.Symbol) bool {
+	if ix.admitted == nil {
+		return true
+	}
+	decl, names := s.(node.Declaration)
+	if !names {
+		return false
+	}
+	id := decl.Identity()
+	key := pkgKey{lang: id.Lang, pkg: id.Package}
+	if !r.cached || key != r.last {
+		_, r.admitted = ix.admitted[key]
+		r.last, r.cached = key, true
+	}
+	return r.admitted
 }

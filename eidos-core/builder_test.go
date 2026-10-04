@@ -8,6 +8,7 @@ import (
 	"text/template"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/directive"
@@ -15,6 +16,40 @@ import (
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// The allocations of a declaration's methods, which TestBuilderAllocs
+// checks in the ordinary run and BenchmarkBuilder in a benchmark run. A
+// method without a constant allocates nothing.
+const (
+	// newPluginAllocs is a declaration: the builder and its map of
+	// priorities.
+	newPluginAllocs = 2
+	// declareAllocs is the first call of a method that appends to a list
+	// of a new declaration: the list.
+	declareAllocs = 1
+	// priorityAllocs is a declaration's first priority: its map's first
+	// group.
+	priorityAllocs = 1
+	// forAllocs is a declaration's first target: its list of targets and
+	// the copy of the target's options.
+	forAllocs = 2
+	// buildAllocs is one Build of the bench declaration: the table of
+	// output families and its entry, the flattened rules growing to three
+	// and the predicates a wrapper hands its rules, the built value with
+	// its copies of the outputs and the priorities, the subscriptions
+	// growing to three, and the role wrapper.
+	buildAllocs = 13
+)
+
+// declaring is one method of a declaration called with a fixture value,
+// named as its benchmark is, and what its call on a new declaration
+// allocates. A method that sets one value takes the same declaration
+// on every call.
+type declaring struct {
+	name   string
+	allocs uint64
+	set    func(*eidos.Builder) *eidos.Builder
+}
 
 // emitNothing returns a graph rule whose handler does nothing: the
 // smallest rule a plugin can declare.
@@ -38,6 +73,30 @@ func stubSchema(name directive.Name) directive.Schema {
 // return are all contract.
 func TestBuilder(t *testing.T) {
 	t.Parallel()
+
+	t.Run("NewPlugin", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a declaration under the name", func(t *testing.T) {
+			t.Parallel()
+
+			p := eidos.NewPlugin("planner").Handle(emitNothing()).Build()
+			assert.Equal(t, p.Name(), "planner", "the plugin is named as declared")
+		})
+	})
+
+	for _, tt := range declarations(t) {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			t.Run("returns its builder", func(t *testing.T) {
+				t.Parallel()
+
+				b := eidos.NewPlugin("planner")
+				assert.True(t, tt.set(b) == b, "a declaration chains its calls on one builder")
+			})
+		})
+	}
 
 	t.Run("Build", func(t *testing.T) {
 		t.Parallel()
@@ -215,7 +274,7 @@ func TestBuilder(t *testing.T) {
 				},
 			},
 			{
-				name: "panics on a helper text/template refuses",
+				name: "panics on a helper that is no function",
 				build: func() {
 					eidos.NewPlugin("t").
 						Funcs(template.FuncMap{toneHelper: 1}).
@@ -278,7 +337,7 @@ func TestBuilder(t *testing.T) {
 				},
 			},
 			{
-				name: "panics on one name as a helper of a target and its override",
+				name: "panics on a target's helper named like its override",
 				build: func() {
 					eidos.NewPlugin("t").
 						For(stubTarget,
@@ -338,4 +397,162 @@ func TestBuilder(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Each method of a declaration allocates within its ceiling in the
+// ordinary run, which runs no benchmark. A method that appends takes a
+// declaration built before the count, because its first call allocates
+// the list, and so does Build, because a declaration builds once. The
+// check runs alone, because AllocsPerRun counts every goroutine's
+// allocations and refuses to run beside parallel tests.
+func TestBuilderAllocs(t *testing.T) {
+	var declared *eidos.Builder
+	assert.MaxAllocs(t, func() { declared = eidos.NewPlugin("bench") }, newPluginAllocs,
+		"NewPlugin allocates the builder and its map of priorities")
+	assert.NotNil(t, declared, "NewPlugin returns the declaration")
+
+	for _, tt := range declarations(t) {
+		fresh, at := newDeclarations(allocRuns), 0
+		msg := tt.name + " allocates within its ceiling on a new declaration"
+		assert.MaxAllocs(t, func() {
+			tt.set(fresh[at])
+			at++
+		}, tt.allocs, msg)
+	}
+
+	declare := benchDeclaration(t)
+	fresh, at := make([]*eidos.Builder, allocRuns), 0
+	for i := range fresh {
+		fresh[i] = declare()
+	}
+	var p plugin.Plugin
+	assert.MaxAllocs(t, func() {
+		p = fresh[at].Build()
+		at++
+	}, buildAllocs, "Build allocates the lowered rules, the subscriptions and the built value")
+	assert.Equal(t, p.Name(), "bench", "Build returns the declared plugin")
+}
+
+// BenchmarkBuilder measures a declaration's construction, each method
+// on a new declaration, and freezing a declaration of a graph rule and
+// two fact-gated emit rules. Each call takes a declaration built afresh
+// outside the measurement, because a method's first call allocates its
+// list and a Builder freezes once.
+func BenchmarkBuilder(b *testing.B) {
+	b.Run("NewPlugin", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(newPluginAllocs)
+		defer c.End()
+		var declared *eidos.Builder
+		for c.Loop() {
+			declared = eidos.NewPlugin("bench")
+		}
+		assert.NotNil(b, declared, "NewPlugin returns the declaration")
+	})
+
+	for _, tt := range declarations(b) {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			declared := eidos.NewPlugin("bench")
+			var got *eidos.Builder
+			for c.Loop() {
+				if tt.allocs > 0 {
+					c.Excluding(func() { declared = eidos.NewPlugin("bench") })
+				}
+				got = tt.set(declared)
+			}
+			assert.True(b, got == declared, "the method returns its builder")
+		})
+	}
+
+	b.Run("Build", func(b *testing.B) {
+		declare := benchDeclaration(b)
+		var declared *eidos.Builder
+		c := bench.Start(b).MaxAllocs(buildAllocs)
+		defer c.End()
+		var p plugin.Plugin
+		for c.Loop() {
+			c.Excluding(func() { declared = declare() })
+			p = declared.Build()
+		}
+		assert.Equal(b, p.Name(), "bench", "Build returns the declared plugin")
+	})
+}
+
+// declarations returns each method of a declaration, called with a
+// fixture value built once.
+func declarations(tb assert.TB) []declaring {
+	tb.Helper()
+
+	var options any = &plannerOptions{}
+	family := plugin.Output{Per: plugin.PerPlan, Word: "registry"}
+	register := func(*meta.Registry) error { return nil }
+	tree, helpers := stubTree(), template.FuncMap{toneHelper: shout}
+	layer := eidos.Templates(stubTree())
+	rule := emitNothing()
+	return []declaring{
+		{name: "Version", set: func(b *eidos.Builder) *eidos.Builder { return b.Version(declaredVersion) }},
+		{name: "Output", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder { return b.Output(family) }},
+		{name: "Priority", allocs: priorityAllocs, set: func(b *eidos.Builder) *eidos.Builder {
+			return b.Priority(plugin.RoleAnnotator, declaredPriority)
+		}},
+		{name: "Provides", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder {
+			return b.Provides(providedLabel)
+		}},
+		{name: "Requires", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder {
+			return b.Requires(requiredLabel)
+		}},
+		{name: "Options", set: func(b *eidos.Builder) *eidos.Builder { return b.Options(options) }},
+		{name: "Keys", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder { return b.Keys(register) }},
+		{
+			name:   "Templates",
+			allocs: declareAllocs,
+			set:    func(b *eidos.Builder) *eidos.Builder { return b.Templates(tree) },
+		},
+		{name: "Funcs", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder { return b.Funcs(helpers) }},
+		{
+			name:   "For",
+			allocs: forAllocs,
+			set:    func(b *eidos.Builder) *eidos.Builder { return b.For(stubTarget, layer) },
+		},
+		{name: "Handle", allocs: declareAllocs, set: func(b *eidos.Builder) *eidos.Builder { return b.Handle(rule) }},
+	}
+}
+
+// newDeclarations returns n new declarations, built before a count, so
+// each counted call takes one of its own.
+func newDeclarations(n int) []*eidos.Builder {
+	out := make([]*eidos.Builder, n)
+	for i := range out {
+		out[i] = eidos.NewPlugin("bench")
+	}
+	return out
+}
+
+// benchDeclaration returns a function that declares the bench plugin
+// afresh: one output family, a graph rule, and two emit rules under one
+// fact gate.
+func benchDeclaration(tb assert.TB) func() *eidos.Builder {
+	tb.Helper()
+
+	key, _ := boolKey(tb)
+	return func() *eidos.Builder {
+		return eidos.NewPlugin("bench").
+			Output(plugin.Output{Per: plugin.PerPlan, Word: "registry"}).
+			Handle(
+				eidos.OnGraph(func(m *eidos.GraphMatch, e *eidos.Emitter) error {
+					return nil
+				}),
+				eidos.Where(eidos.HasKey(key),
+					eidos.OnEmit(symbol.KindStruct,
+						func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+							return nil
+						}),
+					eidos.OnEmit(symbol.KindMethod,
+						func(m *eidos.EmitMatch, e *eidos.Emitter) error {
+							return nil
+						}),
+				),
+			)
+	}
 }

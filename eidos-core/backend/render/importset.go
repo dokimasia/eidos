@@ -5,7 +5,6 @@ package render
 
 import (
 	"cmp"
-	"maps"
 	"slices"
 	"strconv"
 )
@@ -218,19 +217,31 @@ func (s *ImportSet) AddType(path, name string) {
 
 // Paths returns every recorded path, distinct and sorted, so two
 // renders spell one block. A renderer that binds no names reads
-// nothing else.
+// nothing else. It allocates the list it returns, and nothing for an
+// empty set.
 func (s *ImportSet) Paths() []string {
-	paths := make(map[string]struct{}, len(s.entries))
-	for e := range s.entries {
-		paths[e.Path] = struct{}{}
+	if len(s.entries) == 0 {
+		return nil
 	}
-	return slices.Sorted(maps.Keys(paths))
+	paths := make([]string, 0, len(s.entries))
+	for e := range s.entries {
+		paths = append(paths, e.Path)
+	}
+	slices.Sort(paths)
+	return slices.Compact(paths)
 }
 
 // Entries returns every recorded entry, sorted by path, name, item,
-// then value before type-only, so two renders spell one block.
+// then value before type-only, so two renders spell one block. It
+// allocates the list it returns, and nothing for an empty set.
 func (s *ImportSet) Entries() []Entry {
-	entries := slices.Collect(maps.Keys(s.entries))
+	if len(s.entries) == 0 {
+		return nil
+	}
+	entries := make([]Entry, 0, len(s.entries))
+	for e := range s.entries {
+		entries = append(entries, e)
+	}
 	slices.SortFunc(entries, func(a, b Entry) int {
 		return cmp.Or(
 			cmp.Compare(a.Path, b.Path),

@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"maps"
 	"slices"
 	"strconv"
 	"strings"
@@ -37,7 +36,9 @@ const (
 	ActionDeleted
 )
 
-// String spells the action for a diagnostic or a dry run.
+// String spells the action for a diagnostic or a dry run, and the
+// number of an action nothing declares. It allocates nothing for a
+// declared action.
 func (a Action) String() string {
 	switch a {
 	case ActionCreated:
@@ -74,7 +75,9 @@ const (
 	FoundForeign Found = 5
 )
 
-// String spells the verdict for a diagnostic or a dry run.
+// String spells the verdict for a diagnostic or a dry run, and the
+// number of a verdict nothing declares. It allocates nothing for a
+// declared verdict.
 func (f Found) String() string {
 	switch f {
 	case FoundNothing:
@@ -251,9 +254,16 @@ func (s *staging) fits(p string) error {
 }
 
 // paths returns every staged path, written and removed, in commit
-// order.
+// order. It allocates the returned list alone, and nothing for a
+// staging without a path.
 func (s *staging) paths() []string {
-	all := slices.AppendSeq(slices.Collect(maps.Keys(s.files)), maps.Keys(s.removals))
+	all := make([]string, 0, len(s.files)+len(s.removals))
+	for p := range s.files {
+		all = append(all, p)
+	}
+	for p := range s.removals {
+		all = append(all, p)
+	}
 	slices.Sort(all)
 	return all
 }

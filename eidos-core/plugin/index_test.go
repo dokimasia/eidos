@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -25,89 +26,27 @@ const (
 	flagNamespace           = "t"
 )
 
-// storeOnly is the scope admitting the store package alone.
-func storeOnly(pkg symbol.Identity) bool {
-	return pkg.Package == coretest.StorePath
-}
+// The store scale the routing surface has to serve: a thousand
+// packages, ten thousand files, two hundred thousand declarations.
+const (
+	benchPackages = 1_000
+	benchFiles    = 10
+	benchDecls    = 20
+)
 
-// twoPackages returns a frozen graph with one struct per fixture
-// package and one raw stub directive on each struct.
-func twoPackages(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
-	tb.Helper()
-
-	inStore := coretest.Struct(coretest.StorePath, "Store")
-	inCache := coretest.Struct(coretest.CachePath, "Cache")
-	g := store.New()
-	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, inStore)),
-		"the store package is admitted")
-	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.CachePath, inCache)),
-		"the cache package is admitted")
-	assert.NoError(tb, g.AttachDirectives(inStore.ID, []directive.Raw{{Name: "stub"}}),
-		"the raw instance attaches before the seal")
-	assert.NoError(tb, g.AttachDirectives(inCache.ID, []directive.Raw{{Name: "stub"}}),
-		"the second raw instance attaches before the seal")
-	g.Freeze()
-	return g, inStore, inCache
-}
-
-// index returns a routing surface over the fixture graph, no facts
-// stamped and no directives validated unless the case adds them.
-func index(
-	tb assert.TB, g *store.Graph,
-	validated map[symbol.Identity][]directive.Directive, sc store.Scope,
-) *plugin.Index {
-	tb.Helper()
-
-	ix, err := plugin.NewIndex(g, meta.NewFacts(meta.NewRegistry()), validated, sc)
-	assert.NoError(tb, err, "the routing surface builds over a frozen graph")
-	return ix
-}
-
-// everything is the scope that admits every package, which is not
-// the same as no scope: a case about the scoped code path states
-// one and does not pass nil.
-func everything(symbol.Identity) bool { return true }
-
-// names collects the yielded declarations' names.
-func names(tb assert.TB, seq func(func(symbol.Symbol) bool)) []string {
-	tb.Helper()
-
-	var out []string
-	for s := range seq {
-		decl, ok := s.(node.Declaration)
-		assert.True(tb, ok, "the index yields declarations")
-		out = append(out, decl.Identity().Name)
-	}
-	return out
-}
-
-// flagged stamps one boolean fact on each subject and returns the
-// store together with the key it registered.
-func flagged(tb assert.TB, subjects ...symbol.Identity) (*meta.Facts, meta.Key[bool]) {
-	tb.Helper()
-
-	reg := meta.NewRegistry()
-	assert.NoError(tb, reg.ClaimNamespace(flagNamespace), "the namespace is claimed")
-	key, err := meta.Register[bool](reg, meta.KeySpec{
-		Name: "t.flag", Doc: "marks a fixture subject",
-	})
-	assert.NoError(tb, err, "the key registers")
-	facts := meta.NewFacts(reg)
-	for _, id := range subjects {
-		assert.NoError(tb, meta.Stamp(facts, key, true, meta.Claim{Subject: id}),
-			"the fixture fact stamps")
-	}
-	return facts, key
-}
-
-// subjects collects the identities a fact enumeration yielded.
-func subjects(seq func(func(symbol.Identity) bool)) []string {
-	var out []string
-	for id := range seq {
-		out = append(out, id.Name)
-	}
-	return out
-}
+// The allocations of the routing surface's construction, which
+// TestIndexAllocs checks in the ordinary run and BenchmarkIndex in a
+// benchmark run.
+const (
+	// newIndexAllocs is the index of a run without a skip or a scope.
+	newIndexAllocs = 1
+	// scopedIndexAllocs is the index of a run whose scope admits one
+	// package: the index and the set of admitted packages with its first
+	// group.
+	scopedIndexAllocs = newIndexAllocs + 2
+	// readerAllocs is a reader handle.
+	readerAllocs = 1
+)
 
 // The index is the dispatcher's routing surface: untracked and
 // scope-filtered, with the validated directive table and the skip
@@ -405,113 +344,365 @@ func TestIndex(t *testing.T) {
 	})
 }
 
-// The store scale the routing surface has to serve: a thousand
-// packages, ten thousand files, two hundred thousand declarations.
-const (
-	benchPackages = 1_000
-	benchFiles    = 10
-	benchDecls    = 20
-)
+// The index allocates itself and the tables a run's skips and scope
+// need, a reader allocates its handle, and the enumerations and lookups
+// a phase call makes through the index allocate nothing, with a scope
+// and without one. The check runs alone, because AllocsPerRun counts
+// every goroutine's allocations and refuses to run beside parallel
+// tests.
+func TestIndexAllocs(t *testing.T) {
+	g, inStore, inCache := twoPackages(t)
+	facts, key := flagged(t, inStore.ID, inCache.ID)
+	validated := map[symbol.Identity][]directive.Directive{inStore.ID: {{Name: directive.KernelSkip}}}
 
+	var built *plugin.Index
+	assert.MaxAllocs(t, func() {
+		var err error
+		if built, err = plugin.NewIndex(g, facts, nil, nil); err != nil {
+			t.Fatalf("NewIndex: unexpected error: %v", err)
+		}
+	}, newIndexAllocs, "NewIndex allocates the index of a run without a skip or a scope")
+	assert.MaxAllocs(t, func() {
+		var err error
+		if built, err = plugin.NewIndex(g, facts, nil, storeOnly); err != nil {
+			t.Fatalf("NewIndex: unexpected error: %v", err)
+		}
+	}, scopedIndexAllocs, "NewIndex allocates the set of the packages a scope admits")
+	reads := store.NewReadSet()
+	assert.MaxAllocs(t, func() {
+		if _, err := built.Reader(reads); err != nil {
+			t.Fatalf("Reader: unexpected error: %v", err)
+		}
+	}, readerAllocs, "Reader allocates the handle")
+
+	ix, err := plugin.NewIndex(g, facts, validated, everything)
+	assert.NoError(t, err, "the routing surface builds")
+	assert.MaxAllocs(t, func() {
+		n := 0
+		for range ix.ByDirective("stub") {
+			n++
+		}
+		if n != 2 {
+			t.Fatal("ByDirective enumerated another number of subjects")
+		}
+	}, 0, "ByDirective allocates nothing")
+	for range ix.ByFactKey(key.ID()) { // the first enumeration sorts the key's subjects
+	}
+	assert.MaxAllocs(t, func() {
+		n := 0
+		for range ix.ByKind(symbol.KindStruct) {
+			n++
+		}
+		if n != 2 {
+			t.Fatal("ByKind enumerated another number of structs")
+		}
+	}, 0, "ByKind allocates nothing")
+	assert.MaxAllocs(t, func() {
+		n := 0
+		for range ix.ByFactKey(key.ID()) {
+			n++
+		}
+		if n != 2 {
+			t.Fatal("ByFactKey enumerated another number of subjects")
+		}
+	}, 0, "ByFactKey allocates nothing for a key whose presence did not change")
+	assert.MaxAllocs(t, func() {
+		if _, held := ix.Lookup(inStore.ID); !held {
+			t.Fatal("Lookup missed the store's struct")
+		}
+	}, 0, "Lookup allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if _, held := ix.PackageOf(inStore.ID); !held {
+			t.Fatal("PackageOf missed the store's struct")
+		}
+	}, 0, "PackageOf allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if !ix.Skipped(inStore.ID, skippedPlugin) || len(ix.DirectivesOf(inStore.ID)) != 1 {
+			t.Fatal("the skip of the store's struct did not read back")
+		}
+	}, 0, "Skipped and DirectivesOf allocate nothing")
+
+	bare, err := plugin.NewIndex(g, facts, nil, nil)
+	assert.NoError(t, err, "the routing surface builds without a scope")
+	assert.MaxAllocs(t, func() {
+		n := 0
+		for range bare.ByKind(symbol.KindStruct) {
+			n++
+		}
+		_, found := bare.Lookup(inStore.ID)
+		_, contained := bare.PackageOf(inStore.ID)
+		if n != 2 || !found || !contained {
+			t.Fatal("the reads without a scope read back wrong")
+		}
+	}, 0, "ByKind, Lookup and PackageOf allocate nothing without a scope")
+}
+
+// BenchmarkIndex measures the routing surface at the store scale it
+// serves: the enumerations a phase call makes, with and without a scope,
+// and the lookups and skip checks it makes per subject.
 func BenchmarkIndex(b *testing.B) {
 	g := coretest.Frozen(b, coretest.Workspace(benchPackages, benchFiles, benchDecls)...)
 	facts := meta.NewFacts(meta.NewRegistry())
 	one := coretest.StorePath + "/0"
+	inOne := func(pkg symbol.Identity) bool { return pkg.Package == one }
+	hit := coretest.Struct(one, "Decl0_0").ID
+	miss := coretest.Struct(one, "Decl0_1").ID
 
 	b.Run("ByKind/unscoped", func(b *testing.B) {
-		b.ReportAllocs()
 		ix, err := plugin.NewIndex(g, facts, nil, nil)
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
-		}
-		for b.Loop() {
-			var n int
+		assert.NoError(b, err, "the routing surface builds")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		n := 0
+		// The first pass runs before the contract counts, at the call site
+		// it measures, where the runtime builds the site's 48-byte cache
+		// for converting a declaration to a symbol. A pass at any other
+		// call site builds a cache of its own.
+		for first := true; first || c.Loop(); first = false {
+			n = 0
 			for range ix.ByKind(symbol.KindStruct) {
 				n++
 			}
-			if n != benchPackages*benchFiles*benchDecls {
-				b.Fatalf("ByKind yielded %d declarations", n)
-			}
 		}
+		assert.Equal(b, n, benchPackages*benchFiles*benchDecls, "ByKind yields every struct")
 	})
 
 	b.Run("ByKind/scoped to one package", func(b *testing.B) {
-		b.ReportAllocs()
-		ix, err := plugin.NewIndex(g, facts, nil,
-			func(pkg symbol.Identity) bool { return pkg.Package == one })
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
-		}
-		for b.Loop() {
-			var n int
+		ix, err := plugin.NewIndex(g, facts, nil, inOne)
+		assert.NoError(b, err, "the routing surface builds")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		n := 0
+		// The first pass builds the call site's conversion cache before
+		// the contract counts, as in the unscoped case.
+		for first := true; first || c.Loop(); first = false {
+			n = 0
 			for range ix.ByKind(symbol.KindStruct) {
 				n++
 			}
-			if n != benchFiles*benchDecls {
-				b.Fatalf("ByKind yielded %d declarations", n)
-			}
 		}
+		assert.Equal(b, n, benchFiles*benchDecls, "ByKind yields the package's structs")
 	})
 
 	b.Run("ByFactKey/scoped", func(b *testing.B) {
-		b.ReportAllocs()
 		reg := meta.NewRegistry()
-		if err := reg.ClaimNamespace(flagNamespace); err != nil {
-			b.Fatalf("ClaimNamespace: unexpected error: %v", err)
-		}
-		key, err := meta.Register[bool](reg, meta.KeySpec{
-			Name: "t.flag", Doc: "marks a bench subject",
-		})
-		if err != nil {
-			b.Fatalf("Register: unexpected error: %v", err)
-		}
+		assert.NoError(b, reg.ClaimNamespace(flagNamespace), "the namespace is claimed")
+		key, err := meta.Register[bool](reg, meta.KeySpec{Name: "t.flag", Doc: "marks a bench subject"})
+		assert.NoError(b, err, "the key registers")
 		stamped := meta.NewFacts(reg)
 		for pkg := range benchPackages {
-			id := coretest.Struct(
-				coretest.StorePath+"/"+strconv.Itoa(pkg), "Decl0_0",
-			).ID
-			if serr := meta.Stamp(stamped, key, true, meta.Claim{Subject: id}); serr != nil {
-				b.Fatalf("Stamp: unexpected error: %v", serr)
-			}
+			id := coretest.Struct(coretest.StorePath+"/"+strconv.Itoa(pkg), "Decl0_0").ID
+			assert.NoError(b, meta.Stamp(stamped, key, true, meta.Claim{Subject: id}), "the fact stamps")
 		}
-		ix, err := plugin.NewIndex(g, stamped, nil,
-			func(pkg symbol.Identity) bool { return pkg.Package == one })
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
+		ix, err := plugin.NewIndex(g, stamped, nil, inOne)
+		assert.NoError(b, err, "the routing surface builds")
+		for range ix.ByFactKey(key.ID()) { // the first enumeration sorts the key's subjects
 		}
-		for b.Loop() {
-			var n int
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		n := 0
+		for c.Loop() {
+			n = 0
 			for range ix.ByFactKey(key.ID()) {
 				n++
 			}
-			if n != 1 {
-				b.Fatalf("ByFactKey yielded %d subjects", n)
-			}
 		}
+		assert.Equal(b, n, 1, "ByFactKey yields the one stamped subject in scope")
 	})
 
 	b.Run("Skipped", func(b *testing.B) {
-		b.ReportAllocs()
 		validated := map[symbol.Identity][]directive.Directive{}
 		for pkg := range benchPackages {
-			id := coretest.Struct(
-				coretest.StorePath+"/"+strconv.Itoa(pkg), "Decl0_0",
-			).ID
+			id := coretest.Struct(coretest.StorePath+"/"+strconv.Itoa(pkg), "Decl0_0").ID
 			validated[id] = []directive.Directive{{Name: directive.KernelSkip}}
 		}
 		ix, err := plugin.NewIndex(g, facts, validated, nil)
-		if err != nil {
-			b.Fatalf("NewIndex: unexpected error: %v", err)
+		assert.NoError(b, err, "the routing surface builds")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		skipped, clean := false, true
+		for c.Loop() {
+			skipped, clean = ix.Skipped(hit, skippedPlugin), !ix.Skipped(miss, skippedPlugin)
 		}
-		hit := coretest.Struct(one, "Decl0_0").ID
-		miss := coretest.Struct(one, "Decl0_1").ID
-		for b.Loop() {
-			if !ix.Skipped(hit, skippedPlugin) {
-				b.Fatal("the skipped subject must return true")
-			}
-			if ix.Skipped(miss, skippedPlugin) {
-				b.Fatal("the clean subject must return false")
-			}
-		}
+		assert.True(b, skipped, "the skipped subject is skipped")
+		assert.True(b, clean, "the clean subject is not")
 	})
+
+	b.Run("Lookup", func(b *testing.B) {
+		ix, err := plugin.NewIndex(g, facts, nil, nil)
+		assert.NoError(b, err, "the routing surface builds")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			_, held = ix.Lookup(hit)
+		}
+		assert.True(b, held, "the declaration is found")
+	})
+
+	b.Run("PackageOf", func(b *testing.B) {
+		ix, err := plugin.NewIndex(g, facts, nil, nil)
+		assert.NoError(b, err, "the routing surface builds")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		held := false
+		for c.Loop() {
+			_, held = ix.PackageOf(hit)
+		}
+		assert.True(b, held, "the declaration's package is found")
+	})
+
+	scopes := []struct {
+		name   string
+		scope  store.Scope
+		allocs uint64
+	}{
+		{name: "NewIndex/a run without a scope", allocs: newIndexAllocs},
+		{name: "NewIndex/a run scoped to one package", scope: inOne, allocs: scopedIndexAllocs},
+	}
+	for _, tt := range scopes {
+		b.Run(tt.name, func(b *testing.B) {
+			_, err := plugin.NewIndex(g, facts, nil, tt.scope)
+			assert.NoError(b, err, "the routing surface builds before the measurement")
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var ix *plugin.Index
+			for c.Loop() {
+				ix, err = plugin.NewIndex(g, facts, nil, tt.scope)
+			}
+			assert.NoError(b, err, "the routing surface builds")
+			_, held := ix.Lookup(hit)
+			assert.True(b, held, "the index finds a declaration its scope admits")
+		})
+	}
+
+	b.Run("ByDirective", func(b *testing.B) {
+		small, inStore, _ := twoPackages(b)
+		ix := index(b, small, nil, nil)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		n := 0
+		// The first pass builds the call site's conversion cache before
+		// the contract counts, as in the ByKind cases.
+		for first := true; first || c.Loop(); first = false {
+			n = 0
+			for range ix.ByDirective("stub") {
+				n++
+			}
+		}
+		assert.Equal(b, n, 2, "ByDirective yields both stubbed structs")
+		assert.Empty(b, ix.DirectivesOf(inStore.ID), "no directive was validated")
+	})
+
+	b.Run("DirectivesOf", func(b *testing.B) {
+		validated := map[symbol.Identity][]directive.Directive{hit: {{Name: directive.KernelSkip}}}
+		ix, err := plugin.NewIndex(g, facts, validated, nil)
+		assert.NoError(b, err, "the routing surface builds")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got []directive.Directive
+		for c.Loop() {
+			got = ix.DirectivesOf(hit)
+		}
+		assert.Length(b, got, 1, "DirectivesOf returns the subject's instance")
+	})
+
+	b.Run("Reader", func(b *testing.B) {
+		ix, err := plugin.NewIndex(g, facts, nil, nil)
+		assert.NoError(b, err, "the routing surface builds")
+		reads := store.NewReadSet()
+		c := bench.Start(b).MaxAllocs(readerAllocs)
+		defer c.End()
+		var r *store.Reader
+		for c.Loop() {
+			r, err = ix.Reader(reads)
+		}
+		assert.NoError(b, err, "the reader is minted")
+		_, held := r.Lookup(hit)
+		assert.True(b, held, "the reader finds a declaration")
+	})
+}
+
+// storeOnly is the scope admitting the store package alone.
+func storeOnly(pkg symbol.Identity) bool {
+	return pkg.Package == coretest.StorePath
+}
+
+// twoPackages returns a frozen graph with one struct per fixture
+// package and one raw stub directive on each struct.
+func twoPackages(tb assert.TB) (*store.Graph, *node.Struct, *node.Struct) {
+	tb.Helper()
+
+	inStore := coretest.Struct(coretest.StorePath, "Store")
+	inCache := coretest.Struct(coretest.CachePath, "Cache")
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, inStore)),
+		"the store package is admitted")
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.CachePath, inCache)),
+		"the cache package is admitted")
+	assert.NoError(tb, g.AttachDirectives(inStore.ID, []directive.Raw{{Name: "stub"}}),
+		"the raw instance attaches before the seal")
+	assert.NoError(tb, g.AttachDirectives(inCache.ID, []directive.Raw{{Name: "stub"}}),
+		"the second raw instance attaches before the seal")
+	g.Freeze()
+	return g, inStore, inCache
+}
+
+// index returns a routing surface over the fixture graph, no facts
+// stamped and no directives validated unless the case adds them.
+func index(
+	tb assert.TB, g *store.Graph,
+	validated map[symbol.Identity][]directive.Directive, sc store.Scope,
+) *plugin.Index {
+	tb.Helper()
+
+	ix, err := plugin.NewIndex(g, meta.NewFacts(meta.NewRegistry()), validated, sc)
+	assert.NoError(tb, err, "the routing surface builds over a frozen graph")
+	return ix
+}
+
+// everything is the scope that admits every package, which is not
+// the same as no scope: a case about the scoped code path states
+// one and does not pass nil.
+func everything(symbol.Identity) bool { return true }
+
+// names collects the yielded declarations' names.
+func names(tb assert.TB, seq func(func(symbol.Symbol) bool)) []string {
+	tb.Helper()
+
+	var out []string
+	for s := range seq {
+		decl, ok := s.(node.Declaration)
+		assert.True(tb, ok, "the index yields declarations")
+		out = append(out, decl.Identity().Name)
+	}
+	return out
+}
+
+// flagged stamps one boolean fact on each subject and returns the
+// store together with the key it registered.
+func flagged(tb assert.TB, subjects ...symbol.Identity) (*meta.Facts, meta.Key[bool]) {
+	tb.Helper()
+
+	reg := meta.NewRegistry()
+	assert.NoError(tb, reg.ClaimNamespace(flagNamespace), "the namespace is claimed")
+	key, err := meta.Register[bool](reg, meta.KeySpec{
+		Name: "t.flag", Doc: "marks a fixture subject",
+	})
+	assert.NoError(tb, err, "the key registers")
+	facts := meta.NewFacts(reg)
+	for _, id := range subjects {
+		assert.NoError(tb, meta.Stamp(facts, key, true, meta.Claim{Subject: id}),
+			"the fixture fact stamps")
+	}
+	return facts, key
+}
+
+// subjects collects the identities a fact enumeration yielded.
+func subjects(seq func(func(symbol.Identity) bool)) []string {
+	var out []string
+	for id := range seq {
+		out = append(out, id.Name)
+	}
+	return out
 }

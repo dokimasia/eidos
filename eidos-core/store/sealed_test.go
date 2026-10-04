@@ -571,11 +571,14 @@ func BenchmarkSealed(b *testing.B) {
 
 	b.Run("ByKind", func(b *testing.B) {
 		g := store.Sealed(summaries)
-		warm(g, id)
 		c := bench.Start(b).MaxAllocs(0)
 		defer c.End()
 		seen := 0
-		for c.Loop() {
+		// The first pass runs before the contract counts, at the call site
+		// it measures. It decodes the regions, and the runtime builds the
+		// site's 48-byte cache for converting a declaration to a symbol. A
+		// pass at any other call site builds a cache of its own.
+		for first := true; first || c.Loop(); first = false {
 			seen = 0
 			for range g.ByKind(symbol.KindStruct) {
 				seen++

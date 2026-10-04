@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/plugin"
 )
@@ -75,10 +76,24 @@ func TestDependent(t *testing.T) {
 		})
 	})
 
+	t.Run("Unplace", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("records the need with its reason", func(t *testing.T) {
+			t.Parallel()
+
+			round := &plugin.DependencyRound{Number: 1}
+			round.Unplace("example.test/"+missingName, unplacedReason)
+			assert.Equal(t, round.Unplaced(),
+				[]plugin.Unplaced{{Path: "example.test/" + missingName, Reason: unplacedReason}},
+				"the report keeps the need and the reason the finding quotes")
+		})
+	})
+
 	t.Run("Unplaced", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the needs Unplace reported in report order", func(t *testing.T) {
+		t.Run("returns the reports in report order", func(t *testing.T) {
 			t.Parallel()
 
 			round := &plugin.DependencyRound{Number: 1, Needs: []plugin.Need{
@@ -112,5 +127,51 @@ func TestDependent(t *testing.T) {
 			assert.NoError(t, err, "the directory lists")
 			assert.Length(t, entries, 1, "the module's one file")
 		})
+	})
+}
+
+// A round's first report allocates the list of reports, and reading the
+// reports allocates nothing, in the ordinary run, which runs no
+// benchmark. Each counted report goes to a round of its own. The check
+// runs alone, because AllocsPerRun counts every goroutine's allocations
+// and refuses to run beside parallel tests.
+func TestDependentAllocs(t *testing.T) {
+	rounds := make([]plugin.DependencyRound, allocRuns)
+	at := 0
+	assert.MaxAllocs(t, func() {
+		rounds[at].Unplace("example.test/"+missingName, unplacedReason)
+		at++
+	}, 1, "Unplace allocates the list of reports on a round's first report")
+
+	var got []plugin.Unplaced
+	assert.MaxAllocs(t, func() { got = rounds[0].Unplaced() }, 0, "Unplaced allocates nothing")
+	assert.Length(t, got, 1, "Unplaced returns the round's report")
+}
+
+// BenchmarkDependent measures a round's first report of a need placed
+// nowhere, each on a round of its own, and the read of the reports.
+func BenchmarkDependent(b *testing.B) {
+	b.Run("Unplace/the first report of a round", func(b *testing.B) {
+		var round *plugin.DependencyRound
+		fresh := func() { round = &plugin.DependencyRound{Number: 1} }
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		for c.Loop() {
+			c.Excluding(fresh)
+			round.Unplace("example.test/"+missingName, unplacedReason)
+		}
+		assert.Length(b, round.Unplaced(), 1, "the round keeps the report")
+	})
+
+	b.Run("Unplaced", func(b *testing.B) {
+		round := &plugin.DependencyRound{Number: 1}
+		round.Unplace("example.test/"+missingName, unplacedReason)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got []plugin.Unplaced
+		for c.Loop() {
+			got = round.Unplaced()
+		}
+		assert.Length(b, got, 1, "Unplaced returns the round's report")
 	})
 }

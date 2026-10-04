@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
@@ -25,131 +26,21 @@ var validationSubject = symbol.Identity{
 	Lang: "golang", Package: "svc/store", Name: "Store", Kind: symbol.KindStruct,
 }
 
-// keyed returns a metadata registry with shape.role in the group
-// shape.writer, for drop resolution.
-func keyed(tb assert.TB) *meta.Registry {
-	tb.Helper()
+// The validation benchmark's instances: an index with a positional, a
+// list and three params under a role, a second plugin's index, and a
+// drop of a metadata key.
+const (
+	fullIndexPayload  = `indexer:index btree fields=[a, b] depth=3 unique=true role=server shard=id`
+	otherIndexPayload = "stubgen:index mode=fast"
+	dropPayload       = "meta drop=shape.role"
+)
 
-	r := meta.NewRegistry()
-	assert.NoError(tb, r.ClaimNamespace("shape"), "the namespace is claimed")
-	_, err := meta.Register[string](r, meta.KeySpec{
-		Name: "shape.role", Group: "shape.writer", Doc: "the classified role",
-	})
-	assert.NoError(tb, err, "the fixture key registers")
-	return r
-}
-
-// fullSchema exercises positionals, every scalar type, a reference
-// list, roles and repeatability.
-func fullSchema() directive.Schema {
-	return directive.Schema{
-		Plugin: "indexer",
-		Name:   "index",
-		Positional: []directive.ParamSpec{
-			{Key: "kind", Type: directive.TypeString, Required: true, Doc: "the index kind"},
-		},
-		Params: []directive.ParamSpec{
-			{
-				Key: "fields", Type: directive.TypeList, ListOf: directive.TypeReference,
-				Resolution: directive.ResolveValueField, Doc: "the indexed members",
-			},
-			{Key: "depth", Type: directive.TypeInt, Doc: "the tree depth"},
-			{Key: "unique", Type: directive.TypeBool, Doc: "one row per key"},
-			{
-				Key: "shard", Type: directive.TypeString, Roles: []string{"server"},
-				Doc: "the server-side shard key",
-			},
-		},
-		Roles:      []string{"client", "server"},
-		Repeatable: true,
-		Doc:        "declares an index over members",
-	}
-}
-
-// negatable returns a well-formed schema that admits the negated
-// form.
-func negatable(plugin string, name directive.Name) directive.Schema {
-	s := wellFormed(plugin, name)
-	s.Negatable = true
-	return s
-}
-
-// parse returns the parsed payload, failing the test on a payload
-// outside the grammar.
-func parse(tb assert.TB, payload string, line int) directive.Raw {
-	tb.Helper()
-
-	raw, err := directive.Parse(payload)
-	assert.NoError(tb, err, "the fixture payload parses")
-	raw.Pos = position.Pos{File: "svc/store.go", Line: line, Col: 1}
-	return raw
-}
-
-// negated returns the parsed payload in the negated form.
-func negated(tb assert.TB, payload string, line int) directive.Raw {
-	tb.Helper()
-
-	raw := parse(tb, payload, line)
-	raw.Negated = true
-	return raw
-}
-
-// shaped returns the parsed payload marked as written on a carrier
-// line in the tool-directive shape.
-func shaped(tb assert.TB, payload string, line int) directive.Raw {
-	tb.Helper()
-
-	raw := parse(tb, payload, line)
-	raw.DirectiveShaped = true
-	return raw
-}
-
-// mixedIndexes validates two instances of the repeatable index
-// schema, the first in another shape and the second in the
-// tool-directive shape.
-func mixedIndexes(tb assert.TB) ([]directive.Directive, *diag.Sink) {
-	tb.Helper()
-
-	return validateRaws(tb, []directive.Raw{
-		parse(tb, "indexer:index hash", 1),
-		shaped(tb, "indexer:index btree", 2),
-	}, fullSchema())
-}
-
-// validate runs Validate over payloads with the full fixture,
-// returning the typed instances and the sink.
-func validate(tb assert.TB, payloads ...string) ([]directive.Directive, *diag.Sink) {
-	tb.Helper()
-
-	r := sealed(tb, fullSchema(), wellFormed("stubgen", "index"))
-	sink := diag.NewSink()
-	raws := make([]directive.Raw, 0, len(payloads))
-	for i, payload := range payloads {
-		raws = append(raws, parse(tb, payload, i+1))
-	}
-	return directive.Validate(validationSubject, raws, r, keyed(tb), nil, sink), sink
-}
-
-// validateRaws runs Validate over raws against a registry of the
-// kernel schemas and the given ones.
-func validateRaws(
-	tb assert.TB, raws []directive.Raw, schemas ...directive.Schema,
-) ([]directive.Directive, *diag.Sink) {
-	tb.Helper()
-
-	sink := diag.NewSink()
-	got := directive.Validate(validationSubject, raws, sealed(tb, schemas...), keyed(tb), nil, sink)
-	return got, sink
-}
-
-// relatedCount returns how many related positions the findings name.
-func relatedCount(sink *diag.Sink) int {
-	n := 0
-	for d := range sink.All() {
-		n += len(d.Related)
-	}
-	return n
-}
+// validateAllocs is what validating the benchmark's three instances
+// allocates: the returned slice, and per instance the params map, its
+// one group and each param's value, which the map keeps apart because a
+// Value is larger than 128 bytes. The index also allocates its
+// positional and its list.
+const validateAllocs = 1 + (2 + 4 + 2) + (2 + 1) + (2 + 1)
 
 // Validate is the one gate between a carrier and a handler, so every
 // check it runs and every finding it reports is pinned.
@@ -925,25 +816,174 @@ func TestValidate(t *testing.T) {
 	})
 }
 
-// Validation runs once per subject at the seal, so its cost per
+// Validation allocates what its instances keep and nothing to check
+// them. The check runs alone, because AllocsPerRun counts every
+// goroutine's allocations and refuses to run beside parallel tests.
+func TestValidateAllocs(t *testing.T) {
+	r, keys, raws := validationBench(t)
+	sink := diag.NewSink()
+	assert.MaxAllocs(t, func() {
+		if got := directive.Validate(validationSubject, raws, r, keys, nil, sink); len(got) != len(raws) {
+			t.Fatal("Validate refused an instance")
+		}
+	}, validateAllocs, "Validate allocates the instances it returns")
+}
+
+// BenchmarkValidate measures the validation of one subject's three
+// instances, which runs once per subject at the seal, so its cost per
 // subject bounds the pass over a large workspace.
 func BenchmarkValidate(b *testing.B) {
-	b.ReportAllocs()
-
-	r := sealed(b, fullSchema(), wellFormed("stubgen", "index"))
-	keys := keyed(b)
-	raws := []directive.Raw{
-		parse(b, `indexer:index btree fields=[a, b] depth=3 unique=true role=server shard=id`, 1),
-		parse(b, "stubgen:index mode=fast", 2),
-		parse(b, "meta drop=shape.role", 3),
-	}
-
-	for b.Loop() {
+	b.Run("Validate", func(b *testing.B) {
+		r, keys, raws := validationBench(b)
 		sink := diag.NewSink()
-		if got := directive.Validate(validationSubject, raws, r, keys, nil, sink); len(got) != 3 {
-			b.Fatalf("Validate returned %d instances, want 3", len(got))
+		c := bench.Start(b).MaxAllocs(validateAllocs)
+		defer c.End()
+		var got []directive.Directive
+		for c.Loop() {
+			got = directive.Validate(validationSubject, raws, r, keys, nil, sink)
 		}
+		assert.Length(b, got, len(raws), "every instance validates")
+		assert.False(b, sink.Failed(), "nothing is reported")
+	})
+}
+
+// validationBench returns the registries and the instances the
+// validation benchmark and its allocation check validate.
+func validationBench(tb assert.TB) (*directive.Registry, *meta.Registry, []directive.Raw) {
+	tb.Helper()
+
+	raws := []directive.Raw{
+		parse(tb, fullIndexPayload, 1),
+		parse(tb, otherIndexPayload, 2),
+		parse(tb, dropPayload, 3),
 	}
+	return sealed(tb, fullSchema(), wellFormed("stubgen", "index")), keyed(tb), raws
+}
+
+// keyed returns a metadata registry with shape.role in the group
+// shape.writer, for drop resolution.
+func keyed(tb assert.TB) *meta.Registry {
+	tb.Helper()
+
+	r := meta.NewRegistry()
+	assert.NoError(tb, r.ClaimNamespace("shape"), "the namespace is claimed")
+	_, err := meta.Register[string](r, meta.KeySpec{
+		Name: "shape.role", Group: "shape.writer", Doc: "the classified role",
+	})
+	assert.NoError(tb, err, "the fixture key registers")
+	return r
+}
+
+// fullSchema exercises positionals, every scalar type, a reference
+// list, roles and repeatability.
+func fullSchema() directive.Schema {
+	return directive.Schema{
+		Plugin: "indexer",
+		Name:   "index",
+		Positional: []directive.ParamSpec{
+			{Key: "kind", Type: directive.TypeString, Required: true, Doc: "the index kind"},
+		},
+		Params: []directive.ParamSpec{
+			{
+				Key: "fields", Type: directive.TypeList, ListOf: directive.TypeReference,
+				Resolution: directive.ResolveValueField, Doc: "the indexed members",
+			},
+			{Key: "depth", Type: directive.TypeInt, Doc: "the tree depth"},
+			{Key: "unique", Type: directive.TypeBool, Doc: "one row per key"},
+			{
+				Key: "shard", Type: directive.TypeString, Roles: []string{"server"},
+				Doc: "the server-side shard key",
+			},
+		},
+		Roles:      []string{"client", "server"},
+		Repeatable: true,
+		Doc:        "declares an index over members",
+	}
+}
+
+// negatable returns a well-formed schema that admits the negated
+// form.
+func negatable(plugin string, name directive.Name) directive.Schema {
+	s := wellFormed(plugin, name)
+	s.Negatable = true
+	return s
+}
+
+// parse returns the parsed payload, failing the test on a payload
+// outside the grammar.
+func parse(tb assert.TB, payload string, line int) directive.Raw {
+	tb.Helper()
+
+	raw, err := directive.Parse(payload)
+	assert.NoError(tb, err, "the fixture payload parses")
+	raw.Pos = position.Pos{File: "svc/store.go", Line: line, Col: 1}
+	return raw
+}
+
+// negated returns the parsed payload in the negated form.
+func negated(tb assert.TB, payload string, line int) directive.Raw {
+	tb.Helper()
+
+	raw := parse(tb, payload, line)
+	raw.Negated = true
+	return raw
+}
+
+// shaped returns the parsed payload marked as written on a carrier
+// line in the tool-directive shape.
+func shaped(tb assert.TB, payload string, line int) directive.Raw {
+	tb.Helper()
+
+	raw := parse(tb, payload, line)
+	raw.DirectiveShaped = true
+	return raw
+}
+
+// mixedIndexes validates two instances of the repeatable index
+// schema, the first in another shape and the second in the
+// tool-directive shape.
+func mixedIndexes(tb assert.TB) ([]directive.Directive, *diag.Sink) {
+	tb.Helper()
+
+	return validateRaws(tb, []directive.Raw{
+		parse(tb, "indexer:index hash", 1),
+		shaped(tb, "indexer:index btree", 2),
+	}, fullSchema())
+}
+
+// validate runs Validate over payloads with the full fixture,
+// returning the typed instances and the sink.
+func validate(tb assert.TB, payloads ...string) ([]directive.Directive, *diag.Sink) {
+	tb.Helper()
+
+	r := sealed(tb, fullSchema(), wellFormed("stubgen", "index"))
+	sink := diag.NewSink()
+	raws := make([]directive.Raw, 0, len(payloads))
+	for i, payload := range payloads {
+		raws = append(raws, parse(tb, payload, i+1))
+	}
+	return directive.Validate(validationSubject, raws, r, keyed(tb), nil, sink), sink
+}
+
+// validateRaws runs Validate over raws against a registry of the
+// kernel schemas and the given ones.
+func validateRaws(
+	tb assert.TB, raws []directive.Raw, schemas ...directive.Schema,
+) ([]directive.Directive, *diag.Sink) {
+	tb.Helper()
+
+	sink := diag.NewSink()
+	got := directive.Validate(validationSubject, raws, sealed(tb, schemas...), keyed(tb), nil, sink)
+	return got, sink
+}
+
+// relatedCount returns how many related positions the findings name.
+func relatedCount(sink *diag.Sink) int {
+	n := 0
+	for d := range sink.All() {
+		n += len(d.Related)
+	}
+	return n
 }
 
 // onlyDiag returns the one finding a sink contains.

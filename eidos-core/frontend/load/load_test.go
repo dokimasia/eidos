@@ -16,12 +16,14 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/internal/coretest"
+	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/output"
@@ -103,6 +105,38 @@ const (
 	extRoot     = "ext"
 	absentStore = "absent"
 	dualEntry   = "ext/lib/x"
+)
+
+// The canonical scale every layer benches at: 1000 packages of 10
+// files of 20 declarations, 200k declarations in all.
+const (
+	benchPackages = 1000
+	benchFiles    = 10
+	benchDecls    = 20
+)
+
+// benchBrand is the brand the canonical corpus loads under.
+const benchBrand output.Brand = "bench"
+
+// The ceilings of [BenchmarkLoad].
+const (
+	// coldLoadAllocs is one cold load of the canonical corpus, 1,173,084
+	// allocations. The scripted frontend's parse and resolution make
+	// about 910,000 of them, and the driver the rest: the gate's read and
+	// record of each of the 10,000 files, each unit's source unit, read
+	// fold, key and imports, the link's record of each reference, and the
+	// regions. The parse's goroutines allocate up to 16 more as the
+	// runtime schedules them: 30 fresh processes counted 1,173,086 to
+	// 1,173,100. The ceiling allows twice that.
+	coldLoadAllocs = 1_173_084 + 32
+	// warmLoadAllocs is one warm load of the unchanged corpus over a record
+	// opened for the load, as a run opens it: 194,490 allocations on
+	// average. Most of them decode the record, a string for each text
+	// field and a list for each list of texts of the 10,000 file records
+	// and the 1,000 unit records, and the gate allocates a record and a
+	// path for each file it stats. 30 fresh processes counted 194,486 to
+	// 194,494.
+	warmLoadAllocs = 194_490 + 10
 )
 
 // stdTree is the happy-path fixture: two packages, one cross-package
@@ -384,7 +418,7 @@ func TestLoad(t *testing.T) {
 			assert.Contains(t, err.Error(), storeFile, "the error names the file the proof could not read")
 		})
 
-		t.Run("reads a claimed file whole for its digest and again for its unit", func(t *testing.T) {
+		t.Run("reads a claimed file once for its digest then once for its unit", func(t *testing.T) {
 			t.Parallel()
 
 			tree := stdTree()
@@ -957,6 +991,102 @@ func TestLoad(t *testing.T) {
 			assert.Equal(t, raws[0].Name, tableName, "the instance has its spelling")
 		})
 	})
+
+	t.Run("Decoded", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns zero for a cold load", func(t *testing.T) {
+			t.Parallel()
+
+			_, report, _ := loadTree(t, stdTree())
+			assert.Equal(t, report.Decoded(), 0, "a cold load decodes nothing from a record")
+		})
+
+		t.Run("returns zero for the zero Report", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, (&load.Report{}).Decoded(), 0, "a report no load filled counts nothing")
+		})
+	})
+}
+
+// The count of decoded regions reads without allocating in the ordinary
+// run, which runs no benchmark. The loads' own ceilings run under -bench
+// alone: a cold load of the canonical corpus takes too long to repeat
+// 101 times, and the warm load's ceiling leaves out the record's
+// opening, which no count of [assert.MaxAllocs] leaves out.
+func TestLoadAllocs(t *testing.T) {
+	_, report, _ := loadTree(t, stdTree())
+	got := -1
+	assert.MaxAllocs(t, func() { got = report.Decoded() }, 0, "Decoded allocates nothing")
+	assert.Equal(t, got, 0, "Decoded returns zero for a cold load")
+}
+
+// BenchmarkLoad drives the whole pipeline at the canonical scale, cold
+// and warm, and reads a report's count of decoded regions. A cold load
+// has no record of an earlier load: it selects,
+// gates, partitions, parses, splices, assigns, resolves, seals and keys,
+// and the gate reads and hashes every claimed file whole, none of them
+// ending in the brand's trailer. A warm load reads the record of a load
+// of the same tree, keeps every unit, and parses none. The fake
+// language's parse is part of the cold measurement, so its number is a
+// ceiling on driver overhead, not a frontend budget. One load before
+// each measurement builds what a process builds once.
+func BenchmarkLoad(b *testing.B) {
+	tree := scaledTree()
+	fronts := []plugin.Frontend{frontendtest.NewScripted()}
+	cold := func() load.Config {
+		return load.Config{FS: tree, Frontends: fronts, Sink: diag.NewSink(), Brand: benchBrand}
+	}
+
+	b.Run("Load/a cold load of 200,000 declarations", func(b *testing.B) {
+		_, _, err := load.Load(b.Context(), cold())
+		assert.NoError(b, err, "the corpus loads before the measurement")
+		c := bench.Start(b).MaxAllocs(coldLoadAllocs)
+		defer c.End()
+		var report *load.Report
+		for c.Loop() {
+			_, report, err = load.Load(b.Context(), cold())
+		}
+		assert.NoError(b, err, "the corpus loads")
+		assert.Length(b, report.Units, benchPackages, "each package is one unit")
+	})
+
+	b.Run("Load/a warm load of the unchanged 200,000 declarations", func(b *testing.B) {
+		_, first, err := load.Load(b.Context(), cold())
+		assert.NoError(b, err, "the corpus loads cold")
+		rec := newRecorder()
+		rec.record(b, first)
+		warm := func(prior load.Prior) load.Config {
+			cfg := cold()
+			cfg.Prior = prior
+			return cfg
+		}
+		_, _, err = load.Load(b.Context(), warm(reopened(b, rec)))
+		assert.NoError(b, err, "the corpus loads warm before the measurement")
+		c := bench.Start(b).MaxAllocs(warmLoadAllocs)
+		defer c.End()
+		var report *load.Report
+		for c.Loop() {
+			var prior load.Prior
+			c.Excluding(func() { prior = reopened(b, rec) })
+			_, report, err = load.Load(b.Context(), warm(prior))
+		}
+		assert.NoError(b, err, "the corpus loads warm")
+		assert.Length(b, report.Units, benchPackages, "each package is one unit")
+		assert.Equal(b, report.Reparsed, 0, "the load parses no unit")
+	})
+
+	b.Run("Report.Decoded", func(b *testing.B) {
+		_, report, _ := loadTree(b, stdTree())
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		got := -1
+		for c.Loop() {
+			got = report.Decoded()
+		}
+		assert.Equal(b, got, 0, "a cold load decodes nothing from a record")
+	})
 }
 
 // encoded renders the identities of every package the graph
@@ -1483,4 +1613,37 @@ func (*looseStamp) Parse(_ context.Context, u *plugin.SourceUnit) error {
 		Key: frontendtest.ScriptedTestKey, Value: "yes",
 	})
 	return nil
+}
+
+// scaledTree writes the canonical corpus in the fake language:
+// per file, four cross-referencing types and sixteen constants.
+func scaledTree() fstest.MapFS {
+	tree := fstest.MapFS{"mod.zz": &fstest.MapFile{Data: []byte("mod bench\n")}}
+	for p := range benchPackages {
+		prev := fmt.Sprintf("p%d", (p+benchPackages-1)%benchPackages)
+		for f := range benchFiles {
+			var b strings.Builder
+			fmt.Fprintf(&b, "package p%d\nimport prev %s\n", p, prev)
+			for d := range benchDecls {
+				if d < 4 {
+					fmt.Fprintf(&b, "type T%d_%d prev.T%d_0 int\n", f, d, f)
+				} else {
+					fmt.Fprintf(&b, "const c%d_%d\n", f, d)
+				}
+			}
+			tree[fmt.Sprintf("p%d/f%d.zz", p, f)] = &fstest.MapFile{Data: []byte(b.String())}
+		}
+	}
+	return tree
+}
+
+// reopened returns the record the recorder made live, opened again from
+// its ledger, so a load reads and decodes it whole, as a run's load
+// does.
+func reopened(tb assert.TB, r *recorder) load.Prior {
+	tb.Helper()
+
+	gen, err := state.Open(context.Background(), r.l)
+	assert.NoError(tb, err, "the live generation opens")
+	return gen.Load(context.Background())
 }

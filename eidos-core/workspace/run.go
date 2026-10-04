@@ -132,7 +132,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	if err != nil {
 		return w.stopped(ctx, report, err)
 	}
-	table, err := w.annotateRun(ctx, g, facts, sink)
+	table, err := w.annotateRun(ctx, g, facts, sink, &report.Stats)
 	if err != nil {
 		return w.stopped(ctx, report, err)
 	}
@@ -148,6 +148,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	}
 	for _, p := range runs {
 		report.Emits[p.plan.name] = p.emit
+		report.Stats.Rendered += len(p.files)
 		for d := range p.sink.All() {
 			sink.Report(d)
 		}
@@ -159,7 +160,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	unmet := w.audit(g, facts, loaded, sink)
 	checked := false
 	if !shared {
-		checked, err = w.check(g, facts, table, runs, sink)
+		checked, err = w.check(g, facts, table, runs, sink, &report.Stats)
 		errs = append(errs, err)
 	}
 	broken := damaged(g.Damaged())
@@ -304,11 +305,13 @@ func (w *Workspace) load(
 
 // annotateRun runs the shared phases after the load: directive
 // validation, the stamp replay, the kernel meta drops and the annotate
-// schedule. An annotator's returned error stops the frame.
+// schedule. It counts the subjects it validated into stats. An
+// annotator's returned error stops the frame.
 func (w *Workspace) annotateRun(
-	ctx context.Context, g *store.Graph, facts *meta.Facts, sink *diag.Sink,
+	ctx context.Context, g *store.Graph, facts *meta.Facts, sink *diag.Sink, stats *Stats,
 ) (map[symbol.Identity][]directive.Directive, error) {
-	table := w.validated(g, facts, sink)
+	table, validated := w.validated(g, facts, sink)
+	stats.Validated = validated
 	applyStamps(g, facts, sink)
 	if err := w.applyDrops(table, facts); err != nil {
 		return nil, err
@@ -349,11 +352,12 @@ func failure(sink *diag.Sink) error {
 // canonical finding order, so the report is the same whatever order
 // the workers finished in. A subject the graph does not contain
 // reports the dangling code and contributes nothing. The survivors
-// form the table the routing indexes read, so a rejected instance
-// never gates a rule.
+// form the table the routing indexes read, so no rule dispatches on a
+// rejected instance. It also returns the number of subjects it
+// validated. A dangling subject is not validated.
 func (w *Workspace) validated(
 	g *store.Graph, facts *meta.Facts, sink *diag.Sink,
-) map[symbol.Identity][]directive.Directive {
+) (map[symbol.Identity][]directive.Directive, int) {
 	type attached struct {
 		subject symbol.Identity
 		raws    []directive.Raw
@@ -364,15 +368,20 @@ func (w *Workspace) validated(
 	}
 	results := make([][]directive.Directive, len(subjects))
 	locals := make([]*diag.Sink, min(runtime.GOMAXPROCS(0), len(subjects)))
+	// counts is each worker's number of validated subjects, which the
+	// worker writes once, when it finds no subject left.
+	counts := make([]int, len(locals))
 	var next atomic.Int64
 	var wg sync.WaitGroup
 	for k := range locals {
 		local := diag.NewSink()
 		locals[k] = local
 		wg.Go(func() {
+			count := 0
 			for {
 				i := int(next.Add(1)) - 1
 				if i >= len(subjects) {
+					counts[k] = count
 					return
 				}
 				s := subjects[i]
@@ -384,6 +393,7 @@ func (w *Workspace) validated(
 				results[i] = directive.Validate(
 					s.subject, s.raws, w.directives, w.keys, w.resolver(g, facts), local,
 				)
+				count++
 			}
 		})
 	}
@@ -402,7 +412,11 @@ func (w *Workspace) validated(
 			table[subjects[i].subject] = ds
 		}
 	}
-	return table
+	validated := 0
+	for _, count := range counts {
+		validated += count
+	}
+	return table, validated
 }
 
 // resolver binds a subject's reference params through the rules
@@ -457,8 +471,8 @@ func fileOf(reader *store.Reader, subject symbol.Identity) *node.File {
 
 // applyStamps replays the load's classification stamps into the
 // fact store at plugin authority, before any drop or annotator
-// runs. Rank decides every winner, so a directive-authority drop
-// outranks a stamp whichever applied first. The order here exists
+// runs. Rank decides every winner, so a drop at directive authority
+// ranks above a stamp, whichever applied first. The order here exists
 // for the findings, not the outcome. A refusal reports under the
 // fact store's own code at the stamp's position, and the frame
 // continues. A stamp whose subject the graph does not contain is

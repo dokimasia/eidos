@@ -12,6 +12,13 @@ type {{.Name}}Match struct {
 	{{.Name}} *node.{{.Name}}
 }
 
+// unbind zeroes the match for its lane's next phase call, and returns
+// the key the lane keeps released {{.Name}}Match values under.
+func (m *{{.Name}}Match) unbind() any {
+	*m = {{.Name}}Match{}
+	return (*{{.Name}}Match)(nil)
+}
+
 // On{{.Name}} fires the handler once per subject of its kind in
 // scope, or once per gating instance under a Directive wrapper.
 // The effect parameter picks the role: an Emitter generates, a

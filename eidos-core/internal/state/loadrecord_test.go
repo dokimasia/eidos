@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
@@ -21,6 +22,7 @@ import (
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
@@ -35,6 +37,41 @@ const (
 // loadBrand is the brand the scripted loads run under.
 const loadBrand output.Brand = "own"
 
+// The ceilings of the reads and the record of a load over the scripted
+// tree of two units.
+const (
+	// loadStateAllocs is one load state over a generation: the state.
+	loadStateAllocs = 1
+	// filesAllocs is a first range over the record's files, which reads
+	// the files table whole: the run, its index and blocks, the merged
+	// entries, and the two records with their paths and packages.
+	filesAllocs = 13
+	// unitsAllocs is a first range over the record's units, which reads
+	// the units table whole: the run, its index and blocks, the merged
+	// entries, and the two records with their members, keys, summaries
+	// and imports.
+	unitsAllocs = 42
+	// regionAllocs is one decode of a unit's region of one package: the
+	// run read from the ledger, the string table, the region, and the
+	// package's declarations and lists.
+	regionAllocs = 20
+	// doorsAllocs is one read of the scripted frontend's doors: the doors
+	// table read whole, and the one door's reads, units and paths.
+	doorsAllocs = 13
+	// probedAllocs is one lookup of a candidate a unit named: its key,
+	// the run read from the ledger, the block, the units' paths decoded,
+	// and the list of numbers.
+	probedAllocs = 6
+	// followedAllocs is one lookup of a package no reference followed:
+	// its key, the run read from the ledger, and the block the row would
+	// be in.
+	followedAllocs = 3
+	// recordLoadAllocs is one record of a cold load of the two units into
+	// a new commit: each region's encoding and the segment, each file's
+	// and unit's row, the door's row, and the probes.
+	recordLoadAllocs = 89
+)
+
 // scriptedTree returns the two packages the load cases load.
 func scriptedTree() fstest.MapFS {
 	return fstest.MapFS{
@@ -45,8 +82,8 @@ func scriptedTree() fstest.MapFS {
 
 // loaded loads a tree through the scripted frontend, over a prior
 // record where one is set.
-func loaded(t *testing.T, tree fstest.MapFS, prior load.Prior) *load.Report {
-	t.Helper()
+func loaded(tb testing.TB, tree fstest.MapFS, prior load.Prior) *load.Report {
+	tb.Helper()
 
 	_, report, err := load.Load(context.Background(), load.Config{
 		FS:        tree,
@@ -55,29 +92,29 @@ func loaded(t *testing.T, tree fstest.MapFS, prior load.Prior) *load.Report {
 		Brand:     loadBrand,
 		Prior:     prior,
 	})
-	assert.NoError(t, err, "the tree loads")
+	assert.NoError(tb, err, "the tree loads")
 	return report
 }
 
 // recordedLoad commits a load's record over the live generation of a
 // ledger, nil for a ledger without one, and returns the generation the
 // commit made live.
-func recordedLoad(t *testing.T, l ledger.Ledger, r *load.Report) *state.Generation {
-	t.Helper()
+func recordedLoad(tb testing.TB, l ledger.Ledger, r *load.Report) *state.Generation {
+	tb.Helper()
 
-	parent, err := state.Open(t.Context(), l)
+	parent, err := state.Open(tb.Context(), l)
 	var prior *state.LoadState
 	if err == nil {
-		prior = parent.Load(t.Context())
+		prior = parent.Load(tb.Context())
 	} else {
 		parent = nil
 	}
 	c := state.NewCommit(parent, nil)
-	assert.NoError(t, state.RecordLoad(t.Context(), c, prior, r), "the load records")
-	_, err = c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
-	assert.NoError(t, err, "the commit writes")
-	g, err := state.Open(t.Context(), l)
-	assert.NoError(t, err, "and its generation opens")
+	assert.NoError(tb, state.RecordLoad(tb.Context(), c, prior, r), "the load records")
+	_, err = c.Write(tb.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
+	assert.NoError(tb, err, "the commit writes")
+	g, err := state.Open(tb.Context(), l)
+	assert.NoError(tb, err, "and its generation opens")
 	return g
 }
 
@@ -315,4 +352,261 @@ func TestLoadState(t *testing.T) {
 			assert.Equal(t, l.Writes(), writes, "so nothing is written")
 		})
 	})
+}
+
+// The reads of a load's record and the record of a load allocate within
+// their ceilings in the ordinary run, which runs no benchmark. A first
+// range takes a load state made before the count, because the state
+// reads each table once, and a record takes a commit made before it. The
+// check runs alone, because AllocsPerRun counts every goroutine's
+// allocations and refuses to run beside parallel tests.
+func TestLoadStateAllocs(t *testing.T) {
+	report := loaded(t, scriptedTree(), nil)
+	g := recordedLoad(t, ledger.NewMem(), report)
+	var s *state.LoadState
+	assert.MaxAllocs(t, func() { s = g.Load(t.Context()) }, loadStateAllocs, "Load allocates the state")
+	assert.MaxAllocs(t, func() {
+		if !s.Anchor().Equal(past) {
+			t.Fatal("Anchor returned another instant")
+		}
+	}, 0, "Anchor allocates nothing")
+
+	states, at := loadStates(t, g, allocRuns), 0
+	assert.MaxAllocs(t, func() {
+		for range states[at].Files() {
+		}
+		at++
+	}, filesAllocs, "a first range over Files reads the files table")
+	states, at = loadStates(t, g, allocRuns), 0
+	assert.MaxAllocs(t, func() {
+		for range states[at].Units() {
+		}
+		at++
+	}, unitsAllocs, "a first range over Units reads the units table")
+	assert.MaxAllocs(t, func() {
+		for range s.Files() {
+		}
+		for range s.Units() {
+		}
+	}, 0, "a range over tables read before allocates nothing")
+
+	u := lastUnit(t, s)
+	assert.MaxAllocs(t, func() {
+		if _, err := s.Region(u); err != nil {
+			t.Fatalf("Region: unexpected error: %v", err)
+		}
+	}, regionAllocs, "Region allocates the decoded region")
+	assert.MaxAllocs(t, func() {
+		if _, err := s.Doors(frontendtest.ScriptedID); err != nil {
+			t.Fatalf("Doors: unexpected error: %v", err)
+		}
+	}, doorsAllocs, "Doors allocates the doors table and the doors")
+	user := userID()
+	assert.MaxAllocs(t, func() {
+		if got, err := s.Probed(user); err != nil || len(got) != 1 {
+			t.Fatalf("Probed: units %v, error %v", got, err)
+		}
+	}, probedAllocs, "Probed allocates the key, the row and the numbers")
+	api := apiPackage()
+	assert.MaxAllocs(t, func() {
+		if _, err := s.Followed(api); err != nil {
+			t.Fatalf("Followed: unexpected error: %v", err)
+		}
+	}, followedAllocs, "Followed allocates the key and the block")
+
+	commits, at := newCommits(allocRuns), 0
+	assert.MaxAllocs(t, func() {
+		if err := state.RecordLoad(t.Context(), commits[at], nil, report); err != nil {
+			t.Fatalf("RecordLoad: unexpected error: %v", err)
+		}
+		at++
+	}, recordLoadAllocs, "RecordLoad allocates the regions, the rows and the probes")
+}
+
+// BenchmarkLoadState measures the reads a warm load makes of the record
+// of the scripted tree, and the record of a cold load of it, each after
+// one call.
+func BenchmarkLoadState(b *testing.B) {
+	report := loaded(b, scriptedTree(), nil)
+	g := recordedLoad(b, ledger.NewMem(), report)
+	s := g.Load(b.Context())
+	u := lastUnit(b, s)
+
+	b.Run("Generation.Load", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(loadStateAllocs)
+		defer c.End()
+		var got *state.LoadState
+		for c.Loop() {
+			got = g.Load(b.Context())
+		}
+		assert.NotNil(b, got, "Load returns the state")
+	})
+
+	b.Run("Anchor", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got time.Time
+		for c.Loop() {
+			got = s.Anchor()
+		}
+		assert.True(b, got.Equal(past), "Anchor returns the recording run's anchor")
+	})
+
+	b.Run("Files/a first range", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(filesAllocs)
+		defer c.End()
+		var fresh *state.LoadState
+		n := 0
+		for c.Loop() {
+			c.Excluding(func() { fresh, n = g.Load(b.Context()), 0 })
+			for range fresh.Files() {
+				n++
+			}
+		}
+		assert.Equal(b, n, len(report.Files), "the range yields every file")
+	})
+
+	b.Run("Files/a range over a table read before", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		n := 0
+		for first := true; first || c.Loop(); first = false {
+			n = 0
+			for range s.Files() {
+				n++
+			}
+		}
+		assert.Equal(b, n, len(report.Files), "the range yields every file")
+	})
+
+	b.Run("Units/a first range", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(unitsAllocs)
+		defer c.End()
+		var fresh *state.LoadState
+		n := 0
+		for c.Loop() {
+			c.Excluding(func() { fresh, n = g.Load(b.Context()), 0 })
+			for range fresh.Units() {
+				n++
+			}
+		}
+		assert.Equal(b, n, len(report.Units), "the range yields every unit")
+	})
+
+	b.Run("Units/a range over a table read before", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		n := 0
+		for first := true; first || c.Loop(); first = false {
+			n = 0
+			for range s.Units() {
+				n++
+			}
+		}
+		assert.Equal(b, n, len(report.Units), "the range yields every unit")
+	})
+
+	b.Run("Region", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(regionAllocs)
+		defer c.End()
+		var (
+			got *store.Region
+			err error
+		)
+		for c.Loop() {
+			got, err = s.Region(u)
+		}
+		assert.NoError(b, err, "the region decodes")
+		assert.Length(b, got.Packages, 1, "to the unit's package")
+	})
+
+	b.Run("Doors", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(doorsAllocs)
+		defer c.End()
+		var (
+			got []load.DoorRecord
+			err error
+		)
+		for c.Loop() {
+			got, err = s.Doors(frontendtest.ScriptedID)
+		}
+		assert.NoError(b, err, "the doors read")
+		assert.Equal(b, got, report.Doors[frontendtest.ScriptedID], "Doors returns the recorded doors")
+	})
+
+	b.Run("Probed", func(b *testing.B) {
+		user := userID()
+		_, err := s.Probed(user)
+		assert.NoError(b, err, "the probes read before the measurement")
+		c := bench.Start(b).MaxAllocs(probedAllocs)
+		defer c.End()
+		var got []int
+		for c.Loop() {
+			got, err = s.Probed(user)
+		}
+		assert.NoError(b, err, "the probes read")
+		assert.Equal(b, got, []int{1}, "the store unit named the user")
+	})
+
+	b.Run("Followed", func(b *testing.B) {
+		api := apiPackage()
+		_, err := s.Followed(api)
+		assert.NoError(b, err, "the probes read before the measurement")
+		c := bench.Start(b).MaxAllocs(followedAllocs)
+		defer c.End()
+		var got []int
+		for c.Loop() {
+			got, err = s.Followed(api)
+		}
+		assert.NoError(b, err, "the probes read")
+		assert.Empty(b, got, "the scripted language follows no re-export")
+	})
+
+	b.Run("RecordLoad/a cold load of two units", func(b *testing.B) {
+		// One record before the contract counts pools the region
+		// encoding's scratch.
+		assert.NoError(b, state.RecordLoad(b.Context(), state.NewCommit(nil, nil), nil, report),
+			"the load records before the measurement")
+		c := bench.Start(b).MaxAllocs(recordLoadAllocs)
+		defer c.End()
+		var (
+			commit *state.Commit
+			err    error
+		)
+		for c.Loop() {
+			c.Excluding(func() { commit = state.NewCommit(nil, nil) })
+			err = state.RecordLoad(b.Context(), commit, nil, report)
+		}
+		assert.NoError(b, err, "the load records")
+	})
+}
+
+// loadStates returns n load states over a generation, none of which
+// has read a table.
+func loadStates(tb testing.TB, g *state.Generation, n int) []*state.LoadState {
+	tb.Helper()
+
+	out := make([]*state.LoadState, n)
+	for i := range out {
+		out[i] = g.Load(tb.Context())
+	}
+	return out
+}
+
+// lastUnit returns the record of a state's last unit, the store unit.
+func lastUnit(tb testing.TB, s *state.LoadState) load.UnitRecord {
+	tb.Helper()
+
+	var last load.UnitRecord
+	for u, err := range s.Units() {
+		assert.NoError(tb, err, "the units read")
+		last = u
+	}
+	return last
+}
+
+// apiPackage is the package identity of the API package, whose
+// re-exports no reference of the scripted tree follows.
+func apiPackage() symbol.Identity {
+	return symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/api", Kind: symbol.KindPackage}
 }

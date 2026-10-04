@@ -11,6 +11,17 @@ import (
 // Tee stages one set of files into several sinks at once: a disk
 // sink beside a memory sink is how a run writes and reports the
 // same bytes.
+//
+// # Concurrency
+//
+// A Tee belongs to one goroutine, as every [Sink] does, and calls its
+// sinks one after another in the order [NewTee] received them.
+//
+// # Allocation contract
+//
+// A Tee allocates what its sinks allocate, and a copy of the first
+// sink's list from Prepare and from Commit. Each method states its
+// count.
 type Tee struct {
 	sinks []Sink
 }
@@ -21,23 +32,31 @@ var _ Sink = (*Tee)(nil)
 // the one of record: its Prepare and its Commit return what the
 // caller reads, because the verdicts and the actions are one
 // destination's answer and not a merged one.
+//
+// # Allocation contract
+//
+// NewTee allocates twice: the Tee and its list of sinks.
 func NewTee(first Sink, rest ...Sink) *Tee {
-	return &Tee{sinks: append([]Sink{first}, rest...)}
+	sinks := make([]Sink, 0, 1+len(rest))
+	sinks = append(sinks, first)
+	return &Tee{sinks: append(sinks, rest...)}
 }
 
-// Write stages into every sink, joining what any of them refused.
+// Write stages into every sink, joining what any of them refused. It
+// allocates what the sinks allocate.
 func (t *Tee) Write(path string, body []byte) error {
 	return t.each(func(s Sink) error { return s.Write(path, body) })
 }
 
 // Delete stages the removal into every sink, joining what any of them
-// refused.
+// refused. It allocates what the sinks allocate.
 func (t *Tee) Delete(path string) error {
 	return t.each(func(s Sink) error { return s.Delete(path) })
 }
 
 // Prepare prepares every sink and returns the first one's changes,
-// joining what any of them refused.
+// joining what any of them refused. It allocates what the sinks
+// allocate and a copy of the first sink's changes.
 func (t *Tee) Prepare() ([]Change, error) {
 	var changes []Change
 	var faults []error
@@ -54,7 +73,8 @@ func (t *Tee) Prepare() ([]Change, error) {
 }
 
 // Commit commits every sink and returns the first one's records,
-// joining what any of them refused.
+// joining what any of them refused. It allocates what the sinks
+// allocate and a copy of the first sink's records.
 func (t *Tee) Commit() ([]Written, error) {
 	var records []Written
 	var faults []error
@@ -70,12 +90,15 @@ func (t *Tee) Commit() ([]Written, error) {
 	return records, errors.Join(faults...)
 }
 
-// Discard discards every sink, joining what any of them refused.
+// Discard discards every sink, joining what any of them refused. It
+// allocates what the sinks allocate.
 func (t *Tee) Discard() error {
 	return t.each(Sink.Discard)
 }
 
 // each runs one call on every sink, joining what any of them refused.
+// It allocates only where a sink refused: the list of faults and the
+// joined error.
 func (t *Tee) each(call func(Sink) error) error {
 	var faults []error
 	for _, s := range t.sinks {

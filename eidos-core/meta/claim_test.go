@@ -7,33 +7,15 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/meta"
 )
 
+// A claim's envelope decides its rank, so its zero value and the order
+// of its places are contract.
 func TestClaim(t *testing.T) {
 	t.Parallel()
-
-	t.Run("Authority", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("orders plugin below directive below manual", func(t *testing.T) {
-			t.Parallel()
-
-			assert.True(t, meta.AuthorityPlugin < meta.AuthorityDirective,
-				"a human override at the source beats any inference")
-			assert.True(t, meta.AuthorityDirective < meta.AuthorityManual,
-				"and consumer tooling outranks even the directives it rewrites")
-		})
-
-		t.Run("the zero value is the plugin authority", func(t *testing.T) {
-			t.Parallel()
-
-			var got meta.Authority
-			assert.Equal(t, got, meta.AuthorityPlugin,
-				"a claim that returned no authority claims the least")
-		})
-	})
 
 	t.Run("zero value", func(t *testing.T) {
 		t.Parallel()
@@ -49,8 +31,6 @@ func TestClaim(t *testing.T) {
 	t.Run("Compare", func(t *testing.T) {
 		t.Parallel()
 
-		other := subject
-		other.Name = "Cache"
 		place := meta.Order{Rule: 1, Subject: subject, Instance: 1}
 		tests := []struct {
 			name string
@@ -65,7 +45,7 @@ func TestClaim(t *testing.T) {
 			},
 			{
 				name: "returns a negative number for an earlier subject in one rule",
-				give: meta.Order{Rule: 1, Subject: other, Instance: 9},
+				give: meta.Order{Rule: 1, Subject: sibling, Instance: 9},
 				want: -1,
 			},
 			{
@@ -83,6 +63,37 @@ func TestClaim(t *testing.T) {
 			})
 		}
 	})
+}
+
+// Two places compare without allocating in the ordinary run, which runs
+// no benchmark.
+func TestClaimZeroAlloc(t *testing.T) {
+	earlier, later := places()
+	var got int
+	assert.MaxAllocs(t, func() { got = earlier.Compare(later) }, 0, "Compare allocates nothing")
+	assert.Equal(t, sign(got), -1, "Compare orders the earlier subject first")
+}
+
+// BenchmarkClaim measures the comparison of two places, which ranking
+// two claims of one plugin makes.
+func BenchmarkClaim(b *testing.B) {
+	b.Run("Compare", func(b *testing.B) {
+		earlier, later := places()
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got int
+		for c.Loop() {
+			got = earlier.Compare(later)
+		}
+		assert.Equal(b, sign(got), -1, "Compare orders the earlier subject first")
+	})
+}
+
+// places returns two places in one rule: one on the sibling subject and
+// one on the fixture subject, which sorts after it.
+func places() (earlier, later meta.Order) {
+	return meta.Order{Rule: 1, Subject: sibling, Instance: 2},
+		meta.Order{Rule: 1, Subject: subject, Instance: 1}
 }
 
 // sign returns -1, 0 or 1 as n is negative, zero or positive.

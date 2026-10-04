@@ -21,6 +21,12 @@ import (
 // [Graph.Freeze] and over a graph [Sealed] returned. A zero subject and
 // an empty attachment return a plain error, because only a defect
 // produces either.
+//
+// # Allocation contract
+//
+// A subject's first attachment allocates four times: its pending entry,
+// the boxed identity, the entry of the subject map and the copy of the
+// instances. A later attachment on the subject grows its instances.
 func (g *Graph) AttachDirectives(subject symbol.Identity, ds []directive.Raw) error {
 	return attach(g, &g.directives, subject, ds, "directives")
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -57,12 +58,29 @@ const (
 	threeText            = "3"
 )
 
+// emitRefAllocs is the restatement of a reference without children: the
+// emit reference.
+const emitRefAllocs = 1
+
+// deriving counts the calls to the language's SamplesOf, so a case
+// proves the kernel derives only what no author stated.
+type deriving struct {
+	rules.SourceRules
+	asked int
+}
+
+// SamplesOf counts the call and returns the wrapped rules' pair.
+func (d *deriving) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
+	d.asked++
+	return d.SourceRules.SamplesOf(ref, hint, v)
+}
+
 // Authored values take precedence over derived ones by contract, and
 // every refusal names its reason, which a check generator reads.
 func TestValues(t *testing.T) {
 	t.Parallel()
 
-	t.Run("OK", func(t *testing.T) {
+	t.Run("Sample.OK", func(t *testing.T) {
 		t.Parallel()
 
 		valued := emit.Literal(emit.LiteralInt, derivedInt)
@@ -87,6 +105,28 @@ func TestValues(t *testing.T) {
 				assert.Equal(t, tt.give.OK(), tt.want, "OK reports whether the sample has a derived value")
 			})
 		}
+	})
+
+	t.Run("Of", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a sample with the value", func(t *testing.T) {
+			t.Parallel()
+
+			valued := emit.Literal(emit.LiteralInt, derivedInt)
+			assert.Equal(t, rules.Of(valued), rules.Sample{Value: valued}, "the value without a refusal")
+		})
+	})
+
+	t.Run("Refused", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a sample with the refusal", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, rules.Refused(rules.RefusedDepth), rules.Sample{Refusal: rules.RefusedDepth},
+				"the refusal without a value")
+		})
 	})
 
 	t.Run("SamplesOf", func(t *testing.T) {
@@ -422,7 +462,7 @@ func TestValues(t *testing.T) {
 		}
 	})
 
-	t.Run("String", func(t *testing.T) {
+	t.Run("Refusal.String", func(t *testing.T) {
 		t.Parallel()
 
 		tests := []struct {
@@ -561,17 +601,107 @@ func TestValues(t *testing.T) {
 	})
 }
 
-// deriving counts the calls to the language's SamplesOf, so a case
-// proves the kernel derives only what no author stated.
-type deriving struct {
-	rules.SourceRules
-	asked int
+// The constructors and combinators of a sample return values without
+// allocating, and a restated reference allocates itself, in the ordinary
+// run, which runs no benchmark. The check runs alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestValuesAllocs(t *testing.T) {
+	for _, tt := range valueCalls(t) {
+		msg := tt.name + " allocates what it returns"
+		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
+	}
 }
 
-// SamplesOf counts the call and returns the wrapped rules' pair.
-func (d *deriving) SamplesOf(ref *node.TypeRef, hint string, v rules.View) (rules.Sample, rules.Sample) {
-	d.asked++
-	return d.SourceRules.SamplesOf(ref, hint, v)
+// BenchmarkValues measures each constructor and combinator a language's
+// sample derivation returns through, the spelling of a refusal, and the
+// restatement of a reference a value's type takes.
+func BenchmarkValues(b *testing.B) {
+	for _, tt := range valueCalls(b) {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+		})
+	}
+}
+
+// valueCalls returns one call of each function and method of the
+// values file over declared values, with what the call allocates. Each
+// call checks what it returned, so a call that measured another path
+// fails.
+func valueCalls(tb assert.TB) []allocCall {
+	tb.Helper()
+
+	lit := emit.Literal(emit.LiteralInt, derivedInt)
+	one, two := rules.Of(lit), rules.Of(emit.Literal(emit.LiteralInt, twoText))
+	wrap := func(v emit.Value) emit.Value { return v }
+	refusal := rules.RefusedDepth
+	ref := &node.TypeRef{Spelling: outsideName, Package: outsidePackage}
+	return []allocCall{
+		{name: "Sample.OK", call: func() {
+			if !one.OK() {
+				tb.Fatalf("OK reported false for a sample with a value")
+			}
+		}},
+		{name: "Of", call: func() {
+			if rules.Of(lit).Value.Text != derivedInt {
+				tb.Fatalf("Of returned another value")
+			}
+		}},
+		{name: "Refused", call: func() {
+			if rules.Refused(refusal).Refusal != refusal {
+				tb.Fatalf("Refused returned another refusal")
+			}
+		}},
+		{name: "Pair", call: func() {
+			if sample, _ := rules.Pair(emit.LiteralString, pairSample, pairAlternate); !sample.OK() {
+				tb.Fatalf("Pair returned a sample without a value")
+			}
+		}},
+		{name: "NumberPair", call: func() {
+			if _, alternate := rules.NumberPair(
+				emit.LiteralFloat,
+				pairSample,
+				pairAlternate,
+				pairBits,
+			); !alternate.OK() {
+				tb.Fatalf("NumberPair returned an alternate without a value")
+			}
+		}},
+		{name: "RefusedPair", call: func() {
+			if _, alternate := rules.RefusedPair(refusal); alternate.Refusal != refusal {
+				tb.Fatalf("RefusedPair returned another refusal")
+			}
+		}},
+		{name: "Lift", call: func() {
+			if !rules.Lift(one, wrap).OK() {
+				tb.Fatalf("Lift returned a sample without a value")
+			}
+		}},
+		{name: "Complete", call: func() {
+			if _, alternate := rules.Complete(two, rules.Sample{}, one, two); alternate.Value.Text != derivedInt {
+				tb.Fatalf("Complete paired another alternate")
+			}
+		}},
+		{name: "FirstRefusal", call: func() {
+			if rules.FirstRefusal(one, rules.Refused(refusal)) != refusal {
+				tb.Fatalf("FirstRefusal returned another refusal")
+			}
+		}},
+		{name: "Refusal.String", call: func() {
+			if refusal.String() != "depth" {
+				tb.Fatalf("String returned another spelling")
+			}
+		}},
+		{name: "EmitRef", allocs: emitRefAllocs, call: func() {
+			if rules.EmitRef(ref).Package != outsidePackage {
+				tb.Fatalf("EmitRef restated another package")
+			}
+		}},
+	}
 }
 
 // stampWitness states one authored witness on a type parameter, the

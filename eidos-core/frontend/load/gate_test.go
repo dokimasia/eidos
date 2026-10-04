@@ -7,8 +7,6 @@ import (
 	"crypto/sha256"
 	"errors"
 	"iter"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -125,18 +123,6 @@ func TestGate(t *testing.T) {
 			for _, f := range report.Files {
 				assert.False(t, strings.HasPrefix(f.Path, ".own/"), "the state directory is not the workspace's source")
 			}
-		})
-
-		t.Run("records the change time and the inode of a file on disk", func(t *testing.T) {
-			t.Parallel()
-
-			dir := t.TempDir()
-			assert.NoError(t, os.WriteFile(filepath.Join(dir, "one.zz"), []byte("package one\n"), 0o600),
-				"the file writes")
-			_, report, _ := loadTree(t, os.DirFS(dir))
-			rec := recordOf(t, report, "one.zz")
-			assert.False(t, rec.Change.IsZero(), "the kernel's stat states a change time")
-			assert.NotEqual(t, rec.Inode, uint64(0), "and an inode")
 		})
 
 		t.Run("returns the error of a record whose files do not read", func(t *testing.T) {

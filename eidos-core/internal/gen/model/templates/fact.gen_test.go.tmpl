@@ -3,6 +3,8 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
+{{- template "model" .}}
 )
 
 // factNamings pairs every fact with the name String returns.
@@ -16,6 +18,8 @@ var factNamings = []struct {
 {{- end}}
 }
 
+// A fact is what a coverage declaration is held total against, so
+// each spells its schema name and Facts lists every one.
 func TestFact(t *testing.T) {
 	t.Parallel()
 
@@ -23,14 +27,15 @@ func TestFact(t *testing.T) {
 		t.Parallel()
 
 		for _, tt := range factNamings {
-			t.Run(tt.want, func(t *testing.T) {
+			t.Run("returns "+tt.want+" for its fact", func(t *testing.T) {
 				t.Parallel()
+
 				assert.Equal(t, tt.fact.String(), tt.want,
 					"the fact spells its schema name")
 			})
 		}
 
-		t.Run("names are unique", func(t *testing.T) {
+		t.Run("returns a distinct name for every fact", func(t *testing.T) {
 			t.Parallel()
 
 			seen := make(map[string]struct{}, len(factNamings))
@@ -41,7 +46,7 @@ func TestFact(t *testing.T) {
 				"every fact returns its own name")
 		})
 
-		t.Run("a value outside the set returns a placeholder", func(t *testing.T) {
+		t.Run("returns a placeholder for a value outside the set", func(t *testing.T) {
 			t.Parallel()
 
 			// The first value past the set is the one the bound
@@ -60,12 +65,63 @@ func TestFact(t *testing.T) {
 	t.Run("Facts", func(t *testing.T) {
 		t.Parallel()
 
-		all := Facts()
-		assert.Length(t, all, len(factNamings)-1,
-			"every declared fact arrives, the invalid zero left out")
-		for i, f := range all {
-			assert.Equal(t, f, factNamings[i+1].fact,
-				"in constant order")
-		}
+		t.Run("returns every declared fact in constant order", func(t *testing.T) {
+			t.Parallel()
+
+			all := Facts()
+			assert.Length(t, all, len(factNamings)-1,
+				"every declared fact arrives, the invalid zero left out")
+			for i, f := range all {
+				assert.Equal(t, f, factNamings[i+1].fact,
+					"in constant order")
+			}
+		})
 	})
+}
+
+// String allocates nothing and Facts allocates its one slice in the
+// ordinary run, which runs no benchmark.
+func TestFactAllocs(t *testing.T) {
+	var spelled int
+	assert.MaxAllocs(t, func() { spelled = spellEveryFact() }, 0, "String allocates nothing")
+	assert.Equal(t, spelled, len(factNamings), "String spells every fact")
+	var all []Fact
+	assert.MaxAllocs(t, func() { all = Facts() }, 1, "Facts allocates its one slice")
+	assert.Length(t, all, len(factNamings)-1, "Facts returns every declared fact")
+}
+
+// BenchmarkFact measures the spelling of every fact and the list of
+// every fact.
+func BenchmarkFact(b *testing.B) {
+	b.Run("String/every fact", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var spelled int
+		for c.Loop() {
+			spelled = spellEveryFact()
+		}
+		assert.Equal(b, spelled, len(factNamings), "String spells every fact")
+	})
+
+	b.Run("Facts", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var all []Fact
+		for c.Loop() {
+			all = Facts()
+		}
+		assert.Length(b, all, len(factNamings)-1, "Facts returns every declared fact")
+	})
+}
+
+// spellEveryFact spells every fact, and returns how many spellings
+// were not empty.
+func spellEveryFact() int {
+	spelled := 0
+	for _, tt := range factNamings {
+		if tt.fact.String() != "" {
+			spelled++
+		}
+	}
+	return spelled
 }

@@ -14,8 +14,8 @@ import (
 
 // Budget is the ceiling a benchmark checks a language against.
 type Budget struct {
-	// MaxAllocs is the allocation ceiling per iteration, pinned
-	// from a profiled run with headroom. A zero ceiling refuses.
+	// MaxAllocs is the most allocations one projection pass may make.
+	// Zero states no ceiling, and [BenchRules] refuses it.
 	MaxAllocs uint64
 }
 
@@ -25,6 +25,11 @@ type Budget struct {
 // fails when the allocations per iteration exceed the budget. The
 // fixture builds once outside the loop, and every iteration binds a
 // fresh view.
+//
+// One pass runs before the contract counts, at the call sites the
+// loop measures, so the count excludes what a process builds on the
+// first projection: the runtime's type-assertion caches and the
+// lazily built state of the language's rules.
 func BenchRules(b *testing.B, setup Setup, budget Budget) {
 	b.Helper()
 
@@ -43,7 +48,7 @@ func BenchRules(b *testing.B, setup Setup, budget Budget) {
 
 	c := bench.Start(b).MaxAllocs(budget.MaxAllocs)
 	defer c.End()
-	for c.Loop() {
+	for first := true; first || c.Loop(); first = false {
 		view, _, _ := viewOf(b, f)
 		bd := rules.NewBound(r, view, nil)
 		for _, ref := range refs {

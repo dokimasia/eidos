@@ -8,9 +8,36 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// method is the identity the allocation checks and the benchmarks spell
+// and parse: a method with a discriminator, every part populated.
+var method = symbol.Identity{
+	Lang:    "golang",
+	Package: "svc/store",
+	Owner:   "Store",
+	Name:    "Get",
+	Disc:    "ctx,string",
+	Kind:    symbol.KindMethod,
+}
+
+// boundary is method with a shorter discriminator. Its 28 bytes of parts
+// and five separators spell 33 bytes, one byte past the 32-byte
+// allocation class.
+var boundary = symbol.Identity{
+	Lang:    "golang",
+	Package: "svc/store",
+	Owner:   "Store",
+	Name:    "Get",
+	Disc:    "ctx,s",
+	Kind:    symbol.KindMethod,
+}
+
+// boundarySize is the length of boundary's spelling.
+const boundarySize = 33
 
 // parseCase is one spelling and what [symbol.Parse] makes of it.
 type parseCase struct {
@@ -20,113 +47,8 @@ type parseCase struct {
 	wantErr bool
 }
 
-// parseCases returns the pinned grammar: the spellings Parse accepts
-// with the identities it reads, and the spellings it refuses.
-//
-// [FuzzParse] seeds its corpus from the same table, so the fuzzer
-// starts inside the grammar and spends no budget discovering the
-// colon.
-func parseCases() []parseCase {
-	return []parseCase{
-		{
-			name: "package",
-			in:   "golang:svc/store",
-			want: symbol.Identity{
-				Lang:    "golang",
-				Package: "svc/store",
-				Kind:    symbol.KindPackage,
-			},
-		},
-		{
-			name: "top-level name leaves the kind undetermined",
-			in:   "golang:svc/store.Store",
-			want: symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"},
-		},
-		{
-			// The discriminator search admits an opening paren at the
-			// very front, so a spelling that is nothing but a
-			// discriminator is refused for its missing name rather
-			// than read as a package.
-			name:    "a discriminator with nothing before it",
-			in:      "golang:(int)",
-			wantErr: true,
-		},
-		{
-			// The name search admits a dot at the very front of the
-			// last segment, so a name directly after the slash keeps
-			// its package, and does not read as one whole path.
-			name: "a name opening the segment after the slash",
-			in:   "golang:svc/.Name",
-			want: symbol.Identity{Lang: "golang", Package: "svc/", Name: "Name"},
-		},
-		{
-			name: "a name opening a spelling that has no slash",
-			in:   "golang:.Name",
-			want: symbol.Identity{Lang: "golang", Name: "Name"},
-		},
-		{
-			name: "function",
-			in:   "golang:svc/store.Open(string)",
-			want: symbol.Identity{
-				Lang:    "golang",
-				Package: "svc/store",
-				Name:    "Open",
-				Disc:    "string",
-				Kind:    symbol.KindFunction,
-			},
-		},
-		{
-			name: "member leaves the kind undetermined",
-			in:   "golang:svc/store.Store#timeout",
-			want: symbol.Identity{
-				Lang:    "golang",
-				Package: "svc/store",
-				Owner:   "Store",
-				Name:    "timeout",
-			},
-		},
-		{
-			name: "method",
-			in:   "golang:svc/store.Store#Get(ctx,string)",
-			want: symbol.Identity{
-				Lang:    "golang",
-				Package: "svc/store",
-				Owner:   "Store",
-				Name:    "Get",
-				Disc:    "ctx,string",
-				Kind:    symbol.KindMethod,
-			},
-		},
-		{
-			name: "nullary method",
-			in:   "golang:svc/store.Store#Close()",
-			want: symbol.Identity{
-				Lang:    "golang",
-				Package: "svc/store",
-				Owner:   "Store",
-				Name:    "Close",
-				Kind:    symbol.KindMethod,
-			},
-		},
-		{name: "rejects empty input", in: "", wantErr: true},
-		{name: "rejects missing separator", in: "nolang", wantErr: true},
-		{name: "rejects empty path", in: "golang:", wantErr: true},
-		{name: "rejects empty language", in: ":svc/store", wantErr: true},
-		{
-			name:    "rejects unclosed discriminator",
-			in:      "golang:svc/store.Open(string",
-			wantErr: true,
-		},
-		{name: "rejects empty owner", in: "golang:svc/store.#name", wantErr: true},
-		{
-			name:    "rejects a discriminator on a bare package",
-			in:      "golang:svc/store()",
-			wantErr: true,
-		},
-		{name: "rejects an empty name after the dot", in: "golang:svc/store.", wantErr: true},
-	}
-}
-
+// An identity spells in the canonical grammar, parses back from it, and
+// orders on every part that makes it.
 func TestIdentity(t *testing.T) {
 	t.Parallel()
 
@@ -139,7 +61,7 @@ func TestIdentity(t *testing.T) {
 			want string
 		}{
 			{
-				name: "package",
+				name: "spells a package as its language before its path",
 				id: symbol.Identity{
 					Lang:    "golang",
 					Package: "svc/store",
@@ -148,7 +70,7 @@ func TestIdentity(t *testing.T) {
 				want: "golang:svc/store",
 			},
 			{
-				name: "file",
+				name: "spells a file under its package path",
 				id: symbol.Identity{
 					Lang:    "golang",
 					Package: "svc/store",
@@ -158,7 +80,7 @@ func TestIdentity(t *testing.T) {
 				want: "golang:svc/store/store.go",
 			},
 			{
-				name: "top-level type",
+				name: "spells a top-level type after a dot",
 				id: symbol.Identity{
 					Lang:    "golang",
 					Package: "svc/store",
@@ -168,7 +90,7 @@ func TestIdentity(t *testing.T) {
 				want: "golang:svc/store.Store",
 			},
 			{
-				name: "function carries parens",
+				name: "spells a function's discriminator in parentheses",
 				id: symbol.Identity{
 					Lang:    "golang",
 					Package: "svc/store",
@@ -179,7 +101,7 @@ func TestIdentity(t *testing.T) {
 				want: "golang:svc/store.Open(string)",
 			},
 			{
-				name: "member field",
+				name: "spells a member behind its owner's hash mark",
 				id: symbol.Identity{
 					Lang:    "golang",
 					Package: "svc/store",
@@ -190,19 +112,12 @@ func TestIdentity(t *testing.T) {
 				want: "golang:svc/store.Store#timeout",
 			},
 			{
-				name: "method with discriminator",
-				id: symbol.Identity{
-					Lang:    "golang",
-					Package: "svc/store",
-					Owner:   "Store",
-					Name:    "Get",
-					Disc:    "ctx,string",
-					Kind:    symbol.KindMethod,
-				},
+				name: "spells a method's discriminator in parentheses",
+				id:   method,
 				want: "golang:svc/store.Store#Get(ctx,string)",
 			},
 			{
-				name: "nullary method still carries parens",
+				name: "spells empty parentheses for a nullary method",
 				id: symbol.Identity{
 					Lang:    "golang",
 					Package: "svc/store",
@@ -239,91 +154,20 @@ func TestIdentity(t *testing.T) {
 		}
 	})
 
-	t.Run("equality", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("two overloads get distinct identities", func(t *testing.T) {
-			t.Parallel()
-
-			// Overloads share every part but the discriminator, which
-			// is the whole reason it exists: Java, Kotlin, C# and
-			// TypeScript all admit two methods under one name.
-			base := symbol.Identity{
-				Lang:    "java",
-				Package: "svc/store",
-				Owner:   "Store",
-				Name:    "Get",
-				Kind:    symbol.KindMethod,
-			}
-			byKey := base
-			byKey.Disc = "String"
-			byIndex := base
-			byIndex.Disc = "int"
-
-			assert.NotEqual(t, byKey, byIndex,
-				"the discriminator separates two overloads")
-			assert.NotEqual(t, byKey.String(), byIndex.String(),
-				"and their spellings differ with them")
-		})
-
-		t.Run("a language without overloads returns one identity", func(t *testing.T) {
-			t.Parallel()
-
-			first := symbol.Identity{
-				Lang: "golang", Package: "svc/store", Owner: "Store",
-				Name: "Get", Kind: symbol.KindMethod,
-			}
-			second := first
-			assert.Equal(t, first, second,
-				"a language without overloads returns one identity")
-		})
-
-		t.Run("the parts that make an identity all count", func(t *testing.T) {
-			t.Parallel()
-
-			base := symbol.Identity{
-				Lang: "golang", Package: "svc/store", Owner: "Store",
-				Name: "Get", Kind: symbol.KindMethod, Disc: "ctx",
-			}
-			tests := map[string]symbol.Identity{
-				"language": {
-					Lang: "protobuf", Package: base.Package, Owner: base.Owner,
-					Name: base.Name, Kind: base.Kind, Disc: base.Disc,
-				},
-				"package": {
-					Lang: base.Lang, Package: "svc/cache", Owner: base.Owner,
-					Name: base.Name, Kind: base.Kind, Disc: base.Disc,
-				},
-				"owner": {
-					Lang: base.Lang, Package: base.Package, Owner: "Cache",
-					Name: base.Name, Kind: base.Kind, Disc: base.Disc,
-				},
-				"name": {
-					Lang: base.Lang, Package: base.Package, Owner: base.Owner,
-					Name: "Put", Kind: base.Kind, Disc: base.Disc,
-				},
-				"kind": {
-					Lang: base.Lang, Package: base.Package, Owner: base.Owner,
-					Name: base.Name, Kind: symbol.KindField, Disc: base.Disc,
-				},
-			}
-			for part, other := range tests {
-				t.Run(part, func(t *testing.T) {
-					t.Parallel()
-					assert.NotEqual(t, base, other,
-						"every part that makes an identity counts")
-				})
-			}
-		})
-	})
-
 	t.Run("IsZero", func(t *testing.T) {
 		t.Parallel()
 
-		assert.True(t, (symbol.Identity{}).IsZero(),
-			"the zero Identity names nothing")
-		assert.False(t, (symbol.Identity{Lang: "golang"}).IsZero(),
-			"a populated Identity names something")
+		t.Run("reports true for the zero identity", func(t *testing.T) {
+			t.Parallel()
+
+			assert.True(t, (symbol.Identity{}).IsZero(), "the zero Identity names nothing")
+		})
+
+		t.Run("reports false for an identity with a language", func(t *testing.T) {
+			t.Parallel()
+
+			assert.False(t, (symbol.Identity{Lang: "golang"}).IsZero(), "a populated Identity names something")
+		})
 	})
 
 	t.Run("PackageIdentity", func(t *testing.T) {
@@ -407,6 +251,21 @@ func TestIdentity(t *testing.T) {
 				"two identities differing only in kind sort apart")
 		})
 
+		t.Run("separates two overloads by their discriminators", func(t *testing.T) {
+			t.Parallel()
+
+			// Overloads share every part but the discriminator, which
+			// is the whole reason it exists: Java, Kotlin, C# and
+			// TypeScript all admit two methods under one name.
+			overload := symbol.Identity{
+				Lang: "java", Package: "svc/store", Owner: "Store", Name: "Get", Kind: symbol.KindMethod,
+			}
+			byKey, byIndex := overload, overload
+			byKey.Disc, byIndex.Disc = "String", "int"
+			assert.NotEqual(t, byKey.Compare(byIndex), 0, "the discriminator separates two overloads")
+			assert.NotEqual(t, byKey.String(), byIndex.String(), "and their spellings differ with them")
+		})
+
 		t.Run("sorts a slice into one order", func(t *testing.T) {
 			t.Parallel()
 
@@ -422,6 +281,41 @@ func TestIdentity(t *testing.T) {
 				"Compare sorts a slice into the one canonical order")
 		})
 	})
+}
+
+// A spelling allocates the string it returns, and nothing else reads
+// or compares with an allocation. The check runs alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestIdentityAllocs(t *testing.T) {
+	spelled := method.String()
+	other := method
+	other.Name = "Put"
+	assert.MaxAllocs(t, func() {
+		if method.String() != spelled {
+			t.Fatal("String spelled another identity")
+		}
+	}, 1, "String allocates the string it returns")
+	assert.MaxAllocs(t, func() {
+		if len(boundary.String()) != boundarySize {
+			t.Fatal("String spelled another length")
+		}
+	}, 1, "String allocates one string for a spelling past the 32-byte class")
+	assert.MaxAllocs(t, func() {
+		if _, err := symbol.Parse(spelled); err != nil {
+			t.Fatalf("Parse(%q): unexpected error: %v", spelled, err)
+		}
+	}, 0, "Parse allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if method.Compare(other) >= 0 {
+			t.Fatal("Compare ordered Get after Put")
+		}
+	}, 0, "Compare allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if method.PackageIdentity().IsZero() {
+			t.Fatal("PackageIdentity returned the zero identity")
+		}
+	}, 0, "PackageIdentity and IsZero allocate nothing")
 }
 
 // Parse reads spellings a person typed into a manifest or a
@@ -441,7 +335,7 @@ func FuzzParse(f *testing.F) {
 			spelling string
 		)
 		assert.NotPanics(t, func() { id, refusal = symbol.Parse(in) },
-			"Parse answers on any bytes rather than panicking")
+			"Parse returns on any bytes without panicking")
 		if refusal != nil {
 			assert.Equal(t, id, symbol.Identity{},
 				"a refused spelling names nothing")
@@ -449,53 +343,182 @@ func FuzzParse(f *testing.F) {
 		}
 
 		assert.NotPanics(t, func() { spelling = id.String() },
-			"an identity spells on any parts rather than panicking")
+			"an identity spells on any parts without panicking")
 		respelt, refusal = symbol.Parse(spelling)
 		assert.NoError(t, refusal, "what Parse read spells back into the grammar")
 		assert.Equal(t, respelt, id, "and reads back as the identity it spelled")
 	})
 }
 
-// An identity is spelled and compared on every ordering the kernel
-// makes deterministic: a graph's indexes, a read set, a manifest.
+// BenchmarkIdentity measures the spelling, the parse and the comparison
+// of an identity: every ordering the kernel makes deterministic, a
+// graph's indexes, a read set and a manifest, compares identities, and
+// every record spells them.
 func BenchmarkIdentity(b *testing.B) {
-	method := symbol.Identity{
-		Lang:    "golang",
-		Package: "svc/store",
-		Owner:   "Store",
-		Name:    "Get",
-		Disc:    "ctx,string",
-		Kind:    symbol.KindMethod,
-	}
-
 	b.Run("String", func(b *testing.B) {
-		b.ReportAllocs()
-
-		for b.Loop() {
-			_ = method.String()
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = method.String()
 		}
+		assert.Equal(b, got, "golang:svc/store.Store#Get(ctx,string)", "String spells the method")
 	})
 
-	b.Run("String of a 33-byte spelling", func(b *testing.B) {
-		b.ReportAllocs()
-
-		// Twenty-eight bytes of parts and five separators: one byte
-		// past the 32-byte allocation class.
-		boundary := method
-		boundary.Disc = "ctx,s"
-		for b.Loop() {
-			_ = boundary.String()
+	b.Run("String/a 33-byte spelling", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = boundary.String()
 		}
+		assert.Length(b, got, boundarySize, "the spelling is 33 bytes")
 	})
 
 	b.Run("Parse", func(b *testing.B) {
-		b.ReportAllocs()
-
 		spelled := method.String()
-		for b.Loop() {
-			if _, err := symbol.Parse(spelled); err != nil {
-				b.Fatalf("Parse(%q): unexpected error: %v", spelled, err)
-			}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var (
+			got symbol.Identity
+			err error
+		)
+		for c.Loop() {
+			got, err = symbol.Parse(spelled)
 		}
+		assert.NoError(b, err, "the spelling parses")
+		assert.Equal(b, got, method, "back to the method")
 	})
+
+	b.Run("IsZero", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		got := true
+		for c.Loop() {
+			got = method.IsZero()
+		}
+		assert.False(b, got, "the method names something")
+	})
+
+	b.Run("Compare", func(b *testing.B) {
+		other := method
+		other.Name = "Put"
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		order := 0
+		for c.Loop() {
+			order = method.Compare(other)
+		}
+		assert.True(b, order < 0, "Get sorts before Put")
+	})
+
+	b.Run("PackageIdentity", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got symbol.Identity
+		for c.Loop() {
+			got = method.PackageIdentity()
+		}
+		assert.Equal(b, got.Package, method.Package, "the package of the method")
+	})
+}
+
+// parseCases returns the pinned grammar: the spellings Parse accepts
+// with the identities it reads, and the spellings it refuses.
+//
+// [FuzzParse] seeds its corpus from the same table, so the fuzzer
+// starts inside the grammar and spends no budget discovering the
+// colon.
+func parseCases() []parseCase {
+	return []parseCase{
+		{
+			name: "returns a package identity for a bare path",
+			in:   "golang:svc/store",
+			want: symbol.Identity{
+				Lang:    "golang",
+				Package: "svc/store",
+				Kind:    symbol.KindPackage,
+			},
+		},
+		{
+			name: "leaves the kind of a top-level name undetermined",
+			in:   "golang:svc/store.Store",
+			want: symbol.Identity{Lang: "golang", Package: "svc/store", Name: "Store"},
+		},
+		{
+			// The discriminator search admits an opening paren at the
+			// very front, so a spelling that is nothing but a
+			// discriminator is refused for its missing name, and is not
+			// read as a package.
+			name:    "returns an error for a discriminator with nothing before it",
+			in:      "golang:(int)",
+			wantErr: true,
+		},
+		{
+			// The name search admits a dot at the very front of the
+			// last segment, so a name directly after the slash keeps
+			// its package, and does not read as one whole path.
+			name: "reads a name that opens the segment after the slash",
+			in:   "golang:svc/.Name",
+			want: symbol.Identity{Lang: "golang", Package: "svc/", Name: "Name"},
+		},
+		{
+			name: "reads a name that opens a spelling without a slash",
+			in:   "golang:.Name",
+			want: symbol.Identity{Lang: "golang", Name: "Name"},
+		},
+		{
+			name: "returns a function identity for a name with a discriminator",
+			in:   "golang:svc/store.Open(string)",
+			want: symbol.Identity{
+				Lang:    "golang",
+				Package: "svc/store",
+				Name:    "Open",
+				Disc:    "string",
+				Kind:    symbol.KindFunction,
+			},
+		},
+		{
+			name: "leaves the kind of a member undetermined",
+			in:   "golang:svc/store.Store#timeout",
+			want: symbol.Identity{
+				Lang:    "golang",
+				Package: "svc/store",
+				Owner:   "Store",
+				Name:    "timeout",
+			},
+		},
+		{
+			name: "returns a method identity for a member with a discriminator",
+			in:   "golang:svc/store.Store#Get(ctx,string)",
+			want: method,
+		},
+		{
+			name: "returns a method identity for a member with empty parentheses",
+			in:   "golang:svc/store.Store#Close()",
+			want: symbol.Identity{
+				Lang:    "golang",
+				Package: "svc/store",
+				Owner:   "Store",
+				Name:    "Close",
+				Kind:    symbol.KindMethod,
+			},
+		},
+		{name: "returns an error for empty input", in: "", wantErr: true},
+		{name: "returns an error for a spelling without a separator", in: "nolang", wantErr: true},
+		{name: "returns an error for an empty path", in: "golang:", wantErr: true},
+		{name: "returns an error for an empty language", in: ":svc/store", wantErr: true},
+		{
+			name:    "returns an error for an unclosed discriminator",
+			in:      "golang:svc/store.Open(string",
+			wantErr: true,
+		},
+		{name: "returns an error for an empty owner", in: "golang:svc/store.#name", wantErr: true},
+		{
+			name:    "returns an error for a discriminator on a bare package",
+			in:      "golang:svc/store()",
+			wantErr: true,
+		},
+		{name: "returns an error for an empty name after the dot", in: "golang:svc/store.", wantErr: true},
+	}
 }

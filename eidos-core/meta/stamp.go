@@ -16,7 +16,7 @@ import (
 // a pre-claim that crossed a phase as data, the way a raw
 // directive does. The name resolves through the registry when the
 // stamp applies, because a typed handle is valid in one composition
-// only and a record outlives it.
+// only and a record crosses compositions.
 type RawStamp struct {
 	// Key is the boundary spelling of the key the stamp writes.
 	Key KeyName
@@ -41,7 +41,20 @@ type RawStamp struct {
 // term of the vocabulary, of the type the key registered with.
 // Everything else checks as [Stamp] checks it: the kind
 // restriction, the false boolean, the rank. Every subject
-// [Facts.ByKey] lists therefore reads present through [Get].
+// [Facts.ByKey] lists reads present through [Get].
+//
+// Error modes:
+//   - a key nothing registered;
+//   - a value outside the vocabulary;
+//   - a value of another type than the key's;
+//   - every claim [Stamp] refuses.
+//
+// # Allocation contract
+//
+// An identical re-stamp allocates nothing. The value arrives boxed, so
+// a new claim allocates what a new claim of [Stamp] does without the
+// box, and a copy of a list value. A subject's first claim allocates
+// three times: the bag, the boxed identity and the [sync.Map] entry.
 func (f *Facts) StampRaw(s RawStamp, c Claim) error {
 	id, registered := f.registry.Resolve(s.Key)
 	if !registered {

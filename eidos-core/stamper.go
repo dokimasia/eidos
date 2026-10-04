@@ -34,6 +34,17 @@ func stamperInto(m *match) *Stamper {
 // claim's derivation. A write the fact store refuses reports an Error
 // at the subject's position under [RefusedStamp], and the phase
 // continues.
+//
+// # Allocation contract
+//
+// Stamp allocates what the fact store keeps for the claim, and the
+// invocation's derivation where the read set grew since the last
+// stamp. A second key on a subject with a claim allocates three times:
+// the subject's map of keys with its first group, and the claim's
+// state. A first claim on a subject allocates its bag, its boxed
+// identity and an entry of the store's map of subjects, whose trie
+// grows by nodes the subjects' hashes decide. The key's index grows as
+// it gains members.
 func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
 	stamp(st.m, st.m.subject, k, v)
 }
@@ -43,7 +54,8 @@ func Stamp[T meta.FactValue](st *Stamper, k meta.Key[T], v T) {
 // matches on their own where a directive on the subject states
 // something about them. The envelope is the subject's. An identity
 // the subject does not declare is refused under [RefusedStamp] at the
-// subject's position, and the phase continues.
+// subject's position, and the phase continues. StampOn allocates as
+// [Stamp] does, and a refusal allocates the finding's message.
 func StampOn[T meta.FactValue](st *Stamper, owned symbol.Identity, k meta.Key[T], v T) {
 	m := st.m
 	if !owns(m.subject, owned) {

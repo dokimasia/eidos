@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/frontend/load"
@@ -116,7 +117,7 @@ func TestPrior(t *testing.T) {
 			}
 		})
 
-		t.Run("restores every unit the memo holds the key of", func(t *testing.T) {
+		t.Run("restores every unit whose key the memo records", func(t *testing.T) {
 			t.Parallel()
 
 			memo := newRemembered()
@@ -129,7 +130,7 @@ func TestPrior(t *testing.T) {
 			assertSameLoad(t, restored, loadOf(t, stdTree()))
 		})
 
-		t.Run("parses a unit of an importing language the memo holds the key of", func(t *testing.T) {
+		t.Run("parses a unit of an importing language whose key the memo records", func(t *testing.T) {
 			t.Parallel()
 
 			memo := newRemembered()
@@ -142,5 +143,46 @@ func TestPrior(t *testing.T) {
 				assert.Equal(t, u.From, load.FromParse, "each unit parses for its imports")
 			}
 		})
+	})
+}
+
+// A declared source spells without allocating, and a value outside the
+// set allocates its spelling, in the ordinary run, which runs no
+// benchmark.
+func TestPriorAllocs(t *testing.T) {
+	from, outside := load.FromMemo, load.From(9)
+	var got string
+	assert.MaxAllocs(t, func() { got = from.String() }, 0, "String allocates nothing for a declared source")
+	assert.Equal(t, got, "memo", "String spells FromMemo")
+	assert.MaxAllocs(t, func() { got = outside.String() }, 1,
+		"String allocates the spelling of a value outside the set")
+	assert.Equal(t, got, "From(9)", "String spells the value's number")
+}
+
+// BenchmarkPrior measures the spelling of where a unit's region came
+// from.
+func BenchmarkPrior(b *testing.B) {
+	b.Run("From.String", func(b *testing.B) {
+		from := load.FromMemo
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = from.String()
+		}
+		assert.Equal(b, got, "memo", "String spells FromMemo")
+	})
+
+	b.Run("From.String/a value outside the set", func(b *testing.B) {
+		// The number is below 100, so strconv returns a constant string
+		// and the concatenation is the one allocation.
+		outside := load.From(9)
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = outside.String()
+		}
+		assert.Equal(b, got, "From(9)", "String spells the value's number")
 	})
 }

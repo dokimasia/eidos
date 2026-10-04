@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/emit"
@@ -17,8 +18,8 @@ import (
 // mirrorLang is the language the fixture's identities are in.
 const mirrorLang symbol.Lang = "golang"
 
-// The mirror fixture: the host a method is mirrored onto, and the
-// declarations its signature names.
+// The host the mirror cases mirror a method onto, and the declarations
+// the method's signature names.
 const (
 	mirrorPackage = "svc/store"
 	mirrorHost    = "Store"
@@ -36,6 +37,17 @@ const (
 	userMap       = "Map[string, User]"
 	stringType    = "string"
 	userType      = "User"
+)
+
+// The allocations of a mirror.
+const (
+	// mirrorAllocs is the mirror of a method with one parameter and one
+	// return: the method, its receiving type, and for the parameter and
+	// the return each the list, the view and the type.
+	mirrorAllocs = 2 + 2*3
+	// bareMirrorAllocs is the mirror of a method without a signature: the
+	// method and its receiving type.
+	bareMirrorAllocs = 2
 )
 
 // methodID returns a fixture method identity.
@@ -142,4 +154,54 @@ func TestMirror(t *testing.T) {
 				"a pointer receiver is Go's spelling, and Rust spells self")
 		})
 	})
+}
+
+// A mirror allocates the method it returns and its parts in the
+// ordinary run, which runs no benchmark. The check runs alone, because
+// AllocsPerRun counts every goroutine's allocations and refuses to run
+// beside parallel tests.
+func TestMirrorAllocs(t *testing.T) {
+	signed, bare := getter(), &node.Method{ID: methodID(getMethod), Name: getMethod}
+	var got *emit.Method
+	assert.MaxAllocs(t, func() { got = eidos.Mirror(mirrorHost, signed) }, mirrorAllocs,
+		"Mirror allocates the method and the parts of its signature")
+	assert.Length(t, got.Params, 1, "Mirror returns the parameter")
+	assert.MaxAllocs(t, func() { got = eidos.Mirror(mirrorHost, bare) }, bareMirrorAllocs,
+		"Mirror allocates the method and its receiving type for a method without a signature")
+	assert.Equal(t, got.Name, getMethod, "Mirror returns the method's name")
+}
+
+// BenchmarkMirror measures the mirror of a getter of one parameter and
+// one return, and of a method without a signature.
+func BenchmarkMirror(b *testing.B) {
+	b.Run("Mirror", func(b *testing.B) {
+		m := getter()
+		c := bench.Start(b).MaxAllocs(mirrorAllocs)
+		defer c.End()
+		var got *emit.Method
+		for c.Loop() {
+			got = eidos.Mirror(mirrorHost, m)
+		}
+		assert.Length(b, got.Returns, 1, "Mirror returns the return")
+	})
+
+	b.Run("Mirror/a method without a signature", func(b *testing.B) {
+		m := &node.Method{ID: methodID(getMethod), Name: getMethod}
+		c := bench.Start(b).MaxAllocs(bareMirrorAllocs)
+		defer c.End()
+		var got *emit.Method
+		for c.Loop() {
+			got = eidos.Mirror(mirrorHost, m)
+		}
+		assert.Equal(b, got.Receives.Spelling, mirrorHost, "Mirror names the host")
+	})
+}
+
+// getter returns a method of one string parameter and one int return.
+func getter() *node.Method {
+	return &node.Method{
+		ID: methodID(getMethod), Name: getMethod,
+		Params:  []*node.Param{{Name: keysParam, Type: &node.TypeRef{Spelling: stringType}}},
+		Returns: []*node.Return{{Type: &node.TypeRef{Spelling: intType}}},
+	}
 }

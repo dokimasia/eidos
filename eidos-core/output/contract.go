@@ -39,6 +39,11 @@ const (
 	trailerKey = ":" + keyProvenance + " " + hashPrefix
 )
 
+// derivationScratch is how many plugins, and how many sources, a stamp
+// sorts on the stack. A file with more grows its derivation onto the
+// heap.
+const derivationScratch = 8
+
 // TailSize is how many final bytes of a stamped file contain its
 // trailer's key. The key, the digest, the comment's closer and the
 // final line break end the file, 84 bytes and the closer, so 128
@@ -66,7 +71,7 @@ type Brand string
 
 // Valid reports whether b is spelled the way the frame and the
 // carrier mark require: a lowercase letter first, then lowercase
-// letters, digits and hyphens.
+// letters, digits and hyphens. It allocates nothing.
 func (b Brand) Valid() bool {
 	if b == "" || b[0] < 'a' || b[0] > 'z' {
 		return false
@@ -107,8 +112,18 @@ type Provenance struct {
 // proves ownership and integrity. Every frame line is spelled
 // through the language's own comment form.
 //
+// # Concurrency
+//
 // A Contract is immutable after [NewContract] and safe for
 // concurrent use.
+//
+// # Allocation contract
+//
+// [Contract.Stamp] allocates the bytes it returns. [Contract.Verify]
+// and [Read] allocate the record they return: the trailer line and the
+// frame's lines, each copied into one string that the record's values
+// are parts of, and the record's lists of plugins and of sources. Read
+// allocates nothing for bytes whose final line contains no trailer key.
 type Contract struct {
 	brand  Brand
 	opener string
@@ -122,6 +137,12 @@ type Contract struct {
 // comments has no place for the frame. The line form is
 // preferred where a language has both: one line comment per frame
 // line reads in every editor and diffs one line per change.
+//
+// # Allocation contract
+//
+// NewContract allocates the contract and its opener, and for a block
+// form its closer: two allocations for a line form, three for a block
+// form.
 func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error) {
 	if !b.Valid() {
 		return nil, fmt.Errorf(
@@ -144,7 +165,8 @@ func NewContract(b Brand, s plugin.CommentSyntax) (*Contract, error) {
 	return c, nil
 }
 
-// Brand returns the name this contract stamps under.
+// Brand returns the name this contract stamps under. It allocates
+// nothing.
 func (c *Contract) Brand() Brand { return c.brand }
 
 // Stamp returns the finished bytes: the marker line, one
@@ -160,6 +182,13 @@ func (c *Contract) Brand() Brand { return c.brand }
 // LF line ends, and each refused input breaks the frame or the
 // policy. A formatter emitting CRLF is where that violation is
 // fixed.
+//
+// # Allocation contract
+//
+// Stamp allocates once, for the bytes it returns, where every frame line
+// is at most 96 bytes and the file has at most eight plugins and eight
+// sources. It sorts the derivation in storage on the stack and writes
+// the digest into the returned bytes.
 func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 	if len(f.Body) == 0 || f.Body[len(f.Body)-1] != '\n' {
 		return nil, errors.New("output: the body does not end in a newline")
@@ -177,7 +206,8 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 			"output: the body contains a byte order mark, and the text policy writes none",
 		)
 	}
-	plugins := make([]string, 0, len(f.Plugins))
+	var pluginScratch, sourceScratch [derivationScratch]string
+	plugins := pluginScratch[:0]
 	for _, p := range f.Plugins {
 		plugins = append(plugins, string(p))
 	}
@@ -185,7 +215,7 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	sources, err := derivation(slices.Clone(f.Sources), keySource)
+	sources, err := derivation(append(sourceScratch[:0], f.Sources...), keySource)
 	if err != nil {
 		return nil, err
 	}
@@ -201,7 +231,12 @@ func (c *Contract) Stamp(f plugin.RenderedFile) ([]byte, error) {
 	}
 	out.WriteByte('\n')
 	out.Write(f.Body)
-	c.line(&out, string(c.brand), ":", keyProvenance, " ", digest(f.Body))
+	out.WriteString(c.opener)
+	out.WriteString(string(c.brand))
+	out.WriteString(trailerKey)
+	out.Write(appendHex(out.AvailableBuffer(), f.Body))
+	out.WriteString(c.closer)
+	out.WriteByte('\n')
 	return out.Bytes(), nil
 }
 
@@ -231,10 +266,10 @@ func verify(stamped []byte, brand Brand) (Provenance, error) {
 			string(f.record.Brand), string(brand),
 		)
 	}
-	if got := digest(f.body); got != f.record.Hash {
+	if !attests(f.body, f.record.Hash) {
 		return Provenance{}, fmt.Errorf(
 			"output: the body hashes to %s and the trailer claims %s",
-			got, f.record.Hash,
+			digest(f.body), f.record.Hash,
 		)
 	}
 	return f.record, nil
@@ -272,12 +307,12 @@ type frame struct {
 	body   []byte
 }
 
-// parse reads a stamped file's frame without being told the brand
-// or the comment form. The trailer names both: the digest key
-// locates it, the brand reads backwards from that key, and
-// whatever precedes the brand is the comment opener every other
-// frame line opens with. Writing one space after the opener is what
-// makes the brand readable back out.
+// parse reads a stamped file's frame without being told the brand or
+// the comment form, because the trailer spells both. The digest key
+// locates the trailer, the brand reads backwards from that key, and
+// whatever precedes the brand is the comment opener every other frame
+// line opens with. The one space after the opener makes the brand
+// readable back out.
 func parse(stamped []byte) (frame, bool) {
 	if len(stamped) == 0 || stamped[len(stamped)-1] != '\n' {
 		return frame{}, false
@@ -287,12 +322,11 @@ func parse(stamped []byte) (frame, bool) {
 	if cut < 0 {
 		return frame{}, false
 	}
-	trailer := string(head[cut+1:])
-
-	at := strings.Index(trailer, trailerKey)
+	at := bytes.Index(head[cut+1:], []byte(trailerKey))
 	if at < 0 {
 		return frame{}, false
 	}
+	trailer := string(head[cut+1:])
 	start := at
 	for start > 0 && brandByte(trailer[start-1]) {
 		start--
@@ -303,13 +337,10 @@ func parse(stamped []byte) (frame, bool) {
 	}
 	digestAt := at + len(trailerKey)
 	hashEnd := digestAt + hashLen
-	if hashEnd > len(trailer) {
+	if hashEnd > len(trailer) || !isHex(trailer[digestAt:hashEnd]) {
 		return frame{}, false
 	}
-	if _, err := hex.DecodeString(trailer[digestAt:hashEnd]); err != nil {
-		return frame{}, false
-	}
-	c := &Contract{
+	c := Contract{
 		brand:  brand,
 		opener: trailer[:start],
 		closer: trailer[hashEnd:],
@@ -319,36 +350,41 @@ func parse(stamped []byte) (frame, bool) {
 
 // head reads the frame above the body: the marker, the derivation
 // lines, and the blank line that ends them. Everything after that
-// line is the body, byte for byte.
+// line is the body, byte for byte. The frame's lines copy into one
+// string, which the record's derivation values are parts of, so the
+// record keeps none of the body.
 func (c *Contract) head(above []byte, hash string) (frame, bool) {
-	rec := Provenance{Brand: c.brand, Hash: hash}
-	pos := 0
-	next := func() (string, bool) {
-		at := bytes.IndexByte(above[pos:], '\n')
-		if at < 0 {
-			return "", false
-		}
-		line := string(above[pos : pos+at])
-		pos += at + 1
-		return line, true
-	}
-
-	marker, held := next()
-	if !held || marker != c.opener+markerPrefix+string(c.brand)+markerSuffix+c.closer {
+	end := bytes.Index(above, []byte("\n\n"))
+	if end < 0 {
 		return frame{}, false
 	}
-	for {
-		line, held := next()
+	marker, derivation, _ := strings.Cut(string(above[:end+1]), "\n")
+	if !c.marker(marker) {
+		return frame{}, false
+	}
+	plugins, sources := 0, 0
+	for line := range strings.Lines(derivation) {
+		key, _, held := c.entry(strings.TrimSuffix(line, "\n"))
 		if !held {
 			return frame{}, false
 		}
-		if line == "" {
-			break
+		switch key {
+		case keyPlugin:
+			plugins++
+		case keySource:
+			sources++
 		}
-		key, value, held := c.entry(line)
-		if !held {
-			return frame{}, false
-		}
+	}
+
+	rec := Provenance{Brand: c.brand, Hash: hash}
+	if plugins > 0 {
+		rec.Plugins = make([]plugin.ID, 0, plugins)
+	}
+	if sources > 0 {
+		rec.Sources = make([]string, 0, sources)
+	}
+	for line := range strings.Lines(derivation) {
+		key, value, _ := c.entry(strings.TrimSuffix(line, "\n"))
 		switch key {
 		case keyPlugin:
 			rec.Plugins = append(rec.Plugins, plugin.ID(value))
@@ -356,7 +392,26 @@ func (c *Contract) head(above []byte, hash string) (frame, bool) {
 			rec.Sources = append(rec.Sources, value)
 		}
 	}
-	return frame{record: rec, body: above[pos:]}, true
+	return frame{record: rec, body: above[end+2:]}, true
+}
+
+// marker reports whether a line is the frame's marker under the
+// contract's brand and comment form.
+func (c *Contract) marker(line string) bool {
+	text, held := strings.CutPrefix(line, c.opener)
+	if !held {
+		return false
+	}
+	if text, held = strings.CutPrefix(text, markerPrefix); !held {
+		return false
+	}
+	if text, held = strings.CutPrefix(text, string(c.brand)); !held {
+		return false
+	}
+	if text, held = strings.CutPrefix(text, markerSuffix); !held {
+		return false
+	}
+	return text == c.closer
 }
 
 // entry splits one derivation line into its key and value.
@@ -369,11 +424,28 @@ func (c *Contract) entry(line string) (key, value string, held bool) {
 	if !held {
 		return "", "", false
 	}
-	text, held = strings.CutPrefix(text, string(c.brand)+":")
+	text, held = strings.CutPrefix(text, string(c.brand))
+	if !held {
+		return "", "", false
+	}
+	text, held = strings.CutPrefix(text, ":")
 	if !held {
 		return "", "", false
 	}
 	return strings.Cut(text, " ")
+}
+
+// isHex reports whether every byte of s is a hex digit, in either
+// case.
+func isHex(s string) bool {
+	for i := range len(s) {
+		switch c := s[i]; {
+		case c >= '0' && c <= '9', c >= 'a' && c <= 'f', c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // line writes one frame line in the language's comment form,
@@ -413,8 +485,24 @@ func derivation(values []string, key string) ([]string, error) {
 	return values, nil
 }
 
-// digest returns the trailer's claim over body.
+// digest returns the trailer's claim over body, the digest's name and
+// its hex spelling, as one string: the string is its one allocation.
 func digest(body []byte) string {
+	var claim [len(hashPrefix) + hashLen]byte
+	return string(appendHex(append(claim[:0], hashPrefix...), body))
+}
+
+// attests reports whether hash is the trailer's claim over body. It
+// spells the claim on the stack and allocates nothing.
+func attests(body []byte, hash string) bool {
+	var claim [len(hashPrefix) + hashLen]byte
+	return string(appendHex(append(claim[:0], hashPrefix...), body)) == hash
+}
+
+// appendHex appends the hex spelling of body's sha256 digest to dst,
+// the trailer's claim without its prefix, and allocates only where dst
+// has no room for it.
+func appendHex(dst, body []byte) []byte {
 	sum := sha256.Sum256(body)
-	return hashPrefix + hex.EncodeToString(sum[:])
+	return hex.AppendEncode(dst, sum[:])
 }

@@ -105,7 +105,8 @@ type Graph struct {
 	lazy *sealedIndex
 }
 
-// New returns an unfrozen graph that contains nothing.
+// New returns an unfrozen graph that contains nothing. It allocates the
+// graph, one allocation.
 func New() *Graph { return &Graph{} }
 
 // Sealed returns a frozen graph over the regions of src.
@@ -260,7 +261,8 @@ func (g *Graph) Frozen() bool {
 //
 // It is refused before [Graph.Freeze]: identities are not assigned
 // and the graph is still moving, so an edge recorded then would name
-// a declaration that may not survive the phase.
+// a declaration that may not survive the phase. It allocates the
+// handle, one allocation.
 func (g *Graph) Reader(reads *ReadSet, sc Scope) (*Reader, error) {
 	if reads == nil {
 		return nil, errors.New("store: no read set to record into, " +

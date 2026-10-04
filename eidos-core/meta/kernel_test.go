@@ -7,27 +7,41 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// kernelFixture returns a registry with the kernel's keys registered,
-// a fact store over it, and the handles.
-func kernelFixture(tb assert.TB) (*meta.Registry, *meta.Facts, meta.KernelKeys) {
-	tb.Helper()
-
-	r := meta.NewRegistry()
-	keys, err := meta.Kernel(r)
-	assert.NoError(tb, err, "the kernel's keys register")
-	return r, meta.NewFacts(r), keys
-}
+// kernelAllocs is one registration of the kernel's keys into an empty
+// registry: the first entry of the namespace map, the four kind lists,
+// the first entry of the name map, and the spec and type lists growing
+// to five entries, eight allocations.
+const kernelAllocs = 14
 
 // The kernel's own keys are the one registration every composition
 // shares, so the contract is what a frontend stamps against.
 func TestKernel(t *testing.T) {
 	t.Parallel()
+
+	t.Run("IsZero", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("reports true for the zero handles", func(t *testing.T) {
+			t.Parallel()
+
+			var keys meta.KernelKeys
+			assert.True(t, keys.IsZero(), "the zero handles name nothing")
+		})
+
+		t.Run("reports false for the handles Kernel returns", func(t *testing.T) {
+			t.Parallel()
+
+			_, _, keys := kernelFixture(t)
+			assert.False(t, keys.IsZero(), "the handles name keys")
+		})
+	})
 
 	t.Run("Kernel", func(t *testing.T) {
 		t.Parallel()
@@ -36,7 +50,6 @@ func TestKernel(t *testing.T) {
 			t.Parallel()
 
 			_, _, keys := kernelFixture(t)
-			assert.False(t, keys.IsZero(), "the handles name keys")
 			assert.Equal(t, keys.Module.Name(), meta.ModuleKey, "the module handle has its name")
 			assert.Equal(t, keys.ModuleRoot.Name(), meta.ModuleRootKey, "the root handle has its name")
 			assert.Equal(t, keys.Sample.Name(), meta.SampleKey, "the sample handle has its name")
@@ -136,4 +149,76 @@ func TestKernel(t *testing.T) {
 			assert.Contains(t, err.Error(), rivalPlugin, "the error names the plugin")
 		})
 	})
+}
+
+// The kernel's registration allocates what its registry keeps, and its
+// handles report their state without allocating, in the ordinary run,
+// which runs no benchmark. Each counted registration takes an empty
+// registry of its own, built before the count. The check runs alone,
+// because AllocsPerRun counts every goroutine's allocations and refuses
+// to run beside parallel tests.
+func TestKernelAllocs(t *testing.T) {
+	registries := make([]*meta.Registry, allocRuns)
+	for i := range registries {
+		registries[i] = meta.NewRegistry()
+	}
+	var (
+		keys meta.KernelKeys
+		at   int
+	)
+	assert.MaxAllocs(t, func() {
+		var err error
+		if keys, err = meta.Kernel(registries[at]); err != nil {
+			t.Fatalf("Kernel: unexpected error: %v", err)
+		}
+		at++
+	}, kernelAllocs, "Kernel allocates the registrations of the kernel's keys")
+
+	zero := true
+	assert.MaxAllocs(t, func() { zero = keys.IsZero() }, 0, "IsZero allocates nothing")
+	assert.False(t, zero, "IsZero reports false for the handles Kernel returns")
+}
+
+// BenchmarkKernel measures the registration of the kernel's keys into an
+// empty registry, which every composition makes once, and the check of
+// the handles it returns.
+func BenchmarkKernel(b *testing.B) {
+	b.Run("Kernel", func(b *testing.B) {
+		var r *meta.Registry
+		fresh := func() { r = meta.NewRegistry() }
+		c := bench.Start(b).MaxAllocs(kernelAllocs)
+		defer c.End()
+		var (
+			keys meta.KernelKeys
+			err  error
+		)
+		for c.Loop() {
+			c.Excluding(fresh)
+			keys, err = meta.Kernel(r)
+		}
+		assert.NoError(b, err, "the kernel's keys register")
+		assert.False(b, keys.IsZero(), "Kernel returns handles that name keys")
+	})
+
+	b.Run("IsZero", func(b *testing.B) {
+		_, _, keys := kernelFixture(b)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		zero := true
+		for c.Loop() {
+			zero = keys.IsZero()
+		}
+		assert.False(b, zero, "IsZero reports false for the handles Kernel returns")
+	})
+}
+
+// kernelFixture returns a registry with the kernel's keys registered,
+// a fact store over it, and the handles.
+func kernelFixture(tb assert.TB) (*meta.Registry, *meta.Facts, meta.KernelKeys) {
+	tb.Helper()
+
+	r := meta.NewRegistry()
+	keys, err := meta.Kernel(r)
+	assert.NoError(tb, err, "the kernel's keys register")
+	return r, meta.NewFacts(r), keys
 }

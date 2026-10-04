@@ -655,14 +655,17 @@ func sameMembers(parts [][]plugin.SourceRef, claimed []string) bool {
 	return slices.Equal(members, slices.Sorted(slices.Values(claimed)))
 }
 
-// keyAll folds every unit's key from the gate's digests.
+// keyAll folds every unit's key from the gate's digests. The units'
+// folds share one buffer, so a unit allocates its key alone once the
+// buffer holds the longest fold.
 func keyAll(units []*unit, g *gate, brand output.Brand) error {
+	var fold []byte
 	for _, u := range units {
-		key, err := unitKey(u, g, brand)
-		if err != nil {
+		var err error
+		if fold, err = appendFold(fold[:0], u, g, brand); err != nil {
 			return err
 		}
-		u.key = key
+		u.key = unitKey(fold)
 	}
 	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/output"
 )
@@ -15,21 +16,22 @@ import (
 // package, so a case pins the bytes and does not mirror the code.
 const packageHash = "sha256:0ad6261536f6380b14ade1a508ac911b8c48230731746e0c76abd26bf3e3a15d"
 
-// every returns one constructor per shipped sink, so the rules
-// they share are checked against each of them, not against
-// whichever one was convenient.
-func every(t *testing.T) map[string]func() output.Sink {
-	t.Helper()
+// allocRuns is the number of calls an allocation check makes: one
+// warm-up call and a hundred counted ones. A check of a call that
+// consumes its sink builds this many sinks before it counts.
+const allocRuns = 101
 
-	return map[string]func() output.Sink{
-		"mem": func() output.Sink { return output.NewMem() },
-		"disk": func() output.Sink {
-			d, err := output.NewDisk(t.TempDir(), diskBrand)
-			assert.NoError(t, err, "the fixture root opens")
-			return d
-		},
-	}
-}
+// The allocations of the staging every sink shares, which the
+// allocation checks and the benchmarks of each sink count.
+const (
+	// firstWriteAllocs is a sink's first write of a path without a
+	// directory: the staging's map and the path set's map of files, two
+	// allocations each, and the path set's empty map of directories.
+	firstWriteAllocs = 5
+	// firstDeleteAllocs is a sink's first removal: the removal set, two
+	// allocations.
+	firstDeleteAllocs = 2
+)
 
 // Staging is what every sink shares: what it refuses to stage, and
 // that one staging serves one commit. How the bytes are written to
@@ -345,4 +347,57 @@ func TestSink(t *testing.T) {
 			})
 		}
 	})
+}
+
+// A declared action and a declared verdict spell without allocating in
+// the ordinary run, which runs no benchmark.
+func TestSinkZeroAlloc(t *testing.T) {
+	action, found := output.ActionUpdated, output.FoundIntact
+	var got string
+	assert.MaxAllocs(t, func() { got = action.String() }, 0, "Action.String allocates nothing for a declared action")
+	assert.Equal(t, got, "updated", "Action.String spells ActionUpdated")
+	assert.MaxAllocs(t, func() { got = found.String() }, 0, "Found.String allocates nothing for a declared verdict")
+	assert.Equal(t, got, "intact", "Found.String spells FoundIntact")
+}
+
+// BenchmarkSink measures the spelling of an action and of a verdict,
+// which a dry run prints once per staged path.
+func BenchmarkSink(b *testing.B) {
+	b.Run("Action.String", func(b *testing.B) {
+		action := output.ActionUpdated
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = action.String()
+		}
+		assert.Equal(b, got, "updated", "Action.String spells ActionUpdated")
+	})
+
+	b.Run("Found.String", func(b *testing.B) {
+		found := output.FoundIntact
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = found.String()
+		}
+		assert.Equal(b, got, "intact", "Found.String spells FoundIntact")
+	})
+}
+
+// every returns one constructor per shipped sink, so the rules
+// they share are checked against each of them, not against
+// whichever one was convenient.
+func every(t *testing.T) map[string]func() output.Sink {
+	t.Helper()
+
+	return map[string]func() output.Sink{
+		"mem": func() output.Sink { return output.NewMem() },
+		"disk": func() output.Sink {
+			d, err := output.NewDisk(t.TempDir(), diskBrand)
+			assert.NoError(t, err, "the fixture root opens")
+			return d
+		},
+	}
 }

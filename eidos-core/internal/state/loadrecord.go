@@ -32,6 +32,11 @@ const (
 // no frontend name contains it, so a composite key sorts by its parts.
 const keySep = 0
 
+// identityKeyFixed is how many bytes an identity's key adds to its
+// parts: the separator after each of the four named parts, and the
+// kind's byte with its separator.
+const identityKeyFixed = 6
+
 // LoadState is a generation's record of the load: its file records, its
 // units with their regions, each frontend's doors, and the probes of
 // every unit's references. It is the [load.Prior] a warm load reads,
@@ -508,9 +513,11 @@ func bare(id symbol.Identity) symbol.Identity {
 	return symbol.Identity{Lang: id.Lang, Package: id.Package, Owner: id.Owner, Name: id.Name}
 }
 
-// probeKey returns a probes key: its kind's byte and the identity's key.
+// probeKey returns a probes key: its kind's byte and the identity's key,
+// in one allocation.
 func probeKey(kind byte, id symbol.Identity) []byte {
-	return identityKey([]byte{kind}, id)
+	n := 1 + len(id.Lang) + len(id.Package) + len(id.Owner) + len(id.Name) + len(id.Disc) + identityKeyFixed
+	return identityKey(append(make([]byte, 0, n), kind), id)
 }
 
 // identityKey appends an identity's key to dst: its six parts, each

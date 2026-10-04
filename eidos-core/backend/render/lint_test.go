@@ -10,6 +10,7 @@ import (
 	"text/template"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/backend/render"
 )
@@ -29,6 +30,11 @@ const (
 	brokenTpl = "broken.tpl"
 	bareTpl   = "bare.tpl"
 )
+
+// lintAllocs is one lint of a tree of one template that places its
+// marker: the walk of the tree, the read of the template, and its parse
+// against the merged vocabulary.
+const lintAllocs = 67
 
 // tree returns a one-template tree.
 func tree(name, src string) fstest.MapFS {
@@ -77,10 +83,7 @@ func TestLint(t *testing.T) {
 	linter := func(t *testing.T) *render.Pass {
 		t.Helper()
 
-		l := language()
-		l.Funcs = helpers(template.FuncMap{shoutHelper: identity})
-		p, err := render.New(passName, l)
-		assert.NoError(t, err, "the language composes")
+		p, _ := lintFixture(t)
 		return p
 	}
 	slots := action(render.BuiltinSlots)
@@ -247,4 +250,42 @@ func TestLint(t *testing.T) {
 			assert.Contains(t, findings[0].Error(), bareTpl, "naming the template")
 		})
 	})
+}
+
+// A lint of a tree of one template allocates within its ceiling in the
+// ordinary run, which runs no benchmark.
+func TestLintAllocs(t *testing.T) {
+	p, marked := lintFixture(t)
+	var findings []error
+	assert.MaxAllocs(t, func() { findings = p.Lint(marked, nil, nil) }, lintAllocs,
+		"Lint allocates the walk and the parse of the template")
+	assert.Empty(t, findings, "Lint returns nothing for a tree that places its marker")
+}
+
+// BenchmarkLint measures the static check of a plugin's tree of one
+// template, which the composition runs once per plugin.
+func BenchmarkLint(b *testing.B) {
+	b.Run("Lint/a tree of one template that places its marker", func(b *testing.B) {
+		p, marked := lintFixture(b)
+		c := bench.Start(b).MaxAllocs(lintAllocs)
+		defer c.End()
+		var findings []error
+		for c.Loop() {
+			findings = p.Lint(marked, nil, nil)
+		}
+		assert.Empty(b, findings, "the marker is placed and every helper resolves")
+	})
+}
+
+// lintFixture returns a pass over the fixture language with the shared
+// helper, and a tree of one template that calls the helper and places
+// its marker.
+func lintFixture(tb assert.TB) (*render.Pass, fs.FS) {
+	tb.Helper()
+
+	l := language()
+	l.Funcs = helpers(template.FuncMap{shoutHelper: identity})
+	p, err := render.New(passName, l)
+	assert.NoError(tb, err, "the language composes")
+	return p, tree(refName, "\t"+action(shoutHelper, ".Data."+markKey)+"()\n"+action(render.BuiltinSlots))
 }

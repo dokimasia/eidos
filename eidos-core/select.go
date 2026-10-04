@@ -75,6 +75,14 @@ func (s *selection) evaluatedOf(j, from int, dst []plugin.MatchKey) ([]plugin.Ma
 	return dst, from
 }
 
+// reset drops the caller's keys and candidates, and empties the matches
+// the candidates had while keeping their storage, for the state's next
+// phase call.
+func (s *selection) reset() {
+	clear(s.evaluated)
+	*s = selection{evaluated: s.evaluated[:0]}
+}
+
 // byRule orders a key against a target by plugin, then rule: the prefix
 // of canonical match order that groups one rule's keys.
 func byRule(k, target plugin.MatchKey) int {

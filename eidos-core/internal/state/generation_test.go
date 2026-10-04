@@ -14,13 +14,35 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
 )
 
-// currentBlob is the name of the pointer to the live generation.
-const currentBlob = "state/CURRENT"
+// currentBlob is the name of the pointer to the live generation, and
+// absentSegment a segment no generation references.
+const (
+	currentBlob   = "state/CURRENT"
+	absentSegment = "state/seg/00/absent"
+)
+
+// The ceilings of a generation's open and reads over a generation of
+// two rows of the checks table.
+const (
+	// openAllocs is one open: 2 for the copies of CURRENT and the
+	// generation the ledger returns, the name's digest, 7 for the
+	// decoded header, segments and tables, 2 for the table readers, and
+	// the generation.
+	openAllocs = 13
+	// getAllocs is one lookup of a row: the run read from the ledger,
+	// and 2 for the decoded block of the two rows that contains it.
+	getAllocs = 3
+	// allAllocs is one read of the table: the run read from the ledger,
+	// its index, the run, 2 for its blocks, the merged entries and the
+	// rows.
+	allAllocs = 7
+)
 
 // The pins of a generation's layout the format case rewrites: the blob
 // begins with its format as a uvarint, and ends in the little-endian
@@ -181,8 +203,96 @@ func TestGeneration(t *testing.T) {
 			t.Parallel()
 
 			g := committed(t, ledger.NewMem(), past, "alpha")
-			assert.Equal(t, g.Live("state/seg/00/absent"), 0, "no region of the segment is live")
+			assert.Equal(t, g.Live(absentSegment), 0, "no region of the segment is live")
 		})
+	})
+}
+
+// An open and a generation's reads allocate within their ceilings in
+// the ordinary run, which runs no benchmark. The check runs alone,
+// because AllocsPerRun counts every goroutine's allocations and refuses
+// to run beside parallel tests.
+func TestGenerationAllocs(t *testing.T) {
+	l := ledger.NewMem()
+	g := committed(t, l, past, "alpha", "beta")
+	assert.MaxAllocs(t, func() {
+		if _, err := state.Open(t.Context(), l); err != nil {
+			t.Fatalf("Open: unexpected error: %v", err)
+		}
+	}, openAllocs, "Open allocates the reads and the decoded generation")
+	key := []byte("alpha")
+	assert.MaxAllocs(t, func() {
+		if _, held, err := g.Get(t.Context(), state.TableChecks, key); err != nil || !held {
+			t.Fatalf("Get: held %t, error %v", held, err)
+		}
+	}, getAllocs, "Get allocates the run and the block it reads")
+	assert.MaxAllocs(t, func() {
+		if rows, err := g.All(t.Context(), state.TableChecks); err != nil || len(rows) != 2 {
+			t.Fatalf("All: rows %d, error %v", len(rows), err)
+		}
+	}, allAllocs, "All allocates the run, its blocks and the rows")
+	assert.MaxAllocs(t, func() {
+		if g.Live(absentSegment) != 0 {
+			t.Fatal("Live counted a segment the generation does not reference")
+		}
+	}, 0, "Live allocates nothing")
+}
+
+// BenchmarkGeneration measures an open of a generation of two rows, and
+// its reads, each after one read.
+func BenchmarkGeneration(b *testing.B) {
+	l := ledger.NewMem()
+	g := committed(b, l, past, "alpha", "beta")
+	key := []byte("alpha")
+
+	b.Run("Open", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(openAllocs)
+		defer c.End()
+		var (
+			got *state.Generation
+			err error
+		)
+		for c.Loop() {
+			got, err = state.Open(b.Context(), l)
+		}
+		assert.NoError(b, err, "the generation opens")
+		assert.Equal(b, got.Name, g.Name, "Open returns the live generation")
+	})
+
+	b.Run("Get", func(b *testing.B) {
+		_, _, err := g.Get(b.Context(), state.TableChecks, key)
+		assert.NoError(b, err, "the row reads before the measurement")
+		c := bench.Start(b).MaxAllocs(getAllocs)
+		defer c.End()
+		var row []byte
+		for c.Loop() {
+			row, _, err = g.Get(b.Context(), state.TableChecks, key)
+		}
+		assert.NoError(b, err, "the row reads")
+		assert.Equal(b, string(row), "row of alpha", "Get returns the row")
+	})
+
+	b.Run("All", func(b *testing.B) {
+		_, err := g.All(b.Context(), state.TableChecks)
+		assert.NoError(b, err, "the table reads before the measurement")
+		c := bench.Start(b).MaxAllocs(allAllocs)
+		defer c.End()
+		var rows []state.Row
+		for c.Loop() {
+			rows, err = g.All(b.Context(), state.TableChecks)
+		}
+		assert.NoError(b, err, "the table reads")
+		assert.Length(b, rows, 2, "All returns both rows")
+	})
+
+	b.Run("Live", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		got := -1
+		for c.Loop() {
+			got = g.Live(absentSegment)
+		}
+		assert.Equal(b, got, 0, "no region of the segment is live")
 	})
 }
 

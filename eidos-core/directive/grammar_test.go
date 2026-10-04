@@ -8,19 +8,20 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/directive"
 )
 
-// scalar returns a bare scalar value.
-func scalar(text string) directive.RawValue {
-	return directive.RawValue{Text: text}
-}
+// The payloads the allocation checks and the benchmarks parse: one with
+// five arguments, one a list, and one with a bare name alone.
+const (
+	fullPayload = `indexer:index btree fields=[a, b, c] depth=3 unique=true role=server`
+	barePayload = "skip"
+)
 
-// quoted returns a quoted scalar value.
-func quoted(text string) directive.RawValue {
-	return directive.RawValue{Text: text, Quoted: true}
-}
+// continued is a payload written over three carrier lines.
+var continued = []string{`index \`, `fields=[a, b, \`, `c] depth=3`}
 
 func TestGrammar(t *testing.T) {
 	t.Parallel()
@@ -79,7 +80,7 @@ func TestGrammar(t *testing.T) {
 				}},
 			},
 			{
-				name:    "reads positional and keyed arguments in source order",
+				name:    "reads mixed arguments in source order",
 				payload: "route get path=/x fallback",
 				want: directive.Raw{Name: "route", Args: []directive.RawArg{
 					{Value: scalar("get"), Col: 6},
@@ -95,10 +96,50 @@ func TestGrammar(t *testing.T) {
 				}},
 			},
 			{
+				name:    "reads a quoted value without escapes",
+				payload: `doc text="plain words"`,
+				want: directive.Raw{Name: "doc", Args: []directive.RawArg{
+					{Key: "text", Value: quoted("plain words"), Col: 4},
+				}},
+			},
+			{
+				name:    "reads a quoted value whose escape follows plain text",
+				payload: `doc text="plain \"words\""`,
+				want: directive.Raw{Name: "doc", Args: []directive.RawArg{
+					{Key: "text", Value: quoted(`plain "words"`), Col: 4},
+				}},
+			},
+			{
 				name:    "reads a quoted empty string as a value",
 				payload: `doc text=""`,
 				want: directive.Raw{Name: "doc", Args: []directive.RawArg{
 					{Key: "text", Value: quoted(""), Col: 4},
+				}},
+			},
+			{
+				name:    "reads more arguments than the parser collects on the stack",
+				payload: "x a b c d e f g h i j",
+				want: directive.Raw{Name: "x", Args: []directive.RawArg{
+					{Value: scalar("a"), Col: 2},
+					{Value: scalar("b"), Col: 4},
+					{Value: scalar("c"), Col: 6},
+					{Value: scalar("d"), Col: 8},
+					{Value: scalar("e"), Col: 10},
+					{Value: scalar("f"), Col: 12},
+					{Value: scalar("g"), Col: 14},
+					{Value: scalar("h"), Col: 16},
+					{Value: scalar("i"), Col: 18},
+					{Value: scalar("j"), Col: 20},
+				}},
+			},
+			{
+				name:    "reads a list longer than the parser collects on the stack",
+				payload: "x k=[a,b,c,d,e,f,g,h,i,j]",
+				want: directive.Raw{Name: "x", Args: []directive.RawArg{
+					{Key: "k", Value: directive.RawValue{List: []directive.RawValue{
+						scalar("a"), scalar("b"), scalar("c"), scalar("d"), scalar("e"),
+						scalar("f"), scalar("g"), scalar("h"), scalar("i"), scalar("j"),
+					}}, Col: 2},
 				}},
 			},
 			{
@@ -293,36 +334,105 @@ func FuzzParse(f *testing.F) {
 	})
 }
 
-// Parsing runs once per carrier line across every loaded file, so
-// its cost per directive bounds a large workspace's load.
-func BenchmarkGrammar(b *testing.B) {
-	b.Run("Parse", func(b *testing.B) {
-		b.ReportAllocs()
-
-		const payload = `indexer:index btree fields=[a, b, c] depth=3 unique=true role=server`
-		for b.Loop() {
-			if _, err := directive.Parse(payload); err != nil {
-				b.Fatalf("Parse: unexpected error: %v", err)
-			}
+// A name's plugin reads without allocating, Parse allocates the
+// arguments and each list once, and the joined payload of continued
+// lines is one allocation. The check runs alone, because AllocsPerRun
+// counts every goroutine's allocations and refuses to run beside
+// parallel tests.
+func TestGrammarAllocs(t *testing.T) {
+	name := directive.Name("mockgen:stub")
+	assert.MaxAllocs(t, func() {
+		if name.Plugin() != "mockgen" {
+			t.Fatal("Plugin returned another prefix")
 		}
+	}, 0, "Plugin allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if _, err := directive.Parse(fullPayload); err != nil {
+			t.Fatalf("Parse: unexpected error: %v", err)
+		}
+	}, 2, "Parse allocates the arguments and the list's elements")
+	assert.MaxAllocs(t, func() {
+		if _, err := directive.Parse(barePayload); err != nil {
+			t.Fatalf("Parse: unexpected error: %v", err)
+		}
+	}, 0, "Parse allocates nothing for a bare name")
+	assert.MaxAllocs(t, func() {
+		if _, err := directive.Parse(`doc text="plain words"`); err != nil {
+			t.Fatalf("Parse: unexpected error: %v", err)
+		}
+	}, 1, "Parse allocates the arguments and no quoted value without an escape")
+	assert.MaxAllocs(t, func() {
+		if directive.Join(continued) == "" {
+			t.Fatal("Join returned nothing")
+		}
+	}, 1, "Join allocates the joined payload")
+	assert.MaxAllocs(t, func() {
+		if directive.Join(continued[2:]) == "" {
+			t.Fatal("Join returned nothing")
+		}
+	}, 0, "Join allocates nothing for one line")
+}
+
+// BenchmarkGrammar measures a name's plugin, parsing, which runs once
+// per carrier line across every loaded file, and the join of continued
+// lines.
+func BenchmarkGrammar(b *testing.B) {
+	b.Run("Name.Plugin", func(b *testing.B) {
+		name := directive.Name("mockgen:stub")
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = name.Plugin()
+		}
+		assert.Equal(b, got, "mockgen", "Plugin returns the prefix")
 	})
 
-	b.Run("Parse minimal", func(b *testing.B) {
-		b.ReportAllocs()
-
-		for b.Loop() {
-			if _, err := directive.Parse("skip"); err != nil {
-				b.Fatalf("Parse: unexpected error: %v", err)
-			}
+	b.Run("Parse/five arguments with a list", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(2)
+		defer c.End()
+		var (
+			got directive.Raw
+			err error
+		)
+		for c.Loop() {
+			got, err = directive.Parse(fullPayload)
 		}
+		assert.NoError(b, err, "the payload parses")
+		assert.Length(b, got.Args, 5, "with its five arguments")
+	})
+
+	b.Run("Parse/a bare name", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var (
+			got directive.Raw
+			err error
+		)
+		for c.Loop() {
+			got, err = directive.Parse(barePayload)
+		}
+		assert.NoError(b, err, "the payload parses")
+		assert.Equal(b, got.Name, directive.Name(barePayload), "to the bare name")
 	})
 
 	b.Run("Join", func(b *testing.B) {
-		b.ReportAllocs()
-
-		lines := []string{`index \`, `fields=[a, b, \`, `c] depth=3`}
-		for b.Loop() {
-			_ = directive.Join(lines)
+		c := bench.Start(b).MaxAllocs(1)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = directive.Join(continued)
 		}
+		assert.Equal(b, got, "index fields=[a, b, c] depth=3", "Join folds the three lines")
 	})
+}
+
+// scalar returns a bare scalar value.
+func scalar(text string) directive.RawValue {
+	return directive.RawValue{Text: text}
+}
+
+// quoted returns a quoted scalar value.
+func quoted(text string) directive.RawValue {
+	return directive.RawValue{Text: text, Quoted: true}
 }

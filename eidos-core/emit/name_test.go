@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -46,5 +47,31 @@ func TestName(t *testing.T) {
 				assert.Equal(t, emit.DeclaredName(tt.give), tt.want, "the file-level name")
 			})
 		}
+	})
+}
+
+// A declared name reads without allocating in the ordinary run, which
+// runs no benchmark.
+func TestNameZeroAlloc(t *testing.T) {
+	var d symbol.Symbol = &emit.Variable{Name: declared}
+	assert.MaxAllocs(t, func() {
+		if emit.DeclaredName(d) != declared {
+			t.Fatal("DeclaredName returned another name")
+		}
+	}, 0, "DeclaredName allocates nothing")
+}
+
+// BenchmarkName measures the name a variable declares, the last kind
+// the switch tests.
+func BenchmarkName(b *testing.B) {
+	b.Run("DeclaredName", func(b *testing.B) {
+		var d symbol.Symbol = &emit.Variable{Name: declared}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = emit.DeclaredName(d)
+		}
+		assert.Equal(b, got, declared, "DeclaredName returns the variable's name")
 	})
 }

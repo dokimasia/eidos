@@ -38,6 +38,19 @@ type Tag string
 // invocations one after another or on several workers. A handler sees
 // the plan's store and the slots as they were when its phase call
 // began.
+//
+// # Concurrency
+//
+// An Emitter belongs to one invocation and is valid during its handler
+// call. A handler does not share it with another goroutine.
+//
+// # Allocation contract
+//
+// The phase call's buffers and the invocation's handles are pooled, so
+// an accessor, an append and a slot view allocate nothing per
+// invocation once the call's state is warm. What a call's effects leave
+// in the store allocates when they apply: the units, their lists of
+// declarations and origins, and the slots' values.
 type Emitter struct {
 	rs *runState
 	m  *match
@@ -45,20 +58,24 @@ type Emitter struct {
 
 // File returns the accumulator for the subject's source file and
 // the family, keyed by the subject's position: a subject without
-// one keys the empty string.
+// one keys the empty string. It allocates nothing for an invocation's
+// first four handles, and a handle each after them.
 func (e *Emitter) File(tags ...Tag) *Out {
 	return e.out(plugin.PerSource, e.m.pos.File, tags)
 }
 
 // PackageFile returns the accumulator for the subject's package and
 // the family, keyed by the language and the package path the
-// subject's identity names.
+// subject's identity names. It allocates nothing for an invocation's
+// first four handles, and a handle each after them.
 func (e *Emitter) PackageFile(tags ...Tag) *Out {
 	return e.out(plugin.PerPackage, e.m.subject.Package, tags)
 }
 
 // PlanFile returns the accumulator for the plan and the family. A
-// plan has one output per family, so its key is empty.
+// plan has one output per family, so its key is empty. It allocates
+// nothing for an invocation's first four handles, and a handle each
+// after them.
 func (e *Emitter) PlanFile(tags ...Tag) *Out {
 	return e.out(plugin.PerPlan, "", tags)
 }
@@ -70,7 +87,7 @@ func (e *Emitter) PlanFile(tags ...Tag) *Out {
 // into a slot of an earlier bucket's value names the plugin among the
 // contributors of the unit that contains the value. The view is valid
 // during the handler call. A nil slot panics, because the view would
-// append nowhere.
+// append nowhere. Slot returns the view by value and allocates nothing.
 func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] {
 	if s == nil {
 		panic("eidos: " + string(e.rs.plugin) + " asks for the view of a nil slot")
@@ -86,7 +103,8 @@ func (e *Emitter) Slot[T any](s *emit.Slot[T]) SlotView[T] {
 // target's case when the plan settles: store and stub join as
 // storeStub, which a Go plan spells StoreStub for a public
 // declaration. An empty word returns the base, and an empty base
-// returns the word.
+// returns the word, without allocating. A join allocates the joined
+// name, one allocation.
 func (*Emitter) JoinName(word, base string) string {
 	if word == "" {
 		return base
@@ -107,7 +125,8 @@ func (*Emitter) JoinName(word, base string) string {
 // body to claim: the render resolves the name in this plugin's tree
 // for the plan's target, wherever the body is placed, a slot of
 // another plugin's declaration included. Data is the payload the
-// template executes over.
+// template executes over. Ref allocates the reference, which the body
+// keeps, one allocation.
 func (e *Emitter) Ref(name string, data any) *emit.TemplateRef {
 	return &emit.TemplateRef{Name: name, Data: data, Owner: e.rs.plugin}
 }
@@ -174,7 +193,10 @@ type Out struct {
 // source order under a repeatable directive, then by canonical match
 // order and the order of the appends, so output order is canonical
 // and never schedule order. The call copies the declarations, so the
-// caller may reuse the slice it passed.
+// caller may reuse the slice it passed. It buffers them in the phase
+// call's pooled storage and allocates nothing once the call's state is
+// warm. The flush allocates the unit's lists of declarations and
+// origins.
 func (o *Out) Append(decls ...symbol.Symbol) {
 	if len(decls) == 0 {
 		return
@@ -195,7 +217,10 @@ type SlotView[T any] struct {
 // Append buffers values for the slot, in order. They apply when the
 // phase call's rules have run, after the values of every invocation
 // earlier in canonical match order. An append of no values is not
-// recorded.
+// recorded. The buffer is the phase call's pooled storage, so an append
+// allocates nothing once the call's state is warm. The slot grows when
+// the values apply, and the store records the plugin among the host
+// unit's contributors.
 func (v SlotView[T]) Append(values ...T) {
 	if v.rs == nil {
 		panic("eidos: a zero SlotView appends nowhere; Emitter.Slot returns the view to append through")
@@ -262,9 +287,12 @@ func originsOf(places []placed) []symbol.Identity {
 	return out
 }
 
-// accFor returns the accumulator for one key, created on first
-// touch with its namespace resolved once. The first touch of the call
-// creates the map, so a call that touches nothing allocates none.
+// accFor returns the accumulator for one key, bound on first touch
+// with its namespace resolved once. It binds an accumulator an earlier
+// call released where the call's state has one, so its placements
+// append into storage that call grew, and allocates one otherwise. The
+// first touch of a state creates the map, so a call that touches
+// nothing allocates none.
 func (c *phaseCall) accFor(k accKey, fam plugin.Output, subject symbol.Identity) *accumulator {
 	if acc, held := c.accs[k]; held {
 		return acc
@@ -272,7 +300,13 @@ func (c *phaseCall) accFor(k accKey, fam plugin.Output, subject symbol.Identity)
 	if c.accs == nil {
 		c.accs = map[accKey]*accumulator{}
 	}
-	acc := &accumulator{out: fam, key: k.key}
+	var acc *accumulator
+	if n := len(c.spare); n > 0 {
+		acc, c.spare = c.spare[n-1], c.spare[:n-1]
+		acc.out, acc.key = fam, k.key
+	} else {
+		acc = &accumulator{out: fam, key: k.key}
+	}
 	if k.per != plugin.PerPlan && !subject.IsZero() {
 		if pkg, held := c.index.PackageOf(subject); held {
 			acc.pkg = pkg.ID
@@ -286,11 +320,18 @@ func (c *phaseCall) accFor(k accKey, fam plugin.Output, subject symbol.Identity)
 // in canonical order, and arrives them in the plan's store. The
 // accumulators flush in key order, so refusals arrive in one order. A
 // call that touched nothing flushes nothing and allocates nothing.
+//
+// # Allocation contract
+//
+// The keys sort in the call's own buffer. Each unit allocates its
+// declarations and, where they have origins, its origins, both of which
+// the store keeps.
 func (c *phaseCall) flush(into *plugin.Emit) error {
 	if len(c.accs) == 0 {
 		return nil
 	}
-	keys := slices.SortedFunc(maps.Keys(c.accs), func(a, b accKey) int {
+	c.accKeys = slices.AppendSeq(c.accKeys[:0], maps.Keys(c.accs))
+	slices.SortFunc(c.accKeys, func(a, b accKey) int {
 		if c := cmp.Compare(a.per, b.per); c != 0 {
 			return c
 		}
@@ -302,7 +343,7 @@ func (c *phaseCall) flush(into *plugin.Emit) error {
 		}
 		return cmp.Compare(a.tag, b.tag)
 	})
-	for _, k := range keys {
+	for _, k := range c.accKeys {
 		acc := c.accs[k]
 		slices.SortStableFunc(acc.places, func(a, b placed) int {
 			if c := a.origin.Compare(b.origin); c != 0 {

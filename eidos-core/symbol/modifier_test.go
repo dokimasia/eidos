@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -79,11 +80,58 @@ func TestModifier(t *testing.T) {
 				"the zero Variadic takes exactly one argument")
 		})
 
-		t.Run("positional and keyword stay distinct", func(t *testing.T) {
+		t.Run("distinguishes VariadicPositional from VariadicKeyword", func(t *testing.T) {
 			t.Parallel()
 
 			assert.NotEqual(t, symbol.VariadicPositional, symbol.VariadicKeyword,
 				"Python *args and **kwargs spell differently")
 		})
+	})
+
+	t.Run("Structural", func(t *testing.T) {
+		t.Parallel()
+
+		tests := []struct {
+			name string
+			give symbol.TypeForm
+			want bool
+		}{
+			{name: "reports true for FormNamed", give: symbol.FormNamed, want: true},
+			{name: "reports true for FormInline", give: symbol.FormInline, want: true},
+			{name: "reports false for FormScalar", give: symbol.FormScalar, want: false},
+			{name: "reports false for FormOpaque", give: symbol.FormOpaque, want: false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, tt.give.Structural(), tt.want, "whether a frontend sets the form")
+			})
+		}
+	})
+}
+
+// Structural allocates nothing in the ordinary run, which runs no
+// benchmark.
+func TestModifierZeroAlloc(t *testing.T) {
+	form := symbol.FormInline
+	assert.MaxAllocs(t, func() {
+		if !form.Structural() {
+			t.Fatal("Structural reported false for FormInline")
+		}
+	}, 0, "Structural allocates nothing")
+}
+
+// BenchmarkModifier measures the one method of the modifiers.
+func BenchmarkModifier(b *testing.B) {
+	b.Run("Structural", func(b *testing.B) {
+		form := symbol.FormInline
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got bool
+		for c.Loop() {
+			got = form.Structural()
+		}
+		assert.True(b, got, "FormInline is a structural form")
 	})
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/meta"
@@ -24,19 +25,63 @@ const (
 	compositionName = "the composition"
 )
 
-// claimed returns the composition's handle on a registry in which
-// the composition claimed the shape and gen namespaces.
-func claimed(tb assert.TB) *meta.Registry {
-	tb.Helper()
+// The allocations of building a registry and of each registration,
+// which TestRegistryAllocs checks in the ordinary run and
+// BenchmarkRegistry in a benchmark run.
+const (
+	// newRegistryAllocs is an empty registry: the composition's handle,
+	// the registrations every handle shares, and their three maps.
+	newRegistryAllocs = 5
+	// forAllocs is a registrant's handle.
+	forAllocs = 1
+	// firstNamespaceAllocs is the first namespace a registry claims: the
+	// first entry of the namespace map.
+	firstNamespaceAllocs = 1
+	// firstKeyAllocs is the first key a registry registers outside a
+	// group: the spec list, the type list and the first entry of the
+	// name map.
+	firstKeyAllocs = 3
+	// firstGroupedKeyAllocs is the first key a registry registers into a
+	// group: what firstKeyAllocs counts, the first entry of the group
+	// map and the group's member list.
+	firstGroupedKeyAllocs = 5
+)
 
-	r := meta.NewRegistry()
-	assert.NoError(tb, r.ClaimNamespace(shapeNamespace), "the shape namespace is claimed")
-	assert.NoError(tb, r.ClaimNamespace(genNamespace), "the gen namespace is claimed")
-	return r
-}
-
+// Registration is how a plugin claims its namespace and its keys, so
+// what each registration refuses and what each lookup returns are
+// contract.
 func TestRegistry(t *testing.T) {
 	t.Parallel()
+
+	t.Run("NewRegistry", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a registry without a key", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, slices.Collect(meta.NewRegistry().Keys()), "nothing is registered")
+		})
+	})
+
+	t.Run("For", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns a handle on the same registrations", func(t *testing.T) {
+			t.Parallel()
+
+			r := meta.NewRegistry()
+			shape := r.For(shapePlugin)
+			assert.NoError(t, shape.ClaimNamespace(shapeNamespace), "the plugin claims its namespace")
+			role, err := meta.Register[string](shape, meta.KeySpec{
+				Name: "shape.role", Doc: "the classified role",
+			})
+			assert.NoError(t, err, "the key registers through the plugin's handle")
+
+			id, known := r.Resolve("shape.role")
+			assert.True(t, known, "the composition's handle resolves the key")
+			assert.Equal(t, id, role.ID(), "the composition's handle resolves the same id")
+		})
+	})
 
 	t.Run("ClaimNamespace", func(t *testing.T) {
 		t.Parallel()
@@ -78,26 +123,6 @@ func TestRegistry(t *testing.T) {
 			r := meta.NewRegistry()
 			r.Seal()
 			assert.HasError(t, r.ClaimNamespace(shapeNamespace), "the claim fails")
-		})
-	})
-
-	t.Run("For", func(t *testing.T) {
-		t.Parallel()
-
-		t.Run("returns a handle on the same registrations", func(t *testing.T) {
-			t.Parallel()
-
-			r := meta.NewRegistry()
-			shape := r.For(shapePlugin)
-			assert.NoError(t, shape.ClaimNamespace(shapeNamespace), "the plugin claims its namespace")
-			role, err := meta.Register[string](shape, meta.KeySpec{
-				Name: "shape.role", Doc: "the classified role",
-			})
-			assert.NoError(t, err, "the key registers through the plugin's handle")
-
-			id, known := r.Resolve("shape.role")
-			assert.True(t, known, "the composition's handle resolves the key")
-			assert.Equal(t, id, role.ID(), "the composition's handle resolves the same id")
 		})
 	})
 
@@ -365,6 +390,39 @@ func TestRegistry(t *testing.T) {
 		})
 	})
 
+	t.Run("Group", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns the members in registration order", func(t *testing.T) {
+			t.Parallel()
+
+			r := claimed(t)
+			role, err := meta.Register[string](r, meta.KeySpec{
+				Name: "shape.role", Group: "shape.writer", Doc: "the classified role",
+			})
+			assert.NoError(t, err, "the first member registers")
+			target, err := meta.Register[symbol.Identity](r, meta.KeySpec{
+				Name: "shape.target", Group: "shape.writer", Doc: "the named twin",
+			})
+			assert.NoError(t, err, "the second member registers")
+			_, err = meta.Register[bool](r, meta.KeySpec{
+				Name: "shape.comparable", Doc: "outside the group",
+			})
+			assert.NoError(t, err, "a key outside the group registers")
+
+			assert.Equal(t, slices.Collect(r.Group("shape.writer")),
+				[]meta.KeyID{role.ID(), target.ID()},
+				"the members are in registration order")
+		})
+
+		t.Run("returns nothing for a group nothing registered into", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Empty(t, slices.Collect(claimed(t).Group("shape.nonexistent")),
+				"the group has no members")
+		})
+	})
+
 	t.Run("Keys", func(t *testing.T) {
 		t.Parallel()
 
@@ -403,57 +461,308 @@ func TestRegistry(t *testing.T) {
 		})
 	})
 
-	t.Run("Group", func(t *testing.T) {
+	t.Run("Seal", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("returns the members in registration order", func(t *testing.T) {
+		t.Run("keeps every registered key resolvable", func(t *testing.T) {
 			t.Parallel()
 
-			r := claimed(t)
-			role, err := meta.Register[string](r, meta.KeySpec{
-				Name: "shape.role", Group: "shape.writer", Doc: "the classified role",
-			})
-			assert.NoError(t, err, "the first member registers")
-			target, err := meta.Register[symbol.Identity](r, meta.KeySpec{
-				Name: "shape.target", Group: "shape.writer", Doc: "the named twin",
-			})
-			assert.NoError(t, err, "the second member registers")
-			_, err = meta.Register[bool](r, meta.KeySpec{
-				Name: "shape.comparable", Doc: "outside the group",
-			})
-			assert.NoError(t, err, "a key outside the group registers")
-
-			assert.Equal(t, slices.Collect(r.Group("shape.writer")),
-				[]meta.KeyID{role.ID(), target.ID()},
-				"the members are in registration order")
-		})
-
-		t.Run("returns nothing for a group nothing registered into", func(t *testing.T) {
-			t.Parallel()
-
-			assert.Empty(t, slices.Collect(claimed(t).Group("shape.nonexistent")),
-				"the group has no members")
+			r, role := grouped(t)
+			id, known := r.Resolve("shape.role")
+			assert.True(t, known, "the sealed registry resolves the key")
+			assert.Equal(t, id, role.ID(), "to the registered id")
 		})
 	})
 }
 
-// Resolution is the boundary's lookup: every directive parameter
-// naming a key goes through it.
-func BenchmarkRegistry(b *testing.B) {
-	b.Run("Resolve", func(b *testing.B) {
-		b.ReportAllocs()
+// Building a registry and each registration allocate what the registry
+// keeps, and the lookups a run makes allocate nothing, in the ordinary
+// run, which runs no benchmark. Each counted registration takes a
+// registry of its own, built before the count. The check runs alone,
+// because AllocsPerRun counts every goroutine's allocations and refuses
+// to run beside parallel tests.
+func TestRegistryAllocs(t *testing.T) {
+	var built *meta.Registry
+	assert.MaxAllocs(t, func() { built = meta.NewRegistry() }, newRegistryAllocs,
+		"NewRegistry allocates the handle, the registrations and their maps")
+	assert.MaxAllocs(t, func() { built = built.For(shapePlugin) }, forAllocs, "For allocates the handle")
 
-		r := claimed(b)
-		if _, err := meta.Register[string](r, meta.KeySpec{
-			Name: "shape.role", Doc: "the classified role",
-		}); err != nil {
-			b.Fatalf("Register: unexpected error: %v", err)
+	at, empty := 0, registries(t, unclaimed)
+	assert.MaxAllocs(t, func() {
+		if err := empty[at].ClaimNamespace(shapeNamespace); err != nil {
+			t.Fatalf("ClaimNamespace: unexpected error: %v", err)
 		}
+		at++
+	}, firstNamespaceAllocs, "ClaimNamespace allocates the first entry of the namespace map")
 
-		for b.Loop() {
-			if _, known := r.Resolve("shape.role"); !known {
-				b.Fatal("a registered spelling did not resolve")
+	at, once := 0, registries(t, claimedGen)
+	assert.MaxAllocs(t, func() {
+		if err := once[at].ClaimNamespace(shapeNamespace); err != nil {
+			t.Fatalf("ClaimNamespace: unexpected error: %v", err)
+		}
+		at++
+	}, 0, "ClaimNamespace allocates nothing for a second namespace")
+
+	spec := roleSpec()
+	at, ungrouped := 0, registries(t, claimed)
+	assert.MaxAllocs(t, func() {
+		if _, err := meta.Register[string](ungrouped[at], spec); err != nil {
+			t.Fatalf("Register: unexpected error: %v", err)
+		}
+		at++
+	}, firstKeyAllocs, "Register allocates the spec list, the type list and the name map's first entry")
+
+	spec = groupedRoleSpec()
+	at, grouping := 0, registries(t, claimed)
+	assert.MaxAllocs(t, func() {
+		if _, err := meta.Register[string](grouping[at], spec); err != nil {
+			t.Fatalf("Register: unexpected error: %v", err)
+		}
+		at++
+	}, firstGroupedKeyAllocs, "Register allocates the group's entry and its member list beside the key's")
+
+	assert.MaxAllocs(t, func() { built.Seal() }, 0, "Seal allocates nothing")
+
+	r, role := grouped(t)
+	assert.MaxAllocs(t, func() {
+		if id, _ := r.Resolve("shape.role"); id != role.ID() {
+			t.Fatal("Resolve returned another id")
+		}
+	}, 0, "Resolve allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if got, _ := meta.Lookup[string](r, "shape.role"); got.ID() != role.ID() {
+			t.Fatal("Lookup returned another handle")
+		}
+	}, 0, "Lookup allocates nothing")
+	assert.MaxAllocs(t, func() {
+		if spec, _ := r.Spec(role.ID()); spec.Name != role.Name() {
+			t.Fatal("Spec returned another spec")
+		}
+	}, 0, "Spec allocates nothing")
+	assert.MaxAllocs(t, func() {
+		members := 0
+		for range r.Group("shape.writer") {
+			members++
+		}
+		if members != 1 {
+			t.Fatal("Group enumerated another number of members")
+		}
+	}, 0, "Group allocates nothing")
+	assert.MaxAllocs(t, func() {
+		keys := 0
+		for range r.Keys() {
+			keys++
+		}
+		if keys != 1 {
+			t.Fatal("Keys enumerated another number of keys")
+		}
+	}, 0, "Keys allocates nothing")
+}
+
+// BenchmarkRegistry measures the registrations a composition makes once
+// per build, each into a registry built outside the measurement, and
+// the lookups a run makes against the sealed registry: every directive
+// parameter naming a key resolves through one of them.
+func BenchmarkRegistry(b *testing.B) {
+	b.Run("NewRegistry", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(newRegistryAllocs)
+		defer c.End()
+		var r *meta.Registry
+		for c.Loop() {
+			r = meta.NewRegistry()
+		}
+		assert.Empty(b, slices.Collect(r.Keys()), "NewRegistry returns a registry without a key")
+	})
+
+	b.Run("For", func(b *testing.B) {
+		r := meta.NewRegistry()
+		c := bench.Start(b).MaxAllocs(forAllocs)
+		defer c.End()
+		var handle *meta.Registry
+		for c.Loop() {
+			handle = r.For(shapePlugin)
+		}
+		assert.NoError(b, handle.ClaimNamespace(shapeNamespace), "For returns a handle that claims")
+	})
+
+	claims := []struct {
+		name   string
+		fresh  func(assert.TB) *meta.Registry
+		allocs uint64
+	}{
+		{name: "ClaimNamespace/a first namespace", fresh: unclaimed, allocs: firstNamespaceAllocs},
+		{name: "ClaimNamespace/a second namespace", fresh: claimedGen, allocs: 0},
+	}
+	for _, tt := range claims {
+		b.Run(tt.name, func(b *testing.B) {
+			var r *meta.Registry
+			fresh := func() { r = tt.fresh(b) }
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				err = r.ClaimNamespace(shapeNamespace)
+			}
+			assert.NoError(b, err, "the namespace is claimed")
+		})
+	}
+
+	registrations := []struct {
+		name   string
+		spec   meta.KeySpec
+		allocs uint64
+	}{
+		{name: "Register/a first key", spec: roleSpec(), allocs: firstKeyAllocs},
+		{name: "Register/a first key in a group", spec: groupedRoleSpec(), allocs: firstGroupedKeyAllocs},
+	}
+	for _, tt := range registrations {
+		b.Run(tt.name, func(b *testing.B) {
+			var r *meta.Registry
+			fresh := func() { r = claimed(b) }
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var (
+				key meta.Key[string]
+				err error
+			)
+			for c.Loop() {
+				c.Excluding(fresh)
+				key, err = meta.Register[string](r, tt.spec)
+			}
+			assert.NoError(b, err, "the key registers")
+			assert.False(b, key.IsZero(), "Register returns a handle that names the key")
+		})
+	}
+
+	b.Run("Seal", func(b *testing.B) {
+		r := claimed(b)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		for c.Loop() {
+			r.Seal()
+		}
+		assert.HasError(b, r.ClaimNamespace("late"), "Seal ends registration")
+	})
+
+	r, role := grouped(b)
+
+	b.Run("Resolve", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var id meta.KeyID
+		for c.Loop() {
+			id, _ = r.Resolve("shape.role")
+		}
+		assert.Equal(b, id, role.ID(), "Resolve returns the registered id")
+	})
+
+	b.Run("Lookup", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got meta.Key[string]
+		for c.Loop() {
+			got, _ = meta.Lookup[string](r, "shape.role")
+		}
+		assert.Equal(b, got.ID(), role.ID(), "Lookup returns the registered handle")
+	})
+
+	b.Run("Spec", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var spec meta.KeySpec
+		for c.Loop() {
+			spec, _ = r.Spec(role.ID())
+		}
+		assert.Equal(b, spec.Name, role.Name(), "Spec returns the registered spec")
+	})
+
+	b.Run("Group", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		members := 0
+		for c.Loop() {
+			members = 0
+			for range r.Group("shape.writer") {
+				members++
 			}
 		}
+		assert.Equal(b, members, 1, "Group enumerates the group's member")
 	})
+
+	b.Run("Keys", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		keys := 0
+		for c.Loop() {
+			keys = 0
+			for range r.Keys() {
+				keys++
+			}
+		}
+		assert.Equal(b, keys, 1, "Keys enumerates the registered key")
+	})
+}
+
+// unclaimed returns the composition's handle on an empty registry, in
+// which no namespace is claimed.
+func unclaimed(tb assert.TB) *meta.Registry {
+	tb.Helper()
+
+	return meta.NewRegistry()
+}
+
+// claimed returns the composition's handle on a registry in which
+// the composition claimed the shape and gen namespaces.
+func claimed(tb assert.TB) *meta.Registry {
+	tb.Helper()
+
+	r := meta.NewRegistry()
+	assert.NoError(tb, r.ClaimNamespace(shapeNamespace), "the shape namespace is claimed")
+	assert.NoError(tb, r.ClaimNamespace(genNamespace), "the gen namespace is claimed")
+	return r
+}
+
+// claimedGen returns the composition's handle on a registry in which
+// the composition claimed the gen namespace alone.
+func claimedGen(tb assert.TB) *meta.Registry {
+	tb.Helper()
+
+	r := meta.NewRegistry()
+	assert.NoError(tb, r.ClaimNamespace(genNamespace), "the gen namespace is claimed")
+	return r
+}
+
+// grouped returns a sealed registry with the role key registered into
+// the writer group, and the key's handle.
+func grouped(tb assert.TB) (*meta.Registry, meta.Key[string]) {
+	tb.Helper()
+
+	r := claimed(tb)
+	role, err := meta.Register[string](r, groupedRoleSpec())
+	assert.NoError(tb, err, "the role key registers")
+	r.Seal()
+	return r, role
+}
+
+// roleSpec returns the spec of the role key outside a group.
+func roleSpec() meta.KeySpec {
+	return meta.KeySpec{Name: "shape.role", Doc: "the classified role"}
+}
+
+// groupedRoleSpec returns the spec of the role key in the writer group.
+func groupedRoleSpec() meta.KeySpec {
+	return meta.KeySpec{Name: "shape.role", Group: "shape.writer", Doc: "the classified role"}
+}
+
+// registries returns allocRuns registries that build returns, one for
+// each call of an allocation check that consumes its registry.
+func registries(t *testing.T, build func(assert.TB) *meta.Registry) []*meta.Registry {
+	t.Helper()
+
+	out := make([]*meta.Registry, allocRuns)
+	for i := range out {
+		out[i] = build(t)
+	}
+	return out
 }

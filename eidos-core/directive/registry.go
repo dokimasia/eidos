@@ -246,9 +246,11 @@ func admissible(s Schema) error {
 		return fmt.Errorf("directive: %s names plugin %q, which no carrier can spell as a prefix",
 			s.Name, s.Plugin)
 	}
-	for _, spec := range slices.Concat(s.Positional, s.Params) {
-		if !isIdentifier(string(spec.Key)) {
-			return fmt.Errorf("directive: %s param %q is no key a carrier can spell", s.Name, spec.Key)
+	for _, specs := range [2][]ParamSpec{s.Positional, s.Params} {
+		for _, spec := range specs {
+			if !isIdentifier(string(spec.Key)) {
+				return fmt.Errorf("directive: %s param %q is no key a carrier can spell", s.Name, spec.Key)
+			}
 		}
 	}
 	if s.Doc == "" {

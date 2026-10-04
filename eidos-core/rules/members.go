@@ -4,8 +4,10 @@
 package rules
 
 import (
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 
 	"go.dokimi.dev/eidos/core/node"
 	"go.dokimi.dev/eidos/core/symbol"
@@ -13,22 +15,24 @@ import (
 
 // MemberSet is a type's effective members: its own and what arrives
 // through its contributors, with provenance per member and a gap
-// for every contributor that yielded nothing.
+// for every contributor that yielded nothing. Each call of
+// [Bound.MembersOf] returns lists of its own.
 type MemberSet struct {
-	Members []Member
-	Gaps    []Gap
+	Members []Member // grouped by name in the order each name first arrives, the declared names first
+	Gaps    []Gap    // the contributors the walk could not follow, then the conflicts; nil for a complete set
 }
 
-// Complete reports whether every contributor yielded.
+// Complete reports whether every contributor yielded. It allocates
+// nothing.
 func (s MemberSet) Complete() bool { return len(s.Gaps) == 0 }
 
 // Member is one effective member and where it came from.
 type Member struct {
 	// Symbol is the member: a field, a method, or, under
 	// [MemberPolicy.EmbedsAreFields], the [node.Embed] declaring an
-	// embedded field. One that arrived through a contributor carrying
-	// type arguments is a copy with the arguments bound; a declared
-	// one is the graph's own node.
+	// embedded field. A member that arrived through a contributor with
+	// type arguments is a copy with the arguments bound. A declared
+	// member is the graph's own node.
 	Symbol symbol.Symbol
 	// Owner is the declaration that declared it.
 	Owner symbol.Identity
@@ -47,8 +51,8 @@ type Member struct {
 type GapReason uint8
 
 const (
-	// GapUnresolved is a contributor whose reference carries no
-	// target, or one the view does not hold.
+	// GapUnresolved is a contributor whose reference has no target, or
+	// a target the view does not contain.
 	GapUnresolved GapReason = iota + 1
 	// GapNotMembered is a contributor that is not a type with
 	// members.
@@ -56,15 +60,16 @@ const (
 	// GapCyclic is a contributor already on the path, or one past
 	// the depth budget.
 	GapCyclic
-	// GapGeneric is a contributor carrying type arguments the walk
-	// could not bind.
+	// GapGeneric is a contributor with type arguments the walk could
+	// not bind.
 	GapGeneric
 	// GapConflict is two arrivals of one name on an interface with
 	// different signatures.
 	GapConflict
 )
 
-// String returns the reason's spelling.
+// String returns the reason's spelling, and the decimal number of an
+// undeclared reason. It allocates nothing for a declared reason.
 func (r GapReason) String() string {
 	switch r {
 	case GapUnresolved:
@@ -84,12 +89,12 @@ func (r GapReason) String() string {
 
 // Gap is one contributor that yielded nothing, and why.
 type Gap struct {
-	Host        symbol.Identity
-	Contributor *node.TypeRef
-	Reason      GapReason
+	Host        symbol.Identity // the type whose list contains the contributor
+	Contributor *node.TypeRef   // the reference the walk could not follow
+	Reason      GapReason       // why the contributor yielded nothing
 }
 
-// membered is what the walk reads off a type with members.
+// membered is what the walk reads from a type with members.
 type membered struct {
 	id         symbol.Identity
 	fields     []*node.Field
@@ -101,8 +106,8 @@ type membered struct {
 	iface      bool
 }
 
-// memberedOf reads the lists a kind carries, and false for a kind
-// without members.
+// memberedOf returns the member lists of a type, and reports false for
+// a kind without members and for a nil declaration.
 func memberedOf(sym symbol.Symbol) (membered, bool) {
 	switch d := sym.(type) {
 	case *node.Struct:
@@ -136,8 +141,8 @@ func memberedOf(sym symbol.Symbol) (membered, bool) {
 	}
 }
 
-// arrival is one candidate for a name, chained to the next arrival
-// of the same name by index so one flat list holds every name's
+// arrival is one candidate for a name, chained to the next arrival of
+// the same name by index, so one flat list contains every name's
 // candidates without a slice per name.
 type arrival struct {
 	member Member
@@ -167,7 +172,9 @@ func (a *arrival) signature() string {
 // chain is where a name's arrivals start and currently end.
 type chain struct{ first, last int }
 
-// walk carries one member walk's state.
+// walk is the state of one member walk. A walk serves one call of
+// [Bound.membersOf] at a time and returns to the pool when the call
+// returns, so a walk's storage serves the calls after it.
 type walk struct {
 	b        Bound
 	root     symbol.Identity
@@ -178,22 +185,24 @@ type walk struct {
 	visiting map[symbol.Identity]bool
 }
 
+// walks pools the walks of finished calls, with their storage.
+var walks = sync.Pool{New: func() any {
+	return &walk{names: map[string]chain{}, visiting: map[symbol.Identity]bool{}}
+}}
+
 // membersOf runs the kernel walk under the subject language's
-// policy. It reports false for a symbol that is not a type.
+// policy. It reports false for a symbol that is not a type. It
+// allocates the members it returns, the gaps, and the path of each
+// contributor it descends into, and takes its working storage from a
+// walk an earlier call released.
 func (b Bound) membersOf(sym symbol.Symbol) (MemberSet, bool) {
 	root, is := memberedOf(sym)
 	if !is {
 		return MemberSet{}, false
 	}
-	declared := len(root.fields) + len(root.methods)
-	w := &walk{
-		b:        b,
-		root:     root.id,
-		arrivals: make([]arrival, 0, declared),
-		names:    make(map[string]chain, declared),
-		order:    make([]string, 0, declared),
-		visiting: map[symbol.Identity]bool{},
-	}
+	w, _ := walks.Get().(*walk)
+	defer w.release()
+	w.b, w.root = b, root.id
 	policy := b.source.Members()
 	w.visit(root, policy, b.source, nil, 0, false, nil)
 	set := MemberSet{Members: make([]Member, 0, len(w.order))}
@@ -201,9 +210,27 @@ func (b Bound) membersOf(sym symbol.Symbol) (MemberSet, bool) {
 		set.Members = w.settle(set.Members, name, policy, root.iface)
 	}
 	// Settling files conflict gaps of its own, so the gaps are read
-	// after it, not before.
-	set.Gaps = w.gaps
+	// after it, not before. The set keeps a copy, because the walk's
+	// storage returns to the pool.
+	if len(w.gaps) > 0 {
+		set.Gaps = slices.Clone(w.gaps)
+	}
 	return set, true
+}
+
+// release empties the walk and returns it to the pool. It zeroes the
+// arrivals and the gaps, so a pooled walk keeps no declaration of the
+// graph alive.
+func (w *walk) release() {
+	clear(w.arrivals)
+	clear(w.names)
+	clear(w.order)
+	clear(w.gaps)
+	clear(w.visiting)
+	*w = walk{
+		arrivals: w.arrivals[:0], names: w.names, order: w.order[:0], gaps: w.gaps[:0], visiting: w.visiting,
+	}
+	walks.Put(w)
 }
 
 // visit records a type's declared members at the current depth and
@@ -245,7 +272,7 @@ func (w *walk) visit(
 	}
 	for _, c := range policy.Contributes {
 		for _, ref := range t.contributors(c) {
-			w.descend(t, ref, source, through, depth, budget, viaOptional)
+			w.descend(t, ref, policy, source, through, depth, budget, viaOptional)
 		}
 	}
 }
@@ -270,9 +297,11 @@ func (t membered) contributors(c Contribution) []*node.TypeRef {
 	}
 }
 
-// descend follows one contributor, recording a gap where it cannot.
+// descend follows one contributor, recording a gap where it cannot. A
+// contributor in the host's language walks under the host's policy, and
+// one in another language under that language's own.
 func (w *walk) descend(
-	host membered, ref *node.TypeRef, source SourceRules,
+	host membered, ref *node.TypeRef, policy MemberPolicy, source SourceRules,
 	through []symbol.Identity, depth, budget int, viaOptional bool,
 ) {
 	if ref == nil {
@@ -306,7 +335,6 @@ func (w *walk) descend(
 		inner = bound
 	}
 	next := source
-	policy := source.Members()
 	if target.Target.Lang != source.Lang() {
 		// A contributor in another language walks under its own
 		// policy: Go promotion says nothing about a proto message.
@@ -335,8 +363,10 @@ func namedUnder(ref *node.TypeRef) *node.TypeRef {
 // contributors with the reference's arguments substituted through
 // the language's generics capability, so a chain of generic
 // contributors binds each level to the arguments of the level
-// above. It reports false where a parameter stays unbound or the
-// language returns no capability.
+// above. It reports false where the language has no generics
+// capability, and where the reference's arguments differ in number
+// from the contributor's parameters. It allocates the restated lists
+// and each restated member.
 func bind(inner membered, ref *node.TypeRef, source SourceRules) (membered, bool) {
 	generics, held := source.(GenericsRules)
 	if !held || len(ref.Args) != len(inner.params) {
@@ -454,7 +484,7 @@ func (w *walk) each(name string, fn func(a *arrival) bool) {
 }
 
 // settle applies the shadowing rule to one name's arrivals and
-// appends the members that survive to dst: a declared member always
+// appends the members the rule keeps to dst: a declared member always
 // takes its name or its signature, and on an interface one name
 // with one signature arriving twice is one member.
 func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool) []Member {
@@ -497,8 +527,8 @@ func (w *walk) settle(dst []Member, name string, policy MemberPolicy, iface bool
 }
 
 // nearestPerSignature appends one member per distinct signature
-// among a name's surviving arrivals: the shallowest arrival, and the
-// first of those in arrival order. Each overload keeps its nearest
+// among a name's arrivals that dedupe kept: the shallowest arrival, and
+// the first of those in arrival order. Each overload keeps its nearest
 // declaration. A field and an embedded field have no signature, so
 // fields settle by name alone.
 func (w *walk) nearestPerSignature(dst []Member, name string) []Member {
@@ -529,8 +559,8 @@ func (w *walk) nearestPerSignature(dst []Member, name string) []Member {
 	return dst
 }
 
-// appendFirstAt appends a name's first surviving arrival at one
-// depth to dst.
+// appendFirstAt appends a name's first kept arrival at one depth to
+// dst.
 func (w *walk) appendFirstAt(dst []Member, name string, depth int) []Member {
 	w.each(name, func(a *arrival) bool {
 		if a.dropped || a.member.Depth != depth {
@@ -542,8 +572,8 @@ func (w *walk) appendFirstAt(dst []Member, name string, depth int) []Member {
 	return dst
 }
 
-// appendAt appends a name's surviving arrivals at one depth to dst,
-// or every surviving arrival for a negative depth.
+// appendAt appends a name's kept arrivals at one depth to dst, or
+// every kept arrival for a negative depth.
 func (w *walk) appendAt(dst []Member, name string, depth int) []Member {
 	w.each(name, func(a *arrival) bool {
 		if !a.dropped && (depth < 0 || a.member.Depth == depth) {
@@ -554,7 +584,7 @@ func (w *walk) appendAt(dst []Member, name string, depth int) []Member {
 	return dst
 }
 
-// countAt counts a name's surviving arrivals at one depth.
+// countAt counts a name's kept arrivals at one depth.
 func (w *walk) countAt(name string, depth int) int {
 	n := 0
 	w.each(name, func(a *arrival) bool {
@@ -569,7 +599,7 @@ func (w *walk) countAt(name string, depth int) int {
 // dedupe drops a name's later arrivals with the first's signature,
 // and files a conflict for a later arrival whose signature differs
 // while both are stated. The conflict names the contributor the
-// later arrival came by and the host whose list holds it.
+// later arrival came by and the host whose list contains it.
 func (w *walk) dedupe(name string) {
 	head := &w.arrivals[w.names[name].first]
 	for i := head.next; i >= 0; i = w.arrivals[i].next {

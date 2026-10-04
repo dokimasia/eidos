@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	eidos "go.dokimi.dev/eidos/core"
 	"go.dokimi.dev/eidos/core/diag"
@@ -21,6 +22,19 @@ import (
 
 // subjectPlugin is the identity every plugin here declares under.
 const subjectPlugin = "subjects"
+
+// matchAllocs is one constructor call: the rule's leaf, and the
+// closure that binds the handler to the subject's kind.
+const matchAllocs = 2
+
+// matchCase is one measured call of a constructor: the
+// sub-benchmark's name, the call, and the check on the rule the last
+// call returned.
+type matchCase struct {
+	name  string
+	call  func()
+	check func(testing.TB)
+}
 
 // dispatched runs p's generate phase over a graph holding pkgs, and
 // fails the test unless the phase call passes. It is what puts a
@@ -52,7 +66,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnFunction", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -139,7 +153,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnMethod", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -226,7 +240,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnParam", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -313,7 +327,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnReturn", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -400,7 +414,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnEnum", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -487,7 +501,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnSum", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -574,7 +588,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnField", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -661,7 +675,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnVariable", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -748,7 +762,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnConstant", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -835,7 +849,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnStruct", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -922,7 +936,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnInterface", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -1009,7 +1023,7 @@ func TestMatches(t *testing.T) {
 	t.Run("OnAlias", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("fires once per subject of its kind", func(t *testing.T) {
+		t.Run("runs once per subject of its kind", func(t *testing.T) {
 			t.Parallel()
 
 			store := coretest.EveryKind(coretest.StorePath)
@@ -1092,4 +1106,202 @@ func TestMatches(t *testing.T) {
 			assert.False(t, alsoGenerates, "and only an annotator")
 		})
 	})
+}
+
+// The constructors allocate within their ceiling in the ordinary run,
+// which runs no benchmark.
+func TestMatchesAllocs(t *testing.T) {
+	for _, tt := range matchCases() {
+		assert.MaxAllocs(t, tt.call, matchAllocs, tt.name+" allocates the rule")
+		tt.check(t)
+	}
+}
+
+// BenchmarkMatches measures every subject kind's constructor.
+func BenchmarkMatches(b *testing.B) {
+	for _, tt := range matchCases() {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(matchAllocs)
+			defer c.End()
+			for c.Loop() {
+				tt.call()
+			}
+			tt.check(b)
+		})
+	}
+}
+
+// matchCases returns one case for every subject kind's constructor,
+// each over a handler built once.
+func matchCases() []matchCase {
+	var cases []matchCase
+	{
+		handler := func(*eidos.FunctionMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnFunction",
+			call: func() { rule = eidos.OnFunction(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnFunction returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindFunction,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.MethodMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnMethod",
+			call: func() { rule = eidos.OnMethod(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnMethod returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindMethod,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.ParamMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnParam",
+			call: func() { rule = eidos.OnParam(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnParam returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindParam,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.ReturnMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnReturn",
+			call: func() { rule = eidos.OnReturn(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnReturn returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindReturn,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.EnumMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnEnum",
+			call: func() { rule = eidos.OnEnum(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnEnum returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindEnum,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.SumMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnSum",
+			call: func() { rule = eidos.OnSum(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnSum returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindSum,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.FieldMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnField",
+			call: func() { rule = eidos.OnField(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnField returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindField,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.VariableMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnVariable",
+			call: func() { rule = eidos.OnVariable(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnVariable returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindVariable,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.ConstantMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnConstant",
+			call: func() { rule = eidos.OnConstant(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnConstant returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindConstant,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.StructMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnStruct",
+			call: func() { rule = eidos.OnStruct(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnStruct returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindStruct,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.InterfaceMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnInterface",
+			call: func() { rule = eidos.OnInterface(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnInterface returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindInterface,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	{
+		handler := func(*eidos.AliasMatch, *eidos.Emitter) error { return nil }
+		var rule eidos.Rule
+		cases = append(cases, matchCase{
+			name: "OnAlias",
+			call: func() { rule = eidos.OnAlias(handler) },
+			check: func(tb testing.TB) {
+				subscribed, held := eidos.NewPlugin(subjectPlugin).Handle(rule).Build().(plugin.Subscribed)
+				assert.True(tb, held, "OnAlias returns a rule a plugin builds from")
+				assert.Equal(tb, subscribed.Subscriptions()[0].Kind, symbol.KindAlias,
+					"the rule triggers on its kind")
+			},
+		})
+	}
+	return cases
 }

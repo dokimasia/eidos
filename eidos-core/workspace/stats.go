@@ -22,13 +22,15 @@ type Stats struct {
 	Parsed, Restored, Kept, Reparsed int
 	// Decoded counts the regions the run decoded.
 	Decoded int
-	// Validated counts the subjects the run validated.
+	// Validated counts the subjects whose directives the run validated. A
+	// subject the graph does not contain is reported and not validated.
 	Validated int
 	// Invoked counts the invocations each phase call ran.
 	Invoked []Invoked
-	// Rendered counts the files the plans rendered.
+	// Rendered counts the files the plans rendered and stamped.
 	Rendered int
-	// Checked counts the workspace checks the run called.
+	// Checked counts the workspace checks the run called. A check that
+	// reads a failed plan is not called.
 	Checked int
 	// Generation reports that the commit wrote a generation, Written the
 	// bytes the commit wrote to the ledger, and Size the bytes of the

@@ -8,10 +8,15 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/store"
 )
+
+// refusalAllocs is the text of a refusal: the code's spelling and the
+// joined message.
+const refusalAllocs = 2
 
 // storeCodes are every code this package refuses under.
 var storeCodes = map[string]diag.Code{
@@ -28,18 +33,18 @@ func TestRefusal(t *testing.T) {
 	t.Run("Error", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("names its code and its reason", func(t *testing.T) {
+		t.Run("returns its code with its reason", func(t *testing.T) {
 			t.Parallel()
 
 			const reason = "svc/store is added after Freeze"
 			got := (&store.RefusedError{Code: store.FrozenWrite, Msg: reason}).Error()
 
-			assert.HasPrefix(t, got, "store: ", "the error carries the package prefix")
+			assert.HasPrefix(t, got, "store: ", "the error has the package prefix")
 			assert.Contains(t, got, store.FrozenWrite.String(), "names its code")
 			assert.Contains(t, got, reason, "and states its reason")
 		})
 
-		t.Run("carries its code through a wrapping", func(t *testing.T) {
+		t.Run("returns its code to errors.As through a wrapping", func(t *testing.T) {
 			t.Parallel()
 
 			wrapped := fmt.Errorf("loading svc/store: %w",
@@ -81,5 +86,36 @@ func TestRefusal(t *testing.T) {
 			assert.Length(t, seen, len(storeCodes),
 				"every refusal reports under its own code")
 		})
+	})
+}
+
+// A refusal's text allocates the code's spelling and the joined message
+// in the ordinary run, which runs no benchmark. The check runs alone,
+// because AllocsPerRun counts every goroutine's allocations and refuses
+// to run beside parallel tests.
+func TestRefusalAllocs(t *testing.T) {
+	refused := &store.RefusedError{Code: store.FrozenWrite, Msg: "svc/store is added after Freeze"}
+	var got string
+	assert.MaxAllocs(
+		t,
+		func() { got = refused.Error() },
+		refusalAllocs,
+		"Error allocates the code's spelling and the text",
+	)
+	assert.HasPrefix(t, got, "store: ", "Error returns the prefixed text")
+}
+
+// BenchmarkRefusal measures the text of a refusal, which a run spells
+// once per refused write.
+func BenchmarkRefusal(b *testing.B) {
+	b.Run("Error", func(b *testing.B) {
+		refused := &store.RefusedError{Code: store.FrozenWrite, Msg: "svc/store is added after Freeze"}
+		c := bench.Start(b).MaxAllocs(refusalAllocs)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = refused.Error()
+		}
+		assert.HasPrefix(b, got, "store: ", "Error returns the prefixed text")
 	})
 }

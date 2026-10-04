@@ -14,9 +14,11 @@ import (
 // factIndex returns the subjects on which each key reads present. It
 // is maintained at stamp time so a fact-gated rule visits its matches
 // and not the whole graph, and it has a lock of its own: presence
-// transitions arrive from many bags at once.
+// transitions arrive from many bags at once. The zero factIndex is an
+// empty index that restores nothing.
 type factIndex struct {
-	mu     sync.Mutex
+	mu sync.Mutex
+	// perKey is each key's presence set, created with the first set.
 	perKey map[KeyID]*keyIndex
 	// recorded returns the subjects on which a key read present when a
 	// recorded source was written, nil for an index that restores
@@ -43,17 +45,11 @@ type keyIndex struct {
 	pending map[symbol.Identity]bool
 }
 
-// newFactIndex returns an empty index, which loads each key's
-// recorded presence from recorded on the key's first enumeration where
-// recorded is set.
-func newFactIndex(recorded func(KeyID) []symbol.Identity) *factIndex {
-	return &factIndex{perKey: map[KeyID]*keyIndex{}, recorded: recorded}
-}
-
-// record notes a presence transition for (subject, key). A
-// transition marks the cached enumeration stale; a write that
-// changes nothing does not. A transition that arrives before the key's
-// recorded presence loaded waits until the enumeration merges it.
+// record notes a presence transition for (subject, key). A transition
+// marks the cached enumeration stale, and a write that leaves the
+// presence as it was keeps the cache. A transition that arrives before
+// the key's recorded presence loaded waits until the enumeration merges
+// it.
 func (x *factIndex) record(id symbol.Identity, k KeyID, present bool) {
 	x.mu.Lock()
 	defer x.mu.Unlock()
@@ -64,7 +60,7 @@ func (x *factIndex) record(id symbol.Identity, k KeyID, present bool) {
 			return
 		}
 		entry = &keyIndex{members: map[symbol.Identity]struct{}{}, loaded: x.recorded == nil}
-		x.perKey[k] = entry
+		x.put(k, entry)
 	}
 	if !entry.loaded {
 		if entry.pending == nil {
@@ -88,7 +84,7 @@ func (x *factIndex) record(id symbol.Identity, k KeyID, present bool) {
 	entry.stale = true
 }
 
-// enumerate returns the subjects presently carrying k, in identity
+// enumerate returns the subjects on which k reads present, in identity
 // order, from the cache where it is fresh. The first enumeration of a
 // key in an index that restores loads the recorded presence and merges
 // the transitions recorded before it.
@@ -102,7 +98,7 @@ func (x *factIndex) enumerate(k KeyID) []symbol.Identity {
 			return nil
 		}
 		entry = &keyIndex{members: map[symbol.Identity]struct{}{}}
-		x.perKey[k] = entry
+		x.put(k, entry)
 	}
 	if !entry.loaded {
 		for _, id := range x.recorded(k) {
@@ -122,4 +118,13 @@ func (x *factIndex) enumerate(k KeyID) []symbol.Identity {
 		entry.stale = false
 	}
 	return entry.sorted
+}
+
+// put keeps a key's presence set, creating the map with the first set.
+// The caller has locked x.mu.
+func (x *factIndex) put(k KeyID, entry *keyIndex) {
+	if x.perKey == nil {
+		x.perKey = map[KeyID]*keyIndex{}
+	}
+	x.perKey[k] = entry
 }

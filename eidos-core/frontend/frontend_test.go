@@ -11,6 +11,7 @@ import (
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/frontend"
@@ -32,6 +33,53 @@ const (
 	depPath       = "svc/dep"
 	classified    = "classified"
 )
+
+// allocRuns is the number of calls [assert.MaxAllocs] makes: one to
+// warm the function, and the 100 it counts.
+const allocRuns = 101
+
+// The ceilings of a declaration's steps.
+const (
+	// newAllocs is one new declaration: the builder.
+	newAllocs = 1
+	// appendAllocs is the first Match or Classify on a new declaration:
+	// the list it appends to.
+	appendAllocs = 1
+	// buildAllocs is one Build of a declaration without optional roles:
+	// the lowered frontend.
+	buildAllocs = 1
+	// buildRolesAllocs is one Build of a declaration in every optional
+	// role: the lowered frontend, and the struct that composes it with
+	// the roles.
+	buildRolesAllocs = 2
+)
+
+// setter is one field setter of a declaration, called through a
+// function made before any measurement.
+type setter struct {
+	name string
+	set  func(*frontend.Builder) *frontend.Builder
+}
+
+// setters returns every setter that writes one field of a declaration,
+// each over the scripted frontend's functions.
+func setters(inner *frontendtest.Scripted) []setter {
+	partition, parse, resolve, opts := inner.Partition, inner.Parse, inner.Resolve, inner.Opts
+	dependencies := frontendtest.NewScriptedDependent().Dependencies
+	exports := frontendtest.NewScriptedExporter().Exports
+	return []setter{
+		{name: "Version", set: func(b *frontend.Builder) *frontend.Builder { return b.Version("1") }},
+		{name: "Overloads", set: func(b *frontend.Builder) *frontend.Builder { return b.Overloads() }},
+		{name: "Units", set: func(b *frontend.Builder) *frontend.Builder { return b.Units(partition) }},
+		{name: "Parse", set: func(b *frontend.Builder) *frontend.Builder { return b.Parse(parse) }},
+		{name: "Resolve", set: func(b *frontend.Builder) *frontend.Builder { return b.Resolve(resolve) }},
+		{name: "Options", set: func(b *frontend.Builder) *frontend.Builder { return b.Options(opts) }},
+		{name: "Dependencies", set: func(b *frontend.Builder) *frontend.Builder {
+			return b.Dependencies(dependencies)
+		}},
+		{name: "Exports", set: func(b *frontend.Builder) *frontend.Builder { return b.Exports(exports) }},
+	}
+}
 
 // kitFake lowers the scripted language through the kit, its
 // test-file stamp moved from a parse statement into a classifier,
@@ -153,9 +201,15 @@ func TestFrontend(t *testing.T) {
 			{name: "returns a frontend in the options role alone", options: true},
 			{name: "returns a frontend in the dependent role alone", dependencies: true},
 			{name: "returns a frontend in the exporter role alone", exports: true},
-			{name: "returns a frontend in the options and dependent roles", options: true, dependencies: true},
-			{name: "returns a frontend in the options and exporter roles", options: true, exports: true},
-			{name: "returns a frontend in the dependent and exporter roles", dependencies: true, exports: true},
+			{
+				name:    "returns a frontend in the options role beside the dependent role",
+				options: true, dependencies: true,
+			},
+			{name: "returns a frontend in the options role beside the exporter role", options: true, exports: true},
+			{
+				name:         "returns a frontend in the dependent role beside the exporter role",
+				dependencies: true, exports: true,
+			},
 			{
 				name:    "returns a frontend in every optional role",
 				options: true, dependencies: true, exports: true,
@@ -384,4 +438,157 @@ func TestFrontend(t *testing.T) {
 			assert.ErrorIs(t, err, broken, "the load stops and seals no half-made stamps")
 		})
 	})
+}
+
+// A declaration allocates its builder, the first entry of each list it
+// appends to, and the lowered frontend, and its setters allocate
+// nothing, in the ordinary run, which runs no benchmark. An append and a
+// Build each take a declaration built before the count, because each
+// changes or freezes the declaration it is called on. The check runs
+// alone, because AllocsPerRun counts every goroutine's allocations and
+// refuses to run beside parallel tests.
+func TestFrontendAllocs(t *testing.T) {
+	inner := frontendtest.NewScripted()
+	syntax := inner.Syntax()
+	var b *frontend.Builder
+	assert.MaxAllocs(t, func() { b = frontend.New(kitName, frontendtest.ScriptedLang, syntax) }, newAllocs,
+		"New allocates the builder")
+	for _, tt := range setters(inner) {
+		var got *frontend.Builder
+		assert.MaxAllocs(t, func() { got = tt.set(b) }, 0, tt.name+" allocates nothing")
+		assert.True(t, got == b, tt.name+" returns its builder")
+	}
+
+	fresh, at := news(inner, allocRuns), 0
+	assert.MaxAllocs(t, func() {
+		fresh[at].Match(anyScripted)
+		at++
+	}, appendAllocs, "Match allocates the claim of a new declaration")
+	fresh, at = news(inner, allocRuns), 0
+	classify := frontend.Classifier(markTests)
+	assert.MaxAllocs(t, func() {
+		fresh[at].Classify(classify)
+		at++
+	}, appendAllocs, "Classify allocates the classifier list of a new declaration")
+
+	bare, at := declarations(inner, allocRuns, false), 0
+	assert.MaxAllocs(t, func() {
+		bare[at].Build()
+		at++
+	}, buildAllocs, "Build allocates the lowered frontend")
+	roled, at := declarations(inner, allocRuns, true), 0
+	assert.MaxAllocs(t, func() {
+		roled[at].Build()
+		at++
+	}, buildRolesAllocs, "Build allocates the lowered frontend and the composition of its roles")
+}
+
+// BenchmarkFrontend measures each step of a declaration: the builder,
+// the setters, the first entry of each list, and the lowering.
+func BenchmarkFrontend(b *testing.B) {
+	inner := frontendtest.NewScripted()
+
+	b.Run("New", func(b *testing.B) {
+		syntax := inner.Syntax()
+		c := bench.Start(b).MaxAllocs(newAllocs)
+		defer c.End()
+		var got *frontend.Builder
+		for c.Loop() {
+			got = frontend.New(kitName, frontendtest.ScriptedLang, syntax)
+		}
+		assert.NotNil(b, got, "New returns a builder")
+	})
+
+	for _, tt := range setters(inner) {
+		b.Run(tt.name, func(b *testing.B) {
+			builder := frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax())
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got *frontend.Builder
+			for c.Loop() {
+				got = tt.set(builder)
+			}
+			assert.True(b, got == builder, tt.name+" returns its builder")
+		})
+	}
+
+	b.Run("Match/a new declaration's first pattern", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(appendAllocs)
+		defer c.End()
+		var builder *frontend.Builder
+		for c.Loop() {
+			c.Excluding(func() { builder = frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()) })
+			builder.Match(anyScripted)
+		}
+		assert.NotPanics(b, func() {
+			builder.Version("1").Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
+		}, "the claim completes a declaration")
+	})
+
+	b.Run("Classify/a new declaration's first classifier", func(b *testing.B) {
+		classify := frontend.Classifier(markTests)
+		c := bench.Start(b).MaxAllocs(appendAllocs)
+		defer c.End()
+		var builder *frontend.Builder
+		for c.Loop() {
+			c.Excluding(func() { builder = frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()) })
+			builder.Classify(classify)
+		}
+		assert.NotNil(b, builder, "the classifier is declared")
+	})
+
+	b.Run("Build/a declaration without optional roles", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(buildAllocs)
+		defer c.End()
+		var (
+			builder *frontend.Builder
+			got     plugin.Frontend
+		)
+		for c.Loop() {
+			c.Excluding(func() { builder = declarations(inner, 1, false)[0] })
+			got = builder.Build()
+		}
+		_, optioned := got.(plugin.OptionsProvider)
+		assert.False(b, optioned, "the frontend has no optional role")
+	})
+
+	b.Run("Build/a declaration in every optional role", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(buildRolesAllocs)
+		defer c.End()
+		var (
+			builder *frontend.Builder
+			got     plugin.Frontend
+		)
+		for c.Loop() {
+			c.Excluding(func() { builder = declarations(inner, 1, true)[0] })
+			got = builder.Build()
+		}
+		_, exports := got.(plugin.Exporter)
+		assert.True(b, exports, "the frontend has every optional role")
+	})
+}
+
+// news returns n new declarations of the kit's frontend.
+func news(inner *frontendtest.Scripted, n int) []*frontend.Builder {
+	out := make([]*frontend.Builder, n)
+	for i := range out {
+		out[i] = frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax())
+	}
+	return out
+}
+
+// declarations returns n whole declarations of the kit's frontend, each
+// in every optional role where roles is set and in none otherwise.
+func declarations(inner *frontendtest.Scripted, n int, roles bool) []*frontend.Builder {
+	out := news(inner, n)
+	for i, b := range out {
+		b.Version("1").Match(anyScripted).Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve)
+		if roles {
+			b.Options(inner.Opts).
+				Dependencies(frontendtest.NewScriptedDependent().Dependencies).
+				Exports(frontendtest.NewScriptedExporter().Exports)
+		}
+		out[i] = b
+	}
+	return out
 }
