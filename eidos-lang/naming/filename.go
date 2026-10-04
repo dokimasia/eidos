@@ -14,7 +14,7 @@ import (
 // the tag. An empty part is left out, so a per-package or per-plan
 // unit, whose file key is empty, yields the word and the tag alone.
 // Each target joins and cases the parts in its own filename
-// convention.
+// convention. It allocates the list, one allocation.
 func FilenameParts(key, word, tag string) []string {
 	parts := make([]string, 0, 3)
 	if stem := path.Base(key); key != "" && stem != "." {
@@ -32,7 +32,8 @@ func FilenameParts(key, word, tag string) []string {
 // SnakeFilename joins the [FilenameParts] of a routing key, a family
 // word and a tag with underscores, converts the join to snake case,
 // and appends the extension, which is how the snake-cased languages
-// name files.
+// name files. It allocates the parts, their join and the name, three
+// allocations, and a fourth where the join is not snake case already.
 func SnakeFilename(key, word, tag, ext string) string {
 	return Snake(strings.Join(FilenameParts(key, word, tag), "_")) + ext
 }

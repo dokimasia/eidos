@@ -28,12 +28,24 @@ const (
 	largestPositional  = 1e21
 )
 
+// decimalBuffer is the size of the stack buffer [Decimal] formats into.
+// It is longer than any text Decimal writes, so formatting allocates
+// nothing and the conversion to a string allocates the result alone.
+const decimalBuffer = 32
+
 // Int returns an integral value inside the range of an integer type
 // as decimal text. A class of [rules.ScalarUint] bounds the value
 // from 0 to 2^bits-1, and every other class from -2^(bits-1) to
 // 2^(bits-1)-1. A width of 0 bounds as 64 bits. The returned number
 // states the width passed in. A value that is no integer, or one
 // outside the range, reports false.
+//
+// # Allocation contract
+//
+// A width of at most 64 bits checks the range in machine integers and
+// allocates the decimal text alone, and nothing for a value from 0 to
+// 99, whose text is static. A wider type checks the range in exact
+// arithmetic, which allocates its bounds.
 func Int(value constant.Value, class rules.ScalarClass, bits int) (emit.Value, bool) {
 	n := constant.ToInt(value)
 	if n.Kind() != constant.Int {
@@ -42,6 +54,12 @@ func Int(value constant.Value, class rules.ScalarClass, bits int) (emit.Value, b
 	width := bits
 	if width == 0 {
 		width = widest
+	}
+	if width <= widest {
+		if !fits(n, class, width) {
+			return emit.Value{}, false
+		}
+		return emit.Number(emit.LiteralInt, n.ExactString(), bits), true
 	}
 	one := constant.MakeInt64(1)
 	var lo, hi constant.Value
@@ -57,6 +75,24 @@ func Int(value constant.Value, class rules.ScalarClass, bits int) (emit.Value, b
 		return emit.Value{}, false
 	}
 	return emit.Number(emit.LiteralInt, n.ExactString(), bits), true
+}
+
+// fits reports whether an integer is inside the range of an integer
+// type of a width from 1 to 64 bits, in machine integers.
+func fits(n constant.Value, class rules.ScalarClass, width int) bool {
+	if class == rules.ScalarUint {
+		u, exact := constant.Uint64Val(n)
+		return exact && (width == widest || u < 1<<width)
+	}
+	v, exact := constant.Int64Val(n)
+	if !exact {
+		return false
+	}
+	if width == widest {
+		return true
+	}
+	half := int64(1) << (width - 1)
+	return v >= -half && v < half
 }
 
 // Float returns a finite value inside the range of a float type as
@@ -88,7 +124,8 @@ func Float(value constant.Value, bits int) (emit.Value, bool) {
 // and exponent notation outside it with the exponent unpadded. This
 // is the rule encoding/json writes floats by, with the cutoffs
 // compared at the same precision. A width of 32 is single
-// precision, and every other width is double precision.
+// precision, and every other width is double precision. It allocates
+// the text, one allocation.
 func Decimal(f float64, bits int) string {
 	if bits != single {
 		bits = widest
@@ -101,7 +138,8 @@ func Decimal(f float64, bits int) string {
 			format = 'e'
 		}
 	}
-	b := strconv.AppendFloat(nil, f, format, -1, bits)
+	var buf [decimalBuffer]byte
+	b := strconv.AppendFloat(buf[:0], f, format, -1, bits)
 	if n := len(b); format == 'e' && n >= 4 && b[n-4] == 'e' && b[n-3] == '-' && b[n-2] == '0' {
 		b[n-2] = b[n-1]
 		b = b[:n-1]

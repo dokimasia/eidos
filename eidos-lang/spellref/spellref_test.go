@@ -8,14 +8,15 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/spellref"
 	"go.dokimi.dev/eidos/sdk/emit"
 	"go.dokimi.dev/eidos/sdk/symbol"
 )
 
-// The fixture: the brackets a language writes arguments in, the
-// stand-in an absent spelling takes, and the names a qualify renames.
+// The brackets a language writes arguments in, the stand-in an absent
+// spelling takes, and the names a qualify renames.
 const (
 	opener  = "<"
 	closer  = ">"
@@ -32,25 +33,9 @@ const (
 	targetPkg = "svc/rows"
 )
 
-// generic returns a named reference with arguments.
-func generic(name string, args ...*emit.TypeRef) *emit.TypeRef {
-	return &emit.TypeRef{Spelling: name, Args: args}
-}
-
-// named returns a named reference without arguments.
-func named(name string) *emit.TypeRef { return &emit.TypeRef{Spelling: name} }
-
-// renaming is a qualify that spells rowName as renamed and every other
-// reference as written.
-func renaming(t *emit.TypeRef) (string, error) {
-	if t.Spelling == rowName {
-		return renamed, nil
-	}
-	return t.Spelling, nil
-}
-
-// asWritten is a qualify that spells every reference as written.
-func asWritten(t *emit.TypeRef) (string, error) { return t.Spelling, nil }
+// spelledAllocs is the spelling of a reference with arguments: one
+// buffer sized to the result.
+const spelledAllocs = 1
 
 // One walk serves every bracket pair, so the recursion, the stand-in
 // and the composite rule are pinned once.
@@ -82,6 +67,13 @@ func TestSpellRef(t *testing.T) {
 			assert.Equal(t, spellref.Spell(&emit.TypeRef{}, opener, closer, standIn), standIn,
 				"the language's stand-in")
 		})
+
+		t.Run("writes the stand-in for an argument that spells nothing", func(t *testing.T) {
+			t.Parallel()
+
+			assert.Equal(t, spellref.Spell(generic("Map", nil, named("V")), opener, closer, standIn), "Map<?, V>",
+				"the stand-in inside the brackets")
+		})
 	})
 
 	t.Run("SpellWith", func(t *testing.T) {
@@ -109,6 +101,14 @@ func TestSpellRef(t *testing.T) {
 			got, err := spellref.SpellWith(nil, opener, closer, standIn, renaming)
 			assert.NoError(t, err, "a missing reference spells")
 			assert.Equal(t, got, standIn, "the language's stand-in")
+		})
+
+		t.Run("writes the stand-in for an argument that spells nothing", func(t *testing.T) {
+			t.Parallel()
+
+			got, err := spellref.SpellWith(generic("List", &emit.TypeRef{}), opener, closer, standIn, renaming)
+			assert.NoError(t, err, "an argument that spells nothing spells")
+			assert.Equal(t, got, "List<?>", "the stand-in inside the brackets")
 		})
 
 		t.Run("keeps a composite's spelling where every child spells as written", func(t *testing.T) {
@@ -188,3 +188,111 @@ func TestSpellRef(t *testing.T) {
 		})
 	})
 }
+
+// A reference with arguments spells into one buffer, and a reference
+// without them returns its spelling, in the ordinary run, which runs no
+// benchmark.
+func TestSpellRefAllocs(t *testing.T) {
+	ref, leaf := nested(), named(rowName)
+	list := &emit.TypeRef{Form: symbol.FormList, Spelling: "Row[]", Elems: []*emit.TypeRef{named(rowName)}}
+	target := &emit.TypeRef{Spelling: rowName, Target: symbol.Identity{Lang: lang, Package: targetPkg, Name: rowName}}
+	var (
+		got string
+		err error
+	)
+	assert.MaxAllocs(t, func() { got = spellref.Spell(ref, opener, closer, standIn) }, spelledAllocs,
+		"Spell allocates the buffer of a reference with arguments")
+	assert.Equal(t, got, "Map<K, List<V>>", "Spell writes the arguments")
+	assert.MaxAllocs(t, func() { got = spellref.Spell(leaf, opener, closer, standIn) }, 0,
+		"Spell allocates nothing for a reference without arguments")
+	assert.MaxAllocs(t, func() { got, err = spellref.SpellWith(ref, opener, closer, standIn, asWritten) },
+		spelledAllocs, "SpellWith allocates the buffer of a reference with arguments")
+	assert.NoError(t, err, "SpellWith spells the reference")
+	assert.MaxAllocs(t, func() { got, err = spellref.SpellWith(list, opener, closer, standIn, asWritten) }, 0,
+		"SpellWith allocates nothing for a composite spelled as written")
+	assert.Equal(t, got, "Row[]", "SpellWith returns the composite's spelling")
+	assert.MaxAllocs(t, func() { got = spellref.PackageOf(target, lang) }, 0, "PackageOf allocates nothing")
+	assert.Equal(t, got, targetPkg, "PackageOf returns the target's package")
+}
+
+// BenchmarkSpellRef measures the spelling a backend writes for every
+// reference it renders: a generic with a generic argument, and one
+// without arguments.
+func BenchmarkSpellRef(b *testing.B) {
+	ref, leaf := nested(), named(rowName)
+	spells := []struct {
+		name   string
+		give   *emit.TypeRef
+		allocs uint64
+		want   string
+	}{
+		{name: "Spell", give: ref, allocs: spelledAllocs, want: "Map<K, List<V>>"},
+		{name: "Spell/a reference without arguments", give: leaf, want: rowName},
+	}
+	for _, tt := range spells {
+		b.Run(tt.name, func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = spellref.Spell(tt.give, opener, closer, standIn)
+			}
+			assert.Equal(b, got, tt.want, "Spell writes the reference")
+		})
+	}
+	for _, tt := range spells {
+		b.Run("SpellWith"+tt.name[len("Spell"):], func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(tt.allocs)
+			defer c.End()
+			var (
+				got string
+				err error
+			)
+			for c.Loop() {
+				got, err = spellref.SpellWith(tt.give, opener, closer, standIn, asWritten)
+			}
+			assert.NoError(b, err, "SpellWith spells the reference")
+			assert.Equal(b, got, tt.want, "SpellWith writes the reference")
+		})
+	}
+
+	b.Run("PackageOf", func(b *testing.B) {
+		target := &emit.TypeRef{
+			Spelling: rowName,
+			Target:   symbol.Identity{Lang: lang, Package: targetPkg, Name: rowName},
+		}
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var got string
+		for c.Loop() {
+			got = spellref.PackageOf(target, lang)
+		}
+		assert.Equal(b, got, targetPkg, "PackageOf returns the target's package")
+	})
+}
+
+// generic returns a named reference with arguments.
+func generic(name string, args ...*emit.TypeRef) *emit.TypeRef {
+	return &emit.TypeRef{Spelling: name, Args: args}
+}
+
+// named returns a named reference without arguments.
+func named(name string) *emit.TypeRef { return &emit.TypeRef{Spelling: name} }
+
+// nested returns Map<K, List<V>>: a generic whose second argument is a
+// generic.
+func nested() *emit.TypeRef {
+	return generic("Map", named("K"), generic("List", named("V")))
+}
+
+// renaming is a qualify that spells rowName as renamed and every other
+// reference as written.
+func renaming(t *emit.TypeRef) (string, error) {
+	if t.Spelling == rowName {
+		return renamed, nil
+	}
+	return t.Spelling, nil
+}
+
+// asWritten is a qualify that spells every reference as written.
+func asWritten(t *emit.TypeRef) (string, error) { return t.Spelling, nil }

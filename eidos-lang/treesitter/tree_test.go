@@ -4,11 +4,14 @@
 package treesitter_test
 
 import (
+	"context"
 	"slices"
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
+	"go.dokimi.dev/eidos/lang/treesitter"
 	"go.dokimi.dev/eidos/lang/treesitter/java"
 	"go.dokimi.dev/eidos/sdk/position"
 )
@@ -21,9 +24,9 @@ var (
 	missingAt = position.Pos{File: javaFile, Line: 3, Col: 25}
 )
 
-// A tree is C memory the runtime allocates, and it reports its errors
-// as nodes, so its root, its error walk and its release are pinned
-// over parsed sources.
+// A tree's nodes are C memory the runtime allocates, and its errors are
+// nodes. Its root, its error walk and its release are pinned over
+// parsed sources.
 func TestTree(t *testing.T) {
 	t.Parallel()
 
@@ -56,7 +59,7 @@ func TestTree(t *testing.T) {
 			assert.Empty(t, slices.Collect(parse(t, cleanJava).Errors()), "the source fits the grammar")
 		})
 
-		t.Run("yields the ERROR and MISSING nodes in document order", func(t *testing.T) {
+		t.Run("yields every node the parser marks erroneous in document order", func(t *testing.T) {
 			t.Parallel()
 
 			var at []position.Pos
@@ -91,7 +94,7 @@ func TestTree(t *testing.T) {
 	t.Run("Close", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("is safe to call twice", func(t *testing.T) {
+		t.Run("releases nothing on a second call", func(t *testing.T) {
 			t.Parallel()
 
 			tree := parse(t, cleanJava)
@@ -109,5 +112,82 @@ func TestTree(t *testing.T) {
 			assert.True(t, class.IsZero(), "a node of a closed tree is absent")
 			assert.Equal(t, class.Kind(), 0, "and returns zero values")
 		})
+
+		t.Run("releases nothing for the zero Tree", func(t *testing.T) {
+			t.Parallel()
+
+			var tree treesitter.Tree
+			tree.Close()
+			assert.True(t, tree.Root().IsZero(), "the zero Tree is a closed one")
+		})
 	})
+}
+
+// A tree's root, its error walk and its release allocate nothing on the
+// Go heap. The ordinary run, which runs no benchmark, checks that here.
+func TestTreeZeroAlloc(t *testing.T) {
+	checkAllocs(t, treeCalls(t))
+	trees := make([]*treesitter.Tree, 0, allocRuns)
+	for range allocRuns {
+		trees = append(trees, parse(t, cleanJava))
+	}
+	closed := 0
+	closing := func() {
+		trees[closed].Close()
+		closed++
+	}
+	assert.MaxAllocs(t, closing, 0, "Close allocates nothing")
+	assert.Equal(t, closed, allocRuns, "Close released every tree")
+	assert.True(t, trees[allocRuns-1].Root().IsZero(), "Close releases the tree")
+}
+
+// BenchmarkTree measures the root and error walk a frontend reads once
+// per file, and the release of the file's tree.
+func BenchmarkTree(b *testing.B) {
+	benchCalls(b, treeCalls(b))
+
+	b.Run("Close", func(b *testing.B) {
+		ctx, src := context.Background(), []byte(cleanJava)
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		var (
+			tree *treesitter.Tree
+			err  error
+		)
+		for c.Loop() {
+			c.Excluding(func() { tree, err = java.Grammar.Parse(ctx, javaFile, src) })
+			tree.Close()
+		}
+		assert.NoError(b, err, "the source parses")
+		assert.True(b, tree.Root().IsZero(), "Close releases the tree")
+	})
+}
+
+// treeCalls returns a call of the root and of the error walk of the
+// broken source's tree.
+func treeCalls(tb testing.TB) []allocCall {
+	tb.Helper()
+
+	tree := parse(tb, brokenJava)
+	var (
+		root treesitter.Node
+		errs int
+	)
+	return []allocCall{
+		{
+			name: "Root", call: func() { root = tree.Root() },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, root.Kind(), java.Grammar.Kind(programKind), "Root returns the program")
+			},
+		},
+		{
+			name: "Errors", call: func() {
+				errs = 0
+				for range tree.Errors() {
+					errs++
+				}
+			},
+			check: func(tb assert.TB) { assert.Equal(tb, errs, 2, "Errors yields the ERROR and the MISSING node") },
+		},
+	}
 }

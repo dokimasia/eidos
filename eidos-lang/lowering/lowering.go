@@ -11,7 +11,9 @@ import (
 
 // CopyTypeParams restates a parameter list without sharing nodes,
 // so the settle's walks visit each output's list once: fresh
-// parameters, fresh bound and default references.
+// parameters, fresh bound and default references. No parameters
+// return nil without allocating. A list allocates itself, each
+// parameter, and the copies [CopyTypeRef] makes of its references.
 func CopyTypeParams(ps []*emit.TypeParam) []*emit.TypeParam {
 	if len(ps) == 0 {
 		return nil
@@ -27,7 +29,9 @@ func CopyTypeParams(ps []*emit.TypeParam) []*emit.TypeParam {
 	return out
 }
 
-// CopyTypeRefs restates references without sharing nodes.
+// CopyTypeRefs restates references without sharing nodes. No
+// references return nil without allocating. A list allocates itself
+// and the copies [CopyTypeRef] makes.
 func CopyTypeRefs(ts []*emit.TypeRef) []*emit.TypeRef {
 	if len(ts) == 0 {
 		return nil
@@ -41,7 +45,9 @@ func CopyTypeRefs(ts []*emit.TypeRef) []*emit.TypeRef {
 
 // CopyTypeRef restates one reference tree without sharing nodes:
 // the form's children and the instantiation's arguments both copy,
-// so a structural reference survives a lowering whole.
+// so a structural reference survives a lowering whole. A nil
+// reference returns nil. It allocates each node of the tree, and each
+// node's lists of children and arguments.
 func CopyTypeRef(t *emit.TypeRef) *emit.TypeRef {
 	if t == nil {
 		return nil
@@ -55,6 +61,12 @@ func CopyTypeRef(t *emit.TypeRef) *emit.TypeRef {
 // UniqueMethods reports the first method name declared twice on a
 // host, spelled under the language's own error prefix: what a
 // backend without overloads checks before its fold spells members.
+//
+// # Allocation contract
+//
+// UniqueMethods allocates nothing for up to eight methods, whose set
+// of names is on the stack, and the set at its final size for more,
+// three allocations. An error allocates its message.
 func UniqueMethods(lang, host string, methods []*emit.Method) error {
 	seen := make(map[string]bool, len(methods))
 	for _, m := range methods {

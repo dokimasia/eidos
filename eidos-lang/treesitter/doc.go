@@ -39,8 +39,8 @@
 //
 // # Memory
 //
-// A tree's nodes are C memory the runtime allocates, and [Tree.Close]
-// releases them. Close is safe to call twice, and every node of a
+// A tree's nodes are C memory the runtime allocates. [Tree.Close]
+// releases them, and a second Close releases nothing. Every node of a
 // closed tree reports [Node.IsZero] and returns zero values. The
 // package calls no binding function that leaks at the pinned runtime
 // version:
@@ -49,32 +49,36 @@
 //     which its cgo preamble declares, and passes the name's bytes. The
 //     binding's wrapper copies the name into C memory it never frees.
 //   - It reads the field table once, and a child by the field's id.
-//   - It parses without parse options, whose callback the binding
-//     never releases.
+//   - It parses through the runtime's own string parse, which reads the
+//     source in place. The binding's parse copies the source into Go
+//     and C memory for each read through a call back into Go.
 //
-// Each parse creates its parser and closes it before it returns,
-// because the binding sets no finalizer that would release a dropped
-// one.
+// Each parse creates the runtime's parser and deletes it before it
+// returns.
 //
 // # Cost
 //
-// The package reads a node and walks a tree through the runtime's own C
-// functions, which its cgo preamble declares. It keeps each node and each
-// cursor by value in Go memory, so a walk allocates nothing on the Go
-// heap. The binding returns every node it reads as a new heap
-// allocation. A walk of a node's children, of the named ones or of the
-// ones under one field, makes one call into C per child it yields, and
-// [Node.Compact] makes one call per node. When it initializes, the
-// package sets the runtime's allocator back to libc's, because the
-// binding routes every allocation of the runtime through a call back
-// into Go and allocates from libc too. Its calls into C then never call
-// back into Go, which a test run would report as a panic.
+// The package parses, reads a node and walks a tree through the
+// runtime's own C functions, which its cgo preamble declares. It keeps
+// each node and each cursor by value in Go memory. A walk allocates
+// nothing on the Go heap, and a parse allocates its [Tree] alone. The
+// binding returns every node it reads as a new heap allocation.
+//
+// A walk of a node's children makes one call into C per child it
+// yields, whether it walks all children, the named ones or the ones
+// under one field. [Node.Compact] makes one call per node.
+//
+// When it initializes, the package sets the runtime's allocator back to
+// libc's. The binding routes every allocation of the runtime through a
+// call back into Go, and allocates from libc too. The package's calls
+// into C then never call back into Go. A test run would report such a
+// call as a panic.
 //
 // # Concurrency
 //
-// A [Grammar] is immutable and safe for concurrent use, so parses of
-// many files run in parallel. One goroutine uses a [Tree] and its
-// nodes at a time.
+// A [Grammar] is immutable and safe for concurrent use. Parses of many
+// files run in parallel. One goroutine uses a [Tree] and its nodes at a
+// time.
 //
 // # Positions
 //

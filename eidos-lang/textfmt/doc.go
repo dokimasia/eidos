@@ -9,8 +9,8 @@
 // trailing comments and structured markers. The comment writers split
 // a text at its line breaks or fold it onto one line, and escape a
 // block-comment delimiter inside a block comment, so no text ends a
-// comment early. [ImportLines] writes one import statement per
-// collected entry.
+// comment early. [ImportLines] writes each distinct import statement
+// that a file's collected entries spell once.
 //
 // [Normalize] is the finaliser a backend without a hermetic
 // pretty-printer declares. It strips trailing whitespace, collapses
@@ -18,6 +18,12 @@
 // newline. It never reorders, rewraps or reindents: the output bytes
 // are the template's, minus trailing whitespace and extra blank
 // lines.
+//
+// # Allocation contract
+//
+// Every function sizes one buffer to its result before it writes, so a
+// call allocates its result once. Each function's docblock names the
+// inputs that allocate more.
 //
 // # Dependency position
 //

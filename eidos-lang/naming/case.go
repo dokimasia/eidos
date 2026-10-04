@@ -16,20 +16,22 @@ import "strings"
 // and underscores, is returned unchanged: "FOO" and "STATUS_ACTIVE"
 // keep their spelling. An empty or separator-only input returns "".
 // An input already in the style returns itself and allocates
-// nothing.
+// nothing. Any other allocates the result alone, once for an input
+// whose output is no longer than the input.
 func (c *Caser) Pascal(s string) string {
 	if isUpperIdentifier(s) || c.matchesTitled(s, false, true) {
 		return s
 	}
-	words := c.Words(s)
-	if len(words) == 0 {
-		return ""
-	}
 	var b strings.Builder
-	b.Grow(len(s))
-	for _, w := range words {
-		c.writeTitleWord(&b, w, true)
-	}
+	first := true
+	wordSpans(s, func(start, end int, dirty bool) bool {
+		if first {
+			b.Grow(len(s))
+			first = false
+		}
+		c.writeTitleWord(&b, wordAt(s, start, end, dirty), true)
+		return true
+	})
 	return b.String()
 }
 
@@ -42,59 +44,69 @@ func (c *Caser) Pascal(s string) string {
 // kept whole in an input that also contains a lower-case letter. In
 // an input without a lower-case letter no word is an acronym run, so
 // "STATUS_ACTIVE" becomes "statusActive". An input already in the
-// style returns itself and allocates nothing.
+// style returns itself and allocates nothing. Any other allocates the
+// result alone, once for an input whose output is no longer than the
+// input.
 func (c *Caser) Camel(s string) string {
 	keepUpper := !isUpperInput(s)
 	if c.matchesTitled(s, true, keepUpper) {
 		return s
 	}
-	words := c.Words(s)
-	if len(words) == 0 {
-		return ""
-	}
 	var b strings.Builder
-	b.Grow(len(s))
-	writeCased(&b, words[0], false)
-	for _, w := range words[1:] {
+	first := true
+	wordSpans(s, func(start, end int, dirty bool) bool {
+		w := wordAt(s, start, end, dirty)
+		if first {
+			b.Grow(len(s))
+			writeCased(&b, w, false)
+			first = false
+			return true
+		}
 		c.writeTitleWord(&b, w, keepUpper)
-	}
+		return true
+	})
 	return b.String()
 }
 
-// Snake converts s to snake_case (lower-case words joined by '_').
+// Snake converts s to snake_case: lower-case words joined by '_'. An
+// input already in the style returns itself and allocates nothing, and
+// any other allocates the result alone.
 func (c *Caser) Snake(s string) string { return c.joined(s, '_', false) }
 
-// ScreamingSnake converts s to SCREAMING_SNAKE_CASE (upper-case words
-// joined by '_').
+// ScreamingSnake converts s to SCREAMING_SNAKE_CASE: upper-case words
+// joined by '_'. An input already in the style returns itself and
+// allocates nothing, and any other allocates the result alone.
 func (c *Caser) ScreamingSnake(s string) string { return c.joined(s, '_', true) }
 
-// Kebab converts s to kebab-case (lower-case words joined by '-').
+// Kebab converts s to kebab-case: lower-case words joined by '-'. An
+// input already in the style returns itself and allocates nothing, and
+// any other allocates the result alone.
 func (c *Caser) Kebab(s string) string { return c.joined(s, '-', false) }
 
-// joined splits s and writes its words into one Builder, separated by
-// sep and case-mapped by up. It is the shared body of the three
-// separator styles, and a conversion costs one allocation for the
+// joined writes the words of s into one Builder as it splits them,
+// separated by sep and case-mapped by up. It is the shared body of the
+// three separator styles, and a conversion costs one allocation for the
 // result.
 //
 // Grow(len(s)) is a size hint. The output of a Unicode input can be
 // longer than the input: U+0250 is two bytes and upper-cases to a
 // three-byte rune, and the Builder grows to fit.
-func (c *Caser) joined(s string, sep byte, up bool) string {
+func (*Caser) joined(s string, sep byte, up bool) string {
 	if matchesJoined(s, sep, up) {
 		return s
 	}
-	words := c.Words(s)
-	if len(words) == 0 {
-		return ""
-	}
 	var b strings.Builder
-	b.Grow(len(s))
-	for i, w := range words {
-		if i > 0 {
+	first := true
+	wordSpans(s, func(start, end int, dirty bool) bool {
+		if first {
+			b.Grow(len(s))
+			first = false
+		} else {
 			b.WriteByte(sep)
 		}
-		writeCased(&b, w, up)
-	}
+		writeCased(&b, wordAt(s, start, end, dirty), up)
+		return true
+	})
 	return b.String()
 }
 
@@ -209,21 +221,26 @@ func writeCased(b *strings.Builder, w string, up bool) {
 	}
 }
 
-// Words returns the component words of s using the default Caser. See
-// [Caser.Words] for the splitting rules.
+// Words returns the component words of s using the default Caser.
+// [Caser.Words] states the splitting rules and the allocation contract.
 func Words(s string) []string { return Default().Words(s) }
 
 // Pascal converts s to PascalCase using the default Caser.
+// [Caser.Pascal] states the rules and the allocation contract.
 func Pascal(s string) string { return Default().Pascal(s) }
 
-// Camel converts s to camelCase using the default Caser.
+// Camel converts s to camelCase using the default Caser. [Caser.Camel]
+// states the rules and the allocation contract.
 func Camel(s string) string { return Default().Camel(s) }
 
-// Snake converts s to snake_case using the default Caser.
+// Snake converts s to snake_case using the default Caser. [Caser.Snake]
+// states the allocation contract.
 func Snake(s string) string { return Default().Snake(s) }
 
-// ScreamingSnake converts s to SCREAMING_SNAKE_CASE using the default Caser.
+// ScreamingSnake converts s to SCREAMING_SNAKE_CASE using the default
+// Caser. [Caser.ScreamingSnake] states the allocation contract.
 func ScreamingSnake(s string) string { return Default().ScreamingSnake(s) }
 
-// Kebab converts s to kebab-case using the default Caser.
+// Kebab converts s to kebab-case using the default Caser. [Caser.Kebab]
+// states the allocation contract.
 func Kebab(s string) string { return Default().Kebab(s) }

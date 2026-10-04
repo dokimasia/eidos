@@ -74,11 +74,12 @@ type Caser struct {
 
 // Default returns a Caser pre-loaded with [CommonInitialisms]. Every
 // call returns the same Caser, which is safe to share because a
-// Caser is immutable.
+// Caser is immutable. It allocates nothing.
 func Default() *Caser { return defaultCaser }
 
 // New returns a Caser that recognises no initialism, so Pascal
-// spells "url" as "Url".
+// spells "url" as "Url". It allocates the Caser and its map, two
+// allocations.
 func New() *Caser {
 	return &Caser{initialisms: map[string]string{}}
 }
@@ -90,6 +91,13 @@ func New() *Caser {
 // and continues with upper-case ASCII letters or digits. Any other
 // candidate returns [ErrInvalidInitialism], wrapped with the
 // offending value.
+//
+// # Allocation contract
+//
+// WithInitialisms allocates the Caser and the clone of the receiver's
+// map, which grows as the given initialisms arrive. Adding one
+// initialism to a Caser without any allocates three times. An invalid
+// candidate allocates its error.
 func (c *Caser) WithInitialisms(words ...string) (*Caser, error) {
 	out := &Caser{initialisms: maps.Clone(c.initialisms)}
 	if out.initialisms == nil {
@@ -105,7 +113,8 @@ func (c *Caser) WithInitialisms(words ...string) (*Caser, error) {
 }
 
 // Initialisms returns the recognised initialisms in alphabetical order.
-// The returned slice is a fresh copy, and a caller may modify it.
+// The returned slice is a fresh copy, and a caller may modify it. It
+// allocates the slice, one allocation.
 func (c *Caser) Initialisms() []string {
 	// The slice is sized to the set, so appending never regrows it.
 	out := slices.AppendSeq(make([]string, 0, len(c.initialisms)), maps.Keys(c.initialisms))

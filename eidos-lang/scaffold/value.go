@@ -19,9 +19,13 @@ const (
 	falseSpelling = "false"
 )
 
+// callArgs is how many spelled arguments of a call value the walk
+// keeps on the stack. A call with more arguments allocates its list.
+const callArgs = 8
+
 // Entry is one settled field of a composite, in the form the
 // value stated it: a named field sets Name, a map's entry sets Key,
-// and a list's element sets neither.
+// and a list's element sets neither. Value is the field's spelling.
 type Entry struct {
 	Name  string
 	Key   string
@@ -39,6 +43,17 @@ type Entry struct {
 //
 // A method that spells a reference or a callee records the import the
 // spelling needs, so a target is bound to one file's import set.
+//
+// # Concurrency
+//
+// [Value] calls a target's methods one at a time from the calling
+// goroutine. A target bound to one file's import set is not safe for
+// concurrent use.
+//
+// # Allocation contract
+//
+// Each method's allocations add to the walk's own, which [Value]
+// lists.
 type Target interface {
 	// Lang names the target, so a refusal reads the way every
 	// other refusal in that language does.
@@ -73,6 +88,16 @@ type Target interface {
 // Leaves is one target's spelling of the literal leaves: the parts in
 // which the C-family targets differ. Its [Leaves.Literal] method is
 // the target's [Target.Literal].
+//
+// # Concurrency
+//
+// [Leaves.Literal] reads a Leaves and never writes it. A Leaves is
+// safe for concurrent use when its Quote and Number functions are.
+//
+// # Allocation contract
+//
+// [Leaves.Literal] allocates nothing itself. Quote and Number allocate
+// what their spellings need.
 type Leaves struct {
 	// Lang is the target's language. Its name opens every refusal,
 	// and raw text written in any other language is refused.
@@ -90,8 +115,19 @@ type Leaves struct {
 // a string quotes through [Leaves.Quote], a boolean takes exactly the
 // two spellings, and the absent value is [Leaves.Absent]. Raw text
 // spells only where the author wrote it in the target's language,
-// because nothing translates another language's source. Every
-// refusal is a [render.ValueError].
+// because nothing translates another language's source.
+//
+// Error modes, each a [render.ValueError] that names the target's
+// language:
+//   - A number without text.
+//   - A boolean whose text is neither true nor false.
+//   - Raw text written in another language.
+//   - A literal kind the vocabulary does not declare.
+//
+// # Allocation contract
+//
+// Literal allocates nothing on success beyond what Quote and Number
+// allocate. A refusal allocates its error.
 func (l Leaves) Literal(v emit.Value) (string, error) {
 	lang := string(l.Lang)
 	switch v.Literal {
@@ -125,14 +161,27 @@ func (l Leaves) Literal(v emit.Value) (string, error) {
 
 // Value spells one value tree through a target: it walks the tree
 // and hands each spelling to the target, so a language states its
-// syntax once and never its recursion.
+// syntax once and never its recursion. A composite lists its entries
+// in the order the value states them, and a call spells as the callee,
+// its arguments comma-joined in parentheses.
 //
-// The walk refuses a value the vocabulary does not declare, a
-// conversion or an address wrapping nothing, a composite or a
-// conversion naming no type or a type that spells nothing, and a call
-// naming no callee or a callee without a name. Each refusal names
-// what is missing and is a [render.ValueError], so the render reports
-// it under its value code.
+// Error modes, each a [render.ValueError] that names what is missing:
+//   - A value kind the vocabulary does not declare.
+//   - A conversion or an address that wraps nothing.
+//   - A conversion or a composite that names no type, or a type that
+//     spells nothing.
+//   - A call that names no callee, or a callee without a name.
+//
+// An error a target method returns passes through unchanged.
+//
+// # Allocation contract
+//
+// The walk allocates the list of entries a composite with fields
+// passes to [Target.Composite], one allocation, because an interface
+// method's argument escapes. A call allocates its spelling, one
+// allocation, and the list of its spelled arguments where it has more
+// than eight. Literals, conversions and addresses allocate nothing in
+// the walk. The target's methods add their own allocations.
 func Value(t Target, v emit.Value) (string, error) {
 	switch v.Kind {
 	case emit.ValueLiteral:
@@ -189,7 +238,7 @@ func composite(t Target, v emit.Value) (string, error) {
 
 // valueCall spells an application of a callee to its arguments:
 // the callee, an open parenthesis, the arguments joined with commas,
-// and a close.
+// and a close, written into one buffer sized to the spelling.
 func valueCall(t Target, v emit.Value) (string, error) {
 	switch {
 	case v.Callee.IsZero():
@@ -201,15 +250,32 @@ func valueCall(t Target, v emit.Value) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	args := make([]string, 0, len(v.Args))
-	for _, arg := range v.Args {
+	var stack [callArgs]string
+	args := stack[:0]
+	n := len(callee) + len("()")
+	for i, arg := range v.Args {
 		spelled, err := Value(t, arg)
 		if err != nil {
 			return "", err
 		}
+		if i > 0 {
+			n += len(nameSep)
+		}
+		n += len(spelled)
 		args = append(args, spelled)
 	}
-	return callee + "(" + strings.Join(args, nameSep) + ")", nil
+	var b strings.Builder
+	b.Grow(n)
+	b.WriteString(callee)
+	b.WriteByte('(')
+	for i, arg := range args {
+		if i > 0 {
+			b.WriteString(nameSep)
+		}
+		b.WriteString(arg)
+	}
+	b.WriteByte(')')
+	return b.String(), nil
 }
 
 // namedType spells the type a value names. A conversion and a

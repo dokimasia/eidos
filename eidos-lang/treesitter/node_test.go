@@ -58,9 +58,22 @@ var (
 	longCompact = "int " + strings.Repeat("a,", 20) + "a;"
 )
 
-// A node is a value handle whose every accessor works on the absent
-// node too, so each accessor is pinned on a parsed tree and on the
-// zero Node.
+// The positions of the clean source's field: line 2 from its third
+// byte, and the byte after its semicolon.
+var (
+	cleanFieldAt  = position.Pos{File: javaFile, Line: 2, Col: 3}
+	cleanFieldEnd = position.Pos{File: javaFile, Line: 2, Col: 12}
+)
+
+// The allocations of an accessor that returns source text: the string,
+// and the token spans of a node of more than 32 tokens.
+const (
+	textAllocs        = 1
+	longCompactAllocs = textAllocs + 1
+)
+
+// Every accessor of a Node works on the absent node too. Each accessor
+// is pinned on a parsed tree and on the zero Node.
 func TestNode(t *testing.T) {
 	t.Parallel()
 
@@ -294,7 +307,7 @@ func TestNode(t *testing.T) {
 	t.Run("Pos", func(t *testing.T) {
 		t.Parallel()
 
-		t.Run("counts lines and byte columns from one", func(t *testing.T) {
+		t.Run("returns a position counted from one", func(t *testing.T) {
 			t.Parallel()
 
 			field := first(parse(t, wideJava).Root(), g.Kind(fieldDeclKind)).NextNamedSibling()
@@ -532,6 +545,163 @@ func TestNode(t *testing.T) {
 			assert.True(t, absent.NextNamedSibling().IsZero(), "an absent node has no sibling")
 		})
 	})
+}
+
+// The accessors that return source text allocate the string, and every
+// other accessor and walk allocates nothing. The ordinary run, which
+// runs no benchmark, checks those ceilings here.
+func TestNodeAllocs(t *testing.T) {
+	checkAllocs(t, nodeCalls(t))
+}
+
+// BenchmarkNode measures every accessor and walk a frontend calls on
+// the nodes of a parsed file.
+func BenchmarkNode(b *testing.B) {
+	benchCalls(b, nodeCalls(b))
+}
+
+// nodeCalls returns a call of every accessor and walk of a node of the
+// clean source, and a compact spelling of the long field.
+func nodeCalls(tb testing.TB) []allocCall {
+	tb.Helper()
+
+	g := java.Grammar
+	root := parse(tb, cleanJava).Root()
+	field, body := first(root, g.Kind(fieldDeclKind)), first(root, g.Kind(classBodyKind))
+	method := first(root, g.Kind(methodDeclKind))
+	long := first(parse(tb, longJava).Root(), g.Kind(fieldDeclKind))
+	decl := g.Field(declaratorField)
+	declarators := slices.Collect(field.Children(decl))
+	var (
+		reported bool
+		kind     treesitter.Kind
+		text     string
+		at       position.Pos
+		node     treesitter.Node
+		count    int
+	)
+	return []allocCall{
+		{
+			name:  "IsZero",
+			call:  func() { reported = field.IsZero() },
+			check: func(tb assert.TB) { assert.False(tb, reported, "IsZero reports a parsed node present") },
+		},
+		{
+			name:  "Kind",
+			call:  func() { kind = field.Kind() },
+			check: func(tb assert.TB) { assert.Equal(tb, kind, g.Kind(fieldDeclKind), "Kind returns the field's kind") },
+		},
+		{
+			name:  "Named",
+			call:  func() { reported = field.Named() },
+			check: func(tb assert.TB) { assert.True(tb, reported, "Named reports a declaration named") },
+		},
+		{
+			name:  "IsError",
+			call:  func() { reported = field.IsError() },
+			check: func(tb assert.TB) { assert.False(tb, reported, "IsError reports a clean node") },
+		},
+		{
+			name:  "IsMissing",
+			call:  func() { reported = field.IsMissing() },
+			check: func(tb assert.TB) { assert.False(tb, reported, "IsMissing reports a written node") },
+		},
+		{
+			name:  "IsExtra",
+			call:  func() { reported = field.IsExtra() },
+			check: func(tb assert.TB) { assert.False(tb, reported, "IsExtra reports a declaration") },
+		},
+		{
+			name:   "Text",
+			allocs: textAllocs,
+			call:   func() { text = field.Text() },
+			check:  func(tb assert.TB) { assert.Equal(tb, text, cleanField, "Text returns the declaration") },
+		},
+		{
+			name:   "TextThrough",
+			allocs: textAllocs,
+			call:   func() { text = declarators[0].TextThrough(declarators[1]) },
+			check:  func(tb assert.TB) { assert.Equal(tb, text, "a, b", "TextThrough returns both declarators") },
+		},
+		{
+			name:   "Compact",
+			allocs: textAllocs,
+			call:   func() { text = field.Compact() },
+			check:  func(tb assert.TB) { assert.Equal(tb, text, "int a,b;", "Compact returns the tokens") },
+		},
+		{
+			name:   "Compact/a node of more than 32 tokens",
+			allocs: longCompactAllocs,
+			call:   func() { text = long.Compact() },
+			check:  func(tb assert.TB) { assert.Equal(tb, text, longCompact, "Compact returns every token") },
+		},
+		{
+			name:  "Pos",
+			call:  func() { at = field.Pos() },
+			check: func(tb assert.TB) { assert.Equal(tb, at, cleanFieldAt, "Pos returns where the field starts") },
+		},
+		{
+			name:  "End",
+			call:  func() { at = field.End() },
+			check: func(tb assert.TB) { assert.Equal(tb, at, cleanFieldEnd, "End returns where the field ends") },
+		},
+		{
+			name:  "Child",
+			call:  func() { node = field.Child(decl) },
+			check: func(tb assert.TB) { assert.Equal(tb, node.Text(), firstName, "Child returns the first declarator") },
+		},
+		{
+			name: "Children",
+			call: func() {
+				count = 0
+				for range field.Children(decl) {
+					count++
+				}
+			},
+			check: func(tb assert.TB) { assert.Equal(tb, count, 2, "Children yields both declarators") },
+		},
+		{
+			name: "AllChildren",
+			call: func() {
+				count = 0
+				for range field.AllChildren() {
+					count++
+				}
+			},
+			check: func(tb assert.TB) { assert.Equal(tb, count, 5, "AllChildren yields the separator and the terminator") },
+		},
+		{
+			name: "NamedChildren",
+			call: func() {
+				count = 0
+				for range body.NamedChildren() {
+					count++
+				}
+			},
+			check: func(tb assert.TB) { assert.Equal(tb, count, 2, "NamedChildren yields the field and the method") },
+		},
+		{
+			name: "Parent",
+			call: func() { node = field.Parent() },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, node.Kind(), g.Kind(classBodyKind), "Parent returns the class body")
+			},
+		},
+		{
+			name: "PrevNamedSibling",
+			call: func() { node = method.PrevNamedSibling() },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, node.Kind(), g.Kind(fieldDeclKind), "PrevNamedSibling returns the field")
+			},
+		},
+		{
+			name: "NextNamedSibling",
+			call: func() { node = field.NextNamedSibling() },
+			check: func(tb assert.TB) {
+				assert.Equal(tb, node.Kind(), g.Kind(methodDeclKind), "NextNamedSibling returns the method")
+			},
+		},
+	}
 }
 
 // kindsOf returns the names of the kinds a sequence of nodes reports.

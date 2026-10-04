@@ -35,12 +35,19 @@ package treesitter
 #cgo nocallback eidos_step
 #cgo nocallback eidos_field_step
 #cgo nocallback eidos_tokens
+#cgo nocallback ts_parser_new
+#cgo nocallback ts_parser_delete
+#cgo nocallback ts_parser_set_language
+#cgo nocallback ts_parser_parse_string
+#cgo nocallback ts_tree_root_node
+#cgo nocallback ts_tree_delete
 
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 
 typedef struct TSLanguage TSLanguage;
+typedef struct TSParser TSParser;
 typedef struct TSTree TSTree;
 
 // The runtime's node, tree cursor and point, laid out as the runtime's
@@ -75,6 +82,12 @@ typedef struct EidosSpan {
 extern void ts_set_allocator(void *(*new_malloc)(size_t), void *(*new_calloc)(size_t, size_t),
 	void *(*new_realloc)(void *, size_t), void (*new_free)(void *));
 extern uint16_t ts_language_symbol_for_name(const TSLanguage *self, const char *name, uint32_t length, bool named);
+extern TSParser *ts_parser_new(void);
+extern void ts_parser_delete(TSParser *self);
+extern bool ts_parser_set_language(TSParser *self, const TSLanguage *language);
+extern TSTree *ts_parser_parse_string(TSParser *self, const TSTree *old_tree, const char *string, uint32_t length);
+extern TSNode ts_tree_root_node(const TSTree *self);
+extern void ts_tree_delete(TSTree *self);
 extern uint16_t ts_node_symbol(TSNode self);
 extern bool ts_node_is_named(TSNode self);
 extern bool ts_node_is_missing(TSNode self);
@@ -171,13 +184,9 @@ import (
 	ts "github.com/tree-sitter/go-tree-sitter"
 )
 
-// The binding's Node is the runtime's TSNode and nothing else, which
-// rootOf reads as the layer's own: the package compiles only while the
-// two sizes are equal.
-const (
-	_ = unsafe.Sizeof(ts.Node{}) - unsafe.Sizeof(C.TSNode{})
-	_ = unsafe.Sizeof(C.TSNode{}) - unsafe.Sizeof(ts.Node{})
-)
+// rawTree is the runtime's syntax tree, in C memory the runtime
+// allocates. Its owner deletes it once.
+type rawTree = *C.TSTree
 
 // rawNode is the runtime's syntax node as a value: four context words,
 // the node's id, which is nil for the null node, and its tree.
@@ -220,11 +229,24 @@ func publicKind(lang *ts.Language, name string) Kind {
 	))
 }
 
-// rootOf returns the root node of a tree the binding parsed, read as the
-// layer's node.
-func rootOf(t *ts.Tree) rawNode {
-	return *(*rawNode)(unsafe.Pointer(t.RootNode()))
+// parseString parses src with a new parser for a language, and deletes
+// the parser before it returns. The runtime reads src in place during
+// the call, and the tree it returns refers to no byte of it. The caller
+// deletes the tree. The runtime returns a tree for every input, because
+// the parse sets no timeout, cancellation flag or progress callback.
+func parseString(lang *ts.Language, src []byte) rawTree {
+	p := C.ts_parser_new()
+	defer C.ts_parser_delete(p)
+	// Load checked the ABI version, which is the one refusal.
+	C.ts_parser_set_language(p, (*C.TSLanguage)(unsafe.Pointer(lang.Inner)))
+	return C.ts_parser_parse_string(p, nil, (*C.char)(unsafe.Pointer(unsafe.SliceData(src))), C.uint32_t(len(src)))
 }
+
+// rootNode returns a tree's root node.
+func rootNode(t rawTree) rawNode { return C.ts_tree_root_node(t) }
+
+// deleteTree releases a tree's C memory.
+func deleteTree(t rawTree) { C.ts_tree_delete(t) }
 
 // present reports whether a node is not the runtime's null node.
 func present(n rawNode) bool { return n.id != nil }

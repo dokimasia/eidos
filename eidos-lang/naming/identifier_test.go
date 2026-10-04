@@ -7,22 +7,59 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
+	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/lang/naming"
 )
 
-// The predicate stands before every wire-name refusal, so the
-// shape's edges are pinned here.
+// The predicate runs before every wire-name refusal, so the shape's
+// edges are pinned here.
 func TestIdentifier(t *testing.T) {
 	t.Parallel()
 
-	t.Run("IsIdentifier/reports the shape without touching it", func(t *testing.T) {
+	t.Run("IsIdentifier", func(t *testing.T) {
 		t.Parallel()
 
-		assert.True(t, naming.IsIdentifier("content_type"), "the plain shape holds")
-		assert.True(t, naming.IsIdentifier("_x9"), "an underscore opening holds")
-		assert.False(t, naming.IsIdentifier("content-type"), "a hyphen is outside the shape")
-		assert.False(t, naming.IsIdentifier("9lives"), "a leading digit is outside it")
-		assert.False(t, naming.IsIdentifier(""), "and emptiness names nothing")
+		tests := []struct {
+			name string
+			give string
+			want bool
+		}{
+			{name: "reports true for letters around an underscore", give: "content_type", want: true},
+			{name: "reports true for an underscore opening", give: "_x9", want: true},
+			{name: "reports false for a hyphen", give: "content-type", want: false},
+			{name: "reports false for a leading digit", give: "9lives", want: false},
+			{name: "reports false for a non-ASCII letter", give: "café", want: false},
+			{name: "reports false for the empty string", give: "", want: false},
+		}
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				t.Parallel()
+
+				assert.Equal(t, naming.IsIdentifier(tt.give), tt.want, "whether the name has the shape")
+			})
+		}
+	})
+}
+
+// The predicate allocates nothing in the ordinary run, which runs no
+// benchmark.
+func TestIdentifierZeroAlloc(t *testing.T) {
+	var got bool
+	assert.MaxAllocs(t, func() { got = naming.IsIdentifier("content_type") }, 0, "IsIdentifier allocates nothing")
+	assert.True(t, got, "IsIdentifier reports true for an identifier")
+}
+
+// BenchmarkIdentifier measures the shape check a backend runs on every
+// wire name.
+func BenchmarkIdentifier(b *testing.B) {
+	b.Run("IsIdentifier", func(b *testing.B) {
+		c := bench.Start(b).MaxAllocs(0)
+		defer c.End()
+		got := false
+		for c.Loop() {
+			got = naming.IsIdentifier("content_type")
+		}
+		assert.True(b, got, "IsIdentifier reports true for an identifier")
 	})
 }

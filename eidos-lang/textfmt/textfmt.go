@@ -7,9 +7,20 @@ import (
 	"bytes"
 )
 
-// Normalize strips trailing whitespace from every line, collapses
-// blank-line runs to one, drops leading blank lines, and ends the
-// text with exactly one newline. An empty input returns empty.
+// Normalize returns src without the whitespace a template leaves:
+//
+//   - It strips trailing whitespace from every line.
+//   - It collapses each run of blank lines to one.
+//   - It drops leading blank lines.
+//   - It ends the text with exactly one newline.
+//
+// An empty input returns as it is. The error is always nil. It matches
+// the formatter signature a backend's Finalise step takes.
+//
+// # Allocation contract
+//
+// Normalize allocates the output at the input's length, one
+// allocation. An empty input allocates nothing.
 func Normalize(src []byte) ([]byte, error) {
 	if len(src) == 0 {
 		return src, nil

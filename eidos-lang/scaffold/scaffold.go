@@ -24,6 +24,17 @@ const (
 // which the scaffolding statements differ between targets. [Scaffold]
 // writes every statement through it, so a target states its tokens
 // once and never the walk.
+//
+// # Concurrency
+//
+// [Scaffold] reads a Grammar and never writes it. A Grammar is safe
+// for concurrent use when its Tuple and Guard functions are.
+//
+// # Allocation contract
+//
+// [Scaffold] calls Tuple once for each assignment of more than one name
+// and Guard once for each guard. Their allocations add to the
+// statement's.
 type Grammar struct {
 	// Lang names the target in every refusal.
 	Lang string
@@ -53,12 +64,30 @@ type Grammar struct {
 
 // Scaffold spells one statement of the neutral vocabulary in grammar
 // g, at one level of indentation, with t spelling the values its
-// expressions contain.
+// expressions contain. A guard writes its actions one level deeper,
+// inside a block.
 //
-// A statement or an expression the grammar has no form for returns
-// an error, and the render skips that declaration and keeps the
-// file. The returned bytes are the buffer's own: Scaffold keeps no
-// reference to them.
+// The returned bytes are the buffer's own: Scaffold keeps no reference
+// to them. A statement it refuses returns nil bytes, and the render
+// skips that declaration and keeps the file.
+//
+// Error modes:
+//   - A statement kind the vocabulary does not declare returns an
+//     error that names the kind.
+//   - An assignment that binds no name, or more than one name in a
+//     grammar without Tuple, returns an error that names the count.
+//   - A guard that names no value, or a guard with actions in a
+//     grammar without Guard, returns an error.
+//   - An expression [Expr] refuses returns its error, and a value the
+//     target refuses returns the target's [render.ValueError].
+//
+// # Allocation contract
+//
+// Scaffold allocates the statement's buffer, one allocation for a
+// statement of up to 64 bytes, and the buffer grows by doubling past
+// that. An assignment of more than one name allocates the comma-joined
+// names it passes to Tuple. The grammar's functions and the values the
+// statement contains add their own allocations.
 func Scaffold(g Grammar, s emit.Stmt, t Target) ([]byte, error) {
 	var b bytes.Buffer
 	if err := statement(&b, g, s, 1, t); err != nil {
@@ -71,7 +100,7 @@ func Scaffold(g Grammar, s emit.Stmt, t Target) ([]byte, error) {
 func statement(b *bytes.Buffer, g Grammar, s emit.Stmt, depth int, t Target) error {
 	switch s.Kind {
 	case emit.StmtReturn:
-		b.WriteString(strings.Repeat(g.Indent, depth))
+		writeIndent(b, g.Indent, depth)
 		b.WriteString(returnKeyword)
 		if s.Value.Kind != 0 {
 			b.WriteByte(' ')
@@ -84,7 +113,7 @@ func statement(b *bytes.Buffer, g Grammar, s emit.Stmt, depth int, t Target) err
 			return err
 		}
 	case emit.StmtExpr:
-		b.WriteString(strings.Repeat(g.Indent, depth))
+		writeIndent(b, g.Indent, depth)
 		if err := Expr(b, s.Value, t); err != nil {
 			return err
 		}
@@ -114,7 +143,7 @@ func assignment(b *bytes.Buffer, g Grammar, s emit.Stmt, depth int, t Target) er
 	default:
 		names = g.Tuple(strings.Join(s.Names, nameSep))
 	}
-	b.WriteString(strings.Repeat(g.Indent, depth))
+	writeIndent(b, g.Indent, depth)
 	op := assignOp
 	if s.Declare {
 		b.WriteString(g.Declare)
@@ -140,7 +169,7 @@ func guard(b *bytes.Buffer, g Grammar, s emit.Stmt, depth int, t Target) error {
 	if s.Name == "" {
 		return fmt.Errorf("%s: a guard names no value to test", g.Lang)
 	}
-	b.WriteString(strings.Repeat(g.Indent, depth))
+	writeIndent(b, g.Indent, depth)
 	b.WriteString(g.Guard(s.Name))
 	b.WriteString(blockOpen)
 	for _, then := range s.Then {
@@ -148,9 +177,17 @@ func guard(b *bytes.Buffer, g Grammar, s emit.Stmt, depth int, t Target) error {
 			return err
 		}
 	}
-	b.WriteString(strings.Repeat(g.Indent, depth))
+	writeIndent(b, g.Indent, depth)
 	b.WriteString(blockClose)
 	return nil
+}
+
+// writeIndent writes depth levels of indent into b. It allocates only
+// where b grows.
+func writeIndent(b *bytes.Buffer, indent string, depth int) {
+	for range depth {
+		b.WriteString(indent)
+	}
 }
 
 // Expr writes one expression of the neutral vocabulary into b,
@@ -160,10 +197,23 @@ func guard(b *bytes.Buffer, g Grammar, s emit.Stmt, depth int, t Target) error {
 // locally resolving names and no target qualifies one. A call spells
 // the applied expression, an open parenthesis, its arguments joined
 // with commas, and a close. A value goes to the target, which spells
-// its tree and records the imports its references need. An empty
-// name, a call applying no function, a value expression without a
-// value, and a kind nothing declares each return an error naming
-// what is missing.
+// its tree and records the imports its references need.
+//
+// Error modes:
+//   - An empty name, a call that applies no function, and a value
+//     expression without a value or without a target each return an
+//     error that names what is missing.
+//   - An expression kind the vocabulary does not declare returns an
+//     error that names the kind.
+//   - A value the walk or the target refuses returns its
+//     [render.ValueError].
+//
+// Bytes written before an error stay in b.
+//
+// # Allocation contract
+//
+// Expr allocates nothing for names and calls beyond the growth of b. A
+// value expression allocates what [Value] allocates for its value.
 func Expr(b *bytes.Buffer, e emit.Expr, t Target) error {
 	switch e.Kind {
 	case emit.ExprName:

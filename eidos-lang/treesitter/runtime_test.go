@@ -16,9 +16,9 @@ import (
 // kind is.
 const semicolon = ";"
 
-// The layer resolves kinds through the runtime's own lookup, so every
-// grammar's resolution is pinned against the binding's wrapper of
-// that lookup.
+// The layer resolves kinds through the runtime's own lookup. Every
+// grammar's resolution is pinned against the binding's wrapper of that
+// lookup.
 func TestRuntime(t *testing.T) {
 	t.Parallel()
 

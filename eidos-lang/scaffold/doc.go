@@ -20,6 +20,13 @@
 // target cannot spell returns a [render.ValueError], which the render
 // reports under its value code.
 //
+// # Allocation contract
+//
+// The walk allocates a statement's buffer, a composite's entries and a
+// call value's spelling. A grammar's functions and a target's methods
+// add their own allocations, and each function's docblock states the
+// count.
+//
 // # Dependency position
 //
 // lang/scaffold imports sdk/emit, sdk/render, sdk/symbol and the Go
