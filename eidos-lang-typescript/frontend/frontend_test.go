@@ -38,13 +38,19 @@ const (
 const newAllocs = 4 + 1 + 2 + 4
 
 // allocCall is one call that an allocation test and a benchmark share:
-// its benchmark path, its allocation ceiling, the call, and the check
-// of the result the call leaves.
+// the method it calls, which names its benchmark, the case it measures
+// where the method has more than one call, its allocation ceiling, the
+// call, and the check of the result the call leaves. A case whose
+// ceiling only a benchmark checks sets bench, which measures the case
+// in place of the call, and no list an allocation test reads contains
+// it.
 type allocCall struct {
-	name   string
-	allocs uint64
-	call   func()
-	check  func(tb assert.TB)
+	name     string
+	caseName string
+	allocs   uint64
+	call     func()
+	check    func(tb assert.TB)
+	bench    func(b *testing.B)
 }
 
 // The frontend runs the conformance suite every frontend runs, over real
@@ -138,29 +144,60 @@ func checkAllocs(t *testing.T, calls []allocCall) {
 
 	for _, c := range calls {
 		msg := c.name + " allocates within its ceiling"
+		if c.caseName != "" {
+			msg = c.name + " for " + c.caseName + " allocates within its ceiling"
+		}
 		assert.MaxAllocs(t, c.call, c.allocs, msg)
 		c.check(t)
 	}
 }
 
 // benchCalls measures every call under the bench contract at its
-// ceiling, one sub-benchmark each. Each call runs once before the
-// contract starts, so what the first call initialises stays out of the
-// count.
+// ceiling: one sub-benchmark for each method, in the order the methods
+// first appear, and inside it one for each case of a method with cases.
 func benchCalls(b *testing.B, calls []allocCall) {
 	b.Helper()
 
-	for _, tt := range calls {
-		b.Run(tt.name, func(b *testing.B) {
-			tt.call()
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			for c.Loop() {
-				tt.call()
+	var methods []string
+	byMethod := map[string][]allocCall{}
+	for _, c := range calls {
+		if _, seen := byMethod[c.name]; !seen {
+			methods = append(methods, c.name)
+		}
+		byMethod[c.name] = append(byMethod[c.name], c)
+	}
+	for _, name := range methods {
+		cases := byMethod[name]
+		b.Run(name, func(b *testing.B) {
+			if len(cases) == 1 && cases[0].caseName == "" {
+				benchCall(b, cases[0])
+				return
 			}
-			tt.check(b)
+			for _, tt := range cases {
+				b.Run(tt.caseName, func(b *testing.B) { benchCall(b, tt) })
+			}
 		})
 	}
+}
+
+// benchCall measures one call under the bench contract at its ceiling,
+// and checks the result the last call leaves. The call runs once before
+// the contract starts, so what the first call initialises stays out of
+// the count. A case that sets bench runs it instead.
+func benchCall(b *testing.B, tt allocCall) {
+	b.Helper()
+
+	if tt.bench != nil {
+		tt.bench(b)
+		return
+	}
+	tt.call()
+	c := bench.Start(b).MaxAllocs(tt.allocs)
+	defer c.End()
+	for c.Loop() {
+		tt.call()
+	}
+	tt.check(b)
 }
 
 // tsTree is the whole-contract fixture: two modules and a reference

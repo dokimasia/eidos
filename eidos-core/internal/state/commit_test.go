@@ -455,41 +455,45 @@ func BenchmarkCommit(b *testing.B) {
 	parent, ref := parentWithRegion(b)
 	key, row := []byte("alpha"), []byte("row")
 
-	b.Run("NewCommit/a cold run", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(newCommitAllocs)
-		defer c.End()
-		var got *state.Commit
-		for c.Loop() {
-			got = state.NewCommit(nil, nil)
-		}
-		assert.NotNil(b, got, "NewCommit returns the commit")
+	b.Run("NewCommit", func(b *testing.B) {
+		b.Run("a cold run", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(newCommitAllocs)
+			defer c.End()
+			var got *state.Commit
+			for c.Loop() {
+				got = state.NewCommit(nil, nil)
+			}
+			assert.NotNil(b, got, "NewCommit returns the commit")
+		})
+
+		b.Run("over a parent of one live segment", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(newCommitParentAllocs)
+			defer c.End()
+			var got *state.Commit
+			for c.Loop() {
+				got = state.NewCommit(parent, nil)
+			}
+			assert.NotNil(b, got, "NewCommit returns the commit")
+		})
 	})
 
-	b.Run("NewCommit/over a parent of one live segment", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(newCommitParentAllocs)
-		defer c.End()
-		var got *state.Commit
-		for c.Loop() {
-			got = state.NewCommit(parent, nil)
-		}
-		assert.NotNil(b, got, "NewCommit returns the commit")
-	})
-
-	b.Run("AddRegions/two blobs into a new commit", func(b *testing.B) {
-		blobs := [][]byte{[]byte("ab"), []byte("cde")}
-		c := bench.Start(b).MaxAllocs(addRegionsAllocs)
-		defer c.End()
-		var (
-			commit *state.Commit
-			refs   []state.RegionRef
-			err    error
-		)
-		for c.Loop() {
-			c.Excluding(func() { commit = state.NewCommit(nil, nil) })
-			refs, err = commit.AddRegions(blobs)
-		}
-		assert.NoError(b, err, "the regions add")
-		assert.Length(b, refs, 2, "one place for each blob")
+	b.Run("AddRegions", func(b *testing.B) {
+		b.Run("two blobs into a new commit", func(b *testing.B) {
+			blobs := [][]byte{[]byte("ab"), []byte("cde")}
+			c := bench.Start(b).MaxAllocs(addRegionsAllocs)
+			defer c.End()
+			var (
+				commit *state.Commit
+				refs   []state.RegionRef
+				err    error
+			)
+			for c.Loop() {
+				c.Excluding(func() { commit = state.NewCommit(nil, nil) })
+				refs, err = commit.AddRegions(blobs)
+			}
+			assert.NoError(b, err, "the regions add")
+			assert.Length(b, refs, 2, "one place for each blob")
+		})
 	})
 
 	b.Run("Release", func(b *testing.B) {
@@ -502,47 +506,53 @@ func BenchmarkCommit(b *testing.B) {
 		assert.NotNil(b, commit, "the release is recorded")
 	})
 
-	b.Run("Put/a first row into a new commit", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(putAllocs)
-		defer c.End()
-		var commit *state.Commit
-		for c.Loop() {
-			c.Excluding(func() { commit = state.NewCommit(nil, nil) })
-			commit.Put(state.TableChecks, key, row)
-		}
-		assert.NotNil(b, commit, "the row is recorded")
-	})
-
-	b.Run("Delete/a first tombstone into a new commit", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(deleteAllocs)
-		defer c.End()
-		var commit *state.Commit
-		for c.Loop() {
-			c.Excluding(func() { commit = state.NewCommit(nil, nil) })
-			commit.Delete(state.TableChecks, key)
-		}
-		assert.NotNil(b, commit, "the tombstone is recorded")
-	})
-
-	b.Run("Write/a commit of one row into an empty ledger", func(b *testing.B) {
-		h, m := header(past), manifest.Manifest{Version: manifest.Version}
-		c := bench.Start(b).MaxAllocs(writeAllocs)
-		defer c.End()
-		var (
-			commit *state.Commit
-			l      *ledger.Mem
-			result state.Result
-			err    error
-		)
-		for c.Loop() {
-			c.Excluding(func() {
-				commit, l = state.NewCommit(nil, nil), ledger.NewMem()
+	b.Run("Put", func(b *testing.B) {
+		b.Run("a first row into a new commit", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(putAllocs)
+			defer c.End()
+			var commit *state.Commit
+			for c.Loop() {
+				c.Excluding(func() { commit = state.NewCommit(nil, nil) })
 				commit.Put(state.TableChecks, key, row)
-			})
-			result, err = commit.Write(b.Context(), l, h, m)
-		}
-		assert.NoError(b, err, "the commit writes")
-		assert.NotEqual(b, result.Generation, "", "and makes a generation live")
+			}
+			assert.NotNil(b, commit, "the row is recorded")
+		})
+	})
+
+	b.Run("Delete", func(b *testing.B) {
+		b.Run("a first tombstone into a new commit", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(deleteAllocs)
+			defer c.End()
+			var commit *state.Commit
+			for c.Loop() {
+				c.Excluding(func() { commit = state.NewCommit(nil, nil) })
+				commit.Delete(state.TableChecks, key)
+			}
+			assert.NotNil(b, commit, "the tombstone is recorded")
+		})
+	})
+
+	b.Run("Write", func(b *testing.B) {
+		b.Run("a commit of one row into an empty ledger", func(b *testing.B) {
+			h, m := header(past), manifest.Manifest{Version: manifest.Version}
+			c := bench.Start(b).MaxAllocs(writeAllocs)
+			defer c.End()
+			var (
+				commit *state.Commit
+				l      *ledger.Mem
+				result state.Result
+				err    error
+			)
+			for c.Loop() {
+				c.Excluding(func() {
+					commit, l = state.NewCommit(nil, nil), ledger.NewMem()
+					commit.Put(state.TableChecks, key, row)
+				})
+				result, err = commit.Write(b.Context(), l, h, m)
+			}
+			assert.NoError(b, err, "the commit writes")
+			assert.NotEqual(b, result.Generation, "", "and makes a generation live")
+		})
 	})
 }
 

@@ -42,10 +42,12 @@ func (foreignSymbol) Position() position.Pos { return position.Pos{} }
 // Docs returns nil.
 func (foreignSymbol) Docs() []string { return nil }
 
-// codecCase is one measured call of the binary codec: the
-// sub-benchmark's name, its allocation ceiling, the call, and the
-// check on what the last call returned.
+// codecCase is one measured call of the binary codec: the function it
+// calls and the case it measures, which name its sub-benchmark, its
+// allocation ceiling, the call, and the check on what the last call
+// returned.
 type codecCase struct {
+	method string
 	name   string
 	allocs uint64
 	call   func()
@@ -318,7 +320,8 @@ func TestCodec(t *testing.T) {
 // list once.
 func TestCodecAllocs(t *testing.T) {
 	for _, tt := range codecCases(t) {
-		assert.MaxAllocs(t, tt.call, tt.allocs, tt.name+" allocates within its ceiling")
+		msg := tt.method + " for " + tt.name + " allocates within its ceiling"
+		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
 		tt.check(t)
 	}
 }
@@ -327,13 +330,15 @@ func TestCodecAllocs(t *testing.T) {
 // reads back, over one package of the canonical corpus.
 func BenchmarkCodec(b *testing.B) {
 	for _, tt := range codecCases(b) {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			for c.Loop() {
-				tt.call()
-			}
-			tt.check(b)
+		b.Run(tt.method, func(b *testing.B) {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				for c.Loop() {
+					tt.call()
+				}
+				tt.check(b)
+			})
 		})
 	}
 }
@@ -354,7 +359,7 @@ func codecCases(tb testing.TB) []codecCase {
 	)
 	return []codecCase{
 		{
-			name: "AppendBinary/one package with reused storage",
+			method: "AppendBinary", name: "one package with reused storage",
 			call: func() {
 				table.Reset()
 				buf, encodeErr = AppendBinary(buf[:0], pkg, &table)
@@ -365,7 +370,8 @@ func codecCases(tb testing.TB) []codecCase {
 			},
 		},
 		{
-			name:   "DecodeBinary/one package",
+			method: "DecodeBinary",
+			name:   "one package",
 			allocs: codecDecodeAllocs,
 			call:   func() { decoded, _, decodeErr = DecodeBinary(encoded, decodeTable) },
 			check: func(tb testing.TB) {

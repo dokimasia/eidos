@@ -406,27 +406,29 @@ func BenchmarkBody(b *testing.B) {
 		assert.True(b, declared, "the declared slot is found")
 	})
 
-	b.Run("Declare/a new name", func(b *testing.B) {
-		var body emit.Body
-		empty := func() { body = emit.Body{} }
-		c := bench.Start(b).MaxAllocs(declareAllocs)
-		defer c.End()
-		for c.Loop() {
-			c.Excluding(empty)
-			body.Declare(checksSlot)
-		}
-		assert.Length(b, body.Slots, 1, "the declaration adds its slot")
-	})
+	b.Run("Declare", func(b *testing.B) {
+		b.Run("a new name", func(b *testing.B) {
+			var body emit.Body
+			empty := func() { body = emit.Body{} }
+			c := bench.Start(b).MaxAllocs(declareAllocs)
+			defer c.End()
+			for c.Loop() {
+				c.Excluding(empty)
+				body.Declare(checksSlot)
+			}
+			assert.Length(b, body.Slots, 1, "the declaration adds its slot")
+		})
 
-	b.Run("Declare/a declared name", func(b *testing.B) {
-		body := scaffold()
-		body.Declare(checksSlot)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		for c.Loop() {
+		b.Run("a declared name", func(b *testing.B) {
+			body := scaffold()
 			body.Declare(checksSlot)
-		}
-		assert.Length(b, body.Slots, 1, "the declaration returns the existing slot")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				body.Declare(checksSlot)
+			}
+			assert.Length(b, body.Slots, 1, "the declaration returns the existing slot")
+		})
 	})
 
 	b.Run("EncodeJSON", func(b *testing.B) {

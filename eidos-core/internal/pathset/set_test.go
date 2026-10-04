@@ -190,34 +190,38 @@ func TestSetAllocs(t *testing.T) {
 func BenchmarkSet(b *testing.B) {
 	s := filled()
 
-	b.Run("Set.Clash/a lowercase path that fits", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got pathset.Clash
-		for c.Loop() {
-			got, _ = s.Clash(storeTest)
-		}
-		assert.Equal(b, got, pathset.ClashNone, "Clash reports a sibling as fitting")
+	b.Run("Clash", func(b *testing.B) {
+		b.Run("a lowercase path that fits", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got pathset.Clash
+			for c.Loop() {
+				got, _ = s.Clash(storeTest)
+			}
+			assert.Equal(b, got, pathset.ClashNone, "Clash reports a sibling as fitting")
+		})
+
+		b.Run("a path that differs only in case", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var got pathset.Clash
+			for c.Loop() {
+				got, _ = s.Clash("svc/Store.go")
+			}
+			assert.Equal(b, got, pathset.ClashCase, "Clash reports the case clash")
+		})
 	})
 
-	b.Run("Set.Clash/a path that differs only in case", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		var got pathset.Clash
-		for c.Loop() {
-			got, _ = s.Clash("svc/Store.go")
-		}
-		assert.Equal(b, got, pathset.ClashCase, "Clash reports the case clash")
-	})
-
-	b.Run("Set.Add/a path the set contains", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		for c.Loop() {
-			s.Add(storeFile)
-		}
-		clash, _ := s.Clash(storeFile)
-		assert.Equal(b, clash, pathset.ClashNone, "Add keeps the one spelling")
+	b.Run("Add", func(b *testing.B) {
+		b.Run("a path the set contains", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				s.Add(storeFile)
+			}
+			clash, _ := s.Clash(storeFile)
+			assert.Equal(b, clash, pathset.ClashNone, "Add keeps the one spelling")
+		})
 	})
 
 	b.Run("Clash.String", func(b *testing.B) {

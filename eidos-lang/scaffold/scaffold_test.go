@@ -276,25 +276,27 @@ func BenchmarkScaffold(b *testing.B) {
 		give    emit.Stmt
 		allocs  uint64
 	}{
-		{name: "Scaffold", grammar: ended, give: returnLoad(), allocs: statementAllocs},
-		{name: "Scaffold/an assignment of two names", grammar: bare, give: assignNext(), allocs: tupleAllocs},
-		{name: "Scaffold/a guard", grammar: ended, give: guardErr(), allocs: guardAllocs},
+		{name: "a return of a call", grammar: ended, give: returnLoad(), allocs: statementAllocs},
+		{name: "an assignment of two names", grammar: bare, give: assignNext(), allocs: tupleAllocs},
+		{name: "a guard", grammar: ended, give: guardErr(), allocs: guardAllocs},
 	}
-	for _, tt := range statements {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var (
-				got []byte
-				err error
-			)
-			for c.Loop() {
-				got, err = scaffold.Scaffold(tt.grammar, tt.give, passthrough{})
-			}
-			assert.NoError(b, err, "Scaffold spells the statement")
-			assert.NotEmpty(b, got, "Scaffold writes the statement")
-		})
-	}
+	b.Run("Scaffold", func(b *testing.B) {
+		for _, tt := range statements {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var (
+					got []byte
+					err error
+				)
+				for c.Loop() {
+					got, err = scaffold.Scaffold(tt.grammar, tt.give, passthrough{})
+				}
+				assert.NoError(b, err, "Scaffold spells the statement")
+				assert.NotEmpty(b, got, "Scaffold writes the statement")
+			})
+		}
+	})
 
 	b.Run("Expr", func(b *testing.B) {
 		expr := call(name("load"), name("ctx"), emit.ValueExpr(integer("42")))

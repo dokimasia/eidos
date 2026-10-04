@@ -246,16 +246,18 @@ func BenchmarkStringTable(b *testing.B) {
 		assert.Equal(b, got, 2, "Len counts both strings")
 	})
 
-	b.Run("Reset/a table of two strings refilled", func(b *testing.B) {
-		var reused node.StringTable
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		for c.Loop() {
-			reused.Reset()
-			reused.Add("ab")
-			reused.Add("c")
-		}
-		assert.Equal(b, reused.Len(), 2, "the refilled table contains both strings")
+	b.Run("Reset", func(b *testing.B) {
+		b.Run("a table of two strings refilled", func(b *testing.B) {
+			var reused node.StringTable
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				reused.Reset()
+				reused.Add("ab")
+				reused.Add("c")
+			}
+			assert.Equal(b, reused.Len(), 2, "the refilled table contains both strings")
+		})
 	})
 
 	b.Run("AppendBinary", func(b *testing.B) {

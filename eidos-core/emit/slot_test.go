@@ -276,16 +276,18 @@ func TestSlotAllocs(t *testing.T) {
 // encoder's or the decoder's state, and its ceiling allows that state
 // once more for a run of one iteration.
 func BenchmarkSlot(b *testing.B) {
-	b.Run("Append/a first value into an empty slot", func(b *testing.B) {
-		field := &emit.Field{Name: "ID"}
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		var s *emit.Struct
-		for c.Loop() {
-			c.Excluding(func() { s = &emit.Struct{} })
-			s.Fields.Append(field)
-		}
-		assert.Equal(b, s.Fields.Len(), 1, "the slot holds the field")
+	b.Run("Append", func(b *testing.B) {
+		b.Run("a first value into an empty slot", func(b *testing.B) {
+			field := &emit.Field{Name: "ID"}
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var s *emit.Struct
+			for c.Loop() {
+				c.Excluding(func() { s = &emit.Struct{} })
+				s.Fields.Append(field)
+			}
+			assert.Equal(b, s.Fields.Len(), 1, "the slot holds the field")
+		})
 	})
 
 	b.Run("Items", func(b *testing.B) {
@@ -321,61 +323,65 @@ func BenchmarkSlot(b *testing.B) {
 		assert.False(b, got, "a filled slot is not empty")
 	})
 
-	b.Run("MarshalJSON/a concrete slot", func(b *testing.B) {
-		slot := concrete()
-		_, err := slot.MarshalJSON()
-		assert.NoError(b, err, "the slot encodes before the measurement")
-		c := bench.Start(b).MaxAllocs(marshalConcreteAllocs + encodeStateAllocs)
-		defer c.End()
-		var got []byte
-		for c.Loop() {
-			got, err = slot.MarshalJSON()
-		}
-		assert.NoError(b, err, "the slot encodes")
-		assert.Equal(b, string(got), concreteJSON, "as the array of its contents")
+	b.Run("MarshalJSON", func(b *testing.B) {
+		b.Run("a concrete slot", func(b *testing.B) {
+			slot := concrete()
+			_, err := slot.MarshalJSON()
+			assert.NoError(b, err, "the slot encodes before the measurement")
+			c := bench.Start(b).MaxAllocs(marshalConcreteAllocs + encodeStateAllocs)
+			defer c.End()
+			var got []byte
+			for c.Loop() {
+				got, err = slot.MarshalJSON()
+			}
+			assert.NoError(b, err, "the slot encodes")
+			assert.Equal(b, string(got), concreteJSON, "as the array of its contents")
+		})
+
+		b.Run("a declaration slot", func(b *testing.B) {
+			slot := declarations()
+			_, err := slot.MarshalJSON()
+			assert.NoError(b, err, "the slot encodes before the measurement")
+			c := bench.Start(b).MaxAllocs(marshalDeclarationAllocs + encodeStateAllocs)
+			defer c.End()
+			var got []byte
+			for c.Loop() {
+				got, err = slot.MarshalJSON()
+			}
+			assert.NoError(b, err, "the slot encodes")
+			assert.Contains(b, string(got), "RowID", "with its declarations")
+		})
 	})
 
-	b.Run("MarshalJSON/a declaration slot", func(b *testing.B) {
-		slot := declarations()
-		_, err := slot.MarshalJSON()
-		assert.NoError(b, err, "the slot encodes before the measurement")
-		c := bench.Start(b).MaxAllocs(marshalDeclarationAllocs + encodeStateAllocs)
-		defer c.End()
-		var got []byte
-		for c.Loop() {
-			got, err = slot.MarshalJSON()
-		}
-		assert.NoError(b, err, "the slot encodes")
-		assert.Contains(b, string(got), "RowID", "with its declarations")
-	})
+	b.Run("UnmarshalJSON", func(b *testing.B) {
+		b.Run("a concrete slot", func(b *testing.B) {
+			data := []byte(concreteJSON)
+			var slot emit.Slot[string]
+			err := slot.UnmarshalJSON(data)
+			assert.NoError(b, err, "the slot decodes before the measurement")
+			c := bench.Start(b).MaxAllocs(decodeStateAllocs)
+			defer c.End()
+			for c.Loop() {
+				err = slot.UnmarshalJSON(data)
+			}
+			assert.NoError(b, err, "the array decodes")
+			assert.Equal(b, slot.Items(), []string{"a", "b"}, "into the contents")
+		})
 
-	b.Run("UnmarshalJSON/a concrete slot", func(b *testing.B) {
-		data := []byte(concreteJSON)
-		var slot emit.Slot[string]
-		err := slot.UnmarshalJSON(data)
-		assert.NoError(b, err, "the slot decodes before the measurement")
-		c := bench.Start(b).MaxAllocs(decodeStateAllocs)
-		defer c.End()
-		for c.Loop() {
+		b.Run("a declaration slot", func(b *testing.B) {
+			data, err := declarations().MarshalJSON()
+			assert.NoError(b, err, "the declaration slot encodes")
+			var slot emit.Slot[symbol.Symbol]
 			err = slot.UnmarshalJSON(data)
-		}
-		assert.NoError(b, err, "the array decodes")
-		assert.Equal(b, slot.Items(), []string{"a", "b"}, "into the contents")
-	})
-
-	b.Run("UnmarshalJSON/a declaration slot", func(b *testing.B) {
-		data, err := declarations().MarshalJSON()
-		assert.NoError(b, err, "the declaration slot encodes")
-		var slot emit.Slot[symbol.Symbol]
-		err = slot.UnmarshalJSON(data)
-		assert.NoError(b, err, "the slot decodes before the measurement")
-		c := bench.Start(b).MaxAllocs(unmarshalDeclarationAllocs + decodeStateAllocs)
-		defer c.End()
-		for c.Loop() {
-			err = slot.UnmarshalJSON(data)
-		}
-		assert.NoError(b, err, "the array decodes")
-		assert.Equal(b, slot.Len(), 2, "into the declarations")
+			assert.NoError(b, err, "the slot decodes before the measurement")
+			c := bench.Start(b).MaxAllocs(unmarshalDeclarationAllocs + decodeStateAllocs)
+			defer c.End()
+			for c.Loop() {
+				err = slot.UnmarshalJSON(data)
+			}
+			assert.NoError(b, err, "the array decodes")
+			assert.Equal(b, slot.Len(), 2, "into the declarations")
+		})
 	})
 }
 

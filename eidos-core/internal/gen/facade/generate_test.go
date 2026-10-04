@@ -32,8 +32,8 @@ const (
 	// over each file.
 	generateMiniAllocs = 14_730 + 8*1
 	// generateKernelAllocs is one generation of the kernel's facade,
-	// 484,978 on average with a standard deviation of 13.
-	generateKernelAllocs = 484_978 + 8*13
+	// 490,079 on average with a standard deviation of 12.
+	generateKernelAllocs = 490_079 + 8*12
 	// regenerateMiniAllocs is one regeneration of the mini kernel's
 	// facade: the module check, the generation, and the write of each
 	// file.
@@ -208,34 +208,38 @@ func BenchmarkGenerate(b *testing.B) {
 		root   string
 		allocs uint64
 	}{
-		{name: "Generate/the mini kernel", root: mini(b), allocs: generateMiniAllocs},
-		{name: "Generate/the kernel", root: repoRoot(b), allocs: generateKernelAllocs},
+		{name: "the mini kernel", root: mini(b), allocs: generateMiniAllocs},
+		{name: "the kernel", root: repoRoot(b), allocs: generateKernelAllocs},
 	}
-	for _, tt := range generations {
-		b.Run(tt.name, func(b *testing.B) {
-			_, err := facade.Generate(tt.root)
-			assert.NoError(b, err, "the facade generates before the measurement")
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var set genfile.Set
-			for c.Loop() {
-				set, err = facade.Generate(tt.root)
-			}
-			assert.NoError(b, err, "the facade generates")
-			assert.NotEmpty(b, set, "every file")
-		})
-	}
-
-	b.Run("Regenerate/the mini kernel", func(b *testing.B) {
-		dir := filepath.Join(mini(b), facade.KernelDir)
-		err := facade.Regenerate(dir)
-		assert.NoError(b, err, "the facade regenerates before the measurement")
-		c := bench.Start(b).MaxAllocs(regenerateMiniAllocs)
-		defer c.End()
-		for c.Loop() {
-			err = facade.Regenerate(dir)
+	b.Run("Generate", func(b *testing.B) {
+		for _, tt := range generations {
+			b.Run(tt.name, func(b *testing.B) {
+				_, err := facade.Generate(tt.root)
+				assert.NoError(b, err, "the facade generates before the measurement")
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var set genfile.Set
+				for c.Loop() {
+					set, err = facade.Generate(tt.root)
+				}
+				assert.NoError(b, err, "the facade generates")
+				assert.NotEmpty(b, set, "every file")
+			})
 		}
-		assert.NoError(b, err, "the facade regenerates")
+	})
+
+	b.Run("Regenerate", func(b *testing.B) {
+		b.Run("the mini kernel", func(b *testing.B) {
+			dir := filepath.Join(mini(b), facade.KernelDir)
+			err := facade.Regenerate(dir)
+			assert.NoError(b, err, "the facade regenerates before the measurement")
+			c := bench.Start(b).MaxAllocs(regenerateMiniAllocs)
+			defer c.End()
+			for c.Loop() {
+				err = facade.Regenerate(dir)
+			}
+			assert.NoError(b, err, "the facade regenerates")
+		})
 	})
 }
 

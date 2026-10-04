@@ -26,13 +26,14 @@ const (
 	walkDecls    = 20
 )
 
-// walkCase is one measured traversal: the sub-benchmark's name, the
-// call, and the check on what the last call visited. A traversal
-// allocates nothing.
+// walkCase is one measured traversal: the function it calls and the
+// case it measures, which name its sub-benchmark, the call, and the
+// check on what the last call visited. A traversal allocates nothing.
 type walkCase struct {
-	name  string
-	call  func()
-	check func(testing.TB)
+	method string
+	name   string
+	call   func()
+	check  func(testing.TB)
 }
 
 // unnamed is a symbol from outside this model: it satisfies the shared
@@ -2136,7 +2137,7 @@ func TestWalk(t *testing.T) {
 // benchmark.
 func TestWalkZeroAlloc(t *testing.T) {
 	for _, tt := range walkCases(1) {
-		assert.MaxAllocs(t, tt.call, 0, tt.name+" allocates nothing")
+		assert.MaxAllocs(t, tt.call, 0, tt.method+" for "+tt.name+" allocates nothing")
 		tt.check(t)
 	}
 }
@@ -2145,17 +2146,19 @@ func TestWalkZeroAlloc(t *testing.T) {
 // generator runs over the model.
 func BenchmarkWalk(b *testing.B) {
 	for _, tt := range walkCases(walkPackages) {
-		b.Run(tt.name, func(b *testing.B) {
-			// The first call runs before the contract counts, at the
-			// call site it measures, where the runtime builds the caches
-			// of an inlined iterator's conversion sites.
-			tt.call()
-			c := bench.Start(b).MaxAllocs(0)
-			defer c.End()
-			for c.Loop() {
+		b.Run(tt.method, func(b *testing.B) {
+			b.Run(tt.name, func(b *testing.B) {
+				// The first call runs before the contract counts, at the
+				// call site it measures, where the runtime builds the
+				// caches of an inlined iterator's conversion sites.
 				tt.call()
-			}
-			tt.check(b)
+				c := bench.Start(b).MaxAllocs(0)
+				defer c.End()
+				for c.Loop() {
+					tt.call()
+				}
+				tt.check(b)
+			})
 		})
 	}
 }
@@ -2183,7 +2186,7 @@ func walkCases(packages int) []walkCase {
 	}
 	return []walkCase{
 		{
-			name: "Walk/" + corpus,
+			method: "Walk", name: corpus,
 			call: func() {
 				seen = 0
 				for _, pkg := range pkgs {
@@ -2193,7 +2196,7 @@ func walkCases(packages int) []walkCase {
 			check: visited,
 		},
 		{
-			name: "All/" + corpus,
+			method: "All", name: corpus,
 			call: func() {
 				seen = 0
 				for _, pkg := range pkgs {
@@ -2205,7 +2208,7 @@ func walkCases(packages int) []walkCase {
 			check: visited,
 		},
 		{
-			name: "Declarations/" + corpus,
+			method: "Declarations", name: corpus,
 			call: func() {
 				seen = 0
 				for _, pkg := range pkgs {

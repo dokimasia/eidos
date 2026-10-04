@@ -843,36 +843,36 @@ func valueCalls(tb testing.TB) []allocCall {
 	)
 	return []allocCall{
 		{
-			name:  "SamplesOf",
+			name: "SamplesOf", caseName: "a scalar",
 			call:  func() { sample, _ = r.SamplesOf(scalar, "", f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, sample.Value.Text, derivedInt, "SamplesOf returns 42") },
 		},
 		{
-			name: "SamplesOf/a struct", allocs: structSamplesAllocs,
+			name: "SamplesOf", caseName: "a struct", allocs: structSamplesAllocs,
 			call:  func() { sample, _ = r.SamplesOf(row, "", f.view) },
 			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives Row") },
 		},
 		{
-			name: "SamplesOf/a slice", allocs: sliceSamplesAllocs,
+			name: "SamplesOf", caseName: "a slice", allocs: sliceSamplesAllocs,
 			call: func() { sample, _ = r.SamplesOf(slice, tagHint, f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "SamplesOf derives the slice")
 			},
 		},
 		{
-			name: "SamplesOf/a map", allocs: mapSamplesAllocs,
+			name: "SamplesOf", caseName: "a map", allocs: mapSamplesAllocs,
 			call: func() { sample, _ = r.SamplesOf(m, keyHint, f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "SamplesOf derives the map")
 			},
 		},
 		{
-			name:  "ZeroValue",
+			name: "ZeroValue", caseName: "a scalar",
 			call:  func() { value, _ = r.ZeroValue(scalar, f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Text, zeroText, "ZeroValue returns 0") },
 		},
 		{
-			name: "ZeroValue/a struct", allocs: structZeroAllocs,
+			name: "ZeroValue", caseName: "a struct", allocs: structZeroAllocs,
 			call: func() { value, _ = r.ZeroValue(row, f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, value.Kind, emit.ValueComposite, "ZeroValue returns the empty composite")

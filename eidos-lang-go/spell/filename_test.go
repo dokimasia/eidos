@@ -129,25 +129,27 @@ func BenchmarkFilename(b *testing.B) {
 		allocs uint64
 		want   string
 	}{
-		{name: "Filename", give: storeUnit(), allocs: filenameAllocs, want: "store_stub.go"},
+		{name: "a unit of a package", give: storeUnit(), allocs: filenameAllocs, want: "store_stub.go"},
 		{
-			name:   "Filename/a unit of an external test package",
+			name:   "a unit of an external test package",
 			give:   externalTestUnit(),
 			allocs: testFilenameAllocs,
 			want:   "stub_test.go",
 		},
 	}
-	for _, tt := range units {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var got string
-			for c.Loop() {
-				got = spell.Filename(tt.give)
-			}
-			assert.Equal(b, got, tt.want, "Filename spells the unit")
-		})
-	}
+	b.Run("Filename", func(b *testing.B) {
+		for _, tt := range units {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var got string
+				for c.Loop() {
+					got = spell.Filename(tt.give)
+				}
+				assert.Equal(b, got, tt.want, "Filename spells the unit")
+			})
+		}
+	})
 }
 
 // storeUnit returns the stub family's unit of svc/store.go.

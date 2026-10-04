@@ -22,13 +22,14 @@ const walkVisits = 0 + 5 + 7 + 2 + 2 + 1 + 1 + 1 + 1 + 1 + 4 + 1 + 4 + 2 + 2 + 2
 // walkOriginated is how many kinds carry origin storage.
 const walkOriginated = 0 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1 + 1
 
-// walkCase is one measured traversal: the sub-benchmark's name, the
-// call, and the check on what the last call visited. A traversal
-// allocates nothing.
+// walkCase is one measured traversal: the function it calls and the
+// case it measures, which name its sub-benchmark, the call, and the
+// check on what the last call visited. A traversal allocates nothing.
 type walkCase struct {
-	name  string
-	call  func()
-	check func(testing.TB)
+	method string
+	name   string
+	call   func()
+	check  func(testing.TB)
 }
 
 // The traversals visit every declaration a subject contains, prune
@@ -1414,7 +1415,7 @@ func TestWalk(t *testing.T) {
 // benchmark.
 func TestWalkZeroAlloc(t *testing.T) {
 	for _, tt := range walkCases() {
-		assert.MaxAllocs(t, tt.call, 0, tt.name+" allocates nothing")
+		assert.MaxAllocs(t, tt.call, 0, tt.method+" for "+tt.name+" allocates nothing")
 		tt.check(t)
 	}
 }
@@ -1423,17 +1424,19 @@ func TestWalkZeroAlloc(t *testing.T) {
 // generator runs over the model.
 func BenchmarkWalk(b *testing.B) {
 	for _, tt := range walkCases() {
-		b.Run(tt.name, func(b *testing.B) {
-			// The first call runs before the contract counts, at the
-			// call site it measures, where the runtime builds the caches
-			// of an inlined iterator's conversion sites.
-			tt.call()
-			c := bench.Start(b).MaxAllocs(0)
-			defer c.End()
-			for c.Loop() {
+		b.Run(tt.method, func(b *testing.B) {
+			b.Run(tt.name, func(b *testing.B) {
+				// The first call runs before the contract counts, at the
+				// call site it measures, where the runtime builds the
+				// caches of an inlined iterator's conversion sites.
 				tt.call()
-			}
-			tt.check(b)
+				c := bench.Start(b).MaxAllocs(0)
+				defer c.End()
+				for c.Loop() {
+					tt.call()
+				}
+				tt.check(b)
+			})
 		})
 	}
 }
@@ -1452,7 +1455,7 @@ func walkCases() []walkCase {
 	}
 	return []walkCase{
 		{
-			name: "Walk/every kind",
+			method: "Walk", name: "every kind",
 			call: func() {
 				seen = 0
 				for _, s := range subjects {
@@ -1462,7 +1465,7 @@ func walkCases() []walkCase {
 			check: visited,
 		},
 		{
-			name: "All/every kind",
+			method: "All", name: "every kind",
 			call: func() {
 				seen = 0
 				for _, s := range subjects {
@@ -1474,7 +1477,7 @@ func walkCases() []walkCase {
 			check: visited,
 		},
 		{
-			name: "OriginOf/every kind",
+			method: "OriginOf", name: "every kind",
 			call: func() {
 				held = 0
 				for _, s := range subjects {

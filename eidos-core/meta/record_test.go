@@ -151,30 +151,32 @@ func TestRecordAllocs(t *testing.T) {
 func BenchmarkRecord(b *testing.B) {
 	f, role := contested(b)
 
-	b.Run("Claims/a fact with two claims", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(claimsAllocs)
-		defer c.End()
-		views := 0
-		for c.Loop() {
-			views = 0
-			for range f.Claims(subject, role.ID()) {
-				views++
+	b.Run("Claims", func(b *testing.B) {
+		b.Run("a fact with two claims", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(claimsAllocs)
+			defer c.End()
+			views := 0
+			for c.Loop() {
+				views = 0
+				for range f.Claims(subject, role.ID()) {
+					views++
+				}
 			}
-		}
-		assert.Equal(b, views, 2, "Claims enumerates both claims")
-	})
+			assert.Equal(b, views, 2, "Claims enumerates both claims")
+		})
 
-	b.Run("Claims/a fact never claimed", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		views := 0
-		for c.Loop() {
-			views = 0
-			for range f.Claims(sibling, role.ID()) {
-				views++
+		b.Run("a fact never claimed", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			views := 0
+			for c.Loop() {
+				views = 0
+				for range f.Claims(sibling, role.ID()) {
+					views++
+				}
 			}
-		}
-		assert.Equal(b, views, 0, "Claims enumerates nothing for a fact never claimed")
+			assert.Equal(b, views, 0, "Claims enumerates nothing for a fact never claimed")
+		})
 	})
 }
 

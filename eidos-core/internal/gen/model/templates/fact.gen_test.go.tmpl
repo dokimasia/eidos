@@ -93,14 +93,16 @@ func TestFactAllocs(t *testing.T) {
 // BenchmarkFact measures the spelling of every fact and the list of
 // every fact.
 func BenchmarkFact(b *testing.B) {
-	b.Run("String/every fact", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var spelled int
-		for c.Loop() {
-			spelled = spellEveryFact()
-		}
-		assert.Equal(b, spelled, len(factNamings), "String spells every fact")
+	b.Run("String", func(b *testing.B) {
+		b.Run("every fact", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var spelled int
+			for c.Loop() {
+				spelled = spellEveryFact()
+			}
+			assert.Equal(b, spelled, len(factNamings), "String spells every fact")
+		})
 	})
 
 	b.Run("Facts", func(b *testing.B) {

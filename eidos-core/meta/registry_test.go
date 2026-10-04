@@ -590,50 +590,54 @@ func BenchmarkRegistry(b *testing.B) {
 		fresh  func(assert.TB) *meta.Registry
 		allocs uint64
 	}{
-		{name: "ClaimNamespace/a first namespace", fresh: unclaimed, allocs: firstNamespaceAllocs},
-		{name: "ClaimNamespace/a second namespace", fresh: claimedGen, allocs: 0},
+		{name: "a first namespace", fresh: unclaimed, allocs: firstNamespaceAllocs},
+		{name: "a second namespace", fresh: claimedGen, allocs: 0},
 	}
-	for _, tt := range claims {
-		b.Run(tt.name, func(b *testing.B) {
-			var r *meta.Registry
-			fresh := func() { r = tt.fresh(b) }
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var err error
-			for c.Loop() {
-				c.Excluding(fresh)
-				err = r.ClaimNamespace(shapeNamespace)
-			}
-			assert.NoError(b, err, "the namespace is claimed")
-		})
-	}
+	b.Run("ClaimNamespace", func(b *testing.B) {
+		for _, tt := range claims {
+			b.Run(tt.name, func(b *testing.B) {
+				var r *meta.Registry
+				fresh := func() { r = tt.fresh(b) }
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var err error
+				for c.Loop() {
+					c.Excluding(fresh)
+					err = r.ClaimNamespace(shapeNamespace)
+				}
+				assert.NoError(b, err, "the namespace is claimed")
+			})
+		}
+	})
 
 	registrations := []struct {
 		name   string
 		spec   meta.KeySpec
 		allocs uint64
 	}{
-		{name: "Register/a first key", spec: roleSpec(), allocs: firstKeyAllocs},
-		{name: "Register/a first key in a group", spec: groupedRoleSpec(), allocs: firstGroupedKeyAllocs},
+		{name: "a first key", spec: roleSpec(), allocs: firstKeyAllocs},
+		{name: "a first key in a group", spec: groupedRoleSpec(), allocs: firstGroupedKeyAllocs},
 	}
-	for _, tt := range registrations {
-		b.Run(tt.name, func(b *testing.B) {
-			var r *meta.Registry
-			fresh := func() { r = claimed(b) }
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var (
-				key meta.Key[string]
-				err error
-			)
-			for c.Loop() {
-				c.Excluding(fresh)
-				key, err = meta.Register[string](r, tt.spec)
-			}
-			assert.NoError(b, err, "the key registers")
-			assert.False(b, key.IsZero(), "Register returns a handle that names the key")
-		})
-	}
+	b.Run("Register", func(b *testing.B) {
+		for _, tt := range registrations {
+			b.Run(tt.name, func(b *testing.B) {
+				var r *meta.Registry
+				fresh := func() { r = claimed(b) }
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var (
+					key meta.Key[string]
+					err error
+				)
+				for c.Loop() {
+					c.Excluding(fresh)
+					key, err = meta.Register[string](r, tt.spec)
+				}
+				assert.NoError(b, err, "the key registers")
+				assert.False(b, key.IsZero(), "Register returns a handle that names the key")
+			})
+		}
+	})
 
 	b.Run("Seal", func(b *testing.B) {
 		r := claimed(b)

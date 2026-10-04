@@ -959,8 +959,13 @@ func vocabularyCalls() []allocCall {
 			name: "NewSpeller", call: func() { spellerOut = backend.NewSpeller(set) },
 			check: func(tb assert.TB) { assert.Equal(tb, spellerOut, s, "NewSpeller returns the set's speller") },
 		},
-		{name: "Spell", call: func() { out, err = s.Spell(bare) }, check: spells(intType)},
-		{name: "Spell/an imported class", call: func() { out, err = s.Spell(row) }, check: spells(rowName)},
+		{name: "Spell", caseName: "a builtin type", call: func() { out, err = s.Spell(bare) }, check: spells(intType)},
+		{
+			name:     "Spell",
+			caseName: "an imported class",
+			call:     func() { out, err = s.Spell(row) },
+			check:    spells(rowName),
+		},
 		{
 			name: "TypeParams", allocs: typeParamsAllocs,
 			call: func() { out, err = s.TypeParams(params) }, check: spells("<K extends Comparable, V>"),
@@ -1009,9 +1014,14 @@ func vocabularyCalls() []allocCall {
 			name: "MethodMods", allocs: joinedKeywordAllocs,
 			call: func() { out, err = backend.MethodMods(staticMethod) }, check: spells("public static "),
 		},
-		{name: "SigMods", call: func() { out, err = backend.SigMods(defaultMethod) }, check: spells("default ")},
 		{
-			name: "SigMods/a private static method", allocs: joinedKeywordAllocs,
+			name:     "SigMods",
+			caseName: "a default method",
+			call:     func() { out, err = backend.SigMods(defaultMethod) },
+			check:    spells("default "),
+		},
+		{
+			name: "SigMods", caseName: "a private static method", allocs: joinedKeywordAllocs,
 			call: func() { out, err = backend.SigMods(privateStatic) }, check: spells("private static "),
 		},
 		{

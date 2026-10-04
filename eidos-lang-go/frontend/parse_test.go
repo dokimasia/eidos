@@ -894,20 +894,22 @@ func BenchmarkParse(b *testing.B) {
 	tree, units := scaledTree()
 	f := frontend.New(nil)
 
-	b.Run("Parse/the canonical corpus of 200,000 declarations", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(parseAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			for _, unit := range units {
-				u := plugin.NewSourceUnit(unit, tree, plugin.DepthFull,
-					f.Syntax(), brand, diag.NewSink(), f.Name())
-				if err = f.Parse(b.Context(), u); err != nil {
-					break
+	b.Run("Parse", func(b *testing.B) {
+		b.Run("the canonical corpus of 200,000 declarations", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(parseAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				for _, unit := range units {
+					u := plugin.NewSourceUnit(unit, tree, plugin.DepthFull,
+						f.Syntax(), brand, diag.NewSink(), f.Name())
+					if err = f.Parse(b.Context(), u); err != nil {
+						break
+					}
 				}
 			}
-		}
-		assert.NoError(b, err, "the corpus parses")
+			assert.NoError(b, err, "the corpus parses")
+		})
 	})
 }
 

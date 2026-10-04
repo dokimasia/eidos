@@ -223,7 +223,7 @@ func lowerCalls() []allocCall {
 	)
 	return []allocCall{
 		{
-			name: "Lower",
+			name: "Lower", caseName: "a struct",
 			call: func() { out, err = backend.Lower(row) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Lower passes the struct")
@@ -231,7 +231,7 @@ func lowerCalls() []allocCall {
 			},
 		},
 		{
-			name: "Lower/a sum of two variants", allocs: lowerAllocs,
+			name: "Lower", caseName: "a sum of two variants", allocs: lowerAllocs,
 			call: func() { out, err = backend.Lower(sum) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Lower reshapes the sum")

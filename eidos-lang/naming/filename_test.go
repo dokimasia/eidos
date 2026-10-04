@@ -115,22 +115,24 @@ func BenchmarkFilename(b *testing.B) {
 	})
 
 	b.Run("SnakeFilename", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(snakeFilenameAllocs)
-		defer c.End()
-		var name string
-		for c.Loop() {
-			name = naming.SnakeFilename(unitKey, familyWord, "", rustExt)
-		}
-		assert.Equal(b, name, "row_stub.rs", "SnakeFilename joins the parts")
-	})
+		b.Run("a join already in snake case", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(snakeFilenameAllocs)
+			defer c.End()
+			var name string
+			for c.Loop() {
+				name = naming.SnakeFilename(unitKey, familyWord, "", rustExt)
+			}
+			assert.Equal(b, name, "row_stub.rs", "SnakeFilename joins the parts")
+		})
 
-	b.Run("SnakeFilename/a join in another case", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(convertedFilenameAllocs)
-		defer c.End()
-		var name string
-		for c.Loop() {
-			name = naming.SnakeFilename("", "HTTPClient", testTag, ".go")
-		}
-		assert.Equal(b, name, "http_client_test.go", "SnakeFilename converts the join")
+		b.Run("a join in another case", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(convertedFilenameAllocs)
+			defer c.End()
+			var name string
+			for c.Loop() {
+				name = naming.SnakeFilename("", "HTTPClient", testTag, ".go")
+			}
+			assert.Equal(b, name, "http_client_test.go", "SnakeFilename converts the join")
+		})
 	})
 }

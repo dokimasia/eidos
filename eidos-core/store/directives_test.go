@@ -367,27 +367,29 @@ func BenchmarkDirectives(b *testing.B) {
 	// is a directive-heavy workspace.
 	const carriers = 20_000
 
-	b.Run("AttachDirectives/a first attachment on each of a thousand subjects", func(b *testing.B) {
-		ids := make([]symbol.Identity, 0, attachBatch)
-		raws := make([][]directive.Raw, 0, attachBatch)
-		for i := range attachBatch {
-			ids = append(ids, coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i)).ID)
-			raws = append(raws, []directive.Raw{stubAt(i + 1)})
-		}
-		var g *store.Graph
-		fresh := func() { g = store.New() }
-		c := bench.Start(b).MaxAllocs(attachAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			for i, id := range ids {
-				if err = g.AttachDirectives(id, raws[i]); err != nil {
-					break
+	b.Run("AttachDirectives", func(b *testing.B) {
+		b.Run("a first attachment on each of a thousand subjects", func(b *testing.B) {
+			ids := make([]symbol.Identity, 0, attachBatch)
+			raws := make([][]directive.Raw, 0, attachBatch)
+			for i := range attachBatch {
+				ids = append(ids, coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i)).ID)
+				raws = append(raws, []directive.Raw{stubAt(i + 1)})
+			}
+			var g *store.Graph
+			fresh := func() { g = store.New() }
+			c := bench.Start(b).MaxAllocs(attachAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				for i, id := range ids {
+					if err = g.AttachDirectives(id, raws[i]); err != nil {
+						break
+					}
 				}
 			}
-		}
-		assert.NoError(b, err, "every attachment is admitted")
+			assert.NoError(b, err, "every attachment is admitted")
+		})
 	})
 
 	b.Run("ByDirective", func(b *testing.B) {

@@ -159,22 +159,24 @@ func TestStampsAllocs(t *testing.T) {
 func BenchmarkStamps(b *testing.B) {
 	ids := stampedSubjects(attachBatch)
 
-	b.Run("AttachStamps/a first attachment on each of a thousand subjects", func(b *testing.B) {
-		stamps := []meta.RawStamp{stampAt(1)}
-		var g *store.Graph
-		fresh := func() { g = store.New() }
-		c := bench.Start(b).MaxAllocs(attachAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			for _, id := range ids {
-				if err = g.AttachStamps(id, stamps); err != nil {
-					break
+	b.Run("AttachStamps", func(b *testing.B) {
+		b.Run("a first attachment on each of a thousand subjects", func(b *testing.B) {
+			stamps := []meta.RawStamp{stampAt(1)}
+			var g *store.Graph
+			fresh := func() { g = store.New() }
+			c := bench.Start(b).MaxAllocs(attachAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				for _, id := range ids {
+					if err = g.AttachStamps(id, stamps); err != nil {
+						break
+					}
 				}
 			}
-		}
-		assert.NoError(b, err, "every attachment is admitted")
+			assert.NoError(b, err, "every attachment is admitted")
+		})
 	})
 
 	g := store.New()

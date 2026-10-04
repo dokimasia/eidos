@@ -624,13 +624,13 @@ func nodeCalls(tb testing.TB) []allocCall {
 			check:  func(tb assert.TB) { assert.Equal(tb, text, "a, b", "TextThrough returns both declarators") },
 		},
 		{
-			name:   "Compact",
+			name: "Compact", caseName: "a node of a few tokens",
 			allocs: textAllocs,
 			call:   func() { text = field.Compact() },
 			check:  func(tb assert.TB) { assert.Equal(tb, text, "int a,b;", "Compact returns the tokens") },
 		},
 		{
-			name:   "Compact/a node of more than 32 tokens",
+			name: "Compact", caseName: "a node of more than 32 tokens",
 			allocs: longCompactAllocs,
 			call:   func() { text = long.Compact() },
 			check:  func(tb assert.TB) { assert.Equal(tb, text, longCompact, "Compact returns every token") },

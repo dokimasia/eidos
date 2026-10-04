@@ -220,23 +220,25 @@ func BenchmarkCase(b *testing.B) {
 
 	for _, s := range caseStyles {
 		b.Run(s.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(styleAllocs)
-			defer c.End()
-			var got string
-			for c.Loop() {
-				got = s.fn(mixedInput)
-			}
-			assert.Equal(b, got, s.mixed, "the conversion spells the input in its style")
-		})
+			b.Run("an input in mixed styles", func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(styleAllocs)
+				defer c.End()
+				var got string
+				for c.Loop() {
+					got = s.fn(mixedInput)
+				}
+				assert.Equal(b, got, s.mixed, "the conversion spells the input in its style")
+			})
 
-		b.Run(s.name+"/an input already in the style", func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(0)
-			defer c.End()
-			var got string
-			for c.Loop() {
-				got = s.fn(s.styled)
-			}
-			assert.Equal(b, got, s.styled, "the conversion returns the input itself")
+			b.Run("an input already in the style", func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(0)
+				defer c.End()
+				var got string
+				for c.Loop() {
+					got = s.fn(s.styled)
+				}
+				assert.Equal(b, got, s.styled, "the conversion returns the input itself")
+			})
 		})
 	}
 }

@@ -39,11 +39,13 @@ func (t storeTree) Store(name string) (fs.FS, bool) {
 
 // storeRead is one read through the store helpers beside the read of
 // the tree or the store it resolves to, which the helper adds nothing
-// to.
+// to: the helper, which names its benchmark, and the case it reads. The
+// reads of one helper are adjacent in a list of reads.
 type storeRead struct {
-	name  string
-	own   func() error
-	plain func() error
+	name     string
+	caseName string
+	own      func() error
+	plain    func() error
 }
 
 // Qualified paths address a file inside a named store, and the read
@@ -244,11 +246,12 @@ func TestStoreAllocs(t *testing.T) {
 	assert.True(t, valid, "ValidStoreName reports true for a plain name")
 
 	for _, tt := range storeReads(t) {
+		label := tt.name + " for " + tt.caseName
 		assert.MaxAllocs(t, func() {
 			if err := tt.own(); err != nil {
-				t.Fatalf("%s: unexpected error: %v", tt.name, err)
+				t.Fatalf("%s: unexpected error: %v", label, err)
 			}
-		}, plainAllocs(t, tt), tt.name+" allocates what the read of its tree allocates")
+		}, plainAllocs(t, tt), label+" allocates what the read of its tree allocates")
 	}
 }
 
@@ -286,15 +289,26 @@ func BenchmarkStore(b *testing.B) {
 		assert.True(b, valid, "ValidStoreName reports true for a plain name")
 	})
 
-	for _, tt := range storeReads(b) {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(plainAllocs(b, tt))
-			defer c.End()
-			var err error
-			for c.Loop() {
-				err = tt.own()
+	reads := storeReads(b)
+	for len(reads) > 0 {
+		n := 1
+		for n < len(reads) && reads[n].name == reads[0].name {
+			n++
+		}
+		helper := reads[:n]
+		reads = reads[n:]
+		b.Run(helper[0].name, func(b *testing.B) {
+			for _, tt := range helper {
+				b.Run(tt.caseName, func(b *testing.B) {
+					c := bench.Start(b).MaxAllocs(plainAllocs(b, tt))
+					defer c.End()
+					var err error
+					for c.Loop() {
+						err = tt.own()
+					}
+					assert.NoError(b, err, "the read succeeds")
+				})
 			}
-			assert.NoError(b, err, "the read succeeds")
 		})
 	}
 }
@@ -321,22 +335,22 @@ func storeReads(tb assert.TB) []storeRead {
 	var fsys fs.FS = tree
 	return []storeRead{
 		{
-			name:  "ReadFile/a workspace file",
+			name: "ReadFile", caseName: "a workspace file",
 			own:   func() error { _, err := plugin.ReadFile(fsys, workspaceFile); return err },
 			plain: func() error { _, err := fs.ReadFile(fsys, workspaceFile); return err },
 		},
 		{
-			name:  "ReadFile/a store file",
+			name: "ReadFile", caseName: "a store file",
 			own:   func() error { _, err := plugin.ReadFile(fsys, qualifiedFile); return err },
 			plain: func() error { _, err := fs.ReadFile(cache, cacheFile); return err },
 		},
 		{
-			name:  "ReadDir/a store root",
+			name: "ReadDir", caseName: "a store root",
 			own:   func() error { _, err := plugin.ReadDir(fsys, cacheRoot); return err },
 			plain: func() error { _, err := fs.ReadDir(cache, "."); return err },
 		},
 		{
-			name:  "Stat/a store file",
+			name: "Stat", caseName: "a store file",
 			own:   func() error { _, err := plugin.Stat(fsys, qualifiedFile); return err },
 			plain: func() error { _, err := fs.Stat(cache, cacheFile); return err },
 		},

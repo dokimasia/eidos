@@ -332,12 +332,12 @@ func storeCalls(tb testing.TB) []allocCall {
 	}
 	return []allocCall{
 		{
-			name: "Stores", allocs: storesAllocs,
+			name: "Stores", caseName: "the environment's variables", allocs: storesAllocs,
 			call:  func() { stores, err = frontend.Stores(env) },
 			check: check,
 		},
 		{
-			name: "Stores/the go env file", allocs: envFileAllocs,
+			name: "Stores", caseName: "the go env file", allocs: envFileAllocs,
 			call:  func() { stores, err = frontend.Stores(fileEnv) },
 			check: check,
 		},

@@ -308,7 +308,7 @@ func resolveCalls(tb testing.TB) []allocCall {
 	)
 	return []allocCall{
 		{
-			name: "Resolve", allocs: probeAllocs,
+			name: "Resolve", caseName: "a function in scope", allocs: probeAllocs,
 			call: func() { got, err = r.Resolve(scope, "Find", directive.ResolveCallableInScope, f.view) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Resolve finds Find")
@@ -316,7 +316,7 @@ func resolveCalls(tb testing.TB) []allocCall {
 			},
 		},
 		{
-			name: "Resolve/a member of the subject's type", allocs: memberAllocs,
+			name: "Resolve", caseName: "a member of the subject's type", allocs: memberAllocs,
 			call: func() { got, err = r.Resolve(scope, "ID", directive.ResolveValueField, f.view) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Resolve finds ID")

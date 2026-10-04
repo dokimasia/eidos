@@ -936,42 +936,44 @@ func BenchmarkLoad(b *testing.B) {
 		return load.Config{FS: tree, Frontends: fronts, Sink: diag.NewSink(), Brand: benchBrand}
 	}
 
-	b.Run("Load/a cold load of 200,000 declarations", func(b *testing.B) {
-		_, _, err := load.Load(b.Context(), cold())
-		assert.NoError(b, err, "the corpus loads before the measurement")
-		c := bench.Start(b).MaxAllocs(coldLoadAllocs)
-		defer c.End()
-		var report *load.Report
-		for c.Loop() {
-			_, report, err = load.Load(b.Context(), cold())
-		}
-		assert.NoError(b, err, "the corpus loads")
-		assert.Length(b, report.Units, benchPackages, "each package is one unit")
-	})
+	b.Run("Load", func(b *testing.B) {
+		b.Run("a cold load of 200,000 declarations", func(b *testing.B) {
+			_, _, err := load.Load(b.Context(), cold())
+			assert.NoError(b, err, "the corpus loads before the measurement")
+			c := bench.Start(b).MaxAllocs(coldLoadAllocs)
+			defer c.End()
+			var report *load.Report
+			for c.Loop() {
+				_, report, err = load.Load(b.Context(), cold())
+			}
+			assert.NoError(b, err, "the corpus loads")
+			assert.Length(b, report.Units, benchPackages, "each package is one unit")
+		})
 
-	b.Run("Load/a warm load of the unchanged 200,000 declarations", func(b *testing.B) {
-		_, first, err := load.Load(b.Context(), cold())
-		assert.NoError(b, err, "the corpus loads cold")
-		rec := newRecorder()
-		rec.record(b, first)
-		warm := func(prior load.Prior) load.Config {
-			cfg := cold()
-			cfg.Prior = prior
-			return cfg
-		}
-		_, _, err = load.Load(b.Context(), warm(reopened(b, rec)))
-		assert.NoError(b, err, "the corpus loads warm before the measurement")
-		c := bench.Start(b).MaxAllocs(warmLoadAllocs)
-		defer c.End()
-		var report *load.Report
-		for c.Loop() {
-			var prior load.Prior
-			c.Excluding(func() { prior = reopened(b, rec) })
-			_, report, err = load.Load(b.Context(), warm(prior))
-		}
-		assert.NoError(b, err, "the corpus loads warm")
-		assert.Length(b, report.Units, benchPackages, "each package is one unit")
-		assert.Equal(b, report.Reparsed, 0, "the load parses no unit")
+		b.Run("a warm load of the unchanged 200,000 declarations", func(b *testing.B) {
+			_, first, err := load.Load(b.Context(), cold())
+			assert.NoError(b, err, "the corpus loads cold")
+			rec := newRecorder()
+			rec.record(b, first)
+			warm := func(prior load.Prior) load.Config {
+				cfg := cold()
+				cfg.Prior = prior
+				return cfg
+			}
+			_, _, err = load.Load(b.Context(), warm(reopened(b, rec)))
+			assert.NoError(b, err, "the corpus loads warm before the measurement")
+			c := bench.Start(b).MaxAllocs(warmLoadAllocs)
+			defer c.End()
+			var report *load.Report
+			for c.Loop() {
+				var prior load.Prior
+				c.Excluding(func() { prior = reopened(b, rec) })
+				_, report, err = load.Load(b.Context(), warm(prior))
+			}
+			assert.NoError(b, err, "the corpus loads warm")
+			assert.Length(b, report.Units, benchPackages, "each package is one unit")
+			assert.Equal(b, report.Reparsed, 0, "the load parses no unit")
+		})
 	})
 
 	b.Run("Report.Decoded", func(b *testing.B) {

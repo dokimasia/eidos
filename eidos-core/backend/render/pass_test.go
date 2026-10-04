@@ -778,43 +778,45 @@ func BenchmarkPass(b *testing.B) {
 		assert.Length(b, got, 1, "an unsplit unit files whole")
 	})
 
-	b.Run("Render/one file of one struct", func(b *testing.B) {
-		p := composedPass(b)
-		ctx := renderOne(b, p)
-		c := bench.Start(b).MaxAllocs(renderOneAllocs)
-		defer c.End()
-		var (
-			files []plugin.RenderedFile
-			err   error
-		)
-		for c.Loop() {
-			files, err = p.Render(ctx)
-		}
-		assert.NoError(b, err, "the file renders")
-		assert.Length(b, files, 1, "one file")
-	})
+	b.Run("Render", func(b *testing.B) {
+		b.Run("one file of one struct", func(b *testing.B) {
+			p := composedPass(b)
+			ctx := renderOne(b, p)
+			c := bench.Start(b).MaxAllocs(renderOneAllocs)
+			defer c.End()
+			var (
+				files []plugin.RenderedFile
+				err   error
+			)
+			for c.Loop() {
+				files, err = p.Render(ctx)
+			}
+			assert.NoError(b, err, "the file renders")
+			assert.Length(b, files, 1, "one file")
+		})
 
-	b.Run("Render/1,000 files of 200 structs", func(b *testing.B) {
-		e := benchStore(b, structDecl, benchStruct)
-		benchRender(b, composedPass(b), e, nil, renderStructsAllocs)
-	})
+		b.Run("1,000 files of 200 structs", func(b *testing.B) {
+			e := benchStore(b, structDecl, benchStruct)
+			benchRender(b, composedPass(b), e, nil, renderStructsAllocs)
+		})
 
-	b.Run("Render/1,000 files of 200 structs binding one import each", func(b *testing.B) {
-		e := benchStore(b, structDecl, benchStruct)
-		l := binding()
-		l.Kinds[symbol.KindStruct] = qualifiedStruct
-		p, err := render.New(passName, l)
-		assert.NoError(b, err, "the binding language composes")
-		benchRender(b, p, e, nil, renderBindingAllocs)
-	})
+		b.Run("1,000 files of 200 structs binding one import each", func(b *testing.B) {
+			e := benchStore(b, structDecl, benchStruct)
+			l := binding()
+			l.Kinds[symbol.KindStruct] = qualifiedStruct
+			p, err := render.New(passName, l)
+			assert.NoError(b, err, "the binding language composes")
+			benchRender(b, p, e, nil, renderBindingAllocs)
+		})
 
-	b.Run("Render/1,000 files of 200 functions with referenced bodies", func(b *testing.B) {
-		e := benchStore(b, func(path, name string) symbol.Symbol {
-			f := &emit.Function{Origin: coretest.Struct(path, name).ID, Name: name}
-			f.Body = refBody()
-			return f
-		}, benchFunc)
-		benchRender(b, composedPass(b), e, refTree("\tref()\n"+action(render.BuiltinSlots)), renderReferencesAllocs)
+		b.Run("1,000 files of 200 functions with referenced bodies", func(b *testing.B) {
+			e := benchStore(b, func(path, name string) symbol.Symbol {
+				f := &emit.Function{Origin: coretest.Struct(path, name).ID, Name: name}
+				f.Body = refBody()
+				return f
+			}, benchFunc)
+			benchRender(b, composedPass(b), e, refTree("\tref()\n"+action(render.BuiltinSlots)), renderReferencesAllocs)
+		})
 	})
 }
 

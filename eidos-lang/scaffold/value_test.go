@@ -510,24 +510,26 @@ func BenchmarkValue(b *testing.B) {
 		allocs uint64
 		want   string
 	}{
-		{name: "Value", give: unixCall(), allocs: callAllocs, want: "Unix(1, 0)"},
-		{name: "Value/a composite", give: rowValue(), allocs: compositeAllocs, want: "Row"},
+		{name: "a call", give: unixCall(), allocs: callAllocs, want: "Unix(1, 0)"},
+		{name: "a composite", give: rowValue(), allocs: compositeAllocs, want: "Row"},
 	}
-	for _, tt := range trees {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var (
-				got string
-				err error
-			)
-			for c.Loop() {
-				got, err = scaffold.Value(passthrough{}, tt.give)
-			}
-			assert.NoError(b, err, "Value spells the tree")
-			assert.Equal(b, got, tt.want, "Value writes the spelling")
-		})
-	}
+	b.Run("Value", func(b *testing.B) {
+		for _, tt := range trees {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var (
+					got string
+					err error
+				)
+				for c.Loop() {
+					got, err = scaffold.Value(passthrough{}, tt.give)
+				}
+				assert.NoError(b, err, "Value spells the tree")
+				assert.Equal(b, got, tt.want, "Value writes the spelling")
+			})
+		}
+	})
 
 	b.Run("Literal", func(b *testing.B) {
 		plain, lit := plainLeaves(), integer("42")

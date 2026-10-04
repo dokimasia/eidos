@@ -1011,9 +1011,9 @@ func vocabularyCalls() []allocCall {
 			name: "NewSpeller", call: func() { spellerOut = backend.NewSpeller(set) },
 			check: func(tb assert.TB) { assert.Equal(tb, spellerOut, s, "NewSpeller returns the set's speller") },
 		},
-		{name: "Spell", call: func() { out, err = s.Spell(bare) }, check: spells(intType)},
+		{name: "Spell", caseName: "a builtin name", call: func() { out, err = s.Spell(bare) }, check: spells(intType)},
 		{
-			name: "Spell/a qualified name", allocs: qualifiedAllocs,
+			name: "Spell", caseName: "a qualified name", allocs: qualifiedAllocs,
 			call: func() { out, err = s.Spell(qualified) }, check: spells(qualifiedRow),
 		},
 		{
@@ -1021,11 +1021,11 @@ func vocabularyCalls() []allocCall {
 			call: func() { out, err = s.TypeParams(params) }, check: spells("[K comparable, V any]"),
 		},
 		{
-			name: "Params", allocs: paramsAllocs,
+			name: "Params", caseName: "two parameters", allocs: paramsAllocs,
 			call: func() { out, err = s.Params(args) }, check: spells("ctx context.Context, id int"),
 		},
 		{
-			name: "Params/three parameters", allocs: partsAllocs,
+			name: "Params", caseName: "three parameters", allocs: partsAllocs,
 			call: func() { out, err = s.Params(three) }, check: spells("id int, count int, ctx int"),
 		},
 		{

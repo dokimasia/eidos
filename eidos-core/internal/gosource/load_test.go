@@ -221,33 +221,37 @@ func TestLoadAllocs(t *testing.T) {
 // BenchmarkLoad measures a parse and a load of the fixture's package
 // without imports, each into a new file set.
 func BenchmarkLoad(b *testing.B) {
-	b.Run("ParseDir/a directory of one hand-written file", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(parseDirAllocs)
-		defer c.End()
-		var (
-			files []*ast.File
-			err   error
-		)
-		for c.Loop() {
-			files, err = gosource.ParseDir(token.NewFileSet(), libDir, gosource.HandWritten)
-		}
-		assert.NoError(b, err, "the directory parses")
-		assert.Length(b, files, 1, "into its one hand-written file")
+	b.Run("ParseDir", func(b *testing.B) {
+		b.Run("a directory of one hand-written file", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(parseDirAllocs)
+			defer c.End()
+			var (
+				files []*ast.File
+				err   error
+			)
+			for c.Loop() {
+				files, err = gosource.ParseDir(token.NewFileSet(), libDir, gosource.HandWritten)
+			}
+			assert.NoError(b, err, "the directory parses")
+			assert.Length(b, files, 1, "into its one hand-written file")
+		})
 	})
 
-	b.Run("Load/a package without imports", func(b *testing.B) {
-		modRoot := fixtureRoot(b)
-		c := bench.Start(b).MaxAllocs(loadAllocs)
-		defer c.End()
-		var (
-			pkg *types.Package
-			err error
-		)
-		for c.Loop() {
-			pkg, _, err = gosource.Load(token.NewFileSet(), libDir, libPath, modRoot, gosource.HandWritten)
-		}
-		assert.NoError(b, err, "the package loads")
-		assert.NotNil(b, pkg.Scope().Lookup("Value"), "with its declarations type-checked")
+	b.Run("Load", func(b *testing.B) {
+		b.Run("a package without imports", func(b *testing.B) {
+			modRoot := fixtureRoot(b)
+			c := bench.Start(b).MaxAllocs(loadAllocs)
+			defer c.End()
+			var (
+				pkg *types.Package
+				err error
+			)
+			for c.Loop() {
+				pkg, _, err = gosource.Load(token.NewFileSet(), libDir, libPath, modRoot, gosource.HandWritten)
+			}
+			assert.NoError(b, err, "the package loads")
+			assert.NotNil(b, pkg.Scope().Lookup("Value"), "with its declarations type-checked")
+		})
 	})
 }
 

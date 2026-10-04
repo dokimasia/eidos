@@ -1318,10 +1318,20 @@ func vocabularyCalls() []allocCall {
 			name: "NewSpeller", call: func() { spellerOut = backend.NewSpeller(set) },
 			check: func(tb assert.TB) { assert.Equal(tb, spellerOut, s, "NewSpeller returns the set's speller") },
 		},
-		{name: "Spell", call: func() { out, err = s.Spell(bare) }, check: spells(numberType)},
-		{name: "Spell/an imported declaration", call: func() { out, err = s.Spell(row) }, check: spells(rowName)},
 		{
-			name: "Spell/an instantiation", allocs: textAllocs,
+			name:     "Spell",
+			caseName: "a builtin type",
+			call:     func() { out, err = s.Spell(bare) },
+			check:    spells(numberType),
+		},
+		{
+			name:     "Spell",
+			caseName: "an imported declaration",
+			call:     func() { out, err = s.Spell(row) },
+			check:    spells(rowName),
+		},
+		{
+			name: "Spell", caseName: "an instantiation", allocs: textAllocs,
 			call: func() { out, err = s.Spell(instance) }, check: spells("Map<string, number>"),
 		},
 		{
@@ -1337,27 +1347,27 @@ func vocabularyCalls() []allocCall {
 			call: func() { out, err = s.Heritage(heir) }, check: spells(" extends Base implements Keyed, Closer"),
 		},
 		{
-			name: "Params", allocs: paramsAllocs,
+			name: "Params", caseName: "two parameters", allocs: paramsAllocs,
 			call: func() { out, err = s.Params(args) }, check: spells("id: number, name: string"),
 		},
 		{
-			name: "Params/three parameters", allocs: partsAllocs,
+			name: "Params", caseName: "three parameters", allocs: partsAllocs,
 			call: func() { out, err = s.Params(three) }, check: spells("id: number, name: number, count: number"),
 		},
 		{
-			name: "Returns", allocs: textAllocs,
+			name: "Returns", caseName: "an async function returning a value", allocs: textAllocs,
 			call: func() { out, err = s.Returns(async) }, check: spells(": Promise<number>"),
 		},
 		{
-			name: "Returns/an async function returning nothing",
+			name: "Returns", caseName: "an async function returning nothing",
 			call: func() { out, err = s.Returns(flush) }, check: spells(": Promise<void>"),
 		},
 		{
-			name: "Results", allocs: textAllocs,
+			name: "Results", caseName: "one result", allocs: textAllocs,
 			call: func() { out, err = s.Results(one) }, check: spells(": number"),
 		},
 		{
-			name: "Results/a tuple of two", allocs: resultTupleAllocs,
+			name: "Results", caseName: "a tuple of two", allocs: resultTupleAllocs,
 			call: func() { out, err = s.Results(pair) }, check: spells(": [number, string]"),
 		},
 		{
@@ -1369,18 +1379,28 @@ func vocabularyCalls() []allocCall {
 			name: "Docs", allocs: textAllocs,
 			call: func() { out = backend.Docs(doc) }, check: spells("/**\n * " + rowDoc + "\n */\n"),
 		},
-		{name: "PropKey", call: func() { out, err = backend.PropKey(field) }, check: spells(idName)},
 		{
-			name: "PropKey/a quoted key", allocs: textAllocs,
+			name:     "PropKey",
+			caseName: "a plain key",
+			call:     func() { out, err = backend.PropKey(field) },
+			check:    spells(idName),
+		},
+		{
+			name: "PropKey", caseName: "a quoted key", allocs: textAllocs,
 			call: func() { out, err = backend.PropKey(wire) }, check: spells("'content-type'"),
 		},
 		{name: "MethodKey", call: func() { out, err = backend.MethodKey(method) }, check: spells(makeName)},
 		{name: "EnumKey", call: func() { out = backend.EnumKey(variant) }, check: spells(openName)},
 		{name: "AccessorKw", call: func() { out, err = backend.AccessorKw(get) }, check: spells("get ")},
 		{name: "Hard", call: func() { out, err = backend.Hard(hard) }, check: spells("#")},
-		{name: "Mods", call: func() { out, err = backend.Mods(class) }, check: spells(exportWord)},
 		{
-			name: "Mods/an abstract class", allocs: textAllocs,
+			name:     "Mods",
+			caseName: "an exported class",
+			call:     func() { out, err = backend.Mods(class) },
+			check:    spells(exportWord),
+		},
+		{
+			name: "Mods", caseName: "an abstract class", allocs: textAllocs,
 			call: func() { out, err = backend.Mods(abstract) }, check: spells("export abstract "),
 		},
 		{

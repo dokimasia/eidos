@@ -226,35 +226,39 @@ func BenchmarkSpellRef(b *testing.B) {
 		allocs uint64
 		want   string
 	}{
-		{name: "Spell", give: ref, allocs: spelledAllocs, want: "Map<K, List<V>>"},
-		{name: "Spell/a reference without arguments", give: leaf, want: rowName},
+		{name: "a reference with arguments", give: ref, allocs: spelledAllocs, want: "Map<K, List<V>>"},
+		{name: "a reference without arguments", give: leaf, want: rowName},
 	}
-	for _, tt := range spells {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var got string
-			for c.Loop() {
-				got = spellref.Spell(tt.give, opener, closer, standIn)
-			}
-			assert.Equal(b, got, tt.want, "Spell writes the reference")
-		})
-	}
-	for _, tt := range spells {
-		b.Run("SpellWith"+tt.name[len("Spell"):], func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var (
-				got string
-				err error
-			)
-			for c.Loop() {
-				got, err = spellref.SpellWith(tt.give, opener, closer, standIn, asWritten)
-			}
-			assert.NoError(b, err, "SpellWith spells the reference")
-			assert.Equal(b, got, tt.want, "SpellWith writes the reference")
-		})
-	}
+	b.Run("Spell", func(b *testing.B) {
+		for _, tt := range spells {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var got string
+				for c.Loop() {
+					got = spellref.Spell(tt.give, opener, closer, standIn)
+				}
+				assert.Equal(b, got, tt.want, "Spell writes the reference")
+			})
+		}
+	})
+	b.Run("SpellWith", func(b *testing.B) {
+		for _, tt := range spells {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var (
+					got string
+					err error
+				)
+				for c.Loop() {
+					got, err = spellref.SpellWith(tt.give, opener, closer, standIn, asWritten)
+				}
+				assert.NoError(b, err, "SpellWith spells the reference")
+				assert.Equal(b, got, tt.want, "SpellWith writes the reference")
+			})
+		}
+	})
 
 	b.Run("PackageOf", func(b *testing.B) {
 		target := &emit.TypeRef{

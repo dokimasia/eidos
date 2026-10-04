@@ -201,12 +201,12 @@ func builtinCalls() []allocCall {
 	var shape rules.TypeShape
 	return []allocCall{
 		{
-			name:  "Builtin",
+			name: "Builtin", caseName: "a scalar",
 			call:  func() { shape = r.Builtin(scalar, rules.View{}) },
 			check: func(tb assert.TB) { assert.Equal(tb, shape.Class, rules.ScalarInt, "Builtin classifies int") },
 		},
 		{
-			name: "Builtin/a well-known type",
+			name: "Builtin", caseName: "a well-known type",
 			call: func() { shape = r.Builtin(when, rules.View{}) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, shape.Ref, rules.WellKnownTimestamp, "Builtin maps time.Time")

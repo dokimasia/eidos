@@ -493,23 +493,25 @@ func BenchmarkEmitter(b *testing.B) {
 
 	e := &eidos.Emitter{}
 	b.Run("JoinName", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(joinNameAllocs)
-		defer c.End()
-		var got string
-		for c.Loop() {
-			got = e.JoinName("stub", "store")
-		}
-		assert.Equal(b, got, "storeStub", "JoinName joins the word after the base")
-	})
+		b.Run("a word and a base", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(joinNameAllocs)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = e.JoinName("stub", "store")
+			}
+			assert.Equal(b, got, "storeStub", "JoinName joins the word after the base")
+		})
 
-	b.Run("JoinName/an empty word", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got string
-		for c.Loop() {
-			got = e.JoinName("", "store")
-		}
-		assert.Equal(b, got, "store", "JoinName returns the base for an empty word")
+		b.Run("an empty word", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = e.JoinName("", "store")
+			}
+			assert.Equal(b, got, "store", "JoinName returns the base for an empty word")
+		})
 	})
 }
 

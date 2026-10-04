@@ -66,10 +66,12 @@ func (refusing) Docs() []string { return nil }
 // encoder fault to report.
 func (refusing) MarshalJSON() ([]byte, error) { return nil, errRefused }
 
-// symbolsCase is one measured call of the JSON codec: the
-// sub-benchmark's name, its allocation ceiling, the call, and the
-// check on what the last call returned.
+// symbolsCase is one measured call of the JSON codec: the function it
+// calls and the case it measures, which name its sub-benchmark, its
+// allocation ceiling, the call, and the check on what the last call
+// returned.
 type symbolsCase struct {
+	method string
 	name   string
 	allocs uint64
 	call   func()
@@ -948,7 +950,8 @@ func FuzzDecodeJSON(f *testing.F) {
 // which runs no benchmark.
 func TestSymbolsAllocs(t *testing.T) {
 	for _, tt := range symbolsCases(t) {
-		assert.MaxAllocs(t, tt.call, tt.allocs, tt.name+" allocates within its ceiling")
+		msg := tt.method + " for " + tt.name + " allocates within its ceiling"
+		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
 		tt.check(t)
 	}
 }
@@ -957,16 +960,18 @@ func TestSymbolsAllocs(t *testing.T) {
 // declarations through.
 func BenchmarkSymbols(b *testing.B) {
 	for _, tt := range symbolsCases(b) {
-		b.Run(tt.name, func(b *testing.B) {
-			// The first call caches the codec's functions for each type
-			// and refills the pools the harness's collection emptied.
-			tt.call()
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			for c.Loop() {
+		b.Run(tt.method, func(b *testing.B) {
+			b.Run(tt.name, func(b *testing.B) {
+				// The first call caches the codec's functions for each type
+				// and refills the pools the harness's collection emptied.
 				tt.call()
-			}
-			tt.check(b)
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				for c.Loop() {
+					tt.call()
+				}
+				tt.check(b)
+			})
 		})
 	}
 }
@@ -996,7 +1001,8 @@ func symbolsCases(tb testing.TB) []symbolsCase {
 	)
 	return []symbolsCase{
 		{
-			name:   "EncodeJSON/" + corpus,
+			method: "EncodeJSON",
+			name:   corpus,
 			allocs: symbolsEncodeAllocs + symbolsPoolAllocs,
 			call: func() {
 				encodeErr = nil
@@ -1009,7 +1015,8 @@ func symbolsCases(tb testing.TB) []symbolsCase {
 			check: func(tb testing.TB) { assert.NoError(tb, encodeErr, "every encoding succeeds") },
 		},
 		{
-			name:   "DecodeJSON/" + corpus,
+			method: "DecodeJSON",
+			name:   corpus,
 			allocs: symbolsDecodeAllocs + symbolsPoolAllocs,
 			call: func() {
 				decodeErr = nil
@@ -1025,7 +1032,8 @@ func symbolsCases(tb testing.TB) []symbolsCase {
 			},
 		},
 		{
-			name:   "Symbols.MarshalJSON/every kind",
+			method: "Symbols.MarshalJSON",
+			name:   "every kind",
 			allocs: symbolsMarshalAllocs + symbolsPoolAllocs,
 			call:   func() { marshalled, marshalErr = list.MarshalJSON() },
 			check: func(tb testing.TB) {
@@ -1034,7 +1042,8 @@ func symbolsCases(tb testing.TB) []symbolsCase {
 			},
 		},
 		{
-			name:   "Symbols.UnmarshalJSON/every kind",
+			method: "Symbols.UnmarshalJSON",
+			name:   "every kind",
 			allocs: symbolsUnmarshalAllocs + symbolsPoolAllocs,
 			call:   func() { unmarshalErr = unmarshalled.UnmarshalJSON(listed) },
 			check: func(tb testing.TB) {

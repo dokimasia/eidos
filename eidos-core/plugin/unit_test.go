@@ -1075,20 +1075,22 @@ func BenchmarkSourceUnit(b *testing.B) {
 		raw    string
 		allocs uint64
 	}{
-		{name: "Comment/three lines of documentation", raw: docComment, allocs: commentAllocs},
-		{name: "Comment/documentation above a carrier", raw: carrierComment, allocs: carrierCommentAllocs},
+		{name: "three lines of documentation", raw: docComment, allocs: commentAllocs},
+		{name: "documentation above a carrier", raw: carrierComment, allocs: carrierCommentAllocs},
 	}
-	for _, tt := range comments {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var parts plugin.CommentParts
-			for c.Loop() {
-				parts = u.Comment(tt.raw, commentAt)
-			}
-			assert.NotEmpty(b, parts.Docs, "Comment returns the documentation")
-		})
-	}
+	b.Run("Comment", func(b *testing.B) {
+		for _, tt := range comments {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var parts plugin.CommentParts
+				for c.Loop() {
+					parts = u.Comment(tt.raw, commentAt)
+				}
+				assert.NotEmpty(b, parts.Docs, "Comment returns the documentation")
+			})
+		}
+	})
 
 	b.Run("Doc", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(docAllocs)
@@ -1185,42 +1187,46 @@ func BenchmarkSourceUnit(b *testing.B) {
 		})
 	}
 
-	b.Run("AttachCarriers/a unit's first carrier", func(b *testing.B) {
-		carriers := []plugin.Carrier{{Mark: bareMark, Payload: tablePayload, Pos: carrierAt}}
-		var unit *plugin.SourceUnit
-		fresh := func() { unit = unitOf(b, unitTree()) }
-		c := bench.Start(b).MaxAllocs(attachCarriersAllocs)
-		defer c.End()
-		for c.Loop() {
-			c.Excluding(fresh)
-			unit.AttachCarriers(recordSubject, carriers, unitCode)
-		}
-		assert.Length(b, unit.Graph().Attachments(), 1, "the carrier is attached")
+	b.Run("AttachCarriers", func(b *testing.B) {
+		b.Run("a unit's first carrier", func(b *testing.B) {
+			carriers := []plugin.Carrier{{Mark: bareMark, Payload: tablePayload, Pos: carrierAt}}
+			var unit *plugin.SourceUnit
+			fresh := func() { unit = unitOf(b, unitTree()) }
+			c := bench.Start(b).MaxAllocs(attachCarriersAllocs)
+			defer c.End()
+			for c.Loop() {
+				c.Excluding(fresh)
+				unit.AttachCarriers(recordSubject, carriers, unitCode)
+			}
+			assert.Length(b, unit.Graph().Attachments(), 1, "the carrier is attached")
+		})
 	})
 
-	b.Run("Package/a unit's first package", func(b *testing.B) {
-		var gb *plugin.GraphBuilder
-		fresh := func() { gb = unitOf(b, unitTree()).Graph() }
-		c := bench.Start(b).MaxAllocs(firstPackageAllocs)
-		defer c.End()
-		var pkg *node.Package
-		for c.Loop() {
-			c.Excluding(fresh)
-			pkg = gb.Package("svc/store")
-		}
-		assert.Equal(b, pkg.Path, []string{"svc", "store"}, "Package returns the path's package")
-	})
+	b.Run("Package", func(b *testing.B) {
+		b.Run("a unit's first package", func(b *testing.B) {
+			var gb *plugin.GraphBuilder
+			fresh := func() { gb = unitOf(b, unitTree()).Graph() }
+			c := bench.Start(b).MaxAllocs(firstPackageAllocs)
+			defer c.End()
+			var pkg *node.Package
+			for c.Loop() {
+				c.Excluding(fresh)
+				pkg = gb.Package("svc/store")
+			}
+			assert.Equal(b, pkg.Path, []string{"svc", "store"}, "Package returns the path's package")
+		})
 
-	b.Run("Package/a package returned before", func(b *testing.B) {
-		gb := unitOf(b, unitTree()).Graph()
-		first := gb.Package("svc/store")
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var pkg *node.Package
-		for c.Loop() {
-			pkg = gb.Package("svc/store")
-		}
-		assert.True(b, pkg == first, "Package returns the first package")
+		b.Run("a package returned before", func(b *testing.B) {
+			gb := unitOf(b, unitTree()).Graph()
+			first := gb.Package("svc/store")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var pkg *node.Package
+			for c.Loop() {
+				pkg = gb.Package("svc/store")
+			}
+			assert.True(b, pkg == first, "Package returns the first package")
+		})
 	})
 
 	b.Run("Packages", func(b *testing.B) {
@@ -1236,15 +1242,17 @@ func BenchmarkSourceUnit(b *testing.B) {
 	})
 
 	for _, tt := range unitRecords() {
-		b.Run(tt.method+"/a unit's first record", func(b *testing.B) {
-			var gb *plugin.GraphBuilder
-			fresh := func() { gb = unitOf(b, unitTree()).Graph() }
-			c := bench.Start(b).MaxAllocs(firstRecordAllocs)
-			defer c.End()
-			for c.Loop() {
-				c.Excluding(fresh)
-				tt.record(gb)
-			}
+		b.Run(tt.method, func(b *testing.B) {
+			b.Run("a unit's first record", func(b *testing.B) {
+				var gb *plugin.GraphBuilder
+				fresh := func() { gb = unitOf(b, unitTree()).Graph() }
+				c := bench.Start(b).MaxAllocs(firstRecordAllocs)
+				defer c.End()
+				for c.Loop() {
+					c.Excluding(fresh)
+					tt.record(gb)
+				}
+			})
 		})
 	}
 

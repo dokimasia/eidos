@@ -319,12 +319,12 @@ func builtinCalls() []allocCall {
 	var shape rules.TypeShape
 	return []allocCall{
 		{
-			name:  "Builtin",
+			name: "Builtin", caseName: "a scalar",
 			call:  func() { shape = r.Builtin(scalar, rules.View{}) },
 			check: func(tb assert.TB) { assert.Equal(tb, shape.Bits, 32, "Builtin classifies int32") },
 		},
 		{
-			name: "Builtin/a wrapper", allocs: elementsAllocs,
+			name: "Builtin", caseName: "a wrapper", allocs: elementsAllocs,
 			call: func() { shape = r.Builtin(wrapper, rules.View{}) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, shape.Form, symbol.FormOptional, "Builtin classifies Int32Value")

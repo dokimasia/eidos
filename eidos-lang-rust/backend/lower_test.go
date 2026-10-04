@@ -209,30 +209,32 @@ func TestLowerAllocs(t *testing.T) {
 // declaration, a fresh function built outside the count for each fold.
 func BenchmarkLower(b *testing.B) {
 	b.Run("Lower", func(b *testing.B) {
-		constant := &emit.Constant{Name: storeName, Type: &emit.TypeRef{Spelling: countType}, Value: "8"}
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var (
-			out []symbol.Symbol
-			err error
-		)
-		for c.Loop() {
-			out, err = backend.Lower(constant)
-		}
-		assert.NoError(b, err, "Lower passes the constant")
-		assert.Length(b, out, 0, "Lower keeps the constant in place")
-	})
+		b.Run("a constant", func(b *testing.B) {
+			constant := &emit.Constant{Name: storeName, Type: &emit.TypeRef{Spelling: countType}, Value: "8"}
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var (
+				out []symbol.Symbol
+				err error
+			)
+			for c.Loop() {
+				out, err = backend.Lower(constant)
+			}
+			assert.NoError(b, err, "Lower passes the constant")
+			assert.Length(b, out, 0, "Lower keeps the constant in place")
+		})
 
-	b.Run("Lower/a function that throws", func(b *testing.B) {
-		f := valuedThrower()
-		c := bench.Start(b).MaxAllocs(wrapAllocs)
-		defer c.End()
-		for c.Loop() {
-			_, _ = backend.Lower(f)
-			c.Excluding(func() { f = valuedThrower() })
-		}
-		lowered(b, f)
-		assert.Equal(b, f.Returns[0].Type.Spelling, resultType, "Lower folds the failure into a Result")
+		b.Run("a function that throws", func(b *testing.B) {
+			f := valuedThrower()
+			c := bench.Start(b).MaxAllocs(wrapAllocs)
+			defer c.End()
+			for c.Loop() {
+				_, _ = backend.Lower(f)
+				c.Excluding(func() { f = valuedThrower() })
+			}
+			lowered(b, f)
+			assert.Equal(b, f.Returns[0].Type.Spelling, resultType, "Lower folds the failure into a Result")
+		})
 	})
 }
 

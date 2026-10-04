@@ -151,16 +151,18 @@ func TestDependentAllocs(t *testing.T) {
 // BenchmarkDependent measures a round's first report of a need placed
 // nowhere, each on a round of its own, and the read of the reports.
 func BenchmarkDependent(b *testing.B) {
-	b.Run("Unplace/the first report of a round", func(b *testing.B) {
-		var round *plugin.DependencyRound
-		fresh := func() { round = &plugin.DependencyRound{Number: 1} }
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		for c.Loop() {
-			c.Excluding(fresh)
-			round.Unplace("example.test/"+missingName, unplacedReason)
-		}
-		assert.Length(b, round.Unplaced(), 1, "the round keeps the report")
+	b.Run("Unplace", func(b *testing.B) {
+		b.Run("the first report of a round", func(b *testing.B) {
+			var round *plugin.DependencyRound
+			fresh := func() { round = &plugin.DependencyRound{Number: 1} }
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			for c.Loop() {
+				c.Excluding(fresh)
+				round.Unplace("example.test/"+missingName, unplacedReason)
+			}
+			assert.Length(b, round.Unplaced(), 1, "the round keeps the report")
+		})
 	})
 
 	b.Run("Unplaced", func(b *testing.B) {

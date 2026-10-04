@@ -395,25 +395,27 @@ func BenchmarkReadSet(b *testing.B) {
 	reads := everyGrain(b)
 	id := coretest.Struct(coretest.StorePath, "Store").ID
 
-	b.Run("AppendPointReads/into a slice with room", func(b *testing.B) {
-		room := make([]meta.Read, 0, reads.Len())
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got []meta.Read
-		for c.Loop() {
-			got = reads.AppendPointReads(room)
-		}
-		assert.Length(b, got, 3, "AppendPointReads returns the declaration, package and fact reads")
-	})
+	b.Run("AppendPointReads", func(b *testing.B) {
+		b.Run("into a slice with room", func(b *testing.B) {
+			room := make([]meta.Read, 0, reads.Len())
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got []meta.Read
+			for c.Loop() {
+				got = reads.AppendPointReads(room)
+			}
+			assert.Length(b, got, 3, "AppendPointReads returns the declaration, package and fact reads")
+		})
 
-	b.Run("AppendPointReads/into nil", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		var got []meta.Read
-		for c.Loop() {
-			got = reads.AppendPointReads(nil)
-		}
-		assert.Length(b, got, 3, "AppendPointReads returns the declaration, package and fact reads")
+		b.Run("into nil", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var got []meta.Read
+			for c.Loop() {
+				got = reads.AppendPointReads(nil)
+			}
+			assert.Length(b, got, 3, "AppendPointReads returns the declaration, package and fact reads")
+		})
 	})
 
 	b.Run("RecordFact", func(b *testing.B) {

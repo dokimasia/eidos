@@ -594,52 +594,56 @@ func BenchmarkGraph(b *testing.B) {
 	})
 
 	b.Run("Freeze", func(b *testing.B) {
-		// One workspace loads into a fresh graph per iteration: a
-		// package is not mutated by an add, so the fixture is built
-		// once and the seal alone is measured.
-		var g *store.Graph
-		load := func() { g = addedAll(b, loaded) }
-		c := bench.Start(b).MaxAllocs(freezeAllocs)
-		defer c.End()
-		for c.Loop() {
-			c.Excluding(load)
-			g.Freeze()
-		}
-		assert.True(b, g.Frozen(), "the graph is sealed")
+		b.Run("a loaded workspace", func(b *testing.B) {
+			// One workspace loads into a fresh graph per iteration: a
+			// package is not mutated by an add, so the fixture is built
+			// once and the seal alone is measured.
+			var g *store.Graph
+			load := func() { g = addedAll(b, loaded) }
+			c := bench.Start(b).MaxAllocs(freezeAllocs)
+			defer c.End()
+			for c.Loop() {
+				c.Excluding(load)
+				g.Freeze()
+			}
+			assert.True(b, g.Frozen(), "the graph is sealed")
+		})
+
+		b.Run("after a parallel load", func(b *testing.B) {
+			// The number that matters for a large workspace: the whole
+			// pipeline, packages added from parallel goroutines the way
+			// frontends load, then the seal.
+			c := bench.Start(b).MaxAllocs(loadFreezeAllocs)
+			defer c.End()
+			var g *store.Graph
+			for c.Loop() {
+				g = parallelLoad(b, loaded)
+			}
+			assert.True(b, g.Frozen(), "the graph is sealed")
+		})
 	})
 
-	b.Run("Freeze/after a parallel load", func(b *testing.B) {
-		// The number that matters for a large workspace: the whole
-		// pipeline, packages added from parallel goroutines the way
-		// frontends load, then the seal.
-		c := bench.Start(b).MaxAllocs(loadFreezeAllocs)
-		defer c.End()
-		var g *store.Graph
-		for c.Loop() {
-			g = parallelLoad(b, loaded)
-		}
-		assert.True(b, g.Frozen(), "the graph is sealed")
-	})
-
-	b.Run("AddPackage/a thousand empty packages", func(b *testing.B) {
-		pool := make([]*node.Package, 0, addBatch)
-		for i := range addBatch {
-			pool = append(pool, coretest.Package(coretest.StorePath+"/"+strconv.Itoa(i)))
-		}
-		var g *store.Graph
-		fresh := func() { g = store.New() }
-		c := bench.Start(b).MaxAllocs(addAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			for _, pkg := range pool {
-				if err = g.AddPackage(pkg); err != nil {
-					break
+	b.Run("AddPackage", func(b *testing.B) {
+		b.Run("a thousand empty packages", func(b *testing.B) {
+			pool := make([]*node.Package, 0, addBatch)
+			for i := range addBatch {
+				pool = append(pool, coretest.Package(coretest.StorePath+"/"+strconv.Itoa(i)))
+			}
+			var g *store.Graph
+			fresh := func() { g = store.New() }
+			c := bench.Start(b).MaxAllocs(addAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				for _, pkg := range pool {
+					if err = g.AddPackage(pkg); err != nil {
+						break
+					}
 				}
 			}
-		}
-		assert.NoError(b, err, "every package is added")
+			assert.NoError(b, err, "every package is added")
+		})
 	})
 
 	b.Run("Lookup", func(b *testing.B) {

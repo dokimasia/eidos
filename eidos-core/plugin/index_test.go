@@ -448,66 +448,70 @@ func BenchmarkIndex(b *testing.B) {
 	hit := coretest.Struct(one, "Decl0_0").ID
 	miss := coretest.Struct(one, "Decl0_1").ID
 
-	b.Run("ByKind/unscoped", func(b *testing.B) {
-		ix, err := plugin.NewIndex(g, facts, nil, nil)
-		assert.NoError(b, err, "the routing surface builds")
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		n := 0
-		// The first pass runs before the contract counts, at the call site
-		// it measures, where the runtime builds the site's 48-byte cache
-		// for converting a declaration to a symbol. A pass at any other
-		// call site builds a cache of its own.
-		for first := true; first || c.Loop(); first = false {
-			n = 0
-			for range ix.ByKind(symbol.KindStruct) {
-				n++
+	b.Run("ByKind", func(b *testing.B) {
+		b.Run("unscoped", func(b *testing.B) {
+			ix, err := plugin.NewIndex(g, facts, nil, nil)
+			assert.NoError(b, err, "the routing surface builds")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			n := 0
+			// The first pass runs before the contract counts, at the call site
+			// it measures, where the runtime builds the site's 48-byte cache
+			// for converting a declaration to a symbol. A pass at any other
+			// call site builds a cache of its own.
+			for first := true; first || c.Loop(); first = false {
+				n = 0
+				for range ix.ByKind(symbol.KindStruct) {
+					n++
+				}
 			}
-		}
-		assert.Equal(b, n, benchPackages*benchFiles*benchDecls, "ByKind yields every struct")
+			assert.Equal(b, n, benchPackages*benchFiles*benchDecls, "ByKind yields every struct")
+		})
+
+		b.Run("scoped to one package", func(b *testing.B) {
+			ix, err := plugin.NewIndex(g, facts, nil, inOne)
+			assert.NoError(b, err, "the routing surface builds")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			n := 0
+			// The first pass builds the call site's conversion cache before
+			// the contract counts, as in the unscoped case.
+			for first := true; first || c.Loop(); first = false {
+				n = 0
+				for range ix.ByKind(symbol.KindStruct) {
+					n++
+				}
+			}
+			assert.Equal(b, n, benchFiles*benchDecls, "ByKind yields the package's structs")
+		})
 	})
 
-	b.Run("ByKind/scoped to one package", func(b *testing.B) {
-		ix, err := plugin.NewIndex(g, facts, nil, inOne)
-		assert.NoError(b, err, "the routing surface builds")
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		n := 0
-		// The first pass builds the call site's conversion cache before
-		// the contract counts, as in the unscoped case.
-		for first := true; first || c.Loop(); first = false {
-			n = 0
-			for range ix.ByKind(symbol.KindStruct) {
-				n++
+	b.Run("ByFactKey", func(b *testing.B) {
+		b.Run("scoped", func(b *testing.B) {
+			reg := meta.NewRegistry()
+			assert.NoError(b, reg.ClaimNamespace(flagNamespace), "the namespace is claimed")
+			key, err := meta.Register[bool](reg, meta.KeySpec{Name: "t.flag", Doc: "marks a bench subject"})
+			assert.NoError(b, err, "the key registers")
+			stamped := meta.NewFacts(reg)
+			for pkg := range benchPackages {
+				id := coretest.Struct(coretest.StorePath+"/"+strconv.Itoa(pkg), "Decl0_0").ID
+				assert.NoError(b, meta.Stamp(stamped, key, true, meta.Claim{Subject: id}), "the fact stamps")
 			}
-		}
-		assert.Equal(b, n, benchFiles*benchDecls, "ByKind yields the package's structs")
-	})
-
-	b.Run("ByFactKey/scoped", func(b *testing.B) {
-		reg := meta.NewRegistry()
-		assert.NoError(b, reg.ClaimNamespace(flagNamespace), "the namespace is claimed")
-		key, err := meta.Register[bool](reg, meta.KeySpec{Name: "t.flag", Doc: "marks a bench subject"})
-		assert.NoError(b, err, "the key registers")
-		stamped := meta.NewFacts(reg)
-		for pkg := range benchPackages {
-			id := coretest.Struct(coretest.StorePath+"/"+strconv.Itoa(pkg), "Decl0_0").ID
-			assert.NoError(b, meta.Stamp(stamped, key, true, meta.Claim{Subject: id}), "the fact stamps")
-		}
-		ix, err := plugin.NewIndex(g, stamped, nil, inOne)
-		assert.NoError(b, err, "the routing surface builds")
-		for range ix.ByFactKey(key.ID()) { // the first enumeration sorts the key's subjects
-		}
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		n := 0
-		for c.Loop() {
-			n = 0
-			for range ix.ByFactKey(key.ID()) {
-				n++
+			ix, err := plugin.NewIndex(g, stamped, nil, inOne)
+			assert.NoError(b, err, "the routing surface builds")
+			for range ix.ByFactKey(key.ID()) { // the first enumeration sorts the key's subjects
 			}
-		}
-		assert.Equal(b, n, 1, "ByFactKey yields the one stamped subject in scope")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			n := 0
+			for c.Loop() {
+				n = 0
+				for range ix.ByFactKey(key.ID()) {
+					n++
+				}
+			}
+			assert.Equal(b, n, 1, "ByFactKey yields the one stamped subject in scope")
+		})
 	})
 
 	b.Run("Skipped", func(b *testing.B) {
@@ -557,24 +561,26 @@ func BenchmarkIndex(b *testing.B) {
 		scope  store.Scope
 		allocs uint64
 	}{
-		{name: "NewIndex/a run without a scope", allocs: newIndexAllocs},
-		{name: "NewIndex/a run scoped to one package", scope: inOne, allocs: scopedIndexAllocs},
+		{name: "a run without a scope", allocs: newIndexAllocs},
+		{name: "a run scoped to one package", scope: inOne, allocs: scopedIndexAllocs},
 	}
-	for _, tt := range scopes {
-		b.Run(tt.name, func(b *testing.B) {
-			_, err := plugin.NewIndex(g, facts, nil, tt.scope)
-			assert.NoError(b, err, "the routing surface builds before the measurement")
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var ix *plugin.Index
-			for c.Loop() {
-				ix, err = plugin.NewIndex(g, facts, nil, tt.scope)
-			}
-			assert.NoError(b, err, "the routing surface builds")
-			_, held := ix.Lookup(hit)
-			assert.True(b, held, "the index finds a declaration its scope admits")
-		})
-	}
+	b.Run("NewIndex", func(b *testing.B) {
+		for _, tt := range scopes {
+			b.Run(tt.name, func(b *testing.B) {
+				_, err := plugin.NewIndex(g, facts, nil, tt.scope)
+				assert.NoError(b, err, "the routing surface builds before the measurement")
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var ix *plugin.Index
+				for c.Loop() {
+					ix, err = plugin.NewIndex(g, facts, nil, tt.scope)
+				}
+				assert.NoError(b, err, "the routing surface builds")
+				_, held := ix.Lookup(hit)
+				assert.True(b, held, "the index finds a declaration its scope admits")
+			})
+		}
+	})
 
 	b.Run("ByDirective", func(b *testing.B) {
 		small, inStore, _ := twoPackages(b)

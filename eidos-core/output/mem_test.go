@@ -185,88 +185,100 @@ func BenchmarkMem(b *testing.B) {
 		assert.Empty(b, m.Files(), "NewMem returns a sink without a file")
 	})
 
-	b.Run("Write/the first file of a staging", func(b *testing.B) {
-		var m *output.Mem
-		fresh := func() { m = output.NewMem() }
-		c := bench.Start(b).MaxAllocs(firstWriteAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			err = m.Write(storeFile, body)
-		}
-		assert.NoError(b, err, "the file stages")
+	b.Run("Write", func(b *testing.B) {
+		b.Run("the first file of a staging", func(b *testing.B) {
+			var m *output.Mem
+			fresh := func() { m = output.NewMem() }
+			c := bench.Start(b).MaxAllocs(firstWriteAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				err = m.Write(storeFile, body)
+			}
+			assert.NoError(b, err, "the file stages")
+		})
 	})
 
-	b.Run("Delete/the first removal of a staging", func(b *testing.B) {
-		var m *output.Mem
-		fresh := func() { m = output.NewMem() }
-		c := bench.Start(b).MaxAllocs(firstDeleteAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			err = m.Delete(storeFile)
-		}
-		assert.NoError(b, err, "the removal stages")
+	b.Run("Delete", func(b *testing.B) {
+		b.Run("the first removal of a staging", func(b *testing.B) {
+			var m *output.Mem
+			fresh := func() { m = output.NewMem() }
+			c := bench.Start(b).MaxAllocs(firstDeleteAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				err = m.Delete(storeFile)
+			}
+			assert.NoError(b, err, "the removal stages")
+		})
 	})
 
-	b.Run("Prepare/a staging of one file", func(b *testing.B) {
-		var m *output.Mem
-		fresh := func() { m = stagedMem(b) }
-		c := bench.Start(b).MaxAllocs(prepareOneAllocs)
-		defer c.End()
-		var (
-			got []output.Change
-			err error
-		)
-		for c.Loop() {
-			c.Excluding(fresh)
-			got, err = m.Prepare()
-		}
-		assert.NoError(b, err, "the staging prepares")
-		assert.Length(b, got, 1, "one change for the staged file")
+	b.Run("Prepare", func(b *testing.B) {
+		b.Run("a staging of one file", func(b *testing.B) {
+			var m *output.Mem
+			fresh := func() { m = stagedMem(b) }
+			c := bench.Start(b).MaxAllocs(prepareOneAllocs)
+			defer c.End()
+			var (
+				got []output.Change
+				err error
+			)
+			for c.Loop() {
+				c.Excluding(fresh)
+				got, err = m.Prepare()
+			}
+			assert.NoError(b, err, "the staging prepares")
+			assert.Length(b, got, 1, "one change for the staged file")
+		})
 	})
 
-	b.Run("Commit/a staging of one file", func(b *testing.B) {
-		var m *output.Mem
-		fresh := func() { m = stagedMem(b) }
-		c := bench.Start(b).MaxAllocs(commitOneAllocs)
-		defer c.End()
-		var (
-			got []output.Written
-			err error
-		)
-		for c.Loop() {
-			c.Excluding(fresh)
-			got, err = m.Commit()
-		}
-		assert.NoError(b, err, "the staging commits")
-		assert.Length(b, got, 1, "one record for the staged file")
+	b.Run("Commit", func(b *testing.B) {
+		b.Run("a staging of one file", func(b *testing.B) {
+			var m *output.Mem
+			fresh := func() { m = stagedMem(b) }
+			c := bench.Start(b).MaxAllocs(commitOneAllocs)
+			defer c.End()
+			var (
+				got []output.Written
+				err error
+			)
+			for c.Loop() {
+				c.Excluding(fresh)
+				got, err = m.Commit()
+			}
+			assert.NoError(b, err, "the staging commits")
+			assert.Length(b, got, 1, "one record for the staged file")
+		})
 	})
 
-	b.Run("Discard/a staging of one file", func(b *testing.B) {
-		var m *output.Mem
-		fresh := func() { m = stagedMem(b) }
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			err = m.Discard()
-		}
-		assert.NoError(b, err, "the staging is discarded")
+	b.Run("Discard", func(b *testing.B) {
+		b.Run("a staging of one file", func(b *testing.B) {
+			var m *output.Mem
+			fresh := func() { m = stagedMem(b) }
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				err = m.Discard()
+			}
+			assert.NoError(b, err, "the staging is discarded")
+		})
 	})
 
-	b.Run("Files/one committed file", func(b *testing.B) {
-		m := committedMem(b)
-		c := bench.Start(b).MaxAllocs(filesOneAllocs)
-		defer c.End()
-		var files map[string][]byte
-		for c.Loop() {
-			files = m.Files()
-		}
-		assert.Length(b, files, 1, "Files returns the committed file")
+	b.Run("Files", func(b *testing.B) {
+		b.Run("one committed file", func(b *testing.B) {
+			m := committedMem(b)
+			c := bench.Start(b).MaxAllocs(filesOneAllocs)
+			defer c.End()
+			var files map[string][]byte
+			for c.Loop() {
+				files = m.Files()
+			}
+			assert.Length(b, files, 1, "Files returns the committed file")
+		})
 	})
 }
 

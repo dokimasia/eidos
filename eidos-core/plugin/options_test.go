@@ -264,41 +264,45 @@ func BenchmarkOptions(b *testing.B) {
 		give   plugin.Plugin
 		allocs uint64
 	}{
-		{name: "ValidateOptions/a struct that keeps the contract", give: lawful, allocs: validateOptionsAllocs},
-		{name: "ValidateOptions/a plugin without the surface", give: bare, allocs: 0},
+		{name: "a struct that keeps the contract", give: lawful, allocs: validateOptionsAllocs},
+		{name: "a plugin without the surface", give: bare, allocs: 0},
 	}
-	for _, tt := range validations {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var errs []error
-			for c.Loop() {
-				errs = plugin.ValidateOptions(tt.give)
-			}
-			assert.Empty(b, errs, "ValidateOptions finds nothing")
-		})
-	}
+	b.Run("ValidateOptions", func(b *testing.B) {
+		for _, tt := range validations {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var errs []error
+				for c.Loop() {
+					errs = plugin.ValidateOptions(tt.give)
+				}
+				assert.Empty(b, errs, "ValidateOptions finds nothing")
+			})
+		}
+	})
 
 	encodings := []struct {
 		name   string
 		give   plugin.Plugin
 		allocs uint64
 	}{
-		{name: "EncodeOptions/a visible struct", give: lawful, allocs: encodeOptionsAllocs},
-		{name: "EncodeOptions/a plugin without the surface", give: bare, allocs: 0},
+		{name: "a visible struct", give: lawful, allocs: encodeOptionsAllocs},
+		{name: "a plugin without the surface", give: bare, allocs: 0},
 	}
-	for _, tt := range encodings {
-		b.Run(tt.name, func(b *testing.B) {
-			_, err := plugin.EncodeOptions(tt.give)
-			assert.NoError(b, err, "the options encode before the measurement")
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			for c.Loop() {
-				_, err = plugin.EncodeOptions(tt.give)
-			}
-			assert.NoError(b, err, "the options encode")
-		})
-	}
+	b.Run("EncodeOptions", func(b *testing.B) {
+		for _, tt := range encodings {
+			b.Run(tt.name, func(b *testing.B) {
+				_, err := plugin.EncodeOptions(tt.give)
+				assert.NoError(b, err, "the options encode before the measurement")
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				for c.Loop() {
+					_, err = plugin.EncodeOptions(tt.give)
+				}
+				assert.NoError(b, err, "the options encode")
+			})
+		}
+	})
 }
 
 // optionPlugins returns a plugin with the lawful options and a plugin

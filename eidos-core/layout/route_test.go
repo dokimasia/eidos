@@ -696,12 +696,14 @@ func TestRouteAllocs(t *testing.T) {
 // their sources, each file's package named by the target. No
 // declaration allocates.
 func BenchmarkRoute(b *testing.B) {
-	b.Run("Route/the canonical corpus of 200,000 declarations", func(b *testing.B) {
-		benchRoute(b, benchPackages, routeAllocs)
-	})
+	b.Run("Route", func(b *testing.B) {
+		b.Run("the canonical corpus of 200,000 declarations", func(b *testing.B) {
+			benchRoute(b, benchPackages, routeAllocs)
+		})
 
-	b.Run("Route/one package of 200 declarations", func(b *testing.B) {
-		benchRoute(b, 1, routeOneAllocs)
+		b.Run("one package of 200 declarations", func(b *testing.B) {
+			benchRoute(b, 1, routeOneAllocs)
+		})
 	})
 }
 

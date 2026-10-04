@@ -1117,24 +1117,26 @@ func TestSettleAllocs(t *testing.T) {
 // BenchmarkSettle measures one plan's settle over a store of a hundred
 // units, each settle on a store built outside the measurement.
 func BenchmarkSettle(b *testing.B) {
-	for _, tt := range settleCases() {
-		b.Run("Settle/"+tt.name, func(b *testing.B) {
-			var (
-				e    *plugin.Emit
-				sink *diag.Sink
-			)
-			fresh := func() { e, sink = settleStore(b), diag.NewSink() }
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var err error
-			for c.Loop() {
-				c.Excluding(fresh)
-				err = plugin.Settle(e, tt.backend, nil, sink)
-			}
-			assert.NoError(b, err, "the store settles")
-			assert.True(b, e.Settled(), "the store is marked settled")
-		})
-	}
+	b.Run("Settle", func(b *testing.B) {
+		for _, tt := range settleCases() {
+			b.Run(tt.name, func(b *testing.B) {
+				var (
+					e    *plugin.Emit
+					sink *diag.Sink
+				)
+				fresh := func() { e, sink = settleStore(b), diag.NewSink() }
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var err error
+				for c.Loop() {
+					c.Excluding(fresh)
+					err = plugin.Settle(e, tt.backend, nil, sink)
+				}
+				assert.NoError(b, err, "the store settles")
+				assert.True(b, e.Settled(), "the store is marked settled")
+			})
+		}
+	})
 }
 
 // settleOrigin returns a distinct origin identity per name.

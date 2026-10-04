@@ -372,20 +372,22 @@ func BenchmarkCode(b *testing.B) {
 		assert.Empty(b, got.Codes(), "a new registry contains no code")
 	})
 
-	b.Run("Register/a first code into a new registry", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(registerAllocs)
-		defer c.End()
-		var (
-			fresh *diag.Registry
-			got   diag.Code
-			err   error
-		)
-		for c.Loop() {
-			fresh = diag.NewRegistry()
-			got, err = fresh.Register(diag.KernelPrefix, firstSpec)
-		}
-		assert.NoError(b, err, "a fresh number registers")
-		assert.Equal(b, fresh.Codes(), []diag.Code{got}, "Register records the code it returns")
+	b.Run("Register", func(b *testing.B) {
+		b.Run("a first code into a new registry", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(registerAllocs)
+			defer c.End()
+			var (
+				fresh *diag.Registry
+				got   diag.Code
+				err   error
+			)
+			for c.Loop() {
+				fresh = diag.NewRegistry()
+				got, err = fresh.Register(diag.KernelPrefix, firstSpec)
+			}
+			assert.NoError(b, err, "a fresh number registers")
+			assert.Equal(b, fresh.Codes(), []diag.Code{got}, "Register records the code it returns")
+		})
 	})
 
 	b.Run("MustRegister", func(b *testing.B) {

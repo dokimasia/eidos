@@ -369,17 +369,19 @@ func TestIRAllocs(t *testing.T) {
 // BenchmarkIR measures a lowering of the fixture schema after one
 // lowering, and a side's questions.
 func BenchmarkIR(b *testing.B) {
-	b.Run("Lower/the fixture schema", func(b *testing.B) {
-		_, err := model.Lower(validSchema, "")
-		assert.NoError(b, err, "the schema lowers before the measurement")
-		c := bench.Start(b).MaxAllocs(lowerValidAllocs)
-		defer c.End()
-		var schema model.Schema
-		for c.Loop() {
-			schema, err = model.Lower(validSchema, "")
-		}
-		assert.NoError(b, err, "the schema lowers")
-		assert.Length(b, schema.Kinds, 2, "into its two kinds")
+	b.Run("Lower", func(b *testing.B) {
+		b.Run("the fixture schema", func(b *testing.B) {
+			_, err := model.Lower(validSchema, "")
+			assert.NoError(b, err, "the schema lowers before the measurement")
+			c := bench.Start(b).MaxAllocs(lowerValidAllocs)
+			defer c.End()
+			var schema model.Schema
+			for c.Loop() {
+				schema, err = model.Lower(validSchema, "")
+			}
+			assert.NoError(b, err, "the schema lowers")
+			assert.Length(b, schema.Kinds, 2, "into its two kinds")
+		})
 	})
 
 	side := model.SideBoth

@@ -157,17 +157,17 @@ func scaffoldCalls() []allocCall {
 	}
 	return []allocCall{
 		{
-			name: "Scaffold", allocs: scaffoldAllocs,
+			name: "Scaffold", caseName: "a return of a call", allocs: scaffoldAllocs,
 			call: func() { out, err = backend.Scaffold(stmt, &set) }, check: spells("\treturn load(ctx)\n"),
 		},
 		{
-			name:   "Scaffold/a guard",
+			name: "Scaffold", caseName: "a guard",
 			allocs: guardAllocs,
 			call:   func() { out, err = backend.Scaffold(guard, &set) },
 			check:  spells("\tif err != nil {\n\t\treturn err\n\t}\n"),
 		},
 		{
-			name: "Scaffold/an assignment of two names", allocs: tupleAllocs,
+			name: "Scaffold", caseName: "an assignment of two names", allocs: tupleAllocs,
 			call: func() { out, err = backend.Scaffold(tuple, &set) }, check: spells("\tres, err := next()\n"),
 		},
 	}

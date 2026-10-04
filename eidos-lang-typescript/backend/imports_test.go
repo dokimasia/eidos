@@ -142,7 +142,7 @@ func importsCalls() []allocCall {
 	var out string
 	return []allocCall{
 		{
-			name: "Imports", allocs: importsAllocs,
+			name: "Imports", caseName: "a set of three imports", allocs: importsAllocs,
 			call: func() { out = backend.Imports(&set) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, out,
@@ -153,7 +153,7 @@ func importsCalls() []allocCall {
 			},
 		},
 		{
-			name:  "Imports/an empty set",
+			name: "Imports", caseName: "an empty set",
 			call:  func() { out = backend.Imports(&empty) },
 			check: func(tb assert.TB) { assert.Equal(tb, out, "", "Imports writes no block") },
 		},

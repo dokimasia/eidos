@@ -184,25 +184,27 @@ func BenchmarkSchema(b *testing.B) {
 	})
 
 	b.Run("Canonical", func(b *testing.B) {
-		s := pluginSchema()
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		var got directive.Name
-		for c.Loop() {
-			got = s.Canonical()
-		}
-		assert.Equal(b, got, directive.Name("mockgen:stub"), "Canonical prefixes the plugin")
-	})
+		b.Run("a plugin schema", func(b *testing.B) {
+			s := pluginSchema()
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var got directive.Name
+			for c.Loop() {
+				got = s.Canonical()
+			}
+			assert.Equal(b, got, directive.Name("mockgen:stub"), "Canonical prefixes the plugin")
+		})
 
-	b.Run("Canonical/a kernel schema", func(b *testing.B) {
-		s := directive.Schema{Name: directive.KernelMeta}
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got directive.Name
-		for c.Loop() {
-			got = s.Canonical()
-		}
-		assert.Equal(b, got, directive.KernelMeta, "Canonical leaves a kernel name bare")
+		b.Run("a kernel schema", func(b *testing.B) {
+			s := directive.Schema{Name: directive.KernelMeta}
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got directive.Name
+			for c.Loop() {
+				got = s.Canonical()
+			}
+			assert.Equal(b, got, directive.KernelMeta, "Canonical leaves a kernel name bare")
+		})
 	})
 }
 

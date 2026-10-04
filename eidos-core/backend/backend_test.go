@@ -783,46 +783,50 @@ func BenchmarkBackend(b *testing.B) {
 	}
 
 	for _, tt := range merges() {
-		b.Run(tt.name+"/one entry into a new declaration", func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var builder *backend.Builder
-			for c.Loop() {
-				c.Excluding(func() { builder = backend.New(kitName, kitTarget, syntax) })
-				tt.set(builder)
-			}
-			assert.NotNil(b, builder, tt.name+" merges into the declaration")
+		b.Run(tt.name, func(b *testing.B) {
+			b.Run("one entry into a new declaration", func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var builder *backend.Builder
+				for c.Loop() {
+					c.Excluding(func() { builder = backend.New(kitName, kitTarget, syntax) })
+					tt.set(builder)
+				}
+				assert.NotNil(b, builder, tt.name+" merges into the declaration")
+			})
 		})
 	}
 
-	b.Run("Build/the fixture declaration", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(buildAllocs)
-		defer c.End()
-		var (
-			builder *backend.Builder
-			got     plugin.Backend
-		)
-		for c.Loop() {
-			c.Excluding(func() { builder = declarations(1, false)[0] })
-			got = builder.Build()
-		}
-		_, renders := got.(plugin.Renderer)
-		assert.True(b, renders, "the lowered backend renders")
-	})
+	b.Run("Build", func(b *testing.B) {
+		b.Run("the fixture declaration", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(buildAllocs)
+			defer c.End()
+			var (
+				builder *backend.Builder
+				got     plugin.Backend
+			)
+			for c.Loop() {
+				c.Excluding(func() { builder = declarations(1, false)[0] })
+				got = builder.Build()
+			}
+			_, renders := got.(plugin.Renderer)
+			assert.True(b, renders, "the lowered backend renders")
+		})
 
-	b.Run("Build/the fixture declaration with both seams", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(buildSeamsAllocs)
-		defer c.End()
-		var (
-			builder *backend.Builder
-			got     plugin.Backend
-		)
-		for c.Loop() {
-			c.Excluding(func() { builder = declarations(1, true)[0] })
-			got = builder.Build()
-		}
-		_, lowers := got.(plugin.Lowerer)
-		assert.True(b, lowers, "the lowered backend has the construct seam")
+		b.Run("the fixture declaration with both seams", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(buildSeamsAllocs)
+			defer c.End()
+			var (
+				builder *backend.Builder
+				got     plugin.Backend
+			)
+			for c.Loop() {
+				c.Excluding(func() { builder = declarations(1, true)[0] })
+				got = builder.Build()
+			}
+			_, lowers := got.(plugin.Lowerer)
+			assert.True(b, lowers, "the lowered backend has the construct seam")
+		})
 	})
 }
 

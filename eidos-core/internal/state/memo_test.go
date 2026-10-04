@@ -261,50 +261,56 @@ func BenchmarkMemo(b *testing.B) {
 		assert.NotNil(b, got, "NewMemo returns the memo")
 	})
 
-	b.Run("Get/a hit", func(b *testing.B) {
-		m := memoAt(l, ample, now)
-		c := bench.Start(b).MaxAllocs(memoGetAllocs)
-		defer c.End()
-		var hit bool
-		for c.Loop() {
-			_, hit = m.Get(key)
-		}
-		assert.True(b, hit, "the entry is in the memo")
+	b.Run("Get", func(b *testing.B) {
+		b.Run("a hit", func(b *testing.B) {
+			m := memoAt(l, ample, now)
+			c := bench.Start(b).MaxAllocs(memoGetAllocs)
+			defer c.End()
+			var hit bool
+			for c.Loop() {
+				_, hit = m.Get(key)
+			}
+			assert.True(b, hit, "the entry is in the memo")
+		})
 	})
 
-	b.Run("Put/a first put into a new memo", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(memoPutAllocs)
-		defer c.End()
-		var m *state.Memo
-		for c.Loop() {
-			c.Excluding(func() { m = memoAt(l, ample, now) })
-			m.Put(key, r)
-		}
-		assert.NotNil(b, m, "the region is put")
-	})
-
-	b.Run("Write/one put into an empty ledger", func(b *testing.B) {
-		// One write before the contract counts pools the region encoding's
-		// scratch.
-		warm := newMemos(1, now)[0]
-		warm.Put(key, r)
-		_, err := warm.Write(b.Context())
-		assert.NoError(b, err, "a memo writes before the measurement")
-		c := bench.Start(b).MaxAllocs(memoWriteAllocs)
-		defer c.End()
-		var (
-			m       *state.Memo
-			written int64
-		)
-		for c.Loop() {
-			c.Excluding(func() {
-				m = newMemos(1, now)[0]
+	b.Run("Put", func(b *testing.B) {
+		b.Run("a first put into a new memo", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(memoPutAllocs)
+			defer c.End()
+			var m *state.Memo
+			for c.Loop() {
+				c.Excluding(func() { m = memoAt(l, ample, now) })
 				m.Put(key, r)
-			})
-			written, err = m.Write(b.Context())
-		}
-		assert.NoError(b, err, "the memo writes")
-		assert.True(b, written > 0, "the entry's bytes")
+			}
+			assert.NotNil(b, m, "the region is put")
+		})
+	})
+
+	b.Run("Write", func(b *testing.B) {
+		b.Run("one put into an empty ledger", func(b *testing.B) {
+			// One write before the contract counts pools the region encoding's
+			// scratch.
+			warm := newMemos(1, now)[0]
+			warm.Put(key, r)
+			_, err := warm.Write(b.Context())
+			assert.NoError(b, err, "a memo writes before the measurement")
+			c := bench.Start(b).MaxAllocs(memoWriteAllocs)
+			defer c.End()
+			var (
+				m       *state.Memo
+				written int64
+			)
+			for c.Loop() {
+				c.Excluding(func() {
+					m = newMemos(1, now)[0]
+					m.Put(key, r)
+				})
+				written, err = m.Write(b.Context())
+			}
+			assert.NoError(b, err, "the memo writes")
+			assert.True(b, written > 0, "the entry's bytes")
+		})
 	})
 }
 

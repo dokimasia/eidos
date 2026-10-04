@@ -1086,8 +1086,8 @@ func vocabularyCalls() []allocCall {
 			name: "NewSpeller", call: func() { spellerOut = backend.NewSpeller(set) },
 			check: func(tb assert.TB) { assert.Equal(tb, spellerOut, s, "NewSpeller returns the set's speller") },
 		},
-		{name: "Spell", call: func() { out, err = s.Spell(bare) }, check: spells(u32Type)},
-		{name: "Spell/a used item", call: func() { out, err = s.Spell(row) }, check: spells(rowName)},
+		{name: "Spell", caseName: "a builtin type", call: func() { out, err = s.Spell(bare) }, check: spells(u32Type)},
+		{name: "Spell", caseName: "a used item", call: func() { out, err = s.Spell(row) }, check: spells(rowName)},
 		{name: "ConstType", call: func() { out, err = s.ConstType(constant) }, check: spells(u32Type)},
 		{
 			name: "TypeParams", allocs: paramListAllocs,
@@ -1118,11 +1118,11 @@ func vocabularyCalls() []allocCall {
 			call: func() { out, err = s.SelfParams(method) }, check: spells("&self, id: u32, name: String"),
 		},
 		{
-			name: "Params", allocs: paramsAllocs,
+			name: "Params", caseName: "two parameters", allocs: paramsAllocs,
 			call: func() { out, err = s.Params(args) }, check: spells("id: u32, name: String"),
 		},
 		{
-			name: "Params/three parameters", allocs: partsAllocs,
+			name: "Params", caseName: "three parameters", allocs: partsAllocs,
 			call: func() { out, err = s.Params(three) }, check: spells("id: u32, name: u32, load: u32"),
 		},
 		{
@@ -1156,9 +1156,14 @@ func vocabularyCalls() []allocCall {
 			call: func() { out, err = backend.FnMods(async) }, check: spells("pub async "),
 		},
 		{name: "TraitFn", call: func() { out, err = backend.TraitFn(traitMethod) }, check: spells("")},
-		{name: "ImplFn", call: func() { out, err = backend.ImplFn(implMethod) }, check: spells(pubKeyword)},
 		{
-			name: "ImplFn/an async method", allocs: textAllocs,
+			name:     "ImplFn",
+			caseName: "a method",
+			call:     func() { out, err = backend.ImplFn(implMethod) },
+			check:    spells(pubKeyword),
+		},
+		{
+			name: "ImplFn", caseName: "an async method", allocs: textAllocs,
 			call: func() { out, err = backend.ImplFn(asyncMethod) }, check: spells("pub async "),
 		},
 		{name: "FieldMods", call: func() { out, err = backend.FieldMods(field) }, check: spells(pubKeyword)},

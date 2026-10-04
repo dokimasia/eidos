@@ -154,11 +154,11 @@ func scaffoldCalls() []allocCall {
 	}
 	return []allocCall{
 		{
-			name: "Scaffold", allocs: scaffoldAllocs,
+			name: "Scaffold", caseName: "a return of a call", allocs: scaffoldAllocs,
 			call: func() { out, err = backend.Scaffold(stmt, &set) }, check: spells("    return load(ctx);\n"),
 		},
 		{
-			name: "Scaffold/a return of a string", allocs: stringAllocs,
+			name: "Scaffold", caseName: "a return of a string", allocs: stringAllocs,
 			call: func() { out, err = backend.Scaffold(text, &set) }, check: spells("    return \"hi\";\n"),
 		},
 	}

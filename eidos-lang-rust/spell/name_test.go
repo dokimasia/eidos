@@ -151,23 +151,31 @@ func BenchmarkName(b *testing.B) {
 		allocs uint64
 		want   string
 	}{
-		{name: "Name", kind: symbol.KindStruct, give: "httpRow", allocs: conversionAllocs, want: "HTTPRow"},
-		{name: "Name/a name in its style", kind: symbol.KindStruct, give: "HTTPRow", want: "HTTPRow"},
-		{name: "Name/a keyword", kind: symbol.KindField, give: "type", allocs: rawAllocs, want: "r#type"},
+		{
+			name:   "a name in another style",
+			kind:   symbol.KindStruct,
+			give:   "httpRow",
+			allocs: conversionAllocs,
+			want:   "HTTPRow",
+		},
+		{name: "a name in its style", kind: symbol.KindStruct, give: "HTTPRow", want: "HTTPRow"},
+		{name: "a keyword", kind: symbol.KindField, give: "type", allocs: rawAllocs, want: "r#type"},
 	}
-	for _, tt := range names {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var (
-				got string
-				err error
-			)
-			for c.Loop() {
-				got, err = spell.Name(symbol.KindStruct, tt.kind, symbol.VisibilityPublic, tt.give)
-			}
-			assert.NoError(b, err, "Name spells the name")
-			assert.Equal(b, got, tt.want, "Name returns the spelling")
-		})
-	}
+	b.Run("Name", func(b *testing.B) {
+		for _, tt := range names {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var (
+					got string
+					err error
+				)
+				for c.Loop() {
+					got, err = spell.Name(symbol.KindStruct, tt.kind, symbol.VisibilityPublic, tt.give)
+				}
+				assert.NoError(b, err, "Name spells the name")
+				assert.Equal(b, got, tt.want, "Name returns the spelling")
+			})
+		}
+	})
 }

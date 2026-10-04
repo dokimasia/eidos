@@ -377,58 +377,62 @@ func BenchmarkLoadState(b *testing.B) {
 		assert.True(b, got.Equal(past), "Anchor returns the recording run's anchor")
 	})
 
-	b.Run("Files/a first range", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(filesAllocs)
-		defer c.End()
-		var fresh *state.LoadState
-		n := 0
-		for c.Loop() {
-			c.Excluding(func() { fresh, n = g.Load(b.Context()), 0 })
-			for range fresh.Files() {
-				n++
+	b.Run("Files", func(b *testing.B) {
+		b.Run("a first range", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(filesAllocs)
+			defer c.End()
+			var fresh *state.LoadState
+			n := 0
+			for c.Loop() {
+				c.Excluding(func() { fresh, n = g.Load(b.Context()), 0 })
+				for range fresh.Files() {
+					n++
+				}
 			}
-		}
-		assert.Equal(b, n, len(report.Files), "the range yields every file")
+			assert.Equal(b, n, len(report.Files), "the range yields every file")
+		})
+
+		b.Run("a range over a table read before", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			n := 0
+			for first := true; first || c.Loop(); first = false {
+				n = 0
+				for range s.Files() {
+					n++
+				}
+			}
+			assert.Equal(b, n, len(report.Files), "the range yields every file")
+		})
 	})
 
-	b.Run("Files/a range over a table read before", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		n := 0
-		for first := true; first || c.Loop(); first = false {
-			n = 0
-			for range s.Files() {
-				n++
+	b.Run("Units", func(b *testing.B) {
+		b.Run("a first range", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(unitsAllocs)
+			defer c.End()
+			var fresh *state.LoadState
+			n := 0
+			for c.Loop() {
+				c.Excluding(func() { fresh, n = g.Load(b.Context()), 0 })
+				for range fresh.Units() {
+					n++
+				}
 			}
-		}
-		assert.Equal(b, n, len(report.Files), "the range yields every file")
-	})
+			assert.Equal(b, n, len(report.Units), "the range yields every unit")
+		})
 
-	b.Run("Units/a first range", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(unitsAllocs)
-		defer c.End()
-		var fresh *state.LoadState
-		n := 0
-		for c.Loop() {
-			c.Excluding(func() { fresh, n = g.Load(b.Context()), 0 })
-			for range fresh.Units() {
-				n++
+		b.Run("a range over a table read before", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			n := 0
+			for first := true; first || c.Loop(); first = false {
+				n = 0
+				for range s.Units() {
+					n++
+				}
 			}
-		}
-		assert.Equal(b, n, len(report.Units), "the range yields every unit")
-	})
-
-	b.Run("Units/a range over a table read before", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		n := 0
-		for first := true; first || c.Loop(); first = false {
-			n = 0
-			for range s.Units() {
-				n++
-			}
-		}
-		assert.Equal(b, n, len(report.Units), "the range yields every unit")
+			assert.Equal(b, n, len(report.Units), "the range yields every unit")
+		})
 	})
 
 	b.Run("Region", func(b *testing.B) {
@@ -487,22 +491,24 @@ func BenchmarkLoadState(b *testing.B) {
 		assert.Empty(b, got, "the scripted language follows no re-export")
 	})
 
-	b.Run("RecordLoad/a cold load of two units", func(b *testing.B) {
-		// One record before the contract counts pools the region
-		// encoding's scratch.
-		assert.NoError(b, state.RecordLoad(b.Context(), state.NewCommit(nil, nil), nil, report),
-			"the load records before the measurement")
-		c := bench.Start(b).MaxAllocs(recordLoadAllocs)
-		defer c.End()
-		var (
-			commit *state.Commit
-			err    error
-		)
-		for c.Loop() {
-			c.Excluding(func() { commit = state.NewCommit(nil, nil) })
-			err = state.RecordLoad(b.Context(), commit, nil, report)
-		}
-		assert.NoError(b, err, "the load records")
+	b.Run("RecordLoad", func(b *testing.B) {
+		b.Run("a cold load of two units", func(b *testing.B) {
+			// One record before the contract counts pools the region
+			// encoding's scratch.
+			assert.NoError(b, state.RecordLoad(b.Context(), state.NewCommit(nil, nil), nil, report),
+				"the load records before the measurement")
+			c := bench.Start(b).MaxAllocs(recordLoadAllocs)
+			defer c.End()
+			var (
+				commit *state.Commit
+				err    error
+			)
+			for c.Loop() {
+				c.Excluding(func() { commit = state.NewCommit(nil, nil) })
+				err = state.RecordLoad(b.Context(), commit, nil, report)
+			}
+			assert.NoError(b, err, "the load records")
+		})
 	})
 }
 

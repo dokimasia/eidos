@@ -34,12 +34,15 @@ const (
 	filledPaths   = 3
 )
 
-// importWrite is one write a file's spellings make into its set, with
-// the ceiling of the write after a Reset.
+// importWrite is one write a file's spellings make into its set: the
+// method, which names its benchmark, the case it measures where the
+// method has more than one write, and the ceiling of the write after a
+// Reset. The writes of one method are adjacent in a list of writes.
 type importWrite struct {
-	name   string
-	allocs uint64
-	write  func(*render.ImportSet)
+	name     string
+	caseName string
+	allocs   uint64
+	write    func(*render.ImportSet)
 }
 
 // The set is the one meeting point between spelling and the import
@@ -522,10 +525,14 @@ func TestImportSet(t *testing.T) {
 func TestImportSetAllocs(t *testing.T) {
 	s := grownSet()
 	for _, tt := range importWrites() {
+		msg := tt.name + " allocates within its ceiling after a Reset"
+		if tt.caseName != "" {
+			msg = tt.name + " for " + tt.caseName + " allocates within its ceiling after a Reset"
+		}
 		assert.MaxAllocs(t, func() {
 			s.Reset()
 			tt.write(s)
-		}, tt.allocs, tt.name+" allocates within its ceiling after a Reset")
+		}, tt.allocs, msg)
 	}
 	full := filledSet()
 	assert.MaxAllocs(t, func() {
@@ -554,16 +561,22 @@ func TestImportSetAllocs(t *testing.T) {
 // after the Reset the pass runs between files, and the reads an import
 // renderer makes once per file.
 func BenchmarkImportSet(b *testing.B) {
-	for _, tt := range importWrites() {
-		b.Run(tt.name, func(b *testing.B) {
-			s := grownSet()
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			for c.Loop() {
-				s.Reset()
-				tt.write(s)
+	writes := importWrites()
+	for len(writes) > 0 {
+		n := 1
+		for n < len(writes) && writes[n].name == writes[0].name {
+			n++
+		}
+		method := writes[:n]
+		writes = writes[n:]
+		b.Run(method[0].name, func(b *testing.B) {
+			if len(method) == 1 && method[0].caseName == "" {
+				benchWrite(b, method[0])
+				return
 			}
-			assert.True(b, s.Len() <= 2, tt.name+" records at most two paths")
+			for _, tt := range method {
+				b.Run(tt.caseName, func(b *testing.B) { benchWrite(b, tt) })
+			}
 		})
 	}
 
@@ -610,15 +623,34 @@ func BenchmarkImportSet(b *testing.B) {
 	})
 }
 
+// benchWrite measures one write after a Reset into a set whose storage
+// has grown, under the bench contract at the write's ceiling.
+func benchWrite(b *testing.B, tt importWrite) {
+	b.Helper()
+
+	s := grownSet()
+	c := bench.Start(b).MaxAllocs(tt.allocs)
+	defer c.End()
+	for c.Loop() {
+		s.Reset()
+		tt.write(s)
+	}
+	assert.True(b, s.Len() <= 2, tt.name+" records at most two paths")
+}
+
 // importWrites returns every write a file's spellings make into its set,
 // each with its ceiling in a set whose storage has grown.
 func importWrites() []importWrite {
 	return []importWrite{
 		{name: "SetHome", write: func(s *render.ImportSet) { s.SetHome(storePkg) }},
 		{name: "Reserve", write: func(s *render.ImportSet) { s.Reserve(rowName) }},
-		{name: "Bind", write: func(s *render.ImportSet) { s.Bind(storePkg, storeLocal) }},
 		{
-			name: "Bind/a name another package binds", allocs: 1,
+			name:     "Bind",
+			caseName: "a name no other package binds",
+			write:    func(s *render.ImportSet) { s.Bind(storePkg, storeLocal) },
+		},
+		{
+			name: "Bind", caseName: "a name another package binds", allocs: 1,
 			write: func(s *render.ImportSet) {
 				s.Bind(storePkg, storeLocal)
 				s.Bind(legacyPkg, storeLocal)
@@ -630,7 +662,7 @@ func importWrites() []importWrite {
 		{name: "AddNamed", write: func(s *render.ImportSet) { s.AddNamed(storePkg, rowName) }},
 		{name: "AddType", write: func(s *render.ImportSet) { s.AddType(storePkg, rowName) }},
 		{
-			name: "Reset/a set of two entries",
+			name: "Reset", caseName: "a set of two entries",
 			write: func(s *render.ImportSet) {
 				s.Add(sidePkg)
 				s.Bind(auditPkg, storeLocal)

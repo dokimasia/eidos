@@ -666,79 +666,93 @@ func BenchmarkDisk(b *testing.B) {
 		discard()
 	})
 
-	stagings := []struct {
-		name   string
-		root   string
-		body   []byte
-		allocs uint64
-		call   func(*output.Disk) error
-	}{
-		{
-			name: "Write/the first file of a staging", root: root, allocs: firstWriteAllocs,
-			call: func(d *output.Disk) error { return d.Write(storeFile, same) },
-		},
-		{
-			name: "Delete/the first removal of a staging", root: root, allocs: firstDeleteAllocs,
-			call: func(d *output.Disk) error { return d.Delete(storeFile) },
-		},
-		{
-			name: "Prepare/a file with the staged bytes", root: root, body: same, allocs: prepareSameAllocs,
-			call: func(d *output.Disk) error { _, err := d.Prepare(); return err },
-		},
-		{
-			name: "Prepare/a path without a file", root: nothing, body: same, allocs: prepareNothingAllocs,
-			call: func(d *output.Disk) error { _, err := d.Prepare(); return err },
-		},
-		{
-			name: "Commit/a file with the staged bytes", root: root, body: same, allocs: commitSameAllocs,
-			call: func(d *output.Disk) error { _, err := d.Commit(); return err },
-		},
-		{
-			name: "Discard/a staging of one file", root: root, body: same, allocs: 0,
-			call: (*output.Disk).Discard,
-		},
-	}
-	for _, tt := range stagings {
-		b.Run(tt.name, func(b *testing.B) {
-			var d *output.Disk
-			fresh := func() {
-				discarded(b, d)
-				d = opened(b, tt.root, tt.body)
-			}
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var err error
-			for c.Loop() {
-				c.Excluding(fresh)
-				err = tt.call(d)
-			}
-			assert.NoError(b, err, "the call succeeds")
-			discarded(b, d)
+	prepare := func(d *output.Disk) error { _, err := d.Prepare(); return err }
+
+	b.Run("Write", func(b *testing.B) {
+		b.Run("the first file of a staging", func(b *testing.B) {
+			benchStaged(b, root, nil, firstWriteAllocs, func(d *output.Disk) error { return d.Write(storeFile, same) })
 		})
-	}
+	})
+
+	b.Run("Delete", func(b *testing.B) {
+		b.Run("the first removal of a staging", func(b *testing.B) {
+			benchStaged(b, root, nil, firstDeleteAllocs, func(d *output.Disk) error { return d.Delete(storeFile) })
+		})
+	})
+
+	b.Run("Prepare", func(b *testing.B) {
+		b.Run("a file with the staged bytes", func(b *testing.B) {
+			benchStaged(b, root, same, prepareSameAllocs, prepare)
+		})
+
+		b.Run("a path without a file", func(b *testing.B) {
+			benchStaged(b, nothing, same, prepareNothingAllocs, prepare)
+		})
+	})
+
+	b.Run("Discard", func(b *testing.B) {
+		b.Run("a staging of one file", func(b *testing.B) {
+			benchStaged(b, root, same, 0, (*output.Disk).Discard)
+		})
+	})
 
 	// The root's file has same, and next persists across the runs of the
-	// sub-benchmark, so every commit stages the body the file lacks.
+	// update's sub-benchmark, so every commit of it stages the body the
+	// file lacks.
 	bodies, next := [2][]byte{other, same}, 0
-	b.Run("Commit/an update of the brand's file", func(b *testing.B) {
-		var d *output.Disk
-		fresh := func() {
-			d = opened(b, root, bodies[next%2])
-			next++
-		}
-		c := bench.Start(b).MaxAllocs(commitUpdateAllocs)
-		defer c.End()
-		var (
-			got []output.Written
-			err error
-		)
-		for c.Loop() {
-			c.Excluding(fresh)
-			got, err = d.Commit()
-		}
-		assert.NoError(b, err, "the update commits")
-		assert.Equal(b, got[0].Action, output.ActionUpdated, "the commit updates the file")
+	b.Run("Commit", func(b *testing.B) {
+		b.Run("a file with the staged bytes", func(b *testing.B) {
+			benchStaged(
+				b,
+				root,
+				same,
+				commitSameAllocs,
+				func(d *output.Disk) error { _, err := d.Commit(); return err },
+			)
+		})
+
+		b.Run("an update of the brand's file", func(b *testing.B) {
+			var d *output.Disk
+			fresh := func() {
+				d = opened(b, root, bodies[next%2])
+				next++
+			}
+			c := bench.Start(b).MaxAllocs(commitUpdateAllocs)
+			defer c.End()
+			var (
+				got []output.Written
+				err error
+			)
+			for c.Loop() {
+				c.Excluding(fresh)
+				got, err = d.Commit()
+			}
+			assert.NoError(b, err, "the update commits")
+			assert.Equal(b, got[0].Action, output.ActionUpdated, "the commit updates the file")
+		})
 	})
+}
+
+// benchStaged measures one call on a sink over root that stages body,
+// under the bench contract at a ceiling of allocs. Each iteration opens
+// a fresh sink outside the measurement and discards the one before.
+func benchStaged(b *testing.B, root string, body []byte, allocs uint64, call func(*output.Disk) error) {
+	b.Helper()
+
+	var d *output.Disk
+	fresh := func() {
+		discarded(b, d)
+		d = opened(b, root, body)
+	}
+	c := bench.Start(b).MaxAllocs(allocs)
+	defer c.End()
+	var err error
+	for c.Loop() {
+		c.Excluding(fresh)
+		err = call(d)
+	}
+	assert.NoError(b, err, "the call succeeds")
+	discarded(b, d)
 }
 
 // disk opens a sink over root under the fixture brand, failing the

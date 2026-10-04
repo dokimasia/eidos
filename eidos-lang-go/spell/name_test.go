@@ -164,22 +164,24 @@ func BenchmarkName(b *testing.B) {
 		give   string
 		allocs uint64
 	}{
-		{name: "Name", give: "httpRow", allocs: conversionAllocs},
-		{name: "Name/a name in its style", give: "HTTPRow"},
+		{name: "a name in another style", give: "httpRow", allocs: conversionAllocs},
+		{name: "a name in its style", give: "HTTPRow"},
 	}
-	for _, tt := range names {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var (
-				got string
-				err error
-			)
-			for c.Loop() {
-				got, err = spell.Name(symbol.KindInvalid, symbol.KindStruct, symbol.VisibilityPublic, tt.give)
-			}
-			assert.NoError(b, err, "Name spells the name")
-			assert.Equal(b, got, "HTTPRow", "Name returns the exported spelling")
-		})
-	}
+	b.Run("Name", func(b *testing.B) {
+		for _, tt := range names {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var (
+					got string
+					err error
+				)
+				for c.Loop() {
+					got, err = spell.Name(symbol.KindInvalid, symbol.KindStruct, symbol.VisibilityPublic, tt.give)
+				}
+				assert.NoError(b, err, "Name spells the name")
+				assert.Equal(b, got, "HTTPRow", "Name returns the exported spelling")
+			})
+		}
+	})
 }

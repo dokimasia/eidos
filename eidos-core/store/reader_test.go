@@ -393,38 +393,40 @@ func BenchmarkReader(b *testing.B) {
 	})
 
 	b.Run("ByKind", func(b *testing.B) {
-		r, _ := coretest.Reading(b, nil, pkgs...)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		seen := 0
-		// The first pass runs before the contract counts, at the call site
-		// it measures. It grows the read set, and the runtime builds the
-		// site's 48-byte cache for converting a declaration to a symbol. A
-		// pass at any other call site builds a cache of its own.
-		for first := true; first || c.Loop(); first = false {
-			seen = 0
-			for range r.ByKind(symbol.KindStruct) {
-				seen++
+		b.Run("without a scope", func(b *testing.B) {
+			r, _ := coretest.Reading(b, nil, pkgs...)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			seen := 0
+			// The first pass runs before the contract counts, at the call site
+			// it measures. It grows the read set, and the runtime builds the
+			// site's 48-byte cache for converting a declaration to a symbol. A
+			// pass at any other call site builds a cache of its own.
+			for first := true; first || c.Loop(); first = false {
+				seen = 0
+				for range r.ByKind(symbol.KindStruct) {
+					seen++
+				}
 			}
-		}
-		assert.Equal(b, seen, packages*files*decls, "ByKind returns every struct")
-	})
+			assert.Equal(b, seen, packages*files*decls, "ByKind returns every struct")
+		})
 
-	b.Run("ByKind/under a scope", func(b *testing.B) {
-		admitted := coretest.StorePath + "/0"
-		r, _ := coretest.Reading(b, onlyPackage(admitted), pkgs...)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		seen := 0
-		// The first pass grows the read set and builds the call site's
-		// conversion cache before the contract counts, as in ByKind.
-		for first := true; first || c.Loop(); first = false {
-			seen = 0
-			for range r.ByKind(symbol.KindStruct) {
-				seen++
+		b.Run("under a scope", func(b *testing.B) {
+			admitted := coretest.StorePath + "/0"
+			r, _ := coretest.Reading(b, onlyPackage(admitted), pkgs...)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			seen := 0
+			// The first pass grows the read set and builds the call site's
+			// conversion cache before the contract counts, as in ByKind.
+			for first := true; first || c.Loop(); first = false {
+				seen = 0
+				for range r.ByKind(symbol.KindStruct) {
+					seen++
+				}
 			}
-		}
-		assert.Equal(b, seen, files*decls, "ByKind returns the admitted package's structs")
+			assert.Equal(b, seen, files*decls, "ByKind returns the admitted package's structs")
+		})
 	})
 
 	b.Run("ByDirective", func(b *testing.B) {

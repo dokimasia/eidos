@@ -116,19 +116,21 @@ func TestFactsAllocs(t *testing.T) {
 // BenchmarkFacts measures the facts traversal over every kind that
 // states a fact, and the build of the kinds' fact table.
 func BenchmarkFacts(b *testing.B) {
-	b.Run("Facts/every kind stating each of its facts", func(b *testing.B) {
-		subjects := factsSubjects()
-		var count int
-		counted := countFacts(&count)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		for c.Loop() {
-			count = 0
-			for _, s := range subjects {
-				Facts(s, counted)
+	b.Run("Facts", func(b *testing.B) {
+		b.Run("every kind stating each of its facts", func(b *testing.B) {
+			subjects := factsSubjects()
+			var count int
+			counted := countFacts(&count)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				count = 0
+				for _, s := range subjects {
+					Facts(s, counted)
+				}
 			}
-		}
-		assert.Equal(b, count, factsStated, "Facts calls f for every stated fact")
+			assert.Equal(b, count, factsStated, "Facts calls f for every stated fact")
+		})
 	})
 
 	b.Run("KindFacts", func(b *testing.B) {

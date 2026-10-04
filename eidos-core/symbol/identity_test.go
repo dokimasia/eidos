@@ -356,23 +356,25 @@ func FuzzParse(f *testing.F) {
 // every record spells them.
 func BenchmarkIdentity(b *testing.B) {
 	b.Run("String", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		var got string
-		for c.Loop() {
-			got = method.String()
-		}
-		assert.Equal(b, got, "golang:svc/store.Store#Get(ctx,string)", "String spells the method")
-	})
+		b.Run("a method", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = method.String()
+			}
+			assert.Equal(b, got, "golang:svc/store.Store#Get(ctx,string)", "String spells the method")
+		})
 
-	b.Run("String/a 33-byte spelling", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		var got string
-		for c.Loop() {
-			got = boundary.String()
-		}
-		assert.Length(b, got, boundarySize, "the spelling is 33 bytes")
+		b.Run("a 33-byte spelling", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = boundary.String()
+			}
+			assert.Length(b, got, boundarySize, "the spelling is 33 bytes")
+		})
 	})
 
 	b.Run("Parse", func(b *testing.B) {

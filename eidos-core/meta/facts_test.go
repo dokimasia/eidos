@@ -617,192 +617,204 @@ func BenchmarkFacts(b *testing.B) {
 		assert.True(b, f.Registry() == r, "NewFacts returns a store over the registry")
 	})
 
-	b.Run("Stamp/a first claim on each of a thousand new subjects", func(b *testing.B) {
-		r, _, role, _ := fixture(b)
-		batch := subjects[:stampBatch]
-		var f *meta.Facts
-		fresh := func() {
-			f = meta.NewFacts(r)
-			assert.NoError(b, meta.Stamp(f, role, "writer", on(subjects[stampBatch], "shape", stampBatch)),
-				"a claim outside the batch creates the store's map and index")
-		}
-		c := bench.Start(b).MaxAllocs(firstClaimsAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			for i, id := range batch {
-				if err = meta.Stamp(f, role, "writer", on(id, "shape", i)); err != nil {
-					break
+	b.Run("Stamp", func(b *testing.B) {
+		b.Run("a first claim on each of a thousand new subjects", func(b *testing.B) {
+			r, _, role, _ := fixture(b)
+			batch := subjects[:stampBatch]
+			var f *meta.Facts
+			fresh := func() {
+				f = meta.NewFacts(r)
+				assert.NoError(b, meta.Stamp(f, role, "writer", on(subjects[stampBatch], "shape", stampBatch)),
+					"a claim outside the batch creates the store's map and index")
+			}
+			c := bench.Start(b).MaxAllocs(firstClaimsAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				for i, id := range batch {
+					if err = meta.Stamp(f, role, "writer", on(id, "shape", i)); err != nil {
+						break
+					}
 				}
 			}
-		}
-		assert.NoError(b, err, "every first claim is admitted")
-	})
+			assert.NoError(b, err, "every first claim is admitted")
+		})
 
-	b.Run("Stamp/a first claim on a second key of a subject", func(b *testing.B) {
-		var (
-			f    *meta.Facts
-			flag meta.Key[bool]
-			next int
-		)
-		build := func() {
-			f, _, flag = stamped(b, subjects)
-			assert.NoError(b, meta.Stamp(f, flag, true, on(subjects[0], "shape", 0)), "the flag's index exists")
-			next = 1
-		}
-		build()
-		c := bench.Start(b).MaxAllocs(secondKeyAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			if next == len(subjects) {
-				c.Excluding(build)
+		b.Run("a first claim on a second key of a subject", func(b *testing.B) {
+			var (
+				f    *meta.Facts
+				flag meta.Key[bool]
+				next int
+			)
+			build := func() {
+				f, _, flag = stamped(b, subjects)
+				assert.NoError(b, meta.Stamp(f, flag, true, on(subjects[0], "shape", 0)), "the flag's index exists")
+				next = 1
 			}
-			err = meta.Stamp(f, flag, true, on(subjects[next], "shape", next))
-			next++
-		}
-		assert.NoError(b, err, "the second key's claim is admitted")
-	})
-
-	b.Run("Stamp/a claim from a second source", func(b *testing.B) {
-		var (
-			f    *meta.Facts
-			role meta.Key[string]
-			next int
-		)
-		build := func() {
-			f, role, _ = stamped(b, subjects)
-			next = 0
-		}
-		build()
-		c := bench.Start(b).MaxAllocs(secondSourceAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			if next == len(subjects) {
-				c.Excluding(build)
+			build()
+			c := bench.Start(b).MaxAllocs(secondKeyAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				if next == len(subjects) {
+					c.Excluding(build)
+				}
+				err = meta.Stamp(f, flag, true, on(subjects[next], "shape", next))
+				next++
 			}
-			err = meta.Stamp(f, role, "reader", on(subjects[next], "weaver", next))
-			next++
-		}
-		assert.NoError(b, err, "the second source's claim is admitted")
-	})
+			assert.NoError(b, err, "the second key's claim is admitted")
+		})
 
-	b.Run("Stamp/an identical re-stamp", func(b *testing.B) {
-		f, role, _ := stamped(b, subjects[:1])
-		claim := on(subjects[0], "shape", 0)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = meta.Stamp(f, role, "writer", claim)
-		}
-		assert.NoError(b, err, "the re-stamp is accepted")
-	})
-
-	b.Run("DropKey/a drop on a stamped fact", func(b *testing.B) {
-		var (
-			f    *meta.Facts
-			role meta.Key[string]
-			next int
-		)
-		build := func() {
-			f, role, _ = stamped(b, subjects)
-			next = 0
-		}
-		build()
-		c := bench.Start(b).MaxAllocs(dropAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			if next == len(subjects) {
-				c.Excluding(build)
+		b.Run("a claim from a second source", func(b *testing.B) {
+			var (
+				f    *meta.Facts
+				role meta.Key[string]
+				next int
+			)
+			build := func() {
+				f, role, _ = stamped(b, subjects)
+				next = 0
 			}
-			err = f.DropKey(role.ID(), dropOn(subjects[next], next))
-			next++
-		}
-		assert.NoError(b, err, "the drop is admitted")
-	})
-
-	b.Run("DropGroup/a first group drop on a stamped subject", func(b *testing.B) {
-		var (
-			f    *meta.Facts
-			next int
-		)
-		build := func() {
-			f, _, _ = stamped(b, subjects)
-			next = 0
-		}
-		build()
-		c := bench.Start(b).MaxAllocs(groupDropAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			if next == len(subjects) {
-				c.Excluding(build)
+			build()
+			c := bench.Start(b).MaxAllocs(secondSourceAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				if next == len(subjects) {
+					c.Excluding(build)
+				}
+				err = meta.Stamp(f, role, "reader", on(subjects[next], "weaver", next))
+				next++
 			}
-			err = f.DropGroup("shape.writer", dropOn(subjects[next], next))
-			next++
-		}
-		assert.NoError(b, err, "the group drop is admitted")
+			assert.NoError(b, err, "the second source's claim is admitted")
+		})
+
+		b.Run("an identical re-stamp", func(b *testing.B) {
+			f, role, _ := stamped(b, subjects[:1])
+			claim := on(subjects[0], "shape", 0)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = meta.Stamp(f, role, "writer", claim)
+			}
+			assert.NoError(b, err, "the re-stamp is accepted")
+		})
 	})
 
-	b.Run("Withdraw/the only claim on a fact", func(b *testing.B) {
-		f, role, _ := stamped(b, subjects[:1])
-		claim := on(subjects[0], "shape", 0)
-		restamp := func() {
-			assert.NoError(b, meta.Stamp(f, role, "writer", claim), "the claim is stamped again")
-		}
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = f.Withdraw(role.ID(), claim)
-			c.Excluding(restamp)
-		}
-		assert.NoError(b, err, "the claim is withdrawn")
+	b.Run("DropKey", func(b *testing.B) {
+		b.Run("a drop on a stamped fact", func(b *testing.B) {
+			var (
+				f    *meta.Facts
+				role meta.Key[string]
+				next int
+			)
+			build := func() {
+				f, role, _ = stamped(b, subjects)
+				next = 0
+			}
+			build()
+			c := bench.Start(b).MaxAllocs(dropAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				if next == len(subjects) {
+					c.Excluding(build)
+				}
+				err = f.DropKey(role.ID(), dropOn(subjects[next], next))
+				next++
+			}
+			assert.NoError(b, err, "the drop is admitted")
+		})
 	})
 
-	b.Run("WithdrawGroup/the only group drop on a subject", func(b *testing.B) {
-		f, _, _ := stamped(b, subjects[:1])
-		drop := dropOn(subjects[0], 0)
-		redrop := func() {
-			assert.NoError(b, f.DropGroup("shape.writer", drop), "the group drop is made again")
-		}
-		redrop()
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = f.WithdrawGroup("shape.writer", drop)
-			c.Excluding(redrop)
-		}
-		assert.NoError(b, err, "the group drop is withdrawn")
+	b.Run("DropGroup", func(b *testing.B) {
+		b.Run("a first group drop on a stamped subject", func(b *testing.B) {
+			var (
+				f    *meta.Facts
+				next int
+			)
+			build := func() {
+				f, _, _ = stamped(b, subjects)
+				next = 0
+			}
+			build()
+			c := bench.Start(b).MaxAllocs(groupDropAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				if next == len(subjects) {
+					c.Excluding(build)
+				}
+				err = f.DropGroup("shape.writer", dropOn(subjects[next], next))
+				next++
+			}
+			assert.NoError(b, err, "the group drop is admitted")
+		})
 	})
 
-	b.Run("Get/a miss on an unstamped subject", func(b *testing.B) {
-		f, role, _ := stamped(b, subjects)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		held, next := false, 0
-		for c.Loop() {
-			_, held = meta.Get(f, absent[next%len(absent)], role)
-			next++
-		}
-		assert.False(b, held, "Get reports false for an unstamped subject")
+	b.Run("Withdraw", func(b *testing.B) {
+		b.Run("the only claim on a fact", func(b *testing.B) {
+			f, role, _ := stamped(b, subjects[:1])
+			claim := on(subjects[0], "shape", 0)
+			restamp := func() {
+				assert.NoError(b, meta.Stamp(f, role, "writer", claim), "the claim is stamped again")
+			}
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = f.Withdraw(role.ID(), claim)
+				c.Excluding(restamp)
+			}
+			assert.NoError(b, err, "the claim is withdrawn")
+		})
 	})
 
-	b.Run("Get/a stamped fact", func(b *testing.B) {
-		f, role, _ := stamped(b, subjects)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		got, next := "", 0
-		for c.Loop() {
-			got, _ = meta.Get(f, subjects[next%len(subjects)], role)
-			next++
-		}
-		assert.Equal(b, got, "writer", "Get returns the stamped value")
+	b.Run("WithdrawGroup", func(b *testing.B) {
+		b.Run("the only group drop on a subject", func(b *testing.B) {
+			f, _, _ := stamped(b, subjects[:1])
+			drop := dropOn(subjects[0], 0)
+			redrop := func() {
+				assert.NoError(b, f.DropGroup("shape.writer", drop), "the group drop is made again")
+			}
+			redrop()
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = f.WithdrawGroup("shape.writer", drop)
+				c.Excluding(redrop)
+			}
+			assert.NoError(b, err, "the group drop is withdrawn")
+		})
+	})
+
+	b.Run("Get", func(b *testing.B) {
+		b.Run("a miss on an unstamped subject", func(b *testing.B) {
+			f, role, _ := stamped(b, subjects)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			held, next := false, 0
+			for c.Loop() {
+				_, held = meta.Get(f, absent[next%len(absent)], role)
+				next++
+			}
+			assert.False(b, held, "Get reports false for an unstamped subject")
+		})
+
+		b.Run("a stamped fact", func(b *testing.B) {
+			f, role, _ := stamped(b, subjects)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			got, next := "", 0
+			for c.Loop() {
+				got, _ = meta.Get(f, subjects[next%len(subjects)], role)
+				next++
+			}
+			assert.Equal(b, got, "writer", "Get returns the stamped value")
+		})
 	})
 
 	b.Run("Fact", func(b *testing.B) {

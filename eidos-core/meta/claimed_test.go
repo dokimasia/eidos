@@ -153,24 +153,26 @@ func BenchmarkClaimed(b *testing.B) {
 
 	f, _, _ := stamped(b, benchIdentities(claimedFacts))
 
-	b.Run("ClaimedBy/a plugin that claimed a thousand facts", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(claimedByAllocs)
-		defer c.End()
-		var got []meta.FactRef
-		for c.Loop() {
-			got = f.ClaimedBy("shape")
-		}
-		assert.Length(b, got, claimedFacts, "ClaimedBy lists every fact the plugin claimed")
-	})
+	b.Run("ClaimedBy", func(b *testing.B) {
+		b.Run("a plugin that claimed a thousand facts", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(claimedByAllocs)
+			defer c.End()
+			var got []meta.FactRef
+			for c.Loop() {
+				got = f.ClaimedBy("shape")
+			}
+			assert.Length(b, got, claimedFacts, "ClaimedBy lists every fact the plugin claimed")
+		})
 
-	b.Run("ClaimedBy/a plugin that claimed nothing", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got []meta.FactRef
-		for c.Loop() {
-			got = f.ClaimedBy("gamma")
-		}
-		assert.Empty(b, got, "ClaimedBy lists nothing for a plugin that claimed nothing")
+		b.Run("a plugin that claimed nothing", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got []meta.FactRef
+			for c.Loop() {
+				got = f.ClaimedBy("gamma")
+			}
+			assert.Empty(b, got, "ClaimedBy lists nothing for a plugin that claimed nothing")
+		})
 	})
 }
 

@@ -1202,32 +1202,34 @@ func BenchmarkRun(b *testing.B) {
 	assert.NoError(b, err, "the flagged composition composes")
 	one := []*node.Package{coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Alpha"))}
 
-	b.Run("Run/a cold run over 200,000 declarations", func(b *testing.B) {
-		benchRun(b, w, coretest.Workspace(1_000, 10, 20), emptyPools, coldRunAllocs)
-	})
+	b.Run("Run", func(b *testing.B) {
+		b.Run("a cold run over 200,000 declarations", func(b *testing.B) {
+			benchRun(b, w, coretest.Workspace(1_000, 10, 20), emptyPools, coldRunAllocs)
+		})
 
-	b.Run("Run/a cold run over one declaration", func(b *testing.B) {
-		benchRun(b, w, one, emptyPools, oneRunAllocs)
-	})
+		b.Run("a cold run over one declaration", func(b *testing.B) {
+			benchRun(b, w, one, emptyPools, oneRunAllocs)
+		})
 
-	b.Run("Run/a warm run over one declaration", func(b *testing.B) {
-		benchRun(b, w, one, func() {}, warmRunAllocs)
-	})
+		b.Run("a warm run over one declaration", func(b *testing.B) {
+			benchRun(b, w, one, func() {}, warmRunAllocs)
+		})
 
-	b.Run("Run/a cold run of the pipeline over 200,000 declarations on one worker", func(b *testing.B) {
-		resetPeakRSS()
-		report := benchRun(b, pipelineWorkspace(b, pipelinePackages, oneWorker),
-			pipelineCorpus(pipelinePackages), emptyPools, pipelineAllocs)
-		assert.Length(b, report.Plans[0].Changes, pipelinePackages, "the run commits one file per package")
-		reportPeakRSS(b)
-	})
+		b.Run("a cold run of the pipeline over 200,000 declarations on one worker", func(b *testing.B) {
+			resetPeakRSS()
+			report := benchRun(b, pipelineWorkspace(b, pipelinePackages, oneWorker),
+				pipelineCorpus(pipelinePackages), emptyPools, pipelineAllocs)
+			assert.Length(b, report.Plans[0].Changes, pipelinePackages, "the run commits one file per package")
+			reportPeakRSS(b)
+		})
 
-	b.Run("Run/a cold run of the pipeline over 200,000 declarations on four workers", func(b *testing.B) {
-		resetPeakRSS()
-		report := benchRun(b, pipelineWorkspace(b, pipelinePackages, fourWorkers),
-			pipelineCorpus(pipelinePackages), emptyPools, parallelPipelineAllocs)
-		assert.Length(b, report.Plans[0].Changes, pipelinePackages, "the run commits one file per package")
-		reportPeakRSS(b)
+		b.Run("a cold run of the pipeline over 200,000 declarations on four workers", func(b *testing.B) {
+			resetPeakRSS()
+			report := benchRun(b, pipelineWorkspace(b, pipelinePackages, fourWorkers),
+				pipelineCorpus(pipelinePackages), emptyPools, parallelPipelineAllocs)
+			assert.Length(b, report.Plans[0].Changes, pipelinePackages, "the run commits one file per package")
+			reportPeakRSS(b)
+		})
 	})
 }
 

@@ -388,32 +388,34 @@ func BenchmarkGrammar(b *testing.B) {
 		assert.Equal(b, got, "mockgen", "Plugin returns the prefix")
 	})
 
-	b.Run("Parse/five arguments with a list", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(2)
-		defer c.End()
-		var (
-			got directive.Raw
-			err error
-		)
-		for c.Loop() {
-			got, err = directive.Parse(fullPayload)
-		}
-		assert.NoError(b, err, "the payload parses")
-		assert.Length(b, got.Args, 5, "with its five arguments")
-	})
+	b.Run("Parse", func(b *testing.B) {
+		b.Run("five arguments with a list", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(2)
+			defer c.End()
+			var (
+				got directive.Raw
+				err error
+			)
+			for c.Loop() {
+				got, err = directive.Parse(fullPayload)
+			}
+			assert.NoError(b, err, "the payload parses")
+			assert.Length(b, got.Args, 5, "with its five arguments")
+		})
 
-	b.Run("Parse/a bare name", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var (
-			got directive.Raw
-			err error
-		)
-		for c.Loop() {
-			got, err = directive.Parse(barePayload)
-		}
-		assert.NoError(b, err, "the payload parses")
-		assert.Equal(b, got.Name, directive.Name(barePayload), "to the bare name")
+		b.Run("a bare name", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var (
+				got directive.Raw
+				err error
+			)
+			for c.Loop() {
+				got, err = directive.Parse(barePayload)
+			}
+			assert.NoError(b, err, "the payload parses")
+			assert.Equal(b, got.Name, directive.Name(barePayload), "to the bare name")
+		})
 	})
 
 	b.Run("Join", func(b *testing.B) {

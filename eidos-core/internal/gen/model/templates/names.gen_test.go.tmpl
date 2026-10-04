@@ -187,16 +187,18 @@ func TestNamesZeroAlloc(t *testing.T) {
 func BenchmarkNames(b *testing.B) {
 	subjects := namesSubjects()
 
-	b.Run("RespellNames/every named kind", func(b *testing.B) {
-		var visits int
-		same := sameName(&visits)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		for c.Loop() {
-			visits = 0
-			respellEvery(b, subjects, same)
-		}
-		assert.Equal(b, visits, namesVisits, "RespellNames offers every declared name")
+	b.Run("RespellNames", func(b *testing.B) {
+		b.Run("every named kind", func(b *testing.B) {
+			var visits int
+			same := sameName(&visits)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			for c.Loop() {
+				visits = 0
+				respellEvery(b, subjects, same)
+			}
+			assert.Equal(b, visits, namesVisits, "RespellNames offers every declared name")
+		})
 	})
 }
 

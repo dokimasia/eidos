@@ -501,24 +501,26 @@ func BenchmarkContract(b *testing.B) {
 		syntax plugin.CommentSyntax
 		allocs uint64
 	}{
-		{name: "NewContract/a line comment form", syntax: goSyntax(), allocs: lineContractAllocs},
-		{name: "NewContract/a block comment form", syntax: blockSyntax(), allocs: blockContractAllocs},
+		{name: "a line comment form", syntax: goSyntax(), allocs: lineContractAllocs},
+		{name: "a block comment form", syntax: blockSyntax(), allocs: blockContractAllocs},
 	}
-	for _, tt := range syntaxes {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var (
-				got *output.Contract
-				err error
-			)
-			for c.Loop() {
-				got, err = output.NewContract("acme", tt.syntax)
-			}
-			assert.NoError(b, err, "the contract composes")
-			assert.Equal(b, got.Brand(), output.Brand("acme"), "under the brand")
-		})
-	}
+	b.Run("NewContract", func(b *testing.B) {
+		for _, tt := range syntaxes {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var (
+					got *output.Contract
+					err error
+				)
+				for c.Loop() {
+					got, err = output.NewContract("acme", tt.syntax)
+				}
+				assert.NoError(b, err, "the contract composes")
+				assert.Equal(b, got.Brand(), output.Brand("acme"), "under the brand")
+			})
+		}
+	})
 
 	acme := contract(b, "acme", goSyntax())
 	files := benchFiles(1_000)

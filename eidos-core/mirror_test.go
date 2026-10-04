@@ -167,25 +167,27 @@ func TestMirrorAllocs(t *testing.T) {
 // one return, and of a method without a signature.
 func BenchmarkMirror(b *testing.B) {
 	b.Run("Mirror", func(b *testing.B) {
-		m := getter()
-		c := bench.Start(b).MaxAllocs(mirrorAllocs)
-		defer c.End()
-		var got *emit.Method
-		for c.Loop() {
-			got = eidos.Mirror(mirrorHost, m)
-		}
-		assert.Length(b, got.Returns, 1, "Mirror returns the return")
-	})
+		b.Run("a method with a signature", func(b *testing.B) {
+			m := getter()
+			c := bench.Start(b).MaxAllocs(mirrorAllocs)
+			defer c.End()
+			var got *emit.Method
+			for c.Loop() {
+				got = eidos.Mirror(mirrorHost, m)
+			}
+			assert.Length(b, got.Returns, 1, "Mirror returns the return")
+		})
 
-	b.Run("Mirror/a method without a signature", func(b *testing.B) {
-		m := &node.Method{ID: methodID(getMethod), Name: getMethod}
-		c := bench.Start(b).MaxAllocs(bareMirrorAllocs)
-		defer c.End()
-		var got *emit.Method
-		for c.Loop() {
-			got = eidos.Mirror(mirrorHost, m)
-		}
-		assert.Equal(b, got.Receives.Spelling, mirrorHost, "Mirror names the host")
+		b.Run("a method without a signature", func(b *testing.B) {
+			m := &node.Method{ID: methodID(getMethod), Name: getMethod}
+			c := bench.Start(b).MaxAllocs(bareMirrorAllocs)
+			defer c.End()
+			var got *emit.Method
+			for c.Loop() {
+				got = eidos.Mirror(mirrorHost, m)
+			}
+			assert.Equal(b, got.Receives.Spelling, mirrorHost, "Mirror names the host")
+		})
 	})
 }
 

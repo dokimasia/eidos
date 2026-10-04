@@ -201,43 +201,45 @@ func TestStampAllocs(t *testing.T) {
 func BenchmarkStamp(b *testing.B) {
 	raw := meta.RawStamp{Key: "shape.role", Value: "writer"}
 
-	b.Run("StampRaw/a first claim on a new subject", func(b *testing.B) {
-		claims := firstClaims(benchSubjects)
-		var (
-			f    *meta.Facts
-			next int
-		)
-		build := func() {
-			_, f, _, _ = fixture(b)
-			assert.NoError(b, f.StampRaw(raw, on(sibling, "shape", 0)),
-				"a claim outside the subjects creates the store's map and index")
-			next = 0
-		}
-		build()
-		c := bench.Start(b).MaxAllocs(rawFirstClaimAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			if next == len(claims) {
-				c.Excluding(build)
+	b.Run("StampRaw", func(b *testing.B) {
+		b.Run("a first claim on a new subject", func(b *testing.B) {
+			claims := firstClaims(benchSubjects)
+			var (
+				f    *meta.Facts
+				next int
+			)
+			build := func() {
+				_, f, _, _ = fixture(b)
+				assert.NoError(b, f.StampRaw(raw, on(sibling, "shape", 0)),
+					"a claim outside the subjects creates the store's map and index")
+				next = 0
 			}
-			err = f.StampRaw(raw, claims[next])
-			next++
-		}
-		assert.NoError(b, err, "every first claim is admitted")
-	})
+			build()
+			c := bench.Start(b).MaxAllocs(rawFirstClaimAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				if next == len(claims) {
+					c.Excluding(build)
+				}
+				err = f.StampRaw(raw, claims[next])
+				next++
+			}
+			assert.NoError(b, err, "every first claim is admitted")
+		})
 
-	b.Run("StampRaw/an identical re-stamp", func(b *testing.B) {
-		_, f, _, _ := fixture(b)
-		claim := by("shape", 1)
-		assert.NoError(b, f.StampRaw(raw, claim), "the first stamp is admitted")
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = f.StampRaw(raw, claim)
-		}
-		assert.NoError(b, err, "the re-stamp is accepted")
+		b.Run("an identical re-stamp", func(b *testing.B) {
+			_, f, _, _ := fixture(b)
+			claim := by("shape", 1)
+			assert.NoError(b, f.StampRaw(raw, claim), "the first stamp is admitted")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = f.StampRaw(raw, claim)
+			}
+			assert.NoError(b, err, "the re-stamp is accepted")
+		})
 	})
 }
 

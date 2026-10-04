@@ -183,35 +183,37 @@ func BenchmarkImporter(b *testing.B) {
 		assert.NotNil(b, got, "NewImporter returns the importer")
 	})
 
-	b.Run("Import/a module-local package", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(importAllocs)
-		defer c.End()
-		var (
-			imp *gosource.Importer
-			pkg *types.Package
-			err error
-		)
-		for c.Loop() {
-			c.Excluding(func() { imp, err = gosource.NewImporter(token.NewFileSet(), modRoot) })
-			pkg, err = imp.Import(libPath)
-		}
-		assert.NoError(b, err, "the package imports")
-		assert.Equal(b, pkg.Path(), libPath, "Import returns the package")
-	})
+	b.Run("Import", func(b *testing.B) {
+		b.Run("a module-local package", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(importAllocs)
+			defer c.End()
+			var (
+				imp *gosource.Importer
+				pkg *types.Package
+				err error
+			)
+			for c.Loop() {
+				c.Excluding(func() { imp, err = gosource.NewImporter(token.NewFileSet(), modRoot) })
+				pkg, err = imp.Import(libPath)
+			}
+			assert.NoError(b, err, "the package imports")
+			assert.Equal(b, pkg.Path(), libPath, "Import returns the package")
+		})
 
-	b.Run("Import/a package imported before", func(b *testing.B) {
-		imp, err := gosource.NewImporter(token.NewFileSet(), modRoot)
-		assert.NoError(b, err, "the importer builds")
-		_, err = imp.Import(libPath)
-		assert.NoError(b, err, "the package imports before the measurement")
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var pkg *types.Package
-		for c.Loop() {
-			pkg, err = imp.Import(libPath)
-		}
-		assert.NoError(b, err, "the package imports")
-		assert.Equal(b, pkg.Path(), libPath, "from the cache")
+		b.Run("a package imported before", func(b *testing.B) {
+			imp, err := gosource.NewImporter(token.NewFileSet(), modRoot)
+			assert.NoError(b, err, "the importer builds")
+			_, err = imp.Import(libPath)
+			assert.NoError(b, err, "the package imports before the measurement")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var pkg *types.Package
+			for c.Loop() {
+				pkg, err = imp.Import(libPath)
+			}
+			assert.NoError(b, err, "the package imports")
+			assert.Equal(b, pkg.Path(), libPath, "from the cache")
+		})
 	})
 }
 

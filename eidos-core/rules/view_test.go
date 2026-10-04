@@ -8,7 +8,6 @@ import (
 	"testing"
 
 	"go.dokimi.dev/assert"
-	"go.dokimi.dev/assert/bench"
 
 	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/internal/coretest"
@@ -370,6 +369,9 @@ func TestView(t *testing.T) {
 func TestViewAllocs(t *testing.T) {
 	for _, tt := range viewCalls(t) {
 		msg := tt.name + " allocates what it lifts"
+		if tt.caseName != "" {
+			msg = tt.name + " for " + tt.caseName + " allocates what it lifts"
+		}
 		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
 	}
 }
@@ -378,16 +380,7 @@ func TestViewAllocs(t *testing.T) {
 // the check for the zero view, a declaration, its package, the values an
 // author stated or did not state, and a fact.
 func BenchmarkView(b *testing.B) {
-	for _, tt := range viewCalls(b) {
-		b.Run(tt.name, func(b *testing.B) {
-			tt.call()
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			for c.Loop() {
-				tt.call()
-			}
-		})
-	}
+	benchCalls(b, viewCalls(b))
 }
 
 // viewCalls returns one call of each read of a view over the walk
@@ -421,12 +414,12 @@ func viewCalls(tb assert.TB) []allocCall {
 				tb.Fatalf("PackageOf missed the fixture's package")
 			}
 		}},
-		{name: "Authored/a type without a stated value", call: func() {
+		{name: "Authored", caseName: "a type without a stated value", call: func() {
 			if sample, _ := v.Authored(source, unstated, intRef); !sample.Value.IsZero() {
 				tb.Fatalf("Authored returned a value nobody stated")
 			}
 		}},
-		{name: "Authored/a stated value", allocs: authoredAllocs, call: func() {
+		{name: "Authored", caseName: "a stated value", allocs: authoredAllocs, call: func() {
 			if sample, _ := v.Authored(source, stated, strRef); sample.Value.Text != authoredText {
 				tb.Fatalf("Authored returned another value")
 			}

@@ -408,24 +408,26 @@ func BenchmarkShape(b *testing.B) {
 	})
 
 	b.Run("Reference", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got rules.TypeShape
-		for c.Loop() {
-			got = rules.Reference(timeSpelling, rules.WellKnownTimestamp)
-		}
-		assert.Equal(b, got.Ref, rules.WellKnownTimestamp, "Reference keeps the identity")
-	})
+		b.Run("without a type argument", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got rules.TypeShape
+			for c.Loop() {
+				got = rules.Reference(timeSpelling, rules.WellKnownTimestamp)
+			}
+			assert.Equal(b, got.Ref, rules.WellKnownTimestamp, "Reference keeps the identity")
+		})
 
-	b.Run("Reference/with a type argument", func(b *testing.B) {
-		id, arg := coretest.ID(svcPath, rowName, symbol.KindStruct), rules.Scalar(intSpelling, rules.ScalarInt, 0)
-		c := bench.Start(b).MaxAllocs(referenceArgsAllocs)
-		defer c.End()
-		var got rules.TypeShape
-		for c.Loop() {
-			got = rules.Reference(rowName, id, arg)
-		}
-		assert.Length(b, got.Args, 1, "Reference keeps the argument")
+		b.Run("with a type argument", func(b *testing.B) {
+			id, arg := coretest.ID(svcPath, rowName, symbol.KindStruct), rules.Scalar(intSpelling, rules.ScalarInt, 0)
+			c := bench.Start(b).MaxAllocs(referenceArgsAllocs)
+			defer c.End()
+			var got rules.TypeShape
+			for c.Loop() {
+				got = rules.Reference(rowName, id, arg)
+			}
+			assert.Length(b, got.Args, 1, "Reference keeps the argument")
+		})
 	})
 
 	b.Run("IsWellKnown", func(b *testing.B) {

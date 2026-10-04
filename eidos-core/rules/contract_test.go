@@ -464,28 +464,30 @@ func BenchmarkContract(b *testing.B) {
 		assert.NoError(b, err, "Register records the first language")
 	})
 
-	b.Run("For/a registered language", func(b *testing.B) {
-		r := rules.NewRegistry()
-		assert.NoError(b, r.Register(source), "the scripted language registers")
-		lang := source.Lang()
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		registered := false
-		for c.Loop() {
-			_, registered = r.For(lang)
-		}
-		assert.True(b, registered, "For finds the registered language")
-	})
+	b.Run("For", func(b *testing.B) {
+		b.Run("a registered language", func(b *testing.B) {
+			r := rules.NewRegistry()
+			assert.NoError(b, r.Register(source), "the scripted language registers")
+			lang := source.Lang()
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			registered := false
+			for c.Loop() {
+				_, registered = r.For(lang)
+			}
+			assert.True(b, registered, "For finds the registered language")
+		})
 
-	b.Run("For/an unregistered language", func(b *testing.B) {
-		r := rules.NewRegistry()
-		c := bench.Start(b).MaxAllocs(absentAllocs)
-		defer c.End()
-		var got rules.SourceRules
-		for c.Loop() {
-			got, _ = r.For(unregistered)
-		}
-		assert.True(b, rules.IsAbsent(got), "For returns the absent rules")
+		b.Run("an unregistered language", func(b *testing.B) {
+			r := rules.NewRegistry()
+			c := bench.Start(b).MaxAllocs(absentAllocs)
+			defer c.End()
+			var got rules.SourceRules
+			for c.Loop() {
+				got, _ = r.For(unregistered)
+			}
+			assert.True(b, rules.IsAbsent(got), "For returns the absent rules")
+		})
 	})
 
 	b.Run("Languages", func(b *testing.B) {

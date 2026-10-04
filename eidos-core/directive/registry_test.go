@@ -604,16 +604,18 @@ func BenchmarkRegistry(b *testing.B) {
 		assert.False(b, got.Sealed(), "NewRegistry returns an open registry")
 	})
 
-	b.Run("Ignore/a plugin prefix", func(b *testing.B) {
-		r := openRegistries(b, 1, directive.Kernel()...)[0]
-		assert.NoError(b, r.Ignore(foreignPrefix), "the prefix is ignored before the measurement")
-		c := bench.Start(b).MaxAllocs(ignorePrefixAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = r.Ignore(foreignPrefix)
-		}
-		assert.NoError(b, err, "a prefix no schema claims is ignored")
+	b.Run("Ignore", func(b *testing.B) {
+		b.Run("a plugin prefix", func(b *testing.B) {
+			r := openRegistries(b, 1, directive.Kernel()...)[0]
+			assert.NoError(b, r.Ignore(foreignPrefix), "the prefix is ignored before the measurement")
+			c := bench.Start(b).MaxAllocs(ignorePrefixAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = r.Ignore(foreignPrefix)
+			}
+			assert.NoError(b, err, "a prefix no schema claims is ignored")
+		})
 	})
 
 	b.Run("Ignored", func(b *testing.B) {
@@ -628,33 +630,37 @@ func BenchmarkRegistry(b *testing.B) {
 		assert.True(b, got, "a name under the ignored prefix is ignored")
 	})
 
-	b.Run("Register/a schema into a new registry", func(b *testing.B) {
-		stub := wellFormed("mockgen", "stub")
-		c := bench.Start(b).MaxAllocs(registerAllocs)
-		defer c.End()
-		var (
-			r   *directive.Registry
-			err error
-		)
-		for c.Loop() {
-			c.Excluding(func() { r = directive.NewRegistry() })
-			err = r.Register(stub)
-		}
-		assert.NoError(b, err, "the schema registers")
+	b.Run("Register", func(b *testing.B) {
+		b.Run("a schema into a new registry", func(b *testing.B) {
+			stub := wellFormed("mockgen", "stub")
+			c := bench.Start(b).MaxAllocs(registerAllocs)
+			defer c.End()
+			var (
+				r   *directive.Registry
+				err error
+			)
+			for c.Loop() {
+				c.Excluding(func() { r = directive.NewRegistry() })
+				err = r.Register(stub)
+			}
+			assert.NoError(b, err, "the schema registers")
+		})
 	})
 
-	b.Run("Seal/the kernel's six schemas", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(sealAllocs)
-		defer c.End()
-		var (
-			r      *directive.Registry
-			faults []error
-		)
-		for c.Loop() {
-			c.Excluding(func() { r = openRegistries(b, 1, directive.Kernel()...)[0] })
-			faults = r.Seal()
-		}
-		assert.Empty(b, faults, "the kernel's schemas seal without a fault")
+	b.Run("Seal", func(b *testing.B) {
+		b.Run("the kernel's six schemas", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(sealAllocs)
+			defer c.End()
+			var (
+				r      *directive.Registry
+				faults []error
+			)
+			for c.Loop() {
+				c.Excluding(func() { r = openRegistries(b, 1, directive.Kernel()...)[0] })
+				faults = r.Seal()
+			}
+			assert.Empty(b, faults, "the kernel's schemas seal without a fault")
+		})
 	})
 
 	b.Run("Sealed", func(b *testing.B) {
@@ -683,15 +689,22 @@ func BenchmarkRegistry(b *testing.B) {
 		assert.Equal(b, got.Plugin, "mockgen", "to its one claimant")
 	})
 
-	b.Run("Candidates/two claimants", func(b *testing.B) {
-		r := sealed(b, wellFormed("mockgen", "stub"), wellFormed("stubgen", "stub"))
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		var got []directive.Name
-		for c.Loop() {
-			got = r.Candidates("stub")
-		}
-		assert.Equal(b, got, []directive.Name{"mockgen:stub", "stubgen:stub"}, "both claimants in registration order")
+	b.Run("Candidates", func(b *testing.B) {
+		b.Run("two claimants", func(b *testing.B) {
+			r := sealed(b, wellFormed("mockgen", "stub"), wellFormed("stubgen", "stub"))
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var got []directive.Name
+			for c.Loop() {
+				got = r.Candidates("stub")
+			}
+			assert.Equal(
+				b,
+				got,
+				[]directive.Name{"mockgen:stub", "stubgen:stub"},
+				"both claimants in registration order",
+			)
+		})
 	})
 }
 

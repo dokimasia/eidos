@@ -476,14 +476,14 @@ func capabilityCalls(tb testing.TB) []allocCall {
 			check: func(tb assert.TB) { assert.Equal(tb, got.Spelling, witness, "Derive returns int") },
 		},
 		{
-			name: "Substitute", allocs: substituteAllocs,
+			name: "Substitute", caseName: "a reference that names a parameter", allocs: substituteAllocs,
 			call: func() { got = generics.Substitute(list, box, args) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, got.Elems[0].Spelling, argSpelling, "Substitute binds the argument")
 			},
 		},
 		{
-			name:  "Substitute/a reference that names no parameter",
+			name: "Substitute", caseName: "a reference that names no parameter",
 			call:  func() { got = generics.Substitute(plain, box, args) },
 			check: func(tb assert.TB) { assert.True(tb, got == plain, "Substitute returns the reference as it is") },
 		},
@@ -498,12 +498,12 @@ func capabilityCalls(tb testing.TB) []allocCall {
 			check: func(tb assert.TB) { assert.Length(tb, set.Members, 2, "Settable returns Name and Kind") },
 		},
 		{
-			name: "Comparable", allocs: comparableAllocs,
+			name: "Comparable", caseName: "a struct that does not compare", allocs: comparableAllocs,
 			call:  func() { reported, problems = equality.Comparable(row, f.view) },
 			check: func(tb assert.TB) { assert.True(tb, !reported && len(problems) == 4, "Comparable finds all four") },
 		},
 		{
-			name:  "Comparable/a struct that compares",
+			name: "Comparable", caseName: "a struct that compares",
 			call:  func() { reported, problems = equality.Comparable(base, f.view) },
 			check: func(tb assert.TB) { assert.True(tb, reported && len(problems) == 0, "Comparable reports Base") },
 		},

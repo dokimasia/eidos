@@ -189,12 +189,12 @@ func storeCalls(tb testing.TB) []allocCall {
 	}
 	return []allocCall{
 		{
-			name: "Stores", allocs: storesAllocs,
+			name: "Stores", caseName: "the default homes", allocs: storesAllocs,
 			call:  func() { stores, err = frontend.Stores(byDefault) },
 			check: check,
 		},
 		{
-			name: "Stores/a Gradle home", allocs: gradleStoresAllocs,
+			name: "Stores", caseName: "a Gradle home", allocs: gradleStoresAllocs,
 			call:  func() { stores, err = frontend.Stores(named) },
 			check: check,
 		},

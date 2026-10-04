@@ -28,8 +28,8 @@ const (
 	// check, and the parse of each curated package's files.
 	lowerMiniAllocs = 1_621 + 8*1
 	// lowerKernelAllocs is one lowering of the kernel's curated
-	// packages, 304,557 on average with a standard deviation of 6.
-	lowerKernelAllocs = 304_557 + 8*6
+	// packages, 307,381 on average with a standard deviation of 5.
+	lowerKernelAllocs = 307_381 + 8*5
 )
 
 // Lowering owns what the renderer may assume: the curated
@@ -190,26 +190,28 @@ func BenchmarkIR(b *testing.B) {
 		root   string
 		allocs uint64
 	}{
-		{name: "Lower/the mini kernel", root: filepath.Join(mini(b), facade.KernelDir), allocs: lowerMiniAllocs},
+		{name: "the mini kernel", root: filepath.Join(mini(b), facade.KernelDir), allocs: lowerMiniAllocs},
 		{
-			name: "Lower/the kernel's curated packages",
+			name: "the kernel's curated packages",
 			root: filepath.Join(repoRoot(b), facade.KernelDir), allocs: lowerKernelAllocs,
 		},
 	}
-	for _, tt := range lowerings {
-		b.Run(tt.name, func(b *testing.B) {
-			_, err := facade.Lower(tt.root)
-			assert.NoError(b, err, "the kernel lowers before the measurement")
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var surfaces []*facade.PackageSurface
-			for c.Loop() {
-				surfaces, err = facade.Lower(tt.root)
-			}
-			assert.NoError(b, err, "the kernel lowers")
-			assert.NotEmpty(b, surfaces, "into its curated surfaces")
-		})
-	}
+	b.Run("Lower", func(b *testing.B) {
+		for _, tt := range lowerings {
+			b.Run(tt.name, func(b *testing.B) {
+				_, err := facade.Lower(tt.root)
+				assert.NoError(b, err, "the kernel lowers before the measurement")
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var surfaces []*facade.PackageSurface
+				for c.Loop() {
+					surfaces, err = facade.Lower(tt.root)
+				}
+				assert.NoError(b, err, "the kernel lowers")
+				assert.NotEmpty(b, surfaces, "into its curated surfaces")
+			})
+		}
+	})
 
 	b.Run("Surface.KernelImportPath", func(b *testing.B) {
 		c := bench.Start(b).MaxAllocs(1)

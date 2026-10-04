@@ -88,18 +88,25 @@ func BenchmarkImportPath(b *testing.B) {
 		allocs uint64
 		want   string
 	}{
-		{name: "ImportPath", dir: "svc/store", allocs: joinedAllocs, want: acmeModule + "/store"},
-		{name: "ImportPath/the module's root", dir: "svc", want: acmeModule},
+		{
+			name:   "a directory below the module's root",
+			dir:    "svc/store",
+			allocs: joinedAllocs,
+			want:   acmeModule + "/store",
+		},
+		{name: "the module's root", dir: "svc", want: acmeModule},
 	}
-	for _, tt := range paths {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var got string
-			for c.Loop() {
-				got = golang.ImportPath(acmeModule, "svc", tt.dir)
-			}
-			assert.Equal(b, got, tt.want, "ImportPath returns the import path")
-		})
-	}
+	b.Run("ImportPath", func(b *testing.B) {
+		for _, tt := range paths {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var got string
+				for c.Loop() {
+					got = golang.ImportPath(acmeModule, "svc", tt.dir)
+				}
+				assert.Equal(b, got, tt.want, "ImportPath returns the import path")
+			})
+		}
+	})
 }

@@ -255,77 +255,87 @@ func BenchmarkTee(b *testing.B) {
 		assert.NoError(b, tee.Discard(), "NewTee returns a sink over both")
 	})
 
-	b.Run("Write/the first file of a staging", func(b *testing.B) {
-		var tee *output.Tee
-		fresh := func() { tee = output.NewTee(output.NewMem(), output.NewMem()) }
-		c := bench.Start(b).MaxAllocs(2 * firstWriteAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			err = tee.Write(storeFile, body)
-		}
-		assert.NoError(b, err, "the file stages")
+	b.Run("Write", func(b *testing.B) {
+		b.Run("the first file of a staging", func(b *testing.B) {
+			var tee *output.Tee
+			fresh := func() { tee = output.NewTee(output.NewMem(), output.NewMem()) }
+			c := bench.Start(b).MaxAllocs(2 * firstWriteAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				err = tee.Write(storeFile, body)
+			}
+			assert.NoError(b, err, "the file stages")
+		})
 	})
 
-	b.Run("Delete/the first removal of a staging", func(b *testing.B) {
-		var tee *output.Tee
-		fresh := func() { tee = output.NewTee(output.NewMem(), output.NewMem()) }
-		c := bench.Start(b).MaxAllocs(2 * firstDeleteAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			err = tee.Delete(storeFile)
-		}
-		assert.NoError(b, err, "the removal stages")
+	b.Run("Delete", func(b *testing.B) {
+		b.Run("the first removal of a staging", func(b *testing.B) {
+			var tee *output.Tee
+			fresh := func() { tee = output.NewTee(output.NewMem(), output.NewMem()) }
+			c := bench.Start(b).MaxAllocs(2 * firstDeleteAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				err = tee.Delete(storeFile)
+			}
+			assert.NoError(b, err, "the removal stages")
+		})
 	})
 
-	b.Run("Prepare/a staging of one file", func(b *testing.B) {
-		var tee *output.Tee
-		fresh := func() { tee = stagedTee(b) }
-		c := bench.Start(b).MaxAllocs(teePrepareAllocs)
-		defer c.End()
-		var (
-			got []output.Change
-			err error
-		)
-		for c.Loop() {
-			c.Excluding(fresh)
-			got, err = tee.Prepare()
-		}
-		assert.NoError(b, err, "the staging prepares")
-		assert.Length(b, got, 1, "one change for the staged file")
+	b.Run("Prepare", func(b *testing.B) {
+		b.Run("a staging of one file", func(b *testing.B) {
+			var tee *output.Tee
+			fresh := func() { tee = stagedTee(b) }
+			c := bench.Start(b).MaxAllocs(teePrepareAllocs)
+			defer c.End()
+			var (
+				got []output.Change
+				err error
+			)
+			for c.Loop() {
+				c.Excluding(fresh)
+				got, err = tee.Prepare()
+			}
+			assert.NoError(b, err, "the staging prepares")
+			assert.Length(b, got, 1, "one change for the staged file")
+		})
 	})
 
-	b.Run("Commit/a staging of one file", func(b *testing.B) {
-		var tee *output.Tee
-		fresh := func() { tee = stagedTee(b) }
-		c := bench.Start(b).MaxAllocs(teeCommitAllocs)
-		defer c.End()
-		var (
-			got []output.Written
-			err error
-		)
-		for c.Loop() {
-			c.Excluding(fresh)
-			got, err = tee.Commit()
-		}
-		assert.NoError(b, err, "the staging commits")
-		assert.Length(b, got, 1, "one record for the staged file")
+	b.Run("Commit", func(b *testing.B) {
+		b.Run("a staging of one file", func(b *testing.B) {
+			var tee *output.Tee
+			fresh := func() { tee = stagedTee(b) }
+			c := bench.Start(b).MaxAllocs(teeCommitAllocs)
+			defer c.End()
+			var (
+				got []output.Written
+				err error
+			)
+			for c.Loop() {
+				c.Excluding(fresh)
+				got, err = tee.Commit()
+			}
+			assert.NoError(b, err, "the staging commits")
+			assert.Length(b, got, 1, "one record for the staged file")
+		})
 	})
 
-	b.Run("Discard/a staging of one file", func(b *testing.B) {
-		var tee *output.Tee
-		fresh := func() { tee = stagedTee(b) }
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(fresh)
-			err = tee.Discard()
-		}
-		assert.NoError(b, err, "the staging is discarded")
+	b.Run("Discard", func(b *testing.B) {
+		b.Run("a staging of one file", func(b *testing.B) {
+			var tee *output.Tee
+			fresh := func() { tee = stagedTee(b) }
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(fresh)
+				err = tee.Discard()
+			}
+			assert.NoError(b, err, "the staging is discarded")
+		})
 	})
 }
 

@@ -133,23 +133,25 @@ func BenchmarkFilename(b *testing.B) {
 		allocs uint64
 		want   string
 	}{
-		{name: "Filename", give: rowUnit(), allocs: typeFilenameAllocs, want: "Row.java"},
+		{name: "a unit of one type", give: rowUnit(), allocs: typeFilenameAllocs, want: "Row.java"},
 		{
-			name: "Filename/a unit without a lone type", give: storeUnit(),
+			name: "a unit without a lone type", give: storeUnit(),
 			allocs: partsFilenameAllocs, want: "StoreStub.java",
 		},
 	}
-	for _, tt := range units {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var got string
-			for c.Loop() {
-				got = spell.Filename(tt.give)
-			}
-			assert.Equal(b, got, tt.want, "Filename spells the unit")
-		})
-	}
+	b.Run("Filename", func(b *testing.B) {
+		for _, tt := range units {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var got string
+				for c.Loop() {
+					got = spell.Filename(tt.give)
+				}
+				assert.Equal(b, got, tt.want, "Filename spells the unit")
+			})
+		}
+	})
 }
 
 // rowUnit returns a unit that declares the struct Row alone.

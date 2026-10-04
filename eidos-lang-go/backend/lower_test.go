@@ -338,31 +338,32 @@ func TestLowerAllocs(t *testing.T) {
 // declaration, a fresh declaration built outside the count for each
 // lowering in place.
 func BenchmarkLower(b *testing.B) {
-	benchCalls(b, lowerCalls())
-
-	b.Run("Lower/a function that throws", func(b *testing.B) {
-		f := thrower(nil, overflowType)
-		c := bench.Start(b).MaxAllocs(throwsAllocs)
-		defer c.End()
-		for c.Loop() {
-			_, _ = backend.Lower(f)
-			c.Excluding(func() { f = thrower(nil, overflowType) })
-		}
-		lowered(b, f)
-		assert.Length(b, f.Returns, 1, "Lower appends the error return")
-	})
-
-	b.Run("Lower/a struct", func(b *testing.B) {
-		host := hostOf(getName, putName)
-		c := bench.Start(b).MaxAllocs(receiveAllocs)
-		defer c.End()
-		for c.Loop() {
-			_, _ = backend.Lower(host)
-			c.Excluding(func() { host = hostOf(getName, putName) })
-		}
-		lowered(b, host)
-		assert.NotNil(b, host.Methods.Items()[0].Receives, "Lower fills the receiver")
-	})
+	benchCalls(b, append(lowerCalls(),
+		allocCall{name: "Lower", caseName: "a function that throws", bench: func(b *testing.B) {
+			b.Helper()
+			f := thrower(nil, overflowType)
+			c := bench.Start(b).MaxAllocs(throwsAllocs)
+			defer c.End()
+			for c.Loop() {
+				_, _ = backend.Lower(f)
+				c.Excluding(func() { f = thrower(nil, overflowType) })
+			}
+			lowered(b, f)
+			assert.Length(b, f.Returns, 1, "Lower appends the error return")
+		}},
+		allocCall{name: "Lower", caseName: "a struct", bench: func(b *testing.B) {
+			b.Helper()
+			host := hostOf(getName, putName)
+			c := bench.Start(b).MaxAllocs(receiveAllocs)
+			defer c.End()
+			for c.Loop() {
+				_, _ = backend.Lower(host)
+				c.Excluding(func() { host = hostOf(getName, putName) })
+			}
+			lowered(b, host)
+			assert.NotNil(b, host.Methods.Items()[0].Receives, "Lower fills the receiver")
+		}},
+	))
 }
 
 // lowerCalls returns a call of Lower over a declaration Go states as
@@ -376,7 +377,7 @@ func lowerCalls() []allocCall {
 	)
 	return []allocCall{
 		{
-			name: "Lower",
+			name: "Lower", caseName: "a constant",
 			call: func() { out, err = backend.Lower(constant) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Lower passes the constant")
@@ -384,7 +385,7 @@ func lowerCalls() []allocCall {
 			},
 		},
 		{
-			name: "Lower/an enum", allocs: enumLowerAllocs,
+			name: "Lower", caseName: "an enum", allocs: enumLowerAllocs,
 			call: func() { out, err = backend.Lower(phase) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Lower reshapes the enum")

@@ -368,25 +368,27 @@ func BenchmarkSignature(b *testing.B) {
 	})
 
 	b.Run("BinaryName", func(b *testing.B) {
-		typ := classfile.Type{Kind: classfile.KindClass, Class: []classfile.ClassName{{Name: mapName}}}
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got string
-		for c.Loop() {
-			got = typ.BinaryName()
-		}
-		assert.Equal(b, got, mapName, "BinaryName returns the class's name")
-	})
+		b.Run("a top-level class", func(b *testing.B) {
+			typ := classfile.Type{Kind: classfile.KindClass, Class: []classfile.ClassName{{Name: mapName}}}
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = typ.BinaryName()
+			}
+			assert.Equal(b, got, mapName, "BinaryName returns the class's name")
+		})
 
-	b.Run("BinaryName/a nested class", func(b *testing.B) {
-		typ := mapEntry()
-		c := bench.Start(b).MaxAllocs(nestedNameAllocs)
-		defer c.End()
-		var got string
-		for c.Loop() {
-			got = typ.BinaryName()
-		}
-		assert.Equal(b, got, mapName+"$Entry", "BinaryName joins the names")
+		b.Run("a nested class", func(b *testing.B) {
+			typ := mapEntry()
+			c := bench.Start(b).MaxAllocs(nestedNameAllocs)
+			defer c.End()
+			var got string
+			for c.Loop() {
+				got = typ.BinaryName()
+			}
+			assert.Equal(b, got, mapName+"$Entry", "BinaryName joins the names")
+		})
 	})
 }
 

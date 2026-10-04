@@ -52,13 +52,19 @@ const (
 )
 
 // allocCall is one call that an allocation test and a benchmark share:
-// its benchmark path, its allocation ceiling, the call, and the check
-// of the result the call leaves.
+// the method it calls, which names its benchmark, the case it measures
+// where the method has more than one call, its allocation ceiling, the
+// call, and the check of the result the call leaves. A case whose
+// ceiling only a benchmark checks sets bench, which measures the case
+// in place of the call, and no list an allocation test reads contains
+// it.
 type allocCall struct {
-	name   string
-	allocs uint64
-	call   func()
-	check  func(tb assert.TB)
+	name     string
+	caseName string
+	allocs   uint64
+	call     func()
+	check    func(tb assert.TB)
+	bench    func(b *testing.B)
 }
 
 // fixture is the loaded tree with a tracked view over it.
@@ -452,11 +458,13 @@ func TestRulesAllocs(t *testing.T) {
 // kernel asks protobuf's rules for, and drives the four hot projections
 // over the schema tree under their ceiling.
 func BenchmarkRules(b *testing.B) {
-	benchCalls(b, rulesCalls(b))
-
-	b.Run("New/the projections of the schema tree", func(b *testing.B) {
-		rulestest.BenchRules(b, setup, rulestest.Budget{MaxAllocs: rulesAllocs})
-	})
+	benchCalls(b, append(rulesCalls(b), allocCall{
+		name: "New", caseName: "the projections of the schema tree",
+		bench: func(b *testing.B) {
+			b.Helper()
+			rulestest.BenchRules(b, setup, rulestest.Budget{MaxAllocs: rulesAllocs})
+		},
+	}))
 }
 
 // rulesCalls returns a call of the constructor and of every method of
@@ -484,9 +492,10 @@ func rulesCalls(tb testing.TB) []allocCall {
 	)
 	return []allocCall{
 		{
-			name:  "New",
-			call:  func() { built = protorules.New() },
-			check: func(tb assert.TB) { assert.Equal(tb, built.Lang(), protobuf.Lang, "New returns protobuf's rules") },
+			name:     "New",
+			caseName: "the rules",
+			call:     func() { built = protorules.New() },
+			check:    func(tb assert.TB) { assert.Equal(tb, built.Lang(), protobuf.Lang, "New returns protobuf's rules") },
 		},
 		{
 			name:  "Lang",
@@ -519,7 +528,7 @@ func rulesCalls(tb testing.TB) []allocCall {
 			check: func(tb assert.TB) { assert.Equal(tb, name, "CheckRow", "TypeName joins the word onto the base") },
 		},
 		{
-			name: "Resolve",
+			name: "Resolve", caseName: "a field of the subject",
 			call: func() { got, err = r.Resolve(row, "name", directive.ResolveValueField, f.view) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Resolve finds name")
@@ -527,7 +536,7 @@ func rulesCalls(tb testing.TB) []allocCall {
 			},
 		},
 		{
-			name: "Resolve/a type in scope", allocs: probeAllocs,
+			name: "Resolve", caseName: "a type in scope", allocs: probeAllocs,
 			call: func() { got, err = r.Resolve(row, "Key", directive.ResolveTypeInScope, f.view) },
 			check: func(tb assert.TB) {
 				assert.NoError(tb, err, "Resolve finds Key")
@@ -544,29 +553,60 @@ func checkAllocs(t *testing.T, calls []allocCall) {
 
 	for _, c := range calls {
 		msg := c.name + " allocates within its ceiling"
+		if c.caseName != "" {
+			msg = c.name + " for " + c.caseName + " allocates within its ceiling"
+		}
 		assert.MaxAllocs(t, c.call, c.allocs, msg)
 		c.check(t)
 	}
 }
 
 // benchCalls measures every call under the bench contract at its
-// ceiling, one sub-benchmark each. Each call runs once before the
-// contract starts, so what the first call initialises stays out of the
-// count.
+// ceiling: one sub-benchmark for each method, in the order the methods
+// first appear, and inside it one for each case of a method with cases.
 func benchCalls(b *testing.B, calls []allocCall) {
 	b.Helper()
 
-	for _, tt := range calls {
-		b.Run(tt.name, func(b *testing.B) {
-			tt.call()
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			for c.Loop() {
-				tt.call()
+	var methods []string
+	byMethod := map[string][]allocCall{}
+	for _, c := range calls {
+		if _, seen := byMethod[c.name]; !seen {
+			methods = append(methods, c.name)
+		}
+		byMethod[c.name] = append(byMethod[c.name], c)
+	}
+	for _, name := range methods {
+		cases := byMethod[name]
+		b.Run(name, func(b *testing.B) {
+			if len(cases) == 1 && cases[0].caseName == "" {
+				benchCall(b, cases[0])
+				return
 			}
-			tt.check(b)
+			for _, tt := range cases {
+				b.Run(tt.caseName, func(b *testing.B) { benchCall(b, tt) })
+			}
 		})
 	}
+}
+
+// benchCall measures one call under the bench contract at its ceiling,
+// and checks the result the last call leaves. The call runs once before
+// the contract starts, so what the first call initialises stays out of
+// the count. A case that sets bench runs it instead.
+func benchCall(b *testing.B, tt allocCall) {
+	b.Helper()
+
+	if tt.bench != nil {
+		tt.bench(b)
+		return
+	}
+	tt.call()
+	c := bench.Start(b).MaxAllocs(tt.allocs)
+	defer c.End()
+	for c.Loop() {
+		tt.call()
+	}
+	tt.check(b)
 }
 
 // setup is the suite's entry: protobuf's rules over the loaded

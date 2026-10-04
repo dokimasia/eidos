@@ -368,24 +368,28 @@ func BenchmarkMem(b *testing.B) {
 		assert.Equal(b, string(p[:n]), "first", "ReadAt copies the bytes at the offset")
 	})
 
-	b.Run("Write/a blob stored before", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = l.Write(b.Context(), docName, body)
-		}
-		assert.NoError(b, err, "the blob is written")
+	b.Run("Write", func(b *testing.B) {
+		b.Run("a blob stored before", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = l.Write(b.Context(), docName, body)
+			}
+			assert.NoError(b, err, "the blob is written")
+		})
 	})
 
-	b.Run("Put/a blob stored before", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(1)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = l.Put(b.Context(), docName, body)
-		}
-		assert.NoError(b, err, "the blob is put")
+	b.Run("Put", func(b *testing.B) {
+		b.Run("a blob stored before", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(1)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = l.Put(b.Context(), docName, body)
+			}
+			assert.NoError(b, err, "the blob is put")
+		})
 	})
 
 	b.Run("Touch", func(b *testing.B) {
@@ -398,29 +402,33 @@ func BenchmarkMem(b *testing.B) {
 		assert.NoError(b, err, "the blob is touched")
 	})
 
-	b.Run("Remove/a stored blob", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(func() { err = l.Write(b.Context(), segName, body) })
-			err = l.Remove(b.Context(), segName)
-		}
-		assert.NoError(b, err, "the blob is removed")
+	b.Run("Remove", func(b *testing.B) {
+		b.Run("a stored blob", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(func() { err = l.Write(b.Context(), segName, body) })
+				err = l.Remove(b.Context(), segName)
+			}
+			assert.NoError(b, err, "the blob is removed")
+		})
 	})
 
-	b.Run("List/a directory of three blobs", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(3)
-		defer c.End()
-		var (
-			got []ledger.Blob
-			err error
-		)
-		for c.Loop() {
-			got, err = l.List(b.Context(), "manifest")
-		}
-		assert.NoError(b, err, "the blobs list")
-		assert.Length(b, got, len(listedDocs), "every document")
+	b.Run("List", func(b *testing.B) {
+		b.Run("a directory of three blobs", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(3)
+			defer c.End()
+			var (
+				got []ledger.Blob
+				err error
+			)
+			for c.Loop() {
+				got, err = l.List(b.Context(), "manifest")
+			}
+			assert.NoError(b, err, "the blobs list")
+			assert.Length(b, got, len(listedDocs), "every document")
+		})
 	})
 
 	b.Run("Writes", func(b *testing.B) {

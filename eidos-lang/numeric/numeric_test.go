@@ -346,28 +346,30 @@ func BenchmarkNumeric(b *testing.B) {
 		want   string
 	}{
 		{
-			name:   "Int",
+			name:   "a 32-bit type",
 			give:   constant.MakeInt64(math.MaxInt32),
 			bits:   singleWidth,
 			allocs: textAllocs,
 			want:   "2147483647",
 		},
 		{
-			name: "Int/a type wider than 64 bits", give: constant.Shift(constant.MakeInt64(1), token.SHL, doubleWidth),
+			name: "a type wider than 64 bits", give: constant.Shift(constant.MakeInt64(1), token.SHL, doubleWidth),
 			bits: wideWidth, allocs: wideIntAllocs, want: "18446744073709551616",
 		},
 	}
-	for _, tt := range ints {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var v emit.Value
-			for c.Loop() {
-				v, _ = numeric.Int(tt.give, rules.ScalarInt, tt.bits)
-			}
-			assert.Equal(b, v.Text, tt.want, "Int returns the value as text")
-		})
-	}
+	b.Run("Int", func(b *testing.B) {
+		for _, tt := range ints {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var v emit.Value
+				for c.Loop() {
+					v, _ = numeric.Int(tt.give, rules.ScalarInt, tt.bits)
+				}
+				assert.Equal(b, v.Text, tt.want, "Int returns the value as text")
+			})
+		}
+	})
 
 	b.Run("Float", func(b *testing.B) {
 		tenth := constant.MakeFloat64(0.1)

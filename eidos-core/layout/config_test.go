@@ -228,15 +228,17 @@ func TestConfigAllocs(t *testing.T) {
 // BenchmarkConfig measures the check a Build runs over each plan's
 // configuration.
 func BenchmarkConfig(b *testing.B) {
-	b.Run("Config.Check/a valid configuration", func(b *testing.B) {
-		cfg, outputs := layout.Config{Dir: genDir}, families()
-		c := bench.Start(b).MaxAllocs(checkAllocs)
-		defer c.End()
-		var faults []error
-		for c.Loop() {
-			faults = cfg.Check(planName, outputs)
-		}
-		assert.Empty(b, faults, "Check returns no fault for a valid configuration")
+	b.Run("Check", func(b *testing.B) {
+		b.Run("a valid configuration", func(b *testing.B) {
+			cfg, outputs := layout.Config{Dir: genDir}, families()
+			c := bench.Start(b).MaxAllocs(checkAllocs)
+			defer c.End()
+			var faults []error
+			for c.Loop() {
+				faults = cfg.Check(planName, outputs)
+			}
+			assert.Empty(b, faults, "Check returns no fault for a valid configuration")
+		})
 	})
 }
 

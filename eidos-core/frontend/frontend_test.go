@@ -446,59 +446,65 @@ func BenchmarkFrontend(b *testing.B) {
 		})
 	}
 
-	b.Run("Match/a new declaration's first pattern", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(appendAllocs)
-		defer c.End()
-		var builder *frontend.Builder
-		for c.Loop() {
-			c.Excluding(func() { builder = frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()) })
-			builder.Match(anyScripted)
-		}
-		assert.NotPanics(b, func() {
-			builder.Version("1").Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
-		}, "the claim completes a declaration")
+	b.Run("Match", func(b *testing.B) {
+		b.Run("a new declaration's first pattern", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(appendAllocs)
+			defer c.End()
+			var builder *frontend.Builder
+			for c.Loop() {
+				c.Excluding(func() { builder = frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()) })
+				builder.Match(anyScripted)
+			}
+			assert.NotPanics(b, func() {
+				builder.Version("1").Units(inner.Partition).Parse(inner.Parse).Resolve(inner.Resolve).Build()
+			}, "the claim completes a declaration")
+		})
 	})
 
-	b.Run("Classify/a new declaration's first classifier", func(b *testing.B) {
-		classify := frontend.Classifier(markTests)
-		c := bench.Start(b).MaxAllocs(appendAllocs)
-		defer c.End()
-		var builder *frontend.Builder
-		for c.Loop() {
-			c.Excluding(func() { builder = frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()) })
-			builder.Classify(classify)
-		}
-		assert.NotNil(b, builder, "the classifier is declared")
+	b.Run("Classify", func(b *testing.B) {
+		b.Run("a new declaration's first classifier", func(b *testing.B) {
+			classify := frontend.Classifier(markTests)
+			c := bench.Start(b).MaxAllocs(appendAllocs)
+			defer c.End()
+			var builder *frontend.Builder
+			for c.Loop() {
+				c.Excluding(func() { builder = frontend.New(kitName, frontendtest.ScriptedLang, inner.Syntax()) })
+				builder.Classify(classify)
+			}
+			assert.NotNil(b, builder, "the classifier is declared")
+		})
 	})
 
-	b.Run("Build/a declaration without optional roles", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(buildAllocs)
-		defer c.End()
-		var (
-			builder *frontend.Builder
-			got     plugin.Frontend
-		)
-		for c.Loop() {
-			c.Excluding(func() { builder = declarations(inner, 1, false)[0] })
-			got = builder.Build()
-		}
-		_, optioned := got.(plugin.OptionsProvider)
-		assert.False(b, optioned, "the frontend has no optional role")
-	})
+	b.Run("Build", func(b *testing.B) {
+		b.Run("a declaration without optional roles", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(buildAllocs)
+			defer c.End()
+			var (
+				builder *frontend.Builder
+				got     plugin.Frontend
+			)
+			for c.Loop() {
+				c.Excluding(func() { builder = declarations(inner, 1, false)[0] })
+				got = builder.Build()
+			}
+			_, optioned := got.(plugin.OptionsProvider)
+			assert.False(b, optioned, "the frontend has no optional role")
+		})
 
-	b.Run("Build/a declaration in every optional role", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(buildRolesAllocs)
-		defer c.End()
-		var (
-			builder *frontend.Builder
-			got     plugin.Frontend
-		)
-		for c.Loop() {
-			c.Excluding(func() { builder = declarations(inner, 1, true)[0] })
-			got = builder.Build()
-		}
-		_, exports := got.(plugin.Exporter)
-		assert.True(b, exports, "the frontend has every optional role")
+		b.Run("a declaration in every optional role", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(buildRolesAllocs)
+			defer c.End()
+			var (
+				builder *frontend.Builder
+				got     plugin.Frontend
+			)
+			for c.Loop() {
+				c.Excluding(func() { builder = declarations(inner, 1, true)[0] })
+				got = builder.Build()
+			}
+			_, exports := got.(plugin.Exporter)
+			assert.True(b, exports, "the frontend has every optional role")
+		})
 	})
 }
 

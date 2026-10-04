@@ -327,32 +327,36 @@ func BenchmarkManifest(b *testing.B) {
 	m := scaled()
 	l, digests := recorded(b, m)
 
-	b.Run("ReadManifest/a record of 1,000 files", func(b *testing.B) {
-		_, _, err := state.ReadManifest(b.Context(), l)
-		assert.NoError(b, err, "the record reads before the measurement")
-		c := bench.Start(b).MaxAllocs(readManifestAllocs + manifestStateAllocs)
-		defer c.End()
-		var got manifest.Manifest
-		for c.Loop() {
-			got, _, err = state.ReadManifest(b.Context(), l)
-		}
-		assert.NoError(b, err, "the record reads")
-		assert.Length(b, got.Files, files, "with every file")
+	b.Run("ReadManifest", func(b *testing.B) {
+		b.Run("a record of 1,000 files", func(b *testing.B) {
+			_, _, err := state.ReadManifest(b.Context(), l)
+			assert.NoError(b, err, "the record reads before the measurement")
+			c := bench.Start(b).MaxAllocs(readManifestAllocs + manifestStateAllocs)
+			defer c.End()
+			var got manifest.Manifest
+			for c.Loop() {
+				got, _, err = state.ReadManifest(b.Context(), l)
+			}
+			assert.NoError(b, err, "the record reads")
+			assert.Length(b, got.Files, files, "with every file")
+		})
 	})
 
-	b.Run("WriteManifest/a manifest equal to the record", func(b *testing.B) {
-		_, err := state.WriteManifest(b.Context(), l, m, digests)
-		assert.NoError(b, err, "the record writes before the measurement")
-		writes := l.Writes()
-		c := bench.Start(b).MaxAllocs(writeManifestAllocs + manifestStateAllocs)
-		defer c.End()
-		var got state.Digests
-		for c.Loop() {
-			got, err = state.WriteManifest(b.Context(), l, m, digests)
-		}
-		assert.NoError(b, err, "the record writes")
-		assert.Equal(b, got, digests, "WriteManifest returns the recorded digests")
-		assert.Equal(b, l.Writes(), writes, "and writes nothing")
+	b.Run("WriteManifest", func(b *testing.B) {
+		b.Run("a manifest equal to the record", func(b *testing.B) {
+			_, err := state.WriteManifest(b.Context(), l, m, digests)
+			assert.NoError(b, err, "the record writes before the measurement")
+			writes := l.Writes()
+			c := bench.Start(b).MaxAllocs(writeManifestAllocs + manifestStateAllocs)
+			defer c.End()
+			var got state.Digests
+			for c.Loop() {
+				got, err = state.WriteManifest(b.Context(), l, m, digests)
+			}
+			assert.NoError(b, err, "the record writes")
+			assert.Equal(b, got, digests, "WriteManifest returns the recorded digests")
+			assert.Equal(b, l.Writes(), writes, "and writes nothing")
+		})
 	})
 }
 

@@ -618,39 +618,41 @@ func TestEmitAllocs(t *testing.T) {
 func BenchmarkEmit(b *testing.B) {
 	units := benchUnitsOf(benchUnits * 10)
 
-	b.Run("Add/the first unit of a store", func(b *testing.B) {
-		var e *plugin.Emit
-		empty := func() { e = plugin.NewEmit() }
-		c := bench.Start(b).MaxAllocs(firstAddAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			c.Excluding(empty)
-			err = e.Add(units[0])
-		}
-		assert.NoError(b, err, "the unit is added")
-	})
-
-	b.Run("Add/a later unit", func(b *testing.B) {
-		var (
-			e    *plugin.Emit
-			next int
-		)
-		fill := func() {
-			e, next = addedUnits(b, benchUnits), benchUnits
-		}
-		fill()
-		c := bench.Start(b).MaxAllocs(laterAddAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			if next == len(units) {
-				c.Excluding(fill)
+	b.Run("Add", func(b *testing.B) {
+		b.Run("the first unit of a store", func(b *testing.B) {
+			var e *plugin.Emit
+			empty := func() { e = plugin.NewEmit() }
+			c := bench.Start(b).MaxAllocs(firstAddAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				c.Excluding(empty)
+				err = e.Add(units[0])
 			}
-			err = e.Add(units[next])
-			next++
-		}
-		assert.NoError(b, err, "the unit is added")
+			assert.NoError(b, err, "the unit is added")
+		})
+
+		b.Run("a later unit", func(b *testing.B) {
+			var (
+				e    *plugin.Emit
+				next int
+			)
+			fill := func() {
+				e, next = addedUnits(b, benchUnits), benchUnits
+			}
+			fill()
+			c := bench.Start(b).MaxAllocs(laterAddAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				if next == len(units) {
+					c.Excluding(fill)
+				}
+				err = e.Add(units[next])
+				next++
+			}
+			assert.NoError(b, err, "the unit is added")
+		})
 	})
 
 	b.Run("ByKind", func(b *testing.B) {
@@ -773,37 +775,39 @@ func BenchmarkEmit(b *testing.B) {
 		assert.False(b, settled, "Settled reports false before the settle")
 	})
 
-	b.Run("Contribute/a contributor the unit names", func(b *testing.B) {
-		e := plugin.NewEmit()
-		u := hosting("stubgen", "a.go", "Store")
-		assert.NoError(b, e.Add(u), "the hosting unit arrives")
-		host := methodOf(u)
-		e.Contribute(host, "audit")
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		held := false
-		for c.Loop() {
-			held = e.Contribute(host, "audit")
-		}
-		assert.True(b, held, "the store contains the host")
-	})
-
-	b.Run("Contribute/the first contribution to a store", func(b *testing.B) {
-		u := hosting("stubgen", "a.go", "Store")
-		host := methodOf(u)
-		var e *plugin.Emit
-		fresh := func() {
-			e = plugin.NewEmit()
+	b.Run("Contribute", func(b *testing.B) {
+		b.Run("a contributor the unit names", func(b *testing.B) {
+			e := plugin.NewEmit()
+			u := hosting("stubgen", "a.go", "Store")
 			assert.NoError(b, e.Add(u), "the hosting unit arrives")
-		}
-		c := bench.Start(b).MaxAllocs(firstContributeAllocs)
-		defer c.End()
-		held := false
-		for c.Loop() {
-			c.Excluding(fresh)
-			held = e.Contribute(host, "audit")
-		}
-		assert.True(b, held, "the store contains the host")
+			host := methodOf(u)
+			e.Contribute(host, "audit")
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			held := false
+			for c.Loop() {
+				held = e.Contribute(host, "audit")
+			}
+			assert.True(b, held, "the store contains the host")
+		})
+
+		b.Run("the first contribution to a store", func(b *testing.B) {
+			u := hosting("stubgen", "a.go", "Store")
+			host := methodOf(u)
+			var e *plugin.Emit
+			fresh := func() {
+				e = plugin.NewEmit()
+				assert.NoError(b, e.Add(u), "the hosting unit arrives")
+			}
+			c := bench.Start(b).MaxAllocs(firstContributeAllocs)
+			defer c.End()
+			held := false
+			for c.Loop() {
+				c.Excluding(fresh)
+				held = e.Contribute(host, "audit")
+			}
+			assert.True(b, held, "the store contains the host")
+		})
 	})
 }
 

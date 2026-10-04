@@ -205,29 +205,31 @@ func BenchmarkPackage(b *testing.B) {
 		allocs uint64
 		want   symbol.Identity
 	}{
-		{name: "Package", give: residentPlacement(), want: declared(storePath, "store")},
+		{name: "a directory with a Go package", give: residentPlacement(), want: declared(storePath, "store")},
 		{
-			name:   "Package/a directory without a Go package",
+			name:   "a directory without a Go package",
 			give:   modulePlacement(),
 			allocs: derivedAllocs,
 			want:   declared(svcModule+"/gen", "gen"),
 		},
 	}
-	for _, tt := range placements {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var (
-				got symbol.Identity
-				err error
-			)
-			for c.Loop() {
-				got, err = spell.Package(tt.give)
-			}
-			assert.NoError(b, err, "Package derives the package")
-			assert.Equal(b, got, tt.want, "Package returns the package")
-		})
-	}
+	b.Run("Package", func(b *testing.B) {
+		for _, tt := range placements {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var (
+					got symbol.Identity
+					err error
+				)
+				for c.Loop() {
+					got, err = spell.Package(tt.give)
+				}
+				assert.NoError(b, err, "Package derives the package")
+				assert.Equal(b, got, tt.want, "Package returns the package")
+			})
+		}
+	})
 }
 
 // declared returns the package a loaded directory's files declare.

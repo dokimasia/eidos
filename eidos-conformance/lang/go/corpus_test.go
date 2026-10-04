@@ -53,37 +53,39 @@ func BenchmarkCorpus(b *testing.B) {
 	}
 	c := golang.Corpus(os.DirFS(repositoryRoot))
 
-	b.Run("Corpus/the load of this repository", func(b *testing.B) {
-		var report *load.Report
-		b.ReportAllocs()
-		for b.Loop() {
-			sink := diag.NewSink()
-			_, loaded, loadErr := load.Load(context.Background(), load.Config{
-				FS:        c.Sources,
-				Frontends: []plugin.Frontend{c.Frontend},
-				Sink:      sink,
-				Brand:     frontendtest.Brand,
-				Stores:    stores,
-			})
-			if loadErr != nil || sink.Failed() {
-				b.Fatalf("the repository loads without an error: %v", loadErr)
+	b.Run("Corpus", func(b *testing.B) {
+		b.Run("the load of this repository", func(b *testing.B) {
+			var report *load.Report
+			b.ReportAllocs()
+			for b.Loop() {
+				sink := diag.NewSink()
+				_, loaded, loadErr := load.Load(context.Background(), load.Config{
+					FS:        c.Sources,
+					Frontends: []plugin.Frontend{c.Frontend},
+					Sink:      sink,
+					Brand:     frontendtest.Brand,
+					Stores:    stores,
+				})
+				if loadErr != nil || sink.Failed() {
+					b.Fatalf("the repository loads without an error: %v", loadErr)
+				}
+				report = loaded
 			}
-			report = loaded
-		}
-		var rounds, workspace, dependency int
-		for _, u := range report.Units {
-			rounds = max(rounds, u.Round)
-			if u.Round == 0 {
-				workspace++
-			} else {
-				dependency++
+			var rounds, workspace, dependency int
+			for _, u := range report.Units {
+				rounds = max(rounds, u.Round)
+				if u.Round == 0 {
+					workspace++
+				} else {
+					dependency++
+				}
 			}
-		}
-		if dependency == 0 {
-			b.Fatal("the dependency rounds return units")
-		}
-		b.ReportMetric(float64(rounds), "rounds")
-		b.ReportMetric(float64(workspace), "workspace-units")
-		b.ReportMetric(float64(dependency), "dependency-units")
+			if dependency == 0 {
+				b.Fatal("the dependency rounds return units")
+			}
+			b.ReportMetric(float64(rounds), "rounds")
+			b.ReportMetric(float64(workspace), "workspace-units")
+			b.ReportMetric(float64(dependency), "dependency-units")
+		})
 	})
 }

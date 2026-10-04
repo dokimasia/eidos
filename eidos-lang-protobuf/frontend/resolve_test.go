@@ -455,12 +455,12 @@ func resolveCalls(tb testing.TB) []allocCall {
 	)
 	return []allocCall{
 		{
-			name: "Resolve", allocs: probeAllocs,
+			name: "Resolve", caseName: "a relative name", allocs: probeAllocs,
 			call:  func() { candidates = f.Resolve(inRow, "Key") },
 			check: func(tb assert.TB) { assert.Length(tb, candidates, 4, "Resolve returns one tier per scope") },
 		},
 		{
-			name: "Resolve/a rooted name", allocs: rootedAllocs,
+			name: "Resolve", caseName: "a rooted name", allocs: rootedAllocs,
 			call:  func() { candidates = f.Resolve(inRow, ".dep.Target") },
 			check: func(tb assert.TB) { assert.Length(tb, candidates, 1, "Resolve returns the one rooted tier") },
 		},

@@ -398,30 +398,34 @@ func BenchmarkGenfile(b *testing.B) {
 		assert.Contains(b, got, "internal/gen/model", "Header names the generator")
 	})
 
-	b.Run("Render/two items", func(b *testing.B) {
-		items := []string{"node", "emit"}
-		c := bench.Start(b).MaxAllocs(renderAllocs)
-		defer c.End()
-		var (
-			got genfile.Set
-			err error
-		)
-		for c.Loop() {
-			got, err = genfile.Render(items, renderKinds)
-		}
-		assert.NoError(b, err, "every file renders")
-		assert.Length(b, got, 2, "one file per item")
+	b.Run("Render", func(b *testing.B) {
+		b.Run("two items", func(b *testing.B) {
+			items := []string{"node", "emit"}
+			c := bench.Start(b).MaxAllocs(renderAllocs)
+			defer c.End()
+			var (
+				got genfile.Set
+				err error
+			)
+			for c.Loop() {
+				got, err = genfile.Render(items, renderKinds)
+			}
+			assert.NoError(b, err, "every file renders")
+			assert.Length(b, got, 2, "one file per item")
+		})
 	})
 
-	b.Run("Regenerate/one file", func(b *testing.B) {
-		root := written(b)
-		c := bench.Start(b).MaxAllocs(regenerateAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = genfile.Regenerate(root, generateOwned)
-		}
-		assert.NoError(b, err, "the set writes")
+	b.Run("Regenerate", func(b *testing.B) {
+		b.Run("one file", func(b *testing.B) {
+			root := written(b)
+			c := bench.Start(b).MaxAllocs(regenerateAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = genfile.Regenerate(root, generateOwned)
+			}
+			assert.NoError(b, err, "the set writes")
+		})
 	})
 
 	b.Run("Format", func(b *testing.B) {
@@ -439,26 +443,30 @@ func BenchmarkGenfile(b *testing.B) {
 		assert.Equal(b, string(got), wellFormed, "into canonical layout")
 	})
 
-	b.Run("Write/one file", func(b *testing.B) {
-		root := written(b)
-		c := bench.Start(b).MaxAllocs(writeAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = genfile.Write(root, owned)
-		}
-		assert.NoError(b, err, "the set writes")
+	b.Run("Write", func(b *testing.B) {
+		b.Run("one file", func(b *testing.B) {
+			root := written(b)
+			c := bench.Start(b).MaxAllocs(writeAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = genfile.Write(root, owned)
+			}
+			assert.NoError(b, err, "the set writes")
+		})
 	})
 
-	b.Run("Verify/a tree of one file that matches", func(b *testing.B) {
-		root, dirs := written(b), []string{ownedDir}
-		c := bench.Start(b).MaxAllocs(verifyAllocs)
-		defer c.End()
-		var err error
-		for c.Loop() {
-			err = genfile.Verify(root, owned, dirs)
-		}
-		assert.NoError(b, err, "the tree matches")
+	b.Run("Verify", func(b *testing.B) {
+		b.Run("a tree of one file that matches", func(b *testing.B) {
+			root, dirs := written(b), []string{ownedDir}
+			c := bench.Start(b).MaxAllocs(verifyAllocs)
+			defer c.End()
+			var err error
+			for c.Loop() {
+				err = genfile.Verify(root, owned, dirs)
+			}
+			assert.NoError(b, err, "the tree matches")
+		})
 	})
 }
 

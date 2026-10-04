@@ -774,48 +774,48 @@ func valueCalls(tb testing.TB) []allocCall {
 	)
 	return []allocCall{
 		{
-			name:  "SamplesOf",
+			name: "SamplesOf", caseName: "a scalar",
 			call:  func() { sample, _ = r.SamplesOf(scalar, "", f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, sample.Value.Text, derivedInt, "SamplesOf returns 42") },
 		},
 		{
-			name: "SamplesOf/a message", allocs: messageSamplesAllocs,
+			name: "SamplesOf", caseName: "a message", allocs: messageSamplesAllocs,
 			call:  func() { sample, _ = r.SamplesOf(row, "", f.view) },
 			check: func(tb assert.TB) { assert.True(tb, sample.OK(), "SamplesOf derives Row") },
 		},
 		{
-			name: "SamplesOf/a repeated field", allocs: listSamplesAllocs,
+			name: "SamplesOf", caseName: "a repeated field", allocs: listSamplesAllocs,
 			call: func() { sample, _ = r.SamplesOf(list, tagHint, f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, sample.Value.Kind, emit.ValueComposite, "SamplesOf derives the list")
 			},
 		},
 		{
-			name: "SamplesOf/an enum", allocs: enumSamplesAllocs,
+			name: "SamplesOf", caseName: "an enum", allocs: enumSamplesAllocs,
 			call: func() { sample, _ = r.SamplesOf(colour, "", f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, sample.Value.Kind, emit.ValueConversion, "SamplesOf derives Colour")
 			},
 		},
 		{
-			name:  "ZeroValue",
+			name: "ZeroValue", caseName: "a scalar",
 			call:  func() { value, _ = r.ZeroValue(scalar, f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Text, zeroText, "ZeroValue returns 0") },
 		},
 		{
-			name: "ZeroValue/an enum", allocs: enumZeroAllocs,
+			name: "ZeroValue", caseName: "an enum", allocs: enumZeroAllocs,
 			call: func() { value, _ = r.ZeroValue(colour, f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, value.Kind, emit.ValueConversion, "ZeroValue returns the first value")
 			},
 		},
 		{
-			name:  "LiteralFor",
+			name: "LiteralFor", caseName: "an integer",
 			call:  func() { value, _ = r.LiteralFor(nil, scalar, derivedInt, f.view) },
 			check: func(tb assert.TB) { assert.Equal(tb, value.Text, derivedInt, "LiteralFor reads 42") },
 		},
 		{
-			name: "LiteralFor/a string", allocs: stringLiteralAllocs,
+			name: "LiteralFor", caseName: "a string", allocs: stringLiteralAllocs,
 			call: func() { value, _ = r.LiteralFor(nil, text, longString, f.view) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, value.Text, longText, "LiteralFor reads the string")

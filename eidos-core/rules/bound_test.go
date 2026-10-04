@@ -171,12 +171,14 @@ func (n nongeneric) LiteralFor(f *node.File, ref *node.TypeRef, text string, v r
 // TypeName returns the inner rules' join of a word onto a base.
 func (n nongeneric) TypeName(word, base string) string { return n.inner.TypeName(word, base) }
 
-// allocCall is one call of a function or a method, named as its
-// benchmark is, and the allocations the call makes.
+// allocCall is one call of a function or a method: the method, which
+// names its benchmark, the case it measures where the method has more
+// than one call, and the allocations the call makes.
 type allocCall struct {
-	name   string
-	allocs uint64
-	call   func()
+	name     string
+	caseName string
+	allocs   uint64
+	call     func()
 }
 
 // A handler calls the binding's methods, so the binding's defaults and
@@ -299,10 +301,20 @@ func TestBound(t *testing.T) {
 func TestBoundAllocs(t *testing.T) {
 	for _, tt := range boundCalls(t) {
 		msg := tt.name + " allocates what it returns"
+		if tt.caseName != "" {
+			msg = tt.name + " for " + tt.caseName + " allocates what it returns"
+		}
 		assert.MaxAllocs(t, tt.call, tt.allocs, msg)
 	}
 
-	v, ref, bytes := viewOnly(t), builtin(intSpelling), byteList()
+	folded, ref := foldedBinding(t)
+	assert.MaxAllocs(t, func() {
+		if folded.TypeOf(ref).Form != symbol.FormScalar {
+			t.Fatal("TypeOf returned another form for a folded reference")
+		}
+	}, 0, "TypeOf allocates nothing for a reference the binding folded")
+
+	v, bytes := viewOnly(t), byteList()
 	fresh := make([]rules.Bound, allocRuns)
 	for i := range fresh {
 		fresh[i] = rules.NewBound(scripted(), v, nil)
@@ -331,54 +343,112 @@ func TestBoundAllocs(t *testing.T) {
 // fixture, which a handler calls once per match, and the first fold of a
 // reference.
 func BenchmarkBound(b *testing.B) {
-	for _, tt := range boundCalls(b) {
-		b.Run(tt.name, func(b *testing.B) {
-			tt.call()
-			c := bench.Start(b).MaxAllocs(tt.allocs)
+	benchCalls(b, boundCalls(b))
+
+	b.Run("TypeOf", func(b *testing.B) {
+		b.Run("a reference the binding folded", func(b *testing.B) {
+			bound, ref := foldedBinding(b)
+			c := bench.Start(b).MaxAllocs(0)
 			defer c.End()
+			var shape rules.TypeShape
 			for c.Loop() {
-				tt.call()
+				shape = bound.TypeOf(ref)
+			}
+			assert.Equal(b, shape.Form, symbol.FormScalar, "TypeOf returns the folded scalar")
+		})
+
+		b.Run("a reference new to the binding", func(b *testing.B) {
+			source, v, ref := scripted(), viewOnly(b), builtin(intSpelling)
+			c := bench.Start(b).MaxAllocs(foldAllocs)
+			defer c.End()
+			var (
+				bound rules.Bound
+				shape rules.TypeShape
+			)
+			for c.Loop() {
+				c.Excluding(func() { bound = rules.NewBound(source, v, nil) })
+				shape = bound.TypeOf(ref)
+			}
+			assert.Equal(b, shape.Form, symbol.FormScalar, "TypeOf folds int to a scalar")
+		})
+
+		b.Run("a list of bytes new to the binding", func(b *testing.B) {
+			var source rules.SourceRules = bytesLang{scripted()}
+			v, ref := viewOnly(b), byteList()
+			c := bench.Start(b).MaxAllocs(foldBytesAllocs)
+			defer c.End()
+			var (
+				bound rules.Bound
+				shape rules.TypeShape
+			)
+			for c.Loop() {
+				c.Excluding(func() { bound = rules.NewBound(source, v, nil) })
+				shape = bound.TypeOf(ref)
+			}
+			assert.Equal(b, shape.Form, symbol.FormBytes, "TypeOf folds a list of bytes to Bytes")
+		})
+	})
+}
+
+// benchCalls measures every call under the bench contract at its
+// ceiling: one sub-benchmark for each method, in the order the methods
+// first appear, and inside it one for each case of a method with cases.
+func benchCalls(b *testing.B, calls []allocCall) {
+	b.Helper()
+
+	var methods []string
+	byMethod := map[string][]allocCall{}
+	for _, c := range calls {
+		if _, seen := byMethod[c.name]; !seen {
+			methods = append(methods, c.name)
+		}
+		byMethod[c.name] = append(byMethod[c.name], c)
+	}
+	for _, name := range methods {
+		cases := byMethod[name]
+		b.Run(name, func(b *testing.B) {
+			if len(cases) == 1 && cases[0].caseName == "" {
+				benchCall(b, cases[0])
+				return
+			}
+			for _, tt := range cases {
+				b.Run(tt.caseName, func(b *testing.B) { benchCall(b, tt) })
 			}
 		})
 	}
+}
 
-	b.Run("TypeOf/a reference new to the binding", func(b *testing.B) {
-		source, v, ref := scripted(), viewOnly(b), builtin(intSpelling)
-		c := bench.Start(b).MaxAllocs(foldAllocs)
-		defer c.End()
-		var (
-			bound rules.Bound
-			shape rules.TypeShape
-		)
-		for c.Loop() {
-			c.Excluding(func() { bound = rules.NewBound(source, v, nil) })
-			shape = bound.TypeOf(ref)
-		}
-		assert.Equal(b, shape.Form, symbol.FormScalar, "TypeOf folds int to a scalar")
-	})
+// benchCall measures one call under the bench contract at its ceiling.
+// The call runs once before the contract starts, so what the first call
+// initialises stays out of the count.
+func benchCall(b *testing.B, tt allocCall) {
+	b.Helper()
 
-	b.Run("TypeOf/a list of bytes new to the binding", func(b *testing.B) {
-		var source rules.SourceRules = bytesLang{scripted()}
-		v, ref := viewOnly(b), byteList()
-		c := bench.Start(b).MaxAllocs(foldBytesAllocs)
-		defer c.End()
-		var (
-			bound rules.Bound
-			shape rules.TypeShape
-		)
-		for c.Loop() {
-			c.Excluding(func() { bound = rules.NewBound(source, v, nil) })
-			shape = bound.TypeOf(ref)
-		}
-		assert.Equal(b, shape.Form, symbol.FormBytes, "TypeOf folds a list of bytes to Bytes")
-	})
+	tt.call()
+	c := bench.Start(b).MaxAllocs(tt.allocs)
+	defer c.End()
+	for c.Loop() {
+		tt.call()
+	}
+}
+
+// foldedBinding returns a binding over the walk fixture and a reference
+// to int the binding has folded, so TypeOf reads the reference's shape
+// from the binding's memo.
+func foldedBinding(tb assert.TB) (rules.Bound, *node.TypeRef) {
+	tb.Helper()
+
+	b, _, _ := boundOver(tb, coretest.Frozen(tb, hierarchy()))
+	ref := builtin(intSpelling)
+	b.TypeOf(ref)
+	return b, ref
 }
 
 // boundCalls returns one call of each method of a binding over the walk
 // fixture, with what the call allocates. Each call checks what it
 // returned, so a call that measured a refusal fails. The binding has
-// folded the reference TypeOf reads, and MembersOf walks the struct
-// [promoted] returns.
+// folded the reference the calls read, and MembersOf walks the struct
+// [promoted] returns. [foldedBinding] measures TypeOf.
 func boundCalls(tb assert.TB) []allocCall {
 	tb.Helper()
 
@@ -417,17 +487,12 @@ func boundCalls(tb assert.TB) []allocCall {
 				tb.Fatalf("CallableOf projected another signature")
 			}
 		}},
-		{name: "TypeOf/a reference the binding folded", call: func() {
-			if b.TypeOf(intRef).Form != symbol.FormScalar {
-				tb.Fatalf("TypeOf folded int to another form")
-			}
-		}},
-		{name: "MembersOf/under ShadowPromote", allocs: membersAllocs, call: func() {
+		{name: "MembersOf", caseName: "under ShadowPromote", allocs: membersAllocs, call: func() {
 			if set, _ := promoting.MembersOf(embedder); len(set.Members) != promotedMethods {
 				tb.Fatalf("MembersOf returned another number of members")
 			}
 		}},
-		{name: "MembersOf/under ShadowOverride", allocs: membersAllocs, call: func() {
+		{name: "MembersOf", caseName: "under ShadowOverride", allocs: membersAllocs, call: func() {
 			if set, _ := overriding.MembersOf(extender); len(set.Members) != promotedMethods {
 				tb.Fatalf("MembersOf returned another number of members")
 			}

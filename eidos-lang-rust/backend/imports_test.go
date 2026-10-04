@@ -90,14 +90,14 @@ func importsCalls() []allocCall {
 	var out string
 	return []allocCall{
 		{
-			name: "Imports", allocs: importsAllocs,
+			name: "Imports", caseName: "a set of two uses", allocs: importsAllocs,
 			call: func() { out = backend.Imports(&full) },
 			check: func(tb assert.TB) {
 				assert.Equal(tb, out, "use std::collections;\nuse svc::store;\n\n", "Imports writes both uses")
 			},
 		},
 		{
-			name:  "Imports/an empty set",
+			name: "Imports", caseName: "an empty set",
 			call:  func() { out = backend.Imports(&empty) },
 			check: func(tb assert.TB) { assert.Equal(tb, out, "", "Imports writes no block") },
 		},

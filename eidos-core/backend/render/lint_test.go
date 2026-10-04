@@ -257,15 +257,17 @@ func TestLintAllocs(t *testing.T) {
 // BenchmarkLint measures the static check of a plugin's tree of one
 // template, which the composition runs once per plugin.
 func BenchmarkLint(b *testing.B) {
-	b.Run("Lint/a tree of one template that places its marker", func(b *testing.B) {
-		p, marked := lintFixture(b)
-		c := bench.Start(b).MaxAllocs(lintAllocs)
-		defer c.End()
-		var findings []error
-		for c.Loop() {
-			findings = p.Lint(marked, nil, nil)
-		}
-		assert.Empty(b, findings, "the marker is placed and every helper resolves")
+	b.Run("Lint", func(b *testing.B) {
+		b.Run("a tree of one template that places its marker", func(b *testing.B) {
+			p, marked := lintFixture(b)
+			c := bench.Start(b).MaxAllocs(lintAllocs)
+			defer c.End()
+			var findings []error
+			for c.Loop() {
+				findings = p.Lint(marked, nil, nil)
+			}
+			assert.Empty(b, findings, "the marker is placed and every helper resolves")
+		})
 	})
 }
 

@@ -95,16 +95,16 @@ const (
 const (
 	// generateAllocs is one generation over the kernel's own schema, the
 	// lowering, every template's execution and every file's formatting:
-	// 2,383,823 on average with a standard deviation of 51.
-	generateAllocs = 2_383_823 + 8*51
+	// 2,384,435 on average with a standard deviation of 28.
+	generateAllocs = 2_384_435 + 8*28
 	// generateOneKindAllocs is one generation over a schema of one walked
-	// kind: the same templates over a smaller model, 55,768 on average
-	// with a standard deviation of 6.
-	generateOneKindAllocs = 55_768 + 8*6
+	// kind: the same templates over a smaller model, 56,447 on average
+	// with a standard deviation of 5.
+	generateOneKindAllocs = 56_447 + 8*5
 	// regenerateOneKindAllocs is one regeneration over the same schema:
-	// the generation and the write of each file, 55,956 on average with
-	// a standard deviation of 5.
-	regenerateOneKindAllocs = 55_956 + 8*5
+	// the generation and the write of each file, 56,635 on average with
+	// a standard deviation of 4.
+	regenerateOneKindAllocs = 56_635 + 8*4
 )
 
 // symbolModule is one module a fingerprint case generates from: the
@@ -373,34 +373,38 @@ func BenchmarkGenerate(b *testing.B) {
 		root   string
 		allocs uint64
 	}{
-		{name: "Generate/the kernel's own schema", root: moduleRoot(b), allocs: generateAllocs},
-		{name: "Generate/a schema of one kind", root: schemaModule(b, reachSchema), allocs: generateOneKindAllocs},
+		{name: "the kernel's own schema", root: moduleRoot(b), allocs: generateAllocs},
+		{name: "a schema of one kind", root: schemaModule(b, reachSchema), allocs: generateOneKindAllocs},
 	}
-	for _, tt := range generations {
-		b.Run(tt.name, func(b *testing.B) {
-			_, err := model.Generate(tt.root)
-			assert.NoError(b, err, "the schema generates before the measurement")
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var set genfile.Set
-			for c.Loop() {
-				set, err = model.Generate(tt.root)
-			}
-			assert.NoError(b, err, "the schema generates")
-			assert.NotEmpty(b, set, "every output")
-		})
-	}
-
-	b.Run("Regenerate/a schema of one kind", func(b *testing.B) {
-		dir := filepath.Join(schemaModule(b, reachSchema), model.SchemaDir)
-		err := model.Regenerate(dir)
-		assert.NoError(b, err, "the schema regenerates before the measurement")
-		c := bench.Start(b).MaxAllocs(regenerateOneKindAllocs)
-		defer c.End()
-		for c.Loop() {
-			err = model.Regenerate(dir)
+	b.Run("Generate", func(b *testing.B) {
+		for _, tt := range generations {
+			b.Run(tt.name, func(b *testing.B) {
+				_, err := model.Generate(tt.root)
+				assert.NoError(b, err, "the schema generates before the measurement")
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var set genfile.Set
+				for c.Loop() {
+					set, err = model.Generate(tt.root)
+				}
+				assert.NoError(b, err, "the schema generates")
+				assert.NotEmpty(b, set, "every output")
+			})
 		}
-		assert.NoError(b, err, "the schema regenerates")
+	})
+
+	b.Run("Regenerate", func(b *testing.B) {
+		b.Run("a schema of one kind", func(b *testing.B) {
+			dir := filepath.Join(schemaModule(b, reachSchema), model.SchemaDir)
+			err := model.Regenerate(dir)
+			assert.NoError(b, err, "the schema regenerates before the measurement")
+			c := bench.Start(b).MaxAllocs(regenerateOneKindAllocs)
+			defer c.End()
+			for c.Loop() {
+				err = model.Regenerate(dir)
+			}
+			assert.NoError(b, err, "the schema regenerates")
+		})
 	})
 }
 

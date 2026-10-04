@@ -212,24 +212,26 @@ func BenchmarkLowering(b *testing.B) {
 		methods []*emit.Method
 		allocs  uint64
 	}{
-		{name: "UniqueMethods", methods: methods(stackMethods)},
+		{name: "methods that fit on the stack", methods: methods(stackMethods)},
 		{
-			name:    "UniqueMethods/more methods than fit on the stack",
+			name:    "more methods than fit on the stack",
 			methods: methods(stackMethods + 1),
 			allocs:  uniqueAllocs,
 		},
 	}
-	for _, tt := range tests {
-		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(tt.allocs)
-			defer c.End()
-			var err error
-			for c.Loop() {
-				err = lowering.UniqueMethods(rustLang, shapeHost, tt.methods)
-			}
-			assert.NoError(b, err, "UniqueMethods passes distinct names")
-		})
-	}
+	b.Run("UniqueMethods", func(b *testing.B) {
+		for _, tt := range tests {
+			b.Run(tt.name, func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(tt.allocs)
+				defer c.End()
+				var err error
+				for c.Loop() {
+					err = lowering.UniqueMethods(rustLang, shapeHost, tt.methods)
+				}
+				assert.NoError(b, err, "UniqueMethods passes distinct names")
+			})
+		}
+	})
 }
 
 // boundParams returns one parameter T with one bound Ord of one

@@ -172,24 +172,28 @@ func TestKindZeroAlloc(t *testing.T) {
 // BenchmarkKind measures the spelling of every kind and the parse of
 // every kind's name.
 func BenchmarkKind(b *testing.B) {
-	b.Run("String/every kind", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var spelled int
-		for c.Loop() {
-			spelled = spellEveryKind()
-		}
-		assert.Equal(b, spelled, len(kindNamings), "String spells every kind")
+	b.Run("String", func(b *testing.B) {
+		b.Run("every kind", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var spelled int
+			for c.Loop() {
+				spelled = spellEveryKind()
+			}
+			assert.Equal(b, spelled, len(kindNamings), "String spells every kind")
+		})
 	})
 
-	b.Run("ParseKind/every kind's name", func(b *testing.B) {
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var parsed int
-		for c.Loop() {
-			parsed = parseEveryKind()
-		}
-		assert.Equal(b, parsed, len(kindNamings)-1, "ParseKind reads every kind back")
+	b.Run("ParseKind", func(b *testing.B) {
+		b.Run("every kind's name", func(b *testing.B) {
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var parsed int
+			for c.Loop() {
+				parsed = parseEveryKind()
+			}
+			assert.Equal(b, parsed, len(kindNamings)-1, "ParseKind reads every kind back")
+		})
 	})
 }
 

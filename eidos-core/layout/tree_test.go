@@ -190,50 +190,54 @@ func TestTreeAllocs(t *testing.T) {
 // BenchmarkTree measures the reads of the source tree that a plan writes
 // its files into, over the fixture's tree and over the canonical corpus.
 func BenchmarkTree(b *testing.B) {
-	b.Run("Residents/the fixture's tree", func(b *testing.B) {
-		g := graph(b)
-		c := bench.Start(b).MaxAllocs(residentsAllocs)
-		defer c.End()
-		var got map[string][]plugin.Resident
-		for c.Loop() {
-			got = layout.Residents(g)
-		}
-		assert.Length(b, got, 4, "Residents indexes every workspace directory")
+	b.Run("Residents", func(b *testing.B) {
+		b.Run("the fixture's tree", func(b *testing.B) {
+			g := graph(b)
+			c := bench.Start(b).MaxAllocs(residentsAllocs)
+			defer c.End()
+			var got map[string][]plugin.Resident
+			for c.Loop() {
+				got = layout.Residents(g)
+			}
+			assert.Length(b, got, 4, "Residents indexes every workspace directory")
+		})
+
+		b.Run("the canonical corpus of 10,000 files", func(b *testing.B) {
+			g, _ := benchTree(b, benchPackages)
+			c := bench.Start(b).MaxAllocs(canonicalResidentsAllocs)
+			defer c.End()
+			var got map[string][]plugin.Resident
+			for c.Loop() {
+				got = layout.Residents(g)
+			}
+			assert.Length(b, got, benchPackages, "Residents indexes one directory per package")
+		})
 	})
 
-	b.Run("Residents/the canonical corpus of 10,000 files", func(b *testing.B) {
-		g, _ := benchTree(b, benchPackages)
-		c := bench.Start(b).MaxAllocs(canonicalResidentsAllocs)
-		defer c.End()
-		var got map[string][]plugin.Resident
-		for c.Loop() {
-			got = layout.Residents(g)
-		}
-		assert.Length(b, got, benchPackages, "Residents indexes one directory per package")
-	})
+	b.Run("Modules", func(b *testing.B) {
+		b.Run("the fixture's two modules", func(b *testing.B) {
+			g := graph(b)
+			f, k := facts(b, twoModules())
+			c := bench.Start(b).MaxAllocs(modulesAllocs)
+			defer c.End()
+			var got []plugin.Module
+			for c.Loop() {
+				got = layout.Modules(g, f, k)
+			}
+			assert.Length(b, got, 2, "Modules lists both modules")
+		})
 
-	b.Run("Modules/the fixture's two modules", func(b *testing.B) {
-		g := graph(b)
-		f, k := facts(b, twoModules())
-		c := bench.Start(b).MaxAllocs(modulesAllocs)
-		defer c.End()
-		var got []plugin.Module
-		for c.Loop() {
-			got = layout.Modules(g, f, k)
-		}
-		assert.Length(b, got, 2, "Modules lists both modules")
-	})
-
-	b.Run("Modules/the canonical corpus without a module", func(b *testing.B) {
-		g, _ := benchTree(b, benchPackages)
-		f, k := facts(b, nil)
-		c := bench.Start(b).MaxAllocs(0)
-		defer c.End()
-		var got []plugin.Module
-		for c.Loop() {
-			got = layout.Modules(g, f, k)
-		}
-		assert.Empty(b, got, "Modules lists no module")
+		b.Run("the canonical corpus without a module", func(b *testing.B) {
+			g, _ := benchTree(b, benchPackages)
+			f, k := facts(b, nil)
+			c := bench.Start(b).MaxAllocs(0)
+			defer c.End()
+			var got []plugin.Module
+			for c.Loop() {
+				got = layout.Modules(g, f, k)
+			}
+			assert.Empty(b, got, "Modules lists no module")
+		})
 	})
 }
 
