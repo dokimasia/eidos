@@ -166,7 +166,7 @@ func skipsOf(
 }
 
 // ByKind enumerates the declarations of one kind under the scope,
-// in the graph's own order, untracked.
+// in identity order, untracked.
 //
 // # Allocation contract
 //
@@ -252,11 +252,11 @@ func (ix *Index) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	return ix.graph.PackageOf(id)
 }
 
-// Reader mints a tracked handle under the index's scope, recording
-// into reads: how dispatch gives each handler invocation its own
-// read grain, and how a hand-rolled plugin's phase call gets its
-// one. It allocates the handle, one allocation, and returns the
-// graph's error for a nil read set.
+// Reader returns a new tracked handle under the index's scope, which
+// records into reads. Dispatch takes one for each lane of a phase call,
+// and a plugin that implements its role directly takes the one its phase
+// call hands it. It allocates the handle, one allocation, and returns
+// the graph's error for a nil read set.
 func (ix *Index) Reader(reads *store.ReadSet) (*store.Reader, error) {
 	return ix.graph.Reader(reads, ix.scope)
 }
@@ -272,7 +272,7 @@ func (ix *Index) admits(id symbol.Identity) bool {
 }
 
 // eachOfKind calls yield with each declaration of one kind under the
-// scope, in the graph's order, until yield returns false. It ranges
+// scope, in identity order, until yield returns false. It ranges
 // over the graph's enumeration in place, so the compiler inlines it,
 // and it does not keep yield.
 func (ix *Index) eachOfKind(k symbol.Kind, yield func(symbol.Symbol) bool) {

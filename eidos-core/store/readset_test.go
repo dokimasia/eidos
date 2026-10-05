@@ -5,6 +5,7 @@ package store_test
 
 import (
 	"slices"
+	"strconv"
 	"testing"
 
 	"go.dokimi.dev/assert"
@@ -27,9 +28,14 @@ var _ meta.Recorder = (*store.ReadSet)(nil)
 const (
 	// newReadSetAllocs is the set.
 	newReadSetAllocs = 1
-	// enumerationAllocs is the sorted list of a grain's edges.
+	// enumerationAllocs is the sorted list of a grain's edges, where the
+	// set moved its edges into maps.
 	enumerationAllocs = 1
 )
+
+// pastInline is a number of edges past the four a read set keeps in
+// place.
+const pastInline = 6
 
 // enumeration is one enumeration of a read set: its name and a count
 // of the edges a range over it yields.
@@ -83,6 +89,47 @@ func TestReadSet(t *testing.T) {
 				slices.Collect(forwardReads.Identities()),
 				slices.Collect(backwardReads.Identities()),
 				"the order is the set's own, not the read order")
+		})
+
+		t.Run("returns the edges of a set past four edges in identity order", func(t *testing.T) {
+			t.Parallel()
+
+			var decls []symbol.Symbol
+			var ids []symbol.Identity
+			for i := range pastInline {
+				s := coretest.Struct(coretest.StorePath, "Decl"+strconv.Itoa(i))
+				decls, ids = append(decls, s), append(ids, s.ID)
+			}
+			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath, decls...))
+			for _, id := range slices.Backward(ids) {
+				r.Lookup(id)
+			}
+
+			slices.SortFunc(ids, symbol.Identity.Compare)
+			assert.Equal(t, slices.Collect(reads.Identities()), ids, "the edges come back in identity order")
+		})
+
+		t.Run("stops when a range over the edges a log loaded stops", func(t *testing.T) {
+			t.Parallel()
+
+			seen := 0
+			for range loadedFrom(pastFourEdges(t)).Identities() {
+				seen++
+				break
+			}
+			assert.Equal(t, seen, 1, "the iteration stops when the range stops")
+		})
+
+		t.Run("returns nothing for a set past four edges that read no declaration", func(t *testing.T) {
+			t.Parallel()
+
+			s := store.NewReadSet()
+			id := coretest.Struct(coretest.StorePath, "Store").ID
+			for i := range pastInline {
+				s.RecordFact(id, meta.KeyName("t.k"+strconv.Itoa(i)))
+			}
+
+			assert.Empty(t, slices.Collect(s.Identities()), "a set of fact edges has no declaration edge")
 		})
 	})
 
@@ -160,6 +207,19 @@ func TestReadSet(t *testing.T) {
 				slices.Collect(backwardReads.Kinds()),
 				"the order is the set's own, not the enumeration order")
 		})
+
+		t.Run("returns the edges of a set past four edges in kind order", func(t *testing.T) {
+			t.Parallel()
+
+			kinds := []symbol.Kind{
+				symbol.KindStruct, symbol.KindInterface, symbol.KindFile, symbol.KindPackage, symbol.KindEnum,
+			}
+			r, reads := coretest.Reading(t, nil, coretest.Package(coretest.StorePath))
+			enumerate(r, kinds...)
+
+			assert.Equal(t, slices.Collect(reads.Kinds()), slices.Sorted(slices.Values(kinds)),
+				"the edges come back in kind order")
+		})
 	})
 
 	t.Run("Reset", func(t *testing.T) {
@@ -181,6 +241,29 @@ func TestReadSet(t *testing.T) {
 			s.Reset()
 			s.RecordFact(coretest.Struct(coretest.StorePath, "Store").ID, "shape.role")
 			assert.Equal(t, s.Len(), 1, "the set records again")
+		})
+
+		t.Run("drops the edges a log loaded", func(t *testing.T) {
+			t.Parallel()
+
+			s := loadedFrom(everyGrain(t))
+			s.Reset()
+			assert.Equal(t, grainsOf(s), grainsOf(store.NewReadSet()), "a reset set returns no edge")
+		})
+	})
+
+	t.Run("RecordFact", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("keeps the edges a log loaded into the set", func(t *testing.T) {
+			t.Parallel()
+
+			id := coretest.Struct(coretest.CachePath, "Cache").ID
+			s := loadedFrom(everyGrain(t))
+			s.RecordFact(id, "shape.role")
+			want := everyGrain(t)
+			want.RecordFact(id, "shape.role")
+			assert.Equal(t, grainsOf(s), grainsOf(want), "the set has the loaded edges and the new one")
 		})
 	})
 
@@ -253,6 +336,31 @@ func TestReadSet(t *testing.T) {
 			}
 			assert.Equal(t, seen, 1, "the iteration stops when the range stops")
 		})
+
+		t.Run("returns the edges of a set past four edges in subject then key order", func(t *testing.T) {
+			t.Parallel()
+
+			s := store.NewReadSet()
+			one := coretest.Struct(coretest.StorePath, "Alpha").ID
+			other := coretest.Struct(coretest.StorePath, "Omega").ID
+			for _, key := range []meta.KeyName{"t.c", "t.a", "t.b"} {
+				s.RecordFact(other, key)
+				s.RecordFact(one, key)
+			}
+
+			var got []meta.FactRef
+			for subject, key := range s.Facts() {
+				got = append(got, meta.FactRef{Subject: subject, Key: key})
+			}
+			assert.Equal(t, got, []meta.FactRef{
+				{Subject: one, Key: "t.a"},
+				{Subject: one, Key: "t.b"},
+				{Subject: one, Key: "t.c"},
+				{Subject: other, Key: "t.a"},
+				{Subject: other, Key: "t.b"},
+				{Subject: other, Key: "t.c"},
+			}, "the edges come back by subject, then by key")
+		})
 	})
 
 	t.Run("AppendPointReads", func(t *testing.T) {
@@ -318,6 +426,14 @@ func TestReadSet(t *testing.T) {
 			assert.Equal(t, got[0], first, "the element of dst comes first")
 			assert.Equal(t, got[1:], reads.AppendPointReads(nil), "the point reads follow it")
 		})
+
+		t.Run("returns the point reads of a set a log loaded", func(t *testing.T) {
+			t.Parallel()
+
+			reads := pastFourEdges(t)
+			assert.Equal(t, loadedFrom(reads).AppendPointReads(nil), reads.AppendPointReads(nil),
+				"the loaded set derives what the recorded set does")
+		})
 	})
 
 	t.Run("Len", func(t *testing.T) {
@@ -345,6 +461,27 @@ func TestReadSet(t *testing.T) {
 			// kind edge, and one fact edge.
 			assert.Equal(t, reads.Len(), 5, "Len counts every grain")
 		})
+
+		t.Run("counts one edge for an edge read again past four edges", func(t *testing.T) {
+			t.Parallel()
+
+			s := store.NewReadSet()
+			id := coretest.Struct(coretest.StorePath, "Store").ID
+			keys := []meta.KeyName{"t.a", "t.b", "t.c", "t.d", "t.e"}
+			for _, key := range keys {
+				s.RecordFact(id, key)
+			}
+			s.RecordFact(id, keys[0])
+
+			assert.Equal(t, s.Len(), len(keys), "the first key's second read records nothing")
+		})
+
+		t.Run("counts the edges a log loaded", func(t *testing.T) {
+			t.Parallel()
+
+			reads := pastFourEdges(t)
+			assert.Equal(t, loadedFrom(reads).Len(), reads.Len(), "the loaded set counts what the recorded set does")
+		})
 	})
 }
 
@@ -367,11 +504,20 @@ func TestReadSetAllocs(t *testing.T) {
 	}, 1, "AppendPointReads allocates one slice into nil")
 
 	for _, tt := range enumerations(reads) {
+		msg := "a range over " + tt.name + " of edges in maps allocates the sorted list of edges"
 		assert.MaxAllocs(t, func() {
 			if tt.count() != 1 {
 				t.Fatalf("%s enumerated another number of edges", tt.name)
 			}
-		}, enumerationAllocs, "a range over "+tt.name+" allocates the sorted list of edges")
+		}, enumerationAllocs, msg)
+	}
+	for _, tt := range enumerations(loadedFrom(reads)) {
+		msg := "a range over " + tt.name + " of edges a log loaded allocates nothing"
+		assert.MaxAllocs(t, func() {
+			if tt.count() != 1 {
+				t.Fatalf("%s enumerated another number of edges", tt.name)
+			}
+		}, 0, msg)
 	}
 
 	var built *store.ReadSet
@@ -386,11 +532,17 @@ func TestReadSetAllocs(t *testing.T) {
 			t.Fatal("the reset set records another number of edges")
 		}
 	}, 0, "Reset and RecordFact allocate nothing within the set's earlier use")
+
+	for _, tt := range enumerations(reads) {
+		msg := "a range over " + tt.name + " of edges in place allocates nothing"
+		assert.MaxAllocs(t, func() { tt.count() }, 0, msg)
+	}
 }
 
 // BenchmarkReadSet measures a set of five edges, one of each grain: the
-// derivation a stamp records from it, and the reuse of the set by the
-// next invocation.
+// derivation a stamp records from it, the reuse of the set by the next
+// invocation, and a range over each enumeration of the set's edges in
+// maps and of the same edges a log loaded into another set.
 func BenchmarkReadSet(b *testing.B) {
 	reads := everyGrain(b)
 	id := coretest.Struct(coretest.StorePath, "Store").ID
@@ -461,15 +613,28 @@ func BenchmarkReadSet(b *testing.B) {
 		assert.Equal(b, s.Len(), 0, "NewReadSet returns a set without an edge")
 	})
 
-	for _, tt := range enumerations(reads) {
+	loaded := enumerations(loadedFrom(reads))
+	for i, tt := range enumerations(reads) {
 		b.Run(tt.name, func(b *testing.B) {
-			c := bench.Start(b).MaxAllocs(enumerationAllocs)
-			defer c.End()
-			n := 0
-			for c.Loop() {
-				n = tt.count()
-			}
-			assert.Equal(b, n, 1, "the enumeration returns the grain's one edge")
+			b.Run("of edges in maps", func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(enumerationAllocs)
+				defer c.End()
+				n := 0
+				for c.Loop() {
+					n = tt.count()
+				}
+				assert.Equal(b, n, 1, "the enumeration returns the grain's one edge")
+			})
+
+			b.Run("of edges a log loaded", func(b *testing.B) {
+				c := bench.Start(b).MaxAllocs(0)
+				defer c.End()
+				n := 0
+				for c.Loop() {
+					n = loaded[i].count()
+				}
+				assert.Equal(b, n, 1, "the enumeration returns the grain's one edge")
+			})
 		})
 	}
 }
@@ -514,6 +679,14 @@ func enumerations(s *store.ReadSet) []enumeration {
 			return n
 		}},
 	}
+}
+
+// loadedFrom returns a new set that a log loaded the edges of reads into.
+func loadedFrom(reads *store.ReadSet) *store.ReadSet {
+	var log store.ReadLog
+	loaded := store.NewReadSet()
+	log.Load(log.Append(reads), loaded)
+	return loaded
 }
 
 // enumerate ranges every kind through the reader, which is what

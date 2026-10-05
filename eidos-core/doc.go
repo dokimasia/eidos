@@ -141,6 +141,6 @@
 //
 // The root package imports core/plugin, core/diag,
 // core/directive, core/emit, core/meta, core/node, core/position,
-// core/rules, core/store, core/symbol and the Go stdlib. Nothing
-// in the module imports the root package back.
+// core/rules, core/store, core/symbol, core/internal/grow and the Go
+// stdlib. Nothing in the module imports the root package back.
 package eidos

@@ -140,7 +140,7 @@ func Sealed(src Source) *Graph {
 // traversing every package again serially.
 type loadedPackage struct {
 	pkg *node.Package
-	// decls lists the identity-bearing declarations, in traversal
+	// decls lists the identity-bearing declarations, in identity
 	// order. Freeze releases it once the indexes contain them.
 	decls []node.Declaration
 }
@@ -277,12 +277,12 @@ func (g *Graph) Reader(reads *ReadSet, sc Scope) (*Reader, error) {
 	return &Reader{graph: g, reads: reads, scope: sc}, nil
 }
 
-// ByKind enumerates the declarations of one kind, untracked.
-//
-// The order is the graph's own and is the same on every run: packages
-// sort by identity, and a package's declarations come back in the order
-// the traversal visits them. A sealed graph decodes the regions whose
-// summary lists the kind, and enumerates them in the same order.
+// ByKind enumerates the declarations of one kind, untracked, in
+// identity order, the same on every run: packages sort by identity, and
+// so does each package's declarations. Declarations under one identity
+// come back in the order the walk of their package visits them. A sealed
+// graph decodes the regions whose summary lists the kind, and enumerates
+// them in the same order.
 func (g *Graph) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
 		for _, decl := range g.kind(k) {
@@ -354,8 +354,12 @@ func (g *Graph) Damaged() error {
 	return g.lazy.damaged()
 }
 
-// collect walks one package, returning its identity-bearing
-// declarations in traversal order and tallying them per kind.
+// collect returns one package's identity-bearing declarations in
+// identity order, and adds each to the graph's count of its kind. The
+// sort is stable, so declarations under one identity keep the order of
+// the walk. It runs once per package, on the loading goroutine, so
+// every enumeration of a kind is in identity order without a sort per
+// call.
 func (g *Graph) collect(p *node.Package) []node.Declaration {
 	var out []node.Declaration
 	node.Walk(p, func(s symbol.Symbol) bool {
@@ -367,6 +371,7 @@ func (g *Graph) collect(p *node.Package) []node.Declaration {
 		out = append(out, decl)
 		return true
 	})
+	slices.SortStableFunc(out, func(a, b node.Declaration) int { return a.Identity().Compare(b.Identity()) })
 	return out
 }
 

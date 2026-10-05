@@ -152,22 +152,26 @@ func TestJournal(t *testing.T) {
 			assert.Equal(t, rec.keys(), want, "each subject's match is recorded once, in identity order")
 		})
 
-		t.Run("records the invocations in identity order where the index enumerates in another", func(t *testing.T) {
+		t.Run("records the invocations in identity order where the store enumerates in another", func(t *testing.T) {
 			t.Parallel()
 
-			zeta := coretest.Struct(coretest.StorePath, "Zeta")
-			alpha := coretest.Struct(coretest.StorePath, "Alpha")
-			g := store.New()
-			assert.NoError(t, g.AddPackage(coretest.Package(coretest.StorePath, zeta, alpha)),
-				"the fixture package is admitted")
-			g.Freeze()
+			g, alpha, beta := fixtureGraph(t)
 			_, facts := boolKey(t)
-			p, visited := visitingStructs(contextPlugin, eidos.OnStruct[*eidos.Emitter])
-			rec := journaledGenerate(t, genContext(t, g, facts, nil), p)
-			assert.Equal(t, *visited, []string{"Zeta", "Alpha"}, "the index enumerates in declaration order")
+			ctx := genContext(t, g, facts, nil)
+			seed(t, ctx, emitted(beta), emitted(alpha))
+			var origins []symbol.Identity
+			for v := range ctx.Emit.ByKind(symbol.KindStruct) {
+				origin, _ := emit.OriginOf(v)
+				origins = append(origins, origin)
+			}
+			assert.Equal(t, origins, []symbol.Identity{beta.ID, alpha.ID}, "the store enumerates in the unit's order")
+			p := eidos.NewPlugin(contextPlugin).
+				Handle(eidos.OnEmit(symbol.KindStruct, func(*eidos.EmitMatch, *eidos.Emitter) error { return nil })).
+				Build()
+			rec := journaledGenerate(t, ctx, p)
 			assert.Equal(t, rec.keys(), []plugin.MatchKey{
-				{Plugin: contextPlugin, Subject: alpha.ID},
-				{Plugin: contextPlugin, Subject: zeta.ID},
+				{Plugin: contextPlugin, Subject: alpha.ID, Host: plugin.EmitRef{Unit: seededUnit, Index: 1}},
+				{Plugin: contextPlugin, Subject: beta.ID, Host: plugin.EmitRef{Unit: seededUnit, Index: 0}},
 			}, "the journal receives the records in identity order")
 		})
 

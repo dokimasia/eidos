@@ -119,7 +119,10 @@ type Reader = core.Reader
 // [ReadLog.Load] records an entry's edges into a set again, so a
 // consumer reads every entry through one set the caller resets between
 // entries. An entry keeps the set's edges and not the order they
-// arrived in, which no enumeration of a set returns either.
+// arrived in, which no enumeration of a set returns either. An entry of
+// more than four edges keeps them in the order the set's enumerations
+// return them, which Append sorts, so a set that loads it enumerates the
+// edges in place and sorts nothing.
 //
 // The zero ReadLog is empty and ready to record. [ReadLog.Reset] empties
 // a log and keeps its storage, so a dispatcher reuses one log across
@@ -133,9 +136,13 @@ type Reader = core.Reader
 // # Allocation contract
 //
 // Append allocates only to grow the log's slices past the largest use
-// since the log's creation, and Load only to grow the set's maps past
-// the largest entry the set held since its creation. Reset allocates
-// nothing.
+// since the log's creation. Load allocates nothing for an entry of at
+// most four edges, which a set keeps in place. For a larger entry, Load
+// allocates only to grow the set's list of loaded edges past the largest
+// entry the set has loaded since its creation. A slice doubles when it
+// fills, so a log of n edges allocates less than twice their size, where
+// an append that grows a large slice by a quarter allocates about five
+// times it. Reset allocates nothing.
 type ReadLog = core.ReadLog
 
 // ReadSet is what one derived artifact read.
@@ -158,11 +165,15 @@ type ReadLog = core.ReadLog
 //
 // # Allocation contract
 //
-// Each grain allocates its map on its first edge, and the map grows as
-// edges arrive. [ReadSet.Reset] keeps every map, so a set reused across
-// invocations allocates only to grow. A range over an enumeration sorts
-// the grain's edges into one new list when the range starts, and
-// allocates nothing for a grain without an edge.
+// A set keeps its first four edges in place and allocates nothing for
+// them, which covers an invocation that reads a fact or looks up a few
+// declarations. A fifth edge, or an enumeration that reserves room for
+// more, moves every edge into a map of its grain, and each map then
+// grows as edges arrive. [ReadSet.Reset] keeps the maps, so a set reused
+// across invocations allocates only to grow. A range over an enumeration
+// of the edges a set keeps in place, or of the edges a [ReadLog] loaded
+// into it, allocates nothing, and one over edges in maps sorts the
+// grain's edges into one new list when the range starts.
 type ReadSet = core.ReadSet
 
 // NewReadSet returns a read set with no edges. It allocates the set,

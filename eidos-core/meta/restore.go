@@ -4,8 +4,12 @@
 package meta
 
 import (
+	"cmp"
 	"fmt"
+	"iter"
+	"maps"
 	"reflect"
+	"slices"
 
 	"go.dokimi.dev/eidos/core/symbol"
 )
@@ -107,4 +111,93 @@ func (f *Facts) restoreBag(id symbol.Identity, b *bag) {
 	for _, state := range b.perGroup {
 		state.rewin()
 	}
+}
+
+// Bags enumerates every bag that keeps a claim, each subject once with
+// its claims in the form [BagSource.Claims] returns them: the claims of
+// each key, keys in name order, then the drops of each group, groups in
+// name order, and the claims of one fact or one group in rank order. A
+// source that returns these claims restores a store that reads, ranks
+// and withdraws them as this one does. Subjects arrive in no fixed
+// order. In a store [Restore] returned, the bags are the ones the run
+// restored or wrote.
+//
+// A list value and a claim's derivation are copies, so a caller cannot
+// write into a bag. The yielded slice is the range's own until the body
+// returns, and the next bag reuses its storage.
+//
+// # Concurrency
+//
+// A range takes each bag's read lock while it copies the bag, so it
+// runs beside writes and yields each bag as one write left it.
+//
+// # Allocation contract
+//
+// A range allocates the slice it yields, which grows to the largest bag,
+// the list of the keys of a bag of more than four, the list of a bag's
+// groups, and a copy of each list value and of each non-empty
+// derivation: one allocation for a store of bags of one claim without a
+// derivation. The returned function inlines into the range.
+func (f *Facts) Bags() iter.Seq2[symbol.Identity, []StoredClaim] {
+	return func(yield func(symbol.Identity, []StoredClaim) bool) { f.eachBag(yield) }
+}
+
+// eachBag yields each bag that keeps a claim, in the form [Facts.Bags]
+// documents, and stops when yield returns false.
+func (f *Facts) eachBag(yield func(symbol.Identity, []StoredClaim) bool) {
+	var claims []StoredClaim
+	f.bags.Range(func(key, value any) bool {
+		id, _ := key.(symbol.Identity)
+		b, _ := value.(*bag)
+		claims = f.appendBag(claims[:0], b)
+		return len(claims) == 0 || yield(id, claims)
+	})
+}
+
+// appendBag appends a bag's claims to dst in the order [Facts.Bags]
+// documents, under the bag's read lock. A state exists only under a key
+// the registry resolved, so every key's name is registered.
+func (f *Facts) appendBag(dst []StoredClaim, b *bag) []StoredClaim {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	type keyed struct {
+		name  KeyName
+		state *factState
+	}
+	var inline [4]keyed
+	keys := inline[:0]
+	if b.hasFirst {
+		name, _ := f.registry.nameOf(b.firstID)
+		keys = append(keys, keyed{name: name, state: &b.first})
+	}
+	for k, state := range b.perKey {
+		name, _ := f.registry.nameOf(k)
+		keys = append(keys, keyed{name: name, state: state})
+	}
+	slices.SortFunc(keys, func(a, b keyed) int { return cmp.Compare(a.name, b.name) })
+	for _, k := range keys {
+		dst = k.state.appendClaims(dst, k.name, "")
+	}
+	if len(b.perGroup) == 0 {
+		return dst
+	}
+	for _, g := range slices.Sorted(maps.Keys(b.perGroup)) {
+		dst = b.perGroup[g].appendClaims(dst, "", g)
+	}
+	return dst
+}
+
+// appendClaims appends the state's claims to dst in rank order, each
+// under the key or the group the state keeps, with a copy of its
+// derivation and of its value.
+func (s *factState) appendClaims(dst []StoredClaim, k KeyName, g GroupName) []StoredClaim {
+	start := len(dst)
+	for _, held := range s.claims {
+		claim := held.claim
+		claim.Derived = slices.Clone(claim.Derived)
+		dst = append(dst, StoredClaim{Key: k, Group: g, Claim: claim, Value: cloneValue(held.value), Drop: held.drop})
+	}
+	slices.SortFunc(dst[start:], func(a, b StoredClaim) int { return rank(a.Claim, b.Claim) })
+	return dst
 }

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/internal/grow"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
@@ -22,8 +23,9 @@ type span struct{ from, to int32 }
 // its reads in the lane's read log, the ranges of the lane's buffers its
 // handler filled, and the ranges of the call's buffers its effects
 // filled as they applied. A record keeps the match's parts and not its
-// key, whose host the delivery resolves, so a call of many invocations
-// keeps a small record for each.
+// key, whose host the delivery resolves. It copies the subject while
+// the invocation runs, so the delivery reads every record in order and
+// no declaration again.
 type record struct {
 	seq     int
 	fr      *flatRule
@@ -87,7 +89,7 @@ func sortedSet[T any](s []T, compare func(a, b T) int) []T {
 // open appends the record of the invocation inv binds, before the
 // handler runs.
 func (rs *runState) open(fr *flatRule, inv *invocation) {
-	rs.records = append(rs.records, record{
+	rs.records = append(grow.Room(rs.records, 1, minGrowth), record{
 		seq:     inv.seq,
 		fr:      fr,
 		subject: inv.subject,
@@ -117,13 +119,13 @@ func (rs *runState) running() *record { return &rs.records[len(rs.records)-1] }
 
 // noteExport records that the running invocation read a plan's export.
 func (rs *runState) noteExport(plan string) {
-	rs.readExports = append(rs.readExports, plan)
+	rs.readExports = append(grow.Room(rs.readExports, 1, minGrowth), plan)
 	rs.running().exports.to = int32(len(rs.readExports))
 }
 
 // noteClaim records that the running invocation stamped a fact.
 func (rs *runState) noteClaim(f meta.FactRef) {
-	rs.stamped = append(rs.stamped, f)
+	rs.stamped = append(grow.Room(rs.stamped, 1, minGrowth), f)
 	rs.running().claimed.to = int32(len(rs.stamped))
 }
 
@@ -193,9 +195,11 @@ func (c *phaseCall) keyHosts() {
 //
 // The call numbers its matches from zero without a gap, rule after rule,
 // so the records fall into sequence order by their numbers, and each
-// rule's records are one run of it. A run is in canonical match order
-// already where the rule's index enumerates in identity order, and the
-// delivery sorts the other runs alone.
+// rule's records are one run of it. Every enumeration hands its matches
+// over in canonical match order but two. An emit-phase rule's matches
+// follow the plan's store, and a directive-gated rule of more than one
+// spelling enumerates the carriers spelling by spelling. The delivery
+// sorts those two kinds of run alone.
 //
 // # Allocation contract
 //
@@ -220,7 +224,8 @@ func (c *phaseCall) deliver() {
 		for end < len(all) && all[end].r.fr == all[start].r.fr {
 			end++
 		}
-		if run := all[start:end]; !slices.IsSortedFunc(run, compareEntries) {
+		run, fr := all[start:end], all[start].r.fr
+		if (fr.phase == plugin.PhaseEmit || len(fr.spellings) > 1) && !slices.IsSortedFunc(run, compareEntries) {
 			slices.SortFunc(run, compareEntries)
 		}
 		start = end

@@ -67,7 +67,8 @@ type Reader struct {
 	scope Scope
 }
 
-// ByKind enumerates the declarations of one kind.
+// ByKind enumerates the declarations of one kind, in identity order, as
+// [Graph.ByKind] does.
 //
 // It records a membership edge, so the reader runs again when a
 // declaration of that kind enters or leaves the set, and not when one
@@ -77,7 +78,7 @@ type Reader struct {
 // early records only the declarations it saw.
 func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
-		r.reads.recordKind(k)
+		r.reads.record(edge{grain: grainKind, kind: k})
 
 		// An unscoped enumeration records an edge per element, so the
 		// set can size its map up front. Under a scope the admitted
@@ -94,7 +95,7 @@ func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 			if !scope.admits(id) {
 				continue
 			}
-			r.reads.recordIdentity(id)
+			r.reads.record(edge{grain: grainIdentity, id: id})
 			if !yield(decl) {
 				return
 			}
@@ -110,7 +111,7 @@ func (r *Reader) ByKind(k symbol.Kind) iter.Seq[symbol.Symbol] {
 // caller met.
 func (r *Reader) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 	return func(yield func(symbol.Symbol) bool) {
-		r.reads.recordDirective(n)
+		r.reads.record(edge{grain: grainDirective, name: string(n)})
 
 		scope := verdicts{scope: r.scope}
 		for _, decl := range r.graph.carriers(n) {
@@ -118,7 +119,7 @@ func (r *Reader) ByDirective(n directive.Name) iter.Seq[symbol.Symbol] {
 			if !scope.admits(id) {
 				continue
 			}
-			r.reads.recordIdentity(id)
+			r.reads.record(edge{grain: grainIdentity, id: id})
 			if !yield(decl) {
 				return
 			}
@@ -140,9 +141,9 @@ func (r *Reader) Lookup(id symbol.Identity) (symbol.Symbol, bool) {
 		return nil, false
 	}
 	if id.Kind == symbol.KindPackage {
-		r.reads.recordPackage(id)
+		r.reads.record(edge{grain: grainPackage, id: id})
 	} else {
-		r.reads.recordIdentity(id)
+		r.reads.record(edge{grain: grainIdentity, id: id})
 	}
 	return r.graph.Lookup(id)
 }
@@ -156,14 +157,15 @@ func (r *Reader) PackageOf(id symbol.Identity) (*node.Package, bool) {
 	if !r.scope.admits(pkg) {
 		return nil, false
 	}
-	r.reads.recordPackage(pkg)
+	r.reads.record(edge{grain: grainPackage, id: pkg})
 	return r.graph.packageOf(id)
 }
 
 // owningPackage returns the identity of the package a declaration
 // belongs to.
 //
-// It reads the identity, not the graph, so scope is decided for a
-// declaration the graph does not contain too. Deciding it from a lookup
-// would let an out-of-scope caller learn whether a declaration exists.
+// It derives the package from the identity alone, so a scope applies to
+// a declaration the graph does not contain as it applies to one it
+// does. A scope applied after a lookup would tell an out-of-scope caller
+// whether a declaration exists.
 func owningPackage(id symbol.Identity) symbol.Identity { return id.PackageIdentity() }

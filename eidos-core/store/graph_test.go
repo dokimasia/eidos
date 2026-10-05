@@ -453,6 +453,16 @@ func TestGraph(t *testing.T) {
 				"the order is the graph's own, not the load order")
 		})
 
+		t.Run("returns a package's declarations in identity order", func(t *testing.T) {
+			t.Parallel()
+
+			g := coretest.Frozen(t, coretest.Package(coretest.StorePath,
+				coretest.Struct(coretest.StorePath, "Store"), coretest.Struct(coretest.StorePath, "Cache")))
+
+			assert.Equal(t, coretest.Names(t, slices.Collect(g.ByKind(symbol.KindStruct))),
+				[]string{"Cache", "Store"}, "the package declares Store first, and Cache sorts first")
+		})
+
 		t.Run("returns nothing before Freeze", func(t *testing.T) {
 			t.Parallel()
 

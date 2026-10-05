@@ -169,10 +169,9 @@ func AssertStableDeclaration(tb assert.TB, setup Setup) {
 }
 
 // declaresTree reports whether the plugin declares a template tree
-// for any language the fixture lists. The facade gives every
-// plugin the provider's shape, so the shape alone proves nothing:
-// the suite gates its lint on a declared tree, never on the
-// interface.
+// for any language the fixture lists. The facade gives every plugin
+// the provider's methods, so the suite lints a plugin that declares a
+// tree and not every plugin that implements the interface.
 func declaresTree(p plugin.Plugin, f *Fixture) bool {
 	tp, held := p.(plugin.TemplateProvider)
 	if !held || f == nil {
@@ -270,25 +269,26 @@ func AssertParallelDispatch(tb assert.TB, setup Setup) {
 		"and it reports the same findings in the same order")
 }
 
-// AssertSelective runs every phase the plugin implements over two
-// isolated fixtures: whole with a journal, then under a selection that
-// lists every match the whole run journaled for the phase. It fails
-// unless both runs emit the same bytes, end with the same fact values
-// and report the same findings, and unless each phase's journal lists
-// every match once, in canonical match order. The selected run executes
-// its matches in canonical match order and the whole run in the order
-// the index enumerates them, so a handler whose output depends on
-// another invocation fails the check. The two runs report their
-// findings in those two orders, so the check compares the findings in
-// [diag.Diag.Compare] order. A plugin that journals nothing runs whole
-// both times and passes.
+// AssertSelective runs every phase the plugin implements twice, with one
+// plugin over two isolated fixtures: whole with a journal, then under a
+// selection that lists every match the whole run journaled for the
+// phase. It fails unless both runs emit the same bytes, end with the
+// same fact values and report the same findings, and unless each phase's
+// journal lists every match once, in canonical match order. The second
+// run takes the fixture of a second setup and keeps the plugin of the
+// first, as a workspace runs one plugin cold and then warm, so a handler
+// whose output depends on an earlier invocation fails the check. The
+// selected run executes its matches in canonical match order, which an
+// enumeration in another order does not, so the check compares the
+// findings in [diag.Diag.Compare] order. A plugin that journals nothing
+// runs whole both times and passes.
 func AssertSelective(tb assert.TB, setup Setup) {
 	tb.Helper()
 
-	wholePlugin, wholeFixture := setup(tb)
-	selectedPlugin, selectedFixture := setup(tb)
-	whole, wholeKeys := journaledRun(tb, wholePlugin, wholeFixture, nil)
-	selected, selectedKeys := journaledRun(tb, selectedPlugin, selectedFixture, wholeKeys)
+	p, wholeFixture := setup(tb)
+	_, selectedFixture := setup(tb)
+	whole, wholeKeys := journaledRun(tb, p, wholeFixture, nil)
+	selected, selectedKeys := journaledRun(tb, p, selectedFixture, wholeKeys)
 	for _, keys := range wholeKeys {
 		assert.True(tb, ascending(keys), "the journal lists every match once, in canonical match order")
 	}
@@ -304,7 +304,7 @@ func AssertSelective(tb assert.TB, setup Setup) {
 }
 
 // keyJournal keeps the match keys one phase call journals, in the order
-// the call hands them.
+// the call passes them to Invoked.
 type keyJournal struct{ keys []plugin.MatchKey }
 
 // Invoked keeps the invocation's key.

@@ -152,7 +152,7 @@ func (e *Emitter) out(per plugin.Cardinality, key string, tags []Tag) *Out {
 	if e.m.gate != nil {
 		instance = e.m.gate.Instance
 	}
-	at := e.rs.fx.touch(e.m.seq, touch{key: k, fam: fam, subject: e.m.subject, instance: instance})
+	at := e.rs.fx.touch(e.m.seq, touch{key: k, fr: e.m.fr, value: e.m.value, instance: instance})
 	if e.rs.minted < len(e.rs.handles) {
 		h := &e.rs.handles[e.rs.minted]
 		e.rs.minted++
@@ -288,18 +288,19 @@ func originsOf(places []placed) []symbol.Identity {
 }
 
 // accFor returns the accumulator for one key, bound on first touch
-// with its namespace resolved once. It binds an accumulator an earlier
-// call released where the call's state has one, so its placements
-// append into storage that call grew, and allocates one otherwise. The
-// first touch of a state creates the map, so a call that touches
-// nothing allocates none.
-func (c *phaseCall) accFor(k accKey, fam plugin.Output, subject symbol.Identity) *accumulator {
+// with its family, which the key's tag names, and its namespace
+// resolved once. It binds an accumulator an earlier call released where
+// the call's state has one, so its placements append into storage that
+// call grew, and allocates one otherwise. The first touch of a state
+// creates the map, so a call that touches nothing allocates none.
+func (c *phaseCall) accFor(k accKey, subject symbol.Identity) *accumulator {
 	if acc, held := c.accs[k]; held {
 		return acc
 	}
 	if c.accs == nil {
 		c.accs = map[accKey]*accumulator{}
 	}
+	fam := c.b.outByTag[k.tag]
 	var acc *accumulator
 	if n := len(c.spare); n > 0 {
 		acc, c.spare = c.spare[n-1], c.spare[:n-1]

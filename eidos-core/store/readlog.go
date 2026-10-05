@@ -4,9 +4,14 @@
 package store
 
 import (
-	"go.dokimi.dev/eidos/core/directive"
-	"go.dokimi.dev/eidos/core/symbol"
+	"slices"
+
+	"go.dokimi.dev/eidos/core/internal/grow"
 )
+
+// minGrowth is the capacity a log's empty slice takes on its first
+// append.
+const minGrowth = 16
 
 // ReadLog keeps the edges of many read sets in flat storage, one entry
 // for each set it records: what a dispatcher keeps of each invocation's
@@ -16,7 +21,10 @@ import (
 // [ReadLog.Load] records an entry's edges into a set again, so a
 // consumer reads every entry through one set the caller resets between
 // entries. An entry keeps the set's edges and not the order they
-// arrived in, which no enumeration of a set returns either.
+// arrived in, which no enumeration of a set returns either. An entry of
+// more than four edges keeps them in the order the set's enumerations
+// return them, which Append sorts, so a set that loads it enumerates the
+// edges in place and sorts nothing.
 //
 // The zero ReadLog is empty and ready to record. [ReadLog.Reset] empties
 // a log and keeps its storage, so a dispatcher reuses one log across
@@ -30,51 +38,49 @@ import (
 // # Allocation contract
 //
 // Append allocates only to grow the log's slices past the largest use
-// since the log's creation, and Load only to grow the set's maps past
-// the largest entry the set held since its creation. Reset allocates
-// nothing.
+// since the log's creation. Load allocates nothing for an entry of at
+// most four edges, which a set keeps in place. For a larger entry, Load
+// allocates only to grow the set's list of loaded edges past the largest
+// entry the set has loaded since its creation. A slice doubles when it
+// fills, so a log of n edges allocates less than twice their size, where
+// an append that grows a large slice by a quarter allocates about five
+// times it. Reset allocates nothing.
 type ReadLog struct {
-	identities []symbol.Identity
-	packages   []symbol.Identity
-	kinds      []symbol.Kind
-	facts      []factRead
-	directives []directive.Name
-	// ends contains, for each entry, the length of every slice once the
-	// entry was appended. The entry before an entry gives its start.
-	ends []logEnd
-}
-
-// logEnd is the length of each of a log's edge slices after one entry.
-type logEnd struct {
-	identities, packages, kinds, facts, directives int
+	// edges are every entry's edges, entry after entry.
+	edges []edge
+	// ends contains, for each entry, the number of edges once the entry
+	// was appended. The entry before an entry gives its start.
+	ends []int
 }
 
 // Append records the edges of s as the log's next entry and returns the
-// entry's index, counted from zero. It cannot fail, and it leaves s
-// unchanged.
+// entry's index, counted from zero. It sorts an entry it takes from the
+// maps of a set past four edges, so the set that loads it sorts nothing.
+// It cannot fail, and it leaves s unchanged.
 func (l *ReadLog) Append(s *ReadSet) int {
-	for id := range s.identities {
-		l.identities = append(l.identities, id)
+	l.edges = grow.Room(l.edges, s.Len(), minGrowth)
+	if !s.spilled {
+		l.edges = append(l.edges, s.listed()...)
+	} else {
+		start := len(l.edges)
+		for id := range s.identities {
+			l.edges = append(l.edges, edge{grain: grainIdentity, id: id})
+		}
+		for id := range s.packages {
+			l.edges = append(l.edges, edge{grain: grainPackage, id: id})
+		}
+		for k := range s.kinds {
+			l.edges = append(l.edges, edge{grain: grainKind, kind: k})
+		}
+		for f := range s.facts {
+			l.edges = append(l.edges, edge{grain: grainFact, id: f.subject, name: string(f.key)})
+		}
+		for n := range s.directives {
+			l.edges = append(l.edges, edge{grain: grainDirective, name: string(n)})
+		}
+		slices.SortFunc(l.edges[start:], compareEdges)
 	}
-	for id := range s.packages {
-		l.packages = append(l.packages, id)
-	}
-	for k := range s.kinds {
-		l.kinds = append(l.kinds, k)
-	}
-	for f := range s.facts {
-		l.facts = append(l.facts, f)
-	}
-	for n := range s.directives {
-		l.directives = append(l.directives, n)
-	}
-	l.ends = append(l.ends, logEnd{
-		identities: len(l.identities),
-		packages:   len(l.packages),
-		kinds:      len(l.kinds),
-		facts:      len(l.facts),
-		directives: len(l.directives),
-	})
+	l.ends = append(grow.Room(l.ends, 1, minGrowth), len(l.edges))
 	return len(l.ends) - 1
 }
 
@@ -82,27 +88,12 @@ func (l *ReadLog) Append(s *ReadSet) int {
 // returns what the recorded set returned. An index outside the log
 // panics, as an index outside a slice does.
 func (l *ReadLog) Load(i int, s *ReadSet) {
-	var start logEnd
+	start := 0
 	if i > 0 {
 		start = l.ends[i-1]
 	}
-	end := l.ends[i]
 	s.Reset()
-	for _, id := range l.identities[start.identities:end.identities] {
-		s.recordIdentity(id)
-	}
-	for _, id := range l.packages[start.packages:end.packages] {
-		s.recordPackage(id)
-	}
-	for _, k := range l.kinds[start.kinds:end.kinds] {
-		s.recordKind(k)
-	}
-	for _, f := range l.facts[start.facts:end.facts] {
-		s.RecordFact(f.subject, f.key)
-	}
-	for _, n := range l.directives[start.directives:end.directives] {
-		s.recordDirective(n)
-	}
+	s.restore(l.edges[start:l.ends[i]])
 }
 
 // Reset empties the log and keeps the storage of its slices, so the
@@ -111,14 +102,7 @@ func (l *ReadLog) Load(i int, s *ReadSet) {
 // log kept for reuse retains no string of the graph that recorded them.
 // It cannot fail.
 func (l *ReadLog) Reset() {
-	clear(l.identities)
-	clear(l.packages)
-	clear(l.facts)
-	clear(l.directives)
-	l.identities = l.identities[:0]
-	l.packages = l.packages[:0]
-	l.kinds = l.kinds[:0]
-	l.facts = l.facts[:0]
-	l.directives = l.directives[:0]
+	clear(l.edges)
+	l.edges = l.edges[:0]
 	l.ends = l.ends[:0]
 }

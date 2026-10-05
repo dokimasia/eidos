@@ -32,8 +32,8 @@ const (
 	// over each file.
 	generateMiniAllocs = 14_730 + 8*1
 	// generateKernelAllocs is one generation of the kernel's facade,
-	// 490,079 on average with a standard deviation of 12.
-	generateKernelAllocs = 490_079 + 8*12
+	// 492,398 on average with a standard deviation of 13.
+	generateKernelAllocs = 492_398 + 8*13
 	// regenerateMiniAllocs is one regeneration of the mini kernel's
 	// facade: the module check, the generation, and the write of each
 	// file.

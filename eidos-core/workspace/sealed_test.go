@@ -4,23 +4,33 @@
 package workspace_test
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"errors"
 	"io/fs"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
 
 	"go.dokimi.dev/assert"
 
+	eidos "go.dokimi.dev/eidos/core"
+	"go.dokimi.dev/eidos/core/diag"
+	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/emit"
 	"go.dokimi.dev/eidos/core/frontend/frontendtest"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
+	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
 )
 
@@ -38,6 +48,13 @@ const (
 // load.
 const sealedSource = "svc/store/row.zz"
 
+// The annotator and the generator of the sealed-state composition, whose
+// phase calls the invocation counts name.
+const (
+	noterID  plugin.ID = "noter"
+	mirrorID plugin.ID = "mirror"
+)
+
 // The bytes of the template file a generator's tree contains, before and
 // after an edit.
 const (
@@ -48,6 +65,42 @@ const (
 // anotherBuild is the path of the executable a forged generation states
 // it was written by.
 const anotherBuild = "/opt/another/build"
+
+// The recording compositions name these plugins and this check. The
+// flagger stamps a flag. The marker runs on each subject that carries the
+// mark, and reads the flag. The lookup check looks the row up, and the
+// moduler and the direct generator implement their roles directly.
+const (
+	flaggerID plugin.ID = "flagger"
+	markerID  plugin.ID = "marker"
+	lookupID  plugin.ID = "lookup"
+	modulerID plugin.ID = "moduler"
+	directID  plugin.ID = "direct"
+)
+
+// The module the moduler states the store package is in, the key whose
+// contract nothing meets, and the mark's spelling in the tree.
+const (
+	storeModule              = "example.test/svc"
+	contractKey meta.KeyName = "shape.audited"
+	markLine                 = "+marker:mark"
+)
+
+// directFinding is the code the moduler, which implements its role
+// directly, reports its finding under.
+var directFinding = diag.Code{Prefix: "tst", Number: 8}
+
+// The declarations of the sealed tree the recording cases name: the row
+// struct and its package, which the scripted frontend loads.
+var (
+	rowID = symbol.Identity{
+		Lang: frontendtest.ScriptedLang, Package: "svc/store", Name: "Row", Kind: symbol.KindStruct,
+	}
+	storePackage = symbol.Identity{Lang: frontendtest.ScriptedLang, Package: "svc/store", Kind: symbol.KindPackage}
+)
+
+// markSchema is the directive whose carriers the marker's rule runs on.
+var markSchema = directive.Schema{Plugin: string(markerID), Name: "mark", Doc: "marks a row the marker mirrors"}
 
 // errStateRead is the failure the blind ledger returns for a read of
 // the sealed state.
@@ -105,6 +158,52 @@ type counting struct {
 func (c *counting) ReadFile(name string) ([]byte, error) {
 	c.reads++
 	return c.MapFS.ReadFile(name)
+}
+
+// moduler is an annotator that implements its role directly and journals
+// nothing: it looks the row up, stamps the store package's two module
+// facts, and reports one warning.
+type moduler struct{}
+
+// Name returns the moduler's name.
+func (moduler) Name() plugin.ID { return modulerID }
+
+// Annotate looks the row up, stamps the module facts and reports the
+// warning.
+func (moduler) Annotate(ctx *plugin.AnnotatorContext) error {
+	ctx.Reader.Lookup(rowID)
+	claim := meta.Claim{Subject: storePackage, Bucket: ctx.Bucket, Plugin: modulerID}
+	if err := meta.Stamp(ctx.Facts, ctx.Kernel.Module, storeModule, claim); err != nil {
+		return err
+	}
+	if err := meta.Stamp(ctx.Facts, ctx.Kernel.ModuleRoot, ".", claim); err != nil {
+		return err
+	}
+	ctx.Sink.Warnf(directFinding, position.Pos{File: sealedSource, Line: 2}, modulerID,
+		"the moduler states the store package's module")
+	return nil
+}
+
+// direct is a generator that implements its role directly and journals
+// nothing: it declares one family, looks the row up and flushes one unit
+// of one struct into the family.
+type direct struct{}
+
+// Name returns the generator's name.
+func (direct) Name() plugin.ID { return directID }
+
+// Outputs declares the family the generator flushes into.
+func (direct) Outputs() []plugin.Output {
+	return []plugin.Output{{Per: plugin.PerPackage, Word: "direct"}}
+}
+
+// Generate looks the row up and flushes the unit.
+func (direct) Generate(ctx *plugin.GeneratorContext) error {
+	ctx.Reader.Lookup(rowID)
+	return ctx.Emit.Add(plugin.Unit{
+		Plugin: directID, Per: plugin.PerPackage, Word: "direct", Key: storePackage.Package, Pkg: storePackage,
+		Decls: []symbol.Symbol{&emit.Struct{Origin: rowID, Name: "DirectRow"}},
+	})
 }
 
 // The sealed state is what a run over a tree compares the tree with, so
@@ -331,6 +430,20 @@ func TestSealed(t *testing.T) {
 			assert.Equal(t, report.Plans[0].Status, workspace.PlanCommitted, "which commits")
 		})
 
+		t.Run("runs again cold over a damaged run of a phase table", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			w := sealing(t, mem, "plan")
+			sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			flipLastByte(t, mem)
+			report := sealedRun(t, w, workspace.Input{Tree: sealedTree()})
+			cold := findings(report.Sink, workspace.ColdState)
+			assert.Length(t, cold, 1, "one ColdState states the damage")
+			assert.Contains(t, cold[0].Msg, "record the phases", "which the record of the phases met")
+			assert.True(t, report.Stats.Cold, "the report is the cold run's")
+		})
+
 		t.Run("runs again cold over a damaged region", func(t *testing.T) {
 			t.Parallel()
 
@@ -362,12 +475,221 @@ func TestSealed(t *testing.T) {
 			_, err := w.Run(t.Context(), workspace.Input{Tree: sealedTree()})
 			assert.ErrorIs(t, err, errRecord, "the ledger's own error returns")
 		})
+
+		t.Run("records a row for every validated subject, fact, invocation and edge", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			flag := &meta.Key[bool]{}
+			marked := fstest.MapFS{
+				sealedSource: {Data: []byte("package svc/store\ntype Row int string\n" + markLine + "\n")},
+			}
+			report := sealedRun(t, built(t, phaseRecording(t, mem, flag)), workspace.Input{Tree: marked})
+			s := phasesIn(t, mem)
+
+			validation, held, err := s.Validation(rowID)
+			assert.NoError(t, err, "the validations table reads")
+			assert.True(t, held, "the marked subject's validation is recorded")
+			assert.Length(t, validation.Directives, 1, "with the mark that passed")
+			stamp := plugin.MatchKey{Plugin: flaggerID, Subject: rowID}
+			stamped, held, err := s.Invocation("", stamp)
+			assert.NoError(t, err, "the invocations table reads")
+			assert.True(t, held, "the annotator's invocation is recorded")
+			assert.Equal(t, stamped.Claimed, []meta.FactRef{{Subject: rowID, Key: flag.Name()}},
+				"with the fact it claimed")
+			read := plugin.MatchKey{Plugin: markerID, Subject: rowID}
+			readFact, held, err := s.Invocation("plan", read)
+			assert.NoError(t, err, "the invocations table reads")
+			assert.True(t, held, "the generator's invocation is recorded")
+			checked, held, err := s.Check(lookupID)
+			assert.NoError(t, err, "the checks table reads")
+			assert.True(t, held, "the check's call is recorded")
+
+			records := []struct {
+				ref   state.RecordRef
+				reads []state.EdgeHash
+			}{
+				{ref: state.ValidationRef(rowID), reads: validation.Reads},
+				{ref: state.InvocationRef("", stamp), reads: stamped.Reads},
+				{ref: state.InvocationRef("plan", read), reads: readFact.Reads},
+				{ref: state.CheckRef(lookupID), reads: checked.Reads},
+			}
+			for _, r := range records {
+				assert.NotEmpty(t, r.reads, "each record read an edge")
+				for _, h := range r.reads {
+					readers, readErr := s.Readers(h)
+					assert.NoError(t, readErr, "the readers table reads")
+					assert.True(t, slices.Contains(readers, r.ref), "every edge lists every record that read it")
+				}
+			}
+			assert.True(t, slices.Contains(readFact.Reads, state.FactEdge(rowID, flag.Name())),
+				"the generator read the flag")
+
+			for id, claims := range report.Facts.Bags() {
+				got, claimsErr := s.Claims(id)
+				assert.NoError(t, claimsErr, "the claims table reads")
+				assert.Equal(t, got, claims, "every bag is recorded whole")
+			}
+			present, err := s.Present(flag.Name())
+			assert.NoError(t, err, "the present table reads")
+			assert.Equal(t, present, []symbol.Identity{rowID}, "and the fact that reads present")
+			invoked := 0
+			for _, c := range report.Stats.Invoked {
+				invoked += c.Count
+			}
+			assert.Equal(t, rowsIn(t, mem, state.TableInvocations), invoked, "one row for each invocation")
+		})
+
+		t.Run("records a phase call that journals nothing as one whole call", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			report := sealedRun(t, built(t, directly(t, mem)), workspace.Input{Tree: sealedTree()})
+			s := phasesIn(t, mem)
+
+			annotated, held, err := s.Invocation("", plugin.MatchKey{Plugin: modulerID, Rule: plugin.WholeCall})
+			assert.NoError(t, err, "the invocations table reads")
+			assert.True(t, held, "the annotator's call is one whole call")
+			assert.Equal(t, annotated.Reads, []state.EdgeHash{state.DeclarationEdge(rowID)},
+				"which read what its reader read")
+			assert.Equal(t, annotated.Claimed, []meta.FactRef{
+				{Subject: storePackage, Key: meta.ModuleKey}, {Subject: storePackage, Key: meta.ModuleRootKey},
+			}, "and claimed the module facts")
+			assert.Equal(t, annotated.Findings, findings(report.Sink, directFinding), "and reported its finding")
+			generated, held, err := s.Invocation("plan", plugin.MatchKey{Plugin: directID, Rule: plugin.WholeCall})
+			assert.NoError(t, err, "the invocations table reads")
+			assert.True(t, held, "the generator's call is one whole call")
+			assert.Length(t, generated.Units, 1, "which flushed one unit")
+			modules, err := s.Modules()
+			assert.NoError(t, err, "the modules table reads")
+			assert.Equal(t, modules, map[plugin.Module]int{
+				{Lang: frontendtest.ScriptedLang, Path: storeModule, Root: "."}: 1,
+			}, "the package names its module")
+		})
+
+		t.Run("records the finding of an unmet contract", func(t *testing.T) {
+			t.Parallel()
+
+			mem := ledger.NewMem()
+			report := sealedRun(t, built(t, sealingBuilder(t, mem, "plan").Keys(contracted)), workspace.Input{
+				Tree: sealedTree(),
+			})
+			got, err := phasesIn(t, mem).Audits()
+			assert.NoError(t, err, "the audit table reads")
+			unmet := findings(report.Sink, workspace.UnmetContract)
+			assert.Length(t, unmet, 1, "the run reports the unmet contract")
+			assert.Equal(t, got, []state.Audit{{Key: contractKey, Subject: rowID, Finding: unmet[0]}},
+				"and records it under its key and its subject")
+		})
 	})
 }
 
 // sealedTree returns a tree of one package the scripted frontend parses.
 func sealedTree() fstest.MapFS {
 	return fstest.MapFS{sealedSource: {Data: []byte("package svc/store\ntype Row int string\n")}}
+}
+
+// phaseRecording returns the builder of a composition over the scripted
+// frontend that records into a ledger: an annotator that stamps a flag on
+// every struct, a plan whose generator mirrors each marked struct after
+// it reads the flag, and a check that looks the row up. The flag's handle
+// arrives in flag when Build registers it.
+func phaseRecording(tb assert.TB, l ledger.Ledger, flag *meta.Key[bool]) *workspace.Builder {
+	tb.Helper()
+
+	flagger, held := eidos.NewPlugin(flaggerID).
+		Keys(func(r *meta.Registry) error {
+			if err := r.ClaimNamespace("shape"); err != nil {
+				return err
+			}
+			k, err := meta.Register[bool](r, meta.KeySpec{Name: "shape.flag", Doc: "marks a recorded row"})
+			*flag = k
+			return err
+		}).
+		Handle(eidos.OnStruct(func(_ *eidos.StructMatch, st *eidos.Stamper) error {
+			eidos.Stamp(st, *flag, true)
+			return nil
+		})).Build().(plugin.Annotator)
+	assert.True(tb, held, "the flagger lowers to the annotator role")
+	marker, held := eidos.NewPlugin(markerID).
+		Output(plugin.Output{Per: plugin.PerPackage, Word: "gen"}).
+		Handle(eidos.Directive(markSchema, eidos.OnStruct(func(m *eidos.StructMatch, e *eidos.Emitter) error {
+			eidos.Fact(m, *flag)
+			return mirrored(m, e)
+		}))).Build().(plugin.Generator)
+	assert.True(tb, held, "the marker lowers to the generator role")
+	lookup := &recordingCheck{name: lookupID, reads: []string{"plan"}, script: func(ctx *plugin.CheckContext) {
+		ctx.Reader.Lookup(rowID)
+	}}
+	return workspace.New().
+		Brand(fixtureBrand).
+		Frontends(frontendtest.NewScripted()).
+		Annotators(flagger).
+		Targets("fixture").
+		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{marker}, Backend: printer(tb, "fixture")}).
+		Checks(lookup).
+		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
+		Ledger(func() (ledger.Ledger, error) { return l, nil })
+}
+
+// directly returns the builder of a composition over the scripted
+// frontend that records into a ledger, whose annotator and generator
+// implement their roles directly.
+func directly(tb assert.TB, l ledger.Ledger) *workspace.Builder {
+	tb.Helper()
+
+	return workspace.New().
+		Brand(fixtureBrand).
+		Frontends(frontendtest.NewScripted()).
+		Annotators(moduler{}).
+		Targets("fixture").
+		Plans(workspace.Plan{Name: "plan", Generators: []plugin.Generator{direct{}}, Backend: printer(tb, "fixture")}).
+		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
+		Ledger(func() (ledger.Ledger, error) { return l, nil })
+}
+
+// contracted registers a key whose completeness contract promises it on
+// every struct, at Warning, which nothing stamps.
+func contracted(r *meta.Registry) error {
+	if err := r.ClaimNamespace("shape"); err != nil {
+		return err
+	}
+	_, err := meta.Register[bool](r, meta.KeySpec{
+		Name: contractKey,
+		Contract: &meta.Completeness{
+			On: []symbol.Kind{symbol.KindStruct}, By: diag.PhaseAnnotate, Severity: diag.SeverityWarning,
+		},
+		Doc: "a promise the composition never keeps",
+	})
+	return err
+}
+
+// phasesIn returns the record of the phases of a ledger's live
+// generation.
+func phasesIn(t *testing.T, l ledger.Ledger) *state.PhaseState {
+	t.Helper()
+
+	g, err := state.Open(t.Context(), l)
+	assert.NoError(t, err, "the live generation opens")
+	return g.Phases(t.Context())
+}
+
+// rowsIn returns how many entries one table of a ledger's live generation
+// keeps: each row's count of entries, summed.
+func rowsIn(t *testing.T, l ledger.Ledger, table state.Table) int {
+	t.Helper()
+
+	g, err := state.Open(t.Context(), l)
+	assert.NoError(t, err, "the live generation opens")
+	rows, err := g.All(t.Context(), table)
+	assert.NoError(t, err, "the table reads")
+	n := 0
+	for _, r := range rows {
+		count, read := binary.Uvarint(r.Value)
+		assert.True(t, read > 0, "a row opens with its count of entries")
+		n += int(count)
+	}
+	return n
 }
 
 // sealing returns a composition over the scripted frontend that records
@@ -383,7 +705,7 @@ func sealing(tb assert.TB, l ledger.Ledger, plan string) *workspace.Workspace {
 func sealingBuilder(tb assert.TB, l ledger.Ledger, plan string) *workspace.Builder {
 	tb.Helper()
 
-	return sealingOf(tb, l, plan, mirror("mirror"))
+	return sealingOf(tb, l, plan, mirror(mirrorID))
 }
 
 // sealingOf returns the builder of a composition over the scripted
@@ -405,7 +727,7 @@ func sealingPlans(l ledger.Ledger, plans ...workspace.Plan) *workspace.Builder {
 	return workspace.New().
 		Brand(fixtureBrand).
 		Frontends(frontendtest.NewScripted()).
-		Annotators(stamper("noter", quiet)).
+		Annotators(stamper(noterID, quiet)).
 		Targets("fixture").
 		Plans(plans...).
 		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
@@ -442,19 +764,41 @@ func sealedRun(t *testing.T, w *workspace.Workspace, in workspace.Input) *worksp
 func truncate(t *testing.T, mem *ledger.Mem, pick func(live int) bool) {
 	t.Helper()
 
+	damageSegment(t, mem, pick, func(body []byte) []byte { return body[:1] })
+}
+
+// flipLastByte inverts the last byte of the live generation's run
+// segment, which ends with the footer of the last table's run: a phase
+// table's, whose records follow the load's in table order. The load
+// reads no phase table, so the record of the phases meets the damage.
+func flipLastByte(t *testing.T, mem *ledger.Mem) {
+	t.Helper()
+
+	damageSegment(t, mem, func(live int) bool { return live == 0 }, func(body []byte) []byte {
+		body = bytes.Clone(body)
+		body[len(body)-1] ^= 0xff
+		return body
+	})
+}
+
+// damageSegment rewrites the one segment of the live generation whose
+// count of live regions picks with the bytes damage makes of it.
+func damageSegment(t *testing.T, mem *ledger.Mem, pick func(live int) bool, damage func(body []byte) []byte) {
+	t.Helper()
+
 	g, err := state.Open(t.Context(), mem)
 	assert.NoError(t, err, "the live generation opens")
 	blobs, err := mem.List(t.Context(), segmentDir)
 	assert.NoError(t, err, "the segments list")
-	cut := 0
+	damaged := 0
 	for _, b := range blobs {
 		if !pick(g.Live(b.Name)) {
 			continue
 		}
 		body, err := mem.Read(t.Context(), b.Name)
 		assert.NoError(t, err, "the segment reads")
-		assert.NoError(t, mem.Write(t.Context(), b.Name, body[:1]), "the cut segment writes")
-		cut++
+		assert.NoError(t, mem.Write(t.Context(), b.Name, damage(body)), "the damaged segment writes")
+		damaged++
 	}
-	assert.Equal(t, cut, 1, "one segment is cut")
+	assert.Equal(t, damaged, 1, "one segment is damaged")
 }

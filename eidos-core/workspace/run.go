@@ -132,7 +132,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	if err != nil {
 		return w.stopped(ctx, report, err)
 	}
-	table, err := w.annotateRun(ctx, g, facts, sink, &report.Stats)
+	table, err := w.annotateRun(ctx, g, facts, sink, &report.Stats, sealed.recorder)
 	if err != nil {
 		return w.stopped(ctx, report, err)
 	}
@@ -142,12 +142,13 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	if w.open != nil {
 		src = tree{residents: layout.Residents(g), modules: layout.Modules(g, facts, w.kernel)}
 	}
-	runs := w.generateAll(ctx, g, facts, table, src)
+	runs := w.generateAll(ctx, g, facts, table, src, sealed.recorder)
 	if !shared {
 		w.stageAll(ctx, runs, rec)
 	}
 	for _, p := range runs {
 		report.Emits[p.plan.name] = p.emit
+		report.Stats.Invoked = append(report.Stats.Invoked, p.invoked...)
 		report.Stats.Rendered += len(p.files)
 		for d := range p.sink.All() {
 			sink.Report(d)
@@ -157,13 +158,16 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	collided := collide(runs, sink)
 	sw, err := w.sweep(rec, runs, sink, shared || collided)
 	errs := []error{err}
-	unmet := w.audit(g, facts, loaded, sink)
+	unmet := w.audit(g, facts, loaded, sink, sealed.recorder)
 	checked := false
 	if !shared {
-		checked, err = w.check(g, facts, table, runs, sink, &report.Stats)
+		checked, err = w.check(g, facts, table, runs, sink, &report.Stats, sealed.recorder)
 		errs = append(errs, err)
 	}
 	broken := damaged(g.Damaged())
+	if broken == nil {
+		broken = sealed.recordPhases(ctx, g, facts, w.kernel)
+	}
 	blocked := shared || collided || unmet || checked || broken != nil
 
 	errs = append(errs, commitAll(ctx, runs, w.order, sw, blocked, in.Dry, report))
@@ -172,7 +176,7 @@ func (w *Workspace) run(ctx context.Context, in Input, after *damage) (*Report, 
 	}
 	report.Manifest = merged(rec, runs, sw)
 	if sealed.commit != nil {
-		errs = append(errs, sealed.write(ctx, report.Manifest, &report.Stats))
+		errs = append(errs, sealed.write(ctx, report.Manifest, runs, &report.Stats))
 	} else {
 		errs = append(errs, commitRecord(ctx, rec, runs, sw, in.Dry, report.Manifest))
 	}
@@ -305,12 +309,13 @@ func (w *Workspace) load(
 
 // annotateRun runs the shared phases after the load: directive
 // validation, the stamp replay, the kernel meta drops and the annotate
-// schedule. It counts the subjects it validated into stats. An
-// annotator's returned error stops the frame.
+// schedule. It counts the subjects it validated into stats, and records
+// each validation and invocation into rec, nil for a run that records
+// none. An annotator's returned error stops the frame.
 func (w *Workspace) annotateRun(
-	ctx context.Context, g *store.Graph, facts *meta.Facts, sink *diag.Sink, stats *Stats,
+	ctx context.Context, g *store.Graph, facts *meta.Facts, sink *diag.Sink, stats *Stats, rec *state.Recorder,
 ) (map[symbol.Identity][]directive.Directive, error) {
-	table, validated := w.validated(g, facts, sink)
+	table, validated := w.validated(g, facts, sink, rec)
 	stats.Validated = validated
 	applyStamps(g, facts, sink)
 	if err := w.applyDrops(table, facts); err != nil {
@@ -319,7 +324,7 @@ func (w *Workspace) annotateRun(
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
-	return table, w.annotateAll(ctx, g, facts, table, sink)
+	return table, w.annotateAll(ctx, g, facts, table, sink, stats, rec)
 }
 
 // stopped returns the report of a frame that stopped before the plans
@@ -355,8 +360,14 @@ func failure(sink *diag.Sink) error {
 // form the table the routing indexes read, so no rule dispatches on a
 // rejected instance. It also returns the number of subjects it
 // validated. A dangling subject is not validated.
+//
+// Where rec is set, each worker records into a lane of its own each
+// subject's validation: the directives that passed, the edges the
+// subject's references resolved through, and the findings, which a
+// sink of the subject's own collects before they merge. A dangling
+// subject's record keeps its one finding.
 func (w *Workspace) validated(
-	g *store.Graph, facts *meta.Facts, sink *diag.Sink,
+	g *store.Graph, facts *meta.Facts, sink *diag.Sink, rec *state.Recorder,
 ) (map[symbol.Identity][]directive.Directive, int) {
 	type attached struct {
 		subject symbol.Identity
@@ -377,6 +388,11 @@ func (w *Workspace) validated(
 		local := diag.NewSink()
 		locals[k] = local
 		wg.Go(func() {
+			var lane *state.Lane
+			if rec != nil {
+				lane = rec.Lane("")
+			}
+			reads := store.NewReadSet()
 			count := 0
 			for {
 				i := int(next.Add(1)) - 1
@@ -386,13 +402,28 @@ func (w *Workspace) validated(
 				}
 				s := subjects[i]
 				if !g.Holds(s.subject) {
-					local.Errorf(directive.DanglingSubject, s.raws[0].Pos, diag.PhaseFreeze,
-						"directives on %s name a subject the graph does not contain", s.subject)
+					d := diag.Diag{
+						Code:     directive.DanglingSubject,
+						Severity: diag.SeverityError,
+						Pos:      s.raws[0].Pos,
+						Msg:      fmt.Sprintf("directives on %s name a subject the graph does not contain", s.subject),
+						Origin:   diag.PhaseFreeze,
+					}
+					local.Report(d)
+					lane.Validation(s.subject, nil, nil, []diag.Diag{d})
 					continue
 				}
+				reads.Reset()
+				target := local
+				if lane != nil {
+					target = diag.NewSink()
+				}
 				results[i] = directive.Validate(
-					s.subject, s.raws, w.directives, w.keys, w.resolver(g, facts), local,
+					s.subject, s.raws, w.directives, w.keys, w.resolver(g, facts, reads), target,
 				)
+				if lane != nil {
+					lane.Validation(s.subject, results[i], reads, reported(target, local))
+				}
 				count++
 			}
 		})
@@ -420,17 +451,17 @@ func (w *Workspace) validated(
 }
 
 // resolver binds a subject's reference params through the rules
-// registered for the subject's language, each call over a view of
-// its own whose reads the run discards, because validation runs
-// whole on every run and one subject validates per goroutine. A
-// language none registered for resolves nothing, naming itself.
-func (w *Workspace) resolver(g *store.Graph, facts *meta.Facts) directive.Resolver {
+// registered for the subject's language, each call over a view of its
+// own whose reader records into reads, the subject's read set, which one
+// goroutine validates at a time. A language none registered for resolves
+// nothing, naming itself.
+func (w *Workspace) resolver(g *store.Graph, facts *meta.Facts, reads *store.ReadSet) directive.Resolver {
 	return func(subject symbol.Identity, name string, kind directive.ResolutionKind) (symbol.Identity, error) {
 		src, held := w.rules.For(subject.Lang)
 		if !held {
 			return symbol.Identity{}, fmt.Errorf("workspace: no rules are registered for %s", subject.Lang)
 		}
-		reader, err := g.Reader(store.NewReadSet(), nil)
+		reader, err := g.Reader(reads, nil)
 		if err != nil {
 			return symbol.Identity{}, err
 		}
@@ -542,12 +573,19 @@ func (w *Workspace) applyDrops(
 }
 
 // annotateAll runs the annotate schedule in bucket order over one
-// whole-graph index, each role handed its own tracked reader and
-// its rank fields. A returned error stops the frame, wrapped with
-// the role that returned it.
+// whole-graph index, each role handed its own tracked reader, its rank
+// fields and a journal that counts its invocations into stats. A
+// returned error stops the frame, wrapped with the role that returned
+// it.
+//
+// Where rec is set, the journal also records each invocation into a lane
+// of the shared phases, each call reports into a sink of its own whose
+// findings then merge into the run's, and a call that journals no
+// invocation of its own is recorded as one under [plugin.WholeCall]: its
+// reader's reads, the facts its plugin claimed, and its findings.
 func (w *Workspace) annotateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
-	table map[symbol.Identity][]directive.Directive, sink *diag.Sink,
+	table map[symbol.Identity][]directive.Directive, sink *diag.Sink, stats *Stats, rec *state.Recorder,
 ) error {
 	if len(w.annotate) == 0 {
 		return nil
@@ -556,30 +594,66 @@ func (w *Workspace) annotateAll(
 	if err != nil {
 		return err
 	}
+	counted := &tally{}
+	if rec != nil {
+		counted.next = rec.Lane("")
+	}
 	for _, s := range w.annotate {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		reader, err := ix.Reader(store.NewReadSet())
+		reads := store.NewReadSet()
+		reader, err := ix.Reader(reads)
 		if err != nil {
 			return err
+		}
+		counted.count = 0
+		calls := sink
+		if counted.next != nil {
+			calls = diag.NewSink()
 		}
 		call := &plugin.AnnotatorContext{
 			Index:   ix,
 			Reader:  reader,
 			Facts:   facts,
-			Sink:    sink,
+			Sink:    calls,
 			Rules:   w.rules,
 			Kernel:  w.kernel,
 			Plugin:  s.name,
 			Bucket:  s.bucket,
 			Workers: w.workers,
+			Journal: counted,
 		}
-		if err := s.run.Annotate(call); err != nil {
+		err = s.run.Annotate(call)
+		if counted.next != nil {
+			found := reported(calls, sink)
+			if counted.count == 0 {
+				counted.next.Invoked(plugin.Invocation{
+					Match:    plugin.MatchKey{Plugin: s.name, Rule: plugin.WholeCall},
+					Reads:    reads,
+					Claimed:  facts.ClaimedBy(s.name),
+					Findings: found,
+				})
+			}
+		}
+		if err != nil {
 			return fmt.Errorf(
 				"workspace: annotator %s in bucket %d: %w", s.name, s.bucket, err,
 			)
 		}
+		stats.Invoked = append(stats.Invoked, Invoked{
+			Plugin: s.name, Phase: plugin.PhaseAnnotate, Count: counted.count,
+		})
 	}
 	return nil
+}
+
+// reported reports a phase call's findings into the sink they belong
+// in, in the order the call's own sink lists them, and returns them.
+func reported(calls, sink *diag.Sink) []diag.Diag {
+	found := slices.Collect(calls.All())
+	for _, d := range found {
+		sink.Report(d)
+	}
+	return found
 }

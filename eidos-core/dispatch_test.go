@@ -933,7 +933,7 @@ func TestDispatch(t *testing.T) {
 			p, visited := visitingStructs(contextPlugin, bare)
 			assert.NoError(t, generatorOf(t, p).Generate(genContext(t, g, facts, nil)),
 				"the phase call passes")
-			assert.Equal(t, *visited, []string{"Alpha", "Beta"}, "the declarations are in the graph's order")
+			assert.Equal(t, *visited, []string{"Alpha", "Beta"}, "the declarations are in identity order")
 		})
 
 		t.Run("runs a directive-gated rule once per instance", func(t *testing.T) {

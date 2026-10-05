@@ -180,32 +180,34 @@ const (
 // pooled state the collector emptied before the run began.
 const (
 	// coldRunAllocs is one run over the canonical workspace of 200,000
-	// declarations, 1,092,396 on average with a standard deviation of 108
+	// declarations, 1,091,311 on average with a standard deviation of 114
 	// over 24 fresh processes. The fact store allocates three times for
 	// each subject's first claim, 600,000 in all, and sync.Map adds about
 	// 75,600 trie nodes at random where the hashes of the subjects share
 	// a prefix. The mirror allocates twice for each struct, and the phase
-	// calls, the emit store and the seal allocate about 16,000 times. The
-	// ceiling allows eight standard deviations above the mean.
-	coldRunAllocs = 1_092_396 + 8*108
-	// oneRunAllocs is one run over one declaration: 126 for the frame's
-	// own structures, among them the seal, the fact store, the emit store
-	// and the phase calls' state. The 8 more are for the runtime's
-	// allocations for the plan's goroutine, for the sudogs whose central
-	// cache the collector cleared, and for its type-assertion caches. A
-	// fresh process at one iteration counts them: 200 fresh processes
-	// counted 0 to 5.
-	oneRunAllocs = 126 + 8
+	// calls, their journals, the emit store and the seal allocate about
+	// 15,000 times. The ceiling allows eight standard deviations above the
+	// mean.
+	coldRunAllocs = 1_091_311 + 8*114
+	// oneRunAllocs is one run over one declaration. The frame's own
+	// structures allocate 125 times, among them the seal, the fact store,
+	// the emit store and the phase calls' state. The headroom of 12 is for
+	// the runtime's own allocations, which a fresh process counts at one
+	// iteration: the plan's goroutine, the sudogs whose central cache the
+	// collector cleared, and the type-assertion caches. 200 fresh
+	// processes counted 0 to 8 of them.
+	oneRunAllocs = 125 + 12
 	// warmRunAllocs is one run over one declaration in a process whose
-	// pools already hold the phase calls' state: 103 in each of 12 runs.
-	// The seal allocates 24 of them, the plan's generate, settle and
-	// commit 21, and the annotation's stamp 13. The fact store, the
-	// index, the read set, the sink, the frame's goroutines and the
-	// report allocate the rest.
-	warmRunAllocs = 103
+	// pools already contain the phase calls' state. Most runs allocate 98
+	// times. The seal allocates 24 of them, and the annotation, the plan,
+	// the fact store, the index, the sink, the frame's goroutines and the
+	// report allocate the rest. A collection between two runs can empty
+	// the pool, and the next run then allocates the phase calls' state
+	// again. The mean of 20 runs in one process measured up to 100.
+	warmRunAllocs = 98 + 2
 	// pipelineAllocs is one cold run of the pipeline over 200,000
-	// declarations on one worker, 440,305 on average with a standard
-	// deviation of 40 over 24 fresh processes. A memory profile
+	// declarations on one worker, 440,246 on average with a standard
+	// deviation of 36 over 24 fresh processes. A memory profile
 	// attributes about 211,000 to the render, where text/template's
 	// reflection executes the struct template once for each of the
 	// 20,000 mirrors. The annotation's stamps allocate about 67,000: two
@@ -215,12 +217,24 @@ const (
 	// allocations, such as the mirrors' names, which the profiler
 	// samples only in part. The ceiling allows eight standard deviations
 	// above the mean.
-	pipelineAllocs = 440_305 + 8*40
-	// parallelPipelineAllocs is the same run on four workers, 441,320 on
-	// average with a standard deviation of 46 over 24 fresh processes.
+	pipelineAllocs = 440_246 + 8*36
+	// parallelPipelineAllocs is the same run on four workers, 441,280 on
+	// average with a standard deviation of 45 over 24 fresh processes.
 	// The parallel phase calls add about 1,000 allocations for their
-	// goroutines and for their lanes' effect buffers.
-	parallelPipelineAllocs = 441_320 + 8*46
+	// goroutines and for their lanes' effect buffers and journals.
+	parallelPipelineAllocs = 441_280 + 8*45
+	// treeRunAllocs is one cold run of the edge corpus's tree of 200,000
+	// declarations into a fresh memory ledger, its load and its record of
+	// the state included, 2,604,419 on average with a standard deviation
+	// of 54 over 24 fresh processes. A memory profile of one run
+	// attributes about 1,690,000 to the scripted frontend's parse of the
+	// tree, 199,000 to the phase calls' handlers, most of them the
+	// annotator's stamps, and 181,000 to the render's templates. The
+	// record of the phases allocates only to grow its buffers. The
+	// profile counts 2,231,363 and misses about 373,000 allocations below
+	// 16 bytes that share a block of the tiny allocator. The ceiling allows
+	// eight standard deviations above the mean.
+	treeRunAllocs = 2_604_419 + 8*54
 )
 
 // dropping is a backend whose lowering hook returns a declaration
@@ -1195,7 +1209,10 @@ func TestRunAllocs(t *testing.T) {
 // generate, settle, layout, render, stamp and commit into a memory
 // sink. Its cases reset the process's peak resident set before they
 // start and report it beside the counts, so the metric covers the case
-// alone.
+// alone. The tree case runs the edge corpus's composition over a tree,
+// its load inside the measurement, and records the state into a fresh
+// memory ledger on each run. It reports the bytes of the state for each
+// declaration.
 func BenchmarkRun(b *testing.B) {
 	builder, _ := flagged()
 	w, err := builder.Build()
@@ -1228,6 +1245,14 @@ func BenchmarkRun(b *testing.B) {
 			report := benchRun(b, pipelineWorkspace(b, pipelinePackages, fourWorkers),
 				pipelineCorpus(pipelinePackages), emptyPools, parallelPipelineAllocs)
 			assert.Length(b, report.Plans[0].Changes, pipelinePackages, "the run commits one file per package")
+			reportPeakRSS(b)
+		})
+
+		b.Run("a cold run over the tree of 200,000 declarations into a ledger", func(b *testing.B) {
+			resetPeakRSS()
+			report := benchTree(b, recordedEdges(b, pipelinePackages), pipelineTree(pipelinePackages), treeRunAllocs)
+			assert.True(b, report.Stats.Generation, "the run writes a generation")
+			b.ReportMetric(float64(report.Stats.Size)/float64(pipelinePackages*pipelineStructs), "state-B/decl")
 			reportPeakRSS(b)
 		})
 	})
@@ -1700,30 +1725,55 @@ func edgeFixture(edit func(root string) error) workspacetest.Fixture {
 	return workspacetest.Fixture{
 		Tree: pipelineTree(pipelineTestPackages),
 		Compose: func(root string) *workspace.Builder {
-			return workspace.New().
-				Brand(fixtureBrand).
-				Frontends(frontendtest.NewScripted()).
-				Annotators(measuring(keys)).
-				Targets("fixture").
+			return edgeComposition(keys).
 				Output(func() (output.Sink, error) { return output.NewDisk(root, fixtureBrand) }).
 				Ledger(func() (ledger.Ledger, error) { return ledger.OpenDir(root, fixtureBrand) })
 		},
-		Plans: func() []workspace.Plan {
-			return []workspace.Plan{
-				{
-					Name:       "readers",
-					Generators: []plugin.Generator{reading(keys, pipelineTestPackages)},
-					Backend:    documenting("readers-printer"),
-				},
-				{
-					Name:       "stubs",
-					Generators: []plugin.Generator{stubbing()},
-					Backend:    documenting("stubs-printer"),
-				},
-			}
-		},
-		Edit: edit,
+		Plans: func() []workspace.Plan { return edgePlans(keys, pipelineTestPackages) },
+		Edit:  edit,
 	}
+}
+
+// edgeComposition returns the edge corpus's composition without its plans,
+// its output and its ledger: the scripted frontend and the measuring
+// annotator, which registers the corpus's keys into keys.
+func edgeComposition(keys *corpusKeys) *workspace.Builder {
+	return workspace.New().
+		Brand(fixtureBrand).
+		Frontends(frontendtest.NewScripted()).
+		Annotators(measuring(keys)).
+		Targets("fixture")
+}
+
+// edgePlans returns the edge corpus's plans over a corpus of n packages:
+// the readers plan, which mirrors every marked struct and documents what
+// the referencing structs read, and the stubs plan.
+func edgePlans(keys *corpusKeys, n int) []workspace.Plan {
+	return []workspace.Plan{
+		{
+			Name:       "readers",
+			Generators: []plugin.Generator{reading(keys, n)},
+			Backend:    documenting("readers-printer"),
+		},
+		{
+			Name:       "stubs",
+			Generators: []plugin.Generator{stubbing()},
+			Backend:    documenting("stubs-printer"),
+		},
+	}
+}
+
+// recordedEdges returns the edge corpus's composition over n packages,
+// which writes into memory and records each run into a fresh memory
+// ledger, so every run is cold and records its whole state.
+func recordedEdges(tb assert.TB, n int) *workspace.Workspace {
+	tb.Helper()
+
+	keys := &corpusKeys{}
+	return built(tb, edgeComposition(keys).
+		Plans(edgePlans(keys, n)...).
+		Output(func() (output.Sink, error) { return output.NewMem(), nil }).
+		Ledger(func() (ledger.Ledger, error) { return ledger.NewMem(), nil }))
 }
 
 // measuring returns the annotator that registers the corpus's keys into
@@ -1887,6 +1937,27 @@ func benchRun(
 	}
 	assert.NoError(b, err, "the run is clean")
 	assert.Length(b, report.Emits, 1, "the plan's store is in the report")
+	return report
+}
+
+// benchTree measures w's cold runs over a tree against a ceiling of
+// allocs per run, and returns the last run's report. One run before the
+// measurement builds what a process builds once, and each run records
+// into the fresh ledger w's composition opens. Each iteration empties the
+// process's pools outside the measurement.
+func benchTree(b *testing.B, w *workspace.Workspace, tree fs.FS, allocs uint64) *workspace.Report {
+	b.Helper()
+
+	_, err := w.Run(b.Context(), workspace.Input{Tree: tree})
+	assert.NoError(b, err, "the run before the measurement is clean")
+	c := bench.Start(b).MaxAllocs(allocs)
+	defer c.End()
+	var report *workspace.Report
+	for c.Loop() {
+		c.Excluding(emptyPools)
+		report, err = w.Run(b.Context(), workspace.Input{Tree: tree})
+	}
+	assert.NoError(b, err, "the run is clean")
 	return report
 }
 

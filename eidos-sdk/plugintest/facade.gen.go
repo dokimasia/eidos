@@ -129,18 +129,19 @@ func AssertParallelDispatch(tb assert.TB, setup Setup) {
 	core.AssertParallelDispatch(tb, setup)
 }
 
-// AssertSelective runs every phase the plugin implements over two
-// isolated fixtures: whole with a journal, then under a selection that
-// lists every match the whole run journaled for the phase. It fails
-// unless both runs emit the same bytes, end with the same fact values
-// and report the same findings, and unless each phase's journal lists
-// every match once, in canonical match order. The selected run executes
-// its matches in canonical match order and the whole run in the order
-// the index enumerates them, so a handler whose output depends on
-// another invocation fails the check. The two runs report their
-// findings in those two orders, so the check compares the findings in
-// [diag.Diag.Compare] order. A plugin that journals nothing runs whole
-// both times and passes.
+// AssertSelective runs every phase the plugin implements twice, with one
+// plugin over two isolated fixtures: whole with a journal, then under a
+// selection that lists every match the whole run journaled for the
+// phase. It fails unless both runs emit the same bytes, end with the
+// same fact values and report the same findings, and unless each phase's
+// journal lists every match once, in canonical match order. The second
+// run takes the fixture of a second setup and keeps the plugin of the
+// first, as a workspace runs one plugin cold and then warm, so a handler
+// whose output depends on an earlier invocation fails the check. The
+// selected run executes its matches in canonical match order, which an
+// enumeration in another order does not, so the check compares the
+// findings in [diag.Diag.Compare] order. A plugin that journals nothing
+// runs whole both times and passes.
 func AssertSelective(tb assert.TB, setup Setup) {
 	core.AssertSelective(tb, setup)
 }

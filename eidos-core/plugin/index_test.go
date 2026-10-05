@@ -90,7 +90,7 @@ func TestIndex(t *testing.T) {
 
 			g, _, _ := twoPackages(t)
 			got := names(t, index(t, g, nil, nil).ByKind(symbol.KindStruct))
-			assert.Equal(t, got, []string{"Cache", "Store"}, "the declarations are in the graph's order")
+			assert.Equal(t, got, []string{"Cache", "Store"}, "the declarations are in identity order")
 		})
 
 		t.Run("returns only the declarations the scope admits", func(t *testing.T) {

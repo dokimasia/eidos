@@ -5,6 +5,8 @@ package state_test
 
 import (
 	"context"
+	"encoding/binary"
+	"iter"
 	"slices"
 	"testing"
 	"testing/fstest"
@@ -37,27 +39,42 @@ const (
 // loadBrand is the brand the scripted loads run under.
 const loadBrand output.Brand = "own"
 
+// The key of a door's row, pinned: the frontend's name, doorKeySep, and
+// the door's place as four big-endian bytes.
+const doorKeySep = 0
+
+// damagedPlace is the place of the door row that a damaged case adds,
+// after every door of the scripted load.
+const damagedPlace = 9
+
+// undecodable is a row that every load table rejects: a varint cut short.
+var undecodable = []byte{0x80}
+
 // The ceilings of the reads and the record of a load over the scripted
 // tree of two units.
 const (
 	// loadStateAllocs is one load state over a generation: the state.
 	loadStateAllocs = 1
 	// filesAllocs is a first range over the record's files, which reads
-	// the files table whole: the run, its index and blocks, the merged
-	// entries, and the two records with their paths and packages.
-	filesAllocs = 13
+	// the files table whole: the run, its index, one list of the entries
+	// of its blocks, the merged entries, the map of the strings the
+	// state's decodes share, and the two records with their paths and
+	// packages.
+	filesAllocs = 12
 	// unitsAllocs is a first range over the record's units, which reads
-	// the units table whole: the run, its index and blocks, the merged
-	// entries, and the two records with their members, keys, summaries
-	// and imports.
-	unitsAllocs = 42
+	// the units table whole: the run, its index, one list of the entries
+	// of its blocks, the merged entries, the map of shared strings, and the
+	// two records with their members, keys, summaries and imports, which
+	// make one string of each distinct text.
+	unitsAllocs = 30
 	// regionAllocs is one decode of a unit's region of one package: the
 	// run read from the ledger, the string table, the region, and the
 	// package's declarations and lists.
 	regionAllocs = 20
-	// doorsAllocs is one read of the scripted frontend's doors: the doors
-	// table read whole, and the one door's reads, units and paths.
-	doorsAllocs = 13
+	// doorsAllocs is one read of the scripted frontend's doors after the
+	// units: the doors table, read whole, and the one door's reads and
+	// units. The door's paths reuse the strings of the units' decode.
+	doorsAllocs = 9
 	// probedAllocs is one lookup of a candidate a unit named: its key,
 	// the run read from the ledger, the block, the units' paths decoded,
 	// and the list of numbers.
@@ -69,7 +86,7 @@ const (
 	// recordLoadAllocs is one record of a cold load of the two units into
 	// a new commit: each region's encoding and the segment, each file's
 	// and unit's row, the door's row, and the probes.
-	recordLoadAllocs = 89
+	recordLoadAllocs = 88
 )
 
 // A generation's record of the load is what a warm load keeps, so every
@@ -108,6 +125,13 @@ func TestLoadState(t *testing.T) {
 			g := recordedLoad(t, ledger.NewMem(), loaded(t, scriptedTree(), nil))
 			assert.True(t, g.Load(t.Context()).Anchor().Equal(past), "the header's anchor")
 		})
+
+		t.Run("returns ErrDamaged for a row that does not decode", func(t *testing.T) {
+			t.Parallel()
+
+			s := damagedLoad(t, state.TableFiles, []byte(extraFile)).Load(t.Context())
+			assert.ErrorIs(t, rangeErr(s.Files()), state.ErrDamaged, "the files table does not read whole")
+		})
 	})
 
 	t.Run("Units", func(t *testing.T) {
@@ -135,6 +159,13 @@ func TestLoadState(t *testing.T) {
 			assert.Equal(t, units[1].Imports, []load.Import{{
 				Path: "svc/api", Files: []string{storeFile}, At: position.Pos{File: storeFile, Line: 2},
 			}}, "the store package imports the API on its second line")
+		})
+
+		t.Run("returns ErrDamaged for a row that does not decode", func(t *testing.T) {
+			t.Parallel()
+
+			s := damagedLoad(t, state.TableUnits, []byte(extraFile)).Load(t.Context())
+			assert.ErrorIs(t, rangeErr(s.Units()), state.ErrDamaged, "the units table does not read whole")
 		})
 	})
 
@@ -181,6 +212,14 @@ func TestLoadState(t *testing.T) {
 			doors, err := s.Doors("absent")
 			assert.NoError(t, err, "the doors read")
 			assert.Empty(t, doors, "no door is recorded under the name")
+		})
+
+		t.Run("returns ErrDamaged for a row that does not decode", func(t *testing.T) {
+			t.Parallel()
+
+			key := binary.BigEndian.AppendUint32(append([]byte(frontendtest.ScriptedID), doorKeySep), damagedPlace)
+			_, err := damagedLoad(t, state.TableDoors, key).Load(t.Context()).Doors(frontendtest.ScriptedID)
+			assert.ErrorIs(t, err, state.ErrDamaged, "the frontend's doors do not read whole")
 		})
 	})
 
@@ -556,6 +595,35 @@ func recordedLoad(tb testing.TB, l ledger.Ledger, r *load.Report) *state.Generat
 	g, err := state.Open(tb.Context(), l)
 	assert.NoError(tb, err, "and its generation opens")
 	return g
+}
+
+// damagedLoad commits the record of the scripted tree's load and one
+// more row under key in a table, a row that does not decode, and returns
+// the generation the commit made live.
+func damagedLoad(t *testing.T, table state.Table, key []byte) *state.Generation {
+	t.Helper()
+
+	c := state.NewCommit(nil, nil)
+	assert.NoError(t, state.RecordLoad(t.Context(), c, nil, loaded(t, scriptedTree(), nil)), "the load records")
+	c.Put(table, key, undecodable)
+	l := ledger.NewMem()
+	_, err := c.Write(t.Context(), l, header(past), manifest.Manifest{Version: manifest.Version})
+	assert.NoError(t, err, "the commit writes")
+	g, err := state.Open(t.Context(), l)
+	assert.NoError(t, err, "and its generation opens")
+	return g
+}
+
+// rangeErr ranges over seq to its end and returns the last error it
+// yielded, nil for a range that yielded none.
+func rangeErr[T any](seq iter.Seq2[T, error]) error {
+	var last error
+	for _, err := range seq {
+		if err != nil {
+			last = err
+		}
+	}
+	return last
 }
 
 // unitsOf returns a generation's unit records.

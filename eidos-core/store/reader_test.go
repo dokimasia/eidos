@@ -176,8 +176,25 @@ func TestReader(t *testing.T) {
 					coretest.Struct(coretest.CachePath, "Cache"), coretest.Struct(coretest.CachePath, "Entry")))
 
 			assert.Equal(t, coretest.Names(t, slices.Collect(r.ByKind(symbol.KindStruct))),
-				[]string{"Store", "Index"}, "the scope admits one package")
+				[]string{"Index", "Store"}, "the scope admits one package, in identity order")
 			assert.Equal(t, *asked, 2, "and is asked once for each of the two packages")
+		})
+
+		t.Run("keeps the edges a log loaded into the set", func(t *testing.T) {
+			t.Parallel()
+
+			cache := coretest.Struct(coretest.CachePath, "Cache")
+			g := coretest.Frozen(t, coretest.Package(coretest.CachePath, cache))
+			reads := loadedFrom(everyGrain(t))
+			r, err := g.Reader(reads, nil)
+			assert.NoError(t, err, "a sealed graph hands out a reader")
+			for range r.ByKind(symbol.KindStruct) { // ranging is what records the edges
+			}
+			ids := []symbol.Identity{cache.ID, coretest.Struct(coretest.StorePath, "Store").ID}
+			slices.SortFunc(ids, symbol.Identity.Compare)
+			assert.Equal(t, slices.Collect(reads.Identities()), ids,
+				"the loaded declaration and the enumerated one")
+			assert.Equal(t, reads.Len(), 6, "beside the loaded package, kind, directive and fact edges")
 		})
 	})
 

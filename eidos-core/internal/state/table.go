@@ -173,7 +173,7 @@ func (r *runReader) block(ctx context.Context, ref blockRef) ([]entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	return decodeBlock(b)
+	return decodeBlock(nil, b)
 }
 
 // read returns n bytes of the run from offset off within it.
@@ -246,8 +246,12 @@ func (t *tableReader) merged(ctx context.Context) ([]entry, error) {
 }
 
 // mergeEntries returns older and newer merged in key order, newer's
-// entry deciding a key both contain. Both are sorted by key.
+// entry deciding a key both contain. Both are sorted by key. An empty
+// newer returns older itself.
 func mergeEntries(older, newer []entry) []entry {
+	if len(newer) == 0 {
+		return older
+	}
 	out := make([]entry, 0, len(older)+len(newer))
 	i, j := 0, 0
 	for i < len(older) && j < len(newer) {

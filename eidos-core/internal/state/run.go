@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash/crc32"
 
+	"go.dokimi.dev/eidos/core/internal/grow"
 	"go.dokimi.dev/eidos/core/internal/wire"
 )
 
@@ -32,6 +33,10 @@ const (
 	entryTombstone = 0
 	entryRow       = 1
 )
+
+// minEntries is the least capacity a decoded list of entries takes on
+// its first entry.
+const minEntries = 64
 
 // castagnoli is the CRC-32C table every block, index, generation and
 // region is checked with.
@@ -102,6 +107,30 @@ func appendEntry(dst []byte, e entry) []byte {
 	return wire.AppendBytes(dst, e.row)
 }
 
+// runSize returns at least the number of bytes [appendRun] appends for
+// entries: each entry's encoding, and for each block, of which there are
+// at most one more than [blockSize] divides into the entries' bytes, a
+// trailer and an index entry of at most the longest key and three
+// varints, then the index's count and the footer.
+func runSize(entries []entry) int {
+	size, longest := 0, 0
+	for _, e := range entries {
+		size += entrySize(e)
+		longest = max(longest, len(e.key))
+	}
+	blocks := size/blockSize + 1
+	return size + blocks*(trailerSize+longest+3*binary.MaxVarintLen64) + binary.MaxVarintLen64 + footerSize
+}
+
+// entrySize returns the number of bytes [appendEntry] appends for e.
+func entrySize(e entry) int {
+	size := uvarintLen(uint64(len(e.key))) + len(e.key) + 1
+	if !e.dead {
+		size += uvarintLen(uint64(len(e.row))) + len(e.row)
+	}
+	return size
+}
+
 // decodeFooter returns the length of the index a run's footer states,
 // and the index's CRC-32C.
 func decodeFooter(footer []byte) (int, uint32) {
@@ -133,17 +162,18 @@ func decodeIndex(index []byte, sum uint32, limit int) ([]blockRef, error) {
 	return refs, nil
 }
 
-// decodeBlock decodes one block and its trailer, checked against the
-// block's CRC-32C. The keys and rows are windows of b.
+// decodeBlock appends the entries of one block to dst, the block and its
+// trailer checked against the block's CRC-32C, and returns the extended
+// slice. The keys and rows are windows of b. It allocates only to grow
+// dst, which doubles when it fills.
 //
 // Error modes: an error wrapping [ErrDamaged] for a block whose CRC-32C
 // does not match or whose entries do not decode.
-func decodeBlock(b []byte) ([]entry, error) {
+func decodeBlock(dst []entry, b []byte) ([]entry, error) {
 	block := b[:len(b)-trailerSize]
 	if crc32.Checksum(block, castagnoli) != binary.LittleEndian.Uint32(b[len(block):]) {
 		return nil, fmt.Errorf("%w: a block fails its CRC-32C", ErrDamaged)
 	}
-	var out []entry
 	d := wire.NewDecoder(block)
 	for d.Len() > 0 && d.Err() == nil {
 		e := entry{key: d.Bytes()}
@@ -155,12 +185,12 @@ func decodeBlock(b []byte) ([]entry, error) {
 		default:
 			d.Fail(fmt.Errorf("%w: an entry is neither a row nor a tombstone", ErrDamaged))
 		}
-		out = append(out, e)
+		dst = append(grow.Room(dst, 1, minEntries), e)
 	}
 	if err := d.Err(); err != nil {
 		return nil, fmt.Errorf("%w: a block does not decode: %w", ErrDamaged, err)
 	}
-	return out, nil
+	return dst, nil
 }
 
 // decodeRun decodes every entry of a run held whole in memory, in key
@@ -183,11 +213,10 @@ func decodeRun(run []byte) ([]entry, error) {
 	}
 	var out []entry
 	for _, ref := range refs {
-		block, err := decodeBlock(run[ref.offset : ref.offset+ref.length+trailerSize])
+		out, err = decodeBlock(out, run[ref.offset:ref.offset+ref.length+trailerSize])
 		if err != nil {
 			return nil, err
 		}
-		out = append(out, block...)
 	}
 	return out, nil
 }

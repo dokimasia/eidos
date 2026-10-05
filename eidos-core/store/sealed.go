@@ -224,8 +224,9 @@ func (s *sealedIndex) packageOf(id symbol.Identity) (*node.Package, bool) {
 
 // kind returns the declarations of one kind in the graph's order:
 // packages in identity order, and each package's declarations in
-// traversal order. It decodes the regions whose summary lists the kind,
-// and for packages, every region of each package listed.
+// identity order, those under one identity in region order. It decodes
+// the regions whose summary lists the kind, and for packages, every
+// region of each package listed.
 func (s *sealedIndex) kind(k symbol.Kind) []node.Declaration {
 	slot := &s.kinds[k]
 	slot.once.Do(func() {
@@ -236,6 +237,7 @@ func (s *sealedIndex) kind(k symbol.Kind) []node.Declaration {
 				}
 				continue
 			}
+			start := len(slot.decls)
 			for _, i := range s.pkgSlots[s.byPkg[id]].regions {
 				if !slices.Contains(s.infos[i].Kinds, k) {
 					continue
@@ -251,6 +253,9 @@ func (s *sealedIndex) kind(k symbol.Kind) []node.Declaration {
 					}
 				}
 			}
+			slices.SortStableFunc(slot.decls[start:], func(a, b node.Declaration) int {
+				return a.Identity().Compare(b.Identity())
+			})
 		}
 	})
 	return slot.decls

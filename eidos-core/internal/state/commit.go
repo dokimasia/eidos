@@ -42,6 +42,11 @@ type Commit struct {
 	regions       []byte
 	regionSegment string
 	changes       [tableCount]map[string]entry
+	// sorted are the changes [PhaseRecord.Commit] records for each phase
+	// table in bulk, sorted by key without repeats, which the commit keeps
+	// without copying. A bulk change decides a key that changes also
+	// contains.
+	sorted [tableCount][]entry
 	// recorded are the digests of the documents the ledger contains,
 	// which the commit compares the manifest's documents with.
 	recorded Digests
@@ -54,6 +59,15 @@ type Result struct {
 	Generation string
 	Written    int64
 	Size       int64
+}
+
+// freshRun is one table's new run, which the commit encodes into the run
+// segment: the table, its entries sorted by key, and whether the run
+// replaces the table's older runs, which a merge folded into it.
+type freshRun struct {
+	table   int
+	entries []entry
+	whole   bool
 }
 
 // NewCommit returns an empty commit over a parent, nil for a cold run.
@@ -77,7 +91,8 @@ func NewCommit(parent *Generation, recorded Digests) *Commit {
 
 // AddRegions makes the blobs one region segment, named by its digest,
 // and returns where each blob is. A commit adds one segment: a second
-// call refuses.
+// call refuses. It copies the blobs into one buffer it sizes before it
+// fills it.
 //
 // Error modes: an error for a second call.
 func (c *Commit) AddRegions(blobs [][]byte) ([]RegionRef, error) {
@@ -87,6 +102,11 @@ func (c *Commit) AddRegions(blobs [][]byte) ([]RegionRef, error) {
 	if len(blobs) == 0 {
 		return nil, nil
 	}
+	size := 0
+	for _, b := range blobs {
+		size += len(b)
+	}
+	c.regions = make([]byte, 0, size)
 	refs := make([]RegionRef, len(blobs))
 	for i, b := range blobs {
 		refs[i] = RegionRef{Offset: int64(len(c.regions)), Length: int64(len(b))}
@@ -229,8 +249,8 @@ func (c *Commit) empty() bool {
 	if len(c.regions) > 0 {
 		return false
 	}
-	for _, changes := range c.changes {
-		if len(changes) > 0 {
+	for t, changes := range c.changes {
+		if len(changes) > 0 || len(c.sorted[t]) > 0 {
 			return false
 		}
 	}
@@ -239,35 +259,46 @@ func (c *Commit) empty() bool {
 
 // tables returns every table's runs after the commit, and the bytes of
 // the new runs, whose references name an empty segment until the
-// caller names the run segment.
+// caller names the run segment. It sizes the bytes before it encodes
+// any run into them.
 func (c *Commit) tables(ctx context.Context) ([tableCount][]runRef, []byte, error) {
-	var (
-		out  [tableCount][]runRef
-		runs []byte
-	)
+	var out [tableCount][]runRef
 	if c.parent != nil {
 		for t := range out {
 			out[t] = slices.Clone(c.parent.tables[t])
 		}
 	}
+	var fresh []freshRun
+	size := 0
 	for t, changes := range c.changes {
-		if len(changes) == 0 {
+		if len(changes) == 0 && len(c.sorted[t]) == 0 {
 			continue
 		}
-		fresh := slices.SortedFunc(maps.Values(changes), compareEntries)
-		start := len(runs)
-		if merges(out[t], fresh) {
+		r := freshRun{table: t, entries: c.sorted[t]}
+		if len(changes) > 0 {
+			r.entries = mergeEntries(slices.SortedFunc(maps.Values(changes), compareEntries), r.entries)
+		}
+		if merges(out[t], r.entries) {
 			merged, err := c.parent.readers[t].merged(ctx)
 			if err != nil {
 				return out, nil, fmt.Errorf("state: merge the %s table: %w", Table(t), err)
 			}
-			live := slices.DeleteFunc(mergeEntries(merged, fresh), func(e entry) bool { return e.dead })
-			runs = appendRun(runs, live)
-			out[t] = []runRef{{offset: int64(start), length: int64(len(runs) - start)}}
+			r.entries = slices.DeleteFunc(mergeEntries(merged, r.entries), func(e entry) bool { return e.dead })
+			r.whole = true
+		}
+		size += runSize(r.entries)
+		fresh = append(fresh, r)
+	}
+	runs := make([]byte, 0, size)
+	for _, r := range fresh {
+		start := len(runs)
+		runs = appendRun(runs, r.entries)
+		ref := runRef{offset: int64(start), length: int64(len(runs) - start)}
+		if r.whole {
+			out[r.table] = []runRef{ref}
 			continue
 		}
-		runs = appendRun(runs, fresh)
-		out[t] = append(out[t], runRef{offset: int64(start), length: int64(len(runs) - start)})
+		out[r.table] = append(out[r.table], ref)
 	}
 	return out, runs, nil
 }

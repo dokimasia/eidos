@@ -129,7 +129,7 @@ func TestFixture(t *testing.T) {
 			r := f.Generate(t, p)
 			assert.NoError(t, r.Err, "the phase call passes")
 			assert.Equal(t, visited, []string{"Alpha", "Beta"},
-				"the loaded declarations dispatch in the graph's own order")
+				"the loaded declarations dispatch in identity order")
 		})
 
 		t.Run("sees seeded units the way a later bucket does", func(t *testing.T) {

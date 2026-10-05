@@ -7,10 +7,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"sync"
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/directive"
+	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/output"
@@ -42,6 +45,9 @@ type planRun struct {
 	// before this one generated, nil where every one of them rendered.
 	// A plan with an upstream generates nothing.
 	upstream *planRun
+	// invoked counts the invocations of each of the plan's generator
+	// calls, in schedule order.
+	invoked []Invoked
 	// files are what the plan rendered, in path order.
 	files []stagedFile
 	// export is what the plan rendered, as its dependents and the
@@ -86,10 +92,11 @@ func (p *planRun) cause() (position.Pos, bool) {
 // after each of them has rendered and reads their exports. A plan's
 // failure does not stop its siblings, every plan that depends on it
 // generates nothing, and every plan's store arrives in the report
-// either way.
+// either way. Each plan records its invocations into a lane of rec of
+// its own, where rec is set.
 func (w *Workspace) generateAll(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
-	table map[symbol.Identity][]directive.Directive, src tree,
+	table map[symbol.Identity][]directive.Directive, src tree, rec *state.Recorder,
 ) []*planRun {
 	runs := make([]*planRun, len(w.plans))
 	for i := range w.plans {
@@ -106,7 +113,7 @@ func (w *Workspace) generateAll(
 				return
 			}
 			var rendered []plugin.File
-			p.files, rendered, p.err = w.runPlan(ctx, g, facts, table, src, p, exports)
+			p.files, rendered, p.err = w.runPlan(ctx, g, facts, table, src, p, exports, rec)
 			p.cancelled = p.err != nil && ctx.Err() != nil && errors.Is(p.err, ctx.Err())
 			if p.plan.exported && !p.failed() {
 				p.export = plugin.NewExport(p.plan.name, rendered, p.emit)
@@ -146,46 +153,81 @@ func (p *planRun) await(runs []*planRun) (map[string]plugin.ExportDoc, bool) {
 // runPlan runs one plan's roles in bucket order, which is what an
 // emit-triggered rule's visibility is defined against: the store
 // contains earlier buckets' units when a later role runs. The plan's
-// sources bind its scope over the run's graph and facts, and every
-// generator reads the exports of the plans it depends on. Where the
-// composition writes output, the settled store routes to files
-// against the run's source tree, and the files render and stamp. It
-// returns the stamped files, and for a plan marked exported, the
-// routed files that rendered, which the plan's export lists.
+// sources bind its scope over the run's graph and facts, every
+// generator reads the exports of the plans it depends on, and a journal
+// counts each generator's invocations into the plan's run. Where the
+// composition writes output, the settled store routes to files against
+// the run's source tree, and the files render and stamp. It returns the
+// stamped files, and for a plan marked exported, the routed files that
+// rendered, which the plan's export lists.
+//
+// Where rec is set, the journal also records each invocation into the
+// plan's lane, each call reports into a sink of its own whose findings
+// then merge into the plan's, and a call that journals no invocation of
+// its own is recorded as one under [plugin.WholeCall]: its reader's
+// reads, the plans whose export it was handed, the units its plugin
+// flushed or appended into, and its findings.
 func (w *Workspace) runPlan(
 	ctx context.Context, g *store.Graph, facts *meta.Facts,
 	table map[symbol.Identity][]directive.Directive, src tree, p *planRun,
-	exports map[string]plugin.ExportDoc,
+	exports map[string]plugin.ExportDoc, rec *state.Recorder,
 ) ([]stagedFile, []plugin.File, error) {
 	pl := p.plan
 	ix, err := plugin.NewIndex(g, facts, table, pl.sources.bind(g, facts, w.kernel))
 	if err != nil {
 		return nil, nil, err
 	}
+	counted := &tally{}
+	if rec != nil {
+		counted.next = rec.Lane(pl.name)
+	}
 	for _, s := range pl.entries {
 		if err := ctx.Err(); err != nil {
 			return nil, nil, err
 		}
-		reader, err := ix.Reader(store.NewReadSet())
+		reads := store.NewReadSet()
+		reader, err := ix.Reader(reads)
 		if err != nil {
 			return nil, nil, err
+		}
+		counted.count = 0
+		calls := p.sink
+		if counted.next != nil {
+			calls = diag.NewSink()
 		}
 		call := &plugin.GeneratorContext{
 			Index:   ix,
 			Reader:  reader,
 			Facts:   facts,
 			Emit:    p.emit,
-			Sink:    p.sink,
+			Sink:    calls,
 			Rules:   w.rules,
 			Kernel:  w.kernel,
 			Plugin:  s.name,
 			Bucket:  s.bucket,
 			Workers: w.workers,
 			Exports: exports,
+			Journal: counted,
 		}
-		if err := s.run.Generate(call); err != nil {
+		err = s.run.Generate(call)
+		if counted.next != nil {
+			found := reported(calls, p.sink)
+			if counted.count == 0 {
+				counted.next.Invoked(plugin.Invocation{
+					Match:    plugin.MatchKey{Plugin: s.name, Rule: plugin.WholeCall},
+					Reads:    reads,
+					Exports:  slices.Sorted(maps.Keys(exports)),
+					Units:    unitsOf(p.emit, s.name),
+					Findings: found,
+				})
+			}
+		}
+		if err != nil {
 			return nil, nil, fmt.Errorf("generator %s in bucket %d: %w", s.name, s.bucket, err)
 		}
+		p.invoked = append(p.invoked, Invoked{
+			Plan: pl.name, Plugin: s.name, Phase: plugin.PhaseGenerate, Count: counted.count,
+		})
 	}
 	if err := plugin.Settle(p.emit, pl.backend, facts, p.sink); err != nil {
 		return nil, nil, fmt.Errorf("settle: %w", err)
@@ -332,6 +374,21 @@ func (w *Workspace) openSink() (output.Sink, error) {
 		return nil, fmt.Errorf("open the output: the open function returned (nil, nil)")
 	}
 	return out, nil
+}
+
+// unitsOf returns the references of the units of a plan's store that a
+// plugin flushed or appended into, sorted: what the run can tell from
+// the store that a phase call journaling no invocation of its own
+// touched.
+func unitsOf(e *plugin.Emit, p plugin.ID) []plugin.UnitRef {
+	var out []plugin.UnitRef
+	for u := range e.Units() {
+		if u.Plugin == p || slices.Contains(u.Contributors, p) {
+			out = append(out, u.Ref())
+		}
+	}
+	slices.SortFunc(out, plugin.UnitRef.Compare)
+	return out
 }
 
 // discarding drops a staging after a failure, joining whatever the

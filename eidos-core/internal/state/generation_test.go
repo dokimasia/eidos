@@ -35,13 +35,13 @@ const (
 	// decoded header, segments and tables, 2 for the table readers, and
 	// the generation.
 	openAllocs = 13
-	// getAllocs is one lookup of a row: the run read from the ledger,
-	// and 2 for the decoded block of the two rows that contains it.
-	getAllocs = 3
+	// getAllocs is one lookup of a row: the block read from the ledger,
+	// and the list of the block's two rows, decoded.
+	getAllocs = 2
 	// allAllocs is one read of the table: the run read from the ledger,
-	// its index, the run, 2 for its blocks, the merged entries and the
-	// rows.
-	allAllocs = 7
+	// its index, one list of the entries of its blocks, the merged
+	// entries and the rows.
+	allAllocs = 5
 )
 
 // The pins of a generation's layout the format case rewrites: the blob

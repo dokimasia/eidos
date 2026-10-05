@@ -28,13 +28,14 @@ const (
 	// check, and the parse of each curated package's files.
 	lowerMiniAllocs = 1_621 + 8*1
 	// lowerKernelAllocs is one lowering of the kernel's curated
-	// packages, 307,381 on average with a standard deviation of 5.
-	lowerKernelAllocs = 307_381 + 8*5
+	// packages, 309,649 on average with a standard deviation of 7.
+	lowerKernelAllocs = 309_649 + 8*7
 )
 
-// Lowering owns what the renderer may assume: the curated
-// packages parse in order, and what would defeat syntax-level
-// re-export is refused before anything renders.
+// A lowering establishes what the renderer assumes. The curated
+// packages parse in curated order, and Lower returns an error for a
+// construct that defeats a re-export at the syntax level before
+// anything renders.
 func TestIR(t *testing.T) {
 	t.Parallel()
 
@@ -62,7 +63,7 @@ func TestIR(t *testing.T) {
 			poison(t, root, poisonRel, "package emit\n\nimport . \"strings\"\n")
 			_, err := facade.Lower(filepath.Join(root, facade.KernelDir))
 			assert.HasError(t, err, "a dot import erases the qualifier")
-			assert.Contains(t, err.Error(), "dot import", "the refusal says why")
+			assert.Contains(t, err.Error(), "dot import", "the error names the cause")
 			assert.Contains(t, err.Error(), "poison.go:", "at the kernel position")
 		})
 

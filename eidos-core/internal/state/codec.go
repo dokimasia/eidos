@@ -199,6 +199,10 @@ func (e *encoder) value(v any) error {
 type decoder struct {
 	wire.Decoder
 	t *node.StringTable
+	// interned maps the bytes of each inline string the decoders of one
+	// load state read to the one string they make of them, and is nil
+	// for a decoder that makes a new string of every inline string.
+	interned map[string]string
 }
 
 // newDecoder returns a decoder over b, its strings numbered in t, or
@@ -210,7 +214,7 @@ func newDecoder(b []byte, t *node.StringTable) *decoder {
 // text reads a string.
 func (d *decoder) text() string {
 	if d.t == nil {
-		return d.Text()
+		return d.intern(d.Bytes())
 	}
 	i := d.Uvarint()
 	s, held := d.t.At(i)
@@ -218,6 +222,22 @@ func (d *decoder) text() string {
 		d.Fail(fmt.Errorf("%w: the table numbers %d strings, and the record names string %d",
 			wire.ErrMalformed, d.t.Len(), i))
 	}
+	return s
+}
+
+// intern returns b as a string. A decoder without an intern map returns
+// a new string. A decoder with one returns the string it made of the
+// same bytes before, which the map lookup finds without allocating, and
+// otherwise adds a new string to the map.
+func (d *decoder) intern(b []byte) string {
+	if d.interned == nil {
+		return string(b)
+	}
+	if s, held := d.interned[string(b)]; held {
+		return s
+	}
+	s := string(b)
+	d.interned[s] = s
 	return s
 }
 
@@ -359,4 +379,11 @@ func (d *decoder) value() any {
 		d.Fail(fmt.Errorf("%w: value tag %d is outside the fact vocabulary", wire.ErrMalformed, tag))
 		return nil
 	}
+}
+
+// uvarintLen returns how many bytes the unsigned varint of v takes, as
+// [binary.AppendUvarint] writes it. It allocates nothing.
+func uvarintLen(v uint64) int {
+	var b [binary.MaxVarintLen64]byte
+	return binary.PutUvarint(b[:], v)
 }

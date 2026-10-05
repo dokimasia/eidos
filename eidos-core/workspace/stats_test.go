@@ -13,6 +13,7 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/internal/coretest"
 	"go.dokimi.dev/eidos/core/ledger"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/store"
 	"go.dokimi.dev/eidos/core/symbol"
 	"go.dokimi.dev/eidos/core/workspace"
@@ -27,10 +28,12 @@ const (
 )
 
 // The counts the cases expect of the tree: every file the gate stats,
-// and the claimed files a cold gate hashes.
+// the claimed files a cold gate hashes, and the structs the files
+// declare, Row and User.
 const (
 	treeFiles    = 3
 	claimedFiles = 2
+	treeStructs  = 2
 )
 
 // The files of the coupled tree: one package the files of two
@@ -136,6 +139,31 @@ func TestStats(t *testing.T) {
 			})
 			assert.ErrorIs(t, err, workspace.ErrRunFailed, "the dangling subject fails the run")
 			assert.Equal(t, report.Stats.Validated, 1, "the struct alone")
+		})
+
+		t.Run("counts the invocations of each phase call", func(t *testing.T) {
+			t.Parallel()
+
+			report := sealedRun(t, sealing(t, ledger.NewMem(), "plan"), workspace.Input{Tree: statsTree()})
+			assert.Equal(t, report.Stats.Invoked, []workspace.Invoked{
+				{Plugin: noterID, Phase: plugin.PhaseAnnotate, Count: treeStructs},
+				{Plan: "plan", Plugin: mirrorID, Phase: plugin.PhaseGenerate, Count: treeStructs},
+			}, "the annotator and the generator each run once for each struct")
+		})
+
+		t.Run("counts the plans' generator calls after the annotators in composition order", func(t *testing.T) {
+			t.Parallel()
+
+			second := sealedPlan(t, "second", mirror("second-mirror"))
+			first := sealedPlan(t, "first", mirror("first-mirror"))
+			report := sealedRun(t, built(t, sealingPlans(ledger.NewMem(), second, first)),
+				workspace.Input{Tree: statsTree()})
+			var calls []plugin.ID
+			for _, c := range report.Stats.Invoked {
+				calls = append(calls, c.Plugin)
+			}
+			assert.Equal(t, calls, []plugin.ID{noterID, second.Generators[0].Name(), first.Generators[0].Name()},
+				"the annotator, then the plans as the composition lists them")
 		})
 
 		t.Run("counts the files the plans rendered", func(t *testing.T) {

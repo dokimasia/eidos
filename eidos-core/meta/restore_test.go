@@ -16,10 +16,21 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// restoreAllocs is a store that restores from a recorded source: the
-// store, its key table, and the function that loads a key's recorded
-// presence.
-const restoreAllocs = 3
+// The ceilings of a restored store and of the enumeration of a store's
+// bags.
+const (
+	// restoreAllocs is a store that restores from a recorded source: the
+	// store, its key table, and the function that loads a key's recorded
+	// presence.
+	restoreAllocs = 3
+	// bagsAllocs is a range over a store of bags of one claim without a
+	// derivation: the slice every bag is yielded in.
+	bagsAllocs = 1
+)
+
+// bagStore is how many bags the enumeration's ceilings are measured
+// over.
+const bagStore = 1_000
 
 // errSegment is the failure a damaged recorded source returns.
 var errSegment = errors.New("a segment is missing")
@@ -221,6 +232,143 @@ func TestRestore(t *testing.T) {
 			assert.HasError(t, f.Damaged(), "and the store is damaged")
 		})
 	})
+
+	t.Run("Bags", func(t *testing.T) {
+		t.Parallel()
+
+		t.Run("returns each key's claims in key order and in rank order", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, flag := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "reader", by("beta", 1)), "beta stamps the role")
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "alpha stamps the role")
+			assert.NoError(t, meta.Stamp(f, flag, true, by("alpha", 2)), "alpha stamps the flag")
+			assert.Equal(t, bagsOf(f), map[symbol.Identity][]meta.StoredClaim{
+				subject: {
+					{Key: "shape.comparable", Claim: by("alpha", 2), Value: true},
+					{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"},
+					{Key: "shape.role", Claim: by("beta", 1), Value: "reader"},
+				},
+			}, "shape.comparable sorts first, and alpha outranks beta")
+		})
+
+		t.Run("returns a group's drops after the keys", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, f.DropGroup("shape.writer", dropBy("defaults", 1)), "the group drop arrives")
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "a member stamps")
+			assert.Equal(t, bagsOf(f), map[symbol.Identity][]meta.StoredClaim{
+				subject: {
+					{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"},
+					{Group: "shape.writer", Claim: dropBy("defaults", 1), Drop: true},
+				},
+			}, "the group drop follows the key's claim")
+		})
+
+		t.Run("returns a key's drop without a value", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, f.DropKey(role.ID(), dropBy("defaults", 1)), "the drop arrives")
+			assert.Equal(t, bagsOf(f), map[symbol.Identity][]meta.StoredClaim{
+				subject: {{Key: "shape.role", Claim: dropBy("defaults", 1), Drop: true}},
+			}, "the drop has no value")
+		})
+
+		t.Run("returns a bag for each subject", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "the subject is stamped")
+			assert.NoError(t, meta.Stamp(f, role, "reader", on(sibling, "alpha", 1)), "and so is the sibling")
+			assert.Equal(t, bagsOf(f), map[symbol.Identity][]meta.StoredClaim{
+				subject: {{Key: "shape.role", Claim: by("alpha", 1), Value: "writer"}},
+				sibling: {{Key: "shape.role", Claim: on(sibling, "alpha", 1), Value: "reader"}},
+			}, "each subject's bag arrives once")
+		})
+
+		t.Run("returns a bag of more keys than fit in place", func(t *testing.T) {
+			t.Parallel()
+
+			r, _, _, _ := fixture(t)
+			var flags []meta.Key[bool]
+			for _, name := range []meta.KeyName{"shape.e", "shape.d", "shape.c", "shape.b", "shape.a"} {
+				k, err := meta.Register[bool](r, meta.KeySpec{Name: name, Doc: "one of five flags"})
+				assert.NoError(t, err, "the flag registers")
+				flags = append(flags, k)
+			}
+			f := meta.NewFacts(r)
+			for _, k := range flags {
+				assert.NoError(t, meta.Stamp(f, k, true, by("alpha", 1)), "each flag is stamped")
+			}
+			var got []meta.KeyName
+			for _, c := range bagsOf(f)[subject] {
+				got = append(got, c.Key)
+			}
+			assert.Equal(t, got, []meta.KeyName{"shape.a", "shape.b", "shape.c", "shape.d", "shape.e"},
+				"the five keys arrive in name order")
+		})
+
+		t.Run("leaves out a bag whose every claim was withdrawn", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "the subject is stamped")
+			assert.NoError(t, f.Withdraw(role.ID(), by("alpha", 1)), "and the claim is withdrawn")
+			assert.Empty(t, bagsOf(f), "the empty bag is not yielded")
+		})
+
+		t.Run("returns copies of a list value and of a derivation", func(t *testing.T) {
+			t.Parallel()
+
+			r, _, _, _ := fixture(t)
+			tags, err := meta.Register[[]string](r, meta.KeySpec{Name: "shape.tags", Doc: "the subject's tags"})
+			assert.NoError(t, err, "the list key registers")
+			f := meta.NewFacts(r)
+			claim := by("alpha", 1)
+			claim.Derived = []meta.Read{{Subject: sibling}}
+			assert.NoError(t, meta.Stamp(f, tags, []string{"a"}, claim), "the list is stamped")
+			for _, bag := range f.Bags() {
+				bag[0].Value.([]string)[0] = "b"
+				bag[0].Claim.Derived[0].Key = "shape.role"
+			}
+			got, _ := meta.Get(f, subject, tags)
+			assert.Equal(t, got, []string{"a"}, "the store keeps its value")
+			views := slices.Collect(f.Claims(subject, tags.ID()))
+			assert.Equal(t, views[0].Claim.Derived, []meta.Read{{Subject: sibling}},
+				"and its derivation")
+		})
+
+		t.Run("stops when the range's body breaks", func(t *testing.T) {
+			t.Parallel()
+
+			_, f, role, _ := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "the subject is stamped")
+			assert.NoError(t, meta.Stamp(f, role, "reader", on(sibling, "alpha", 1)), "and so is the sibling")
+			seen := 0
+			for range f.Bags() {
+				seen++
+				break
+			}
+			assert.Equal(t, seen, 1, "the range ends at the first bag")
+		})
+
+		t.Run("returns claims a source restores into an equal store", func(t *testing.T) {
+			t.Parallel()
+
+			r, f, role, flag := fixture(t)
+			assert.NoError(t, meta.Stamp(f, role, "writer", by("alpha", 1)), "alpha stamps the role")
+			assert.NoError(t, f.DropKey(flag.ID(), dropBy("defaults", 2)), "a directive drops the flag")
+			assert.NoError(t, f.DropGroup("shape.writer", dropBy("defaults", 3)), "and the group")
+			src := &recordedSource{claims: bagsOf(f), present: map[meta.KeyName][]symbol.Identity{}}
+			assert.Equal(t, bagsOf(meta.Restore(r, src)), map[symbol.Identity][]meta.StoredClaim{},
+				"a restored store yields no bag before a touch")
+			again := meta.Restore(r, src)
+			_, _ = meta.Get(again, subject, role)
+			assert.Equal(t, bagsOf(again), bagsOf(f), "a touched bag yields the claims it restored")
+		})
+	})
 }
 
 // A restored store is built without allocating more than an empty one
@@ -234,6 +382,16 @@ func TestRestoreAllocs(t *testing.T) {
 	assert.MaxAllocs(t, func() { f = meta.Restore(r, src) }, restoreAllocs,
 		"Restore allocates the store, its key table and its presence loader")
 	assert.NoError(t, f.Damaged(), "Restore returns a store that is not damaged")
+
+	stamped := storeOfBags(t, bagStore)
+	n := 0
+	assert.MaxAllocs(t, func() {
+		n = 0
+		for range stamped.Bags() {
+			n++
+		}
+	}, bagsAllocs, "a range over Bags allocates the slice every bag is yielded in")
+	assert.Equal(t, n, bagStore, "the range yields every bag")
 }
 
 // BenchmarkRestore measures the store a warm run builds over the
@@ -250,6 +408,43 @@ func BenchmarkRestore(b *testing.B) {
 		}
 		assert.True(b, f.Registry() == r, "Restore returns a store over the registry")
 	})
+
+	b.Run("Bags", func(b *testing.B) {
+		b.Run("a store of a thousand bags of one claim", func(b *testing.B) {
+			f := storeOfBags(b, bagStore)
+			c := bench.Start(b).MaxAllocs(bagsAllocs)
+			defer c.End()
+			n := 0
+			for c.Loop() {
+				n = 0
+				for range f.Bags() {
+					n++
+				}
+			}
+			assert.Equal(b, n, bagStore, "the range yields every bag")
+		})
+	})
+}
+
+// bagsOf collects a store's bags by subject.
+func bagsOf(f *meta.Facts) map[symbol.Identity][]meta.StoredClaim {
+	out := map[symbol.Identity][]meta.StoredClaim{}
+	for id, claims := range f.Bags() {
+		out[id] = slices.Clone(claims)
+	}
+	return out
+}
+
+// storeOfBags returns a store of n bags, each of one claim of the role
+// key without a derivation.
+func storeOfBags(tb assert.TB, n int) *meta.Facts {
+	tb.Helper()
+
+	_, f, role, _ := fixture(tb)
+	for _, id := range benchIdentities(n) {
+		assert.NoError(tb, meta.Stamp(f, role, "writer", on(id, "alpha", 1)), "the subject is stamped")
+	}
+	return f
 }
 
 // restored returns a store restoring from src over the fixture's

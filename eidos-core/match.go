@@ -31,7 +31,12 @@ type match struct {
 	seq int
 	// rule is the rule's place in its plugin's declaration order, the
 	// first step of a claim's order.
-	rule    int
+	rule int
+	// fr and value are the rule and the matched value, nil for a graph
+	// match, from which an accessor call's buffered touch derives the
+	// subject again.
+	fr      *flatRule
+	value   symbol.Symbol
 	subject symbol.Identity
 	pos     position.Pos
 	gate    *directive.Directive
@@ -70,6 +75,8 @@ func newMatch(inv invocation) match {
 	m := match{
 		rs:      inv.rs,
 		seq:     inv.seq,
+		fr:      inv.fr,
+		value:   inv.value,
 		subject: inv.subject,
 		pos:     inv.pos,
 		gate:    inv.gate,

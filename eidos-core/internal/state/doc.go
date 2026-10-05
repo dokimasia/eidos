@@ -36,6 +36,21 @@
 // record of the load, which is the [go.dokimi.dev/eidos/core/frontend/load.Prior]
 // a warm load reads, and [RecordLoad] records the next load in a commit.
 //
+// # The record of the phases
+//
+// A [Recorder] collects what the phases after the load executed: each
+// validation, invocation and check with the edges it read, through one
+// [Lane] for each goroutine that records, and the audit's findings. An
+// [EdgeHash] is the first eight bytes of the SHA-256 of an edge's
+// spelling, and a [RecordRef] names a record by the same hash of its kind
+// and its key fields. [RecordPhases] reads the prior record whole before
+// any plan commits, and [PhaseRecord.Commit] completes the record into
+// the commit once the plans have committed. It sorts the records by ID
+// and the reads by edge, and records only the rows that differ from the
+// prior record's. A plan that does not commit keeps its prior
+// invocations. [Generation.Phases] returns a generation's record, which
+// looks up a record by its key and the records that read an edge.
+//
 // # The parse memo
 //
 // A [Memo] keeps the region of every unit a run parsed under memo/, each
@@ -69,6 +84,6 @@
 //
 // core/internal/state imports core/ledger, core/manifest, core/node,
 // core/store, core/frontend/load, core/plugin, core/directive,
-// core/meta, core/diag, core/position, core/symbol, core/internal/wire
-// and the Go stdlib.
+// core/meta, core/diag, core/position, core/symbol, core/internal/grow,
+// core/internal/wire and the Go stdlib.
 package state

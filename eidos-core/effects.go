@@ -9,9 +9,14 @@ import (
 
 	"go.dokimi.dev/eidos/core/diag"
 	"go.dokimi.dev/eidos/core/emit"
+	"go.dokimi.dev/eidos/core/internal/grow"
 	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// minGrowth is the capacity an empty buffer of a phase call takes on its
+// first append.
+const minGrowth = 64
 
 // effectKind names what one buffered effect does when it applies.
 type effectKind uint8
@@ -69,15 +74,19 @@ type effects struct {
 	lastHost int
 }
 
-// touch is an accessor call: the accumulator it addresses, the subject
-// and gating instance its handle places under, and the accumulator
-// itself once the touch has applied.
+// touch is one accessor call, in 96 bytes. It derives the family from
+// the key's tag, and the subject from the rule and the matched value.
 type touch struct {
-	key      accKey
-	fam      plugin.Output
-	subject  symbol.Identity
+	// key addresses the accumulator.
+	key accKey
+	// fr and value are the rule and the matched value from which the
+	// subject of the call's handle derives.
+	fr    *flatRule
+	value symbol.Symbol
+	// instance is the gating instance the handle places under.
 	instance int
-	acc      *accumulator
+	// acc is the accumulator, set once the touch applies.
+	acc *accumulator
 }
 
 // place is one [Out.Append] call: the touch of the handle it went
@@ -141,24 +150,24 @@ func (b *slotBuffer[T]) reset() {
 // call's handle places under.
 func (fx *effects) touch(seq int, t touch) int {
 	at := len(fx.touches)
-	fx.stream = append(fx.stream, effect{seq: seq, at: at, kind: effectTouch})
-	fx.touches = append(fx.touches, t)
+	fx.stream = append(grow.Room(fx.stream, 1, minGrowth), effect{seq: seq, at: at, kind: effectTouch})
+	fx.touches = append(grow.Room(fx.touches, 1, minGrowth), t)
 	return at
 }
 
 // place buffers one append call's declarations, in order, under the
 // touch of the handle the call went through.
 func (fx *effects) place(seq, touch int, decls []symbol.Symbol) {
-	fx.stream = append(fx.stream, effect{seq: seq, at: len(fx.places), kind: effectPlace})
+	fx.stream = append(grow.Room(fx.stream, 1, minGrowth), effect{seq: seq, at: len(fx.places), kind: effectPlace})
 	from := len(fx.decls)
-	fx.decls = append(fx.decls, decls...)
-	fx.places = append(fx.places, place{touch: touch, from: from, to: len(fx.decls)})
+	fx.decls = append(grow.Room(fx.decls, len(decls), minGrowth), decls...)
+	fx.places = append(grow.Room(fx.places, 1, minGrowth), place{touch: touch, from: from, to: len(fx.decls)})
 }
 
 // report buffers one finding.
 func (fx *effects) report(seq int, f finding) {
-	fx.stream = append(fx.stream, effect{seq: seq, at: len(fx.found), kind: effectFinding})
-	fx.found = append(fx.found, f)
+	fx.stream = append(grow.Room(fx.stream, 1, minGrowth), effect{seq: seq, at: len(fx.found), kind: effectFinding})
+	fx.found = append(grow.Room(fx.found, 1, minGrowth), f)
 }
 
 // contribute buffers the emit value whose slots an invocation appended
@@ -169,8 +178,8 @@ func (fx *effects) contribute(seq int, host symbol.Symbol) {
 		return
 	}
 	fx.lastHost = seq
-	fx.stream = append(fx.stream, effect{seq: seq, at: len(fx.hosts), kind: effectHost})
-	fx.hosts = append(fx.hosts, host)
+	fx.stream = append(grow.Room(fx.stream, 1, minGrowth), effect{seq: seq, at: len(fx.hosts), kind: effectHost})
+	fx.hosts = append(grow.Room(fx.hosts, 1, minGrowth), host)
 }
 
 // reset empties the lane's effects for its next phase call and keeps
@@ -202,10 +211,10 @@ func (fx *effects) reset() {
 func appendSlot[T any](fx *effects, seq int, s *emit.Slot[T], values []T) {
 	buf := slotBufferOf[T](fx)
 	from := len(buf.values)
-	buf.values = append(buf.values, values...)
-	fx.stream = append(fx.stream, effect{seq: seq, at: len(fx.slotted), kind: effectSlot})
-	fx.slotted = append(fx.slotted, slotted{buf: buf, at: len(buf.appends)})
-	buf.appends = append(buf.appends, slotAppend[T]{slot: s, from: from, to: len(buf.values)})
+	buf.values = append(grow.Room(buf.values, len(values), minGrowth), values...)
+	fx.stream = append(grow.Room(fx.stream, 1, minGrowth), effect{seq: seq, at: len(fx.slotted), kind: effectSlot})
+	fx.slotted = append(grow.Room(fx.slotted, 1, minGrowth), slotted{buf: buf, at: len(buf.appends)})
+	buf.appends = append(grow.Room(buf.appends, 1, minGrowth), slotAppend[T]{slot: s, from: from, to: len(buf.values)})
 }
 
 // slotBufferOf returns the lane's buffer of the appends into slots of
@@ -285,9 +294,9 @@ func (c *phaseCall) applyEffect(ln *runState, e effect) {
 	switch e.kind {
 	case effectTouch:
 		t := &ln.fx.touches[e.at]
-		t.acc = c.accFor(t.key, t.fam, t.subject)
+		t.acc = c.accFor(t.key, subjectOf(t.fr, t.value))
 		if c.filling != nil {
-			c.units = append(c.units, plugin.UnitRef{
+			c.units = append(grow.Room(c.units, 1, minGrowth), plugin.UnitRef{
 				Plugin: c.plugin, Tag: string(t.key.tag), Pkg: t.acc.pkg, Key: t.acc.key,
 			})
 			c.filling.units.to = int32(len(c.units))
@@ -295,9 +304,10 @@ func (c *phaseCall) applyEffect(ln *runState, e effect) {
 	case effectPlace:
 		p := ln.fx.places[e.at]
 		t := &ln.fx.touches[p.touch]
+		origin := subjectOf(t.fr, t.value)
 		for _, d := range ln.fx.decls[p.from:p.to] {
 			t.acc.places = append(t.acc.places, placed{
-				origin:   t.subject,
+				origin:   origin,
 				instance: t.instance,
 				seq:      len(t.acc.places),
 				decl:     d,
@@ -319,7 +329,7 @@ func (c *phaseCall) applyEffect(ln *runState, e effect) {
 		}
 		c.sink.Report(f.d)
 		if c.filling != nil {
-			c.findings = append(c.findings, f.d)
+			c.findings = append(grow.Room(c.findings, 1, minGrowth), f.d)
 			c.filling.findings.to = int32(len(c.findings))
 		}
 	case effectHost:
@@ -332,7 +342,7 @@ func (c *phaseCall) applyEffect(ln *runState, e effect) {
 			return
 		}
 		if ref, held := c.emit.Ref(host); held {
-			c.hosts = append(c.hosts, ref)
+			c.hosts = append(grow.Room(c.hosts, 1, minGrowth), ref)
 			c.filling.hosts.to = int32(len(c.hosts))
 		}
 	}

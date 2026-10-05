@@ -18,7 +18,10 @@ import (
 	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/ledger"
 	"go.dokimi.dev/eidos/core/manifest"
+	"go.dokimi.dev/eidos/core/meta"
+	"go.dokimi.dev/eidos/core/plugin"
 	"go.dokimi.dev/eidos/core/position"
+	"go.dokimi.dev/eidos/core/store"
 )
 
 // currentName is the ledger name of the pointer to the live generation,
@@ -30,16 +33,20 @@ const currentName = "state/CURRENT"
 // the generation's record of the load. commit is the next generation the
 // run records into, nil for a run that writes none: a dry run, a run
 // over a caller's graph or without a ledger, a run whose previous record
-// does not read, and a run that cannot read its executable. header is
+// does not read, and a run that cannot read its executable. recorder
+// collects the record of the run's phases, and phases is that record
+// prepared before any plan commits, both nil where commit is. header is
 // the next generation's header, and memo the parse memo, nil where the
 // run keeps none.
 type sealedState struct {
-	ledger ledger.Ledger
-	gen    *state.Generation
-	prior  *state.LoadState
-	commit *state.Commit
-	header state.Header
-	memo   *state.Memo
+	ledger   ledger.Ledger
+	gen      *state.Generation
+	prior    *state.LoadState
+	commit   *state.Commit
+	recorder *state.Recorder
+	phases   *state.PhaseRecord
+	header   state.Header
+	memo     *state.Memo
 }
 
 // loadPrior returns the record a warm load reads, and nil for a cold
@@ -68,15 +75,46 @@ func (s *sealedState) record(ctx context.Context, loaded *load.Report) error {
 	return nil
 }
 
-// write makes the next generation live, strictly after every plan's
-// commit, with the merged manifest's documents that differ from the
-// ledger's. It writes under a context without the run's cancellation,
-// because the record has to match the destination once a commit wrote
-// to it, and counts what it wrote in stats.
+// recordPhases prepares the record of the run's phases, after Close and
+// before any plan commits, so damage it meets in the generation's records
+// discards the run with nothing written. A run that records no phases
+// prepares nothing.
+//
+// Error modes: [damage] for a record of the generation that does not
+// read whole, and the error of a claim whose value is outside the fact
+// vocabulary.
+func (s *sealedState) recordPhases(ctx context.Context, g *store.Graph, facts *meta.Facts, k meta.KernelKeys) error {
+	if s.recorder == nil {
+		return nil
+	}
+	p, err := state.RecordPhases(ctx, s.gen, s.recorder, state.PhaseRun{
+		Facts: facts, Modules: moduleCounts(g, facts, k),
+	})
+	if err != nil {
+		return damaged(fmt.Errorf("workspace: record the phases: %w", err))
+	}
+	s.phases = p
+	return nil
+}
+
+// write completes the record of the run's phases with each plan's
+// outcome, then makes the next generation live, strictly after every
+// plan's commit, with the merged manifest's documents that differ from
+// the ledger's. It writes under a context without the run's
+// cancellation, because the record has to match the destination once a
+// commit wrote to it, and counts what it wrote in stats. A plan that does
+// not commit keeps its previous invocations.
 //
 // Error modes: a ledger's failure to write, wrapped. A failure before
 // CURRENT leaves the parent live.
-func (s *sealedState) write(ctx context.Context, m manifest.Manifest, stats *Stats) error {
+func (s *sealedState) write(ctx context.Context, m manifest.Manifest, runs []*planRun, stats *Stats) error {
+	var uncommitted []string
+	for _, p := range runs {
+		if !p.commits() {
+			uncommitted = append(uncommitted, p.plan.name)
+		}
+	}
+	s.phases.Commit(s.commit, uncommitted)
 	result, err := s.commit.Write(context.WithoutCancel(ctx), s.ledger, s.header, m)
 	stats.Generation = result.Generation != "" && (s.gen == nil || result.Generation != s.gen.Name)
 	stats.Written, stats.Size = result.Written, result.Size
@@ -221,6 +259,7 @@ func (w *Workspace) openSealed(ctx context.Context, rec *record, in Input, sink 
 	}
 	if !in.Dry && rec.digests != nil {
 		s.commit = state.NewCommit(s.gen, rec.digests)
+		s.recorder = &state.Recorder{}
 	}
 	return s, nil
 }
@@ -245,4 +284,20 @@ func (w *Workspace) usable(gen *state.Generation, run state.Header, sink *diag.S
 func (w *Workspace) coldState(sink *diag.Sink, format string, args ...any) {
 	at := position.Pos{File: ledger.StateDir(w.brand) + "/" + currentName}
 	sink.Infof(ColdState, at, diag.PhaseLoad, format, args...)
+}
+
+// moduleCounts returns how many packages name each module: every package
+// that has both module facts, the module and its root, counted under its
+// language, its module and its root. A module rooted outside the
+// workspace counts too, where the layout's list of modules leaves it out.
+func moduleCounts(g *store.Graph, facts *meta.Facts, k meta.KernelKeys) map[plugin.Module]int {
+	out := map[plugin.Module]int{}
+	for p := range g.Packages() {
+		module, named := meta.Get(facts, p.ID, k.Module)
+		root, rooted := meta.Get(facts, p.ID, k.ModuleRoot)
+		if named && rooted {
+			out[plugin.Module{Lang: p.ID.Lang, Path: module, Root: root}]++
+		}
+	}
+	return out
 }

@@ -120,23 +120,23 @@ const benchBrand output.Brand = "bench"
 
 // The ceilings of [BenchmarkLoad].
 const (
-	// coldLoadAllocs is one cold load of the canonical corpus, 1,173,084
+	// coldLoadAllocs is one cold load of the canonical corpus, 1,139,086
 	// allocations. The scripted frontend's parse and resolution make
-	// about 910,000 of them, and the driver the rest: the gate's read and
+	// about 950,000 of them, and the driver the rest: the gate's read and
 	// record of each of the 10,000 files, each unit's source unit, read
 	// fold, key and imports, the link's record of each reference, and the
-	// regions. The parse's goroutines allocate up to 16 more as the
-	// runtime schedules them: 30 fresh processes counted 1,173,086 to
-	// 1,173,100. The ceiling allows twice that.
-	coldLoadAllocs = 1_173_084 + 32
+	// regions. The parse's goroutines allocate up to 7 more as the runtime
+	// schedules them: 30 fresh processes counted 1,139,086 to 1,139,093.
+	// The ceiling allows twice that.
+	coldLoadAllocs = 1_139_086 + 14
 	// warmLoadAllocs is one warm load of the unchanged corpus over a record
-	// opened for the load, as a run opens it: 194,490 allocations on
-	// average. Most of them decode the record, a string for each text
-	// field and a list for each list of texts of the 10,000 file records
-	// and the 1,000 unit records, and the gate allocates a record and a
-	// path for each file it stats. 30 fresh processes counted 194,486 to
-	// 194,494.
-	warmLoadAllocs = 194_490 + 10
+	// opened for the load, as a run opens it: 89,571 allocations at least.
+	// Most of them decode the record, which makes one string of each
+	// distinct text of the 10,000 file records and the 1,000 unit records
+	// and a list for each list of texts, and the gate allocates a record
+	// and a path for each file it stats. 30 fresh processes counted 89,571
+	// to 89,577, and the ceiling allows twice that spread.
+	warmLoadAllocs = 89_571 + 12
 )
 
 // The driver is the read side's one pipeline, so its phases are

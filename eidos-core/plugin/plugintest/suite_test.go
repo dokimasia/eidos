@@ -978,8 +978,8 @@ func weaving(tb assert.TB) (plugin.Plugin, *plugintest.Fixture) {
 }
 
 // reversed returns a fixture with two positioned structs declared in
-// the reverse of their identity order, so the index enumerates them in
-// another order than a selection runs them.
+// the reverse of their identity order, which is the order the index
+// enumerates them in.
 func reversed(tb assert.TB) *plugintest.Fixture {
 	tb.Helper()
 

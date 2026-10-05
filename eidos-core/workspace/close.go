@@ -12,6 +12,7 @@ import (
 	"go.dokimi.dev/eidos/core/directive"
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/internal/pathset"
+	"go.dokimi.dev/eidos/core/internal/state"
 	"go.dokimi.dev/eidos/core/manifest"
 	"go.dokimi.dev/eidos/core/meta"
 	"go.dokimi.dev/eidos/core/node"
@@ -140,8 +141,11 @@ func (w *Workspace) sweep(rec *record, runs []*planRun, sink *diag.Sink, blocked
 // every declaration of a graph the caller handed over, and the
 // declarations of the units the load parsed at full depth: a
 // dependency's declarations are signatures no annotator is promised to
-// stamp.
-func (w *Workspace) audit(g *store.Graph, facts *meta.Facts, loaded *load.Report, sink *diag.Sink) bool {
+// stamp. It records each finding into rec under the contract's key and
+// the declaration, where rec is set.
+func (w *Workspace) audit(
+	g *store.Graph, facts *meta.Facts, loaded *load.Report, sink *diag.Sink, rec *state.Recorder,
+) bool {
 	if len(w.contracts) == 0 {
 		return false
 	}
@@ -174,14 +178,18 @@ func (w *Workspace) audit(g *store.Graph, facts *meta.Facts, loaded *load.Report
 					continue
 				}
 				failed = failed || c.Severity == diag.SeverityError
-				sink.Report(diag.Diag{
+				d := diag.Diag{
 					Code:     UnmetContract,
 					Severity: c.Severity,
 					Pos:      at,
 					Msg: fmt.Sprintf("%s %s lacks %s, whose contract promises it on every %s by the end of %s",
 						kind, id.Name, c.name, kinds(c.On), c.By),
 					Origin: diag.PhaseClose,
-				})
+				}
+				sink.Report(d)
+				if rec != nil {
+					rec.Audit(c.name, id, d)
+				}
 			}
 		}
 	}
@@ -198,10 +206,11 @@ func (w *Workspace) audit(g *store.Graph, facts *meta.Facts, loaded *load.Report
 // where the plan has one. A check's findings arrive in the run's sink
 // in the order it reported them. A check's returned error stops the
 // step and returns, wrapped with the check's name. Every check it
-// calls counts into stats.
+// calls counts into stats, and records its reader's reads and its
+// findings into a lane of rec, where rec is set.
 func (w *Workspace) check(
 	g *store.Graph, facts *meta.Facts, table map[symbol.Identity][]directive.Directive,
-	runs []*planRun, sink *diag.Sink, stats *Stats,
+	runs []*planRun, sink *diag.Sink, stats *Stats, rec *state.Recorder,
 ) (bool, error) {
 	if len(w.checks) == 0 {
 		return false, nil
@@ -209,6 +218,10 @@ func (w *Workspace) check(
 	ix, err := plugin.NewIndex(g, facts, table, nil)
 	if err != nil {
 		return false, fmt.Errorf("workspace: %w", err)
+	}
+	var lane *state.Lane
+	if rec != nil {
+		lane = rec.Lane("")
 	}
 	failed := false
 	for _, c := range w.checks {
@@ -225,7 +238,8 @@ func (w *Workspace) check(
 			}
 			continue
 		}
-		reader, err := ix.Reader(store.NewReadSet())
+		reads := store.NewReadSet()
+		reader, err := ix.Reader(reads)
 		if err != nil {
 			return failed, fmt.Errorf("workspace: %w", err)
 		}
@@ -241,9 +255,7 @@ func (w *Workspace) check(
 			Plugin: c.name,
 			Plans:  records(c.reads, runs),
 		})
-		for d := range local.All() {
-			sink.Report(d)
-		}
+		lane.Check(c.name, reads, reported(local, sink))
 		failed = failed || local.Failed()
 		if err != nil {
 			return true, fmt.Errorf("workspace: check %s: %w", c.name, err)

@@ -42,10 +42,15 @@ const identityKeyFixed = 6
 // every unit's references. It is the [load.Prior] a warm load reads,
 // and it records the next load in a [Commit].
 //
+// The decodes of the files, the units and the doors share one string
+// for each distinct text. The units, their summaries and the doors
+// repeat frontend names, segment names, package paths and file paths.
+//
 // # Concurrency
 //
 // A LoadState is safe for concurrent use: the tables it reads whole load
-// once under a [sync.Once], and a region decodes on each call.
+// once under a [sync.Once], a region decodes on each call, and the
+// decodes that share strings take turns under a lock.
 type LoadState struct {
 	ctx context.Context
 	g   *Generation
@@ -58,6 +63,12 @@ type LoadState struct {
 	units     []unitRow
 	byFirst   map[string]int
 	unitsErr  error
+
+	// interned maps the bytes of each text a decode read to the one
+	// string the state's decodes share, nil before the first decode.
+	// interning serializes the decodes that read and fill it.
+	interning sync.Mutex
+	interned  map[string]string
 }
 
 // unitRow is one unit's row: its record, and where its region is.
@@ -137,15 +148,20 @@ func (s *LoadState) Doors(frontend plugin.ID) ([]load.DoorRecord, error) {
 	}
 	prefix := append([]byte(frontend), keySep)
 	var out []load.DoorRecord
-	for _, e := range rows {
-		if !bytes.HasPrefix(e.key, prefix) {
-			continue
+	if err := s.decodeInterned(func(interned map[string]string) error {
+		for _, e := range rows {
+			if !bytes.HasPrefix(e.key, prefix) {
+				continue
+			}
+			door, err := decodeDoor(e.row, interned)
+			if err != nil {
+				return err
+			}
+			out = append(out, door)
 		}
-		door, err := decodeDoor(e.row)
-		if err != nil {
-			return nil, err
-		}
-		out = append(out, door)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return out, nil
 }
@@ -200,12 +216,15 @@ func (s *LoadState) readFiles() ([]load.FileRecord, error) {
 			return
 		}
 		s.files = make([]load.FileRecord, len(rows))
-		for i, e := range rows {
-			if s.files[i], err = decodeFile(e.key, e.row); err != nil {
-				s.filesErr = err
-				return
+		s.filesErr = s.decodeInterned(func(interned map[string]string) error {
+			for i, e := range rows {
+				var err error
+				if s.files[i], err = decodeFile(e.key, e.row, interned); err != nil {
+					return err
+				}
 			}
-		}
+			return nil
+		})
 	})
 	return s.files, s.filesErr
 }
@@ -221,16 +240,31 @@ func (s *LoadState) readUnits() ([]unitRow, error) {
 		}
 		s.units = make([]unitRow, len(rows))
 		s.byFirst = make(map[string]int, len(rows))
-		for i, e := range rows {
-			if s.units[i], err = decodeUnit(e.row); err != nil {
-				s.unitsErr = err
-				return
+		s.unitsErr = s.decodeInterned(func(interned map[string]string) error {
+			for i, e := range rows {
+				var err error
+				if s.units[i], err = decodeUnit(e.row, interned); err != nil {
+					return err
+				}
+				s.units[i].record.Number = i
+				s.byFirst[string(e.key)] = i
 			}
-			s.units[i].record.Number = i
-			s.byFirst[string(e.key)] = i
-		}
+			return nil
+		})
 	})
 	return s.units, s.unitsErr
+}
+
+// decodeInterned runs decode with the strings the state's decodes share,
+// created on the first decode, under the lock that makes those decodes
+// take turns, and returns decode's error.
+func (s *LoadState) decodeInterned(decode func(interned map[string]string) error) error {
+	s.interning.Lock()
+	defer s.interning.Unlock()
+	if s.interned == nil {
+		s.interned = map[string]string{}
+	}
+	return decode(s.interned)
 }
 
 // RecordLoad records a load in a commit: each file record that differs
@@ -531,6 +565,27 @@ func identityKey(dst []byte, id symbol.Identity) []byte {
 	return append(dst, id.Disc...)
 }
 
+// parseIdentityKey returns the identity a key [identityKey] appended
+// spells, and false for bytes that spell none: fewer than four parts
+// before the kind, or a kind without its separator.
+func parseIdentityKey(b []byte) (symbol.Identity, bool) {
+	var parts [4]string
+	for i := range parts {
+		at := bytes.IndexByte(b, keySep)
+		if at < 0 {
+			return symbol.Identity{}, false
+		}
+		parts[i], b = string(b[:at]), b[at+1:]
+	}
+	if len(b) < 2 || b[1] != keySep {
+		return symbol.Identity{}, false
+	}
+	return symbol.Identity{
+		Lang: symbol.Lang(parts[0]), Package: parts[1], Owner: parts[2], Name: parts[3],
+		Kind: symbol.Kind(b[0]), Disc: string(b[2:]),
+	}, true
+}
+
 // doorKey returns a door's key: the frontend's name, the separator, and
 // the door's place, the partition first.
 func doorKey(frontend plugin.ID, place int) []byte {
@@ -572,11 +627,13 @@ func encodeFile(f load.FileRecord) []byte {
 	return e.buf
 }
 
-// decodeFile decodes a file record's row under its key.
-func decodeFile(key, row []byte) (load.FileRecord, error) {
+// decodeFile decodes a file record's row under its key, with the strings
+// a load state's decodes share.
+func decodeFile(key, row []byte, interned map[string]string) (load.FileRecord, error) {
 	d := newDecoder(row, nil)
+	d.interned = interned
 	f := load.FileRecord{
-		Path:    string(key),
+		Path:    d.intern(key),
 		Size:    d.Varint(),
 		ModTime: d.instant(),
 		Change:  d.instant(),
@@ -609,9 +666,11 @@ func encodeUnit(u unitRow) []byte {
 	return e.buf
 }
 
-// decodeUnit decodes a unit's row.
-func decodeUnit(row []byte) (unitRow, error) {
+// decodeUnit decodes a unit's row, with the strings a load state's
+// decodes share.
+func decodeUnit(row []byte, interned map[string]string) (unitRow, error) {
 	d := newDecoder(row, nil)
+	d.interned = interned
 	var u unitRow
 	u.record.Frontend = plugin.ID(d.text())
 	u.record.Files = d.refs()
@@ -653,9 +712,11 @@ func encodeDoor(door load.DoorRecord) []byte {
 	return e.buf
 }
 
-// decodeDoor decodes a door's row.
-func decodeDoor(row []byte) (load.DoorRecord, error) {
+// decodeDoor decodes a door's row, with the strings a load state's
+// decodes share.
+func decodeDoor(row []byte, interned map[string]string) (load.DoorRecord, error) {
 	d := newDecoder(row, nil)
+	d.interned = interned
 	door := load.DoorRecord{Round: int(d.Uvarint())}
 	if n := d.Count(); n > 0 {
 		door.Reads = make([]load.Digested, n)

@@ -17,10 +17,12 @@ import (
 	"go.dokimi.dev/eidos/core/symbol"
 )
 
-// The directive spelling and the fact key the log fixtures read.
+// The directive spellings and the fact keys the log fixtures read.
 const (
-	logDirective directive.Name = "stub"
-	logKey       meta.KeyName   = "t.flag"
+	logDirective  directive.Name = "stub"
+	markDirective directive.Name = "mark"
+	logKey        meta.KeyName   = "t.flag"
+	roleKey       meta.KeyName   = "t.role"
 )
 
 // grains is every enumeration of a read set, the five grains in one
@@ -58,6 +60,17 @@ func TestReadLog(t *testing.T) {
 			log.Append(reads)
 			assert.Equal(t, grainsOf(reads), before, "the set keeps its edges")
 		})
+
+		t.Run("keeps the edges of a set a log loaded", func(t *testing.T) {
+			t.Parallel()
+
+			var first, second store.ReadLog
+			loaded := store.NewReadSet()
+			first.Load(first.Append(everyGrain(t)), loaded)
+			again := store.NewReadSet()
+			second.Load(second.Append(loaded), again)
+			assert.Equal(t, grainsOf(again), grainsOf(everyGrain(t)), "the second log keeps what the first loaded")
+		})
 	})
 
 	t.Run("Load", func(t *testing.T) {
@@ -72,6 +85,16 @@ func TestReadLog(t *testing.T) {
 			loaded := store.NewReadSet()
 			log.Load(at, loaded)
 			assert.Equal(t, grainsOf(loaded), grainsOf(reads), "the loaded set returns what the recorded set did")
+		})
+
+		t.Run("returns the edges of an entry past four edges in each grain's order", func(t *testing.T) {
+			t.Parallel()
+
+			reads := pastFourEdges(t)
+			var log store.ReadLog
+			loaded := store.NewReadSet()
+			log.Load(log.Append(reads), loaded)
+			assert.Equal(t, grainsOf(loaded), grainsOf(reads), "the loaded set returns the recorded set's order")
 		})
 
 		t.Run("records the edges of its own entry alone", func(t *testing.T) {
@@ -163,6 +186,18 @@ func TestReadLogZeroAlloc(t *testing.T) {
 			t.Fatal("Append after Reset returns another index than zero")
 		}
 	}, 0, "Reset and Append allocate nothing within the log's earlier use")
+
+	one := store.NewReadSet()
+	one.RecordFact(coretest.Struct(coretest.StorePath, "Store").ID, logKey)
+	var small store.ReadLog
+	entry := small.Append(one)
+	fresh := store.NewReadSet()
+	assert.MaxAllocs(t, func() {
+		small.Load(entry, fresh)
+		if fresh.Len() != 1 {
+			t.Fatal("Load records another number of edges")
+		}
+	}, 0, "Load allocates nothing for an entry of at most four edges, which a set keeps in place")
 }
 
 // BenchmarkReadLog measures a set of five edges, one of each grain,
@@ -237,6 +272,41 @@ func everyGrain(tb assert.TB) *store.ReadSet {
 	for range r.ByDirective(logDirective) { // ranging is what records the edges
 	}
 	reads.RecordFact(decl.ID, logKey)
+	return reads
+}
+
+// pastFourEdges returns a read set past four edges with more than one
+// edge of every grain, each grain's edges recorded against its order.
+func pastFourEdges(tb assert.TB) *store.ReadSet {
+	tb.Helper()
+
+	alpha, omega := coretest.Struct(coretest.StorePath, "Alpha"), coretest.Struct(coretest.StorePath, "Omega")
+	cache := coretest.Struct(coretest.CachePath, "Cache")
+	g := store.New()
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.StorePath, alpha, omega)),
+		"the store package is admitted")
+	assert.NoError(tb, g.AddPackage(coretest.Package(coretest.CachePath, cache)), "the cache package is admitted")
+	assert.NoError(tb, g.AttachDirectives(omega.ID, []directive.Raw{{Name: logDirective}, {Name: markDirective}}),
+		"the directives attach")
+	g.Freeze()
+	reads := store.NewReadSet()
+	r, err := g.Reader(reads, nil)
+	assert.NoError(tb, err, "a sealed graph hands out a reader")
+	r.Lookup(omega.ID)
+	r.Lookup(alpha.ID)
+	r.PackageOf(omega.ID)
+	r.PackageOf(cache.ID)
+	for _, k := range []symbol.Kind{symbol.KindStruct, symbol.KindFile} {
+		for range r.ByKind(k) { // ranging is what records the edges
+		}
+	}
+	for _, n := range []directive.Name{logDirective, markDirective} {
+		for range r.ByDirective(n) { // ranging is what records the edges
+		}
+	}
+	reads.RecordFact(omega.ID, logKey)
+	reads.RecordFact(alpha.ID, roleKey)
+	reads.RecordFact(alpha.ID, logKey)
 	return reads
 }
 

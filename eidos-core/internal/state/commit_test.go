@@ -54,7 +54,7 @@ const (
 	// ledger: the run segment and its name, the generation's encoding and
 	// its name, CURRENT, the manifest's digests, and the listing the
 	// collection walks.
-	writeAllocs = 41
+	writeAllocs = 40
 )
 
 // refusing is a memory ledger that refuses every write of a name under

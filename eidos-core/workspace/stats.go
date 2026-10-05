@@ -6,7 +6,23 @@ package workspace
 import (
 	"go.dokimi.dev/eidos/core/frontend/load"
 	"go.dokimi.dev/eidos/core/plugin"
+	"go.dokimi.dev/eidos/core/symbol"
 )
+
+// Invoked counts the invocations of one phase call. A run lists the
+// annotators' calls in schedule order, then each plan's generator calls,
+// plans in composition order and each plan's generators in schedule
+// order.
+type Invoked struct {
+	// Plan is the call's plan, empty for an annotator.
+	Plan   string
+	Plugin plugin.ID
+	Phase  plugin.Phase
+	// Count is the number of invocations the call handed its journal. A
+	// plugin that implements its role directly and journals nothing
+	// counts zero.
+	Count int
+}
 
 // Stats counts what one run executed: what a probe asserts and what a
 // report summarizes. A cold run and a warm run over one tree leave the
@@ -63,11 +79,29 @@ func (s *Stats) count(loaded *load.Report, sealed *sealedState) {
 	}
 }
 
-// Invoked counts the invocations of one phase call.
-type Invoked struct {
-	// Plan is the call's plan, empty for an annotator.
-	Plan   string
-	Plugin plugin.ID
-	Phase  plugin.Phase
-	Count  int
+// tally is the journal a run hands each phase call: it counts the
+// invocations the call journals, and hands each record to next, the
+// recording lane of a run that records its phases, nil for a run that
+// records none. The run resets the count before each call and reads it
+// after the call returns. A phase call journals on its calling
+// goroutine, one record at a time, so a tally that serves one call at a
+// time needs no lock. Its methods allocate nothing beyond what next
+// allocates.
+type tally struct {
+	count int
+	next  plugin.Journal
 }
+
+var _ plugin.Journal = (*tally)(nil)
+
+// Invoked adds the invocation to the count and hands it to next.
+func (t *tally) Invoked(inv plugin.Invocation) {
+	t.count++
+	if t.next != nil {
+		t.next.Invoked(inv)
+	}
+}
+
+// Evaluated discards a selection's candidates, which are not
+// invocations.
+func (*tally) Evaluated(symbol.Identity, []plugin.MatchKey) {}

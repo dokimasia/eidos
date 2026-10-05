@@ -355,6 +355,23 @@ func TestSealed(t *testing.T) {
 			}
 		})
 
+		t.Run("returns the declarations of a package's parts in identity order", func(t *testing.T) {
+			t.Parallel()
+
+			first := coretest.Package(coretest.StorePath, coretest.Struct(coretest.StorePath, "Store"))
+			second := &node.Package{ID: first.ID, Path: first.Path, Files: []*node.File{{
+				ID:    coretest.ID(coretest.StorePath, secondFile, symbol.KindFile),
+				Path:  secondFile,
+				Decls: node.Symbols{coretest.Struct(coretest.StorePath, "Cache")},
+			}}}
+			g := store.Sealed(newMemory(
+				&store.Region{Packages: []*node.Package{first}},
+				&store.Region{Packages: []*node.Package{second}},
+			))
+			assert.Equal(t, coretest.Names(t, slices.Collect(g.ByKind(symbol.KindStruct))),
+				[]string{"Cache", "Store"}, "the second part declares Cache, which sorts first")
+		})
+
 		t.Run("decodes only the regions whose summary lists the kind", func(t *testing.T) {
 			t.Parallel()
 
